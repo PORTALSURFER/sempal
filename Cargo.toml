@@ -1,0 +1,7 @@
+[package]
+name = "sempal"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+slint = { version = "1.14.1", default-features = false, features = ["std", "backend-winit", "renderer-skia-vulkan", "compat-1-2"] }
