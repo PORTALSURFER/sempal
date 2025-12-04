@@ -4,4 +4,5 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+hound = "3.5"
 slint = { version = "1.14.1", default-features = false, features = ["std", "backend-winit", "renderer-femtovg-wgpu", "compat-1-2", "unstable-winit-030", "unstable-wgpu-27"] }
