@@ -94,9 +94,11 @@ impl AudioPlayer {
         }
 
         let offset = start_seconds.clamp(0.0, duration);
-        let source = Decoder::new(Cursor::new(bytes))
-            .map_err(|error| format!("Audio decode failed: {error}"))?
-            .skip_duration(Duration::from_secs_f32(offset));
+        let mut source =
+            Decoder::new(Cursor::new(bytes)).map_err(|error| format!("Audio decode failed: {error}"))?;
+        source
+            .try_seek(Duration::from_secs_f32(offset))
+            .map_err(Self::map_seek_error)?;
 
         let sink =
             Sink::try_new(&self.handle).map_err(|error| format!("Audio output failed: {error}"))?;
@@ -105,5 +107,15 @@ impl AudioPlayer {
         self.started_at = Some(Instant::now() - Duration::from_secs_f32(offset));
         self.sink = Some(sink);
         Ok(())
+    }
+
+    fn map_seek_error(error: rodio::source::SeekError) -> String {
+        match error {
+            rodio::source::SeekError::NotSupported { .. } => {
+                "Seeking not supported for this audio source".into()
+            }
+            rodio::source::SeekError::HoundDecoder(err) => format!("Audio seek failed: {err}"),
+            _ => format!("Audio seek failed: {error}"),
+        }
     }
 }
