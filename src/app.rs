@@ -11,17 +11,17 @@ use crate::audio::AudioPlayer;
 use crate::sample_sources::config::{self, AppConfig};
 use crate::sample_sources::scanner::scan_once;
 use crate::sample_sources::{
-    SampleSource, ScanError, ScanStats, SourceDatabase, SourceId, WavEntry,
+    SampleSource, ScanError, ScanStats, ScanTracker, SourceDatabase, SourceId, WavEntry,
 };
 use crate::ui::{HelloWorld, SourceRow, WavRow};
 use crate::waveform::WaveformRenderer;
 use rfd::FileDialog;
-use slint::ComponentHandle;
 use slint::winit_030::{
     self, CustomApplicationHandler, EventResult,
     winit::event::{ElementState, WindowEvent},
     winit::keyboard::{KeyCode, PhysicalKey},
 };
+use slint::{Color, ComponentHandle, SharedString};
 
 #[derive(Clone)]
 pub struct DropHandler {
@@ -32,6 +32,7 @@ pub struct DropHandler {
     sources: Rc<RefCell<Vec<SampleSource>>>,
     wav_entries: Rc<RefCell<Vec<WavEntry>>>,
     selected_source: Rc<RefCell<Option<SourceId>>>,
+    scan_tracker: Rc<RefCell<ScanTracker>>,
     scan_tx: Sender<ScanJobResult>,
     scan_rx: Rc<RefCell<Receiver<ScanJobResult>>>,
     scan_poll_timer: Rc<slint::Timer>,
@@ -41,6 +42,15 @@ pub struct DropHandler {
 struct ScanJobResult {
     source_id: SourceId,
     result: Result<ScanStats, ScanError>,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum StatusState {
+    Idle,
+    Busy,
+    Info,
+    Warning,
+    Error,
 }
 
 impl DropHandler {
@@ -54,6 +64,7 @@ impl DropHandler {
             sources: Rc::new(RefCell::new(Vec::new())),
             wav_entries: Rc::new(RefCell::new(Vec::new())),
             selected_source: Rc::new(RefCell::new(None)),
+            scan_tracker: Rc::new(RefCell::new(ScanTracker::default())),
             scan_tx,
             scan_rx: Rc::new(RefCell::new(scan_rx)),
             scan_poll_timer: Rc::new(slint::Timer::default()),
@@ -72,7 +83,11 @@ impl DropHandler {
             return;
         };
         if !Self::is_wav(path) {
-            app.set_status_text("Unsupported file type (please drop a .wav)".into());
+            self.set_status(
+                &app,
+                "Unsupported file type (please drop a .wav)",
+                StatusState::Warning,
+            );
             return;
         }
         match self.renderer.load_waveform(path) {
@@ -84,9 +99,13 @@ impl DropHandler {
                 self.playhead_timer.stop();
                 app.set_playhead_position(0.0);
                 app.set_playhead_visible(false);
-                app.set_status_text(format!("Loaded {}", path.display()).into());
+                self.set_status(
+                    &app,
+                    format!("Loaded {}", path.display()),
+                    StatusState::Info,
+                );
             }
-            Err(error) => app.set_status_text(error.into()),
+            Err(error) => self.set_status(&app, error, StatusState::Error),
         }
     }
 
@@ -96,12 +115,12 @@ impl DropHandler {
         };
         match self.player.borrow_mut().play() {
             Ok(_) => {
-                app.set_status_text("Playing audio".into());
+                self.set_status(&app, "Playing audio", StatusState::Info);
                 self.start_playhead_updates();
                 EventResult::PreventDefault
             }
             Err(error) => {
-                app.set_status_text(error.into());
+                self.set_status(&app, error, StatusState::Error);
                 EventResult::PreventDefault
             }
         }
@@ -117,11 +136,11 @@ impl DropHandler {
             Ok(_) => {
                 app.set_playhead_position(progress);
                 app.set_playhead_visible(true);
-                app.set_status_text("Playing audio".into());
+                self.set_status(&app, "Playing audio", StatusState::Info);
                 self.start_playhead_updates();
             }
             Err(error) => {
-                app.set_status_text(error.into());
+                self.set_status(&app, error, StatusState::Error);
                 app.set_playhead_visible(false);
             }
         }
@@ -136,27 +155,35 @@ impl DropHandler {
         };
         let normalized = config::normalize_path(path.as_path());
         if !normalized.is_dir() {
-            app.set_status_text("Please select a directory".into());
+            self.set_status(&app, "Please select a directory", StatusState::Warning);
             return;
         }
         let mut sources = self.sources.borrow_mut();
         if sources.iter().any(|s| s.root == normalized) {
-            app.set_status_text("Source already added".into());
+            self.set_status(&app, "Source already added", StatusState::Info);
             return;
         }
         let source = SampleSource::new(normalized.clone());
         if let Err(error) = SourceDatabase::open(&normalized) {
-            app.set_status_text(format!("Failed to create database: {error}").into());
+            self.set_status(
+                &app,
+                format!("Failed to create database: {error}"),
+                StatusState::Error,
+            );
             return;
         }
         sources.push(source.clone());
         drop(sources);
         if let Err(error) = self.save_sources() {
-            app.set_status_text(format!("Failed to save config: {error}").into());
+            self.set_status(
+                &app,
+                format!("Failed to save config: {error}"),
+                StatusState::Error,
+            );
         }
         self.refresh_sources(&app);
         self.select_source_by_id(&app, &source.id);
-        self.start_scan_for(source);
+        self.start_scan_for(source, true);
     }
 
     pub fn handle_source_selected(&self, index: i32) {
@@ -170,7 +197,7 @@ impl DropHandler {
             return;
         };
         self.select_source_by_id(&app, &source.id);
-        self.start_scan_for(source);
+        self.start_scan_for(source, false);
     }
 
     pub fn handle_wav_clicked(&self, index: i32) {
@@ -184,7 +211,66 @@ impl DropHandler {
             return;
         };
         let full_path = source.root.join(&entry.relative_path);
+        if !full_path.exists() {
+            self.prune_missing_entry(&source, &entry);
+            if let Some(app) = self.app() {
+                self.refresh_wavs(&app);
+                self.set_status(
+                    &app,
+                    "File missing on disk. Removed from library.",
+                    StatusState::Warning,
+                );
+            }
+            return;
+        }
         self.handle_drop(full_path.as_path());
+    }
+
+    pub fn handle_update_source(&self, index: i32) {
+        if index < 0 {
+            return;
+        }
+        let Some(source) = self.sources.borrow().get(index as usize).cloned() else {
+            return;
+        };
+        self.start_scan_for(source, true);
+    }
+
+    pub fn handle_remove_source(&self, index: i32) {
+        if index < 0 {
+            return;
+        }
+        let Some(app) = self.app() else {
+            return;
+        };
+        let removed = {
+            let mut sources = self.sources.borrow_mut();
+            if (index as usize) >= sources.len() {
+                return;
+            }
+            sources.remove(index as usize)
+        };
+        self.scan_tracker.borrow_mut().forget(&removed.id);
+        let mut selected = self.selected_source.borrow_mut();
+        if selected.as_ref().is_some_and(|id| id == &removed.id) {
+            *selected = None;
+        }
+        drop(selected);
+        if let Err(error) = self.save_sources() {
+            self.set_status(
+                &app,
+                format!("Failed to save config: {error}"),
+                StatusState::Error,
+            );
+            return;
+        }
+        self.refresh_sources(&app);
+        if self.selected_source.borrow().is_none() {
+            self.select_first_source(&app);
+        } else {
+            self.refresh_wavs(&app);
+        }
+        self.set_status(&app, "Source removed", StatusState::Info);
     }
 
     fn app(&self) -> Option<HelloWorld> {
@@ -196,12 +282,13 @@ impl DropHandler {
             Ok(cfg) => {
                 self.sources.replace(cfg.sources);
                 self.refresh_sources(app);
-                if let Some(first) = self.sources.borrow().first().cloned() {
-                    self.select_source_by_id(app, &first.id);
-                    self.start_scan_for(first);
-                }
+                self.select_first_source(app);
             }
-            Err(error) => app.set_status_text(format!("Config load failed: {error}").into()),
+            Err(error) => self.set_status(
+                app,
+                format!("Config load failed: {error}"),
+                StatusState::Error,
+            ),
         }
     }
 
@@ -228,6 +315,16 @@ impl DropHandler {
             .map(|i| i as i32)
             .unwrap_or(-1);
         app.set_selected_source(index);
+        app.set_source_menu_index(-1);
+    }
+
+    fn select_first_source(&self, app: &HelloWorld) {
+        if let Some(first) = self.sources.borrow().first().cloned() {
+            self.select_source_by_id(app, &first.id);
+            self.start_scan_for(first, false);
+        } else {
+            app.set_wavs(Rc::<slint::VecModel<WavRow>>::default().into());
+        }
     }
 
     fn select_source_by_id(&self, app: &HelloWorld, id: &SourceId) {
@@ -245,6 +342,15 @@ impl DropHandler {
             .cloned()
     }
 
+    fn prune_missing_entry(&self, source: &SampleSource, entry: &WavEntry) {
+        if let Ok(db) = SourceDatabase::open(&source.root) {
+            let _ = db.remove_file(&entry.relative_path);
+        }
+        self.wav_entries
+            .borrow_mut()
+            .retain(|e| e.relative_path != entry.relative_path);
+    }
+
     fn refresh_wavs(&self, app: &HelloWorld) {
         let Some(source) = self.current_source() else {
             app.set_wavs(Rc::<slint::VecModel<WavRow>>::default().into());
@@ -252,23 +358,52 @@ impl DropHandler {
         };
         match SourceDatabase::open(&source.root).and_then(|db| db.list_files()) {
             Ok(entries) => {
-                self.wav_entries.replace(entries.clone());
-                let rows = entries.iter().map(Self::wav_row).collect::<Vec<_>>();
-                let model = Rc::new(slint::VecModel::from(rows));
-                app.set_wavs(model.into());
-                app.set_status_text(format!("{} wav files loaded", entries.len()).into());
+                let unchanged = Self::wav_entries_match(&self.wav_entries.borrow(), &entries);
+                if !unchanged {
+                    self.wav_entries.replace(entries.clone());
+                    let rows = entries.iter().map(Self::wav_row).collect::<Vec<_>>();
+                    let model = Rc::new(slint::VecModel::from(rows));
+                    app.set_wavs(model.into());
+                }
+                self.set_status(
+                    app,
+                    format!("{} wav files loaded", entries.len()),
+                    StatusState::Info,
+                );
             }
-            Err(error) => app.set_status_text(format!("Failed to load wavs: {error}").into()),
+            Err(error) => self.set_status(
+                app,
+                format!("Failed to load wavs: {error}"),
+                StatusState::Error,
+            ),
         }
     }
 
-    fn start_scan_for(&self, source: SampleSource) {
+    fn start_scan_for(&self, source: SampleSource, force: bool) {
         if *self.shutting_down.borrow() {
             return;
         }
+        {
+            let tracker = self.scan_tracker.borrow();
+            if !tracker.can_start(&source.id, force) {
+                if tracker.is_active(&source.id) {
+                    if let Some(app) = self.app() {
+                        self.set_status(&app, "Scan already in progress", StatusState::Info);
+                    }
+                } else if let Some(app) = self.app() {
+                    self.set_status(&app, "Using existing scan results", StatusState::Info);
+                }
+                return;
+            }
+        }
+        self.scan_tracker.borrow_mut().mark_started(&source.id);
         let tx = self.scan_tx.clone();
         if let Some(app) = self.app() {
-            app.set_status_text(format!("Scanning {}", source.root.display()).into());
+            self.set_status(
+                &app,
+                format!("Scanning {}", source.root.display()),
+                StatusState::Busy,
+            );
         }
         thread::spawn(move || {
             let result = (|| -> Result<ScanStats, ScanError> {
@@ -304,14 +439,32 @@ impl DropHandler {
     }
 
     fn handle_scan_result(&self, app: &HelloWorld, message: ScanJobResult) {
+        if !self
+            .sources
+            .borrow()
+            .iter()
+            .any(|source| source.id == message.source_id)
+        {
+            self.scan_tracker.borrow_mut().forget(&message.source_id);
+            return;
+        }
         match message.result {
             Ok(stats) => {
-                app.set_status_text(
+                self.scan_tracker
+                    .borrow_mut()
+                    .mark_completed(&message.source_id);
+                let state = if self.scan_tracker.borrow().has_active() {
+                    StatusState::Busy
+                } else {
+                    StatusState::Info
+                };
+                self.set_status(
+                    app,
                     format!(
                         "Scan complete: {} added, {} updated, {} removed",
                         stats.added, stats.updated, stats.removed
-                    )
-                    .into(),
+                    ),
+                    state,
                 );
                 if self
                     .selected_source
@@ -323,7 +476,10 @@ impl DropHandler {
                 }
             }
             Err(error) => {
-                app.set_status_text(format!("Scan failed: {error}").into());
+                self.scan_tracker
+                    .borrow_mut()
+                    .mark_failed(&message.source_id);
+                self.set_status(app, format!("Scan failed: {error}"), StatusState::Error);
             }
         }
     }
@@ -398,6 +554,34 @@ impl DropHandler {
         }
     }
 
+    fn wav_entries_match(existing: &[WavEntry], incoming: &[WavEntry]) -> bool {
+        if existing.len() != incoming.len() {
+            return false;
+        }
+        existing.iter().zip(incoming.iter()).all(|(old, new)| {
+            old.relative_path == new.relative_path
+                && old.file_size == new.file_size
+                && old.modified_ns == new.modified_ns
+        })
+    }
+
+    fn set_status(&self, app: &HelloWorld, text: impl Into<SharedString>, state: StatusState) {
+        let (badge, color) = Self::status_badge(state);
+        app.set_status_badge_text(badge);
+        app.set_status_badge_color(color);
+        app.set_status_text(text.into());
+    }
+
+    fn status_badge(state: StatusState) -> (SharedString, Color) {
+        match state {
+            StatusState::Idle => ("Idle".into(), Color::from_rgb_u8(42, 42, 42)),
+            StatusState::Busy => ("Scanning".into(), Color::from_rgb_u8(31, 139, 255)),
+            StatusState::Info => ("Info".into(), Color::from_rgb_u8(64, 140, 112)),
+            StatusState::Warning => ("Warning".into(), Color::from_rgb_u8(192, 138, 43)),
+            StatusState::Error => ("Error".into(), Color::from_rgb_u8(192, 57, 43)),
+        }
+    }
+
     fn is_wav(path: &std::path::Path) -> bool {
         path.extension()
             .is_some_and(|ext| ext.eq_ignore_ascii_case("wav"))
@@ -443,6 +627,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         .select()?;
 
     let app = HelloWorld::new()?;
+    app.set_source_menu_index(-1);
     app.set_waveform(renderer.empty_image());
     drop_handler.set_app(&app);
     attach_callbacks(&app, &drop_handler);
@@ -457,6 +642,10 @@ fn attach_callbacks(app: &HelloWorld, drop_handler: &DropHandler) {
     app.on_add_source(move || add_handler.handle_add_source());
     let source_handler = drop_handler.clone();
     app.on_source_selected(move |index| source_handler.handle_source_selected(index));
+    let update_handler = drop_handler.clone();
+    app.on_source_update_requested(move |index| update_handler.handle_update_source(index));
+    let remove_handler = drop_handler.clone();
+    app.on_source_remove_requested(move |index| remove_handler.handle_remove_source(index));
     let wav_handler = drop_handler.clone();
     app.on_wav_clicked(move |index| wav_handler.handle_wav_clicked(index));
     let close_handler = drop_handler.clone();

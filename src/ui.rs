@@ -10,6 +10,8 @@ slint::slint! {
         min-width: 480px;
         min-height: 320px;
         in-out property <string> status_text: "Add a sample source to get started";
+        in-out property <string> status_badge_text: "Idle";
+        in-out property <color> status_badge_color: #2a2a2a;
         in-out property <image> waveform;
         in-out property <float> playhead_position: 0.0;
         in-out property <bool> playhead_visible: false;
@@ -18,7 +20,10 @@ slint::slint! {
         in-out property <[SourceRow]> sources;
         in-out property <int> selected_source: -1;
         in-out property <[WavRow]> wavs;
+        in-out property <int> source_menu_index: -1;
         callback source_selected(int);
+        callback source_update_requested(int);
+        callback source_remove_requested(int);
         callback add_source();
         callback wav_clicked(int);
 
@@ -137,11 +142,96 @@ slint::slint! {
                                         text: source.name;
                                         color: #e0e0e0;
                                     }
+                                    Rectangle {
+                                        horizontal-stretch: 1;
+                                        height: 1px;
+                                        background: #00000000;
+                                    }
+                                    Rectangle {
+                                        width: 22px;
+                                        height: 22px;
+                                        background: #1b1b1b;
+                                        border-radius: 4px;
+                                        border-width: 1px;
+                                        border-color: #2f2f2f;
+                                        Text {
+                                            text: "⋮";
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
+                                            color: #c8c8c8;
+                                            width: parent.width;
+                                            height: parent.height;
+                                        }
+                                        TouchArea {
+                                            width: parent.width;
+                                            height: parent.height;
+                                            clicked => { root.source_menu_index = i; }
+                                        }
+                                    }
                                 }
                                 ta_source := TouchArea {
                                     width: parent.width;
                                     height: parent.height;
-                                    clicked => { root.source_selected(i); }
+                                    clicked => {
+                                        root.source_menu_index = -1;
+                                        root.source_selected(i);
+                                    }
+                                }
+                                if root.source_menu_index == i : Rectangle {
+                                    x: parent.width - self.width - 8px;
+                                    y: parent.height;
+                                    width: 160px;
+                                    background: #0f1115;
+                                    border-width: 1px;
+                                    border-color: #2a3a50;
+                                    border-radius: 6px;
+                                    z: 5;
+                                    VerticalLayout {
+                                        padding: 6px;
+                                        spacing: 6px;
+                                        Rectangle {
+                                            height: 28px;
+                                            background: #162235;
+                                            border-radius: 4px;
+                                            Text {
+                                                text: "Update files";
+                                                color: #d8dfe8;
+                                                vertical-alignment: center;
+                                                horizontal-alignment: center;
+                                                width: parent.width;
+                                                height: parent.height;
+                                            }
+                                            TouchArea {
+                                                width: parent.width;
+                                                height: parent.height;
+                                                clicked => {
+                                                    root.source_menu_index = -1;
+                                                    root.source_update_requested(i);
+                                                }
+                                            }
+                                        }
+                                        Rectangle {
+                                            height: 28px;
+                                            background: #251919;
+                                            border-radius: 4px;
+                                            Text {
+                                                text: "Remove source";
+                                                color: #e8c8c8;
+                                                vertical-alignment: center;
+                                                horizontal-alignment: center;
+                                                width: parent.width;
+                                                height: parent.height;
+                                            }
+                                            TouchArea {
+                                                width: parent.width;
+                                                height: parent.height;
+                                                clicked => {
+                                                    root.source_menu_index = -1;
+                                                    root.source_remove_requested(i);
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -203,7 +293,16 @@ slint::slint! {
                                         z: 1;
                                     }
 
-                                    TouchArea {
+                                    Rectangle {
+                                        visible: ta_wave.has-hover;
+                                        width: 2px;
+                                        height: parent.height;
+                                        x: ta_wave.mouse-x - (self.width / 2);
+                                        background: #66ccff;
+                                        z: 2;
+                                    }
+
+                                    ta_wave := TouchArea {
                                         width: parent.width;
                                         height: parent.height;
                                         clicked => {
@@ -260,17 +359,38 @@ slint::slint! {
                         }
 
                         Rectangle {
-                            height: 32px;
+                            height: 34px;
                             background: #00000033;
                             border-width: 1px;
                             border-color: #303030;
                             border-radius: 6px;
-                            Text {
-                                text: root.status_text;
-                                vertical-alignment: center;
-                                width: parent.width;
-                                height: parent.height;
-                                color: #d0d0d0;
+                            HorizontalLayout {
+                                padding: 8px;
+                                spacing: 10px;
+                                Rectangle {
+                                    width: 18px;
+                                    height: 18px;
+                                    border-radius: 9px;
+                                    background: root.status_badge_color;
+                                    border-width: 1px;
+                                    border-color: #00000055;
+                                }
+                                Text {
+                                    text: root.status_badge_text;
+                                    vertical-alignment: center;
+                                    color: #d0d0d0;
+                                }
+                                Rectangle {
+                                    width: 1px;
+                                    height: parent.height * 0.55;
+                                    background: #2d2d2d;
+                                }
+                                Text {
+                                    text: root.status_text;
+                                    vertical-alignment: center;
+                                    horizontal-stretch: 1;
+                                    color: #d0d0d0;
+                                }
                             }
                         }
                     }

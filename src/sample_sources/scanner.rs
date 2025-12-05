@@ -8,9 +8,9 @@ use std::{
 
 use thiserror::Error;
 
-use super::db::WavEntry;
 use super::SourceDatabase;
 use super::SourceDbError;
+use super::db::WavEntry;
 
 /// Summary of a scan run.
 #[derive(Debug, Default, Clone)]

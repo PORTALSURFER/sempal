@@ -1,18 +1,16 @@
 Goal
-Implement a SQLite-backed sample source workflow that replaces the current file browser with a left sidebar list of user-configured source directories, supports adding sources via folder picker, scans folders in the background for .wav files into per-source databases, and persists sources across app relaunches.
+Let users browse and judge samples faster by highlighting the selected/loaded wav, navigating the list with arrow keys, and marking items as “keep” or “trash” via keyboard gestures.
 
 Proposed solutions
-- Add a sample source data layer using SQLite (e.g., rusqlite) with a per-source DB file inside each chosen directory to store discovered wav files.
-- Create an app-level config file (JSON/TOML) to persist the list of sources and their metadata, loading on startup and saving on changes.
-- Build a background scanner that recursively walks a source directory, detects new/removed .wav files, and updates the source DB without blocking the UI.
-- Replace the current file browser UI with a left sidebar showing sources and a main list view showing wav entries for the selected source; include a “+” control that opens a folder picker to register a new source.
-- Integrate selection, scanning, and playback so choosing a source refreshes the list from its DB and selecting a wav loads it into the existing waveform/player pipeline.
+- Add explicit selection/loaded state to wav entries and surface it in the Slint list styling so the current/loaded sample is visually distinct.
+- Extend the custom winit keyboard handling to move selection up/down through the wav list, reusing existing `DropHandler` state and avoiding conflicts with playback shortcuts.
+- Introduce per-sample “keep”/“trash” tagging stored alongside wav metadata (e.g., in the source DB) and render the status as a badge/icon in the list.
+- Map left/right arrow keys to toggle keep/trash/neutral states for the current selection, updating persistence and UI cues immediately.
+- Provide minimal tests around tag persistence and selection navigation logic, and add a manual QA pass to confirm keyboard flows and highlighting.
 
 Step-by-step plan
-1. [x] Add data models and helpers for sample sources and per-source SQLite schema (sources table metadata + wav entries table), including creating the DB file inside a chosen directory.
-2. [x] Implement a recursive scanner that runs off the UI thread, discovers .wav files, and upserts/removes rows in the source database; surface progress/state to the app layer.
-3. [x] Introduce an app-level config file for persisting the list of source directories and any cached metadata; load at startup and save on modifications.
-4. [x] Replace the file browser UI with a left sidebar listing sources (with “+” add control) and a main wav list view bound to the selected source’s database entries.
-5. [x] Wire Slint callbacks and app logic to manage adding/selecting sources, kicking off scans, and feeding selected wav files into the existing waveform/audio player flow.
-6. [x] Add unit tests for the scanning/database logic and config persistence (temp directories), and adjust any integration hooks to stay under size/function limits.
-7. [x] Perform manual QA passes: add source, rescan after adding/removing wavs, reload app to confirm persistence, and play a selected wav from the list.
+1. [-] Review the current wav selection/loading flow in `DropHandler` and the Slint list to define where selection state should live and how it interacts with playback/loading.
+2. [-] Add selection/loaded state to wav rows and update the Slint UI to style the active/loaded sample distinctly without regressing existing list rendering.
+3. [-] Implement keyboard navigation (up/down) in the custom winit handler to change the current wav selection, clamping bounds and updating UI state.
+4. [-] Add keep/trash tagging: persist tags with each wav (via the source DB), expose left/right key bindings to cycle tags, and render badges/icons in the list.
+5. [-] Write/extend tests for tag persistence and navigation helpers, then perform manual QA for keyboard browsing, visual highlights, and keep/trash toggles.
