@@ -80,6 +80,11 @@ impl SelectionState {
         self.range
     }
 
+    /// True while a drag gesture is active.
+    pub fn is_dragging(&self) -> bool {
+        self.drag.is_some()
+    }
+
     /// Begin creating a new selection from the given anchor point.
     pub fn begin_new(&mut self, position: f32) -> SelectionRange {
         let range = SelectionRange::new(position, position);
@@ -158,11 +163,23 @@ mod tests {
         state.begin_new(0.2);
         state.update_drag(0.7);
         assert!(state.begin_edge_drag(SelectionEdge::Start));
+        assert!(state.is_dragging());
         state.update_drag(0.1);
         assert_eq!(state.range().unwrap(), SelectionRange::new(0.1, 0.7));
         assert!(state.begin_edge_drag(SelectionEdge::End));
         state.update_drag(0.9);
         assert_eq!(state.range().unwrap(), SelectionRange::new(0.1, 0.9));
+        assert!(state.is_dragging());
+    }
+
+    #[test]
+    fn dragging_state_clears_on_finish() {
+        let mut state = SelectionState::new();
+        state.begin_new(0.2);
+        state.update_drag(0.7);
+        assert!(state.is_dragging());
+        state.finish_drag();
+        assert!(!state.is_dragging());
     }
 
     #[test]
