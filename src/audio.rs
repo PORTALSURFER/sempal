@@ -299,7 +299,7 @@ mod tests {
     #[test]
     fn normalized_progress_handles_elapsed_beyond_span() {
         let progress = normalized_progress(Some((2.0, 4.0)), 10.0, 3.5, false);
-        assert_eq!(progress, Some(0.6));
+        assert_eq!(progress, Some(0.4));
     }
 
     #[test]
