@@ -11,15 +11,21 @@ use sysinfo::Disks;
 /// A single file or directory entry.
 #[derive(Clone)]
 pub struct FileEntry {
+    /// Display name for the entry.
     pub name: String,
+    /// Absolute path on disk.
     pub path: PathBuf,
+    /// True when the entry is a directory.
     pub is_dir: bool,
 }
 
 /// Describes how the browser should respond when an entry is activated.
 pub enum EntryAction {
+    /// Enter the directory.
     OpenDir,
+    /// Play the selected wav file.
     PlayFile(PathBuf),
+    /// No-op (e.g., single-click on a folder).
     None,
 }
 
@@ -29,6 +35,8 @@ pub struct FileBrowser {
     current_dir: PathBuf,
     last_click: Option<(PathBuf, Instant)>,
 }
+
+const DOUBLE_CLICK_MS: u128 = 500;
 
 impl FileBrowser {
     /// Initialize the browser with detected mount points.
@@ -120,7 +128,7 @@ impl FileBrowser {
     fn is_double_click(&self, path: &Path) -> bool {
         self.last_click
             .as_ref()
-            .map(|(prev, time)| prev == path && time.elapsed().as_millis() < 500)
+            .map(|(prev, time)| prev == path && time.elapsed().as_millis() < DOUBLE_CLICK_MS)
             .unwrap_or(false)
     }
 
