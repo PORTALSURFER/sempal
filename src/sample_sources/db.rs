@@ -111,14 +111,14 @@ impl SourceDatabase {
                  ON CONFLICT(path) DO UPDATE SET file_size = excluded.file_size,
                                                 modified_ns = excluded.modified_ns",
             )
-            .map_err(Self::map_sql_error)?;
+            .map_err(map_sql_error)?;
         stmt.execute(params![
             path,
             file_size as i64,
             modified_ns,
             SampleTag::Neutral.as_i64()
         ])
-        .map_err(Self::map_sql_error)?;
+        .map_err(map_sql_error)?;
         Ok(())
     }
 
@@ -152,7 +152,7 @@ impl SourceDatabase {
         let mut stmt = self
             .connection
             .prepare("SELECT path, file_size, modified_ns, tag FROM wav_files ORDER BY path ASC")
-            .map_err(Self::map_sql_error)?;
+            .map_err(map_sql_error)?;
         let rows = stmt
             .query_map([], |row| {
                 let path: String = row.get(0)?;
@@ -163,9 +163,9 @@ impl SourceDatabase {
                     tag: SampleTag::from_i64(row.get(3)?),
                 })
             })
-            .map_err(Self::map_sql_error)?
+            .map_err(map_sql_error)?
             .collect::<Result<Vec<_>, _>>()
-            .map_err(Self::map_sql_error)?;
+            .map_err(map_sql_error)?;
         Ok(rows)
     }
 
@@ -174,7 +174,7 @@ impl SourceDatabase {
         let tx = self
             .connection
             .unchecked_transaction()
-            .map_err(Self::map_sql_error)?;
+            .map_err(map_sql_error)?;
         Ok(SourceWriteBatch { tx })
     }
 
@@ -184,7 +184,7 @@ impl SourceDatabase {
              PRAGMA synchronous = NORMAL;
              PRAGMA foreign_keys=ON;",
         )
-        .map_err(Self::map_sql_error)?;
+        .map_err(map_sql_error)?;
         Ok(())
     }
 
@@ -201,21 +201,9 @@ impl SourceDatabase {
                 tag INTEGER NOT NULL DEFAULT 0
             );",
         )
-        .map_err(Self::map_sql_error)?;
+        .map_err(map_sql_error)?;
         ensure_tag_column(&self.connection)?;
         Ok(())
-    }
-
-    fn map_sql_error(err: rusqlite::Error) -> SourceDbError {
-        match err {
-            rusqlite::Error::SqliteFailure(sql_err, _) if sql_err.extended_code == rusqlite::ffi::SQLITE_BUSY => {
-                SourceDbError::Busy
-            }
-            rusqlite::Error::InvalidQuery
-            | rusqlite::Error::InvalidParameterName(_)
-            | rusqlite::Error::MultipleStatement => SourceDbError::Unexpected,
-            other => SourceDbError::Sql(other),
-        }
     }
 }
 
@@ -239,13 +227,15 @@ impl<'conn> SourceWriteBatch<'conn> {
                  VALUES (?1, ?2, ?3, ?4)
                  ON CONFLICT(path) DO UPDATE SET file_size = excluded.file_size,
                                                 modified_ns = excluded.modified_ns",
-            )?
+            )
+            .map_err(map_sql_error)?
             .execute(params![
                 path,
                 file_size as i64,
                 modified_ns,
                 SampleTag::Neutral.as_i64()
-            ])?;
+            ])
+            .map_err(map_sql_error)?;
         Ok(())
     }
 
@@ -253,8 +243,10 @@ impl<'conn> SourceWriteBatch<'conn> {
     pub fn set_tag(&mut self, relative_path: &Path, tag: SampleTag) -> Result<(), SourceDbError> {
         let path = normalize_relative_path(relative_path)?;
         self.tx
-            .prepare_cached("UPDATE wav_files SET tag = ?1 WHERE path = ?2")?
-            .execute(params![tag.as_i64(), path])?;
+            .prepare_cached("UPDATE wav_files SET tag = ?1 WHERE path = ?2")
+            .map_err(map_sql_error)?
+            .execute(params![tag.as_i64(), path])
+            .map_err(map_sql_error)?;
         Ok(())
     }
 
@@ -262,15 +254,30 @@ impl<'conn> SourceWriteBatch<'conn> {
     pub fn remove_file(&mut self, relative_path: &Path) -> Result<(), SourceDbError> {
         let path = normalize_relative_path(relative_path)?;
         self.tx
-            .prepare_cached("DELETE FROM wav_files WHERE path = ?1")?
-            .execute(params![path])?;
+            .prepare_cached("DELETE FROM wav_files WHERE path = ?1")
+            .map_err(map_sql_error)?
+            .execute(params![path])
+            .map_err(map_sql_error)?;
         Ok(())
     }
 
     /// Commit all batched operations atomically.
     pub fn commit(self) -> Result<(), SourceDbError> {
-        self.tx.commit()?;
+        self.tx.commit().map_err(map_sql_error)?;
         Ok(())
+    }
+}
+
+/// Translate rusqlite errors into friendlier SourceDbError variants.
+fn map_sql_error(err: rusqlite::Error) -> SourceDbError {
+    match err {
+        rusqlite::Error::SqliteFailure(sql_err, _) if sql_err.extended_code == rusqlite::ffi::SQLITE_BUSY => {
+            SourceDbError::Busy
+        }
+        rusqlite::Error::InvalidQuery
+        | rusqlite::Error::InvalidParameterName(_)
+        | rusqlite::Error::MultipleStatement => SourceDbError::Unexpected,
+        other => SourceDbError::Sql(other),
     }
 }
 
@@ -295,16 +302,21 @@ fn create_parent_if_needed(path: &Path) -> Result<(), SourceDbError> {
 }
 
 fn ensure_tag_column(connection: &Connection) -> Result<(), SourceDbError> {
-    let mut stmt = connection.prepare("PRAGMA table_info(wav_files)")?;
+    let mut stmt = connection
+        .prepare("PRAGMA table_info(wav_files)")
+        .map_err(map_sql_error)?;
     let has_tag = stmt
         .query_map([], |row| row.get::<_, String>(1))
-        .map(|cols| cols.filter_map(Result::ok).any(|name| name == "tag"))
-        .unwrap_or(false);
+        .map_err(map_sql_error)?
+        .filter_map(Result::ok)
+        .any(|name| name == "tag");
     if !has_tag {
-        connection.execute(
-            "ALTER TABLE wav_files ADD COLUMN tag INTEGER NOT NULL DEFAULT 0",
-            [],
-        )?;
+        connection
+            .execute(
+                "ALTER TABLE wav_files ADD COLUMN tag INTEGER NOT NULL DEFAULT 0",
+                [],
+            )
+            .map_err(map_sql_error)?;
     }
     Ok(())
 }
@@ -350,5 +362,41 @@ mod tests {
 
         let rows = db.list_files().unwrap();
         assert_eq!(rows[0].tag, SampleTag::Trash);
+    }
+
+    #[test]
+    fn absolute_paths_are_rejected() {
+        let dir = tempdir().unwrap();
+        let db = SourceDatabase::open(dir.path()).unwrap();
+        let absolute = std::env::current_dir().unwrap().join("absolute.wav");
+        let err = db.upsert_file(&absolute, 1, 1).unwrap_err();
+        assert!(matches!(err, SourceDbError::PathMustBeRelative(_)));
+    }
+
+    #[test]
+    fn missing_tag_column_is_added_on_open() {
+        let dir = tempdir().unwrap();
+        let db_file = dir.path().join(DB_FILE_NAME);
+        {
+            let conn = Connection::open(&db_file).unwrap();
+            conn.execute(
+                "CREATE TABLE wav_files (
+                    path TEXT PRIMARY KEY,
+                    file_size INTEGER NOT NULL,
+                    modified_ns INTEGER NOT NULL
+                )",
+                [],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO wav_files (path, file_size, modified_ns) VALUES ('one.wav', 10, 5)",
+                [],
+            )
+            .unwrap();
+        }
+        let db = SourceDatabase::open(dir.path()).unwrap();
+        let rows = db.list_files().unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].tag, SampleTag::Neutral);
     }
 }
