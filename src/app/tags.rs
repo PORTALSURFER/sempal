@@ -18,7 +18,7 @@ impl DropHandler {
         };
         self.enqueue_tag_for_flush(&source.id, target_path.clone(), new_tag);
         if let Some(app) = self.app() {
-            self.update_wav_view(&app);
+            self.update_wav_view(&app, true);
             let label = match new_tag {
                 SampleTag::Keep => "Marked keep",
                 SampleTag::Trash => "Marked trash",
@@ -159,10 +159,7 @@ mod tests {
             step_tag(SampleTag::Neutral, TagStep::Right),
             SampleTag::Keep
         );
-        assert_eq!(
-            step_tag(SampleTag::Keep, TagStep::Left),
-            SampleTag::Neutral
-        );
+        assert_eq!(step_tag(SampleTag::Keep, TagStep::Left), SampleTag::Neutral);
         assert_eq!(
             step_tag(SampleTag::Trash, TagStep::Right),
             SampleTag::Neutral

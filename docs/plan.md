@@ -1,14 +1,17 @@
 Goal
-- Ensure sample source scanning only runs when a source is newly added or when the user manually requests it via a right-click context menu on the selected source item in the source list.
+- Diagnose why selecting samples feels slow and outline changes that make selection/playback nearly instant while flagging any feature areas that need redesign.
 
 Proposed solutions
-- Decouple source selection from automatic scans, keeping initial scans only when a new source is added while using existing database contents for navigation.
-- Add a right-click context menu on source list rows that exposes manual "Rescan / Find changes" alongside existing actions, targeting the currently selected source.
-- Route the new manual action through the existing scan pipeline (ScanTracker, start_scan_for) with forced scans and clear status updates.
+- Profile the selection path (handle_wav_clicked → update_wav_view → load_from_source → waveform decode/render → playback) to pinpoint time spent and UI-thread blockers.
+- Cut wav list churn by keeping models stable, updating selection/loaded flags in place, and eliminating duplicate full rebuilds on each click.
+- Offload waveform decoding/rendering and audio preparation to background workers with caching/downsampling so per-click work stays small.
+- Trim playback startup costs (avoid blocking fades and full buffered decodes) and reuse prepared state where possible.
+- Revisit sample list UX for large libraries (virtualization/single filtered list) if current three-column layout remains heavy.
 
 Step-by-step plan
-1. [x] Map current scan triggers and source list interactions (DropHandler selection/add flows, SourcePanel menu) to spot where automatic scans need to be removed or gated.
-2. [x] Update selection and initial load behaviour so existing sources only load cached entries without triggering scans, while preserving the first-time scan when adding a new source.
-3. [x] Extend SourcePanel to show a right-click context menu on selected rows with a "Rescan / Find changes" action (and keep/remove other actions as appropriate) without disrupting tap/selection behaviour.
-4. [x] Wire the new menu action into DropHandler to invoke a manual rescan on the targeted source using start_scan_for(force=true) and align status text/ScanTracker rules.
-5. [~] Verify flows manually or via tests: add source triggers one scan; selecting sources does not rescan; right-click rescan works and the wav list updates without regressions.
+1. [~] Capture baseline timings for the sample selection path on a representative library (trace UI thread vs. worker costs).
+2. [x] Confirm and rank bottlenecks (list rebuilds, synchronous waveform decode/render, playback setup, DB fetches) with evidence.
+3. [x] Redesign wav list updates to avoid full model rebuilds and duplicate refreshes; validate behavior with large lists.
+4. [x] Implement async/cached media loading (waveform + audio) with downsampled previews and an LRU cache to keep UI responsive.
+5. [x] Optimize playback start/looping to remove blocking fades and unnecessary buffering; measure the responsiveness gain.
+6. [-] Re-profile after changes, add performance-focused tests/benchmarks, and document any feature-level redesign needs for the sample list/preview pipeline.
