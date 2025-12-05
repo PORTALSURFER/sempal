@@ -460,6 +460,7 @@ impl DropHandler {
                 .borrow_mut()
                 .replace(entry.relative_path.clone());
             self.update_wav_view(app);
+            let _ = self.play_audio(*self.loop_enabled.borrow());
         }
     }
 
