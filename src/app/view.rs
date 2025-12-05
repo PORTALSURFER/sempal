@@ -22,11 +22,7 @@ impl DropHandler {
     }
 
     /// Request the wav list to scroll to a given column/index pair.
-    pub(super) fn scroll_wavs_to(
-        &self,
-        app: &HelloWorld,
-        target: Option<(SampleTag, usize)>,
-    ) {
+    pub(super) fn scroll_wavs_to(&self, app: &HelloWorld, target: Option<(SampleTag, usize)>) {
         let Some((tag, index)) = target else {
             return;
         };
