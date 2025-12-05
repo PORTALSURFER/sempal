@@ -1,6 +1,12 @@
 use super::*;
 use super::navigation::compute_target_index;
 
+/// Error details surfaced when adding a new sample source fails validation.
+struct AddSourceFailure {
+    message: String,
+    state: StatusState,
+}
+
 impl DropHandler {
     /// Prompt for a directory and add it as a new sample source.
     pub fn handle_add_source(&self) {
@@ -10,38 +16,47 @@ impl DropHandler {
         let Some(path) = FileDialog::new().pick_folder() else {
             return;
         };
+        if let Err(error) = self.add_source_from_path(&app, path) {
+            self.set_status(&app, error.message, error.state);
+        }
+    }
+
+    /// Validate and persist a new source selected from the filesystem.
+    fn add_source_from_path(&self, app: &HelloWorld, path: PathBuf) -> Result<(), AddSourceFailure> {
         let normalized = config::normalize_path(path.as_path());
         if !normalized.is_dir() {
-            self.set_status(&app, "Please select a directory", StatusState::Warning);
-            return;
+            return Err(AddSourceFailure {
+                message: "Please select a directory".into(),
+                state: StatusState::Warning,
+            });
         }
         let mut sources = self.sources.borrow_mut();
         if sources.iter().any(|s| s.root == normalized) {
-            self.set_status(&app, "Source already added", StatusState::Info);
-            return;
+            return Err(AddSourceFailure {
+                message: "Source already added".into(),
+                state: StatusState::Info,
+            });
         }
         let source = SampleSource::new(normalized.clone());
         if let Err(error) = SourceDatabase::open(&normalized) {
-            self.set_status(
-                &app,
-                format!("Failed to create database: {error}"),
-                StatusState::Error,
-            );
-            return;
+            return Err(AddSourceFailure {
+                message: format!("Failed to create database: {error}"),
+                state: StatusState::Error,
+            });
         }
         let _ = self.cache_db(&source);
         sources.push(source.clone());
         drop(sources);
         if let Err(error) = self.save_sources() {
-            self.set_status(
-                &app,
-                format!("Failed to save config: {error}"),
-                StatusState::Error,
-            );
+            return Err(AddSourceFailure {
+                message: format!("Failed to save config: {error}"),
+                state: StatusState::Error,
+            });
         }
         self.refresh_sources(&app);
         self.select_source_by_id(&app, &source.id);
         self.start_scan_for(source, true);
+        Ok(())
     }
 
     /// Respond to selecting a source in the UI.
