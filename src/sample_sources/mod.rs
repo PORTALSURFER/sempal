@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+pub mod config;
 pub mod db;
 pub mod scanner;
 
