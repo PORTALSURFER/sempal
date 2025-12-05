@@ -8,7 +8,7 @@ pub mod db;
 pub mod scanner;
 
 pub use db::{DB_FILE_NAME, SourceDatabase, SourceDbError, WavEntry};
-pub use scanner::{ScanError, ScanStats, scan_in_background};
+pub use scanner::{ScanError, ScanStats};
 
 /// Identifier for a configured sample source.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
