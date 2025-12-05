@@ -20,6 +20,7 @@ pub struct WaveformRenderer {
 }
 
 impl WaveformRenderer {
+    /// Create a renderer with the target image size and colors.
     pub fn new(width: u32, height: u32) -> Self {
         Self {
             width,
@@ -37,6 +38,7 @@ impl WaveformRenderer {
         }
     }
 
+    /// Produce an empty waveform image with the configured styling.
     pub fn empty_image(&self) -> Image {
         self.render_waveform(&[])
     }
