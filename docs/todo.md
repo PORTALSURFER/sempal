@@ -24,4 +24,4 @@ lets instead isolate this to the focused column so we neatly go up and down that
 selecting an item in a column will focus that column.
 if we move a sample from one column to another, dont keep that sample selected, instead select the next item in the current column.
 
-\plan - the ui is very slow when selecting samples, lets review which parts currently are slowing things down, find the bottlenecks, and come up with solutions for drastically improving performance, and list others which might need a redesign in terms of features.
+\plan - the ui is very slow when selecting samples in the sample source lists, lets review which parts currently are slowing things down, find the bottlenecks, and come up with solutions for drastically improving performance, and list others which might need a redesign in terms of features.

@@ -16,14 +16,7 @@ impl DropHandler {
         }
         match self.renderer.load_waveform(path) {
             Ok(loaded) => {
-                app.set_waveform(loaded.image);
-                let mut player = self.player.borrow_mut();
-                player.stop();
-                player.set_audio(loaded.audio_bytes, loaded.duration_seconds);
-                self.playhead_timer.stop();
-                app.set_playhead_position(0.0);
-                app.set_playhead_visible(false);
-                self.clear_selection(&app);
+                self.apply_loaded_waveform(&app, &loaded);
                 self.set_status(
                     &app,
                     format!("Loaded {}", path.display()),
@@ -312,6 +305,26 @@ impl DropHandler {
     fn is_wav(path: &std::path::Path) -> bool {
         path.extension()
             .is_some_and(|ext| ext.eq_ignore_ascii_case("wav"))
+    }
+
+    /// Apply a freshly loaded waveform to the UI and audio player.
+    pub(super) fn apply_loaded_waveform(&self, app: &HelloWorld, loaded: &LoadedWaveform) {
+        app.set_waveform(loaded.image.clone());
+        let mut player = self.player.borrow_mut();
+        player.stop();
+        player.set_audio(loaded.audio_bytes.clone(), loaded.duration_seconds);
+        self.playhead_timer.stop();
+        app.set_playhead_position(0.0);
+        app.set_playhead_visible(false);
+        self.clear_selection(app);
+    }
+
+    /// Stop playback and hide the playhead without altering selection.
+    pub(super) fn stop_playback_ui(&self, app: &HelloWorld) {
+        self.player.borrow_mut().stop();
+        self.playhead_timer.stop();
+        app.set_playhead_visible(false);
+        app.set_playhead_position(0.0);
     }
 }
 
