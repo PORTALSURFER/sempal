@@ -1,10 +1,10 @@
 use std::{
-    collections::HashMap,
     cell::RefCell,
+    collections::HashMap,
+    mem,
     path::PathBuf,
     rc::Rc,
     sync::mpsc::{self, Receiver, Sender},
-    mem,
     thread,
     time::Duration,
 };
@@ -16,7 +16,10 @@ use crate::sample_sources::{
     SampleSource, SampleTag, ScanError, ScanStats, ScanTracker, SourceDatabase, SourceDbError,
     SourceId, WavEntry,
 };
+use crate::selection::{SelectionEdge, SelectionRange, SelectionState};
 use crate::ui::{HelloWorld, SourceRow, WavRow};
+
+const MIN_SELECTION_WIDTH: f32 = 0.001;
 use crate::waveform::WaveformRenderer;
 use rfd::FileDialog;
 use slint::winit_030::{
@@ -45,6 +48,8 @@ pub struct DropHandler {
     scan_poll_timer: Rc<slint::Timer>,
     tag_flush_timer: Rc<slint::Timer>,
     shutting_down: Rc<RefCell<bool>>,
+    selection: Rc<RefCell<SelectionState>>,
+    loop_enabled: Rc<RefCell<bool>>,
 }
 
 struct ScanJobResult {
@@ -82,11 +87,17 @@ impl DropHandler {
             scan_poll_timer: Rc::new(slint::Timer::default()),
             tag_flush_timer: Rc::new(slint::Timer::default()),
             shutting_down: Rc::new(RefCell::new(false)),
+            selection: Rc::new(RefCell::new(SelectionState::new())),
+            loop_enabled: Rc::new(RefCell::new(false)),
         }
     }
 
     pub fn set_app(&self, app: &HelloWorld) {
         self.app.replace(Some(app.as_weak()));
+        app.set_selection_visible(false);
+        app.set_selection_start(0.0);
+        app.set_selection_end(0.0);
+        app.set_loop_enabled(*self.loop_enabled.borrow());
         self.load_sources(app);
         self.start_scan_polling();
     }
@@ -112,6 +123,7 @@ impl DropHandler {
                 self.playhead_timer.stop();
                 app.set_playhead_position(0.0);
                 app.set_playhead_visible(false);
+                self.clear_selection(&app);
                 self.set_status(
                     &app,
                     format!("Loaded {}", path.display()),
@@ -126,13 +138,17 @@ impl DropHandler {
         }
     }
 
-    pub fn play_audio(&self) -> EventResult {
+    pub fn play_audio(&self, looped: bool) -> EventResult {
         let Some(app) = self.app() else {
             return EventResult::Propagate;
         };
-        match self.player.borrow_mut().play() {
+        match self.start_playback(looped, self.usable_selection(), None) {
             Ok(_) => {
-                self.set_status(&app, "Playing audio", StatusState::Info);
+                self.set_status(
+                    &app,
+                    if looped { "Looping selection" } else { "Playing audio" },
+                    StatusState::Info,
+                );
                 self.start_playhead_updates();
                 EventResult::PreventDefault
             }
@@ -160,6 +176,140 @@ impl DropHandler {
                 self.set_status(&app, error, StatusState::Error);
                 app.set_playhead_visible(false);
             }
+        }
+    }
+
+    pub fn start_selection_drag(&self, position: f32) {
+        let Some(app) = self.app() else { return };
+        self.player.borrow_mut().stop();
+        self.playhead_timer.stop();
+        app.set_playhead_visible(false);
+        let range = self.selection.borrow_mut().begin_new(position);
+        self.apply_selection(&app, Some(range));
+    }
+
+    pub fn update_selection_drag(&self, position: f32) {
+        let Some(app) = self.app() else { return };
+        if let Some(range) = self.selection.borrow_mut().update_drag(position) {
+            self.apply_selection(&app, Some(range));
+        }
+    }
+
+    pub fn finish_selection_drag(&self) {
+        self.selection.borrow_mut().finish_drag();
+    }
+
+    pub fn clear_selection_request(&self) {
+        let Some(app) = self.app() else { return };
+        if self.selection.borrow_mut().clear() {
+            self.apply_selection(&app, None);
+        }
+    }
+
+    pub fn begin_edge_drag(&self, edge: SelectionEdge) {
+        let Some(app) = self.app() else { return };
+        if self.selection.borrow_mut().begin_edge_drag(edge) {
+            if let Some(range) = self.selection.borrow().range() {
+                self.apply_selection(&app, Some(range));
+            }
+        }
+    }
+
+    fn clear_selection(&self, app: &HelloWorld) {
+        if self.selection.borrow_mut().clear() {
+            self.apply_selection(app, None);
+        }
+    }
+
+    pub fn handle_loop_toggle(&self, enabled: bool) {
+        self.set_loop_enabled(enabled);
+        let is_playing = self.player.borrow().is_playing();
+        let progress = if is_playing {
+            self.player.borrow().progress()
+        } else {
+            None
+        };
+        if enabled && is_playing {
+            self.restart_playback(true, self.usable_selection(), progress);
+        } else if !enabled && is_playing {
+            self.restart_playback(false, self.usable_selection(), progress);
+        } else if let Some(app) = self.app() {
+            self.set_status(
+                &app,
+                if enabled { "Loop enabled" } else { "Loop disabled" },
+                StatusState::Info,
+            );
+        }
+    }
+
+    fn apply_selection(&self, app: &HelloWorld, range: Option<SelectionRange>) {
+        if let Some(range) = range.or_else(|| self.selection.borrow().range()) {
+            app.set_selection_visible(true);
+            app.set_selection_start(range.start());
+            app.set_selection_end(range.end());
+            if *self.loop_enabled.borrow() && self.player.borrow().is_playing() {
+                let progress = self.player.borrow().progress();
+                self.restart_playback(true, self.usable_selection(), progress);
+            }
+        } else {
+            app.set_selection_visible(false);
+            app.set_selection_start(0.0);
+            app.set_selection_end(0.0);
+        }
+    }
+
+    fn selection_range(&self) -> Option<SelectionRange> {
+        self.selection.borrow().range()
+    }
+
+    fn usable_selection(&self) -> Option<SelectionRange> {
+        self.selection_range()
+            .filter(|range| range.width() >= MIN_SELECTION_WIDTH)
+    }
+
+    fn start_playback(
+        &self,
+        looped: bool,
+        selection: Option<SelectionRange>,
+        resume_from: Option<f32>,
+    ) -> Result<(), String> {
+        let mut player = self.player.borrow_mut();
+        let span = selection
+            .filter(|range| range.width() >= MIN_SELECTION_WIDTH)
+            .unwrap_or_else(|| SelectionRange::new(0.0, 1.0));
+        let start = resume_from
+            .unwrap_or(span.start())
+            .clamp(span.start(), span.end());
+        player.play_range(start, span.end(), looped)
+    }
+
+    fn restart_playback(
+        &self,
+        looped: bool,
+        selection: Option<SelectionRange>,
+        resume_from: Option<f32>,
+    ) {
+        let Some(app) = self.app() else { return };
+        match self.start_playback(looped, selection, resume_from) {
+            Ok(_) => {
+                self.set_status(
+                    &app,
+                    if looped { "Looping selection" } else { "Playing audio" },
+                    StatusState::Info,
+                );
+                self.start_playhead_updates();
+            }
+            Err(error) => {
+                self.set_status(&app, error, StatusState::Error);
+                app.set_playhead_visible(false);
+            }
+        }
+    }
+
+    fn set_loop_enabled(&self, enabled: bool) {
+        self.loop_enabled.replace(enabled);
+        if let Some(app) = self.app() {
+            app.set_loop_enabled(enabled);
         }
     }
 
@@ -252,12 +402,7 @@ impl DropHandler {
         self.load_from_source(app, &source, &entry);
     }
 
-    fn load_from_source(
-        &self,
-        app: &HelloWorld,
-        source: &SampleSource,
-        entry: &WavEntry,
-    ) {
+    fn load_from_source(&self, app: &HelloWorld, source: &SampleSource, entry: &WavEntry) {
         let full_path = source.root.join(&entry.relative_path);
         if !full_path.exists() {
             self.prune_missing_entry(source, entry);
@@ -295,8 +440,12 @@ impl DropHandler {
     }
 
     fn apply_tag_to_selection(&self, tag: SampleTag) -> bool {
-        let Some(source) = self.current_source() else { return false };
-        let Some((target_path, new_tag)) = self.update_tag_in_memory(tag) else { return false };
+        let Some(source) = self.current_source() else {
+            return false;
+        };
+        let Some((target_path, new_tag)) = self.update_tag_in_memory(tag) else {
+            return false;
+        };
         self.enqueue_tag_for_flush(&source.id, target_path.clone(), new_tag);
         if let Some(app) = self.app() {
             self.update_wav_view(&app);
@@ -333,7 +482,10 @@ impl DropHandler {
     fn enqueue_tag_for_flush(&self, source_id: &SourceId, path: PathBuf, tag: SampleTag) {
         {
             let mut pending = self.pending_tags.borrow_mut();
-            pending.entry(source_id.clone()).or_default().push((path, tag));
+            pending
+                .entry(source_id.clone())
+                .or_default()
+                .push((path, tag));
         }
         self.start_tag_flush_timer();
     }
@@ -385,7 +537,11 @@ impl DropHandler {
                     .map(|err| err.to_string())
                     .collect::<Vec<_>>()
                     .join("; ");
-                self.set_status(&app, format!("Failed to save tags: {text}"), StatusState::Error);
+                self.set_status(
+                    &app,
+                    format!("Failed to save tags: {text}"),
+                    StatusState::Error,
+                );
             }
         }
     }
@@ -764,13 +920,13 @@ impl DropHandler {
             timer.stop();
             return;
         };
+        app.set_playhead_position(progress);
         if !player.is_playing() {
             app.set_playhead_visible(false);
             timer.stop();
             return;
         }
         app.set_playhead_visible(true);
-        app.set_playhead_position(progress);
         if progress >= 1.0 {
             player.stop();
             app.set_playhead_visible(false);
@@ -894,11 +1050,12 @@ impl CustomApplicationHandler for DropHandler {
                 EventResult::PreventDefault
             }
             WindowEvent::KeyboardInput { event, .. }
-                if event.state == ElementState::Pressed
-                    && !event.repeat =>
+                if event.state == ElementState::Pressed && !event.repeat =>
             {
                 match event.physical_key {
-                    PhysicalKey::Code(KeyCode::Space) => self.play_audio(),
+                    PhysicalKey::Code(KeyCode::Space) => {
+                        self.play_audio(*self.loop_enabled.borrow())
+                    }
                     PhysicalKey::Code(KeyCode::ArrowUp) => {
                         if self.move_selection(-1) {
                             EventResult::PreventDefault
@@ -959,6 +1116,29 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
 fn attach_callbacks(app: &HelloWorld, drop_handler: &DropHandler) {
     let seek_handler = drop_handler.clone();
     app.on_seek_requested(move |position| seek_handler.seek_to(position));
+    let selection_start_handler = drop_handler.clone();
+    app.on_selection_drag_started(move |position| {
+        selection_start_handler.start_selection_drag(position)
+    });
+    let selection_update_handler = drop_handler.clone();
+    app.on_selection_drag_updated(move |position| {
+        selection_update_handler.update_selection_drag(position)
+    });
+    let selection_finish_handler = drop_handler.clone();
+    app.on_selection_drag_finished(move || selection_finish_handler.finish_selection_drag());
+    let selection_clear_handler = drop_handler.clone();
+    app.on_selection_clear_requested(move || selection_clear_handler.clear_selection_request());
+    let selection_handle_handler = drop_handler.clone();
+    app.on_selection_handle_pressed(move |is_start| {
+        let edge = if is_start {
+            SelectionEdge::Start
+        } else {
+            SelectionEdge::End
+        };
+        selection_handle_handler.begin_edge_drag(edge);
+    });
+    let loop_handler = drop_handler.clone();
+    app.on_loop_toggled(move |enabled| loop_handler.handle_loop_toggle(enabled));
     let add_handler = drop_handler.clone();
     app.on_add_source(move || add_handler.handle_add_source());
     let source_handler = drop_handler.clone();
@@ -1003,10 +1183,25 @@ mod tests {
 
     #[test]
     fn toggle_tag_toggles_to_neutral_on_repeat() {
-        assert_eq!(toggle_tag(SampleTag::Neutral, SampleTag::Keep), SampleTag::Keep);
-        assert_eq!(toggle_tag(SampleTag::Keep, SampleTag::Keep), SampleTag::Neutral);
-        assert_eq!(toggle_tag(SampleTag::Neutral, SampleTag::Trash), SampleTag::Trash);
-        assert_eq!(toggle_tag(SampleTag::Trash, SampleTag::Trash), SampleTag::Neutral);
-        assert_eq!(toggle_tag(SampleTag::Keep, SampleTag::Trash), SampleTag::Trash);
+        assert_eq!(
+            toggle_tag(SampleTag::Neutral, SampleTag::Keep),
+            SampleTag::Keep
+        );
+        assert_eq!(
+            toggle_tag(SampleTag::Keep, SampleTag::Keep),
+            SampleTag::Neutral
+        );
+        assert_eq!(
+            toggle_tag(SampleTag::Neutral, SampleTag::Trash),
+            SampleTag::Trash
+        );
+        assert_eq!(
+            toggle_tag(SampleTag::Trash, SampleTag::Trash),
+            SampleTag::Neutral
+        );
+        assert_eq!(
+            toggle_tag(SampleTag::Keep, SampleTag::Trash),
+            SampleTag::Trash
+        );
     }
 }

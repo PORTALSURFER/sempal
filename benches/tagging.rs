@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, black_box};
+use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use sempal::sample_sources::{SampleTag, SourceDatabase};
 use tempfile::tempdir;
 
@@ -12,9 +12,7 @@ fn setup_db() -> SourceDatabase {
     let mut batch = db.write_batch().expect("write batch");
     for i in 0..SAMPLE_COUNT {
         let path = PathBuf::from(format!("{i}.wav"));
-        batch
-            .upsert_file(&path, 1, i as i64)
-            .expect("seed upsert");
+        batch.upsert_file(&path, 1, i as i64).expect("seed upsert");
     }
     batch.commit().expect("seed commit");
     db
