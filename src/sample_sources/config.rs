@@ -56,28 +56,44 @@ pub fn config_path() -> Result<PathBuf, ConfigError> {
 /// Load configuration from disk, returning an empty default if missing.
 pub fn load_or_default() -> Result<AppConfig, ConfigError> {
     let path = config_path()?;
-    if !path.exists() {
-        return Ok(AppConfig::default());
-    }
-    let bytes = std::fs::read(&path).map_err(|source| ConfigError::Read {
-        path: path.clone(),
-        source,
-    })?;
-    serde_json::from_slice(&bytes).map_err(|source| ConfigError::Parse {
-        path: path.clone(),
-        source,
-    })
+    load_from(&path)
 }
 
 /// Persist configuration to disk, overwriting any previous contents.
 pub fn save(config: &AppConfig) -> Result<(), ConfigError> {
     let path = config_path()?;
-    let data = serde_json::to_vec_pretty(config).map_err(|source| ConfigError::Parse {
-        path: path.clone(),
+    save_to_path(config, &path)
+}
+
+/// Load configuration from a specific path, returning an empty default if missing.
+pub fn load_from(path: &Path) -> Result<AppConfig, ConfigError> {
+    if !path.exists() {
+        return Ok(AppConfig::default());
+    }
+    let bytes = std::fs::read(path).map_err(|source| ConfigError::Read {
+        path: path.to_path_buf(),
         source,
     })?;
-    std::fs::write(&path, data).map_err(|source| ConfigError::Write {
-        path: path.clone(),
+    serde_json::from_slice(&bytes).map_err(|source| ConfigError::Parse {
+        path: path.to_path_buf(),
+        source,
+    })
+}
+
+/// Save configuration to a specific path, creating parent directories as needed.
+pub fn save_to_path(config: &AppConfig, path: &Path) -> Result<(), ConfigError> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|source| ConfigError::CreateDir {
+            path: parent.to_path_buf(),
+            source,
+        })?;
+    }
+    let data = serde_json::to_vec_pretty(config).map_err(|source| ConfigError::Parse {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    std::fs::write(path, data).map_err(|source| ConfigError::Write {
+        path: path.to_path_buf(),
         source,
     })
 }
@@ -85,4 +101,23 @@ pub fn save(config: &AppConfig) -> Result<(), ConfigError> {
 /// Utility to convert absolute paths to strings for serialization durability.
 pub fn normalize_path(path: &Path) -> PathBuf {
     PathBuf::from_iter(path.components())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn save_and_load_from_custom_path() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("cfg.json");
+        let cfg = AppConfig {
+            sources: vec![SampleSource::new(dir.path().to_path_buf())],
+        };
+        save_to_path(&cfg, &path).unwrap();
+        let loaded = load_from(&path).unwrap();
+        assert_eq!(loaded.sources.len(), 1);
+        assert_eq!(loaded.sources[0].root, dir.path());
+    }
 }

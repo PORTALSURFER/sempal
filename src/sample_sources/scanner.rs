@@ -8,9 +8,9 @@ use std::{
 
 use thiserror::Error;
 
+use super::db::WavEntry;
 use super::SourceDatabase;
 use super::SourceDbError;
-use super::db::WavEntry;
 
 /// Summary of a scan run.
 #[derive(Debug, Default, Clone)]
@@ -189,4 +189,31 @@ fn to_nanos(time: &SystemTime, path: &Path) -> Result<i64, ScanError> {
 fn is_wav(path: &Path) -> bool {
     path.extension()
         .is_some_and(|ext| ext.eq_ignore_ascii_case("wav"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn scan_add_update_remove() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("one.wav");
+        std::fs::write(&file_path, b"one").unwrap();
+
+        let db = SourceDatabase::open(dir.path()).unwrap();
+        let first = scan_once(&db).unwrap();
+        assert_eq!(first.added, 1);
+        assert_eq!(db.list_files().unwrap().len(), 1);
+
+        std::fs::write(&file_path, b"longer-data").unwrap();
+        let second = scan_once(&db).unwrap();
+        assert_eq!(second.updated, 1);
+
+        std::fs::remove_file(&file_path).unwrap();
+        let third = scan_once(&db).unwrap();
+        assert_eq!(third.removed, 1);
+        assert_eq!(db.list_files().unwrap().len(), 0);
+    }
 }
