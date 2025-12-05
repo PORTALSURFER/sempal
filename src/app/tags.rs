@@ -1,12 +1,19 @@
 use super::*;
 
+/// Direction to move a sample tag when stepping between columns.
+#[derive(Clone, Copy)]
+pub(super) enum TagStep {
+    Left,
+    Right,
+}
+
 impl DropHandler {
-    /// Apply a keep/trash/neutral tag to the selected wav entry.
-    pub(super) fn apply_tag_to_selection(&self, tag: SampleTag) -> bool {
+    /// Step the selected wav entry's tag left/right across Trash ⇄ Neutral ⇄ Keep.
+    pub(super) fn apply_tag_step(&self, step: TagStep) -> bool {
         let Some(source) = self.current_source() else {
             return false;
         };
-        let Some((target_path, new_tag)) = self.update_tag_in_memory(tag) else {
+        let Some((target_path, new_tag)) = self.update_tag_in_memory_step(step) else {
             return false;
         };
         self.enqueue_tag_for_flush(&source.id, target_path.clone(), new_tag);
@@ -26,14 +33,14 @@ impl DropHandler {
         true
     }
 
-    fn update_tag_in_memory(&self, desired_tag: SampleTag) -> Option<(PathBuf, SampleTag)> {
+    fn update_tag_in_memory_step(&self, step: TagStep) -> Option<(PathBuf, SampleTag)> {
         let mut entries = self.wav_entries.borrow_mut();
         if entries.is_empty() {
             return None;
         }
         let selected_index = Self::entry_index(&entries, &self.selected_wav.borrow()).unwrap_or(0);
         let entry = entries.get_mut(selected_index)?;
-        let new_tag = toggle_tag(entry.tag, desired_tag);
+        let new_tag = step_tag(entry.tag, step);
         let path = entry.relative_path.clone();
         entry.tag = new_tag;
         if self.selected_wav.borrow().is_none() {
@@ -120,12 +127,21 @@ fn coalesce_tag_updates(updates: Vec<(PathBuf, SampleTag)>) -> Vec<(PathBuf, Sam
     latest.into_iter().collect()
 }
 
-/// Toggle tags so repeating the same choice clears back to neutral.
-fn toggle_tag(current: SampleTag, desired: SampleTag) -> SampleTag {
-    if current == desired {
-        SampleTag::Neutral
-    } else {
-        desired
+/// Move the tag one step left/right across Trash ⇄ Neutral ⇄ Keep, clamping at the ends.
+fn step_tag(current: SampleTag, step: TagStep) -> SampleTag {
+    let current_index = match current {
+        SampleTag::Trash => 0,
+        SampleTag::Neutral => 1,
+        SampleTag::Keep => 2,
+    };
+    let delta = match step {
+        TagStep::Left => -1,
+        TagStep::Right => 1,
+    };
+    match (current_index as i8 + delta).clamp(0, 2) {
+        0 => SampleTag::Trash,
+        1 => SampleTag::Neutral,
+        _ => SampleTag::Keep,
     }
 }
 
@@ -134,26 +150,28 @@ mod tests {
     use super::*;
 
     #[test]
-    fn toggle_tag_toggles_to_neutral_on_repeat() {
+    fn step_tag_moves_left_and_right() {
         assert_eq!(
-            toggle_tag(SampleTag::Neutral, SampleTag::Keep),
+            step_tag(SampleTag::Neutral, TagStep::Left),
+            SampleTag::Trash
+        );
+        assert_eq!(
+            step_tag(SampleTag::Neutral, TagStep::Right),
             SampleTag::Keep
         );
         assert_eq!(
-            toggle_tag(SampleTag::Keep, SampleTag::Keep),
+            step_tag(SampleTag::Keep, TagStep::Left),
             SampleTag::Neutral
         );
         assert_eq!(
-            toggle_tag(SampleTag::Neutral, SampleTag::Trash),
-            SampleTag::Trash
-        );
-        assert_eq!(
-            toggle_tag(SampleTag::Trash, SampleTag::Trash),
+            step_tag(SampleTag::Trash, TagStep::Right),
             SampleTag::Neutral
         );
-        assert_eq!(
-            toggle_tag(SampleTag::Keep, SampleTag::Trash),
-            SampleTag::Trash
-        );
+    }
+
+    #[test]
+    fn step_tag_clamps_at_edges() {
+        assert_eq!(step_tag(SampleTag::Trash, TagStep::Left), SampleTag::Trash);
+        assert_eq!(step_tag(SampleTag::Keep, TagStep::Right), SampleTag::Keep);
     }
 }

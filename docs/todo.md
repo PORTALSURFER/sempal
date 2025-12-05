@@ -2,10 +2,6 @@
 
 --
 
-\plan - lets add 2 more lists to the main list, so it turns into 3 colums, lets move trashed samples to the left column, removing them from the center list, and move keep samples to the right column, also removing them from the center list.
-lets adjust left/right toggles so that center to left is 1 left tap, left to right is 2 right taps, right to center is 1 left tap, etc.
-lets also change th tag visual to mark the entire sample list item of that sample with a soft color overlay of either green or red
-
 \plan - lets add a new sidebar on the very right, inside this add a system for collections
 users can add new collection to this list. right below the collections list add a collection view which lists all samples inside of the currently selected collection if any.
 then add a drag/drop feature which add the ability for users to pick up any sample, and drop it onto this list, which will add it to said collection.

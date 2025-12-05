@@ -79,14 +79,24 @@ impl DropHandler {
     }
 
     /// Respond to a wav row click.
-    pub fn handle_wav_clicked(&self, index: i32) {
-        if index < 0 {
-            return;
-        }
+    pub fn handle_wav_clicked(&self, path: slint::SharedString) {
         let Some(app) = self.app() else {
             return;
         };
-        self.select_wav_at_index(&app, index as usize);
+        let Some(source) = self.current_source() else {
+            return;
+        };
+        let target = path.as_str();
+        let Some(entry) = self
+            .wav_entries
+            .borrow()
+            .iter()
+            .find(|e| e.relative_path.to_string_lossy() == target)
+            .cloned()
+        else {
+            return;
+        };
+        self.select_entry(&app, &entry, &source);
     }
 
     /// Trigger a rescan of the selected source.
@@ -147,11 +157,15 @@ impl DropHandler {
         let Some(entry) = self.wav_entries.borrow().get(index).cloned() else {
             return;
         };
+        self.select_entry(app, &entry, &source);
+    }
+
+    fn select_entry(&self, app: &HelloWorld, entry: &WavEntry, source: &SampleSource) {
         self.selected_wav
             .borrow_mut()
             .replace(entry.relative_path.clone());
         self.update_wav_view(app);
-        self.load_from_source(app, &source, &entry);
+        self.load_from_source(app, source, entry);
     }
 
     fn load_from_source(&self, app: &HelloWorld, source: &SampleSource, entry: &WavEntry) {
@@ -276,22 +290,59 @@ impl DropHandler {
             }
             index
         };
-        let rows = entries
-            .iter()
-            .enumerate()
-            .map(|(i, entry)| {
-                Self::wav_row(entry, Some(i) == selected_index, Some(i) == loaded_index)
-            })
-            .collect::<Vec<_>>();
-        let model = Rc::new(slint::VecModel::from(rows));
-        app.set_wavs(model.into());
-        let selected = selected_index.map(|i| i as i32).unwrap_or(-1);
-        app.set_selected_wav(selected);
-        self.scroll_wavs_to(app, selected);
-        let loaded_path = loaded_index
-            .and_then(|i| entries.get(i))
-            .map(|entry| entry.relative_path.to_string_lossy().to_string())
-            .unwrap_or_default();
+        let mut trash_rows = Vec::new();
+        let mut neutral_rows = Vec::new();
+        let mut keep_rows = Vec::new();
+        let mut selected_target: Option<(SampleTag, usize)> = None;
+        let mut loaded_path = String::new();
+
+        for (i, entry) in entries.iter().enumerate() {
+            let selected = Some(i) == selected_index;
+            let loaded = Some(i) == loaded_index;
+            if loaded {
+                loaded_path = entry.relative_path.to_string_lossy().to_string();
+            }
+            let row = Self::wav_row(entry, selected, loaded);
+            match entry.tag {
+                SampleTag::Trash => {
+                    if selected {
+                        selected_target = Some((SampleTag::Trash, trash_rows.len()));
+                    }
+                    trash_rows.push(row);
+                }
+                SampleTag::Neutral => {
+                    if selected {
+                        selected_target = Some((SampleTag::Neutral, neutral_rows.len()));
+                    }
+                    neutral_rows.push(row);
+                }
+                SampleTag::Keep => {
+                    if selected {
+                        selected_target = Some((SampleTag::Keep, keep_rows.len()));
+                    }
+                    keep_rows.push(row);
+                }
+            }
+        }
+
+        let trash_model = Rc::new(slint::VecModel::from(trash_rows));
+        app.set_wavs_trash(trash_model.into());
+        let neutral_model = Rc::new(slint::VecModel::from(neutral_rows));
+        app.set_wavs_neutral(neutral_model.into());
+        let keep_model = Rc::new(slint::VecModel::from(keep_rows));
+        app.set_wavs_keep(keep_model.into());
+
+        let (selected_trash, selected_neutral, selected_keep) = match selected_target {
+            Some((SampleTag::Trash, index)) => (index as i32, -1, -1),
+            Some((SampleTag::Neutral, index)) => (-1, index as i32, -1),
+            Some((SampleTag::Keep, index)) => (-1, -1, index as i32),
+            None => (-1, -1, -1),
+        };
+
+        app.set_selected_trash(selected_trash);
+        app.set_selected_neutral(selected_neutral);
+        app.set_selected_keep(selected_keep);
+        self.scroll_wavs_to(app, selected_target);
         app.set_loaded_wav_path(loaded_path.into());
     }
 

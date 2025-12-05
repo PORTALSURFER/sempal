@@ -34,6 +34,7 @@ mod scan;
 mod sources;
 mod tags;
 mod view;
+use self::tags::TagStep;
 
 /// Minimum normalized width for a selection to count as usable.
 const MIN_SELECTION_WIDTH: f32 = 0.001;
@@ -195,14 +196,14 @@ impl CustomApplicationHandler for DropHandler {
                         }
                     }
                     PhysicalKey::Code(KeyCode::ArrowLeft) => {
-                        if self.apply_tag_to_selection(SampleTag::Trash) {
+                        if self.apply_tag_step(TagStep::Left) {
                             EventResult::PreventDefault
                         } else {
                             EventResult::Propagate
                         }
                     }
                     PhysicalKey::Code(KeyCode::ArrowRight) => {
-                        if self.apply_tag_to_selection(SampleTag::Keep) {
+                        if self.apply_tag_step(TagStep::Right) {
                             EventResult::PreventDefault
                         } else {
                             EventResult::Propagate
