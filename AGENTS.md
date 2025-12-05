@@ -2,3 +2,4 @@
 
 - ask the user to run builds, checks and tests instead of doing it yourself. (their machine is faster). 
 - instruct the user what to do, and if you need feedback from them to move ahead, tell them clearly what to return to you.
+- find slint api reference here https://docs.slint.dev/latest/docs/slint/reference
