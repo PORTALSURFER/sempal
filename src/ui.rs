@@ -31,17 +31,21 @@ slint::slint! {
         callback close_requested();
         in-out property <[SourceRow]> sources;
         in-out property <int> selected_source: -1;
-        in-out property <[WavRow]> wavs;
-        in-out property <int> selected_wav: -1;
+        in-out property <[WavRow]> wavs_trash;
+        in-out property <[WavRow]> wavs_neutral;
+        in-out property <[WavRow]> wavs_keep;
+        in-out property <int> selected_trash: -1;
+        in-out property <int> selected_neutral: -1;
+        in-out property <int> selected_keep: -1;
         in-out property <string> loaded_wav_path: "";
         in-out property <int> source_menu_index: -1;
         callback source_selected(int);
         callback source_update_requested(int);
         callback source_remove_requested(int);
         callback add_source();
-        callback wav_clicked(int);
+        callback wav_clicked(string);
         callback scroll_sources_to(int);
-        callback scroll_wavs_to(int);
+        callback scroll_wavs_to(int, int);
         property <bool> selection_drag_active: false;
         property <bool> selection_drag_moved: false;
 
@@ -101,10 +105,14 @@ slint::slint! {
                         }
 
                         wavs_panel := WavListPanel {
-                            wavs <=> root.wavs;
-                            selected_wav <=> root.selected_wav;
+                            wavs_trash <=> root.wavs_trash;
+                            wavs_neutral <=> root.wavs_neutral;
+                            wavs_keep <=> root.wavs_keep;
+                            selected_trash <=> root.selected_trash;
+                            selected_neutral <=> root.selected_neutral;
+                            selected_keep <=> root.selected_keep;
                             loaded_wav_path <=> root.loaded_wav_path;
-                            wav_clicked(i) => root.wav_clicked(i);
+                            wav_clicked(path) => root.wav_clicked(path);
                         }
 
                         StatusBar {
@@ -122,9 +130,9 @@ slint::slint! {
             sources_panel.scroll_to(index);
         }
 
-        scroll_wavs_to(index) => {
+        scroll_wavs_to(tag, index) => {
             if index < 0 { return; }
-            wavs_panel.scroll_to(index);
+            wavs_panel.scroll_to(tag, index);
         }
     }
 }

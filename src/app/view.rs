@@ -21,11 +21,16 @@ impl DropHandler {
         }
     }
 
-    /// Request the wav list to scroll to a given index.
-    pub(super) fn scroll_wavs_to(&self, app: &HelloWorld, index: i32) {
-        if index >= 0 {
-            app.invoke_scroll_wavs_to(index);
-        }
+    /// Request the wav list to scroll to a given column/index pair.
+    pub(super) fn scroll_wavs_to(
+        &self,
+        app: &HelloWorld,
+        target: Option<(SampleTag, usize)>,
+    ) {
+        let Some((tag, index)) = target else {
+            return;
+        };
+        app.invoke_scroll_wavs_to(Self::tag_to_column(tag), index as i32);
     }
 
     fn status_badge(state: StatusState) -> (SharedString, Color) {
@@ -53,22 +58,24 @@ impl DropHandler {
 
     /// Convert a wav entry into its UI row representation.
     pub(super) fn wav_row(entry: &WavEntry, selected: bool, loaded: bool) -> WavRow {
-        let (tag_label, tag_bg, tag_fg) = Self::tag_display(entry.tag);
+        let (tag_label, tag_bg, tag_fg, overlay) = Self::tag_display(entry.tag);
         WavRow {
             name: entry.relative_path.to_string_lossy().to_string().into(),
             path: entry.relative_path.to_string_lossy().to_string().into(),
             selected,
             loaded,
+            overlay,
             tag_label,
             tag_bg,
             tag_fg,
         }
     }
 
-    fn tag_display(tag: SampleTag) -> (SharedString, Color, Color) {
+    fn tag_display(tag: SampleTag) -> (SharedString, Color, Color, Color) {
         match tag {
             SampleTag::Neutral => (
                 "".into(),
+                Color::from_argb_u8(0, 0, 0, 0),
                 Color::from_argb_u8(0, 0, 0, 0),
                 Color::from_argb_u8(0, 0, 0, 0),
             ),
@@ -76,12 +83,22 @@ impl DropHandler {
                 "KEEP".into(),
                 Color::from_argb_u8(180, 34, 78, 52),
                 Color::from_rgb_u8(132, 214, 163),
+                Color::from_argb_u8(42, 52, 164, 108),
             ),
             SampleTag::Trash => (
                 "TRASH".into(),
                 Color::from_argb_u8(180, 78, 35, 35),
                 Color::from_rgb_u8(240, 138, 138),
+                Color::from_argb_u8(42, 164, 78, 78),
             ),
+        }
+    }
+
+    fn tag_to_column(tag: SampleTag) -> i32 {
+        match tag {
+            SampleTag::Trash => 0,
+            SampleTag::Neutral => 1,
+            SampleTag::Keep => 2,
         }
     }
 }

@@ -36,7 +36,7 @@ pub(super) fn attach_callbacks(app: &HelloWorld, drop_handler: &DropHandler) {
     let remove_handler = drop_handler.clone();
     app.on_source_remove_requested(move |index| remove_handler.handle_remove_source(index));
     let wav_handler = drop_handler.clone();
-    app.on_wav_clicked(move |index| wav_handler.handle_wav_clicked(index));
+    app.on_wav_clicked(move |path| wav_handler.handle_wav_clicked(path));
     let close_handler = drop_handler.clone();
     app.on_close_requested(move || {
         close_handler.shutdown();
