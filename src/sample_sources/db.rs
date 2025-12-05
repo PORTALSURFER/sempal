@@ -181,18 +181,20 @@ impl SourceDatabase {
     }
 
     fn apply_pragmas(&self) -> Result<(), SourceDbError> {
-        self.connection.execute_batch(
-            "PRAGMA journal_mode=WAL;
+        self.connection
+            .execute_batch(
+                "PRAGMA journal_mode=WAL;
              PRAGMA synchronous = NORMAL;
              PRAGMA foreign_keys=ON;",
-        )
-        .map_err(map_sql_error)?;
+            )
+            .map_err(map_sql_error)?;
         Ok(())
     }
 
     fn apply_schema(&self) -> Result<(), SourceDbError> {
-        self.connection.execute_batch(
-            "CREATE TABLE IF NOT EXISTS metadata (
+        self.connection
+            .execute_batch(
+                "CREATE TABLE IF NOT EXISTS metadata (
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
             );
@@ -202,8 +204,8 @@ impl SourceDatabase {
                 modified_ns INTEGER NOT NULL,
                 tag INTEGER NOT NULL DEFAULT 0
             );",
-        )
-        .map_err(map_sql_error)?;
+            )
+            .map_err(map_sql_error)?;
         ensure_tag_column(&self.connection)?;
         Ok(())
     }
@@ -273,7 +275,9 @@ impl<'conn> SourceWriteBatch<'conn> {
 /// Translate rusqlite errors into friendlier SourceDbError variants.
 fn map_sql_error(err: rusqlite::Error) -> SourceDbError {
     match err {
-        rusqlite::Error::SqliteFailure(sql_err, _) if sql_err.extended_code == rusqlite::ffi::SQLITE_BUSY => {
+        rusqlite::Error::SqliteFailure(sql_err, _)
+            if sql_err.extended_code == rusqlite::ffi::SQLITE_BUSY =>
+        {
             SourceDbError::Busy
         }
         rusqlite::Error::InvalidQuery

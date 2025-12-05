@@ -1,5 +1,5 @@
-use super::*;
 use super::navigation::compute_target_index;
+use super::*;
 
 /// Error details surfaced when adding a new sample source fails validation.
 struct AddSourceFailure {
@@ -22,7 +22,11 @@ impl DropHandler {
     }
 
     /// Validate and persist a new source selected from the filesystem.
-    fn add_source_from_path(&self, app: &HelloWorld, path: PathBuf) -> Result<(), AddSourceFailure> {
+    fn add_source_from_path(
+        &self,
+        app: &HelloWorld,
+        path: PathBuf,
+    ) -> Result<(), AddSourceFailure> {
         let normalized = config::normalize_path(path.as_path());
         if !normalized.is_dir() {
             return Err(AddSourceFailure {
@@ -300,7 +304,10 @@ impl DropHandler {
     }
 
     /// Fetch or open the cached database for a sample source.
-    pub(super) fn database_for(&self, source: &SampleSource) -> Result<Rc<SourceDatabase>, SourceDbError> {
+    pub(super) fn database_for(
+        &self,
+        source: &SampleSource,
+    ) -> Result<Rc<SourceDatabase>, SourceDbError> {
         if let Some(existing) = self.db_cache.borrow().get(&source.id) {
             return Ok(existing.clone());
         }
@@ -312,7 +319,10 @@ impl DropHandler {
     }
 
     /// Ensure the database is opened and cached for later use.
-    pub(super) fn cache_db(&self, source: &SampleSource) -> Result<Rc<SourceDatabase>, SourceDbError> {
+    pub(super) fn cache_db(
+        &self,
+        source: &SampleSource,
+    ) -> Result<Rc<SourceDatabase>, SourceDbError> {
         self.database_for(source)
     }
 
