@@ -45,6 +45,7 @@ struct ScanJobResult {
 
 #[derive(Clone, Copy, Debug)]
 enum StatusState {
+    #[allow(dead_code)]
     Idle,
     Busy,
     Info,
