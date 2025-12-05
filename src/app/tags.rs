@@ -111,6 +111,7 @@ impl DropHandler {
     }
 }
 
+/// Keep only the latest tag per path to minimize DB writes.
 fn coalesce_tag_updates(updates: Vec<(PathBuf, SampleTag)>) -> Vec<(PathBuf, SampleTag)> {
     let mut latest: HashMap<PathBuf, SampleTag> = HashMap::new();
     for (path, tag) in updates {
@@ -119,6 +120,7 @@ fn coalesce_tag_updates(updates: Vec<(PathBuf, SampleTag)>) -> Vec<(PathBuf, Sam
     latest.into_iter().collect()
 }
 
+/// Toggle tags so repeating the same choice clears back to neutral.
 fn toggle_tag(current: SampleTag, desired: SampleTag) -> SampleTag {
     if current == desired {
         SampleTag::Neutral
