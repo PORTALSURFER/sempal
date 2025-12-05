@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, params, Transaction};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -97,29 +97,36 @@ impl SourceDatabase {
         modified_ns: i64,
     ) -> Result<(), SourceDbError> {
         let path = normalize_relative_path(relative_path)?;
-        self.connection.execute(
+        let mut stmt = self.connection.prepare_cached(
             "INSERT INTO wav_files (path, file_size, modified_ns, tag)
              VALUES (?1, ?2, ?3, ?4)
              ON CONFLICT(path) DO UPDATE SET file_size = excluded.file_size,
                                             modified_ns = excluded.modified_ns",
-            params![
-                path,
-                file_size as i64,
-                modified_ns,
-                SampleTag::Neutral.as_i64()
-            ],
         )?;
+        stmt.execute(params![
+            path,
+            file_size as i64,
+            modified_ns,
+            SampleTag::Neutral.as_i64()
+        ])?;
         Ok(())
     }
 
-    /// Persist a keep/trash tag for a wav file by relative path.
+    /// Persist a keep/trash tag for a single wav file by relative path.
     pub fn set_tag(&self, relative_path: &Path, tag: SampleTag) -> Result<(), SourceDbError> {
-        let path = normalize_relative_path(relative_path)?;
-        self.connection.execute(
-            "UPDATE wav_files SET tag = ?1 WHERE path = ?2",
-            params![tag.as_i64(), path],
-        )?;
-        Ok(())
+        self.set_tags_batch(&[(relative_path.to_path_buf(), tag)])
+    }
+
+    /// Persist multiple tag changes in one transaction, coalescing SQLite work.
+    pub fn set_tags_batch(&self, updates: &[(PathBuf, SampleTag)]) -> Result<(), SourceDbError> {
+        if updates.is_empty() {
+            return Ok(());
+        }
+        let mut batch = self.write_batch()?;
+        for (path, tag) in updates {
+            batch.set_tag(path, *tag)?;
+        }
+        batch.commit()
     }
 
     /// Remove a wav file row by relative path.
@@ -151,9 +158,18 @@ impl SourceDatabase {
         Ok(rows)
     }
 
+    /// Start a write batch that wraps related mutations in a single transaction.
+    pub fn write_batch(&self) -> Result<SourceWriteBatch<'_>, SourceDbError> {
+        let tx = self.connection.unchecked_transaction()?;
+        Ok(SourceWriteBatch { tx })
+    }
+
     fn apply_pragmas(&self) -> Result<(), SourceDbError> {
-        self.connection
-            .execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")?;
+        self.connection.execute_batch(
+            "PRAGMA journal_mode=WAL;
+             PRAGMA synchronous = NORMAL;
+             PRAGMA foreign_keys=ON;",
+        )?;
         Ok(())
     }
 
@@ -171,6 +187,61 @@ impl SourceDatabase {
             );",
         )?;
         ensure_tag_column(&self.connection)?;
+        Ok(())
+    }
+}
+
+/// Groups multiple database writes into one transaction using cached statements.
+pub struct SourceWriteBatch<'conn> {
+    tx: Transaction<'conn>,
+}
+
+impl<'conn> SourceWriteBatch<'conn> {
+    /// Insert or update a wav row, resetting the tag to neutral on first insert.
+    pub fn upsert_file(
+        &mut self,
+        relative_path: &Path,
+        file_size: u64,
+        modified_ns: i64,
+    ) -> Result<(), SourceDbError> {
+        let path = normalize_relative_path(relative_path)?;
+        self.tx
+            .prepare_cached(
+                "INSERT INTO wav_files (path, file_size, modified_ns, tag)
+                 VALUES (?1, ?2, ?3, ?4)
+                 ON CONFLICT(path) DO UPDATE SET file_size = excluded.file_size,
+                                                modified_ns = excluded.modified_ns",
+            )?
+            .execute(params![
+                path,
+                file_size as i64,
+                modified_ns,
+                SampleTag::Neutral.as_i64()
+            ])?;
+        Ok(())
+    }
+
+    /// Update the tag for a wav row within the batch.
+    pub fn set_tag(&mut self, relative_path: &Path, tag: SampleTag) -> Result<(), SourceDbError> {
+        let path = normalize_relative_path(relative_path)?;
+        self.tx
+            .prepare_cached("UPDATE wav_files SET tag = ?1 WHERE path = ?2")?
+            .execute(params![tag.as_i64(), path])?;
+        Ok(())
+    }
+
+    /// Remove a wav row within the batch.
+    pub fn remove_file(&mut self, relative_path: &Path) -> Result<(), SourceDbError> {
+        let path = normalize_relative_path(relative_path)?;
+        self.tx
+            .prepare_cached("DELETE FROM wav_files WHERE path = ?1")?
+            .execute(params![path])?;
+        Ok(())
+    }
+
+    /// Commit all batched operations atomically.
+    pub fn commit(self) -> Result<(), SourceDbError> {
+        self.tx.commit()?;
         Ok(())
     }
 }
@@ -235,5 +306,21 @@ mod tests {
         let reopened = SourceDatabase::open(dir.path()).unwrap();
         let fourth = reopened.list_files().unwrap();
         assert_eq!(fourth[0].tag, SampleTag::Keep);
+    }
+
+    #[test]
+    fn batch_tag_updates_coalesce_to_latest_value() {
+        let dir = tempdir().unwrap();
+        let db = SourceDatabase::open(dir.path()).unwrap();
+        db.upsert_file(Path::new("one.wav"), 10, 5).unwrap();
+
+        db.set_tags_batch(&[
+            (PathBuf::from("one.wav"), SampleTag::Keep),
+            (PathBuf::from("one.wav"), SampleTag::Trash),
+        ])
+        .unwrap();
+
+        let rows = db.list_files().unwrap();
+        assert_eq!(rows[0].tag, SampleTag::Trash);
     }
 }
