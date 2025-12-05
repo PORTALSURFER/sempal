@@ -8,9 +8,9 @@ use std::{
 
 use thiserror::Error;
 
-use super::{SourceDatabase, SourceDbError};
 use super::db::SourceWriteBatch;
 use super::db::WavEntry;
+use super::{SourceDatabase, SourceDbError};
 
 /// Summary of a scan run.
 #[derive(Debug, Default, Clone)]

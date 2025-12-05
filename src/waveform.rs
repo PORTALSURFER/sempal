@@ -174,9 +174,6 @@ mod tests {
 
         let columns = renderer.sample_columns(&samples);
 
-        assert_eq!(
-            columns,
-            vec![(0.1, 0.2), (0.3, 0.4)]
-        );
+        assert_eq!(columns, vec![(0.1, 0.2), (0.3, 0.4)]);
     }
 }

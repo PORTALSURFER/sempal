@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use rusqlite::{Connection, params, Transaction};
+use rusqlite::{Connection, Transaction, params};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -141,9 +141,7 @@ impl SourceDatabase {
     pub fn list_files(&self) -> Result<Vec<WavEntry>, SourceDbError> {
         let mut stmt = self
             .connection
-            .prepare(
-                "SELECT path, file_size, modified_ns, tag FROM wav_files ORDER BY path ASC",
-            )?;
+            .prepare("SELECT path, file_size, modified_ns, tag FROM wav_files ORDER BY path ASC")?;
         let rows = stmt
             .query_map([], |row| {
                 let path: String = row.get(0)?;
