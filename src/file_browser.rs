@@ -8,6 +8,7 @@ use std::{
 use slint::SharedString;
 use sysinfo::Disks;
 
+/// A single file or directory entry.
 #[derive(Clone)]
 pub struct FileEntry {
     pub name: String,
@@ -15,12 +16,14 @@ pub struct FileEntry {
     pub is_dir: bool,
 }
 
+/// Describes how the browser should respond when an entry is activated.
 pub enum EntryAction {
     OpenDir,
     PlayFile(PathBuf),
     None,
 }
 
+/// Minimal filesystem browser for selecting wav files.
 pub struct FileBrowser {
     mounts: Vec<PathBuf>,
     current_dir: PathBuf,
@@ -28,6 +31,7 @@ pub struct FileBrowser {
 }
 
 impl FileBrowser {
+    /// Initialize the browser with detected mount points.
     pub fn new() -> Self {
         let mounts = Self::collect_mounts();
         let current_dir = mounts
@@ -41,6 +45,7 @@ impl FileBrowser {
         }
     }
 
+    /// Return the list of mount points suitable for UI presentation.
     pub fn mounts(&self) -> Vec<SharedString> {
         self.mounts
             .iter()
@@ -48,6 +53,7 @@ impl FileBrowser {
             .collect()
     }
 
+    /// Index of the currently selected disk for UI binding.
     pub fn selected_disk(&self) -> i32 {
         self.mounts
             .iter()
@@ -55,6 +61,7 @@ impl FileBrowser {
             .unwrap_or(0) as i32
     }
 
+    /// Switch to a given disk by index.
     pub fn select_disk(&mut self, index: usize) {
         if let Some(path) = self.mounts.get(index) {
             self.current_dir = path.clone();
@@ -62,6 +69,7 @@ impl FileBrowser {
         }
     }
 
+    /// Navigate to the parent directory if possible.
     pub fn go_up(&mut self) {
         if let Some(parent) = self.current_dir.parent() {
             self.current_dir = parent.to_path_buf();
@@ -69,6 +77,7 @@ impl FileBrowser {
         self.last_click = None;
     }
 
+    /// List wav files and directories in the current directory.
     pub fn entries(&self) -> Vec<FileEntry> {
         let mut items = Vec::new();
         if let Ok(read_dir) = fs::read_dir(&self.current_dir) {
@@ -91,6 +100,7 @@ impl FileBrowser {
         items
     }
 
+    /// Handle a click on an entry, returning the resulting action.
     pub fn activate_entry(&mut self, entry: &FileEntry) -> EntryAction {
         if entry.is_dir {
             let is_double = self.is_double_click(&entry.path);
