@@ -75,7 +75,6 @@ impl DropHandler {
             return;
         };
         self.select_source_by_id(&app, &source.id);
-        self.start_scan_for(source, false);
     }
 
     /// Respond to a wav row click.
@@ -425,7 +424,6 @@ impl DropHandler {
     fn select_first_source(&self, app: &HelloWorld) {
         if let Some(first) = self.sources.borrow().first().cloned() {
             self.select_source_by_id(app, &first.id);
-            self.start_scan_for(first, false);
         } else {
             self.wav_entries.borrow_mut().clear();
             self.selected_wav.borrow_mut().take();
