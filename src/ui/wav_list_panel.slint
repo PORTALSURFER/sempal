@@ -1,0 +1,96 @@
+import { ListView } from "std-widgets.slint";
+import { WavRow } from "types.slint";
+
+export component WavListPanel inherits Rectangle {
+    in-out property <[WavRow]> wavs;
+    in-out property <int> selected_wav: -1;
+    in-out property <string> loaded_wav_path: "";
+    callback wav_clicked(int);
+
+    public function scroll_to(index: int) {
+        if index < 0 { return; }
+        let row_height = 32px;
+        let visible = wav_list.visible-height;
+        let desired_top = index * row_height;
+        let desired_bottom = desired_top + row_height;
+        let current_top = -wav_list.viewport-y;
+        let margin = 6px;
+
+        if desired_top < current_top + margin {
+            let target = desired_top - margin;
+            let clamped = target < 0px ? 0px : target;
+            wav_list.viewport-y = -clamped;
+        } else if desired_bottom > current_top + visible - margin {
+            let target = desired_bottom - visible + margin;
+            let clamped = target < 0px ? 0px : target;
+            wav_list.viewport-y = -clamped;
+        }
+    }
+
+    vertical-stretch: 1;
+    border-width: 1px;
+    border-color: #404040;
+    background: #0f0f0f;
+    border-radius: 6px;
+
+    VerticalLayout {
+        padding: 8px;
+        spacing: 6px;
+
+        Text {
+            text: "Wav files";
+            color: #d0d0d0;
+        }
+
+        wav_list := ListView {
+            vertical-stretch: 1;
+            min-height: 200px;
+            for file[i] in root.wavs: Rectangle {
+                height: 32px;
+                horizontal-stretch: 1;
+                background: ta_wav.pressed ? #1f1f1f :
+                    (file.loaded ? #20344c :
+                        (file.selected ? #1d1d1d :
+                            (ta_wav.has-hover ? #1a1a1a : #141414)));
+                border-width: file.selected ? 1px : 0px;
+                border-color: file.loaded ? #3a9cff : #2f6fb1;
+                HorizontalLayout {
+                    padding: 8px;
+                    spacing: 8px;
+                    Rectangle {
+                        width: 4px;
+                        height: parent.height - 6px;
+                        background: file.loaded ? #3a9cff : (file.selected ? #2f6fb1 : #00000000);
+                        border-radius: 2px;
+                    }
+                    Text {
+                        text: file.name;
+                        color: #e0e0e0;
+                        horizontal-alignment: left;
+                        horizontal-stretch: 1;
+                    }
+                    if file.tag_label != "" : Rectangle {
+                        height: 20px;
+                        border-radius: 10px;
+                        background: file.tag_bg;
+                        HorizontalLayout {
+                            padding-left: 8px;
+                            padding-right: 8px;
+                            Text {
+                                text: file.tag_label;
+                                color: file.tag_fg;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+                ta_wav := TouchArea {
+                    width: parent.width;
+                    height: parent.height;
+                    clicked => { root.wav_clicked(i); }
+                }
+            }
+        }
+    }
+}

@@ -2,6 +2,8 @@
 
 --
 
+- lets adjust the build script so it only bumps the version if we successfuly build, and not every run.
+
 - lets add 2 more lists to the main list, so it turns into 3 colums, lets move trashed samples to the left column, removing them from the center list, and move keep samples to the right column, also removing them from the center list.
 lets adjust left/right toggles so that center to left is 1 left tap, left to right is 2 right taps, right to center is 1 left tap, etc.
 lets also change th tag visual to mark the entire sample list item of that sample with a soft color overlay of either green or red
