@@ -438,7 +438,7 @@ slint::slint! {
                                         z: 1;
                                         pointer-event(event) => {
                                             if event.kind == PointerEventKind.down
-                                                && event.modifiers.alt
+                                                && event.modifiers.shift
                                             {
                                                 root.selection_drag_active = true;
                                                 root.selection_drag_moved = false;
@@ -447,7 +447,7 @@ slint::slint! {
                                                 );
                                             } else if event.kind == PointerEventKind.move
                                                 && root.selection_drag_active
-                                                && event.modifiers.alt
+                                                && event.modifiers.shift
                                             {
                                                 root.selection_drag_moved = true;
                                                 root.selection_drag_updated(
@@ -458,9 +458,11 @@ slint::slint! {
                                                     root.selection_drag_active = false;
                                                     root.selection_drag_finished();
                                                 }
-                                                if event.modifiers.alt && !root.selection_drag_moved {
+                                                if event.modifiers.shift
+                                                    && !root.selection_drag_moved
+                                                {
                                                     root.selection_clear_requested();
-                                                } else if !event.modifiers.alt {
+                                                } else if !event.modifiers.shift {
                                                     root.seek_requested(self.mouse-x / self.width);
                                                 }
                                                 root.selection_drag_moved = false;
