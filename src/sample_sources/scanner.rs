@@ -194,6 +194,7 @@ fn is_wav(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sample_sources::SampleTag;
     use tempfile::tempdir;
 
     #[test]
@@ -205,7 +206,9 @@ mod tests {
         let db = SourceDatabase::open(dir.path()).unwrap();
         let first = scan_once(&db).unwrap();
         assert_eq!(first.added, 1);
-        assert_eq!(db.list_files().unwrap().len(), 1);
+        let initial = db.list_files().unwrap();
+        assert_eq!(initial.len(), 1);
+        assert_eq!(initial[0].tag, SampleTag::Neutral);
 
         std::fs::write(&file_path, b"longer-data").unwrap();
         let second = scan_once(&db).unwrap();

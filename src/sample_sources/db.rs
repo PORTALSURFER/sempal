@@ -7,12 +7,39 @@ use thiserror::Error;
 /// Hidden filename used for per-source databases.
 pub const DB_FILE_NAME: &str = ".sempal_samples.db";
 
+/// Tag applied to a wav file to mark keep/trash decisions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SampleTag {
+    Neutral,
+    Keep,
+    Trash,
+}
+
+impl SampleTag {
+    pub fn as_i64(self) -> i64 {
+        match self {
+            SampleTag::Neutral => 0,
+            SampleTag::Keep => 1,
+            SampleTag::Trash => 2,
+        }
+    }
+
+    pub fn from_i64(value: i64) -> Self {
+        match value {
+            1 => SampleTag::Keep,
+            2 => SampleTag::Trash,
+            _ => SampleTag::Neutral,
+        }
+    }
+}
+
 /// Details about a wav file stored in a source database.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WavEntry {
     pub relative_path: PathBuf,
     pub file_size: u64,
     pub modified_ns: i64,
+    pub tag: SampleTag,
 }
 
 /// Errors returned when managing a source database.
@@ -71,11 +98,26 @@ impl SourceDatabase {
     ) -> Result<(), SourceDbError> {
         let path = normalize_relative_path(relative_path)?;
         self.connection.execute(
-            "INSERT INTO wav_files (path, file_size, modified_ns)
-             VALUES (?1, ?2, ?3)
+            "INSERT INTO wav_files (path, file_size, modified_ns, tag)
+             VALUES (?1, ?2, ?3, ?4)
              ON CONFLICT(path) DO UPDATE SET file_size = excluded.file_size,
                                             modified_ns = excluded.modified_ns",
-            params![path, file_size as i64, modified_ns],
+            params![
+                path,
+                file_size as i64,
+                modified_ns,
+                SampleTag::Neutral.as_i64()
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Persist a keep/trash tag for a wav file by relative path.
+    pub fn set_tag(&self, relative_path: &Path, tag: SampleTag) -> Result<(), SourceDbError> {
+        let path = normalize_relative_path(relative_path)?;
+        self.connection.execute(
+            "UPDATE wav_files SET tag = ?1 WHERE path = ?2",
+            params![tag.as_i64(), path],
         )?;
         Ok(())
     }
@@ -92,7 +134,9 @@ impl SourceDatabase {
     pub fn list_files(&self) -> Result<Vec<WavEntry>, SourceDbError> {
         let mut stmt = self
             .connection
-            .prepare("SELECT path, file_size, modified_ns FROM wav_files ORDER BY path ASC")?;
+            .prepare(
+                "SELECT path, file_size, modified_ns, tag FROM wav_files ORDER BY path ASC",
+            )?;
         let rows = stmt
             .query_map([], |row| {
                 let path: String = row.get(0)?;
@@ -100,6 +144,7 @@ impl SourceDatabase {
                     relative_path: PathBuf::from(path),
                     file_size: row.get::<_, i64>(1)? as u64,
                     modified_ns: row.get(2)?,
+                    tag: SampleTag::from_i64(row.get(3)?),
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -121,9 +166,11 @@ impl SourceDatabase {
              CREATE TABLE IF NOT EXISTS wav_files (
                 path TEXT PRIMARY KEY,
                 file_size INTEGER NOT NULL,
-                modified_ns INTEGER NOT NULL
+                modified_ns INTEGER NOT NULL,
+                tag INTEGER NOT NULL DEFAULT 0
             );",
         )?;
+        ensure_tag_column(&self.connection)?;
         Ok(())
     }
 }
@@ -146,4 +193,47 @@ fn create_parent_if_needed(path: &Path) -> Result<(), SourceDbError> {
         }
     }
     Ok(())
+}
+
+fn ensure_tag_column(connection: &Connection) -> Result<(), SourceDbError> {
+    let mut stmt = connection.prepare("PRAGMA table_info(wav_files)")?;
+    let has_tag = stmt
+        .query_map([], |row| row.get::<_, String>(1))
+        .map(|cols| cols.filter_map(Result::ok).any(|name| name == "tag"))
+        .unwrap_or(false);
+    if !has_tag {
+        connection.execute(
+            "ALTER TABLE wav_files ADD COLUMN tag INTEGER NOT NULL DEFAULT 0",
+            [],
+        )?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn tags_default_and_persist() {
+        let dir = tempdir().unwrap();
+        let db = SourceDatabase::open(dir.path()).unwrap();
+        db.upsert_file(Path::new("one.wav"), 10, 5).unwrap();
+
+        let first = db.list_files().unwrap();
+        assert_eq!(first[0].tag, SampleTag::Neutral);
+
+        db.set_tag(Path::new("one.wav"), SampleTag::Keep).unwrap();
+        let second = db.list_files().unwrap();
+        assert_eq!(second[0].tag, SampleTag::Keep);
+
+        db.upsert_file(Path::new("one.wav"), 12, 6).unwrap();
+        let third = db.list_files().unwrap();
+        assert_eq!(third[0].tag, SampleTag::Keep);
+
+        let reopened = SourceDatabase::open(dir.path()).unwrap();
+        let fourth = reopened.list_files().unwrap();
+        assert_eq!(fourth[0].tag, SampleTag::Keep);
+    }
 }

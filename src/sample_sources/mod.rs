@@ -8,7 +8,7 @@ pub mod db;
 pub mod scan_state;
 pub mod scanner;
 
-pub use db::{DB_FILE_NAME, SourceDatabase, SourceDbError, WavEntry};
+pub use db::{DB_FILE_NAME, SampleTag, SourceDatabase, SourceDbError, WavEntry};
 pub use scan_state::ScanTracker;
 pub use scanner::{ScanError, ScanStats};
 
