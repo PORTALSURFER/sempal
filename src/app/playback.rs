@@ -44,15 +44,7 @@ impl DropHandler {
             return EventResult::Propagate;
         };
         match self.start_playback(looped, self.usable_selection(), None) {
-            Ok(_) => {
-                self.set_status(
-                    &app,
-                    if looped { "Looping selection" } else { "Playing audio" },
-                    StatusState::Info,
-                );
-                self.start_playhead_updates();
-                EventResult::PreventDefault
-            }
+            Ok(_) => self.playback_started(&app, looped),
             Err(error) => {
                 self.set_status(&app, error, StatusState::Error);
                 EventResult::PreventDefault
@@ -218,12 +210,7 @@ impl DropHandler {
         let Some(app) = self.app() else { return };
         match self.start_playback(looped, selection, resume_from) {
             Ok(_) => {
-                self.set_status(
-                    &app,
-                    if looped { "Looping selection" } else { "Playing audio" },
-                    StatusState::Info,
-                );
-                self.start_playhead_updates();
+                self.playback_started(&app, looped);
             }
             Err(error) => {
                 self.set_status(&app, error, StatusState::Error);
@@ -232,6 +219,7 @@ impl DropHandler {
         }
     }
 
+    /// Clamp a resume position to a selection span, falling back to the start.
     pub(super) fn resume_point(span: &SelectionRange, resume_from: Option<f32>) -> f32 {
         let start = span.start();
         let end = span.end();
@@ -250,6 +238,18 @@ impl DropHandler {
         }
     }
 
+    /// Update UI status and playhead timer after a successful playback start.
+    fn playback_started(&self, app: &HelloWorld, looped: bool) -> EventResult {
+        self.set_status(
+            app,
+            if looped { "Looping selection" } else { "Playing audio" },
+            StatusState::Info,
+        );
+        self.start_playhead_updates();
+        EventResult::PreventDefault
+    }
+
+    /// Restart looping playback when active, optionally forcing a restart after UI interactions.
     fn restart_loop_if_active(&self, force: bool) {
         if *self.loop_enabled.borrow() && (force || self.player.borrow().is_playing()) {
             let selection = self.usable_selection();
