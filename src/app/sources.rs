@@ -163,7 +163,16 @@ impl DropHandler {
         self.selected_wav
             .borrow_mut()
             .replace(entry.relative_path.clone());
-        self.update_wav_view(app);
+        if self
+            .loaded_wav
+            .borrow()
+            .as_ref()
+            .is_some_and(|path| path != &entry.relative_path)
+        {
+            self.loaded_wav.borrow_mut().take();
+        }
+        self.update_wav_view(app, false);
+        self.stop_playback_ui(app);
         self.load_from_source(app, source, entry);
     }
 
@@ -179,13 +188,30 @@ impl DropHandler {
             );
             return;
         }
-        if self.handle_drop(full_path.as_path()) {
+        if let Some(cached) = self
+            .waveform_cache
+            .borrow_mut()
+            .get(&source.id, &entry.relative_path)
+        {
             self.loaded_wav
                 .borrow_mut()
                 .replace(entry.relative_path.clone());
-            self.update_wav_view(app);
+            self.update_wav_view(app, false);
+            self.apply_loaded_waveform(app, &cached);
+            self.set_status(
+                app,
+                format!("Loaded {}", entry.relative_path.display()),
+                StatusState::Info,
+            );
             let _ = self.play_audio(*self.loop_enabled.borrow());
+            return;
         }
+        self.set_status(
+            app,
+            format!("Loading {}", entry.relative_path.display()),
+            StatusState::Busy,
+        );
+        self.enqueue_waveform_load(&source.id, &source.root, &entry.relative_path);
     }
 
     /// Move wav selection by delta rows; returns true when a move occurs.
@@ -247,13 +273,13 @@ impl DropHandler {
             self.wav_entries.borrow_mut().clear();
             self.selected_wav.borrow_mut().take();
             self.loaded_wav.borrow_mut().take();
-            self.update_wav_view(app);
+            self.update_wav_view(app, true);
             return;
         };
         match self.database_for(&source).and_then(|db| db.list_files()) {
             Ok(entries) => {
                 self.wav_entries.replace(entries.clone());
-                self.update_wav_view(app);
+                self.update_wav_view(app, true);
                 self.set_status(
                     app,
                     format!("{} wav files loaded", entries.len()),
@@ -269,7 +295,7 @@ impl DropHandler {
     }
 
     /// Update UI bindings for the wav list selection and loaded file state.
-    pub(super) fn update_wav_view(&self, app: &HelloWorld) {
+    pub(super) fn update_wav_view(&self, app: &HelloWorld, rebuild_models: bool) {
         let entries = self.wav_entries.borrow();
         let selected_index = {
             let selected = self.selected_wav.borrow();
@@ -289,60 +315,27 @@ impl DropHandler {
             }
             index
         };
-        let mut trash_rows = Vec::new();
-        let mut neutral_rows = Vec::new();
-        let mut keep_rows = Vec::new();
-        let mut selected_target: Option<(SampleTag, usize)> = None;
-        let mut loaded_path = String::new();
-
-        for (i, entry) in entries.iter().enumerate() {
-            let selected = Some(i) == selected_index;
-            let loaded = Some(i) == loaded_index;
-            if loaded {
-                loaded_path = entry.relative_path.to_string_lossy().to_string();
+        let (selected_target, loaded_path) = {
+            let mut models = self.wav_models.borrow_mut();
+            if rebuild_models || !models.is_synced(entries.len()) {
+                models.rebuild(entries.as_slice(), selected_index, loaded_index)
+            } else {
+                let selected_path = selected_index
+                    .and_then(|i| entries.get(i))
+                    .map(|e| e.relative_path.as_path());
+                let loaded_path = loaded_index
+                    .and_then(|i| entries.get(i))
+                    .map(|e| e.relative_path.as_path());
+                models.update_selection(entries.as_slice(), selected_path, loaded_path)
             }
-            let row = Self::wav_row(entry, selected, loaded);
-            match entry.tag {
-                SampleTag::Trash => {
-                    if selected {
-                        selected_target = Some((SampleTag::Trash, trash_rows.len()));
-                    }
-                    trash_rows.push(row);
-                }
-                SampleTag::Neutral => {
-                    if selected {
-                        selected_target = Some((SampleTag::Neutral, neutral_rows.len()));
-                    }
-                    neutral_rows.push(row);
-                }
-                SampleTag::Keep => {
-                    if selected {
-                        selected_target = Some((SampleTag::Keep, keep_rows.len()));
-                    }
-                    keep_rows.push(row);
-                }
-            }
-        }
-
-        let trash_model = Rc::new(slint::VecModel::from(trash_rows));
-        app.set_wavs_trash(trash_model.into());
-        let neutral_model = Rc::new(slint::VecModel::from(neutral_rows));
-        app.set_wavs_neutral(neutral_model.into());
-        let keep_model = Rc::new(slint::VecModel::from(keep_rows));
-        app.set_wavs_keep(keep_model.into());
-
-        let (selected_trash, selected_neutral, selected_keep) = match selected_target {
-            Some((SampleTag::Trash, index)) => (index as i32, -1, -1),
-            Some((SampleTag::Neutral, index)) => (-1, index as i32, -1),
-            Some((SampleTag::Keep, index)) => (-1, -1, index as i32),
-            None => (-1, -1, -1),
         };
-
-        app.set_selected_trash(selected_trash);
-        app.set_selected_neutral(selected_neutral);
-        app.set_selected_keep(selected_keep);
+        let (trash_model, neutral_model, keep_model) = self.wav_models.borrow().models();
+        app.set_wavs_trash(trash_model.into());
+        app.set_wavs_neutral(neutral_model.into());
+        app.set_wavs_keep(keep_model.into());
+        Self::apply_selection_to_app(app, selected_target);
         self.scroll_wavs_to(app, selected_target);
-        app.set_loaded_wav_path(loaded_path.into());
+        app.set_loaded_wav_path(loaded_path.unwrap_or_default().into());
     }
 
     pub(super) fn entry_index(entries: &[WavEntry], target: &Option<PathBuf>) -> Option<usize> {
@@ -351,6 +344,18 @@ impl DropHandler {
                 .iter()
                 .position(|entry| &entry.relative_path == path)
         })
+    }
+
+    fn apply_selection_to_app(app: &HelloWorld, selected: Option<(SampleTag, usize)>) {
+        let (selected_trash, selected_neutral, selected_keep) = match selected {
+            Some((SampleTag::Trash, index)) => (index as i32, -1, -1),
+            Some((SampleTag::Neutral, index)) => (-1, index as i32, -1),
+            Some((SampleTag::Keep, index)) => (-1, -1, index as i32),
+            None => (-1, -1, -1),
+        };
+        app.set_selected_trash(selected_trash);
+        app.set_selected_neutral(selected_neutral);
+        app.set_selected_keep(selected_keep);
     }
 
     /// Fetch or open the cached database for a sample source.
@@ -428,7 +433,7 @@ impl DropHandler {
             self.wav_entries.borrow_mut().clear();
             self.selected_wav.borrow_mut().take();
             self.loaded_wav.borrow_mut().take();
-            self.update_wav_view(app);
+            self.update_wav_view(app, true);
         }
     }
 

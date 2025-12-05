@@ -18,6 +18,7 @@ use crate::sample_sources::{
 };
 use crate::selection::{SelectionEdge, SelectionRange, SelectionState};
 use crate::ui::{HelloWorld, SourceRow, WavRow};
+use crate::waveform::LoadedWaveform;
 use crate::waveform::WaveformRenderer;
 use rfd::FileDialog;
 use slint::winit_030::{
@@ -28,16 +29,21 @@ use slint::winit_030::{
 use slint::{Color, ComponentHandle, SharedString};
 
 mod callbacks;
+mod loading;
 mod navigation;
 mod playback;
 mod scan;
 mod sources;
 mod tags;
 mod view;
+mod wavs;
+use self::loading::{WaveformCache, WaveformJob, WaveformJobResult};
 use self::tags::TagStep;
+use self::wavs::WavModels;
 
 /// Minimum normalized width for a selection to count as usable.
 const MIN_SELECTION_WIDTH: f32 = 0.001;
+const WAVEFORM_CACHE_CAPACITY: usize = 6;
 
 struct ScanJobResult {
     source_id: SourceId,
@@ -78,12 +84,23 @@ pub struct DropHandler {
     loop_enabled: Rc<RefCell<bool>>,
     selection_drag_looping: Rc<RefCell<bool>>,
     modifiers: Rc<RefCell<ModifiersState>>,
+    waveform_tx: Sender<WaveformJob>,
+    waveform_rx: Rc<RefCell<Receiver<WaveformJobResult>>>,
+    waveform_poll_timer: Rc<slint::Timer>,
+    waveform_cache: Rc<RefCell<WaveformCache>>,
+    wav_models: Rc<RefCell<WavModels>>,
 }
 
 impl DropHandler {
     /// Create a new handler with shared waveform renderer and audio player.
     pub fn new(renderer: WaveformRenderer, player: Rc<RefCell<AudioPlayer>>) -> Self {
         let (scan_tx, scan_rx) = mpsc::channel();
+        let (waveform_tx, waveform_rx_raw) = mpsc::channel();
+        let (waveform_result_tx, waveform_result_rx) = mpsc::channel();
+        let worker_renderer = renderer.clone();
+        thread::spawn(move || {
+            loading::run_waveform_worker(worker_renderer, waveform_rx_raw, waveform_result_tx)
+        });
         Self {
             app: Rc::new(RefCell::new(None)),
             renderer,
@@ -106,6 +123,11 @@ impl DropHandler {
             loop_enabled: Rc::new(RefCell::new(false)),
             selection_drag_looping: Rc::new(RefCell::new(false)),
             modifiers: Rc::new(RefCell::new(ModifiersState::empty())),
+            waveform_tx,
+            waveform_rx: Rc::new(RefCell::new(waveform_result_rx)),
+            waveform_poll_timer: Rc::new(slint::Timer::default()),
+            waveform_cache: Rc::new(RefCell::new(WaveformCache::new(WAVEFORM_CACHE_CAPACITY))),
+            wav_models: Rc::new(RefCell::new(WavModels::new())),
         }
     }
 
@@ -118,6 +140,7 @@ impl DropHandler {
         app.set_loop_enabled(*self.loop_enabled.borrow());
         self.load_sources(app);
         self.start_scan_polling();
+        self.start_waveform_polling();
     }
 
     fn app(&self) -> Option<HelloWorld> {
@@ -128,6 +151,7 @@ impl DropHandler {
         *self.shutting_down.borrow_mut() = true;
         self.flush_pending_tags();
         self.scan_poll_timer.stop();
+        self.waveform_poll_timer.stop();
         self.playhead_timer.stop();
         self.player.borrow_mut().stop();
         mem::forget(self.player.clone());

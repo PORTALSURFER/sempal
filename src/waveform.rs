@@ -10,6 +10,12 @@ pub struct LoadedWaveform {
     pub duration_seconds: f32,
 }
 
+/// Raw audio data decoded from a wav file, ready to render or play.
+pub struct DecodedWaveform {
+    pub samples: Vec<f32>,
+    pub duration_seconds: f32,
+}
+
 /// Renders averaged waveforms from wav samples.
 #[derive(Clone)]
 pub struct WaveformRenderer {
@@ -47,13 +53,27 @@ impl WaveformRenderer {
     pub fn load_waveform(&self, path: &Path) -> Result<LoadedWaveform, String> {
         let bytes = std::fs::read(path)
             .map_err(|error| format!("Failed to read {}: {error}", path.display()))?;
-        let (samples, duration_seconds) = self.load_samples(&bytes)?;
-        let image = self.render_waveform(&samples);
+        let decoded = self.decode_from_bytes(&bytes)?;
+        let image = self.render_from_samples(&decoded.samples);
         Ok(LoadedWaveform {
             image,
             audio_bytes: bytes,
+            duration_seconds: decoded.duration_seconds,
+        })
+    }
+
+    /// Decode wav bytes into samples and duration without rendering.
+    pub fn decode_from_bytes(&self, bytes: &[u8]) -> Result<DecodedWaveform, String> {
+        let (samples, duration_seconds) = self.load_samples(bytes)?;
+        Ok(DecodedWaveform {
+            samples,
             duration_seconds,
         })
+    }
+
+    /// Render an `Image` from already-decoded samples.
+    pub fn render_from_samples(&self, samples: &[f32]) -> Image {
+        self.render_waveform(samples)
     }
 
     /// Decode bytes into mono samples and duration seconds.

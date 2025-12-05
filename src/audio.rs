@@ -1,6 +1,5 @@
 use std::{
     io::Cursor,
-    thread,
     time::{Duration, Instant},
 };
 
@@ -158,19 +157,10 @@ impl AudioPlayer {
         }
     }
 
-    /// Fade out the current sink briefly before dropping it to avoid clicks when restarting.
+    /// Mute and stop the current sink without blocking the UI thread.
     fn fade_out_current_sink(&mut self) {
         if let Some(sink) = self.sink.take() {
-            let initial_volume = sink.volume();
-            // Apply a short blocking fade so the new sink doesn't overlap the old one.
-            let steps: u32 = 10;
-            let fade_length = Duration::from_millis(12);
-            let step_duration = fade_length / steps;
-            for step in 0..steps {
-                let factor = 1.0 - (step + 1) as f32 / steps as f32;
-                sink.set_volume((initial_volume * factor).max(0.0));
-                thread::sleep(step_duration);
-            }
+            sink.set_volume(0.0);
             sink.stop();
         }
     }
