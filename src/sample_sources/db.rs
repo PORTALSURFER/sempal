@@ -16,6 +16,7 @@ pub enum SampleTag {
 }
 
 impl SampleTag {
+    /// Convert the tag to a SQLite-friendly integer.
     pub fn as_i64(self) -> i64 {
         match self {
             SampleTag::Neutral => 0,
@@ -24,6 +25,7 @@ impl SampleTag {
         }
     }
 
+    /// Parse an integer column value into a tag.
     pub fn from_i64(value: i64) -> Self {
         match value {
             1 => SampleTag::Keep,
@@ -56,6 +58,10 @@ pub enum SourceDbError {
     },
     #[error("Path must be relative to the source root: {0}")]
     PathMustBeRelative(PathBuf),
+    #[error("Database is busy, please retry")]
+    Busy,
+    #[error("SQLite returned an unexpected result")]
+    Unexpected,
 }
 
 /// SQLite wrapper that stores wav metadata for a single source folder.
@@ -97,18 +103,22 @@ impl SourceDatabase {
         modified_ns: i64,
     ) -> Result<(), SourceDbError> {
         let path = normalize_relative_path(relative_path)?;
-        let mut stmt = self.connection.prepare_cached(
-            "INSERT INTO wav_files (path, file_size, modified_ns, tag)
-             VALUES (?1, ?2, ?3, ?4)
-             ON CONFLICT(path) DO UPDATE SET file_size = excluded.file_size,
-                                            modified_ns = excluded.modified_ns",
-        )?;
+        let mut stmt = self
+            .connection
+            .prepare_cached(
+                "INSERT INTO wav_files (path, file_size, modified_ns, tag)
+                 VALUES (?1, ?2, ?3, ?4)
+                 ON CONFLICT(path) DO UPDATE SET file_size = excluded.file_size,
+                                                modified_ns = excluded.modified_ns",
+            )
+            .map_err(Self::map_sql_error)?;
         stmt.execute(params![
             path,
             file_size as i64,
             modified_ns,
             SampleTag::Neutral.as_i64()
-        ])?;
+        ])
+        .map_err(Self::map_sql_error)?;
         Ok(())
     }
 
@@ -141,7 +151,8 @@ impl SourceDatabase {
     pub fn list_files(&self) -> Result<Vec<WavEntry>, SourceDbError> {
         let mut stmt = self
             .connection
-            .prepare("SELECT path, file_size, modified_ns, tag FROM wav_files ORDER BY path ASC")?;
+            .prepare("SELECT path, file_size, modified_ns, tag FROM wav_files ORDER BY path ASC")
+            .map_err(Self::map_sql_error)?;
         let rows = stmt
             .query_map([], |row| {
                 let path: String = row.get(0)?;
@@ -151,14 +162,19 @@ impl SourceDatabase {
                     modified_ns: row.get(2)?,
                     tag: SampleTag::from_i64(row.get(3)?),
                 })
-            })?
-            .collect::<Result<Vec<_>, _>>()?;
+            })
+            .map_err(Self::map_sql_error)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(Self::map_sql_error)?;
         Ok(rows)
     }
 
     /// Start a write batch that wraps related mutations in a single transaction.
     pub fn write_batch(&self) -> Result<SourceWriteBatch<'_>, SourceDbError> {
-        let tx = self.connection.unchecked_transaction()?;
+        let tx = self
+            .connection
+            .unchecked_transaction()
+            .map_err(Self::map_sql_error)?;
         Ok(SourceWriteBatch { tx })
     }
 
@@ -167,7 +183,8 @@ impl SourceDatabase {
             "PRAGMA journal_mode=WAL;
              PRAGMA synchronous = NORMAL;
              PRAGMA foreign_keys=ON;",
-        )?;
+        )
+        .map_err(Self::map_sql_error)?;
         Ok(())
     }
 
@@ -183,9 +200,22 @@ impl SourceDatabase {
                 modified_ns INTEGER NOT NULL,
                 tag INTEGER NOT NULL DEFAULT 0
             );",
-        )?;
+        )
+        .map_err(Self::map_sql_error)?;
         ensure_tag_column(&self.connection)?;
         Ok(())
+    }
+
+    fn map_sql_error(err: rusqlite::Error) -> SourceDbError {
+        match err {
+            rusqlite::Error::SqliteFailure(sql_err, _) if sql_err.extended_code == rusqlite::ffi::SQLITE_BUSY => {
+                SourceDbError::Busy
+            }
+            rusqlite::Error::InvalidQuery
+            | rusqlite::Error::InvalidParameterName(_)
+            | rusqlite::Error::MultipleStatement => SourceDbError::Unexpected,
+            other => SourceDbError::Sql(other),
+        }
     }
 }
 
