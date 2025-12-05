@@ -1,3 +1,5 @@
+- lets do a housekeeping pass, clean up the codebase, improve maintainability, add missing docs, find and resolve bugs, improve performance, etc.
+
 - currently moving up/down the samples list is slow, I think because it we are waiting on the sample to fully load first. lets decouple this so the user can move through samples quickly if they like. however, lets also implement strategies to make sample loading much fast, it seems quite slow now.
 
 - lets add 2 more lists to the main list, so it turns into 3 colums, lets move trashed samples to the left column, removing them from the center list, and move keep samples to the right column, also removing them from the center list.
