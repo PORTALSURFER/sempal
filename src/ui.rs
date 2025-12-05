@@ -340,7 +340,7 @@ slint::slint! {
                                         source: root.waveform;
                                         width: parent.width;
                                         height: parent.height;
-                                        image-fit: stretch;
+                                        image-fit: fill;
                                         colorize: #00000000;
                                     }
 
