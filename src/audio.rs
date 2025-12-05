@@ -1,5 +1,6 @@
 use std::{
     io::Cursor,
+    thread,
     time::{Duration, Instant},
 };
 
@@ -89,9 +90,7 @@ impl AudioPlayer {
             return Err("Load a .wav file first".into());
         }
 
-        if let Some(sink) = self.sink.take() {
-            sink.stop();
-        }
+        self.fade_out_current_sink();
 
         let offset = start_seconds.clamp(0.0, duration);
         let mut source = Decoder::new(Cursor::new(bytes))
@@ -99,6 +98,7 @@ impl AudioPlayer {
         source
             .try_seek(Duration::from_secs_f32(offset))
             .map_err(Self::map_seek_error)?;
+        let source = source.fade_in(Duration::from_millis(5));
 
         let sink =
             Sink::try_new(&self.handle).map_err(|error| format!("Audio output failed: {error}"))?;
@@ -116,6 +116,23 @@ impl AudioPlayer {
             }
             rodio::source::SeekError::HoundDecoder(err) => format!("Audio seek failed: {err}"),
             _ => format!("Audio seek failed: {error}"),
+        }
+    }
+
+    /// Fade out the current sink briefly before dropping it to avoid clicks when restarting.
+    fn fade_out_current_sink(&mut self) {
+        if let Some(sink) = self.sink.take() {
+            let initial_volume = sink.volume();
+            thread::spawn(move || {
+                let steps: u32 = 5;
+                let step_duration = Duration::from_millis(5) / steps;
+                for step in 0..steps {
+                    let factor = 1.0 - (step + 1) as f32 / steps as f32;
+                    sink.set_volume((initial_volume * factor).max(0.0));
+                    thread::sleep(step_duration);
+                }
+                sink.stop();
+            });
         }
     }
 }

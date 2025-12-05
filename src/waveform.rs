@@ -114,10 +114,6 @@ impl WaveformRenderer {
             return cols;
         }
 
-        let max_amp = samples
-            .iter()
-            .fold(0.0_f32, |m, v| m.max(v.abs()))
-            .max(1e-6);
         let chunk = (samples.len() / self.width as usize).max(1);
 
         for (x, col) in cols.iter_mut().enumerate() {
@@ -129,9 +125,9 @@ impl WaveformRenderer {
             let mut min: f32 = 1.0;
             let mut max: f32 = -1.0;
             for &sample in &samples[start..end] {
-                let v = (sample / max_amp).clamp(-1.0, 1.0);
-                min = min.min(v);
-                max = max.max(v);
+                let clamped = sample.clamp(-1.0, 1.0);
+                min = min.min(clamped);
+                max = max.max(clamped);
             }
             *col = (min, max);
         }
@@ -164,5 +160,23 @@ impl WaveformRenderer {
                 pixels[y as usize * stride + x] = self.foreground;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn samples_are_not_normalized() {
+        let renderer = WaveformRenderer::new(2, 4);
+        let samples = [0.1, 0.2, 0.3, 0.4];
+
+        let columns = renderer.sample_columns(&samples);
+
+        assert_eq!(
+            columns,
+            vec![(0.1, 0.2), (0.3, 0.4)]
+        );
     }
 }
