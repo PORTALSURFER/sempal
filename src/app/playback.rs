@@ -156,7 +156,11 @@ impl DropHandler {
         } else if let Some(app) = self.app() {
             self.set_status(
                 &app,
-                if enabled { "Loop enabled" } else { "Loop disabled" },
+                if enabled {
+                    "Loop enabled"
+                } else {
+                    "Loop disabled"
+                },
                 StatusState::Info,
             );
         }
@@ -242,7 +246,11 @@ impl DropHandler {
     fn playback_started(&self, app: &HelloWorld, looped: bool) -> EventResult {
         self.set_status(
             app,
-            if looped { "Looping selection" } else { "Playing audio" },
+            if looped {
+                "Looping selection"
+            } else {
+                "Playing audio"
+            },
             StatusState::Info,
         );
         self.start_playhead_updates();

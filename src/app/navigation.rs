@@ -1,5 +1,9 @@
 /// Compute a new selection index clamped to the bounds of the wav list.
-pub(super) fn compute_target_index(current: Option<usize>, len: usize, delta: isize) -> Option<usize> {
+pub(super) fn compute_target_index(
+    current: Option<usize>,
+    len: usize,
+    delta: isize,
+) -> Option<usize> {
     if len == 0 {
         return None;
     }

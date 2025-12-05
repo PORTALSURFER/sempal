@@ -11,11 +11,11 @@ use std::{
 
 use crate::audio::AudioPlayer;
 use crate::sample_sources::config::{self, AppConfig};
+use crate::sample_sources::scanner::scan_once;
 use crate::sample_sources::{
     SampleSource, SampleTag, ScanError, ScanStats, ScanTracker, SourceDatabase, SourceDbError,
     SourceId, WavEntry,
 };
-use crate::sample_sources::scanner::scan_once;
 use crate::selection::{SelectionEdge, SelectionRange, SelectionState};
 use crate::ui::{HelloWorld, SourceRow, WavRow};
 use crate::waveform::WaveformRenderer;
