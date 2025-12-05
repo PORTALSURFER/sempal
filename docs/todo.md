@@ -21,5 +21,5 @@ this should be an additional flag, this action should dont move the sample, it s
 lets also make it possible for the user to drag down the topbar to unstick the fullscreen mode into a windowed mode
 and add a 'go fullscreen' button to the topbar next to the x for closing
 
-
+- lets adjust the look and feel of everything so we have had rectangled everything, never round corners, if we must have soft corners, use a diagonal cut, very hard sci fi in terms of looks. 
 

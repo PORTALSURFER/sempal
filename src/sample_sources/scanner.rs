@@ -38,6 +38,7 @@ pub enum ScanError {
 }
 
 /// Recursively scan the source root, syncing .wav files into the database.
+/// Returns counts of added/updated/removed wav rows.
 pub fn scan_once(db: &SourceDatabase) -> Result<ScanStats, ScanError> {
     let root = ensure_root_dir(db)?;
     let mut stats = ScanStats::default();
@@ -52,6 +53,7 @@ pub fn scan_once(db: &SourceDatabase) -> Result<ScanStats, ScanError> {
 }
 
 /// Spawn a background thread that opens the source database and performs one scan.
+/// Useful for fire-and-forget refreshes without blocking the UI thread.
 pub fn scan_in_background(root: PathBuf) -> thread::JoinHandle<Result<ScanStats, ScanError>> {
     thread::spawn(move || {
         let db = SourceDatabase::open(root)?;
@@ -220,5 +222,31 @@ mod tests {
         let third = scan_once(&db).unwrap();
         assert_eq!(third.removed, 1);
         assert_eq!(db.list_files().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn scan_ignores_non_wav_and_counts_nested() {
+        let dir = tempdir().unwrap();
+        let nested = dir.path().join("nested");
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::write(dir.path().join("one.wav"), b"one").unwrap();
+        std::fs::write(nested.join("two.wav"), b"two").unwrap();
+        std::fs::write(dir.path().join("ignore.txt"), b"text").unwrap();
+
+        let db = SourceDatabase::open(dir.path()).unwrap();
+        let stats = scan_once(&db).unwrap();
+        assert_eq!(stats.added, 2);
+        assert_eq!(stats.total_files, 2);
+        let rows = db.list_files().unwrap();
+        assert_eq!(rows.len(), 2);
+    }
+
+    #[test]
+    fn scan_in_background_finishes() {
+        let dir = tempdir().unwrap();
+        std::fs::write(dir.path().join("one.wav"), b"one").unwrap();
+        let handle = scan_in_background(dir.path().to_path_buf());
+        let stats = handle.join().unwrap().unwrap();
+        assert_eq!(stats.added, 1);
     }
 }

@@ -35,6 +35,11 @@ impl SelectionRange {
     pub fn width(&self) -> f32 {
         (self.end - self.start).abs()
     }
+
+    /// True when the selection has zero width.
+    pub fn is_empty(&self) -> bool {
+        self.width() == 0.0
+    }
 }
 
 /// The selection edge being dragged.
@@ -147,6 +152,13 @@ mod tests {
         let range = SelectionRange::new(0.8, 0.2);
         assert_eq!(range.start(), 0.2);
         assert_eq!(range.end(), 0.8);
+    }
+
+    #[test]
+    fn empty_range_reports_zero_width() {
+        let range = SelectionRange::new(0.5, 0.5);
+        assert!(range.is_empty());
+        assert_eq!(range.width(), 0.0);
     }
 
     #[test]
