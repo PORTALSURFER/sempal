@@ -4,12 +4,12 @@ use crate::audio::AudioPlayer;
 use crate::file_browser::{EntryAction, FileBrowser, FileEntry};
 use crate::ui::{FileRow, HelloWorld};
 use crate::waveform::WaveformRenderer;
+use slint::ComponentHandle;
 use slint::winit_030::{
     self, CustomApplicationHandler, EventResult,
     winit::event::{ElementState, WindowEvent},
     winit::keyboard::{KeyCode, PhysicalKey},
 };
-use slint::ComponentHandle;
 
 #[derive(Clone)]
 pub struct DropHandler {
@@ -74,9 +74,7 @@ impl DropHandler {
         if index < 0 {
             return;
         }
-        self.file_browser
-            .borrow_mut()
-            .select_disk(index as usize);
+        self.file_browser.borrow_mut().select_disk(index as usize);
         self.refresh_disks(&app);
         self.refresh_files(&app);
     }
@@ -151,10 +149,7 @@ impl DropHandler {
     }
 
     fn app(&self) -> Option<HelloWorld> {
-        self.app
-            .borrow()
-            .as_ref()
-            .and_then(|a| a.upgrade())
+        self.app.borrow().as_ref().and_then(|a| a.upgrade())
     }
 
     fn refresh_disks(&self, app: &HelloWorld) {

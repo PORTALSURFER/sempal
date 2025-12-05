@@ -94,8 +94,8 @@ impl AudioPlayer {
         }
 
         let offset = start_seconds.clamp(0.0, duration);
-        let mut source =
-            Decoder::new(Cursor::new(bytes)).map_err(|error| format!("Audio decode failed: {error}"))?;
+        let mut source = Decoder::new(Cursor::new(bytes))
+            .map_err(|error| format!("Audio decode failed: {error}"))?;
         source
             .try_seek(Duration::from_secs_f32(offset))
             .map_err(Self::map_seek_error)?;
