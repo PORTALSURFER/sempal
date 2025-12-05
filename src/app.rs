@@ -678,6 +678,7 @@ impl DropHandler {
             .unwrap_or(-1);
         app.set_selected_source(index);
         app.set_source_menu_index(-1);
+        self.scroll_sources_to(app, index);
     }
 
     fn select_first_source(&self, app: &HelloWorld) {
@@ -789,12 +790,26 @@ impl DropHandler {
             .collect::<Vec<_>>();
         let model = Rc::new(slint::VecModel::from(rows));
         app.set_wavs(model.into());
-        app.set_selected_wav(selected_index.map(|i| i as i32).unwrap_or(-1));
+        let selected = selected_index.map(|i| i as i32).unwrap_or(-1);
+        app.set_selected_wav(selected);
+        self.scroll_wavs_to(app, selected);
         let loaded_path = loaded_index
             .and_then(|i| entries.get(i))
             .map(|entry| entry.relative_path.to_string_lossy().to_string())
             .unwrap_or_default();
         app.set_loaded_wav_path(loaded_path.into());
+    }
+
+    fn scroll_sources_to(&self, app: &HelloWorld, index: i32) {
+        if index >= 0 {
+            app.invoke_scroll_sources_to(index);
+        }
+    }
+
+    fn scroll_wavs_to(&self, app: &HelloWorld, index: i32) {
+        if index >= 0 {
+            app.invoke_scroll_wavs_to(index);
+        }
     }
 
     fn entry_index(entries: &[WavEntry], target: &Option<PathBuf>) -> Option<usize> {
