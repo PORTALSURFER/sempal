@@ -184,39 +184,55 @@ impl DropHandler {
         self.player.borrow_mut().stop();
         self.playhead_timer.stop();
         app.set_playhead_visible(false);
-        let range = self.selection.borrow_mut().begin_new(position);
+        let range = {
+            let mut selection = self.selection.borrow_mut();
+            selection.begin_new(position)
+        };
         self.apply_selection(&app, Some(range));
     }
 
     pub fn update_selection_drag(&self, position: f32) {
         let Some(app) = self.app() else { return };
-        if let Some(range) = self.selection.borrow_mut().update_drag(position) {
+        let next_range = {
+            let mut selection = self.selection.borrow_mut();
+            selection.update_drag(position)
+        };
+        if let Some(range) = next_range {
             self.apply_selection(&app, Some(range));
         }
     }
 
     pub fn finish_selection_drag(&self) {
         self.selection.borrow_mut().finish_drag();
+        self.restart_loop_if_active();
     }
 
     pub fn clear_selection_request(&self) {
         let Some(app) = self.app() else { return };
-        if self.selection.borrow_mut().clear() {
+        let cleared = self.selection.borrow_mut().clear();
+        if cleared {
             self.apply_selection(&app, None);
         }
     }
 
     pub fn begin_edge_drag(&self, edge: SelectionEdge) {
         let Some(app) = self.app() else { return };
-        if self.selection.borrow_mut().begin_edge_drag(edge) {
-            if let Some(range) = self.selection.borrow().range() {
-                self.apply_selection(&app, Some(range));
+        let range = {
+            let mut selection = self.selection.borrow_mut();
+            if selection.begin_edge_drag(edge) {
+                selection.range()
+            } else {
+                None
             }
+        };
+        if let Some(range) = range {
+            self.apply_selection(&app, Some(range));
         }
     }
 
     fn clear_selection(&self, app: &HelloWorld) {
-        if self.selection.borrow_mut().clear() {
+        let cleared = self.selection.borrow_mut().clear();
+        if cleared {
             self.apply_selection(app, None);
         }
     }
@@ -243,13 +259,13 @@ impl DropHandler {
     }
 
     fn apply_selection(&self, app: &HelloWorld, range: Option<SelectionRange>) {
+        let dragging = self.selection.borrow().is_dragging();
         if let Some(range) = range.or_else(|| self.selection.borrow().range()) {
             app.set_selection_visible(true);
             app.set_selection_start(range.start());
             app.set_selection_end(range.end());
-            if *self.loop_enabled.borrow() && self.player.borrow().is_playing() {
-                let progress = self.player.borrow().progress();
-                self.restart_playback(true, self.usable_selection(), progress);
+            if !dragging {
+                self.restart_loop_if_active();
             }
         } else {
             app.set_selection_visible(false);
@@ -277,9 +293,7 @@ impl DropHandler {
         let span = selection
             .filter(|range| range.width() >= MIN_SELECTION_WIDTH)
             .unwrap_or_else(|| SelectionRange::new(0.0, 1.0));
-        let start = resume_from
-            .unwrap_or(span.start())
-            .clamp(span.start(), span.end());
+        let start = Self::resume_point(&span, resume_from);
         player.play_range(start, span.end(), looped)
     }
 
@@ -306,10 +320,29 @@ impl DropHandler {
         }
     }
 
+    fn resume_point(span: &SelectionRange, resume_from: Option<f32>) -> f32 {
+        let start = span.start();
+        let end = span.end();
+        if let Some(position) = resume_from {
+            if position >= start && position < end {
+                return position;
+            }
+        }
+        start
+    }
+
     fn set_loop_enabled(&self, enabled: bool) {
         self.loop_enabled.replace(enabled);
         if let Some(app) = self.app() {
             app.set_loop_enabled(enabled);
+        }
+    }
+
+    fn restart_loop_if_active(&self) {
+        if *self.loop_enabled.borrow() && self.player.borrow().is_playing() {
+            let selection = self.usable_selection();
+            let restart_from = selection.as_ref().map(|range| range.start());
+            self.restart_playback(true, selection, restart_from);
         }
     }
 
@@ -1179,6 +1212,26 @@ mod tests {
     fn compute_target_index_handles_empty() {
         assert_eq!(compute_target_index(None, 0, 1), None);
         assert_eq!(compute_target_index(Some(0), 0, 1), None);
+    }
+
+    #[test]
+    fn resume_point_returns_within_span() {
+        let span = SelectionRange::new(0.2, 0.6);
+        let position = DropHandler::resume_point(&span, Some(0.4));
+        assert_eq!(position, 0.4);
+    }
+
+    #[test]
+    fn resume_point_out_of_span_defaults_to_start() {
+        let span = SelectionRange::new(0.2, 0.6);
+        assert_eq!(DropHandler::resume_point(&span, Some(0.9)), 0.2);
+        assert_eq!(DropHandler::resume_point(&span, Some(0.1)), 0.2);
+    }
+
+    #[test]
+    fn resume_point_at_end_defaults_to_start() {
+        let span = SelectionRange::new(0.2, 0.6);
+        assert_eq!(DropHandler::resume_point(&span, Some(0.6)), 0.2);
     }
 
     #[test]
