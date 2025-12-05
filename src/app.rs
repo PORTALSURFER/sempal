@@ -51,6 +51,7 @@ pub struct DropHandler {
     selection: Rc<RefCell<SelectionState>>,
     loop_enabled: Rc<RefCell<bool>>,
     selection_drag_looping: Rc<RefCell<bool>>,
+    modifiers: Rc<RefCell<ModifiersState>>,
 }
 
 struct ScanJobResult {
@@ -91,6 +92,7 @@ impl DropHandler {
             selection: Rc::new(RefCell::new(SelectionState::new())),
             loop_enabled: Rc::new(RefCell::new(false)),
             selection_drag_looping: Rc::new(RefCell::new(false)),
+            modifiers: Rc::new(RefCell::new(ModifiersState::empty())),
         }
     }
 
@@ -1088,10 +1090,14 @@ impl CustomApplicationHandler for DropHandler {
                 let _ = slint::quit_event_loop();
                 EventResult::PreventDefault
             }
+            WindowEvent::ModifiersChanged(modifiers) => {
+                self.modifiers.replace(modifiers.state());
+                EventResult::Propagate
+            }
             WindowEvent::KeyboardInput { event, .. }
                 if event.state == ElementState::Pressed && !event.repeat =>
             {
-                let modifiers = event.modifiers.state();
+                let modifiers = *self.modifiers.borrow();
                 match event.physical_key {
                     PhysicalKey::Code(KeyCode::Space) => {
                         if modifiers.contains(ModifiersState::CONTROL) {
