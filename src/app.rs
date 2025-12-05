@@ -25,7 +25,7 @@ use rfd::FileDialog;
 use slint::winit_030::{
     self, CustomApplicationHandler, EventResult,
     winit::event::{ElementState, WindowEvent},
-    winit::keyboard::{KeyCode, PhysicalKey},
+    winit::keyboard::{KeyCode, ModifiersState, PhysicalKey},
 };
 use slint::{Color, ComponentHandle, SharedString};
 
@@ -50,6 +50,7 @@ pub struct DropHandler {
     shutting_down: Rc<RefCell<bool>>,
     selection: Rc<RefCell<SelectionState>>,
     loop_enabled: Rc<RefCell<bool>>,
+    selection_drag_looping: Rc<RefCell<bool>>,
 }
 
 struct ScanJobResult {
@@ -89,6 +90,7 @@ impl DropHandler {
             shutting_down: Rc::new(RefCell::new(false)),
             selection: Rc::new(RefCell::new(SelectionState::new())),
             loop_enabled: Rc::new(RefCell::new(false)),
+            selection_drag_looping: Rc::new(RefCell::new(false)),
         }
     }
 
@@ -181,6 +183,8 @@ impl DropHandler {
 
     pub fn start_selection_drag(&self, position: f32) {
         let Some(app) = self.app() else { return };
+        let was_looping = *self.loop_enabled.borrow() && self.player.borrow().is_playing();
+        self.selection_drag_looping.replace(was_looping);
         self.player.borrow_mut().stop();
         self.playhead_timer.stop();
         app.set_playhead_visible(false);
@@ -204,7 +208,9 @@ impl DropHandler {
 
     pub fn finish_selection_drag(&self) {
         self.selection.borrow_mut().finish_drag();
-        self.restart_loop_if_active();
+        let should_restart = *self.selection_drag_looping.borrow();
+        self.selection_drag_looping.replace(false);
+        self.restart_loop_if_active(should_restart);
     }
 
     pub fn clear_selection_request(&self) {
@@ -265,7 +271,7 @@ impl DropHandler {
             app.set_selection_start(range.start());
             app.set_selection_end(range.end());
             if !dragging {
-                self.restart_loop_if_active();
+                self.restart_loop_if_active(false);
             }
         } else {
             app.set_selection_visible(false);
@@ -338,8 +344,8 @@ impl DropHandler {
         }
     }
 
-    fn restart_loop_if_active(&self) {
-        if *self.loop_enabled.borrow() && self.player.borrow().is_playing() {
+    fn restart_loop_if_active(&self, force: bool) {
+        if *self.loop_enabled.borrow() && (force || self.player.borrow().is_playing()) {
             let selection = self.usable_selection();
             let restart_from = selection.as_ref().map(|range| range.start());
             self.restart_playback(true, selection, restart_from);
@@ -1085,9 +1091,26 @@ impl CustomApplicationHandler for DropHandler {
             WindowEvent::KeyboardInput { event, .. }
                 if event.state == ElementState::Pressed && !event.repeat =>
             {
+                let modifiers = event.modifiers.state();
                 match event.physical_key {
                     PhysicalKey::Code(KeyCode::Space) => {
-                        self.play_audio(*self.loop_enabled.borrow())
+                        if modifiers.contains(ModifiersState::CONTROL) {
+                            if self.player.borrow().is_playing() && *self.loop_enabled.borrow() {
+                                self.player.borrow_mut().stop();
+                                self.playhead_timer.stop();
+                                self.set_loop_enabled(false);
+                                if let Some(app) = self.app() {
+                                    app.set_playhead_visible(false);
+                                    self.set_status(&app, "Loop stopped", StatusState::Info);
+                                }
+                                EventResult::PreventDefault
+                            } else {
+                                self.set_loop_enabled(true);
+                                self.play_audio(true)
+                            }
+                        } else {
+                            self.play_audio(*self.loop_enabled.borrow())
+                        }
                     }
                     PhysicalKey::Code(KeyCode::ArrowUp) => {
                         if self.move_selection(-1) {
