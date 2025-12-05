@@ -1,0 +1,192 @@
+use std::{
+    collections::HashMap,
+    fs,
+    path::{Path, PathBuf},
+    thread,
+    time::{SystemTime, UNIX_EPOCH},
+};
+
+use thiserror::Error;
+
+use super::SourceDatabase;
+use super::SourceDbError;
+use super::db::WavEntry;
+
+/// Summary of a scan run.
+#[derive(Debug, Default, Clone)]
+pub struct ScanStats {
+    pub added: usize,
+    pub updated: usize,
+    pub removed: usize,
+    pub total_files: usize,
+}
+
+/// Errors that can occur while scanning a source folder.
+#[derive(Debug, Error)]
+pub enum ScanError {
+    #[error("Source root is not a directory: {0}")]
+    InvalidRoot(PathBuf),
+    #[error("Failed to read {path}: {source}")]
+    Io {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+    #[error("Database error: {0}")]
+    Db(#[from] SourceDbError),
+    #[error("Time conversion failed for {path}")]
+    Time { path: PathBuf },
+}
+
+/// Recursively scan the source root, syncing .wav files into the database.
+pub fn scan_once(db: &SourceDatabase) -> Result<ScanStats, ScanError> {
+    let root = ensure_root_dir(db)?;
+    let mut stats = ScanStats::default();
+    let mut existing = index_existing(db)?;
+    visit_dir(&root, &mut |path| {
+        sync_file(db, &root, path, &mut existing, &mut stats)
+    })?;
+    remove_missing(db, existing, &mut stats)?;
+    Ok(stats)
+}
+
+/// Spawn a background thread that opens the source database and performs one scan.
+pub fn scan_in_background(root: PathBuf) -> thread::JoinHandle<Result<ScanStats, ScanError>> {
+    thread::spawn(move || {
+        let db = SourceDatabase::open(root)?;
+        scan_once(&db)
+    })
+}
+
+fn index_existing(db: &SourceDatabase) -> Result<HashMap<PathBuf, WavEntry>, ScanError> {
+    let entries = db.list_files()?;
+    Ok(entries
+        .into_iter()
+        .map(|entry| (entry.relative_path.clone(), entry))
+        .collect())
+}
+
+fn visit_dir(
+    root: &Path,
+    visitor: &mut impl FnMut(&Path) -> Result<(), ScanError>,
+) -> Result<(), ScanError> {
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let entries = fs::read_dir(&dir).map_err(|source| ScanError::Io {
+            path: dir.clone(),
+            source,
+        })?;
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            if is_wav(&path) {
+                visitor(&path)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn ensure_root_dir(db: &SourceDatabase) -> Result<PathBuf, ScanError> {
+    let root = db.root().to_path_buf();
+    if root.is_dir() {
+        Ok(root)
+    } else {
+        Err(ScanError::InvalidRoot(root))
+    }
+}
+
+fn sync_file(
+    db: &SourceDatabase,
+    root: &Path,
+    path: &Path,
+    existing: &mut HashMap<PathBuf, WavEntry>,
+    stats: &mut ScanStats,
+) -> Result<(), ScanError> {
+    let facts = read_facts(root, path)?;
+    apply_diff(db, facts, existing, stats)?;
+    stats.total_files += 1;
+    Ok(())
+}
+
+fn remove_missing(
+    db: &SourceDatabase,
+    existing: HashMap<PathBuf, WavEntry>,
+    stats: &mut ScanStats,
+) -> Result<(), ScanError> {
+    for leftover in existing.values() {
+        db.remove_file(&leftover.relative_path)?;
+        stats.removed += 1;
+    }
+    Ok(())
+}
+
+fn strip_relative(root: &Path, path: &Path) -> Result<PathBuf, ScanError> {
+    path.strip_prefix(root)
+        .map(PathBuf::from)
+        .map_err(|_| ScanError::InvalidRoot(path.to_path_buf()))
+}
+
+#[derive(Debug)]
+struct FileFacts {
+    relative: PathBuf,
+    size: u64,
+    modified_ns: i64,
+}
+
+fn read_facts(root: &Path, path: &Path) -> Result<FileFacts, ScanError> {
+    let relative = strip_relative(root, path)?;
+    let meta = path.metadata().map_err(|source| ScanError::Io {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    let modified_ns = to_nanos(
+        &meta.modified().map_err(|source| ScanError::Io {
+            path: path.to_path_buf(),
+            source,
+        })?,
+        path,
+    )?;
+    Ok(FileFacts {
+        relative,
+        size: meta.len(),
+        modified_ns,
+    })
+}
+
+fn apply_diff(
+    db: &SourceDatabase,
+    facts: FileFacts,
+    existing: &mut HashMap<PathBuf, WavEntry>,
+    stats: &mut ScanStats,
+) -> Result<(), ScanError> {
+    let path = facts.relative.clone();
+    match existing.remove(&path) {
+        Some(entry) if entry.file_size == facts.size && entry.modified_ns == facts.modified_ns => {}
+        Some(_) => {
+            db.upsert_file(&path, facts.size, facts.modified_ns)?;
+            stats.updated += 1;
+        }
+        None => {
+            db.upsert_file(&path, facts.size, facts.modified_ns)?;
+            stats.added += 1;
+        }
+    }
+    Ok(())
+}
+
+fn to_nanos(time: &SystemTime, path: &Path) -> Result<i64, ScanError> {
+    let duration = time
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| ScanError::Time {
+            path: path.to_path_buf(),
+        })?;
+    Ok(duration.as_nanos().min(i64::MAX as u128) as i64)
+}
+
+fn is_wav(path: &Path) -> bool {
+    path.extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("wav"))
+}
