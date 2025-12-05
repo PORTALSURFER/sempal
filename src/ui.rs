@@ -2,7 +2,15 @@ slint::slint! {
     import { ListView } from "std-widgets.slint";
 
     export struct SourceRow { name: string, path: string }
-    export struct WavRow { name: string, path: string }
+    export struct WavRow {
+        name: string,
+        path: string,
+        selected: bool,
+        loaded: bool,
+        tag_label: string,
+        tag_bg: color,
+        tag_fg: color,
+    }
 
     export component HelloWorld inherits Window {
         preferred-width: 960px;
@@ -20,6 +28,8 @@ slint::slint! {
         in-out property <[SourceRow]> sources;
         in-out property <int> selected_source: -1;
         in-out property <[WavRow]> wavs;
+        in-out property <int> selected_wav: -1;
+        in-out property <string> loaded_wav_path: "";
         in-out property <int> source_menu_index: -1;
         callback source_selected(int);
         callback source_update_requested(int);
@@ -334,18 +344,41 @@ slint::slint! {
                                     for file[i] in root.wavs: Rectangle {
                                         height: 32px;
                                         horizontal-stretch: 1;
-                                        background: ta_wav.pressed ? #1f1f1f : (ta_wav.has-hover ? #1a1a1a : #141414);
+                                        background: ta_wav.pressed ? #1f1f1f :
+                                            (file.loaded ? #20344c :
+                                                (file.selected ? #1d1d1d :
+                                                    (ta_wav.has-hover ? #1a1a1a : #141414)));
+                                        border-width: file.selected ? 1px : 0px;
+                                        border-color: file.loaded ? #3a9cff : #2f6fb1;
                                         HorizontalLayout {
                                             padding: 8px;
                                             spacing: 8px;
-                                            Text {
-                                                text: "[wav]";
-                                                color: #c0c0c0;
+                                            Rectangle {
+                                                width: 4px;
+                                                height: parent.height - 6px;
+                                                background: file.loaded ? #3a9cff : (file.selected ? #2f6fb1 : #00000000);
+                                                border-radius: 2px;
                                             }
                                             Text {
                                                 text: file.name;
                                                 color: #e0e0e0;
                                                 horizontal-alignment: left;
+                                                horizontal-stretch: 1;
+                                            }
+                                            if file.tag_label != "" : Rectangle {
+                                                height: 20px;
+                                                border-radius: 10px;
+                                                background: file.tag_bg;
+                                                HorizontalLayout {
+                                                    padding-left: 8px;
+                                                    padding-right: 8px;
+                                                    Text {
+                                                        text: file.tag_label;
+                                                        color: file.tag_fg;
+                                                        horizontal-alignment: center;
+                                                        vertical-alignment: center;
+                                                    }
+                                                }
                                             }
                                         }
                                         ta_wav := TouchArea {
