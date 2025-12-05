@@ -43,6 +43,7 @@ impl WaveformRenderer {
         self.render_waveform(&[])
     }
 
+    /// Load a wav file from disk and return its pixels, raw bytes, and duration.
     pub fn load_waveform(&self, path: &Path) -> Result<LoadedWaveform, String> {
         let bytes = std::fs::read(path)
             .map_err(|error| format!("Failed to read {}: {error}", path.display()))?;
@@ -55,6 +56,7 @@ impl WaveformRenderer {
         })
     }
 
+    /// Decode bytes into mono samples and duration seconds.
     fn load_samples(&self, bytes: &[u8]) -> Result<(Vec<f32>, f32), String> {
         let mut reader = hound::WavReader::new(std::io::Cursor::new(bytes))
             .map_err(|error| format!("Invalid wav: {error}"))?;
@@ -99,6 +101,7 @@ impl WaveformRenderer {
         Ok(Self::average_channels(raw, channels))
     }
 
+    /// Average multi-channel frames down to mono samples.
     fn average_channels(raw: Vec<f32>, channels: usize) -> Vec<f32> {
         raw.chunks(channels)
             .map(|frame| frame.iter().copied().sum::<f32>() / channels as f32)
@@ -177,5 +180,20 @@ mod tests {
         let columns = renderer.sample_columns(&samples);
 
         assert_eq!(columns, vec![(0.1, 0.2), (0.3, 0.4)]);
+    }
+
+    #[test]
+    fn sample_columns_clamps_to_bounds() {
+        let renderer = WaveformRenderer::new(2, 2);
+        let samples = [2.0, -3.0, 0.5, -0.5];
+        let columns = renderer.sample_columns(&samples);
+        assert_eq!(columns, vec![(-1.0, 1.0), (-0.5, 0.5)]);
+    }
+
+    #[test]
+    fn sample_columns_returns_zeroes_when_empty() {
+        let renderer = WaveformRenderer::new(3, 2);
+        let columns = renderer.sample_columns(&[]);
+        assert_eq!(columns, vec![(0.0, 0.0); 3]);
     }
 }
