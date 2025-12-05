@@ -37,6 +37,7 @@ impl SelectionRange {
     }
 
     /// True when the selection has zero width.
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.width() == 0.0
     }
