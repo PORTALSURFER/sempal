@@ -12,7 +12,7 @@ Step-by-step plan
 1. [x] Add data models and helpers for sample sources and per-source SQLite schema (sources table metadata + wav entries table), including creating the DB file inside a chosen directory.
 2. [x] Implement a recursive scanner that runs off the UI thread, discovers .wav files, and upserts/removes rows in the source database; surface progress/state to the app layer.
 3. [x] Introduce an app-level config file for persisting the list of source directories and any cached metadata; load at startup and save on modifications.
-4. [-] Replace the file browser UI with a left sidebar listing sources (with “+” add control) and a main wav list view bound to the selected source’s database entries.
-5. [-] Wire Slint callbacks and app logic to manage adding/selecting sources, kicking off scans, and feeding selected wav files into the existing waveform/audio player flow.
+4. [x] Replace the file browser UI with a left sidebar listing sources (with “+” add control) and a main wav list view bound to the selected source’s database entries.
+5. [~] Wire Slint callbacks and app logic to manage adding/selecting sources, kicking off scans, and feeding selected wav files into the existing waveform/audio player flow.
 6. [-] Add unit tests for the scanning/database logic and config persistence (temp directories), and adjust any integration hooks to stay under size/function limits.
 7. [-] Perform manual QA passes: add source, rescan after adding/removing wavs, reload app to confirm persistence, and play a selected wav from the list.
