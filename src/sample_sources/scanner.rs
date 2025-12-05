@@ -8,8 +8,8 @@ use std::{
 
 use thiserror::Error;
 
-use super::SourceDatabase;
-use super::SourceDbError;
+use super::{SourceDatabase, SourceDbError};
+use super::db::SourceWriteBatch;
 use super::db::WavEntry;
 
 /// Summary of a scan run.
@@ -42,10 +42,12 @@ pub fn scan_once(db: &SourceDatabase) -> Result<ScanStats, ScanError> {
     let root = ensure_root_dir(db)?;
     let mut stats = ScanStats::default();
     let mut existing = index_existing(db)?;
+    let mut batch = db.write_batch()?;
     visit_dir(&root, &mut |path| {
-        sync_file(db, &root, path, &mut existing, &mut stats)
+        sync_file(&mut batch, &root, path, &mut existing, &mut stats)
     })?;
-    remove_missing(db, existing, &mut stats)?;
+    remove_missing(&mut batch, existing, &mut stats)?;
+    batch.commit()?;
     Ok(stats)
 }
 
@@ -99,25 +101,25 @@ fn ensure_root_dir(db: &SourceDatabase) -> Result<PathBuf, ScanError> {
 }
 
 fn sync_file(
-    db: &SourceDatabase,
+    batch: &mut SourceWriteBatch<'_>,
     root: &Path,
     path: &Path,
     existing: &mut HashMap<PathBuf, WavEntry>,
     stats: &mut ScanStats,
 ) -> Result<(), ScanError> {
     let facts = read_facts(root, path)?;
-    apply_diff(db, facts, existing, stats)?;
+    apply_diff(batch, facts, existing, stats)?;
     stats.total_files += 1;
     Ok(())
 }
 
 fn remove_missing(
-    db: &SourceDatabase,
+    batch: &mut SourceWriteBatch<'_>,
     existing: HashMap<PathBuf, WavEntry>,
     stats: &mut ScanStats,
 ) -> Result<(), ScanError> {
     for leftover in existing.values() {
-        db.remove_file(&leftover.relative_path)?;
+        batch.remove_file(&leftover.relative_path)?;
         stats.removed += 1;
     }
     Ok(())
@@ -157,7 +159,7 @@ fn read_facts(root: &Path, path: &Path) -> Result<FileFacts, ScanError> {
 }
 
 fn apply_diff(
-    db: &SourceDatabase,
+    batch: &mut SourceWriteBatch<'_>,
     facts: FileFacts,
     existing: &mut HashMap<PathBuf, WavEntry>,
     stats: &mut ScanStats,
@@ -166,11 +168,11 @@ fn apply_diff(
     match existing.remove(&path) {
         Some(entry) if entry.file_size == facts.size && entry.modified_ns == facts.modified_ns => {}
         Some(_) => {
-            db.upsert_file(&path, facts.size, facts.modified_ns)?;
+            batch.upsert_file(&path, facts.size, facts.modified_ns)?;
             stats.updated += 1;
         }
         None => {
-            db.upsert_file(&path, facts.size, facts.modified_ns)?;
+            batch.upsert_file(&path, facts.size, facts.modified_ns)?;
             stats.added += 1;
         }
     }

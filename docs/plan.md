@@ -1,16 +1,16 @@
 Goal
-Let users browse and judge samples faster by highlighting the selected/loaded wav, navigating the list with arrow keys, and marking items as “keep” or “trash” via keyboard gestures.
+	Design a high-performance tagging and database subsystem so sample tagging and related database updates feel instantaneous while keeping the current features intact.
 
 Proposed solutions
-- Add explicit selection/loaded state to wav entries and surface it in the Slint list styling so the current/loaded sample is visually distinct.
-- Extend the custom winit keyboard handling to move selection up/down through the wav list, reusing existing `DropHandler` state and avoiding conflicts with playback shortcuts.
-- Introduce per-sample “keep”/“trash” tagging stored alongside wav metadata (e.g., in the source DB) and render the status as a badge/icon in the list.
-- Map left/right arrow keys to toggle keep/trash/neutral states for the current selection, updating persistence and UI cues immediately.
-- Provide minimal tests around tag persistence and selection navigation logic, and add a manual QA pass to confirm keyboard flows and highlighting.
+- Profile the current tagging path (UI → DropHandler → SQLite) to identify the main latency sources, especially sync writes and DB opens.
+- Introduce a long-lived SQLite handle with prepared statements and batched transactions for tag writes to remove per-event setup costs.
+- Add an in-memory tag cache that is kept in sync with the DB (write-through or queued) so UI updates stay instant while background writes commit.
+- Restructure scan/update flows to use chunked inserts/updates and avoid redundant file stat calls, improving overall DB/IO throughput.
+- Provide lightweight benchmarks/tests around tag toggling and scan performance to guard against regressions.
 
 Step-by-step plan
-1. [x] Review the current wav selection/loading flow in `DropHandler` and the Slint list to define where selection state should live and how it interacts with playback/loading.
-2. [x] Add selection/loaded state to wav rows and update the Slint UI to style the active/loaded sample distinctly without regressing existing list rendering.
-3. [x] Implement keyboard navigation (up/down) in the custom winit handler to change the current wav selection, clamping bounds and updating UI state.
-4. [x] Add keep/trash tagging: persist tags with each wav (via the source DB), expose left/right key bindings to cycle tags, and render badges/icons in the list.
-5. [x] Write/extend tests for tag persistence and navigation helpers, then perform manual QA for keyboard browsing, visual highlights, and keep/trash toggles.
+1. [x] Profile and trace the existing tagging path (UI to DB) to measure latency, DB open frequency, and WAL/pragma effects.
+2. [x] Design the new persistence flow: shared DB handle per source, prepared statements for tag updates/reads, and a small in-memory tag cache strategy.
+3. [x] Implement the storage layer improvements (connection lifecycle, prepared/batched tag writes, cache maintenance) without changing current features.
+4. [x] Optimize scan/update routines to batch DB writes and reduce filesystem calls while keeping correctness.
+5. [~] Add targeted tests/benchmarks for tag toggling and scan throughput; document operational guidance for achieving “lightning fast” interactions. (In progress; bugfix for alt-F4 crash landed.)

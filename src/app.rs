@@ -38,10 +38,12 @@ pub struct DropHandler {
     selected_source: Rc<RefCell<Option<SourceId>>>,
     selected_wav: Rc<RefCell<Option<PathBuf>>>,
     loaded_wav: Rc<RefCell<Option<PathBuf>>>,
+    pending_tags: Rc<RefCell<HashMap<SourceId, Vec<(PathBuf, SampleTag)>>>>,
     scan_tracker: Rc<RefCell<ScanTracker>>,
     scan_tx: Sender<ScanJobResult>,
     scan_rx: Rc<RefCell<Receiver<ScanJobResult>>>,
     scan_poll_timer: Rc<slint::Timer>,
+    tag_flush_timer: Rc<slint::Timer>,
     shutting_down: Rc<RefCell<bool>>,
 }
 
@@ -73,10 +75,12 @@ impl DropHandler {
             selected_source: Rc::new(RefCell::new(None)),
             selected_wav: Rc::new(RefCell::new(None)),
             loaded_wav: Rc::new(RefCell::new(None)),
+            pending_tags: Rc::new(RefCell::new(HashMap::new())),
             scan_tracker: Rc::new(RefCell::new(ScanTracker::default())),
             scan_tx,
             scan_rx: Rc::new(RefCell::new(scan_rx)),
             scan_poll_timer: Rc::new(slint::Timer::default()),
+            tag_flush_timer: Rc::new(slint::Timer::default()),
             shutting_down: Rc::new(RefCell::new(false)),
         }
     }
@@ -293,15 +297,7 @@ impl DropHandler {
     fn apply_tag_to_selection(&self, tag: SampleTag) -> bool {
         let Some(source) = self.current_source() else { return false };
         let Some((target_path, new_tag)) = self.update_tag_in_memory(tag) else { return false };
-        if let Err(error) = self
-            .database_for(&source)
-            .and_then(|db| db.set_tag(&target_path, new_tag))
-        {
-            if let Some(app) = self.app() {
-                self.set_status(&app, format!("Failed to save tag: {error}"), StatusState::Error);
-            }
-            return false;
-        }
+        self.enqueue_tag_for_flush(&source.id, target_path.clone(), new_tag);
         if let Some(app) = self.app() {
             self.update_wav_view(&app);
             let label = match new_tag {
@@ -334,6 +330,74 @@ impl DropHandler {
         Some((path, new_tag))
     }
 
+    fn enqueue_tag_for_flush(&self, source_id: &SourceId, path: PathBuf, tag: SampleTag) {
+        {
+            let mut pending = self.pending_tags.borrow_mut();
+            pending.entry(source_id.clone()).or_default().push((path, tag));
+        }
+        self.start_tag_flush_timer();
+    }
+
+    fn start_tag_flush_timer(&self) {
+        if *self.shutting_down.borrow() {
+            return;
+        }
+        let flusher = self.clone();
+        self.tag_flush_timer.start(
+            slint::TimerMode::SingleShot,
+            Duration::from_millis(40),
+            move || flusher.flush_pending_tags(),
+        );
+    }
+
+    fn flush_pending_tags(&self) {
+        self.tag_flush_timer.stop();
+        let pending = std::mem::take(&mut *self.pending_tags.borrow_mut());
+        if pending.is_empty() {
+            return;
+        }
+        let mut errors = Vec::new();
+        for (source_id, updates) in pending {
+            if updates.is_empty() {
+                continue;
+            }
+            let Some(source) = self
+                .sources
+                .borrow()
+                .iter()
+                .find(|s| s.id == source_id)
+                .cloned()
+            else {
+                continue;
+            };
+            let deduped = Self::coalesce_tag_updates(updates);
+            if let Err(error) = self
+                .database_for(&source)
+                .and_then(|db| db.set_tags_batch(&deduped))
+            {
+                errors.push(error);
+            }
+        }
+        if !errors.is_empty() {
+            if let Some(app) = self.app() {
+                let text = errors
+                    .into_iter()
+                    .map(|err| err.to_string())
+                    .collect::<Vec<_>>()
+                    .join("; ");
+                self.set_status(&app, format!("Failed to save tags: {text}"), StatusState::Error);
+            }
+        }
+    }
+
+    fn coalesce_tag_updates(updates: Vec<(PathBuf, SampleTag)>) -> Vec<(PathBuf, SampleTag)> {
+        let mut latest: HashMap<PathBuf, SampleTag> = HashMap::new();
+        for (path, tag) in updates {
+            latest.insert(path, tag);
+        }
+        latest.into_iter().collect()
+    }
+
     pub fn handle_remove_source(&self, index: i32) {
         if index < 0 {
             return;
@@ -350,6 +414,7 @@ impl DropHandler {
         };
         self.db_cache.borrow_mut().remove(&removed.id);
         self.scan_tracker.borrow_mut().forget(&removed.id);
+        self.pending_tags.borrow_mut().remove(&removed.id);
         let mut selected = self.selected_source.borrow_mut();
         if selected.as_ref().is_some_and(|id| id == &removed.id) {
             *selected = None;
@@ -664,6 +729,7 @@ impl DropHandler {
 
     fn shutdown(&self) {
         *self.shutting_down.borrow_mut() = true;
+        self.flush_pending_tags();
         self.scan_poll_timer.stop();
         self.playhead_timer.stop();
         self.player.borrow_mut().stop();
@@ -821,6 +887,11 @@ impl CustomApplicationHandler for DropHandler {
             WindowEvent::DroppedFile(path_buf) => {
                 self.handle_drop(path_buf.as_path());
                 EventResult::Propagate
+            }
+            WindowEvent::CloseRequested => {
+                self.shutdown();
+                let _ = slint::quit_event_loop();
+                EventResult::PreventDefault
             }
             WindowEvent::KeyboardInput { event, .. }
                 if event.state == ElementState::Pressed
