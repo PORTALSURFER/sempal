@@ -1,8 +1,15 @@
+mod audio;
+mod waveform;
+
 use std::{cell::RefCell, rc::Rc};
 
-use hound::SampleFormat;
-use slint::winit_030::{self, CustomApplicationHandler, EventResult};
-use slint::{Rgb8Pixel, SharedPixelBuffer};
+use audio::AudioPlayer;
+use slint::winit_030::{
+    self, CustomApplicationHandler, EventResult,
+    winit::event::{ElementState, WindowEvent},
+    winit::keyboard::{KeyCode, PhysicalKey},
+};
+use waveform::WaveformRenderer;
 
 slint::slint! {
     export component HelloWorld inherits Window {
@@ -10,192 +17,130 @@ slint::slint! {
         height: 420px;
         in-out property <string> status_text: "Drop a .wav file";
         in-out property <image> waveform;
+        in-out property <float> playhead_position: 0.0;
+        in-out property <bool> playhead_visible: false;
+        callback seek_requested(float);
+        callback close_requested();
 
         VerticalLayout {
             spacing: 8px;
-            padding: 12px;
+            padding: 0px;
 
             Rectangle {
+                width: parent.width;
+                height: 36px;
+                background: #181818;
                 border-width: 1px;
-                border-color: #404040;
-                background: #101010;
-                VerticalLayout {
-                    spacing: 8px;
+                border-color: #303030;
+
+                HorizontalLayout {
                     padding: 8px;
+                    spacing: 8px;
 
                     Text {
                         text: "Waveform Viewer";
-                        horizontal-alignment: center;
                         color: #e0e0e0;
-                        font-size: 18px;
-                        width: parent.width;
+                        vertical-alignment: center;
                     }
 
-                    Image {
-                        source: root.waveform;
-                        width: parent.width;
-                        height: 260px;
-                        image-fit: contain;
-                        colorize: #00000000;
+                    Rectangle {
+                        height: 1px;
+                        horizontal-stretch: 1;
+                        background: #00000000;
+                    }
+
+                    Rectangle {
+                        width: 28px;
+                        height: parent.height - 8px;
+                        background: #2a2a2a;
+                        border-width: 1px;
+                        border-color: #404040;
+                        border-radius: 4px;
+
+                        Text {
+                            text: "X";
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            color: #e0e0e0;
+                            width: parent.width;
+                            height: parent.height;
+                        }
+
+                        TouchArea {
+                            width: parent.width;
+                            height: parent.height;
+                            clicked => { root.close_requested(); }
+                        }
                     }
                 }
             }
 
-            Rectangle {
-                height: 32px;
-                background: #00000033;
-                border-width: 1px;
-                border-color: #303030;
-                Text {
-                    text: root.status_text;
-                    vertical-alignment: center;
-                    width: parent.width;
-                    height: parent.height;
-                    color: #d0d0d0;
+            VerticalLayout {
+                spacing: 8px;
+                padding: 12px;
+
+                Rectangle {
+                    border-width: 1px;
+                    border-color: #404040;
+                    background: #101010;
+                    VerticalLayout {
+                        spacing: 8px;
+                        padding: 8px;
+
+                        Text {
+                            text: "Waveform Viewer";
+                            horizontal-alignment: center;
+                            color: #e0e0e0;
+                            font-size: 18px;
+                            width: parent.width;
+                        }
+
+                        Rectangle {
+                            width: parent.width;
+                            height: 260px;
+                            clip: true;
+
+                            Image {
+                                source: root.waveform;
+                                width: parent.width;
+                                height: parent.height;
+                                image-fit: contain;
+                                colorize: #00000000;
+                            }
+
+                            Rectangle {
+                                visible: root.playhead_visible;
+                                width: 2px;
+                                height: parent.height;
+                                x: (root.playhead_position * parent.width) - (self.width / 2);
+                                background: #3399ff;
+                                z: 1;
+                            }
+
+                            TouchArea {
+                                width: parent.width;
+                                height: parent.height;
+                                clicked => {
+                                    root.seek_requested(self.mouse-x / self.width);
+                                }
+                            }
+                        }
+                    }
                 }
-            }
-        }
-    }
-}
 
-#[derive(Clone)]
-struct WaveformRenderer {
-    width: u32,
-    height: u32,
-    background: Rgb8Pixel,
-    foreground: Rgb8Pixel,
-}
-
-impl WaveformRenderer {
-    fn new(width: u32, height: u32) -> Self {
-        Self {
-            width,
-            height,
-            background: Rgb8Pixel {
-                r: 16,
-                g: 16,
-                b: 24,
-            },
-            foreground: Rgb8Pixel {
-                r: 0,
-                g: 200,
-                b: 255,
-            },
-        }
-    }
-
-    fn empty_image(&self) -> slint::Image {
-        self.render_waveform(&[])
-    }
-
-    fn load_samples(&self, bytes: &[u8]) -> Result<Vec<f32>, String> {
-        let mut reader = hound::WavReader::new(std::io::Cursor::new(bytes))
-            .map_err(|error| format!("Invalid wav: {error}"))?;
-        let spec = reader.spec();
-        let channels = spec.channels.max(1) as usize;
-
-        let raw = match spec.sample_format {
-            SampleFormat::Float => Self::read_float_samples(&mut reader, channels)?,
-            SampleFormat::Int => {
-                Self::read_int_samples(&mut reader, spec.bits_per_sample, channels)?
-            }
-        };
-
-        Ok(raw)
-    }
-
-    fn read_float_samples(
-        reader: &mut hound::WavReader<std::io::Cursor<&[u8]>>,
-        channels: usize,
-    ) -> Result<Vec<f32>, String> {
-        let raw: Vec<f32> = reader
-            .samples::<f32>()
-            .map(|s| s.map_err(|error| format!("Sample error: {error}")))
-            .collect::<Result<_, _>>()?;
-        Ok(Self::average_channels(raw, channels))
-    }
-
-    fn read_int_samples(
-        reader: &mut hound::WavReader<std::io::Cursor<&[u8]>>,
-        bits_per_sample: u16,
-        channels: usize,
-    ) -> Result<Vec<f32>, String> {
-        let scale = (1i64 << bits_per_sample.saturating_sub(1)).max(1) as f32;
-        let raw: Vec<f32> = reader
-            .samples::<i32>()
-            .map(|s| {
-                s.map(|v| v as f32 / scale)
-                    .map_err(|error| format!("Sample error: {error}"))
-            })
-            .collect::<Result<_, _>>()?;
-        Ok(Self::average_channels(raw, channels))
-    }
-
-    fn average_channels(raw: Vec<f32>, channels: usize) -> Vec<f32> {
-        raw.chunks(channels)
-            .map(|frame| frame.iter().copied().sum::<f32>() / channels as f32)
-            .collect()
-    }
-
-    fn render_waveform(&self, samples: &[f32]) -> slint::Image {
-        let columns = self.sample_columns(samples);
-        self.paint_image(&columns)
-    }
-
-    fn sample_columns(&self, samples: &[f32]) -> Vec<(f32, f32)> {
-        let mut cols = vec![(0.0, 0.0); self.width as usize];
-        if samples.is_empty() {
-            return cols;
-        }
-
-        let max_amp = samples
-            .iter()
-            .fold(0.0_f32, |m, v| m.max(v.abs()))
-            .max(1e-6);
-        let chunk = (samples.len() / self.width as usize).max(1);
-
-        for (x, col) in cols.iter_mut().enumerate() {
-            let start = x * chunk;
-            if start >= samples.len() {
-                break;
-            }
-            let end = ((x + 1) * chunk).min(samples.len());
-            let mut min: f32 = 1.0;
-            let mut max: f32 = -1.0;
-            for &sample in &samples[start..end] {
-                let v = (sample / max_amp).clamp(-1.0, 1.0);
-                min = min.min(v);
-                max = max.max(v);
-            }
-            *col = (min, max);
-        }
-
-        cols
-    }
-
-    fn paint_image(&self, columns: &[(f32, f32)]) -> slint::Image {
-        let mut buffer = SharedPixelBuffer::<Rgb8Pixel>::new(self.width, self.height);
-        self.fill_background(buffer.make_mut_slice());
-        self.draw_columns(columns, buffer.make_mut_slice());
-        slint::Image::from_rgb8(buffer)
-    }
-
-    fn fill_background(&self, pixels: &mut [Rgb8Pixel]) {
-        for pixel in pixels {
-            *pixel = self.background;
-        }
-    }
-
-    fn draw_columns(&self, columns: &[(f32, f32)], pixels: &mut [Rgb8Pixel]) {
-        let stride = self.width as usize;
-        let mid = (self.height / 2) as f32;
-        let limit = self.height.saturating_sub(1) as f32;
-
-        for (x, (min, max)) in columns.iter().enumerate() {
-            let top = (mid - max * (mid - 1.0)).clamp(0.0, limit) as u32;
-            let bottom = (mid - min * (mid - 1.0)).clamp(0.0, limit) as u32;
-            for y in top..=bottom {
-                pixels[y as usize * stride + x] = self.foreground;
+                Rectangle {
+                    height: 32px;
+                    background: #00000033;
+                    border-width: 1px;
+                    border-color: #303030;
+                    Text {
+                        text: root.status_text;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                        color: #d0d0d0;
+                    }
+                }
             }
         }
     }
@@ -205,13 +150,17 @@ impl WaveformRenderer {
 struct DropHandler {
     app: Rc<RefCell<Option<slint::Weak<HelloWorld>>>>,
     renderer: WaveformRenderer,
+    player: Rc<RefCell<AudioPlayer>>,
+    playhead_timer: Rc<slint::Timer>,
 }
 
 impl DropHandler {
-    fn new(renderer: WaveformRenderer) -> Self {
+    fn new(renderer: WaveformRenderer, player: Rc<RefCell<AudioPlayer>>) -> Self {
         Self {
             app: Rc::new(RefCell::new(None)),
             renderer,
+            player,
+            playhead_timer: Rc::new(slint::Timer::default()),
         }
     }
 
@@ -229,10 +178,18 @@ impl DropHandler {
             return;
         }
 
-        match self.load_waveform_image(path) {
-            Ok(image) => {
+        match self.renderer.load_waveform(path) {
+            Ok(loaded) => {
                 let message = format!("Loaded {}", path.display());
-                app.set_waveform(image);
+                app.set_waveform(loaded.image);
+                {
+                    let mut player = self.player.borrow_mut();
+                    player.stop();
+                    player.set_audio(loaded.audio_bytes, loaded.duration_seconds);
+                }
+                self.playhead_timer.stop();
+                app.set_playhead_position(0.0);
+                app.set_playhead_visible(false);
                 app.set_status_text(message.into());
             }
             Err(error) => app.set_status_text(error.into()),
@@ -244,11 +201,87 @@ impl DropHandler {
             .is_some_and(|ext| ext.eq_ignore_ascii_case("wav"))
     }
 
-    fn load_waveform_image(&self, path: &std::path::Path) -> Result<slint::Image, String> {
-        let bytes = std::fs::read(path)
-            .map_err(|error| format!("Failed to read {}: {error}", path.display()))?;
-        let samples = self.renderer.load_samples(&bytes)?;
-        Ok(self.renderer.render_waveform(&samples))
+    fn start_playhead_updates(&self) {
+        self.playhead_timer.stop();
+        let timer = self.playhead_timer.clone();
+        let app = self.app.clone();
+        let player = self.player.clone();
+        let timer_for_tick = timer.clone();
+
+        timer.start(
+            slint::TimerMode::Repeated,
+            std::time::Duration::from_millis(30),
+            move || Self::tick_playhead(&app, &player, &timer_for_tick),
+        );
+    }
+
+    fn tick_playhead(
+        app_handle: &Rc<RefCell<Option<slint::Weak<HelloWorld>>>>,
+        player: &Rc<RefCell<AudioPlayer>>,
+        timer: &slint::Timer,
+    ) {
+        let Some(app) = app_handle.borrow().as_ref().and_then(|a| a.upgrade()) else {
+            timer.stop();
+            return;
+        };
+        let mut player = player.borrow_mut();
+        let Some(progress) = player.progress() else {
+            app.set_playhead_visible(false);
+            timer.stop();
+            return;
+        };
+        if !player.is_playing() {
+            app.set_playhead_visible(false);
+            timer.stop();
+            return;
+        }
+        app.set_playhead_visible(true);
+        app.set_playhead_position(progress);
+        if progress >= 1.0 {
+            player.stop();
+            app.set_playhead_visible(false);
+            timer.stop();
+        }
+    }
+
+    fn play_audio(&self) -> EventResult {
+        let Some(app) = self.app.borrow().as_ref().and_then(|a| a.upgrade()) else {
+            return EventResult::Propagate;
+        };
+
+        match self.player.borrow_mut().play() {
+            Ok(_) => {
+                app.set_status_text("Playing audio".into());
+                self.start_playhead_updates();
+                EventResult::PreventDefault
+            }
+            Err(error) => {
+                app.set_status_text(error.into());
+                EventResult::PreventDefault
+            }
+        }
+    }
+
+    fn seek_to(&self, position: f32) {
+        let Some(app) = self.app.borrow().as_ref().and_then(|a| a.upgrade()) else {
+            return;
+        };
+
+        let progress = position.clamp(0.0, 1.0);
+        self.playhead_timer.stop();
+
+        match self.player.borrow_mut().play_from_fraction(progress) {
+            Ok(_) => {
+                app.set_playhead_position(progress);
+                app.set_playhead_visible(true);
+                app.set_status_text("Playing audio".into());
+                self.start_playhead_updates();
+            }
+            Err(error) => {
+                app.set_status_text(error.into());
+                app.set_playhead_visible(false);
+            }
+        }
     }
 }
 
@@ -259,19 +292,31 @@ impl CustomApplicationHandler for DropHandler {
         _window_id: winit_030::winit::window::WindowId,
         _winit_window: Option<&winit_030::winit::window::Window>,
         _slint_window: Option<&slint::Window>,
-        event: &winit_030::winit::event::WindowEvent,
+        event: &WindowEvent,
     ) -> EventResult {
-        if let winit_030::winit::event::WindowEvent::DroppedFile(path_buf) = event {
-            self.handle_drop(path_buf.as_path());
+        match event {
+            WindowEvent::DroppedFile(path_buf) => {
+                self.handle_drop(path_buf.as_path());
+                EventResult::Propagate
+            }
+            WindowEvent::KeyboardInput { event, .. }
+                if event.state == ElementState::Pressed
+                    && !event.repeat
+                    && event.physical_key == PhysicalKey::Code(KeyCode::Space) =>
+            {
+                self.play_audio()
+            }
+            _ => EventResult::Propagate,
         }
-
-        EventResult::Propagate
     }
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let renderer = WaveformRenderer::new(680, 260);
-    let drop_handler = DropHandler::new(renderer.clone());
+    let audio_player = AudioPlayer::new()
+        .map_err(|error| std::io::Error::new(std::io::ErrorKind::Other, error))?;
+    let player = Rc::new(RefCell::new(audio_player));
+    let drop_handler = DropHandler::new(renderer.clone(), player.clone());
 
     slint::BackendSelector::new()
         .require_wgpu_27(slint::wgpu_27::WGPUConfiguration::default())
@@ -281,6 +326,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app = HelloWorld::new()?;
     app.set_waveform(renderer.empty_image());
     drop_handler.set_app(&app);
+    let seek_handler = drop_handler.clone();
+    app.on_seek_requested(move |position| seek_handler.seek_to(position));
+    app.on_close_requested(|| {
+        let _ = slint::quit_event_loop();
+    });
+    app.window().set_fullscreen(true);
 
     app.run()?;
 

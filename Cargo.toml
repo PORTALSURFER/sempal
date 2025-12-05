@@ -5,4 +5,5 @@ edition = "2024"
 
 [dependencies]
 hound = "3.5"
+rodio = { version = "0.19", default-features = true }
 slint = { version = "1.14.1", default-features = false, features = ["std", "backend-winit", "renderer-femtovg-wgpu", "compat-1-2", "unstable-winit-030", "unstable-wgpu-27"] }
