@@ -120,6 +120,14 @@ export component SourcePanel inherits Rectangle {
                         root.source_menu_index = -1;
                         root.source_selected(i);
                     }
+                    pointer-event(event) => {
+                        if event.kind == PointerEventKind.up
+                            && event.button == PointerEventButton.right
+                        {
+                            root.source_selected(i);
+                            root.source_menu_index = i;
+                        }
+                    }
                 }
                 if root.source_menu_index == i : Rectangle {
                     x: parent.width - self.width - 8px;
@@ -138,7 +146,7 @@ export component SourcePanel inherits Rectangle {
                             background: #162235;
                             border-radius: 4px;
                             Text {
-                                text: "Update files";
+                                text: "Rescan / Find changes";
                                 color: #d8dfe8;
                                 vertical-alignment: center;
                                 horizontal-alignment: center;
