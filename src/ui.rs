@@ -46,6 +46,8 @@ slint::slint! {
         callback source_remove_requested(int);
         callback add_source();
         callback wav_clicked(int);
+        callback scroll_sources_to(int);
+        callback scroll_wavs_to(int);
         property <bool> selection_drag_active: false;
         property <bool> selection_drag_moved: false;
 
@@ -148,7 +150,7 @@ slint::slint! {
                             }
                         }
 
-                        ListView {
+                        source_list := ListView {
                             vertical-stretch: 1;
                             min-height: 200px;
                             for source[i] in root.sources: Rectangle {
@@ -488,7 +490,7 @@ slint::slint! {
                                     color: #d0d0d0;
                                 }
 
-                                ListView {
+                                wav_list := ListView {
                                     vertical-stretch: 1;
                                     min-height: 200px;
                                     for file[i] in root.wavs: Rectangle {
@@ -580,5 +582,46 @@ slint::slint! {
                 }
             }
         }
+
+        scroll_sources_to(index) => {
+            if index < 0 { return; }
+            let row_height = 36px;
+            let visible = source_list.visible-height;
+            let desired_top = index * row_height;
+            let desired_bottom = desired_top + row_height;
+            let current_top = -source_list.viewport-y;
+            let margin = 6px;
+
+            if desired_top < current_top + margin {
+                let target = desired_top - margin;
+                let clamped = target < 0px ? 0px : target;
+                source_list.viewport-y = -clamped;
+            } else if desired_bottom > current_top + visible - margin {
+                let target = desired_bottom - visible + margin;
+                let clamped = target < 0px ? 0px : target;
+                source_list.viewport-y = -clamped;
+            }
+        }
+
+        scroll_wavs_to(index) => {
+            if index < 0 { return; }
+            let row_height = 32px;
+            let visible = wav_list.visible-height;
+            let desired_top = index * row_height;
+            let desired_bottom = desired_top + row_height;
+            let current_top = -wav_list.viewport-y;
+            let margin = 6px;
+
+            if desired_top < current_top + margin {
+                let target = desired_top - margin;
+                let clamped = target < 0px ? 0px : target;
+                wav_list.viewport-y = -clamped;
+            } else if desired_bottom > current_top + visible - margin {
+                let target = desired_bottom - visible + margin;
+                let clamped = target < 0px ? 0px : target;
+                wav_list.viewport-y = -clamped;
+            }
+        }
+
     }
 }
