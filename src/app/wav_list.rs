@@ -10,7 +10,12 @@ pub struct WavListJob {
 
 pub struct WavListJobResult {
     pub source_id: SourceId,
-    pub result: Result<Vec<WavEntry>, SourceDbError>,
+    pub result: Result<WavListPayload, SourceDbError>,
+}
+
+pub struct WavListPayload {
+    pub entries: Vec<WavEntry>,
+    pub missing_paths: Vec<PathBuf>,
 }
 
 pub fn spawn_wav_list_worker() -> (Sender<WavListJob>, Receiver<WavListJobResult>) {
@@ -28,7 +33,18 @@ pub fn spawn_wav_list_worker() -> (Sender<WavListJob>, Receiver<WavListJobResult
     (tx, result_rx)
 }
 
-fn load_entries(job: &WavListJob) -> Result<Vec<WavEntry>, SourceDbError> {
+fn load_entries(job: &WavListJob) -> Result<WavListPayload, SourceDbError> {
     let db = SourceDatabase::open(&job.root)?;
-    db.list_files()
+    let entries = db.list_files()?;
+    let mut missing = Vec::new();
+    for entry in &entries {
+        let full_path = job.root.join(&entry.relative_path);
+        if !full_path.exists() {
+            missing.push(entry.relative_path.clone());
+        }
+    }
+    Ok(WavListPayload {
+        entries,
+        missing_paths: missing,
+    })
 }
