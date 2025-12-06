@@ -392,7 +392,10 @@ impl EguiApp {
                     let is_selected = selected_row == Some(row);
                     let is_loaded = loaded_row == Some(row);
                     let path = entry.relative_path.clone();
-                    let mut label = path.to_string_lossy().to_string();
+                    let mut label = self
+                        .controller
+                        .wav_label(entry_index)
+                        .unwrap_or_else(|| path.to_string_lossy().to_string());
                     if is_loaded {
                         label.push_str(" • loaded");
                     }
