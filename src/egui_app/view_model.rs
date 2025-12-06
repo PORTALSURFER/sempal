@@ -1,3 +1,6 @@
+#![allow(dead_code)]
+// Transitional helpers; wiring into the egui renderer will consume these.
+
 use crate::egui_app::state::{
     CollectionRowView, CollectionSampleView, SourceRowView, WavRowView,
 };
