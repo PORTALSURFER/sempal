@@ -281,21 +281,25 @@ impl EguiApp {
                 }
             });
             if let Some(row) = duplicate_row {
-                let content_min = scroll_response.inner.inner_rect.min;
-                let min = egui::pos2(content_min.x, content_min.y + row as f32 * ROW_HEIGHT);
-                let rect = egui::Rect::from_min_size(
-                    min,
-                    egui::vec2(scroll_response.inner.inner_rect.width(), ROW_HEIGHT),
-                );
-                ui.scroll_to_rect(rect, Some(Align::Center));
-            } else if let Some(row) = selected_row {
-                let content_min = scroll_response.inner.inner_rect.min;
-                let min = egui::pos2(content_min.x, content_min.y + row as f32 * ROW_HEIGHT);
-                let rect = egui::Rect::from_min_size(
-                    min,
-                    egui::vec2(scroll_response.inner.inner_rect.width(), ROW_HEIGHT),
-                );
-                ui.scroll_to_rect(rect, Some(Align::Center));
+                let viewport_height = scroll_response.inner.inner_rect.height();
+                let content_height = scroll_response.inner.content_size.y;
+                let target = (row as f32 + 0.5) * ROW_HEIGHT - viewport_height * 0.5;
+                let max_offset = (content_height - viewport_height).max(0.0);
+                let desired_offset = target.clamp(0.0, max_offset);
+                let mut state = scroll_response.inner.state;
+                state.offset.y = desired_offset;
+                state.store(ui.ctx(), scroll_response.inner.id);
+            }
+            if duplicate_row.is_none() {
+                if let Some(row) = selected_row {
+                    let content_min = scroll_response.inner.inner_rect.min;
+                    let min = egui::pos2(content_min.x, content_min.y + row as f32 * ROW_HEIGHT);
+                    let rect = egui::Rect::from_min_size(
+                        min,
+                        egui::vec2(scroll_response.inner.inner_rect.width(), ROW_HEIGHT),
+                    );
+                    ui.scroll_to_rect(rect, Some(Align::Center));
+                }
             }
             if drag_active {
                 if let Some(pointer) = pointer_pos {
@@ -567,6 +571,7 @@ impl EguiApp {
             let mut state = frame_response.inner.state;
             state.offset.y = desired_offset;
             state.store(ui.ctx(), frame_response.inner.id);
+            self.controller.ui.triage.autoscroll = false;
         }
         if drag_active {
             if let Some(pointer) = pointer_pos {
@@ -611,8 +616,6 @@ impl eframe::App for EguiApp {
         if collection_focus {
             self.controller.ui.triage.autoscroll = false;
             self.controller.ui.triage.selected = None;
-        } else if triage_has_selection {
-            self.controller.ui.triage.autoscroll = true;
         }
         if ctx.input(|i| i.key_pressed(egui::Key::Space)) {
             self.controller.toggle_play_pause();

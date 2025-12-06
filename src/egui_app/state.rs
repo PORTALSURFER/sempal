@@ -129,7 +129,7 @@ impl Default for TriageState {
             keep: Vec::new(),
             selected: None,
             loaded: None,
-            autoscroll: true,
+            autoscroll: false,
         }
     }
 }
