@@ -32,6 +32,7 @@ pub struct EguiController {
     collections: Vec<Collection>,
     db_cache: HashMap<SourceId, Rc<SourceDatabase>>,
     wav_cache: HashMap<SourceId, Vec<WavEntry>>,
+    label_cache: HashMap<SourceId, Vec<String>>,
     wav_entries: Vec<WavEntry>,
     wav_lookup: HashMap<PathBuf, usize>,
     selected_source: Option<SourceId>,
@@ -61,6 +62,7 @@ impl EguiController {
             collections: Vec::new(),
             db_cache: HashMap::new(),
             wav_cache: HashMap::new(),
+            label_cache: HashMap::new(),
             wav_entries: Vec::new(),
             wav_lookup: HashMap::new(),
             selected_source: None,
@@ -228,6 +230,18 @@ impl EguiController {
         self.wav_entries.get(index)
     }
 
+    /// Retrieve a cached label for a wav entry by index.
+    pub fn wav_label(&mut self, index: usize) -> Option<String> {
+        self.label_for(index)
+    }
+
+    fn build_label_cache(&self, entries: &[WavEntry]) -> Vec<String> {
+        entries
+            .iter()
+            .map(|entry| entry.relative_path.to_string_lossy().into_owned())
+            .collect()
+    }
+
     /// Update the selection drag with a new normalized position.
     pub fn update_selection_drag(&mut self, position: f32) {
         if let Some(range) = self.selection.update_drag(position) {
@@ -339,6 +353,23 @@ impl EguiController {
                 self.ui.loaded_wav = Some(path.relative_path.clone());
             }
         }
+    }
+
+    fn label_for(&mut self, index: usize) -> Option<String> {
+        let source_id = self.selected_source.clone()?;
+        if let Some(cache) = self.label_cache.get(&source_id) {
+            if let Some(label) = cache.get(index) {
+                return Some(label.clone());
+            }
+        }
+        let labels: Vec<String> = self
+            .wav_entries
+            .iter()
+            .map(|entry| entry.relative_path.to_string_lossy().into_owned())
+            .collect();
+        let result = labels.get(index).cloned();
+        self.label_cache.insert(source_id, labels);
+        result
     }
 
     fn current_source(&self) -> Option<SampleSource> {
@@ -585,7 +616,7 @@ impl EguiController {
             return;
         };
         if let Some(entries) = self.wav_cache.get(&source.id).cloned() {
-            self.apply_wav_entries(entries, true);
+            self.apply_wav_entries(entries, true, Some(source.id.clone()));
             return;
         }
         self.wav_entries.clear();
@@ -616,7 +647,7 @@ impl EguiController {
                 Ok(entries) => {
                     self.wav_cache
                         .insert(message.source_id.clone(), entries.clone());
-                    self.apply_wav_entries(entries, false);
+                    self.apply_wav_entries(entries, false, Some(message.source_id.clone()));
                 }
                 Err(err) => {
                     self.set_status(format!("Failed to load wavs: {err}"), StatusTone::Error);
@@ -626,10 +657,19 @@ impl EguiController {
         }
     }
 
-    fn apply_wav_entries(&mut self, entries: Vec<WavEntry>, from_cache: bool) {
+    fn apply_wav_entries(
+        &mut self,
+        entries: Vec<WavEntry>,
+        from_cache: bool,
+        source_id: Option<SourceId>,
+    ) {
         self.wav_entries = entries;
         self.rebuild_wav_lookup();
         self.rebuild_triage_lists();
+        if let Some(id) = source_id {
+            self.label_cache
+                .insert(id, self.build_label_cache(&self.wav_entries));
+        }
         let prefix = if from_cache { "Cached" } else { "Loaded" };
         self.set_status(
             format!("{prefix} {} wav files", self.wav_entries.len()),
@@ -706,6 +746,7 @@ impl EguiController {
                         );
                         if let Some(source) = self.current_source() {
                             self.wav_cache.remove(&source.id);
+                            self.label_cache.remove(&source.id);
                         }
                         self.queue_wav_load();
                     }
