@@ -17,7 +17,7 @@ use crate::sample_sources::{
     SourceDatabase, SourceDbError, SourceId, WavEntry,
 };
 use crate::selection::{SelectionEdge, SelectionRange, SelectionState};
-use crate::ui::{HelloWorld, SourceRow, WavRow};
+use crate::ui::{Sempal, SourceRow, WavRow};
 use crate::waveform::LoadedWaveform;
 use crate::waveform::WaveformRenderer;
 use rfd::FileDialog;
@@ -68,7 +68,7 @@ enum StatusState {
 /// Coordinates UI callbacks, playback, scanning, and tag persistence.
 #[derive(Clone)]
 pub struct DropHandler {
-    app: Rc<RefCell<Option<slint::Weak<HelloWorld>>>>,
+    app: Rc<RefCell<Option<slint::Weak<Sempal>>>>,
     renderer: WaveformRenderer,
     player: Rc<RefCell<AudioPlayer>>,
     playhead_timer: Rc<slint::Timer>,
@@ -158,7 +158,7 @@ impl DropHandler {
     }
 
     /// Connect to the UI instance, preload sources, and begin scan polling.
-    pub fn set_app(&self, app: &HelloWorld) {
+    pub fn set_app(&self, app: &Sempal) {
         self.app.replace(Some(app.as_weak()));
         app.set_selection_visible(false);
         app.set_selection_start(0.0);
@@ -171,7 +171,7 @@ impl DropHandler {
         self.start_wav_list_polling();
     }
 
-    fn app(&self) -> Option<HelloWorld> {
+    fn app(&self) -> Option<Sempal> {
         self.app.borrow().as_ref().and_then(|a| a.upgrade())
     }
 
@@ -283,7 +283,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         .with_winit_custom_application_handler(drop_handler.clone())
         .select()?;
 
-    let app = HelloWorld::new()?;
+    let app = Sempal::new()?;
     app.set_source_menu_index(-1);
     app.set_waveform(renderer.empty_image());
     drop_handler.set_app(&app);

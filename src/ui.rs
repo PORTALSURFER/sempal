@@ -7,7 +7,7 @@ slint::slint! {
     import { CollectionPanel } from "ui/collection_panel.slint";
     import { CollectionRow, CollectionSampleRow, SourceRow, WavRow } from "ui/types.slint";
 
-    export component HelloWorld inherits Window {
+    export component Sempal inherits Window {
         preferred-width: 960px;
         preferred-height: 560px;
         min-width: 480px;
@@ -59,6 +59,8 @@ slint::slint! {
         callback scroll_sources_to(int);
         callback scroll_wavs_to(int, int);
         callback sample_dropped_on_collection(string, string);
+        callback sample_drop_attempt(string, length, length) -> bool;
+        callback sample_drag_hover(string, length, length, bool);
         property <bool> selection_drag_active: false;
         property <bool> selection_drag_moved: false;
 
@@ -120,18 +122,21 @@ slint::slint! {
                         wavs_panel := WavListPanel {
                             wavs_trash <=> root.wavs_trash;
                             wavs_neutral <=> root.wavs_neutral;
-                            wavs_keep <=> root.wavs_keep;
-                            dragging_sample_path <=> root.dragging_sample_path;
-                            drag_preview_label <=> root.drag_preview_label;
-                            drag_preview_x <=> root.drag_preview_x;
-                            drag_preview_y <=> root.drag_preview_y;
-                            drag_preview_visible <=> root.drag_preview_visible;
-                            selected_trash <=> root.selected_trash;
-                            selected_neutral <=> root.selected_neutral;
-                            selected_keep <=> root.selected_keep;
-                            loaded_wav_path <=> root.loaded_wav_path;
-                            wav_clicked(path) => root.wav_clicked(path);
-                        }
+                        wavs_keep <=> root.wavs_keep;
+                        dragging_sample_path <=> root.dragging_sample_path;
+                        drag_preview_label <=> root.drag_preview_label;
+                        drag_preview_x <=> root.drag_preview_x;
+                        drag_preview_y <=> root.drag_preview_y;
+                        drag_preview_visible <=> root.drag_preview_visible;
+                        selected_trash <=> root.selected_trash;
+                        selected_neutral <=> root.selected_neutral;
+                        selected_keep <=> root.selected_keep;
+                        loaded_wav_path <=> root.loaded_wav_path;
+                        z: 10;
+                        wav_clicked(path) => root.wav_clicked(path);
+                        drop_attempt(path, x, y) => root.sample_drop_attempt(path, x, y);
+                        drag_hover(path, x, y, active) => root.sample_drag_hover(path, x, y, active);
+                    }
 
                         StatusBar {
                             status_text <=> root.status_text;
@@ -141,7 +146,7 @@ slint::slint! {
                     }
                 }
 
-                CollectionPanel {
+                collection_panel := CollectionPanel {
                     collections <=> root.collections;
                     collection_samples <=> root.collection_samples;
                     selected_collection <=> root.selected_collection;
@@ -168,6 +173,21 @@ slint::slint! {
         scroll_wavs_to(tag, index) => {
             if index < 0 { return; }
             wavs_panel.scroll_to(tag, index);
+        }
+
+        sample_drag_hover(path, x, y, active) => {
+            collection_panel.update_drag_hover(path, x, y, active);
+        }
+
+        sample_drop_attempt(path, x, y) => {
+            if collection_panel.try_drop(path, x, y) {
+                root.drag_preview_visible = false;
+                root.dragging_sample_path = "";
+                collection_panel.update_drag_hover("", 0px, 0px, false);
+                return true;
+            }
+            collection_panel.update_drag_hover("", 0px, 0px, false);
+            false
         }
     }
 }

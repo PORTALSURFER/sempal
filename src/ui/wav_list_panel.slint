@@ -22,6 +22,8 @@ export component WavListPanel inherits Rectangle {
     in-out property <int> selected_keep: -1;
     in-out property <string> loaded_wav_path: "";
     callback wav_clicked(string);
+    callback drag_hover(string, length, length, bool);
+    callback drop_attempt(string, length, length) -> bool;
 
     public function scroll_to(tag: int, index: int) {
         if index < 0 { return; }
@@ -96,6 +98,7 @@ export component WavListPanel inherits Rectangle {
     border-color: #404040;
     background: #0f0f0f;
     border-radius: 6px;
+    z: 50;
 
     VerticalLayout {
         padding: 8px;
@@ -182,15 +185,20 @@ export component WavListPanel inherits Rectangle {
                                         root.pending_label = file.name;
                                         root.drag_started = false;
                                         root.drag_preview_visible = false;
-                                        let pos_x = trash_column.x + row_trash.x + self.mouse-x;
-                                        let pos_y = trash_column.y + row_trash.y + self.mouse-y;
+                                        root.drag_hover("", 0px, 0px, false);
+                                        let pos_x = trash_column.x + trash_list.x
+                                            + row_trash.x + self.mouse-x;
+                                        let pos_y = trash_column.y + trash_list.y
+                                            + row_trash.y + self.mouse-y;
                                         root.drag_start_x = pos_x;
                                         root.drag_start_y = pos_y;
                                         root.cursor_x = pos_x;
                                         root.cursor_y = pos_y;
                                     } else if event.kind == PointerEventKind.move && root.pending_path != "" {
-                                        let pos_x = trash_column.x + row_trash.x + self.mouse-x;
-                                        let pos_y = trash_column.y + row_trash.y + self.mouse-y;
+                                        let pos_x = trash_column.x + trash_list.x
+                                            + row_trash.x + self.mouse-x;
+                                        let pos_y = trash_column.y + trash_list.y
+                                            + row_trash.y + self.mouse-y;
                                         root.cursor_x = pos_x;
                                         root.cursor_y = pos_y;
                                         if !root.drag_started
@@ -207,16 +215,33 @@ export component WavListPanel inherits Rectangle {
                                         if root.drag_started {
                                             root.drag_preview_x = root.cursor_x;
                                             root.drag_preview_y = root.cursor_y;
+                                            root.drag_hover(root.dragging_sample_path, root.cursor_x, root.cursor_y, true);
                                         }
                                     } else if event.kind == PointerEventKind.up {
                                         let was_dragging = root.drag_started;
+                                        if was_dragging {
+                                            root.drag_hover(root.dragging_sample_path, root.drag_preview_x, root.drag_preview_y, false);
+                                        } else {
+                                            root.drag_hover("", 0px, 0px, false);
+                                        }
                                         root.drag_preview_visible = false;
                                         root.drag_started = false;
+                                        if was_dragging {
+                                            let handled = root.drop_attempt(
+                                                root.dragging_sample_path,
+                                                root.drag_preview_x,
+                                                root.drag_preview_y,
+                                            );
+                                            if handled {
+                                                root.dragging_sample_path = "";
+                                            }
+                                        }
                                         if !was_dragging {
                                             root.dragging_sample_path = "";
                                         }
                                         root.pending_path = "";
                                     } else if event.kind == PointerEventKind.cancel {
+                                        root.drag_hover("", 0px, 0px, false);
                                         root.drag_preview_visible = false;
                                         root.drag_started = false;
                                         root.pending_path = "";
@@ -302,15 +327,20 @@ export component WavListPanel inherits Rectangle {
                                         root.pending_label = file.name;
                                         root.drag_started = false;
                                         root.drag_preview_visible = false;
-                                        let pos_x = neutral_column.x + row_neutral.x + self.mouse-x;
-                                        let pos_y = neutral_column.y + row_neutral.y + self.mouse-y;
+                                        root.drag_hover("", 0px, 0px, false);
+                                        let pos_x = neutral_column.x + neutral_list.x
+                                            + row_neutral.x + self.mouse-x;
+                                        let pos_y = neutral_column.y + neutral_list.y
+                                            + row_neutral.y + self.mouse-y;
                                         root.drag_start_x = pos_x;
                                         root.drag_start_y = pos_y;
                                         root.cursor_x = pos_x;
                                         root.cursor_y = pos_y;
                                     } else if event.kind == PointerEventKind.move && root.pending_path != "" {
-                                        let pos_x = neutral_column.x + row_neutral.x + self.mouse-x;
-                                        let pos_y = neutral_column.y + row_neutral.y + self.mouse-y;
+                                        let pos_x = neutral_column.x + neutral_list.x
+                                            + row_neutral.x + self.mouse-x;
+                                        let pos_y = neutral_column.y + neutral_list.y
+                                            + row_neutral.y + self.mouse-y;
                                         root.cursor_x = pos_x;
                                         root.cursor_y = pos_y;
                                         if !root.drag_started
@@ -327,16 +357,33 @@ export component WavListPanel inherits Rectangle {
                                         if root.drag_started {
                                             root.drag_preview_x = root.cursor_x;
                                             root.drag_preview_y = root.cursor_y;
+                                            root.drag_hover(root.dragging_sample_path, root.cursor_x, root.cursor_y, true);
                                         }
                                     } else if event.kind == PointerEventKind.up {
                                         let was_dragging = root.drag_started;
+                                        if was_dragging {
+                                            root.drag_hover(root.dragging_sample_path, root.drag_preview_x, root.drag_preview_y, false);
+                                        } else {
+                                            root.drag_hover("", 0px, 0px, false);
+                                        }
                                         root.drag_preview_visible = false;
                                         root.drag_started = false;
+                                        if was_dragging {
+                                            let handled = root.drop_attempt(
+                                                root.dragging_sample_path,
+                                                root.drag_preview_x,
+                                                root.drag_preview_y,
+                                            );
+                                            if handled {
+                                                root.dragging_sample_path = "";
+                                            }
+                                        }
                                         if !was_dragging {
                                             root.dragging_sample_path = "";
                                         }
                                         root.pending_path = "";
                                     } else if event.kind == PointerEventKind.cancel {
+                                        root.drag_hover("", 0px, 0px, false);
                                         root.drag_preview_visible = false;
                                         root.drag_started = false;
                                         root.pending_path = "";
@@ -422,15 +469,20 @@ export component WavListPanel inherits Rectangle {
                                         root.pending_label = file.name;
                                         root.drag_started = false;
                                         root.drag_preview_visible = false;
-                                        let pos_x = keep_column.x + row_keep.x + self.mouse-x;
-                                        let pos_y = keep_column.y + row_keep.y + self.mouse-y;
+                                        root.drag_hover("", 0px, 0px, false);
+                                        let pos_x = keep_column.x + keep_list.x
+                                            + row_keep.x + self.mouse-x;
+                                        let pos_y = keep_column.y + keep_list.y
+                                            + row_keep.y + self.mouse-y;
                                         root.drag_start_x = pos_x;
                                         root.drag_start_y = pos_y;
                                         root.cursor_x = pos_x;
                                         root.cursor_y = pos_y;
                                     } else if event.kind == PointerEventKind.move && root.pending_path != "" {
-                                        let pos_x = keep_column.x + row_keep.x + self.mouse-x;
-                                        let pos_y = keep_column.y + row_keep.y + self.mouse-y;
+                                        let pos_x = keep_column.x + keep_list.x
+                                            + row_keep.x + self.mouse-x;
+                                        let pos_y = keep_column.y + keep_list.y
+                                            + row_keep.y + self.mouse-y;
                                         root.cursor_x = pos_x;
                                         root.cursor_y = pos_y;
                                         if !root.drag_started
@@ -447,16 +499,33 @@ export component WavListPanel inherits Rectangle {
                                         if root.drag_started {
                                             root.drag_preview_x = root.cursor_x;
                                             root.drag_preview_y = root.cursor_y;
+                                            root.drag_hover(root.dragging_sample_path, root.cursor_x, root.cursor_y, true);
                                         }
                                     } else if event.kind == PointerEventKind.up {
                                         let was_dragging = root.drag_started;
+                                        if was_dragging {
+                                            root.drag_hover(root.dragging_sample_path, root.drag_preview_x, root.drag_preview_y, false);
+                                        } else {
+                                            root.drag_hover("", 0px, 0px, false);
+                                        }
                                         root.drag_preview_visible = false;
                                         root.drag_started = false;
+                                        if was_dragging {
+                                            let handled = root.drop_attempt(
+                                                root.dragging_sample_path,
+                                                root.drag_preview_x,
+                                                root.drag_preview_y,
+                                            );
+                                            if handled {
+                                                root.dragging_sample_path = "";
+                                            }
+                                        }
                                         if !was_dragging {
                                             root.dragging_sample_path = "";
                                         }
                                         root.pending_path = "";
                                     } else if event.kind == PointerEventKind.cancel {
+                                        root.drag_hover("", 0px, 0px, false);
                                         root.drag_preview_visible = false;
                                         root.drag_started = false;
                                         root.pending_path = "";
@@ -473,11 +542,11 @@ export component WavListPanel inherits Rectangle {
     }
 
     if root.drag_preview_visible : Rectangle {
-        x: root.drag_preview_x + 8px;
-        y: root.drag_preview_y + 8px;
         width: 180px;
         height: 34px;
-        z: 15;
+        x: root.drag_preview_x;
+        y: root.drag_preview_y;
+        z: 50;
         background: #1a2733ee;
         border-width: 1px;
         border-color: #2f6fb1;
