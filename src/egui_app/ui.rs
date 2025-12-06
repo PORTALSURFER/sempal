@@ -1,3 +1,4 @@
+//! egui renderer for the application UI.
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -5,17 +6,18 @@ use crate::audio::AudioPlayer;
 use crate::egui_app::controller::EguiController;
 use crate::egui_app::state::{TriageColumn, TriageIndex};
 use crate::waveform::WaveformRenderer;
-use eframe::egui::{self, Color32, Frame, Margin, RichText, Stroke, Ui};
+use eframe::egui::{self, Color32, Frame, Margin, RichText, Stroke, TextureHandle, TextureOptions, Ui};
 
-/// Thin wrapper that renders the egui UI using the shared controller state.
+/// Renders the egui UI using the shared controller state.
 pub struct EguiApp {
     controller: EguiController,
     visuals_set: bool,
+    waveform_tex: Option<TextureHandle>,
 }
 
 impl EguiApp {
     /// Create a new egui app, loading persisted configuration.
-    pub fn new(renderer: WaveformRenderer, player: Rc<RefCell<AudioPlayer>>) -> Result<Self, String> {
+    pub fn new(renderer: WaveformRenderer, player: Option<Rc<RefCell<AudioPlayer>>>) -> Result<Self, String> {
         let mut controller = EguiController::new(renderer, player);
         controller
             .load_configuration()
@@ -23,6 +25,7 @@ impl EguiApp {
         Ok(Self {
             controller,
             visuals_set: false,
+            waveform_tex: None,
         })
     }
 
@@ -165,7 +168,29 @@ impl EguiApp {
             let available = ui.available_size();
             let rect = ui.allocate_space(available).1;
             let painter = ui.painter();
-            painter.rect_filled(rect, 6.0, Color32::from_rgb(12, 12, 12));
+            let tex_id = if let Some(image) = &self.controller.ui.waveform.image {
+                let needs_refresh = self
+                    .waveform_tex
+                    .as_ref()
+                    .map(|tex| tex.size() != image.image.size)
+                    .unwrap_or(true);
+                if needs_refresh {
+                    self.waveform_tex = Some(
+                        ui.ctx()
+                            .load_texture("waveform_texture", image.image.clone(), TextureOptions::LINEAR),
+                    );
+                }
+                self.waveform_tex.as_ref().map(|tex| tex.id())
+            } else {
+                self.waveform_tex = None;
+                None
+            };
+
+            if let Some(id) = tex_id {
+                painter.image(id, rect, rect, Color32::WHITE);
+            } else {
+                painter.rect_filled(rect, 6.0, Color32::from_rgb(12, 12, 12));
+            }
             painter.rect_stroke(
                 rect,
                 6.0,

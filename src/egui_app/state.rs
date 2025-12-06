@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+//! Shared state types for the egui UI.
 // Temporary while the egui UI is being wired; types will be exercised by the renderer next.
 
 use crate::sample_sources::{CollectionId, SampleTag, SourceId};
@@ -90,7 +91,7 @@ impl Default for WaveformState {
 /// Raw pixels ready to upload to an egui texture.
 #[derive(Clone, Debug)]
 pub struct WaveformImage {
-    pub pixels: egui::ColorImage,
+    pub image: egui::ColorImage,
 }
 
 /// Current playhead position/visibility.
@@ -126,6 +127,7 @@ pub struct TriageIndex {
     pub row: usize,
 }
 
+/// Wav triage columns: trash, neutral, keep.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TriageColumn {
     Trash,
