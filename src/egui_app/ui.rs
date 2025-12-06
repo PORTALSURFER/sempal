@@ -455,6 +455,9 @@ impl eframe::App for EguiApp {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         self.apply_visuals(ctx);
         self.controller.tick_playhead();
+        if ctx.input(|i| i.key_pressed(egui::Key::Space)) {
+            self.controller.toggle_play_pause();
+        }
         self.render_top_bar(ctx, frame);
         egui::SidePanel::left("sources")
             .resizable(false)

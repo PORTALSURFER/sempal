@@ -73,9 +73,15 @@ impl AudioPlayer {
             .ok_or_else(|| "Load a .wav file first".to_string())?;
         let clamped_start = start.clamp(0.0, 1.0) * duration;
         let clamped_end = end.clamp(0.0, 1.0) * duration;
-        let bounded_end = clamped_end.min(duration);
-        if bounded_end <= clamped_start {
-            return Err("Selection must cover a non-zero range".into());
+        let mut bounded_start = clamped_start.min(duration);
+        let mut bounded_end = clamped_end.min(duration);
+        let min_span = (duration * 0.01).max(0.01);
+        if bounded_end <= bounded_start {
+            bounded_end = (bounded_start + min_span).min(duration);
+            if bounded_end <= bounded_start {
+                bounded_start = (duration - min_span).max(0.0);
+                bounded_end = duration.max(bounded_start + 0.001);
+            }
         }
         self.start_with_span(clamped_start, bounded_end, duration, looped)
     }
@@ -309,5 +315,32 @@ mod tests {
     fn normalized_progress_returns_none_when_invalid_duration() {
         assert_eq!(normalized_progress(None, 0.0, 1.0, false), None);
         assert_eq!(normalized_progress(None, -1.0, 1.0, false), None);
+    }
+
+    #[test]
+    fn play_range_accepts_zero_width_request() {
+        let Ok((stream, handle)) = rodio::OutputStream::try_default() else {
+            // Skip when no audio device is available in the test environment.
+            return;
+        };
+        let mut player = AudioPlayer {
+            _stream: stream,
+            handle,
+            sink: None,
+            current_audio: None,
+            track_duration: None,
+            started_at: None,
+            play_span: None,
+            looping: false,
+        };
+        // A minimal valid 1s mono wav (header only, no samples needed for the span logic).
+        let bytes = vec![
+            0x52, 0x49, 0x46, 0x46, 0x24, 0x80, 0x00, 0x00, 0x57, 0x41, 0x56, 0x45, 0x66, 0x6D,
+            0x74, 0x20, 0x10, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x44, 0xAC, 0x00, 0x00,
+            0x88, 0x58, 0x01, 0x00, 0x02, 0x00, 0x10, 0x00, 0x64, 0x61, 0x74, 0x61, 0x00, 0x80,
+            0x00, 0x00, 0x00, 0x00,
+        ];
+        player.set_audio(bytes, 1.0);
+        assert!(player.play_range(0.5, 0.5, false).is_ok());
     }
 }
