@@ -260,6 +260,16 @@ impl EguiController {
     /// Finish a selection drag gesture.
     pub fn finish_selection_drag(&mut self) {
         self.selection.finish_drag();
+        let is_playing = self
+            .player
+            .as_ref()
+            .map(|p| p.borrow().is_playing())
+            .unwrap_or(false);
+        if is_playing && self.ui.waveform.loop_enabled {
+            if let Err(err) = self.play_audio(true, None) {
+                self.set_status(err, StatusTone::Error);
+            }
+        }
     }
 
     /// Clear any active selection.
