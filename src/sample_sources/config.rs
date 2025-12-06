@@ -17,6 +17,8 @@ pub struct AppConfig {
     pub collections: Vec<Collection>,
     #[serde(default)]
     pub feature_flags: FeatureFlags,
+    #[serde(default)]
+    pub last_selected_source: Option<super::SourceId>,
 }
 
 /// Toggleable features that can be persisted and evolve without breaking old configs.
@@ -133,6 +135,7 @@ mod tests {
         let path = dir.path().join("cfg.json");
         let cfg = AppConfig {
             sources: vec![SampleSource::new(dir.path().to_path_buf())],
+            last_selected_source: None,
             ..Default::default()
         };
         save_to_path(&cfg, &path).unwrap();
