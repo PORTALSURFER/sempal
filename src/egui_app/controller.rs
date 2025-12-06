@@ -1270,12 +1270,19 @@ mod tests {
 
     #[test]
     fn dropping_triage_sample_adds_to_collection_and_db() {
-        let (mut controller, source) = dummy_controller();
+        let temp = tempdir().unwrap();
+        let root = temp.path().join("source");
+        std::fs::create_dir_all(&root).unwrap();
+        let renderer = WaveformRenderer::new(10, 10);
+        let mut controller = EguiController::new(renderer, None);
+        let source = SampleSource::new(root.clone());
+        controller.selected_source = Some(source.id.clone());
         controller.sources.push(source.clone());
-        let file_path = source.root.join("sample.wav");
+
+        let file_path = root.join("sample.wav");
         std::fs::write(&file_path, b"data").unwrap();
 
-        let mut collection = Collection::new("Test");
+        let collection = Collection::new("Test");
         let collection_id = collection.id.clone();
         controller.collections.push(collection);
         controller.selected_collection = Some(collection_id.clone());
