@@ -95,14 +95,21 @@ impl DropHandler {
     fn row_highlights(selected: bool, loaded: bool) -> (Color, Color) {
         let primary = Color::from_rgb_u8(58, 156, 255);
         let secondary = Color::from_rgb_u8(47, 111, 177);
+        let neutral = Color::from_argb_u8(0, 0, 0, 0);
         let indicator = if loaded {
             primary
         } else if selected {
             secondary
         } else {
-            Color::from_argb_u8(0, 0, 0, 0)
+            neutral
         };
-        let border = if loaded { primary } else { secondary };
+        let border = if loaded {
+            primary
+        } else if selected {
+            secondary
+        } else {
+            neutral
+        };
         (border, indicator)
     }
 
