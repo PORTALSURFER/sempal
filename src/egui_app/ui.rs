@@ -478,6 +478,27 @@ impl eframe::App for EguiApp {
         if ctx.input(|i| i.key_pressed(egui::Key::ArrowUp)) {
             self.controller.nudge_selection(-1);
         }
+        if ctx.input(|i| i.key_pressed(egui::Key::ArrowRight)) {
+            if ctx.input(|i| i.modifiers.ctrl) {
+                let col = self.controller.ui.triage.selected.map(|t| t.column);
+                let target = if matches!(col, Some(crate::egui_app::state::TriageColumn::Trash)) {
+                    crate::sample_sources::SampleTag::Neutral
+                } else {
+                    crate::sample_sources::SampleTag::Keep
+                };
+                self.controller.tag_selected(target);
+            } else {
+                self.controller.nudge_selection(1);
+            }
+        }
+        if ctx.input(|i| i.key_pressed(egui::Key::ArrowLeft)) {
+            if ctx.input(|i| i.modifiers.ctrl) {
+                self.controller
+                    .tag_selected(crate::sample_sources::SampleTag::Trash);
+            } else {
+                self.controller.nudge_selection(-1);
+            }
+        }
         self.render_top_bar(ctx, frame);
         egui::SidePanel::left("sources")
             .resizable(false)
