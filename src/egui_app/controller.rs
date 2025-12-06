@@ -142,21 +142,28 @@ impl EguiController {
         self.refresh_collections_ui();
         let target_source = member.source_id.clone();
         let target_path = member.relative_path.clone();
-        if !self.sources.iter().any(|s| s.id == target_source) {
+        let Some(source) = self.sources.iter().find(|s| s.id == target_source).cloned() else {
             self.set_status("Source not available for this sample", StatusTone::Warning);
             return;
+        };
+        if Some(&target_source) != self.selected_source.as_ref() {
+            self.selected_source = Some(target_source.clone());
+            self.selected_wav = None;
+            self.loaded_wav = None;
+            self.refresh_sources_ui();
+            self.queue_wav_load();
+            let _ = self.persist_config("Failed to save selection");
         }
-        if Some(&target_source) == self.selected_source.as_ref() {
-            self.pending_select_path = Some(target_path.clone());
-            if self.wav_lookup.contains_key(&target_path) {
-                self.pending_select_path = None;
-                self.select_wav_by_path(&target_path);
-            } else {
-                self.queue_wav_load();
-            }
+        self.selected_wav = None;
+        self.loaded_wav = None;
+        self.ui.loaded_wav = None;
+        if let Err(err) = self.load_collection_waveform(&source, &target_path) {
+            self.set_status(err, StatusTone::Error);
             return;
         }
-        self.select_source_internal(Some(target_source), Some(target_path));
+        if self.feature_flags.autoplay_selection {
+            let _ = self.play_audio(self.ui.waveform.loop_enabled, None);
+        }
     }
 
     /// Select a source, optionally targeting a specific wav path once loaded.
@@ -467,6 +474,7 @@ impl EguiController {
             return;
         }
         self.ui.triage.autoscroll = false;
+        self.ui.triage.selected = None;
         let current = selected_row as isize;
         let next = (current + offset).clamp(0, total as isize - 1) as usize;
         self.select_collection_sample(next);
@@ -531,7 +539,11 @@ impl EguiController {
         } else {
             None
         };
-        let loaded_index = self.loaded_row_index();
+        let loaded_index = if highlight_selection {
+            self.loaded_row_index()
+        } else {
+            None
+        };
         self.reset_triage_ui();
 
         for i in 0..self.wav_entries.len() {
@@ -835,6 +847,34 @@ impl EguiController {
         Ok(())
     }
 
+    fn load_collection_waveform(
+        &mut self,
+        source: &SampleSource,
+        relative_path: &Path,
+    ) -> Result<(), String> {
+        let full_path = source.root.join(relative_path);
+        let bytes = fs::read(&full_path)
+            .map_err(|err| format!("Failed to read {}: {err}", full_path.display()))?;
+        let decoded = self.renderer.decode_from_bytes(&bytes)?;
+        let color_image = self.renderer.render_color_image(&decoded.samples);
+        self.ui.waveform.image = Some(WaveformImage { image: color_image });
+        self.ui.waveform.playhead = PlayheadState::default();
+        self.ui.waveform.selection = None;
+        self.selection.clear();
+        self.loaded_wav = None;
+        self.ui.loaded_wav = None;
+        if let Some(player) = self.ensure_player()? {
+            let mut player = player.borrow_mut();
+            player.stop();
+            player.set_audio(bytes, decoded.duration_seconds);
+        }
+        self.set_status(
+            format!("Loaded {}", relative_path.display()),
+            StatusTone::Info,
+        );
+        Ok(())
+    }
+
     fn set_status(&mut self, text: impl Into<String>, tone: StatusTone) {
         let (label, color) = status_badge(tone);
         self.ui.status.text = text.into();
@@ -956,7 +996,11 @@ impl EguiController {
                 pending_applied = true;
             }
         }
-        if !pending_applied && self.selected_wav.is_none() && !self.wav_entries.is_empty() {
+        if !pending_applied
+            && self.selected_wav.is_none()
+            && self.ui.collections.selected_sample.is_none()
+            && !self.wav_entries.is_empty()
+        {
             self.suppress_autoplay_once = true;
             self.select_wav_by_index(0);
         }
