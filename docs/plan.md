@@ -1,15 +1,19 @@
 ## Goal
-- Add a right-hand sidebar for collections where users can create collections, view the samples within a selected collection, and drag/drop samples to tag them into collections without moving them.
+- Migrate the entire UI from Slint to egui, preserving current functionality (sample sources, triage columns, waveform/selection, playback controls, collections sidebar with drag/drop tagging) and maintaining existing state/persistence semantics.
 
 ## Proposed solutions
-- Introduce a collections state model (ids, names, member sample paths) stored alongside existing sources/tags, with lightweight persistence so collection membership survives reloads.
-- Extend the Slint UI with a right sidebar component: collections list with add action, and a collection detail list showing members of the selected collection, keeping existing sample triage panels unchanged.
-- Implement drag/drop integration from existing sample rows to the collections sidebar; dropping adds membership (tagging) without altering the sample’s current category, gated behind a feature flag.
+- Recreate the window and layout using egui panels/splitters, mirroring the current structure: sources list, central waveform + triage lists, right-hand collections pane.
+- Implement custom drag/drop within egui: draggable sample rows with hover previews and drop targets for collections, keeping tagging semantics (no movement between lists).
+- Port Slint data models to pure Rust egui state structs, reusing existing app logic (collections, wav list handling, playback) with minimal rewrites.
+- Wrap audio/waveform rendering in egui-friendly components (texture upload for waveform image, playhead/selection overlays, keyboard + mouse interactions).
+- Replace Slint callback wiring with egui event handling loop, ensuring hotkeys, selection, scrolling, and status updates remain intact.
 
 ## Step-by-step plan
-1. [x] Review current wav list rendering, selection, and tag/persistence flow to identify integration points for collections and drag events.
-2. [x] Define collection data structures and storage/persistence strategy, including schema for member references and feature flag wiring.
-3. [x] Extend application state and handlers to manage collections (create/select/list members) and expose data to the UI while keeping existing workflows stable.
-4. [x] Update Slint layouts to add the right sidebar with collections list + add control and a collection member view that syncs with selection.
-5. [x] Implement drag/drop from sample rows to collections targets to add membership without moving samples; handle feedback, deduping, and flag-guarded activation.
-6. [~] Add tests for collection state/membership logic and perform manual QA of the new UI/drag-drop flow.
+1. [-] Inventory current UI features and interactions (sources, wav triage, waveform selection/loop, collections/drag-drop, status) to map them to egui widgets and events.
+2. [-] Design egui layout structure (top bar, left sources panel, central waveform + triage columns, right collections pane) with theming consistent with existing app.
+3. [-] Define egui-side state models mirroring current Slint models (rows for sources/wavs/collections, drag state, selection state) and connect to existing app logic/persistence.
+4. [-] Implement egui rendering for core panels: sources list with actions, triage lists with selection/highlight, status bar, top bar controls.
+5. [-] Implement waveform view in egui (texture rendering + overlays) and wire playback/selection interactions and keyboard shortcuts.
+6. [-] Implement collections panel with add/select, member list, and drag/drop tagging from wav rows, including hover/drop feedback and preview rendering.
+7. [-] Replace application entry/runtime to launch egui (winit integration), remove Slint dependencies, and ensure audio/worker threads communicate with the egui state.
+8. [-] Add or update tests for state transitions (collections, selection, tagging) and perform manual QA of the egui UI parity; remove Slint assets/deps once validated.
