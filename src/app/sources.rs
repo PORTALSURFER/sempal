@@ -56,7 +56,7 @@ impl DropHandler {
         let _ = self.cache_db(&source);
         sources.push(source.clone());
         drop(sources);
-        if let Err(error) = self.save_sources() {
+        if let Err(error) = self.save_full_config() {
             return Err(AddSourceFailure {
                 message: format!("Failed to save config: {error}"),
                 state: StatusState::Error,
@@ -126,12 +126,13 @@ impl DropHandler {
         self.db_cache.borrow_mut().remove(&removed.id);
         self.scan_tracker.borrow_mut().forget(&removed.id);
         self.pending_tags.borrow_mut().remove(&removed.id);
+        self.prune_collections_for_source(&removed.id);
         let mut selected = self.selected_source.borrow_mut();
         if selected.as_ref().is_some_and(|id| id == &removed.id) {
             *selected = None;
         }
         drop(selected);
-        if let Err(error) = self.save_sources() {
+        if let Err(error) = self.save_full_config() {
             self.set_status(
                 &app,
                 format!("Failed to save config: {error}"),
@@ -140,6 +141,7 @@ impl DropHandler {
             return;
         }
         self.refresh_sources(&app);
+        self.refresh_collections(&app);
         if self.selected_source.borrow().is_none() {
             self.select_first_source(&app);
         } else {
@@ -564,11 +566,16 @@ impl DropHandler {
     }
 
     /// Load persisted sources from disk and update the UI.
-    pub(super) fn load_sources(&self, app: &HelloWorld) {
+    pub(super) fn load_configuration(&self, app: &HelloWorld) {
         match config::load_or_default() {
             Ok(cfg) => {
+                self.feature_flags.replace(cfg.feature_flags);
                 self.sources.replace(cfg.sources);
+                self.collections.replace(cfg.collections);
+                app.set_collections_enabled(self.feature_flags.borrow().collections_enabled);
+                self.ensure_collection_selection();
                 self.refresh_sources(app);
+                self.refresh_collections(app);
                 self.select_first_source(app);
             }
             Err(error) => self.set_status(
@@ -579,10 +586,12 @@ impl DropHandler {
         }
     }
 
-    /// Save the current source list to disk.
-    pub(super) fn save_sources(&self) -> Result<(), config::ConfigError> {
+    /// Save the current configuration to disk.
+    pub(super) fn save_full_config(&self) -> Result<(), config::ConfigError> {
         config::save(&AppConfig {
             sources: self.sources.borrow().clone(),
+            collections: self.collections.borrow().clone(),
+            feature_flags: self.feature_flags.borrow().clone(),
         })
     }
 

@@ -2,11 +2,6 @@
 
 --
 
-\plan - lets add a new sidebar on the very right, inside this add a system for collections
-users can add new collection to this list. right below the collections list add a collection view which lists all samples inside of the currently selected collection if any.
-then add a drag/drop feature which add the ability for users to pick up any sample, and drop it onto this list, which will add it to said collection.
-this should be an additional flag, this action should dont move the sample, it should just add it to the collection. effectively tagging it as being part of said collection, or more collections.
-
 \plan - add a clearly distinc visual rect in the lower 1 3rd of a selection area, turn this into a drag handle. users can use this drag handle to drag out the selected areas of the same, and they can then drop it into the sample list view, adding a new sample, cropped, to that list, saving it on disk. the user can also add it a collection, which should mark place the file into the current sample source folder on disk, as well as marking it as being added to the collection, listing it there as well in its view.
 
 \plan - add some usage documentation to /docs/usage.md

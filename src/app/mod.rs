@@ -10,11 +10,11 @@ use std::{
 };
 
 use crate::audio::AudioPlayer;
-use crate::sample_sources::config::{self, AppConfig};
+use crate::sample_sources::config::{self, AppConfig, FeatureFlags};
 use crate::sample_sources::scanner::scan_once;
 use crate::sample_sources::{
-    SampleSource, SampleTag, ScanError, ScanStats, ScanTracker, SourceDatabase, SourceDbError,
-    SourceId, WavEntry,
+    Collection, CollectionId, SampleSource, SampleTag, ScanError, ScanStats, ScanTracker,
+    SourceDatabase, SourceDbError, SourceId, WavEntry,
 };
 use crate::selection::{SelectionEdge, SelectionRange, SelectionState};
 use crate::ui::{HelloWorld, SourceRow, WavRow};
@@ -29,6 +29,7 @@ use slint::winit_030::{
 use slint::{Color, ComponentHandle, SharedString};
 
 mod callbacks;
+mod collections;
 mod loading;
 mod metrics;
 mod navigation;
@@ -39,6 +40,7 @@ mod tags;
 mod view;
 mod wav_list;
 mod wavs;
+use self::collections::CollectionModels;
 use self::loading::{WaveformCache, WaveformJob, WaveformJobResult};
 use self::tags::TagStep;
 use self::wav_list::{WavListJob, WavListJobResult, spawn_wav_list_worker};
@@ -71,10 +73,12 @@ pub struct DropHandler {
     player: Rc<RefCell<AudioPlayer>>,
     playhead_timer: Rc<slint::Timer>,
     sources: Rc<RefCell<Vec<SampleSource>>>,
+    collections: Rc<RefCell<Vec<Collection>>>,
     db_cache: Rc<RefCell<HashMap<SourceId, Rc<SourceDatabase>>>>,
     wav_entries: Rc<RefCell<Vec<WavEntry>>>,
     wav_lookup: Rc<RefCell<HashMap<PathBuf, usize>>>,
     selected_source: Rc<RefCell<Option<SourceId>>>,
+    selected_collection: Rc<RefCell<Option<CollectionId>>>,
     selected_wav: Rc<RefCell<Option<PathBuf>>>,
     loaded_wav: Rc<RefCell<Option<PathBuf>>>,
     wav_list_tx: Sender<WavListJob>,
@@ -98,6 +102,8 @@ pub struct DropHandler {
     waveform_poll_timer: Rc<slint::Timer>,
     waveform_cache: Rc<RefCell<WaveformCache>>,
     wav_models: Rc<RefCell<WavModels>>,
+    collection_models: Rc<RefCell<CollectionModels>>,
+    feature_flags: Rc<RefCell<FeatureFlags>>,
 }
 
 impl DropHandler {
@@ -117,10 +123,12 @@ impl DropHandler {
             player,
             playhead_timer: Rc::new(slint::Timer::default()),
             sources: Rc::new(RefCell::new(Vec::new())),
+            collections: Rc::new(RefCell::new(Vec::new())),
             db_cache: Rc::new(RefCell::new(HashMap::new())),
             wav_entries: Rc::new(RefCell::new(Vec::new())),
             wav_lookup: Rc::new(RefCell::new(HashMap::new())),
             selected_source: Rc::new(RefCell::new(None)),
+            selected_collection: Rc::new(RefCell::new(None)),
             selected_wav: Rc::new(RefCell::new(None)),
             loaded_wav: Rc::new(RefCell::new(None)),
             wav_list_tx,
@@ -144,6 +152,8 @@ impl DropHandler {
             waveform_poll_timer: Rc::new(slint::Timer::default()),
             waveform_cache: Rc::new(RefCell::new(WaveformCache::new(WAVEFORM_CACHE_CAPACITY))),
             wav_models: Rc::new(RefCell::new(WavModels::new())),
+            collection_models: Rc::new(RefCell::new(CollectionModels::new())),
+            feature_flags: Rc::new(RefCell::new(FeatureFlags::default())),
         }
     }
 
@@ -154,7 +164,7 @@ impl DropHandler {
         app.set_selection_start(0.0);
         app.set_selection_end(0.0);
         app.set_loop_enabled(*self.loop_enabled.borrow());
-        self.load_sources(app);
+        self.load_configuration(app);
         self.start_scan_polling();
         self.start_waveform_polling();
         self.start_wav_batching();

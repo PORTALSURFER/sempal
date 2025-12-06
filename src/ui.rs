@@ -4,7 +4,8 @@ slint::slint! {
     import { WaveformPanel } from "ui/waveform_panel.slint";
     import { WavListPanel } from "ui/wav_list_panel.slint";
     import { StatusBar } from "ui/status_bar.slint";
-    import { SourceRow, WavRow } from "ui/types.slint";
+    import { CollectionPanel } from "ui/collection_panel.slint";
+    import { CollectionRow, CollectionSampleRow, SourceRow, WavRow } from "ui/types.slint";
 
     export component HelloWorld inherits Window {
         preferred-width: 960px;
@@ -31,6 +32,15 @@ slint::slint! {
         callback close_requested();
         in-out property <[SourceRow]> sources;
         in-out property <int> selected_source: -1;
+        in-out property <[CollectionRow]> collections;
+        in-out property <[CollectionSampleRow]> collection_samples;
+        in-out property <int> selected_collection: -1;
+        in-out property <bool> collections_enabled: true;
+        in-out property <string> dragging_sample_path: "";
+        in-out property <string> drag_preview_label: "";
+        in-out property <length> drag_preview_x: 0px;
+        in-out property <length> drag_preview_y: 0px;
+        in-out property <bool> drag_preview_visible: false;
         in-out property <[WavRow]> wavs_trash;
         in-out property <[WavRow]> wavs_neutral;
         in-out property <[WavRow]> wavs_keep;
@@ -43,9 +53,12 @@ slint::slint! {
         callback source_update_requested(int);
         callback source_remove_requested(int);
         callback add_source();
+        callback add_collection();
+        callback collection_selected(int);
         callback wav_clicked(string);
         callback scroll_sources_to(int);
         callback scroll_wavs_to(int, int);
+        callback sample_dropped_on_collection(string, string);
         property <bool> selection_drag_active: false;
         property <bool> selection_drag_moved: false;
 
@@ -108,6 +121,11 @@ slint::slint! {
                             wavs_trash <=> root.wavs_trash;
                             wavs_neutral <=> root.wavs_neutral;
                             wavs_keep <=> root.wavs_keep;
+                            dragging_sample_path <=> root.dragging_sample_path;
+                            drag_preview_label <=> root.drag_preview_label;
+                            drag_preview_x <=> root.drag_preview_x;
+                            drag_preview_y <=> root.drag_preview_y;
+                            drag_preview_visible <=> root.drag_preview_visible;
                             selected_trash <=> root.selected_trash;
                             selected_neutral <=> root.selected_neutral;
                             selected_keep <=> root.selected_keep;
@@ -120,6 +138,23 @@ slint::slint! {
                             status_badge_text <=> root.status_badge_text;
                             status_badge_color <=> root.status_badge_color;
                         }
+                    }
+                }
+
+                CollectionPanel {
+                    collections <=> root.collections;
+                    collection_samples <=> root.collection_samples;
+                    selected_collection <=> root.selected_collection;
+                    collections_enabled <=> root.collections_enabled;
+                    dragging_sample_path <=> root.dragging_sample_path;
+                    drag_preview_label <=> root.drag_preview_label;
+                    drag_preview_x <=> root.drag_preview_x;
+                    drag_preview_y <=> root.drag_preview_y;
+                    drag_preview_visible <=> root.drag_preview_visible;
+                    add_collection => root.add_collection();
+                    collection_selected(i) => root.collection_selected(i);
+                    sample_dropped_on_collection(id, path) => {
+                        root.sample_dropped_on_collection(id, path);
                     }
                 }
             }
