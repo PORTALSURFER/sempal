@@ -36,9 +36,11 @@ mod scan;
 mod sources;
 mod tags;
 mod view;
+mod wav_list;
 mod wavs;
 use self::loading::{WaveformCache, WaveformJob, WaveformJobResult};
 use self::tags::TagStep;
+use self::wav_list::{WavListJob, WavListJobResult, spawn_wav_list_worker};
 use self::wavs::WavModels;
 
 /// Minimum normalized width for a selection to count as usable.
@@ -74,6 +76,9 @@ pub struct DropHandler {
     selected_source: Rc<RefCell<Option<SourceId>>>,
     selected_wav: Rc<RefCell<Option<PathBuf>>>,
     loaded_wav: Rc<RefCell<Option<PathBuf>>>,
+    wav_list_tx: Sender<WavListJob>,
+    wav_list_rx: Rc<RefCell<Receiver<WavListJobResult>>>,
+    wav_list_poll_timer: Rc<slint::Timer>,
     pending_tags: Rc<RefCell<HashMap<SourceId, Vec<(PathBuf, SampleTag)>>>>,
     scan_tracker: Rc<RefCell<ScanTracker>>,
     scan_tx: Sender<ScanJobResult>,
@@ -98,6 +103,7 @@ impl DropHandler {
         let (scan_tx, scan_rx) = mpsc::channel();
         let (waveform_tx, waveform_rx_raw) = mpsc::channel();
         let (waveform_result_tx, waveform_result_rx) = mpsc::channel();
+        let (wav_list_tx, wav_list_rx) = spawn_wav_list_worker();
         let worker_renderer = renderer.clone();
         thread::spawn(move || {
             loading::run_waveform_worker(worker_renderer, waveform_rx_raw, waveform_result_tx)
@@ -114,6 +120,9 @@ impl DropHandler {
             selected_source: Rc::new(RefCell::new(None)),
             selected_wav: Rc::new(RefCell::new(None)),
             loaded_wav: Rc::new(RefCell::new(None)),
+            wav_list_tx,
+            wav_list_rx: Rc::new(RefCell::new(wav_list_rx)),
+            wav_list_poll_timer: Rc::new(slint::Timer::default()),
             pending_tags: Rc::new(RefCell::new(HashMap::new())),
             scan_tracker: Rc::new(RefCell::new(ScanTracker::default())),
             scan_tx,
@@ -143,6 +152,7 @@ impl DropHandler {
         self.load_sources(app);
         self.start_scan_polling();
         self.start_waveform_polling();
+        self.start_wav_list_polling();
     }
 
     fn app(&self) -> Option<HelloWorld> {
@@ -153,6 +163,7 @@ impl DropHandler {
         *self.shutting_down.borrow_mut() = true;
         self.flush_pending_tags();
         self.scan_poll_timer.stop();
+        self.wav_list_poll_timer.stop();
         self.waveform_poll_timer.stop();
         self.playhead_timer.stop();
         self.player.borrow_mut().stop();

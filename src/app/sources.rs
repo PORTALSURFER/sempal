@@ -1,5 +1,6 @@
 use super::navigation::compute_target_index;
 use super::*;
+use crate::app::wav_list::{WavListJob, WavListJobResult};
 use std::path::{Path, PathBuf};
 
 /// Error details surfaced when adding a new sample source fails validation.
@@ -279,23 +280,19 @@ impl DropHandler {
             self.update_wav_view(app, true);
             return;
         };
-        match self.database_for(&source).and_then(|db| db.list_files()) {
-            Ok(entries) => {
-                self.wav_entries.replace(entries.clone());
-                self.rebuild_wav_lookup(&entries);
-                self.update_wav_view(app, true);
-                self.set_status(
-                    app,
-                    format!("{} wav files loaded", entries.len()),
-                    StatusState::Info,
-                );
-            }
-            Err(error) => self.set_status(
-                app,
-                format!("Failed to load wavs: {error}"),
-                StatusState::Error,
-            ),
+        if *self.shutting_down.borrow() {
+            return;
         }
+        let job = WavListJob {
+            source_id: source.id.clone(),
+            root: source.root.clone(),
+        };
+        let _ = self.wav_list_tx.send(job);
+        self.set_status(
+            app,
+            format!("Loading {}", source.root.display()),
+            StatusState::Busy,
+        );
     }
 
     /// Update UI bindings for the wav list selection and loaded file state.
@@ -347,6 +344,73 @@ impl DropHandler {
         Self::apply_selection_to_app(app, selected_target);
         self.scroll_wavs_to(app, selected_target);
         app.set_loaded_wav_path(loaded_path.unwrap_or_default().into());
+    }
+
+    /// Start polling for wav list load results.
+    pub(super) fn start_wav_list_polling(&self) {
+        if *self.shutting_down.borrow() {
+            return;
+        }
+        let poller = self.clone();
+        self.wav_list_poll_timer.start(
+            slint::TimerMode::Repeated,
+            Duration::from_millis(60),
+            move || poller.process_wav_list_queue(),
+        );
+    }
+
+    /// Process any queued wav list results from the background worker.
+    pub(super) fn process_wav_list_queue(&self) {
+        let Some(app) = self.app() else {
+            return;
+        };
+        while let Ok(message) = self.wav_list_rx.borrow().try_recv() {
+            self.handle_wav_list_result(&app, message);
+        }
+    }
+
+    fn handle_wav_list_result(&self, app: &HelloWorld, message: WavListJobResult) {
+        if !self
+            .sources
+            .borrow()
+            .iter()
+            .any(|source| source.id == message.source_id)
+        {
+            return;
+        }
+        match message.result {
+            Ok(entries) => {
+                if self
+                    .selected_source
+                    .borrow()
+                    .as_ref()
+                    .is_some_and(|id| id == &message.source_id)
+                {
+                    self.wav_entries.replace(entries.clone());
+                    self.rebuild_wav_lookup(&entries);
+                    self.update_wav_view(app, true);
+                    self.set_status(
+                        app,
+                        format!("{} wav files loaded", entries.len()),
+                        StatusState::Info,
+                    );
+                }
+            }
+            Err(error) => {
+                if self
+                    .selected_source
+                    .borrow()
+                    .as_ref()
+                    .is_some_and(|id| id == &message.source_id)
+                {
+                    self.set_status(
+                        app,
+                        format!("Failed to load wavs: {error}"),
+                        StatusState::Error,
+                    );
+                }
+            }
+        }
     }
 
     fn apply_selection_to_app(app: &HelloWorld, selected: Option<(SampleTag, usize)>) {
