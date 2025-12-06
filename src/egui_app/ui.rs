@@ -480,6 +480,8 @@ impl eframe::App for EguiApp {
         }
         if ctx.input(|i| i.key_pressed(egui::Key::ArrowRight)) {
             if ctx.input(|i| i.modifiers.ctrl) {
+                self.controller.move_selection_column(1);
+            } else {
                 let col = self.controller.ui.triage.selected.map(|t| t.column);
                 let target = if matches!(col, Some(crate::egui_app::state::TriageColumn::Trash)) {
                     crate::sample_sources::SampleTag::Neutral
@@ -487,16 +489,14 @@ impl eframe::App for EguiApp {
                     crate::sample_sources::SampleTag::Keep
                 };
                 self.controller.tag_selected(target);
-            } else {
-                self.controller.nudge_selection(1);
             }
         }
         if ctx.input(|i| i.key_pressed(egui::Key::ArrowLeft)) {
             if ctx.input(|i| i.modifiers.ctrl) {
+                self.controller.move_selection_column(-1);
+            } else {
                 self.controller
                     .tag_selected(crate::sample_sources::SampleTag::Trash);
-            } else {
-                self.controller.nudge_selection(-1);
             }
         }
         self.render_top_bar(ctx, frame);

@@ -333,6 +333,7 @@ impl EguiController {
         let Some(selected_index) = self.selected_row_index() else {
             return;
         };
+        let moved_entry_index = selected_index;
         let original_list: Vec<usize> = self.triage_indices(column).to_vec();
         let next_candidate = if row + 1 < original_list.len() {
             original_list.get(row + 1).copied()
@@ -365,11 +366,14 @@ impl EguiController {
             }
         }
         self.rebuild_triage_lists();
+        // If we moved the last item out of a column, keep selection on the moved item.
+        if original_list.len() == 1 || (row + 1 == original_list.len() && next_candidate.is_none())
+        {
+            self.select_wav_by_index(moved_entry_index);
+            return;
+        }
         if let Some(next_index) = next_candidate {
             self.select_wav_by_index(next_index);
-        } else {
-            self.selected_wav = None;
-            self.ui.triage.selected = None;
         }
     }
 
@@ -386,6 +390,29 @@ impl EguiController {
         let current_row = row as isize;
         let next_row = (current_row + offset).clamp(0, list.len() as isize - 1) as usize;
         if let Some(entry_index) = list.get(next_row).copied() {
+            self.select_wav_by_index(entry_index);
+            let _ = self.play_audio(self.ui.waveform.loop_enabled, None);
+        }
+    }
+
+    /// Move selection to the same row in a neighboring column (-1 left, +1 right).
+    pub fn move_selection_column(&mut self, delta: isize) {
+        use crate::egui_app::state::TriageColumn::*;
+        let columns = [Trash, Neutral, Keep];
+        let current = self.ui.triage.selected.map(|t| t.column).unwrap_or(Neutral);
+        let current_idx = columns.iter().position(|c| c == &current).unwrap_or(1) as isize;
+        let target_idx = (current_idx + delta).clamp(0, (columns.len() as isize) - 1) as usize;
+        if target_idx == current_idx as usize {
+            return;
+        }
+        let target_col = columns[target_idx];
+        let list = self.triage_indices(target_col);
+        if list.is_empty() {
+            return;
+        }
+        let row = self.ui.triage.selected.map(|t| t.row).unwrap_or(0);
+        let clamped_row = row.min(list.len().saturating_sub(1));
+        if let Some(entry_index) = list.get(clamped_row).copied() {
             self.select_wav_by_index(entry_index);
             let _ = self.play_audio(self.ui.waveform.loop_enabled, None);
         }
