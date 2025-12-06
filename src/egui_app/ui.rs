@@ -19,6 +19,30 @@ pub struct EguiApp {
 }
 
 impl EguiApp {
+    fn list_row_height(ui: &Ui) -> f32 {
+        ui.spacing().interact_size.y
+    }
+
+    fn clamp_label_for_width(text: &str, available_width: f32) -> String {
+        // Roughly approximate mono-width to avoid expensive layout probes.
+        let width = available_width.max(1.0);
+        let approx_char_width = 8.0;
+        let max_chars = (width / approx_char_width).floor().max(6.0) as usize;
+        if text.chars().count() <= max_chars {
+            return text.to_string();
+        }
+        let keep = max_chars.saturating_sub(3);
+        let mut clipped = String::with_capacity(max_chars);
+        for (i, ch) in text.chars().enumerate() {
+            if i >= keep {
+                clipped.push_str("...");
+                break;
+            }
+            clipped.push(ch);
+        }
+        clipped
+    }
+
     /// Create a new egui app, loading persisted configuration.
     pub fn new(
         renderer: WaveformRenderer,
@@ -105,18 +129,23 @@ impl EguiApp {
                 .show(ui, |ui| {
                     let rows = self.controller.ui.sources.rows.clone();
                     let selected = self.controller.ui.sources.selected;
+                    let row_height = Self::list_row_height(ui);
                     for (index, row) in rows.iter().enumerate() {
                         let is_selected = Some(index) == selected;
                         ui.push_id(&row.id, |ui| {
-                            let mut response = ui.selectable_label(
-                                is_selected,
-                                RichText::new(&row.name).color(Color32::WHITE),
-                            );
-                            response = response.on_hover_text(&row.path);
+                            let row_width = ui.available_width();
+                            let label = Self::clamp_label_for_width(&row.name, row_width);
+                            let mut button =
+                                egui::Button::new(RichText::new(label).color(Color32::WHITE))
+                                    .wrap(false);
+                            if is_selected {
+                                button = button.fill(Color32::from_rgb(30, 30, 30));
+                            }
+                            let response = ui.add_sized(egui::vec2(row_width, row_height), button);
+                            let response = response.on_hover_text(&row.path);
                             if response.clicked() {
                                 self.controller.select_source_by_index(index);
                             }
-                            ui.add_space(4.0);
                         });
                     }
                 });
@@ -143,14 +172,20 @@ impl EguiApp {
             egui::ScrollArea::vertical()
                 .id_source("collections_scroll")
                 .show(ui, |ui| {
+                    let row_height = Self::list_row_height(ui);
                     for (index, collection) in rows.iter().enumerate() {
                         let selected = collection.selected;
                         let label = format!("{} ({})", collection.name, collection.count);
                         ui.push_id(&collection.id, |ui| {
-                            let response = ui.selectable_label(
-                                selected,
-                                RichText::new(label).color(Color32::WHITE),
-                            );
+                            let row_width = ui.available_width();
+                            let label = Self::clamp_label_for_width(&label, row_width);
+                            let mut button =
+                                egui::Button::new(RichText::new(label).color(Color32::WHITE))
+                                    .wrap(false);
+                            if selected {
+                                button = button.fill(Color32::from_rgb(30, 30, 30));
+                            }
+                            let response = ui.add_sized(egui::vec2(row_width, row_height), button);
                             if response.clicked() {
                                 self.controller.select_collection_by_index(Some(index));
                             }
@@ -166,7 +201,6 @@ impl EguiApp {
                                     }
                                 }
                             }
-                            ui.add_space(4.0);
                         });
                     }
                 });
@@ -205,14 +239,11 @@ impl EguiApp {
             } else {
                 None
             };
-            const ROW_HEIGHT: f32 = 28.0;
+            let row_height = Self::list_row_height(ui);
             let available_height = ui.available_height();
             let frame = egui::Frame::none().fill(Color32::from_rgb(16, 16, 16));
             let scroll_response = frame.show(ui, |ui| {
                 ui.set_min_height(available_height);
-                let full_width = ui.available_width();
-                ui.set_width(full_width);
-                ui.set_min_width(full_width);
                 let scroll = egui::ScrollArea::vertical().id_source("collection_items_scroll");
                 if samples.is_empty() {
                     scroll.show(ui, |ui| {
@@ -223,18 +254,21 @@ impl EguiApp {
                         );
                     })
                 } else {
-                    scroll.show_rows(ui, ROW_HEIGHT, samples.len(), |ui, row_range| {
+                    scroll.show_rows(ui, row_height, samples.len(), |ui, row_range| {
                         for row in row_range {
                             let Some(sample) = samples.get(row) else {
                                 continue;
                             };
+                            let row_width = ui.available_width();
                             let path = sample.path.clone();
                             let label = format!("{} — {}", sample.source, sample.label);
+                            let label = Self::clamp_label_for_width(&label, row_width);
                             let is_selected = Some(row) == selected_row;
                             let is_duplicate_hover = drag_active
                                 && active_drag_path.as_ref().is_some_and(|p| p == &path);
                             let mut button =
                                 egui::Button::new(RichText::new(label).color(Color32::LIGHT_GRAY))
+                                    .wrap(false)
                                     .sense(egui::Sense::click_and_drag());
                             if is_selected {
                                 button = button.fill(Color32::from_rgb(30, 30, 30));
@@ -244,10 +278,8 @@ impl EguiApp {
                             ui.push_id(
                                 format!("{}:{}:{}", sample.source_id, sample.source, sample.label),
                                 |ui| {
-                                    let response = ui.add_sized(
-                                        egui::vec2(ui.available_width(), ROW_HEIGHT),
-                                        button,
-                                    );
+                                    let response =
+                                        ui.add_sized(egui::vec2(row_width, row_height), button);
                                     if response.clicked() {
                                         self.controller.select_collection_sample(row);
                                     }
@@ -283,7 +315,7 @@ impl EguiApp {
             if let Some(row) = duplicate_row {
                 let viewport_height = scroll_response.inner.inner_rect.height();
                 let content_height = scroll_response.inner.content_size.y;
-                let target = (row as f32 + 0.5) * ROW_HEIGHT - viewport_height * 0.5;
+                let target = (row as f32 + 0.5) * row_height - viewport_height * 0.5;
                 let max_offset = (content_height - viewport_height).max(0.0);
                 let desired_offset = target.clamp(0.0, max_offset);
                 let mut state = scroll_response.inner.state;
@@ -293,10 +325,10 @@ impl EguiApp {
             if duplicate_row.is_none() {
                 if let Some(row) = selected_row {
                     let content_min = scroll_response.inner.inner_rect.min;
-                    let min = egui::pos2(content_min.x, content_min.y + row as f32 * ROW_HEIGHT);
+                    let min = egui::pos2(content_min.x, content_min.y + row as f32 * row_height);
                     let rect = egui::Rect::from_min_size(
                         min,
-                        egui::vec2(scroll_response.inner.inner_rect.width(), ROW_HEIGHT),
+                        egui::vec2(scroll_response.inner.inner_rect.width(), row_height),
                     );
                     ui.scroll_to_rect(rect, Some(Align::Center));
                 }
@@ -498,13 +530,13 @@ impl EguiApp {
         };
         let triage_autoscroll = self.controller.ui.triage.autoscroll
             && self.controller.ui.collections.selected_sample.is_none();
-        const ROW_HEIGHT: f32 = 30.0;
+        let row_height = Self::list_row_height(ui);
         let total_rows = self.controller.triage_indices(column).len();
         let bg_frame = Frame::none().fill(Color32::from_rgb(16, 16, 16));
         let frame_response = bg_frame.show(ui, |ui| {
             let scroll_response = egui::ScrollArea::vertical()
                 .id_source(format!("triage_scroll_{title}"))
-                .show_rows(ui, ROW_HEIGHT, total_rows, |ui, row_range| {
+                .show_rows(ui, row_height, total_rows, |ui, row_range| {
                     for row in row_range {
                         let entry_index = {
                             let indices = self.controller.triage_indices(column);
@@ -520,6 +552,7 @@ impl EguiApp {
                         let is_selected = selected_row == Some(row);
                         let is_loaded = loaded_row == Some(row);
                         let path = entry.relative_path.clone();
+                        let row_width = ui.available_width();
                         let mut label = self
                             .controller
                             .wav_label(entry_index)
@@ -527,16 +560,16 @@ impl EguiApp {
                         if is_loaded {
                             label.push_str(" • loaded");
                         }
-
+                        let label = Self::clamp_label_for_width(&label, row_width);
                         let mut button =
                             egui::Button::new(RichText::new(label).color(Color32::WHITE))
+                                .wrap(false)
                                 .sense(egui::Sense::click_and_drag());
                         if is_selected {
                             button = button.fill(Color32::from_rgb(30, 30, 30));
                         }
                         ui.push_id(&path, |ui| {
-                            let response =
-                                ui.add_sized(egui::vec2(ui.available_width(), ROW_HEIGHT), button);
+                            let response = ui.add_sized(egui::vec2(row_width, row_height), button);
                             if response.clicked() {
                                 self.controller.select_from_triage(&path);
                             }
@@ -565,7 +598,7 @@ impl EguiApp {
         if let (Some(row), true) = (selected_row, triage_autoscroll) {
             let viewport_height = frame_response.inner.inner_rect.height();
             let content_height = frame_response.inner.content_size.y;
-            let target = (row as f32 + 0.5) * ROW_HEIGHT - viewport_height * 0.5;
+            let target = (row as f32 + 0.5) * row_height - viewport_height * 0.5;
             let max_offset = (content_height - viewport_height).max(0.0);
             let desired_offset = target.clamp(0.0, max_offset);
             let mut state = frame_response.inner.state;
