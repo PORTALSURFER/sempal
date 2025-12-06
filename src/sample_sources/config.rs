@@ -4,7 +4,7 @@ use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use super::SampleSource;
+use super::{Collection, SampleSource};
 
 /// Default filename used to store the app configuration.
 pub const CONFIG_FILE_NAME: &str = "config.json";
@@ -13,6 +13,25 @@ pub const CONFIG_FILE_NAME: &str = "config.json";
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AppConfig {
     pub sources: Vec<SampleSource>,
+    #[serde(default)]
+    pub collections: Vec<Collection>,
+    #[serde(default)]
+    pub feature_flags: FeatureFlags,
+}
+
+/// Toggleable features that can be persisted and evolve without breaking old configs.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FeatureFlags {
+    #[serde(default = "default_true")]
+    pub collections_enabled: bool,
+}
+
+impl Default for FeatureFlags {
+    fn default() -> Self {
+        Self {
+            collections_enabled: true,
+        }
+    }
 }
 
 /// Errors that may occur while loading or saving app configuration.
@@ -114,10 +133,15 @@ mod tests {
         let path = dir.path().join("cfg.json");
         let cfg = AppConfig {
             sources: vec![SampleSource::new(dir.path().to_path_buf())],
+            ..Default::default()
         };
         save_to_path(&cfg, &path).unwrap();
         let loaded = load_from(&path).unwrap();
         assert_eq!(loaded.sources.len(), 1);
         assert_eq!(loaded.sources[0].root, dir.path());
     }
+}
+
+fn default_true() -> bool {
+    true
 }

@@ -37,6 +37,16 @@ pub(super) fn attach_callbacks(app: &HelloWorld, drop_handler: &DropHandler) {
     app.on_source_remove_requested(move |index| remove_handler.handle_remove_source(index));
     let wav_handler = drop_handler.clone();
     app.on_wav_clicked(move |path| wav_handler.handle_wav_clicked(path));
+    let collection_add_handler = drop_handler.clone();
+    app.on_add_collection(move || collection_add_handler.handle_add_collection());
+    let collection_select_handler = drop_handler.clone();
+    app.on_collection_selected(move |index| {
+        collection_select_handler.handle_collection_selected(index)
+    });
+    let drop_handler_clone = drop_handler.clone();
+    app.on_sample_dropped_on_collection(move |collection_id, path| {
+        drop_handler_clone.handle_sample_dropped_on_collection(collection_id, path)
+    });
     let close_handler = drop_handler.clone();
     app.on_close_requested(move || {
         close_handler.shutdown();
