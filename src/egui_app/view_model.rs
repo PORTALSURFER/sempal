@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+//! Helpers to convert domain data into egui-facing view structs.
 // Transitional helpers; wiring into the egui renderer will consume these.
 
 use crate::egui_app::state::{
