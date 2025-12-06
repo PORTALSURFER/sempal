@@ -212,10 +212,21 @@ impl EguiController {
             if let Some(source) = self.current_source() {
                 if let Err(err) = self.load_waveform_for_selection(&source, path) {
                     self.set_status(err, StatusTone::Error);
+                } else if self.feature_flags.autoplay_selection {
+                    let _ = self.play_audio(self.ui.waveform.loop_enabled, None);
                 }
             }
             self.rebuild_triage_lists();
         }
+    }
+
+    /// Select a wav by absolute index into the full wav list.
+    pub fn select_wav_by_index(&mut self, index: usize) {
+        let path = match self.wav_entries.get(index) {
+            Some(entry) => entry.relative_path.clone(),
+            None => return,
+        };
+        self.select_wav_by_path(&path);
     }
 
     /// Begin a selection drag at the given normalized position.
@@ -312,6 +323,24 @@ impl EguiController {
         drop(player_rc);
         if let Err(err) = self.play_audio(self.ui.waveform.loop_enabled, None) {
             self.set_status(err, StatusTone::Error);
+        }
+    }
+
+    /// Move selection within the current triage column by an offset and play.
+    pub fn nudge_selection(&mut self, offset: isize) {
+        let selected_triage = self.ui.triage.selected;
+        let Some(TriageIndex { column, row }) = selected_triage else {
+            return;
+        };
+        let list = self.triage_indices(column);
+        if list.is_empty() {
+            return;
+        }
+        let current_row = row as isize;
+        let next_row = (current_row + offset).clamp(0, list.len() as isize - 1) as usize;
+        if let Some(entry_index) = list.get(next_row).copied() {
+            self.select_wav_by_index(entry_index);
+            let _ = self.play_audio(self.ui.waveform.loop_enabled, None);
         }
     }
 
