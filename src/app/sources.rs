@@ -280,19 +280,30 @@ impl DropHandler {
             self.update_wav_view(app, true);
             return;
         };
-        if *self.shutting_down.borrow() {
-            return;
+        match self.database_for(&source).and_then(|db| db.list_files()) {
+            Ok(entries) => {
+                self.wav_entries.replace(entries.clone());
+                self.rebuild_wav_lookup(&entries);
+                self.update_wav_view(app, true);
+                self.set_status(
+                    app,
+                    format!("{} wav files loaded", entries.len()),
+                    StatusState::Info,
+                );
+                if !*self.shutting_down.borrow() {
+                    let job = WavListJob {
+                        source_id: source.id.clone(),
+                        root: source.root.clone(),
+                    };
+                    let _ = self.wav_list_tx.send(job);
+                }
+            }
+            Err(error) => self.set_status(
+                app,
+                format!("Failed to load wavs: {error}"),
+                StatusState::Error,
+            ),
         }
-        let job = WavListJob {
-            source_id: source.id.clone(),
-            root: source.root.clone(),
-        };
-        let _ = self.wav_list_tx.send(job);
-        self.set_status(
-            app,
-            format!("Loading {}", source.root.display()),
-            StatusState::Busy,
-        );
     }
 
     /// Update UI bindings for the wav list selection and loaded file state.
@@ -379,21 +390,28 @@ impl DropHandler {
             return;
         }
         match message.result {
-            Ok(entries) => {
+            Ok(payload) => {
                 if self
                     .selected_source
                     .borrow()
                     .as_ref()
                     .is_some_and(|id| id == &message.source_id)
                 {
-                    self.wav_entries.replace(entries.clone());
-                    self.rebuild_wav_lookup(&entries);
-                    self.update_wav_view(app, true);
-                    self.set_status(
-                        app,
-                        format!("{} wav files loaded", entries.len()),
-                        StatusState::Info,
-                    );
+                    if payload.entries.len() != self.wav_entries.borrow().len() {
+                        self.wav_entries.replace(payload.entries.clone());
+                        self.rebuild_wav_lookup(&payload.entries);
+                        self.update_wav_view(app, true);
+                    }
+                    if !payload.missing_paths.is_empty() {
+                        let missing_count = payload.missing_paths.len();
+                        self.set_status(
+                            app,
+                            format!("Some files missing on disk ({missing_count} paths)"),
+                            StatusState::Warning,
+                        );
+                    } else {
+                        // Keep the existing "wav files loaded" status from the synchronous path.
+                    }
                 }
             }
             Err(error) => {
