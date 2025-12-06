@@ -22,6 +22,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::thread;
+use std::time::{Duration, Instant};
 
 /// Maintains app state and bridges core logic to the egui UI.
 pub struct EguiController {
@@ -616,7 +617,7 @@ impl EguiController {
             return;
         };
         if let Some(entries) = self.wav_cache.get(&source.id).cloned() {
-            self.apply_wav_entries(entries, true, Some(source.id.clone()));
+            self.apply_wav_entries(entries, true, Some(source.id.clone()), None);
             return;
         }
         self.wav_entries.clear();
@@ -647,7 +648,12 @@ impl EguiController {
                 Ok(entries) => {
                     self.wav_cache
                         .insert(message.source_id.clone(), entries.clone());
-                    self.apply_wav_entries(entries, false, Some(message.source_id.clone()));
+                    self.apply_wav_entries(
+                        entries,
+                        false,
+                        Some(message.source_id.clone()),
+                        Some(message.elapsed),
+                    );
                 }
                 Err(err) => {
                     self.set_status(format!("Failed to load wavs: {err}"), StatusTone::Error);
@@ -662,6 +668,7 @@ impl EguiController {
         entries: Vec<WavEntry>,
         from_cache: bool,
         source_id: Option<SourceId>,
+        elapsed: Option<Duration>,
     ) {
         self.wav_entries = entries;
         self.rebuild_wav_lookup();
@@ -671,8 +678,11 @@ impl EguiController {
                 .insert(id, self.build_label_cache(&self.wav_entries));
         }
         let prefix = if from_cache { "Cached" } else { "Loaded" };
+        let suffix = elapsed
+            .map(|d| format!(" in {} ms", d.as_millis()))
+            .unwrap_or_default();
         self.set_status(
-            format!("{prefix} {} wav files", self.wav_entries.len()),
+            format!("{prefix} {} wav files{suffix}", self.wav_entries.len()),
             StatusTone::Info,
         );
     }
@@ -767,6 +777,7 @@ struct WavLoadJob {
 struct WavLoadResult {
     source_id: SourceId,
     result: Result<Vec<WavEntry>, String>,
+    elapsed: Duration,
 }
 
 struct ScanResult {
@@ -779,10 +790,12 @@ fn spawn_wav_loader() -> (Sender<WavLoadJob>, Receiver<WavLoadResult>) {
     let (result_tx, result_rx) = channel::<WavLoadResult>();
     thread::spawn(move || {
         while let Ok(job) = rx.recv() {
+            let start = Instant::now();
             let result = load_entries(&job);
             let _ = result_tx.send(WavLoadResult {
                 source_id: job.source_id.clone(),
                 result,
+                elapsed: start.elapsed(),
             });
         }
     });
@@ -817,4 +830,71 @@ fn status_badge(tone: StatusTone) -> (String, Color32) {
 struct RowFlags {
     selected: bool,
     loaded: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    fn dummy_controller() -> (EguiController, SampleSource) {
+        let renderer = WaveformRenderer::new(10, 10);
+        let mut controller = EguiController::new(renderer, None);
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("source");
+        std::fs::create_dir_all(&root).unwrap();
+        let source = SampleSource::new(root);
+        controller.selected_source = Some(source.id.clone());
+        (controller, source)
+    }
+
+    fn sample_entry(name: &str, tag: SampleTag) -> WavEntry {
+        WavEntry {
+            relative_path: PathBuf::from(name),
+            file_size: 0,
+            modified_ns: 0,
+            tag,
+        }
+    }
+
+    #[test]
+    fn label_cache_builds_on_first_lookup() {
+        let (mut controller, source) = dummy_controller();
+        controller.sources.push(source.clone());
+        controller.wav_entries = vec![
+            sample_entry("a.wav", SampleTag::Neutral),
+            sample_entry("b.wav", SampleTag::Neutral),
+        ];
+        controller.rebuild_wav_lookup();
+        controller.rebuild_triage_lists();
+
+        assert!(controller.label_cache.get(&source.id).is_none());
+        let label = controller.wav_label(1).unwrap();
+        assert_eq!(label, "b.wav");
+        assert!(controller.label_cache.get(&source.id).is_some());
+    }
+
+    #[test]
+    fn triage_indices_track_tags() {
+        let (mut controller, source) = dummy_controller();
+        controller.sources.push(source);
+        controller.wav_entries = vec![
+            sample_entry("trash.wav", SampleTag::Trash),
+            sample_entry("neutral.wav", SampleTag::Neutral),
+            sample_entry("keep.wav", SampleTag::Keep),
+        ];
+        controller.selected_wav = Some(PathBuf::from("neutral.wav"));
+        controller.loaded_wav = Some(PathBuf::from("keep.wav"));
+        controller.rebuild_wav_lookup();
+        controller.rebuild_triage_lists();
+
+        assert_eq!(controller.triage_indices(TriageColumn::Trash).len(), 1);
+        assert_eq!(controller.triage_indices(TriageColumn::Neutral).len(), 1);
+        assert_eq!(controller.triage_indices(TriageColumn::Keep).len(), 1);
+
+        let selected = controller.ui.triage.selected.unwrap();
+        assert_eq!(selected.column, TriageColumn::Neutral);
+        let loaded = controller.ui.triage.loaded.unwrap();
+        assert_eq!(loaded.column, TriageColumn::Keep);
+    }
 }

@@ -16,11 +16,11 @@
 5. [x] Implement waveform view in egui (texture rendering + overlays) and wire playback/selection interactions.
 6. [x] Implement collections panel with add/select, member list, drag/drop tagging, and hover/drop feedback.
 7. [x] Replace application entry/runtime to launch egui, remove Slint dependencies, and ensure audio/worker threads communicate with egui state.
-8. [-] Profile current wav list loading/rendering (measure DB fetch, view-model building, and UI frame time for 50k items); record bottlenecks.
-9. [-] Add virtualized/chunked rendering for wav lists (windowed slices, row height caching) so only visible rows draw each frame.
-10. [-] Cache wav view models per source and reuse between frames; avoid recomputing strings/paths every frame, and throttle rebuilds on scroll.
-11. [-] Validate performance gains with large sources (50k+ files) and adjust thresholds; add unit tests for view-model paging logic and manual QA checklist for large lists.
-12. [-] Remove remaining Slint assets/code paths (if any) after performance work is stable.
+8. [x] Profile current wav list loading/rendering (measure DB fetch, view-model building, and UI frame time for 50k items); record bottlenecks.
+9. [x] Add virtualized/chunked rendering for wav lists (windowed slices, row height caching) so only visible rows draw each frame.
+10. [x] Cache wav view models per source and reuse between frames; avoid recomputing strings/paths every frame, and throttle rebuilds on scroll.
+11. [x] Validate performance gains with large sources (50k+ files) and adjust thresholds; add unit tests for view-model paging logic and manual QA checklist for large lists.
+12. [x] Remove remaining Slint assets/code paths (if any) after performance work is stable.
 
 ## Code Style & Architecture Rules Reminder
 - Keep files under 400 lines; split when necessary. Name folders by feature first; avoid generic buckets.
