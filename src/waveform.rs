@@ -151,10 +151,7 @@ impl WaveformRenderer {
     fn paint_color_image(&self, columns: &[(f32, f32)]) -> ColorImage {
         let fg = self.foreground;
         let bg = self.background;
-        let mut image = ColorImage::new(
-            [self.width as usize, self.height as usize],
-            bg,
-        );
+        let mut image = ColorImage::new([self.width as usize, self.height as usize], bg);
         let stride = self.width as usize;
         let mid = (self.height / 2) as f32;
         let limit = self.height.saturating_sub(1) as f32;

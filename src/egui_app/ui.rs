@@ -6,7 +6,10 @@ use crate::audio::AudioPlayer;
 use crate::egui_app::controller::EguiController;
 use crate::egui_app::state::{TriageColumn, TriageIndex};
 use crate::waveform::WaveformRenderer;
-use eframe::egui::{self, Area, Color32, Frame, Margin, Order, RichText, Stroke, TextureHandle, TextureOptions, Ui, Vec2};
+use eframe::egui::{
+    self, Area, Color32, Frame, Margin, Order, RichText, Stroke, TextureHandle, TextureOptions, Ui,
+    Vec2,
+};
 
 /// Renders the egui UI using the shared controller state.
 pub struct EguiApp {
@@ -17,7 +20,10 @@ pub struct EguiApp {
 
 impl EguiApp {
     /// Create a new egui app, loading persisted configuration.
-    pub fn new(renderer: WaveformRenderer, player: Option<Rc<RefCell<AudioPlayer>>>) -> Result<Self, String> {
+    pub fn new(
+        renderer: WaveformRenderer,
+        player: Option<Rc<RefCell<AudioPlayer>>>,
+    ) -> Result<Self, String> {
         let mut controller = EguiController::new(renderer, player);
         controller
             .load_configuration()
@@ -50,7 +56,10 @@ impl EguiApp {
                     ui.add_space(8.0);
                     ui.separator();
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button(RichText::new("Close").color(Color32::WHITE)).clicked() {
+                        if ui
+                            .button(RichText::new("Close").color(Color32::WHITE))
+                            .clicked()
+                        {
                             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                         }
                     });
@@ -65,8 +74,11 @@ impl EguiApp {
                 let status = &self.controller.ui.status;
                 ui.horizontal(|ui| {
                     ui.add_space(8.0);
-                    ui.painter()
-                        .circle_filled(ui.cursor().min + egui::vec2(9.0, 11.0), 9.0, status.badge_color);
+                    ui.painter().circle_filled(
+                        ui.cursor().min + egui::vec2(9.0, 11.0),
+                        9.0,
+                        status.badge_color,
+                    );
                     ui.add_space(8.0);
                     ui.label(RichText::new(&status.badge_label).color(Color32::WHITE));
                     ui.separator();
@@ -127,10 +139,8 @@ impl EguiApp {
                 for (index, collection) in rows.iter().enumerate() {
                     let selected = collection.selected;
                     let label = format!("{} ({})", collection.name, collection.count);
-                    let response = ui.selectable_label(
-                        selected,
-                        RichText::new(label).color(Color32::WHITE),
-                    );
+                    let response =
+                        ui.selectable_label(selected, RichText::new(label).color(Color32::WHITE));
                     if response.clicked() {
                         self.controller.select_collection_by_index(Some(index));
                     }
@@ -185,8 +195,7 @@ impl EguiApp {
             if drag_active {
                 if let Some(pointer) = pointer_pos {
                     if zone_response.rect.contains(pointer) {
-                        self.controller
-                            .update_sample_drag(pointer, None, true);
+                        self.controller.update_sample_drag(pointer, None, true);
                     }
                 }
             }
@@ -194,7 +203,10 @@ impl EguiApp {
             ui.label(RichText::new("Collection items").color(Color32::WHITE));
             egui::ScrollArea::vertical().show(ui, |ui| {
                 for sample in &self.controller.ui.collections.samples {
-                    ui.label(RichText::new(format!("{} — {}", sample.source, sample.path)).color(Color32::LIGHT_GRAY));
+                    ui.label(
+                        RichText::new(format!("{} — {}", sample.source, sample.path))
+                            .color(Color32::LIGHT_GRAY),
+                    );
                 }
             });
         });
@@ -219,8 +231,7 @@ impl EguiApp {
             });
             ui.add_space(8.0);
             let desired = egui::vec2(ui.available_width(), 260.0);
-            let (rect, response) =
-                ui.allocate_exact_size(desired, egui::Sense::click_and_drag());
+            let (rect, response) = ui.allocate_exact_size(desired, egui::Sense::click_and_drag());
             let painter = ui.painter();
             let tex_id = if let Some(image) = &self.controller.ui.waveform.image {
                 let needs_refresh = self
@@ -229,10 +240,11 @@ impl EguiApp {
                     .map(|tex| tex.size() != image.image.size)
                     .unwrap_or(true);
                 if needs_refresh {
-                    self.waveform_tex = Some(
-                        ui.ctx()
-                            .load_texture("waveform_texture", image.image.clone(), TextureOptions::LINEAR),
-                    );
+                    self.waveform_tex = Some(ui.ctx().load_texture(
+                        "waveform_texture",
+                        image.image.clone(),
+                        TextureOptions::LINEAR,
+                    ));
                 }
                 self.waveform_tex.as_ref().map(|tex| tex.id())
             } else {
@@ -245,11 +257,7 @@ impl EguiApp {
             } else {
                 painter.rect_filled(rect, 6.0, Color32::from_rgb(12, 12, 12));
             }
-            painter.rect_stroke(
-                rect,
-                6.0,
-                Stroke::new(1.0, Color32::from_rgb(64, 64, 64)),
-            );
+            painter.rect_stroke(rect, 6.0, Stroke::new(1.0, Color32::from_rgb(64, 64, 64)));
             if let Some(selection) = self.controller.ui.waveform.selection {
                 let width = rect.width() * (selection.end() - selection.start()) as f32;
                 let x = rect.left() + rect.width() * selection.start() as f32;
@@ -257,7 +265,11 @@ impl EguiApp {
                     egui::pos2(x, rect.top()),
                     egui::vec2(width, rect.height()),
                 );
-                painter.rect_filled(selection_rect, 4.0, Color32::from_rgba_unmultiplied(28, 63, 106, 90));
+                painter.rect_filled(
+                    selection_rect,
+                    4.0,
+                    Color32::from_rgba_unmultiplied(28, 63, 106, 90),
+                );
             }
             if self.controller.ui.waveform.playhead.visible {
                 let x = rect.left() + rect.width() * self.controller.ui.waveform.playhead.position;
@@ -377,8 +389,7 @@ impl EguiApp {
                     }
                 } else if drag_active && response.dragged() {
                     if let Some(pos) = response.interact_pointer_pos() {
-                        self.controller
-                            .update_sample_drag(pos, None, false);
+                        self.controller.update_sample_drag(pos, None, false);
                     }
                 } else if response.drag_stopped() {
                     self.controller.finish_sample_drag();

@@ -1,4 +1,4 @@
-pub mod state;
-pub mod view_model;
 pub mod controller;
+pub mod state;
 pub mod ui;
+pub mod view_model;

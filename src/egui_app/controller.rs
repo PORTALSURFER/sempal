@@ -5,19 +5,20 @@ use crate::audio::AudioPlayer;
 use crate::egui_app::state::*;
 use crate::egui_app::view_model;
 use crate::sample_sources::config::{self, FeatureFlags};
+use crate::sample_sources::scanner::{ScanError, ScanStats, scan_once};
 use crate::sample_sources::{
     Collection, CollectionId, SampleSource, SampleTag, SourceDatabase, SourceDbError, SourceId,
     WavEntry,
 };
+use crate::selection::{SelectionRange, SelectionState};
 use crate::waveform::WaveformRenderer;
-use crate::selection::{SelectionState, SelectionRange};
 use egui::Color32;
 use rfd::FileDialog;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
-use std::fs;
 use std::rc::Rc;
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::thread;
@@ -41,6 +42,8 @@ pub struct EguiController {
     wav_job_tx: Sender<WavLoadJob>,
     wav_job_rx: Receiver<WavLoadResult>,
     pending_source: Option<SourceId>,
+    scan_rx: Option<Receiver<ScanResult>>,
+    scan_in_progress: bool,
 }
 
 const MIN_SELECTION_WIDTH: f32 = 0.001;
@@ -67,6 +70,8 @@ impl EguiController {
             wav_job_tx,
             wav_job_rx,
             pending_source: None,
+            scan_rx: None,
+            scan_in_progress: false,
         }
     }
 
@@ -104,11 +109,17 @@ impl EguiController {
 
     /// Change the selected source by id and refresh dependent state.
     pub fn select_source(&mut self, id: Option<SourceId>) {
+        if self.selected_source == id {
+            // Avoid reloading the same source just because it was clicked again.
+            self.refresh_sources_ui();
+            return;
+        }
         self.selected_source = id;
         self.selected_wav = None;
         self.loaded_wav = None;
         self.refresh_sources_ui();
         self.queue_wav_load();
+        // Do not auto-scan; only run when explicitly requested.
     }
 
     /// Refresh wav entries for the current source.
@@ -235,7 +246,9 @@ impl EguiController {
     /// Start playback over the current selection or full range.
     pub fn play_audio(&mut self, looped: bool, start_override: Option<f32>) -> Result<(), String> {
         let player = self.ensure_player()?;
-        let Some(player) = player else { return Err("Audio unavailable".into()); };
+        let Some(player) = player else {
+            return Err("Audio unavailable".into());
+        };
         let selection = self
             .selection
             .range()
@@ -244,9 +257,7 @@ impl EguiController {
             .or_else(|| selection.as_ref().map(|range| range.start()))
             .unwrap_or(0.0);
         let span_end = selection.as_ref().map(|r| r.end()).unwrap_or(1.0);
-        player
-            .borrow_mut()
-            .play_range(start, span_end, looped)?;
+        player.borrow_mut().play_range(start, span_end, looped)?;
         self.ui.waveform.playhead.visible = true;
         self.ui.waveform.playhead.position = start;
         Ok(())
@@ -315,10 +326,7 @@ impl EguiController {
 
     fn current_source(&self) -> Option<SampleSource> {
         let selected = self.selected_source.as_ref()?;
-        self.sources
-            .iter()
-            .find(|s| &s.id == selected)
-            .cloned()
+        self.sources.iter().find(|s| &s.id == selected).cloned()
     }
 
     fn refresh_sources_ui(&mut self) {
@@ -333,13 +341,11 @@ impl EguiController {
 
     fn refresh_collections_ui(&mut self) {
         let selected_id = self.selected_collection.clone();
-        self.ui.collections.rows = view_model::collection_rows(
-            &self.collections,
-            selected_id.as_ref(),
-        );
-        self.ui.collections.selected = selected_id.as_ref().and_then(|id| {
-            self.collections.iter().position(|c| &c.id == id)
-        });
+        self.ui.collections.rows =
+            view_model::collection_rows(&self.collections, selected_id.as_ref());
+        self.ui.collections.selected = selected_id
+            .as_ref()
+            .and_then(|id| self.collections.iter().position(|c| &c.id == id));
         self.refresh_collection_samples();
     }
 
@@ -422,6 +428,33 @@ impl EguiController {
         Ok(())
     }
 
+    /// Manually trigger a scan of the selected source.
+    pub fn request_scan(&mut self) {
+        if self.scan_in_progress {
+            self.set_status("Scan already in progress", StatusTone::Info);
+            return;
+        }
+        let Some(source) = self.current_source() else {
+            self.set_status("Select a source to scan", StatusTone::Warning);
+            return;
+        };
+        let (tx, rx) = channel();
+        self.scan_rx = Some(rx);
+        self.scan_in_progress = true;
+        self.set_status(
+            format!("Scanning {}", source.root.display()),
+            StatusTone::Busy,
+        );
+        let source_id = source.id.clone();
+        thread::spawn(move || {
+            let result = (|| -> Result<ScanStats, ScanError> {
+                let db = SourceDatabase::open(&source.root)?;
+                scan_once(&db)
+            })();
+            let _ = tx.send(ScanResult { source_id, result });
+        });
+    }
+
     fn database_for(&mut self, source: &SampleSource) -> Result<Rc<SourceDatabase>, SourceDbError> {
         if let Some(existing) = self.db_cache.get(&source.id) {
             return Ok(existing.clone());
@@ -498,8 +531,7 @@ impl EguiController {
 
     fn ensure_player(&mut self) -> Result<Option<Rc<RefCell<AudioPlayer>>>, String> {
         if self.player.is_none() {
-            let created = AudioPlayer::new()
-                .map_err(|err| format!("Audio init failed: {err}"))?;
+            let created = AudioPlayer::new().map_err(|err| format!("Audio init failed: {err}"))?;
             self.player = Some(Rc::new(RefCell::new(created)));
         }
         Ok(self.player.clone())
@@ -508,6 +540,7 @@ impl EguiController {
     /// Advance playhead position and visibility from the underlying player.
     pub fn tick_playhead(&mut self) {
         self.poll_wav_loader();
+        self.poll_scan();
         let Some(player) = self.player.as_ref() else {
             self.ui.waveform.playhead.visible = false;
             return;
@@ -537,6 +570,9 @@ impl EguiController {
         let Some(source) = self.current_source() else {
             return;
         };
+        if self.pending_source.as_ref() == Some(&source.id) {
+            return;
+        }
         self.pending_source = Some(source.id.clone());
         let job = WavLoadJob {
             source_id: source.id.clone(),
@@ -545,7 +581,7 @@ impl EguiController {
         let _ = self.wav_job_tx.send(job);
         self.set_status(
             format!("Loading wavs for {}", source.root.display()),
-            StatusTone::Busy,
+            StatusTone::Info,
         );
     }
 
@@ -566,10 +602,7 @@ impl EguiController {
                     );
                 }
                 Err(err) => {
-                    self.set_status(
-                        format!("Failed to load wavs: {err}"),
-                        StatusTone::Error,
-                    );
+                    self.set_status(format!("Failed to load wavs: {err}"), StatusTone::Error);
                 }
             }
             self.pending_source = None;
@@ -628,6 +661,30 @@ impl EguiController {
     fn current_collection_id(&self) -> Option<CollectionId> {
         self.selected_collection.clone()
     }
+
+    fn poll_scan(&mut self) {
+        if let Some(rx) = &self.scan_rx {
+            if let Ok(result) = rx.try_recv() {
+                self.scan_in_progress = false;
+                self.scan_rx = None;
+                match result.result {
+                    Ok(stats) => {
+                        self.set_status(
+                            format!(
+                                "Scan complete: {} added, {} updated, {} removed",
+                                stats.added, stats.updated, stats.removed
+                            ),
+                            StatusTone::Info,
+                        );
+                        self.queue_wav_load();
+                    }
+                    Err(err) => {
+                        self.set_status(format!("Scan failed: {err}"), StatusTone::Error);
+                    }
+                }
+            }
+        }
+    }
 }
 
 struct WavLoadJob {
@@ -638,6 +695,11 @@ struct WavLoadJob {
 struct WavLoadResult {
     source_id: SourceId,
     result: Result<Vec<WavEntry>, String>,
+}
+
+struct ScanResult {
+    source_id: SourceId,
+    result: Result<ScanStats, ScanError>,
 }
 
 fn spawn_wav_loader() -> (Sender<WavLoadJob>, Receiver<WavLoadResult>) {
@@ -656,10 +718,8 @@ fn spawn_wav_loader() -> (Sender<WavLoadJob>, Receiver<WavLoadResult>) {
 }
 
 fn load_entries(job: &WavLoadJob) -> Result<Vec<WavEntry>, String> {
-    let db = SourceDatabase::open(&job.root)
-        .map_err(|err| format!("Database error: {err}"))?;
-    db.list_files()
-        .map_err(|err| format!("Load failed: {err}"))
+    let db = SourceDatabase::open(&job.root).map_err(|err| format!("Database error: {err}"))?;
+    db.list_files().map_err(|err| format!("Load failed: {err}"))
 }
 
 /// UI status tone for badge coloring.
@@ -675,7 +735,7 @@ pub enum StatusTone {
 fn status_badge(tone: StatusTone) -> (String, Color32) {
     match tone {
         StatusTone::Idle => ("Idle".into(), Color32::from_rgb(42, 42, 42)),
-        StatusTone::Busy => ("Scanning".into(), Color32::from_rgb(31, 139, 255)),
+        StatusTone::Busy => ("Working".into(), Color32::from_rgb(31, 139, 255)),
         StatusTone::Info => ("Info".into(), Color32::from_rgb(64, 140, 112)),
         StatusTone::Warning => ("Warning".into(), Color32::from_rgb(192, 138, 43)),
         StatusTone::Error => ("Error".into(), Color32::from_rgb(192, 57, 43)),
