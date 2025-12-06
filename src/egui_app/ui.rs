@@ -160,13 +160,13 @@ impl EguiApp {
                     let text = if loop_enabled { "Loop on" } else { "Loop off" };
                     let button = egui::Button::new(RichText::new(text).color(Color32::WHITE));
                     if ui.add(button).clicked() {
-                        self.controller.ui.waveform.loop_enabled = !loop_enabled;
+                        self.controller.toggle_loop();
                     }
                 });
             });
             ui.add_space(8.0);
             let available = ui.available_size();
-            let rect = ui.allocate_space(available).1;
+            let (rect, response) = ui.allocate_exact_size(available, egui::Sense::click_and_drag());
             let painter = ui.painter();
             let tex_id = if let Some(image) = &self.controller.ui.waveform.image {
                 let needs_refresh = self
@@ -212,6 +212,27 @@ impl EguiApp {
                     egui::pos2(x, rect.bottom()),
                 );
                 painter.rect_stroke(line, 0.0, Stroke::new(2.0, Color32::from_rgb(51, 153, 255)));
+            }
+
+            // Waveform interactions: click to seek, shift-drag to select.
+            if let Some(pos) = response.interact_pointer_pos() {
+                if rect.contains(pos) {
+                    let normalized = ((pos.x - rect.left()) / rect.width()).clamp(0.0, 1.0);
+                    let shift_down = ui.input(|i| i.modifiers.shift);
+                    if response.drag_started() && shift_down {
+                        self.controller.start_selection_drag(normalized);
+                    } else if response.dragged() && shift_down {
+                        self.controller.update_selection_drag(normalized);
+                    } else if response.drag_released() && shift_down {
+                        self.controller.finish_selection_drag();
+                    } else if response.clicked() {
+                        if shift_down {
+                            self.controller.clear_selection();
+                        } else {
+                            self.controller.seek_to(normalized);
+                        }
+                    }
+                }
             }
         });
     }
@@ -309,6 +330,7 @@ impl EguiApp {
 impl eframe::App for EguiApp {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         self.apply_visuals(ctx);
+        self.controller.tick_playhead();
         self.render_top_bar(ctx, frame);
         egui::SidePanel::left("sources")
             .resizable(false)
