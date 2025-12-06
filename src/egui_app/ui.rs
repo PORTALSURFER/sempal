@@ -267,7 +267,8 @@ impl EguiApp {
             };
 
             if let Some(id) = tex_id {
-                painter.image(id, rect, rect, Color32::WHITE);
+                let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
+                painter.image(id, rect, uv, Color32::WHITE);
             } else {
                 painter.rect_filled(rect, 6.0, Color32::from_rgb(12, 12, 12));
             }
