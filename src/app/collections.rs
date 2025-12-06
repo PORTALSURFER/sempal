@@ -21,7 +21,7 @@ impl CollectionModels {
 
 impl DropHandler {
     /// Push current collections into the UI and ensure selection is reflected.
-    pub(super) fn refresh_collections(&self, app: &HelloWorld) {
+    pub(super) fn refresh_collections(&self, app: &Sempal) {
         let selected = self.selected_collection.borrow().clone();
         let rows = self
             .collections
@@ -46,7 +46,7 @@ impl DropHandler {
     }
 
     /// Update the member list for the selected collection.
-    pub(super) fn refresh_collection_members(&self, app: &HelloWorld) {
+    pub(super) fn refresh_collection_members(&self, app: &Sempal) {
         let selected = self.selected_collection.borrow().clone();
         let rows = selected
             .and_then(|id| {
@@ -199,7 +199,7 @@ impl DropHandler {
             .for_each(|collection| collection.prune_source(source_id));
     }
 
-    fn persist_collection_add(&self, app: &HelloWorld, path: PathBuf) {
+    fn persist_collection_add(&self, app: &Sempal, path: PathBuf) {
         if let Err(error) = self.save_full_config() {
             self.set_status(
                 app,

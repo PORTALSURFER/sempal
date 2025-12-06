@@ -27,11 +27,7 @@ impl DropHandler {
     }
 
     /// Validate and persist a new source selected from the filesystem.
-    fn add_source_from_path(
-        &self,
-        app: &HelloWorld,
-        path: PathBuf,
-    ) -> Result<(), AddSourceFailure> {
+    fn add_source_from_path(&self, app: &Sempal, path: PathBuf) -> Result<(), AddSourceFailure> {
         let normalized = config::normalize_path(path.as_path());
         if !normalized.is_dir() {
             return Err(AddSourceFailure {
@@ -150,7 +146,7 @@ impl DropHandler {
         self.set_status(&app, "Source removed", StatusState::Info);
     }
 
-    fn select_wav_at_index(&self, app: &HelloWorld, index: usize) {
+    fn select_wav_at_index(&self, app: &Sempal, index: usize) {
         let Some(source) = self.current_source() else {
             return;
         };
@@ -160,7 +156,7 @@ impl DropHandler {
         self.select_entry(app, &entry, &source);
     }
 
-    fn select_entry(&self, app: &HelloWorld, entry: &WavEntry, source: &SampleSource) {
+    fn select_entry(&self, app: &Sempal, entry: &WavEntry, source: &SampleSource) {
         self.selected_wav
             .borrow_mut()
             .replace(entry.relative_path.clone());
@@ -177,7 +173,7 @@ impl DropHandler {
         self.load_from_source(app, source, entry);
     }
 
-    fn load_from_source(&self, app: &HelloWorld, source: &SampleSource, entry: &WavEntry) {
+    fn load_from_source(&self, app: &Sempal, source: &SampleSource, entry: &WavEntry) {
         let full_path = source.root.join(&entry.relative_path);
         if !full_path.exists() {
             self.prune_missing_entry(source, entry);
@@ -276,7 +272,7 @@ impl DropHandler {
     }
 
     /// Refresh the wav list from disk/database for the current source.
-    pub(super) fn refresh_wavs(&self, app: &HelloWorld) {
+    pub(super) fn refresh_wavs(&self, app: &Sempal) {
         let Some(source) = self.current_source() else {
             self.wav_entries.borrow_mut().clear();
             self.selected_wav.borrow_mut().take();
@@ -318,7 +314,7 @@ impl DropHandler {
     }
 
     /// Update UI bindings for the wav list selection and loaded file state.
-    pub(super) fn update_wav_view(&self, app: &HelloWorld, rebuild_models: bool) {
+    pub(super) fn update_wav_view(&self, app: &Sempal, rebuild_models: bool) {
         let entries = self.wav_entries.borrow();
         self.sync_wav_lookup(&entries);
         let selected_index = {
@@ -414,7 +410,7 @@ impl DropHandler {
         }
     }
 
-    fn handle_wav_list_result(&self, app: &HelloWorld, message: WavListJobResult) {
+    fn handle_wav_list_result(&self, app: &Sempal, message: WavListJobResult) {
         if !self
             .sources
             .borrow()
@@ -464,7 +460,7 @@ impl DropHandler {
         }
     }
 
-    fn apply_selection_to_app(app: &HelloWorld, selected: Option<(SampleTag, usize)>) {
+    fn apply_selection_to_app(app: &Sempal, selected: Option<(SampleTag, usize)>) {
         let (selected_trash, selected_neutral, selected_keep) = match selected {
             Some((SampleTag::Trash, index)) => (index as i32, -1, -1),
             Some((SampleTag::Neutral, index)) => (-1, index as i32, -1),
@@ -527,7 +523,7 @@ impl DropHandler {
         *self.wav_batch.borrow_mut() = Some(BatchState::new(entries));
     }
 
-    fn consume_pending_batch(&self, app: &HelloWorld) {
+    fn consume_pending_batch(&self, app: &Sempal) {
         let mut batch_opt = self.wav_batch.borrow_mut();
         let Some(batch) = batch_opt.as_mut() else {
             return;
@@ -566,7 +562,7 @@ impl DropHandler {
     }
 
     /// Load persisted sources from disk and update the UI.
-    pub(super) fn load_configuration(&self, app: &HelloWorld) {
+    pub(super) fn load_configuration(&self, app: &Sempal) {
         match config::load_or_default() {
             Ok(cfg) => {
                 self.feature_flags.replace(cfg.feature_flags);
@@ -596,7 +592,7 @@ impl DropHandler {
     }
 
     /// Push the current sources into the UI model and selection.
-    pub(super) fn refresh_sources(&self, app: &HelloWorld) {
+    pub(super) fn refresh_sources(&self, app: &Sempal) {
         let rows = self
             .sources
             .borrow()
@@ -617,7 +613,7 @@ impl DropHandler {
         self.scroll_sources_to(app, index);
     }
 
-    fn select_first_source(&self, app: &HelloWorld) {
+    fn select_first_source(&self, app: &Sempal) {
         if let Some(first) = self.sources.borrow().first().cloned() {
             self.select_source_by_id(app, &first.id);
         } else {
@@ -629,7 +625,7 @@ impl DropHandler {
         }
     }
 
-    fn select_source_by_id(&self, app: &HelloWorld, id: &SourceId) {
+    fn select_source_by_id(&self, app: &Sempal, id: &SourceId) {
         self.selected_source.replace(Some(id.clone()));
         self.selected_wav.borrow_mut().take();
         self.loaded_wav.borrow_mut().take();

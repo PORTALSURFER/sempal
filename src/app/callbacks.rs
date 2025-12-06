@@ -1,7 +1,7 @@
 use super::*;
 
 /// Wire UI callbacks to the shared handler instance.
-pub(super) fn attach_callbacks(app: &HelloWorld, drop_handler: &DropHandler) {
+pub(super) fn attach_callbacks(app: &Sempal, drop_handler: &DropHandler) {
     let seek_handler = drop_handler.clone();
     app.on_seek_requested(move |position| seek_handler.seek_to(position));
     let selection_start_handler = drop_handler.clone();

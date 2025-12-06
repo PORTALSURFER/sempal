@@ -126,7 +126,7 @@ impl DropHandler {
         }
     }
 
-    fn clear_selection(&self, app: &HelloWorld) {
+    fn clear_selection(&self, app: &Sempal) {
         let cleared = self.selection.borrow_mut().clear();
         if cleared {
             self.apply_selection(app, None);
@@ -159,7 +159,7 @@ impl DropHandler {
         }
     }
 
-    fn apply_selection(&self, app: &HelloWorld, range: Option<SelectionRange>) {
+    fn apply_selection(&self, app: &Sempal, range: Option<SelectionRange>) {
         let dragging = self.selection.borrow().is_dragging();
         if let Some(range) = range.or_else(|| self.selection.borrow().range()) {
             app.set_selection_visible(true);
@@ -236,7 +236,7 @@ impl DropHandler {
     }
 
     /// Update UI status and playhead timer after a successful playback start.
-    fn playback_started(&self, app: &HelloWorld, looped: bool) -> EventResult {
+    fn playback_started(&self, app: &Sempal, looped: bool) -> EventResult {
         self.set_status(
             app,
             if looped {
@@ -274,7 +274,7 @@ impl DropHandler {
     }
 
     fn tick_playhead(
-        app_handle: &Rc<RefCell<Option<slint::Weak<HelloWorld>>>>,
+        app_handle: &Rc<RefCell<Option<slint::Weak<Sempal>>>>,
         player: &Rc<RefCell<AudioPlayer>>,
         timer: &slint::Timer,
     ) {
@@ -308,7 +308,7 @@ impl DropHandler {
     }
 
     /// Apply a freshly loaded waveform to the UI and audio player.
-    pub(super) fn apply_loaded_waveform(&self, app: &HelloWorld, loaded: &LoadedWaveform) {
+    pub(super) fn apply_loaded_waveform(&self, app: &Sempal, loaded: &LoadedWaveform) {
         app.set_waveform(loaded.image.clone());
         let mut player = self.player.borrow_mut();
         player.stop();
@@ -320,7 +320,7 @@ impl DropHandler {
     }
 
     /// Stop playback and hide the playhead without altering selection.
-    pub(super) fn stop_playback_ui(&self, app: &HelloWorld) {
+    pub(super) fn stop_playback_ui(&self, app: &Sempal) {
         self.player.borrow_mut().stop();
         self.playhead_timer.stop();
         app.set_playhead_visible(false);
