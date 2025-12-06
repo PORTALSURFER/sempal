@@ -4,7 +4,7 @@ impl DropHandler {
     /// Update the status text and badge styling in the UI.
     pub(super) fn set_status(
         &self,
-        app: &HelloWorld,
+        app: &Sempal,
         text: impl Into<SharedString>,
         state: StatusState,
     ) {
@@ -15,14 +15,14 @@ impl DropHandler {
     }
 
     /// Request the source list to scroll to a given index.
-    pub(super) fn scroll_sources_to(&self, app: &HelloWorld, index: i32) {
+    pub(super) fn scroll_sources_to(&self, app: &Sempal, index: i32) {
         if index >= 0 {
             app.invoke_scroll_sources_to(index);
         }
     }
 
     /// Request the wav list to scroll to a given column/index pair.
-    pub(super) fn scroll_wavs_to(&self, app: &HelloWorld, target: Option<(SampleTag, usize)>) {
+    pub(super) fn scroll_wavs_to(&self, app: &Sempal, target: Option<(SampleTag, usize)>) {
         let Some((tag, index)) = target else {
             return;
         };
