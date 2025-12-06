@@ -7,8 +7,8 @@ use crate::egui_app::controller::EguiController;
 use crate::egui_app::state::{TriageColumn, TriageIndex};
 use crate::waveform::WaveformRenderer;
 use eframe::egui::{
-    self, Area, Color32, Frame, Margin, Order, RichText, Stroke, TextureHandle, TextureOptions, Ui,
-    Vec2,
+    self, Align, Area, Color32, Frame, Margin, Order, RichText, Stroke, TextureHandle,
+    TextureOptions, Ui, Vec2,
 };
 
 /// Renders the egui UI using the shared controller state.
@@ -171,18 +171,82 @@ impl EguiApp {
                     }
                 });
             ui.label(RichText::new("Collection items").color(Color32::WHITE));
-            egui::ScrollArea::vertical()
-                .id_source("collection_items_scroll")
-                .show(ui, |ui| {
-                    for sample in &self.controller.ui.collections.samples {
-                        ui.push_id(format!("{}:{}", sample.source, sample.path), |ui| {
-                            ui.label(
-                                RichText::new(format!("{} — {}", sample.source, sample.path))
-                                    .color(Color32::LIGHT_GRAY),
+            let drag_active = self.controller.ui.drag.active_path.is_some();
+            let pointer_pos = ui.input(|i| i.pointer.hover_pos());
+            let samples = self.controller.ui.collections.samples.clone();
+            let selected_row = self.controller.ui.collections.selected_sample;
+            const ROW_HEIGHT: f32 = 28.0;
+            let frame = egui::Frame::none().fill(Color32::from_rgb(16, 16, 16));
+            let scroll_response = frame.show(ui, |ui| {
+                egui::ScrollArea::vertical()
+                    .id_source("collection_items_scroll")
+                    .show_rows(ui, ROW_HEIGHT, samples.len(), |ui, row_range| {
+                        for row in row_range {
+                            let Some(sample) = samples.get(row) else {
+                                continue;
+                            };
+                            let path = sample.path.clone();
+                            let label = format!("{} — {}", sample.source, sample.label);
+                            let is_selected = Some(row) == selected_row;
+                            let mut button =
+                                egui::Button::new(RichText::new(label).color(Color32::LIGHT_GRAY))
+                                    .sense(egui::Sense::click_and_drag());
+                            if is_selected {
+                                button = button.fill(Color32::from_rgb(30, 30, 30));
+                            }
+                            ui.push_id(
+                                format!("{}:{}:{}", sample.source_id, sample.source, sample.label),
+                                |ui| {
+                                    let response = ui.add_sized(
+                                        egui::vec2(ui.available_width(), ROW_HEIGHT),
+                                        button,
+                                    );
+                                    if response.clicked() {
+                                        self.controller.select_collection_sample(row);
+                                    }
+                                    if response.drag_started() {
+                                        if let Some(pos) = response.interact_pointer_pos() {
+                                            self.controller.start_sample_drag(
+                                                path.clone(),
+                                                sample.label.clone(),
+                                                pos,
+                                            );
+                                        }
+                                    } else if drag_active && response.dragged() {
+                                        if let Some(pos) = response.interact_pointer_pos() {
+                                            self.controller
+                                                .update_sample_drag(pos, None, false, None);
+                                        }
+                                    } else if response.drag_stopped() {
+                                        self.controller.finish_sample_drag();
+                                    }
+                                },
                             );
-                        });
+                        }
+                    })
+            });
+            if let Some(row) = selected_row {
+                let content_min = scroll_response.inner.inner_rect.min;
+                let min = egui::pos2(content_min.x, content_min.y + row as f32 * ROW_HEIGHT);
+                let rect = egui::Rect::from_min_size(
+                    min,
+                    egui::vec2(scroll_response.inner.inner_rect.width(), ROW_HEIGHT),
+                );
+                ui.scroll_to_rect(rect, Some(Align::Center));
+            }
+            if drag_active {
+                if let Some(pointer) = pointer_pos {
+                    if scroll_response.response.rect.contains(pointer) {
+                        self.controller
+                            .update_sample_drag(pointer, None, false, None);
+                        ui.painter().rect_stroke(
+                            scroll_response.response.rect,
+                            6.0,
+                            Stroke::new(2.0, Color32::from_rgba_unmultiplied(80, 140, 200, 180)),
+                        );
                     }
-                });
+                }
+            }
         });
     }
 
@@ -360,11 +424,13 @@ impl EguiApp {
             Some(TriageIndex { column: c, row }) if c == column => Some(row),
             _ => None,
         };
+        let triage_autoscroll = self.controller.ui.triage.autoscroll
+            && self.controller.ui.collections.selected_sample.is_none();
         const ROW_HEIGHT: f32 = 30.0;
         let total_rows = self.controller.triage_indices(column).len();
         let bg_frame = Frame::none().fill(Color32::from_rgb(16, 16, 16));
         let frame_response = bg_frame.show(ui, |ui| {
-            let _scroll_response = egui::ScrollArea::vertical()
+            let scroll_response = egui::ScrollArea::vertical()
                 .id_source(format!("triage_scroll_{title}"))
                 .show_rows(ui, ROW_HEIGHT, total_rows, |ui, row_range| {
                     for row in row_range {
@@ -400,7 +466,7 @@ impl EguiApp {
                             let response =
                                 ui.add_sized(egui::vec2(ui.available_width(), ROW_HEIGHT), button);
                             if response.clicked() {
-                                self.controller.select_wav_by_path(&path);
+                                self.controller.select_from_triage(&path);
                             }
                             if response.drag_started() {
                                 if let Some(pos) = response.interact_pointer_pos() {
@@ -422,8 +488,18 @@ impl EguiApp {
                         });
                     }
                 });
-            ()
+            scroll_response
         });
+        if let (Some(row), true) = (selected_row, triage_autoscroll) {
+            let viewport_height = frame_response.inner.inner_rect.height();
+            let content_height = frame_response.inner.content_size.y;
+            let target = (row as f32 + 0.5) * ROW_HEIGHT - viewport_height * 0.5;
+            let max_offset = (content_height - viewport_height).max(0.0);
+            let desired_offset = target.clamp(0.0, max_offset);
+            let mut state = frame_response.inner.state;
+            state.offset.y = desired_offset;
+            state.store(ui.ctx(), frame_response.inner.id);
+        }
         if drag_active {
             if let Some(pointer) = pointer_pos {
                 if frame_response.response.rect.contains(pointer) {
@@ -458,19 +534,31 @@ impl eframe::App for EguiApp {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         self.apply_visuals(ctx);
         self.controller.tick_playhead();
+        let collection_focus = self.controller.ui.collections.selected_sample.is_some();
+        let triage_has_selection = self.controller.ui.triage.selected.is_some();
         if ctx.input(|i| i.key_pressed(egui::Key::Space)) {
             self.controller.toggle_play_pause();
         }
         if ctx.input(|i| i.key_pressed(egui::Key::ArrowDown)) {
-            self.controller.nudge_selection(1);
+            if collection_focus {
+                self.controller.nudge_collection_sample(1);
+            } else {
+                self.controller.nudge_selection(1);
+            }
         }
         if ctx.input(|i| i.key_pressed(egui::Key::ArrowUp)) {
-            self.controller.nudge_selection(-1);
+            if collection_focus {
+                self.controller.nudge_collection_sample(-1);
+            } else {
+                self.controller.nudge_selection(-1);
+            }
         }
         if ctx.input(|i| i.key_pressed(egui::Key::ArrowRight)) {
             if ctx.input(|i| i.modifiers.ctrl) {
-                self.controller.move_selection_column(1);
-            } else {
+                if triage_has_selection {
+                    self.controller.move_selection_column(1);
+                }
+            } else if triage_has_selection {
                 let col = self.controller.ui.triage.selected.map(|t| t.column);
                 let target = if matches!(col, Some(crate::egui_app::state::TriageColumn::Trash)) {
                     crate::sample_sources::SampleTag::Neutral
@@ -482,8 +570,10 @@ impl eframe::App for EguiApp {
         }
         if ctx.input(|i| i.key_pressed(egui::Key::ArrowLeft)) {
             if ctx.input(|i| i.modifiers.ctrl) {
-                self.controller.move_selection_column(-1);
-            } else {
+                if triage_has_selection {
+                    self.controller.move_selection_column(-1);
+                }
+            } else if triage_has_selection {
                 self.controller
                     .tag_selected(crate::sample_sources::SampleTag::Trash);
             }
