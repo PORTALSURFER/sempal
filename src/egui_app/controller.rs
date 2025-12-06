@@ -315,15 +315,10 @@ impl EguiController {
                 return;
             }
         };
-        let is_playing = player_rc.borrow().is_playing();
-        if is_playing {
-            player_rc.borrow_mut().stop();
-            return;
-        }
+        let _is_playing = player_rc.borrow().is_playing();
         drop(player_rc);
-        if let Err(err) = self.play_audio(self.ui.waveform.loop_enabled, None) {
-            self.set_status(err, StatusTone::Error);
-        }
+        // Always start playback from the selection/full track, restarting if currently playing.
+        let _ = self.play_audio(self.ui.waveform.loop_enabled, None);
     }
 
     /// Move selection within the current triage column by an offset and play.
