@@ -10,6 +10,7 @@ use crate::sample_sources::{
     WavEntry,
 };
 use crate::waveform::WaveformRenderer;
+use crate::selection::{SelectionState, SelectionRange};
 use egui::Color32;
 use rfd::FileDialog;
 use std::cell::RefCell;
@@ -34,7 +35,10 @@ pub struct EguiController {
     selected_wav: Option<PathBuf>,
     loaded_wav: Option<PathBuf>,
     feature_flags: FeatureFlags,
+    selection: SelectionState,
 }
+
+const MIN_SELECTION_WIDTH: f32 = 0.001;
 
 impl EguiController {
     /// Create a controller with shared renderer and optional audio player.
@@ -53,6 +57,7 @@ impl EguiController {
             selected_wav: None,
             loaded_wav: None,
             feature_flags: FeatureFlags::default(),
+            selection: SelectionState::new(),
         }
     }
 
@@ -195,6 +200,63 @@ impl EguiController {
             }
             self.rebuild_triage_lists();
         }
+    }
+
+    /// Begin a selection drag at the given normalized position.
+    pub fn start_selection_drag(&mut self, position: f32) {
+        let range = self.selection.begin_new(position);
+        self.apply_selection(Some(range));
+    }
+
+    /// Update the selection drag with a new normalized position.
+    pub fn update_selection_drag(&mut self, position: f32) {
+        if let Some(range) = self.selection.update_drag(position) {
+            self.apply_selection(Some(range));
+        }
+    }
+
+    /// Finish a selection drag gesture.
+    pub fn finish_selection_drag(&mut self) {
+        self.selection.finish_drag();
+    }
+
+    /// Clear any active selection.
+    pub fn clear_selection(&mut self) {
+        if self.selection.clear() {
+            self.apply_selection(None);
+        }
+    }
+
+    /// Toggle loop playback state.
+    pub fn toggle_loop(&mut self) {
+        self.ui.waveform.loop_enabled = !self.ui.waveform.loop_enabled;
+    }
+
+    /// Seek to a normalized position and start playback.
+    pub fn seek_to(&mut self, position: f32) {
+        if let Err(err) = self.play_audio(false, Some(position)) {
+            self.set_status(err, StatusTone::Error);
+        }
+    }
+
+    /// Start playback over the current selection or full range.
+    pub fn play_audio(&mut self, looped: bool, start_override: Option<f32>) -> Result<(), String> {
+        let player = self.ensure_player()?;
+        let Some(player) = player else { return Err("Audio unavailable".into()); };
+        let selection = self
+            .selection
+            .range()
+            .filter(|range| range.width() >= MIN_SELECTION_WIDTH);
+        let start = start_override
+            .or_else(|| selection.as_ref().map(|range| range.start()))
+            .unwrap_or(0.0);
+        let span_end = selection.as_ref().map(|r| r.end()).unwrap_or(1.0);
+        player
+            .borrow_mut()
+            .play_range(start, span_end, looped)?;
+        self.ui.waveform.playhead.visible = true;
+        self.ui.waveform.playhead.position = start;
+        Ok(())
     }
 
     fn rebuild_wav_lookup(&mut self) {
@@ -373,6 +435,7 @@ impl EguiController {
         self.ui.waveform.image = Some(WaveformImage { image: color_image });
         self.ui.waveform.playhead = PlayheadState::default();
         self.ui.waveform.selection = None;
+        self.selection.clear();
         self.loaded_wav = Some(relative_path.to_path_buf());
         self.ui.loaded_wav = Some(relative_path.to_path_buf());
         if let Some(player) = self.ensure_player()? {
@@ -413,6 +476,29 @@ impl EguiController {
             self.player = Some(Rc::new(RefCell::new(created)));
         }
         Ok(self.player.clone())
+    }
+
+    /// Advance playhead position and visibility from the underlying player.
+    pub fn tick_playhead(&mut self) {
+        let Some(player) = self.player.as_ref() else {
+            self.ui.waveform.playhead.visible = false;
+            return;
+        };
+        let mut player = player.borrow_mut();
+        if let Some(progress) = player.progress() {
+            self.ui.waveform.playhead.position = progress;
+            self.ui.waveform.playhead.visible = player.is_playing();
+        } else {
+            self.ui.waveform.playhead.visible = false;
+        }
+    }
+
+    fn apply_selection(&mut self, range: Option<SelectionRange>) {
+        if let Some(range) = range {
+            self.ui.waveform.selection = Some(range);
+        } else {
+            self.ui.waveform.selection = None;
+        }
     }
 }
 
