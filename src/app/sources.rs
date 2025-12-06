@@ -2,7 +2,9 @@ use super::navigation::compute_target_index;
 use super::*;
 use crate::app::metrics;
 use crate::app::wav_list::{WavListJob, WavListJobResult};
+use std::cell::RefCell;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 /// Error details surfaced when adding a new sample source fails validation.
 struct AddSourceFailure {
@@ -278,6 +280,7 @@ impl DropHandler {
             self.selected_wav.borrow_mut().take();
             self.loaded_wav.borrow_mut().take();
             self.wav_lookup.borrow_mut().clear();
+            self.wav_batch.borrow_mut().take();
             self.update_wav_view(app, true);
             return;
         };
@@ -290,6 +293,7 @@ impl DropHandler {
                 metrics::profile("update_wav_view_initial", || {
                     self.update_wav_view(app, true);
                 });
+                self.wav_batch.borrow_mut().take();
                 self.set_status(
                     app,
                     format!("{} wav files loaded", entries.len()),
@@ -377,6 +381,27 @@ impl DropHandler {
         );
     }
 
+    /// Start batching large wav list updates to keep UI responsive.
+    pub(super) fn start_wav_batching(&self) {
+        if *self.shutting_down.borrow() {
+            return;
+        }
+        let poller = self.clone();
+        self.wav_batch_poll_timer.start(
+            slint::TimerMode::Repeated,
+            Duration::from_millis(30),
+            move || poller.process_pending_batches(),
+        );
+    }
+
+    /// Apply any pending batched wav list rebuilds.
+    pub(super) fn process_pending_batches(&self) {
+        let Some(app) = self.app() else {
+            return;
+        };
+        self.consume_pending_batch(&app);
+    }
+
     /// Process any queued wav list results from the background worker.
     pub(super) fn process_wav_list_queue(&self) {
         let Some(app) = self.app() else {
@@ -404,10 +429,9 @@ impl DropHandler {
                     .as_ref()
                     .is_some_and(|id| id == &message.source_id)
                 {
-                    if payload.entries.len() != self.wav_entries.borrow().len() {
-                        self.wav_entries.replace(payload.entries.clone());
-                        self.rebuild_wav_lookup(&payload.entries);
-                        self.update_wav_view(app, true);
+                    let current_len = self.wav_entries.borrow().len();
+                    if payload.entries.len() != current_len {
+                        self.enqueue_batch_refresh(payload.entries);
                     }
                     if !payload.missing_paths.is_empty() {
                         let missing_count = payload.missing_paths.len();
@@ -497,6 +521,25 @@ impl DropHandler {
         entries.get(index).cloned()
     }
 
+    fn enqueue_batch_refresh(&self, entries: Vec<WavEntry>) {
+        *self.wav_batch.borrow_mut() = Some(BatchState::new(entries));
+    }
+
+    fn consume_pending_batch(&self, app: &HelloWorld) {
+        let mut batch_opt = self.wav_batch.borrow_mut();
+        let Some(batch) = batch_opt.as_mut() else {
+            return;
+        };
+        let applied = batch.apply_next_chunk(&self.wav_entries);
+        if applied {
+            self.rebuild_wav_lookup(&self.wav_entries.borrow());
+            self.update_wav_view(app, true);
+        }
+        if batch.is_finished() {
+            batch_opt.take();
+        }
+    }
+
     /// Fetch or open the cached database for a sample source.
     pub(super) fn database_for(
         &self,
@@ -583,5 +626,40 @@ impl DropHandler {
         self.loaded_wav.borrow_mut().take();
         self.refresh_sources(app);
         self.refresh_wavs(app);
+    }
+}
+
+/// Incremental wav list builder to avoid long UI stalls on large sources.
+#[derive(Debug)]
+pub struct BatchState {
+    entries: Vec<WavEntry>,
+    applied: usize,
+    chunk_size: usize,
+}
+
+impl BatchState {
+    pub fn new(entries: Vec<WavEntry>) -> Self {
+        Self {
+            entries,
+            applied: 0,
+            chunk_size: 300,
+        }
+    }
+
+    /// Copy the next chunk of entries into the shared wav list; returns true when a change was applied.
+    pub fn apply_next_chunk(&mut self, target: &Rc<RefCell<Vec<WavEntry>>>) -> bool {
+        if self.applied >= self.entries.len() {
+            return false;
+        }
+        let end = (self.applied + self.chunk_size).min(self.entries.len());
+        let mut dest = target.borrow_mut();
+        dest.clear();
+        dest.extend_from_slice(&self.entries[..end]);
+        self.applied = end;
+        true
+    }
+
+    pub fn is_finished(&self) -> bool {
+        self.applied >= self.entries.len()
     }
 }
