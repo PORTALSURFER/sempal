@@ -26,12 +26,15 @@ pub struct AppConfig {
 pub struct FeatureFlags {
     #[serde(default = "default_true")]
     pub collections_enabled: bool,
+    #[serde(default = "default_true")]
+    pub autoplay_selection: bool,
 }
 
 impl Default for FeatureFlags {
     fn default() -> Self {
         Self {
             collections_enabled: true,
+            autoplay_selection: true,
         }
     }
 }
@@ -135,6 +138,10 @@ mod tests {
         let path = dir.path().join("cfg.json");
         let cfg = AppConfig {
             sources: vec![SampleSource::new(dir.path().to_path_buf())],
+            feature_flags: FeatureFlags {
+                autoplay_selection: true,
+                ..Default::default()
+            },
             last_selected_source: None,
             ..Default::default()
         };

@@ -472,6 +472,12 @@ impl eframe::App for EguiApp {
         if ctx.input(|i| i.key_pressed(egui::Key::Space)) {
             self.controller.toggle_play_pause();
         }
+        if ctx.input(|i| i.key_pressed(egui::Key::ArrowDown)) {
+            self.controller.nudge_selection(1);
+        }
+        if ctx.input(|i| i.key_pressed(egui::Key::ArrowUp)) {
+            self.controller.nudge_selection(-1);
+        }
         self.render_top_bar(ctx, frame);
         egui::SidePanel::left("sources")
             .resizable(false)
