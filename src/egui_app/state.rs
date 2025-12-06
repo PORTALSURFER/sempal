@@ -111,13 +111,27 @@ impl Default for PlayheadState {
 }
 
 /// Three-column triage state for wav entries.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct TriageState {
     pub trash: Vec<usize>,
     pub neutral: Vec<usize>,
     pub keep: Vec<usize>,
     pub selected: Option<TriageIndex>,
     pub loaded: Option<TriageIndex>,
+    pub autoscroll: bool,
+}
+
+impl Default for TriageState {
+    fn default() -> Self {
+        Self {
+            trash: Vec::new(),
+            neutral: Vec::new(),
+            keep: Vec::new(),
+            selected: None,
+            loaded: None,
+            autoscroll: true,
+        }
+    }
 }
 
 /// Identifies a row inside one of the triage columns.
@@ -155,6 +169,7 @@ pub struct CollectionsState {
     pub samples: Vec<CollectionSampleView>,
     pub drop_ready: bool,
     pub drop_active: bool,
+    pub selected_sample: Option<usize>,
 }
 
 impl Default for CollectionsState {
@@ -166,6 +181,7 @@ impl Default for CollectionsState {
             samples: Vec::new(),
             drop_ready: false,
             drop_active: false,
+            selected_sample: None,
         }
     }
 }
@@ -182,6 +198,8 @@ pub struct CollectionRowView {
 /// Display data for a sample inside a collection.
 #[derive(Clone, Debug)]
 pub struct CollectionSampleView {
+    pub source_id: SourceId,
     pub source: String,
-    pub path: String,
+    pub path: PathBuf,
+    pub label: String,
 }

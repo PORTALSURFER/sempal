@@ -49,8 +49,10 @@ pub fn collection_samples(
         .members
         .iter()
         .map(|member| CollectionSampleView {
+            source_id: member.source_id.clone(),
             source: source_label(sources, member.source_id.as_str()),
-            path: member.relative_path.to_string_lossy().to_string(),
+            path: member.relative_path.clone(),
+            label: member.relative_path.to_string_lossy().to_string(),
         })
         .collect()
 }
