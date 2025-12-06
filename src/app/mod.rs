@@ -30,6 +30,7 @@ use slint::{Color, ComponentHandle, SharedString};
 
 mod callbacks;
 mod loading;
+mod metrics;
 mod navigation;
 mod playback;
 mod scan;

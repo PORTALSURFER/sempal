@@ -55,11 +55,12 @@ impl DropHandler {
     /// Convert a wav entry into its UI row representation.
     pub(super) fn wav_row(entry: &WavEntry, selected: bool, loaded: bool) -> WavRow {
         let (tag_label, tag_bg, tag_fg, overlay) = Self::tag_display(entry.tag);
+        let path_str = entry.relative_path.to_string_lossy().to_string();
         let (bg, hover_bg, pressed_bg) = Self::row_background(selected, loaded);
         let (border_color, indicator_color) = Self::row_highlights(selected, loaded);
         WavRow {
-            name: entry.relative_path.to_string_lossy().to_string().into(),
-            path: entry.relative_path.to_string_lossy().to_string().into(),
+            name: path_str.clone().into(),
+            path: path_str.into(),
             selected,
             loaded,
             bg,

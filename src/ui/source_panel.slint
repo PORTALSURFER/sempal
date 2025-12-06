@@ -76,6 +76,7 @@ export component SourcePanel inherits Rectangle {
             for source[i] in root.sources: Rectangle {
                 height: 36px;
                 horizontal-stretch: 1;
+                cache-rendering-hint: true;
                 background: ta_source.pressed ? #1f1f1f : (i == root.selected_source ? #1a2733 : (ta_source.has-hover ? #141414 : #101010));
                 border-width: i == root.selected_source ? 1px : 0px;
                 border-color: #2f6fb1;
