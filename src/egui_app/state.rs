@@ -2,7 +2,7 @@
 //! Shared state types for the egui UI.
 // Temporary while the egui UI is being wired; types will be exercised by the renderer next.
 
-use crate::sample_sources::{CollectionId, SampleTag, SourceId};
+use crate::sample_sources::{CollectionId, SourceId};
 use crate::selection::SelectionRange;
 use egui::{Color32, Pos2};
 use std::path::PathBuf;
@@ -113,9 +113,9 @@ impl Default for PlayheadState {
 /// Three-column triage state for wav entries.
 #[derive(Clone, Debug, Default)]
 pub struct TriageState {
-    pub trash: Vec<WavRowView>,
-    pub neutral: Vec<WavRowView>,
-    pub keep: Vec<WavRowView>,
+    pub trash: Vec<usize>,
+    pub neutral: Vec<usize>,
+    pub keep: Vec<usize>,
     pub selected: Option<TriageIndex>,
     pub loaded: Option<TriageIndex>,
 }
@@ -133,16 +133,6 @@ pub enum TriageColumn {
     Trash,
     Neutral,
     Keep,
-}
-
-/// Display data for a single wav row.
-#[derive(Clone, Debug)]
-pub struct WavRowView {
-    pub path: PathBuf,
-    pub name: String,
-    pub tag: SampleTag,
-    pub selected: bool,
-    pub loaded: bool,
 }
 
 /// Drag/hover state shared between triage lists and collections.

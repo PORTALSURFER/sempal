@@ -31,6 +31,7 @@ pub struct EguiController {
     sources: Vec<SampleSource>,
     collections: Vec<Collection>,
     db_cache: HashMap<SourceId, Rc<SourceDatabase>>,
+    wav_cache: HashMap<SourceId, Vec<WavEntry>>,
     wav_entries: Vec<WavEntry>,
     wav_lookup: HashMap<PathBuf, usize>,
     selected_source: Option<SourceId>,
@@ -59,6 +60,7 @@ impl EguiController {
             sources: Vec::new(),
             collections: Vec::new(),
             db_cache: HashMap::new(),
+            wav_cache: HashMap::new(),
             wav_entries: Vec::new(),
             wav_lookup: HashMap::new(),
             selected_source: None,
@@ -212,6 +214,20 @@ impl EguiController {
         self.apply_selection(Some(range));
     }
 
+    /// Expose wav indices for a given triage column (used by virtualized rendering).
+    pub fn triage_indices(&self, column: TriageColumn) -> &[usize] {
+        match column {
+            TriageColumn::Trash => &self.ui.triage.trash,
+            TriageColumn::Neutral => &self.ui.triage.neutral,
+            TriageColumn::Keep => &self.ui.triage.keep,
+        }
+    }
+
+    /// Retrieve a wav entry by absolute index.
+    pub fn wav_entry(&self, index: usize) -> Option<&WavEntry> {
+        self.wav_entries.get(index)
+    }
+
     /// Update the selection drag with a new normalized position.
     pub fn update_selection_drag(&mut self, position: f32) {
         if let Some(range) = self.selection.update_drag(position) {
@@ -276,12 +292,12 @@ impl EguiController {
         self.reset_triage_ui();
 
         for i in 0..self.wav_entries.len() {
-            let entry = self.wav_entries[i].clone();
+            let tag = self.wav_entries[i].tag;
             let flags = RowFlags {
                 selected: Some(i) == selected_index,
                 loaded: Some(i) == loaded_index,
             };
-            self.push_triage_row(&entry, flags);
+            self.push_triage_row(i, tag, flags);
         }
     }
 
@@ -306,21 +322,22 @@ impl EguiController {
         self.ui.loaded_wav = None;
     }
 
-    fn push_triage_row(&mut self, entry: &WavEntry, flags: RowFlags) {
-        let row = view_model::wav_row(entry, flags.selected, flags.loaded);
-        let target = match entry.tag {
+    fn push_triage_row(&mut self, entry_index: usize, tag: SampleTag, flags: RowFlags) {
+        let target = match tag {
             SampleTag::Trash => &mut self.ui.triage.trash,
             SampleTag::Neutral => &mut self.ui.triage.neutral,
             SampleTag::Keep => &mut self.ui.triage.keep,
         };
         let row_index = target.len();
-        target.push(row);
+        target.push(entry_index);
         if flags.selected {
-            self.ui.triage.selected = Some(view_model::triage_index_for(entry.tag, row_index));
+            self.ui.triage.selected = Some(view_model::triage_index_for(tag, row_index));
         }
         if flags.loaded {
-            self.ui.triage.loaded = Some(view_model::triage_index_for(entry.tag, row_index));
-            self.ui.loaded_wav = Some(entry.relative_path.clone());
+            self.ui.triage.loaded = Some(view_model::triage_index_for(tag, row_index));
+            if let Some(path) = self.wav_entries.get(entry_index) {
+                self.ui.loaded_wav = Some(path.relative_path.clone());
+            }
         }
     }
 
@@ -564,12 +581,16 @@ impl EguiController {
 
     /// Enqueue loading wav entries for the selected source on a worker thread.
     fn queue_wav_load(&mut self) {
-        self.wav_entries.clear();
-        self.rebuild_wav_lookup();
-        self.rebuild_triage_lists();
         let Some(source) = self.current_source() else {
             return;
         };
+        if let Some(entries) = self.wav_cache.get(&source.id).cloned() {
+            self.apply_wav_entries(entries, true);
+            return;
+        }
+        self.wav_entries.clear();
+        self.rebuild_wav_lookup();
+        self.rebuild_triage_lists();
         if self.pending_source.as_ref() == Some(&source.id) {
             return;
         }
@@ -593,13 +614,9 @@ impl EguiController {
             }
             match message.result {
                 Ok(entries) => {
-                    self.wav_entries = entries;
-                    self.rebuild_wav_lookup();
-                    self.rebuild_triage_lists();
-                    self.set_status(
-                        format!("{} wav files loaded", self.wav_entries.len()),
-                        StatusTone::Info,
-                    );
+                    self.wav_cache
+                        .insert(message.source_id.clone(), entries.clone());
+                    self.apply_wav_entries(entries, false);
                 }
                 Err(err) => {
                     self.set_status(format!("Failed to load wavs: {err}"), StatusTone::Error);
@@ -607,6 +624,17 @@ impl EguiController {
             }
             self.pending_source = None;
         }
+    }
+
+    fn apply_wav_entries(&mut self, entries: Vec<WavEntry>, from_cache: bool) {
+        self.wav_entries = entries;
+        self.rebuild_wav_lookup();
+        self.rebuild_triage_lists();
+        let prefix = if from_cache { "Cached" } else { "Loaded" };
+        self.set_status(
+            format!("{prefix} {} wav files", self.wav_entries.len()),
+            StatusTone::Info,
+        );
     }
 
     /// Start tracking a drag for a sample.
@@ -676,6 +704,9 @@ impl EguiController {
                             ),
                             StatusTone::Info,
                         );
+                        if let Some(source) = self.current_source() {
+                            self.wav_cache.remove(&source.id);
+                        }
                         self.queue_wav_load();
                     }
                     Err(err) => {
