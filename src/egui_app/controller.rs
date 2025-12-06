@@ -295,7 +295,6 @@ impl EguiController {
     /// Select a wav coming from the triage columns and clear collection focus.
     pub fn select_from_triage(&mut self, path: &Path) {
         self.ui.collections.selected_sample = None;
-        self.ui.triage.autoscroll = true;
         self.select_wav_by_path(path);
     }
 
