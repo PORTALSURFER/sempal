@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use hound::SampleFormat;
+use egui::{Color32, ColorImage};
 use slint::{Image, Rgb8Pixel, SharedPixelBuffer};
 
 /// Waveform pixels and audio payload loaded from disk.
@@ -49,6 +50,11 @@ impl WaveformRenderer {
         self.render_waveform(&[])
     }
 
+    /// Produce an empty waveform as an egui color image.
+    pub fn empty_color_image(&self) -> ColorImage {
+        self.render_color_image(&[])
+    }
+
     /// Load a wav file from disk and return its pixels, raw bytes, and duration.
     pub fn load_waveform(&self, path: &Path) -> Result<LoadedWaveform, String> {
         let bytes = std::fs::read(path)
@@ -74,6 +80,12 @@ impl WaveformRenderer {
     /// Render an `Image` from already-decoded samples.
     pub fn render_from_samples(&self, samples: &[f32]) -> Image {
         self.render_waveform(samples)
+    }
+
+    /// Render an egui color image from already-decoded samples.
+    pub fn render_color_image(&self, samples: &[f32]) -> ColorImage {
+        let columns = self.sample_columns(samples);
+        self.paint_color_image(&columns)
     }
 
     /// Decode bytes into mono samples and duration seconds.
@@ -165,6 +177,30 @@ impl WaveformRenderer {
         self.fill_background(buffer.make_mut_slice());
         self.draw_columns(columns, buffer.make_mut_slice());
         Image::from_rgb8(buffer)
+    }
+
+    fn paint_color_image(&self, columns: &[(f32, f32)]) -> ColorImage {
+        let fg = Color32::from_rgb(self.foreground.r, self.foreground.g, self.foreground.b);
+        let bg = Color32::from_rgb(self.background.r, self.background.g, self.background.b);
+        let mut image = ColorImage::new(
+            [self.width as usize, self.height as usize],
+            bg,
+        );
+        let stride = self.width as usize;
+        let mid = (self.height / 2) as f32;
+        let limit = self.height.saturating_sub(1) as f32;
+
+        for (x, (min, max)) in columns.iter().enumerate() {
+            let top = (mid - max * (mid - 1.0)).clamp(0.0, limit) as u32;
+            let bottom = (mid - min * (mid - 1.0)).clamp(0.0, limit) as u32;
+            for y in top..=bottom {
+                let idx = y as usize * stride + x;
+                if let Some(pixel) = image.pixels.get_mut(idx) {
+                    *pixel = fg;
+                }
+            }
+        }
+        image
     }
 
     fn fill_background(&self, pixels: &mut [Rgb8Pixel]) {

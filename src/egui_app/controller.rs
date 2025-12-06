@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-// Controller is being integrated incrementally with the egui renderer.
+//! Controller is being integrated incrementally with the egui renderer.
 
 use crate::audio::AudioPlayer;
 use crate::egui_app::state::*;
@@ -16,13 +16,14 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::Path;
 use std::path::PathBuf;
+use std::fs;
 use std::rc::Rc;
 
 /// Maintains app state and bridges core logic to the egui UI.
 pub struct EguiController {
     pub ui: UiState,
     renderer: WaveformRenderer,
-    _player: Rc<RefCell<AudioPlayer>>,
+    player: Option<Rc<RefCell<AudioPlayer>>>,
     sources: Vec<SampleSource>,
     collections: Vec<Collection>,
     db_cache: HashMap<SourceId, Rc<SourceDatabase>>,
@@ -36,11 +37,12 @@ pub struct EguiController {
 }
 
 impl EguiController {
-    pub fn new(renderer: WaveformRenderer, player: Rc<RefCell<AudioPlayer>>) -> Self {
+    /// Create a controller with shared renderer and optional audio player.
+    pub fn new(renderer: WaveformRenderer, player: Option<Rc<RefCell<AudioPlayer>>>) -> Self {
         Self {
             ui: UiState::default(),
             renderer,
-            _player: player,
+            player,
             sources: Vec::new(),
             collections: Vec::new(),
             db_cache: HashMap::new(),
@@ -64,7 +66,6 @@ impl EguiController {
         self.ensure_collection_selection();
         self.refresh_sources_ui();
         self.refresh_collections_ui();
-        self.select_first_source();
         Ok(())
     }
 
@@ -187,6 +188,11 @@ impl EguiController {
     pub fn select_wav_by_path(&mut self, path: &Path) {
         if self.wav_lookup.contains_key(path) {
             self.selected_wav = Some(path.to_path_buf());
+            if let Some(source) = self.current_source() {
+                if let Err(err) = self.load_waveform_for_selection(&source, path) {
+                    self.set_status(err, StatusTone::Error);
+                }
+            }
             self.rebuild_triage_lists();
         }
     }
@@ -354,6 +360,33 @@ impl EguiController {
         })
     }
 
+    fn load_waveform_for_selection(
+        &mut self,
+        source: &SampleSource,
+        relative_path: &Path,
+    ) -> Result<(), String> {
+        let full_path = source.root.join(relative_path);
+        let bytes = fs::read(&full_path)
+            .map_err(|err| format!("Failed to read {}: {err}", full_path.display()))?;
+        let decoded = self.renderer.decode_from_bytes(&bytes)?;
+        let color_image = self.renderer.render_color_image(&decoded.samples);
+        self.ui.waveform.image = Some(WaveformImage { image: color_image });
+        self.ui.waveform.playhead = PlayheadState::default();
+        self.ui.waveform.selection = None;
+        self.loaded_wav = Some(relative_path.to_path_buf());
+        self.ui.loaded_wav = Some(relative_path.to_path_buf());
+        if let Some(player) = self.ensure_player()? {
+            let mut player = player.borrow_mut();
+            player.stop();
+            player.set_audio(bytes, decoded.duration_seconds);
+        }
+        self.set_status(
+            format!("Loaded {}", relative_path.display()),
+            StatusTone::Info,
+        );
+        Ok(())
+    }
+
     fn set_status(&mut self, text: impl Into<String>, tone: StatusTone) {
         let (label, color) = status_badge(tone);
         self.ui.status.text = text.into();
@@ -372,8 +405,18 @@ impl EguiController {
             index += 1;
         }
     }
+
+    fn ensure_player(&mut self) -> Result<Option<Rc<RefCell<AudioPlayer>>>, String> {
+        if self.player.is_none() {
+            let created = AudioPlayer::new()
+                .map_err(|err| format!("Audio init failed: {err}"))?;
+            self.player = Some(Rc::new(RefCell::new(created)));
+        }
+        Ok(self.player.clone())
+    }
 }
 
+/// UI status tone for badge coloring.
 #[derive(Clone, Copy, Debug)]
 pub enum StatusTone {
     Idle,
