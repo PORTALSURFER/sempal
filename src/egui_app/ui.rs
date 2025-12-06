@@ -6,7 +6,7 @@ use crate::audio::AudioPlayer;
 use crate::egui_app::controller::EguiController;
 use crate::egui_app::state::{TriageColumn, TriageIndex};
 use crate::waveform::WaveformRenderer;
-use eframe::egui::{self, Color32, Frame, Margin, RichText, Stroke, TextureHandle, TextureOptions, Ui};
+use eframe::egui::{self, Area, Color32, Frame, Margin, Order, RichText, Stroke, TextureHandle, TextureOptions, Ui, Vec2};
 
 /// Renders the egui UI using the shared controller state.
 pub struct EguiApp {
@@ -107,6 +107,8 @@ impl EguiApp {
     }
 
     fn render_collections_panel(&mut self, ui: &mut Ui) {
+        let drag_active = self.controller.ui.drag.active_path.is_some();
+        let pointer_pos = ui.input(|i| i.pointer.hover_pos());
         ui.vertical(|ui| {
             ui.horizontal(|ui| {
                 ui.label(RichText::new("Collections").color(Color32::WHITE));
@@ -125,18 +127,69 @@ impl EguiApp {
                 for (index, collection) in rows.iter().enumerate() {
                     let selected = collection.selected;
                     let label = format!("{} ({})", collection.name, collection.count);
-                    if ui
-                        .selectable_label(
-                            selected,
-                            RichText::new(label).color(Color32::WHITE),
-                        )
-                        .clicked()
-                    {
+                    let response = ui.selectable_label(
+                        selected,
+                        RichText::new(label).color(Color32::WHITE),
+                    );
+                    if response.clicked() {
                         self.controller.select_collection_by_index(Some(index));
+                    }
+                    if drag_active {
+                        if let Some(pointer) = pointer_pos {
+                            if response.rect.contains(pointer) {
+                                self.controller.update_sample_drag(
+                                    pointer,
+                                    Some(collection.id.clone()),
+                                    false,
+                                );
+                            }
+                        }
                     }
                     ui.add_space(4.0);
                 }
             });
+            ui.add_space(8.0);
+            // Drop zone for the currently selected collection.
+            let zone_color = if self.controller.ui.drag.hovering_drop_zone {
+                Color32::from_rgb(30, 47, 72)
+            } else if drag_active && self.controller.ui.collections.selected.is_some() {
+                Color32::from_rgb(20, 33, 51)
+            } else {
+                Color32::from_rgb(11, 11, 11)
+            };
+            let zone_stroke = if self.controller.ui.drag.hovering_drop_zone {
+                Color32::from_rgb(59, 130, 196)
+            } else if drag_active && self.controller.ui.collections.selected.is_some() {
+                Color32::from_rgb(50, 91, 136)
+            } else {
+                Color32::from_rgb(48, 48, 48)
+            };
+            let zone_response = Frame::none()
+                .fill(zone_color)
+                .stroke(Stroke::new(1.0, zone_stroke))
+                .rounding(6.0)
+                .show(ui, |ui| {
+                    ui.set_height(80.0);
+                    ui.set_min_width(ui.available_width());
+                    ui.vertical_centered(|ui| {
+                        ui.add_space(10.0);
+                        let text = if self.controller.ui.collections.selected.is_some() {
+                            "Drop to add to selected collection"
+                        } else {
+                            "Select a collection"
+                        };
+                        ui.label(RichText::new(text).color(Color32::WHITE));
+                    });
+                })
+                .response;
+            if drag_active {
+                if let Some(pointer) = pointer_pos {
+                    if zone_response.rect.contains(pointer) {
+                        self.controller
+                            .update_sample_drag(pointer, None, true);
+                    }
+                }
+            }
             ui.add_space(8.0);
             ui.label(RichText::new("Collection items").color(Color32::WHITE));
             egui::ScrollArea::vertical().show(ui, |ui| {
@@ -223,7 +276,7 @@ impl EguiApp {
                         self.controller.start_selection_drag(normalized);
                     } else if response.dragged() && shift_down {
                         self.controller.update_selection_drag(normalized);
-                    } else if response.drag_released() && shift_down {
+                    } else if response.drag_stopped() && shift_down {
                         self.controller.finish_selection_drag();
                     } else if response.clicked() {
                         if shift_down {
@@ -291,6 +344,7 @@ impl EguiApp {
     ) {
         ui.label(RichText::new(title).color(accent));
         ui.add_space(6.0);
+        let drag_active = self.controller.ui.drag.active_path.is_some();
         egui::ScrollArea::vertical().show(ui, |ui| {
             for (idx, row) in rows.iter().enumerate() {
                 let is_selected = matches!(
@@ -306,12 +360,27 @@ impl EguiApp {
                 if is_loaded {
                     text.push_str(" • loaded");
                 }
-                let label = egui::SelectableLabel::new(
-                    is_selected,
-                    RichText::new(text).color(Color32::WHITE),
-                );
-                if ui.add(label).clicked() {
+                let mut button = egui::Button::new(RichText::new(text).color(Color32::WHITE))
+                    .sense(egui::Sense::click_and_drag());
+                if is_selected {
+                    button = button.fill(Color32::from_rgb(30, 30, 30));
+                }
+                let response = ui.add(button);
+                if response.clicked() {
                     self.controller.select_wav_by_path(&row.path);
+                }
+                if response.drag_started() {
+                    if let Some(pos) = response.interact_pointer_pos() {
+                        self.controller
+                            .start_sample_drag(row.path.clone(), row.name.clone(), pos);
+                    }
+                } else if drag_active && response.dragged() {
+                    if let Some(pos) = response.interact_pointer_pos() {
+                        self.controller
+                            .update_sample_drag(pos, None, false);
+                    }
+                } else if response.drag_stopped() {
+                    self.controller.finish_sample_drag();
                 }
                 ui.add_space(4.0);
             }
@@ -345,6 +414,36 @@ impl eframe::App for EguiApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             self.render_center(ui);
         });
+        if let Some(pos) = self.controller.ui.drag.position {
+            let label = if self.controller.ui.drag.label.is_empty() {
+                "Sample".to_string()
+            } else {
+                self.controller.ui.drag.label.clone()
+            };
+            Area::new("drag_preview".into())
+                .order(Order::Tooltip)
+                .pivot(egui::Align2::CENTER_CENTER)
+                .current_pos(pos + Vec2::new(16.0, 16.0))
+                .show(ctx, |ui| {
+                    Frame::none()
+                        .fill(Color32::from_rgba_unmultiplied(26, 39, 51, 220))
+                        .stroke(Stroke::new(1.0, Color32::from_rgb(47, 111, 177)))
+                        .rounding(6.0)
+                        .show(ui, |ui| {
+                            ui.horizontal(|ui| {
+                                ui.add_space(8.0);
+                                ui.colored_label(Color32::from_rgb(90, 176, 255), "●");
+                                ui.label(RichText::new(label).color(Color32::WHITE));
+                                ui.add_space(8.0);
+                            });
+                        });
+                });
+        }
+        if self.controller.ui.drag.active_path.is_some() {
+            if ctx.input(|i| i.pointer.any_released()) {
+                self.controller.finish_sample_drag();
+            }
+        }
         self.render_status(ctx);
         ctx.request_repaint();
     }
