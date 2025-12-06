@@ -13,10 +13,4 @@ and add a 'go fullscreen' button to the topbar next to the x for closing
 \plan - lets adjust the look and feel of everything so we have had rectangled everything, never round corners, if we must have soft corners, use a diagonal cut, very hard sci fi in terms of looks.
 please review the styleguide in @styleguide.md and make a plan
 
-\plan - lets adjust the way the trash/keep splitter ui works.
-right now if we move up/down throught he list, we jump between all three columns.
-lets instead isolate this to the focused column so we neatly go up and down that columns list only.
-selecting an item in a column will focus that column.
-if we move a sample from one column to another, dont keep that sample selected, instead select the next item in the current column.
- 
 \plan - when the user hovers the start or end of an audio selection, lets make a [ or ] icon visible at the bottom of the line, indicating the are now able to grab the edge and resize it.
