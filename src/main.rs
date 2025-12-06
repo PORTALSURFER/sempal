@@ -18,10 +18,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     eframe::run_native(
         "Sempal",
         native_options,
-        Box::new(move |_cc| match EguiApp::new(renderer.clone(), player.clone()) {
-            Ok(app) => Box::new(app),
-            Err(err) => Box::new(LaunchError { message: err }),
-        }),
+        Box::new(
+            move |_cc| match EguiApp::new(renderer.clone(), player.clone()) {
+                Ok(app) => Box::new(app),
+                Err(err) => Box::new(LaunchError { message: err }),
+            },
+        ),
     )?;
     Ok(())
 }
