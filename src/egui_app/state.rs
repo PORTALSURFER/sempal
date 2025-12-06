@@ -152,6 +152,7 @@ pub struct DragState {
     pub label: String,
     pub position: Option<Pos2>,
     pub hovering_collection: Option<CollectionId>,
+    pub hovering_drop_zone: bool,
 }
 
 /// Collections sidebar and sample list state.

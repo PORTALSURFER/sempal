@@ -395,6 +395,40 @@ impl EguiController {
         self.set_status("Collection created", StatusTone::Info);
     }
 
+    /// Add a sample to the given collection id.
+    pub fn add_sample_to_collection(
+        &mut self,
+        collection_id: &CollectionId,
+        relative_path: &Path,
+    ) -> Result<(), String> {
+        if !self.feature_flags.collections_enabled {
+            return Err("Collections are disabled".into());
+        }
+        let Some(source) = self.current_source() else {
+            return Err("Select a source first".into());
+        };
+        if !self.wav_lookup.contains_key(relative_path) {
+            return Err("Sample is not available to add".into());
+        }
+        let mut collections = self.collections.clone();
+        let Some(collection) = collections.iter_mut().find(|c| &c.id == collection_id) else {
+            return Err("Collection not found".into());
+        };
+        let added = collection.add_member(source.id.clone(), relative_path.to_path_buf());
+        self.collections = collections;
+        if added {
+            self.persist_config("Failed to save collection")?;
+            self.refresh_collections_ui();
+            self.set_status(
+                format!("Added {} to collection", relative_path.display()),
+                StatusTone::Info,
+            );
+        } else {
+            self.set_status("Already in collection", StatusTone::Info);
+        }
+        Ok(())
+    }
+
     fn database_for(&mut self, source: &SampleSource) -> Result<Rc<SourceDatabase>, SourceDbError> {
         if let Some(existing) = self.db_cache.get(&source.id) {
             return Ok(existing.clone());
@@ -484,10 +518,10 @@ impl EguiController {
             self.ui.waveform.playhead.visible = false;
             return;
         };
-        let mut player = player.borrow_mut();
-        if let Some(progress) = player.progress() {
+        let player_ref = player.borrow();
+        if let Some(progress) = player_ref.progress() {
             self.ui.waveform.playhead.position = progress;
-            self.ui.waveform.playhead.visible = player.is_playing();
+            self.ui.waveform.playhead.visible = player_ref.is_playing();
         } else {
             self.ui.waveform.playhead.visible = false;
         }
@@ -499,6 +533,59 @@ impl EguiController {
         } else {
             self.ui.waveform.selection = None;
         }
+    }
+
+    /// Start tracking a drag for a sample.
+    pub fn start_sample_drag(&mut self, path: PathBuf, label: String, pos: egui::Pos2) {
+        self.ui.drag.active_path = Some(path);
+        self.ui.drag.label = label;
+        self.ui.drag.position = Some(pos);
+        self.ui.drag.hovering_collection = None;
+        self.ui.drag.hovering_drop_zone = false;
+    }
+
+    /// Update drag position and hover state.
+    pub fn update_sample_drag(
+        &mut self,
+        pos: egui::Pos2,
+        hovering_collection: Option<CollectionId>,
+        hovering_drop_zone: bool,
+    ) {
+        self.ui.drag.position = Some(pos);
+        self.ui.drag.hovering_collection = hovering_collection;
+        self.ui.drag.hovering_drop_zone = hovering_drop_zone;
+    }
+
+    /// Finish drag and perform drop if applicable.
+    pub fn finish_sample_drag(&mut self) {
+        let path = match self.ui.drag.active_path.take() {
+            Some(path) => path,
+            None => {
+                self.reset_drag();
+                return;
+            }
+        };
+        let target_id = if self.ui.drag.hovering_drop_zone {
+            self.current_collection_id()
+        } else {
+            self.ui.drag.hovering_collection.clone()
+        };
+        self.reset_drag();
+        if let Some(collection_id) = target_id {
+            let _ = self.add_sample_to_collection(&collection_id, &path);
+        }
+    }
+
+    fn reset_drag(&mut self) {
+        self.ui.drag.active_path = None;
+        self.ui.drag.label.clear();
+        self.ui.drag.position = None;
+        self.ui.drag.hovering_collection = None;
+        self.ui.drag.hovering_drop_zone = false;
+    }
+
+    fn current_collection_id(&self) -> Option<CollectionId> {
+        self.selected_collection.clone()
     }
 }
 
