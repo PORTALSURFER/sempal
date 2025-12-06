@@ -5,6 +5,18 @@ export component WavListPanel inherits Rectangle {
     in-out property <[WavRow]> wavs_trash;
     in-out property <[WavRow]> wavs_neutral;
     in-out property <[WavRow]> wavs_keep;
+    in-out property <string> dragging_sample_path: "";
+    in-out property <string> drag_preview_label: "";
+    in-out property <length> drag_preview_x: 0px;
+    in-out property <length> drag_preview_y: 0px;
+    in-out property <bool> drag_preview_visible: false;
+    property <string> pending_path: "";
+    property <string> pending_label: "";
+    property <length> drag_start_x: 0px;
+    property <length> drag_start_y: 0px;
+    property <bool> drag_started: false;
+    property <length> cursor_x: 0px;
+    property <length> cursor_y: 0px;
     in-out property <int> selected_trash: -1;
     in-out property <int> selected_neutral: -1;
     in-out property <int> selected_keep: -1;
@@ -98,7 +110,8 @@ export component WavListPanel inherits Rectangle {
             spacing: 8px;
             vertical-stretch: 1;
 
-            Rectangle {
+            // Trash column
+            trash_column := Rectangle {
                 horizontal-stretch: 1;
                 vertical-stretch: 1;
                 background: #0b0b0b;
@@ -112,35 +125,35 @@ export component WavListPanel inherits Rectangle {
                     trash_list := ListView {
                         vertical-stretch: 1;
                         min-height: 200px;
-                for file[i] in root.wavs_trash: Rectangle {
-                    height: 32px;
-                    horizontal-stretch: 1;
-                    clip: true;
-                    cache-rendering-hint: true;
-                    background: ta_trash.pressed ? file.pressed_bg :
-                        (ta_trash.has-hover ? file.hover_bg : file.bg);
-                    border-width: file.selected ? 1px : 0px;
-                    border-color: file.border_color;
-                    Rectangle {
-                        x: 0px;
-                        y: 0px;
-                        width: parent.width;
-                        height: parent.height;
+                        for file[i] in root.wavs_trash: row_trash := Rectangle {
+                            height: 32px;
+                            horizontal-stretch: 1;
+                            clip: true;
+                            cache-rendering-hint: true;
+                            background: ta_trash.pressed ? file.pressed_bg :
+                                (ta_trash.has-hover ? file.hover_bg : file.bg);
+                            border-width: file.selected ? 1px : 0px;
+                            border-color: file.border_color;
+                            Rectangle {
+                                x: 0px;
+                                y: 0px;
+                                width: parent.width;
+                                height: parent.height;
                                 background: file.overlay;
                                 border-radius: 6px;
                             }
                             HorizontalLayout {
                                 padding: 8px;
-                        spacing: 8px;
-                        Rectangle {
-                            width: 4px;
-                            height: parent.height - 6px;
-                            background: file.indicator_color;
-                            border-radius: 2px;
-                        }
-                        Text {
-                            text: file.name;
-                            color: #e0e0e0;
+                                spacing: 8px;
+                                Rectangle {
+                                    width: 4px;
+                                    height: parent.height - 6px;
+                                    background: file.indicator_color;
+                                    border-radius: 2px;
+                                }
+                                Text {
+                                    text: file.name;
+                                    color: #e0e0e0;
                                     horizontal-alignment: left;
                                     horizontal-stretch: 1;
                                 }
@@ -163,6 +176,53 @@ export component WavListPanel inherits Rectangle {
                             ta_trash := TouchArea {
                                 width: parent.width;
                                 height: parent.height;
+                                pointer-event(event) => {
+                                    if event.kind == PointerEventKind.down {
+                                        root.pending_path = file.path;
+                                        root.pending_label = file.name;
+                                        root.drag_started = false;
+                                        root.drag_preview_visible = false;
+                                        let pos_x = trash_column.x + row_trash.x + self.mouse-x;
+                                        let pos_y = trash_column.y + row_trash.y + self.mouse-y;
+                                        root.drag_start_x = pos_x;
+                                        root.drag_start_y = pos_y;
+                                        root.cursor_x = pos_x;
+                                        root.cursor_y = pos_y;
+                                    } else if event.kind == PointerEventKind.move && root.pending_path != "" {
+                                        let pos_x = trash_column.x + row_trash.x + self.mouse-x;
+                                        let pos_y = trash_column.y + row_trash.y + self.mouse-y;
+                                        root.cursor_x = pos_x;
+                                        root.cursor_y = pos_y;
+                                        if !root.drag_started
+                                            && (pos_x > root.drag_start_x + 6px
+                                                || pos_x + 6px < root.drag_start_x
+                                                || pos_y > root.drag_start_y + 6px
+                                                || pos_y + 6px < root.drag_start_y)
+                                        {
+                                            root.drag_started = true;
+                                            root.dragging_sample_path = root.pending_path;
+                                            root.drag_preview_label = root.pending_label;
+                                            root.drag_preview_visible = true;
+                                        }
+                                        if root.drag_started {
+                                            root.drag_preview_x = root.cursor_x;
+                                            root.drag_preview_y = root.cursor_y;
+                                        }
+                                    } else if event.kind == PointerEventKind.up {
+                                        let was_dragging = root.drag_started;
+                                        root.drag_preview_visible = false;
+                                        root.drag_started = false;
+                                        if !was_dragging {
+                                            root.dragging_sample_path = "";
+                                        }
+                                        root.pending_path = "";
+                                    } else if event.kind == PointerEventKind.cancel {
+                                        root.drag_preview_visible = false;
+                                        root.drag_started = false;
+                                        root.pending_path = "";
+                                        root.dragging_sample_path = "";
+                                    }
+                                }
                                 clicked => { root.wav_clicked(file.path); }
                             }
                         }
@@ -170,7 +230,8 @@ export component WavListPanel inherits Rectangle {
                 }
             }
 
-            Rectangle {
+            // Neutral column
+            neutral_column := Rectangle {
                 horizontal-stretch: 1;
                 vertical-stretch: 1;
                 background: #0b0b0b;
@@ -184,7 +245,7 @@ export component WavListPanel inherits Rectangle {
                     neutral_list := ListView {
                         vertical-stretch: 1;
                         min-height: 200px;
-                        for file[i] in root.wavs_neutral: Rectangle {
+                        for file[i] in root.wavs_neutral: row_neutral := Rectangle {
                             height: 32px;
                             horizontal-stretch: 1;
                             clip: true;
@@ -194,25 +255,25 @@ export component WavListPanel inherits Rectangle {
                             border-width: file.selected ? 1px : 0px;
                             border-color: file.border_color;
                             Rectangle {
-                        x: 0px;
-                        y: 0px;
-                        width: parent.width;
-                        height: parent.height;
+                                x: 0px;
+                                y: 0px;
+                                width: parent.width;
+                                height: parent.height;
                                 background: file.overlay;
                                 border-radius: 6px;
                             }
                             HorizontalLayout {
                                 padding: 8px;
-                        spacing: 8px;
-                        Rectangle {
-                            width: 4px;
-                            height: parent.height - 6px;
-                            background: file.indicator_color;
-                            border-radius: 2px;
-                        }
-                        Text {
-                            text: file.name;
-                            color: #e0e0e0;
+                                spacing: 8px;
+                                Rectangle {
+                                    width: 4px;
+                                    height: parent.height - 6px;
+                                    background: file.indicator_color;
+                                    border-radius: 2px;
+                                }
+                                Text {
+                                    text: file.name;
+                                    color: #e0e0e0;
                                     horizontal-alignment: left;
                                     horizontal-stretch: 1;
                                 }
@@ -235,6 +296,53 @@ export component WavListPanel inherits Rectangle {
                             ta_neutral := TouchArea {
                                 width: parent.width;
                                 height: parent.height;
+                                pointer-event(event) => {
+                                    if event.kind == PointerEventKind.down {
+                                        root.pending_path = file.path;
+                                        root.pending_label = file.name;
+                                        root.drag_started = false;
+                                        root.drag_preview_visible = false;
+                                        let pos_x = neutral_column.x + row_neutral.x + self.mouse-x;
+                                        let pos_y = neutral_column.y + row_neutral.y + self.mouse-y;
+                                        root.drag_start_x = pos_x;
+                                        root.drag_start_y = pos_y;
+                                        root.cursor_x = pos_x;
+                                        root.cursor_y = pos_y;
+                                    } else if event.kind == PointerEventKind.move && root.pending_path != "" {
+                                        let pos_x = neutral_column.x + row_neutral.x + self.mouse-x;
+                                        let pos_y = neutral_column.y + row_neutral.y + self.mouse-y;
+                                        root.cursor_x = pos_x;
+                                        root.cursor_y = pos_y;
+                                        if !root.drag_started
+                                            && (pos_x > root.drag_start_x + 6px
+                                                || pos_x + 6px < root.drag_start_x
+                                                || pos_y > root.drag_start_y + 6px
+                                                || pos_y + 6px < root.drag_start_y)
+                                        {
+                                            root.drag_started = true;
+                                            root.dragging_sample_path = root.pending_path;
+                                            root.drag_preview_label = root.pending_label;
+                                            root.drag_preview_visible = true;
+                                        }
+                                        if root.drag_started {
+                                            root.drag_preview_x = root.cursor_x;
+                                            root.drag_preview_y = root.cursor_y;
+                                        }
+                                    } else if event.kind == PointerEventKind.up {
+                                        let was_dragging = root.drag_started;
+                                        root.drag_preview_visible = false;
+                                        root.drag_started = false;
+                                        if !was_dragging {
+                                            root.dragging_sample_path = "";
+                                        }
+                                        root.pending_path = "";
+                                    } else if event.kind == PointerEventKind.cancel {
+                                        root.drag_preview_visible = false;
+                                        root.drag_started = false;
+                                        root.pending_path = "";
+                                        root.dragging_sample_path = "";
+                                    }
+                                }
                                 clicked => { root.wav_clicked(file.path); }
                             }
                         }
@@ -242,7 +350,8 @@ export component WavListPanel inherits Rectangle {
                 }
             }
 
-            Rectangle {
+            // Keep column
+            keep_column := Rectangle {
                 horizontal-stretch: 1;
                 vertical-stretch: 1;
                 background: #0b0b0b;
@@ -256,7 +365,7 @@ export component WavListPanel inherits Rectangle {
                     keep_list := ListView {
                         vertical-stretch: 1;
                         min-height: 200px;
-                        for file[i] in root.wavs_keep: Rectangle {
+                        for file[i] in root.wavs_keep: row_keep := Rectangle {
                             height: 32px;
                             horizontal-stretch: 1;
                             clip: true;
@@ -266,25 +375,25 @@ export component WavListPanel inherits Rectangle {
                             border-width: file.selected ? 1px : 0px;
                             border-color: file.border_color;
                             Rectangle {
-                        x: 0px;
-                        y: 0px;
-                        width: parent.width;
-                        height: parent.height;
+                                x: 0px;
+                                y: 0px;
+                                width: parent.width;
+                                height: parent.height;
                                 background: file.overlay;
                                 border-radius: 6px;
                             }
                             HorizontalLayout {
                                 padding: 8px;
-                        spacing: 8px;
-                        Rectangle {
-                            width: 4px;
-                            height: parent.height - 6px;
-                            background: file.indicator_color;
-                            border-radius: 2px;
-                        }
-                        Text {
-                            text: file.name;
-                            color: #e0e0e0;
+                                spacing: 8px;
+                                Rectangle {
+                                    width: 4px;
+                                    height: parent.height - 6px;
+                                    background: file.indicator_color;
+                                    border-radius: 2px;
+                                }
+                                Text {
+                                    text: file.name;
+                                    color: #e0e0e0;
                                     horizontal-alignment: left;
                                     horizontal-stretch: 1;
                                 }
@@ -307,11 +416,85 @@ export component WavListPanel inherits Rectangle {
                             ta_keep := TouchArea {
                                 width: parent.width;
                                 height: parent.height;
+                                pointer-event(event) => {
+                                    if event.kind == PointerEventKind.down {
+                                        root.pending_path = file.path;
+                                        root.pending_label = file.name;
+                                        root.drag_started = false;
+                                        root.drag_preview_visible = false;
+                                        let pos_x = keep_column.x + row_keep.x + self.mouse-x;
+                                        let pos_y = keep_column.y + row_keep.y + self.mouse-y;
+                                        root.drag_start_x = pos_x;
+                                        root.drag_start_y = pos_y;
+                                        root.cursor_x = pos_x;
+                                        root.cursor_y = pos_y;
+                                    } else if event.kind == PointerEventKind.move && root.pending_path != "" {
+                                        let pos_x = keep_column.x + row_keep.x + self.mouse-x;
+                                        let pos_y = keep_column.y + row_keep.y + self.mouse-y;
+                                        root.cursor_x = pos_x;
+                                        root.cursor_y = pos_y;
+                                        if !root.drag_started
+                                            && (pos_x > root.drag_start_x + 6px
+                                                || pos_x + 6px < root.drag_start_x
+                                                || pos_y > root.drag_start_y + 6px
+                                                || pos_y + 6px < root.drag_start_y)
+                                        {
+                                            root.drag_started = true;
+                                            root.dragging_sample_path = root.pending_path;
+                                            root.drag_preview_label = root.pending_label;
+                                            root.drag_preview_visible = true;
+                                        }
+                                        if root.drag_started {
+                                            root.drag_preview_x = root.cursor_x;
+                                            root.drag_preview_y = root.cursor_y;
+                                        }
+                                    } else if event.kind == PointerEventKind.up {
+                                        let was_dragging = root.drag_started;
+                                        root.drag_preview_visible = false;
+                                        root.drag_started = false;
+                                        if !was_dragging {
+                                            root.dragging_sample_path = "";
+                                        }
+                                        root.pending_path = "";
+                                    } else if event.kind == PointerEventKind.cancel {
+                                        root.drag_preview_visible = false;
+                                        root.drag_started = false;
+                                        root.pending_path = "";
+                                        root.dragging_sample_path = "";
+                                    }
+                                }
                                 clicked => { root.wav_clicked(file.path); }
                             }
                         }
                     }
                 }
+            }
+        }
+    }
+
+    if root.drag_preview_visible : Rectangle {
+        x: root.drag_preview_x + 8px;
+        y: root.drag_preview_y + 8px;
+        width: 180px;
+        height: 34px;
+        z: 15;
+        background: #1a2733ee;
+        border-width: 1px;
+        border-color: #2f6fb1;
+        border-radius: 6px;
+        HorizontalLayout {
+            padding: 10px;
+            spacing: 8px;
+            Rectangle {
+                width: 8px;
+                height: 8px;
+                background: #5ab0ff;
+                border-radius: 4px;
+            }
+            Text {
+                text: root.drag_preview_label != "" ? root.drag_preview_label : "Sample";
+                color: #e0e0e0;
+                horizontal-stretch: 1;
             }
         }
     }

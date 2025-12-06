@@ -3,11 +3,13 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+pub mod collections;
 pub mod config;
 pub mod db;
 pub mod scan_state;
 pub mod scanner;
 
+pub use collections::{Collection, CollectionId};
 pub use db::{DB_FILE_NAME, SampleTag, SourceDatabase, SourceDbError, WavEntry};
 pub use scan_state::ScanTracker;
 pub use scanner::{ScanError, ScanStats};
