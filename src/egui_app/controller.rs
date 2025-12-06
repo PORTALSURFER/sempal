@@ -40,6 +40,7 @@ pub struct EguiController {
     selected_collection: Option<CollectionId>,
     selected_wav: Option<PathBuf>,
     loaded_wav: Option<PathBuf>,
+    suppress_autoplay_once: bool,
     feature_flags: FeatureFlags,
     selection: SelectionState,
     wav_job_tx: Sender<WavLoadJob>,
@@ -70,6 +71,7 @@ impl EguiController {
             selected_collection: None,
             selected_wav: None,
             loaded_wav: None,
+            suppress_autoplay_once: false,
             feature_flags: FeatureFlags::default(),
             selection: SelectionState::new(),
             wav_job_tx,
@@ -212,8 +214,10 @@ impl EguiController {
             if let Some(source) = self.current_source() {
                 if let Err(err) = self.load_waveform_for_selection(&source, path) {
                     self.set_status(err, StatusTone::Error);
-                } else if self.feature_flags.autoplay_selection {
+                } else if self.feature_flags.autoplay_selection && !self.suppress_autoplay_once {
                     let _ = self.play_audio(self.ui.waveform.loop_enabled, None);
+                } else {
+                    self.suppress_autoplay_once = false;
                 }
             }
             self.rebuild_triage_lists();
@@ -319,6 +323,54 @@ impl EguiController {
         drop(player_rc);
         // Always start playback from the selection/full track, restarting if currently playing.
         let _ = self.play_audio(self.ui.waveform.loop_enabled, None);
+    }
+
+    /// Tag the currently selected wav and advance to the next row in the original column.
+    pub fn tag_selected(&mut self, target: SampleTag) {
+        let Some(TriageIndex { column, row }) = self.ui.triage.selected else {
+            return;
+        };
+        let Some(selected_index) = self.selected_row_index() else {
+            return;
+        };
+        let original_list: Vec<usize> = self.triage_indices(column).to_vec();
+        let next_candidate = if row + 1 < original_list.len() {
+            original_list.get(row + 1).copied()
+        } else if row > 0 {
+            original_list.get(row - 1).copied()
+        } else {
+            None
+        };
+        let path = match self.wav_entries.get(selected_index) {
+            Some(entry) => entry.relative_path.clone(),
+            None => return,
+        };
+        let Some(source) = self.current_source() else {
+            return;
+        };
+        let db = match self.database_for(&source) {
+            Ok(db) => db,
+            Err(err) => {
+                self.set_status(err.to_string(), StatusTone::Error);
+                return;
+            }
+        };
+        if let Some(entry) = self.wav_entries.get_mut(selected_index) {
+            entry.tag = target;
+        }
+        let _ = db.set_tag(&path, target);
+        if let Some(cache) = self.wav_cache.get_mut(&source.id) {
+            if let Some(entry) = cache.get_mut(selected_index) {
+                entry.tag = target;
+            }
+        }
+        self.rebuild_triage_lists();
+        if let Some(next_index) = next_candidate {
+            self.select_wav_by_index(next_index);
+        } else {
+            self.selected_wav = None;
+            self.ui.triage.selected = None;
+        }
     }
 
     /// Move selection within the current triage column by an offset and play.
@@ -739,6 +791,10 @@ impl EguiController {
         self.wav_entries = entries;
         self.rebuild_wav_lookup();
         self.rebuild_triage_lists();
+        if self.selected_wav.is_none() && !self.wav_entries.is_empty() {
+            self.suppress_autoplay_once = true;
+            self.select_wav_by_index(0);
+        }
         if let Some(id) = source_id {
             self.label_cache
                 .insert(id, self.build_label_cache(&self.wav_entries));
