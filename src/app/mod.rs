@@ -80,6 +80,8 @@ pub struct DropHandler {
     wav_list_tx: Sender<WavListJob>,
     wav_list_rx: Rc<RefCell<Receiver<WavListJobResult>>>,
     wav_list_poll_timer: Rc<slint::Timer>,
+    wav_batch_poll_timer: Rc<slint::Timer>,
+    wav_batch: Rc<RefCell<Option<crate::app::sources::BatchState>>>,
     pending_tags: Rc<RefCell<HashMap<SourceId, Vec<(PathBuf, SampleTag)>>>>,
     scan_tracker: Rc<RefCell<ScanTracker>>,
     scan_tx: Sender<ScanJobResult>,
@@ -124,6 +126,8 @@ impl DropHandler {
             wav_list_tx,
             wav_list_rx: Rc::new(RefCell::new(wav_list_rx)),
             wav_list_poll_timer: Rc::new(slint::Timer::default()),
+            wav_batch_poll_timer: Rc::new(slint::Timer::default()),
+            wav_batch: Rc::new(RefCell::new(None)),
             pending_tags: Rc::new(RefCell::new(HashMap::new())),
             scan_tracker: Rc::new(RefCell::new(ScanTracker::default())),
             scan_tx,
@@ -153,6 +157,7 @@ impl DropHandler {
         self.load_sources(app);
         self.start_scan_polling();
         self.start_waveform_polling();
+        self.start_wav_batching();
         self.start_wav_list_polling();
     }
 
