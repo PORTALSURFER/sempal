@@ -1,6 +1,7 @@
 - lets do a housekeeping pass, clean up the codebase, reduce file lengths, improve maintainability, add missing docs, find and resolve bugs, improve performance, etc.
 
 --
+
 \plan - add a context menu to the collection items, in it, add the option for the user to select an export path on disk. collections should export their files to this folder automatically whenever a file is added to it. also delete again if a file is removed.
 also add an option to 'refresh export' so that if we add or removed files externally, the collection is updated accordingly.
 
@@ -20,3 +21,5 @@ please review the styleguide in @styleguide.md and make a plan
 - if the user disables looping while we are actively playing, stop looping after the current cycle. currently it just keep looping until we restart play.
 
 - selecting items in the collection will somehow make the trash triage list autoscroll. can you remove this.
+
+- currently if I drop a wave file item, it will start playing, lets stop that from happening

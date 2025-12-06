@@ -7,8 +7,8 @@ use crate::egui_app::controller::EguiController;
 use crate::egui_app::state::{TriageColumn, TriageIndex};
 use crate::waveform::WaveformRenderer;
 use eframe::egui::{
-    self, Align, Area, Color32, Frame, Margin, Order, RichText, Stroke, TextureHandle,
-    TextureOptions, Ui, Vec2,
+    self, Align, Align2, Area, Color32, Frame, Margin, Order, RichText, Stroke, TextStyle,
+    TextureHandle, TextureOptions, Ui, Vec2,
 };
 
 /// Renders the egui UI using the shared controller state.
@@ -24,7 +24,7 @@ impl EguiApp {
     }
 
     fn clamp_label_for_width(text: &str, available_width: f32) -> String {
-        // Roughly approximate mono-width to avoid expensive layout probes.
+        // Rough character-based truncation to avoid layout thrash.
         let width = available_width.max(1.0);
         let approx_char_width = 8.0;
         let max_chars = (width / approx_char_width).floor().max(6.0) as usize;
@@ -41,6 +41,31 @@ impl EguiApp {
             clipped.push(ch);
         }
         clipped
+    }
+
+    fn render_list_row(
+        ui: &mut Ui,
+        label: &str,
+        row_width: f32,
+        row_height: f32,
+        bg: Option<Color32>,
+        text_color: Color32,
+        sense: egui::Sense,
+    ) -> egui::Response {
+        let (rect, response) = ui.allocate_exact_size(egui::vec2(row_width, row_height), sense);
+        let mut fill = bg;
+        if response.hovered() && bg.is_none() {
+            fill = Some(Color32::from_rgb(26, 26, 26));
+        }
+        if let Some(color) = fill {
+            ui.painter().rect_filled(rect, 0.0, color);
+        }
+        let padding = ui.spacing().button_padding;
+        let font_id = TextStyle::Button.resolve(ui.style());
+        let text_pos = rect.left_center() + egui::vec2(padding.x, 0.0);
+        ui.painter()
+            .text(text_pos, Align2::LEFT_CENTER, label, font_id, text_color);
+        response
     }
 
     /// Create a new egui app, loading persisted configuration.
@@ -134,15 +159,19 @@ impl EguiApp {
                         let is_selected = Some(index) == selected;
                         ui.push_id(&row.id, |ui| {
                             let row_width = ui.available_width();
-                            let label = Self::clamp_label_for_width(&row.name, row_width);
-                            let mut button =
-                                egui::Button::new(RichText::new(label).color(Color32::WHITE))
-                                    .wrap(false);
-                            if is_selected {
-                                button = button.fill(Color32::from_rgb(30, 30, 30));
-                            }
-                            let response = ui.add_sized(egui::vec2(row_width, row_height), button);
-                            let response = response.on_hover_text(&row.path);
+                            let padding = ui.spacing().button_padding.x * 2.0;
+                            let label = Self::clamp_label_for_width(&row.name, row_width - padding);
+                            let bg = is_selected.then_some(Color32::from_rgb(30, 30, 30));
+                            let response = Self::render_list_row(
+                                ui,
+                                &label,
+                                row_width,
+                                row_height,
+                                bg,
+                                Color32::WHITE,
+                                egui::Sense::click(),
+                            )
+                            .on_hover_text(&row.path);
                             if response.clicked() {
                                 self.controller.select_source_by_index(index);
                             }
@@ -154,7 +183,9 @@ impl EguiApp {
 
     fn render_collections_panel(&mut self, ui: &mut Ui) {
         let drag_active = self.controller.ui.drag.active_path.is_some();
-        let pointer_pos = ui.input(|i| i.pointer.hover_pos());
+        let pointer_pos = ui
+            .input(|i| i.pointer.hover_pos().or_else(|| i.pointer.interact_pos()))
+            .or(self.controller.ui.drag.position);
         ui.vertical(|ui| {
             ui.horizontal(|ui| {
                 ui.label(RichText::new("Collections").color(Color32::WHITE));
@@ -178,14 +209,18 @@ impl EguiApp {
                         let label = format!("{} ({})", collection.name, collection.count);
                         ui.push_id(&collection.id, |ui| {
                             let row_width = ui.available_width();
-                            let label = Self::clamp_label_for_width(&label, row_width);
-                            let mut button =
-                                egui::Button::new(RichText::new(label).color(Color32::WHITE))
-                                    .wrap(false);
-                            if selected {
-                                button = button.fill(Color32::from_rgb(30, 30, 30));
-                            }
-                            let response = ui.add_sized(egui::vec2(row_width, row_height), button);
+                            let padding = ui.spacing().button_padding.x * 2.0;
+                            let label = Self::clamp_label_for_width(&label, row_width - padding);
+                            let bg = selected.then_some(Color32::from_rgb(30, 30, 30));
+                            let response = Self::render_list_row(
+                                ui,
+                                &label,
+                                row_width,
+                                row_height,
+                                bg,
+                                Color32::WHITE,
+                                egui::Sense::click(),
+                            );
                             if response.clicked() {
                                 self.controller.select_collection_by_index(Some(index));
                             }
@@ -206,7 +241,9 @@ impl EguiApp {
                 });
             ui.label(RichText::new("Collection items").color(Color32::WHITE));
             let drag_active = self.controller.ui.drag.active_path.is_some();
-            let pointer_pos = ui.input(|i| i.pointer.hover_pos());
+            let pointer_pos = ui
+                .input(|i| i.pointer.hover_pos().or_else(|| i.pointer.interact_pos()))
+                .or(self.controller.ui.drag.position);
             let samples = self.controller.ui.collections.samples.clone();
             let selected_row = self.controller.ui.collections.selected_sample;
             let current_collection_id = self.controller.current_collection_id();
@@ -260,26 +297,32 @@ impl EguiApp {
                                 continue;
                             };
                             let row_width = ui.available_width();
+                            let padding = ui.spacing().button_padding.x * 2.0;
                             let path = sample.path.clone();
                             let label = format!("{} — {}", sample.source, sample.label);
-                            let label = Self::clamp_label_for_width(&label, row_width);
+                            let label = Self::clamp_label_for_width(&label, row_width - padding);
                             let is_selected = Some(row) == selected_row;
                             let is_duplicate_hover = drag_active
                                 && active_drag_path.as_ref().is_some_and(|p| p == &path);
-                            let mut button =
-                                egui::Button::new(RichText::new(label).color(Color32::LIGHT_GRAY))
-                                    .wrap(false)
-                                    .sense(egui::Sense::click_and_drag());
-                            if is_selected {
-                                button = button.fill(Color32::from_rgb(30, 30, 30));
+                            let bg = if is_selected {
+                                Some(Color32::from_rgb(30, 30, 30))
                             } else if is_duplicate_hover {
-                                button = button.fill(Color32::from_rgb(90, 60, 24));
-                            }
+                                Some(Color32::from_rgb(90, 60, 24))
+                            } else {
+                                None
+                            };
                             ui.push_id(
                                 format!("{}:{}:{}", sample.source_id, sample.source, sample.label),
                                 |ui| {
-                                    let response =
-                                        ui.add_sized(egui::vec2(row_width, row_height), button);
+                                    let response = Self::render_list_row(
+                                        ui,
+                                        &label,
+                                        row_width,
+                                        row_height,
+                                        bg,
+                                        Color32::LIGHT_GRAY,
+                                        egui::Sense::click_and_drag(),
+                                    );
                                     if response.clicked() {
                                         self.controller.select_collection_sample(row);
                                     }
@@ -312,27 +355,22 @@ impl EguiApp {
                     })
                 }
             });
+            let viewport_height = scroll_response.inner.inner_rect.height();
+            let content_height = scroll_response.inner.content_size.y;
+            let max_offset = (content_height - viewport_height).max(0.0);
+            let mut desired_offset = scroll_response.inner.state.offset.y;
             if let Some(row) = duplicate_row {
-                let viewport_height = scroll_response.inner.inner_rect.height();
-                let content_height = scroll_response.inner.content_size.y;
-                let target = (row as f32 + 0.5) * row_height - viewport_height * 0.5;
-                let max_offset = (content_height - viewport_height).max(0.0);
-                let desired_offset = target.clamp(0.0, max_offset);
-                let mut state = scroll_response.inner.state;
-                state.offset.y = desired_offset;
-                state.store(ui.ctx(), scroll_response.inner.id);
+                desired_offset = (row as f32 + 0.5) * row_height - viewport_height * 0.5;
+            } else if let Some(row) = selected_row {
+                desired_offset = row as f32 * row_height;
             }
-            if duplicate_row.is_none() {
-                if let Some(row) = selected_row {
-                    let content_min = scroll_response.inner.inner_rect.min;
-                    let min = egui::pos2(content_min.x, content_min.y + row as f32 * row_height);
-                    let rect = egui::Rect::from_min_size(
-                        min,
-                        egui::vec2(scroll_response.inner.inner_rect.width(), row_height),
-                    );
-                    ui.scroll_to_rect(rect, Some(Align::Center));
-                }
-            }
+            let snapped_offset = (desired_offset / row_height)
+                .round()
+                .clamp(0.0, max_offset / row_height)
+                * row_height;
+            let mut state = scroll_response.inner.state;
+            state.offset.y = snapped_offset.clamp(0.0, max_offset);
+            state.store(ui.ctx(), scroll_response.inner.id);
             if drag_active {
                 if let Some(pointer) = pointer_pos {
                     let target_rect = scroll_response.response.rect.expand2(egui::vec2(8.0, 0.0));
@@ -519,7 +557,9 @@ impl EguiApp {
         ui.label(RichText::new(title).color(accent));
         ui.add_space(6.0);
         let drag_active = self.controller.ui.drag.active_path.is_some();
-        let pointer_pos = ui.input(|i| i.pointer.hover_pos());
+        let pointer_pos = ui
+            .input(|i| i.pointer.hover_pos().or_else(|| i.pointer.interact_pos()))
+            .or(self.controller.ui.drag.position);
         let selected_row = match selected {
             Some(TriageIndex { column: c, row }) if c == column => Some(row),
             _ => None,
@@ -553,6 +593,7 @@ impl EguiApp {
                         let is_loaded = loaded_row == Some(row);
                         let path = entry.relative_path.clone();
                         let row_width = ui.available_width();
+                        let padding = ui.spacing().button_padding.x * 2.0;
                         let mut label = self
                             .controller
                             .wav_label(entry_index)
@@ -560,16 +601,18 @@ impl EguiApp {
                         if is_loaded {
                             label.push_str(" • loaded");
                         }
-                        let label = Self::clamp_label_for_width(&label, row_width);
-                        let mut button =
-                            egui::Button::new(RichText::new(label).color(Color32::WHITE))
-                                .wrap(false)
-                                .sense(egui::Sense::click_and_drag());
-                        if is_selected {
-                            button = button.fill(Color32::from_rgb(30, 30, 30));
-                        }
+                        let label = Self::clamp_label_for_width(&label, row_width - padding);
+                        let bg = is_selected.then_some(Color32::from_rgb(30, 30, 30));
                         ui.push_id(&path, |ui| {
-                            let response = ui.add_sized(egui::vec2(row_width, row_height), button);
+                            let response = Self::render_list_row(
+                                ui,
+                                &label,
+                                row_width,
+                                row_height,
+                                bg,
+                                Color32::WHITE,
+                                egui::Sense::click_and_drag(),
+                            );
                             if response.clicked() {
                                 self.controller.select_from_triage(&path);
                             }
@@ -595,17 +638,21 @@ impl EguiApp {
                 });
             scroll_response
         });
+        let viewport_height = frame_response.inner.inner_rect.height();
+        let content_height = frame_response.inner.content_size.y;
+        let max_offset = (content_height - viewport_height).max(0.0);
+        let mut desired_offset = frame_response.inner.state.offset.y;
         if let (Some(row), true) = (selected_row, triage_autoscroll) {
-            let viewport_height = frame_response.inner.inner_rect.height();
-            let content_height = frame_response.inner.content_size.y;
-            let target = (row as f32 + 0.5) * row_height - viewport_height * 0.5;
-            let max_offset = (content_height - viewport_height).max(0.0);
-            let desired_offset = target.clamp(0.0, max_offset);
-            let mut state = frame_response.inner.state;
-            state.offset.y = desired_offset;
-            state.store(ui.ctx(), frame_response.inner.id);
+            desired_offset = (row as f32 + 0.5) * row_height - viewport_height * 0.5;
             self.controller.ui.triage.autoscroll = false;
         }
+        let snapped_offset = (desired_offset / row_height)
+            .round()
+            .clamp(0.0, max_offset / row_height)
+            * row_height;
+        let mut state = frame_response.inner.state;
+        state.offset.y = snapped_offset.clamp(0.0, max_offset);
+        state.store(ui.ctx(), frame_response.inner.id);
         if drag_active {
             if let Some(pointer) = pointer_pos {
                 if frame_response.response.rect.contains(pointer) {
