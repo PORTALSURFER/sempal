@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::audio::AudioPlayer;
-use crate::egui_app::controller::{EguiController, StatusTone};
+use crate::egui_app::controller::EguiController;
 use crate::egui_app::state::{TriageColumn, TriageIndex};
 use crate::waveform::WaveformRenderer;
 use eframe::egui::{self, Color32, Frame, Margin, RichText, Stroke, Ui};
@@ -38,7 +38,7 @@ impl EguiApp {
         self.visuals_set = true;
     }
 
-    fn render_top_bar(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+    fn render_top_bar(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::TopBottomPanel::top("top_bar")
             .frame(Frame::none().fill(Color32::from_rgb(24, 24, 24)))
             .show(ctx, |ui| {
@@ -47,11 +47,8 @@ impl EguiApp {
                     ui.add_space(8.0);
                     ui.separator();
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui
-                            .button(RichText::new("Close").color(Color32::WHITE))
-                            .clicked()
-                        {
-                            frame.close();
+                        if ui.button(RichText::new("Close").color(Color32::WHITE)).clicked() {
+                            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                         }
                     });
                 });
@@ -88,12 +85,16 @@ impl EguiApp {
             });
             ui.add_space(6.0);
             egui::ScrollArea::vertical().show(ui, |ui| {
-                for (index, row) in self.controller.ui.sources.rows.iter().enumerate() {
-                    let selected = Some(index) == self.controller.ui.sources.selected;
-                    let button = egui::SelectableLabel::new(selected, &row.name)
-                        .text_color(Color32::WHITE)
-                        .with_hover_text(&row.path);
-                    if ui.add(button).clicked() {
+                let rows = self.controller.ui.sources.rows.clone();
+                let selected = self.controller.ui.sources.selected;
+                for (index, row) in rows.iter().enumerate() {
+                    let is_selected = Some(index) == selected;
+                    let mut response = ui.selectable_label(
+                        is_selected,
+                        RichText::new(&row.name).color(Color32::WHITE),
+                    );
+                    response = response.on_hover_text(&row.path);
+                    if response.clicked() {
                         self.controller.select_source_by_index(index);
                     }
                     ui.add_space(4.0);
@@ -116,12 +117,16 @@ impl EguiApp {
                 ui.add_space(4.0);
             });
             ui.add_space(6.0);
+            let rows = self.controller.ui.collections.rows.clone();
             egui::ScrollArea::vertical().show(ui, |ui| {
-                for (index, collection) in self.controller.ui.collections.rows.iter().enumerate() {
+                for (index, collection) in rows.iter().enumerate() {
                     let selected = collection.selected;
                     let label = format!("{} ({})", collection.name, collection.count);
                     if ui
-                        .selectable_label(selected, label)
+                        .selectable_label(
+                            selected,
+                            RichText::new(label).color(Color32::WHITE),
+                        )
                         .clicked()
                     {
                         self.controller.select_collection_by_index(Some(index));
@@ -188,29 +193,42 @@ impl EguiApp {
 
     fn render_triage(&mut self, ui: &mut Ui) {
         let spacing = 8.0;
+        let triage = self.controller.ui.triage.clone();
+        let selected = triage.selected;
+        let loaded = triage.loaded;
+        let trash_rows = triage.trash;
+        let neutral_rows = triage.neutral;
+        let keep_rows = triage.keep;
+
         ui.columns(3, |columns| {
             self.render_triage_column(
                 &mut columns[0],
                 "Trash",
-                &self.controller.ui.triage.trash,
+                &trash_rows,
                 TriageColumn::Trash,
                 Color32::from_rgb(198, 143, 143),
+                selected,
+                loaded,
             );
             columns[0].add_space(spacing);
             self.render_triage_column(
                 &mut columns[1],
                 "Samples",
-                &self.controller.ui.triage.neutral,
+                &neutral_rows,
                 TriageColumn::Neutral,
                 Color32::from_rgb(208, 208, 208),
+                selected,
+                loaded,
             );
             columns[1].add_space(spacing);
             self.render_triage_column(
                 &mut columns[2],
                 "Keep",
-                &self.controller.ui.triage.keep,
+                &keep_rows,
                 TriageColumn::Keep,
                 Color32::from_rgb(158, 201, 167),
+                selected,
+                loaded,
             );
         });
     }
@@ -222,30 +240,30 @@ impl EguiApp {
         rows: &[crate::egui_app::state::WavRowView],
         column: TriageColumn,
         accent: Color32,
+        selected: Option<TriageIndex>,
+        loaded: Option<TriageIndex>,
     ) {
         ui.label(RichText::new(title).color(accent));
         ui.add_space(6.0);
         egui::ScrollArea::vertical().show(ui, |ui| {
-            for row in rows {
-                let is_selected = self
-                    .controller
-                    .ui
-                    .triage
-                    .selected
-                    .is_some_and(|sel| matches!(sel, TriageIndex { column: c, row: r } if c == column && row.path == sel_path(&self.controller.ui.triage, sel))));
-                let is_loaded = self
-                    .controller
-                    .ui
-                    .triage
-                    .loaded
-                    .is_some_and(|loaded| {
-                        matches!(loaded, TriageIndex { column: c, row: r } if c == column && row.path == loaded_path(&self.controller.ui.triage, loaded)))
-                    });
+            for (idx, row) in rows.iter().enumerate() {
+                let is_selected = matches!(
+                    selected,
+                    Some(TriageIndex { column: c, row: r }) if c == column && r == idx
+                );
+                let is_loaded = matches!(
+                    loaded,
+                    Some(TriageIndex { column: c, row: r }) if c == column && r == idx
+                );
+
                 let mut text = row.name.clone();
                 if is_loaded {
                     text.push_str(" • loaded");
                 }
-                let label = egui::SelectableLabel::new(is_selected, text).text_color(Color32::WHITE);
+                let label = egui::SelectableLabel::new(
+                    is_selected,
+                    RichText::new(text).color(Color32::WHITE),
+                );
                 if ui.add(label).clicked() {
                     self.controller.select_wav_by_path(&row.path);
                 }
@@ -283,16 +301,4 @@ impl eframe::App for EguiApp {
         self.render_status(ctx);
         ctx.request_repaint();
     }
-}
-
-fn sel_path(triage: &crate::egui_app::state::TriageState, idx: TriageIndex) -> &std::path::Path {
-    match idx.column {
-        TriageColumn::Trash => &triage.trash[idx.row].path,
-        TriageColumn::Neutral => &triage.neutral[idx.row].path,
-        TriageColumn::Keep => &triage.keep[idx.row].path,
-    }
-}
-
-fn loaded_path(triage: &crate::egui_app::state::TriageState, idx: TriageIndex) -> &std::path::Path {
-    sel_path(triage, idx)
 }
