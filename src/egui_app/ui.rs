@@ -286,6 +286,20 @@ impl EguiApp {
                 painter.rect_filled(rect, 6.0, Color32::from_rgb(12, 12, 12));
             }
             painter.rect_stroke(rect, 6.0, Stroke::new(1.0, Color32::from_rgb(64, 64, 64)));
+
+            if let Some(pos) = response.hover_pos().filter(|p| rect.contains(*p)) {
+                let x = pos.x;
+                let hover_line = egui::Rect::from_min_max(
+                    egui::pos2(x, rect.top()),
+                    egui::pos2(x, rect.bottom()),
+                );
+                painter.rect_stroke(
+                    hover_line,
+                    0.0,
+                    Stroke::new(1.0, Color32::from_rgba_unmultiplied(80, 140, 200, 160)),
+                );
+            }
+
             if let Some(selection) = self.controller.ui.waveform.selection {
                 let width = rect.width() * (selection.end() - selection.start()) as f32;
                 let x = rect.left() + rect.width() * selection.start() as f32;
