@@ -2,7 +2,7 @@
 //! Helpers to convert domain data into egui-facing view structs.
 // Transitional helpers; wiring into the egui renderer will consume these.
 
-use crate::egui_app::state::{CollectionRowView, CollectionSampleView, SourceRowView, WavRowView};
+use crate::egui_app::state::{CollectionRowView, CollectionSampleView, SourceRowView};
 use crate::sample_sources::{Collection, CollectionId, SampleSource, SampleTag, WavEntry};
 use std::path::Path;
 
@@ -18,18 +18,6 @@ pub fn source_row(source: &SampleSource) -> SourceRowView {
         id: source.id.clone(),
         name,
         path: source.root.to_string_lossy().to_string(),
-    }
-}
-
-/// Convert a wav entry into its UI row representation.
-pub fn wav_row(entry: &WavEntry, selected: bool, loaded: bool) -> WavRowView {
-    let name = entry.relative_path.to_string_lossy().to_string();
-    WavRowView {
-        path: entry.relative_path.clone(),
-        name,
-        tag: entry.tag,
-        selected,
-        loaded,
     }
 }
 

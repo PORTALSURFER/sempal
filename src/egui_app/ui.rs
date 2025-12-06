@@ -99,22 +99,26 @@ impl EguiApp {
                 }
             });
             ui.add_space(6.0);
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                let rows = self.controller.ui.sources.rows.clone();
-                let selected = self.controller.ui.sources.selected;
-                for (index, row) in rows.iter().enumerate() {
-                    let is_selected = Some(index) == selected;
-                    let mut response = ui.selectable_label(
-                        is_selected,
-                        RichText::new(&row.name).color(Color32::WHITE),
-                    );
-                    response = response.on_hover_text(&row.path);
-                    if response.clicked() {
-                        self.controller.select_source_by_index(index);
+            egui::ScrollArea::vertical()
+                .id_source("sources_scroll")
+                .show(ui, |ui| {
+                    let rows = self.controller.ui.sources.rows.clone();
+                    let selected = self.controller.ui.sources.selected;
+                    for (index, row) in rows.iter().enumerate() {
+                        let is_selected = Some(index) == selected;
+                        ui.push_id(&row.id, |ui| {
+                            let mut response = ui.selectable_label(
+                                is_selected,
+                                RichText::new(&row.name).color(Color32::WHITE),
+                            );
+                            response = response.on_hover_text(&row.path);
+                            if response.clicked() {
+                                self.controller.select_source_by_index(index);
+                            }
+                            ui.add_space(4.0);
+                        });
                     }
-                    ui.add_space(4.0);
-                }
-            });
+                });
         });
     }
 
@@ -135,29 +139,35 @@ impl EguiApp {
             });
             ui.add_space(6.0);
             let rows = self.controller.ui.collections.rows.clone();
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                for (index, collection) in rows.iter().enumerate() {
-                    let selected = collection.selected;
-                    let label = format!("{} ({})", collection.name, collection.count);
-                    let response =
-                        ui.selectable_label(selected, RichText::new(label).color(Color32::WHITE));
-                    if response.clicked() {
-                        self.controller.select_collection_by_index(Some(index));
-                    }
-                    if drag_active {
-                        if let Some(pointer) = pointer_pos {
-                            if response.rect.contains(pointer) {
-                                self.controller.update_sample_drag(
-                                    pointer,
-                                    Some(collection.id.clone()),
-                                    false,
-                                );
+            egui::ScrollArea::vertical()
+                .id_source("collections_scroll")
+                .show(ui, |ui| {
+                    for (index, collection) in rows.iter().enumerate() {
+                        let selected = collection.selected;
+                        let label = format!("{} ({})", collection.name, collection.count);
+                        ui.push_id(&collection.id, |ui| {
+                            let response = ui.selectable_label(
+                                selected,
+                                RichText::new(label).color(Color32::WHITE),
+                            );
+                            if response.clicked() {
+                                self.controller.select_collection_by_index(Some(index));
                             }
-                        }
+                            if drag_active {
+                                if let Some(pointer) = pointer_pos {
+                                    if response.rect.contains(pointer) {
+                                        self.controller.update_sample_drag(
+                                            pointer,
+                                            Some(collection.id.clone()),
+                                            false,
+                                        );
+                                    }
+                                }
+                            }
+                            ui.add_space(4.0);
+                        });
                     }
-                    ui.add_space(4.0);
-                }
-            });
+                });
             ui.add_space(8.0);
             // Drop zone for the currently selected collection.
             let zone_color = if self.controller.ui.drag.hovering_drop_zone {
@@ -201,14 +211,18 @@ impl EguiApp {
             }
             ui.add_space(8.0);
             ui.label(RichText::new("Collection items").color(Color32::WHITE));
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                for sample in &self.controller.ui.collections.samples {
-                    ui.label(
-                        RichText::new(format!("{} — {}", sample.source, sample.path))
-                            .color(Color32::LIGHT_GRAY),
-                    );
-                }
-            });
+            egui::ScrollArea::vertical()
+                .id_source("collection_items_scroll")
+                .show(ui, |ui| {
+                    for sample in &self.controller.ui.collections.samples {
+                        ui.push_id(format!("{}:{}", sample.source, sample.path), |ui| {
+                            ui.label(
+                                RichText::new(format!("{} — {}", sample.source, sample.path))
+                                    .color(Color32::LIGHT_GRAY),
+                            );
+                        });
+                    }
+                });
         });
     }
 
@@ -305,18 +319,13 @@ impl EguiApp {
 
     fn render_triage(&mut self, ui: &mut Ui) {
         let spacing = 8.0;
-        let triage = self.controller.ui.triage.clone();
-        let selected = triage.selected;
-        let loaded = triage.loaded;
-        let trash_rows = triage.trash;
-        let neutral_rows = triage.neutral;
-        let keep_rows = triage.keep;
+        let selected = self.controller.ui.triage.selected;
+        let loaded = self.controller.ui.triage.loaded;
 
         ui.columns(3, |columns| {
             self.render_triage_column(
                 &mut columns[0],
                 "Trash",
-                &trash_rows,
                 TriageColumn::Trash,
                 Color32::from_rgb(198, 143, 143),
                 selected,
@@ -326,7 +335,6 @@ impl EguiApp {
             self.render_triage_column(
                 &mut columns[1],
                 "Samples",
-                &neutral_rows,
                 TriageColumn::Neutral,
                 Color32::from_rgb(208, 208, 208),
                 selected,
@@ -336,7 +344,6 @@ impl EguiApp {
             self.render_triage_column(
                 &mut columns[2],
                 "Keep",
-                &keep_rows,
                 TriageColumn::Keep,
                 Color32::from_rgb(158, 201, 167),
                 selected,
@@ -349,7 +356,6 @@ impl EguiApp {
         &mut self,
         ui: &mut Ui,
         title: &str,
-        rows: &[crate::egui_app::state::WavRowView],
         column: TriageColumn,
         accent: Color32,
         selected: Option<TriageIndex>,
@@ -358,45 +364,65 @@ impl EguiApp {
         ui.label(RichText::new(title).color(accent));
         ui.add_space(6.0);
         let drag_active = self.controller.ui.drag.active_path.is_some();
-        egui::ScrollArea::vertical().show(ui, |ui| {
-            for (idx, row) in rows.iter().enumerate() {
-                let is_selected = matches!(
-                    selected,
-                    Some(TriageIndex { column: c, row: r }) if c == column && r == idx
-                );
-                let is_loaded = matches!(
-                    loaded,
-                    Some(TriageIndex { column: c, row: r }) if c == column && r == idx
-                );
+        let selected_row = match selected {
+            Some(TriageIndex { column: c, row }) if c == column => Some(row),
+            _ => None,
+        };
+        let loaded_row = match loaded {
+            Some(TriageIndex { column: c, row }) if c == column => Some(row),
+            _ => None,
+        };
+        const ROW_HEIGHT: f32 = 30.0;
+        let total_rows = self.controller.triage_indices(column).len();
+        egui::ScrollArea::vertical()
+            .id_source(format!("triage_scroll_{title}"))
+            .show_rows(ui, ROW_HEIGHT, total_rows, |ui, row_range| {
+                for row in row_range {
+                    let entry_index = {
+                        let indices = self.controller.triage_indices(column);
+                        match indices.get(row) {
+                            Some(index) => *index,
+                            None => continue,
+                        }
+                    };
+                    let Some(entry) = self.controller.wav_entry(entry_index) else {
+                        continue;
+                    };
 
-                let mut text = row.name.clone();
-                if is_loaded {
-                    text.push_str(" • loaded");
-                }
-                let mut button = egui::Button::new(RichText::new(text).color(Color32::WHITE))
-                    .sense(egui::Sense::click_and_drag());
-                if is_selected {
-                    button = button.fill(Color32::from_rgb(30, 30, 30));
-                }
-                let response = ui.add(button);
-                if response.clicked() {
-                    self.controller.select_wav_by_path(&row.path);
-                }
-                if response.drag_started() {
-                    if let Some(pos) = response.interact_pointer_pos() {
-                        self.controller
-                            .start_sample_drag(row.path.clone(), row.name.clone(), pos);
+                    let is_selected = selected_row == Some(row);
+                    let is_loaded = loaded_row == Some(row);
+                    let path = entry.relative_path.clone();
+                    let mut label = path.to_string_lossy().to_string();
+                    if is_loaded {
+                        label.push_str(" • loaded");
                     }
-                } else if drag_active && response.dragged() {
-                    if let Some(pos) = response.interact_pointer_pos() {
-                        self.controller.update_sample_drag(pos, None, false);
+
+                    let mut button = egui::Button::new(RichText::new(label).color(Color32::WHITE))
+                        .sense(egui::Sense::click_and_drag());
+                    if is_selected {
+                        button = button.fill(Color32::from_rgb(30, 30, 30));
                     }
-                } else if response.drag_stopped() {
-                    self.controller.finish_sample_drag();
+                    ui.push_id(&path, |ui| {
+                        let response =
+                            ui.add_sized(egui::vec2(ui.available_width(), ROW_HEIGHT), button);
+                        if response.clicked() {
+                            self.controller.select_wav_by_path(&path);
+                        }
+                        if response.drag_started() {
+                            if let Some(pos) = response.interact_pointer_pos() {
+                                let name = path.to_string_lossy().to_string();
+                                self.controller.start_sample_drag(path.clone(), name, pos);
+                            }
+                        } else if drag_active && response.dragged() {
+                            if let Some(pos) = response.interact_pointer_pos() {
+                                self.controller.update_sample_drag(pos, None, false);
+                            }
+                        } else if response.drag_stopped() {
+                            self.controller.finish_sample_drag();
+                        }
+                    });
                 }
-                ui.add_space(4.0);
-            }
-        });
+            });
     }
 
     fn render_center(&mut self, ui: &mut Ui) {
