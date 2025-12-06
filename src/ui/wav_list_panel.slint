@@ -10,6 +10,8 @@ export component WavListPanel inherits Rectangle {
     in-out property <length> drag_preview_x: 0px;
     in-out property <length> drag_preview_y: 0px;
     in-out property <bool> drag_preview_visible: false;
+    in-out property <length> global_offset_x: 0px;
+    in-out property <length> global_offset_y: 0px;
     property <string> pending_path: "";
     property <string> pending_label: "";
     property <length> drag_start_x: 0px;
@@ -213,8 +215,8 @@ export component WavListPanel inherits Rectangle {
                                             root.drag_preview_visible = true;
                                         }
                                         if root.drag_started {
-                                            root.drag_preview_x = root.cursor_x;
-                                            root.drag_preview_y = root.cursor_y;
+                                            root.drag_preview_x = root.global_offset_x + root.cursor_x;
+                                            root.drag_preview_y = root.global_offset_y + root.cursor_y;
                                             root.drag_hover(root.dragging_sample_path, root.cursor_x, root.cursor_y, true);
                                         }
                                     } else if event.kind == PointerEventKind.up {
@@ -355,8 +357,8 @@ export component WavListPanel inherits Rectangle {
                                             root.drag_preview_visible = true;
                                         }
                                         if root.drag_started {
-                                            root.drag_preview_x = root.cursor_x;
-                                            root.drag_preview_y = root.cursor_y;
+                                            root.drag_preview_x = root.global_offset_x + root.cursor_x;
+                                            root.drag_preview_y = root.global_offset_y + root.cursor_y;
                                             root.drag_hover(root.dragging_sample_path, root.cursor_x, root.cursor_y, true);
                                         }
                                     } else if event.kind == PointerEventKind.up {
@@ -497,8 +499,8 @@ export component WavListPanel inherits Rectangle {
                                             root.drag_preview_visible = true;
                                         }
                                         if root.drag_started {
-                                            root.drag_preview_x = root.cursor_x;
-                                            root.drag_preview_y = root.cursor_y;
+                                            root.drag_preview_x = root.global_offset_x + root.cursor_x;
+                                            root.drag_preview_y = root.global_offset_y + root.cursor_y;
                                             root.drag_hover(root.dragging_sample_path, root.cursor_x, root.cursor_y, true);
                                         }
                                     } else if event.kind == PointerEventKind.up {
@@ -541,30 +543,4 @@ export component WavListPanel inherits Rectangle {
         }
     }
 
-    if root.drag_preview_visible : Rectangle {
-        width: 180px;
-        height: 34px;
-        x: root.drag_preview_x;
-        y: root.drag_preview_y;
-        z: 50;
-        background: #1a2733ee;
-        border-width: 1px;
-        border-color: #2f6fb1;
-        border-radius: 6px;
-        HorizontalLayout {
-            padding: 10px;
-            spacing: 8px;
-            Rectangle {
-                width: 8px;
-                height: 8px;
-                background: #5ab0ff;
-                border-radius: 4px;
-            }
-            Text {
-                text: root.drag_preview_label != "" ? root.drag_preview_label : "Sample";
-                color: #e0e0e0;
-                horizontal-stretch: 1;
-            }
-        }
-    }
 }
