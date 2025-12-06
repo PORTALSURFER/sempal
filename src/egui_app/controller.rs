@@ -46,6 +46,7 @@ pub struct EguiController {
     wav_job_tx: Sender<WavLoadJob>,
     wav_job_rx: Receiver<WavLoadResult>,
     pending_source: Option<SourceId>,
+    pending_select_path: Option<PathBuf>,
     scan_rx: Option<Receiver<ScanResult>>,
     scan_in_progress: bool,
 }
@@ -77,6 +78,7 @@ impl EguiController {
             wav_job_tx,
             wav_job_rx,
             pending_source: None,
+            pending_select_path: None,
             scan_rx: None,
             scan_in_progress: false,
         }
@@ -122,10 +124,59 @@ impl EguiController {
 
     /// Change the selected source by id and refresh dependent state.
     pub fn select_source(&mut self, id: Option<SourceId>) {
-        if self.selected_source == id {
-            // Avoid reloading the same source just because it was clicked again.
-            self.refresh_sources_ui();
+        self.select_source_internal(id, None);
+    }
+
+    /// Select a sample from the collection list and ensure it plays.
+    pub fn select_collection_sample(&mut self, index: usize) {
+        let Some(collection) = self.current_collection() else {
             return;
+        };
+        let Some(member) = collection.members.get(index) else {
+            return;
+        };
+        self.selected_collection = Some(collection.id.clone());
+        self.ui.collections.selected_sample = Some(index);
+        self.ui.triage.selected = None;
+        self.ui.triage.autoscroll = false;
+        self.refresh_collections_ui();
+        let target_source = member.source_id.clone();
+        let target_path = member.relative_path.clone();
+        if !self.sources.iter().any(|s| s.id == target_source) {
+            self.set_status("Source not available for this sample", StatusTone::Warning);
+            return;
+        }
+        if Some(&target_source) == self.selected_source.as_ref() {
+            self.pending_select_path = Some(target_path.clone());
+            if self.wav_lookup.contains_key(&target_path) {
+                self.pending_select_path = None;
+                self.select_wav_by_path(&target_path);
+            } else {
+                self.queue_wav_load();
+            }
+            return;
+        }
+        self.select_source_internal(Some(target_source), Some(target_path));
+    }
+
+    /// Select a source, optionally targeting a specific wav path once loaded.
+    fn select_source_internal(&mut self, id: Option<SourceId>, pending_path: Option<PathBuf>) {
+        let same_source = self.selected_source == id;
+        self.pending_select_path = pending_path.clone();
+        if same_source {
+            self.refresh_sources_ui();
+            if let Some(path) = self.pending_select_path.clone() {
+                if self.wav_lookup.contains_key(&path) {
+                    self.pending_select_path = None;
+                    self.select_wav_by_path(&path);
+                } else {
+                    self.queue_wav_load();
+                }
+            }
+            return;
+        }
+        if pending_path.is_none() {
+            self.ui.collections.selected_sample = None;
         }
         self.selected_source = id;
         self.selected_wav = None;
@@ -233,6 +284,13 @@ impl EguiController {
         self.select_wav_by_path(&path);
     }
 
+    /// Select a wav coming from the triage columns and clear collection focus.
+    pub fn select_from_triage(&mut self, path: &Path) {
+        self.ui.collections.selected_sample = None;
+        self.ui.triage.autoscroll = true;
+        self.select_wav_by_path(path);
+    }
+
     /// Begin a selection drag at the given normalized position.
     pub fn start_selection_drag(&mut self, position: f32) {
         let range = self.selection.begin_new(position);
@@ -330,6 +388,8 @@ impl EguiController {
         let Some(TriageIndex { column, row }) = self.ui.triage.selected else {
             return;
         };
+        self.ui.collections.selected_sample = None;
+        self.ui.triage.autoscroll = true;
         let Some(selected_index) = self.selected_row_index() else {
             return;
         };
@@ -383,6 +443,8 @@ impl EguiController {
         let Some(TriageIndex { column, row }) = selected_triage else {
             return;
         };
+        self.ui.collections.selected_sample = None;
+        self.ui.triage.autoscroll = true;
         let list = self.triage_indices(column);
         if list.is_empty() {
             return;
@@ -395,6 +457,21 @@ impl EguiController {
         }
     }
 
+    /// Move selection within the current collection list and play.
+    pub fn nudge_collection_sample(&mut self, offset: isize) {
+        let Some(selected_row) = self.ui.collections.selected_sample else {
+            return;
+        };
+        let total = self.ui.collections.samples.len();
+        if total == 0 {
+            return;
+        }
+        self.ui.triage.autoscroll = false;
+        let current = selected_row as isize;
+        let next = (current + offset).clamp(0, total as isize - 1) as usize;
+        self.select_collection_sample(next);
+    }
+
     /// Move selection to the same row in a neighboring column (-1 left, +1 right).
     pub fn move_selection_column(&mut self, delta: isize) {
         use crate::egui_app::state::TriageColumn::*;
@@ -405,6 +482,8 @@ impl EguiController {
         if target_idx == current_idx as usize {
             return;
         }
+        self.ui.collections.selected_sample = None;
+        self.ui.triage.autoscroll = true;
         let target_col = columns[target_idx];
         let list = self.triage_indices(target_col);
         if list.is_empty() {
@@ -446,7 +525,12 @@ impl EguiController {
     }
 
     fn rebuild_triage_lists(&mut self) {
-        let selected_index = self.selected_row_index();
+        let highlight_selection = self.ui.collections.selected_sample.is_none();
+        let selected_index = if highlight_selection {
+            self.selected_row_index()
+        } else {
+            None
+        };
         let loaded_index = self.loaded_row_index();
         self.reset_triage_ui();
 
@@ -473,11 +557,16 @@ impl EguiController {
     }
 
     fn reset_triage_ui(&mut self) {
+        let autoscroll = self.ui.triage.autoscroll;
+        let collections_selected = self.ui.collections.selected_sample.is_some();
         self.ui.triage.trash.clear();
         self.ui.triage.neutral.clear();
         self.ui.triage.keep.clear();
-        self.ui.triage.selected = None;
+        if collections_selected {
+            self.ui.triage.selected = None;
+        }
         self.ui.triage.loaded = None;
+        self.ui.triage.autoscroll = autoscroll;
         self.ui.loaded_wav = None;
     }
 
@@ -549,6 +638,11 @@ impl EguiController {
         self.sources.iter().find(|s| &s.id == selected).cloned()
     }
 
+    fn current_collection(&self) -> Option<Collection> {
+        let selected = self.selected_collection.as_ref()?;
+        self.collections.iter().find(|c| &c.id == selected).cloned()
+    }
+
     fn refresh_sources_ui(&mut self) {
         self.ui.sources.rows = self.sources.iter().map(view_model::source_row).collect();
         self.ui.sources.menu_row = None;
@@ -575,6 +669,14 @@ impl EguiController {
             .as_ref()
             .and_then(|id| self.collections.iter().find(|c| &c.id == id));
         self.ui.collections.samples = view_model::collection_samples(selected, &self.sources);
+        let len = self.ui.collections.samples.len();
+        if len == 0 {
+            self.ui.collections.selected_sample = None;
+        } else if let Some(selected) = self.ui.collections.selected_sample {
+            if selected >= len {
+                self.ui.collections.selected_sample = Some(len.saturating_sub(1));
+            }
+        }
     }
 
     fn ensure_collection_selection(&mut self) {
@@ -595,6 +697,8 @@ impl EguiController {
         } else {
             self.selected_collection = None;
         }
+        self.ui.collections.selected_sample = None;
+        self.ui.triage.autoscroll = false;
         self.refresh_collections_ui();
     }
 
@@ -845,7 +949,14 @@ impl EguiController {
         self.wav_entries = entries;
         self.rebuild_wav_lookup();
         self.rebuild_triage_lists();
-        if self.selected_wav.is_none() && !self.wav_entries.is_empty() {
+        let mut pending_applied = false;
+        if let Some(path) = self.pending_select_path.take() {
+            if self.wav_lookup.contains_key(&path) {
+                self.select_wav_by_path(&path);
+                pending_applied = true;
+            }
+        }
+        if !pending_applied && self.selected_wav.is_none() && !self.wav_entries.is_empty() {
             self.suppress_autoplay_once = true;
             self.select_wav_by_index(0);
         }
