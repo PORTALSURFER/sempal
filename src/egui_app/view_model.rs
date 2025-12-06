@@ -2,9 +2,7 @@
 //! Helpers to convert domain data into egui-facing view structs.
 // Transitional helpers; wiring into the egui renderer will consume these.
 
-use crate::egui_app::state::{
-    CollectionRowView, CollectionSampleView, SourceRowView, WavRowView,
-};
+use crate::egui_app::state::{CollectionRowView, CollectionSampleView, SourceRowView, WavRowView};
 use crate::sample_sources::{Collection, CollectionId, SampleSource, SampleTag, WavEntry};
 use std::path::Path;
 
