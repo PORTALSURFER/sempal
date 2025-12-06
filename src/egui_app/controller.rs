@@ -19,6 +19,8 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::fs;
 use std::rc::Rc;
+use std::sync::mpsc::{Receiver, Sender, channel};
+use std::thread;
 
 /// Maintains app state and bridges core logic to the egui UI.
 pub struct EguiController {
@@ -36,6 +38,9 @@ pub struct EguiController {
     loaded_wav: Option<PathBuf>,
     feature_flags: FeatureFlags,
     selection: SelectionState,
+    wav_job_tx: Sender<WavLoadJob>,
+    wav_job_rx: Receiver<WavLoadResult>,
+    pending_source: Option<SourceId>,
 }
 
 const MIN_SELECTION_WIDTH: f32 = 0.001;
@@ -43,6 +48,7 @@ const MIN_SELECTION_WIDTH: f32 = 0.001;
 impl EguiController {
     /// Create a controller with shared renderer and optional audio player.
     pub fn new(renderer: WaveformRenderer, player: Option<Rc<RefCell<AudioPlayer>>>) -> Self {
+        let (wav_job_tx, wav_job_rx) = spawn_wav_loader();
         Self {
             ui: UiState::default(),
             renderer,
@@ -58,6 +64,9 @@ impl EguiController {
             loaded_wav: None,
             feature_flags: FeatureFlags::default(),
             selection: SelectionState::new(),
+            wav_job_tx,
+            wav_job_rx,
+            pending_source: None,
         }
     }
 
@@ -99,29 +108,13 @@ impl EguiController {
         self.selected_wav = None;
         self.loaded_wav = None;
         self.refresh_sources_ui();
-        if let Err(error) = self.refresh_wavs() {
-            self.set_status(
-                format!("Failed to load wavs: {error}"),
-                StatusTone::Error,
-            );
-        }
+        self.queue_wav_load();
     }
 
     /// Refresh wav entries for the current source.
     pub fn refresh_wavs(&mut self) -> Result<(), SourceDbError> {
-        let Some(source) = self.current_source() else {
-            self.clear_wavs();
-            return Ok(());
-        };
-        let db = self.database_for(&source)?;
-        let entries = db.list_files()?;
-        self.wav_entries = entries;
-        self.rebuild_wav_lookup();
-        self.rebuild_triage_lists();
-        self.set_status(
-            format!("{} wav files loaded", self.wav_entries.len()),
-            StatusTone::Info,
-        );
+        // Maintained for compatibility; now delegates to background load.
+        self.queue_wav_load();
         Ok(())
     }
 
@@ -514,6 +507,7 @@ impl EguiController {
 
     /// Advance playhead position and visibility from the underlying player.
     pub fn tick_playhead(&mut self) {
+        self.poll_wav_loader();
         let Some(player) = self.player.as_ref() else {
             self.ui.waveform.playhead.visible = false;
             return;
@@ -532,6 +526,53 @@ impl EguiController {
             self.ui.waveform.selection = Some(range);
         } else {
             self.ui.waveform.selection = None;
+        }
+    }
+
+    /// Enqueue loading wav entries for the selected source on a worker thread.
+    fn queue_wav_load(&mut self) {
+        self.wav_entries.clear();
+        self.rebuild_wav_lookup();
+        self.rebuild_triage_lists();
+        let Some(source) = self.current_source() else {
+            return;
+        };
+        self.pending_source = Some(source.id.clone());
+        let job = WavLoadJob {
+            source_id: source.id.clone(),
+            root: source.root.clone(),
+        };
+        let _ = self.wav_job_tx.send(job);
+        self.set_status(
+            format!("Loading wavs for {}", source.root.display()),
+            StatusTone::Busy,
+        );
+    }
+
+    /// Process any completed wav load jobs.
+    fn poll_wav_loader(&mut self) {
+        while let Ok(message) = self.wav_job_rx.try_recv() {
+            if Some(&message.source_id) != self.selected_source.as_ref() {
+                continue;
+            }
+            match message.result {
+                Ok(entries) => {
+                    self.wav_entries = entries;
+                    self.rebuild_wav_lookup();
+                    self.rebuild_triage_lists();
+                    self.set_status(
+                        format!("{} wav files loaded", self.wav_entries.len()),
+                        StatusTone::Info,
+                    );
+                }
+                Err(err) => {
+                    self.set_status(
+                        format!("Failed to load wavs: {err}"),
+                        StatusTone::Error,
+                    );
+                }
+            }
+            self.pending_source = None;
         }
     }
 
@@ -587,6 +628,38 @@ impl EguiController {
     fn current_collection_id(&self) -> Option<CollectionId> {
         self.selected_collection.clone()
     }
+}
+
+struct WavLoadJob {
+    source_id: SourceId,
+    root: PathBuf,
+}
+
+struct WavLoadResult {
+    source_id: SourceId,
+    result: Result<Vec<WavEntry>, String>,
+}
+
+fn spawn_wav_loader() -> (Sender<WavLoadJob>, Receiver<WavLoadResult>) {
+    let (tx, rx) = channel::<WavLoadJob>();
+    let (result_tx, result_rx) = channel::<WavLoadResult>();
+    thread::spawn(move || {
+        while let Ok(job) = rx.recv() {
+            let result = load_entries(&job);
+            let _ = result_tx.send(WavLoadResult {
+                source_id: job.source_id.clone(),
+                result,
+            });
+        }
+    });
+    (tx, result_rx)
+}
+
+fn load_entries(job: &WavLoadJob) -> Result<Vec<WavEntry>, String> {
+    let db = SourceDatabase::open(&job.root)
+        .map_err(|err| format!("Database error: {err}"))?;
+    db.list_files()
+        .map_err(|err| format!("Load failed: {err}"))
 }
 
 /// UI status tone for badge coloring.
