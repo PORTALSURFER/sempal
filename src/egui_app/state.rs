@@ -1,3 +1,6 @@
+#![allow(dead_code)]
+// Temporary while the egui UI is being wired; types will be exercised by the renderer next.
+
 use crate::sample_sources::{CollectionId, SampleTag, SourceId};
 use crate::selection::SelectionRange;
 use egui::{Color32, Pos2};
