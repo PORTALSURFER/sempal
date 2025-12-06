@@ -1,5 +1,6 @@
 use super::navigation::compute_target_index;
 use super::*;
+use std::path::{Path, PathBuf};
 
 /// Error details surfaced when adding a new sample source fails validation.
 struct AddSourceFailure {
@@ -85,14 +86,8 @@ impl DropHandler {
         let Some(source) = self.current_source() else {
             return;
         };
-        let target = path.as_str();
-        let Some(entry) = self
-            .wav_entries
-            .borrow()
-            .iter()
-            .find(|e| e.relative_path.to_string_lossy() == target)
-            .cloned()
-        else {
+        let target = PathBuf::from(path.as_str());
+        let Some(entry) = self.entry_for_path(&target) else {
             return;
         };
         self.select_entry(&app, &entry, &source);
@@ -218,7 +213,11 @@ impl DropHandler {
     pub(super) fn move_selection(&self, delta: isize) -> bool {
         let target_index = {
             let entries = self.wav_entries.borrow();
-            let current = Self::entry_index(&entries, &self.selected_wav.borrow());
+            self.sync_wav_lookup(&entries);
+            let current = {
+                let selected = self.selected_wav.borrow();
+                self.lookup_index_in_entries(&entries, &selected)
+            };
             let target = compute_target_index(current, entries.len(), delta);
             match target {
                 Some(target) if current != Some(target) => target,
@@ -246,9 +245,10 @@ impl DropHandler {
         if let Ok(db) = self.database_for(source) {
             let _ = db.remove_file(&entry.relative_path);
         }
-        self.wav_entries
-            .borrow_mut()
-            .retain(|e| e.relative_path != entry.relative_path);
+        {
+            let mut entries = self.wav_entries.borrow_mut();
+            entries.retain(|e| e.relative_path != entry.relative_path);
+        }
         if self
             .selected_wav
             .borrow()
@@ -265,6 +265,8 @@ impl DropHandler {
         {
             self.loaded_wav.borrow_mut().take();
         }
+        let entries = self.wav_entries.borrow();
+        self.rebuild_wav_lookup(&entries);
     }
 
     /// Refresh the wav list from disk/database for the current source.
@@ -273,12 +275,14 @@ impl DropHandler {
             self.wav_entries.borrow_mut().clear();
             self.selected_wav.borrow_mut().take();
             self.loaded_wav.borrow_mut().take();
+            self.wav_lookup.borrow_mut().clear();
             self.update_wav_view(app, true);
             return;
         };
         match self.database_for(&source).and_then(|db| db.list_files()) {
             Ok(entries) => {
                 self.wav_entries.replace(entries.clone());
+                self.rebuild_wav_lookup(&entries);
                 self.update_wav_view(app, true);
                 self.set_status(
                     app,
@@ -297,9 +301,10 @@ impl DropHandler {
     /// Update UI bindings for the wav list selection and loaded file state.
     pub(super) fn update_wav_view(&self, app: &HelloWorld, rebuild_models: bool) {
         let entries = self.wav_entries.borrow();
+        self.sync_wav_lookup(&entries);
         let selected_index = {
             let selected = self.selected_wav.borrow();
-            let index = Self::entry_index(&entries, &selected);
+            let index = self.lookup_index_in_entries(&entries, &selected);
             if index.is_none() && selected.is_some() {
                 drop(selected);
                 self.selected_wav.borrow_mut().take();
@@ -308,17 +313,19 @@ impl DropHandler {
         };
         let loaded_index = {
             let loaded = self.loaded_wav.borrow();
-            let index = Self::entry_index(&entries, &loaded);
+            let index = self.lookup_index_in_entries(&entries, &loaded);
             if index.is_none() && loaded.is_some() {
                 drop(loaded);
                 self.loaded_wav.borrow_mut().take();
             }
             index
         };
-        let (selected_target, loaded_path) = {
+        let (selected_target, loaded_path, refreshed_models) = {
             let mut models = self.wav_models.borrow_mut();
             if rebuild_models || !models.is_synced(entries.len()) {
-                models.rebuild(entries.as_slice(), selected_index, loaded_index)
+                let (selected_target, loaded_path) =
+                    models.rebuild(entries.as_slice(), selected_index, loaded_index);
+                (selected_target, loaded_path, true)
             } else {
                 let selected_path = selected_index
                     .and_then(|i| entries.get(i))
@@ -326,24 +333,20 @@ impl DropHandler {
                 let loaded_path = loaded_index
                     .and_then(|i| entries.get(i))
                     .map(|e| e.relative_path.as_path());
-                models.update_selection(entries.as_slice(), selected_path, loaded_path)
+                let (selected_target, loaded_path) =
+                    models.update_selection(entries.as_slice(), selected_path, loaded_path);
+                (selected_target, loaded_path, false)
             }
         };
-        let (trash_model, neutral_model, keep_model) = self.wav_models.borrow().models();
-        app.set_wavs_trash(trash_model.into());
-        app.set_wavs_neutral(neutral_model.into());
-        app.set_wavs_keep(keep_model.into());
+        if refreshed_models {
+            let (trash_model, neutral_model, keep_model) = self.wav_models.borrow().models();
+            app.set_wavs_trash(trash_model.into());
+            app.set_wavs_neutral(neutral_model.into());
+            app.set_wavs_keep(keep_model.into());
+        }
         Self::apply_selection_to_app(app, selected_target);
         self.scroll_wavs_to(app, selected_target);
         app.set_loaded_wav_path(loaded_path.unwrap_or_default().into());
-    }
-
-    pub(super) fn entry_index(entries: &[WavEntry], target: &Option<PathBuf>) -> Option<usize> {
-        target.as_ref().and_then(|path| {
-            entries
-                .iter()
-                .position(|entry| &entry.relative_path == path)
-        })
     }
 
     fn apply_selection_to_app(app: &HelloWorld, selected: Option<(SampleTag, usize)>) {
@@ -356,6 +359,53 @@ impl DropHandler {
         app.set_selected_trash(selected_trash);
         app.set_selected_neutral(selected_neutral);
         app.set_selected_keep(selected_keep);
+    }
+
+    pub(super) fn sync_wav_lookup(&self, entries: &[WavEntry]) {
+        let needs_rebuild = {
+            let lookup = self.wav_lookup.borrow();
+            lookup.len() != entries.len()
+        };
+        if needs_rebuild {
+            self.rebuild_wav_lookup(entries);
+        }
+    }
+
+    fn rebuild_wav_lookup(&self, entries: &[WavEntry]) {
+        let mut lookup = self.wav_lookup.borrow_mut();
+        lookup.clear();
+        for (index, entry) in entries.iter().enumerate() {
+            lookup.insert(entry.relative_path.clone(), index);
+        }
+    }
+
+    pub(super) fn lookup_index_in_entries(
+        &self,
+        entries: &[WavEntry],
+        target: &Option<PathBuf>,
+    ) -> Option<usize> {
+        let path = target.as_ref()?;
+        self.lookup_index_for_path(entries, path)
+    }
+
+    fn lookup_index_for_path(&self, entries: &[WavEntry], path: &Path) -> Option<usize> {
+        if let Some(index) = self.wav_lookup.borrow().get(path).copied() {
+            return Some(index);
+        }
+        let index = entries
+            .iter()
+            .position(|entry| entry.relative_path == path)?;
+        self.wav_lookup
+            .borrow_mut()
+            .insert(path.to_path_buf(), index);
+        Some(index)
+    }
+
+    fn entry_for_path(&self, path: &Path) -> Option<WavEntry> {
+        let entries = self.wav_entries.borrow();
+        self.sync_wav_lookup(&entries);
+        let index = self.lookup_index_for_path(&entries, path)?;
+        entries.get(index).cloned()
     }
 
     /// Fetch or open the cached database for a sample source.
@@ -433,6 +483,7 @@ impl DropHandler {
             self.wav_entries.borrow_mut().clear();
             self.selected_wav.borrow_mut().take();
             self.loaded_wav.borrow_mut().take();
+            self.wav_lookup.borrow_mut().clear();
             self.update_wav_view(app, true);
         }
     }
