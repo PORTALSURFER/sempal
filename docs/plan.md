@@ -14,7 +14,8 @@
 3. [x] Define egui-side state models mirroring current Slint models (rows for sources/wavs/collections, drag state, selection state) and connect to existing app logic/persistence.
 4. [x] Implement egui rendering for core panels: sources list with actions, triage lists with selection/highlight, status bar, top bar controls.
 5. [x] Implement waveform view in egui (texture rendering + overlays) and wire playback/selection interactions and keyboard shortcuts.
-6. [~] Implement collections panel with add/select, member list, and drag/drop tagging from wav rows, including hover/drop feedback and preview rendering.
+6. [x] Implement collections panel with add/select, member list, and drag/drop tagging from wav rows, including hover/drop feedback and preview rendering.
+7. [x] Replace application entry/runtime to launch egui (winit integration), remove Slint dependencies, and ensure audio/worker threads communicate with the egui state.
 5. [-] Implement waveform view in egui (texture rendering + overlays) and wire playback/selection interactions and keyboard shortcuts.
 6. [-] Implement collections panel with add/select, member list, and drag/drop tagging from wav rows, including hover/drop feedback and preview rendering.
 7. [-] Replace application entry/runtime to launch egui (winit integration), remove Slint dependencies, and ensure audio/worker threads communicate with the egui state.

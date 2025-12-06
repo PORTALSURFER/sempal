@@ -1,12 +1,11 @@
 use std::path::Path;
 
-use hound::SampleFormat;
 use egui::{Color32, ColorImage};
-use slint::{Image, Rgb8Pixel, SharedPixelBuffer};
+use hound::SampleFormat;
 
 /// Waveform pixels and audio payload loaded from disk.
 pub struct LoadedWaveform {
-    pub image: Image,
+    pub image: ColorImage,
     pub audio_bytes: Vec<u8>,
     pub duration_seconds: f32,
 }
@@ -22,8 +21,8 @@ pub struct DecodedWaveform {
 pub struct WaveformRenderer {
     width: u32,
     height: u32,
-    background: Rgb8Pixel,
-    foreground: Rgb8Pixel,
+    background: Color32,
+    foreground: Color32,
 }
 
 impl WaveformRenderer {
@@ -32,22 +31,9 @@ impl WaveformRenderer {
         Self {
             width,
             height,
-            background: Rgb8Pixel {
-                r: 16,
-                g: 16,
-                b: 24,
-            },
-            foreground: Rgb8Pixel {
-                r: 0,
-                g: 200,
-                b: 255,
-            },
+            background: Color32::from_rgb(16, 16, 24),
+            foreground: Color32::from_rgb(0, 200, 255),
         }
-    }
-
-    /// Produce an empty waveform image with the configured styling.
-    pub fn empty_image(&self) -> Image {
-        self.render_waveform(&[])
     }
 
     /// Produce an empty waveform as an egui color image.
@@ -60,7 +46,7 @@ impl WaveformRenderer {
         let bytes = std::fs::read(path)
             .map_err(|error| format!("Failed to read {}: {error}", path.display()))?;
         let decoded = self.decode_from_bytes(&bytes)?;
-        let image = self.render_from_samples(&decoded.samples);
+        let image = self.render_color_image(&decoded.samples);
         Ok(LoadedWaveform {
             image,
             audio_bytes: bytes,
@@ -75,11 +61,6 @@ impl WaveformRenderer {
             samples,
             duration_seconds,
         })
-    }
-
-    /// Render an `Image` from already-decoded samples.
-    pub fn render_from_samples(&self, samples: &[f32]) -> Image {
-        self.render_waveform(samples)
     }
 
     /// Render an egui color image from already-decoded samples.
@@ -140,11 +121,6 @@ impl WaveformRenderer {
             .collect()
     }
 
-    fn render_waveform(&self, samples: &[f32]) -> Image {
-        let columns = self.sample_columns(samples);
-        self.paint_image(&columns)
-    }
-
     fn sample_columns(&self, samples: &[f32]) -> Vec<(f32, f32)> {
         let mut cols = vec![(0.0, 0.0); self.width as usize];
         if samples.is_empty() {
@@ -172,16 +148,9 @@ impl WaveformRenderer {
         cols
     }
 
-    fn paint_image(&self, columns: &[(f32, f32)]) -> Image {
-        let mut buffer = SharedPixelBuffer::<Rgb8Pixel>::new(self.width, self.height);
-        self.fill_background(buffer.make_mut_slice());
-        self.draw_columns(columns, buffer.make_mut_slice());
-        Image::from_rgb8(buffer)
-    }
-
     fn paint_color_image(&self, columns: &[(f32, f32)]) -> ColorImage {
-        let fg = Color32::from_rgb(self.foreground.r, self.foreground.g, self.foreground.b);
-        let bg = Color32::from_rgb(self.background.r, self.background.g, self.background.b);
+        let fg = self.foreground;
+        let bg = self.background;
         let mut image = ColorImage::new(
             [self.width as usize, self.height as usize],
             bg,
@@ -201,26 +170,6 @@ impl WaveformRenderer {
             }
         }
         image
-    }
-
-    fn fill_background(&self, pixels: &mut [Rgb8Pixel]) {
-        for pixel in pixels {
-            *pixel = self.background;
-        }
-    }
-
-    fn draw_columns(&self, columns: &[(f32, f32)], pixels: &mut [Rgb8Pixel]) {
-        let stride = self.width as usize;
-        let mid = (self.height / 2) as f32;
-        let limit = self.height.saturating_sub(1) as f32;
-
-        for (x, (min, max)) in columns.iter().enumerate() {
-            let top = (mid - max * (mid - 1.0)).clamp(0.0, limit) as u32;
-            let bottom = (mid - min * (mid - 1.0)).clamp(0.0, limit) as u32;
-            for y in top..=bottom {
-                pixels[y as usize * stride + x] = self.foreground;
-            }
-        }
     }
 }
 
