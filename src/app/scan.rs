@@ -63,7 +63,7 @@ impl DropHandler {
         }
     }
 
-    fn handle_scan_result(&self, app: &HelloWorld, message: ScanJobResult) {
+    fn handle_scan_result(&self, app: &Sempal, message: ScanJobResult) {
         if !self
             .sources
             .borrow()
