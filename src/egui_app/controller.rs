@@ -22,6 +22,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::thread;
+use std::time::SystemTime;
 use std::time::{Duration, Instant};
 
 /// Maintains app state and bridges core logic to the egui UI.
@@ -742,9 +743,7 @@ impl EguiController {
         let Some(source) = self.current_source() else {
             return Err("Select a source first".into());
         };
-        if !self.wav_lookup.contains_key(relative_path) {
-            return Err("Sample is not available to add".into());
-        }
+        self.ensure_sample_db_entry(&source, relative_path)?;
         let mut collections = self.collections.clone();
         let Some(collection) = collections.iter_mut().find(|c| &c.id == collection_id) else {
             return Err("Collection not found".into());
@@ -762,6 +761,28 @@ impl EguiController {
             self.set_status("Already in collection", StatusTone::Info);
         }
         Ok(())
+    }
+
+    fn ensure_sample_db_entry(
+        &mut self,
+        source: &SampleSource,
+        relative_path: &Path,
+    ) -> Result<(), String> {
+        let full_path = source.root.join(relative_path);
+        let metadata = fs::metadata(&full_path)
+            .map_err(|err| format!("Missing file for collection: {err}"))?;
+        let modified_ns = metadata
+            .modified()
+            .map_err(|err| format!("Missing mtime for collection: {err}"))?
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .map_err(|_| "File modified time is before epoch".to_string())?
+            .as_nanos() as i64;
+        let file_size = metadata.len();
+        let db = self
+            .database_for(source)
+            .map_err(|err| format!("Database unavailable: {err}"))?;
+        db.upsert_file(relative_path, file_size, modified_ns)
+            .map_err(|err| format!("Failed to sync collection entry: {err}"))
     }
 
     /// Manually trigger a scan of the selected source.
@@ -1076,7 +1097,7 @@ impl EguiController {
         self.ui.drag.hovering_triage = None;
     }
 
-    fn current_collection_id(&self) -> Option<CollectionId> {
+    pub fn current_collection_id(&self) -> Option<CollectionId> {
         self.selected_collection.clone()
     }
 

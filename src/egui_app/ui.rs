@@ -7,8 +7,8 @@ use crate::egui_app::controller::EguiController;
 use crate::egui_app::state::{TriageColumn, TriageIndex};
 use crate::waveform::WaveformRenderer;
 use eframe::egui::{
-    self, Align, Area, Color32, Frame, Margin, Order, RichText, Stroke, TextureHandle,
-    TextureOptions, Ui, Vec2,
+    self, Area, Color32, Frame, Margin, Order, RichText, Stroke, TextureHandle, TextureOptions, Ui,
+    Vec2,
 };
 
 /// Renders the egui UI using the shared controller state.
@@ -175,12 +175,26 @@ impl EguiApp {
             let pointer_pos = ui.input(|i| i.pointer.hover_pos());
             let samples = self.controller.ui.collections.samples.clone();
             let selected_row = self.controller.ui.collections.selected_sample;
+            let current_collection_id = self.controller.current_collection_id();
             const ROW_HEIGHT: f32 = 28.0;
+            let available_height = ui.available_height();
             let frame = egui::Frame::none().fill(Color32::from_rgb(16, 16, 16));
             let scroll_response = frame.show(ui, |ui| {
-                egui::ScrollArea::vertical()
-                    .id_source("collection_items_scroll")
-                    .show_rows(ui, ROW_HEIGHT, samples.len(), |ui, row_range| {
+                ui.set_min_height(available_height);
+                let full_width = ui.available_width();
+                ui.set_width(full_width);
+                ui.set_min_width(full_width);
+                let scroll = egui::ScrollArea::vertical().id_source("collection_items_scroll");
+                if samples.is_empty() {
+                    scroll.show(ui, |ui| {
+                        let height = ui.available_height().max(available_height);
+                        ui.allocate_exact_size(
+                            egui::vec2(ui.available_width(), height),
+                            egui::Sense::hover(),
+                        );
+                    })
+                } else {
+                    scroll.show_rows(ui, ROW_HEIGHT, samples.len(), |ui, row_range| {
                         for row in row_range {
                             let Some(sample) = samples.get(row) else {
                                 continue;
@@ -224,6 +238,7 @@ impl EguiApp {
                             );
                         }
                     })
+                }
             });
             if let Some(row) = selected_row {
                 let viewport_height = scroll_response.inner.inner_rect.height();
@@ -237,11 +252,16 @@ impl EguiApp {
             }
             if drag_active {
                 if let Some(pointer) = pointer_pos {
-                    if scroll_response.response.rect.contains(pointer) {
-                        self.controller
-                            .update_sample_drag(pointer, None, false, None);
+                    let target_rect = scroll_response.response.rect.expand2(egui::vec2(8.0, 0.0));
+                    if target_rect.contains(pointer) {
+                        self.controller.update_sample_drag(
+                            pointer,
+                            current_collection_id.clone(),
+                            true,
+                            None,
+                        );
                         ui.painter().rect_stroke(
-                            scroll_response.response.rect,
+                            target_rect,
                             6.0,
                             Stroke::new(2.0, Color32::from_rgba_unmultiplied(80, 140, 200, 180)),
                         );
