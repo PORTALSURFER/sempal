@@ -18,3 +18,5 @@ please review the styleguide in @styleguide.md and make a plan
 \plan - when the user hovers the start or end of an audio selection, lets make a [ or ] icon visible at the bottom of the line, indicating the are now able to grab the edge and resize it.
 
 - if the user disables looping while we are actively playing, stop looping after the current cycle. currently it just keep looping until we restart play.
+
+- selecting items in the collection will somehow make the trash triage list autoscroll. can you remove this.
