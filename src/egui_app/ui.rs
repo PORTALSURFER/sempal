@@ -7,8 +7,8 @@ use crate::egui_app::controller::EguiController;
 use crate::egui_app::state::{TriageColumn, TriageIndex};
 use crate::waveform::WaveformRenderer;
 use eframe::egui::{
-    self, Area, Color32, Frame, Margin, Order, RichText, Stroke, TextureHandle, TextureOptions, Ui,
-    Vec2,
+    self, Align, Area, Color32, Frame, Margin, Order, RichText, Stroke, TextureHandle,
+    TextureOptions, Ui, Vec2,
 };
 
 /// Renders the egui UI using the shared controller state.
@@ -176,6 +176,35 @@ impl EguiApp {
             let samples = self.controller.ui.collections.samples.clone();
             let selected_row = self.controller.ui.collections.selected_sample;
             let current_collection_id = self.controller.current_collection_id();
+            let hovering_collection =
+                self.controller
+                    .ui
+                    .drag
+                    .hovering_collection
+                    .clone()
+                    .or_else(|| {
+                        if self.controller.ui.drag.hovering_drop_zone {
+                            current_collection_id.clone()
+                        } else {
+                            None
+                        }
+                    });
+            let active_drag_path = if drag_active {
+                self.controller.ui.drag.active_path.clone()
+            } else {
+                None
+            };
+            let duplicate_row = if drag_active
+                && hovering_collection
+                    .as_ref()
+                    .is_some_and(|id| Some(id) == current_collection_id.as_ref())
+            {
+                active_drag_path
+                    .as_ref()
+                    .and_then(|p| samples.iter().position(|s| &s.path == p))
+            } else {
+                None
+            };
             const ROW_HEIGHT: f32 = 28.0;
             let available_height = ui.available_height();
             let frame = egui::Frame::none().fill(Color32::from_rgb(16, 16, 16));
@@ -202,11 +231,15 @@ impl EguiApp {
                             let path = sample.path.clone();
                             let label = format!("{} — {}", sample.source, sample.label);
                             let is_selected = Some(row) == selected_row;
+                            let is_duplicate_hover = drag_active
+                                && active_drag_path.as_ref().is_some_and(|p| p == &path);
                             let mut button =
                                 egui::Button::new(RichText::new(label).color(Color32::LIGHT_GRAY))
                                     .sense(egui::Sense::click_and_drag());
                             if is_selected {
                                 button = button.fill(Color32::from_rgb(30, 30, 30));
+                            } else if is_duplicate_hover {
+                                button = button.fill(Color32::from_rgb(90, 60, 24));
                             }
                             ui.push_id(
                                 format!("{}:{}:{}", sample.source_id, sample.source, sample.label),
@@ -217,6 +250,13 @@ impl EguiApp {
                                     );
                                     if response.clicked() {
                                         self.controller.select_collection_sample(row);
+                                    }
+                                    if is_duplicate_hover {
+                                        ui.painter().rect_stroke(
+                                            response.rect.expand(2.0),
+                                            4.0,
+                                            Stroke::new(2.0, Color32::from_rgb(255, 170, 80)),
+                                        );
                                     }
                                     if response.drag_started() {
                                         if let Some(pos) = response.interact_pointer_pos() {
@@ -240,15 +280,22 @@ impl EguiApp {
                     })
                 }
             });
-            if let Some(row) = selected_row {
-                let viewport_height = scroll_response.inner.inner_rect.height();
-                let content_height = scroll_response.inner.content_size.y;
-                let target = (row as f32 + 0.5) * ROW_HEIGHT - viewport_height * 0.5;
-                let max_offset = (content_height - viewport_height).max(0.0);
-                let desired_offset = target.clamp(0.0, max_offset);
-                let mut state = scroll_response.inner.state;
-                state.offset.y = desired_offset;
-                state.store(ui.ctx(), scroll_response.inner.id);
+            if let Some(row) = duplicate_row {
+                let content_min = scroll_response.inner.inner_rect.min;
+                let min = egui::pos2(content_min.x, content_min.y + row as f32 * ROW_HEIGHT);
+                let rect = egui::Rect::from_min_size(
+                    min,
+                    egui::vec2(scroll_response.inner.inner_rect.width(), ROW_HEIGHT),
+                );
+                ui.scroll_to_rect(rect, Some(Align::Center));
+            } else if let Some(row) = selected_row {
+                let content_min = scroll_response.inner.inner_rect.min;
+                let min = egui::pos2(content_min.x, content_min.y + row as f32 * ROW_HEIGHT);
+                let rect = egui::Rect::from_min_size(
+                    min,
+                    egui::vec2(scroll_response.inner.inner_rect.width(), ROW_HEIGHT),
+                );
+                ui.scroll_to_rect(rect, Some(Align::Center));
             }
             if drag_active {
                 if let Some(pointer) = pointer_pos {
@@ -555,6 +602,10 @@ impl eframe::App for EguiApp {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         self.apply_visuals(ctx);
         self.controller.tick_playhead();
+        if self.controller.ui.drag.active_path.is_some() && !ctx.input(|i| i.pointer.primary_down())
+        {
+            self.controller.finish_sample_drag();
+        }
         let collection_focus = self.controller.ui.collections.selected_sample.is_some();
         let triage_has_selection = self.controller.ui.triage.selected.is_some();
         if collection_focus {
@@ -646,6 +697,9 @@ impl eframe::App for EguiApp {
         }
         if self.controller.ui.drag.active_path.is_some() {
             if ctx.input(|i| i.pointer.any_released()) {
+                self.controller.finish_sample_drag();
+            } else if !ctx.input(|i| i.pointer.primary_down()) {
+                // Safety net to clear drag visuals if a release was missed.
                 self.controller.finish_sample_drag();
             }
         }
