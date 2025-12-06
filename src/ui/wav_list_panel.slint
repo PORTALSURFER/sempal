@@ -112,36 +112,34 @@ export component WavListPanel inherits Rectangle {
                     trash_list := ListView {
                         vertical-stretch: 1;
                         min-height: 200px;
-                        for file[i] in root.wavs_trash: Rectangle {
-                            height: 32px;
-                            horizontal-stretch: 1;
-                            clip: true;
-                            background: ta_trash.pressed ? #1f1f1f :
-                                (file.loaded ? #20344c :
-                                    (file.selected ? #1d1d1d :
-                                        (ta_trash.has-hover ? #1a1a1a : #141414)));
-                            border-width: file.selected ? 1px : 0px;
-                            border-color: file.loaded ? #3a9cff : #2f6fb1;
-                            Rectangle {
-                                x: 0px;
-                                y: 0px;
-                                width: parent.width;
-                                height: parent.height;
+                for file[i] in root.wavs_trash: Rectangle {
+                    height: 32px;
+                    horizontal-stretch: 1;
+                    clip: true;
+                    background: ta_trash.pressed ? file.pressed_bg :
+                        (ta_trash.has-hover ? file.hover_bg : file.bg);
+                    border-width: file.selected ? 1px : 0px;
+                    border-color: file.border_color;
+                    Rectangle {
+                        x: 0px;
+                        y: 0px;
+                        width: parent.width;
+                        height: parent.height;
                                 background: file.overlay;
                                 border-radius: 6px;
                             }
                             HorizontalLayout {
                                 padding: 8px;
-                                spacing: 8px;
-                                Rectangle {
-                                    width: 4px;
-                                    height: parent.height - 6px;
-                                    background: file.loaded ? #3a9cff : (file.selected ? #2f6fb1 : #00000000);
-                                    border-radius: 2px;
-                                }
-                                Text {
-                                    text: file.name;
-                                    color: #e0e0e0;
+                        spacing: 8px;
+                        Rectangle {
+                            width: 4px;
+                            height: parent.height - 6px;
+                            background: file.indicator_color;
+                            border-radius: 2px;
+                        }
+                        Text {
+                            text: file.name;
+                            color: #e0e0e0;
                                     horizontal-alignment: left;
                                     horizontal-stretch: 1;
                                 }
@@ -185,36 +183,34 @@ export component WavListPanel inherits Rectangle {
                     neutral_list := ListView {
                         vertical-stretch: 1;
                         min-height: 200px;
-                        for file[i] in root.wavs_neutral: Rectangle {
-                            height: 32px;
-                            horizontal-stretch: 1;
-                            clip: true;
-                            background: ta_neutral.pressed ? #1f1f1f :
-                                (file.loaded ? #20344c :
-                                    (file.selected ? #1d1d1d :
-                                        (ta_neutral.has-hover ? #1a1a1a : #141414)));
-                            border-width: file.selected ? 1px : 0px;
-                            border-color: file.loaded ? #3a9cff : #2f6fb1;
-                            Rectangle {
-                                x: 0px;
-                                y: 0px;
-                                width: parent.width;
-                                height: parent.height;
+                for file[i] in root.wavs_neutral: Rectangle {
+                    height: 32px;
+                    horizontal-stretch: 1;
+                    clip: true;
+                    background: ta_neutral.pressed ? file.pressed_bg :
+                        (ta_neutral.has-hover ? file.hover_bg : file.bg);
+                    border-width: file.selected ? 1px : 0px;
+                    border-color: file.border_color;
+                    Rectangle {
+                        x: 0px;
+                        y: 0px;
+                        width: parent.width;
+                        height: parent.height;
                                 background: file.overlay;
                                 border-radius: 6px;
                             }
                             HorizontalLayout {
                                 padding: 8px;
-                                spacing: 8px;
-                                Rectangle {
-                                    width: 4px;
-                                    height: parent.height - 6px;
-                                    background: file.loaded ? #3a9cff : (file.selected ? #2f6fb1 : #00000000);
-                                    border-radius: 2px;
-                                }
-                                Text {
-                                    text: file.name;
-                                    color: #e0e0e0;
+                        spacing: 8px;
+                        Rectangle {
+                            width: 4px;
+                            height: parent.height - 6px;
+                            background: file.indicator_color;
+                            border-radius: 2px;
+                        }
+                        Text {
+                            text: file.name;
+                            color: #e0e0e0;
                                     horizontal-alignment: left;
                                     horizontal-stretch: 1;
                                 }
@@ -258,36 +254,34 @@ export component WavListPanel inherits Rectangle {
                     keep_list := ListView {
                         vertical-stretch: 1;
                         min-height: 200px;
-                        for file[i] in root.wavs_keep: Rectangle {
-                            height: 32px;
-                            horizontal-stretch: 1;
-                            clip: true;
-                            background: ta_keep.pressed ? #1f1f1f :
-                                (file.loaded ? #20344c :
-                                    (file.selected ? #1d1d1d :
-                                        (ta_keep.has-hover ? #1a1a1a : #141414)));
-                            border-width: file.selected ? 1px : 0px;
-                            border-color: file.loaded ? #3a9cff : #2f6fb1;
-                            Rectangle {
-                                x: 0px;
-                                y: 0px;
-                                width: parent.width;
-                                height: parent.height;
+                for file[i] in root.wavs_keep: Rectangle {
+                    height: 32px;
+                    horizontal-stretch: 1;
+                    clip: true;
+                    background: ta_keep.pressed ? file.pressed_bg :
+                        (ta_keep.has-hover ? file.hover_bg : file.bg);
+                    border-width: file.selected ? 1px : 0px;
+                    border-color: file.border_color;
+                    Rectangle {
+                        x: 0px;
+                        y: 0px;
+                        width: parent.width;
+                        height: parent.height;
                                 background: file.overlay;
                                 border-radius: 6px;
                             }
                             HorizontalLayout {
                                 padding: 8px;
-                                spacing: 8px;
-                                Rectangle {
-                                    width: 4px;
-                                    height: parent.height - 6px;
-                                    background: file.loaded ? #3a9cff : (file.selected ? #2f6fb1 : #00000000);
-                                    border-radius: 2px;
-                                }
-                                Text {
-                                    text: file.name;
-                                    color: #e0e0e0;
+                        spacing: 8px;
+                        Rectangle {
+                            width: 4px;
+                            height: parent.height - 6px;
+                            background: file.indicator_color;
+                            border-radius: 2px;
+                        }
+                        Text {
+                            text: file.name;
+                            color: #e0e0e0;
                                     horizontal-alignment: left;
                                     horizontal-stretch: 1;
                                 }

@@ -16,7 +16,7 @@ Identify why selecting samples in the sample source lists feels slow, pinpoint t
 1. [~] Capture a baseline trace of sample selection (large source, rapid clicks) and review `flamegraph.svg`/new perf data to measure time from click to visual update.
 2. [~] Document the concrete hot paths (e.g., string-based scans in `handle_wav_clicked`/`update_wav_view`, synchronous `db.list_files`, model rebuild costs, Slint item tree/layout churn) with numbers.
 3. [x] Implement selection-path micro-optimizations: add indexed lookups or index-based UI events, reuse cached lookups, and remove redundant `entry_index` walks.
-4. [~] Reduce list/model churn: keep `WavModels` updates in-place, trim Slint wav/source list item tree depth/width, and eliminate per-frame bindings in those panels.
+4. [x] Reduce list/model churn: keep `WavModels` updates in-place, trim Slint wav/source list item tree depth/width, and eliminate per-frame bindings in those panels.
 5. [-] Offload and streamline IO/rendering: async wav list loads, background file existence checks, larger waveform cache/prefetch, and evaluate paging/virtualization for very large lists.
 6. [-] Cut per-frame text/layout and wgpu churn: minimize dynamic text, reuse buffers/bind groups/pipelines where possible, and batch small GPU updates.
 7. [~] Validate gains with benches (selection/tagging hot paths), UI smoke tests on big datasets, and gather feedback on any feature-level redesign options before shipping; rerun flamegraph with full debug symbols to break down the “Unknown” block.
