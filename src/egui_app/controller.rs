@@ -500,6 +500,33 @@ impl EguiController {
         }
     }
 
+    fn set_sample_tag(&mut self, path: &Path, column: TriageColumn) -> Result<(), String> {
+        let target_tag = match column {
+            TriageColumn::Trash => SampleTag::Trash,
+            TriageColumn::Neutral => SampleTag::Neutral,
+            TriageColumn::Keep => SampleTag::Keep,
+        };
+        let Some(source) = self.current_source() else {
+            return Err("Select a source first".into());
+        };
+        let db = self.database_for(&source).map_err(|err| err.to_string())?;
+        let Some(index) = self.wav_lookup.get(path).copied() else {
+            return Err("Sample not found".into());
+        };
+        if let Some(entry) = self.wav_entries.get_mut(index) {
+            entry.tag = target_tag;
+        }
+        if let Some(cache) = self.wav_cache.get_mut(&source.id) {
+            if let Some(entry) = cache.get_mut(index) {
+                entry.tag = target_tag;
+            }
+        }
+        let _ = db.set_tag(path, target_tag);
+        self.rebuild_triage_lists();
+        self.select_wav_by_path(path);
+        Ok(())
+    }
+
     fn label_for(&mut self, index: usize) -> Option<String> {
         let source_id = self.selected_source.clone()?;
         if let Some(cache) = self.label_cache.get(&source_id) {
@@ -843,6 +870,7 @@ impl EguiController {
         self.ui.drag.position = Some(pos);
         self.ui.drag.hovering_collection = None;
         self.ui.drag.hovering_drop_zone = false;
+        self.ui.drag.hovering_triage = None;
     }
 
     /// Update drag position and hover state.
@@ -851,10 +879,12 @@ impl EguiController {
         pos: egui::Pos2,
         hovering_collection: Option<CollectionId>,
         hovering_drop_zone: bool,
+        hovering_triage: Option<TriageColumn>,
     ) {
         self.ui.drag.position = Some(pos);
         self.ui.drag.hovering_collection = hovering_collection;
         self.ui.drag.hovering_drop_zone = hovering_drop_zone;
+        self.ui.drag.hovering_triage = hovering_triage;
     }
 
     /// Finish drag and perform drop if applicable.
@@ -871,6 +901,11 @@ impl EguiController {
         } else {
             self.ui.drag.hovering_collection.clone()
         };
+        if let Some(column) = self.ui.drag.hovering_triage {
+            let _ = self.set_sample_tag(&path, column);
+            self.reset_drag();
+            return;
+        }
         self.reset_drag();
         if let Some(collection_id) = target_id {
             let _ = self.add_sample_to_collection(&collection_id, &path);
@@ -883,6 +918,7 @@ impl EguiController {
         self.ui.drag.position = None;
         self.ui.drag.hovering_collection = None;
         self.ui.drag.hovering_drop_zone = false;
+        self.ui.drag.hovering_triage = None;
     }
 
     fn current_collection_id(&self) -> Option<CollectionId> {
