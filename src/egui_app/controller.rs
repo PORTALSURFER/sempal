@@ -93,6 +93,9 @@ impl EguiController {
         self.ensure_collection_selection();
         self.refresh_sources_ui();
         self.refresh_collections_ui();
+        if self.selected_source.is_some() {
+            let _ = self.refresh_wavs();
+        }
         Ok(())
     }
 
@@ -274,6 +277,30 @@ impl EguiController {
     /// Seek to a normalized position and start playback.
     pub fn seek_to(&mut self, position: f32) {
         if let Err(err) = self.play_audio(false, Some(position)) {
+            self.set_status(err, StatusTone::Error);
+        }
+    }
+
+    /// Toggle play/pause, preferring the current selection when present.
+    pub fn toggle_play_pause(&mut self) {
+        let player_rc = match self.ensure_player() {
+            Ok(Some(p)) => p,
+            Ok(None) => {
+                self.set_status("Audio unavailable", StatusTone::Error);
+                return;
+            }
+            Err(err) => {
+                self.set_status(err, StatusTone::Error);
+                return;
+            }
+        };
+        let is_playing = player_rc.borrow().is_playing();
+        if is_playing {
+            player_rc.borrow_mut().stop();
+            return;
+        }
+        drop(player_rc);
+        if let Err(err) = self.play_audio(self.ui.waveform.loop_enabled, None) {
             self.set_status(err, StatusTone::Error);
         }
     }
