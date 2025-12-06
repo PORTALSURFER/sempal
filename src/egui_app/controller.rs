@@ -1071,19 +1071,29 @@ impl EguiController {
                 return;
             }
         };
-        let target_id = if self.ui.drag.hovering_drop_zone {
-            self.current_collection_id()
-        } else {
-            self.ui.drag.hovering_collection.clone()
-        };
-        if let Some(column) = self.ui.drag.hovering_triage {
-            let _ = self.set_sample_tag(&path, column);
-            self.reset_drag();
+        let collection_target = self
+            .ui
+            .drag
+            .hovering_collection
+            .clone()
+            .or_else(|| {
+                if self.ui.drag.hovering_drop_zone {
+                    self.current_collection_id()
+                } else {
+                    None
+                }
+            })
+            .or_else(|| self.current_collection_id());
+        let triage_target = self.ui.drag.hovering_triage;
+        self.reset_drag();
+        if let Some(collection_id) = collection_target {
+            if let Err(err) = self.add_sample_to_collection(&collection_id, &path) {
+                self.set_status(err, StatusTone::Error);
+            }
             return;
         }
-        self.reset_drag();
-        if let Some(collection_id) = target_id {
-            let _ = self.add_sample_to_collection(&collection_id, &path);
+        if let Some(column) = triage_target {
+            let _ = self.set_sample_tag(&path, column);
         }
     }
 
@@ -1256,5 +1266,37 @@ mod tests {
         assert_eq!(selected.column, TriageColumn::Neutral);
         let loaded = controller.ui.triage.loaded.unwrap();
         assert_eq!(loaded.column, TriageColumn::Keep);
+    }
+
+    #[test]
+    fn dropping_triage_sample_adds_to_collection_and_db() {
+        let (mut controller, source) = dummy_controller();
+        controller.sources.push(source.clone());
+        let file_path = source.root.join("sample.wav");
+        std::fs::write(&file_path, b"data").unwrap();
+
+        let mut collection = Collection::new("Test");
+        let collection_id = collection.id.clone();
+        controller.collections.push(collection);
+        controller.selected_collection = Some(collection_id.clone());
+
+        controller.ui.drag.active_path = Some(PathBuf::from("sample.wav"));
+        controller.ui.drag.hovering_collection = Some(collection_id.clone());
+
+        controller.finish_sample_drag();
+
+        let collection = controller
+            .collections
+            .iter()
+            .find(|c| c.id == collection_id)
+            .unwrap();
+        assert_eq!(collection.members.len(), 1);
+        assert_eq!(collection.members[0].relative_path, PathBuf::from("sample.wav"));
+
+        let db = controller.database_for(&source).unwrap();
+        let rows = db.list_files().unwrap();
+        assert!(rows
+            .iter()
+            .any(|row| row.relative_path == PathBuf::from("sample.wav")));
     }
 }
