@@ -63,9 +63,9 @@ impl WavModels {
         self.trash_lookup.clear();
         self.neutral_lookup.clear();
         self.keep_lookup.clear();
-        let mut trash_rows = Vec::new();
-        let mut neutral_rows = Vec::new();
-        let mut keep_rows = Vec::new();
+        let mut trash_rows = Vec::with_capacity(entries.len());
+        let mut neutral_rows = Vec::with_capacity(entries.len());
+        let mut keep_rows = Vec::with_capacity(entries.len());
         let mut selected_target = None;
         let mut loaded_target = None;
         let mut loaded_path = None;
