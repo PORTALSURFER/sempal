@@ -1,5 +1,6 @@
 mod app;
 mod audio;
+mod egui_app;
 mod sample_sources;
 mod selection;
 mod ui;
