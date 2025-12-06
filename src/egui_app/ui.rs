@@ -218,8 +218,9 @@ impl EguiApp {
                 });
             });
             ui.add_space(8.0);
-            let available = ui.available_size();
-            let (rect, response) = ui.allocate_exact_size(available, egui::Sense::click_and_drag());
+            let desired = egui::vec2(ui.available_width(), 260.0);
+            let (rect, response) =
+                ui.allocate_exact_size(desired, egui::Sense::click_and_drag());
             let painter = ui.painter();
             let tex_id = if let Some(image) = &self.controller.ui.waveform.image {
                 let needs_refresh = self
