@@ -176,7 +176,7 @@ impl DropHandler {
         }
     }
 
-    fn handle_waveform_result(&self, app: &HelloWorld, message: WaveformJobResult) {
+    fn handle_waveform_result(&self, app: &Sempal, message: WaveformJobResult) {
         let relative_path = message.relative_path;
         match message.result {
             Ok(payload) => {
@@ -192,7 +192,7 @@ impl DropHandler {
 
     fn apply_waveform_payload(
         &self,
-        app: &HelloWorld,
+        app: &Sempal,
         source_id: SourceId,
         relative_path: PathBuf,
         payload: WaveformJobPayload,
