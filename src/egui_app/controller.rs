@@ -87,6 +87,9 @@ impl EguiController {
         self.ui.collections.enabled = self.feature_flags.collections_enabled;
         self.sources = cfg.sources;
         self.collections = cfg.collections;
+        self.selected_source = cfg
+            .last_selected_source
+            .filter(|id| self.sources.iter().any(|s| &s.id == id));
         self.ensure_collection_selection();
         self.refresh_sources_ui();
         self.refresh_collections_ui();
@@ -124,6 +127,7 @@ impl EguiController {
         self.loaded_wav = None;
         self.refresh_sources_ui();
         self.queue_wav_load();
+        let _ = self.persist_config("Failed to save selection");
         // Do not auto-scan; only run when explicitly requested.
     }
 
@@ -528,6 +532,7 @@ impl EguiController {
             sources: self.sources.clone(),
             collections: self.collections.clone(),
             feature_flags: self.feature_flags.clone(),
+            last_selected_source: self.selected_source.clone(),
         })
     }
 

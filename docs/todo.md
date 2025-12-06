@@ -19,3 +19,4 @@ lets instead isolate this to the focused column so we neatly go up and down that
 selecting an item in a column will focus that column.
 if we move a sample from one column to another, dont keep that sample selected, instead select the next item in the current column.
  
+\plan - when the user hovers the start or end of an audio selection, lets make a [ or ] icon visible at the bottom of the line, indicating the are now able to grab the edge and resize it.

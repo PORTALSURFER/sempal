@@ -28,6 +28,7 @@ impl EguiApp {
         controller
             .load_configuration()
             .map_err(|err| format!("Failed to load config: {err}"))?;
+        controller.select_first_source();
         Ok(Self {
             controller,
             visuals_set: false,
@@ -248,19 +249,31 @@ impl EguiApp {
             let (rect, response) = ui.allocate_exact_size(desired, egui::Sense::click_and_drag());
             let painter = ui.painter();
             let tex_id = if let Some(image) = &self.controller.ui.waveform.image {
-                let needs_refresh = self
-                    .waveform_tex
-                    .as_ref()
-                    .map(|tex| tex.size() != image.image.size)
-                    .unwrap_or(true);
-                if needs_refresh {
-                    self.waveform_tex = Some(ui.ctx().load_texture(
+                let new_size = image.image.size;
+                if let Some(tex) = self.waveform_tex.as_mut() {
+                    if tex.size() == new_size {
+                        tex.set(image.image.clone(), TextureOptions::LINEAR);
+                        Some(tex.id())
+                    } else {
+                        let tex = ui.ctx().load_texture(
+                            "waveform_texture",
+                            image.image.clone(),
+                            TextureOptions::LINEAR,
+                        );
+                        let id = tex.id();
+                        self.waveform_tex = Some(tex);
+                        Some(id)
+                    }
+                } else {
+                    let tex = ui.ctx().load_texture(
                         "waveform_texture",
                         image.image.clone(),
                         TextureOptions::LINEAR,
-                    ));
+                    );
+                    let id = tex.id();
+                    self.waveform_tex = Some(tex);
+                    Some(id)
                 }
-                self.waveform_tex.as_ref().map(|tex| tex.id())
             } else {
                 self.waveform_tex = None;
                 None
