@@ -116,6 +116,7 @@ export component WavListPanel inherits Rectangle {
                     height: 32px;
                     horizontal-stretch: 1;
                     clip: true;
+                    cache-rendering-hint: true;
                     background: ta_trash.pressed ? file.pressed_bg :
                         (ta_trash.has-hover ? file.hover_bg : file.bg);
                     border-width: file.selected ? 1px : 0px;
@@ -183,15 +184,16 @@ export component WavListPanel inherits Rectangle {
                     neutral_list := ListView {
                         vertical-stretch: 1;
                         min-height: 200px;
-                for file[i] in root.wavs_neutral: Rectangle {
-                    height: 32px;
-                    horizontal-stretch: 1;
-                    clip: true;
-                    background: ta_neutral.pressed ? file.pressed_bg :
-                        (ta_neutral.has-hover ? file.hover_bg : file.bg);
-                    border-width: file.selected ? 1px : 0px;
-                    border-color: file.border_color;
-                    Rectangle {
+                        for file[i] in root.wavs_neutral: Rectangle {
+                            height: 32px;
+                            horizontal-stretch: 1;
+                            clip: true;
+                            cache-rendering-hint: true;
+                            background: ta_neutral.pressed ? file.pressed_bg :
+                                (ta_neutral.has-hover ? file.hover_bg : file.bg);
+                            border-width: file.selected ? 1px : 0px;
+                            border-color: file.border_color;
+                            Rectangle {
                         x: 0px;
                         y: 0px;
                         width: parent.width;
@@ -254,15 +256,16 @@ export component WavListPanel inherits Rectangle {
                     keep_list := ListView {
                         vertical-stretch: 1;
                         min-height: 200px;
-                for file[i] in root.wavs_keep: Rectangle {
-                    height: 32px;
-                    horizontal-stretch: 1;
-                    clip: true;
-                    background: ta_keep.pressed ? file.pressed_bg :
-                        (ta_keep.has-hover ? file.hover_bg : file.bg);
-                    border-width: file.selected ? 1px : 0px;
-                    border-color: file.border_color;
-                    Rectangle {
+                        for file[i] in root.wavs_keep: Rectangle {
+                            height: 32px;
+                            horizontal-stretch: 1;
+                            clip: true;
+                            cache-rendering-hint: true;
+                            background: ta_keep.pressed ? file.pressed_bg :
+                                (ta_keep.has-hover ? file.hover_bg : file.bg);
+                            border-width: file.selected ? 1px : 0px;
+                            border-color: file.border_color;
+                            Rectangle {
                         x: 0px;
                         y: 0px;
                         width: parent.width;

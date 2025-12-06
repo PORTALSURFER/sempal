@@ -1,5 +1,6 @@
 use super::navigation::compute_target_index;
 use super::*;
+use crate::app::metrics;
 use crate::app::wav_list::{WavListJob, WavListJobResult};
 use std::path::{Path, PathBuf};
 
@@ -280,11 +281,15 @@ impl DropHandler {
             self.update_wav_view(app, true);
             return;
         };
-        match self.database_for(&source).and_then(|db| db.list_files()) {
+        match metrics::profile("list_files", || {
+            self.database_for(&source).and_then(|db| db.list_files())
+        }) {
             Ok(entries) => {
                 self.wav_entries.replace(entries.clone());
                 self.rebuild_wav_lookup(&entries);
-                self.update_wav_view(app, true);
+                metrics::profile("update_wav_view_initial", || {
+                    self.update_wav_view(app, true);
+                });
                 self.set_status(
                     app,
                     format!("{} wav files loaded", entries.len()),
@@ -331,9 +336,10 @@ impl DropHandler {
         let (selected_target, loaded_path, refreshed_models) = {
             let mut models = self.wav_models.borrow_mut();
             if rebuild_models || !models.is_synced(entries.len()) {
-                let (selected_target, loaded_path) =
-                    models.rebuild(entries.as_slice(), selected_index, loaded_index);
-                (selected_target, loaded_path, true)
+                let (sel, loaded) = metrics::profile("wavs_rebuild_models", || {
+                    models.rebuild(entries.as_slice(), selected_index, loaded_index)
+                });
+                (sel, loaded, true)
             } else {
                 let selected_path = selected_index
                     .and_then(|i| entries.get(i))
@@ -341,9 +347,10 @@ impl DropHandler {
                 let loaded_path = loaded_index
                     .and_then(|i| entries.get(i))
                     .map(|e| e.relative_path.as_path());
-                let (selected_target, loaded_path) =
-                    models.update_selection(entries.as_slice(), selected_path, loaded_path);
-                (selected_target, loaded_path, false)
+                let (sel, loaded) = metrics::profile("wavs_update_selection", || {
+                    models.update_selection(entries.as_slice(), selected_path, loaded_path)
+                });
+                (sel, loaded, false)
             }
         };
         if refreshed_models {
