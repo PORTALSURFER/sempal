@@ -55,16 +55,54 @@ impl DropHandler {
     /// Convert a wav entry into its UI row representation.
     pub(super) fn wav_row(entry: &WavEntry, selected: bool, loaded: bool) -> WavRow {
         let (tag_label, tag_bg, tag_fg, overlay) = Self::tag_display(entry.tag);
+        let (bg, hover_bg, pressed_bg) = Self::row_background(selected, loaded);
+        let (border_color, indicator_color) = Self::row_highlights(selected, loaded);
         WavRow {
             name: entry.relative_path.to_string_lossy().to_string().into(),
             path: entry.relative_path.to_string_lossy().to_string().into(),
             selected,
             loaded,
+            bg,
+            hover_bg,
+            pressed_bg,
+            border_color,
+            indicator_color,
             overlay,
             tag_label,
             tag_bg,
             tag_fg,
         }
+    }
+
+    fn row_background(selected: bool, loaded: bool) -> (Color, Color, Color) {
+        let base = if loaded {
+            Color::from_rgb_u8(32, 52, 76)
+        } else if selected {
+            Color::from_rgb_u8(29, 29, 29)
+        } else {
+            Color::from_rgb_u8(20, 20, 20)
+        };
+        let hover = if selected || loaded {
+            base
+        } else {
+            Color::from_rgb_u8(26, 26, 26)
+        };
+        let pressed = Color::from_rgb_u8(31, 31, 31);
+        (base, hover, pressed)
+    }
+
+    fn row_highlights(selected: bool, loaded: bool) -> (Color, Color) {
+        let primary = Color::from_rgb_u8(58, 156, 255);
+        let secondary = Color::from_rgb_u8(47, 111, 177);
+        let indicator = if loaded {
+            primary
+        } else if selected {
+            secondary
+        } else {
+            Color::from_argb_u8(0, 0, 0, 0)
+        };
+        let border = if loaded { primary } else { secondary };
+        (border, indicator)
     }
 
     fn tag_display(tag: SampleTag) -> (SharedString, Color, Color, Color) {
