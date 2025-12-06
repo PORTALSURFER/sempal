@@ -34,12 +34,22 @@ impl DropHandler {
     }
 
     fn update_tag_in_memory_step(&self, step: TagStep) -> Option<(PathBuf, SampleTag)> {
+        let selected_index = {
+            let entries = self.wav_entries.borrow();
+            if entries.is_empty() {
+                return None;
+            }
+            self.sync_wav_lookup(&entries);
+            let selected = self.selected_wav.borrow();
+            self.lookup_index_in_entries(&entries, &selected)
+                .unwrap_or(0)
+        };
         let mut entries = self.wav_entries.borrow_mut();
-        if entries.is_empty() {
-            return None;
-        }
-        let selected_index = Self::entry_index(&entries, &self.selected_wav.borrow()).unwrap_or(0);
-        let entry = entries.get_mut(selected_index)?;
+        let entry = if let Some(entry) = entries.get_mut(selected_index) {
+            entry
+        } else {
+            entries.get_mut(0)?
+        };
         let new_tag = step_tag(entry.tag, step);
         let path = entry.relative_path.clone();
         entry.tag = new_tag;
