@@ -72,7 +72,7 @@ slint::slint! {
                 close_requested => root.close_requested();
             }
 
-            HorizontalLayout {
+            main_row := HorizontalLayout {
                 spacing: 8px;
                 padding: 8px;
                 vertical-stretch: 1;
@@ -87,7 +87,7 @@ slint::slint! {
                     source_remove_requested(i) => root.source_remove_requested(i);
                 }
 
-                Rectangle {
+                center_panel := Rectangle {
                     horizontal-stretch: 1;
                     vertical-stretch: 1;
                     background: #0d0d0d;
@@ -122,17 +122,19 @@ slint::slint! {
                         wavs_panel := WavListPanel {
                             wavs_trash <=> root.wavs_trash;
                             wavs_neutral <=> root.wavs_neutral;
-                        wavs_keep <=> root.wavs_keep;
-                        dragging_sample_path <=> root.dragging_sample_path;
-                        drag_preview_label <=> root.drag_preview_label;
-                        drag_preview_x <=> root.drag_preview_x;
-                        drag_preview_y <=> root.drag_preview_y;
-                        drag_preview_visible <=> root.drag_preview_visible;
-                        selected_trash <=> root.selected_trash;
-                        selected_neutral <=> root.selected_neutral;
-                        selected_keep <=> root.selected_keep;
-                        loaded_wav_path <=> root.loaded_wav_path;
-                        z: 10;
+                            wavs_keep <=> root.wavs_keep;
+                            dragging_sample_path <=> root.dragging_sample_path;
+                            drag_preview_label <=> root.drag_preview_label;
+                            drag_preview_x <=> root.drag_preview_x;
+                            drag_preview_y <=> root.drag_preview_y;
+                            drag_preview_visible <=> root.drag_preview_visible;
+                            global_offset_x: main_row.x + center_panel.x + wavs_panel.x;
+                            global_offset_y: main_row.y + center_panel.y + wavs_panel.y;
+                            selected_trash <=> root.selected_trash;
+                            selected_neutral <=> root.selected_neutral;
+                            selected_keep <=> root.selected_keep;
+                            loaded_wav_path <=> root.loaded_wav_path;
+                            z: 10;
                         wav_clicked(path) => root.wav_clicked(path);
                         drop_attempt(path, x, y) => root.sample_drop_attempt(path, x, y);
                         drag_hover(path, x, y, active) => root.sample_drag_hover(path, x, y, active);
@@ -188,6 +190,33 @@ slint::slint! {
             }
             collection_panel.update_drag_hover("", 0px, 0px, false);
             false
+        }
+
+        if root.drag_preview_visible : Rectangle {
+            width: 180px;
+            height: 34px;
+            x: root.drag_preview_x;
+            y: root.drag_preview_y;
+            z: 100;
+            background: #1a2733ee;
+            border-width: 1px;
+            border-color: #2f6fb1;
+            border-radius: 6px;
+            HorizontalLayout {
+                padding: 10px;
+                spacing: 8px;
+                Rectangle {
+                    width: 8px;
+                    height: 8px;
+                    background: #5ab0ff;
+                    border-radius: 4px;
+                }
+                Text {
+                    text: root.drag_preview_label != "" ? root.drag_preview_label : "Sample";
+                    color: #e0e0e0;
+                    horizontal-stretch: 1;
+                }
+            }
         }
     }
 }
