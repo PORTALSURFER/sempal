@@ -223,6 +223,15 @@ impl EguiController {
             .map(|entry| entry.relative_path.clone())
     }
 
+    fn visible_row_for_path(&self, path: &Path) -> Option<usize> {
+        let entry_index = self.wav_lookup.get(path)?;
+        self.ui
+            .browser
+            .visible
+            .iter()
+            .position(|idx| idx == entry_index)
+    }
+
     fn set_single_browser_selection(&mut self, path: &Path) {
         self.ui.browser.selected_paths.clear();
         self.ui.browser.selected_paths.push(path.to_path_buf());
@@ -321,6 +330,24 @@ impl EguiController {
         }
         self.select_wav_by_path_with_rebuild(&path, false);
         self.rebuild_browser_lists();
+    }
+
+    pub fn action_rows_from_primary(&self, primary_visible_row: usize) -> Vec<usize> {
+        let mut rows: Vec<usize> = self
+            .ui
+            .browser
+            .selected_paths
+            .iter()
+            .filter_map(|path| self.visible_row_for_path(path))
+            .collect();
+        if rows.is_empty() {
+            rows.push(primary_visible_row);
+        } else if !rows.contains(&primary_visible_row) {
+            rows.push(primary_visible_row);
+        }
+        rows.sort_unstable();
+        rows.dedup();
+        rows
     }
 
     pub(super) fn set_sample_tag(
