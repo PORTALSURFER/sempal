@@ -1,6 +1,6 @@
-use super::*;
 use super::collection_export;
 use super::collection_export::delete_exported_file;
+use super::*;
 
 impl EguiController {
     /// Select the first available source or refresh the current one.

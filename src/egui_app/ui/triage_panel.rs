@@ -1,4 +1,7 @@
-use super::helpers::{clamp_label_for_width, list_row_height, render_list_row};
+use super::helpers::{
+    clamp_label_for_width, list_row_height, render_list_row, scroll_offset_to_reveal_row,
+    RowMetrics,
+};
 use super::*;
 use eframe::egui::{self, Color32, RichText, Stroke, Ui};
 
@@ -64,6 +67,10 @@ impl EguiApp {
         let triage_autoscroll = self.controller.ui.triage.autoscroll
             && self.controller.ui.collections.selected_sample.is_none();
         let row_height = list_row_height(ui);
+        let row_metrics = RowMetrics {
+            height: row_height,
+            spacing: ui.spacing().item_spacing.y,
+        };
         let total_rows = self.controller.triage_indices(column).len();
         let bg_frame = egui::Frame::none().fill(Color32::from_rgb(16, 16, 16));
         let frame_response = bg_frame.show(ui, |ui| {
@@ -136,15 +143,12 @@ impl EguiApp {
         let max_offset = (content_height - viewport_height).max(0.0);
         let mut desired_offset = frame_response.inner.state.offset.y;
         if let (Some(row), true) = (selected_row, triage_autoscroll) {
-            desired_offset = (row as f32 + 0.5) * row_height - viewport_height * 0.5;
+            desired_offset =
+                scroll_offset_to_reveal_row(desired_offset, row, row_metrics, viewport_height, 1.0);
             self.controller.ui.triage.autoscroll = false;
         }
-        let snapped_offset = (desired_offset / row_height)
-            .round()
-            .clamp(0.0, max_offset / row_height)
-            * row_height;
         let mut state = frame_response.inner.state;
-        state.offset.y = snapped_offset.clamp(0.0, max_offset);
+        state.offset.y = desired_offset.clamp(0.0, max_offset);
         state.store(ui.ctx(), frame_response.inner.id);
         if drag_active {
             if let Some(pointer) = pointer_pos {

@@ -79,8 +79,9 @@ impl Collection {
     /// Remove a sample from the collection if it exists.
     pub fn remove_member(&mut self, source_id: &SourceId, relative_path: &PathBuf) -> bool {
         let len_before = self.members.len();
-        self.members
-            .retain(|member| &member.source_id != source_id || &member.relative_path != relative_path);
+        self.members.retain(|member| {
+            &member.source_id != source_id || &member.relative_path != relative_path
+        });
         len_before != self.members.len()
     }
 

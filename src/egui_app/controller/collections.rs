@@ -1,5 +1,5 @@
-use super::*;
 use super::collection_export;
+use super::*;
 use crate::sample_sources::collections::CollectionMember;
 
 impl EguiController {
@@ -78,7 +78,10 @@ impl EguiController {
                 .find(|c| c.id == current_id && c.export_path.is_none())
                 .is_some()
             {
-                self.set_status("No export folder chosen; exports disabled", StatusTone::Warning);
+                self.set_status(
+                    "No export folder chosen; exports disabled",
+                    StatusTone::Warning,
+                );
             }
         }
     }
@@ -98,8 +101,9 @@ impl EguiController {
         let export_root = self.collections[index].export_path.clone();
         let new_folder_name = collection_export::collection_folder_name_from_str(trimmed);
         if let Some(root) = export_root.clone() {
-            let old_folder =
-                root.join(collection_export::collection_folder_name(&self.collections[index]));
+            let old_folder = root.join(collection_export::collection_folder_name(
+                &self.collections[index],
+            ));
             let new_folder = root.join(&new_folder_name);
             if old_folder != new_folder {
                 if new_folder.exists() {
@@ -159,8 +163,10 @@ impl EguiController {
             source_id: source.id.clone(),
             relative_path: relative_path.to_path_buf(),
         };
-        let added =
-            collection.add_member(new_member.source_id.clone(), new_member.relative_path.clone());
+        let added = collection.add_member(
+            new_member.source_id.clone(),
+            new_member.relative_path.clone(),
+        );
         self.collections = collections;
         if !added {
             self.set_status("Already in collection", StatusTone::Info);

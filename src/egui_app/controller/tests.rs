@@ -154,7 +154,11 @@ fn export_path_copies_and_refreshes_members() -> Result<(), String> {
     let sample_path = source_root.join("one.wav");
     std::fs::write(&sample_path, b"data").unwrap();
 
-    if let Some(collection) = controller.collections.iter_mut().find(|c| c.id == collection_id) {
+    if let Some(collection) = controller
+        .collections
+        .iter_mut()
+        .find(|c| c.id == collection_id)
+    {
         collection.export_path = Some(export_root.clone());
     }
     controller.add_sample_to_collection(&collection_id, Path::new("one.wav"))?;
