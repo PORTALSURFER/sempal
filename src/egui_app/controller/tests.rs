@@ -307,6 +307,49 @@ fn x_key_toggle_respects_focus() {
 }
 
 #[test]
+fn action_rows_include_selection_and_primary() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source);
+    controller.wav_entries = vec![
+        sample_entry("one.wav", SampleTag::Neutral),
+        sample_entry("two.wav", SampleTag::Neutral),
+        sample_entry("three.wav", SampleTag::Neutral),
+    ];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+    controller.ui.browser.selected_paths =
+        vec![PathBuf::from("one.wav"), PathBuf::from("three.wav")];
+
+    let rows = controller.action_rows_from_primary(1);
+
+    assert_eq!(rows, vec![0, 1, 2]);
+}
+
+#[test]
+fn tag_actions_apply_to_all_selected_rows() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.cache_db(&source).unwrap();
+    controller.wav_entries = vec![
+        sample_entry("one.wav", SampleTag::Neutral),
+        sample_entry("two.wav", SampleTag::Neutral),
+    ];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+
+    controller.focus_browser_row(0);
+    controller.toggle_browser_row_selection(1);
+    let rows = controller.action_rows_from_primary(0);
+
+    controller
+        .tag_browser_samples(&rows, SampleTag::Keep)
+        .unwrap();
+
+    assert_eq!(controller.wav_entries[0].tag, SampleTag::Keep);
+    assert_eq!(controller.wav_entries[1].tag, SampleTag::Keep);
+}
+
+#[test]
 fn exporting_selection_updates_entries_and_db() {
     let temp = tempdir().unwrap();
     let root = temp.path().join("source");
