@@ -13,7 +13,9 @@ mod wavs;
 
 use crate::{
     audio::AudioPlayer,
-    egui_app::state::{PlayheadState, TriageColumn, TriageIndex, TriageState, UiState, WaveformImage},
+    egui_app::state::{
+        PlayheadState, TriageColumn, TriageIndex, TriageState, UiState, WaveformImage,
+    },
     egui_app::view_model,
     sample_sources::{
         Collection, CollectionId, SampleSource, SampleTag, SourceDatabase, SourceDbError, SourceId,
@@ -137,7 +139,7 @@ struct WavLoadJob {
 
 struct WavLoadResult {
     source_id: SourceId,
-    result: Result<Vec<WavEntry>, String>,
+    result: Result<Vec<WavEntry>, LoadEntriesError>,
     elapsed: Duration,
 }
 
@@ -166,9 +168,30 @@ fn spawn_wav_loader() -> (Sender<WavLoadJob>, Receiver<WavLoadResult>) {
     (tx, result_rx)
 }
 
-fn load_entries(job: &WavLoadJob) -> Result<Vec<WavEntry>, String> {
-    let db = SourceDatabase::open(&job.root).map_err(|err| format!("Database error: {err}"))?;
-    db.list_files().map_err(|err| format!("Load failed: {err}"))
+fn load_entries(job: &WavLoadJob) -> Result<Vec<WavEntry>, LoadEntriesError> {
+    let db = SourceDatabase::open(&job.root).map_err(LoadEntriesError::Db)?;
+    db.list_files().map_err(LoadEntriesError::Db)
+}
+
+#[derive(Debug)]
+enum LoadEntriesError {
+    Db(SourceDbError),
+    Message(String),
+}
+
+impl std::fmt::Display for LoadEntriesError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LoadEntriesError::Db(err) => write!(f, "{err}"),
+            LoadEntriesError::Message(msg) => f.write_str(msg),
+        }
+    }
+}
+
+impl From<String> for LoadEntriesError {
+    fn from(value: String) -> Self {
+        LoadEntriesError::Message(value)
+    }
 }
 
 #[cfg(test)]

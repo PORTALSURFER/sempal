@@ -13,7 +13,7 @@
 3. [x] Break down `src/egui_app/ui.rs` into composable view helpers for the top bar, sources, collections, waveform, and triage panels to reduce file length and clarify responsibilities.
 4. [x] Add doc comments for all public types/functions across modules (egui_app state/controller, sample_sources, audio/waveform), keeping files/functions within the size guidelines.
 5. [x] Fix the identified UX/bug issues (stop looping after a loop toggle, prevent trash autoscroll when a collection is focused, avoid autoplay on drop) and add regression coverage.
-6. [-] Optimize performance-critical paths (wav loading/render caching, scan batching, audio playback progress/fades) using targeted measurements or benchmarks where feasible.
+6. [x] Optimize performance-critical paths (wav loading/render caching, scan batching, audio playback progress/fades) using targeted measurements or benchmarks where feasible.
 7. [x] Expand automated coverage for critical flows (sample DB scan/tagging, selection/triage navigation, config persistence) and rerun the full test suite to validate changes.
 
 ## Code Style & Architecture Rules Reminder

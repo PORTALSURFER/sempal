@@ -22,6 +22,19 @@ fn sample_entry(name: &str, tag: SampleTag) -> WavEntry {
 }
 
 #[test]
+fn missing_source_is_pruned_during_load() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.selected_source = Some(source.id.clone());
+    controller.queue_wav_load();
+    // The temp dir from dummy_controller is dropped, so the backing path disappears.
+    // The loader should prune the missing source instead of keeping a broken entry.
+    controller.poll_wav_loader();
+    assert!(controller.sources.is_empty());
+    assert!(controller.selected_source.is_none());
+}
+
+#[test]
 fn label_cache_builds_on_first_lookup() {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source.clone());
