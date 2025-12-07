@@ -1,6 +1,6 @@
 use super::helpers::{clamp_label_for_width, list_row_height, render_list_row};
-use super::*;
 use super::style;
+use super::*;
 use eframe::egui::{self, Color32, RichText, Ui};
 
 impl EguiApp {

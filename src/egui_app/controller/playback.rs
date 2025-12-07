@@ -1,5 +1,6 @@
 use super::*;
 use crate::selection::SelectionEdge;
+use std::time::{Duration, Instant};
 
 impl EguiController {
     /// Begin a selection drag at the given normalized position.
@@ -50,8 +51,12 @@ impl EguiController {
     pub fn toggle_loop(&mut self) {
         let was_looping = self.ui.waveform.loop_enabled;
         self.ui.waveform.loop_enabled = !self.ui.waveform.loop_enabled;
-        if was_looping && !self.ui.waveform.loop_enabled {
-            if let Err(err) = self.resume_without_looping() {
+        if self.ui.waveform.loop_enabled {
+            self.pending_loop_disable_at = None;
+            return;
+        }
+        if was_looping {
+            if let Err(err) = self.defer_loop_disable_after_cycle() {
                 self.set_status(err, StatusTone::Error);
             }
         }
@@ -168,6 +173,7 @@ impl EguiController {
 
     /// Start playback over the current selection or full range.
     pub fn play_audio(&mut self, looped: bool, start_override: Option<f32>) -> Result<(), String> {
+        self.pending_loop_disable_at = None;
         let player = self.ensure_player()?;
         let Some(player) = player else {
             return Err("Audio unavailable".into());
@@ -190,10 +196,25 @@ impl EguiController {
     pub fn tick_playhead(&mut self) {
         self.poll_wav_loader();
         self.poll_scan();
-        let Some(player) = self.player.as_ref() else {
+        let Some(player) = self.player.as_ref().cloned() else {
             self.ui.waveform.playhead.visible = false;
             return;
         };
+        let should_resume = {
+            let player_ref = player.borrow();
+            match self.pending_loop_disable_at {
+                Some(_) if !player_ref.is_playing() || !player_ref.is_looping() => {
+                    self.pending_loop_disable_at = None;
+                    false
+                }
+                Some(deadline) => Instant::now() >= deadline,
+                None => false,
+            }
+        };
+        if should_resume {
+            self.pending_loop_disable_at = None;
+            player.borrow_mut().stop();
+        }
         let player_ref = player.borrow();
         if let Some(progress) = player_ref.progress() {
             self.ui.waveform.playhead.position = progress;
@@ -229,19 +250,31 @@ impl EguiController {
         Ok(self.player.clone())
     }
 
-    fn resume_without_looping(&mut self) -> Result<(), String> {
+    fn defer_loop_disable_after_cycle(&mut self) -> Result<(), String> {
+        self.pending_loop_disable_at = None;
         let Some(player_rc) = self.ensure_player()? else {
             return Ok(());
         };
-        if !player_rc.borrow().is_playing() {
+        let player_ref = player_rc.borrow();
+        let remaining = player_ref.remaining_loop_duration();
+        let is_playing = player_ref.is_playing();
+        let is_looping = player_ref.is_looping();
+        drop(player_ref);
+
+        if !is_playing || !is_looping {
             return Ok(());
         }
-        let progress = player_rc.borrow().progress();
-        drop(player_rc);
-        if let Some(position) = progress {
-            self.suppress_autoplay_once = true;
-            self.play_audio(false, Some(position))?;
+
+        let Some(remaining) = remaining else {
+            player_rc.borrow_mut().stop();
+            return Ok(());
+        };
+        if remaining <= Duration::from_millis(5) {
+            player_rc.borrow_mut().stop();
+            return Ok(());
         }
+
+        self.pending_loop_disable_at = Some(Instant::now() + remaining);
         Ok(())
     }
 }

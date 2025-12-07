@@ -2,8 +2,8 @@ use super::helpers::{
     RowMetrics, clamp_label_for_width, list_row_height, render_list_row,
     scroll_offset_to_reveal_row,
 };
-use super::*;
 use super::style;
+use super::*;
 use crate::egui_app::state::{CollectionRowView, CollectionSampleView, DragPayload};
 use eframe::egui::{self, Color32, RichText, Stroke, StrokeKind, Ui};
 use std::path::PathBuf;
