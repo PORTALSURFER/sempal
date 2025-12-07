@@ -69,6 +69,42 @@ impl EguiApp {
                     columns[1].with_layout(
                         egui::Layout::right_to_left(egui::Align::Center),
                         |ui| {
+                            let mut close_menu = false;
+                            ui.menu_button("Options", |ui| {
+                                let palette = style::palette();
+                                let label = self
+                                    .controller
+                                    .ui
+                                    .trash_folder
+                                    .as_ref()
+                                    .map(|p| p.display().to_string())
+                                    .unwrap_or_else(|| "Not set".to_string());
+                                ui.label(RichText::new(label).color(palette.text_primary));
+                                if ui.button("Choose trash folder...").clicked() {
+                                    self.controller.pick_trash_folder();
+                                    close_menu = true;
+                                }
+                                if ui.button("Open trash folder").clicked() {
+                                    self.controller.open_trash_folder();
+                                    close_menu = true;
+                                }
+                                ui.separator();
+                                if ui.button("Move trashed samples to folder").clicked() {
+                                    self.controller.move_all_trashed_to_folder();
+                                    close_menu = true;
+                                }
+                                let take_out = egui::Button::new(
+                                    RichText::new("Take out trash")
+                                        .color(style::destructive_text()),
+                                );
+                                if ui.add(take_out).clicked() {
+                                    self.controller.take_out_trash();
+                                    close_menu = true;
+                                }
+                                if close_menu {
+                                    ui.close();
+                                }
+                            });
                             let mut volume = self.controller.ui.volume;
                             let slider = egui::Slider::new(&mut volume, 0.0..=1.0)
                                 .text("Vol")

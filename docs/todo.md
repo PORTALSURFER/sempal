@@ -1,10 +1,6 @@
 \plan - lets do a housekeeping pass, clean up the codebase, reduce file lengths, improve DRYness, improve maintainability, collapse large structs/objects into clearly named smaller objects, add missing docs, improve symbol naming, find and resolve bugs, improve performance, etc.
 
 --
-\plan - lets add an options menu, lets add an option to choose a 'trash' folder on disk.
-lets add a feature users can use to trash all trashed files (tagged), add a warning asking the user if they are sure, this should physically move all the trash marked files to this trash folder.
-lets also add a 'take out trash' option, also with a warning, which should hard delete all files in the trash folder.
-lets also add an option to open the trash folder in the OS file explorer.
 
 - lets add the trash/keep tagging system to the collection list as well. with full coloring etc.
 

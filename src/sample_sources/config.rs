@@ -18,6 +18,8 @@ pub struct AppConfig {
     #[serde(default)]
     pub feature_flags: FeatureFlags,
     #[serde(default)]
+    pub trash_folder: Option<PathBuf>,
+    #[serde(default)]
     pub last_selected_source: Option<super::SourceId>,
     #[serde(default = "default_volume")]
     pub volume: f32,
@@ -164,6 +166,18 @@ mod tests {
         let loaded = load_from(&path).unwrap();
         assert!((loaded.volume - 0.42).abs() < f32::EPSILON);
     }
+
+    #[test]
+    fn trash_folder_round_trips() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("cfg.json");
+        let trash = dir.path().join("trash_bin");
+        let mut cfg = AppConfig::default();
+        cfg.trash_folder = Some(trash.clone());
+        save_to_path(&cfg, &path).unwrap();
+        let loaded = load_from(&path).unwrap();
+        assert_eq!(loaded.trash_folder, Some(trash));
+    }
 }
 
 fn default_true() -> bool {
@@ -180,6 +194,7 @@ impl Default for AppConfig {
             sources: Vec::new(),
             collections: Vec::new(),
             feature_flags: FeatureFlags::default(),
+            trash_folder: None,
             last_selected_source: None,
             volume: default_volume(),
         }

@@ -14,6 +14,7 @@ mod sample_browser_actions;
 mod scans;
 mod selection_export;
 mod sources;
+mod trash;
 mod wavs;
 
 use crate::{
@@ -69,6 +70,7 @@ pub struct EguiController {
     suppress_autoplay_once: bool,
     pending_loop_disable_at: Option<Instant>,
     feature_flags: crate::sample_sources::config::FeatureFlags,
+    trash_folder: Option<std::path::PathBuf>,
     selection: SelectionState,
     wav_job_tx: Sender<WavLoadJob>,
     wav_job_rx: Receiver<WavLoadResult>,
@@ -104,6 +106,7 @@ impl EguiController {
             suppress_autoplay_once: false,
             pending_loop_disable_at: None,
             feature_flags: crate::sample_sources::config::FeatureFlags::default(),
+            trash_folder: None,
             selection: SelectionState::new(),
             wav_job_tx,
             wav_job_rx,

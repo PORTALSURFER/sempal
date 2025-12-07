@@ -5,8 +5,10 @@ impl EguiController {
     pub fn load_configuration(&mut self) -> Result<(), crate::sample_sources::config::ConfigError> {
         let cfg = crate::sample_sources::config::load_or_default()?;
         self.feature_flags = cfg.feature_flags;
+        self.trash_folder = cfg.trash_folder.clone();
         self.ui.collections.enabled = self.feature_flags.collections_enabled;
         self.apply_volume(cfg.volume);
+        self.ui.trash_folder = cfg.trash_folder.clone();
         let mut sources = cfg.sources.clone();
         let original_count = sources.len();
         sources.retain(|s| s.root.is_dir());
@@ -39,6 +41,7 @@ impl EguiController {
             sources: self.sources.clone(),
             collections: self.collections.clone(),
             feature_flags: self.feature_flags.clone(),
+            trash_folder: self.trash_folder.clone(),
             last_selected_source: self.selected_source.clone(),
             volume: self.ui.volume,
         })
