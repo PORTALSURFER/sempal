@@ -1,6 +1,6 @@
 use super::helpers::{
-    NumberColumn, RowMetrics, clamp_label_for_width, list_row_height, number_column_width,
-    render_list_row, scroll_offset_to_reveal_row,
+    NumberColumn, RowMarker, RowMetrics, clamp_label_for_width, list_row_height,
+    number_column_width, render_list_row, scroll_offset_to_reveal_row,
 };
 use super::style;
 use super::*;
@@ -62,6 +62,15 @@ impl EguiApp {
                         let is_loaded = loaded_row == Some(row);
                         let row_width = ui.available_width();
                         let padding = ui.spacing().button_padding.x * 2.0;
+                        let triage_marker =
+                            style::triage_marker_color(tag).map(|color| RowMarker {
+                                width: style::triage_marker_width(),
+                                color,
+                            });
+                        let trailing_space = triage_marker
+                            .as_ref()
+                            .map(|marker| marker.width + padding * 0.5)
+                            .unwrap_or(0.0);
                         let mut label = self
                             .controller
                             .wav_label(entry_index)
@@ -69,9 +78,14 @@ impl EguiApp {
                         if is_loaded {
                             label.push_str(" • loaded");
                         }
-                        let label_width = row_width - padding - number_width - number_gap;
+                        let label_width =
+                            row_width - padding - number_width - number_gap - trailing_space;
                         let label = clamp_label_for_width(&label, label_width);
-                        let bg = style::triage_row_bg(tag, false);
+                        let bg = if is_selected || is_focused {
+                            Some(style::row_selected_fill())
+                        } else {
+                            None
+                        };
                         let number_text = format!("{}", row + 1);
                         ui.push_id(&path, |ui| {
                             let response = render_list_row(
@@ -87,18 +101,19 @@ impl EguiApp {
                                     width: number_width,
                                     color: palette.text_muted,
                                 }),
+                                triage_marker,
                             );
                             if is_selected {
                                 let marker_width = 4.0;
                                 let marker_rect = egui::Rect::from_min_max(
                                     response.rect.left_top(),
-                                    response
-                                        .rect
-                                        .left_top()
-                                        + egui::vec2(marker_width, row_height),
+                                    response.rect.left_top() + egui::vec2(marker_width, row_height),
                                 );
-                                ui.painter()
-                                    .rect_filled(marker_rect, 0.0, style::selection_marker_fill());
+                                ui.painter().rect_filled(
+                                    marker_rect,
+                                    0.0,
+                                    style::selection_marker_fill(),
+                                );
                             }
                             if response.clicked() {
                                 let modifiers = ui.input(|i| i.modifiers);
@@ -216,11 +231,7 @@ impl EguiApp {
             let delete_btn =
                 egui::Button::new(RichText::new("Delete file").color(style::destructive_text()));
             if ui.add(delete_btn).clicked() {
-                if self
-                    .controller
-                    .delete_browser_samples(&action_rows)
-                    .is_ok()
-                {
+                if self.controller.delete_browser_samples(&action_rows).is_ok() {
                     close_menu = true;
                 }
             }

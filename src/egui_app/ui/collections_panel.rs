@@ -1,6 +1,6 @@
 use super::helpers::{
-    NumberColumn, RowMetrics, clamp_label_for_width, list_row_height, number_column_width,
-    render_list_row, scroll_offset_to_reveal_row,
+    NumberColumn, RowMarker, RowMetrics, clamp_label_for_width, list_row_height,
+    number_column_width, render_list_row, scroll_offset_to_reveal_row,
 };
 use super::style;
 use super::*;
@@ -57,6 +57,7 @@ impl EguiApp {
                                 bg,
                                 text_color,
                                 egui::Sense::click(),
+                                None,
                                 None,
                             );
                             if response.clicked() {
@@ -160,15 +161,30 @@ impl EguiApp {
                         let is_selected = Some(row) == selected_row;
                         let is_duplicate_hover =
                             drag_active && active_drag_path.as_ref().is_some_and(|p| p == &path);
+                        let triage_marker =
+                            style::triage_marker_color(sample.tag).map(|color| RowMarker {
+                                width: style::triage_marker_width(),
+                                color,
+                            });
+                        let trailing_space = triage_marker
+                            .as_ref()
+                            .map(|marker| marker.width + padding * 0.5)
+                            .unwrap_or(0.0);
                         let bg = if is_duplicate_hover {
                             Some(style::duplicate_hover_fill())
+                        } else if is_selected {
+                            Some(style::row_selected_fill())
                         } else {
-                            style::triage_row_bg(sample.tag, is_selected)
+                            None
                         };
                         ui.push_id(
                             format!("{}:{}:{}", sample.source_id, sample.source, sample.label),
                             |ui| {
-                                let label_width = row_width - padding - number_width - number_gap;
+                                let label_width = row_width
+                                    - padding
+                                    - number_width
+                                    - number_gap
+                                    - trailing_space;
                                 let number_text = format!("{}", row + 1);
                                 let response = render_list_row(
                                     ui,
@@ -183,6 +199,7 @@ impl EguiApp {
                                         width: number_width,
                                         color: palette.text_muted,
                                     }),
+                                    triage_marker,
                                 );
                                 if response.clicked() {
                                     self.controller.select_collection_sample(row);

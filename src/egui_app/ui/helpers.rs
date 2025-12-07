@@ -8,6 +8,12 @@ pub(super) struct NumberColumn<'a> {
     pub color: Color32,
 }
 
+/// Optional marker rendered along the trailing edge of a list row.
+pub(super) struct RowMarker {
+    pub width: f32,
+    pub color: Color32,
+}
+
 /// Estimate a width that comfortably fits numbering for the given row count.
 pub(super) fn number_column_width(total_rows: usize, ui: &Ui) -> f32 {
     let digits = total_rows.max(1).to_string().len() as f32;
@@ -61,6 +67,7 @@ pub(super) fn render_list_row(
     text_color: Color32,
     sense: egui::Sense,
     number: Option<NumberColumn<'_>>,
+    marker: Option<RowMarker>,
 ) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(egui::vec2(row_width, row_height), sense);
     let mut fill = bg;
@@ -69,6 +76,14 @@ pub(super) fn render_list_row(
     }
     if let Some(color) = fill {
         ui.painter().rect_filled(rect, 0.0, color);
+    }
+    if let Some(marker) = marker {
+        let width = marker.width.max(0.0);
+        let marker_rect = egui::Rect::from_min_max(
+            rect.right_top() - egui::vec2(width, 0.0),
+            rect.right_bottom(),
+        );
+        ui.painter().rect_filled(marker_rect, 0.0, marker.color);
     }
     ui.painter()
         .rect_stroke(rect, 0.0, style::inner_border(), StrokeKind::Inside);
