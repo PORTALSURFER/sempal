@@ -204,21 +204,49 @@ impl EguiController {
         let Some(source) = self.current_source() else {
             return Err("Select a source first".into());
         };
-        let db = self.database_for(&source).map_err(|err| err.to_string())?;
-        let Some(index) = self.wav_lookup.get(path).copied() else {
-            return Err("Sample not found".into());
-        };
-        if let Some(entry) = self.wav_entries.get_mut(index) {
-            entry.tag = target_tag;
+        self.set_sample_tag_for_source(&source, path, target_tag, true)
+    }
+
+    pub(super) fn set_sample_tag_for_source(
+        &mut self,
+        source: &SampleSource,
+        path: &Path,
+        target_tag: SampleTag,
+        require_present: bool,
+    ) -> Result<(), String> {
+        let db = self.database_for(source).map_err(|err| err.to_string())?;
+        self.apply_tag_to_caches(source, path, target_tag, require_present)?;
+        let _ = db.set_tag(path, target_tag);
+        if self.selected_source.as_ref() == Some(&source.id) {
+            self.rebuild_triage_lists();
+            if require_present {
+                self.select_wav_by_path(path);
+            }
+        }
+        Ok(())
+    }
+
+    fn apply_tag_to_caches(
+        &mut self,
+        source: &SampleSource,
+        path: &Path,
+        target_tag: SampleTag,
+        require_present: bool,
+    ) -> Result<(), String> {
+        if self.selected_source.as_ref() == Some(&source.id) {
+            if let Some(index) = self.wav_lookup.get(path).copied() {
+                if let Some(entry) = self.wav_entries.get_mut(index) {
+                    entry.tag = target_tag;
+                }
+            } else if require_present {
+                return Err("Sample not found".into());
+            }
         }
         if let Some(cache) = self.wav_cache.get_mut(&source.id) {
-            if let Some(entry) = cache.get_mut(index) {
+            if let Some(entry) = cache.iter_mut().find(|entry| entry.relative_path == path) {
                 entry.tag = target_tag;
             }
         }
-        let _ = db.set_tag(path, target_tag);
-        self.rebuild_triage_lists();
-        self.select_wav_by_path(path);
         Ok(())
     }
 
