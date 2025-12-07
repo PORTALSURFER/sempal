@@ -1,3 +1,13 @@
+## [unreleased]
+
+### 🚀 Features
+
+- Drag drop to daw
+
+### 🐛 Bug Fixes
+
+- Can drag out of window now
+- Restore external drag paths and auto-scan new sources
 ## [0.140.0] - 2025-12-07
 
 ### 🚀 Features

@@ -5,6 +5,8 @@ pub mod audio;
 pub mod egui_app;
 /// Platform helpers for external drag-and-drop.
 pub mod external_drag;
+/// Platform helpers for copying files to the clipboard.
+pub mod external_clipboard;
 /// Sample source management.
 pub mod sample_sources;
 /// Selection math utilities.
