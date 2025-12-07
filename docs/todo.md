@@ -1,4 +1,4 @@
-- lets do a housekeeping pass, clean up the codebase, reduce file lengths, improve maintainability, add missing docs, find and resolve bugs, improve performance, etc.
+- lets do a housekeeping pass, clean up the codebase, reduce file lengths, improve maintainability, add missing docs, improve symbol naming, find and resolve bugs, improve performance, etc.
 
 --
 \plan - add some usage documentation to /docs/usage.md
