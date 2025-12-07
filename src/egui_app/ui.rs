@@ -79,6 +79,10 @@ impl eframe::App for EguiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.apply_visuals(ctx);
         self.controller.tick_playhead();
+        if let Some(pos) = ctx.input(|i| i.pointer.hover_pos().or_else(|| i.pointer.interact_pos()))
+        {
+            self.controller.refresh_drag_position(pos);
+        }
         if self.controller.ui.drag.payload.is_some() && !ctx.input(|i| i.pointer.primary_down()) {
             self.controller.finish_active_drag();
         }

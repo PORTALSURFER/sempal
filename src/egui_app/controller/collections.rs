@@ -154,25 +154,20 @@ impl EguiController {
         let Some(source) = self.current_source() else {
             return Err("Select a source first".into());
         };
-        self.ensure_sample_db_entry(&source, relative_path)?;
-        let mut collections = self.collections.clone();
-        let Some(collection) = collections.iter_mut().find(|c| &c.id == collection_id) else {
-            return Err("Collection not found".into());
-        };
-        let new_member = CollectionMember {
-            source_id: source.id.clone(),
-            relative_path: relative_path.to_path_buf(),
-        };
-        let added = collection.add_member(
-            new_member.source_id.clone(),
-            new_member.relative_path.clone(),
-        );
-        self.collections = collections;
-        if !added {
-            self.set_status("Already in collection", StatusTone::Info);
-            return Ok(());
+        self.add_sample_to_collection_for_source(collection_id, &source, relative_path)
+    }
+
+    /// Add a sample to the given collection id using an explicit source (used by selection exports).
+    pub fn add_sample_to_collection_for_source(
+        &mut self,
+        collection_id: &CollectionId,
+        source: &SampleSource,
+        relative_path: &Path,
+    ) -> Result<(), String> {
+        if !self.feature_flags.collections_enabled {
+            return Err("Collections are disabled".into());
         }
-        self.finalize_collection_add(collection_id, &new_member, relative_path)
+        self.add_sample_to_collection_inner(collection_id, source, relative_path)
     }
 
     pub fn nudge_collection_sample(&mut self, offset: isize) {
@@ -255,6 +250,33 @@ impl EguiController {
     pub(super) fn current_collection(&self) -> Option<Collection> {
         let selected = self.selected_collection.as_ref()?;
         self.collections.iter().find(|c| &c.id == selected).cloned()
+    }
+
+    fn add_sample_to_collection_inner(
+        &mut self,
+        collection_id: &CollectionId,
+        source: &SampleSource,
+        relative_path: &Path,
+    ) -> Result<(), String> {
+        self.ensure_sample_db_entry(source, relative_path)?;
+        let mut collections = self.collections.clone();
+        let Some(collection) = collections.iter_mut().find(|c| &c.id == collection_id) else {
+            return Err("Collection not found".into());
+        };
+        let new_member = CollectionMember {
+            source_id: source.id.clone(),
+            relative_path: relative_path.to_path_buf(),
+        };
+        let added = collection.add_member(
+            new_member.source_id.clone(),
+            new_member.relative_path.clone(),
+        );
+        self.collections = collections;
+        if !added {
+            self.set_status("Already in collection", StatusTone::Info);
+            return Ok(());
+        }
+        self.finalize_collection_add(collection_id, &new_member, relative_path)
     }
 
     fn finalize_collection_add(
