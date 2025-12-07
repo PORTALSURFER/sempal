@@ -1,15 +1,5 @@
 # Sempal usage guide
 
-## Prerequisites and installation
-- Requires Rust (stable toolchain) and `cargo`.
-- Audio playback uses your default output device; ensure one is available before launching.
-- Sempal tracks `.wav` files. Each source folder contains a hidden `.sempal_samples.db` that stores the index and your keep/trash tags.
-- Configuration is saved under your OS config directory (e.g., `$HOME/.config/com/sempal/sempal/config.json` on Linux, `%APPDATA%\\com\\sempal\\sempal\\config.json` on Windows, `~/Library/Application Support/com.sempal.sempal/config.json` on macOS).
-
-## Launching the app
-- From the project root: `cargo run --release`.
-- To run a built binary after compiling: `target/release/sempal`.
-
 ## Interface tour
 - **Sources (left):** Folders you added; click to load their samples.
 - **Waveform viewer (center, top):** Displays the current `.wav`, supports seeking, looping, and range selection.
@@ -54,5 +44,5 @@
 - `Left Arrow`: Trash (or Keep → Neutral).
 - `Ctrl/Cmd + Right/Left`: Cycle triage filter chips.
 - `Shift + drag` on waveform: Create/adjust a selection; `Shift + click` clears.
-- Drag sample rows: Retag via the Samples list or drop into a collection.
+- Drag sample rows: Drop into a collection.
 - Drag selection handle: Export a trimmed clip to the Samples list or a collection.
