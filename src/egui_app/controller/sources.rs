@@ -1,4 +1,5 @@
 use super::*;
+use super::collection_export;
 use super::collection_export::delete_exported_file;
 
 impl EguiController {
@@ -71,9 +72,10 @@ impl EguiController {
         self.db_cache.remove(&removed.id);
         for collection in self.collections.iter_mut() {
             let export_root = collection.export_path.clone();
+            let folder_name = collection_export::collection_folder_name(collection);
             let removed_members = collection.prune_source(&removed.id);
             for member in removed_members {
-                delete_exported_file(export_root.clone(), &member);
+                delete_exported_file(export_root.clone(), &folder_name, &member);
             }
         }
         if self
@@ -114,9 +116,10 @@ impl EguiController {
         self.db_cache.remove(&removed.id);
         for collection in self.collections.iter_mut() {
             let export_root = collection.export_path.clone();
+            let folder_name = collection_export::collection_folder_name(collection);
             let removed_members = collection.prune_source(&removed.id);
             for member in removed_members {
-                delete_exported_file(export_root.clone(), &member);
+                delete_exported_file(export_root.clone(), &folder_name, &member);
             }
         }
         if self
