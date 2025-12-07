@@ -2,6 +2,7 @@
 //! Shared state types for the egui UI.
 // Temporary while the egui UI is being wired; types will be exercised by the renderer next.
 
+use crate::egui_app::ui::style;
 use crate::sample_sources::{CollectionId, SourceId};
 use crate::selection::SelectionRange;
 use egui::{Color32, Pos2};
@@ -49,7 +50,7 @@ impl StatusBarState {
         Self {
             text: "Add a sample source to get started".into(),
             badge_label: "Idle".into(),
-            badge_color: Color32::from_rgb(42, 42, 42),
+            badge_color: style::status_badge_color(style::StatusTone::Idle),
         }
     }
 }

@@ -4,15 +4,9 @@ use egui::viewport::IconData;
 use sempal::audio::AudioPlayer;
 use sempal::egui_app::ui::{EguiApp, MIN_VIEWPORT_SIZE};
 use sempal::waveform::WaveformRenderer;
-use std::env;
 
 /// Launch the egui UI.
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // SAFETY: wgpu picks its backend via this env var; we want to force Vulkan for all runs.
-    unsafe {
-        env::set_var("WGPU_BACKEND", "vulkan");
-    }
-
     let renderer = WaveformRenderer::new(680, 260);
     let player = None::<std::rc::Rc<std::cell::RefCell<AudioPlayer>>>;
 

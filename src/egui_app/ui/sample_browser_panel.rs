@@ -6,7 +6,7 @@ use super::style;
 use super::*;
 use crate::egui_app::state::TriageFlagFilter;
 use crate::sample_sources::SampleTag;
-use eframe::egui::{self, Color32, RichText, Stroke, StrokeKind, Ui};
+use eframe::egui::{self, Color32, RichText, StrokeKind, Ui};
 use std::path::Path;
 
 impl EguiApp {
@@ -134,7 +134,7 @@ impl EguiApp {
                     ui.painter().rect_stroke(
                         frame_response.response.rect,
                         0.0,
-                        Stroke::new(2.0, Color32::from_rgba_unmultiplied(80, 140, 200, 180)),
+                        style::drag_target_stroke(),
                         StrokeKind::Inside,
                     );
                 }
@@ -150,8 +150,9 @@ impl EguiApp {
         label: &str,
     ) {
         response.context_menu(|ui| {
+            let palette = style::palette();
             let mut close_menu = false;
-            ui.label(RichText::new(label.to_string()).color(Color32::LIGHT_GRAY));
+            ui.label(RichText::new(label.to_string()).color(palette.text_primary));
             self.sample_tag_menu(ui, &mut close_menu, |app, tag| {
                 app.controller.tag_browser_sample(row, tag).is_ok()
             });
@@ -172,9 +173,8 @@ impl EguiApp {
             }) {
                 close_menu = true;
             }
-            let delete_btn = egui::Button::new(
-                RichText::new("Delete file").color(Color32::from_rgb(255, 160, 160)),
-            );
+            let delete_btn =
+                egui::Button::new(RichText::new("Delete file").color(style::destructive_text()));
             if ui.add(delete_btn).clicked() {
                 if self.controller.delete_browser_sample(row).is_ok() {
                     close_menu = true;
@@ -212,23 +212,9 @@ impl EguiApp {
 }
 
 fn triage_row_bg(tag: SampleTag, is_selected: bool) -> Option<Color32> {
-    let palette = style::palette();
     match tag {
-        SampleTag::Trash => Some(if is_selected {
-            Color32::from_rgba_unmultiplied(216, 108, 88, 170)
-        } else {
-            Color32::from_rgba_unmultiplied(140, 68, 60, 120)
-        }),
-        SampleTag::Keep => Some(if is_selected {
-            Color32::from_rgba_unmultiplied(
-                palette.success.r(),
-                palette.success.g(),
-                palette.success.b(),
-                170,
-            )
-        } else {
-            Color32::from_rgba_unmultiplied(40, 110, 98, 120)
-        }),
+        SampleTag::Trash => Some(style::triage_trash_bg(is_selected)),
+        SampleTag::Keep => Some(style::triage_keep_bg(is_selected)),
         SampleTag::Neutral => is_selected.then_some(style::row_selected_fill()),
     }
 }
