@@ -1,6 +1,6 @@
 use super::helpers::{
-    RowMetrics, clamp_label_for_width, list_row_height, render_list_row,
-    scroll_offset_to_reveal_row,
+    NumberColumn, RowMetrics, clamp_label_for_width, list_row_height, number_column_width,
+    render_list_row, scroll_offset_to_reveal_row,
 };
 use super::style;
 use super::*;
@@ -34,6 +34,8 @@ impl EguiApp {
             .fill(style::compartment_fill())
             .stroke(style::outer_border());
         let frame_response = bg_frame.show(ui, |ui| {
+            let number_width = number_column_width(total_rows, ui);
+            let number_gap = ui.spacing().button_padding.x * 0.5;
             let scroll_response = egui::ScrollArea::vertical()
                 .id_salt("sample_browser_scroll")
                 .max_height(list_height)
@@ -61,8 +63,10 @@ impl EguiApp {
                         if is_loaded {
                             label.push_str(" • loaded");
                         }
-                        let label = clamp_label_for_width(&label, row_width - padding);
+                        let label_width = row_width - padding - number_width - number_gap;
+                        let label = clamp_label_for_width(&label, label_width);
                         let bg = triage_row_bg(tag, is_selected);
+                        let number_text = format!("{}", row + 1);
                         ui.push_id(&path, |ui| {
                             let response = render_list_row(
                                 ui,
@@ -72,6 +76,11 @@ impl EguiApp {
                                 bg,
                                 palette.text_primary,
                                 egui::Sense::click_and_drag(),
+                                Some(NumberColumn {
+                                    text: &number_text,
+                                    width: number_width,
+                                    color: palette.text_muted,
+                                }),
                             );
                             if response.clicked() {
                                 self.controller.select_from_browser(&path);

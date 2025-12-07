@@ -1,6 +1,21 @@
 use super::style;
 use eframe::egui::{self, Align2, Color32, StrokeKind, TextStyle, Ui};
 
+/// Metadata for rendering a fixed-width number column alongside a list row.
+pub(super) struct NumberColumn<'a> {
+    pub text: &'a str,
+    pub width: f32,
+    pub color: Color32,
+}
+
+/// Estimate a width that comfortably fits numbering for the given row count.
+pub(super) fn number_column_width(total_rows: usize, ui: &Ui) -> f32 {
+    let digits = total_rows.max(1).to_string().len() as f32;
+    let approx_char_width = 8.0;
+    let padding = ui.spacing().button_padding.x;
+    padding * 1.5 + digits * approx_char_width
+}
+
 #[derive(Clone, Copy)]
 pub(super) struct RowMetrics {
     pub height: f32,
@@ -45,6 +60,7 @@ pub(super) fn render_list_row(
     bg: Option<Color32>,
     text_color: Color32,
     sense: egui::Sense,
+    number: Option<NumberColumn<'_>>,
 ) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(egui::vec2(row_width, row_height), sense);
     let mut fill = bg;
@@ -56,11 +72,30 @@ pub(super) fn render_list_row(
     }
     ui.painter()
         .rect_stroke(rect, 0.0, style::inner_border(), StrokeKind::Inside);
-    let padding = ui.spacing().button_padding;
     let font_id = TextStyle::Button.resolve(ui.style());
-    let text_pos = rect.left_center() + egui::vec2(padding.x, 0.0);
-    ui.painter()
-        .text(text_pos, Align2::LEFT_CENTER, label, font_id, text_color);
+    let padding = ui.spacing().button_padding.x;
+    let number_gap = padding * 0.5;
+    let mut number_width = 0.0;
+    if let Some(column) = number {
+        number_width = column.width.max(0.0);
+        let x = rect.left() + padding + number_width;
+        ui.painter().text(
+            egui::pos2(x, rect.center().y),
+            Align2::RIGHT_CENTER,
+            column.text,
+            font_id.clone(),
+            column.color,
+        );
+        number_width += number_gap;
+    }
+    let label_x = rect.left() + padding + number_width;
+    ui.painter().text(
+        egui::pos2(label_x, rect.center().y),
+        Align2::LEFT_CENTER,
+        label,
+        font_id,
+        text_color,
+    );
     response
 }
 
