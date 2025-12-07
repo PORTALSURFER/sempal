@@ -3,7 +3,8 @@ use super::helpers::{
     scroll_offset_to_reveal_row,
 };
 use super::*;
-use crate::egui_app::state::{CollectionRowView, DragPayload};
+use crate::egui_app::state::{CollectionRowView, CollectionSampleView, DragPayload};
+use crate::sample_sources::SampleTag;
 use eframe::egui::{self, Color32, RichText, Stroke, Ui};
 use std::path::PathBuf;
 
@@ -175,6 +176,7 @@ impl EguiApp {
                                 if response.clicked() {
                                     self.controller.select_collection_sample(row);
                                 }
+                                self.collection_sample_menu(&response, row, sample);
                                 if is_duplicate_hover {
                                     ui.painter().rect_stroke(
                                         response.rect.expand(2.0),
@@ -235,6 +237,108 @@ impl EguiApp {
                 }
             }
         }
+    }
+
+    fn collection_sample_menu(
+        &mut self,
+        response: &egui::Response,
+        row: usize,
+        sample: &CollectionSampleView,
+    ) {
+        response.context_menu(|ui| {
+            let mut close_menu = false;
+            ui.label(RichText::new(sample.label.clone()).color(Color32::LIGHT_GRAY));
+            self.sample_tag_menu(ui, row, &mut close_menu);
+            if ui
+                .button("Normalize (overwrite)")
+                .on_hover_text("Scale to full range and overwrite the wav")
+                .clicked()
+            {
+                if self.controller.normalize_collection_sample(row).is_ok() {
+                    close_menu = true;
+                }
+            }
+            ui.separator();
+            if self.sample_rename_controls(ui, row, sample) {
+                close_menu = true;
+            }
+            let delete_btn = egui::Button::new(
+                RichText::new("Delete from collection").color(Color32::from_rgb(255, 160, 160)),
+            );
+            if ui.add(delete_btn).clicked() {
+                if self.controller.delete_collection_sample(row).is_ok() {
+                    close_menu = true;
+                }
+            }
+            if close_menu {
+                ui.close_menu();
+            }
+        });
+    }
+
+    fn sample_tag_menu(&mut self, ui: &mut egui::Ui, row: usize, close_menu: &mut bool) {
+        ui.menu_button("Tag", |ui| {
+            let mut tag_clicked = false;
+            tag_clicked |= ui.button("Trash").clicked()
+                && self
+                    .controller
+                    .tag_collection_sample(row, SampleTag::Trash)
+                    .is_ok();
+            tag_clicked |= ui.button("Neutral").clicked()
+                && self
+                    .controller
+                    .tag_collection_sample(row, SampleTag::Neutral)
+                    .is_ok();
+            tag_clicked |= ui.button("Keep").clicked()
+                && self
+                    .controller
+                    .tag_collection_sample(row, SampleTag::Keep)
+                    .is_ok();
+            if tag_clicked {
+                *close_menu = true;
+                ui.close_menu();
+            }
+        });
+    }
+
+    fn sample_rename_controls(
+        &mut self,
+        ui: &mut egui::Ui,
+        row: usize,
+        sample: &CollectionSampleView,
+    ) -> bool {
+        ui.label("Rename");
+        let default_name = sample
+            .path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(&sample.label);
+        let rename_id = ui.make_persistent_id(format!(
+            "rename:sample:{}:{}",
+            sample.source_id,
+            sample.path.display()
+        ));
+        let mut value = ui.ctx().data_mut(|data| {
+            let value = data.get_temp_mut_or_default::<String>(rename_id);
+            if value.is_empty() {
+                *value = default_name.to_string();
+            }
+            value.clone()
+        });
+        let edit = ui.text_edit_singleline(&mut value);
+        ui.ctx()
+            .data_mut(|data| data.insert_temp(rename_id, value.clone()));
+        let requested = edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+        if ui.button("Apply rename").clicked() || requested {
+            if self
+                .controller
+                .rename_collection_sample(row, value.as_str())
+                .is_ok()
+            {
+                return true;
+            }
+        }
+        false
     }
 
     fn collection_row_menu(&mut self, response: &egui::Response, collection: &CollectionRowView) {
