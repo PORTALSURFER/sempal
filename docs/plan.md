@@ -17,6 +17,8 @@
 8. [x] Prompt for export path when creating a new collection via the existing add flow.
 9. [x] Nest exports under per-collection subfolders inside the chosen base directory.
 10. [x] Add an option to open the collection export folder in the OS file explorer.
+11. [x] Flatten exports and refresh to ignore subfolders and keep files at the collection export root.
+12. [x] Allow renaming collections and their export folder from the UI.
 
 ## Code Style & Architecture Rules Reminder
 - File and module structure

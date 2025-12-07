@@ -1,4 +1,5 @@
 use super::*;
+use super::collection_export;
 use crate::sample_sources::collections::CollectionMember;
 
 impl EguiController {
@@ -80,6 +81,61 @@ impl EguiController {
                 self.set_status("No export folder chosen; exports disabled", StatusTone::Warning);
             }
         }
+    }
+
+    /// Rename a collection and its export folder if configured.
+    pub fn rename_collection(&mut self, collection_id: &CollectionId, new_name: String) {
+        let trimmed = new_name.trim();
+        if trimmed.is_empty() {
+            self.set_status("Collection name cannot be empty", StatusTone::Error);
+            return;
+        }
+        let Some(index) = self.collections.iter().position(|c| &c.id == collection_id) else {
+            self.set_status("Collection not found", StatusTone::Error);
+            return;
+        };
+        let old_name = self.collections[index].name.clone();
+        let export_root = self.collections[index].export_path.clone();
+        let new_folder_name = collection_export::collection_folder_name_from_str(trimmed);
+        if let Some(root) = export_root.clone() {
+            let old_folder =
+                root.join(collection_export::collection_folder_name(&self.collections[index]));
+            let new_folder = root.join(&new_folder_name);
+            if old_folder != new_folder {
+                if new_folder.exists() {
+                    self.set_status(
+                        format!("Export folder already exists: {}", new_folder.display()),
+                        StatusTone::Error,
+                    );
+                    return;
+                }
+                if old_folder.exists() {
+                    if let Err(err) = std::fs::rename(&old_folder, &new_folder) {
+                        self.set_status(
+                            format!("Failed to rename export folder: {err}"),
+                            StatusTone::Error,
+                        );
+                        return;
+                    }
+                } else if let Err(err) = std::fs::create_dir_all(&new_folder) {
+                    self.set_status(
+                        format!("Failed to create export folder: {err}"),
+                        StatusTone::Error,
+                    );
+                    return;
+                }
+            }
+        }
+        self.collections[index].name = trimmed.to_string();
+        if let Err(err) = self.persist_config("Failed to save collection") {
+            self.set_status(err, StatusTone::Error);
+            return;
+        }
+        self.refresh_collections_ui();
+        self.set_status(
+            format!("Renamed collection '{old_name}' to '{}'", trimmed),
+            StatusTone::Info,
+        );
     }
 
     /// Add a sample to the given collection id.

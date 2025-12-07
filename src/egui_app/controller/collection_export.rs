@@ -200,7 +200,7 @@ impl EguiController {
         })
     }
 
-    fn collection_members(&self, collection_id: &CollectionId) -> Vec<CollectionMember> {
+    pub(super) fn collection_members(&self, collection_id: &CollectionId) -> Vec<CollectionMember> {
         self.collections
             .iter()
             .find(|c| &c.id == collection_id)
@@ -283,18 +283,22 @@ fn copy_member_to_export(
 
 fn collect_exported_files(root: &Path) -> Result<Vec<PathBuf>, String> {
     let mut files = Vec::new();
-    let entries = std::fs::read_dir(root)
-        .map_err(|err| format!("Unable to read export folder {}: {err}", root.display()))?;
-    for entry in entries {
-        let entry = entry.map_err(|err| format!("Unable to read export entry: {err}"))?;
-        let path = entry.path();
-        if path.is_file() {
-            let rel = path
-                .strip_prefix(root)
-                .map_err(|err| format!("Path error in export folder: {err}"))?
-                .to_path_buf();
-            if rel.components().count() == 1 {
-                files.push(rel);
+    let mut seen = HashSet::new();
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let entries = std::fs::read_dir(&dir)
+            .map_err(|err| format!("Unable to read export folder {}: {err}", dir.display()))?;
+        for entry in entries {
+            let entry = entry.map_err(|err| format!("Unable to read export entry: {err}"))?;
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+            } else if path.is_file() {
+                if let Some(name) = path.file_name() {
+                    if seen.insert(name.to_os_string()) {
+                        files.push(PathBuf::from(name));
+                    }
+                }
             }
         }
     }
@@ -320,16 +324,7 @@ pub(super) fn export_dir_for(collection: &Collection) -> Result<PathBuf, String>
 }
 
 pub(super) fn collection_folder_name(collection: &Collection) -> String {
-    let mut name = collection.name.clone();
-    name = name
-        .chars()
-        .map(|c| if matches!(c, '/' | '\\' | ':' | '*') { '_' } else { c })
-        .collect();
-    if name.is_empty() {
-        "collection".into()
-    } else {
-        name
-    }
+    collection_folder_name_from_str(&collection.name)
 }
 
 pub(super) fn delete_exported_file(
@@ -346,4 +341,15 @@ pub(super) fn delete_exported_file(
     };
     let target = root.join(folder_name).join(file_name);
     let _ = std::fs::remove_file(target);
+}
+
+pub(super) fn collection_folder_name_from_str(name: &str) -> String {
+    let mut cleaned: String = name
+        .chars()
+        .map(|c| if matches!(c, '/' | '\\' | ':' | '*') { '_' } else { c })
+        .collect();
+    if cleaned.is_empty() {
+        cleaned.push_str("collection");
+    }
+    cleaned
 }
