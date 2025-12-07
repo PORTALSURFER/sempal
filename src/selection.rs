@@ -171,6 +171,16 @@ mod tests {
     }
 
     #[test]
+    fn drag_updates_clamp_outside_bounds() {
+        let mut state = SelectionState::new();
+        state.begin_new(0.3);
+        let first = state.update_drag(-0.5).unwrap();
+        assert_eq!(first, SelectionRange::new(0.0, 0.3));
+        let second = state.update_drag(1.4).unwrap();
+        assert_eq!(second, SelectionRange::new(0.3, 1.0));
+    }
+
+    #[test]
     fn drag_edges_updates_individually() {
         let mut state = SelectionState::new();
         state.begin_new(0.2);
