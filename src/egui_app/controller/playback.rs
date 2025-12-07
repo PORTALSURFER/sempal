@@ -94,37 +94,31 @@ impl EguiController {
         let _ = self.play_audio(self.ui.waveform.loop_enabled, None);
     }
 
-    /// Tag the currently selected wav and keep the current row selected.
+    /// Tag the focused/selected wavs and keep the current focus.
     pub fn tag_selected(&mut self, target: SampleTag) {
         let Some(selected_index) = self.selected_row_index() else {
             return;
         };
-        self.ui.collections.selected_sample = None;
-        self.ui.browser.autoscroll = true;
-        let path = match self.wav_entries.get(selected_index) {
-            Some(entry) => entry.relative_path.clone(),
+        let primary_row = match self
+            .visible_browser_indices()
+            .iter()
+            .position(|idx| *idx == selected_index)
+        {
+            Some(row) => row,
             None => return,
         };
-        let Some(source) = self.current_source() else {
-            return;
-        };
-        let db = match self.database_for(&source) {
-            Ok(db) => db,
-            Err(err) => {
-                self.set_status(err.to_string(), StatusTone::Error);
-                return;
-            }
-        };
-        if let Some(entry) = self.wav_entries.get_mut(selected_index) {
-            entry.tag = target;
-        }
-        if let Some(cache) = self.wav_cache.get_mut(&source.id) {
-            if let Some(entry) = cache.get_mut(selected_index) {
-                entry.tag = target;
+        let rows = self.action_rows_from_primary(primary_row);
+        self.ui.collections.selected_sample = None;
+        self.ui.browser.autoscroll = true;
+        let mut last_error = None;
+        for row in rows {
+            if let Err(err) = self.tag_browser_sample(row, target) {
+                last_error = Some(err);
             }
         }
-        let _ = db.set_tag(&path, target);
-        self.rebuild_browser_lists();
+        if let Some(err) = last_error {
+            self.set_status(err, StatusTone::Error);
+        }
     }
 
     /// Move selection within the current sample browser list by an offset and play.

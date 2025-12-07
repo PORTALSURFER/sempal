@@ -197,6 +197,26 @@ fn left_tagging_from_keep_untags_then_trashes() {
 }
 
 #[test]
+fn hotkey_tagging_applies_to_all_selected_rows() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.cache_db(&source).unwrap();
+    controller.wav_entries = vec![
+        sample_entry("one.wav", SampleTag::Neutral),
+        sample_entry("two.wav", SampleTag::Neutral),
+    ];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+
+    controller.focus_browser_row(0);
+    controller.toggle_browser_row_selection(1);
+    controller.tag_selected_left();
+
+    assert_eq!(controller.wav_entries[0].tag, SampleTag::Trash);
+    assert_eq!(controller.wav_entries[1].tag, SampleTag::Trash);
+}
+
+#[test]
 fn ctrl_click_toggles_selection_and_focuses_row() {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source);
