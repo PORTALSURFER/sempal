@@ -4,10 +4,10 @@ use super::*;
 use crate::sample_sources::collections::CollectionMember;
 use std::path::{Path, PathBuf};
 
-struct TriageSampleContext {
-    source: SampleSource,
-    entry: WavEntry,
-    absolute_path: PathBuf,
+pub(super) struct TriageSampleContext {
+    pub(super) source: SampleSource,
+    pub(super) entry: WavEntry,
+    pub(super) absolute_path: PathBuf,
 }
 
 impl EguiController {
@@ -204,7 +204,7 @@ impl EguiController {
         Ok(collections_changed)
     }
 
-    fn resolve_browser_sample(&self, row: usize) -> Result<TriageSampleContext, String> {
+    pub(super) fn resolve_browser_sample(&self, row: usize) -> Result<TriageSampleContext, String> {
         let source = self
             .current_source()
             .ok_or_else(|| "Select a source first".to_string())?;

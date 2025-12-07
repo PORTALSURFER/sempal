@@ -135,7 +135,9 @@ impl EguiApp {
                             }
                             self.browser_sample_menu(&response, row, &path, &label);
                             if response.drag_started() {
-                                if let Some(pos) = response.interact_pointer_pos() {
+                                if ui.input(|i| i.modifiers.alt) {
+                                    self.controller.start_external_drag_for_browser_row(row);
+                                } else if let Some(pos) = response.interact_pointer_pos() {
                                     let name = path.to_string_lossy().to_string();
                                     self.controller.start_sample_drag(path.clone(), name, pos);
                                 }
