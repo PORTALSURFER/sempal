@@ -205,6 +205,7 @@ pub struct DragState {
     pub hovering_collection: Option<CollectionId>,
     pub hovering_drop_zone: bool,
     pub hovering_browser: Option<TriageFlagColumn>,
+    pub external_started: bool,
 }
 
 /// Collections sidebar and sample list state.

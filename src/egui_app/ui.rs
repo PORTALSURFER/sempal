@@ -20,6 +20,10 @@ use crate::{
 };
 use eframe::egui;
 use eframe::egui::{TextureHandle, Ui, UiBuilder};
+#[cfg(target_os = "windows")]
+use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+#[cfg(target_os = "windows")]
+use windows::Win32::Foundation::HWND;
 
 /// Renders the egui UI using the shared controller state.
 pub struct EguiApp {
@@ -85,10 +89,21 @@ impl EguiApp {
 impl eframe::App for EguiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.apply_visuals(ctx);
+        #[cfg(target_os = "windows")]
+        {
+            let frame = _frame;
+            self.controller
+                .set_drag_hwnd(hwnd_from_frame(frame));
+        }
         self.controller.tick_playhead();
         if let Some(pos) = ctx.input(|i| i.pointer.hover_pos().or_else(|| i.pointer.interact_pos()))
         {
             self.controller.refresh_drag_position(pos);
+        }
+        #[cfg(target_os = "windows")]
+        {
+            let pointer_outside = ctx.input(|i| i.pointer.primary_down() && i.pointer.hover_pos().is_none());
+            self.controller.maybe_launch_external_drag(pointer_outside);
         }
         if self.controller.ui.drag.payload.is_some() && !ctx.input(|i| i.pointer.primary_down()) {
             self.controller.finish_active_drag();
@@ -191,5 +206,14 @@ impl eframe::App for EguiApp {
         });
         self.render_drag_overlay(ctx);
         ctx.request_repaint();
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn hwnd_from_frame(frame: &eframe::Frame) -> Option<HWND> {
+    let handle = frame.window_handle().ok()?;
+    match handle.as_raw() {
+        RawWindowHandle::Win32(win) => Some(HWND(win.hwnd.get() as *mut _)),
+        _ => None,
     }
 }
