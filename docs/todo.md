@@ -20,7 +20,7 @@ lets also add an option to open the trash folder in the OS file explorer.
 
 - if im drawing a new selection of our waveform, but move quickly outside of the waveform frame, we stop sizing it, while not fully touching the wall on that side. lets make it so we keep drawing/adjusting the selection until we release the mouse, not just stop when we move out of the frame
 
-- lets add the trash/keep tagging system to the collection list as well. 
+- lets add the trash/keep tagging system to the collection list as well. with full coloring etc.
 
 - lets add an alt+drag feature for the system which allows dragging waveform selections to extract that part of the audio. but in this case, cut the cropped part out of the original sample. Dont destroy the original sample however, save this edited 'original' as a new version. selecting that new one instead.
 
@@ -39,3 +39,7 @@ lets also turn it from json into toml.
 and lets add migration code to find and convert the current config.json format/path to our new system
 
 \plan - make the collection sameple list context menu with all features also work for the regular sample list
+
+\plan - dont show the extensions or folders in our item lists, both for collections and for the regular sample list, show only the sample name
+
+\plan - our icon is not visible in the windows taskbar, it shows some default windows app icon right now.
