@@ -1,6 +1,6 @@
 use super::style;
 use super::*;
-use eframe::egui::{self, Align2, Area, Color32, Frame, Order, RichText, Stroke, Vec2};
+use eframe::egui::{self, Align2, Area, Frame, Order, RichText, Stroke, Vec2};
 
 impl EguiApp {
     pub(super) fn render_drag_overlay(&mut self, ctx: &egui::Context) {
@@ -17,12 +17,7 @@ impl EguiApp {
                 .current_pos(pos + Vec2::new(16.0, 16.0))
                 .show(ctx, |ui| {
                     Frame::new()
-                        .fill(Color32::from_rgba_unmultiplied(
-                            palette.bg_tertiary.r(),
-                            palette.bg_tertiary.g(),
-                            palette.bg_tertiary.b(),
-                            220,
-                        ))
+                        .fill(style::with_alpha(palette.bg_tertiary, 220))
                         .stroke(Stroke::new(1.0, palette.accent_ice))
                         .show(ui, |ui| {
                             ui.horizontal(|ui| {

@@ -22,7 +22,7 @@ use crate::{
         PlayheadState, SampleBrowserState, TriageFlagColumn, TriageFlagFilter, UiState,
         WaveformImage,
     },
-    egui_app::view_model,
+    egui_app::{ui::style, ui::style::StatusTone, view_model},
     sample_sources::{
         Collection, CollectionId, SampleSource, SampleTag, SourceDatabase, SourceDbError, SourceId,
         WavEntry,
@@ -123,22 +123,19 @@ impl EguiController {
 }
 
 /// UI status tone for badge coloring.
-#[derive(Clone, Copy, Debug)]
-pub enum StatusTone {
-    Idle,
-    Busy,
-    Info,
-    Warning,
-    Error,
-}
-
 fn status_badge(tone: StatusTone) -> (String, Color32) {
     match tone {
-        StatusTone::Idle => ("Idle".into(), Color32::from_rgb(42, 42, 42)),
-        StatusTone::Busy => ("Working".into(), Color32::from_rgb(31, 139, 255)),
-        StatusTone::Info => ("Info".into(), Color32::from_rgb(64, 140, 112)),
-        StatusTone::Warning => ("Warning".into(), Color32::from_rgb(192, 138, 43)),
-        StatusTone::Error => ("Error".into(), Color32::from_rgb(192, 57, 43)),
+        StatusTone::Idle => ("Idle".into(), style::status_badge_color(StatusTone::Idle)),
+        StatusTone::Busy => (
+            "Working".into(),
+            style::status_badge_color(StatusTone::Busy),
+        ),
+        StatusTone::Info => ("Info".into(), style::status_badge_color(StatusTone::Info)),
+        StatusTone::Warning => (
+            "Warning".into(),
+            style::status_badge_color(StatusTone::Warning),
+        ),
+        StatusTone::Error => ("Error".into(), style::status_badge_color(StatusTone::Error)),
     }
 }
 
