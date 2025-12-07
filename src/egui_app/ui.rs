@@ -27,7 +27,8 @@ pub struct EguiApp {
     waveform_tex: Option<TextureHandle>,
     is_fullscreen: bool,
     windowed_size: egui::Vec2,
-    maximize_requests: u8,
+    window_was_maximized: bool,
+    pending_window_restore: bool,
 }
 
 impl EguiApp {
@@ -47,7 +48,8 @@ impl EguiApp {
             waveform_tex: None,
             is_fullscreen: false,
             windowed_size: Self::default_windowed_size(),
-            maximize_requests: 0,
+            window_was_maximized: false,
+            pending_window_restore: false,
         })
     }
 
@@ -68,12 +70,12 @@ impl EguiApp {
     }
 
     fn update_viewport_state(&mut self, ctx: &egui::Context) {
-        let (fullscreen, inner_rect) =
-            ctx.input(|i| (i.viewport().fullscreen, i.viewport().inner_rect));
-        if let Some(current_fullscreen) = fullscreen {
-            self.is_fullscreen = current_fullscreen;
-        }
+        let (inner_rect, maximized) =
+            ctx.input(|i| (i.viewport().inner_rect, i.viewport().maximized));
         if !self.is_fullscreen {
+            if let Some(maximized) = maximized {
+                self.window_was_maximized = maximized;
+            }
             if let Some(inner_rect) = inner_rect {
                 self.windowed_size = inner_rect.size();
             }
@@ -81,17 +83,41 @@ impl EguiApp {
     }
 
     fn toggle_fullscreen(&mut self, ctx: &egui::Context) {
+        let was_fullscreen = self.is_fullscreen;
+        let new_fullscreen = !was_fullscreen;
         if !self.is_fullscreen {
             if let Some(inner_rect) = ctx.input(|i| i.viewport().inner_rect) {
                 self.windowed_size = inner_rect.size();
             }
+            if let Some(maximized) = ctx.input(|i| i.viewport().maximized) {
+                self.window_was_maximized = maximized;
+            }
         }
-        self.is_fullscreen = !self.is_fullscreen;
-        ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(self.is_fullscreen));
-        if !self.is_fullscreen {
-            ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(self.windowed_size));
-            ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true));
-            self.maximize_requests = 0;
+        self.is_fullscreen = new_fullscreen;
+        self.pending_window_restore = was_fullscreen;
+        ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(new_fullscreen));
+    }
+
+    fn handle_fullscreen_shortcut(&mut self, ctx: &egui::Context) {
+        let mut should_toggle = false;
+        ctx.input(|i| {
+            for ev in &i.events {
+                if let egui::Event::Key {
+                    key,
+                    pressed: true,
+                    repeat,
+                    ..
+                } = ev
+                {
+                    if *key == egui::Key::F11 && !repeat {
+                        should_toggle = true;
+                    }
+                }
+            }
+        });
+
+        if should_toggle {
+            self.toggle_fullscreen(ctx);
         }
     }
 
@@ -116,32 +142,19 @@ impl EguiApp {
         });
     }
 
-    fn ensure_maximized(&mut self, ctx: &egui::Context) {
-        if self.is_fullscreen || self.maximize_requests >= 5 {
+    fn restore_windowed_viewport(&mut self, ctx: &egui::Context) {
+        if !self.pending_window_restore {
             return;
         }
-        let (maximized, inner_rect, monitor) = ctx.input(|i| {
-            (
-                i.viewport().maximized,
-                i.viewport().inner_rect,
-                i.viewport().monitor_size,
-            )
-        });
-        let size_matches_monitor = inner_rect
-            .zip(monitor)
-            .map(|(inner, mon)| {
-                let size = inner.size();
-                size.x >= mon.x * 0.98 && size.y >= mon.y * 0.98
-            })
-            .unwrap_or(false);
-
-        let already_maximized = maximized == Some(true) || size_matches_monitor;
-        if already_maximized {
-            self.maximize_requests = 5;
-            return;
+        let fullscreen_state = ctx.input(|i| i.viewport().fullscreen);
+        if fullscreen_state == Some(false) {
+            if self.window_was_maximized {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true));
+            } else {
+                ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(self.windowed_size));
+            }
+            self.pending_window_restore = false;
         }
-        ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true));
-        self.maximize_requests += 1;
     }
 }
 
@@ -149,7 +162,6 @@ impl eframe::App for EguiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.apply_visuals(ctx);
         self.update_viewport_state(ctx);
-        self.ensure_maximized(ctx);
         self.controller.tick_playhead();
         if let Some(pos) = ctx.input(|i| i.pointer.hover_pos().or_else(|| i.pointer.interact_pos()))
         {
@@ -167,9 +179,7 @@ impl eframe::App for EguiApp {
         if ctx.input(|i| i.key_pressed(egui::Key::Space)) {
             self.controller.toggle_play_pause();
         }
-        if ctx.input(|i| i.key_pressed(egui::Key::F11)) {
-            self.toggle_fullscreen(ctx);
-        }
+        self.handle_fullscreen_shortcut(ctx);
         if ctx.input(|i| i.key_pressed(egui::Key::ArrowDown)) {
             if collection_focus {
                 self.controller.nudge_collection_sample(1);
@@ -208,6 +218,7 @@ impl eframe::App for EguiApp {
                 self.controller.tag_selected_left();
             }
         }
+        self.restore_windowed_viewport(ctx);
         self.render_status(ctx);
         egui::SidePanel::left("sources")
             .resizable(false)
