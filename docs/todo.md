@@ -1,6 +1,10 @@
 - lets do a housekeeping pass, clean up the codebase, reduce file lengths, improve maintainability, add missing docs, improve symbol naming, find and resolve bugs, improve performance, etc.
 
 --
+lets change our app logo from the default egui to ./assets/logo3.png
+
+increase the quality of our waveform rendering, it's very pixelated right now.
+
 \plan - add some usage documentation to /docs/usage.md
 
 \plan - add the hotkey F11 to switch between windowed and fullscreen mode
