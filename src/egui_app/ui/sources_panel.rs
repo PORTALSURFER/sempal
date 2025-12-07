@@ -16,7 +16,7 @@ impl EguiApp {
             });
             ui.add_space(6.0);
             egui::ScrollArea::vertical()
-                .id_source("sources_scroll")
+                .id_salt("sources_scroll")
                 .show(ui, |ui| {
                     let rows = self.controller.ui.sources.rows.clone();
                     let selected = self.controller.ui.sources.selected;

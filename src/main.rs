@@ -28,8 +28,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         native_options,
         Box::new(
             move |_cc| match EguiApp::new(renderer.clone(), player.clone()) {
-                Ok(app) => Box::new(app),
-                Err(err) => Box::new(LaunchError { message: err }),
+                Ok(app) => Ok(Box::new(app)),
+                Err(err) => Ok(Box::new(LaunchError { message: err })),
             },
         ),
     )?;

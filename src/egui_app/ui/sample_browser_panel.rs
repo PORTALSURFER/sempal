@@ -5,7 +5,7 @@ use super::helpers::{
 use super::*;
 use crate::egui_app::state::TriageFlagFilter;
 use crate::sample_sources::SampleTag;
-use eframe::egui::{self, Color32, RichText, Stroke, Ui};
+use eframe::egui::{self, Color32, RichText, Stroke, StrokeKind, Ui};
 use std::path::Path;
 
 impl EguiApp {
@@ -28,10 +28,10 @@ impl EguiApp {
             spacing: ui.spacing().item_spacing.y,
         };
         let total_rows = self.controller.visible_browser_indices().len();
-        let bg_frame = egui::Frame::none().fill(Color32::from_rgb(16, 16, 16));
+        let bg_frame = egui::Frame::new().fill(Color32::from_rgb(16, 16, 16));
         let frame_response = bg_frame.show(ui, |ui| {
             let scroll_response = egui::ScrollArea::vertical()
-                .id_source("sample_browser_scroll")
+                .id_salt("sample_browser_scroll")
                 .max_height(list_height)
                 .show_rows(ui, row_height, total_rows, |ui, row_range| {
                     for row in row_range {
@@ -122,6 +122,7 @@ impl EguiApp {
                         frame_response.response.rect,
                         6.0,
                         Stroke::new(2.0, Color32::from_rgba_unmultiplied(80, 140, 200, 180)),
+                        StrokeKind::Inside,
                     );
                 }
             }
@@ -167,7 +168,7 @@ impl EguiApp {
                 }
             }
             if close_menu {
-                ui.close_menu();
+                ui.close();
             }
         });
     }

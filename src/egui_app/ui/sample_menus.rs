@@ -18,7 +18,7 @@ impl EguiApp {
             tag_clicked |= ui.button("Keep").clicked() && on_tag(self, SampleTag::Keep);
             if tag_clicked {
                 *close_menu = true;
-                ui.close_menu();
+                ui.close();
             }
         });
     }
