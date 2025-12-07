@@ -35,15 +35,16 @@ mod platform {
         DRAGDROP_S_CANCEL, DRAGDROP_S_DROP, DV_E_FORMATETC, E_INVALIDARG, HGLOBAL, POINT,
     };
     use windows::Win32::System::Com::{
-        COINIT_APARTMENTTHREADED, CoInitializeEx, CoUninitialize, DATADIR_GET, DVASPECT_CONTENT,
-        FORMATETC, IAdviseSink, IDataObject, IEnumFORMATETC, STGMEDIUM, STGMEDIUM_0, TYMED_HGLOBAL,
+        DATADIR_GET, DVASPECT_CONTENT, FORMATETC, IAdviseSink, IDataObject, IEnumFORMATETC,
+        STGMEDIUM, STGMEDIUM_0, TYMED_HGLOBAL,
     };
     use windows::Win32::System::Memory::{
         GMEM_MOVEABLE, GMEM_ZEROINIT, GlobalAlloc, GlobalLock, GlobalUnlock,
     };
     use windows::Win32::System::Ole::{
-        CF_HDROP, DROPEFFECT, DROPEFFECT_COPY, DROPEFFECT_LINK, DROPEFFECT_MOVE, DoDragDrop,
-        IDropSource,
+        CF_HDROP, DROPEFFECT, DROPEFFECT_COPY, DROPEFFECT_LINK, DROPEFFECT_MOVE,
+        DROPEFFECT_NONE, DoDragDrop, IDropSource, OleInitialize, OleUninitialize,
+        DRAGDROP_S_USEDEFAULTCURSORS,
     };
     use windows::Win32::System::SystemServices::{MK_LBUTTON, MODIFIERKEYS_FLAGS};
     use windows::Win32::UI::Shell::{DROPFILES, SHCreateStdEnumFmtEtc};
@@ -56,7 +57,7 @@ mod platform {
     impl ComApartment {
         fn new() -> Result<Self, String> {
             // SAFETY: Single-threaded COM init for drag/drop, errors converted to string.
-            unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) }
+            unsafe { OleInitialize(None) }
                 .ok()
                 .map_err(|err| format!("COM init failed: {err}"))?;
             Ok(Self)
@@ -65,7 +66,7 @@ mod platform {
 
     impl Drop for ComApartment {
         fn drop(&mut self) {
-            unsafe { CoUninitialize() };
+            unsafe { OleUninitialize() };
         }
     }
 
@@ -218,7 +219,7 @@ mod platform {
         }
 
         fn GiveFeedback(&self, _dweffect: DROPEFFECT) -> HRESULT {
-            HRESULT(0)
+            DRAGDROP_S_USEDEFAULTCURSORS
         }
     }
 
@@ -241,7 +242,13 @@ mod platform {
             )
         }
         .ok()
-        .map_err(|err| format!("Drag failed: {err}"))
+        .map_err(|err| format!("Drag failed: {err}"))?;
+
+        if effect == DROPEFFECT_NONE {
+            Err("Drag canceled or target rejected drop".into())
+        } else {
+            Ok(())
+        }
     }
 
     fn build_format() -> FORMATETC {
