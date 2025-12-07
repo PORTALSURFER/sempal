@@ -30,7 +30,10 @@ mod platform {
     use std::os::windows::ffi::OsStrExt;
     use std::ptr::copy_nonoverlapping;
     use std::sync::OnceLock;
-    use windows::Win32::Foundation::{DV_E_FORMATETC, E_INVALIDARG, HGLOBAL, POINT};
+    use windows::Win32::Foundation::{
+        DRAGDROP_S_CANCEL, DRAGDROP_S_DROP, DRAGDROP_S_USEDEFAULTCURSORS, DV_E_FORMATETC,
+        E_INVALIDARG, HGLOBAL, POINT,
+    };
     use windows::Win32::System::DataExchange::RegisterClipboardFormatW;
     use windows::Win32::System::Com::{
         DATADIR_GET, DVASPECT_CONTENT, FORMATETC, IAdviseSink, IDataObject, IEnumFORMATETC,
@@ -41,9 +44,10 @@ mod platform {
     };
     use windows::Win32::System::Ole::{
         CF_HDROP, DROPEFFECT, DROPEFFECT_COPY, DROPEFFECT_LINK, DROPEFFECT_MOVE, DROPEFFECT_NONE,
-        OleInitialize, OleUninitialize,
+        DoDragDrop, IDropSource, OleInitialize, OleUninitialize,
     };
-    use windows::Win32::UI::Shell::{DROPFILES, SHCreateStdEnumFmtEtc, SHDoDragDrop};
+    use windows::Win32::System::SystemServices::{MK_LBUTTON, MODIFIERKEYS_FLAGS};
+    use windows::Win32::UI::Shell::{DROPFILES, SHCreateStdEnumFmtEtc};
     use windows::core::{w, HRESULT, Ref, BOOL};
     use windows_implement::implement;
 
@@ -239,22 +243,47 @@ mod platform {
         }
     }
 
-    pub fn start_file_drag(hwnd: windows::Win32::Foundation::HWND, paths: &[PathBuf]) -> Result<(), String> {
+    #[implement(IDropSource)]
+    #[derive(Clone)]
+    struct SimpleDropSource;
+
+    #[allow(non_snake_case)]
+    impl windows::Win32::System::Ole::IDropSource_Impl for SimpleDropSource_Impl {
+        fn QueryContinueDrag(
+            &self,
+            escape_pressed: BOOL,
+            key_state: MODIFIERKEYS_FLAGS,
+        ) -> HRESULT {
+            if escape_pressed.as_bool() {
+                return DRAGDROP_S_CANCEL;
+            }
+            if key_state.0 & MK_LBUTTON.0 == 0 {
+                return DRAGDROP_S_DROP;
+            }
+            HRESULT(0)
+        }
+
+        fn GiveFeedback(&self, _dweffect: DROPEFFECT) -> HRESULT {
+            DRAGDROP_S_USEDEFAULTCURSORS
+        }
+    }
+
+    pub fn start_file_drag(_hwnd: windows::Win32::Foundation::HWND, paths: &[PathBuf]) -> Result<(), String> {
         let _com = ComApartment::new()?;
-        let absolute: Vec<PathBuf> = paths
-            .iter()
-            .map(|p| p.canonicalize().unwrap_or_else(|_| p.to_path_buf()))
-            .collect();
+        let absolute: Vec<PathBuf> = paths.iter().map(normalize_path).collect();
         let data_object: IDataObject = FileDropDataObject::new(absolute)?.into();
+        let drop_source: IDropSource = SimpleDropSource.into();
+        let mut effect = DROPEFFECT(0);
         // SAFETY: COM initialized above; object implementations satisfy COM contracts.
-        let effect = unsafe {
-            SHDoDragDrop(
-                Some(hwnd),
+        unsafe {
+            DoDragDrop(
                 &data_object,
-                None,
+                &drop_source,
                 DROPEFFECT_COPY | DROPEFFECT_LINK | DROPEFFECT_MOVE,
+                &mut effect,
             )
         }
+        .ok()
         .map_err(|err| format!("Drag failed: {err}"))?;
 
         if effect == DROPEFFECT_NONE {
@@ -365,5 +394,27 @@ mod platform {
 
     fn last_error_from_win32(err: windows::core::Error) -> std::io::Error {
         std::io::Error::from_raw_os_error(err.code().0)
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn normalize_path(path: &PathBuf) -> PathBuf {
+    let absolute = path
+        .canonicalize()
+        .unwrap_or_else(|_| path.to_path_buf());
+    let verbatim_prefix = "\\\\?\\";
+    if absolute
+        .as_os_str()
+        .to_string_lossy()
+        .starts_with(verbatim_prefix)
+    {
+        PathBuf::from(
+            absolute
+                .as_os_str()
+                .to_string_lossy()
+                .trim_start_matches(verbatim_prefix),
+        )
+    } else {
+        absolute
     }
 }

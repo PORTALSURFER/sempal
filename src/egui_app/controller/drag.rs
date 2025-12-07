@@ -4,8 +4,21 @@ use egui::Pos2;
 
 impl EguiController {
     /// Start tracking a drag for a sample.
-    pub fn start_sample_drag(&mut self, path: PathBuf, label: String, pos: Pos2) {
-        self.begin_drag(DragPayload::Sample { path }, label, pos);
+    pub fn start_sample_drag(
+        &mut self,
+        source_id: SourceId,
+        relative_path: PathBuf,
+        label: String,
+        pos: Pos2,
+    ) {
+        self.begin_drag(
+            DragPayload::Sample {
+                source_id,
+                relative_path,
+            },
+            label,
+            pos,
+        );
     }
 
     /// Start tracking a drag for the current selection payload.
@@ -78,8 +91,11 @@ impl EguiController {
         let triage_target = self.ui.drag.hovering_browser;
         self.reset_drag();
         match payload {
-            DragPayload::Sample { path } => {
-                self.handle_sample_drop(path, collection_target, triage_target);
+            DragPayload::Sample {
+                source_id,
+                relative_path,
+            } => {
+                self.handle_sample_drop(source_id, relative_path, collection_target, triage_target);
             }
             DragPayload::Selection {
                 source_id,
@@ -121,6 +137,15 @@ impl EguiController {
         Err("External drag-out is only supported on Windows in this build".into())
     }
 
+    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+    fn sample_absolute_path(&self, source_id: &SourceId, relative_path: &Path) -> PathBuf {
+        self.sources
+            .iter()
+            .find(|s| &s.id == source_id)
+            .map(|source| source.root.join(relative_path))
+            .unwrap_or_else(|| relative_path.to_path_buf())
+    }
+
     #[cfg(target_os = "windows")]
     pub fn maybe_launch_external_drag(&mut self, pointer_outside: bool) {
         if !pointer_outside || self.ui.drag.payload.is_none() || self.ui.drag.external_started {
@@ -129,9 +154,15 @@ impl EguiController {
         let payload = self.ui.drag.payload.clone();
         self.ui.drag.external_started = true;
         let status = match payload {
-            Some(DragPayload::Sample { path }) => self
-                .start_external_drag(&[path.clone()])
-                .map(|_| format!("Drag {} to an external target", path.display())),
+            Some(DragPayload::Sample {
+                source_id,
+                relative_path,
+            }) => {
+                let absolute = self.sample_absolute_path(&source_id, &relative_path);
+                self.start_external_drag(&[absolute]).map(|_| {
+                    format!("Drag {} to an external target", relative_path.display())
+                })
+            }
             Some(DragPayload::Selection { bounds, .. }) => self
                 .export_selection_for_drag(bounds)
                 .and_then(|(absolute, label)| {
@@ -198,19 +229,47 @@ impl EguiController {
 
     fn handle_sample_drop(
         &mut self,
-        path: PathBuf,
+        source_id: SourceId,
+        relative_path: PathBuf,
         collection_target: Option<CollectionId>,
         triage_target: Option<TriageFlagColumn>,
     ) {
         if let Some(collection_id) = collection_target {
-            if let Err(err) = self.add_sample_to_collection(&collection_id, &path) {
+            if let Some(source) = self
+                .sources
+                .iter()
+                .find(|s| s.id == source_id)
+                .cloned()
+            {
+                if let Err(err) =
+                    self.add_sample_to_collection_for_source(&collection_id, &source, &relative_path)
+                {
+                    self.set_status(err, StatusTone::Error);
+                }
+            } else if let Err(err) =
+                self.add_sample_to_collection(&collection_id, &relative_path.clone())
+            {
                 self.set_status(err, StatusTone::Error);
             }
             return;
         }
         if let Some(column) = triage_target {
             self.suppress_autoplay_once = true;
-            let _ = self.set_sample_tag(&path, column);
+            let target_tag = match column {
+                TriageFlagColumn::Trash => SampleTag::Trash,
+                TriageFlagColumn::Neutral => SampleTag::Neutral,
+                TriageFlagColumn::Keep => SampleTag::Keep,
+            };
+            if let Some(source) = self
+                .sources
+                .iter()
+                .find(|s| s.id == source_id)
+                .cloned()
+            {
+                let _ = self.set_sample_tag_for_source(&source, &relative_path, target_tag, false);
+            } else {
+                let _ = self.set_sample_tag(&relative_path, column);
+            }
         }
     }
 

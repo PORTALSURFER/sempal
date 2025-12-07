@@ -109,7 +109,7 @@ impl EguiApp {
                 });
         let active_drag_path = if drag_active {
             match &self.controller.ui.drag.payload {
-                Some(DragPayload::Sample { path }) => Some(path.clone()),
+                Some(DragPayload::Sample { relative_path, .. }) => Some(relative_path.clone()),
                 _ => None,
             }
         } else {
@@ -216,6 +216,7 @@ impl EguiApp {
                                 if response.drag_started() {
                                     if let Some(pos) = response.interact_pointer_pos() {
                                         self.controller.start_sample_drag(
+                                            sample.source_id.clone(),
                                             path.clone(),
                                             sample.label.clone(),
                                             pos,
