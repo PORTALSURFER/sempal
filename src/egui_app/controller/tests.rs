@@ -5,6 +5,7 @@ use crate::sample_sources::collections::CollectionMember;
 use crate::egui_app::controller::collection_export;
 use hound::WavReader;
 use std::path::{Path, PathBuf};
+use std::io::Cursor;
 use tempfile::tempdir;
 
 fn max_sample_amplitude(path: &Path) -> f32 {
@@ -458,6 +459,9 @@ fn triage_normalize_refreshes_exports() -> Result<(), String> {
     controller.wav_entries = vec![sample_entry("one.wav", SampleTag::Neutral)];
     controller.rebuild_wav_lookup();
     controller.rebuild_triage_lists();
+    controller
+        .load_waveform_for_selection(&source, Path::new("one.wav"))
+        .unwrap();
 
     let mut collection = Collection::new("Export");
     let collection_id = collection.id.clone();
@@ -482,6 +486,13 @@ fn triage_normalize_refreshes_exports() -> Result<(), String> {
     assert!(exported_path.is_file());
     assert!((max_sample_amplitude(&root.join("one.wav")) - 1.0).abs() < 1e-6);
     assert!((max_sample_amplitude(&exported_path) - 1.0).abs() < 1e-6);
+    let loaded = controller.loaded_audio.as_ref().expect("loaded audio");
+    let max_loaded = WavReader::new(Cursor::new(loaded.bytes.as_slice()))
+        .unwrap()
+        .samples::<f32>()
+        .map(|s| s.unwrap().abs())
+        .fold(0.0, f32::max);
+    assert!((max_loaded - 1.0).abs() < 1e-6);
     Ok(())
 }
 
