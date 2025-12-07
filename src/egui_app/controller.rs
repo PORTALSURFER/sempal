@@ -27,6 +27,7 @@ use crate::{
 };
 use egui::Color32;
 use rfd::FileDialog;
+use open;
 use std::{
     cell::RefCell,
     collections::HashMap,

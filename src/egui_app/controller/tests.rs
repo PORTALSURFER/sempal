@@ -158,12 +158,12 @@ fn export_path_copies_and_refreshes_members() -> Result<(), String> {
         collection.export_path = Some(export_root.clone());
     }
     controller.add_sample_to_collection(&collection_id, Path::new("one.wav"))?;
-    assert!(export_root.join("one.wav").is_file());
+    assert!(export_root.join("Test").join("one.wav").is_file());
 
-    std::fs::remove_file(export_root.join("one.wav")).unwrap();
+    std::fs::remove_file(export_root.join("Test").join("one.wav")).unwrap();
     let extra_path = source_root.join("extra.wav");
     std::fs::write(&extra_path, b"more").unwrap();
-    std::fs::write(export_root.join("extra.wav"), b"more").unwrap();
+    std::fs::write(export_root.join("Test").join("extra.wav"), b"more").unwrap();
 
     controller.refresh_collection_export(&collection_id);
     let collection = controller
