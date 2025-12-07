@@ -2,8 +2,6 @@
 
 --
 
-increase the quality of our waveform rendering, it's very pixelated right now.
-
 \plan - add some usage documentation to /docs/usage.md
 
 \plan - add the hotkey F11 to switch between windowed and fullscreen mode
@@ -28,3 +26,11 @@ lets also add an option to open the trash folder in the OS file explorer.
 - lets add the trash/keep tagging system to the collection list as well. 
 
 - lets add an alt+drag feature for the system which allows dragging waveform selections to extract that part of the audio. but in this case, cut the cropped part out of the original sample. Dont destroy the original sample however, save this edited 'original' as a new version. selecting that new one instead.
+
+\plan - add the ability to select mulitple sample items, ctrl+mouseclick should add another item, shift+mouseclick should extend the current select to this item.
+shift+up/down should grow the selection
+pressing x should mark the item selected in a way that allows the user to focus another item, and mark it selected with x as well, similart to ctrl+click.
+lets design a difference between a selected and a focused item with this change.
+behavior of regular navigation shuold stay the same, so a 'focused' item should autoplay etc.
+
+\plan - lets add a context menu to the sample list items, in it add a feature to delete the item(s), to rename an item, to mark items (trashed/neutral/keep), and to normalize the sample, overwriting the original sample.

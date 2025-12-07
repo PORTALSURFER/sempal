@@ -8,8 +8,8 @@ mod config;
 mod drag;
 mod loading;
 mod playback;
-mod selection_export;
 mod scans;
+mod selection_export;
 mod sources;
 mod wavs;
 
@@ -24,7 +24,7 @@ use crate::{
         WavEntry,
     },
     selection::{SelectionRange, SelectionState},
-    waveform::WaveformRenderer,
+    waveform::{DecodedWaveform, WaveformRenderer},
 };
 use egui::Color32;
 use open;
@@ -47,6 +47,8 @@ const MIN_SELECTION_WIDTH: f32 = 0.001;
 pub struct EguiController {
     pub ui: UiState,
     renderer: WaveformRenderer,
+    waveform_size: [u32; 2],
+    decoded_waveform: Option<DecodedWaveform>,
     player: Option<Rc<RefCell<AudioPlayer>>>,
     sources: Vec<SampleSource>,
     collections: Vec<Collection>,
@@ -75,9 +77,12 @@ impl EguiController {
     /// Create a controller with shared renderer and optional audio player.
     pub fn new(renderer: WaveformRenderer, player: Option<Rc<RefCell<AudioPlayer>>>) -> Self {
         let (wav_job_tx, wav_job_rx) = spawn_wav_loader();
+        let (waveform_width, waveform_height) = renderer.dimensions();
         Self {
             ui: UiState::default(),
             renderer,
+            waveform_size: [waveform_width, waveform_height],
+            decoded_waveform: None,
             player,
             sources: Vec::new(),
             collections: Vec::new(),
@@ -209,5 +214,7 @@ struct LoadedAudio {
     channels: u16,
 }
 
+#[cfg(test)]
+mod test_support;
 #[cfg(test)]
 mod tests;

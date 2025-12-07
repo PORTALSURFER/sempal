@@ -14,7 +14,10 @@ impl EguiController {
             return;
         }
         let Some(audio) = self.loaded_audio.clone() else {
-            self.set_status("Load a sample before dragging a selection", StatusTone::Warning);
+            self.set_status(
+                "Load a sample before dragging a selection",
+                StatusTone::Warning,
+            );
             return;
         };
         let payload = DragPayload::Selection {

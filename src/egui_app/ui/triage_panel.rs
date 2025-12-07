@@ -1,11 +1,11 @@
 use super::helpers::{
-    clamp_label_for_width, list_row_height, render_list_row, scroll_offset_to_reveal_row,
-    RowMetrics,
+    RowMetrics, clamp_label_for_width, list_row_height, render_list_row,
+    scroll_offset_to_reveal_row,
 };
 use super::*;
 use crate::egui_app::state::TriageFilter;
-use eframe::egui::{self, Color32, RichText, Stroke, Ui};
 use crate::sample_sources::SampleTag;
+use eframe::egui::{self, Color32, RichText, Stroke, Ui};
 
 impl EguiApp {
     pub(super) fn render_triage(&mut self, ui: &mut Ui) {
@@ -129,7 +129,12 @@ impl EguiApp {
     fn render_triage_filter(&mut self, ui: &mut Ui) {
         ui.horizontal(|ui| {
             ui.label(RichText::new("Filter").color(Color32::from_rgb(210, 210, 210)));
-            for filter in [TriageFilter::All, TriageFilter::Keep, TriageFilter::Trash, TriageFilter::Untagged] {
+            for filter in [
+                TriageFilter::All,
+                TriageFilter::Keep,
+                TriageFilter::Trash,
+                TriageFilter::Untagged,
+            ] {
                 let selected = self.controller.ui.triage.filter == filter;
                 let label = match filter {
                     TriageFilter::All => "All",

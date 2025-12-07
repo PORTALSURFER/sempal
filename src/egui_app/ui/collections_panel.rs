@@ -1,6 +1,6 @@
 use super::helpers::{
-    clamp_label_for_width, list_row_height, render_list_row, scroll_offset_to_reveal_row,
-    RowMetrics,
+    RowMetrics, clamp_label_for_width, list_row_height, render_list_row,
+    scroll_offset_to_reveal_row,
 };
 use super::*;
 use crate::egui_app::state::{CollectionRowView, DragPayload};
@@ -192,8 +192,7 @@ impl EguiApp {
                                     }
                                 } else if drag_active && response.dragged() {
                                     if let Some(pos) = response.interact_pointer_pos() {
-                                        self.controller
-                                            .update_active_drag(pos, None, false, None);
+                                        self.controller.update_active_drag(pos, None, false, None);
                                     }
                                 } else if response.drag_stopped() {
                                     self.controller.finish_active_drag();
