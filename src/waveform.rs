@@ -14,6 +14,8 @@ pub struct LoadedWaveform {
 pub struct DecodedWaveform {
     pub samples: Vec<f32>,
     pub duration_seconds: f32,
+    pub sample_rate: u32,
+    pub channels: u16,
 }
 
 /// Renders averaged waveforms from wav samples.
@@ -56,10 +58,12 @@ impl WaveformRenderer {
 
     /// Decode wav bytes into samples and duration without rendering.
     pub fn decode_from_bytes(&self, bytes: &[u8]) -> Result<DecodedWaveform, String> {
-        let (samples, duration_seconds) = self.load_samples(bytes)?;
+        let (samples, duration_seconds, sample_rate, channels) = self.load_samples(bytes)?;
         Ok(DecodedWaveform {
             samples,
             duration_seconds,
+            sample_rate,
+            channels,
         })
     }
 
@@ -70,7 +74,7 @@ impl WaveformRenderer {
     }
 
     /// Decode bytes into mono samples and duration seconds.
-    fn load_samples(&self, bytes: &[u8]) -> Result<(Vec<f32>, f32), String> {
+    fn load_samples(&self, bytes: &[u8]) -> Result<(Vec<f32>, f32, u32, u16), String> {
         let mut reader = hound::WavReader::new(std::io::Cursor::new(bytes))
             .map_err(|error| format!("Invalid wav: {error}"))?;
         let spec = reader.spec();
@@ -84,7 +88,7 @@ impl WaveformRenderer {
         };
         let duration = samples.len() as f32 / spec.sample_rate.max(1) as f32;
 
-        Ok((samples, duration))
+        Ok((samples, duration, spec.sample_rate, spec.channels))
     }
 
     fn read_float_samples(

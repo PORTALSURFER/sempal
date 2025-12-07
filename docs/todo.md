@@ -4,8 +4,7 @@
 \plan - add some usage documentation to /docs/usage.md
 
 \plan - add the hotkey F11 to switch between windowed and fullscreen mode
-lets also make it possible for the user to drag down the topbar to unstick the fullscreen mode into a windowed mode
-and add a 'go fullscreen' button to the topbar next to the x for closing
+lets make fullscreen mode the default mode
 
 \plan - lets adjust the look and feel of everything so we have had rectangled everything, never round corners, if we must have soft corners, use a diagonal cut, very hard sci fi in terms of looks.
 please review the styleguide in @styleguide.md and make a plan

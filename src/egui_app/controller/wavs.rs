@@ -1,4 +1,5 @@
 use super::*;
+use crate::waveform::DecodedWaveform;
 
 impl EguiController {
     /// Expose wav indices for a given triage column (used by virtualized rendering).
@@ -247,31 +248,20 @@ impl EguiController {
         relative_path: &Path,
     ) -> Result<(), String> {
         if self.loaded_wav.as_deref() == Some(relative_path) {
-            self.ui.waveform.playhead = PlayheadState::default();
-            self.ui.waveform.selection = None;
-            self.selection.clear();
+            self.clear_waveform_selection();
             self.set_status(
                 format!("Loaded {}", relative_path.display()),
                 StatusTone::Info,
             );
             return Ok(());
         }
-        let full_path = source.root.join(relative_path);
-        let bytes = fs::read(&full_path)
-            .map_err(|err| format!("Failed to read {}: {err}", full_path.display()))?;
+        let bytes = self.read_waveform_bytes(source, relative_path)?;
         let decoded = self.renderer.decode_from_bytes(&bytes)?;
-        let color_image = self.renderer.render_color_image(&decoded.samples);
-        self.ui.waveform.image = Some(WaveformImage { image: color_image });
-        self.ui.waveform.playhead = PlayheadState::default();
-        self.ui.waveform.selection = None;
-        self.selection.clear();
+        self.apply_waveform_image(&decoded);
+        self.clear_waveform_selection();
         self.loaded_wav = Some(relative_path.to_path_buf());
         self.ui.loaded_wav = Some(relative_path.to_path_buf());
-        if let Some(player) = self.ensure_player()? {
-            let mut player = player.borrow_mut();
-            player.stop();
-            player.set_audio(bytes, decoded.duration_seconds);
-        }
+        self.sync_loaded_audio(source, relative_path, &decoded, bytes)?;
         self.set_status(
             format!("Loaded {}", relative_path.display()),
             StatusTone::Info,
@@ -284,26 +274,65 @@ impl EguiController {
         source: &SampleSource,
         relative_path: &Path,
     ) -> Result<(), String> {
-        let full_path = source.root.join(relative_path);
-        let bytes = fs::read(&full_path)
-            .map_err(|err| format!("Failed to read {}: {err}", full_path.display()))?;
+        let bytes = self.read_waveform_bytes(source, relative_path)?;
         let decoded = self.renderer.decode_from_bytes(&bytes)?;
-        let color_image = self.renderer.render_color_image(&decoded.samples);
-        self.ui.waveform.image = Some(WaveformImage { image: color_image });
-        self.ui.waveform.playhead = PlayheadState::default();
-        self.ui.waveform.selection = None;
-        self.selection.clear();
+        self.apply_waveform_image(&decoded);
+        self.clear_waveform_selection();
         self.loaded_wav = None;
         self.ui.loaded_wav = None;
-        if let Some(player) = self.ensure_player()? {
-            let mut player = player.borrow_mut();
-            player.stop();
-            player.set_audio(bytes, decoded.duration_seconds);
-        }
+        self.sync_loaded_audio(source, relative_path, &decoded, bytes)?;
         self.set_status(
             format!("Loaded {}", relative_path.display()),
             StatusTone::Info,
         );
+        Ok(())
+    }
+
+    fn clear_waveform_selection(&mut self) {
+        self.ui.waveform.playhead = PlayheadState::default();
+        self.ui.waveform.selection = None;
+        self.selection.clear();
+    }
+
+    fn apply_waveform_image(&mut self, decoded: &DecodedWaveform) {
+        let color_image = self.renderer.render_color_image(&decoded.samples);
+        self.ui.waveform.image = Some(WaveformImage { image: color_image });
+    }
+
+    fn read_waveform_bytes(
+        &self,
+        source: &SampleSource,
+        relative_path: &Path,
+    ) -> Result<Vec<u8>, String> {
+        let full_path = source.root.join(relative_path);
+        fs::read(&full_path)
+            .map_err(|err| format!("Failed to read {}: {err}", full_path.display()))
+    }
+
+    fn sync_loaded_audio(
+        &mut self,
+        source: &SampleSource,
+        relative_path: &Path,
+        decoded: &DecodedWaveform,
+        bytes: Vec<u8>,
+    ) -> Result<(), String> {
+        self.loaded_audio = Some(LoadedAudio {
+            source_id: source.id.clone(),
+            relative_path: relative_path.to_path_buf(),
+            bytes: bytes.clone(),
+            duration_seconds: decoded.duration_seconds,
+            sample_rate: decoded.sample_rate,
+            channels: decoded.channels,
+        });
+        match self.ensure_player() {
+            Ok(Some(player)) => {
+                let mut player = player.borrow_mut();
+                player.stop();
+                player.set_audio(bytes, decoded.duration_seconds);
+            }
+            Ok(None) => {}
+            Err(err) => self.set_status(err, StatusTone::Warning),
+        }
         Ok(())
     }
 }

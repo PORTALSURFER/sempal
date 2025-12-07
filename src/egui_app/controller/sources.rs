@@ -84,6 +84,10 @@ impl EguiController {
             .is_some_and(|id| id == &removed.id)
         {
             self.selected_source = None;
+            self.selected_wav = None;
+            self.loaded_wav = None;
+            self.loaded_audio = None;
+            self.ui.loaded_wav = None;
         }
         let _ = self.persist_config("Failed to save config after removing source");
         self.refresh_sources_ui();
@@ -130,6 +134,8 @@ impl EguiController {
             self.selected_source = None;
             self.selected_wav = None;
             self.loaded_wav = None;
+            self.loaded_audio = None;
+            self.ui.loaded_wav = None;
         }
         let _ = self.persist_config("Failed to save config after removing source");
         self.refresh_sources_ui();
@@ -163,6 +169,7 @@ impl EguiController {
         self.selected_source = id;
         self.selected_wav = None;
         self.loaded_wav = None;
+        self.loaded_audio = None;
         self.refresh_sources_ui();
         self.queue_wav_load();
         let _ = self.persist_config("Failed to save selection");
@@ -174,6 +181,7 @@ impl EguiController {
         self.wav_lookup.clear();
         self.selected_wav = None;
         self.loaded_wav = None;
+        self.loaded_audio = None;
         self.ui.triage = TriageState::default();
         self.ui.loaded_wav = None;
     }

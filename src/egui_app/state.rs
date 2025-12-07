@@ -172,10 +172,21 @@ pub enum TriageFilter {
     Untagged,
 }
 
+/// Active drag payload carried across UI panels.
+#[derive(Clone, Debug, PartialEq)]
+pub enum DragPayload {
+    Sample { path: PathBuf },
+    Selection {
+        source_id: SourceId,
+        relative_path: PathBuf,
+        bounds: SelectionRange,
+    },
+}
+
 /// Drag/hover state shared between triage lists and collections.
 #[derive(Clone, Debug, Default)]
 pub struct DragState {
-    pub active_path: Option<PathBuf>,
+    pub payload: Option<DragPayload>,
     pub label: String,
     pub position: Option<Pos2>,
     pub hovering_collection: Option<CollectionId>,

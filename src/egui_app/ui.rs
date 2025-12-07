@@ -79,9 +79,8 @@ impl eframe::App for EguiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.apply_visuals(ctx);
         self.controller.tick_playhead();
-        if self.controller.ui.drag.active_path.is_some() && !ctx.input(|i| i.pointer.primary_down())
-        {
-            self.controller.finish_sample_drag();
+        if self.controller.ui.drag.payload.is_some() && !ctx.input(|i| i.pointer.primary_down()) {
+            self.controller.finish_active_drag();
         }
         let collection_focus = self.controller.ui.collections.selected_sample.is_some();
         let triage_has_selection = self.controller.ui.triage.selected.is_some();
