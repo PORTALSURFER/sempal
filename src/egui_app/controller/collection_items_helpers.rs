@@ -60,13 +60,7 @@ impl EguiController {
         std::fs::rename(&ctx.absolute_path, &new_absolute)
             .map_err(|err| format!("Failed to rename file: {err}"))?;
         let (file_size, modified_ns) = file_metadata(&new_absolute)?;
-        if let Err(err) = self.rewrite_db_entry(
-            ctx,
-            new_relative,
-            file_size,
-            modified_ns,
-            tag,
-        ) {
+        if let Err(err) = self.rewrite_db_entry(ctx, new_relative, file_size, modified_ns, tag) {
             let _ = std::fs::rename(&new_absolute, &ctx.absolute_path);
             return Err(err);
         }
@@ -170,7 +164,12 @@ impl EguiController {
         file_size: u64,
         modified_ns: i64,
     ) -> Result<(), String> {
-        self.upsert_metadata_for_source(&ctx.source, &ctx.member.relative_path, file_size, modified_ns)
+        self.upsert_metadata_for_source(
+            &ctx.source,
+            &ctx.member.relative_path,
+            file_size,
+            modified_ns,
+        )
     }
 
     pub(super) fn upsert_metadata_for_source(
@@ -191,11 +190,7 @@ impl EguiController {
         &mut self,
         ctx: &CollectionSampleContext,
     ) -> Result<(u64, i64, SampleTag), String> {
-        self.normalize_and_save_for_path(
-            &ctx.source,
-            &ctx.member.relative_path,
-            &ctx.absolute_path,
-        )
+        self.normalize_and_save_for_path(&ctx.source, &ctx.member.relative_path, &ctx.absolute_path)
     }
 
     pub(super) fn normalize_and_save_for_path(
@@ -333,10 +328,9 @@ impl EguiController {
         ctx: &CollectionSampleContext,
         relative_path: &Path,
     ) {
-        let loaded_matches = self
-            .loaded_audio
-            .as_ref()
-            .is_some_and(|audio| audio.source_id == ctx.source.id && audio.relative_path == relative_path);
+        let loaded_matches = self.loaded_audio.as_ref().is_some_and(|audio| {
+            audio.source_id == ctx.source.id && audio.relative_path == relative_path
+        });
         let selected_matches = self
             .selected_collection
             .as_ref()

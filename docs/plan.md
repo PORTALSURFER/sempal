@@ -1,16 +1,16 @@
 ## Goal
-- Keep waveform selection resizing active until mouse release even if the pointer leaves the waveform frame while dragging a new selection.
+- Add an F11 hotkey that toggles between windowed and fullscreen modes, with fullscreen enabled by default at startup.
 
 ## Proposed solutions
-- Relax the in-rect checks during selection drags so updates keep flowing while the pointer is outside, clamping normalized positions to the waveform bounds.
-- Start selection creation only on in-bounds initiation, but keep subsequent drag updates/finishing hooked to egui drag responses regardless of pointer location.
-- Add coverage (unit or UI-facing) to confirm selection updates clamp at edges and do not drop when the pointer exits the frame mid-drag.
+- Start the eframe viewport in fullscreen via `ViewportBuilder`/`NativeOptions` while keeping the existing window size constraints available for returning to windowed mode.
+- Handle the F11 keypress in `EguiApp::update`, toggling fullscreen through the frame/viewport API and tracking the current mode to avoid desynchronization.
+- Optionally remember the last windowed dimensions or mode in app state/config so exiting fullscreen restores a sensible size without impacting other features.
 
 ## Step-by-step plan
-1. [x] Review current waveform drag handling (shift-drag selection and edge handles) to pinpoint where out-of-bounds pointer positions halt updates.
-2. [x] Update interaction logic to continue selection updates while dragging outside the frame, clamping positions to [0, 1] and ensuring finishing still occurs on release anywhere.
-3. [x] Add or adjust tests (or manual verification notes) to cover dragging beyond bounds and confirm selections stay active until release.
-4. [x] Run relevant test suite or targeted checks to ensure no regressions in selection and playback interactions.
+1. [x] Confirm current viewport setup and keyboard handling in `main.rs` and `EguiApp::update`, and choose the correct fullscreen API for eframe 0.27 without affecting other shortcuts.
+2. [x] Make fullscreen the default startup mode while preserving the existing window sizing constraints for windowed mode.
+3. [x] Add F11 handling to toggle between fullscreen and windowed modes, keeping the tracked state in sync and ensuring current UI behaviour remains intact.
+4. [x] Outline manual QA notes to verify default fullscreen launch and F11 toggling across platforms.
 
 ## Code Style & Architecture Rules Reminder
 - Keep files under 400 lines; split when necessary.

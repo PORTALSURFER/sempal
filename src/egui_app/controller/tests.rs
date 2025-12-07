@@ -1,11 +1,11 @@
 use super::test_support::{dummy_controller, sample_entry, write_test_wav};
 use super::*;
+use crate::egui_app::controller::collection_export;
 use crate::egui_app::state::{DragPayload, TriageFlagColumn, TriageFlagFilter};
 use crate::sample_sources::collections::CollectionMember;
-use crate::egui_app::controller::collection_export;
 use hound::WavReader;
-use std::path::{Path, PathBuf};
 use std::io::Cursor;
+use std::path::{Path, PathBuf};
 use tempfile::tempdir;
 
 fn max_sample_amplitude(path: &Path) -> f32 {
@@ -60,7 +60,10 @@ fn sample_browser_indices_track_tags() {
     controller.rebuild_browser_lists();
 
     assert_eq!(controller.browser_indices(TriageFlagColumn::Trash).len(), 1);
-    assert_eq!(controller.browser_indices(TriageFlagColumn::Neutral).len(), 1);
+    assert_eq!(
+        controller.browser_indices(TriageFlagColumn::Neutral).len(),
+        1
+    );
     assert_eq!(controller.browser_indices(TriageFlagColumn::Keep).len(), 1);
     assert_eq!(controller.visible_browser_indices(), &[0, 1, 2]);
 
@@ -429,18 +432,18 @@ fn browser_rename_updates_collections_and_lookup() {
         controller.wav_entries[0].relative_path,
         PathBuf::from("renamed.wav")
     );
-    assert!(controller
-        .wav_lookup
-        .contains_key(Path::new("renamed.wav")));
+    assert!(controller.wav_lookup.contains_key(Path::new("renamed.wav")));
     let collection = controller
         .collections
         .iter()
         .find(|c| c.id == collection_id)
         .unwrap();
-    assert!(collection
-        .members
-        .iter()
-        .any(|m| m.relative_path == PathBuf::from("renamed.wav")));
+    assert!(
+        collection
+            .members
+            .iter()
+            .any(|m| m.relative_path == PathBuf::from("renamed.wav"))
+    );
 }
 
 #[test]
