@@ -113,15 +113,22 @@ impl Default for PlayheadState {
     }
 }
 
-/// Three-column triage state for wav entries.
+/// Triage list state for wav entries with filterable rows.
 #[derive(Clone, Debug)]
 pub struct TriageState {
+    /// Absolute indices per tag for keyboard navigation and tagging.
     pub trash: Vec<usize>,
     pub neutral: Vec<usize>,
     pub keep: Vec<usize>,
+    /// Visible rows after applying the active filter.
+    pub visible: Vec<usize>,
     pub selected: Option<TriageIndex>,
     pub loaded: Option<TriageIndex>,
+    /// Visible row indices for selection/autoscroll (filtered list).
+    pub selected_visible: Option<usize>,
+    pub loaded_visible: Option<usize>,
     pub autoscroll: bool,
+    pub filter: TriageFilter,
 }
 
 impl Default for TriageState {
@@ -130,9 +137,13 @@ impl Default for TriageState {
             trash: Vec::new(),
             neutral: Vec::new(),
             keep: Vec::new(),
+            visible: Vec::new(),
             selected: None,
             loaded: None,
+            selected_visible: None,
+            loaded_visible: None,
             autoscroll: false,
+            filter: TriageFilter::All,
         }
     }
 }
@@ -150,6 +161,15 @@ pub enum TriageColumn {
     Trash,
     Neutral,
     Keep,
+}
+
+/// Filter options for the single-column triage view.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TriageFilter {
+    All,
+    Keep,
+    Trash,
+    Untagged,
 }
 
 /// Drag/hover state shared between triage lists and collections.
