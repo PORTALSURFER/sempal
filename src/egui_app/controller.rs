@@ -4,6 +4,7 @@
 
 mod collections;
 mod config;
+mod collection_export;
 mod drag;
 mod loading;
 mod playback;

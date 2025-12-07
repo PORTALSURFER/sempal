@@ -1,5 +1,6 @@
 use super::helpers::{clamp_label_for_width, list_row_height, render_list_row};
 use super::*;
+use crate::egui_app::state::CollectionRowView;
 use eframe::egui::{self, Color32, RichText, Stroke, Ui};
 
 impl EguiApp {
@@ -46,6 +47,7 @@ impl EguiApp {
                             if response.clicked() {
                                 self.controller.select_collection_by_index(Some(index));
                             }
+                            self.collection_row_menu(&response, collection);
                             if drag_active {
                                 if let Some(pointer) = pointer_pos {
                                     if response.rect.contains(pointer) {
@@ -216,5 +218,33 @@ impl EguiApp {
                 }
             }
         }
+    }
+
+    fn collection_row_menu(&mut self, response: &egui::Response, collection: &CollectionRowView) {
+        response.context_menu(|ui| {
+            if ui.button("Set export folder…").clicked() {
+                self.controller
+                    .pick_collection_export_path(&collection.id);
+                ui.close_menu();
+            }
+            if ui.button("Clear export folder").clicked() {
+                self.controller
+                    .clear_collection_export_path(&collection.id);
+                ui.close_menu();
+            }
+            let refresh_enabled = collection.export_path.is_some();
+            if ui
+                .add_enabled(refresh_enabled, egui::Button::new("Refresh export"))
+                .clicked()
+            {
+                self.controller.refresh_collection_export(&collection.id);
+                ui.close_menu();
+            }
+            if let Some(path) = &collection.export_path {
+                ui.small(format!("Current export: {}", path.display()));
+            } else {
+                ui.small("No export folder set");
+            }
+        });
     }
 }

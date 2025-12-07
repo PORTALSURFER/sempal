@@ -33,6 +33,7 @@ pub fn collection_rows(
             name: collection.name.clone(),
             selected: selected.is_some_and(|id| id == &collection.id),
             count: collection.members.len(),
+            export_path: collection.export_path.clone(),
         })
         .collect()
 }

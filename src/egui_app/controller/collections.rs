@@ -1,4 +1,5 @@
 use super::*;
+use crate::sample_sources::collections::CollectionMember;
 
 impl EguiController {
     /// Select a sample from the collection list and ensure it plays.
@@ -87,19 +88,18 @@ impl EguiController {
         let Some(collection) = collections.iter_mut().find(|c| &c.id == collection_id) else {
             return Err("Collection not found".into());
         };
-        let added = collection.add_member(source.id.clone(), relative_path.to_path_buf());
+        let new_member = CollectionMember {
+            source_id: source.id.clone(),
+            relative_path: relative_path.to_path_buf(),
+        };
+        let added =
+            collection.add_member(new_member.source_id.clone(), new_member.relative_path.clone());
         self.collections = collections;
-        if added {
-            self.persist_config("Failed to save collection")?;
-            self.refresh_collections_ui();
-            self.set_status(
-                format!("Added {} to collection", relative_path.display()),
-                StatusTone::Info,
-            );
-        } else {
+        if !added {
             self.set_status("Already in collection", StatusTone::Info);
+            return Ok(());
         }
-        Ok(())
+        self.finalize_collection_add(collection_id, &new_member, relative_path)
     }
 
     pub fn nudge_collection_sample(&mut self, offset: isize) {
@@ -156,7 +156,8 @@ impl EguiController {
         }
     }
 
-    fn ensure_sample_db_entry(
+    /// Make sure the sample exists in the source database before attaching to a collection.
+    pub(super) fn ensure_sample_db_entry(
         &mut self,
         source: &SampleSource,
         relative_path: &Path,
@@ -181,6 +182,24 @@ impl EguiController {
     pub(super) fn current_collection(&self) -> Option<Collection> {
         let selected = self.selected_collection.as_ref()?;
         self.collections.iter().find(|c| &c.id == selected).cloned()
+    }
+
+    fn finalize_collection_add(
+        &mut self,
+        collection_id: &CollectionId,
+        member: &CollectionMember,
+        relative_path: &Path,
+    ) -> Result<(), String> {
+        self.persist_config("Failed to save collection")?;
+        self.refresh_collections_ui();
+        if let Err(err) = self.export_member_if_needed(collection_id, member) {
+            self.set_status(err, StatusTone::Warning);
+        }
+        self.set_status(
+            format!("Added {} to collection", relative_path.display()),
+            StatusTone::Info,
+        );
+        Ok(())
     }
 
     fn next_collection_name(&self) -> String {
