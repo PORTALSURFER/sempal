@@ -2,8 +2,7 @@
 
 --
 
-\plan - currently the triageflags will mark the entire item with a colored overlay, lets intest of coloring the entire item, only mark a small rect on the far right
-
+\plan - currently the triageflags will mark the entire item with a colored overlay, lets instead of coloring the entire item, only mark a small rect on the far right, to keep things visually cleaner.
 
 \plan - lets clean up the config location names so we don't get this double sempal/sempal structure. lets make it simple .sempal/
 So in windows it would end up as %APPDATA%\Roaming\.sempal\config.json

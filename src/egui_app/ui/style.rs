@@ -236,6 +236,11 @@ pub fn row_selected_fill() -> Color32 {
     )
 }
 
+/// Indicator used to show multi-selection membership.
+pub fn selection_marker_fill() -> Color32 {
+    with_alpha(palette().accent_ice, 190)
+}
+
 /// Outline used to indicate keyboard/pointer focus.
 pub fn focused_row_stroke() -> Stroke {
     Stroke::new(2.0, palette().accent_ice)
