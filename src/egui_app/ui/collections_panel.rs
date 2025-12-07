@@ -1,6 +1,6 @@
 use super::helpers::{
-    RowMetrics, clamp_label_for_width, list_row_height, render_list_row,
-    scroll_offset_to_reveal_row,
+    NumberColumn, RowMetrics, clamp_label_for_width, list_row_height, number_column_width,
+    render_list_row, scroll_offset_to_reveal_row,
 };
 use super::style;
 use super::*;
@@ -57,6 +57,7 @@ impl EguiApp {
                                 bg,
                                 text_color,
                                 egui::Sense::click(),
+                                None,
                             );
                             if response.clicked() {
                                 self.controller.select_collection_by_index(Some(index));
@@ -88,6 +89,7 @@ impl EguiApp {
         drag_active: bool,
         pointer_pos: Option<egui::Pos2>,
     ) {
+        let palette = style::palette();
         let samples = self.controller.ui.collections.samples.clone();
         let selected_row = self.controller.ui.collections.selected_sample;
         let current_collection_id = self.controller.current_collection_id();
@@ -128,6 +130,8 @@ impl EguiApp {
             height: row_height,
             spacing: ui.spacing().item_spacing.y,
         };
+        let number_width = number_column_width(samples.len(), ui);
+        let number_gap = ui.spacing().button_padding.x * 0.5;
         let available_height = ui.available_height();
         let frame = egui::Frame::new()
             .fill(style::compartment_fill())
@@ -153,7 +157,6 @@ impl EguiApp {
                         let padding = ui.spacing().button_padding.x * 2.0;
                         let path = sample.path.clone();
                         let label = format!("{} — {}", sample.source, sample.label);
-                        let label = clamp_label_for_width(&label, row_width - padding);
                         let is_selected = Some(row) == selected_row;
                         let is_duplicate_hover =
                             drag_active && active_drag_path.as_ref().is_some_and(|p| p == &path);
@@ -167,14 +170,21 @@ impl EguiApp {
                         ui.push_id(
                             format!("{}:{}:{}", sample.source_id, sample.source, sample.label),
                             |ui| {
+                                let label_width = row_width - padding - number_width - number_gap;
+                                let number_text = format!("{}", row + 1);
                                 let response = render_list_row(
                                     ui,
-                                    &label,
+                                    &clamp_label_for_width(&label, label_width),
                                     row_width,
                                     row_height,
                                     bg,
                                     Color32::LIGHT_GRAY,
                                     egui::Sense::click_and_drag(),
+                                    Some(NumberColumn {
+                                        text: &number_text,
+                                        width: number_width,
+                                        color: palette.text_muted,
+                                    }),
                                 );
                                 if response.clicked() {
                                     self.controller.select_collection_sample(row);
