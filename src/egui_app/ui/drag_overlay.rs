@@ -1,5 +1,5 @@
-use super::*;
 use super::style;
+use super::*;
 use eframe::egui::{self, Align2, Area, Color32, Frame, Order, RichText, Stroke, Vec2};
 
 impl EguiApp {

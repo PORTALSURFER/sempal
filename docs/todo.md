@@ -1,8 +1,6 @@
 \plan - lets do a housekeeping pass, clean up the codebase, reduce file lengths, improve DRYness, improve maintainability, collapse large structs/objects into clearly named smaller objects, add missing docs, improve symbol naming, find and resolve bugs, improve performance, etc.
 
 --
-- if the user disables looping while we are actively playing, stop looping after the current cycle. currently it just keep looping until we restart play.
-
 - lets add a numbering column to the main sample list and to the collection items list showing the count of items
 
 \plan - lets add a toolbar with an options menu, lets add an option to choose a 'trash' folder on disk.

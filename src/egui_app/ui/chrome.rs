@@ -1,5 +1,5 @@
-use super::*;
 use super::style;
+use super::*;
 use eframe::egui::{self, Frame, RichText, SliderClamping, StrokeKind};
 
 impl EguiApp {
@@ -51,14 +51,16 @@ impl EguiApp {
                 ui.columns(2, |columns| {
                     columns[0].horizontal(|ui| {
                         ui.add_space(8.0);
-                        let (badge_rect, _) = ui.allocate_exact_size(
-                            egui::vec2(18.0, 18.0),
-                            egui::Sense::hover(),
-                        );
+                        let (badge_rect, _) =
+                            ui.allocate_exact_size(egui::vec2(18.0, 18.0), egui::Sense::hover());
                         ui.painter()
                             .rect_filled(badge_rect, 0.0, status.badge_color);
-                        ui.painter()
-                            .rect_stroke(badge_rect, 0.0, style::inner_border(), StrokeKind::Inside);
+                        ui.painter().rect_stroke(
+                            badge_rect,
+                            0.0,
+                            style::inner_border(),
+                            StrokeKind::Inside,
+                        );
                         ui.add_space(10.0);
                         ui.label(RichText::new(&status.badge_label).color(palette.text_primary));
                         ui.separator();

@@ -111,6 +111,25 @@ impl AudioPlayer {
             && self.started_at.is_some()
     }
 
+    /// True when the current sink is configured to loop.
+    pub fn is_looping(&self) -> bool {
+        self.looping
+    }
+
+    /// Remaining wall-clock time until the current loop iteration finishes.
+    pub fn remaining_loop_duration(&self) -> Option<Duration> {
+        if !self.looping {
+            return None;
+        }
+        let started_at = self.started_at?;
+        let (start, end) = self.play_span?;
+        let span_length = (end - start).max(f32::EPSILON);
+        let elapsed = started_at.elapsed().as_secs_f32();
+        let elapsed_in_span = elapsed % span_length;
+        let remaining = span_length - elapsed_in_span;
+        Some(Duration::from_secs_f32(remaining.max(0.0)))
+    }
+
     fn start_with_span(
         &mut self,
         start_seconds: f32,
@@ -315,6 +334,46 @@ mod tests {
     fn normalized_progress_handles_full_track() {
         let progress = normalized_progress(None, 8.0, 3.0, false);
         assert_eq!(progress, Some(0.375));
+    }
+
+    #[test]
+    fn remaining_loop_duration_reports_time_left_in_cycle() {
+        let Ok(stream) = rodio::OutputStreamBuilder::open_default_stream() else {
+            return;
+        };
+        let started_at = Instant::now() - Duration::from_secs_f32(0.75);
+        let player = AudioPlayer {
+            stream,
+            sink: None,
+            current_audio: None,
+            track_duration: Some(8.0),
+            started_at: Some(started_at),
+            play_span: Some((1.0, 3.0)),
+            looping: true,
+            volume: 1.0,
+        };
+
+        let remaining = player.remaining_loop_duration().unwrap();
+        assert!((remaining.as_secs_f32() - 1.25).abs() < 0.1);
+    }
+
+    #[test]
+    fn remaining_loop_duration_none_when_not_looping() {
+        let Ok(stream) = rodio::OutputStreamBuilder::open_default_stream() else {
+            return;
+        };
+        let player = AudioPlayer {
+            stream,
+            sink: None,
+            current_audio: None,
+            track_duration: Some(8.0),
+            started_at: Some(Instant::now()),
+            play_span: Some((1.0, 3.0)),
+            looping: false,
+            volume: 1.0,
+        };
+
+        assert!(player.remaining_loop_duration().is_none());
     }
 
     #[test]

@@ -2,8 +2,8 @@ use super::helpers::{
     RowMetrics, clamp_label_for_width, list_row_height, render_list_row,
     scroll_offset_to_reveal_row,
 };
-use super::*;
 use super::style;
+use super::*;
 use crate::egui_app::state::TriageFlagFilter;
 use crate::sample_sources::SampleTag;
 use eframe::egui::{self, Color32, RichText, Stroke, StrokeKind, Ui};
@@ -61,18 +61,18 @@ impl EguiApp {
                         if is_loaded {
                             label.push_str(" • loaded");
                         }
-                            let label = clamp_label_for_width(&label, row_width - padding);
-                            let bg = triage_row_bg(tag, is_selected);
-                            ui.push_id(&path, |ui| {
-                                let response = render_list_row(
-                                    ui,
-                                    &label,
-                                    row_width,
-                                    row_height,
-                                    bg,
-                                    palette.text_primary,
-                                    egui::Sense::click_and_drag(),
-                                );
+                        let label = clamp_label_for_width(&label, row_width - padding);
+                        let bg = triage_row_bg(tag, is_selected);
+                        ui.push_id(&path, |ui| {
+                            let response = render_list_row(
+                                ui,
+                                &label,
+                                row_width,
+                                row_height,
+                                bg,
+                                palette.text_primary,
+                                egui::Sense::click_and_drag(),
+                            );
                             if response.clicked() {
                                 self.controller.select_from_browser(&path);
                             }
@@ -206,19 +206,19 @@ fn triage_row_bg(tag: SampleTag, is_selected: bool) -> Option<Color32> {
     let palette = style::palette();
     match tag {
         SampleTag::Trash => Some(if is_selected {
-            Color32::from_rgba_unmultiplied(160, 72, 72, 180)
+            Color32::from_rgba_unmultiplied(216, 108, 88, 170)
         } else {
-            Color32::from_rgba_unmultiplied(128, 48, 48, 110)
+            Color32::from_rgba_unmultiplied(140, 68, 60, 120)
         }),
         SampleTag::Keep => Some(if is_selected {
             Color32::from_rgba_unmultiplied(
                 palette.success.r(),
                 palette.success.g(),
                 palette.success.b(),
-                200,
+                170,
             )
         } else {
-            Color32::from_rgba_unmultiplied(56, 112, 76, 110)
+            Color32::from_rgba_unmultiplied(40, 110, 98, 120)
         }),
         SampleTag::Neutral => is_selected.then_some(style::row_selected_fill()),
     }
