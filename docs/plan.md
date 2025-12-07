@@ -11,6 +11,9 @@
 2. [x] Make fullscreen the default startup mode while preserving the existing window sizing constraints for windowed mode.
 3. [x] Add F11 handling to toggle between fullscreen and windowed modes, keeping the tracked state in sync and ensuring current UI behaviour remains intact.
 4. [x] Outline manual QA notes to verify default fullscreen launch and F11 toggling across platforms.
+5. [x] Ensure fullscreen startup truly fills the screen and refine the toggle flow to avoid flicker.
+6. [x] Re-run checks and manual QA against the adjusted fullscreen/toggle behaviour.
+7. [x] Adjust default launch to maximized windowed mode while preserving the F11 fullscreen toggle behaviour.
 
 ## Code Style & Architecture Rules Reminder
 - Keep files under 400 lines; split when necessary.
