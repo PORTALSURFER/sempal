@@ -406,9 +406,6 @@ impl EguiController {
         let _ = db.set_tag(path, target_tag);
         if self.selected_source.as_ref() == Some(&source.id) {
             self.rebuild_browser_lists();
-            if require_present {
-                self.select_wav_by_path(path);
-            }
         }
         Ok(())
     }
