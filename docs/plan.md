@@ -13,6 +13,10 @@
 4. [x] Add egui context menu on collection list/items to set/clear export path using the existing `rfd::FileDialog` flow and to trigger a manual “refresh export”.
 5. [x] Build refresh-export reconciliation that scans the export folder to add missing items (when source paths resolve) and prune entries whose files are gone, updating config/UI accordingly.
 6. [x] Add focused tests for collection export bookkeeping and config round-trips, plus manual validation notes for the new UI flows.
+7. [x] Show a warning indicator for collections without an export path in the UI list.
+8. [x] Prompt for export path when creating a new collection via the existing add flow.
+9. [x] Nest exports under per-collection subfolders inside the chosen base directory.
+10. [x] Add an option to open the collection export folder in the OS file explorer.
 
 ## Code Style & Architecture Rules Reminder
 - File and module structure

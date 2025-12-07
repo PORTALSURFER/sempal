@@ -69,6 +69,17 @@ impl EguiController {
         let _ = self.persist_config("Failed to save collection");
         self.refresh_collections_ui();
         self.set_status("Collection created", StatusTone::Info);
+        if let Some(current_id) = self.selected_collection.clone() {
+            self.pick_collection_export_path(&current_id);
+            if self
+                .collections
+                .iter()
+                .find(|c| c.id == current_id && c.export_path.is_none())
+                .is_some()
+            {
+                self.set_status("No export folder chosen; exports disabled", StatusTone::Warning);
+            }
+        }
     }
 
     /// Add a sample to the given collection id.

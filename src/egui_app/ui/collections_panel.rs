@@ -1,6 +1,7 @@
 use super::helpers::{clamp_label_for_width, list_row_height, render_list_row};
 use super::*;
 use crate::egui_app::state::CollectionRowView;
+use std::path::PathBuf;
 use eframe::egui::{self, Color32, RichText, Stroke, Ui};
 
 impl EguiApp {
@@ -29,7 +30,15 @@ impl EguiApp {
                     let row_height = list_row_height(ui);
                     for (index, collection) in rows.iter().enumerate() {
                         let selected = collection.selected;
-                        let label = format!("{} ({})", collection.name, collection.count);
+                        let mut label = format!("{} ({})", collection.name, collection.count);
+                        let (text_color, indicator) = if collection.export_path.is_none() {
+                            (Color32::from_rgb(255, 200, 120), "! ")
+                        } else {
+                            (Color32::WHITE, "")
+                        };
+                        if !indicator.is_empty() {
+                            label.insert_str(0, indicator);
+                        }
                         ui.push_id(&collection.id, |ui| {
                             let row_width = ui.available_width();
                             let padding = ui.spacing().button_padding.x * 2.0;
@@ -41,7 +50,7 @@ impl EguiApp {
                                 row_width,
                                 row_height,
                                 bg,
-                                Color32::WHITE,
+                                text_color,
                                 egui::Sense::click(),
                             );
                             if response.clicked() {
@@ -240,11 +249,38 @@ impl EguiApp {
                 self.controller.refresh_collection_export(&collection.id);
                 ui.close_menu();
             }
-            if let Some(path) = &collection.export_path {
+            let export_dir = collection_export_dir(collection);
+            if ui
+                .add_enabled(export_dir.is_some(), egui::Button::new("Open export folder"))
+                .clicked()
+            {
+                self.controller
+                    .open_collection_export_folder(&collection.id);
+                ui.close_menu();
+            }
+            if let Some(path) = export_dir {
                 ui.small(format!("Current export: {}", path.display()));
             } else {
                 ui.small("No export folder set");
             }
         });
     }
+}
+
+fn collection_export_dir(collection: &CollectionRowView) -> Option<PathBuf> {
+    collection
+        .export_path
+        .clone()
+        .map(|base| base.join(sanitized_collection_name(&collection.name)))
+}
+
+fn sanitized_collection_name(name: &str) -> String {
+    let mut cleaned: String = name
+        .chars()
+        .map(|c| if matches!(c, '/' | '\\' | ':' | '*') { '_' } else { c })
+        .collect();
+    if cleaned.is_empty() {
+        cleaned.push_str("collection");
+    }
+    cleaned
 }
