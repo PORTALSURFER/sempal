@@ -47,3 +47,6 @@ as a first hotkey, lets add 'x' to select the focused sample, 'n' to normalize t
 
 \plan - when I resize the sides of the waveform selection, there is a slight stickyness at first, I need to move the mouse a couple pixels before it unlocks and we actually start resizing, this is very annoying for precise tweaks, lets improve this so its butter smooth and instant.
 
+\plan - lets prefer using vulkan if egui and the users OS support it, which is windows currently.
+
+\plan - add a litte icon or graphic in the top left corner of our ui when in fullscreen mode, to users can toggle back to windowed mode using it instead of f11 as an alternative option
