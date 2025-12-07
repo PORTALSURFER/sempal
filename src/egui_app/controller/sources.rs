@@ -1,4 +1,5 @@
 use super::*;
+use super::collection_export::delete_exported_file;
 
 impl EguiController {
     /// Select the first available source or refresh the current one.
@@ -68,9 +69,13 @@ impl EguiController {
         }
         let removed = self.sources.remove(index);
         self.db_cache.remove(&removed.id);
-        self.collections
-            .iter_mut()
-            .for_each(|collection| collection.prune_source(&removed.id));
+        for collection in self.collections.iter_mut() {
+            let export_root = collection.export_path.clone();
+            let removed_members = collection.prune_source(&removed.id);
+            for member in removed_members {
+                delete_exported_file(export_root.clone(), &member);
+            }
+        }
         if self
             .selected_source
             .as_ref()
@@ -107,9 +112,13 @@ impl EguiController {
         };
         let removed = self.sources.remove(index);
         self.db_cache.remove(&removed.id);
-        self.collections
-            .iter_mut()
-            .for_each(|collection| collection.prune_source(&removed.id));
+        for collection in self.collections.iter_mut() {
+            let export_root = collection.export_path.clone();
+            let removed_members = collection.prune_source(&removed.id);
+            for member in removed_members {
+                delete_exported_file(export_root.clone(), &member);
+            }
+        }
         if self
             .selected_source
             .as_ref()
