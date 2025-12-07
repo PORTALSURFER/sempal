@@ -125,6 +125,11 @@ impl eframe::App for EguiApp {
         if ctx.input(|i| i.key_pressed(egui::Key::Space)) {
             self.controller.toggle_play_pause();
         }
+        if ctx.input(|i| {
+            i.key_pressed(egui::Key::C) && i.modifiers.ctrl && !i.modifiers.alt && !i.modifiers.shift
+        }) {
+            self.controller.copy_selection_to_clipboard();
+        }
         if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             if !self.controller.ui.browser.selected_paths.is_empty() {
                 self.controller.clear_browser_selection();

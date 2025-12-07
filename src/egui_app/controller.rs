@@ -7,6 +7,7 @@ mod collection_items;
 mod collection_items_helpers;
 mod collections;
 mod config;
+mod clipboard;
 mod drag;
 mod loading;
 mod playback;
