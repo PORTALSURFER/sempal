@@ -159,6 +159,28 @@ fn triage_filter_limits_visible_rows() {
 }
 
 #[test]
+fn tagging_keeps_selection_on_same_sample() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source);
+    controller.wav_entries = vec![
+        sample_entry("one.wav", SampleTag::Neutral),
+        sample_entry("two.wav", SampleTag::Neutral),
+    ];
+    controller.selected_wav = Some(PathBuf::from("one.wav"));
+    controller.rebuild_wav_lookup();
+    controller.rebuild_triage_lists();
+
+    controller.tag_selected(SampleTag::Keep);
+
+    assert_eq!(
+        controller.selected_wav.as_deref(),
+        Some(Path::new("one.wav"))
+    );
+    assert_eq!(controller.ui.triage.selected_visible, Some(0));
+    assert_eq!(controller.wav_entries[0].tag, SampleTag::Keep);
+}
+
+#[test]
 fn export_path_copies_and_refreshes_members() -> Result<(), String> {
     let temp = tempdir().unwrap();
     let source_root = temp.path().join("source");
