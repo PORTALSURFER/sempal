@@ -15,6 +15,7 @@
 - Add selection marker indicator in sample browser
 - Add esc hotkey to clear sample browser selection
 - Render triage flags as right-edge markers
+- Add Windows external drag-out flow for samples and selections
 
 ### 🐛 Bug Fixes
 

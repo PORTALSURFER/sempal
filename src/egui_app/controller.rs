@@ -78,6 +78,8 @@ pub struct EguiController {
     pending_select_path: Option<PathBuf>,
     scan_rx: Option<Receiver<ScanResult>>,
     scan_in_progress: bool,
+    #[cfg(target_os = "windows")]
+    drag_hwnd: Option<windows::Win32::Foundation::HWND>,
 }
 
 impl EguiController {
@@ -114,8 +116,18 @@ impl EguiController {
             pending_select_path: None,
             scan_rx: None,
             scan_in_progress: false,
+            #[cfg(target_os = "windows")]
+            drag_hwnd: None,
         }
     }
+
+    #[cfg(target_os = "windows")]
+    pub fn set_drag_hwnd(&mut self, hwnd: Option<windows::Win32::Foundation::HWND>) {
+        self.drag_hwnd = hwnd;
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    pub fn set_drag_hwnd(&mut self, _hwnd: Option<()>) {}
 
     fn set_status(&mut self, text: impl Into<String>, tone: StatusTone) {
         let (label, color) = status_badge(tone);
