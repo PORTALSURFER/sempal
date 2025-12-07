@@ -8,6 +8,7 @@ use eframe::egui::{
 impl EguiApp {
     pub(super) fn render_waveform(&mut self, ui: &mut Ui) {
         let palette = style::palette();
+        let highlight = palette.accent_copper;
         let frame = Frame::new()
             .fill(style::compartment_fill())
             .stroke(style::outer_border())
@@ -81,7 +82,7 @@ impl EguiApp {
                 let x = pos.x;
                 painter.line_segment(
                     [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
-                    Stroke::new(1.0, palette.accent_ice),
+                    Stroke::new(1.0, highlight),
                 );
             }
 
@@ -96,7 +97,7 @@ impl EguiApp {
                 painter.rect_filled(
                     selection_rect,
                     0.0,
-                    style::with_alpha(palette.accent_ice, 60),
+                    style::with_alpha(highlight, 60),
                 );
                 let handle_rect = selection_handle_rect(selection_rect);
                 let handle_response = ui.interact(
@@ -106,7 +107,7 @@ impl EguiApp {
                 );
                 let handle_hovered = handle_response.hovered() || handle_response.dragged();
                 let handle_color = if handle_hovered {
-                    style::with_alpha(palette.accent_ice, 200)
+                    style::with_alpha(highlight, 200)
                 } else {
                     style::with_alpha(palette.grid_strong, 180)
                 };
@@ -114,7 +115,7 @@ impl EguiApp {
                 painter.rect_stroke(
                     handle_rect,
                     0.0,
-                    Stroke::new(1.5, palette.accent_ice),
+                    Stroke::new(1.5, highlight),
                     StrokeKind::Inside,
                 );
                 if handle_response.drag_started() {
@@ -170,7 +171,7 @@ impl EguiApp {
                         || edge_response.hovered()
                         || edge_response.dragged();
                     if edge_hovered {
-                        let color = palette.accent_ice;
+                        let color = highlight;
                         paint_selection_edge_bracket(&painter, edge_rect, edge, color);
                         ui.output_mut(|o| o.cursor_icon = CursorIcon::ResizeHorizontal);
                     }
@@ -180,7 +181,7 @@ impl EguiApp {
                 let x = rect.left() + rect.width() * self.controller.ui.waveform.playhead.position;
                 painter.line_segment(
                     [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
-                    Stroke::new(2.0, palette.accent_ice),
+                    Stroke::new(2.0, highlight),
                 );
             }
 
