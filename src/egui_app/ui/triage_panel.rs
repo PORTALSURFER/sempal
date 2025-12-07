@@ -52,6 +52,7 @@ impl EguiApp {
     ) {
         ui.label(RichText::new(title).color(accent));
         ui.add_space(6.0);
+        let list_height = ui.available_height().max(0.0);
         let drag_active = self.controller.ui.drag.active_path.is_some();
         let pointer_pos = ui
             .input(|i| i.pointer.hover_pos().or_else(|| i.pointer.interact_pos()))
@@ -76,6 +77,7 @@ impl EguiApp {
         let frame_response = bg_frame.show(ui, |ui| {
             let scroll_response = egui::ScrollArea::vertical()
                 .id_source(format!("triage_scroll_{title}"))
+                .max_height(list_height)
                 .show_rows(ui, row_height, total_rows, |ui, row_range| {
                     for row in row_range {
                         let entry_index = {
