@@ -41,6 +41,9 @@ pub struct Collection {
     pub name: String,
     #[serde(default)]
     pub members: Vec<CollectionMember>,
+    /// Optional folder where collection members are exported.
+    #[serde(default)]
+    pub export_path: Option<PathBuf>,
 }
 
 impl Collection {
@@ -50,6 +53,7 @@ impl Collection {
             id: CollectionId::new(),
             name: name.into(),
             members: Vec::new(),
+            export_path: None,
         }
     }
 
@@ -72,9 +76,25 @@ impl Collection {
         true
     }
 
+    /// Remove a sample from the collection if it exists.
+    pub fn remove_member(&mut self, source_id: &SourceId, relative_path: &PathBuf) -> bool {
+        let len_before = self.members.len();
+        self.members
+            .retain(|member| &member.source_id != source_id || &member.relative_path != relative_path);
+        len_before != self.members.len()
+    }
+
     /// Drop any members that belong to the provided source id.
-    pub fn prune_source(&mut self, source_id: &SourceId) {
-        self.members.retain(|member| &member.source_id != source_id);
+    pub fn prune_source(&mut self, source_id: &SourceId) -> Vec<CollectionMember> {
+        let mut removed = Vec::new();
+        self.members.retain(|member| {
+            let keep = &member.source_id != source_id;
+            if !keep {
+                removed.push(member.clone());
+            }
+            keep
+        });
+        removed
     }
 }
 
@@ -105,8 +125,11 @@ mod tests {
         let mut collection = Collection::new("Test");
         collection.add_member(id.clone(), sample_path("one.wav"));
         collection.add_member(other.clone(), sample_path("two.wav"));
-        collection.prune_source(&id);
+        let removed = collection.prune_source(&id);
         assert_eq!(collection.members.len(), 1);
         assert_eq!(collection.members[0].source_id, other);
+        assert_eq!(removed.len(), 1);
+        assert_eq!(removed[0].relative_path, PathBuf::from("one.wav"));
+        assert_eq!(removed[0].source_id, id);
     }
 }

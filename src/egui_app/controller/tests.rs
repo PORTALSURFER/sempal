@@ -1,4 +1,5 @@
 use super::*;
+use std::path::Path;
 use tempfile::tempdir;
 
 fn dummy_controller() -> (EguiController, SampleSource) {
@@ -129,4 +130,52 @@ fn triage_autoscroll_disabled_when_collection_selected() {
     controller.ui.collections.selected_sample = Some(0);
     controller.rebuild_triage_lists();
     assert!(!controller.ui.triage.autoscroll);
+}
+
+#[test]
+fn export_path_copies_and_refreshes_members() -> Result<(), String> {
+    let temp = tempdir().unwrap();
+    let source_root = temp.path().join("source");
+    let export_root = temp.path().join("export");
+    std::fs::create_dir_all(&source_root).unwrap();
+    std::fs::create_dir_all(&export_root).unwrap();
+    let renderer = WaveformRenderer::new(10, 10);
+    let mut controller = EguiController::new(renderer, None);
+    let source = SampleSource::new(source_root.clone());
+    controller.cache_db(&source).unwrap();
+    controller.selected_source = Some(source.id.clone());
+    controller.sources.push(source.clone());
+
+    let collection = Collection::new("Test");
+    let collection_id = collection.id.clone();
+    controller.collections.push(collection);
+    controller.selected_collection = Some(collection_id.clone());
+
+    let sample_path = source_root.join("one.wav");
+    std::fs::write(&sample_path, b"data").unwrap();
+
+    if let Some(collection) = controller.collections.iter_mut().find(|c| c.id == collection_id) {
+        collection.export_path = Some(export_root.clone());
+    }
+    controller.add_sample_to_collection(&collection_id, Path::new("one.wav"))?;
+    assert!(export_root.join("one.wav").is_file());
+
+    std::fs::remove_file(export_root.join("one.wav")).unwrap();
+    let extra_path = source_root.join("extra.wav");
+    std::fs::write(&extra_path, b"more").unwrap();
+    std::fs::write(export_root.join("extra.wav"), b"more").unwrap();
+
+    controller.refresh_collection_export(&collection_id);
+    let collection = controller
+        .collections
+        .iter()
+        .find(|c| c.id == collection_id)
+        .unwrap();
+    let labels: Vec<_> = collection
+        .members
+        .iter()
+        .map(|m| m.relative_path.to_string_lossy().to_string())
+        .collect();
+    assert_eq!(labels, vec!["extra.wav"]);
+    Ok(())
 }

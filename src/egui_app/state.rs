@@ -193,6 +193,7 @@ pub struct CollectionRowView {
     pub name: String,
     pub selected: bool,
     pub count: usize,
+    pub export_path: Option<PathBuf>,
 }
 
 /// Display data for a sample inside a collection.
