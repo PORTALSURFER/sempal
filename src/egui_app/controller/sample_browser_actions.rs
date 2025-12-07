@@ -205,7 +205,7 @@ impl EguiController {
         Ok((file_size, modified_ns))
     }
 
-    fn prune_cached_sample(&mut self, source: &SampleSource, relative_path: &Path) {
+    pub(super) fn prune_cached_sample(&mut self, source: &SampleSource, relative_path: &Path) {
         if let Some(cache) = self.wav_cache.get_mut(&source.id) {
             cache.retain(|entry| entry.relative_path != relative_path);
         }
@@ -222,7 +222,7 @@ impl EguiController {
         self.clear_loaded_sample_if(source, relative_path);
     }
 
-    fn clear_loaded_sample_if(&mut self, source: &SampleSource, relative_path: &Path) {
+    pub(super) fn clear_loaded_sample_if(&mut self, source: &SampleSource, relative_path: &Path) {
         if self.selected_source.as_ref() == Some(&source.id) {
             if self.selected_wav.as_deref() == Some(relative_path) {
                 self.selected_wav = None;
@@ -246,7 +246,11 @@ impl EguiController {
         }
     }
 
-    fn refresh_waveform_for_sample(&mut self, source: &SampleSource, relative_path: &Path) {
+    pub(super) fn refresh_waveform_for_sample(
+        &mut self,
+        source: &SampleSource,
+        relative_path: &Path,
+    ) {
         let loaded_matches = self.loaded_audio.as_ref().is_some_and(|audio| {
             audio.source_id == source.id && audio.relative_path == relative_path
         });
@@ -337,7 +341,7 @@ impl EguiController {
         changed
     }
 
-    fn remove_sample_from_collections(
+    pub(super) fn remove_sample_from_collections(
         &mut self,
         source_id: &SourceId,
         relative_path: &Path,

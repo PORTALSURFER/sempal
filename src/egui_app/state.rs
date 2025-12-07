@@ -20,6 +20,8 @@ pub struct UiState {
     /// Master output volume (0.0-1.0).
     pub volume: f32,
     pub loaded_wav: Option<PathBuf>,
+    /// Optional trash folder path configured by the user.
+    pub trash_folder: Option<PathBuf>,
 }
 
 impl Default for UiState {
@@ -33,6 +35,7 @@ impl Default for UiState {
             collections: CollectionsState::default(),
             volume: 1.0,
             loaded_wav: None,
+            trash_folder: None,
         }
     }
 }

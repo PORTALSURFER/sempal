@@ -28,6 +28,12 @@
   - **Up/Down Arrows:** Move selection through the visible list; playback follows the selection when enabled.
   - **Ctrl/Cmd + Right/Left:** Cycle the active filter chip.
 
+## Trash management
+- Open the **Options** menu in the status bar to choose a trash folder. The choice is saved and reused.
+- **Move trashed samples to folder:** After confirmation, moves every sample tagged Trash from all sources into the trash folder (keeping relative names) and removes them from source lists/collections.
+- **Take out trash:** After confirmation, permanently deletes everything inside the trash folder.
+- **Open trash folder:** Opens the configured trash folder in your OS file explorer.
+
 ## Collections
 - Click the **+** button to create a collection (enabled by default via feature flags). You’ll be prompted to choose an export folder; if set, Sempal copies members into `<export>/<collection-name>/`.
 - Add items:

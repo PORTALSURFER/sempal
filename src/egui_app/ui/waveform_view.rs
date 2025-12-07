@@ -94,11 +94,7 @@ impl EguiApp {
                     egui::pos2(x, rect.top()),
                     egui::vec2(width, rect.height()),
                 );
-                painter.rect_filled(
-                    selection_rect,
-                    0.0,
-                    style::with_alpha(highlight, 60),
-                );
+                painter.rect_filled(selection_rect, 0.0, style::with_alpha(highlight, 60));
                 let handle_rect = selection_handle_rect(selection_rect);
                 let handle_response = ui.interact(
                     handle_rect,
