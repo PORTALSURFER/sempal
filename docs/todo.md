@@ -1,11 +1,6 @@
 \plan - lets do a housekeeping pass, clean up the codebase, reduce file lengths, improve DRYness, improve maintainability, collapse large structs/objects into clearly named smaller objects, add missing docs, improve symbol naming, find and resolve bugs, improve performance, etc.
 
 --
-
-
-\plan - lets adjust the look and feel of everything so we have had rectangles for everything, never round corners, if we must have soft corners, use a diagonal cut, very hard sci fi in terms of looks.
-please review the styleguide in @styleguide.md and make a plan following it.
-
 - if the user disables looping while we are actively playing, stop looping after the current cycle. currently it just keep looping until we restart play.
 
 - lets add a numbering column to the main sample list and to the collection items list showing the count of items
