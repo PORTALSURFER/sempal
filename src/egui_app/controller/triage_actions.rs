@@ -250,6 +250,8 @@ impl EguiController {
         let selected_matches = self.selected_source.as_ref() == Some(&source.id)
             && self.selected_wav.as_deref() == Some(relative_path);
         if loaded_matches || selected_matches {
+            self.loaded_wav = None;
+            self.ui.loaded_wav = None;
             if let Err(err) = self.load_waveform_for_selection(source, relative_path) {
                 self.set_status(err, StatusTone::Warning);
             }
