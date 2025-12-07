@@ -10,8 +10,8 @@
 1. [x] Review current drag/selection/export paths (`EguiApp` gesture handling, `EguiController` drag + export logic) to locate hook points for initiating external drags without breaking in-app targets.
 2. [x] Evaluate feasible APIs for starting external drags from eframe/winit (platform-specific shims or a helper crate) and design a small cross-platform abstraction with graceful fallback when unsupported.
 3. [x] Implement external drag initiation for samples and selection clips, ensuring files exist (exporting clips when needed), wiring through controller/UI state, and preserving existing internal drop behaviour.
-4. [~] Update UI feedback and cancellation handling around external drags (cursor/icon or status text) so users understand when a drag is external versus internal.
-5. [-] Add tests or targeted QA steps for selection export/regression and document manual verification for dragging into Explorer/DAWs.
+4. [x] Update UI feedback and cancellation handling around external drags (cursor/icon or status text) so users understand when a drag is external versus internal.
+5. [~] Add tests or targeted QA steps for selection export/regression and document manual verification for dragging into Explorer/DAWs.
 
 ## Code Style & Architecture Rules Reminder
 - Keep files under 400 lines; split when necessary.
