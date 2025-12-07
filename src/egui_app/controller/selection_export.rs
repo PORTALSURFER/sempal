@@ -125,8 +125,12 @@ fn crop_selection_samples(
         .map_err(|err| format!("Invalid wav: {err}"))?;
     let spec = reader.spec();
     let channels = audio.channels.max(1) as usize;
-    let samples =
-        decode_samples(&mut reader, spec.sample_format, spec.bits_per_sample, channels)?;
+    let samples = decode_samples(
+        &mut reader,
+        spec.sample_format,
+        spec.bits_per_sample,
+        channels,
+    )?;
     let total_frames = samples.len() / channels;
     if total_frames == 0 {
         return Err("No audio data to export".into());
@@ -169,8 +173,7 @@ fn decode_samples(
 fn frame_bounds(total_frames: usize, bounds: SelectionRange) -> (usize, usize) {
     let start_frame = ((bounds.start() * total_frames as f32).floor() as usize)
         .min(total_frames.saturating_sub(1));
-    let mut end_frame = ((bounds.end() * total_frames as f32).ceil() as usize)
-        .min(total_frames);
+    let mut end_frame = ((bounds.end() * total_frames as f32).ceil() as usize).min(total_frames);
     if end_frame <= start_frame {
         end_frame = (start_frame + 1).min(total_frames);
     }
@@ -191,11 +194,7 @@ fn slice_frames(
     cropped
 }
 
-fn write_selection_wav(
-    target: &Path,
-    samples: &[f32],
-    spec: hound::WavSpec,
-) -> Result<(), String> {
+fn write_selection_wav(target: &Path, samples: &[f32], spec: hound::WavSpec) -> Result<(), String> {
     if let Some(parent) = target.parent() {
         if !parent.exists() {
             fs::create_dir_all(parent)

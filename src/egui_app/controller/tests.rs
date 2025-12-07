@@ -1,44 +1,8 @@
+use super::test_support::{dummy_controller, sample_entry, write_test_wav};
 use super::*;
 use crate::egui_app::state::{DragPayload, TriageFilter};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tempfile::tempdir;
-use hound::{SampleFormat, WavSpec, WavWriter};
-
-fn dummy_controller() -> (EguiController, SampleSource) {
-    let renderer = WaveformRenderer::new(10, 10);
-    let mut controller = EguiController::new(renderer, None);
-    let dir = tempdir().unwrap();
-    let root_dir = dir.path().to_path_buf();
-    let root = root_dir.join("source");
-    std::mem::forget(dir);
-    std::fs::create_dir_all(&root).unwrap();
-    let source = SampleSource::new(root);
-    controller.selected_source = Some(source.id.clone());
-    (controller, source)
-}
-
-fn sample_entry(name: &str, tag: SampleTag) -> WavEntry {
-    WavEntry {
-        relative_path: PathBuf::from(name),
-        file_size: 0,
-        modified_ns: 0,
-        tag,
-    }
-}
-
-fn write_test_wav(path: &Path, samples: &[f32]) {
-    let spec = WavSpec {
-        channels: 1,
-        sample_rate: 8,
-        bits_per_sample: 32,
-        sample_format: SampleFormat::Float,
-    };
-    let mut writer = WavWriter::create(path, spec).unwrap();
-    for sample in samples {
-        writer.write_sample(*sample).unwrap();
-    }
-    writer.finalize().unwrap();
-}
 
 #[test]
 fn missing_source_is_pruned_during_load() {
@@ -267,6 +231,22 @@ fn exporting_selection_updates_entries_and_db() {
 }
 
 #[test]
+fn waveform_image_resizes_to_view() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    let wav_path = source.root.join("resize.wav");
+    write_test_wav(&wav_path, &[0.0, 0.25, -0.5, 0.75]);
+
+    controller
+        .load_waveform_for_selection(&source, Path::new("resize.wav"))
+        .unwrap();
+    controller.update_waveform_size(24, 8);
+
+    let size = controller.ui.waveform.image.as_ref().unwrap().image.size;
+    assert_eq!(size, [24, 8]);
+}
+
+#[test]
 fn selection_drop_adds_clip_to_collection() {
     let temp = tempdir().unwrap();
     let root = temp.path().join("source");
@@ -306,16 +286,20 @@ fn selection_drop_adds_clip_to_collection() {
     assert_eq!(collection.members.len(), 1);
     let member_path = &collection.members[0].relative_path;
     assert!(root.join(member_path).exists());
-    assert!(controller
-        .wav_entries
-        .iter()
-        .any(|entry| &entry.relative_path == member_path));
-    assert!(controller
-        .ui
-        .collections
-        .samples
-        .iter()
-        .any(|sample| sample.path == *member_path));
+    assert!(
+        controller
+            .wav_entries
+            .iter()
+            .any(|entry| &entry.relative_path == member_path)
+    );
+    assert!(
+        controller
+            .ui
+            .collections
+            .samples
+            .iter()
+            .any(|sample| sample.path == *member_path)
+    );
 }
 
 #[test]

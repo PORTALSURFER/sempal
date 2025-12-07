@@ -24,6 +24,10 @@ impl EguiApp {
             ui.add_space(8.0);
             let desired = egui::vec2(ui.available_width(), 260.0);
             let (rect, response) = ui.allocate_exact_size(desired, egui::Sense::click_and_drag());
+            let target_width = rect.width().round().max(1.0) as u32;
+            let target_height = rect.height().round().max(1.0) as u32;
+            self.controller
+                .update_waveform_size(target_width, target_height);
             let painter = ui.painter();
             let tex_id = if let Some(image) = &self.controller.ui.waveform.image {
                 let new_size = image.image.size;
@@ -109,8 +113,7 @@ impl EguiApp {
                 );
                 if handle_response.drag_started() {
                     if let Some(pos) = handle_response.interact_pointer_pos() {
-                        self.controller
-                            .start_selection_drag_payload(selection, pos);
+                        self.controller.start_selection_drag_payload(selection, pos);
                     }
                 } else if handle_response.dragged() {
                     if let Some(pos) = handle_response.interact_pointer_pos() {
@@ -161,7 +164,10 @@ impl EguiApp {
 fn selection_handle_rect(selection_rect: egui::Rect) -> egui::Rect {
     let handle_height = (selection_rect.height() / 3.0).max(12.0);
     egui::Rect::from_min_size(
-        egui::pos2(selection_rect.left(), selection_rect.bottom() - handle_height),
+        egui::pos2(
+            selection_rect.left(),
+            selection_rect.bottom() - handle_height,
+        ),
         egui::vec2(selection_rect.width(), handle_height),
     )
 }
