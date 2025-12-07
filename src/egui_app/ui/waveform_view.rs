@@ -1,5 +1,5 @@
-use super::*;
 use super::style;
+use super::*;
 use crate::selection::SelectionEdge;
 use eframe::egui::{
     self, Color32, CursorIcon, Frame, Margin, RichText, Stroke, StrokeKind, TextureOptions, Ui,
