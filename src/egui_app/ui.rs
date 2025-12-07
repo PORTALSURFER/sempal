@@ -58,7 +58,19 @@ impl EguiApp {
         ui.vertical(|ui| {
             self.render_waveform(ui);
             ui.add_space(8.0);
-            self.render_triage(ui);
+            let triage_top = ui.cursor().min.y;
+            let triage_rect = egui::Rect::from_min_max(
+                egui::pos2(ui.max_rect().left(), triage_top),
+                ui.max_rect().max,
+            );
+            if triage_rect.height() > 0.0 {
+                let mut triage_ui = ui.child_ui_with_id_source(
+                    triage_rect,
+                    egui::Layout::top_down(egui::Align::Min),
+                    "triage_area",
+                );
+                self.render_triage(&mut triage_ui);
+            }
         });
     }
 }
