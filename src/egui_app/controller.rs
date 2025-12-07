@@ -3,6 +3,8 @@
 //! keep files small and behaviour easy to reason about.
 
 mod collection_export;
+mod collection_items;
+mod collection_items_helpers;
 mod collections;
 mod config;
 mod drag;
@@ -214,6 +216,8 @@ struct LoadedAudio {
     channels: u16,
 }
 
+#[cfg(test)]
+mod collection_items_tests;
 #[cfg(test)]
 mod test_support;
 #[cfg(test)]
