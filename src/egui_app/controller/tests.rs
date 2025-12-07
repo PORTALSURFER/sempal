@@ -181,6 +181,25 @@ fn tagging_keeps_selection_on_same_sample() {
 }
 
 #[test]
+fn left_tagging_from_keep_untags_then_trashes() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source);
+    controller.wav_entries = vec![
+        sample_entry("one.wav", SampleTag::Keep),
+        sample_entry("two.wav", SampleTag::Neutral),
+    ];
+    controller.selected_wav = Some(PathBuf::from("one.wav"));
+    controller.rebuild_wav_lookup();
+    controller.rebuild_triage_lists();
+
+    controller.tag_selected_left();
+    assert_eq!(controller.wav_entries[0].tag, SampleTag::Neutral);
+
+    controller.tag_selected_left();
+    assert_eq!(controller.wav_entries[0].tag, SampleTag::Trash);
+}
+
+#[test]
 fn export_path_copies_and_refreshes_members() -> Result<(), String> {
     let temp = tempdir().unwrap();
     let source_root = temp.path().join("source");

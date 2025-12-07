@@ -41,6 +41,13 @@ impl EguiController {
         }
     }
 
+    /// Current tag of the selected wav, if any.
+    pub fn selected_tag(&self) -> Option<SampleTag> {
+        self.selected_row_index()
+            .and_then(|idx| self.wav_entries.get(idx))
+            .map(|entry| entry.tag)
+    }
+
     /// Apply a new triage filter and refresh visible rows.
     pub fn set_triage_filter(&mut self, filter: TriageFilter) {
         if self.ui.triage.filter != filter {
