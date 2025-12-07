@@ -3552,7 +3552,7 @@ dependencies = [
 
 [[package]]
 name = "sempal"
-version = "0.141.0"
+version = "0.143.0"
 dependencies = [
  "criterion",
  "directories",
@@ -3561,6 +3561,7 @@ dependencies = [
  "hound",
  "image",
  "open",
+ "raw-window-handle",
  "rfd",
  "rodio",
  "rusqlite",

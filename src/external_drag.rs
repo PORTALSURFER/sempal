@@ -9,32 +9,29 @@ use std::path::PathBuf;
 /// Start dragging the given file paths to an external target.
 ///
 /// Returns an error if the platform does not support outgoing drags.
-pub fn start_file_drag(paths: &[PathBuf]) -> Result<(), String> {
+#[cfg(target_os = "windows")]
+pub fn start_file_drag(hwnd: windows::Win32::Foundation::HWND, paths: &[PathBuf]) -> Result<(), String> {
     if paths.is_empty() {
         return Err("No files to drag".into());
     }
-    platform::start_file_drag(paths)
+    platform::start_file_drag(hwnd, paths)
 }
 
 #[cfg(not(target_os = "windows"))]
-mod platform {
-    use super::*;
-
-    pub fn start_file_drag(_paths: &[PathBuf]) -> Result<(), String> {
-        Err("External drag-out is only supported on Windows in this build".into())
-    }
+pub fn start_file_drag(_hwnd: (), _paths: &[PathBuf]) -> Result<(), String> {
+    Err("External drag-out is only supported on Windows in this build".into())
 }
 
 #[cfg(target_os = "windows")]
 mod platform {
     use super::*;
+    use std::cell::Cell;
     use std::mem::ManuallyDrop;
     use std::os::windows::ffi::OsStrExt;
     use std::ptr::copy_nonoverlapping;
-    use windows::Win32::Foundation::{
-        DRAGDROP_S_CANCEL, DRAGDROP_S_DROP, DRAGDROP_S_USEDEFAULTCURSORS, DV_E_FORMATETC,
-        E_INVALIDARG, HGLOBAL, POINT,
-    };
+    use std::sync::OnceLock;
+    use windows::Win32::Foundation::{DV_E_FORMATETC, E_INVALIDARG, HGLOBAL, POINT};
+    use windows::Win32::System::DataExchange::RegisterClipboardFormatW;
     use windows::Win32::System::Com::{
         DATADIR_GET, DVASPECT_CONTENT, FORMATETC, IAdviseSink, IDataObject, IEnumFORMATETC,
         STGMEDIUM, STGMEDIUM_0, TYMED_HGLOBAL,
@@ -43,12 +40,11 @@ mod platform {
         GMEM_MOVEABLE, GMEM_ZEROINIT, GlobalAlloc, GlobalLock, GlobalUnlock,
     };
     use windows::Win32::System::Ole::{
-        CF_HDROP, DROPEFFECT, DROPEFFECT_COPY, DROPEFFECT_LINK, DROPEFFECT_MOVE,
-        DROPEFFECT_NONE, DoDragDrop, IDropSource, OleInitialize, OleUninitialize,
+        CF_HDROP, DROPEFFECT, DROPEFFECT_COPY, DROPEFFECT_LINK, DROPEFFECT_MOVE, DROPEFFECT_NONE,
+        OleInitialize, OleUninitialize,
     };
-    use windows::Win32::System::SystemServices::{MK_LBUTTON, MODIFIERKEYS_FLAGS};
-    use windows::Win32::UI::Shell::{DROPFILES, SHCreateStdEnumFmtEtc};
-    use windows::core::{HRESULT, Ref, BOOL};
+    use windows::Win32::UI::Shell::{DROPFILES, SHCreateStdEnumFmtEtc, SHDoDragDrop};
+    use windows::core::{w, HRESULT, Ref, BOOL};
     use windows_implement::implement;
 
     /// RAII guard to balance COM initialization.
@@ -73,6 +69,9 @@ mod platform {
     struct FileDropDataObject {
         paths: Vec<PathBuf>,
         format: FORMATETC,
+        preferred_drop_effect: u16,
+        performed_drop_effect: u16,
+        performed_effect: Cell<DROPEFFECT>,
     }
 
     impl FileDropDataObject {
@@ -80,20 +79,33 @@ mod platform {
             if paths.is_empty() {
                 return Err("No files to drag".into());
             }
+            let (preferred_drop_effect, performed_drop_effect) = drop_effect_formats()?;
             Ok(Self {
                 paths,
                 format: build_format(),
+                preferred_drop_effect,
+                performed_drop_effect,
+                performed_effect: Cell::new(DROPEFFECT_NONE),
             })
         }
 
         fn matches_format(&self, fmt: &FORMATETC) -> bool {
-            fmt.cfFormat == CF_HDROP.0 as u16
+            (fmt.cfFormat == CF_HDROP.0 as u16
                 && fmt.dwAspect == DVASPECT_CONTENT.0
                 && (fmt.tymed & TYMED_HGLOBAL.0 as u32) != 0
-                && (fmt.lindex == -1 || fmt.lindex == 0)
+                && (fmt.lindex == -1 || fmt.lindex == 0))
+                || ((fmt.cfFormat == self.preferred_drop_effect
+                    || fmt.cfFormat == self.performed_drop_effect)
+                    && (fmt.tymed & TYMED_HGLOBAL.0 as u32) != 0)
         }
 
-        fn fill_medium(&self) -> windows::core::Result<STGMEDIUM> {
+        fn fill_medium(&self, fmt: &FORMATETC) -> windows::core::Result<STGMEDIUM> {
+            if fmt.cfFormat == self.preferred_drop_effect {
+                return drop_effect_medium(DROPEFFECT_COPY);
+            }
+            if fmt.cfFormat == self.performed_drop_effect {
+                return drop_effect_medium(self.performed_effect.get());
+            }
             let hglobal = create_hglobal_for_paths(&self.paths)
                 .map_err(|_| windows::core::Error::from_thread())?;
             Ok(STGMEDIUM {
@@ -114,7 +126,7 @@ mod platform {
             if !self.matches_format(fmt) {
                 return Err(windows::core::Error::from(DV_E_FORMATETC));
             }
-            self.fill_medium()
+            self.fill_medium(fmt)
         }
 
         fn GetDataHere(
@@ -154,13 +166,39 @@ mod platform {
 
         fn SetData(
             &self,
-            _pformatetc: *const FORMATETC,
-            _pmedium: *const STGMEDIUM,
+            pformatetc: *const FORMATETC,
+            pmedium: *const STGMEDIUM,
             _frelease: BOOL,
         ) -> windows::core::Result<()> {
-            Err(windows::core::Error::from(
-                windows::Win32::Foundation::E_NOTIMPL,
-            ))
+            if pformatetc.is_null() || pmedium.is_null() {
+                return Err(windows::core::Error::from(E_INVALIDARG));
+            }
+            let fmt = unsafe { &*pformatetc };
+            if fmt.cfFormat != self.performed_drop_effect
+                || (fmt.tymed & TYMED_HGLOBAL.0 as u32) == 0
+            {
+                return Err(windows::core::Error::from(
+                    windows::Win32::Foundation::E_NOTIMPL,
+                ));
+            }
+            let medium = unsafe { &*pmedium };
+            if medium.tymed != TYMED_HGLOBAL.0 as u32 {
+                return Err(windows::core::Error::from(E_INVALIDARG));
+            }
+            let handle = unsafe { medium.u.hGlobal };
+            let ptr = unsafe { GlobalLock(handle) } as *const u32;
+            if ptr.is_null() {
+                unsafe {
+                    let _ = GlobalUnlock(handle);
+                }
+                return Err(windows::core::Error::from_thread());
+            }
+            let effect = unsafe { *ptr };
+            self.performed_effect.set(DROPEFFECT(effect));
+            unsafe {
+                let _ = GlobalUnlock(handle);
+            }
+            Ok(())
         }
 
         fn EnumFormatEtc(&self, dwdirection: u32) -> windows::core::Result<IEnumFORMATETC> {
@@ -169,7 +207,12 @@ mod platform {
                     windows::Win32::Foundation::E_NOTIMPL,
                 ));
             }
-            unsafe { SHCreateStdEnumFmtEtc(&[self.format.clone()]) }
+            let formats = [
+                self.format.clone(),
+                build_drop_effect_format(self.preferred_drop_effect),
+                build_drop_effect_format(self.performed_drop_effect),
+            ];
+            unsafe { SHCreateStdEnumFmtEtc(&formats) }
         }
 
         fn DAdvise(
@@ -196,50 +239,22 @@ mod platform {
         }
     }
 
-    #[implement(IDropSource)]
-    #[derive(Clone)]
-    struct SimpleDropSource;
-
-    #[allow(non_snake_case)]
-    impl windows::Win32::System::Ole::IDropSource_Impl for SimpleDropSource_Impl {
-        fn QueryContinueDrag(
-            &self,
-            escape_pressed: BOOL,
-            key_state: MODIFIERKEYS_FLAGS,
-        ) -> HRESULT {
-            if escape_pressed.as_bool() {
-                return DRAGDROP_S_CANCEL;
-            }
-            if key_state.0 & MK_LBUTTON.0 == 0 {
-                return DRAGDROP_S_DROP;
-            }
-            HRESULT(0)
-        }
-
-        fn GiveFeedback(&self, _dweffect: DROPEFFECT) -> HRESULT {
-            DRAGDROP_S_USEDEFAULTCURSORS
-        }
-    }
-
-    pub fn start_file_drag(paths: &[PathBuf]) -> Result<(), String> {
+    pub fn start_file_drag(hwnd: windows::Win32::Foundation::HWND, paths: &[PathBuf]) -> Result<(), String> {
         let _com = ComApartment::new()?;
         let absolute: Vec<PathBuf> = paths
             .iter()
             .map(|p| p.canonicalize().unwrap_or_else(|_| p.to_path_buf()))
             .collect();
         let data_object: IDataObject = FileDropDataObject::new(absolute)?.into();
-        let drop_source: IDropSource = SimpleDropSource.into();
-        let mut effect = DROPEFFECT(0);
         // SAFETY: COM initialized above; object implementations satisfy COM contracts.
-        unsafe {
-            DoDragDrop(
+        let effect = unsafe {
+            SHDoDragDrop(
+                Some(hwnd),
                 &data_object,
-                &drop_source,
+                None,
                 DROPEFFECT_COPY | DROPEFFECT_LINK | DROPEFFECT_MOVE,
-                &mut effect,
             )
         }
-        .ok()
         .map_err(|err| format!("Drag failed: {err}"))?;
 
         if effect == DROPEFFECT_NONE {
@@ -257,6 +272,52 @@ mod platform {
             lindex: -1,
             tymed: TYMED_HGLOBAL.0 as u32,
         }
+    }
+
+    fn build_drop_effect_format(format: u16) -> FORMATETC {
+        FORMATETC {
+            cfFormat: format,
+            ptd: std::ptr::null_mut(),
+            dwAspect: DVASPECT_CONTENT.0,
+            lindex: -1,
+            tymed: TYMED_HGLOBAL.0 as u32,
+        }
+    }
+
+    fn drop_effect_formats() -> Result<(u16, u16), String> {
+        static FORMATS: OnceLock<Result<(u16, u16), String>> = OnceLock::new();
+        FORMATS
+            .get_or_init(|| {
+                let preferred = unsafe { RegisterClipboardFormatW(w!("Preferred DropEffect")) };
+                let performed = unsafe { RegisterClipboardFormatW(w!("Performed DropEffect")) };
+                if preferred == 0 || performed == 0 {
+                    Err("RegisterClipboardFormatW failed".to_string())
+                } else {
+                    Ok((preferred as u16, performed as u16))
+                }
+            })
+            .clone()
+    }
+
+    fn drop_effect_medium(effect: DROPEFFECT) -> windows::core::Result<STGMEDIUM> {
+        let handle = unsafe { GlobalAlloc(GMEM_MOVEABLE | GMEM_ZEROINIT, std::mem::size_of::<u32>()) }
+            .map_err(|_| windows::core::Error::from_thread())?;
+        let ptr = unsafe { GlobalLock(handle) } as *mut u32;
+        if ptr.is_null() {
+            unsafe {
+                let _ = GlobalUnlock(handle);
+            }
+            return Err(windows::core::Error::from_thread());
+        }
+        unsafe {
+            *ptr = effect.0;
+            let _ = GlobalUnlock(handle);
+        }
+        Ok(STGMEDIUM {
+            tymed: TYMED_HGLOBAL.0 as u32,
+            u: STGMEDIUM_0 { hGlobal: handle },
+            pUnkForRelease: ManuallyDrop::new(None),
+        })
     }
 
     fn create_hglobal_for_paths(paths: &[PathBuf]) -> Result<HGLOBAL, std::io::Error> {
@@ -279,7 +340,7 @@ mod platform {
         let ptr = unsafe { GlobalLock(handle) };
         if ptr.is_null() {
             unsafe {
-                GlobalUnlock(handle);
+                let _ = GlobalUnlock(handle);
             }
             return Err(std::io::Error::last_os_error());
         }
@@ -297,7 +358,7 @@ mod platform {
                 data_ptr,
                 utf16_paths.len() * std::mem::size_of::<u16>(),
             );
-            GlobalUnlock(handle);
+            let _ = GlobalUnlock(handle);
         }
         Ok(handle)
     }

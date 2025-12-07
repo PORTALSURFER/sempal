@@ -3,43 +3,6 @@ use crate::egui_app::state::DragPayload;
 use egui::Pos2;
 
 impl EguiController {
-    /// Try to start an external drag for the active sample browser row.
-    ///
-    /// This uses platform-specific drag-out support and falls back with an error
-    /// message when unavailable.
-    pub fn start_external_drag_for_browser_row(&mut self, row: usize) {
-        let result = (|| {
-            let ctx = self.resolve_browser_sample(row)?;
-            let absolute = ctx.source.root.join(&ctx.entry.relative_path);
-            crate::external_drag::start_file_drag(&[absolute])?;
-            Ok::<_, String>(format!(
-                "Drag {} to an external target",
-                ctx.entry.relative_path.display()
-            ))
-        })();
-        match result {
-            Ok(message) => self.set_status(message, StatusTone::Info),
-            Err(err) => self.set_status(err, StatusTone::Error),
-        }
-    }
-
-    /// Try to start an external drag for the current selection clip.
-    pub fn start_external_drag_for_selection(&mut self, bounds: SelectionRange) {
-        if bounds.width() < MIN_SELECTION_WIDTH {
-            self.set_status("Selection is too small to export", StatusTone::Warning);
-            return;
-        }
-        let result = (|| {
-            let (absolute, label) = self.export_selection_for_drag(bounds)?;
-            crate::external_drag::start_file_drag(&[absolute])?;
-            Ok::<_, String>(label)
-        })();
-        match result {
-            Ok(message) => self.set_status(message, StatusTone::Info),
-            Err(err) => self.set_status(err, StatusTone::Error),
-        }
-    }
-
     /// Start tracking a drag for a sample.
     pub fn start_sample_drag(&mut self, path: PathBuf, label: String, pos: Pos2) {
         self.begin_drag(DragPayload::Sample { path }, label, pos);
@@ -141,7 +104,51 @@ impl EguiController {
         self.ui.drag.hovering_collection = None;
         self.ui.drag.hovering_drop_zone = false;
         self.ui.drag.hovering_browser = None;
+        self.ui.drag.external_started = false;
     }
+
+    #[cfg(target_os = "windows")]
+    fn start_external_drag(&self, paths: &[PathBuf]) -> Result<(), String> {
+        let hwnd = self
+            .drag_hwnd
+            .ok_or_else(|| "Window handle unavailable for external drag".to_string())?;
+        crate::external_drag::start_file_drag(hwnd, paths)
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[allow(dead_code)]
+    fn start_external_drag(&self, _paths: &[PathBuf]) -> Result<(), String> {
+        Err("External drag-out is only supported on Windows in this build".into())
+    }
+
+    #[cfg(target_os = "windows")]
+    pub fn maybe_launch_external_drag(&mut self, pointer_outside: bool) {
+        if !pointer_outside || self.ui.drag.payload.is_none() || self.ui.drag.external_started {
+            return;
+        }
+        let payload = self.ui.drag.payload.clone();
+        self.ui.drag.external_started = true;
+        let status = match payload {
+            Some(DragPayload::Sample { path }) => self
+                .start_external_drag(&[path.clone()])
+                .map(|_| format!("Drag {} to an external target", path.display())),
+            Some(DragPayload::Selection { bounds, .. }) => self
+                .export_selection_for_drag(bounds)
+                .and_then(|(absolute, label)| {
+                    self.start_external_drag(&[absolute])?;
+                    Ok(label)
+                }),
+            None => return,
+        };
+        self.reset_drag();
+        match status {
+            Ok(message) => self.set_status(message, StatusTone::Info),
+            Err(err) => self.set_status(err, StatusTone::Error),
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    pub fn maybe_launch_external_drag(&mut self, _pointer_outside: bool) {}
 
     fn begin_drag(&mut self, payload: DragPayload, label: String, pos: Pos2) {
         self.ui.drag.payload = Some(payload);
@@ -150,6 +157,7 @@ impl EguiController {
         self.ui.drag.hovering_collection = None;
         self.ui.drag.hovering_drop_zone = false;
         self.ui.drag.hovering_browser = None;
+        self.ui.drag.external_started = false;
     }
 
     fn selection_drag_label(&self, audio: &LoadedAudio, bounds: SelectionRange) -> String {
@@ -162,6 +170,7 @@ impl EguiController {
         format!("{name} ({seconds:.2}s)")
     }
 
+    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
     fn export_selection_for_drag(
         &mut self,
         bounds: SelectionRange,
