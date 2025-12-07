@@ -26,7 +26,7 @@ impl EguiController {
         self.record_selection_entry(&source, target_rel, target_tag)
     }
 
-    fn selection_audio(
+    pub(super) fn selection_audio(
         &self,
         source_id: &SourceId,
         relative_path: &Path,

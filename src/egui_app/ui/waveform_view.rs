@@ -115,7 +115,9 @@ impl EguiApp {
                     StrokeKind::Inside,
                 );
                 if handle_response.drag_started() {
-                    if let Some(pos) = handle_response.interact_pointer_pos() {
+                    if ui.input(|i| i.modifiers.alt) {
+                        self.controller.start_external_drag_for_selection(selection);
+                    } else if let Some(pos) = handle_response.interact_pointer_pos() {
                         self.controller.start_selection_drag_payload(selection, pos);
                     }
                 } else if handle_response.dragged() {
