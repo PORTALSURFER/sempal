@@ -7,6 +7,7 @@ mod helpers;
 mod sample_browser_panel;
 mod sample_menus;
 mod sources_panel;
+mod style;
 mod waveform_view;
 
 /// Default viewport sizes used when creating or restoring the window.
@@ -18,7 +19,7 @@ use crate::{
     waveform::WaveformRenderer,
 };
 use eframe::egui;
-use eframe::egui::{Color32, TextureHandle, Ui, UiBuilder};
+use eframe::egui::{TextureHandle, Ui, UiBuilder};
 
 /// Renders the egui UI using the shared controller state.
 pub struct EguiApp {
@@ -52,9 +53,7 @@ impl EguiApp {
             return;
         }
         let mut visuals = egui::Visuals::dark();
-        visuals.window_fill = Color32::from_rgb(12, 12, 12);
-        visuals.panel_fill = Color32::from_rgb(16, 16, 16);
-        visuals.widgets.noninteractive.bg_fill = Color32::from_rgb(16, 16, 16);
+        style::apply_visuals(&mut visuals);
         ctx.set_visuals(visuals);
         self.visuals_set = true;
     }
