@@ -51,7 +51,14 @@ impl EguiApp {
                             Some(entry) => (entry.tag, entry.relative_path.clone()),
                             None => continue,
                         };
-                        let is_selected = selected_row == Some(row);
+                        let is_focused = selected_row == Some(row);
+                        let is_selected = self
+                            .controller
+                            .ui
+                            .browser
+                            .selected_paths
+                            .iter()
+                            .any(|p| p == &path);
                         let is_loaded = loaded_row == Some(row);
                         let row_width = ui.available_width();
                         let padding = ui.spacing().button_padding.x * 2.0;
@@ -82,7 +89,22 @@ impl EguiApp {
                                 }),
                             );
                             if response.clicked() {
-                                self.controller.select_from_browser(&path);
+                                let modifiers = ui.input(|i| i.modifiers);
+                                if modifiers.shift {
+                                    self.controller.extend_browser_selection_to_row(row);
+                                } else if modifiers.command || modifiers.ctrl {
+                                    self.controller.toggle_browser_row_selection(row);
+                                } else {
+                                    self.controller.focus_browser_row(row);
+                                }
+                            }
+                            if is_focused {
+                                ui.painter().rect_stroke(
+                                    response.rect,
+                                    0.0,
+                                    style::focused_row_stroke(),
+                                    StrokeKind::Inside,
+                                );
                             }
                             self.browser_sample_menu(&response, row, &path, &label);
                             if response.drag_started() {

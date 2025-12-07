@@ -126,11 +126,16 @@ pub struct SampleBrowserState {
     pub keep: Vec<usize>,
     /// Visible rows after applying the active filter.
     pub visible: Vec<usize>,
+    /// Focused row used for playback/navigation (mirrors previously “selected”).
     pub selected: Option<SampleBrowserIndex>,
     pub loaded: Option<SampleBrowserIndex>,
     /// Visible row indices for selection/autoscroll (filtered list).
     pub selected_visible: Option<usize>,
     pub loaded_visible: Option<usize>,
+    /// Visible row anchor used for range selection (shift + click/arrow).
+    pub selection_anchor_visible: Option<usize>,
+    /// Paths currently included in the multi-selection set.
+    pub selected_paths: Vec<PathBuf>,
     pub autoscroll: bool,
     pub filter: TriageFlagFilter,
 }
@@ -146,6 +151,8 @@ impl Default for SampleBrowserState {
             loaded: None,
             selected_visible: None,
             loaded_visible: None,
+            selection_anchor_visible: None,
+            selected_paths: Vec::new(),
             autoscroll: false,
             filter: TriageFlagFilter::All,
         }

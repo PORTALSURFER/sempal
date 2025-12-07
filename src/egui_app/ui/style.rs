@@ -236,6 +236,11 @@ pub fn row_selected_fill() -> Color32 {
     )
 }
 
+/// Outline used to indicate keyboard/pointer focus.
+pub fn focused_row_stroke() -> Stroke {
+    Stroke::new(2.0, palette().accent_ice)
+}
+
 /// Background for compartment frames.
 pub fn compartment_fill() -> Color32 {
     let palette = palette();
