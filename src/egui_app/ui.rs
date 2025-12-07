@@ -102,8 +102,16 @@ impl eframe::App for EguiApp {
         }
         #[cfg(target_os = "windows")]
         {
-            let pointer_outside = ctx.input(|i| i.pointer.primary_down() && i.pointer.hover_pos().is_none());
-            self.controller.maybe_launch_external_drag(pointer_outside);
+            let (pointer_outside, pointer_left) = ctx.input(|i| {
+                let outside = i.pointer.primary_down() && i.pointer.hover_pos().is_none();
+                let left = i
+                    .events
+                    .iter()
+                    .any(|e| matches!(e, egui::Event::PointerGone));
+                (outside, left)
+            });
+            self.controller
+                .maybe_launch_external_drag(pointer_outside || pointer_left);
         }
         if self.controller.ui.drag.payload.is_some() && !ctx.input(|i| i.pointer.primary_down()) {
             self.controller.finish_active_drag();
