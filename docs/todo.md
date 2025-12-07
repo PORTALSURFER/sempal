@@ -2,6 +2,9 @@
 
 --
 
+\plan - currently the triageflags will mark the entire item with a colored overlay, lets intest of coloring the entire item, only mark a small rect on the far right
+
+
 \plan - lets clean up the config location names so we don't get this double sempal/sempal structure. lets make it simple .sempal/
 So in windows it would end up as %APPDATA%\Roaming\.sempal\config.json
 
@@ -36,3 +39,5 @@ as a first hotkey, lets add 'x' to select the focused sample, 'n' to normalize t
 lets also add an opton to 'mute' which will null the entire selection, fading back into the audio at the far edges with a default of a 5 ms fade.
 
 \plan - lets add the ability to drag drop folder externally, from the OS explorer for example, onto the sample source list, to add a new sample source 
+
+\plan - add similarity search systems
