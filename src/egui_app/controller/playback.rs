@@ -141,10 +141,7 @@ impl EguiController {
         use crate::egui_app::state::TriageFilter::*;
         let filters = [All, Keep, Trash, Untagged];
         let current = self.ui.triage.filter;
-        let current_idx = filters
-            .iter()
-            .position(|f| f == &current)
-            .unwrap_or(0) as isize;
+        let current_idx = filters.iter().position(|f| f == &current).unwrap_or(0) as isize;
         let target_idx = (current_idx + delta).clamp(0, (filters.len() as isize) - 1) as usize;
         let target = filters[target_idx];
         self.set_triage_filter(target);

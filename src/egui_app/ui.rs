@@ -9,9 +9,7 @@ mod triage_panel;
 mod waveform_view;
 
 use crate::{
-    audio::AudioPlayer,
-    egui_app::controller::EguiController,
-    egui_app::state::TriageColumn,
+    audio::AudioPlayer, egui_app::controller::EguiController, egui_app::state::TriageColumn,
     waveform::WaveformRenderer,
 };
 use eframe::egui;

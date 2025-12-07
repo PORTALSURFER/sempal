@@ -175,7 +175,9 @@ pub enum TriageFilter {
 /// Active drag payload carried across UI panels.
 #[derive(Clone, Debug, PartialEq)]
 pub enum DragPayload {
-    Sample { path: PathBuf },
+    Sample {
+        path: PathBuf,
+    },
     Selection {
         source_id: SourceId,
         relative_path: PathBuf,
