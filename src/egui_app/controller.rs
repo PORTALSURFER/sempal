@@ -13,6 +13,7 @@ mod playback;
 mod scans;
 mod selection_export;
 mod sources;
+mod triage_actions;
 mod wavs;
 
 use crate::{
