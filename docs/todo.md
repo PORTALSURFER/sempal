@@ -4,7 +4,7 @@
 \plan - when the user hovers the start or end of an audio selection, lets make a [ or ] icon visible at the bottom of the line, indicating the are now able to grab the edge and resize it.
 
 \plan - add the hotkey F11 to switch between windowed and fullscreen mode
-lets make fullscreen mode the default mode
+and lets make fullscreen mode the default mode
 
 \plan - lets adjust the look and feel of everything so we have had rectangles for everything, never round corners, if we must have soft corners, use a diagonal cut, very hard sci fi in terms of looks.
 please review the styleguide in @styleguide.md and make a plan following it.
@@ -37,8 +37,6 @@ So in windows it would end up as %APPDATA%\Roaming\.sempal\config.json
 the config file should be a lean, app only file, not to store data in. just to set app flags, etc, maybe color themes in the future, etc.
 lets also turn it from json into toml.
 and lets add migration code to find and convert the current config.json format/path to our new system
-
-\plan - make the collection sameple list context menu with all features also work for the regular sample list
 
 \plan - dont show the extensions or folders in our item lists, both for collections and for the regular sample list, show only the sample name
 

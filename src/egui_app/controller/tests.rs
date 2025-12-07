@@ -1,8 +1,19 @@
 use super::test_support::{dummy_controller, sample_entry, write_test_wav};
 use super::*;
 use crate::egui_app::state::{DragPayload, TriageFilter};
+use crate::sample_sources::collections::CollectionMember;
+use crate::egui_app::controller::collection_export;
+use hound::WavReader;
 use std::path::{Path, PathBuf};
 use tempfile::tempdir;
+
+fn max_sample_amplitude(path: &Path) -> f32 {
+    WavReader::open(path)
+        .unwrap()
+        .samples::<f32>()
+        .map(|s| s.unwrap().abs())
+        .fold(0.0, f32::max)
+}
 
 #[test]
 fn missing_source_is_pruned_during_load() {
@@ -384,5 +395,138 @@ fn renaming_collection_updates_export_folder() -> Result<(), String> {
     assert!(new_folder.is_dir());
     assert!(!export_root.join("Old").exists());
     assert_eq!(controller.collections[0].name, "New Name");
+    Ok(())
+}
+
+#[test]
+fn triage_rename_updates_collections_and_lookup() {
+    let temp = tempdir().unwrap();
+    let root = temp.path().join("source");
+    std::fs::create_dir_all(&root).unwrap();
+    let renderer = WaveformRenderer::new(12, 12);
+    let mut controller = EguiController::new(renderer, None);
+    let source = SampleSource::new(root.clone());
+    controller.sources.push(source.clone());
+    controller.selected_source = Some(source.id.clone());
+
+    write_test_wav(&root.join("one.wav"), &[0.1, -0.2]);
+    controller.wav_entries = vec![sample_entry("one.wav", SampleTag::Neutral)];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_triage_lists();
+
+    let mut collection = Collection::new("Crops");
+    let collection_id = collection.id.clone();
+    collection.add_member(source.id.clone(), PathBuf::from("one.wav"));
+    controller.collections.push(collection);
+    controller.selected_collection = Some(collection_id.clone());
+
+    controller.rename_triage_sample(0, "renamed.wav").unwrap();
+
+    assert!(!root.join("one.wav").exists());
+    assert!(root.join("renamed.wav").is_file());
+    assert_eq!(
+        controller.wav_entries[0].relative_path,
+        PathBuf::from("renamed.wav")
+    );
+    assert!(controller
+        .wav_lookup
+        .contains_key(Path::new("renamed.wav")));
+    let collection = controller
+        .collections
+        .iter()
+        .find(|c| c.id == collection_id)
+        .unwrap();
+    assert!(collection
+        .members
+        .iter()
+        .any(|m| m.relative_path == PathBuf::from("renamed.wav")));
+}
+
+#[test]
+fn triage_normalize_refreshes_exports() -> Result<(), String> {
+    let temp = tempdir().unwrap();
+    let root = temp.path().join("source");
+    let export_root = temp.path().join("export");
+    std::fs::create_dir_all(&root).unwrap();
+    let renderer = WaveformRenderer::new(16, 16);
+    let mut controller = EguiController::new(renderer, None);
+    let source = SampleSource::new(root.clone());
+    controller.selected_source = Some(source.id.clone());
+    controller.sources.push(source.clone());
+
+    write_test_wav(&root.join("one.wav"), &[0.25, -0.5]);
+    controller.wav_entries = vec![sample_entry("one.wav", SampleTag::Neutral)];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_triage_lists();
+
+    let mut collection = Collection::new("Export");
+    let collection_id = collection.id.clone();
+    collection.export_path = Some(export_root.clone());
+    collection.add_member(source.id.clone(), PathBuf::from("one.wav"));
+    controller.collections.push(collection);
+
+    let member = CollectionMember {
+        source_id: source.id.clone(),
+        relative_path: PathBuf::from("one.wav"),
+    };
+    controller.export_member_if_needed(&collection_id, &member)?;
+    controller.normalize_triage_sample(0)?;
+
+    let collection = controller
+        .collections
+        .iter()
+        .find(|c| c.id == collection_id)
+        .unwrap();
+    let export_dir = collection_export::export_dir_for(collection)?;
+    let exported_path = export_dir.join("one.wav");
+    assert!(exported_path.is_file());
+    assert!((max_sample_amplitude(&root.join("one.wav")) - 1.0).abs() < 1e-6);
+    assert!((max_sample_amplitude(&exported_path) - 1.0).abs() < 1e-6);
+    Ok(())
+}
+
+#[test]
+fn triage_delete_prunes_collections_and_exports() -> Result<(), String> {
+    let temp = tempdir().unwrap();
+    let root = temp.path().join("source");
+    let export_root = temp.path().join("export");
+    std::fs::create_dir_all(&root).unwrap();
+    let renderer = WaveformRenderer::new(10, 10);
+    let mut controller = EguiController::new(renderer, None);
+    let source = SampleSource::new(root.clone());
+    controller.selected_source = Some(source.id.clone());
+    controller.sources.push(source.clone());
+
+    write_test_wav(&root.join("delete.wav"), &[0.1, 0.2]);
+    controller.wav_entries = vec![sample_entry("delete.wav", SampleTag::Neutral)];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_triage_lists();
+
+    let mut collection = Collection::new("Delete");
+    let collection_id = collection.id.clone();
+    collection.export_path = Some(export_root.clone());
+    collection.add_member(source.id.clone(), PathBuf::from("delete.wav"));
+    controller.collections.push(collection);
+
+    let member = CollectionMember {
+        source_id: source.id.clone(),
+        relative_path: PathBuf::from("delete.wav"),
+    };
+    controller.export_member_if_needed(&collection_id, &member)?;
+    controller.delete_triage_sample(0)?;
+
+    assert!(!root.join("delete.wav").exists());
+    let db = controller.database_for(&source).expect("open db");
+    assert!(db.list_files().unwrap().is_empty());
+    let collection = controller
+        .collections
+        .iter()
+        .find(|c| c.id == collection_id)
+        .unwrap();
+    assert!(collection.members.is_empty());
+    let export_dir = collection_export::export_dir_for(collection)?;
+    assert!(!export_dir.join("delete.wav").exists());
+    assert!(controller.wav_entries.is_empty());
+    assert!(controller.ui.triage.visible.is_empty());
     Ok(())
 }

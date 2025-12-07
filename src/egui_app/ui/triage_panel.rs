@@ -6,6 +6,7 @@ use super::*;
 use crate::egui_app::state::TriageFilter;
 use crate::sample_sources::SampleTag;
 use eframe::egui::{self, Color32, RichText, Stroke, Ui};
+use std::path::Path;
 
 impl EguiApp {
     pub(super) fn render_triage(&mut self, ui: &mut Ui) {
@@ -71,6 +72,7 @@ impl EguiApp {
                             if response.clicked() {
                                 self.controller.select_from_triage(&path);
                             }
+                            self.triage_sample_menu(&response, row, &path, &label);
                             if response.drag_started() {
                                 if let Some(pos) = response.interact_pointer_pos() {
                                     let name = path.to_string_lossy().to_string();
@@ -124,6 +126,57 @@ impl EguiApp {
                 }
             }
         }
+    }
+
+    fn triage_sample_menu(
+        &mut self,
+        response: &egui::Response,
+        row: usize,
+        path: &Path,
+        label: &str,
+    ) {
+        response.context_menu(|ui| {
+            let mut close_menu = false;
+            ui.label(RichText::new(label.to_string()).color(Color32::LIGHT_GRAY));
+            self.sample_tag_menu(ui, &mut close_menu, |app, tag| {
+                app.controller.tag_triage_sample(row, tag).is_ok()
+            });
+            if ui
+                .button("Normalize (overwrite)")
+                .on_hover_text("Scale to full range and overwrite the wav")
+                .clicked()
+            {
+                if self.controller.normalize_triage_sample(row).is_ok() {
+                    close_menu = true;
+                }
+            }
+            ui.separator();
+            let default_name = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(label);
+            let rename_id =
+                ui.make_persistent_id(format!("rename:triage:{}", path.display()));
+            if self.sample_rename_controls(
+                ui,
+                rename_id,
+                default_name,
+                |app, value| app.controller.rename_triage_sample(row, value).is_ok(),
+            ) {
+                close_menu = true;
+            }
+            let delete_btn = egui::Button::new(
+                RichText::new("Delete file").color(Color32::from_rgb(255, 160, 160)),
+            );
+            if ui.add(delete_btn).clicked() {
+                if self.controller.delete_triage_sample(row).is_ok() {
+                    close_menu = true;
+                }
+            }
+            if close_menu {
+                ui.close_menu();
+            }
+        });
     }
 
     fn render_triage_filter(&mut self, ui: &mut Ui) {

@@ -4,6 +4,7 @@ mod chrome;
 mod collections_panel;
 mod drag_overlay;
 mod helpers;
+mod sample_menus;
 mod sources_panel;
 mod triage_panel;
 mod waveform_view;

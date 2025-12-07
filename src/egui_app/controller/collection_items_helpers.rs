@@ -18,6 +18,19 @@ impl EguiController {
         ctx: &CollectionSampleContext,
         new_name: &str,
     ) -> Result<PathBuf, String> {
+        self.validate_new_sample_name_in_parent(
+            &ctx.member.relative_path,
+            &ctx.source.root,
+            new_name,
+        )
+    }
+
+    pub(super) fn validate_new_sample_name_in_parent(
+        &self,
+        relative_path: &Path,
+        root: &Path,
+        new_name: &str,
+    ) -> Result<PathBuf, String> {
         let trimmed = new_name.trim();
         if trimmed.is_empty() {
             return Err("Name cannot be empty".into());
@@ -25,9 +38,9 @@ impl EguiController {
         if trimmed.contains(['/', '\\']) {
             return Err("Name cannot contain path separators".into());
         }
-        let parent = ctx.member.relative_path.parent().unwrap_or(Path::new(""));
+        let parent = relative_path.parent().unwrap_or(Path::new(""));
         let new_relative = parent.join(trimmed);
-        let new_absolute = ctx.source.root.join(&new_relative);
+        let new_absolute = root.join(&new_relative);
         if new_absolute.exists() {
             return Err(format!(
                 "A file named {} already exists",
@@ -47,7 +60,13 @@ impl EguiController {
         std::fs::rename(&ctx.absolute_path, &new_absolute)
             .map_err(|err| format!("Failed to rename file: {err}"))?;
         let (file_size, modified_ns) = file_metadata(&new_absolute)?;
-        if let Err(err) = self.rewrite_db_entry(ctx, new_relative, file_size, modified_ns, tag) {
+        if let Err(err) = self.rewrite_db_entry(
+            ctx,
+            new_relative,
+            file_size,
+            modified_ns,
+            tag,
+        ) {
             let _ = std::fs::rename(&new_absolute, &ctx.absolute_path);
             return Err(err);
         }
@@ -106,14 +125,33 @@ impl EguiController {
         modified_ns: i64,
         tag: SampleTag,
     ) -> Result<(), String> {
+        self.rewrite_db_entry_for_source(
+            &ctx.source,
+            &ctx.member.relative_path,
+            new_relative,
+            file_size,
+            modified_ns,
+            tag,
+        )
+    }
+
+    pub(super) fn rewrite_db_entry_for_source(
+        &mut self,
+        source: &SampleSource,
+        old_relative: &Path,
+        new_relative: &Path,
+        file_size: u64,
+        modified_ns: i64,
+        tag: SampleTag,
+    ) -> Result<(), String> {
         let db = self
-            .database_for(&ctx.source)
+            .database_for(source)
             .map_err(|err| format!("Database unavailable: {err}"))?;
         let mut batch = db
             .write_batch()
             .map_err(|err| format!("Failed to start database update: {err}"))?;
         batch
-            .remove_file(&ctx.member.relative_path)
+            .remove_file(old_relative)
             .map_err(|err| format!("Failed to drop old entry: {err}"))?;
         batch
             .upsert_file(new_relative, file_size, modified_ns)
@@ -132,10 +170,20 @@ impl EguiController {
         file_size: u64,
         modified_ns: i64,
     ) -> Result<(), String> {
+        self.upsert_metadata_for_source(&ctx.source, &ctx.member.relative_path, file_size, modified_ns)
+    }
+
+    pub(super) fn upsert_metadata_for_source(
+        &mut self,
+        source: &SampleSource,
+        relative_path: &Path,
+        file_size: u64,
+        modified_ns: i64,
+    ) -> Result<(), String> {
         let db = self
-            .database_for(&ctx.source)
+            .database_for(source)
             .map_err(|err| format!("Database unavailable: {err}"))?;
-        db.upsert_file(&ctx.member.relative_path, file_size, modified_ns)
+        db.upsert_file(relative_path, file_size, modified_ns)
             .map_err(|err| format!("Failed to refresh metadata: {err}"))
     }
 
@@ -143,7 +191,20 @@ impl EguiController {
         &mut self,
         ctx: &CollectionSampleContext,
     ) -> Result<(u64, i64, SampleTag), String> {
-        let (samples, spec) = read_samples_for_normalization(&ctx.absolute_path)?;
+        self.normalize_and_save_for_path(
+            &ctx.source,
+            &ctx.member.relative_path,
+            &ctx.absolute_path,
+        )
+    }
+
+    pub(super) fn normalize_and_save_for_path(
+        &mut self,
+        source: &SampleSource,
+        relative_path: &Path,
+        absolute_path: &Path,
+    ) -> Result<(u64, i64, SampleTag), String> {
+        let (samples, spec) = read_samples_for_normalization(absolute_path)?;
         if samples.is_empty() {
             return Err("No audio data to normalize".into());
         }
@@ -164,9 +225,9 @@ impl EguiController {
             bits_per_sample: 32,
             sample_format: SampleFormat::Float,
         };
-        write_normalized_wav(&ctx.absolute_path, &normalized, target_spec)?;
-        let (file_size, modified_ns) = file_metadata(&ctx.absolute_path)?;
-        let tag = self.sample_tag_for(&ctx.source, &ctx.member.relative_path)?;
+        write_normalized_wav(absolute_path, &normalized, target_spec)?;
+        let (file_size, modified_ns) = file_metadata(absolute_path)?;
+        let tag = self.sample_tag_for(source, relative_path)?;
         Ok((file_size, modified_ns, tag))
     }
 
