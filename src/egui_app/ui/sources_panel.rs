@@ -39,6 +39,7 @@ impl EguiApp {
                                 style::high_contrast_text(),
                                 egui::Sense::click(),
                                 None,
+                                None,
                             )
                             .on_hover_text(&row.path);
                             if response.clicked() {

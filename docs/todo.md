@@ -1,16 +1,7 @@
 \plan - lets do a housekeeping pass, clean up the codebase, reduce file lengths, improve DRYness, improve maintainability, collapse large structs/objects into clearly named smaller objects, add missing docs, improve symbol naming, find and resolve bugs, improve performance, etc.
 
 --
-
-\plan - currently the triageflags will mark the entire item with a colored overlay, lets instead of coloring the entire item, only mark a small rect on the far right, to keep things visually cleaner.
-
-\plan - lets clean up the config location names so we don't get this double sempal/sempal structure. lets make it simple .sempal/
-So in windows it would end up as %APPDATA%\Roaming\.sempal\config.json
-
-\plan - I noticed we currently use our config file to store collection members? lets move this to use our sqlite db instead.
-the config file should be a lean, app only file, not to store data in. just to set app flags, etc, maybe color themes in the future, etc.
-lets also turn it from json into toml.
-and lets add migration code to find and convert the current config.json format/path to our new system
+\plan - add the ability to drag drop items to external targets like windows explorer or a daw.
 
 \plan - dont show the extensions or folders in our item lists, both for collections and for the regular sample list, show only the sample name
 
@@ -42,3 +33,11 @@ lets also add an opton to 'mute' which will null the entire selection, fading ba
 \plan - add similarity search systems
 
 \plan - while in loop mode, if we play with a mouseclick, we should still end up looping, right now this method will just play oneshot style. only playing with spacebar will loop.
+
+\plan - lets clean up the config location names so we don't get this double sempal/sempal structure. lets make it simple .sempal/
+So in windows it would end up as %APPDATA%\Roaming\.sempal\config.json
+
+\plan - I noticed we currently use our config file to store collection members? lets move this to use our sqlite db instead.
+the config file should be a lean, app only file, not to store data in. just to set app flags, etc, maybe color themes in the future, etc.
+lets also turn it from json into toml.
+and lets add migration code to find and convert the current config.json format/path to our new system

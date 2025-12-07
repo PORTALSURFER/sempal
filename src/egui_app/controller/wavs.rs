@@ -261,13 +261,7 @@ impl EguiController {
         let end = anchor.max(target_visible);
         for row in start..=end {
             if let Some(path) = self.browser_path_for_visible(row) {
-                if !self
-                    .ui
-                    .browser
-                    .selected_paths
-                    .iter()
-                    .any(|p| p == &path)
-                {
+                if !self.ui.browser.selected_paths.iter().any(|p| p == &path) {
                     self.ui.browser.selected_paths.push(path);
                 }
             }

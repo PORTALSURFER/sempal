@@ -139,33 +139,18 @@ pub fn drag_target_stroke() -> Stroke {
     Stroke::new(2.0, with_alpha(semantic_palette().drag_highlight, 180))
 }
 
-/// Triage background for trash rows.
-pub fn triage_trash_bg(is_selected: bool) -> Color32 {
+/// Width of the trailing marker used to denote triage flags in list rows.
+pub fn triage_marker_width() -> f32 {
+    5.0
+}
+
+/// Colour for the trailing triage marker based on tag.
+pub fn triage_marker_color(tag: SampleTag) -> Option<Color32> {
     let palette = semantic_palette();
-    let (color, alpha) = if is_selected {
-        (palette.triage_trash, 170)
-    } else {
-        (palette.triage_trash_subtle, 120)
-    };
-    with_alpha(color, alpha)
-}
-
-/// Triage background for keep rows.
-pub fn triage_keep_bg(is_selected: bool) -> Color32 {
-    let semantics = semantic_palette();
-    if is_selected {
-        with_alpha(palette().success, 170)
-    } else {
-        with_alpha(semantics.triage_keep, 120)
-    }
-}
-
-/// Shared triage row background based on tag and selection.
-pub fn triage_row_bg(tag: SampleTag, is_selected: bool) -> Option<Color32> {
     match tag {
-        SampleTag::Trash => Some(triage_trash_bg(is_selected)),
-        SampleTag::Keep => Some(triage_keep_bg(is_selected)),
-        SampleTag::Neutral => is_selected.then_some(row_selected_fill()),
+        SampleTag::Trash => Some(with_alpha(palette.triage_trash, 220)),
+        SampleTag::Keep => Some(with_alpha(palette.triage_keep, 220)),
+        SampleTag::Neutral => None,
     }
 }
 
