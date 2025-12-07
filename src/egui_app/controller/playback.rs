@@ -150,6 +150,15 @@ impl EguiController {
         self.set_triage_filter(target);
     }
 
+    /// Tag leftwards: Keep -> Neutral, otherwise -> Trash.
+    pub fn tag_selected_left(&mut self) {
+        let target = match self.selected_tag() {
+            Some(SampleTag::Keep) => SampleTag::Neutral,
+            _ => SampleTag::Trash,
+        };
+        self.tag_selected(target);
+    }
+
     /// Start playback over the current selection or full range.
     pub fn play_audio(&mut self, looped: bool, start_override: Option<f32>) -> Result<(), String> {
         let player = self.ensure_player()?;
