@@ -1,10 +1,20 @@
 use super::*;
+use crate::selection::SelectionEdge;
 
 impl EguiController {
     /// Begin a selection drag at the given normalized position.
     pub fn start_selection_drag(&mut self, position: f32) {
         let range = self.selection.begin_new(position);
         self.apply_selection(Some(range));
+    }
+
+    /// Begin dragging a specific selection edge; returns true when a selection exists.
+    pub fn start_selection_edge_drag(&mut self, edge: SelectionEdge) -> bool {
+        if !self.selection.begin_edge_drag(edge) {
+            return false;
+        }
+        self.apply_selection(self.selection.range());
+        true
     }
 
     /// Update the active selection drag with a new normalized position.
