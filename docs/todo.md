@@ -40,3 +40,5 @@ lets also add an opton to 'mute' which will null the entire selection, fading ba
 \plan - lets add the ability to drag drop folder externally, from the OS explorer for example, onto the sample source list, to add a new sample source 
 
 \plan - add similarity search systems
+
+\plan - while in loop mode, if we play with a mouseclick, we should still end up looping, right now this method will just play oneshot style. only playing with spacebar will loop.

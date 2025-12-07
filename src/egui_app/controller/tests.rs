@@ -217,6 +217,28 @@ fn hotkey_tagging_applies_to_all_selected_rows() {
 }
 
 #[test]
+fn escape_clears_selection() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.cache_db(&source).unwrap();
+    controller.wav_entries = vec![
+        sample_entry("one.wav", SampleTag::Neutral),
+        sample_entry("two.wav", SampleTag::Neutral),
+    ];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+
+    controller.focus_browser_row(0);
+    controller.toggle_browser_row_selection(1);
+    assert_eq!(controller.ui.browser.selected_paths.len(), 2);
+
+    controller.clear_browser_selection();
+
+    assert!(controller.ui.browser.selected_paths.is_empty());
+    assert!(controller.ui.browser.selection_anchor_visible.is_none());
+}
+
+#[test]
 fn ctrl_click_toggles_selection_and_focuses_row() {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source);
@@ -367,6 +389,51 @@ fn tag_actions_apply_to_all_selected_rows() {
 
     assert_eq!(controller.wav_entries[0].tag, SampleTag::Keep);
     assert_eq!(controller.wav_entries[1].tag, SampleTag::Keep);
+}
+
+#[test]
+fn selection_persists_when_nudging_focus() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.cache_db(&source).unwrap();
+    controller.wav_entries = vec![
+        sample_entry("one.wav", SampleTag::Neutral),
+        sample_entry("two.wav", SampleTag::Neutral),
+        sample_entry("three.wav", SampleTag::Neutral),
+    ];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+
+    controller.focus_browser_row(0);
+    controller.toggle_browser_row_selection(1);
+    controller.nudge_selection(1);
+
+    let selected = &controller.ui.browser.selected_paths;
+    assert!(selected.contains(&PathBuf::from("one.wav")));
+    assert!(selected.contains(&PathBuf::from("two.wav")));
+    // Focus moved, but selection stayed intact.
+    assert_eq!(controller.ui.browser.selected_visible, Some(2));
+}
+
+#[test]
+fn focused_row_actions_work_without_explicit_selection() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.cache_db(&source).unwrap();
+    controller.wav_entries = vec![
+        sample_entry("one.wav", SampleTag::Neutral),
+        sample_entry("two.wav", SampleTag::Neutral),
+    ];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+
+    controller.nudge_selection(0);
+    assert!(controller.ui.browser.selected_paths.is_empty());
+
+    controller.tag_selected_left();
+
+    assert_eq!(controller.wav_entries[0].tag, SampleTag::Trash);
+    assert_eq!(controller.ui.browser.selected_visible, Some(0));
 }
 
 #[test]

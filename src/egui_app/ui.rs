@@ -102,6 +102,11 @@ impl eframe::App for EguiApp {
         if ctx.input(|i| i.key_pressed(egui::Key::Space)) {
             self.controller.toggle_play_pause();
         }
+        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            if !self.controller.ui.browser.selected_paths.is_empty() {
+                self.controller.clear_browser_selection();
+            }
+        }
         if let Some(new_maximized) = ctx.input(|i| {
             if i.key_pressed(egui::Key::F11) {
                 Some(!i.viewport().maximized.unwrap_or(false))
