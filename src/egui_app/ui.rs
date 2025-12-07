@@ -7,7 +7,7 @@ mod helpers;
 mod sample_browser_panel;
 mod sample_menus;
 mod sources_panel;
-mod style;
+pub mod style;
 mod waveform_view;
 
 /// Default viewport sizes used when creating or restoring the window.

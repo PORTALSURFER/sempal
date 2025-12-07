@@ -66,7 +66,7 @@ impl EguiApp {
 
             if let Some(id) = tex_id {
                 let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
-                painter.image(id, rect, uv, Color32::WHITE);
+                painter.image(id, rect, uv, style::high_contrast_text());
             } else {
                 painter.rect_filled(rect, 0.0, palette.bg_primary);
             }
@@ -96,12 +96,7 @@ impl EguiApp {
                 painter.rect_filled(
                     selection_rect,
                     0.0,
-                    Color32::from_rgba_unmultiplied(
-                        palette.accent_ice.r(),
-                        palette.accent_ice.g(),
-                        palette.accent_ice.b(),
-                        60,
-                    ),
+                    style::with_alpha(palette.accent_ice, 60),
                 );
                 let handle_rect = selection_handle_rect(selection_rect);
                 let handle_response = ui.interact(
@@ -111,19 +106,9 @@ impl EguiApp {
                 );
                 let handle_hovered = handle_response.hovered() || handle_response.dragged();
                 let handle_color = if handle_hovered {
-                    Color32::from_rgba_unmultiplied(
-                        palette.accent_ice.r(),
-                        palette.accent_ice.g(),
-                        palette.accent_ice.b(),
-                        200,
-                    )
+                    style::with_alpha(palette.accent_ice, 200)
                 } else {
-                    Color32::from_rgba_unmultiplied(
-                        palette.grid_strong.r(),
-                        palette.grid_strong.g(),
-                        palette.grid_strong.b(),
-                        180,
-                    )
+                    style::with_alpha(palette.grid_strong, 180)
                 };
                 painter.rect_filled(handle_rect, 0.0, handle_color);
                 painter.rect_stroke(

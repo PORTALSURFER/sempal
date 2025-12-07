@@ -5,7 +5,7 @@ use super::helpers::{
 use super::style;
 use super::*;
 use crate::egui_app::state::{CollectionRowView, CollectionSampleView, DragPayload};
-use eframe::egui::{self, Color32, RichText, Stroke, StrokeKind, Ui};
+use eframe::egui::{self, RichText, Stroke, StrokeKind, Ui};
 use std::path::PathBuf;
 
 impl EguiApp {
@@ -37,9 +37,9 @@ impl EguiApp {
                         let selected = collection.selected;
                         let mut label = format!("{} ({})", collection.name, collection.count);
                         let (text_color, indicator) = if collection.export_path.is_none() {
-                            (Color32::from_rgb(255, 200, 120), "! ")
+                            (style::warning_soft_text(), "! ")
                         } else {
-                            (Color32::WHITE, "")
+                            (style::high_contrast_text(), "")
                         };
                         if !indicator.is_empty() {
                             label.insert_str(0, indicator);
@@ -163,7 +163,7 @@ impl EguiApp {
                         let bg = if is_selected {
                             Some(style::row_selected_fill())
                         } else if is_duplicate_hover {
-                            Some(Color32::from_rgb(90, 60, 24))
+                            Some(style::duplicate_hover_fill())
                         } else {
                             None
                         };
@@ -178,7 +178,7 @@ impl EguiApp {
                                     row_width,
                                     row_height,
                                     bg,
-                                    Color32::LIGHT_GRAY,
+                                    palette.text_primary,
                                     egui::Sense::click_and_drag(),
                                     Some(NumberColumn {
                                         text: &number_text,
@@ -194,7 +194,7 @@ impl EguiApp {
                                     ui.painter().rect_stroke(
                                         response.rect.expand(2.0),
                                         0.0,
-                                        Stroke::new(2.0, Color32::from_rgb(255, 170, 80)),
+                                        Stroke::new(2.0, style::duplicate_hover_stroke()),
                                         StrokeKind::Inside,
                                     );
                                 }
@@ -246,7 +246,7 @@ impl EguiApp {
                     ui.painter().rect_stroke(
                         target_rect,
                         6.0,
-                        Stroke::new(2.0, Color32::from_rgba_unmultiplied(80, 140, 200, 180)),
+                        style::drag_target_stroke(),
                         StrokeKind::Inside,
                     );
                 }
@@ -262,7 +262,7 @@ impl EguiApp {
     ) {
         response.context_menu(|ui| {
             let mut close_menu = false;
-            ui.label(RichText::new(sample.label.clone()).color(Color32::LIGHT_GRAY));
+            ui.label(RichText::new(sample.label.clone()).color(style::palette().text_primary));
             self.sample_tag_menu(ui, &mut close_menu, |app, tag| {
                 app.controller.tag_collection_sample(row, tag).is_ok()
             });
@@ -292,7 +292,7 @@ impl EguiApp {
                 close_menu = true;
             }
             let delete_btn = egui::Button::new(
-                RichText::new("Delete from collection").color(Color32::from_rgb(255, 160, 160)),
+                RichText::new("Delete from collection").color(style::destructive_text()),
             );
             if ui.add(delete_btn).clicked() {
                 if self.controller.delete_collection_sample(row).is_ok() {
