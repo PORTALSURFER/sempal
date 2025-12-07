@@ -6,6 +6,7 @@ impl EguiController {
         let cfg = crate::sample_sources::config::load_or_default()?;
         self.feature_flags = cfg.feature_flags;
         self.ui.collections.enabled = self.feature_flags.collections_enabled;
+        self.apply_volume(cfg.volume);
         let mut sources = cfg.sources.clone();
         let original_count = sources.len();
         sources.retain(|s| s.root.is_dir());
@@ -39,6 +40,7 @@ impl EguiController {
             collections: self.collections.clone(),
             feature_flags: self.feature_flags.clone(),
             last_selected_source: self.selected_source.clone(),
+            volume: self.ui.volume,
         })
     }
 }
