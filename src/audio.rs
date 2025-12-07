@@ -142,6 +142,7 @@ impl AudioPlayer {
             .as_ref()
             .cloned()
             .ok_or_else(|| "Load a .wav file first".to_string())?;
+        let byte_len = bytes.len() as u64;
         if duration <= 0.0 {
             return Err("Load a .wav file first".into());
         }
@@ -151,7 +152,12 @@ impl AudioPlayer {
 
         self.fade_out_current_sink();
 
-        let mut source = Decoder::new(Cursor::new(bytes))
+        let mut source = Decoder::builder()
+            .with_data(Cursor::new(bytes))
+            .with_byte_len(byte_len)
+            .with_seekable(true)
+            .with_hint("wav")
+            .build()
             .map_err(|error| format!("Audio decode failed: {error}"))?;
         source
             .try_seek(Duration::from_secs_f32(bounded_start))
