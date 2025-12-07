@@ -32,7 +32,8 @@ mod platform {
     use std::os::windows::ffi::OsStrExt;
     use std::ptr::copy_nonoverlapping;
     use windows::Win32::Foundation::{
-        DRAGDROP_S_CANCEL, DRAGDROP_S_DROP, DV_E_FORMATETC, E_INVALIDARG, HGLOBAL, POINT,
+        DRAGDROP_S_CANCEL, DRAGDROP_S_DROP, DRAGDROP_S_USEDEFAULTCURSORS, DV_E_FORMATETC,
+        E_INVALIDARG, HGLOBAL, POINT,
     };
     use windows::Win32::System::Com::{
         DATADIR_GET, DVASPECT_CONTENT, FORMATETC, IAdviseSink, IDataObject, IEnumFORMATETC,
@@ -44,7 +45,6 @@ mod platform {
     use windows::Win32::System::Ole::{
         CF_HDROP, DROPEFFECT, DROPEFFECT_COPY, DROPEFFECT_LINK, DROPEFFECT_MOVE,
         DROPEFFECT_NONE, DoDragDrop, IDropSource, OleInitialize, OleUninitialize,
-        DRAGDROP_S_USEDEFAULTCURSORS,
     };
     use windows::Win32::System::SystemServices::{MK_LBUTTON, MODIFIERKEYS_FLAGS};
     use windows::Win32::UI::Shell::{DROPFILES, SHCreateStdEnumFmtEtc};
@@ -56,10 +56,8 @@ mod platform {
 
     impl ComApartment {
         fn new() -> Result<Self, String> {
-            // SAFETY: Single-threaded COM init for drag/drop, errors converted to string.
-            unsafe { OleInitialize(None) }
-                .ok()
-                .map_err(|err| format!("COM init failed: {err}"))?;
+            // SAFETY: Single-threaded OLE init for drag/drop, errors converted to string.
+            unsafe { OleInitialize(None) }.map_err(|err| format!("COM init failed: {err}"))?;
             Ok(Self)
         }
     }
@@ -89,10 +87,10 @@ mod platform {
         }
 
         fn matches_format(&self, fmt: &FORMATETC) -> bool {
-            fmt.cfFormat == self.format.cfFormat
-                && fmt.tymed == self.format.tymed
-                && fmt.dwAspect == self.format.dwAspect
-                && fmt.lindex == self.format.lindex
+            fmt.cfFormat == CF_HDROP.0 as u16
+                && fmt.dwAspect == DVASPECT_CONTENT.0
+                && (fmt.tymed & TYMED_HGLOBAL.0 as u32) != 0
+                && (fmt.lindex == -1 || fmt.lindex == 0)
         }
 
         fn fill_medium(&self) -> windows::core::Result<STGMEDIUM> {
