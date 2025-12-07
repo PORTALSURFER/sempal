@@ -13,7 +13,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut viewport = egui::ViewportBuilder::default()
         .with_inner_size(DEFAULT_VIEWPORT_SIZE)
         .with_min_inner_size(MIN_VIEWPORT_SIZE)
-        .with_fullscreen(true);
+        .with_maximized(true);
     if let Some(icon) = load_app_icon() {
         viewport = viewport.with_icon(icon);
     }
