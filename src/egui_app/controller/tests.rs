@@ -1,6 +1,6 @@
 use super::test_support::{dummy_controller, sample_entry, write_test_wav};
 use super::*;
-use crate::egui_app::state::{DragPayload, TriageFilter};
+use crate::egui_app::state::{DragPayload, TriageFlagColumn, TriageFlagFilter};
 use crate::sample_sources::collections::CollectionMember;
 use crate::egui_app::controller::collection_export;
 use hound::WavReader;
@@ -37,7 +37,7 @@ fn label_cache_builds_on_first_lookup() {
         sample_entry("b.wav", SampleTag::Neutral),
     ];
     controller.rebuild_wav_lookup();
-    controller.rebuild_triage_lists();
+    controller.rebuild_browser_lists();
 
     assert!(controller.label_cache.get(&source.id).is_none());
     let label = controller.wav_label(1).unwrap();
@@ -46,7 +46,7 @@ fn label_cache_builds_on_first_lookup() {
 }
 
 #[test]
-fn triage_indices_track_tags() {
+fn sample_browser_indices_track_tags() {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source);
     controller.wav_entries = vec![
@@ -57,23 +57,23 @@ fn triage_indices_track_tags() {
     controller.selected_wav = Some(PathBuf::from("neutral.wav"));
     controller.loaded_wav = Some(PathBuf::from("keep.wav"));
     controller.rebuild_wav_lookup();
-    controller.rebuild_triage_lists();
+    controller.rebuild_browser_lists();
 
-    assert_eq!(controller.triage_indices(TriageColumn::Trash).len(), 1);
-    assert_eq!(controller.triage_indices(TriageColumn::Neutral).len(), 1);
-    assert_eq!(controller.triage_indices(TriageColumn::Keep).len(), 1);
-    assert_eq!(controller.visible_triage_indices(), &[0, 1, 2]);
+    assert_eq!(controller.browser_indices(TriageFlagColumn::Trash).len(), 1);
+    assert_eq!(controller.browser_indices(TriageFlagColumn::Neutral).len(), 1);
+    assert_eq!(controller.browser_indices(TriageFlagColumn::Keep).len(), 1);
+    assert_eq!(controller.visible_browser_indices(), &[0, 1, 2]);
 
-    let selected = controller.ui.triage.selected.unwrap();
-    assert_eq!(selected.column, TriageColumn::Neutral);
-    assert_eq!(controller.ui.triage.selected_visible, Some(1));
-    let loaded = controller.ui.triage.loaded.unwrap();
-    assert_eq!(loaded.column, TriageColumn::Keep);
-    assert_eq!(controller.ui.triage.loaded_visible, Some(2));
+    let selected = controller.ui.browser.selected.unwrap();
+    assert_eq!(selected.column, TriageFlagColumn::Neutral);
+    assert_eq!(controller.ui.browser.selected_visible, Some(1));
+    let loaded = controller.ui.browser.loaded.unwrap();
+    assert_eq!(loaded.column, TriageFlagColumn::Keep);
+    assert_eq!(controller.ui.browser.loaded_visible, Some(2));
 }
 
 #[test]
-fn dropping_triage_sample_adds_to_collection_and_db() {
+fn dropping_sample_adds_to_collection_and_db() {
     let temp = tempdir().unwrap();
     let root = temp.path().join("source");
     std::fs::create_dir_all(&root).unwrap();
@@ -118,20 +118,20 @@ fn dropping_triage_sample_adds_to_collection_and_db() {
 }
 
 #[test]
-fn triage_autoscroll_disabled_when_collection_selected() {
+fn browser_autoscroll_disabled_when_collection_selected() {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source);
     controller.wav_entries = vec![sample_entry("one.wav", SampleTag::Neutral)];
     controller.selected_wav = Some(PathBuf::from("one.wav"));
     controller.rebuild_wav_lookup();
-    controller.rebuild_triage_lists();
+    controller.rebuild_browser_lists();
     controller.ui.collections.selected_sample = Some(0);
-    controller.rebuild_triage_lists();
-    assert!(!controller.ui.triage.autoscroll);
+    controller.rebuild_browser_lists();
+    assert!(!controller.ui.browser.autoscroll);
 }
 
 #[test]
-fn triage_filter_limits_visible_rows() {
+fn browser_filter_limits_visible_rows() {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source);
     controller.wav_entries = vec![
@@ -140,16 +140,16 @@ fn triage_filter_limits_visible_rows() {
         sample_entry("keep.wav", SampleTag::Keep),
     ];
     controller.rebuild_wav_lookup();
-    controller.rebuild_triage_lists();
+    controller.rebuild_browser_lists();
 
-    controller.set_triage_filter(TriageFilter::Keep);
-    assert_eq!(controller.visible_triage_indices(), &[2]);
-    controller.set_triage_filter(TriageFilter::Trash);
-    assert_eq!(controller.visible_triage_indices(), &[0]);
-    controller.set_triage_filter(TriageFilter::Untagged);
-    assert_eq!(controller.visible_triage_indices(), &[1]);
-    controller.set_triage_filter(TriageFilter::All);
-    assert_eq!(controller.visible_triage_indices(), &[0, 1, 2]);
+    controller.set_browser_filter(TriageFlagFilter::Keep);
+    assert_eq!(controller.visible_browser_indices(), &[2]);
+    controller.set_browser_filter(TriageFlagFilter::Trash);
+    assert_eq!(controller.visible_browser_indices(), &[0]);
+    controller.set_browser_filter(TriageFlagFilter::Untagged);
+    assert_eq!(controller.visible_browser_indices(), &[1]);
+    controller.set_browser_filter(TriageFlagFilter::All);
+    assert_eq!(controller.visible_browser_indices(), &[0, 1, 2]);
 }
 
 #[test]
@@ -162,7 +162,7 @@ fn tagging_keeps_selection_on_same_sample() {
     ];
     controller.selected_wav = Some(PathBuf::from("one.wav"));
     controller.rebuild_wav_lookup();
-    controller.rebuild_triage_lists();
+    controller.rebuild_browser_lists();
 
     controller.tag_selected(SampleTag::Keep);
 
@@ -170,7 +170,7 @@ fn tagging_keeps_selection_on_same_sample() {
         controller.selected_wav.as_deref(),
         Some(Path::new("one.wav"))
     );
-    assert_eq!(controller.ui.triage.selected_visible, Some(0));
+    assert_eq!(controller.ui.browser.selected_visible, Some(0));
     assert_eq!(controller.wav_entries[0].tag, SampleTag::Keep);
 }
 
@@ -184,7 +184,7 @@ fn left_tagging_from_keep_untags_then_trashes() {
     ];
     controller.selected_wav = Some(PathBuf::from("one.wav"));
     controller.rebuild_wav_lookup();
-    controller.rebuild_triage_lists();
+    controller.rebuild_browser_lists();
 
     controller.tag_selected_left();
     assert_eq!(controller.wav_entries[0].tag, SampleTag::Neutral);
@@ -223,7 +223,7 @@ fn exporting_selection_updates_entries_and_db() {
     assert_eq!(entry.tag, SampleTag::Keep);
     assert_eq!(entry.relative_path, PathBuf::from("orig_sel.wav"));
     assert_eq!(controller.wav_entries.len(), 1);
-    assert_eq!(controller.ui.triage.visible.len(), 1);
+    assert_eq!(controller.ui.browser.visible.len(), 1);
     let exported_path = root.join(&entry.relative_path);
     assert!(exported_path.exists());
     let exported: Vec<f32> = hound::WavReader::open(&exported_path)
@@ -400,7 +400,7 @@ fn renaming_collection_updates_export_folder() -> Result<(), String> {
 }
 
 #[test]
-fn triage_rename_updates_collections_and_lookup() {
+fn browser_rename_updates_collections_and_lookup() {
     let temp = tempdir().unwrap();
     let root = temp.path().join("source");
     std::fs::create_dir_all(&root).unwrap();
@@ -413,7 +413,7 @@ fn triage_rename_updates_collections_and_lookup() {
     write_test_wav(&root.join("one.wav"), &[0.1, -0.2]);
     controller.wav_entries = vec![sample_entry("one.wav", SampleTag::Neutral)];
     controller.rebuild_wav_lookup();
-    controller.rebuild_triage_lists();
+    controller.rebuild_browser_lists();
 
     let mut collection = Collection::new("Crops");
     let collection_id = collection.id.clone();
@@ -421,7 +421,7 @@ fn triage_rename_updates_collections_and_lookup() {
     controller.collections.push(collection);
     controller.selected_collection = Some(collection_id.clone());
 
-    controller.rename_triage_sample(0, "renamed.wav").unwrap();
+    controller.rename_browser_sample(0, "renamed.wav").unwrap();
 
     assert!(!root.join("one.wav").exists());
     assert!(root.join("renamed.wav").is_file());
@@ -444,7 +444,7 @@ fn triage_rename_updates_collections_and_lookup() {
 }
 
 #[test]
-fn triage_normalize_refreshes_exports() -> Result<(), String> {
+fn browser_normalize_refreshes_exports() -> Result<(), String> {
     let temp = tempdir().unwrap();
     let root = temp.path().join("source");
     let export_root = temp.path().join("export");
@@ -458,7 +458,7 @@ fn triage_normalize_refreshes_exports() -> Result<(), String> {
     write_test_wav(&root.join("one.wav"), &[0.25, -0.5]);
     controller.wav_entries = vec![sample_entry("one.wav", SampleTag::Neutral)];
     controller.rebuild_wav_lookup();
-    controller.rebuild_triage_lists();
+    controller.rebuild_browser_lists();
     controller
         .load_waveform_for_selection(&source, Path::new("one.wav"))
         .unwrap();
@@ -474,7 +474,7 @@ fn triage_normalize_refreshes_exports() -> Result<(), String> {
         relative_path: PathBuf::from("one.wav"),
     };
     controller.export_member_if_needed(&collection_id, &member)?;
-    controller.normalize_triage_sample(0)?;
+    controller.normalize_browser_sample(0)?;
 
     let collection = controller
         .collections
@@ -497,7 +497,7 @@ fn triage_normalize_refreshes_exports() -> Result<(), String> {
 }
 
 #[test]
-fn triage_delete_prunes_collections_and_exports() -> Result<(), String> {
+fn browser_delete_prunes_collections_and_exports() -> Result<(), String> {
     let temp = tempdir().unwrap();
     let root = temp.path().join("source");
     let export_root = temp.path().join("export");
@@ -511,7 +511,7 @@ fn triage_delete_prunes_collections_and_exports() -> Result<(), String> {
     write_test_wav(&root.join("delete.wav"), &[0.1, 0.2]);
     controller.wav_entries = vec![sample_entry("delete.wav", SampleTag::Neutral)];
     controller.rebuild_wav_lookup();
-    controller.rebuild_triage_lists();
+    controller.rebuild_browser_lists();
 
     let mut collection = Collection::new("Delete");
     let collection_id = collection.id.clone();
@@ -524,7 +524,7 @@ fn triage_delete_prunes_collections_and_exports() -> Result<(), String> {
         relative_path: PathBuf::from("delete.wav"),
     };
     controller.export_member_if_needed(&collection_id, &member)?;
-    controller.delete_triage_sample(0)?;
+    controller.delete_browser_sample(0)?;
 
     assert!(!root.join("delete.wav").exists());
     let db = controller.database_for(&source).expect("open db");
@@ -538,6 +538,6 @@ fn triage_delete_prunes_collections_and_exports() -> Result<(), String> {
     let export_dir = collection_export::export_dir_for(collection)?;
     assert!(!export_dir.join("delete.wav").exists());
     assert!(controller.wav_entries.is_empty());
-    assert!(controller.ui.triage.visible.is_empty());
+    assert!(controller.ui.browser.visible.is_empty());
     Ok(())
 }

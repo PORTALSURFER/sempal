@@ -11,10 +11,10 @@ struct TriageSampleContext {
 }
 
 impl EguiController {
-    /// Apply a tag to a sample shown in the triage list.
-    pub fn tag_triage_sample(&mut self, row: usize, tag: SampleTag) -> Result<(), String> {
+    /// Apply a triage flag to a sample shown in the sample browser.
+    pub fn tag_browser_sample(&mut self, row: usize, tag: SampleTag) -> Result<(), String> {
         let result: Result<(), String> = (|| {
-            let ctx = self.resolve_triage_sample(row)?;
+            let ctx = self.resolve_browser_sample(row)?;
             self.set_sample_tag_for_source(&ctx.source, &ctx.entry.relative_path, tag, true)?;
             self.set_status(
                 format!("Tagged {} as {:?}", ctx.entry.relative_path.display(), tag),
@@ -28,35 +28,35 @@ impl EguiController {
         result
     }
 
-    /// Normalize a triage sample in place.
-    pub fn normalize_triage_sample(&mut self, row: usize) -> Result<(), String> {
-        let result = self.try_normalize_triage_sample(row);
+    /// Normalize a sample browser entry in place.
+    pub fn normalize_browser_sample(&mut self, row: usize) -> Result<(), String> {
+        let result = self.try_normalize_browser_sample(row);
         if let Err(err) = &result {
             self.set_status(err.clone(), StatusTone::Error);
         }
         result
     }
 
-    /// Rename a triage sample file and keep caches, collections, and exports in sync.
-    pub fn rename_triage_sample(&mut self, row: usize, new_name: &str) -> Result<(), String> {
-        let result = self.try_rename_triage_sample(row, new_name);
+    /// Rename a sample browser entry and keep caches, collections, and exports in sync.
+    pub fn rename_browser_sample(&mut self, row: usize, new_name: &str) -> Result<(), String> {
+        let result = self.try_rename_browser_sample(row, new_name);
         if let Err(err) = &result {
             self.set_status(err.clone(), StatusTone::Error);
         }
         result
     }
 
-    /// Delete a triage sample from disk, database, caches, and any collections.
-    pub fn delete_triage_sample(&mut self, row: usize) -> Result<(), String> {
-        let result = self.try_delete_triage_sample(row);
+    /// Delete a sample browser entry from disk, database, caches, and any collections.
+    pub fn delete_browser_sample(&mut self, row: usize) -> Result<(), String> {
+        let result = self.try_delete_browser_sample(row);
         if let Err(err) = &result {
             self.set_status(err.clone(), StatusTone::Error);
         }
         result
     }
 
-    fn try_normalize_triage_sample(&mut self, row: usize) -> Result<(), String> {
-        let ctx = self.resolve_triage_sample(row)?;
+    fn try_normalize_browser_sample(&mut self, row: usize) -> Result<(), String> {
+        let ctx = self.resolve_browser_sample(row)?;
         let (file_size, modified_ns, tag) = self.normalize_and_save_for_path(
             &ctx.source,
             &ctx.entry.relative_path,
@@ -71,7 +71,7 @@ impl EguiController {
         };
         self.update_cached_entry(&ctx.source, &ctx.entry.relative_path, updated);
         if self.selected_source.as_ref() == Some(&ctx.source.id) {
-            self.rebuild_triage_lists();
+            self.rebuild_browser_lists();
         }
         self.refresh_waveform_for_sample(&ctx.source, &ctx.entry.relative_path);
         self.reexport_collections_for_sample(&ctx.source.id, &ctx.entry.relative_path);
@@ -82,8 +82,8 @@ impl EguiController {
         Ok(())
     }
 
-    fn try_delete_triage_sample(&mut self, row: usize) -> Result<(), String> {
-        let ctx = self.resolve_triage_sample(row)?;
+    fn try_delete_browser_sample(&mut self, row: usize) -> Result<(), String> {
+        let ctx = self.resolve_browser_sample(row)?;
         std::fs::remove_file(&ctx.absolute_path)
             .map_err(|err| format!("Failed to delete file: {err}"))?;
         let db = self
@@ -104,15 +104,15 @@ impl EguiController {
         Ok(())
     }
 
-    fn try_rename_triage_sample(&mut self, row: usize, new_name: &str) -> Result<(), String> {
-        let ctx = self.resolve_triage_sample(row)?;
+    fn try_rename_browser_sample(&mut self, row: usize, new_name: &str) -> Result<(), String> {
+        let ctx = self.resolve_browser_sample(row)?;
         let tag = self.sample_tag_for(&ctx.source, &ctx.entry.relative_path)?;
         let new_relative = self.validate_new_sample_name_in_parent(
             &ctx.entry.relative_path,
             &ctx.source.root,
             new_name,
         )?;
-        let collections_changed = self.commit_triage_rename(&ctx, &new_relative, tag)?;
+        let collections_changed = self.commit_browser_rename(&ctx, &new_relative, tag)?;
         if collections_changed {
             self.persist_config("Failed to save collection after rename")?;
         }
@@ -127,7 +127,7 @@ impl EguiController {
         Ok(())
     }
 
-    fn commit_triage_rename(
+    fn commit_browser_rename(
         &mut self,
         ctx: &TriageSampleContext,
         new_relative: &Path,
@@ -155,12 +155,12 @@ impl EguiController {
         Ok(collections_changed)
     }
 
-    fn resolve_triage_sample(&self, row: usize) -> Result<TriageSampleContext, String> {
+    fn resolve_browser_sample(&self, row: usize) -> Result<TriageSampleContext, String> {
         let source = self
             .current_source()
             .ok_or_else(|| "Select a source first".to_string())?;
         let index = self
-            .visible_triage_indices()
+            .visible_browser_indices()
             .get(row)
             .copied()
             .ok_or_else(|| "Sample not found".to_string())?;
@@ -209,7 +209,7 @@ impl EguiController {
             self.wav_entries
                 .retain(|entry| entry.relative_path != relative_path);
             self.rebuild_wav_lookup();
-            self.rebuild_triage_lists();
+            self.rebuild_browser_lists();
             self.label_cache
                 .insert(source.id.clone(), self.build_label_cache(&self.wav_entries));
         } else {

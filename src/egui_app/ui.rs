@@ -6,11 +6,11 @@ mod drag_overlay;
 mod helpers;
 mod sample_menus;
 mod sources_panel;
-mod triage_panel;
+mod sample_browser_panel;
 mod waveform_view;
 
 use crate::{
-    audio::AudioPlayer, egui_app::controller::EguiController, egui_app::state::TriageColumn,
+    audio::AudioPlayer, egui_app::controller::EguiController, egui_app::state::TriageFlagColumn,
     waveform::WaveformRenderer,
 };
 use eframe::egui;
@@ -57,18 +57,18 @@ impl EguiApp {
         ui.vertical(|ui| {
             self.render_waveform(ui);
             ui.add_space(8.0);
-            let triage_top = ui.cursor().min.y;
-            let triage_rect = egui::Rect::from_min_max(
-                egui::pos2(ui.max_rect().left(), triage_top),
+            let browser_top = ui.cursor().min.y;
+            let browser_rect = egui::Rect::from_min_max(
+                egui::pos2(ui.max_rect().left(), browser_top),
                 ui.max_rect().max,
             );
-            if triage_rect.height() > 0.0 {
-                let mut triage_ui = ui.child_ui_with_id_source(
-                    triage_rect,
+            if browser_rect.height() > 0.0 {
+                let mut browser_ui = ui.child_ui_with_id_source(
+                    browser_rect,
                     egui::Layout::top_down(egui::Align::Min),
-                    "triage_area",
+                    "sample_browser_area",
                 );
-                self.render_triage(&mut triage_ui);
+                self.render_sample_browser(&mut browser_ui);
             }
         });
     }
@@ -86,10 +86,10 @@ impl eframe::App for EguiApp {
             self.controller.finish_active_drag();
         }
         let collection_focus = self.controller.ui.collections.selected_sample.is_some();
-        let triage_has_selection = self.controller.ui.triage.selected.is_some();
+        let browser_has_selection = self.controller.ui.browser.selected.is_some();
         if collection_focus {
-            self.controller.ui.triage.autoscroll = false;
-            self.controller.ui.triage.selected = None;
+            self.controller.ui.browser.autoscroll = false;
+            self.controller.ui.browser.selected = None;
         }
         if ctx.input(|i| i.key_pressed(egui::Key::Space)) {
             self.controller.toggle_play_pause();
@@ -110,12 +110,12 @@ impl eframe::App for EguiApp {
         }
         if ctx.input(|i| i.key_pressed(egui::Key::ArrowRight)) {
             if ctx.input(|i| i.modifiers.ctrl) {
-                if triage_has_selection {
+                if browser_has_selection {
                     self.controller.move_selection_column(1);
                 }
-            } else if triage_has_selection {
-                let col = self.controller.ui.triage.selected.map(|t| t.column);
-                let target = if matches!(col, Some(TriageColumn::Trash)) {
+            } else if browser_has_selection {
+                let col = self.controller.ui.browser.selected.map(|t| t.column);
+                let target = if matches!(col, Some(TriageFlagColumn::Trash)) {
                     crate::sample_sources::SampleTag::Neutral
                 } else {
                     crate::sample_sources::SampleTag::Keep
@@ -125,10 +125,10 @@ impl eframe::App for EguiApp {
         }
         if ctx.input(|i| i.key_pressed(egui::Key::ArrowLeft)) {
             if ctx.input(|i| i.modifiers.ctrl) {
-                if triage_has_selection {
+                if browser_has_selection {
                     self.controller.move_selection_column(-1);
                 }
-            } else if triage_has_selection {
+            } else if browser_has_selection {
                 self.controller.tag_selected_left();
             }
         }

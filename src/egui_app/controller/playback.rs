@@ -85,7 +85,7 @@ impl EguiController {
             return;
         };
         self.ui.collections.selected_sample = None;
-        self.ui.triage.autoscroll = true;
+        self.ui.browser.autoscroll = true;
         let path = match self.wav_entries.get(selected_index) {
             Some(entry) => entry.relative_path.clone(),
             None => return,
@@ -109,20 +109,20 @@ impl EguiController {
             }
         }
         let _ = db.set_tag(&path, target);
-        self.rebuild_triage_lists();
+        self.rebuild_browser_lists();
     }
 
-    /// Move selection within the current triage list by an offset and play.
+    /// Move selection within the current sample browser list by an offset and play.
     pub fn nudge_selection(&mut self, offset: isize) {
-        let list = self.visible_triage_indices().to_vec();
+        let list = self.visible_browser_indices().to_vec();
         if list.is_empty() {
             return;
         };
         self.ui.collections.selected_sample = None;
-        self.ui.triage.autoscroll = true;
+        self.ui.browser.autoscroll = true;
         let current_row = self
             .ui
-            .triage
+            .browser
             .selected_visible
             .or_else(|| {
                 self.selected_row_index()
@@ -136,15 +136,15 @@ impl EguiController {
         }
     }
 
-    /// Cycle the triage filter (-1 left, +1 right) to mirror old column navigation.
+    /// Cycle the triage flag filter (-1 left, +1 right) to mirror old column navigation.
     pub fn move_selection_column(&mut self, delta: isize) {
-        use crate::egui_app::state::TriageFilter::*;
+        use crate::egui_app::state::TriageFlagFilter::*;
         let filters = [All, Keep, Trash, Untagged];
-        let current = self.ui.triage.filter;
+        let current = self.ui.browser.filter;
         let current_idx = filters.iter().position(|f| f == &current).unwrap_or(0) as isize;
         let target_idx = (current_idx + delta).clamp(0, (filters.len() as isize) - 1) as usize;
         let target = filters[target_idx];
-        self.set_triage_filter(target);
+        self.set_browser_filter(target);
     }
 
     /// Tag leftwards: Keep -> Neutral, otherwise -> Trash.
