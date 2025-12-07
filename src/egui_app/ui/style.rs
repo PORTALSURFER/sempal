@@ -29,13 +29,13 @@ pub fn palette() -> Palette {
         bg_tertiary: Color32::from_rgb(32, 32, 32),
         panel_outline: Color32::from_rgb(61, 61, 71),
         grid_strong: Color32::from_rgb(50, 50, 60),
-        grid_soft: Color32::from_rgb(20, 20, 30),
+        grid_soft: Color32::from_rgb(40, 62, 80),
         text_primary: Color32::from_rgb(201, 201, 211),
         text_muted: Color32::from_rgb(140, 156, 170),
         accent_mint: Color32::from_rgb(92, 92, 100),
         accent_ice: Color32::from_rgb(92, 92, 100),
-        accent_copper: Color32::from_rgb(154, 64, 29),
-        warning: Color32::from_rgb(218, 72, 41),
+        accent_copper: Color32::from_rgb(254, 164, 29),
+        warning: Color32::from_rgb(218, 112, 41),
         success: Color32::from_rgb(236, 243, 210),
     }
 }
