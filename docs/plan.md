@@ -7,10 +7,10 @@
 - Cover the new actions with controller/UI tests and manual checks to keep drag/select/autoscroll behaviour stable.
 
 ## Step-by-step plan
-1. [-] Audit collection context menu features and define their mapping for triage rows (including desired handling for the “delete” action on regular samples).
-2. [-] Implement controller pathways for triage actions (tag, normalize overwrite, rename, delete/remove) reusing shared helpers and updating caches, waveform, and loaded audio state.
-3. [-] Refactor or share context menu UI code so `triage_panel.rs` renders the same menu as `collection_sample_menu`, keeping selection and drag behaviour unchanged.
-4. [-] Add tests covering triage context menu actions and state updates; validate both triage and collection lists still render/scroll/drag as before.
+1. [x] Audit collection context menu features and define their mapping for sample browser rows (including desired handling for the “delete” action on regular samples).
+2. [x] Implement controller pathways for browser actions (tag, normalize overwrite, rename, delete/remove) reusing shared helpers and updating caches, waveform, and loaded audio state.
+3. [x] Refactor or share context menu UI code so the sample browser panel renders the same menu as `collection_sample_menu`, keeping selection and drag behaviour unchanged.
+4. [x] Add tests covering browser context menu actions and state updates; validate both browser and collection lists still render/scroll/drag as before.
 5. [-] Do a quick manual pass (or targeted integration check) to confirm menus appear and actions work on both lists without regressions.
 
 ## Code Style & Architecture Rules Reminder

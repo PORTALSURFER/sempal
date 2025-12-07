@@ -41,3 +41,11 @@ and lets add migration code to find and convert the current config.json format/p
 \plan - dont show the extensions or folders in our item lists, both for collections and for the regular sample list, show only the sample name
 
 \plan - our icon is sometimes not visible in the windows taskbar, it shows some default windows app icon. but sometimes it does work oddly.
+
+\plan - add ability to select the audio output device, sample rate, and other typical audio output settings in a nice options menu.
+
+\plan - for missing samples, lets add a missing icon clearly informing the user visually, keep then in the database though. later wil will add features to try and recover missing items.
+right now also if we select a missing audio file, the waveform still renders the previously selected file, and playback still plays that buffer, lets clear the waveform and add a clear message that we have a missing file selected here too, and play nothing.
+
+\plan - lets add a contextual hotkey system. based on user focus, so we also need to add a user focus system if we dont have one yet.
+as a first hotkey, lets add 'x' to select the focused sample, 'n' to normalize the sample, 'd' to delete the sample, 'c' to add it to the current collection.  lets also add a hotkey ctrl+/ to show a visual popup, listing the currently available hotkeys in context of the currently focused item, global hotkeys if any.

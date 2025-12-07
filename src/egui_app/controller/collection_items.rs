@@ -69,7 +69,7 @@ impl EguiController {
             let ctx = self.resolve_collection_sample(row)?;
             self.set_sample_tag_for_source(&ctx.source, &ctx.member.relative_path, tag, false)?;
             if self.selected_source.as_ref() == Some(&ctx.source.id) {
-                self.rebuild_triage_lists();
+                self.rebuild_browser_lists();
             }
             self.set_status(
                 format!("Tagged {} as {:?}", ctx.member.relative_path.display(), tag),
@@ -100,7 +100,7 @@ impl EguiController {
                 },
             );
             if self.selected_source.as_ref() == Some(&ctx.source.id) {
-                self.rebuild_triage_lists();
+                self.rebuild_browser_lists();
             }
             self.refresh_waveform_after_change(&ctx, &ctx.member.relative_path);
             self.update_export_after_change(&ctx, &ctx.member.relative_path);

@@ -297,7 +297,7 @@ impl EguiController {
         if self.selected_source.as_ref() == Some(&source.id) {
             replace_entry(&mut self.wav_entries, old_path, &new_entry);
             self.rebuild_wav_lookup();
-            self.rebuild_triage_lists();
+            self.rebuild_browser_lists();
             self.label_cache
                 .insert(source.id.clone(), self.build_label_cache(&self.wav_entries));
         }

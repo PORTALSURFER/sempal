@@ -13,13 +13,14 @@ mod playback;
 mod scans;
 mod selection_export;
 mod sources;
-mod triage_actions;
+mod sample_browser_actions;
 mod wavs;
 
 use crate::{
     audio::AudioPlayer,
     egui_app::state::{
-        PlayheadState, TriageColumn, TriageFilter, TriageState, UiState, WaveformImage,
+        PlayheadState, SampleBrowserState, TriageFlagColumn, TriageFlagFilter, UiState,
+        WaveformImage,
     },
     egui_app::view_model,
     sample_sources::{

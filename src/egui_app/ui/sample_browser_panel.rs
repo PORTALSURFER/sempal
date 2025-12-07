@@ -3,40 +3,40 @@ use super::helpers::{
     scroll_offset_to_reveal_row,
 };
 use super::*;
-use crate::egui_app::state::TriageFilter;
+use crate::egui_app::state::TriageFlagFilter;
 use crate::sample_sources::SampleTag;
 use eframe::egui::{self, Color32, RichText, Stroke, Ui};
 use std::path::Path;
 
 impl EguiApp {
-    pub(super) fn render_triage(&mut self, ui: &mut Ui) {
-        let selected_row = self.controller.ui.triage.selected_visible;
-        let loaded_row = self.controller.ui.triage.loaded_visible;
-        let drop_target = self.controller.triage_drop_target();
-        self.render_triage_filter(ui);
+    pub(super) fn render_sample_browser(&mut self, ui: &mut Ui) {
+        let selected_row = self.controller.ui.browser.selected_visible;
+        let loaded_row = self.controller.ui.browser.loaded_visible;
+        let drop_target = self.controller.triage_flag_drop_target();
+        self.render_sample_browser_filter(ui);
         ui.add_space(6.0);
         let list_height = ui.available_height().max(0.0);
         let drag_active = self.controller.ui.drag.payload.is_some();
         let pointer_pos = ui
             .input(|i| i.pointer.hover_pos().or_else(|| i.pointer.interact_pos()))
             .or(self.controller.ui.drag.position);
-        let triage_autoscroll = self.controller.ui.triage.autoscroll
+        let autoscroll_enabled = self.controller.ui.browser.autoscroll
             && self.controller.ui.collections.selected_sample.is_none();
         let row_height = list_row_height(ui);
         let row_metrics = RowMetrics {
             height: row_height,
             spacing: ui.spacing().item_spacing.y,
         };
-        let total_rows = self.controller.visible_triage_indices().len();
+        let total_rows = self.controller.visible_browser_indices().len();
         let bg_frame = egui::Frame::none().fill(Color32::from_rgb(16, 16, 16));
         let frame_response = bg_frame.show(ui, |ui| {
             let scroll_response = egui::ScrollArea::vertical()
-                .id_source("triage_scroll_single")
+                .id_source("sample_browser_scroll")
                 .max_height(list_height)
                 .show_rows(ui, row_height, total_rows, |ui, row_range| {
                     for row in row_range {
                         let entry_index = {
-                            let indices = self.controller.visible_triage_indices();
+                            let indices = self.controller.visible_browser_indices();
                             match indices.get(row) {
                                 Some(index) => *index,
                                 None => continue,
@@ -70,9 +70,9 @@ impl EguiApp {
                                 egui::Sense::click_and_drag(),
                             );
                             if response.clicked() {
-                                self.controller.select_from_triage(&path);
+                                self.controller.select_from_browser(&path);
                             }
-                            self.triage_sample_menu(&response, row, &path, &label);
+                            self.browser_sample_menu(&response, row, &path, &label);
                             if response.drag_started() {
                                 if let Some(pos) = response.interact_pointer_pos() {
                                     let name = path.to_string_lossy().to_string();
@@ -99,10 +99,10 @@ impl EguiApp {
         let content_height = frame_response.inner.content_size.y;
         let max_offset = (content_height - viewport_height).max(0.0);
         let mut desired_offset = frame_response.inner.state.offset.y;
-        if let (Some(row), true) = (selected_row, triage_autoscroll) {
+        if let (Some(row), true) = (selected_row, autoscroll_enabled) {
             desired_offset =
                 scroll_offset_to_reveal_row(desired_offset, row, row_metrics, viewport_height, 1.0);
-            self.controller.ui.triage.autoscroll = false;
+            self.controller.ui.browser.autoscroll = false;
         }
         let mut state = frame_response.inner.state;
         state.offset.y = desired_offset.clamp(0.0, max_offset);
@@ -128,7 +128,7 @@ impl EguiApp {
         }
     }
 
-    fn triage_sample_menu(
+    fn browser_sample_menu(
         &mut self,
         response: &egui::Response,
         row: usize,
@@ -139,14 +139,14 @@ impl EguiApp {
             let mut close_menu = false;
             ui.label(RichText::new(label.to_string()).color(Color32::LIGHT_GRAY));
             self.sample_tag_menu(ui, &mut close_menu, |app, tag| {
-                app.controller.tag_triage_sample(row, tag).is_ok()
+                app.controller.tag_browser_sample(row, tag).is_ok()
             });
             if ui
                 .button("Normalize (overwrite)")
                 .on_hover_text("Scale to full range and overwrite the wav")
                 .clicked()
             {
-                if self.controller.normalize_triage_sample(row).is_ok() {
+                if self.controller.normalize_browser_sample(row).is_ok() {
                     close_menu = true;
                 }
             }
@@ -161,7 +161,7 @@ impl EguiApp {
                 ui,
                 rename_id,
                 default_name,
-                |app, value| app.controller.rename_triage_sample(row, value).is_ok(),
+                |app, value| app.controller.rename_browser_sample(row, value).is_ok(),
             ) {
                 close_menu = true;
             }
@@ -169,7 +169,7 @@ impl EguiApp {
                 RichText::new("Delete file").color(Color32::from_rgb(255, 160, 160)),
             );
             if ui.add(delete_btn).clicked() {
-                if self.controller.delete_triage_sample(row).is_ok() {
+                if self.controller.delete_browser_sample(row).is_ok() {
                     close_menu = true;
                 }
             }
@@ -179,24 +179,24 @@ impl EguiApp {
         });
     }
 
-    fn render_triage_filter(&mut self, ui: &mut Ui) {
+    fn render_sample_browser_filter(&mut self, ui: &mut Ui) {
         ui.horizontal(|ui| {
             ui.label(RichText::new("Filter").color(Color32::from_rgb(210, 210, 210)));
             for filter in [
-                TriageFilter::All,
-                TriageFilter::Keep,
-                TriageFilter::Trash,
-                TriageFilter::Untagged,
+                TriageFlagFilter::All,
+                TriageFlagFilter::Keep,
+                TriageFlagFilter::Trash,
+                TriageFlagFilter::Untagged,
             ] {
-                let selected = self.controller.ui.triage.filter == filter;
+                let selected = self.controller.ui.browser.filter == filter;
                 let label = match filter {
-                    TriageFilter::All => "All",
-                    TriageFilter::Keep => "Keep",
-                    TriageFilter::Trash => "Trash",
-                    TriageFilter::Untagged => "Untagged",
+                    TriageFlagFilter::All => "All",
+                    TriageFlagFilter::Keep => "Keep",
+                    TriageFlagFilter::Trash => "Trash",
+                    TriageFlagFilter::Untagged => "Untagged",
                 };
                 if ui.selectable_label(selected, label).clicked() {
-                    self.controller.set_triage_filter(filter);
+                    self.controller.set_browser_filter(filter);
                 }
             }
         });

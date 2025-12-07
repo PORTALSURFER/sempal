@@ -13,8 +13,8 @@ impl EguiController {
         };
         self.selected_collection = Some(collection.id.clone());
         self.ui.collections.selected_sample = Some(index);
-        self.ui.triage.selected = None;
-        self.ui.triage.autoscroll = false;
+        self.ui.browser.selected = None;
+        self.ui.browser.autoscroll = false;
         self.refresh_collections_ui();
         let target_source = member.source_id.clone();
         let target_path = member.relative_path.clone();
@@ -52,7 +52,7 @@ impl EguiController {
             self.selected_collection = None;
         }
         self.ui.collections.selected_sample = None;
-        self.ui.triage.autoscroll = false;
+        self.ui.browser.autoscroll = false;
         self.refresh_collections_ui();
     }
 
@@ -178,8 +178,8 @@ impl EguiController {
         if total == 0 {
             return;
         }
-        self.ui.triage.autoscroll = false;
-        self.ui.triage.selected = None;
+        self.ui.browser.autoscroll = false;
+        self.ui.browser.selected = None;
         let current = selected_row as isize;
         let next = (current + offset).clamp(0, total as isize - 1) as usize;
         self.select_collection_sample(next);
