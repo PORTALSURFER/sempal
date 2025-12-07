@@ -14,10 +14,10 @@ impl EguiApp {
                 .pivot(Align2::CENTER_CENTER)
                 .current_pos(pos + Vec2::new(16.0, 16.0))
                 .show(ctx, |ui| {
-                    Frame::none()
+                    Frame::new()
                         .fill(Color32::from_rgba_unmultiplied(26, 39, 51, 220))
                         .stroke(Stroke::new(1.0, Color32::from_rgb(47, 111, 177)))
-                        .rounding(6.0)
+                        .corner_radius(6.0)
                         .show(ui, |ui| {
                             ui.horizontal(|ui| {
                                 ui.add_space(8.0);

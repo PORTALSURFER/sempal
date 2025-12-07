@@ -1,10 +1,10 @@
 use super::*;
-use eframe::egui::{self, Color32, Frame, RichText};
+use eframe::egui::{self, Color32, Frame, RichText, SliderClamping};
 
 impl EguiApp {
     pub(super) fn render_status(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::bottom("status_bar")
-            .frame(Frame::none().fill(Color32::from_rgb(0, 0, 0)))
+            .frame(Frame::new().fill(Color32::from_rgb(0, 0, 0)))
             .show(ctx, |ui| {
                 let status = self.controller.ui.status.clone();
                 ui.columns(2, |columns| {
@@ -26,7 +26,7 @@ impl EguiApp {
                             let mut volume = self.controller.ui.volume;
                             let slider = egui::Slider::new(&mut volume, 0.0..=1.0)
                                 .text("Vol")
-                                .clamp_to_range(true);
+                                .clamping(SliderClamping::Always);
                             if ui.add(slider).changed() {
                                 self.controller.set_volume(volume);
                             }

@@ -192,7 +192,10 @@ impl WaveformRenderer {
         foreground: Color32,
         background: Color32,
     ) -> ColorImage {
-        let mut image = ColorImage::new([width as usize, height as usize], background);
+        let mut image = ColorImage::new(
+            [width as usize, height as usize],
+            vec![background; (width as usize) * (height as usize)],
+        );
         let stride = width as usize;
         let mid = (height / 2) as f32;
         let limit = height.saturating_sub(1) as f32;

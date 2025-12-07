@@ -3,12 +3,11 @@ use std::{
     time::{Duration, Instant},
 };
 
-use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink, Source};
+use rodio::{Decoder, OutputStream, OutputStreamBuilder, Sink, Source};
 
 /// Simple audio helper that plays a loaded wav buffer and reports progress.
 pub struct AudioPlayer {
-    _stream: OutputStream,
-    handle: OutputStreamHandle,
+    stream: OutputStream,
     sink: Option<Sink>,
     current_audio: Option<Vec<u8>>,
     track_duration: Option<f32>,
@@ -23,11 +22,10 @@ const SEGMENT_FADE: Duration = Duration::from_millis(5);
 impl AudioPlayer {
     /// Create a new audio player using the default output device.
     pub fn new() -> Result<Self, String> {
-        let (stream, handle) =
-            OutputStream::try_default().map_err(|error| format!("Audio init failed: {error}"))?;
+        let stream = OutputStreamBuilder::open_default_stream()
+            .map_err(|error| format!("Audio init failed: {error}"))?;
         Ok(Self {
-            _stream: stream,
-            handle,
+            stream,
             sink: None,
             current_audio: None,
             track_duration: None,
@@ -142,7 +140,6 @@ impl AudioPlayer {
         let limited = source
             .fade_in(SEGMENT_FADE)
             .take_duration(Duration::from_secs_f32(span_length))
-            .convert_samples::<f32>()
             .buffered();
         let faded = EdgeFade::new(limited, SEGMENT_FADE);
 
@@ -152,8 +149,7 @@ impl AudioPlayer {
             Box::new(faded)
         };
 
-        let sink =
-            Sink::try_new(&self.handle).map_err(|error| format!("Audio output failed: {error}"))?;
+        let sink = Sink::connect_new(self.stream.mixer());
         sink.set_volume(self.volume);
         sink.append(final_source);
         sink.play();
@@ -169,7 +165,6 @@ impl AudioPlayer {
             rodio::source::SeekError::NotSupported { .. } => {
                 "Seeking not supported for this audio source".into()
             }
-            rodio::source::SeekError::HoundDecoder(err) => format!("Audio seek failed: {err}"),
             _ => format!("Audio seek failed: {error}"),
         }
     }
@@ -274,8 +269,8 @@ where
     S: Source<Item = f32>,
 {
     #[inline]
-    fn current_frame_len(&self) -> Option<usize> {
-        self.inner.current_frame_len()
+    fn current_span_len(&self) -> Option<usize> {
+        self.inner.current_span_len()
     }
 
     #[inline]
@@ -330,13 +325,12 @@ mod tests {
 
     #[test]
     fn play_range_accepts_zero_width_request() {
-        let Ok((stream, handle)) = rodio::OutputStream::try_default() else {
+        let Ok(stream) = rodio::OutputStreamBuilder::open_default_stream() else {
             // Skip when no audio device is available in the test environment.
             return;
         };
         let mut player = AudioPlayer {
-            _stream: stream,
-            handle,
+            stream,
             sink: None,
             current_audio: None,
             track_duration: None,
