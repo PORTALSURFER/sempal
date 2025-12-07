@@ -339,12 +339,14 @@ fn x_key_toggle_respects_focus() {
     assert_eq!(controller.ui.browser.selected_visible, Some(0));
 
     controller.toggle_focused_selection();
-    assert!(controller
-        .ui
-        .browser
-        .selected_paths
-        .iter()
-        .any(|p| p == &PathBuf::from("one.wav")));
+    assert!(
+        controller
+            .ui
+            .browser
+            .selected_paths
+            .iter()
+            .any(|p| p == &PathBuf::from("one.wav"))
+    );
     assert_eq!(controller.ui.browser.selection_anchor_visible, Some(0));
 }
 
