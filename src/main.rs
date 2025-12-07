@@ -2,7 +2,7 @@
 use eframe::egui;
 use egui::viewport::IconData;
 use sempal::audio::AudioPlayer;
-use sempal::egui_app::ui::EguiApp;
+use sempal::egui_app::ui::{DEFAULT_VIEWPORT_SIZE, EguiApp, MIN_VIEWPORT_SIZE};
 use sempal::waveform::WaveformRenderer;
 
 /// Launch the egui UI.
@@ -11,8 +11,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let player = None::<std::rc::Rc<std::cell::RefCell<AudioPlayer>>>;
 
     let mut viewport = egui::ViewportBuilder::default()
-        .with_inner_size([960.0, 560.0])
-        .with_min_inner_size([640.0, 400.0]);
+        .with_inner_size(DEFAULT_VIEWPORT_SIZE)
+        .with_min_inner_size(MIN_VIEWPORT_SIZE)
+        .with_fullscreen(true);
     if let Some(icon) = load_app_icon() {
         viewport = viewport.with_icon(icon);
     }

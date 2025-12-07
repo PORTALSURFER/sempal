@@ -151,18 +151,11 @@ impl EguiApp {
                 }
             }
             ui.separator();
-            let default_name = path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or(label);
-            let rename_id =
-                ui.make_persistent_id(format!("rename:triage:{}", path.display()));
-            if self.sample_rename_controls(
-                ui,
-                rename_id,
-                default_name,
-                |app, value| app.controller.rename_browser_sample(row, value).is_ok(),
-            ) {
+            let default_name = path.file_name().and_then(|n| n.to_str()).unwrap_or(label);
+            let rename_id = ui.make_persistent_id(format!("rename:triage:{}", path.display()));
+            if self.sample_rename_controls(ui, rename_id, default_name, |app, value| {
+                app.controller.rename_browser_sample(row, value).is_ok()
+            }) {
                 close_menu = true;
             }
             let delete_btn = egui::Button::new(

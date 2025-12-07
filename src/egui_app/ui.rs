@@ -4,10 +4,14 @@ mod chrome;
 mod collections_panel;
 mod drag_overlay;
 mod helpers;
+mod sample_browser_panel;
 mod sample_menus;
 mod sources_panel;
-mod sample_browser_panel;
 mod waveform_view;
+
+/// Default viewport sizes used when creating or restoring the window.
+pub const DEFAULT_VIEWPORT_SIZE: [f32; 2] = [960.0, 560.0];
+pub const MIN_VIEWPORT_SIZE: [f32; 2] = [640.0, 400.0];
 
 use crate::{
     audio::AudioPlayer, egui_app::controller::EguiController, egui_app::state::TriageFlagColumn,
@@ -21,6 +25,8 @@ pub struct EguiApp {
     controller: EguiController,
     visuals_set: bool,
     waveform_tex: Option<TextureHandle>,
+    is_fullscreen: bool,
+    windowed_size: Option<egui::Vec2>,
 }
 
 impl EguiApp {
@@ -38,6 +44,8 @@ impl EguiApp {
             controller,
             visuals_set: false,
             waveform_tex: None,
+            is_fullscreen: true,
+            windowed_size: Some(Self::default_windowed_size()),
         })
     }
 
@@ -51,6 +59,38 @@ impl EguiApp {
         visuals.widgets.noninteractive.bg_fill = Color32::from_rgb(16, 16, 16);
         ctx.set_visuals(visuals);
         self.visuals_set = true;
+    }
+
+    fn default_windowed_size() -> egui::Vec2 {
+        egui::vec2(DEFAULT_VIEWPORT_SIZE[0], DEFAULT_VIEWPORT_SIZE[1])
+    }
+
+    fn sync_viewport_state(&mut self, ctx: &egui::Context) {
+        if let Some(current_fullscreen) = ctx.input(|i| i.viewport().fullscreen) {
+            self.is_fullscreen = current_fullscreen;
+        }
+        if !self.is_fullscreen {
+            if let Some(inner_rect) = ctx.input(|i| i.viewport().inner_rect) {
+                self.windowed_size = Some(inner_rect.size());
+            }
+        }
+    }
+
+    fn toggle_fullscreen(&mut self, ctx: &egui::Context) {
+        if !self.is_fullscreen {
+            if let Some(inner_rect) = ctx.input(|i| i.viewport().inner_rect) {
+                self.windowed_size = Some(inner_rect.size());
+            }
+        }
+        let target_fullscreen = !self.is_fullscreen;
+        ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(target_fullscreen));
+        if !target_fullscreen {
+            let size = self
+                .windowed_size
+                .unwrap_or_else(Self::default_windowed_size);
+            ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(size));
+        }
+        self.is_fullscreen = target_fullscreen;
     }
 
     fn render_center(&mut self, ui: &mut Ui) {
@@ -77,6 +117,7 @@ impl EguiApp {
 impl eframe::App for EguiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.apply_visuals(ctx);
+        self.sync_viewport_state(ctx);
         self.controller.tick_playhead();
         if let Some(pos) = ctx.input(|i| i.pointer.hover_pos().or_else(|| i.pointer.interact_pos()))
         {
@@ -93,6 +134,9 @@ impl eframe::App for EguiApp {
         }
         if ctx.input(|i| i.key_pressed(egui::Key::Space)) {
             self.controller.toggle_play_pause();
+        }
+        if ctx.input(|i| i.key_pressed(egui::Key::F11)) {
+            self.toggle_fullscreen(ctx);
         }
         if ctx.input(|i| i.key_pressed(egui::Key::ArrowDown)) {
             if collection_focus {

@@ -270,12 +270,9 @@ impl EguiApp {
                 sample.source_id,
                 sample.path.display()
             ));
-            if self.sample_rename_controls(
-                ui,
-                rename_id,
-                default_name,
-                |app, value| app.controller.rename_collection_sample(row, value).is_ok(),
-            ) {
+            if self.sample_rename_controls(ui, rename_id, default_name, |app, value| {
+                app.controller.rename_collection_sample(row, value).is_ok()
+            }) {
                 close_menu = true;
             }
             let delete_btn = egui::Button::new(

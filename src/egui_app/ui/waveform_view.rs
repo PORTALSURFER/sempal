@@ -1,8 +1,8 @@
 use super::*;
+use crate::selection::SelectionEdge;
 use eframe::egui::{
     self, Color32, CursorIcon, Frame, Margin, RichText, Stroke, TextureOptions, Ui,
 };
-use crate::selection::SelectionEdge;
 
 impl EguiApp {
     pub(super) fn render_waveform(&mut self, ui: &mut Ui) {
@@ -131,7 +131,8 @@ impl EguiApp {
                     ui.output_mut(|o| o.cursor_icon = CursorIcon::Grab);
                 }
 
-                let start_edge_rect = selection_edge_handle_rect(selection_rect, SelectionEdge::Start);
+                let start_edge_rect =
+                    selection_edge_handle_rect(selection_rect, SelectionEdge::Start);
                 let end_edge_rect = selection_edge_handle_rect(selection_rect, SelectionEdge::End);
                 let start_edge_response = ui.interact(
                     start_edge_rect,
@@ -156,16 +157,13 @@ impl EguiApp {
                     }
                     if edge_response.dragged() {
                         if let Some(pos) = edge_response.interact_pointer_pos() {
-                            let normalized =
-                                ((pos.x - rect.left()) / rect.width()).clamp(0.0, 1.0);
+                            let normalized = ((pos.x - rect.left()) / rect.width()).clamp(0.0, 1.0);
                             self.controller.update_selection_drag(normalized);
                         }
                     } else if edge_response.drag_stopped() {
                         self.controller.finish_selection_drag();
                     }
-                    let edge_hovered = pointer_pos
-                        .map(|p| edge_rect.contains(p))
-                        .unwrap_or(false)
+                    let edge_hovered = pointer_pos.map(|p| edge_rect.contains(p)).unwrap_or(false)
                         || edge_response.hovered()
                         || edge_response.dragged();
                     if edge_hovered {
@@ -188,8 +186,8 @@ impl EguiApp {
             if !edge_dragging {
                 let shift_down = ui.input(|i| i.modifiers.shift);
                 let pointer_pos = response.interact_pointer_pos();
-                let normalized = pointer_pos
-                    .map(|pos| ((pos.x - rect.left()) / rect.width()).clamp(0.0, 1.0));
+                let normalized =
+                    pointer_pos.map(|pos| ((pos.x - rect.left()) / rect.width()).clamp(0.0, 1.0));
                 if shift_down && response.drag_started() {
                     if let Some(value) = normalized {
                         self.controller.start_selection_drag(value);
@@ -259,13 +257,22 @@ fn paint_selection_edge_bracket(
         SelectionEdge::End => (center.x, center.x, center.x - EDGE_BRACKET_WIDTH),
     };
     let stroke = Stroke::new(EDGE_BRACKET_STROKE, color);
-    painter.line_segment([egui::pos2(vertical_x, top), egui::pos2(vertical_x, bottom)], stroke);
     painter.line_segment(
-        [egui::pos2(horizontal_start, top), egui::pos2(horizontal_end, top)],
+        [egui::pos2(vertical_x, top), egui::pos2(vertical_x, bottom)],
         stroke,
     );
     painter.line_segment(
-        [egui::pos2(horizontal_start, bottom), egui::pos2(horizontal_end, bottom)],
+        [
+            egui::pos2(horizontal_start, top),
+            egui::pos2(horizontal_end, top),
+        ],
+        stroke,
+    );
+    painter.line_segment(
+        [
+            egui::pos2(horizontal_start, bottom),
+            egui::pos2(horizontal_end, bottom),
+        ],
         stroke,
     );
 }
