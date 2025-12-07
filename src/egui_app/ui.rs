@@ -25,6 +25,7 @@ pub struct EguiApp {
     controller: EguiController,
     visuals_set: bool,
     waveform_tex: Option<TextureHandle>,
+    last_viewport_log: Option<(u32, u32, u32, u32, &'static str)>,
 }
 
 impl EguiApp {
@@ -42,6 +43,7 @@ impl EguiApp {
             controller,
             visuals_set: false,
             waveform_tex: None,
+            last_viewport_log: None,
         })
     }
 
@@ -58,6 +60,7 @@ impl EguiApp {
     }
 
     fn render_center(&mut self, ui: &mut Ui) {
+        ui.set_min_height(ui.available_height());
         ui.vertical(|ui| {
             self.render_waveform(ui);
             ui.add_space(8.0);
@@ -73,6 +76,7 @@ impl EguiApp {
                         .max_rect(browser_rect)
                         .layout(egui::Layout::top_down(egui::Align::Min)),
                 );
+                browser_ui.set_min_height(browser_ui.available_height());
                 self.render_sample_browser(&mut browser_ui);
             }
         });
@@ -99,15 +103,14 @@ impl eframe::App for EguiApp {
         if ctx.input(|i| i.key_pressed(egui::Key::Space)) {
             self.controller.toggle_play_pause();
         }
-        if let Some(new_fullscreen) = ctx.input(|i| {
+        if let Some(new_maximized) = ctx.input(|i| {
             if i.key_pressed(egui::Key::F11) {
-                Some(!i.viewport().fullscreen.unwrap_or(false))
+                Some(!i.viewport().maximized.unwrap_or(false))
             } else {
                 None
             }
         }) {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(new_fullscreen));
-            ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(!new_fullscreen));
+            ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(new_maximized));
         }
         if ctx.input(|i| i.key_pressed(egui::Key::ArrowDown)) {
             if collection_focus {
@@ -159,6 +162,7 @@ impl eframe::App for EguiApp {
             .max_width(280.0)
             .show(ctx, |ui| self.render_collections_panel(ui));
         egui::CentralPanel::default().show(ctx, |ui| {
+            ui.set_min_height(ui.available_height());
             self.render_center(ui);
         });
         self.render_drag_overlay(ctx);
