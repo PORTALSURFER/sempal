@@ -15,7 +15,7 @@ mod wavs;
 use crate::{
     audio::AudioPlayer,
     egui_app::state::{
-        PlayheadState, TriageColumn, TriageIndex, TriageState, UiState, WaveformImage,
+        PlayheadState, TriageColumn, TriageFilter, TriageState, UiState, WaveformImage,
     },
     egui_app::view_model,
     sample_sources::{

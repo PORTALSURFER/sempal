@@ -1,20 +1,19 @@
 ## Goal
-- Add a distinct lower-third selection drag handle on the waveform so users can drag a cropped range into the sample list or a collection, creating a saved file in the current source and listing it in the appropriate view (and collection) automatically.
+- Move triage from three columns to a single list with hue cues for keep/trash, and add filtering to show all, kept, trashed, or untagged samples.
 
 ## Proposed solutions
-- Render a dedicated drag-handle overlay inside the existing waveform selection (lower third, contrasting color/border) using the current egui painter flow in `waveform_view.rs`.
-- Extend controller drag state to differentiate selection-based drags from existing sample drags, reusing the drag overlay visuals while tagging the payload with selection bounds and source info.
-- Introduce a cropping/writing helper that uses the already-decoded waveform bytes/duration to export the selected span to a new wav in the active source folder with unique naming, updating the source DB/cache without a full rescan.
-- Handle drops onto the triage “Samples” list and collection drop zones to materialize the cropped file, attach it to the current source (and collection when applicable), refresh UI lists, and surface errors/status.
-- Cover the new crop/export path with focused tests around range-to-bytes conversion and database/list updates, plus manual validation notes for the drag/drop UX.
+- Collapse triage state to a single list backed by tag metadata, updating the controller/view model so navigation and selection still work.
+- Rebuild the triage UI to render one virtualized list with conditional red/green tinting per row based on tag, keeping the neutral look for untagged items.
+- Introduce a filter control (tabs/dropdown) that toggles the visible subset of triage rows without disrupting selection, autoscroll, or drag/drop.
+- Adjust drag/drop and playback helpers to respect the filtered view while still operating on the underlying tag-aware list, and cover the new flows with tests.
 
 ## Step-by-step plan
-1. [-] Review waveform selection rendering and drag handling (`waveform_view.rs`, controller `playback.rs`, `drag.rs`) to place the lower-third handle and identify state needed for a selection drag payload.
-2. [-] Capture selection audio context: retain decoded audio bytes/duration and current source/path in controller state so a selection drag can be turned into an export without reloading.
-3. [-] Implement the selection drag handle UI and gestures: paint the handle, start a selection-drag payload with bounds metadata, and integrate with the existing drag overlay for visual feedback.
-4. [-] Add controller drop handling for selection drags: on drop over the triage sample list, write the cropped wav into the active source (unique filename), upsert the source DB/cache, and refresh triage lists.
-5. [-] Extend drop handling for collections: when a selection drag lands on a collection/drop zone, create the cropped file in the source root, register it, add it to the target collection, and respect export folder syncing/status.
-6. [-] Add tests for the cropping/writing helper and list-refresh behaviour, and outline manual checks for the new drag handle UX and collection integration.
+1. [-] Audit the current triage data flow (state.rs, controller/wavs.rs, view_model.rs, ui/triage_panel.rs) to map dependencies on the three-column layout and identify required tag metadata for a single list.
+2. [-] Refactor triage state and controller helpers to represent one list with tag metadata and filtering options (all/keep/trash/untagged), preserving selection/autoscroll semantics.
+3. [-] Update triage rendering to a single virtualized list with per-row hue cues (green for keep, red for trash, neutral otherwise) and confirm drag-hover feedback still works.
+4. [-] Add a filter UI control in the triage area (e.g., segmented buttons or dropdown) and wire it to the controller to change the visible subset without losing selection context.
+5. [-] Ensure drag/drop targets, playback navigation, and keyboard shortcuts operate correctly against the filtered single list, adjusting hover/selection logic as needed.
+6. [-] Add or update tests for triage indexing, filtering, and selection/autoscroll behaviour; outline manual checks for hue rendering and filter toggles.
 
 ## Code Style & Architecture Rules Reminder
 - File and module structure

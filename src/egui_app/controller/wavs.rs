@@ -10,6 +10,11 @@ impl EguiController {
         }
     }
 
+    /// Visible wav indices after applying the active triage filter.
+    pub fn visible_triage_indices(&self) -> &[usize] {
+        &self.ui.triage.visible
+    }
+
     /// Select a wav row based on its path.
     pub fn select_wav_by_path(&mut self, path: &Path) {
         if self.wav_lookup.contains_key(path) {
@@ -23,6 +28,23 @@ impl EguiController {
                     self.suppress_autoplay_once = false;
                 }
             }
+            self.rebuild_triage_lists();
+        }
+    }
+
+    /// Map the current triage filter into a drop target tag for drag-and-drop retagging.
+    pub fn triage_drop_target(&self) -> TriageColumn {
+        match self.ui.triage.filter {
+            TriageFilter::All | TriageFilter::Untagged => TriageColumn::Neutral,
+            TriageFilter::Keep => TriageColumn::Keep,
+            TriageFilter::Trash => TriageColumn::Trash,
+        }
+    }
+
+    /// Apply a new triage filter and refresh visible rows.
+    pub fn set_triage_filter(&mut self, filter: TriageFilter) {
+        if self.ui.triage.filter != filter {
+            self.ui.triage.filter = filter;
             self.rebuild_triage_lists();
         }
     }
@@ -104,10 +126,13 @@ impl EguiController {
         self.ui.triage.trash.clear();
         self.ui.triage.neutral.clear();
         self.ui.triage.keep.clear();
+        self.ui.triage.visible.clear();
+        self.ui.triage.selected_visible = None;
         if collections_selected {
             self.ui.triage.selected = None;
         }
         self.ui.triage.loaded = None;
+        self.ui.triage.loaded_visible = None;
         self.ui.triage.autoscroll = autoscroll && !collections_selected;
         self.ui.loaded_wav = None;
     }
@@ -120,6 +145,16 @@ impl EguiController {
         };
         let row_index = target.len();
         target.push(entry_index);
+        if self.triage_filter_accepts(tag) {
+            let visible_row = self.ui.triage.visible.len();
+            self.ui.triage.visible.push(entry_index);
+            if flags.selected {
+                self.ui.triage.selected_visible = Some(visible_row);
+            }
+            if flags.loaded {
+                self.ui.triage.loaded_visible = Some(visible_row);
+            }
+        }
         if flags.selected {
             self.ui.triage.selected = Some(view_model::triage_index_for(tag, row_index));
         }
@@ -131,16 +166,29 @@ impl EguiController {
         }
     }
 
-    pub(super) fn set_sample_tag(
-        &mut self,
-        path: &Path,
-        column: TriageColumn,
-    ) -> Result<(), String> {
+    fn triage_filter_accepts(&self, tag: SampleTag) -> bool {
+        match self.ui.triage.filter {
+            TriageFilter::All => true,
+            TriageFilter::Keep => matches!(tag, SampleTag::Keep),
+            TriageFilter::Trash => matches!(tag, SampleTag::Trash),
+            TriageFilter::Untagged => matches!(tag, SampleTag::Neutral),
+        }
+    }
+
+    pub(super) fn set_sample_tag(&mut self, path: &Path, column: TriageColumn) -> Result<(), String> {
         let target_tag = match column {
             TriageColumn::Trash => SampleTag::Trash,
             TriageColumn::Neutral => SampleTag::Neutral,
             TriageColumn::Keep => SampleTag::Keep,
         };
+        self.set_sample_tag_value(path, target_tag)
+    }
+
+    pub(super) fn set_sample_tag_value(
+        &mut self,
+        path: &Path,
+        target_tag: SampleTag,
+    ) -> Result<(), String> {
         let Some(source) = self.current_source() else {
             return Err("Select a source first".into());
         };
