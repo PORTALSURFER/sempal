@@ -1,15 +1,15 @@
 use super::*;
 use crate::selection::SelectionEdge;
 use eframe::egui::{
-    self, Color32, CursorIcon, Frame, Margin, RichText, Stroke, TextureOptions, Ui,
+    self, Color32, CursorIcon, Frame, Margin, RichText, Stroke, StrokeKind, TextureOptions, Ui,
 };
 
 impl EguiApp {
     pub(super) fn render_waveform(&mut self, ui: &mut Ui) {
-        let frame = Frame::none()
+        let frame = Frame::new()
             .fill(Color32::from_rgb(16, 16, 16))
             .stroke(Stroke::new(1.0, Color32::from_rgb(48, 48, 48)))
-            .inner_margin(Margin::symmetric(10.0, 8.0));
+            .inner_margin(Margin::symmetric(10, 8));
         frame.show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.label(RichText::new("Waveform Viewer").color(Color32::WHITE));
@@ -68,7 +68,12 @@ impl EguiApp {
             } else {
                 painter.rect_filled(rect, 6.0, Color32::from_rgb(12, 12, 12));
             }
-            painter.rect_stroke(rect, 6.0, Stroke::new(1.0, Color32::from_rgb(64, 64, 64)));
+            painter.rect_stroke(
+                rect,
+                6.0,
+                Stroke::new(1.0, Color32::from_rgb(64, 64, 64)),
+                StrokeKind::Inside,
+            );
 
             if let Some(pos) = pointer_pos.filter(|p| rect.contains(*p)) {
                 let x = pos.x;
@@ -80,6 +85,7 @@ impl EguiApp {
                     hover_line,
                     0.0,
                     Stroke::new(1.0, Color32::from_rgba_unmultiplied(80, 140, 200, 160)),
+                    StrokeKind::Inside,
                 );
             }
 
@@ -113,6 +119,7 @@ impl EguiApp {
                     handle_rect,
                     4.0,
                     Stroke::new(1.5, Color32::from_rgb(96, 168, 240)),
+                    StrokeKind::Inside,
                 );
                 if handle_response.drag_started() {
                     if let Some(pos) = handle_response.interact_pointer_pos() {
@@ -179,7 +186,12 @@ impl EguiApp {
                     egui::pos2(x, rect.top()),
                     egui::pos2(x, rect.bottom()),
                 );
-                painter.rect_stroke(line, 0.0, Stroke::new(2.0, Color32::from_rgb(51, 153, 255)));
+                painter.rect_stroke(
+                    line,
+                    0.0,
+                    Stroke::new(2.0, Color32::from_rgb(51, 153, 255)),
+                    StrokeKind::Inside,
+                );
             }
 
             // Waveform interactions: click to seek, shift-drag to select.

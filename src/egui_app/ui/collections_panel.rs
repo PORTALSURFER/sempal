@@ -4,7 +4,7 @@ use super::helpers::{
 };
 use super::*;
 use crate::egui_app::state::{CollectionRowView, CollectionSampleView, DragPayload};
-use eframe::egui::{self, Color32, RichText, Stroke, Ui};
+use eframe::egui::{self, Color32, RichText, Stroke, StrokeKind, Ui};
 use std::path::PathBuf;
 
 impl EguiApp {
@@ -28,7 +28,7 @@ impl EguiApp {
             ui.add_space(6.0);
             let rows = self.controller.ui.collections.rows.clone();
             egui::ScrollArea::vertical()
-                .id_source("collections_scroll")
+                .id_salt("collections_scroll")
                 .show(ui, |ui| {
                     let row_height = list_row_height(ui);
                     for (index, collection) in rows.iter().enumerate() {
@@ -127,10 +127,10 @@ impl EguiApp {
             spacing: ui.spacing().item_spacing.y,
         };
         let available_height = ui.available_height();
-        let frame = egui::Frame::none().fill(Color32::from_rgb(16, 16, 16));
+        let frame = egui::Frame::new().fill(Color32::from_rgb(16, 16, 16));
         let scroll_response = frame.show(ui, |ui| {
             ui.set_min_height(available_height);
-            let scroll = egui::ScrollArea::vertical().id_source("collection_items_scroll");
+            let scroll = egui::ScrollArea::vertical().id_salt("collection_items_scroll");
             if samples.is_empty() {
                 scroll.show(ui, |ui| {
                     let height = ui.available_height().max(available_height);
@@ -181,6 +181,7 @@ impl EguiApp {
                                         response.rect.expand(2.0),
                                         4.0,
                                         Stroke::new(2.0, Color32::from_rgb(255, 170, 80)),
+                                        StrokeKind::Inside,
                                     );
                                 }
                                 if response.drag_started() {
@@ -232,6 +233,7 @@ impl EguiApp {
                         target_rect,
                         6.0,
                         Stroke::new(2.0, Color32::from_rgba_unmultiplied(80, 140, 200, 180)),
+                        StrokeKind::Inside,
                     );
                 }
             }
@@ -284,7 +286,7 @@ impl EguiApp {
                 }
             }
             if close_menu {
-                ui.close_menu();
+                ui.close();
             }
         });
     }
@@ -293,11 +295,11 @@ impl EguiApp {
         response.context_menu(|ui| {
             if ui.button("Set export folder…").clicked() {
                 self.controller.pick_collection_export_path(&collection.id);
-                ui.close_menu();
+                ui.close();
             }
             if ui.button("Clear export folder").clicked() {
                 self.controller.clear_collection_export_path(&collection.id);
-                ui.close_menu();
+                ui.close();
             }
             let refresh_enabled = collection.export_path.is_some();
             if ui
@@ -305,7 +307,7 @@ impl EguiApp {
                 .clicked()
             {
                 self.controller.refresh_collection_export(&collection.id);
-                ui.close_menu();
+                ui.close();
             }
             let export_dir = collection_export_dir(collection);
             if ui
@@ -317,7 +319,7 @@ impl EguiApp {
             {
                 self.controller
                     .open_collection_export_folder(&collection.id);
-                ui.close_menu();
+                ui.close();
             }
             if let Some(path) = export_dir {
                 ui.small(format!("Current export: {}", path.display()));
@@ -344,7 +346,7 @@ impl EguiApp {
                     .rename_collection(&collection.id, rename_value.clone());
                 ui.ctx()
                     .data_mut(|data| data.insert_temp(rename_id, rename_value));
-                ui.close_menu();
+                ui.close();
             }
         });
     }
