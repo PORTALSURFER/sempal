@@ -14,9 +14,9 @@ impl EguiController {
                     self.set_status(err, StatusTone::Error);
                 } else {
                     let label = if paths.len() == 1 {
-                        format!("Copied {}", display_path(&paths[0]))
+                        format!("Copied {} to clipboard", display_path(&paths[0]))
                     } else {
-                        format!("Copied {} files", paths.len())
+                        format!("Copied {} files to clipboard", paths.len())
                     };
                     self.set_status(label, StatusTone::Info);
                 }

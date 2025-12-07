@@ -33,6 +33,22 @@ pub struct EguiApp {
     last_viewport_log: Option<(u32, u32, u32, u32, &'static str)>,
 }
 
+#[inline]
+fn copy_shortcut_pressed(ctx: &egui::Context) -> bool {
+    let events = ctx.input(|i| i.events.clone());
+    events.into_iter().any(|event| match event {
+        egui::Event::Copy => true,
+        egui::Event::Key {
+            key: egui::Key::C,
+            pressed: true,
+            repeat: false,
+            modifiers,
+            ..
+        } if (modifiers.command || modifiers.ctrl) && !modifiers.alt => true,
+        _ => false,
+    })
+}
+
 impl EguiApp {
     /// Create a new egui app, loading persisted configuration.
     pub fn new(
@@ -125,9 +141,7 @@ impl eframe::App for EguiApp {
         if ctx.input(|i| i.key_pressed(egui::Key::Space)) {
             self.controller.toggle_play_pause();
         }
-        if ctx.input(|i| {
-            i.key_pressed(egui::Key::C) && i.modifiers.ctrl && !i.modifiers.alt && !i.modifiers.shift
-        }) {
+        if copy_shortcut_pressed(ctx) {
             self.controller.copy_selection_to_clipboard();
         }
         if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
