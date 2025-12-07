@@ -2,7 +2,6 @@
 
 --
 
-\plan - add some usage documentation to /docs/usage.md
 
 \plan - add the hotkey F11 to switch between windowed and fullscreen mode
 lets make fullscreen mode the default mode
