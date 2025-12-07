@@ -1,5 +1,6 @@
 use super::collection_export;
 use super::*;
+use crate::sample_sources::SampleTag;
 use crate::sample_sources::collections::CollectionMember;
 
 impl EguiController {
@@ -203,8 +204,25 @@ impl EguiController {
         let selected = self
             .selected_collection
             .as_ref()
-            .and_then(|id| self.collections.iter().find(|c| &c.id == id));
-        self.ui.collections.samples = view_model::collection_samples(selected, &self.sources);
+            .and_then(|id| self.collections.iter().find(|c| &c.id == id))
+            .cloned();
+        let sources = self.sources.clone();
+        let mut tag_error: Option<String> = None;
+        self.ui.collections.samples =
+            view_model::collection_samples(selected.as_ref(), &sources, |member| {
+                match self.tag_for_collection_member(member) {
+                    Ok(tag) => tag,
+                    Err(err) => {
+                        if tag_error.is_none() {
+                            tag_error = Some(err);
+                        }
+                        SampleTag::Neutral
+                    }
+                }
+            });
+        if let Some(err) = tag_error {
+            self.set_status(err, StatusTone::Warning);
+        }
         let len = self.ui.collections.samples.len();
         if len == 0 {
             self.ui.collections.selected_sample = None;
@@ -213,6 +231,24 @@ impl EguiController {
                 self.ui.collections.selected_sample = Some(len.saturating_sub(1));
             }
         }
+    }
+
+    fn tag_for_collection_member(
+        &mut self,
+        member: &CollectionMember,
+    ) -> Result<SampleTag, String> {
+        let source = self
+            .sources
+            .iter()
+            .find(|s| s.id == member.source_id)
+            .cloned()
+            .ok_or_else(|| {
+                format!(
+                    "Source not available for {}",
+                    member.relative_path.display()
+                )
+            })?;
+        self.sample_tag_for(&source, &member.relative_path)
     }
 
     pub(super) fn ensure_collection_selection(&mut self) {

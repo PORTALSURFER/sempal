@@ -71,6 +71,7 @@ impl EguiController {
             if self.selected_source.as_ref() == Some(&ctx.source.id) {
                 self.rebuild_browser_lists();
             }
+            self.refresh_collections_ui();
             self.set_status(
                 format!("Tagged {} as {:?}", ctx.member.relative_path.display(), tag),
                 StatusTone::Info,
@@ -81,6 +82,30 @@ impl EguiController {
             self.set_status(err.clone(), StatusTone::Error);
         }
         result
+    }
+
+    pub fn tag_selected_collection_sample(&mut self, tag: SampleTag) {
+        let Some(row) = self.ui.collections.selected_sample else {
+            return;
+        };
+        let _ = self.tag_collection_sample(row, tag);
+    }
+
+    pub fn tag_selected_collection_left(&mut self) {
+        let target = match self.selected_collection_tag() {
+            Some(SampleTag::Keep) => SampleTag::Neutral,
+            _ => SampleTag::Trash,
+        };
+        self.tag_selected_collection_sample(target);
+    }
+
+    pub fn selected_collection_tag(&self) -> Option<SampleTag> {
+        let row = self.ui.collections.selected_sample?;
+        self.ui
+            .collections
+            .samples
+            .get(row)
+            .map(|sample| sample.tag)
     }
 
     /// Normalize a wav in-place to full scale and refresh metadata.

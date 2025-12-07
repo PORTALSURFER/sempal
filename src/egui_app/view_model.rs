@@ -3,6 +3,7 @@
 // Transitional helpers; wiring into the egui renderer will consume these.
 
 use crate::egui_app::state::{CollectionRowView, CollectionSampleView, SourceRowView};
+use crate::sample_sources::collections::CollectionMember;
 use crate::sample_sources::{Collection, CollectionId, SampleSource, SampleTag, WavEntry};
 use std::path::Path;
 
@@ -42,6 +43,7 @@ pub fn collection_rows(
 pub fn collection_samples(
     collection: Option<&Collection>,
     sources: &[SampleSource],
+    mut tag_lookup: impl FnMut(&CollectionMember) -> SampleTag,
 ) -> Vec<CollectionSampleView> {
     let Some(collection) = collection else {
         return Vec::new();
@@ -54,6 +56,7 @@ pub fn collection_samples(
             source: source_label(sources, member.source_id.as_str()),
             path: member.relative_path.clone(),
             label: member.relative_path.to_string_lossy().to_string(),
+            tag: tag_lookup(member),
         })
         .collect()
 }

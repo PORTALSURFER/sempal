@@ -254,6 +254,9 @@ impl EguiController {
         let entries = db
             .list_files()
             .map_err(|err| format!("Failed to read database: {err}"))?;
+        self.wav_cache
+            .entry(source.id.clone())
+            .or_insert_with(|| entries.clone());
         entries
             .iter()
             .find(|entry| entry.relative_path == relative_path)
