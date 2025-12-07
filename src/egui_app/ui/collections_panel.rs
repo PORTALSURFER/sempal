@@ -263,6 +263,30 @@ impl EguiApp {
             } else {
                 ui.small("No export folder set");
             }
+            ui.separator();
+            ui.label("Rename collection");
+            let rename_id = ui.make_persistent_id(format!("rename:{}", collection.id.as_str()));
+            let mut rename_value = ui
+                .ctx()
+                .data_mut(|data| {
+                    let value = data.get_temp_mut_or_default::<String>(rename_id);
+                    if value.is_empty() {
+                        *value = collection.name.clone();
+                    }
+                    value.clone()
+                });
+            let edit = ui.text_edit_singleline(&mut rename_value);
+            ui.ctx()
+                .data_mut(|data| data.insert_temp(rename_id, rename_value.clone()));
+            let rename_requested =
+                edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+            if ui.button("Apply rename").clicked() || rename_requested {
+                self.controller
+                    .rename_collection(&collection.id, rename_value.clone());
+                ui.ctx()
+                    .data_mut(|data| data.insert_temp(rename_id, rename_value));
+                ui.close_menu();
+            }
         });
     }
 }

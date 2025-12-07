@@ -19,3 +19,5 @@ please review the styleguide in @styleguide.md and make a plan
 - selecting items in the collection will somehow make the trash triage list autoscroll. can you remove this.
 
 - currently if I drop a wave file item, it will start playing, lets stop that from happening
+
+- add a horizontal volume slider in the statusbar, on the right. 
