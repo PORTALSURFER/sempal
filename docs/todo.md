@@ -1,7 +1,7 @@
-- lets do a housekeeping pass, clean up the codebase, reduce file lengths, improve DRYness, improve maintainability, collapse large structs/objects into clearly named smaller objects, add missing docs, improve symbol naming, find and resolve bugs, improve performance, etc.
+\plan - lets do a housekeeping pass, clean up the codebase, reduce file lengths, improve DRYness, improve maintainability, collapse large structs/objects into clearly named smaller objects, add missing docs, improve symbol naming, find and resolve bugs, improve performance, etc.
 
 --
-\plan - when the user hovers the start or end of an audio selection, lets make a [ or ] icon visible at the bottom of the line, indicating the are now able to grab the edge and resize it.
+\plan - if im drawing a new selection of our waveform, but move quickly outside of the waveform frame, we stop sizing it, while not fully touching the wall on that side. lets make it so we keep drawing/adjusting the selection until we release the mouse, not just stop when we move out of the frame
 
 \plan - add the hotkey F11 to switch between windowed and fullscreen mode
 and lets make fullscreen mode the default mode
@@ -13,16 +13,14 @@ please review the styleguide in @styleguide.md and make a plan following it.
 
 - lets add a numbering column to the main sample list and to the collection items list showing the count of items
 
-- lets add a toolbar with an options menu, lets add an option to choose a 'trash' folder on disk.
+\plan - lets add a toolbar with an options menu, lets add an option to choose a 'trash' folder on disk.
 lets add a feature users can use to trash all trashed files (tagged), add a warning asking the user if they are sure, this should physically move all the trash marked files to this trash folder.
 lets also add a 'take out trash' option, also with a warning, which should hard delete all files in the trash folder.
 lets also add an option to open the trash folder in the OS file explorer.
 
-- if im drawing a new selection of our waveform, but move quickly outside of the waveform frame, we stop sizing it, while not fully touching the wall on that side. lets make it so we keep drawing/adjusting the selection until we release the mouse, not just stop when we move out of the frame
-
 - lets add the trash/keep tagging system to the collection list as well. with full coloring etc.
 
-- lets add an alt+drag feature for the system which allows dragging waveform selections to extract that part of the audio. but in this case, cut the cropped part out of the original sample. Dont destroy the original sample however, save this edited 'original' as a new version. selecting that new one instead.
+\plan - lets add an alt+drag feature for the system which allows dragging waveform selections to extract that part of the audio. but in this case, cut the cropped part out of the original sample. Dont destroy the original sample however, save this edited 'original' as a new version. selecting that new one instead.
 
 \plan - add the ability to select multiple sample items, ctrl+mouseclick should add another item, shift+mouseclick should extend the current select to this item.
 shift+up/down should grow the selection
@@ -49,3 +47,5 @@ right now also if we select a missing audio file, the waveform still renders the
 
 \plan - lets add a contextual hotkey system. based on user focus, so we also need to add a user focus system if we dont have one yet.
 as a first hotkey, lets add 'x' to select the focused sample, 'n' to normalize the sample, 'd' to delete the sample, 'c' to add it to the current collection.  lets also add a hotkey ctrl+/ to show a visual popup, listing the currently available hotkeys in context of the currently focused item, global hotkeys if any.
+
+\plan - when I resize the sides of the waveform selection, there is a slight stickyness at first, I need to move the mouse a couple pixels before it unlocks and we actually start resizing, this is very annoying for precise tweaks, lets improve this so its butter smooth and instant.

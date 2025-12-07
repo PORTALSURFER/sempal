@@ -88,7 +88,7 @@ impl WaveformRenderer {
         let width = width.max(1);
         let height = height.max(1);
         let columns = Self::sample_columns_for_width(samples, width);
-        Self::paint_color_image_for_size(&columns, width, height, self.background, self.foreground)
+        Self::paint_color_image_for_size(&columns, width, height, self.foreground, self.background)
     }
 
     /// Decode bytes into mono samples and duration seconds.
