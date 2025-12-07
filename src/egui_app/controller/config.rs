@@ -6,7 +6,13 @@ impl EguiController {
         let cfg = crate::sample_sources::config::load_or_default()?;
         self.feature_flags = cfg.feature_flags;
         self.ui.collections.enabled = self.feature_flags.collections_enabled;
-        self.sources = cfg.sources;
+        let mut sources = cfg.sources.clone();
+        let original_count = sources.len();
+        sources.retain(|s| s.root.is_dir());
+        if sources.len() != original_count {
+            self.set_status("Removed missing sources from config", StatusTone::Warning);
+        }
+        self.sources = sources;
         self.collections = cfg.collections;
         self.selected_source = cfg
             .last_selected_source

@@ -191,6 +191,16 @@ impl EguiController {
         source: &SampleSource,
         relative_path: &Path,
     ) -> Result<(), String> {
+        if self.loaded_wav.as_deref() == Some(relative_path) {
+            self.ui.waveform.playhead = PlayheadState::default();
+            self.ui.waveform.selection = None;
+            self.selection.clear();
+            self.set_status(
+                format!("Loaded {}", relative_path.display()),
+                StatusTone::Info,
+            );
+            return Ok(());
+        }
         let full_path = source.root.join(relative_path);
         let bytes = fs::read(&full_path)
             .map_err(|err| format!("Failed to read {}: {err}", full_path.display()))?;

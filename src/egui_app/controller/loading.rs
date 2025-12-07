@@ -5,6 +5,10 @@ impl EguiController {
         let Some(source) = self.current_source() else {
             return;
         };
+        if !source.root.is_dir() {
+            self.drop_missing_source(&source.id, "Source folder missing");
+            return;
+        }
         if let Some(entries) = self.wav_cache.get(&source.id).cloned() {
             self.apply_wav_entries(entries, true, Some(source.id.clone()), None);
             return;
@@ -43,11 +47,27 @@ impl EguiController {
                         Some(message.elapsed),
                     );
                 }
-                Err(err) => {
-                    self.set_status(format!("Failed to load wavs: {err}"), StatusTone::Error);
-                }
+                Err(err) => self.handle_wav_load_error(&message.source_id, err),
             }
             self.pending_source = None;
+        }
+    }
+
+    fn handle_wav_load_error(&mut self, source_id: &SourceId, err: LoadEntriesError) {
+        match err {
+            LoadEntriesError::Db(SourceDbError::InvalidRoot(_)) => {
+                self.drop_missing_source(source_id, "Source folder missing");
+            }
+            LoadEntriesError::Db(db_err) => {
+                self.set_status(format!("Failed to load wavs: {db_err}"), StatusTone::Error);
+            }
+            LoadEntriesError::Message(msg) => {
+                if msg.contains("not a directory") {
+                    self.drop_missing_source(source_id, "Source folder missing");
+                } else {
+                    self.set_status(format!("Failed to load wavs: {msg}"), StatusTone::Error);
+                }
+            }
         }
     }
 
@@ -77,8 +97,16 @@ impl EguiController {
             self.select_wav_by_index(0);
         }
         if let Some(id) = source_id {
-            self.label_cache
-                .insert(id, self.build_label_cache(&self.wav_entries));
+            let needs_labels = !from_cache
+                || self
+                    .label_cache
+                    .get(&id)
+                    .map(|cached| cached.len() != self.wav_entries.len())
+                    .unwrap_or(true);
+            if needs_labels {
+                self.label_cache
+                    .insert(id, self.build_label_cache(&self.wav_entries));
+            }
         }
         let prefix = if from_cache { "Cached" } else { "Loaded" };
         let suffix = elapsed
