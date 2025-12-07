@@ -27,28 +27,26 @@ mod platform {
     use super::*;
     use std::os::windows::ffi::OsStrExt;
     use std::ptr::copy_nonoverlapping;
-    use windows::Win32::Foundation::HGLOBAL;
+    use std::sync::OnceLock;
+    use windows::Win32::Foundation::{HANDLE, HGLOBAL};
     use windows::Win32::System::DataExchange::{
-        CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData,
+        CloseClipboard, EmptyClipboard, OpenClipboard, RegisterClipboardFormatW, SetClipboardData,
     };
     use windows::Win32::System::Memory::{
-        GMEM_MOVEABLE, GMEM_ZEROINIT, GlobalAlloc, GlobalFree, GlobalLock, GlobalUnlock,
+        GMEM_MOVEABLE, GMEM_ZEROINIT, GlobalAlloc, GlobalLock, GlobalUnlock,
     };
-    use windows::Win32::System::Ole::CF_HDROP;
+    use windows::Win32::System::Ole::{CF_HDROP, DROPEFFECT_COPY};
     use windows::Win32::UI::Shell::DROPFILES;
+    use windows::core::w;
 
     struct Clipboard;
 
     impl Clipboard {
         fn new() -> Result<Self, String> {
-            unsafe { OpenClipboard(None) }
-                .ok()
-                .map_err(|err| format!("OpenClipboard failed: {err}"))?;
-            unsafe { EmptyClipboard() }
-                .ok()
-                .map_err(|err| format!("EmptyClipboard failed: {err}"))?;
-            Ok(Self)
-        }
+        unsafe { OpenClipboard(None) }.map_err(|err| format!("OpenClipboard failed: {err}"))?;
+        unsafe { EmptyClipboard() }.map_err(|err| format!("EmptyClipboard failed: {err}"))?;
+        Ok(Self)
+    }
     }
 
     impl Drop for Clipboard {
@@ -62,12 +60,47 @@ mod platform {
     pub fn copy_file_paths(paths: &[PathBuf]) -> Result<(), String> {
         let _clipboard = Clipboard::new()?;
         let hglobal = create_hdrop(paths)?;
+        let drop_effect = create_drop_effect(DROPEFFECT_COPY.0)?;
+        let effect_format = preferred_drop_effect_format()?;
         // SAFETY: clipboard is open; ownership of the HGLOBAL transfers to the system on success.
-        let set_result = unsafe { SetClipboardData(CF_HDROP.0 as u32, Some(hglobal)) };
-        set_result
-            .ok()
-            .map_err(|err| format!("SetClipboardData failed: {err}"))
-            .map(|_| ())
+        unsafe { SetClipboardData(effect_format as u32, Some(HANDLE(drop_effect.0))) }
+            .map_err(|err| format!("SetClipboardData(Preferred DropEffect) failed: {err}"))?;
+        // SAFETY: clipboard is open; ownership of the HGLOBAL transfers to the system on success.
+        unsafe { SetClipboardData(CF_HDROP.0 as u32, Some(HANDLE(hglobal.0))) }
+            .map_err(|err| format!("SetClipboardData failed: {err}"))?;
+        Ok(())
+    }
+
+    fn preferred_drop_effect_format() -> Result<u16, String> {
+        static FORMAT: OnceLock<Result<u16, String>> = OnceLock::new();
+        FORMAT
+            .get_or_init(|| {
+                let fmt = unsafe { RegisterClipboardFormatW(w!("Preferred DropEffect")) };
+                if fmt == 0 {
+                    Err("RegisterClipboardFormatW failed".to_string())
+                } else {
+                    Ok(fmt as u16)
+                }
+            })
+            .clone()
+    }
+
+    fn create_drop_effect(effect: u32) -> Result<HGLOBAL, String> {
+        let handle =
+            unsafe { GlobalAlloc(GMEM_MOVEABLE | GMEM_ZEROINIT, std::mem::size_of::<u32>()) }
+                .map_err(|_| "GlobalAlloc failed".to_string())?;
+        let ptr = unsafe { GlobalLock(handle) } as *mut u32;
+        if ptr.is_null() {
+            unsafe {
+                let _ = GlobalUnlock(handle);
+            }
+            return Err("GlobalLock failed".into());
+        }
+        unsafe {
+            *ptr = effect;
+            let _ = GlobalUnlock(handle);
+        }
+        Ok(handle)
     }
 
     fn create_hdrop(paths: &[PathBuf]) -> Result<HGLOBAL, String> {
@@ -91,7 +124,6 @@ mod platform {
         if ptr.is_null() {
             unsafe {
                 let _ = GlobalUnlock(handle);
-                let _ = GlobalFree(handle);
             }
             return Err("GlobalLock failed".into());
         }
