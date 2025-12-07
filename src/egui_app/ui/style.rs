@@ -141,7 +141,7 @@ pub fn drag_target_stroke() -> Stroke {
 
 /// Width of the trailing marker used to denote triage flags in list rows.
 pub fn triage_marker_width() -> f32 {
-    5.0
+    25.0
 }
 
 /// Colour for the trailing triage marker based on tag.
