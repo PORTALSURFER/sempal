@@ -88,6 +88,18 @@ impl EguiApp {
                                     color: palette.text_muted,
                                 }),
                             );
+                            if is_selected {
+                                let marker_width = 4.0;
+                                let marker_rect = egui::Rect::from_min_max(
+                                    response.rect.left_top(),
+                                    response
+                                        .rect
+                                        .left_top()
+                                        + egui::vec2(marker_width, row_height),
+                                );
+                                ui.painter()
+                                    .rect_filled(marker_rect, 0.0, style::selection_marker_fill());
+                            }
                             if response.clicked() {
                                 let modifiers = ui.input(|i| i.modifiers);
                                 if modifiers.shift {
