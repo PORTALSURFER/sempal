@@ -252,18 +252,9 @@ fn paint_selection_edge_bracket(
     let center = edge_rect.center();
     let top = center.y - half_height;
     let bottom = center.y + half_height;
-    let half_width = EDGE_BRACKET_WIDTH * 0.5;
     let (vertical_x, horizontal_start, horizontal_end) = match edge {
-        SelectionEdge::Start => (
-            center.x - half_width,
-            center.x - half_width,
-            center.x + half_width,
-        ),
-        SelectionEdge::End => (
-            center.x + half_width,
-            center.x + half_width,
-            center.x - half_width,
-        ),
+        SelectionEdge::Start => (center.x, center.x, center.x + EDGE_BRACKET_WIDTH),
+        SelectionEdge::End => (center.x, center.x, center.x - EDGE_BRACKET_WIDTH),
     };
     let stroke = Stroke::new(EDGE_BRACKET_STROKE, color);
     painter.line_segment([egui::pos2(vertical_x, top), egui::pos2(vertical_x, bottom)], stroke);
