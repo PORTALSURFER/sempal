@@ -54,6 +54,12 @@ impl EguiController {
         }
     }
 
+    /// Update master output volume and persist the change.
+    pub fn set_volume(&mut self, volume: f32) {
+        self.apply_volume(volume);
+        let _ = self.persist_config("Failed to save volume");
+    }
+
     /// Toggle play/pause, preferring the current selection when present.
     pub fn toggle_play_pause(&mut self) {
         let player_rc = match self.ensure_player() {
@@ -217,9 +223,19 @@ impl EguiController {
         }
     }
 
+    pub(super) fn apply_volume(&mut self, volume: f32) {
+        let clamped = volume.clamp(0.0, 1.0);
+        self.ui.volume = clamped;
+        if let Some(player) = self.player.as_ref() {
+            player.borrow_mut().set_volume(clamped);
+        }
+    }
+
     pub(super) fn ensure_player(&mut self) -> Result<Option<Rc<RefCell<AudioPlayer>>>, String> {
         if self.player.is_none() {
-            let created = AudioPlayer::new().map_err(|err| format!("Audio init failed: {err}"))?;
+            let mut created =
+                AudioPlayer::new().map_err(|err| format!("Audio init failed: {err}"))?;
+            created.set_volume(self.ui.volume);
             self.player = Some(Rc::new(RefCell::new(created)));
         }
         Ok(self.player.clone())

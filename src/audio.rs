@@ -15,6 +15,7 @@ pub struct AudioPlayer {
     started_at: Option<Instant>,
     play_span: Option<(f32, f32)>,
     looping: bool,
+    volume: f32,
 }
 
 const SEGMENT_FADE: Duration = Duration::from_millis(5);
@@ -33,6 +34,7 @@ impl AudioPlayer {
             started_at: None,
             play_span: None,
             looping: false,
+            volume: 1.0,
         })
     }
 
@@ -43,6 +45,14 @@ impl AudioPlayer {
         self.started_at = None;
         self.play_span = None;
         self.looping = false;
+    }
+
+    /// Adjust master output volume for current and future playback.
+    pub fn set_volume(&mut self, volume: f32) {
+        self.volume = volume.clamp(0.0, 1.0);
+        if let Some(sink) = self.sink.as_mut() {
+            sink.set_volume(self.volume);
+        }
     }
 
     /// Stop any active playback.
@@ -144,6 +154,7 @@ impl AudioPlayer {
 
         let sink =
             Sink::try_new(&self.handle).map_err(|error| format!("Audio output failed: {error}"))?;
+        sink.set_volume(self.volume);
         sink.append(final_source);
         sink.play();
         self.started_at = Some(Instant::now());
@@ -332,6 +343,7 @@ mod tests {
             started_at: None,
             play_span: None,
             looping: false,
+            volume: 1.0,
         };
         // A minimal valid 1s mono wav (header only, no samples needed for the span logic).
         let bytes = vec![
