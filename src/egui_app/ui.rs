@@ -111,14 +111,26 @@ impl eframe::App for EguiApp {
         }) {
             ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(new_maximized));
         }
-        if ctx.input(|i| i.key_pressed(egui::Key::ArrowDown)) {
+        if ctx.input(|i| i.key_pressed(egui::Key::ArrowDown) && i.modifiers.shift) {
+            if collection_focus {
+                self.controller.nudge_collection_sample(1);
+            } else {
+                self.controller.grow_selection(1);
+            }
+        } else if ctx.input(|i| i.key_pressed(egui::Key::ArrowDown)) {
             if collection_focus {
                 self.controller.nudge_collection_sample(1);
             } else {
                 self.controller.nudge_selection(1);
             }
         }
-        if ctx.input(|i| i.key_pressed(egui::Key::ArrowUp)) {
+        if ctx.input(|i| i.key_pressed(egui::Key::ArrowUp) && i.modifiers.shift) {
+            if collection_focus {
+                self.controller.nudge_collection_sample(-1);
+            } else {
+                self.controller.grow_selection(-1);
+            }
+        } else if ctx.input(|i| i.key_pressed(egui::Key::ArrowUp)) {
             if collection_focus {
                 self.controller.nudge_collection_sample(-1);
             } else {
@@ -153,6 +165,9 @@ impl eframe::App for EguiApp {
             } else if browser_has_selection {
                 self.controller.tag_selected_left();
             }
+        }
+        if !collection_focus && ctx.input(|i| i.key_pressed(egui::Key::X)) {
+            self.controller.toggle_focused_selection();
         }
         self.render_status(ctx);
         egui::SidePanel::left("sources")

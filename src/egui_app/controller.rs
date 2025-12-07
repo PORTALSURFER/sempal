@@ -144,7 +144,7 @@ fn status_badge(tone: StatusTone) -> (String, Color32) {
 
 #[derive(Clone)]
 struct RowFlags {
-    selected: bool,
+    focused: bool,
     loaded: bool,
 }
 

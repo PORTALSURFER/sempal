@@ -133,22 +133,20 @@ impl EguiController {
         if list.is_empty() {
             return;
         };
-        self.ui.collections.selected_sample = None;
-        self.ui.browser.autoscroll = true;
-        let current_row = self
-            .ui
-            .browser
-            .selected_visible
-            .or_else(|| {
-                self.selected_row_index()
-                    .and_then(|idx| list.iter().position(|i| *i == idx))
-            })
-            .unwrap_or(0) as isize;
-        let next_row = (current_row + offset).clamp(0, list.len() as isize - 1) as usize;
-        if let Some(entry_index) = list.get(next_row).copied() {
-            self.select_wav_by_index(entry_index);
-            let _ = self.play_audio(self.ui.waveform.loop_enabled, None);
-        }
+        let next_row = self.visible_row_after_offset(offset, &list);
+        self.focus_browser_row(next_row);
+        let _ = self.play_audio(self.ui.waveform.loop_enabled, None);
+    }
+
+    /// Extend selection with shift navigation while keeping the current focus for playback.
+    pub fn grow_selection(&mut self, offset: isize) {
+        let list = self.visible_browser_indices().to_vec();
+        if list.is_empty() {
+            return;
+        };
+        let next_row = self.visible_row_after_offset(offset, &list);
+        self.extend_browser_selection_to_row(next_row);
+        let _ = self.play_audio(self.ui.waveform.loop_enabled, None);
     }
 
     /// Cycle the triage flag filter (-1 left, +1 right) to mirror old column navigation.
@@ -169,6 +167,19 @@ impl EguiController {
             _ => SampleTag::Trash,
         };
         self.tag_selected(target);
+    }
+
+    fn visible_row_after_offset(&self, offset: isize, list: &[usize]) -> usize {
+        let current_row = self
+            .ui
+            .browser
+            .selected_visible
+            .or_else(|| {
+                self.selected_row_index()
+                    .and_then(|idx| list.iter().position(|i| *i == idx))
+            })
+            .unwrap_or(0) as isize;
+        (current_row + offset).clamp(0, list.len() as isize - 1) as usize
     }
 
     /// Start playback over the current selection or full range.
