@@ -38,6 +38,7 @@ impl EguiApp {
                                 bg,
                                 Color32::WHITE,
                                 egui::Sense::click(),
+                                None,
                             )
                             .on_hover_text(&row.path);
                             if response.clicked() {
