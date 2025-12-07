@@ -164,12 +164,10 @@ impl EguiController {
             }
         }
         if flags.selected {
-            self.ui.browser.selected =
-                Some(view_model::sample_browser_index_for(tag, row_index));
+            self.ui.browser.selected = Some(view_model::sample_browser_index_for(tag, row_index));
         }
         if flags.loaded {
-            self.ui.browser.loaded =
-                Some(view_model::sample_browser_index_for(tag, row_index));
+            self.ui.browser.loaded = Some(view_model::sample_browser_index_for(tag, row_index));
             if let Some(path) = self.wav_entries.get(entry_index) {
                 self.ui.loaded_wav = Some(path.relative_path.clone());
             }

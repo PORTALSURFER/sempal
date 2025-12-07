@@ -62,7 +62,12 @@ impl EguiController {
             &ctx.entry.relative_path,
             &ctx.absolute_path,
         )?;
-        self.upsert_metadata_for_source(&ctx.source, &ctx.entry.relative_path, file_size, modified_ns)?;
+        self.upsert_metadata_for_source(
+            &ctx.source,
+            &ctx.entry.relative_path,
+            file_size,
+            modified_ns,
+        )?;
         let updated = WavEntry {
             relative_path: ctx.entry.relative_path.clone(),
             file_size,
@@ -133,8 +138,7 @@ impl EguiController {
         new_relative: &Path,
         tag: SampleTag,
     ) -> Result<bool, String> {
-        let (file_size, modified_ns) =
-            self.apply_triage_rename(&ctx, &new_relative, tag)?;
+        let (file_size, modified_ns) = self.apply_triage_rename(&ctx, &new_relative, tag)?;
         let updated_path = new_relative.to_path_buf();
         self.update_cached_entry(
             &ctx.source,
@@ -243,10 +247,9 @@ impl EguiController {
     }
 
     fn refresh_waveform_for_sample(&mut self, source: &SampleSource, relative_path: &Path) {
-        let loaded_matches = self
-            .loaded_audio
-            .as_ref()
-            .is_some_and(|audio| audio.source_id == source.id && audio.relative_path == relative_path);
+        let loaded_matches = self.loaded_audio.as_ref().is_some_and(|audio| {
+            audio.source_id == source.id && audio.relative_path == relative_path
+        });
         let selected_matches = self.selected_source.as_ref() == Some(&source.id)
             && self.selected_wav.as_deref() == Some(relative_path);
         if loaded_matches || selected_matches {
@@ -278,11 +281,7 @@ impl EguiController {
             relative_path: relative_path.to_path_buf(),
         };
         for (collection_id, export_root, folder_name) in targets {
-            collection_export::delete_exported_file(
-                export_root.clone(),
-                &folder_name,
-                &member,
-            );
+            collection_export::delete_exported_file(export_root.clone(), &folder_name, &member);
             if let Err(err) = self.export_member_if_needed(&collection_id, &member) {
                 self.set_status(err, StatusTone::Warning);
             }

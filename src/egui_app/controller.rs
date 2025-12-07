@@ -10,10 +10,10 @@ mod config;
 mod drag;
 mod loading;
 mod playback;
+mod sample_browser_actions;
 mod scans;
 mod selection_export;
 mod sources;
-mod sample_browser_actions;
 mod wavs;
 
 use crate::{
