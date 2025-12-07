@@ -20,7 +20,10 @@ impl EguiController {
                         .find(|c| &c.id == collection_id)
                         .and_then(|c| export_dir_for(c).ok())
                         .unwrap_or(normalized);
-                    self.set_status(format!("Exports enabled: {}", display.display()), StatusTone::Info);
+                    self.set_status(
+                        format!("Exports enabled: {}", display.display()),
+                        StatusTone::Info,
+                    );
                 }
             }
             Err(err) => self.set_status(err, StatusTone::Error),
@@ -49,9 +52,7 @@ impl EguiController {
         let result = self.reconcile_collection_export(collection_id);
         match result {
             Ok((added, removed)) => {
-                let summary = format!(
-                    "Refresh export complete: +{added} new, -{removed} missing"
-                );
+                let summary = format!("Refresh export complete: +{added} new, -{removed} missing");
                 self.set_status(summary, StatusTone::Info);
             }
             Err(err) => self.set_status(err, StatusTone::Error),
@@ -274,7 +275,10 @@ fn copy_member_to_export(
         .ok_or_else(|| "Invalid filename for export".to_string())?;
     let dest = export_root.join(file_name);
     std::fs::create_dir_all(export_root).map_err(|err| {
-        format!("Failed to create export folder {}: {err}", export_root.display())
+        format!(
+            "Failed to create export folder {}: {err}",
+            export_root.display()
+        )
     })?;
     std::fs::copy(&source_path, &dest)
         .map_err(|err| format!("Failed to export {}: {err}", dest.display()))?;
@@ -307,7 +311,10 @@ fn collect_exported_files(root: &Path) -> Result<Vec<PathBuf>, String> {
 
 fn ensure_export_dir(path: &Path) -> Result<(), String> {
     if path.exists() && !path.is_dir() {
-        return Err(format!("Export path is not a directory: {}", path.display()));
+        return Err(format!(
+            "Export path is not a directory: {}",
+            path.display()
+        ));
     }
     if !path.exists() {
         std::fs::create_dir_all(path)
@@ -346,7 +353,13 @@ pub(super) fn delete_exported_file(
 pub(super) fn collection_folder_name_from_str(name: &str) -> String {
     let mut cleaned: String = name
         .chars()
-        .map(|c| if matches!(c, '/' | '\\' | ':' | '*') { '_' } else { c })
+        .map(|c| {
+            if matches!(c, '/' | '\\' | ':' | '*') {
+                '_'
+            } else {
+                c
+            }
+        })
         .collect();
     if cleaned.is_empty() {
         cleaned.push_str("collection");

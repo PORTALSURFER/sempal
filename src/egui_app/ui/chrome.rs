@@ -40,15 +40,18 @@ impl EguiApp {
                         ui.separator();
                         ui.label(RichText::new(&status.text).color(Color32::WHITE));
                     });
-                    columns[1].with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        let mut volume = self.controller.ui.volume;
-                        let slider = egui::Slider::new(&mut volume, 0.0..=1.0)
-                            .text("Vol")
-                            .clamp_to_range(true);
-                        if ui.add(slider).changed() {
-                            self.controller.set_volume(volume);
-                        }
-                    });
+                    columns[1].with_layout(
+                        egui::Layout::right_to_left(egui::Align::Center),
+                        |ui| {
+                            let mut volume = self.controller.ui.volume;
+                            let slider = egui::Slider::new(&mut volume, 0.0..=1.0)
+                                .text("Vol")
+                                .clamp_to_range(true);
+                            if ui.add(slider).changed() {
+                                self.controller.set_volume(volume);
+                            }
+                        },
+                    );
                 });
             });
     }

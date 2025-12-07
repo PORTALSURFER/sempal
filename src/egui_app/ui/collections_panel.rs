@@ -1,8 +1,11 @@
-use super::helpers::{clamp_label_for_width, list_row_height, render_list_row};
+use super::helpers::{
+    clamp_label_for_width, list_row_height, render_list_row, scroll_offset_to_reveal_row,
+    RowMetrics,
+};
 use super::*;
 use crate::egui_app::state::CollectionRowView;
-use std::path::PathBuf;
 use eframe::egui::{self, Color32, RichText, Stroke, Ui};
+use std::path::PathBuf;
 
 impl EguiApp {
     pub(super) fn render_collections_panel(&mut self, ui: &mut Ui) {
@@ -116,6 +119,10 @@ impl EguiApp {
             None
         };
         let row_height = list_row_height(ui);
+        let row_metrics = RowMetrics {
+            height: row_height,
+            spacing: ui.spacing().item_spacing.y,
+        };
         let available_height = ui.available_height();
         let frame = egui::Frame::none().fill(Color32::from_rgb(16, 16, 16));
         let scroll_response = frame.show(ui, |ui| {
@@ -198,16 +205,14 @@ impl EguiApp {
         let max_offset = (content_height - viewport_height).max(0.0);
         let mut desired_offset = scroll_response.inner.state.offset.y;
         if let Some(row) = duplicate_row {
-            desired_offset = (row as f32 + 0.5) * row_height - viewport_height * 0.5;
+            desired_offset =
+                scroll_offset_to_reveal_row(desired_offset, row, row_metrics, viewport_height, 1.0);
         } else if let Some(row) = selected_row {
-            desired_offset = row as f32 * row_height;
+            desired_offset =
+                scroll_offset_to_reveal_row(desired_offset, row, row_metrics, viewport_height, 1.0);
         }
-        let snapped_offset = (desired_offset / row_height)
-            .round()
-            .clamp(0.0, max_offset / row_height)
-            * row_height;
         let mut state = scroll_response.inner.state;
-        state.offset.y = snapped_offset.clamp(0.0, max_offset);
+        state.offset.y = desired_offset.clamp(0.0, max_offset);
         state.store(ui.ctx(), scroll_response.inner.id);
         if drag_active {
             if let Some(pointer) = pointer_pos {
@@ -232,13 +237,11 @@ impl EguiApp {
     fn collection_row_menu(&mut self, response: &egui::Response, collection: &CollectionRowView) {
         response.context_menu(|ui| {
             if ui.button("Set export folder…").clicked() {
-                self.controller
-                    .pick_collection_export_path(&collection.id);
+                self.controller.pick_collection_export_path(&collection.id);
                 ui.close_menu();
             }
             if ui.button("Clear export folder").clicked() {
-                self.controller
-                    .clear_collection_export_path(&collection.id);
+                self.controller.clear_collection_export_path(&collection.id);
                 ui.close_menu();
             }
             let refresh_enabled = collection.export_path.is_some();
@@ -251,7 +254,10 @@ impl EguiApp {
             }
             let export_dir = collection_export_dir(collection);
             if ui
-                .add_enabled(export_dir.is_some(), egui::Button::new("Open export folder"))
+                .add_enabled(
+                    export_dir.is_some(),
+                    egui::Button::new("Open export folder"),
+                )
                 .clicked()
             {
                 self.controller
@@ -266,15 +272,13 @@ impl EguiApp {
             ui.separator();
             ui.label("Rename collection");
             let rename_id = ui.make_persistent_id(format!("rename:{}", collection.id.as_str()));
-            let mut rename_value = ui
-                .ctx()
-                .data_mut(|data| {
-                    let value = data.get_temp_mut_or_default::<String>(rename_id);
-                    if value.is_empty() {
-                        *value = collection.name.clone();
-                    }
-                    value.clone()
-                });
+            let mut rename_value = ui.ctx().data_mut(|data| {
+                let value = data.get_temp_mut_or_default::<String>(rename_id);
+                if value.is_empty() {
+                    *value = collection.name.clone();
+                }
+                value.clone()
+            });
             let edit = ui.text_edit_singleline(&mut rename_value);
             ui.ctx()
                 .data_mut(|data| data.insert_temp(rename_id, rename_value.clone()));
@@ -301,7 +305,13 @@ fn collection_export_dir(collection: &CollectionRowView) -> Option<PathBuf> {
 fn sanitized_collection_name(name: &str) -> String {
     let mut cleaned: String = name
         .chars()
-        .map(|c| if matches!(c, '/' | '\\' | ':' | '*') { '_' } else { c })
+        .map(|c| {
+            if matches!(c, '/' | '\\' | ':' | '*') {
+                '_'
+            } else {
+                c
+            }
+        })
         .collect();
     if cleaned.is_empty() {
         cleaned.push_str("collection");

@@ -1,5 +1,17 @@
 use eframe::egui::{self, Align2, Color32, TextStyle, Ui};
 
+#[derive(Clone, Copy)]
+pub(super) struct RowMetrics {
+    pub height: f32,
+    pub spacing: f32,
+}
+
+impl RowMetrics {
+    pub fn pitch(self) -> f32 {
+        self.height + self.spacing
+    }
+}
+
 pub(super) fn list_row_height(ui: &Ui) -> f32 {
     ui.spacing().interact_size.y
 }
@@ -47,4 +59,33 @@ pub(super) fn render_list_row(
     ui.painter()
         .text(text_pos, Align2::LEFT_CENTER, label, font_id, text_color);
     response
+}
+
+pub(super) fn scroll_offset_to_reveal_row(
+    current_offset: f32,
+    row: usize,
+    metrics: RowMetrics,
+    viewport_height: f32,
+    padding_rows: f32,
+) -> f32 {
+    if viewport_height <= 0.0 {
+        return current_offset;
+    }
+    let padding = (metrics.pitch() * padding_rows).max(0.0);
+    let row_top = row as f32 * metrics.pitch();
+    let row_bottom = row_top + metrics.height;
+    // Valid offsets that keep the row inside the viewport with padding on both sides.
+    let min_offset = (row_bottom + padding - viewport_height).max(0.0);
+    let max_offset = row_top - padding;
+    if max_offset <= min_offset {
+        return (row_top - padding).max(0.0);
+    }
+    if current_offset < min_offset {
+        return min_offset;
+    }
+    if current_offset > max_offset {
+        return max_offset;
+    }
+    // Already inside the valid band; keep offset stable to avoid drift.
+    current_offset
 }

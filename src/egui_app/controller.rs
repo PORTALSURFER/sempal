@@ -2,9 +2,9 @@
 //! This module now delegates responsibilities into focused submodules to
 //! keep files small and behaviour easy to reason about.
 
+mod collection_export;
 mod collections;
 mod config;
-mod collection_export;
 mod drag;
 mod loading;
 mod playback;
@@ -26,8 +26,8 @@ use crate::{
     waveform::WaveformRenderer,
 };
 use egui::Color32;
-use rfd::FileDialog;
 use open;
+use rfd::FileDialog;
 use std::{
     cell::RefCell,
     collections::HashMap,
