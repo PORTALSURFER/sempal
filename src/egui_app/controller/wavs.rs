@@ -1,5 +1,6 @@
 use super::*;
 use crate::waveform::DecodedWaveform;
+use std::path::{Path, PathBuf};
 
 impl EguiController {
     /// Expose wav indices for a given triage flag column (used by virtualized rendering).
@@ -18,17 +19,28 @@ impl EguiController {
 
     /// Select a wav row based on its path.
     pub fn select_wav_by_path(&mut self, path: &Path) {
-        if self.wav_lookup.contains_key(path) {
-            self.selected_wav = Some(path.to_path_buf());
-            if let Some(source) = self.current_source() {
-                if let Err(err) = self.load_waveform_for_selection(&source, path) {
-                    self.set_status(err, StatusTone::Error);
-                } else if self.feature_flags.autoplay_selection && !self.suppress_autoplay_once {
-                    let _ = self.play_audio(self.ui.waveform.loop_enabled, None);
-                } else {
-                    self.suppress_autoplay_once = false;
-                }
+        self.select_wav_by_path_with_rebuild(path, true);
+    }
+
+    /// Select a wav row based on its path, optionally delaying the browser rebuild.
+    pub fn select_wav_by_path_with_rebuild(&mut self, path: &Path, rebuild: bool) {
+        if !self.wav_lookup.contains_key(path) {
+            return;
+        }
+        if self.ui.browser.selected_paths.is_empty() {
+            self.ui.browser.selected_paths.push(path.to_path_buf());
+        }
+        self.selected_wav = Some(path.to_path_buf());
+        if let Some(source) = self.current_source() {
+            if let Err(err) = self.load_waveform_for_selection(&source, path) {
+                self.set_status(err, StatusTone::Error);
+            } else if self.feature_flags.autoplay_selection && !self.suppress_autoplay_once {
+                let _ = self.play_audio(self.ui.waveform.loop_enabled, None);
+            } else {
+                self.suppress_autoplay_once = false;
             }
+        }
+        if rebuild {
             self.rebuild_browser_lists();
         }
     }
@@ -93,8 +105,9 @@ impl EguiController {
         if self.ui.collections.selected_sample.is_some() {
             self.ui.browser.autoscroll = false;
         }
+        self.prune_browser_selection();
         let highlight_selection = self.ui.collections.selected_sample.is_none();
-        let selected_index = if highlight_selection {
+        let focused_index = if highlight_selection {
             self.selected_row_index()
         } else {
             None
@@ -109,10 +122,16 @@ impl EguiController {
         for i in 0..self.wav_entries.len() {
             let tag = self.wav_entries[i].tag;
             let flags = RowFlags {
-                selected: Some(i) == selected_index,
+                focused: Some(i) == focused_index,
                 loaded: Some(i) == loaded_index,
             };
             self.push_browser_row(i, tag, flags);
+        }
+        let visible_len = self.ui.browser.visible.len();
+        if let Some(anchor) = self.ui.browser.selection_anchor_visible {
+            if anchor >= visible_len {
+                self.ui.browser.selection_anchor_visible = self.ui.browser.selected_visible;
+            }
         }
     }
 
@@ -156,20 +175,34 @@ impl EguiController {
         if self.browser_filter_accepts(tag) {
             let visible_row = self.ui.browser.visible.len();
             self.ui.browser.visible.push(entry_index);
-            if flags.selected {
+            if flags.focused {
                 self.ui.browser.selected_visible = Some(visible_row);
             }
             if flags.loaded {
                 self.ui.browser.loaded_visible = Some(visible_row);
             }
         }
-        if flags.selected {
+        if flags.focused {
             self.ui.browser.selected = Some(view_model::sample_browser_index_for(tag, row_index));
         }
         if flags.loaded {
             self.ui.browser.loaded = Some(view_model::sample_browser_index_for(tag, row_index));
             if let Some(path) = self.wav_entries.get(entry_index) {
                 self.ui.loaded_wav = Some(path.relative_path.clone());
+            }
+        }
+    }
+
+    fn prune_browser_selection(&mut self) {
+        self.ui
+            .browser
+            .selected_paths
+            .retain(|path| self.wav_lookup.contains_key(path));
+        if let Some(path) = self.selected_wav.clone() {
+            if !self.wav_lookup.contains_key(&path) {
+                self.selected_wav = None;
+                self.ui.browser.selected = None;
+                self.ui.browser.selected_visible = None;
             }
         }
     }
@@ -181,6 +214,113 @@ impl EguiController {
             TriageFlagFilter::Trash => matches!(tag, SampleTag::Trash),
             TriageFlagFilter::Untagged => matches!(tag, SampleTag::Neutral),
         }
+    }
+
+    fn browser_path_for_visible(&self, visible_row: usize) -> Option<PathBuf> {
+        let index = self.ui.browser.visible.get(visible_row).copied()?;
+        self.wav_entries
+            .get(index)
+            .map(|entry| entry.relative_path.clone())
+    }
+
+    fn set_single_browser_selection(&mut self, path: &Path) {
+        self.ui.browser.selected_paths.clear();
+        self.ui.browser.selected_paths.push(path.to_path_buf());
+    }
+
+    fn toggle_browser_selection(&mut self, path: &Path) {
+        if let Some(pos) = self
+            .ui
+            .browser
+            .selected_paths
+            .iter()
+            .position(|p| p == path)
+        {
+            self.ui.browser.selected_paths.remove(pos);
+        } else {
+            self.ui.browser.selected_paths.push(path.to_path_buf());
+        }
+    }
+
+    fn extend_browser_selection_to(&mut self, target_visible: usize) {
+        if self.ui.browser.visible.is_empty() {
+            return;
+        }
+        let anchor = self
+            .ui
+            .browser
+            .selection_anchor_visible
+            .unwrap_or_else(|| self.ui.browser.selected_visible.unwrap_or(target_visible));
+        let start = anchor.min(target_visible);
+        let end = anchor.max(target_visible);
+        for row in start..=end {
+            if let Some(path) = self.browser_path_for_visible(row) {
+                if !self
+                    .ui
+                    .browser
+                    .selected_paths
+                    .iter()
+                    .any(|p| p == &path)
+                {
+                    self.ui.browser.selected_paths.push(path);
+                }
+            }
+        }
+    }
+
+    pub fn focus_browser_row(&mut self, visible_row: usize) {
+        self.apply_browser_selection(visible_row, SelectionAction::Replace);
+    }
+
+    pub fn toggle_browser_row_selection(&mut self, visible_row: usize) {
+        self.apply_browser_selection(visible_row, SelectionAction::Toggle);
+    }
+
+    pub fn extend_browser_selection_to_row(&mut self, visible_row: usize) {
+        self.apply_browser_selection(visible_row, SelectionAction::Extend);
+    }
+
+    pub fn toggle_focused_selection(&mut self) {
+        let Some(path) = self.selected_wav.clone() else {
+            return;
+        };
+        if let Some(row) = self.ui.browser.selected_visible {
+            if self.ui.browser.selection_anchor_visible.is_none() {
+                self.ui.browser.selection_anchor_visible = Some(row);
+            }
+        }
+        self.toggle_browser_selection(&path);
+        self.rebuild_browser_lists();
+    }
+
+    fn apply_browser_selection(&mut self, visible_row: usize, action: SelectionAction) {
+        let Some(path) = self.browser_path_for_visible(visible_row) else {
+            return;
+        };
+        self.ui.collections.selected_sample = None;
+        self.ui.browser.autoscroll = true;
+        match action {
+            SelectionAction::Replace => {
+                self.ui.browser.selection_anchor_visible = Some(visible_row);
+                self.set_single_browser_selection(&path);
+            }
+            SelectionAction::Toggle => {
+                self.ui.browser.selection_anchor_visible = Some(visible_row);
+                self.toggle_browser_selection(&path);
+            }
+            SelectionAction::Extend => {
+                let anchor = self
+                    .ui
+                    .browser
+                    .selection_anchor_visible
+                    .or(self.ui.browser.selected_visible)
+                    .unwrap_or(visible_row);
+                self.ui.browser.selection_anchor_visible = Some(anchor);
+                self.extend_browser_selection_to(visible_row);
+            }
+        }
+        self.select_wav_by_path_with_rebuild(&path, false);
+        self.rebuild_browser_lists();
     }
 
     pub(super) fn set_sample_tag(
@@ -410,4 +550,11 @@ impl EguiController {
         }
         Ok(())
     }
+}
+
+#[derive(Clone, Copy)]
+enum SelectionAction {
+    Replace,
+    Toggle,
+    Extend,
 }

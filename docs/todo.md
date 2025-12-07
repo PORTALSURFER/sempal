@@ -2,12 +2,6 @@
 
 --
 
-\plan - add the ability to select multiple sample items, ctrl+mouseclick should add another item, shift+mouseclick should extend the current select to this item.
-shift+up/down should grow the selection
-pressing x should mark the item selected in a way that allows the user to focus another item, and mark it selected with x as well, similart to ctrl+click.
-lets design a difference between a selected and a focused item with this change.
-behavior of regular navigation shuold stay the same, so a 'focused' item should autoplay etc.
-
 \plan - lets clean up the config location names so we don't get this double sempal/sempal structure. lets make it simple .sempal/
 So in windows it would end up as %APPDATA%\Roaming\.sempal\config.json
 
