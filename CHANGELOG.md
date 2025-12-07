@@ -3,10 +3,11 @@
 ### 🚀 Features
 
 - Drag drop to daw
+- Allow copying selected samples to clipboard as file drops
 
 ### 🐛 Bug Fixes
 
-- Can drag out of window now
+- Can drag our of window now
 - Restore external drag paths and auto-scan new sources
 ## [0.140.0] - 2025-12-07
 
