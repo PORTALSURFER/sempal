@@ -79,15 +79,13 @@ impl EguiController {
         let _ = self.play_audio(self.ui.waveform.loop_enabled, None);
     }
 
-    /// Tag the currently selected wav and advance to the next row in the visible list.
+    /// Tag the currently selected wav and keep the current row selected.
     pub fn tag_selected(&mut self, target: SampleTag) {
         let Some(selected_index) = self.selected_row_index() else {
             return;
         };
         self.ui.collections.selected_sample = None;
         self.ui.triage.autoscroll = true;
-        let visible = self.ui.triage.visible.clone();
-        let current_row = visible.iter().position(|i| *i == selected_index);
         let path = match self.wav_entries.get(selected_index) {
             Some(entry) => entry.relative_path.clone(),
             None => return,
@@ -112,20 +110,6 @@ impl EguiController {
         }
         let _ = db.set_tag(&path, target);
         self.rebuild_triage_lists();
-        let next_candidate = current_row.and_then(|row| {
-            if row + 1 < visible.len() {
-                visible.get(row + 1).copied()
-            } else if row > 0 {
-                visible.get(row - 1).copied()
-            } else {
-                None
-            }
-        });
-        if let Some(next_index) = next_candidate {
-            self.select_wav_by_index(next_index);
-        } else {
-            self.select_wav_by_path(&path);
-        }
     }
 
     /// Move selection within the current triage list by an offset and play.
