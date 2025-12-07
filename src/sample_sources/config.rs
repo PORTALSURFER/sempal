@@ -10,7 +10,7 @@ use super::{Collection, SampleSource};
 pub const CONFIG_FILE_NAME: &str = "config.json";
 
 /// Top-level app configuration persisted on disk.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     pub sources: Vec<SampleSource>,
     #[serde(default)]
@@ -19,6 +19,8 @@ pub struct AppConfig {
     pub feature_flags: FeatureFlags,
     #[serde(default)]
     pub last_selected_source: Option<super::SourceId>,
+    #[serde(default = "default_volume")]
+    pub volume: f32,
 }
 
 /// Toggleable features that can be persisted and evolve without breaking old configs.
@@ -150,8 +152,36 @@ mod tests {
         assert_eq!(loaded.sources.len(), 1);
         assert_eq!(loaded.sources[0].root, dir.path());
     }
+
+    #[test]
+    fn volume_defaults_and_persists() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("cfg.json");
+        let mut cfg = AppConfig::default();
+        assert_eq!(cfg.volume, 1.0);
+        cfg.volume = 0.42;
+        save_to_path(&cfg, &path).unwrap();
+        let loaded = load_from(&path).unwrap();
+        assert!((loaded.volume - 0.42).abs() < f32::EPSILON);
+    }
 }
 
 fn default_true() -> bool {
     true
+}
+
+fn default_volume() -> f32 {
+    1.0
+}
+
+impl Default for AppConfig {
+    fn default() -> Self {
+        Self {
+            sources: Vec::new(),
+            collections: Vec::new(),
+            feature_flags: FeatureFlags::default(),
+            last_selected_source: None,
+            volume: default_volume(),
+        }
+    }
 }

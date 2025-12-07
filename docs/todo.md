@@ -1,8 +1,6 @@
 - lets do a housekeeping pass, clean up the codebase, reduce file lengths, improve maintainability, add missing docs, find and resolve bugs, improve performance, etc.
 
 --
-\plan - add a clearly distinct visual rect in the lower 1 3rd of a selection area, turn this into a drag handle. users can use this drag handle to drag out the selected areas of the same, and they can then drop it into the sample list view, adding a new sample, cropped, to that list, saving it on disk. the user can also add it a collection, which should mark place the file into the current sample source folder on disk, as well as marking it as being added to the collection, listing it there as well in its view.
-
 \plan - add some usage documentation to /docs/usage.md
 
 \plan - add the hotkey F11 to switch between windowed and fullscreen mode
@@ -20,4 +18,3 @@ please review the styleguide in @styleguide.md and make a plan
 
 - currently if I drop a wave file item, it will start playing, lets stop that from happening
 
-- add a horizontal volume slider in the statusbar, on the right. 

@@ -16,6 +16,8 @@ pub struct UiState {
     pub waveform: WaveformState,
     pub drag: DragState,
     pub collections: CollectionsState,
+    /// Master output volume (0.0-1.0).
+    pub volume: f32,
     pub loaded_wav: Option<PathBuf>,
 }
 
@@ -28,6 +30,7 @@ impl Default for UiState {
             waveform: WaveformState::default(),
             drag: DragState::default(),
             collections: CollectionsState::default(),
+            volume: 1.0,
             loaded_wav: None,
         }
     }
