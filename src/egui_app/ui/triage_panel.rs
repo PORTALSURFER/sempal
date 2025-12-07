@@ -3,68 +3,22 @@ use super::helpers::{
     RowMetrics,
 };
 use super::*;
+use crate::egui_app::state::TriageFilter;
 use eframe::egui::{self, Color32, RichText, Stroke, Ui};
+use crate::sample_sources::SampleTag;
 
 impl EguiApp {
     pub(super) fn render_triage(&mut self, ui: &mut Ui) {
-        let spacing = 8.0;
-        let selected = self.controller.ui.triage.selected;
-        let loaded = self.controller.ui.triage.loaded;
-
-        ui.columns(3, |columns| {
-            self.render_triage_column(
-                &mut columns[0],
-                "Trash",
-                TriageColumn::Trash,
-                Color32::from_rgb(198, 143, 143),
-                selected,
-                loaded,
-            );
-            columns[0].add_space(spacing);
-            self.render_triage_column(
-                &mut columns[1],
-                "Samples",
-                TriageColumn::Neutral,
-                Color32::from_rgb(208, 208, 208),
-                selected,
-                loaded,
-            );
-            columns[1].add_space(spacing);
-            self.render_triage_column(
-                &mut columns[2],
-                "Keep",
-                TriageColumn::Keep,
-                Color32::from_rgb(158, 201, 167),
-                selected,
-                loaded,
-            );
-        });
-    }
-
-    fn render_triage_column(
-        &mut self,
-        ui: &mut Ui,
-        title: &str,
-        column: TriageColumn,
-        accent: Color32,
-        selected: Option<TriageIndex>,
-        loaded: Option<TriageIndex>,
-    ) {
-        ui.label(RichText::new(title).color(accent));
+        let selected_row = self.controller.ui.triage.selected_visible;
+        let loaded_row = self.controller.ui.triage.loaded_visible;
+        let drop_target = self.controller.triage_drop_target();
+        self.render_triage_filter(ui);
         ui.add_space(6.0);
         let list_height = ui.available_height().max(0.0);
         let drag_active = self.controller.ui.drag.active_path.is_some();
         let pointer_pos = ui
             .input(|i| i.pointer.hover_pos().or_else(|| i.pointer.interact_pos()))
             .or(self.controller.ui.drag.position);
-        let selected_row = match selected {
-            Some(TriageIndex { column: c, row }) if c == column => Some(row),
-            _ => None,
-        };
-        let loaded_row = match loaded {
-            Some(TriageIndex { column: c, row }) if c == column => Some(row),
-            _ => None,
-        };
         let triage_autoscroll = self.controller.ui.triage.autoscroll
             && self.controller.ui.collections.selected_sample.is_none();
         let row_height = list_row_height(ui);
@@ -72,28 +26,27 @@ impl EguiApp {
             height: row_height,
             spacing: ui.spacing().item_spacing.y,
         };
-        let total_rows = self.controller.triage_indices(column).len();
+        let total_rows = self.controller.visible_triage_indices().len();
         let bg_frame = egui::Frame::none().fill(Color32::from_rgb(16, 16, 16));
         let frame_response = bg_frame.show(ui, |ui| {
             let scroll_response = egui::ScrollArea::vertical()
-                .id_source(format!("triage_scroll_{title}"))
+                .id_source("triage_scroll_single")
                 .max_height(list_height)
                 .show_rows(ui, row_height, total_rows, |ui, row_range| {
                     for row in row_range {
                         let entry_index = {
-                            let indices = self.controller.triage_indices(column);
+                            let indices = self.controller.visible_triage_indices();
                             match indices.get(row) {
                                 Some(index) => *index,
                                 None => continue,
                             }
                         };
-                        let Some(entry) = self.controller.wav_entry(entry_index) else {
-                            continue;
+                        let (tag, path) = match self.controller.wav_entry(entry_index) {
+                            Some(entry) => (entry.tag, entry.relative_path.clone()),
+                            None => continue,
                         };
-
                         let is_selected = selected_row == Some(row);
                         let is_loaded = loaded_row == Some(row);
-                        let path = entry.relative_path.clone();
                         let row_width = ui.available_width();
                         let padding = ui.spacing().button_padding.x * 2.0;
                         let mut label = self
@@ -104,7 +57,7 @@ impl EguiApp {
                             label.push_str(" • loaded");
                         }
                         let label = clamp_label_for_width(&label, row_width - padding);
-                        let bg = is_selected.then_some(Color32::from_rgb(30, 30, 30));
+                        let bg = triage_row_bg(tag, is_selected);
                         ui.push_id(&path, |ui| {
                             let response = render_list_row(
                                 ui,
@@ -129,7 +82,7 @@ impl EguiApp {
                                         pos,
                                         None,
                                         false,
-                                        Some(column),
+                                        Some(drop_target),
                                     );
                                 }
                             } else if response.drag_stopped() {
@@ -156,7 +109,7 @@ impl EguiApp {
             if let Some(pointer) = pointer_pos {
                 if frame_response.response.rect.contains(pointer) {
                     self.controller
-                        .update_sample_drag(pointer, None, false, Some(column));
+                        .update_sample_drag(pointer, None, false, Some(drop_target));
                 }
             }
         }
@@ -171,5 +124,39 @@ impl EguiApp {
                 }
             }
         }
+    }
+
+    fn render_triage_filter(&mut self, ui: &mut Ui) {
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Filter").color(Color32::from_rgb(210, 210, 210)));
+            for filter in [TriageFilter::All, TriageFilter::Keep, TriageFilter::Trash, TriageFilter::Untagged] {
+                let selected = self.controller.ui.triage.filter == filter;
+                let label = match filter {
+                    TriageFilter::All => "All",
+                    TriageFilter::Keep => "Keep",
+                    TriageFilter::Trash => "Trash",
+                    TriageFilter::Untagged => "Untagged",
+                };
+                if ui.selectable_label(selected, label).clicked() {
+                    self.controller.set_triage_filter(filter);
+                }
+            }
+        });
+    }
+}
+
+fn triage_row_bg(tag: SampleTag, is_selected: bool) -> Option<Color32> {
+    match tag {
+        SampleTag::Trash => Some(if is_selected {
+            Color32::from_rgba_unmultiplied(160, 72, 72, 180)
+        } else {
+            Color32::from_rgba_unmultiplied(128, 48, 48, 64)
+        }),
+        SampleTag::Keep => Some(if is_selected {
+            Color32::from_rgba_unmultiplied(72, 144, 100, 180)
+        } else {
+            Color32::from_rgba_unmultiplied(56, 112, 76, 64)
+        }),
+        SampleTag::Neutral => is_selected.then_some(Color32::from_rgb(36, 36, 36)),
     }
 }

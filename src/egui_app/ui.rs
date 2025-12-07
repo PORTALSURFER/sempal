@@ -11,7 +11,7 @@ mod waveform_view;
 use crate::{
     audio::AudioPlayer,
     egui_app::controller::EguiController,
-    egui_app::state::{TriageColumn, TriageIndex},
+    egui_app::state::TriageColumn,
     waveform::WaveformRenderer,
 };
 use eframe::egui;
@@ -113,7 +113,7 @@ impl eframe::App for EguiApp {
                 }
             } else if triage_has_selection {
                 let col = self.controller.ui.triage.selected.map(|t| t.column);
-                let target = if matches!(col, Some(crate::egui_app::state::TriageColumn::Trash)) {
+                let target = if matches!(col, Some(TriageColumn::Trash)) {
                     crate::sample_sources::SampleTag::Neutral
                 } else {
                     crate::sample_sources::SampleTag::Keep

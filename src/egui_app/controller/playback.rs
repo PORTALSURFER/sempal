@@ -79,25 +79,15 @@ impl EguiController {
         let _ = self.play_audio(self.ui.waveform.loop_enabled, None);
     }
 
-    /// Tag the currently selected wav and advance to the next row in the original column.
+    /// Tag the currently selected wav and advance to the next row in the visible list.
     pub fn tag_selected(&mut self, target: SampleTag) {
-        let Some(TriageIndex { column, row }) = self.ui.triage.selected else {
+        let Some(selected_index) = self.selected_row_index() else {
             return;
         };
         self.ui.collections.selected_sample = None;
         self.ui.triage.autoscroll = true;
-        let Some(selected_index) = self.selected_row_index() else {
-            return;
-        };
-        let moved_entry_index = selected_index;
-        let original_list: Vec<usize> = self.triage_indices(column).to_vec();
-        let next_candidate = if row + 1 < original_list.len() {
-            original_list.get(row + 1).copied()
-        } else if row > 0 {
-            original_list.get(row - 1).copied()
-        } else {
-            None
-        };
+        let visible = self.ui.triage.visible.clone();
+        let current_row = visible.iter().position(|i| *i == selected_index);
         let path = match self.wav_entries.get(selected_index) {
             Some(entry) => entry.relative_path.clone(),
             None => return,
@@ -122,30 +112,39 @@ impl EguiController {
         }
         let _ = db.set_tag(&path, target);
         self.rebuild_triage_lists();
-        // If we moved the last item out of a column, keep selection on the moved item.
-        if original_list.len() == 1 || (row + 1 == original_list.len() && next_candidate.is_none())
-        {
-            self.select_wav_by_index(moved_entry_index);
-            return;
-        }
+        let next_candidate = current_row.and_then(|row| {
+            if row + 1 < visible.len() {
+                visible.get(row + 1).copied()
+            } else if row > 0 {
+                visible.get(row - 1).copied()
+            } else {
+                None
+            }
+        });
         if let Some(next_index) = next_candidate {
             self.select_wav_by_index(next_index);
+        } else {
+            self.select_wav_by_path(&path);
         }
     }
 
-    /// Move selection within the current triage column by an offset and play.
+    /// Move selection within the current triage list by an offset and play.
     pub fn nudge_selection(&mut self, offset: isize) {
-        let selected_triage = self.ui.triage.selected;
-        let Some(TriageIndex { column, row }) = selected_triage else {
+        let list = self.visible_triage_indices().to_vec();
+        if list.is_empty() {
             return;
         };
         self.ui.collections.selected_sample = None;
         self.ui.triage.autoscroll = true;
-        let list = self.triage_indices(column);
-        if list.is_empty() {
-            return;
-        }
-        let current_row = row as isize;
+        let current_row = self
+            .ui
+            .triage
+            .selected_visible
+            .or_else(|| {
+                self.selected_row_index()
+                    .and_then(|idx| list.iter().position(|i| *i == idx))
+            })
+            .unwrap_or(0) as isize;
         let next_row = (current_row + offset).clamp(0, list.len() as isize - 1) as usize;
         if let Some(entry_index) = list.get(next_row).copied() {
             self.select_wav_by_index(entry_index);
@@ -153,29 +152,18 @@ impl EguiController {
         }
     }
 
-    /// Move selection to the same row in a neighboring column (-1 left, +1 right).
+    /// Cycle the triage filter (-1 left, +1 right) to mirror old column navigation.
     pub fn move_selection_column(&mut self, delta: isize) {
-        use crate::egui_app::state::TriageColumn::*;
-        let columns = [Trash, Neutral, Keep];
-        let current = self.ui.triage.selected.map(|t| t.column).unwrap_or(Neutral);
-        let current_idx = columns.iter().position(|c| c == &current).unwrap_or(1) as isize;
-        let target_idx = (current_idx + delta).clamp(0, (columns.len() as isize) - 1) as usize;
-        if target_idx == current_idx as usize {
-            return;
-        }
-        self.ui.collections.selected_sample = None;
-        self.ui.triage.autoscroll = true;
-        let target_col = columns[target_idx];
-        let list = self.triage_indices(target_col);
-        if list.is_empty() {
-            return;
-        }
-        let row = self.ui.triage.selected.map(|t| t.row).unwrap_or(0);
-        let clamped_row = row.min(list.len().saturating_sub(1));
-        if let Some(entry_index) = list.get(clamped_row).copied() {
-            self.select_wav_by_index(entry_index);
-            let _ = self.play_audio(self.ui.waveform.loop_enabled, None);
-        }
+        use crate::egui_app::state::TriageFilter::*;
+        let filters = [All, Keep, Trash, Untagged];
+        let current = self.ui.triage.filter;
+        let current_idx = filters
+            .iter()
+            .position(|f| f == &current)
+            .unwrap_or(0) as isize;
+        let target_idx = (current_idx + delta).clamp(0, (filters.len() as isize) - 1) as usize;
+        let target = filters[target_idx];
+        self.set_triage_filter(target);
     }
 
     /// Start playback over the current selection or full range.

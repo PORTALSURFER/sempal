@@ -1,4 +1,5 @@
 use super::*;
+use crate::egui_app::state::TriageFilter;
 use std::path::Path;
 use tempfile::tempdir;
 
@@ -69,11 +70,14 @@ fn triage_indices_track_tags() {
     assert_eq!(controller.triage_indices(TriageColumn::Trash).len(), 1);
     assert_eq!(controller.triage_indices(TriageColumn::Neutral).len(), 1);
     assert_eq!(controller.triage_indices(TriageColumn::Keep).len(), 1);
+    assert_eq!(controller.visible_triage_indices(), &[0, 1, 2]);
 
     let selected = controller.ui.triage.selected.unwrap();
     assert_eq!(selected.column, TriageColumn::Neutral);
+    assert_eq!(controller.ui.triage.selected_visible, Some(1));
     let loaded = controller.ui.triage.loaded.unwrap();
     assert_eq!(loaded.column, TriageColumn::Keep);
+    assert_eq!(controller.ui.triage.loaded_visible, Some(2));
 }
 
 #[test]
@@ -130,6 +134,28 @@ fn triage_autoscroll_disabled_when_collection_selected() {
     controller.ui.collections.selected_sample = Some(0);
     controller.rebuild_triage_lists();
     assert!(!controller.ui.triage.autoscroll);
+}
+
+#[test]
+fn triage_filter_limits_visible_rows() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source);
+    controller.wav_entries = vec![
+        sample_entry("trash.wav", SampleTag::Trash),
+        sample_entry("neutral.wav", SampleTag::Neutral),
+        sample_entry("keep.wav", SampleTag::Keep),
+    ];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_triage_lists();
+
+    controller.set_triage_filter(TriageFilter::Keep);
+    assert_eq!(controller.visible_triage_indices(), &[2]);
+    controller.set_triage_filter(TriageFilter::Trash);
+    assert_eq!(controller.visible_triage_indices(), &[0]);
+    controller.set_triage_filter(TriageFilter::Untagged);
+    assert_eq!(controller.visible_triage_indices(), &[1]);
+    controller.set_triage_filter(TriageFilter::All);
+    assert_eq!(controller.visible_triage_indices(), &[0, 1, 2]);
 }
 
 #[test]
