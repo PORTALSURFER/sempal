@@ -28,12 +28,12 @@ impl EguiApp {
                         });
                 });
         }
-        if self.controller.ui.drag.active_path.is_some() {
+        if self.controller.ui.drag.payload.is_some() {
             if ctx.input(|i| i.pointer.any_released()) {
-                self.controller.finish_sample_drag();
+                self.controller.finish_active_drag();
             } else if !ctx.input(|i| i.pointer.primary_down()) {
                 // Safety net to clear drag visuals if a release was missed.
-                self.controller.finish_sample_drag();
+                self.controller.finish_active_drag();
             }
         }
     }
