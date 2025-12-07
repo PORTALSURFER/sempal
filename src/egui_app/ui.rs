@@ -76,7 +76,7 @@ impl EguiApp {
 }
 
 impl eframe::App for EguiApp {
-    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.apply_visuals(ctx);
         self.controller.tick_playhead();
         if self.controller.ui.drag.active_path.is_some() && !ctx.input(|i| i.pointer.primary_down())
@@ -131,7 +131,6 @@ impl eframe::App for EguiApp {
                     .tag_selected(crate::sample_sources::SampleTag::Trash);
             }
         }
-        self.render_top_bar(ctx, frame);
         self.render_status(ctx);
         egui::SidePanel::left("sources")
             .resizable(false)
