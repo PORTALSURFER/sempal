@@ -255,12 +255,12 @@ fn paint_selection_edge_bracket(
     let half_width = EDGE_BRACKET_WIDTH * 0.5;
     let (vertical_x, horizontal_start, horizontal_end) = match edge {
         SelectionEdge::Start => (
-            center.x + half_width,
+            center.x - half_width,
             center.x - half_width,
             center.x + half_width,
         ),
         SelectionEdge::End => (
-            center.x - half_width,
+            center.x + half_width,
             center.x + half_width,
             center.x - half_width,
         ),
