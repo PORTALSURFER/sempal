@@ -1,4 +1,4 @@
-## [unreleased]
+## [0.151.0] - 2025-12-07
 
 ### 🚀 Features
 
@@ -9,6 +9,10 @@
 
 - Can drag our of window now
 - Restore external drag paths and auto-scan new sources
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* V0.151.0 (#7)
 ## [0.140.0] - 2025-12-07
 
 ### 🚀 Features
