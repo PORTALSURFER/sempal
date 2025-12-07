@@ -160,12 +160,10 @@ impl EguiApp {
                         let is_selected = Some(row) == selected_row;
                         let is_duplicate_hover =
                             drag_active && active_drag_path.as_ref().is_some_and(|p| p == &path);
-                        let bg = if is_selected {
-                            Some(style::row_selected_fill())
-                        } else if is_duplicate_hover {
+                        let bg = if is_duplicate_hover {
                             Some(style::duplicate_hover_fill())
                         } else {
-                            None
+                            style::triage_row_bg(sample.tag, is_selected)
                         };
                         ui.push_id(
                             format!("{}:{}:{}", sample.source_id, sample.source, sample.label),

@@ -16,7 +16,7 @@ pub const MIN_VIEWPORT_SIZE: [f32; 2] = [640.0, 400.0];
 
 use crate::{
     audio::AudioPlayer, egui_app::controller::EguiController, egui_app::state::TriageFlagColumn,
-    waveform::WaveformRenderer,
+    sample_sources::SampleTag, waveform::WaveformRenderer,
 };
 use eframe::egui;
 use eframe::egui::{TextureHandle, Ui, UiBuilder};
@@ -130,6 +130,9 @@ impl eframe::App for EguiApp {
                 if browser_has_selection {
                     self.controller.move_selection_column(1);
                 }
+            } else if collection_focus {
+                self.controller
+                    .tag_selected_collection_sample(SampleTag::Keep);
             } else if browser_has_selection {
                 let col = self.controller.ui.browser.selected.map(|t| t.column);
                 let target = if matches!(col, Some(TriageFlagColumn::Trash)) {
@@ -145,6 +148,8 @@ impl eframe::App for EguiApp {
                 if browser_has_selection {
                     self.controller.move_selection_column(-1);
                 }
+            } else if collection_focus {
+                self.controller.tag_selected_collection_left();
             } else if browser_has_selection {
                 self.controller.tag_selected_left();
             }

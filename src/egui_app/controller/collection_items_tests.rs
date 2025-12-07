@@ -60,6 +60,42 @@ fn collection_tagging_updates_database() {
 }
 
 #[test]
+fn collection_rows_expose_tags_in_ui() {
+    let (mut controller, source, _) = setup_collection_with_sample("one.wav");
+    controller.ui.collections.selected_sample = Some(0);
+
+    controller.tag_selected_collection_sample(SampleTag::Keep);
+    assert_eq!(
+        controller
+            .ui
+            .collections
+            .samples
+            .first()
+            .map(|sample| sample.tag),
+        Some(SampleTag::Keep)
+    );
+
+    controller.tag_selected_collection_left();
+    assert_eq!(
+        controller
+            .ui
+            .collections
+            .samples
+            .first()
+            .map(|sample| sample.tag),
+        Some(SampleTag::Neutral)
+    );
+
+    let db = controller.database_for(&source).unwrap();
+    let rows = db.list_files().unwrap();
+    let entry = rows
+        .iter()
+        .find(|row| row.relative_path == Path::new("one.wav"))
+        .unwrap();
+    assert_eq!(entry.tag, SampleTag::Neutral);
+}
+
+#[test]
 fn collection_rename_moves_files_and_export() {
     let (mut controller, source, collection_id) = setup_collection_with_sample("one.wav");
     let export_root = source.root.parent().unwrap().join("export");
