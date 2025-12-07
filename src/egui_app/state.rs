@@ -187,7 +187,8 @@ pub enum TriageFlagFilter {
 #[derive(Clone, Debug, PartialEq)]
 pub enum DragPayload {
     Sample {
-        path: PathBuf,
+        source_id: SourceId,
+        relative_path: PathBuf,
     },
     Selection {
         source_id: SourceId,

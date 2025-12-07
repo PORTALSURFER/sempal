@@ -107,7 +107,7 @@ impl EguiController {
         self.ui.sources.scroll_to = self.ui.sources.selected;
     }
 
-    pub(super) fn current_source(&self) -> Option<SampleSource> {
+    pub(crate) fn current_source(&self) -> Option<SampleSource> {
         let selected = self.selected_source.as_ref()?;
         self.sources.iter().find(|s| &s.id == selected).cloned()
     }

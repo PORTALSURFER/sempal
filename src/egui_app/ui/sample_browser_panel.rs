@@ -4,6 +4,7 @@ use super::helpers::{
 };
 use super::style;
 use super::*;
+use crate::egui_app::ui::style::StatusTone;
 use crate::egui_app::state::TriageFlagFilter;
 use eframe::egui::{self, RichText, StrokeKind, Ui};
 use std::path::Path;
@@ -136,8 +137,20 @@ impl EguiApp {
                             self.browser_sample_menu(&response, row, &path, &label);
                             if response.drag_started() {
                                 if let Some(pos) = response.interact_pointer_pos() {
-                                    let name = path.to_string_lossy().to_string();
-                                    self.controller.start_sample_drag(path.clone(), name, pos);
+                                    if let Some(source) = self.controller.current_source() {
+                                        let name = path.to_string_lossy().to_string();
+                                        self.controller.start_sample_drag(
+                                            source.id.clone(),
+                                            path.clone(),
+                                            name,
+                                            pos,
+                                        );
+                                    } else {
+                                        self.controller.set_status(
+                                            "Select a source before dragging",
+                                            StatusTone::Warning,
+                                        );
+                                    }
                                 }
                             } else if drag_active && response.dragged() {
                                 if let Some(pos) = response.interact_pointer_pos() {
