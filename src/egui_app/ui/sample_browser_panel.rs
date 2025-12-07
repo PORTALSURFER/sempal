@@ -173,16 +173,23 @@ impl EguiApp {
         response.context_menu(|ui| {
             let palette = style::palette();
             let mut close_menu = false;
+            let action_rows = self.controller.action_rows_from_primary(row);
             ui.label(RichText::new(label.to_string()).color(palette.text_primary));
             self.sample_tag_menu(ui, &mut close_menu, |app, tag| {
-                app.controller.tag_browser_sample(row, tag).is_ok()
+                app.controller
+                    .tag_browser_samples(&action_rows, tag)
+                    .is_ok()
             });
             if ui
                 .button("Normalize (overwrite)")
                 .on_hover_text("Scale to full range and overwrite the wav")
                 .clicked()
             {
-                if self.controller.normalize_browser_sample(row).is_ok() {
+                if self
+                    .controller
+                    .normalize_browser_samples(&action_rows)
+                    .is_ok()
+                {
                     close_menu = true;
                 }
             }
@@ -197,7 +204,11 @@ impl EguiApp {
             let delete_btn =
                 egui::Button::new(RichText::new("Delete file").color(style::destructive_text()));
             if ui.add(delete_btn).clicked() {
-                if self.controller.delete_browser_sample(row).is_ok() {
+                if self
+                    .controller
+                    .delete_browser_samples(&action_rows)
+                    .is_ok()
+                {
                     close_menu = true;
                 }
             }

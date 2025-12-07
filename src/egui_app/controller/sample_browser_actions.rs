@@ -28,6 +28,21 @@ impl EguiController {
         result
     }
 
+    /// Apply a triage flag to all targeted rows.
+    pub fn tag_browser_samples(&mut self, rows: &[usize], tag: SampleTag) -> Result<(), String> {
+        let mut last_error = None;
+        for &row in rows {
+            if let Err(err) = self.tag_browser_sample(row, tag) {
+                last_error = Some(err);
+            }
+        }
+        if let Some(err) = last_error {
+            Err(err)
+        } else {
+            Ok(())
+        }
+    }
+
     /// Normalize a sample browser entry in place.
     pub fn normalize_browser_sample(&mut self, row: usize) -> Result<(), String> {
         let result = self.try_normalize_browser_sample(row);
@@ -35,6 +50,21 @@ impl EguiController {
             self.set_status(err.clone(), StatusTone::Error);
         }
         result
+    }
+
+    /// Normalize all targeted rows in place.
+    pub fn normalize_browser_samples(&mut self, rows: &[usize]) -> Result<(), String> {
+        let mut last_error = None;
+        for &row in rows {
+            if let Err(err) = self.normalize_browser_sample(row) {
+                last_error = Some(err);
+            }
+        }
+        if let Some(err) = last_error {
+            Err(err)
+        } else {
+            Ok(())
+        }
     }
 
     /// Rename a sample browser entry and keep caches, collections, and exports in sync.
@@ -53,6 +83,21 @@ impl EguiController {
             self.set_status(err.clone(), StatusTone::Error);
         }
         result
+    }
+
+    /// Delete all targeted sample browser entries.
+    pub fn delete_browser_samples(&mut self, rows: &[usize]) -> Result<(), String> {
+        let mut last_error = None;
+        for &row in rows {
+            if let Err(err) = self.delete_browser_sample(row) {
+                last_error = Some(err);
+            }
+        }
+        if let Some(err) = last_error {
+            Err(err)
+        } else {
+            Ok(())
+        }
     }
 
     fn try_normalize_browser_sample(&mut self, row: usize) -> Result<(), String> {
