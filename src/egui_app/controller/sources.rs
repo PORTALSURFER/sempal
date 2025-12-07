@@ -101,6 +101,35 @@ impl EguiController {
         self.sources.iter().find(|s| &s.id == selected).cloned()
     }
 
+    pub(super) fn drop_missing_source(&mut self, source_id: &SourceId, reason: &str) {
+        let Some(index) = self.sources.iter().position(|s| &s.id == source_id) else {
+            return;
+        };
+        let removed = self.sources.remove(index);
+        self.db_cache.remove(&removed.id);
+        self.collections
+            .iter_mut()
+            .for_each(|collection| collection.prune_source(&removed.id));
+        if self
+            .selected_source
+            .as_ref()
+            .is_some_and(|id| id == &removed.id)
+        {
+            self.selected_source = None;
+            self.selected_wav = None;
+            self.loaded_wav = None;
+        }
+        let _ = self.persist_config("Failed to save config after removing source");
+        self.refresh_sources_ui();
+        let _ = self.refresh_wavs();
+        self.refresh_collections_ui();
+        self.select_first_source();
+        self.set_status(
+            format!("{reason}: {}", removed.root.display()),
+            StatusTone::Warning,
+        );
+    }
+
     fn select_source_internal(&mut self, id: Option<SourceId>, pending_path: Option<PathBuf>) {
         let same_source = self.selected_source == id;
         self.pending_select_path = pending_path.clone();
