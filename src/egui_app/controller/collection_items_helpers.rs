@@ -333,11 +333,18 @@ impl EguiController {
         ctx: &CollectionSampleContext,
         relative_path: &Path,
     ) {
-        if let Some(audio) = self.loaded_audio.as_ref() {
-            if audio.source_id == ctx.source.id && audio.relative_path == relative_path {
-                if let Err(err) = self.load_collection_waveform(&ctx.source, relative_path) {
-                    self.set_status(err, StatusTone::Warning);
-                }
+        let loaded_matches = self
+            .loaded_audio
+            .as_ref()
+            .is_some_and(|audio| audio.source_id == ctx.source.id && audio.relative_path == relative_path);
+        let selected_matches = self
+            .selected_collection
+            .as_ref()
+            .is_some_and(|id| id == &ctx.collection_id)
+            && self.ui.collections.selected_sample == Some(ctx.row);
+        if loaded_matches || selected_matches {
+            if let Err(err) = self.load_collection_waveform(&ctx.source, relative_path) {
+                self.set_status(err, StatusTone::Warning);
             }
         }
     }

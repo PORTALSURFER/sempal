@@ -240,11 +240,15 @@ impl EguiController {
     }
 
     fn refresh_waveform_for_sample(&mut self, source: &SampleSource, relative_path: &Path) {
-        if let Some(audio) = self.loaded_audio.as_ref() {
-            if audio.source_id == source.id && audio.relative_path == relative_path {
-                if let Err(err) = self.load_waveform_for_selection(source, relative_path) {
-                    self.set_status(err, StatusTone::Warning);
-                }
+        let loaded_matches = self
+            .loaded_audio
+            .as_ref()
+            .is_some_and(|audio| audio.source_id == source.id && audio.relative_path == relative_path);
+        let selected_matches = self.selected_source.as_ref() == Some(&source.id)
+            && self.selected_wav.as_deref() == Some(relative_path);
+        if loaded_matches || selected_matches {
+            if let Err(err) = self.load_waveform_for_selection(source, relative_path) {
+                self.set_status(err, StatusTone::Warning);
             }
         }
     }
