@@ -1,6 +1,6 @@
 [package]
 name = "sempal"
-version = "0.130.0"
+version = "0.132.0"
 edition = "2024"
 default-run = "sempal"
 
@@ -19,6 +19,16 @@ egui = "0.33.2"
 eframe = { version = "0.33.2", default-features = true }
 open = "5.3.3"
 image = "0.25.9"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.52.0", features = [
+    "Win32_Foundation",
+    "Win32_System_Com",
+    "Win32_System_Ole",
+    "Win32_System_Memory",
+    "Win32_System_SystemServices",
+    "Win32_UI_Shell",
+] }
 
 [dev-dependencies]
 tempfile = "3.23.0"

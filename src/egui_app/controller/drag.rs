@@ -3,6 +3,43 @@ use crate::egui_app::state::DragPayload;
 use egui::Pos2;
 
 impl EguiController {
+    /// Try to start an external drag for the active sample browser row.
+    ///
+    /// This uses platform-specific drag-out support and falls back with an error
+    /// message when unavailable.
+    pub fn start_external_drag_for_browser_row(&mut self, row: usize) {
+        let result = (|| {
+            let ctx = self.resolve_browser_sample(row)?;
+            let absolute = ctx.source.root.join(&ctx.entry.relative_path);
+            crate::external_drag::start_file_drag(&[absolute])?;
+            Ok::<_, String>(format!(
+                "Drag {} to an external target",
+                ctx.entry.relative_path.display()
+            ))
+        })();
+        match result {
+            Ok(message) => self.set_status(message, StatusTone::Info),
+            Err(err) => self.set_status(err, StatusTone::Error),
+        }
+    }
+
+    /// Try to start an external drag for the current selection clip.
+    pub fn start_external_drag_for_selection(&mut self, bounds: SelectionRange) {
+        if bounds.width() < MIN_SELECTION_WIDTH {
+            self.set_status("Selection is too small to export", StatusTone::Warning);
+            return;
+        }
+        let result = (|| {
+            let (absolute, label) = self.export_selection_for_drag(bounds)?;
+            crate::external_drag::start_file_drag(&[absolute])?;
+            Ok::<_, String>(label)
+        })();
+        match result {
+            Ok(message) => self.set_status(message, StatusTone::Info),
+            Err(err) => self.set_status(err, StatusTone::Error),
+        }
+    }
+
     /// Start tracking a drag for a sample.
     pub fn start_sample_drag(&mut self, path: PathBuf, label: String, pos: Pos2) {
         self.begin_drag(DragPayload::Sample { path }, label, pos);
@@ -123,6 +160,31 @@ impl EguiController {
             .unwrap_or("Selection");
         let seconds = (audio.duration_seconds * bounds.width()).max(0.0);
         format!("{name} ({seconds:.2}s)")
+    }
+
+    fn export_selection_for_drag(
+        &mut self,
+        bounds: SelectionRange,
+    ) -> Result<(PathBuf, String), String> {
+        let audio = self
+            .loaded_audio
+            .as_ref()
+            .ok_or_else(|| "Load a sample before dragging a selection".to_string())?;
+        let clip = self.selection_audio(&audio.source_id, &audio.relative_path)?;
+        let entry =
+            self.export_selection_clip(&clip.source_id, &clip.relative_path, bounds, None)?;
+        let source = self
+            .sources
+            .iter()
+            .find(|s| s.id == clip.source_id)
+            .cloned()
+            .ok_or_else(|| "Source not available for selection export".to_string())?;
+        let absolute = source.root.join(&entry.relative_path);
+        let label = format!(
+            "Drag {} to an external target",
+            entry.relative_path.display()
+        );
+        Ok((absolute, label))
     }
 
     fn handle_sample_drop(

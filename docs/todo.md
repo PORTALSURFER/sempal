@@ -1,7 +1,6 @@
 \plan - lets do a housekeeping pass, clean up the codebase, reduce file lengths, improve DRYness, improve maintainability, collapse large structs/objects into clearly named smaller objects, add missing docs, improve symbol naming, find and resolve bugs, improve performance, etc.
 
 --
-\plan - add the ability to drag drop items to external targets like windows explorer or a daw.
 
 \plan - dont show the extensions or folders in our item lists, both for collections and for the regular sample list, show only the sample name
 
@@ -41,3 +40,6 @@ So in windows it would end up as %APPDATA%\Roaming\.sempal\config.json
 the config file should be a lean, app only file, not to store data in. just to set app flags, etc, maybe color themes in the future, etc.
 lets also turn it from json into toml.
 and lets add migration code to find and convert the current config.json format/path to our new system
+
+
+-- rls_cargo --bump patch --platform linux-x86_64 --platform linux-aarch64 --platform macos-aarch64 -x
