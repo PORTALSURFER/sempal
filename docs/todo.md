@@ -1,8 +1,6 @@
 \plan - lets do a housekeeping pass, clean up the codebase, reduce file lengths, improve DRYness, improve maintainability, collapse large structs/objects into clearly named smaller objects, add missing docs, improve symbol naming, find and resolve bugs, improve performance, etc.
 
 --
-\plan - if im drawing a new selection of our waveform, but move quickly outside of the waveform frame, we stop sizing it, while not fully touching the wall on that side. lets make it so we keep drawing/adjusting the selection until we release the mouse, not just stop when we move out of the frame
-
 \plan - add the hotkey F11 to switch between windowed and fullscreen mode
 and lets make fullscreen mode the default mode
 

@@ -186,23 +186,25 @@ impl EguiApp {
 
             // Waveform interactions: click to seek, shift-drag to select.
             if !edge_dragging {
-                if let Some(pos) = response.interact_pointer_pos() {
-                    if rect.contains(pos) {
-                        let normalized = ((pos.x - rect.left()) / rect.width()).clamp(0.0, 1.0);
-                        let shift_down = ui.input(|i| i.modifiers.shift);
-                        if response.drag_started() && shift_down {
-                            self.controller.start_selection_drag(normalized);
-                        } else if response.dragged() && shift_down {
-                            self.controller.update_selection_drag(normalized);
-                        } else if response.drag_stopped() && shift_down {
-                            self.controller.finish_selection_drag();
-                        } else if response.clicked() {
-                            if shift_down {
-                                self.controller.clear_selection();
-                            } else {
-                                self.controller.seek_to(normalized);
-                            }
-                        }
+                let shift_down = ui.input(|i| i.modifiers.shift);
+                let pointer_pos = response.interact_pointer_pos();
+                let normalized = pointer_pos
+                    .map(|pos| ((pos.x - rect.left()) / rect.width()).clamp(0.0, 1.0));
+                if shift_down && response.drag_started() {
+                    if let Some(value) = normalized {
+                        self.controller.start_selection_drag(value);
+                    }
+                } else if shift_down && response.dragged() {
+                    if let Some(value) = normalized {
+                        self.controller.update_selection_drag(value);
+                    }
+                } else if shift_down && response.drag_stopped() {
+                    self.controller.finish_selection_drag();
+                } else if response.clicked() {
+                    if shift_down {
+                        self.controller.clear_selection();
+                    } else if let Some(value) = normalized {
+                        self.controller.seek_to(value);
                     }
                 }
             }
