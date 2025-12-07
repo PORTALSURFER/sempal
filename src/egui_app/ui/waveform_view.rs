@@ -79,15 +79,9 @@ impl EguiApp {
 
             if let Some(pos) = pointer_pos.filter(|p| rect.contains(*p)) {
                 let x = pos.x;
-                let hover_line = egui::Rect::from_min_max(
-                    egui::pos2(x, rect.top()),
-                    egui::pos2(x, rect.bottom()),
-                );
-                painter.rect_stroke(
-                    hover_line,
-                    0.0,
+                painter.line_segment(
+                    [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
                     Stroke::new(1.0, palette.accent_ice),
-                    StrokeKind::Inside,
                 );
             }
 
@@ -199,15 +193,9 @@ impl EguiApp {
             }
             if self.controller.ui.waveform.playhead.visible {
                 let x = rect.left() + rect.width() * self.controller.ui.waveform.playhead.position;
-                let line = egui::Rect::from_min_max(
-                    egui::pos2(x, rect.top()),
-                    egui::pos2(x, rect.bottom()),
-                );
-                painter.rect_stroke(
-                    line,
-                    0.0,
+                painter.line_segment(
+                    [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
                     Stroke::new(2.0, palette.accent_ice),
-                    StrokeKind::Inside,
                 );
             }
 
