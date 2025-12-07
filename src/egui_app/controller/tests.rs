@@ -163,7 +163,9 @@ fn export_path_copies_and_refreshes_members() -> Result<(), String> {
     std::fs::remove_file(export_root.join("Test").join("one.wav")).unwrap();
     let extra_path = source_root.join("extra.wav");
     std::fs::write(&extra_path, b"more").unwrap();
-    std::fs::write(export_root.join("Test").join("extra.wav"), b"more").unwrap();
+    let nested = export_root.join("Test").join("nested");
+    std::fs::create_dir_all(&nested).unwrap();
+    std::fs::write(nested.join("extra.wav"), b"more").unwrap();
 
     controller.refresh_collection_export(&collection_id);
     let collection = controller
@@ -177,5 +179,36 @@ fn export_path_copies_and_refreshes_members() -> Result<(), String> {
         .map(|m| m.relative_path.to_string_lossy().to_string())
         .collect();
     assert_eq!(labels, vec!["extra.wav"]);
+    Ok(())
+}
+
+#[test]
+fn renaming_collection_updates_export_folder() -> Result<(), String> {
+    let temp = tempdir().unwrap();
+    let source_root = temp.path().join("source");
+    let export_root = temp.path().join("export");
+    std::fs::create_dir_all(&source_root).unwrap();
+    std::fs::create_dir_all(&export_root).unwrap();
+    let renderer = WaveformRenderer::new(10, 10);
+    let mut controller = EguiController::new(renderer, None);
+    let source = SampleSource::new(source_root.clone());
+    controller.cache_db(&source).unwrap();
+    controller.selected_source = Some(source.id.clone());
+    controller.sources.push(source.clone());
+
+    let mut collection = Collection::new("Old");
+    collection.export_path = Some(export_root.clone());
+    std::fs::create_dir_all(export_root.join("Old")).unwrap();
+    collection.add_member(source.id.clone(), PathBuf::from("one.wav"));
+    let collection_id = collection.id.clone();
+    controller.selected_collection = Some(collection_id.clone());
+    controller.collections.push(collection);
+
+    controller.rename_collection(&collection_id, "New Name".into());
+
+    let new_folder = export_root.join("New Name");
+    assert!(new_folder.is_dir());
+    assert!(!export_root.join("Old").exists());
+    assert_eq!(controller.collections[0].name, "New Name");
     Ok(())
 }
