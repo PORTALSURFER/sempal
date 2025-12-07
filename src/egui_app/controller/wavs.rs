@@ -2,18 +2,18 @@ use super::*;
 use crate::waveform::DecodedWaveform;
 
 impl EguiController {
-    /// Expose wav indices for a given triage column (used by virtualized rendering).
-    pub fn triage_indices(&self, column: TriageColumn) -> &[usize] {
+    /// Expose wav indices for a given triage flag column (used by virtualized rendering).
+    pub fn browser_indices(&self, column: TriageFlagColumn) -> &[usize] {
         match column {
-            TriageColumn::Trash => &self.ui.triage.trash,
-            TriageColumn::Neutral => &self.ui.triage.neutral,
-            TriageColumn::Keep => &self.ui.triage.keep,
+            TriageFlagColumn::Trash => &self.ui.browser.trash,
+            TriageFlagColumn::Neutral => &self.ui.browser.neutral,
+            TriageFlagColumn::Keep => &self.ui.browser.keep,
         }
     }
 
-    /// Visible wav indices after applying the active triage filter.
-    pub fn visible_triage_indices(&self) -> &[usize] {
-        &self.ui.triage.visible
+    /// Visible wav indices after applying the active sample browser filter.
+    pub fn visible_browser_indices(&self) -> &[usize] {
+        &self.ui.browser.visible
     }
 
     /// Select a wav row based on its path.
@@ -29,16 +29,16 @@ impl EguiController {
                     self.suppress_autoplay_once = false;
                 }
             }
-            self.rebuild_triage_lists();
+            self.rebuild_browser_lists();
         }
     }
 
-    /// Map the current triage filter into a drop target tag for drag-and-drop retagging.
-    pub fn triage_drop_target(&self) -> TriageColumn {
-        match self.ui.triage.filter {
-            TriageFilter::All | TriageFilter::Untagged => TriageColumn::Neutral,
-            TriageFilter::Keep => TriageColumn::Keep,
-            TriageFilter::Trash => TriageColumn::Trash,
+    /// Map the current browser filter into a drop target tag for drag-and-drop retagging.
+    pub fn triage_flag_drop_target(&self) -> TriageFlagColumn {
+        match self.ui.browser.filter {
+            TriageFlagFilter::All | TriageFlagFilter::Untagged => TriageFlagColumn::Neutral,
+            TriageFlagFilter::Keep => TriageFlagColumn::Keep,
+            TriageFlagFilter::Trash => TriageFlagColumn::Trash,
         }
     }
 
@@ -49,11 +49,11 @@ impl EguiController {
             .map(|entry| entry.tag)
     }
 
-    /// Apply a new triage filter and refresh visible rows.
-    pub fn set_triage_filter(&mut self, filter: TriageFilter) {
-        if self.ui.triage.filter != filter {
-            self.ui.triage.filter = filter;
-            self.rebuild_triage_lists();
+    /// Apply a new browser filter and refresh visible rows.
+    pub fn set_browser_filter(&mut self, filter: TriageFlagFilter) {
+        if self.ui.browser.filter != filter {
+            self.ui.browser.filter = filter;
+            self.rebuild_browser_lists();
         }
     }
 
@@ -66,8 +66,8 @@ impl EguiController {
         self.select_wav_by_path(&path);
     }
 
-    /// Select a wav coming from the triage columns and clear collection focus.
-    pub fn select_from_triage(&mut self, path: &Path) {
+    /// Select a wav coming from the sample browser and clear collection focus.
+    pub fn select_from_browser(&mut self, path: &Path) {
         self.ui.collections.selected_sample = None;
         self.select_wav_by_path(path);
     }
@@ -89,9 +89,9 @@ impl EguiController {
         }
     }
 
-    pub(super) fn rebuild_triage_lists(&mut self) {
+    pub(super) fn rebuild_browser_lists(&mut self) {
         if self.ui.collections.selected_sample.is_some() {
-            self.ui.triage.autoscroll = false;
+            self.ui.browser.autoscroll = false;
         }
         let highlight_selection = self.ui.collections.selected_sample.is_none();
         let selected_index = if highlight_selection {
@@ -104,7 +104,7 @@ impl EguiController {
         } else {
             None
         };
-        self.reset_triage_ui();
+        self.reset_browser_ui();
 
         for i in 0..self.wav_entries.len() {
             let tag = self.wav_entries[i].tag;
@@ -112,7 +112,7 @@ impl EguiController {
                 selected: Some(i) == selected_index,
                 loaded: Some(i) == loaded_index,
             };
-            self.push_triage_row(i, tag, flags);
+            self.push_browser_row(i, tag, flags);
         }
     }
 
@@ -128,70 +128,72 @@ impl EguiController {
             .and_then(|path| self.wav_lookup.get(path).copied())
     }
 
-    fn reset_triage_ui(&mut self) {
-        let autoscroll = self.ui.triage.autoscroll;
+    fn reset_browser_ui(&mut self) {
+        let autoscroll = self.ui.browser.autoscroll;
         let collections_selected = self.ui.collections.selected_sample.is_some();
-        self.ui.triage.trash.clear();
-        self.ui.triage.neutral.clear();
-        self.ui.triage.keep.clear();
-        self.ui.triage.visible.clear();
-        self.ui.triage.selected_visible = None;
+        self.ui.browser.trash.clear();
+        self.ui.browser.neutral.clear();
+        self.ui.browser.keep.clear();
+        self.ui.browser.visible.clear();
+        self.ui.browser.selected_visible = None;
         if collections_selected {
-            self.ui.triage.selected = None;
+            self.ui.browser.selected = None;
         }
-        self.ui.triage.loaded = None;
-        self.ui.triage.loaded_visible = None;
-        self.ui.triage.autoscroll = autoscroll && !collections_selected;
+        self.ui.browser.loaded = None;
+        self.ui.browser.loaded_visible = None;
+        self.ui.browser.autoscroll = autoscroll && !collections_selected;
         self.ui.loaded_wav = None;
     }
 
-    fn push_triage_row(&mut self, entry_index: usize, tag: SampleTag, flags: RowFlags) {
+    fn push_browser_row(&mut self, entry_index: usize, tag: SampleTag, flags: RowFlags) {
         let target = match tag {
-            SampleTag::Trash => &mut self.ui.triage.trash,
-            SampleTag::Neutral => &mut self.ui.triage.neutral,
-            SampleTag::Keep => &mut self.ui.triage.keep,
+            SampleTag::Trash => &mut self.ui.browser.trash,
+            SampleTag::Neutral => &mut self.ui.browser.neutral,
+            SampleTag::Keep => &mut self.ui.browser.keep,
         };
         let row_index = target.len();
         target.push(entry_index);
-        if self.triage_filter_accepts(tag) {
-            let visible_row = self.ui.triage.visible.len();
-            self.ui.triage.visible.push(entry_index);
+        if self.browser_filter_accepts(tag) {
+            let visible_row = self.ui.browser.visible.len();
+            self.ui.browser.visible.push(entry_index);
             if flags.selected {
-                self.ui.triage.selected_visible = Some(visible_row);
+                self.ui.browser.selected_visible = Some(visible_row);
             }
             if flags.loaded {
-                self.ui.triage.loaded_visible = Some(visible_row);
+                self.ui.browser.loaded_visible = Some(visible_row);
             }
         }
         if flags.selected {
-            self.ui.triage.selected = Some(view_model::triage_index_for(tag, row_index));
+            self.ui.browser.selected =
+                Some(view_model::sample_browser_index_for(tag, row_index));
         }
         if flags.loaded {
-            self.ui.triage.loaded = Some(view_model::triage_index_for(tag, row_index));
+            self.ui.browser.loaded =
+                Some(view_model::sample_browser_index_for(tag, row_index));
             if let Some(path) = self.wav_entries.get(entry_index) {
                 self.ui.loaded_wav = Some(path.relative_path.clone());
             }
         }
     }
 
-    fn triage_filter_accepts(&self, tag: SampleTag) -> bool {
-        match self.ui.triage.filter {
-            TriageFilter::All => true,
-            TriageFilter::Keep => matches!(tag, SampleTag::Keep),
-            TriageFilter::Trash => matches!(tag, SampleTag::Trash),
-            TriageFilter::Untagged => matches!(tag, SampleTag::Neutral),
+    fn browser_filter_accepts(&self, tag: SampleTag) -> bool {
+        match self.ui.browser.filter {
+            TriageFlagFilter::All => true,
+            TriageFlagFilter::Keep => matches!(tag, SampleTag::Keep),
+            TriageFlagFilter::Trash => matches!(tag, SampleTag::Trash),
+            TriageFlagFilter::Untagged => matches!(tag, SampleTag::Neutral),
         }
     }
 
     pub(super) fn set_sample_tag(
         &mut self,
         path: &Path,
-        column: TriageColumn,
+        column: TriageFlagColumn,
     ) -> Result<(), String> {
         let target_tag = match column {
-            TriageColumn::Trash => SampleTag::Trash,
-            TriageColumn::Neutral => SampleTag::Neutral,
-            TriageColumn::Keep => SampleTag::Keep,
+            TriageFlagColumn::Trash => SampleTag::Trash,
+            TriageFlagColumn::Neutral => SampleTag::Neutral,
+            TriageFlagColumn::Keep => SampleTag::Keep,
         };
         self.set_sample_tag_value(path, target_tag)
     }
@@ -218,7 +220,7 @@ impl EguiController {
         self.apply_tag_to_caches(source, path, target_tag, require_present)?;
         let _ = db.set_tag(path, target_tag);
         if self.selected_source.as_ref() == Some(&source.id) {
-            self.rebuild_triage_lists();
+            self.rebuild_browser_lists();
             if require_present {
                 self.select_wav_by_path(path);
             }

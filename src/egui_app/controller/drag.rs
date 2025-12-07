@@ -35,7 +35,7 @@ impl EguiController {
         pos: Pos2,
         hovering_collection: Option<CollectionId>,
         hovering_drop_zone: bool,
-        hovering_triage: Option<TriageColumn>,
+        hovering_triage: Option<TriageFlagColumn>,
     ) {
         if self.ui.drag.payload.is_none() {
             return;
@@ -43,7 +43,7 @@ impl EguiController {
         self.ui.drag.position = Some(pos);
         self.ui.drag.hovering_collection = hovering_collection;
         self.ui.drag.hovering_drop_zone = hovering_drop_zone;
-        self.ui.drag.hovering_triage = hovering_triage;
+        self.ui.drag.hovering_browser = hovering_triage;
     }
 
     /// Refresh drag cursor position when payload is active, without touching hover targets.
@@ -75,7 +75,7 @@ impl EguiController {
                 }
             })
             .or_else(|| self.current_collection_id());
-        let triage_target = self.ui.drag.hovering_triage;
+        let triage_target = self.ui.drag.hovering_browser;
         self.reset_drag();
         match payload {
             DragPayload::Sample { path } => {
@@ -103,7 +103,7 @@ impl EguiController {
         self.ui.drag.position = None;
         self.ui.drag.hovering_collection = None;
         self.ui.drag.hovering_drop_zone = false;
-        self.ui.drag.hovering_triage = None;
+        self.ui.drag.hovering_browser = None;
     }
 
     fn begin_drag(&mut self, payload: DragPayload, label: String, pos: Pos2) {
@@ -112,7 +112,7 @@ impl EguiController {
         self.ui.drag.position = Some(pos);
         self.ui.drag.hovering_collection = None;
         self.ui.drag.hovering_drop_zone = false;
-        self.ui.drag.hovering_triage = None;
+        self.ui.drag.hovering_browser = None;
     }
 
     fn selection_drag_label(&self, audio: &LoadedAudio, bounds: SelectionRange) -> String {
@@ -129,7 +129,7 @@ impl EguiController {
         &mut self,
         path: PathBuf,
         collection_target: Option<CollectionId>,
-        triage_target: Option<TriageColumn>,
+        triage_target: Option<TriageFlagColumn>,
     ) {
         if let Some(collection_id) = collection_target {
             if let Err(err) = self.add_sample_to_collection(&collection_id, &path) {
@@ -149,7 +149,7 @@ impl EguiController {
         relative_path: PathBuf,
         bounds: SelectionRange,
         collection_target: Option<CollectionId>,
-        triage_target: Option<TriageColumn>,
+        triage_target: Option<TriageFlagColumn>,
     ) {
         if collection_target.is_none() && triage_target.is_none() {
             self.set_status(
@@ -159,9 +159,9 @@ impl EguiController {
             return;
         }
         let target_tag = triage_target.map(|column| match column {
-            TriageColumn::Trash => SampleTag::Trash,
-            TriageColumn::Neutral => SampleTag::Neutral,
-            TriageColumn::Keep => SampleTag::Keep,
+            TriageFlagColumn::Trash => SampleTag::Trash,
+            TriageFlagColumn::Neutral => SampleTag::Neutral,
+            TriageFlagColumn::Keep => SampleTag::Keep,
         });
         match self.export_selection_clip(&source_id, &relative_path, bounds, target_tag) {
             Ok(entry) => {
@@ -179,7 +179,7 @@ impl EguiController {
                         self.set_status("Source not available for collection", StatusTone::Error);
                     }
                 }
-                self.ui.triage.autoscroll = true;
+                self.ui.browser.autoscroll = true;
                 self.suppress_autoplay_once = true;
                 self.select_wav_by_path(&entry.relative_path);
                 let status = if let Some(collection_id) = collection_target.as_ref() {

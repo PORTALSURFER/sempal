@@ -72,10 +72,13 @@ fn source_label(sources: &[SampleSource], id: &str) -> String {
         .unwrap_or_else(|| "Unknown source".to_string())
 }
 
-/// Helper to derive a triage index from a tag and absolute row position.
-pub fn triage_index_for(tag: SampleTag, index: usize) -> crate::egui_app::state::TriageIndex {
-    use crate::egui_app::state::TriageColumn::*;
-    crate::egui_app::state::TriageIndex {
+/// Helper to derive a browser index from a tag and absolute row position.
+pub fn sample_browser_index_for(
+    tag: SampleTag,
+    index: usize,
+) -> crate::egui_app::state::SampleBrowserIndex {
+    use crate::egui_app::state::TriageFlagColumn::*;
+    crate::egui_app::state::SampleBrowserIndex {
         column: match tag {
             SampleTag::Trash => Trash,
             SampleTag::Neutral => Neutral,

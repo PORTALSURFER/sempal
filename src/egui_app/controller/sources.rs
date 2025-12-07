@@ -182,7 +182,7 @@ impl EguiController {
         self.selected_wav = None;
         self.loaded_wav = None;
         self.loaded_audio = None;
-        self.ui.triage = TriageState::default();
+        self.ui.browser = SampleBrowserState::default();
         self.ui.loaded_wav = None;
     }
 

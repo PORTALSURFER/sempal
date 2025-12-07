@@ -12,7 +12,7 @@ use std::path::PathBuf;
 pub struct UiState {
     pub status: StatusBarState,
     pub sources: SourcePanelState,
-    pub triage: TriageState,
+    pub browser: SampleBrowserState,
     pub waveform: WaveformState,
     pub drag: DragState,
     pub collections: CollectionsState,
@@ -26,7 +26,7 @@ impl Default for UiState {
         Self {
             status: StatusBarState::idle(),
             sources: SourcePanelState::default(),
-            triage: TriageState::default(),
+            browser: SampleBrowserState::default(),
             waveform: WaveformState::default(),
             drag: DragState::default(),
             collections: CollectionsState::default(),
@@ -113,25 +113,25 @@ impl Default for PlayheadState {
     }
 }
 
-/// Triage list state for wav entries with filterable rows.
+/// Sample browser state for wav entries with filterable rows.
 #[derive(Clone, Debug)]
-pub struct TriageState {
+pub struct SampleBrowserState {
     /// Absolute indices per tag for keyboard navigation and tagging.
     pub trash: Vec<usize>,
     pub neutral: Vec<usize>,
     pub keep: Vec<usize>,
     /// Visible rows after applying the active filter.
     pub visible: Vec<usize>,
-    pub selected: Option<TriageIndex>,
-    pub loaded: Option<TriageIndex>,
+    pub selected: Option<SampleBrowserIndex>,
+    pub loaded: Option<SampleBrowserIndex>,
     /// Visible row indices for selection/autoscroll (filtered list).
     pub selected_visible: Option<usize>,
     pub loaded_visible: Option<usize>,
     pub autoscroll: bool,
-    pub filter: TriageFilter,
+    pub filter: TriageFlagFilter,
 }
 
-impl Default for TriageState {
+impl Default for SampleBrowserState {
     fn default() -> Self {
         Self {
             trash: Vec::new(),
@@ -143,29 +143,29 @@ impl Default for TriageState {
             selected_visible: None,
             loaded_visible: None,
             autoscroll: false,
-            filter: TriageFilter::All,
+            filter: TriageFlagFilter::All,
         }
     }
 }
 
-/// Identifies a row inside one of the triage columns.
+/// Identifies a row inside one of the triage flag columns.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct TriageIndex {
-    pub column: TriageColumn,
+pub struct SampleBrowserIndex {
+    pub column: TriageFlagColumn,
     pub row: usize,
 }
 
-/// Wav triage columns: trash, neutral, keep.
+/// Wav triage flag columns: trash, neutral, keep.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum TriageColumn {
+pub enum TriageFlagColumn {
     Trash,
     Neutral,
     Keep,
 }
 
-/// Filter options for the single-column triage view.
+/// Filter options for the single-column sample browser view.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum TriageFilter {
+pub enum TriageFlagFilter {
     All,
     Keep,
     Trash,
@@ -185,7 +185,7 @@ pub enum DragPayload {
     },
 }
 
-/// Drag/hover state shared between triage lists and collections.
+/// Drag/hover state shared between the sample browser and collections.
 #[derive(Clone, Debug, Default)]
 pub struct DragState {
     pub payload: Option<DragPayload>,
@@ -193,7 +193,7 @@ pub struct DragState {
     pub position: Option<Pos2>,
     pub hovering_collection: Option<CollectionId>,
     pub hovering_drop_zone: bool,
-    pub hovering_triage: Option<TriageColumn>,
+    pub hovering_browser: Option<TriageFlagColumn>,
 }
 
 /// Collections sidebar and sample list state.

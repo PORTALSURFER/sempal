@@ -111,7 +111,7 @@ impl EguiController {
         self.wav_entries
             .sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
         self.rebuild_wav_lookup();
-        self.rebuild_triage_lists();
+        self.rebuild_browser_lists();
         self.label_cache
             .insert(source.id.clone(), self.build_label_cache(&self.wav_entries));
     }
