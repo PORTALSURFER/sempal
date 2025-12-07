@@ -1,5 +1,6 @@
 use super::*;
-use eframe::egui::{self, Color32, Frame, RichText, SliderClamping};
+use super::style;
+use eframe::egui::{self, Frame, RichText, SliderClamping, StrokeKind};
 
 impl EguiApp {
     fn log_viewport_info(&mut self, ctx: &egui::Context) {
@@ -38,22 +39,30 @@ impl EguiApp {
 
     pub(super) fn render_status(&mut self, ctx: &egui::Context) {
         self.log_viewport_info(ctx);
+        let palette = style::palette();
         egui::TopBottomPanel::bottom("status_bar")
-            .frame(Frame::new().fill(Color32::from_rgb(0, 0, 0)))
+            .frame(
+                Frame::new()
+                    .fill(palette.bg_primary)
+                    .stroke(style::outer_border()),
+            )
             .show(ctx, |ui| {
                 let status = self.controller.ui.status.clone();
                 ui.columns(2, |columns| {
                     columns[0].horizontal(|ui| {
                         ui.add_space(8.0);
-                        ui.painter().circle_filled(
-                            ui.cursor().min + egui::vec2(9.0, 11.0),
-                            9.0,
-                            status.badge_color,
+                        let (badge_rect, _) = ui.allocate_exact_size(
+                            egui::vec2(18.0, 18.0),
+                            egui::Sense::hover(),
                         );
-                        ui.add_space(8.0);
-                        ui.label(RichText::new(&status.badge_label).color(Color32::WHITE));
+                        ui.painter()
+                            .rect_filled(badge_rect, 0.0, status.badge_color);
+                        ui.painter()
+                            .rect_stroke(badge_rect, 0.0, style::inner_border(), StrokeKind::Inside);
+                        ui.add_space(10.0);
+                        ui.label(RichText::new(&status.badge_label).color(palette.text_primary));
                         ui.separator();
-                        ui.label(RichText::new(&status.text).color(Color32::WHITE));
+                        ui.label(RichText::new(&status.text).color(palette.text_primary));
                     });
                     columns[1].with_layout(
                         egui::Layout::right_to_left(egui::Align::Center),

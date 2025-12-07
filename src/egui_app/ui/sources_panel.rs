@@ -1,14 +1,16 @@
 use super::helpers::{clamp_label_for_width, list_row_height, render_list_row};
 use super::*;
+use super::style;
 use eframe::egui::{self, Color32, RichText, Ui};
 
 impl EguiApp {
     pub(super) fn render_sources_panel(&mut self, ui: &mut Ui) {
+        let palette = style::palette();
         ui.vertical(|ui| {
             ui.horizontal(|ui| {
-                ui.label(RichText::new("Sources").color(Color32::WHITE));
+                ui.label(RichText::new("Sources").color(palette.text_primary));
                 if ui
-                    .button(RichText::new("+").color(Color32::WHITE))
+                    .button(RichText::new("+").color(palette.text_primary))
                     .clicked()
                 {
                     self.controller.add_source_via_dialog();
@@ -27,7 +29,7 @@ impl EguiApp {
                             let row_width = ui.available_width();
                             let padding = ui.spacing().button_padding.x * 2.0;
                             let label = clamp_label_for_width(&row.name, row_width - padding);
-                            let bg = is_selected.then_some(Color32::from_rgb(30, 30, 30));
+                            let bg = is_selected.then_some(style::row_selected_fill());
                             let response = render_list_row(
                                 ui,
                                 &label,

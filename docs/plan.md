@@ -1,37 +1,29 @@
 ## Goal
-- Update all sempal crates to their latest compatible versions while keeping existing features stable and fixing any build breakages.
+- Rework the egui UI to match the Microchip Brutalism style in `docs/styleguide.md`: rectilinear geometry (no rounded corners), beveled diagonals only when softening, dense grid-like layout, metallic dark palette, and hard-edged, mechanical interactions across all panels, controls, and waveform chrome without altering existing behaviours.
 
 ## Proposed solutions
-- Use `cargo outdated` and crate release notes to map patch/minor/major upgrade targets across `eframe`/`egui`, `rodio`, `rusqlite`, `rfd`, `directories`, `image`, `sysinfo`, `open`, `serde`, and supporting tooling.
-- Upgrade dependencies incrementally (low-risk patch/minor first, then majors) to isolate breaking changes and keep default feature behaviour aligned with the current app.
-- Adjust code for API changes in the UI (egui/eframe), audio (rodio/hound), persistence (rusqlite/serde), and build tooling (toml_edit/semver) while preserving existing UX and feature flags.
-- Refresh the lockfile and validate builds/tests to ensure the application, build script, and benches remain healthy after upgrades.
-- Sanity-check runtime flows (config load/save, source scanning, waveform rendering, audio playback) after updates to catch regressions early.
+- Define a centralized visual system (colors, stroke weights, spacings, bevel/diagonal rules) applied via the existing `apply_visuals` hook and shared render helpers so every widget inherits the rectilinear sci-fi look.
+- Refactor shared UI primitives (frames, list rows, scroll containers, buttons, badges, sliders) to enforce sharp rectangles or 45° bevels, textured fills, and the palette from the style guide while keeping layout metrics stable.
+- Recompose key surfaces (status bar, waveform frame, browser/collection panels, drag overlays) into layered rectangular compartments with nested borders and micro-line accents, replacing any rounded or circular motifs.
+- Validate the refreshed styling with targeted visual passes (e.g., hover/selected states, drag/drop highlights, waveform selection handles) to confirm consistency and avoid interaction regressions.
 
 ## Step-by-step plan
-1. [x] Inventory current dependencies and decide target versions using `cargo outdated` and changelogs, with special attention to `eframe`/`egui`, `rodio`, `rusqlite`, `rfd`, `sysinfo`, `image`, `directories`, `open`, `serde`, and build/dev tools.
-2. [x] Update `Cargo.toml` dependency, dev-dependency, and build-dependency versions in manageable batches, regenerating `Cargo.lock` while keeping existing feature flags consistent.
-3. [x] Fix compile-time and API breakages across modules (`audio`, `waveform`, `egui_app`, `sample_sources`, build scripts) to match new crate expectations without altering behaviour.
-4. [x] Run `cargo check`/`cargo test` (and clippy/benches if configured) to ensure the workspace builds cleanly; address any failures.
-5. [-] Perform a quick manual sanity check of UI launch, config persistence, source scanning, waveform rendering, and audio playback paths to confirm runtime stability.
+1. [x] Audit current theming and primitives (e.g., `apply_visuals`, `helpers::render_list_row`, panel frames, status bar, waveform chrome) against `docs/styleguide.md` to map where rounded/circular elements and soft shading exist.
+2. [x] Introduce centralized style tokens (palette, stroke weights, bevel/diagonal rules, spacing) and update shared primitives to draw only rectangles or 45° bevels, adjust hover/selection fills, and align typography to the guide.
+3. [x] Restyle panels (sources, collections, sample browser, menus) to use layered rectangular frames, strict dividers, and rectilinear controls/tags while preserving existing data flow and interactions.
+4. [x] Redesign the status bar and waveform chrome (frames, selection handles, playhead, loop toggle, drag overlays) to remove rounded corners/circles, add nested borders/grid lines, and apply the metallic palette without changing behaviour.
+5. [~] Perform a visual verification pass (hover/active/drag states, autoscroll outlines, waveform selection/drag ergonomics) and adjust any regressions while keeping existing functionality intact.
 
 ## Code Style & Architecture Rules Reminder
-### File and module structure
 - Keep files under 400 lines; split when necessary.
 - When functions require more than 5 arguments, group related values into a struct.
 - Each module must have one clear responsibility; split when responsibilities mix.
-- Do not use generic buckets like misc.rs or util.rs. Name modules by domain or purpose.
+- Do not use generic buckets like `misc.rs` or `util.rs`. Name modules by domain or purpose.
 - Name folders by feature first, not layer first.
-
-### Functions
 - Keep functions under 30 lines; extract helpers as needed.
 - Each function must have a single clear responsibility.
 - Prefer many small structs over large ones.
-
-### Documentation
 - All public objects, functions, structs, traits, and modules must be documented.
-
-### Testing
 - All code should be well tested whenever feasible.
 - “Feasible” should be interpreted broadly: tests are expected in almost all cases.
 - Prefer small, focused unit tests that validate behaviour clearly.

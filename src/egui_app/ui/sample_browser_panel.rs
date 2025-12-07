@@ -3,6 +3,7 @@ use super::helpers::{
     scroll_offset_to_reveal_row,
 };
 use super::*;
+use super::style;
 use crate::egui_app::state::TriageFlagFilter;
 use crate::sample_sources::SampleTag;
 use eframe::egui::{self, Color32, RichText, Stroke, StrokeKind, Ui};
@@ -10,6 +11,7 @@ use std::path::Path;
 
 impl EguiApp {
     pub(super) fn render_sample_browser(&mut self, ui: &mut Ui) {
+        let palette = style::palette();
         let selected_row = self.controller.ui.browser.selected_visible;
         let loaded_row = self.controller.ui.browser.loaded_visible;
         let drop_target = self.controller.triage_flag_drop_target();
@@ -28,7 +30,9 @@ impl EguiApp {
             spacing: ui.spacing().item_spacing.y,
         };
         let total_rows = self.controller.visible_browser_indices().len();
-        let bg_frame = egui::Frame::new().fill(Color32::from_rgb(16, 16, 16));
+        let bg_frame = egui::Frame::new()
+            .fill(style::compartment_fill())
+            .stroke(style::outer_border());
         let frame_response = bg_frame.show(ui, |ui| {
             let scroll_response = egui::ScrollArea::vertical()
                 .id_salt("sample_browser_scroll")
@@ -57,18 +61,18 @@ impl EguiApp {
                         if is_loaded {
                             label.push_str(" • loaded");
                         }
-                        let label = clamp_label_for_width(&label, row_width - padding);
-                        let bg = triage_row_bg(tag, is_selected);
-                        ui.push_id(&path, |ui| {
-                            let response = render_list_row(
-                                ui,
-                                &label,
-                                row_width,
-                                row_height,
-                                bg,
-                                Color32::WHITE,
-                                egui::Sense::click_and_drag(),
-                            );
+                            let label = clamp_label_for_width(&label, row_width - padding);
+                            let bg = triage_row_bg(tag, is_selected);
+                            ui.push_id(&path, |ui| {
+                                let response = render_list_row(
+                                    ui,
+                                    &label,
+                                    row_width,
+                                    row_height,
+                                    bg,
+                                    palette.text_primary,
+                                    egui::Sense::click_and_drag(),
+                                );
                             if response.clicked() {
                                 self.controller.select_from_browser(&path);
                             }
@@ -120,7 +124,7 @@ impl EguiApp {
                 if frame_response.response.rect.contains(pointer) {
                     ui.painter().rect_stroke(
                         frame_response.response.rect,
-                        6.0,
+                        0.0,
                         Stroke::new(2.0, Color32::from_rgba_unmultiplied(80, 140, 200, 180)),
                         StrokeKind::Inside,
                     );
@@ -174,8 +178,9 @@ impl EguiApp {
     }
 
     fn render_sample_browser_filter(&mut self, ui: &mut Ui) {
+        let palette = style::palette();
         ui.horizontal(|ui| {
-            ui.label(RichText::new("Filter").color(Color32::from_rgb(210, 210, 210)));
+            ui.label(RichText::new("Filter").color(palette.text_primary));
             for filter in [
                 TriageFlagFilter::All,
                 TriageFlagFilter::Keep,
@@ -198,17 +203,23 @@ impl EguiApp {
 }
 
 fn triage_row_bg(tag: SampleTag, is_selected: bool) -> Option<Color32> {
+    let palette = style::palette();
     match tag {
         SampleTag::Trash => Some(if is_selected {
             Color32::from_rgba_unmultiplied(160, 72, 72, 180)
         } else {
-            Color32::from_rgba_unmultiplied(128, 48, 48, 64)
+            Color32::from_rgba_unmultiplied(128, 48, 48, 110)
         }),
         SampleTag::Keep => Some(if is_selected {
-            Color32::from_rgba_unmultiplied(72, 144, 100, 180)
+            Color32::from_rgba_unmultiplied(
+                palette.success.r(),
+                palette.success.g(),
+                palette.success.b(),
+                200,
+            )
         } else {
-            Color32::from_rgba_unmultiplied(56, 112, 76, 64)
+            Color32::from_rgba_unmultiplied(56, 112, 76, 110)
         }),
-        SampleTag::Neutral => is_selected.then_some(Color32::from_rgb(36, 36, 36)),
+        SampleTag::Neutral => is_selected.then_some(style::row_selected_fill()),
     }
 }

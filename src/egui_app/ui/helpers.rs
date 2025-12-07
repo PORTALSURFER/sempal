@@ -1,4 +1,5 @@
-use eframe::egui::{self, Align2, Color32, TextStyle, Ui};
+use super::style;
+use eframe::egui::{self, Align2, Color32, StrokeKind, TextStyle, Ui};
 
 #[derive(Clone, Copy)]
 pub(super) struct RowMetrics {
@@ -48,11 +49,13 @@ pub(super) fn render_list_row(
     let (rect, response) = ui.allocate_exact_size(egui::vec2(row_width, row_height), sense);
     let mut fill = bg;
     if response.hovered() && bg.is_none() {
-        fill = Some(Color32::from_rgb(26, 26, 26));
+        fill = Some(style::row_hover_fill());
     }
     if let Some(color) = fill {
         ui.painter().rect_filled(rect, 0.0, color);
     }
+    ui.painter()
+        .rect_stroke(rect, 0.0, style::inner_border(), StrokeKind::Inside);
     let padding = ui.spacing().button_padding;
     let font_id = TextStyle::Button.resolve(ui.style());
     let text_pos = rect.left_center() + egui::vec2(padding.x, 0.0);

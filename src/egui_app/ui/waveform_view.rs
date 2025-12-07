@@ -1,4 +1,5 @@
 use super::*;
+use super::style;
 use crate::selection::SelectionEdge;
 use eframe::egui::{
     self, Color32, CursorIcon, Frame, Margin, RichText, Stroke, StrokeKind, TextureOptions, Ui,
@@ -6,17 +7,18 @@ use eframe::egui::{
 
 impl EguiApp {
     pub(super) fn render_waveform(&mut self, ui: &mut Ui) {
+        let palette = style::palette();
         let frame = Frame::new()
-            .fill(Color32::from_rgb(16, 16, 16))
-            .stroke(Stroke::new(1.0, Color32::from_rgb(48, 48, 48)))
-            .inner_margin(Margin::symmetric(10, 8));
+            .fill(style::compartment_fill())
+            .stroke(style::outer_border())
+            .inner_margin(Margin::symmetric(10, 6));
         frame.show(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.label(RichText::new("Waveform Viewer").color(Color32::WHITE));
+                ui.label(RichText::new("Waveform Viewer").color(palette.text_primary));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let loop_enabled = self.controller.ui.waveform.loop_enabled;
                     let text = if loop_enabled { "Loop on" } else { "Loop off" };
-                    let button = egui::Button::new(RichText::new(text).color(Color32::WHITE));
+                    let button = egui::Button::new(RichText::new(text).color(palette.text_primary));
                     if ui.add(button).clicked() {
                         self.controller.toggle_loop();
                     }
@@ -66,12 +68,12 @@ impl EguiApp {
                 let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
                 painter.image(id, rect, uv, Color32::WHITE);
             } else {
-                painter.rect_filled(rect, 6.0, Color32::from_rgb(12, 12, 12));
+                painter.rect_filled(rect, 0.0, palette.bg_primary);
             }
             painter.rect_stroke(
                 rect,
-                6.0,
-                Stroke::new(1.0, Color32::from_rgb(64, 64, 64)),
+                0.0,
+                Stroke::new(2.0, palette.panel_outline),
                 StrokeKind::Inside,
             );
 
@@ -84,7 +86,7 @@ impl EguiApp {
                 painter.rect_stroke(
                     hover_line,
                     0.0,
-                    Stroke::new(1.0, Color32::from_rgba_unmultiplied(80, 140, 200, 160)),
+                    Stroke::new(1.0, palette.accent_ice),
                     StrokeKind::Inside,
                 );
             }
@@ -99,8 +101,13 @@ impl EguiApp {
                 );
                 painter.rect_filled(
                     selection_rect,
-                    4.0,
-                    Color32::from_rgba_unmultiplied(28, 63, 106, 90),
+                    0.0,
+                    Color32::from_rgba_unmultiplied(
+                        palette.accent_ice.r(),
+                        palette.accent_ice.g(),
+                        palette.accent_ice.b(),
+                        60,
+                    ),
                 );
                 let handle_rect = selection_handle_rect(selection_rect);
                 let handle_response = ui.interact(
@@ -110,15 +117,25 @@ impl EguiApp {
                 );
                 let handle_hovered = handle_response.hovered() || handle_response.dragged();
                 let handle_color = if handle_hovered {
-                    Color32::from_rgba_unmultiplied(74, 147, 221, 180)
+                    Color32::from_rgba_unmultiplied(
+                        palette.accent_ice.r(),
+                        palette.accent_ice.g(),
+                        palette.accent_ice.b(),
+                        200,
+                    )
                 } else {
-                    Color32::from_rgba_unmultiplied(54, 104, 164, 150)
+                    Color32::from_rgba_unmultiplied(
+                        palette.grid_strong.r(),
+                        palette.grid_strong.g(),
+                        palette.grid_strong.b(),
+                        180,
+                    )
                 };
-                painter.rect_filled(handle_rect, 4.0, handle_color);
+                painter.rect_filled(handle_rect, 0.0, handle_color);
                 painter.rect_stroke(
                     handle_rect,
-                    4.0,
-                    Stroke::new(1.5, Color32::from_rgb(96, 168, 240)),
+                    0.0,
+                    Stroke::new(1.5, palette.accent_ice),
                     StrokeKind::Inside,
                 );
                 if handle_response.drag_started() {
@@ -174,7 +191,7 @@ impl EguiApp {
                         || edge_response.hovered()
                         || edge_response.dragged();
                     if edge_hovered {
-                        let color = Color32::from_rgb(96, 168, 240);
+                        let color = palette.accent_ice;
                         paint_selection_edge_bracket(&painter, edge_rect, edge, color);
                         ui.output_mut(|o| o.cursor_icon = CursorIcon::ResizeHorizontal);
                     }
@@ -189,7 +206,7 @@ impl EguiApp {
                 painter.rect_stroke(
                     line,
                     0.0,
-                    Stroke::new(2.0, Color32::from_rgb(51, 153, 255)),
+                    Stroke::new(2.0, palette.accent_ice),
                     StrokeKind::Inside,
                 );
             }

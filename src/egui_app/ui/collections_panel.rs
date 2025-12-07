@@ -3,22 +3,24 @@ use super::helpers::{
     scroll_offset_to_reveal_row,
 };
 use super::*;
+use super::style;
 use crate::egui_app::state::{CollectionRowView, CollectionSampleView, DragPayload};
 use eframe::egui::{self, Color32, RichText, Stroke, StrokeKind, Ui};
 use std::path::PathBuf;
 
 impl EguiApp {
     pub(super) fn render_collections_panel(&mut self, ui: &mut Ui) {
+        let palette = style::palette();
         let drag_active = self.controller.ui.drag.payload.is_some();
         let pointer_pos = ui
             .input(|i| i.pointer.hover_pos().or_else(|| i.pointer.interact_pos()))
             .or(self.controller.ui.drag.position);
         ui.vertical(|ui| {
             ui.horizontal(|ui| {
-                ui.label(RichText::new("Collections").color(Color32::WHITE));
+                ui.label(RichText::new("Collections").color(palette.text_primary));
                 let add_button = ui.add_enabled(
                     self.controller.ui.collections.enabled,
-                    egui::Button::new(RichText::new("+").color(Color32::WHITE)),
+                    egui::Button::new(RichText::new("+").color(palette.text_primary)),
                 );
                 if add_button.clicked() {
                     self.controller.add_collection();
@@ -46,7 +48,7 @@ impl EguiApp {
                             let row_width = ui.available_width();
                             let padding = ui.spacing().button_padding.x * 2.0;
                             let label = clamp_label_for_width(&label, row_width - padding);
-                            let bg = selected.then_some(Color32::from_rgb(30, 30, 30));
+                            let bg = selected.then_some(style::row_selected_fill());
                             let response = render_list_row(
                                 ui,
                                 &label,
@@ -75,7 +77,7 @@ impl EguiApp {
                         });
                     }
                 });
-            ui.label(RichText::new("Collection items").color(Color32::WHITE));
+            ui.label(RichText::new("Collection items").color(palette.text_primary));
             self.render_collection_samples(ui, drag_active, pointer_pos);
         });
     }
@@ -127,7 +129,9 @@ impl EguiApp {
             spacing: ui.spacing().item_spacing.y,
         };
         let available_height = ui.available_height();
-        let frame = egui::Frame::new().fill(Color32::from_rgb(16, 16, 16));
+        let frame = egui::Frame::new()
+            .fill(style::compartment_fill())
+            .stroke(style::outer_border());
         let scroll_response = frame.show(ui, |ui| {
             ui.set_min_height(available_height);
             let scroll = egui::ScrollArea::vertical().id_salt("collection_items_scroll");
@@ -154,7 +158,7 @@ impl EguiApp {
                         let is_duplicate_hover =
                             drag_active && active_drag_path.as_ref().is_some_and(|p| p == &path);
                         let bg = if is_selected {
-                            Some(Color32::from_rgb(30, 30, 30))
+                            Some(style::row_selected_fill())
                         } else if is_duplicate_hover {
                             Some(Color32::from_rgb(90, 60, 24))
                         } else {
@@ -179,7 +183,7 @@ impl EguiApp {
                                 if is_duplicate_hover {
                                     ui.painter().rect_stroke(
                                         response.rect.expand(2.0),
-                                        4.0,
+                                        0.0,
                                         Stroke::new(2.0, Color32::from_rgb(255, 170, 80)),
                                         StrokeKind::Inside,
                                     );
