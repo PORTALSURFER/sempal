@@ -120,6 +120,7 @@ impl eframe::App for EguiApp {
             }
         }
         self.render_top_bar(ctx, frame);
+        self.render_status(ctx);
         egui::SidePanel::left("sources")
             .resizable(false)
             .min_width(220.0)
@@ -134,7 +135,6 @@ impl eframe::App for EguiApp {
             self.render_center(ui);
         });
         self.render_drag_overlay(ctx);
-        self.render_status(ctx);
         ctx.request_repaint();
     }
 }
