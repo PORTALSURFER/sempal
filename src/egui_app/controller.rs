@@ -8,6 +8,7 @@ mod config;
 mod drag;
 mod loading;
 mod playback;
+mod selection_export;
 mod scans;
 mod sources;
 mod wavs;
@@ -58,6 +59,7 @@ pub struct EguiController {
     selected_collection: Option<CollectionId>,
     selected_wav: Option<PathBuf>,
     loaded_wav: Option<PathBuf>,
+    loaded_audio: Option<LoadedAudio>,
     suppress_autoplay_once: bool,
     feature_flags: crate::sample_sources::config::FeatureFlags,
     selection: SelectionState,
@@ -88,6 +90,7 @@ impl EguiController {
             selected_collection: None,
             selected_wav: None,
             loaded_wav: None,
+            loaded_audio: None,
             suppress_autoplay_once: false,
             feature_flags: crate::sample_sources::config::FeatureFlags::default(),
             selection: SelectionState::new(),
@@ -194,6 +197,16 @@ impl From<String> for LoadEntriesError {
     fn from(value: String) -> Self {
         LoadEntriesError::Message(value)
     }
+}
+
+#[derive(Clone)]
+struct LoadedAudio {
+    source_id: SourceId,
+    relative_path: PathBuf,
+    bytes: Vec<u8>,
+    duration_seconds: f32,
+    sample_rate: u32,
+    channels: u16,
 }
 
 #[cfg(test)]

@@ -1,13 +1,16 @@
 use super::*;
-use crate::egui_app::state::TriageFilter;
+use crate::egui_app::state::{DragPayload, TriageFilter};
 use std::path::Path;
 use tempfile::tempdir;
+use hound::{SampleFormat, WavSpec, WavWriter};
 
 fn dummy_controller() -> (EguiController, SampleSource) {
     let renderer = WaveformRenderer::new(10, 10);
     let mut controller = EguiController::new(renderer, None);
     let dir = tempdir().unwrap();
-    let root = dir.path().join("source");
+    let root_dir = dir.path().to_path_buf();
+    let root = root_dir.join("source");
+    std::mem::forget(dir);
     std::fs::create_dir_all(&root).unwrap();
     let source = SampleSource::new(root);
     controller.selected_source = Some(source.id.clone());
@@ -23,14 +26,27 @@ fn sample_entry(name: &str, tag: SampleTag) -> WavEntry {
     }
 }
 
+fn write_test_wav(path: &Path, samples: &[f32]) {
+    let spec = WavSpec {
+        channels: 1,
+        sample_rate: 8,
+        bits_per_sample: 32,
+        sample_format: SampleFormat::Float,
+    };
+    let mut writer = WavWriter::create(path, spec).unwrap();
+    for sample in samples {
+        writer.write_sample(*sample).unwrap();
+    }
+    writer.finalize().unwrap();
+}
+
 #[test]
 fn missing_source_is_pruned_during_load() {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source.clone());
     controller.selected_source = Some(source.id.clone());
+    std::fs::remove_dir_all(&source.root).unwrap();
     controller.queue_wav_load();
-    // The temp dir from dummy_controller is dropped, so the backing path disappears.
-    // The loader should prune the missing source instead of keeping a broken entry.
     controller.poll_wav_loader();
     assert!(controller.sources.is_empty());
     assert!(controller.selected_source.is_none());
@@ -99,10 +115,12 @@ fn dropping_triage_sample_adds_to_collection_and_db() {
     controller.collections.push(collection);
     controller.selected_collection = Some(collection_id.clone());
 
-    controller.ui.drag.active_path = Some(PathBuf::from("sample.wav"));
+    controller.ui.drag.payload = Some(DragPayload::Sample {
+        path: PathBuf::from("sample.wav"),
+    });
     controller.ui.drag.hovering_collection = Some(collection_id.clone());
 
-    controller.finish_sample_drag();
+    controller.finish_active_drag();
 
     let collection = controller
         .collections
@@ -197,6 +215,107 @@ fn left_tagging_from_keep_untags_then_trashes() {
 
     controller.tag_selected_left();
     assert_eq!(controller.wav_entries[0].tag, SampleTag::Trash);
+}
+
+#[test]
+fn exporting_selection_updates_entries_and_db() {
+    let temp = tempdir().unwrap();
+    let root = temp.path().join("source");
+    std::fs::create_dir_all(&root).unwrap();
+    let renderer = WaveformRenderer::new(12, 12);
+    let mut controller = EguiController::new(renderer, None);
+    let source = SampleSource::new(root.clone());
+    controller.sources.push(source.clone());
+    controller.selected_source = Some(source.id.clone());
+
+    let orig = root.join("orig.wav");
+    write_test_wav(&orig, &[0.0, 0.25, 0.5, 0.75]);
+
+    controller
+        .load_waveform_for_selection(&source, Path::new("orig.wav"))
+        .unwrap();
+
+    let entry = controller
+        .export_selection_clip(
+            &source.id,
+            Path::new("orig.wav"),
+            SelectionRange::new(0.0, 0.5),
+            Some(SampleTag::Keep),
+        )
+        .unwrap();
+
+    assert_eq!(entry.tag, SampleTag::Keep);
+    assert_eq!(entry.relative_path, PathBuf::from("orig_sel.wav"));
+    assert_eq!(controller.wav_entries.len(), 1);
+    assert_eq!(controller.ui.triage.visible.len(), 1);
+    let exported_path = root.join(&entry.relative_path);
+    assert!(exported_path.exists());
+    let exported: Vec<f32> = hound::WavReader::open(&exported_path)
+        .unwrap()
+        .samples::<f32>()
+        .map(|s| s.unwrap())
+        .collect();
+    assert_eq!(exported, vec![0.0, 0.25]);
+
+    let db = controller.database_for(&source).unwrap();
+    let rows = db.list_files().unwrap();
+    let saved = rows
+        .iter()
+        .find(|row| row.relative_path == entry.relative_path)
+        .unwrap();
+    assert_eq!(saved.tag, SampleTag::Keep);
+}
+
+#[test]
+fn selection_drop_adds_clip_to_collection() {
+    let temp = tempdir().unwrap();
+    let root = temp.path().join("source");
+    std::fs::create_dir_all(&root).unwrap();
+    let renderer = WaveformRenderer::new(12, 12);
+    let mut controller = EguiController::new(renderer, None);
+    let source = SampleSource::new(root.clone());
+    controller.sources.push(source.clone());
+    controller.selected_source = Some(source.id.clone());
+
+    let orig = root.join("clip.wav");
+    write_test_wav(&orig, &[0.1, 0.2, 0.3, 0.4]);
+    controller
+        .load_waveform_for_selection(&source, Path::new("clip.wav"))
+        .unwrap();
+
+    let collection = Collection::new("Crops");
+    let collection_id = collection.id.clone();
+    controller.collections.push(collection);
+    controller.selected_collection = Some(collection_id.clone());
+    controller.refresh_collections_ui();
+
+    controller.ui.drag.payload = Some(DragPayload::Selection {
+        source_id: source.id.clone(),
+        relative_path: PathBuf::from("clip.wav"),
+        bounds: SelectionRange::new(0.25, 0.75),
+    });
+    controller.ui.drag.hovering_collection = Some(collection_id.clone());
+    controller.ui.drag.hovering_drop_zone = true;
+    controller.finish_active_drag();
+
+    let collection = controller
+        .collections
+        .iter()
+        .find(|c| c.id == collection_id)
+        .unwrap();
+    assert_eq!(collection.members.len(), 1);
+    let member_path = &collection.members[0].relative_path;
+    assert!(root.join(member_path).exists());
+    assert!(controller
+        .wav_entries
+        .iter()
+        .any(|entry| &entry.relative_path == member_path));
+    assert!(controller
+        .ui
+        .collections
+        .samples
+        .iter()
+        .any(|sample| sample.path == *member_path));
 }
 
 #[test]

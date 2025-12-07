@@ -1,5 +1,7 @@
 use super::*;
-use eframe::egui::{self, Color32, Frame, Margin, RichText, Stroke, TextureOptions, Ui};
+use eframe::egui::{
+    self, Color32, CursorIcon, Frame, Margin, RichText, Stroke, TextureOptions, Ui,
+};
 
 impl EguiApp {
     pub(super) fn render_waveform(&mut self, ui: &mut Ui) {
@@ -87,6 +89,41 @@ impl EguiApp {
                     4.0,
                     Color32::from_rgba_unmultiplied(28, 63, 106, 90),
                 );
+                let handle_rect = selection_handle_rect(selection_rect);
+                let handle_response = ui.interact(
+                    handle_rect,
+                    ui.id().with("selection_handle"),
+                    egui::Sense::drag(),
+                );
+                let handle_hovered = handle_response.hovered() || handle_response.dragged();
+                let handle_color = if handle_hovered {
+                    Color32::from_rgba_unmultiplied(74, 147, 221, 180)
+                } else {
+                    Color32::from_rgba_unmultiplied(54, 104, 164, 150)
+                };
+                painter.rect_filled(handle_rect, 4.0, handle_color);
+                painter.rect_stroke(
+                    handle_rect,
+                    4.0,
+                    Stroke::new(1.5, Color32::from_rgb(96, 168, 240)),
+                );
+                if handle_response.drag_started() {
+                    if let Some(pos) = handle_response.interact_pointer_pos() {
+                        self.controller
+                            .start_selection_drag_payload(selection, pos);
+                    }
+                } else if handle_response.dragged() {
+                    if let Some(pos) = handle_response.interact_pointer_pos() {
+                        self.controller.update_active_drag(pos, None, false, None);
+                    }
+                } else if handle_response.drag_stopped() {
+                    self.controller.finish_active_drag();
+                }
+                if handle_response.dragged() {
+                    ui.output_mut(|o| o.cursor_icon = CursorIcon::Grabbing);
+                } else if handle_response.hovered() {
+                    ui.output_mut(|o| o.cursor_icon = CursorIcon::Grab);
+                }
             }
             if self.controller.ui.waveform.playhead.visible {
                 let x = rect.left() + rect.width() * self.controller.ui.waveform.playhead.position;
@@ -119,4 +156,12 @@ impl EguiApp {
             }
         });
     }
+}
+
+fn selection_handle_rect(selection_rect: egui::Rect) -> egui::Rect {
+    let handle_height = (selection_rect.height() / 3.0).max(12.0);
+    egui::Rect::from_min_size(
+        egui::pos2(selection_rect.left(), selection_rect.bottom() - handle_height),
+        egui::vec2(selection_rect.width(), handle_height),
+    )
 }

@@ -9,12 +9,12 @@
 - Cover the new crop/export path with focused tests around range-to-bytes conversion and database/list updates, plus manual validation notes for the drag/drop UX.
 
 ## Step-by-step plan
-1. [-] Review waveform selection rendering and drag handling (`waveform_view.rs`, controller `playback.rs`, `drag.rs`) to place the lower-third handle and identify state needed for a selection drag payload.
-2. [-] Capture selection audio context: retain decoded audio bytes/duration and current source/path in controller state so a selection drag can be turned into an export without reloading.
-3. [-] Implement the selection drag handle UI and gestures: paint the handle, start a selection-drag payload with bounds metadata, and integrate with the existing drag overlay for visual feedback.
-4. [-] Add controller drop handling for selection drags: on drop over the triage sample list, write the cropped wav into the active source (unique filename), upsert the source DB/cache, and refresh triage lists.
-5. [-] Extend drop handling for collections: when a selection drag lands on a collection/drop zone, create the cropped file in the source root, register it, add it to the target collection, and respect export folder syncing/status.
-6. [-] Add tests for the cropping/writing helper and list-refresh behaviour, and outline manual checks for the new drag handle UX and collection integration.
+1. [x] Review waveform selection rendering and drag handling (`waveform_view.rs`, controller `playback.rs`, `drag.rs`) to place the lower-third handle and identify state needed for a selection drag payload.
+2. [x] Capture selection audio context: retain decoded audio bytes/duration and current source/path in controller state so a selection drag can be turned into an export without reloading.
+3. [x] Implement the selection drag handle UI and gestures: paint the handle, start a selection-drag payload with bounds metadata, and integrate with the existing drag overlay for visual feedback.
+4. [x] Add controller drop handling for selection drags: on drop over the triage sample list, write the cropped wav into the active source (unique filename), upsert the source DB/cache, and refresh triage lists.
+5. [x] Extend drop handling for collections: when a selection drag lands on a collection/drop zone, create the cropped file in the source root, register it, add it to the target collection, and respect export folder syncing/status.
+6. [x] Add tests for the cropping/writing helper and list-refresh behaviour, and outline manual checks for the new drag handle UX and collection integration (manual: drag handle shows grab/grabbing cursor; dropping on Samples saves and selects the clip; dropping on a collection saves and attaches the clip/export).
 
 ## Code Style & Architecture Rules Reminder
 - File and module structure

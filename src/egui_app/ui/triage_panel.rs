@@ -15,7 +15,7 @@ impl EguiApp {
         self.render_triage_filter(ui);
         ui.add_space(6.0);
         let list_height = ui.available_height().max(0.0);
-        let drag_active = self.controller.ui.drag.active_path.is_some();
+        let drag_active = self.controller.ui.drag.payload.is_some();
         let pointer_pos = ui
             .input(|i| i.pointer.hover_pos().or_else(|| i.pointer.interact_pos()))
             .or(self.controller.ui.drag.position);
@@ -78,7 +78,7 @@ impl EguiApp {
                                 }
                             } else if drag_active && response.dragged() {
                                 if let Some(pos) = response.interact_pointer_pos() {
-                                    self.controller.update_sample_drag(
+                                    self.controller.update_active_drag(
                                         pos,
                                         None,
                                         false,
@@ -86,7 +86,7 @@ impl EguiApp {
                                     );
                                 }
                             } else if response.drag_stopped() {
-                                self.controller.finish_sample_drag();
+                                self.controller.finish_active_drag();
                             }
                         });
                     }
@@ -109,7 +109,7 @@ impl EguiApp {
             if let Some(pointer) = pointer_pos {
                 if frame_response.response.rect.contains(pointer) {
                     self.controller
-                        .update_sample_drag(pointer, None, false, Some(drop_target));
+                        .update_active_drag(pointer, None, false, Some(drop_target));
                 }
             }
         }

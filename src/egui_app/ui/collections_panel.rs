@@ -3,13 +3,13 @@ use super::helpers::{
     RowMetrics,
 };
 use super::*;
-use crate::egui_app::state::CollectionRowView;
+use crate::egui_app::state::{CollectionRowView, DragPayload};
 use eframe::egui::{self, Color32, RichText, Stroke, Ui};
 use std::path::PathBuf;
 
 impl EguiApp {
     pub(super) fn render_collections_panel(&mut self, ui: &mut Ui) {
-        let drag_active = self.controller.ui.drag.active_path.is_some();
+        let drag_active = self.controller.ui.drag.payload.is_some();
         let pointer_pos = ui
             .input(|i| i.pointer.hover_pos().or_else(|| i.pointer.interact_pos()))
             .or(self.controller.ui.drag.position);
@@ -63,7 +63,7 @@ impl EguiApp {
                             if drag_active {
                                 if let Some(pointer) = pointer_pos {
                                     if response.rect.contains(pointer) {
-                                        self.controller.update_sample_drag(
+                                        self.controller.update_active_drag(
                                             pointer,
                                             Some(collection.id.clone()),
                                             false,
@@ -103,7 +103,10 @@ impl EguiApp {
                     }
                 });
         let active_drag_path = if drag_active {
-            self.controller.ui.drag.active_path.clone()
+            match &self.controller.ui.drag.payload {
+                Some(DragPayload::Sample { path }) => Some(path.clone()),
+                _ => None,
+            }
         } else {
             None
         };
@@ -189,10 +192,11 @@ impl EguiApp {
                                     }
                                 } else if drag_active && response.dragged() {
                                     if let Some(pos) = response.interact_pointer_pos() {
-                                        self.controller.update_sample_drag(pos, None, false, None);
+                                        self.controller
+                                            .update_active_drag(pos, None, false, None);
                                     }
                                 } else if response.drag_stopped() {
-                                    self.controller.finish_sample_drag();
+                                    self.controller.finish_active_drag();
                                 }
                             },
                         );
@@ -218,7 +222,7 @@ impl EguiApp {
             if let Some(pointer) = pointer_pos {
                 let target_rect = scroll_response.response.rect.expand2(egui::vec2(8.0, 0.0));
                 if target_rect.contains(pointer) {
-                    self.controller.update_sample_drag(
+                    self.controller.update_active_drag(
                         pointer,
                         current_collection_id.clone(),
                         true,
