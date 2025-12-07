@@ -18,3 +18,8 @@ please review the styleguide in @styleguide.md and make a plan
 
 - currently if I drop a wave file item, it will start playing, lets stop that from happening
 
+\plan - lets change our triage columns, instead of 3 columns, lets reduce it to a single collumn. lets add a red hue if a sasmple is trashed, or a green hue if its marked keep.
+lets add a 'filter' option, which allows the user to only show trashed or kept items, or only regular untagged items, or all of them together.
+
+- lets add a numbering column to the main sample list and to the collection items list showing the count of items
+
