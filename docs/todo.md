@@ -52,3 +52,5 @@ as a first hotkey, lets add 'x' to select the focused sample, 'n' to normalize t
 \plan - add a litte icon or graphic in the top left corner of our ui when in fullscreen mode, to users can toggle back to windowed mode using it instead of f11 as an alternative option
 
 - hover highlighting of items is hard to see, lets make it more visually intense, also, when items are marked with triageflags, the hover highlight seems to be not visible at all, make sure here too we get clearly visible hover highlighting.
+
+\plan - add a strong and solid logging crate, using tracing, to log to console and file.
