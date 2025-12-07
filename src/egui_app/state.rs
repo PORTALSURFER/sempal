@@ -3,7 +3,7 @@
 // Temporary while the egui UI is being wired; types will be exercised by the renderer next.
 
 use crate::egui_app::ui::style;
-use crate::sample_sources::{CollectionId, SourceId};
+use crate::sample_sources::{CollectionId, SampleTag, SourceId};
 use crate::selection::SelectionRange;
 use egui::{Color32, Pos2};
 use std::path::PathBuf;
@@ -243,4 +243,5 @@ pub struct CollectionSampleView {
     pub source: String,
     pub path: PathBuf,
     pub label: String,
+    pub tag: SampleTag,
 }

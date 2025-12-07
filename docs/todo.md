@@ -2,10 +2,6 @@
 
 --
 
-- lets add the trash/keep tagging system to the collection list as well. with full coloring etc.
-
-\plan - lets add an alt+drag feature for the system which allows dragging waveform selections to extract that part of the audio. but in this case, cut the cropped part out of the original sample. Dont destroy the original sample however, save this edited 'original' as a new version. selecting that new one instead.
-
 \plan - add the ability to select multiple sample items, ctrl+mouseclick should add another item, shift+mouseclick should extend the current select to this item.
 shift+up/down should grow the selection
 pressing x should mark the item selected in a way that allows the user to focus another item, and mark it selected with x as well, similart to ctrl+click.
@@ -41,3 +37,8 @@ as a first hotkey, lets add 'x' to select the focused sample, 'n' to normalize t
 - hover highlighting of items is hard to see, lets make it more visually intense, also, when items are marked with triageflags, the hover highlight seems to be not visible at all, make sure here too we get clearly visible hover highlighting.
 
 \plan - add a strong and solid logging crate, using tracing, to log to console and file.
+
+\plan - let add a context menu to our audo selection block, with an option to crop, also add an option to trim to users can delete parts of the audio like silence. lets also add an option to add a simple fadeout to null, either left to right, or right to left, lets use / or \ icons to make the direction clear to users. the null.
+lets also add an opton to 'mute' which will null the entire selection, fading back into the audio at the far edges with a default of a 5 ms fade.
+
+\plan - lets add the ability to drag drop folder externally, from the OS explorer for example, onto the sample source list, to add a new sample source 

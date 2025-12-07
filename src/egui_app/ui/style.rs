@@ -1,3 +1,4 @@
+use crate::sample_sources::SampleTag;
 use eframe::egui::{
     Color32, Stroke, Visuals,
     epaint::{CornerRadius, Shadow},
@@ -156,6 +157,15 @@ pub fn triage_keep_bg(is_selected: bool) -> Color32 {
         with_alpha(palette().success, 170)
     } else {
         with_alpha(semantics.triage_keep, 120)
+    }
+}
+
+/// Shared triage row background based on tag and selection.
+pub fn triage_row_bg(tag: SampleTag, is_selected: bool) -> Option<Color32> {
+    match tag {
+        SampleTag::Trash => Some(triage_trash_bg(is_selected)),
+        SampleTag::Keep => Some(triage_keep_bg(is_selected)),
+        SampleTag::Neutral => is_selected.then_some(row_selected_fill()),
     }
 }
 

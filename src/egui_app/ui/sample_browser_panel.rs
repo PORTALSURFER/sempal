@@ -5,8 +5,7 @@ use super::helpers::{
 use super::style;
 use super::*;
 use crate::egui_app::state::TriageFlagFilter;
-use crate::sample_sources::SampleTag;
-use eframe::egui::{self, Color32, RichText, StrokeKind, Ui};
+use eframe::egui::{self, RichText, StrokeKind, Ui};
 use std::path::Path;
 
 impl EguiApp {
@@ -65,7 +64,7 @@ impl EguiApp {
                         }
                         let label_width = row_width - padding - number_width - number_gap;
                         let label = clamp_label_for_width(&label, label_width);
-                        let bg = triage_row_bg(tag, is_selected);
+                        let bg = style::triage_row_bg(tag, is_selected);
                         let number_text = format!("{}", row + 1);
                         ui.push_id(&path, |ui| {
                             let response = render_list_row(
@@ -208,13 +207,5 @@ impl EguiApp {
                 }
             }
         });
-    }
-}
-
-fn triage_row_bg(tag: SampleTag, is_selected: bool) -> Option<Color32> {
-    match tag {
-        SampleTag::Trash => Some(style::triage_trash_bg(is_selected)),
-        SampleTag::Keep => Some(style::triage_keep_bg(is_selected)),
-        SampleTag::Neutral => is_selected.then_some(style::row_selected_fill()),
     }
 }
