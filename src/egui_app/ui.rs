@@ -127,8 +127,7 @@ impl eframe::App for EguiApp {
                     self.controller.move_selection_column(-1);
                 }
             } else if triage_has_selection {
-                self.controller
-                    .tag_selected(crate::sample_sources::SampleTag::Trash);
+                self.controller.tag_selected_left();
             }
         }
         self.render_status(ctx);
