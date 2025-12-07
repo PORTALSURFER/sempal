@@ -33,8 +33,8 @@ impl WaveformRenderer {
         Self {
             width,
             height,
-            background: Color32::from_rgb(13, 13, 13),
-            foreground: Color32::from_rgb(110, 135, 155),
+            background: Color32::from_rgb(18, 16, 14),
+            foreground: Color32::from_rgb(230, 226, 220),
         }
     }
 
