@@ -95,7 +95,8 @@ fn dropping_sample_adds_to_collection_and_db() {
     controller.selected_collection = Some(collection_id.clone());
 
     controller.ui.drag.payload = Some(DragPayload::Sample {
-        path: PathBuf::from("sample.wav"),
+        source_id: source.id.clone(),
+        relative_path: PathBuf::from("sample.wav"),
     });
     controller.ui.drag.hovering_collection = Some(collection_id.clone());
 

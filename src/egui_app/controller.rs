@@ -129,7 +129,7 @@ impl EguiController {
     #[cfg(not(target_os = "windows"))]
     pub fn set_drag_hwnd(&mut self, _hwnd: Option<()>) {}
 
-    fn set_status(&mut self, text: impl Into<String>, tone: StatusTone) {
+    pub(crate) fn set_status(&mut self, text: impl Into<String>, tone: StatusTone) {
         let (label, color) = status_badge(tone);
         self.ui.status.text = text.into();
         self.ui.status.badge_label = label;
@@ -198,7 +198,13 @@ fn spawn_wav_loader() -> (Sender<WavLoadJob>, Receiver<WavLoadResult>) {
 
 fn load_entries(job: &WavLoadJob) -> Result<Vec<WavEntry>, LoadEntriesError> {
     let db = SourceDatabase::open(&job.root).map_err(LoadEntriesError::Db)?;
-    db.list_files().map_err(LoadEntriesError::Db)
+    let mut entries = db.list_files().map_err(LoadEntriesError::Db)?;
+    if entries.is_empty() {
+        // New sources start empty; trigger a quick scan to populate before reporting.
+        let _ = crate::sample_sources::scanner::scan_once(&db);
+        entries = db.list_files().map_err(LoadEntriesError::Db)?;
+    }
+    Ok(entries)
 }
 
 #[derive(Debug)]
