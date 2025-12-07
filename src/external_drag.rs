@@ -28,24 +28,27 @@ mod platform {
 #[cfg(target_os = "windows")]
 mod platform {
     use super::*;
+    use std::mem::ManuallyDrop;
     use std::os::windows::ffi::OsStrExt;
     use std::ptr::copy_nonoverlapping;
-    use windows::Win32::Foundation::{E_INVALIDARG, POINT};
+    use windows::Win32::Foundation::{
+        DRAGDROP_S_CANCEL, DRAGDROP_S_DROP, DV_E_FORMATETC, E_INVALIDARG, HGLOBAL, POINT,
+    };
     use windows::Win32::System::Com::{
-        COINIT_APARTMENTTHREADED, CoInitializeEx, CoUninitialize, DATADIR_GET, DV_E_FORMATETC,
-        DVASPECT_CONTENT, FORMATETC, IDataObject, IEnumFORMATETC, STGMEDIUM, STGMEDIUM_0,
-        TYMED_HGLOBAL,
+        COINIT_APARTMENTTHREADED, CoInitializeEx, CoUninitialize, DATADIR_GET, DVASPECT_CONTENT,
+        FORMATETC, IAdviseSink, IDataObject, IEnumFORMATETC, STGMEDIUM, STGMEDIUM_0, TYMED_HGLOBAL,
     };
     use windows::Win32::System::Memory::{
-        GMEM_MOVEABLE, GMEM_ZEROINIT, GlobalAlloc, GlobalLock, GlobalUnlock, HGLOBAL,
+        GMEM_MOVEABLE, GMEM_ZEROINIT, GlobalAlloc, GlobalLock, GlobalUnlock,
     };
     use windows::Win32::System::Ole::{
-        DRAGDROP_S_CANCEL, DRAGDROP_S_DROP, DRAGDROP_S_USEDEFAULTCURSORS, DROPEFFECT,
-        DROPEFFECT_COPY, DROPEFFECT_LINK, DROPEFFECT_MOVE, DoDragDrop, IDropSource,
+        CF_HDROP, DROPEFFECT, DROPEFFECT_COPY, DROPEFFECT_LINK, DROPEFFECT_MOVE, DoDragDrop,
+        IDropSource,
     };
     use windows::Win32::System::SystemServices::{MK_LBUTTON, MODIFIERKEYS_FLAGS};
-    use windows::Win32::UI::Shell::{CF_HDROP, DROPFILES, SHCreateStdEnumFmtEtc};
-    use windows::core::{HRESULT, implement};
+    use windows::Win32::UI::Shell::{DROPFILES, SHCreateStdEnumFmtEtc};
+    use windows::core::{HRESULT, Ref, BOOL};
+    use windows_implement::implement;
 
     /// RAII guard to balance COM initialization.
     struct ComApartment;
@@ -53,10 +56,9 @@ mod platform {
     impl ComApartment {
         fn new() -> Result<Self, String> {
             // SAFETY: Single-threaded COM init for drag/drop, errors converted to string.
-            unsafe {
-                CoInitializeEx(None, COINIT_APARTMENTTHREADED)
-                    .map_err(|err| format!("COM init failed: {err}"))?;
-            }
+            unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) }
+                .ok()
+                .map_err(|err| format!("COM init failed: {err}"))?;
             Ok(Self)
         }
     }
@@ -68,6 +70,7 @@ mod platform {
     }
 
     #[implement(IDataObject)]
+    #[derive(Clone)]
     struct FileDropDataObject {
         paths: Vec<PathBuf>,
         format: FORMATETC,
@@ -91,40 +94,36 @@ mod platform {
                 && fmt.lindex == self.format.lindex
         }
 
-        fn fill_medium(&self, medium: *mut STGMEDIUM) -> HRESULT {
-            match create_hglobal_for_paths(&self.paths) {
-                Ok(hglobal) => {
-                    // SAFETY: caller provided a valid pointer.
-                    unsafe {
-                        *medium = STGMEDIUM {
-                            tymed: TYMED_HGLOBAL,
-                            Anonymous: STGMEDIUM_0 { hGlobal: hglobal },
-                            pUnkForRelease: None,
-                        };
-                    }
-                    HRESULT(0)
-                }
-                Err(err) => HRESULT::from_win32(err.raw_os_error().unwrap_or(1)),
-            }
+        fn fill_medium(&self) -> windows::core::Result<STGMEDIUM> {
+            let hglobal = create_hglobal_for_paths(&self.paths)
+                .map_err(|_| windows::core::Error::from_thread())?;
+            Ok(STGMEDIUM {
+                tymed: TYMED_HGLOBAL.0 as u32,
+                u: STGMEDIUM_0 { hGlobal: hglobal },
+                pUnkForRelease: ManuallyDrop::new(None),
+            })
         }
     }
 
     #[allow(non_snake_case)]
-    impl windows::Win32::System::Com::IDataObject_Impl for FileDropDataObject {
-        fn GetData(&self, formatetcin: *const FORMATETC, medium: *mut STGMEDIUM) -> HRESULT {
-            if formatetcin.is_null() || medium.is_null() {
-                return E_INVALIDARG;
+    impl windows::Win32::System::Com::IDataObject_Impl for FileDropDataObject_Impl {
+        fn GetData(&self, formatetcin: *const FORMATETC) -> windows::core::Result<STGMEDIUM> {
+            if formatetcin.is_null() {
+                return Err(windows::core::Error::from(E_INVALIDARG));
             }
-            // SAFETY: validated against null above.
             let fmt = unsafe { &*formatetcin };
             if !self.matches_format(fmt) {
-                return DV_E_FORMATETC;
+                return Err(windows::core::Error::from(DV_E_FORMATETC));
             }
-            self.fill_medium(medium)
+            self.fill_medium()
         }
 
-        fn GetDataHere(&self, _pformatetc: *const FORMATETC, _pmedium: *mut STGMEDIUM) -> HRESULT {
-            DV_E_FORMATETC
+        fn GetDataHere(
+            &self,
+            _pformatetc: *const FORMATETC,
+            _pmedium: *mut STGMEDIUM,
+        ) -> windows::core::Result<()> {
+            Err(windows::core::Error::from(DV_E_FORMATETC))
         }
 
         fn QueryGetData(&self, pformatetc: *const FORMATETC) -> HRESULT {
@@ -148,7 +147,6 @@ mod platform {
             if pformatectin.is_null() || pformatetcout.is_null() {
                 return E_INVALIDARG;
             }
-            // SAFETY: pointers validated above.
             unsafe {
                 *pformatetcout = *pformatectin;
             }
@@ -159,47 +157,55 @@ mod platform {
             &self,
             _pformatetc: *const FORMATETC,
             _pmedium: *const STGMEDIUM,
-            _frelease: windows::Win32::Foundation::BOOL,
-        ) -> HRESULT {
-            windows::Win32::Foundation::E_NOTIMPL
+            _frelease: BOOL,
+        ) -> windows::core::Result<()> {
+            Err(windows::core::Error::from(
+                windows::Win32::Foundation::E_NOTIMPL,
+            ))
         }
 
         fn EnumFormatEtc(&self, dwdirection: u32) -> windows::core::Result<IEnumFORMATETC> {
-            if dwdirection == DATADIR_GET.0 {
-                // SAFETY: single format descriptor provided.
-                unsafe { SHCreateStdEnumFmtEtc(&[self.format.clone()]) }
-            } else {
-                Err(windows::Win32::Foundation::E_NOTIMPL.into())
+            if dwdirection != DATADIR_GET.0 as u32 {
+                return Err(windows::core::Error::from(
+                    windows::Win32::Foundation::E_NOTIMPL,
+                ));
             }
+            unsafe { SHCreateStdEnumFmtEtc(&[self.format.clone()]) }
         }
 
         fn DAdvise(
             &self,
             _pformatetc: *const FORMATETC,
             _advf: u32,
-            _padvsink: windows::core::Option<windows::Win32::System::Com::IAdviseSink>,
-            _pdwconnection: *mut u32,
-        ) -> HRESULT {
-            windows::Win32::Foundation::E_NOTIMPL
+            _padvsink: Ref<'_, IAdviseSink>,
+        ) -> windows::core::Result<u32> {
+            Err(windows::core::Error::from(
+                windows::Win32::Foundation::E_NOTIMPL,
+            ))
         }
 
-        fn DUnadvise(&self, _dwconnection: u32) -> HRESULT {
-            windows::Win32::Foundation::E_NOTIMPL
+        fn DUnadvise(&self, _dwconnection: u32) -> windows::core::Result<()> {
+            Err(windows::core::Error::from(
+                windows::Win32::Foundation::E_NOTIMPL,
+            ))
         }
 
         fn EnumDAdvise(&self) -> windows::core::Result<windows::Win32::System::Com::IEnumSTATDATA> {
-            Err(windows::Win32::Foundation::E_NOTIMPL.into())
+            Err(windows::core::Error::from(
+                windows::Win32::Foundation::E_NOTIMPL,
+            ))
         }
     }
 
     #[implement(IDropSource)]
+    #[derive(Clone)]
     struct SimpleDropSource;
 
     #[allow(non_snake_case)]
-    impl windows::Win32::System::Ole::IDropSource_Impl for SimpleDropSource {
+    impl windows::Win32::System::Ole::IDropSource_Impl for SimpleDropSource_Impl {
         fn QueryContinueDrag(
             &self,
-            escape_pressed: windows::Win32::Foundation::BOOL,
+            escape_pressed: BOOL,
             key_state: MODIFIERKEYS_FLAGS,
         ) -> HRESULT {
             if escape_pressed.as_bool() {
@@ -212,7 +218,7 @@ mod platform {
         }
 
         fn GiveFeedback(&self, _dweffect: DROPEFFECT) -> HRESULT {
-            DRAGDROP_S_USEDEFAULTCURSORS
+            HRESULT(0)
         }
     }
 
@@ -222,19 +228,20 @@ mod platform {
             .iter()
             .map(|p| p.canonicalize().unwrap_or_else(|_| p.to_path_buf()))
             .collect();
-        let data_object = FileDropDataObject::new(absolute)?;
-        let drop_source = SimpleDropSource;
+        let data_object: IDataObject = FileDropDataObject::new(absolute)?.into();
+        let drop_source: IDropSource = SimpleDropSource.into();
+        let mut effect = DROPEFFECT(0);
         // SAFETY: COM initialized above; object implementations satisfy COM contracts.
-        let result = unsafe {
+        unsafe {
             DoDragDrop(
                 &data_object,
                 &drop_source,
                 DROPEFFECT_COPY | DROPEFFECT_LINK | DROPEFFECT_MOVE,
+                &mut effect,
             )
-        };
-        result
-            .map(|_| ())
-            .map_err(|err| format!("Drag failed: {err}"))
+        }
+        .ok()
+        .map_err(|err| format!("Drag failed: {err}"))
     }
 
     fn build_format() -> FORMATETC {
@@ -243,7 +250,7 @@ mod platform {
             ptd: std::ptr::null_mut(),
             dwAspect: DVASPECT_CONTENT.0,
             lindex: -1,
-            tymed: TYMED_HGLOBAL,
+            tymed: TYMED_HGLOBAL.0 as u32,
         }
     }
 
@@ -262,14 +269,14 @@ mod platform {
             std::mem::size_of::<DROPFILES>() + utf16_paths.len() * std::mem::size_of::<u16>();
         // SAFETY: allocating movable global memory for shell drag.
         let handle = unsafe { GlobalAlloc(GMEM_MOVEABLE | GMEM_ZEROINIT, bytes_needed) }
-            .map_err(last_error)?;
+            .map_err(last_error_from_win32)?;
         // SAFETY: lock global memory to populate DROPFILES header and path list.
         let ptr = unsafe { GlobalLock(handle) };
         if ptr.is_null() {
             unsafe {
                 GlobalUnlock(handle);
             }
-            return Err(last_error(0));
+            return Err(std::io::Error::last_os_error());
         }
         unsafe {
             let header = ptr as *mut DROPFILES;
@@ -290,11 +297,7 @@ mod platform {
         Ok(handle)
     }
 
-    fn last_error(code: u32) -> std::io::Error {
-        if code == 0 {
-            std::io::Error::last_os_error()
-        } else {
-            std::io::Error::from_raw_os_error(code as i32)
-        }
+    fn last_error_from_win32(err: windows::core::Error) -> std::io::Error {
+        std::io::Error::from_raw_os_error(err.code().0)
     }
 }
