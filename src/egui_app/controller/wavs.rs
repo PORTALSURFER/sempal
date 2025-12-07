@@ -27,9 +27,6 @@ impl EguiController {
         if !self.wav_lookup.contains_key(path) {
             return;
         }
-        if self.ui.browser.selected_paths.is_empty() {
-            self.ui.browser.selected_paths.push(path.to_path_buf());
-        }
         self.selected_wav = Some(path.to_path_buf());
         if let Some(source) = self.current_source() {
             if let Err(err) = self.load_waveform_for_selection(&source, path) {
@@ -281,6 +278,19 @@ impl EguiController {
         self.apply_browser_selection(visible_row, SelectionAction::Replace);
     }
 
+    /// Focus a browser row without mutating the multi-selection set.
+    pub fn focus_browser_row_only(&mut self, visible_row: usize) {
+        let Some(path) = self.browser_path_for_visible(visible_row) else {
+            return;
+        };
+        self.ui.collections.selected_sample = None;
+        self.ui.browser.autoscroll = true;
+        if self.ui.browser.selection_anchor_visible.is_none() {
+            self.ui.browser.selection_anchor_visible = Some(visible_row);
+        }
+        self.select_wav_by_path_with_rebuild(&path, true);
+    }
+
     pub fn toggle_browser_row_selection(&mut self, visible_row: usize) {
         self.apply_browser_selection(visible_row, SelectionAction::Toggle);
     }
@@ -299,6 +309,16 @@ impl EguiController {
             }
         }
         self.toggle_browser_selection(&path);
+        self.rebuild_browser_lists();
+    }
+
+    /// Clear the multi-selection set.
+    pub fn clear_browser_selection(&mut self) {
+        if self.ui.browser.selected_paths.is_empty() {
+            return;
+        }
+        self.ui.browser.selected_paths.clear();
+        self.ui.browser.selection_anchor_visible = None;
         self.rebuild_browser_lists();
     }
 

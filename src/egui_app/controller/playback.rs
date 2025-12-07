@@ -128,7 +128,7 @@ impl EguiController {
             return;
         };
         let next_row = self.visible_row_after_offset(offset, &list);
-        self.focus_browser_row(next_row);
+        self.focus_browser_row_only(next_row);
         let _ = self.play_audio(self.ui.waveform.loop_enabled, None);
     }
 

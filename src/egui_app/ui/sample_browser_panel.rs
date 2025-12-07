@@ -71,7 +71,7 @@ impl EguiApp {
                         }
                         let label_width = row_width - padding - number_width - number_gap;
                         let label = clamp_label_for_width(&label, label_width);
-                        let bg = style::triage_row_bg(tag, is_selected);
+                        let bg = style::triage_row_bg(tag, false);
                         let number_text = format!("{}", row + 1);
                         ui.push_id(&path, |ui| {
                             let response = render_list_row(
