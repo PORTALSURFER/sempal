@@ -99,6 +99,9 @@ impl EguiController {
                     tag,
                 },
             );
+            if self.selected_source.as_ref() == Some(&ctx.source.id) {
+                self.rebuild_triage_lists();
+            }
             self.refresh_waveform_after_change(&ctx, &ctx.member.relative_path);
             self.update_export_after_change(&ctx, &ctx.member.relative_path);
             self.set_status(

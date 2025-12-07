@@ -1,4 +1,4 @@
-- lets do a housekeeping pass, clean up the codebase, reduce file lengths, improve maintainability, add missing docs, improve symbol naming, find and resolve bugs, improve performance, etc.
+- lets do a housekeeping pass, clean up the codebase, reduce file lengths, improve DRYness, improve maintainability, collapse large structs/objects into clearly named smaller objects, add missing docs, improve symbol naming, find and resolve bugs, improve performance, etc.
 
 --
 \plan - when the user hovers the start or end of an audio selection, lets make a [ or ] icon visible at the bottom of the line, indicating the are now able to grab the edge and resize it.
@@ -40,4 +40,4 @@ and lets add migration code to find and convert the current config.json format/p
 
 \plan - dont show the extensions or folders in our item lists, both for collections and for the regular sample list, show only the sample name
 
-\plan - our icon is not visible in the windows taskbar, it shows some default windows app icon right now.
+\plan - our icon is sometimes not visible in the windows taskbar, it shows some default windows app icon. but sometimes it does work oddly.

@@ -70,6 +70,9 @@ impl EguiController {
             tag,
         };
         self.update_cached_entry(&ctx.source, &ctx.entry.relative_path, updated);
+        if self.selected_source.as_ref() == Some(&ctx.source.id) {
+            self.rebuild_triage_lists();
+        }
         self.refresh_waveform_for_sample(&ctx.source, &ctx.entry.relative_path);
         self.reexport_collections_for_sample(&ctx.source.id, &ctx.entry.relative_path);
         self.set_status(
