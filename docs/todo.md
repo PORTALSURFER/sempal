@@ -4,9 +4,7 @@
 
 ---
 
-\plan - add a well featured, solid, logging system, using the tracing crate at the core, to log to console and file.
-we should keep track of max 10 log files, a new one each launch, delete the oldest one to make more room.
-add a date and time to the log file name.
+
 
 ---
 
