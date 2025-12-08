@@ -1,18 +1,18 @@
 ## Goal
-- Add a context menu to source list items that offers hard sync (full rescan), quick sync (new/removed/modified check), remap source path, and remove source options.
+- Ensure loop mode applies to mouse-triggered playback, add a global `L` hotkey to toggle looping, and surface a looping indicator bar that reflects the active loop span on the waveform.
 
 ## Proposed solutions
-- Introduce explicit quick vs hard sync flows in the controller/scanner: quick sync reuses the incremental diff scan, while hard sync forces a full rescan/reset of cached/missing state to repair drift.
-- Add a source row context menu in the sources panel (patterned after existing browser/collection menus) that preserves selection and routes actions through controller methods with clear status messaging.
-- Wire controller operations for the new menu items: trigger the appropriate scan mode, reopen/refresh caches, prompt for a replacement folder when remapping, and reuse removal logic while keeping UI state consistent.
-- Extend test coverage (scanner/database and controller helpers where feasible) to lock in scan behaviours, remap persistence, and removal side effects; plan manual smoke checks for the new menu actions.
+- Align mouse-based playback paths with the existing loop flag so selection plays looped when enabled, matching spacebar behaviour.
+- Extend the hotkey registry with a global `L` binding that flips loop mode, updates UI state, and appears in the hotkey overlay.
+- Render a top-of-waveform loop bar that tracks the active loop span (selection or full range), with visibility/opacity keyed off loop mode.
+- Validate loop UX across input methods and selections to avoid regressions in playback or rendering.
 
 ## Step-by-step plan
-1. [x] Inspect source panel UI and controller scan/remove flows to identify existing hooks for context menus and scan triggers.
-2. [x] Define and implement quick vs hard sync semantics in scanner/controller, including cache invalidation and status messaging without breaking current scan behaviour.
-3. [x] Add context menu rendering for source rows with quick sync, hard sync, remap source, and remove source actions, keeping selection/hover behaviour intact.
-4. [x] Implement controller logic for the new menu actions (scan requests, remap with config persistence and reload, removal reuse) and ensure UI updates reflect results.
-5. [~] Add/extend automated tests for scan modes and source mutation flows, then do targeted manual validation of context menu actions and scan outcomes.
+1. [x] Trace pointer-based playback and loop state handling to identify where clicks bypass looping and confirm selection span inputs.
+2. [x] Update seek/playback triggers to honor loop mode for mouse interactions while preserving selection boundaries and playhead updates.
+3. [x] Add a global `L` hotkey that toggles looping, integrates with the hotkey overlay, and keeps controller/UI state consistent.
+4. [x] Implement a looping indicator bar atop the waveform that follows the current loop span (selection or full range) and hides/fades when looping is off.
+5. [~] Test loop behaviour via spacebar, mouse clicks, and the new hotkey; verify the loop bar responds to selection changes and loop toggles.
 
 ## Code Style & Architecture Rules Reminder
 - Keep files under 400 lines; split when necessary.

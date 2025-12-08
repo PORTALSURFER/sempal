@@ -260,6 +260,28 @@ impl EguiApp {
                     }
                 });
             }
+            let loop_bar_alpha = if self.controller.ui.waveform.loop_enabled {
+                180
+            } else {
+                25
+            };
+            if loop_bar_alpha > 0 {
+                let (loop_start, loop_end) = self
+                    .controller
+                    .ui
+                    .waveform
+                    .selection
+                    .map(|range| (range.start(), range.end()))
+                    .unwrap_or((0.0, 1.0));
+                let clamped_start = loop_start.clamp(0.0, 1.0);
+                let clamped_end = loop_end.clamp(clamped_start, 1.0);
+                let width = (clamped_end - clamped_start).max(0.0) * rect.width();
+                let bar_rect = egui::Rect::from_min_size(
+                    egui::pos2(rect.left() + rect.width() * clamped_start, rect.top()),
+                    egui::vec2(width.max(2.0), 6.0),
+                );
+                painter.rect_filled(bar_rect, 0.0, style::with_alpha(highlight, loop_bar_alpha));
+            }
             if self.controller.ui.waveform.playhead.visible {
                 let x = rect.left() + rect.width() * self.controller.ui.waveform.playhead.position;
                 painter.line_segment(
