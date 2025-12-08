@@ -16,6 +16,15 @@ fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=Cargo.toml");
     println!("cargo:rerun-if-changed=build/version_tools.rs");
+    println!("cargo:rerun-if-changed=build/windows/sempal.rc");
+    println!("cargo:rerun-if-changed=assets/logo3.ico");
+
+    if compiling_for_windows_target() {
+        if let Err(error) = compile_windows_resources() {
+            eprintln!("Failed to embed Windows resources: {error}");
+            std::process::exit(1);
+        }
+    }
     if env::var("SKIP_VERSION_BUMP").is_ok() {
         println!("cargo:warning=Skipping version bump because SKIP_VERSION_BUMP is set");
         return;
@@ -174,4 +183,16 @@ fn newer(current: Option<SystemTime>, candidate: Option<SystemTime>) -> Option<S
         (None, time) | (time, None) => time,
         (Some(current), Some(candidate)) => Some(current.max(candidate)),
     }
+}
+
+fn compiling_for_windows_target() -> bool {
+    env::var("CARGO_CFG_TARGET_OS")
+        .map(|target| target == "windows")
+        .unwrap_or_else(|_| cfg!(target_os = "windows"))
+}
+
+fn compile_windows_resources() -> Result<(), Box<dyn std::error::Error>> {
+    embed_resource::compile("build/windows/sempal.rc", embed_resource::NONE)
+        .manifest_optional()?;
+    Ok(())
 }
