@@ -41,6 +41,7 @@ impl EguiController {
                     file_size,
                     modified_ns,
                     tag,
+                    missing: false,
                 },
             );
             self.refresh_waveform_after_change(&ctx, &new_relative);
@@ -122,6 +123,7 @@ impl EguiController {
                     file_size,
                     modified_ns,
                     tag,
+                    missing: false,
                 },
             );
             if self.selected_source.as_ref() == Some(&ctx.source.id) {

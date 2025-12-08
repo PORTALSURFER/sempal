@@ -118,6 +118,7 @@ impl EguiController {
             file_size,
             modified_ns,
             tag,
+            missing: false,
         };
         self.update_cached_entry(&ctx.source, &ctx.entry.relative_path, updated);
         if self.selected_source.as_ref() == Some(&ctx.source.id) {
@@ -193,6 +194,7 @@ impl EguiController {
                 file_size,
                 modified_ns,
                 tag,
+                missing: false,
             },
         );
         self.refresh_waveform_for_sample(&ctx.source, new_relative);
@@ -264,6 +266,7 @@ impl EguiController {
         } else {
             self.label_cache.remove(&source.id);
         }
+        self.rebuild_missing_lookup_for_source(&source.id);
         self.clear_loaded_sample_if(source, relative_path);
     }
 

@@ -9,13 +9,16 @@ impl EguiController {
         self.ui.collections.enabled = self.feature_flags.collections_enabled;
         self.apply_volume(cfg.volume);
         self.ui.trash_folder = cfg.trash_folder.clone();
-        let mut sources = cfg.sources.clone();
-        let original_count = sources.len();
-        sources.retain(|s| s.root.is_dir());
-        if sources.len() != original_count {
-            self.set_status("Removed missing sources from config", StatusTone::Warning);
+        self.sources = cfg.sources.clone();
+        self.rebuild_missing_sources();
+        if !self.missing_sources.is_empty() {
+            let count = self.missing_sources.len();
+            let suffix = if count == 1 { "" } else { "s" };
+            self.set_status(
+                format!("{count} source{suffix} unavailable"),
+                StatusTone::Warning,
+            );
         }
-        self.sources = sources;
         self.collections = cfg.collections;
         self.selected_source = cfg
             .last_selected_source

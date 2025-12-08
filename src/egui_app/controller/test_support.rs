@@ -24,6 +24,7 @@ pub(super) fn sample_entry(name: &str, tag: SampleTag) -> WavEntry {
         file_size: 0,
         modified_ns: 0,
         tag,
+        missing: false,
     }
 }
 

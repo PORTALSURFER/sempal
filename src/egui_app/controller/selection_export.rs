@@ -82,6 +82,7 @@ impl EguiController {
             file_size: metadata.len(),
             modified_ns,
             tag: target_tag.unwrap_or(SampleTag::Neutral),
+            missing: false,
         };
         let db = self
             .database_for(source)
@@ -114,6 +115,7 @@ impl EguiController {
         self.rebuild_browser_lists();
         self.label_cache
             .insert(source.id.clone(), self.build_label_cache(&self.wav_entries));
+        self.rebuild_missing_lookup_for_source(&source.id);
     }
 }
 

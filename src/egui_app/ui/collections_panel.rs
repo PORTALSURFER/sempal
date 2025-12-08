@@ -36,7 +36,9 @@ impl EguiApp {
                     for (index, collection) in rows.iter().enumerate() {
                         let selected = collection.selected;
                         let mut label = format!("{} ({})", collection.name, collection.count);
-                        let (text_color, indicator) = if collection.export_path.is_none() {
+                        let (text_color, indicator) = if collection.missing {
+                            (style::missing_text(), "! ")
+                        } else if collection.export_path.is_none() {
                             (style::warning_soft_text(), "! ")
                         } else {
                             (style::high_contrast_text(), "")
@@ -157,7 +159,10 @@ impl EguiApp {
                         let row_width = ui.available_width();
                         let padding = ui.spacing().button_padding.x * 2.0;
                         let path = sample.path.clone();
-                        let label = format!("{} — {}", sample.source, sample.label);
+                        let mut label = format!("{} — {}", sample.source, sample.label);
+                        if sample.missing {
+                            label.insert_str(0, "! ");
+                        }
                         let is_selected = Some(row) == selected_row;
                         let is_duplicate_hover =
                             drag_active && active_drag_path.as_ref().is_some_and(|p| p == &path);
@@ -186,13 +191,18 @@ impl EguiApp {
                                     - number_gap
                                     - trailing_space;
                                 let number_text = format!("{}", row + 1);
+                                let text_color = if sample.missing {
+                                    style::missing_text()
+                                } else {
+                                    palette.text_primary
+                                };
                                 let response = render_list_row(
                                     ui,
                                     &clamp_label_for_width(&label, label_width),
                                     row_width,
                                     row_height,
                                     bg,
-                                    palette.text_primary,
+                                    text_color,
                                     egui::Sense::click_and_drag(),
                                     Some(NumberColumn {
                                         text: &number_text,

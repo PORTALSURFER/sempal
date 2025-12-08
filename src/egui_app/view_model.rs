@@ -8,7 +8,7 @@ use crate::sample_sources::{Collection, CollectionId, SampleSource, SampleTag, W
 use std::path::Path;
 
 /// Convert a sample source into a UI row.
-pub fn source_row(source: &SampleSource) -> SourceRowView {
+pub fn source_row(source: &SampleSource, missing: bool) -> SourceRowView {
     let name = source
         .root
         .file_name()
@@ -19,6 +19,7 @@ pub fn source_row(source: &SampleSource) -> SourceRowView {
         id: source.id.clone(),
         name,
         path: source.root.to_string_lossy().to_string(),
+        missing,
     }
 }
 
@@ -26,15 +27,18 @@ pub fn source_row(source: &SampleSource) -> SourceRowView {
 pub fn collection_rows(
     collections: &[Collection],
     selected: Option<&CollectionId>,
+    missing_flags: &[bool],
 ) -> Vec<CollectionRowView> {
     collections
         .iter()
-        .map(|collection| CollectionRowView {
+        .enumerate()
+        .map(|(index, collection)| CollectionRowView {
             id: collection.id.clone(),
             name: collection.name.clone(),
             selected: selected.is_some_and(|id| id == &collection.id),
             count: collection.members.len(),
             export_path: collection.export_path.clone(),
+            missing: missing_flags.get(index).copied().unwrap_or(false),
         })
         .collect()
 }
@@ -43,6 +47,7 @@ pub fn collection_rows(
 pub fn collection_samples(
     collection: Option<&Collection>,
     sources: &[SampleSource],
+    missing_flags: Option<&[bool]>,
     mut tag_lookup: impl FnMut(&CollectionMember) -> SampleTag,
 ) -> Vec<CollectionSampleView> {
     let Some(collection) = collection else {
@@ -51,12 +56,17 @@ pub fn collection_samples(
     collection
         .members
         .iter()
-        .map(|member| CollectionSampleView {
+        .enumerate()
+        .map(|(index, member)| CollectionSampleView {
             source_id: member.source_id.clone(),
             source: source_label(sources, member.source_id.as_str()),
             path: member.relative_path.clone(),
             label: sample_display_label(&member.relative_path),
             tag: tag_lookup(member),
+            missing: missing_flags
+                .and_then(|flags| flags.get(index))
+                .copied()
+                .unwrap_or(false),
         })
         .collect()
 }

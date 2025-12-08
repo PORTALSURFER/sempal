@@ -257,6 +257,14 @@ impl EguiController {
         self.wav_cache
             .entry(source.id.clone())
             .or_insert_with(|| entries.clone());
+        self.missing_wavs.insert(
+            source.id.clone(),
+            entries
+                .iter()
+                .filter(|entry| entry.missing)
+                .map(|entry| entry.relative_path.clone())
+                .collect::<std::collections::HashSet<_>>(),
+        );
         entries
             .iter()
             .find(|entry| entry.relative_path == relative_path)
@@ -299,6 +307,7 @@ impl EguiController {
             self.label_cache
                 .insert(source.id.clone(), self.build_label_cache(&self.wav_entries));
         }
+        self.rebuild_missing_lookup_for_source(&source.id);
         self.update_selection_paths(source, old_path, &new_entry.relative_path);
     }
 
