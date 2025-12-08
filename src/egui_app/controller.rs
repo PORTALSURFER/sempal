@@ -2,12 +2,12 @@
 //! This module now delegates responsibilities into focused submodules to
 //! keep files small and behaviour easy to reason about.
 
+mod clipboard;
 mod collection_export;
 mod collection_items;
 mod collection_items_helpers;
 mod collections;
 mod config;
-mod clipboard;
 mod drag;
 mod loading;
 mod playback;

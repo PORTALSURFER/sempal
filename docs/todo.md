@@ -2,8 +2,6 @@
 
 --
 
-\plan - dont show the extensions or folders in our item lists, both for collections and for the regular sample list, show only the sample name
-
 \plan - our icon is sometimes not visible in the windows taskbar, it shows some default windows app icon. but sometimes it does work oddly.
 
 \plan - add ability to select the audio output device, sample rate, and other typical audio output settings in a nice options menu.

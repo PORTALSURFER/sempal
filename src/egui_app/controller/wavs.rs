@@ -438,7 +438,7 @@ impl EguiController {
         let labels: Vec<String> = self
             .wav_entries
             .iter()
-            .map(|entry| entry.relative_path.to_string_lossy().into_owned())
+            .map(|entry| view_model::sample_display_label(&entry.relative_path))
             .collect();
         let result = labels.get(index).cloned();
         self.label_cache.insert(source_id, labels);
@@ -448,7 +448,7 @@ impl EguiController {
     pub(super) fn build_label_cache(&self, entries: &[WavEntry]) -> Vec<String> {
         entries
             .iter()
-            .map(|entry| entry.relative_path.to_string_lossy().into_owned())
+            .map(|entry| view_model::sample_display_label(&entry.relative_path))
             .collect()
     }
 

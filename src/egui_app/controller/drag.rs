@@ -159,9 +159,8 @@ impl EguiController {
                 relative_path,
             }) => {
                 let absolute = self.sample_absolute_path(&source_id, &relative_path);
-                self.start_external_drag(&[absolute]).map(|_| {
-                    format!("Drag {} to an external target", relative_path.display())
-                })
+                self.start_external_drag(&[absolute])
+                    .map(|_| format!("Drag {} to an external target", relative_path.display()))
             }
             Some(DragPayload::Selection { bounds, .. }) => self
                 .export_selection_for_drag(bounds)
@@ -235,15 +234,12 @@ impl EguiController {
         triage_target: Option<TriageFlagColumn>,
     ) {
         if let Some(collection_id) = collection_target {
-            if let Some(source) = self
-                .sources
-                .iter()
-                .find(|s| s.id == source_id)
-                .cloned()
-            {
-                if let Err(err) =
-                    self.add_sample_to_collection_for_source(&collection_id, &source, &relative_path)
-                {
+            if let Some(source) = self.sources.iter().find(|s| s.id == source_id).cloned() {
+                if let Err(err) = self.add_sample_to_collection_for_source(
+                    &collection_id,
+                    &source,
+                    &relative_path,
+                ) {
                     self.set_status(err, StatusTone::Error);
                 }
             } else if let Err(err) =
@@ -260,12 +256,7 @@ impl EguiController {
                 TriageFlagColumn::Neutral => SampleTag::Neutral,
                 TriageFlagColumn::Keep => SampleTag::Keep,
             };
-            if let Some(source) = self
-                .sources
-                .iter()
-                .find(|s| s.id == source_id)
-                .cloned()
-            {
+            if let Some(source) = self.sources.iter().find(|s| s.id == source_id).cloned() {
                 let _ = self.set_sample_tag_for_source(&source, &relative_path, target_tag, false);
             } else {
                 let _ = self.set_sample_tag(&relative_path, column);
