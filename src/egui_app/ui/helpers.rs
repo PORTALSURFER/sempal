@@ -70,11 +70,7 @@ pub(super) fn render_list_row(
     marker: Option<RowMarker>,
 ) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(egui::vec2(row_width, row_height), sense);
-    let mut fill = bg;
-    if response.hovered() && bg.is_none() {
-        fill = Some(style::row_hover_fill());
-    }
-    if let Some(color) = fill {
+    if let Some(color) = bg {
         ui.painter().rect_filled(rect, 0.0, color);
     }
     if let Some(marker) = marker {
@@ -84,6 +80,10 @@ pub(super) fn render_list_row(
             rect.right_bottom(),
         );
         ui.painter().rect_filled(marker_rect, 0.0, marker.color);
+    }
+    if response.hovered() {
+        ui.painter()
+            .rect_filled(rect, 0.0, style::row_hover_fill());
     }
     ui.painter()
         .rect_stroke(rect, 0.0, style::inner_border(), StrokeKind::Inside);
