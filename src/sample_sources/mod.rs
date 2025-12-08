@@ -12,7 +12,7 @@ pub mod scanner;
 pub use collections::{Collection, CollectionId};
 pub use db::{DB_FILE_NAME, SampleTag, SourceDatabase, SourceDbError, WavEntry};
 pub use scan_state::ScanTracker;
-pub use scanner::{ScanError, ScanStats};
+pub use scanner::{ScanError, ScanMode, ScanStats};
 
 /// Identifier for a configured sample source.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]

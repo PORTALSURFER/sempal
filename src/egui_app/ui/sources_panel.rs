@@ -62,6 +62,7 @@ impl EguiApp {
                             if response.clicked() {
                                 self.controller.select_source_by_index(index);
                             }
+                            self.source_row_menu(&response, index, row);
                         });
                     }
                 });
@@ -103,5 +104,50 @@ impl EguiApp {
             self.sources_panel_drop_armed = false;
         }
         self.sources_panel_drop_hovered
+    }
+
+    fn source_row_menu(
+        &mut self,
+        response: &egui::Response,
+        index: usize,
+        row: &crate::egui_app::state::SourceRowView,
+    ) {
+        response.context_menu(|ui| {
+            let palette = style::palette();
+            ui.label(RichText::new(row.name.clone()).color(palette.text_primary));
+            let mut close_menu = false;
+            if ui.button("Quick sync").clicked() {
+                self.controller.select_source_by_index(index);
+                self.controller.request_quick_sync();
+                close_menu = true;
+            }
+            if ui
+                .button("Hard sync (full rescan)")
+                .on_hover_text("Prune missing rows and rebuild from disk")
+                .clicked()
+            {
+                self.controller.select_source_by_index(index);
+                self.controller.request_hard_sync();
+                close_menu = true;
+            }
+            ui.separator();
+            if ui.button("Remap source…").clicked() {
+                self.controller.select_source_by_index(index);
+                self.controller.remap_source_via_dialog(index);
+                close_menu = true;
+            }
+            let remove_btn = egui::Button::new(
+                RichText::new("Remove source")
+                    .color(style::destructive_text())
+                    .strong(),
+            );
+            if ui.add(remove_btn).clicked() {
+                self.controller.remove_source(index);
+                close_menu = true;
+            }
+            if close_menu {
+                ui.close();
+            }
+        });
     }
 }
