@@ -140,6 +140,36 @@ fn dropping_sample_adds_to_collection_and_db() {
 }
 
 #[test]
+fn deleting_collection_removes_and_selects_next() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source);
+
+    let first = Collection::new("First");
+    let second = Collection::new("Second");
+    let first_id = first.id.clone();
+    let second_id = second.id.clone();
+    controller.collections.push(first);
+    controller.collections.push(second);
+    controller.selected_collection = Some(first_id.clone());
+    controller.refresh_collections_ui();
+
+    controller.delete_collection(&first_id).unwrap();
+
+    assert_eq!(controller.collections.len(), 1);
+    assert_eq!(controller.collections[0].id, second_id.clone());
+    assert_eq!(controller.selected_collection, Some(second_id.clone()));
+    assert!(controller.ui.collections.selected_sample.is_none());
+    assert!(
+        controller
+            .ui
+            .collections
+            .rows
+            .iter()
+            .any(|row| row.id == second_id)
+    );
+}
+
+#[test]
 fn browser_autoscroll_disabled_when_collection_selected() {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source);

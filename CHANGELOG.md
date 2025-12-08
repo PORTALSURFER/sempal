@@ -1,3 +1,8 @@
+## [unreleased]
+
+### 🚀 Features
+
+- Add tracing-based logging with rotation
 ## [0.174.0] - 2025-12-08
 
 ### 🚀 Features

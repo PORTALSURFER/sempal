@@ -98,6 +98,35 @@ impl EguiController {
         }
     }
 
+    /// Remove a collection by id and refresh related UI state.
+    pub fn delete_collection(&mut self, collection_id: &CollectionId) -> Result<(), String> {
+        let result: Result<String, String> = (|| {
+            let Some(index) = self.collections.iter().position(|c| &c.id == collection_id) else {
+                return Err("Collection not found".into());
+            };
+            let removed = self.collections.remove(index);
+            if self.selected_collection.as_ref() == Some(collection_id) {
+                self.selected_collection = None;
+                self.ui.collections.selected_sample = None;
+            }
+            self.ensure_collection_selection();
+            self.persist_config("Failed to save collection after delete")?;
+            self.refresh_collections_ui();
+            Ok(removed.name)
+        })();
+
+        match result {
+            Ok(name) => {
+                self.set_status(format!("Removed collection '{name}'"), StatusTone::Info);
+                Ok(())
+            }
+            Err(err) => {
+                self.set_status(err.clone(), StatusTone::Error);
+                Err(err)
+            }
+        }
+    }
+
     /// Rename a collection and its export folder if configured.
     pub fn rename_collection(&mut self, collection_id: &CollectionId, new_name: String) {
         let trimmed = new_name.trim();
