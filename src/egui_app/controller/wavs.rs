@@ -4,6 +4,22 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 impl EguiController {
+    /// Reset all waveform and playback visuals.
+    pub(super) fn clear_waveform_view(&mut self) {
+        self.ui.waveform.image = None;
+        self.ui.waveform.notice = None;
+        self.decoded_waveform = None;
+        self.ui.waveform.playhead = PlayheadState::default();
+        self.ui.waveform.selection = None;
+        self.selection.clear();
+        self.loaded_audio = None;
+        self.loaded_wav = None;
+        self.ui.loaded_wav = None;
+        if let Some(player) = self.player.as_ref() {
+            player.borrow_mut().stop();
+        }
+    }
+
     /// Expose wav indices for a given triage flag column (used by virtualized rendering).
     pub fn browser_indices(&self, column: TriageFlagColumn) -> &[usize] {
         match column {
@@ -220,6 +236,7 @@ impl EguiController {
                 self.selected_wav = None;
                 self.ui.browser.selected = None;
                 self.ui.browser.selected_visible = None;
+                self.clear_waveform_view();
             }
         }
     }
@@ -756,18 +773,8 @@ impl EguiController {
 
     pub(super) fn show_missing_waveform_notice(&mut self, relative_path: &Path) {
         let message = format!("File missing: {}", relative_path.display());
+        self.clear_waveform_view();
         self.ui.waveform.notice = Some(message);
-        self.ui.waveform.image = None;
-        self.decoded_waveform = None;
-        self.ui.waveform.playhead = PlayheadState::default();
-        self.ui.waveform.selection = None;
-        self.selection.clear();
-        self.loaded_audio = None;
-        self.loaded_wav = None;
-        self.ui.loaded_wav = None;
-        if let Some(player) = self.player.as_ref() {
-            player.borrow_mut().stop();
-        }
     }
 }
 

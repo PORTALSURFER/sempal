@@ -91,6 +91,7 @@ impl EguiController {
             self.loaded_wav = None;
             self.loaded_audio = None;
             self.ui.loaded_wav = None;
+            self.clear_waveform_view();
         }
         let _ = self.persist_config("Failed to save config after removing source");
         self.refresh_sources_ui();
@@ -140,8 +141,7 @@ impl EguiController {
             self.loaded_wav = None;
             self.loaded_audio = None;
             self.ui.loaded_wav = None;
-            self.decoded_waveform = None;
-            self.ui.waveform.image = None;
+            self.clear_waveform_view();
         }
         self.missing_wavs
             .entry(source_id.clone())
@@ -187,6 +187,7 @@ impl EguiController {
         self.selected_wav = None;
         self.loaded_wav = None;
         self.loaded_audio = None;
+        self.clear_waveform_view();
         self.refresh_sources_ui();
         self.queue_wav_load();
         let _ = self.persist_config("Failed to save selection");
@@ -201,6 +202,7 @@ impl EguiController {
         self.loaded_audio = None;
         self.ui.browser = SampleBrowserState::default();
         self.ui.loaded_wav = None;
+        self.clear_waveform_view();
         if let Some(selected) = self.selected_source.as_ref() {
             self.missing_wavs.remove(selected);
         } else {
