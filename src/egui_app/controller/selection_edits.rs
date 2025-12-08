@@ -64,7 +64,8 @@ impl EguiController {
 
     /// Silence the selected span with short fades at both edges to avoid clicks.
     pub(crate) fn mute_waveform_selection(&mut self) -> Result<(), String> {
-        let result = self.apply_selection_edit("Muted selection", |buffer| mute_buffer(buffer, 0.005));
+        let result =
+            self.apply_selection_edit("Muted selection", |buffer| mute_buffer(buffer, 0.005));
         if let Err(err) = &result {
             self.set_status(err.clone(), StatusTone::Error);
         }
@@ -206,8 +207,12 @@ fn trim_buffer(buffer: &mut SelectionEditBuffer) -> Result<(), String> {
     }
     let prefix_end = buffer.start_frame * buffer.channels;
     let suffix_start = buffer.end_frame * buffer.channels;
-    let mut trimmed =
-        Vec::with_capacity(buffer.samples.len().saturating_sub(suffix_start - prefix_end));
+    let mut trimmed = Vec::with_capacity(
+        buffer
+            .samples
+            .len()
+            .saturating_sub(suffix_start - prefix_end),
+    );
     trimmed.extend_from_slice(&buffer.samples[..prefix_end]);
     trimmed.extend_from_slice(&buffer.samples[suffix_start..]);
     if trimmed.is_empty() {
@@ -229,7 +234,12 @@ fn mute_buffer(buffer: &mut SelectionEditBuffer, fade_seconds: f32) -> Result<()
     Ok(())
 }
 
-fn slice_frames(samples: &[f32], channels: usize, start_frame: usize, end_frame: usize) -> Vec<f32> {
+fn slice_frames(
+    samples: &[f32],
+    channels: usize,
+    start_frame: usize,
+    end_frame: usize,
+) -> Vec<f32> {
     let mut cropped = Vec::with_capacity((end_frame - start_frame) * channels);
     for frame in start_frame..end_frame {
         let offset = frame * channels;
@@ -282,9 +292,7 @@ fn apply_muted_selection(
     let fade_frames = (sample_rate.max(1) as f32 * fade_seconds)
         .round()
         .clamp(1.0, frame_count as f32) as usize;
-    let fade_len = fade_frames
-        .min((frame_count / 2).max(1))
-        .max(1);
+    let fade_len = fade_frames.min((frame_count / 2).max(1)).max(1);
     let tail_start = start_frame + frame_count - fade_len;
     let denom = fade_len as f32;
     for i in 0..frame_count {
@@ -307,7 +315,11 @@ fn apply_muted_selection(
     }
 }
 
-fn write_selection_wav(target: &PathBuf, samples: &[f32], spec: hound::WavSpec) -> Result<(), String> {
+fn write_selection_wav(
+    target: &PathBuf,
+    samples: &[f32],
+    spec: hound::WavSpec,
+) -> Result<(), String> {
     let mut writer = hound::WavWriter::create(target, spec)
         .map_err(|err| format!("Failed to write wav: {err}"))?;
     for sample in samples {

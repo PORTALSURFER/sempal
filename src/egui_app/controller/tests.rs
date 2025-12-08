@@ -3,8 +3,8 @@ use super::*;
 use crate::egui_app::controller::collection_export;
 use crate::egui_app::controller::hotkeys;
 use crate::egui_app::state::{DragPayload, FocusContext, TriageFlagColumn, TriageFlagFilter};
-use crate::sample_sources::collections::CollectionMember;
 use crate::sample_sources::Collection;
+use crate::sample_sources::collections::CollectionMember;
 use hound::WavReader;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
@@ -36,7 +36,14 @@ fn missing_source_is_marked_during_load() {
     controller.poll_wav_loader();
     assert_eq!(controller.sources.len(), 1);
     assert!(controller.missing_sources.contains(&source.id));
-    assert!(controller.ui.sources.rows.first().is_some_and(|row| row.missing));
+    assert!(
+        controller
+            .ui
+            .sources
+            .rows
+            .first()
+            .is_some_and(|row| row.missing)
+    );
 }
 
 #[test]
@@ -945,12 +952,14 @@ fn selecting_missing_sample_sets_waveform_notice() {
 
     controller.select_wav_by_path(Path::new("one.wav"));
 
-    assert!(controller
-        .ui
-        .waveform
-        .notice
-        .as_ref()
-        .is_some_and(|msg| msg.contains("one.wav")));
+    assert!(
+        controller
+            .ui
+            .waveform
+            .notice
+            .as_ref()
+            .is_some_and(|msg| msg.contains("one.wav"))
+    );
     assert!(controller.loaded_audio.is_none());
 }
 
@@ -979,18 +988,22 @@ fn collection_views_flag_missing_members() {
     controller.collections.push(collection);
     controller.refresh_collections_ui();
 
-    assert!(controller
-        .ui
-        .collections
-        .rows
-        .first()
-        .is_some_and(|row| row.missing));
-    assert!(controller
-        .ui
-        .collections
-        .samples
-        .iter()
-        .any(|sample| sample.missing));
+    assert!(
+        controller
+            .ui
+            .collections
+            .rows
+            .first()
+            .is_some_and(|row| row.missing)
+    );
+    assert!(
+        controller
+            .ui
+            .collections
+            .samples
+            .iter()
+            .any(|sample| sample.missing)
+    );
 }
 
 #[test]
@@ -1015,10 +1028,12 @@ fn read_failure_marks_sample_missing() {
     assert!(err.contains("Failed to read"));
     assert!(controller.sample_missing(&source.id, &rel));
     assert!(controller.wav_entries[0].missing);
-    assert!(controller
-        .missing_wavs
-        .get(&source.id)
-        .is_some_and(|set| set.contains(&rel)));
+    assert!(
+        controller
+            .missing_wavs
+            .get(&source.id)
+            .is_some_and(|set| set.contains(&rel))
+    );
 }
 
 #[test]

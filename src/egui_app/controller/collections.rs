@@ -254,11 +254,8 @@ impl EguiController {
                 .collect::<Vec<bool>>()
         });
         let missing_slice = sample_missing_flags.as_deref();
-        self.ui.collections.samples = view_model::collection_samples(
-            selected.as_ref(),
-            &sources,
-            missing_slice,
-            |member| {
+        self.ui.collections.samples =
+            view_model::collection_samples(selected.as_ref(), &sources, missing_slice, |member| {
                 match self.tag_for_collection_member(member) {
                     Ok(tag) => tag,
                     Err(err) => {
@@ -268,8 +265,7 @@ impl EguiController {
                         SampleTag::Neutral
                     }
                 }
-            },
-        );
+            });
         if let Some(err) = tag_error {
             self.set_status(err, StatusTone::Warning);
         }
