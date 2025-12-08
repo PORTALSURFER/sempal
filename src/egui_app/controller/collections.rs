@@ -15,6 +15,7 @@ impl EguiController {
         };
         self.selected_collection = Some(collection.id.clone());
         self.ui.collections.selected_sample = Some(index);
+        self.focus_collection_context();
         self.ui.browser.selected = None;
         self.ui.browser.autoscroll = false;
         self.refresh_collections_ui();
@@ -62,6 +63,7 @@ impl EguiController {
             self.selected_collection = None;
         }
         self.ui.collections.selected_sample = None;
+        self.clear_focus_context();
         self.ui.browser.autoscroll = false;
         self.refresh_collections_ui();
     }
@@ -274,9 +276,11 @@ impl EguiController {
         let len = self.ui.collections.samples.len();
         if len == 0 {
             self.ui.collections.selected_sample = None;
+            self.clear_collection_focus_context();
         } else if let Some(selected) = self.ui.collections.selected_sample {
             if selected >= len {
                 self.ui.collections.selected_sample = Some(len.saturating_sub(1));
+                self.focus_collection_context();
             }
         }
     }

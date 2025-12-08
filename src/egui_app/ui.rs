@@ -4,6 +4,7 @@ mod chrome;
 mod collections_panel;
 mod drag_overlay;
 mod helpers;
+mod hotkey_overlay;
 mod sample_browser_panel;
 mod sample_menus;
 mod sources_panel;
@@ -15,8 +16,11 @@ pub const DEFAULT_VIEWPORT_SIZE: [f32; 2] = [960.0, 560.0];
 pub const MIN_VIEWPORT_SIZE: [f32; 2] = [640.0, 400.0];
 
 use crate::{
-    audio::AudioPlayer, egui_app::controller::EguiController, egui_app::state::TriageFlagColumn,
-    sample_sources::SampleTag, waveform::WaveformRenderer,
+    audio::AudioPlayer,
+    egui_app::controller::{hotkeys, EguiController},
+    egui_app::state::{FocusContext, TriageFlagColumn},
+    sample_sources::SampleTag,
+    waveform::WaveformRenderer,
 };
 use eframe::egui;
 use eframe::egui::{TextureHandle, Ui, UiBuilder};
@@ -50,6 +54,17 @@ fn copy_shortcut_pressed(ctx: &egui::Context) -> bool {
         } if (modifiers.command || modifiers.ctrl) && !modifiers.alt => true,
         _ => false,
     })
+}
+
+fn hotkey_triggered(ctx: &egui::Context, gesture: &hotkeys::HotkeyGesture) -> bool {
+    ctx.input(|input| {
+        input.key_pressed(gesture.key) && modifiers_match(&input.modifiers, gesture)
+    })
+}
+
+fn modifiers_match(modifiers: &egui::Modifiers, gesture: &hotkeys::HotkeyGesture) -> bool {
+    let command = modifiers.command;
+    command == gesture.command && modifiers.shift == gesture.shift && modifiers.alt == gesture.alt
 }
 
 impl EguiApp {
@@ -148,6 +163,21 @@ impl EguiApp {
         }
         self.sources_panel_drop_armed = false;
     }
+
+    fn process_hotkeys(&mut self, ctx: &egui::Context, focus: FocusContext) {
+        let overlay_open = self.controller.ui.hotkeys.overlay_visible;
+        for action in hotkeys::iter_actions() {
+            if overlay_open && !action.is_global() {
+                continue;
+            }
+            if !action.is_active(focus) {
+                continue;
+            }
+            if hotkey_triggered(ctx, &action.gesture) {
+                self.controller.handle_hotkey(action, focus);
+            }
+        }
+    }
 }
 
 impl eframe::App for EguiApp {
@@ -179,7 +209,8 @@ impl eframe::App for EguiApp {
         if self.controller.ui.drag.payload.is_some() && !ctx.input(|i| i.pointer.primary_down()) {
             self.controller.finish_active_drag();
         }
-        let collection_focus = self.controller.ui.collections.selected_sample.is_some();
+        let focus_context = self.controller.ui.focus.context;
+        let collection_focus = matches!(focus_context, FocusContext::CollectionSample);
         let browser_has_selection = self.controller.ui.browser.selected.is_some();
         if collection_focus {
             self.controller.ui.browser.autoscroll = false;
@@ -260,9 +291,7 @@ impl eframe::App for EguiApp {
                 self.controller.tag_selected_left();
             }
         }
-        if !collection_focus && ctx.input(|i| i.key_pressed(egui::Key::X)) {
-            self.controller.toggle_focused_selection();
-        }
+        self.process_hotkeys(ctx, focus_context);
         self.render_status(ctx);
         egui::SidePanel::left("sources")
             .resizable(false)
@@ -280,6 +309,20 @@ impl eframe::App for EguiApp {
             self.render_center(ui);
         });
         self.render_drag_overlay(ctx);
+        if self.controller.ui.hotkeys.overlay_visible {
+            if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+                self.controller.ui.hotkeys.overlay_visible = false;
+            }
+            let focus_actions = hotkeys::focused_actions(focus_context);
+            let global_actions = hotkeys::global_actions();
+            hotkey_overlay::render_hotkey_overlay(
+                ctx,
+                focus_context,
+                &focus_actions,
+                &global_actions,
+                &mut self.controller.ui.hotkeys.overlay_visible,
+            );
+        }
         ctx.request_repaint();
     }
 }

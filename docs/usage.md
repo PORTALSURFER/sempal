@@ -49,6 +49,11 @@
 - `Right Arrow`: Keep (or move Trash → Neutral).
 - `Left Arrow`: Trash (or Keep → Neutral).
 - `Ctrl/Cmd + Right/Left`: Cycle triage filter chips.
+- `Ctrl/Cmd + /`: Show or hide the contextual hotkey overlay for the currently focused list (browser or collections).
+- `X`: Toggle selection for the focused browser row.
+- `N`: Normalize the focused sample (browser rows overwrite the source file; collection rows overwrite the collection copy).
+- `D`: Delete the focused sample (from disk when browsing, or remove it from the active collection).
+- `C`: Add the focused browser sample to the selected collection.
 - `Shift + drag` on waveform: Create/adjust a selection; `Shift + click` clears.
 - Drag sample rows: Drop into a collection.
 - Drag selection handle: Export a trimmed clip to the Samples list or a collection.
