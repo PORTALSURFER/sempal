@@ -62,10 +62,9 @@ impl EguiController {
         self.fade_waveform_selection(FadeDirection::RightToLeft)
     }
 
-    /// Silence the selected span with short fades at both edges to avoid clicks.
+    /// Silence the selected span without applying fades.
     pub(crate) fn mute_waveform_selection(&mut self) -> Result<(), String> {
-        let result =
-            self.apply_selection_edit("Muted selection", |buffer| mute_buffer(buffer, 0.005));
+        let result = self.apply_selection_edit("Muted selection", mute_buffer);
         if let Err(err) = &result {
             self.set_status(err.clone(), StatusTone::Error);
         }
@@ -222,14 +221,12 @@ fn trim_buffer(buffer: &mut SelectionEditBuffer) -> Result<(), String> {
     Ok(())
 }
 
-fn mute_buffer(buffer: &mut SelectionEditBuffer, fade_seconds: f32) -> Result<(), String> {
+fn mute_buffer(buffer: &mut SelectionEditBuffer) -> Result<(), String> {
     apply_muted_selection(
         &mut buffer.samples,
         buffer.channels,
         buffer.start_frame,
         buffer.end_frame,
-        buffer.sample_rate,
-        fade_seconds,
     );
     Ok(())
 }
@@ -289,38 +286,19 @@ fn apply_directional_fade(
     }
 }
 
-fn apply_muted_selection(
-    samples: &mut [f32],
-    channels: usize,
-    start_frame: usize,
-    end_frame: usize,
-    sample_rate: u32,
-    fade_seconds: f32,
-) {
+fn apply_muted_selection(samples: &mut [f32], channels: usize, start_frame: usize, end_frame: usize) {
     if end_frame <= start_frame {
         return;
     }
-    let frame_count = end_frame - start_frame;
-    let fade_frames = (sample_rate.max(1) as f32 * fade_seconds)
-        .round()
-        .clamp(1.0, frame_count as f32) as usize;
-    let fade_len = fade_frames.min((frame_count / 2).max(1)).max(1);
-    let denom = fade_len as f32;
-    let tail_start = frame_count.saturating_sub(fade_len);
-    for i in 0..frame_count {
-        let factor = if i < fade_len {
-            1.0 - ((i as f32 + 1.0) / denom)
-        } else if i >= tail_start {
-            0.0
-        } else {
-            0.0
-        };
-        let frame = start_frame + i;
-        for ch in 0..channels {
-            let idx = frame * channels + ch;
-            if let Some(sample) = samples.get_mut(idx) {
-                *sample *= factor;
-            }
+    let channels = channels.max(1);
+    let total_frames = samples.len() / channels;
+    let clamped_start = start_frame.min(total_frames);
+    let clamped_end = end_frame.min(total_frames);
+    for frame in clamped_start..clamped_end {
+        let offset = frame * channels;
+        let frame_end = (offset + channels).min(samples.len());
+        for sample in &mut samples[offset..frame_end] {
+            *sample = 0.0;
         }
     }
 }
@@ -378,13 +356,10 @@ mod tests {
     }
 
     #[test]
-    fn mute_applies_fades() {
+    fn mute_zeroes_selection_without_fades() {
         let mut samples = vec![1.0_f32; 10];
-        apply_muted_selection(&mut samples, 1, 0, 10, 1000, 0.005);
-        assert!(samples[0] < 1.0);
-        assert!(samples[9].abs() < 1e-6);
-        assert!(samples[4].abs() < 1e-6);
-        assert!(samples[5].abs() < 1e-6);
+        apply_muted_selection(&mut samples, 1, 0, 10);
+        assert!(samples.iter().all(|sample| sample.abs() < 1e-6));
     }
 
     #[test]
@@ -418,11 +393,11 @@ mod tests {
     #[test]
     fn mute_respects_selection_bounds() {
         let mut samples = vec![0.5_f32; 6];
-        apply_muted_selection(&mut samples, 1, 2, 4, 10, 0.01);
+        apply_muted_selection(&mut samples, 1, 2, 4);
         assert!((samples[0] - 0.5).abs() < 1e-6);
         assert!((samples[1] - 0.5).abs() < 1e-6);
-        assert!(samples[2].abs() < 1e-3);
-        assert!(samples[3].abs() < 1e-3);
+        assert!(samples[2].abs() < 1e-6);
+        assert!(samples[3].abs() < 1e-6);
         assert!((samples[4] - 0.5).abs() < 1e-6);
     }
 }

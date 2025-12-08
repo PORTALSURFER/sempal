@@ -2,10 +2,8 @@
 
 --
 
-- lets make audio silence and trim just a hard actions instead, meaning don't add fades anymore
-
 \plan - while in loop mode, if we play with a mouseclick, we should still end up looping, right now this method will just play oneshot style. only playing with spacebar will loop.
-lets also add 'l' as a global hotkey to toggle looping. also, lets add a colored bar at the top of the waveform to indicate we are looping, a loopbar if you will. this bar should change/move with audio selections.
+lets also add 'l' as a global hotkey to toggle looping. also, lets add a colored bar at the top of the waveform to indicate we are looping, not visible if not in loop mode, or very low opacity. a loopbar if you will. this bar should change/move with audio selections.
 
 ---
 
@@ -13,6 +11,9 @@ lets also add 'l' as a global hotkey to toggle looping. also, lets add a colored
 we should keep track of max 10 log files, a new one each launch, delete the oldest one to make more room.
 add a date and time to the log file name.
 
+---
+
+lets add an option to normalize the audio selection as well, add 5ms fades to each side so we blend smoothly
 ---
 
 - lets add a label showing the length of the audio selection, in ms or bigger units when it makes sense.
