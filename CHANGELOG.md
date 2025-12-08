@@ -3,6 +3,14 @@
 ### 🚀 Features
 
 - Add tracing-based logging with rotation
+
+### 📚 Documentation
+
+- Add animated preview to readme
+
+### ⚙️ Miscellaneous Tasks
+
+- Add collection delete option to context menu
 ## [0.174.0] - 2025-12-08
 
 ### 🚀 Features

@@ -2,8 +2,6 @@
 
 --
 
-\plan - lets add an undo/redo system, capturing all actions. lets keep a history of the previous 10 actions.
-
 ---
 
 lets add an option to normalize the audio selection as well, add 5ms fades to each side so we blend smoothly
