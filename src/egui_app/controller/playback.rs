@@ -64,7 +64,8 @@ impl EguiController {
 
     /// Seek to a normalized position and start playback.
     pub fn seek_to(&mut self, position: f32) {
-        if let Err(err) = self.play_audio(false, Some(position)) {
+        let looped = self.ui.waveform.loop_enabled;
+        if let Err(err) = self.play_audio(looped, Some(position)) {
             self.set_status(err, StatusTone::Error);
         }
     }
@@ -207,7 +208,11 @@ impl EguiController {
             .or_else(|| selection.as_ref().map(|range| range.start()))
             .unwrap_or(0.0);
         let span_end = selection.as_ref().map(|r| r.end()).unwrap_or(1.0);
-        player.borrow_mut().play_range(start, span_end, looped)?;
+        if looped && selection.is_none() && start_override.is_some() {
+            player.borrow_mut().play_full_wrapped_from(start)?;
+        } else {
+            player.borrow_mut().play_range(start, span_end, looped)?;
+        }
         self.ui.waveform.playhead.visible = true;
         self.ui.waveform.playhead.position = start;
         Ok(())

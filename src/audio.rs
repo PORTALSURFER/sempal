@@ -14,6 +14,7 @@ pub struct AudioPlayer {
     started_at: Option<Instant>,
     play_span: Option<(f32, f32)>,
     looping: bool,
+    loop_offset: Option<f32>,
     volume: f32,
 }
 
@@ -32,6 +33,7 @@ impl AudioPlayer {
             started_at: None,
             play_span: None,
             looping: false,
+            loop_offset: None,
             volume: 1.0,
         })
     }
@@ -43,6 +45,7 @@ impl AudioPlayer {
         self.started_at = None;
         self.play_span = None;
         self.looping = false;
+        self.loop_offset = None;
     }
 
     /// Adjust master output volume for current and future playback.
@@ -61,6 +64,7 @@ impl AudioPlayer {
         self.started_at = None;
         self.play_span = None;
         self.looping = false;
+        self.loop_offset = None;
     }
 
     /// Begin playback from the stored buffer.
@@ -91,7 +95,55 @@ impl AudioPlayer {
                 bounded_end = duration.max(bounded_start + 0.001);
             }
         }
+        self.loop_offset = None;
         self.start_with_span(clamped_start, bounded_end, duration, looped)
+    }
+
+    /// Loop the full track while starting playback at the given normalized position.
+    pub fn play_full_wrapped_from(&mut self, start: f32) -> Result<(), String> {
+        let duration = self
+            .track_duration
+            .ok_or_else(|| "Load a .wav file first".to_string())?;
+        let offset = start.clamp(0.0, 1.0) * duration;
+        let bytes = self
+            .current_audio
+            .as_ref()
+            .cloned()
+            .ok_or_else(|| "Load a .wav file first".to_string())?;
+        let byte_len = bytes.len() as u64;
+        if duration <= 0.0 {
+            return Err("Load a .wav file first".into());
+        }
+
+        self.fade_out_current_sink();
+
+        let source = Decoder::builder()
+            .with_data(Cursor::new(bytes))
+            .with_byte_len(byte_len)
+            .with_seekable(true)
+            .with_hint("wav")
+            .build()
+            .map_err(|error| format!("Audio decode failed: {error}"))?;
+        let limited = source
+            .fade_in(SEGMENT_FADE)
+            .take_duration(Duration::from_secs_f32(duration))
+            .buffered();
+        let faded = EdgeFade::new(limited, SEGMENT_FADE);
+        let repeated = faded
+            .repeat_infinite()
+            .skip_duration(Duration::from_secs_f32(offset));
+
+        let sink = Sink::connect_new(self.stream.mixer());
+        sink.set_volume(self.volume);
+        sink.append(repeated);
+        sink.play();
+
+        self.started_at = Some(Instant::now());
+        self.play_span = Some((0.0, duration));
+        self.looping = true;
+        self.loop_offset = Some(offset);
+        self.sink = Some(sink);
+        Ok(())
     }
 
     /// Current playback progress as a 0-1 fraction.
@@ -99,7 +151,20 @@ impl AudioPlayer {
         let duration = self.track_duration?;
         let started_at = self.started_at?;
         let elapsed = started_at.elapsed().as_secs_f32();
-        normalized_progress(self.play_span, duration, elapsed, self.looping)
+        let adjusted_elapsed = if self.looping {
+            let span_length = self
+                .play_span
+                .map(|(start, end)| (end - start).max(f32::EPSILON))
+                .unwrap_or(duration);
+            let offset = self
+                .loop_offset
+                .filter(|_| (span_length - duration).abs() < f32::EPSILON)
+                .unwrap_or(0.0);
+            elapsed + offset
+        } else {
+            elapsed
+        };
+        normalized_progress(self.play_span, duration, adjusted_elapsed, self.looping)
     }
 
     /// True while the sink is still playing the queued audio.
@@ -356,6 +421,7 @@ mod tests {
             started_at: Some(started_at),
             play_span: Some((1.0, 3.0)),
             looping: true,
+            loop_offset: None,
             volume: 1.0,
         };
 
@@ -376,6 +442,7 @@ mod tests {
             started_at: Some(Instant::now()),
             play_span: Some((1.0, 3.0)),
             looping: false,
+            loop_offset: None,
             volume: 1.0,
         };
 
@@ -386,6 +453,27 @@ mod tests {
     fn normalized_progress_returns_none_when_invalid_duration() {
         assert_eq!(normalized_progress(None, 0.0, 1.0, false), None);
         assert_eq!(normalized_progress(None, -1.0, 1.0, false), None);
+    }
+
+    #[test]
+    fn progress_wraps_full_loop_from_offset() {
+        let Ok(stream) = rodio::OutputStreamBuilder::open_default_stream() else {
+            return;
+        };
+        let player = AudioPlayer {
+            stream,
+            sink: None,
+            current_audio: None,
+            track_duration: Some(10.0),
+            started_at: Some(Instant::now() - Duration::from_secs_f32(2.0)),
+            play_span: Some((0.0, 10.0)),
+            looping: true,
+            loop_offset: Some(7.0),
+            volume: 1.0,
+        };
+
+        let progress = player.progress().unwrap();
+        assert!((progress - 0.9).abs() < 0.05);
     }
 
     #[test]
@@ -402,6 +490,7 @@ mod tests {
             started_at: None,
             play_span: None,
             looping: false,
+            loop_offset: None,
             volume: 1.0,
         };
         // A minimal valid 1s mono wav (header only, no samples needed for the span logic).

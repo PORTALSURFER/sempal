@@ -55,6 +55,7 @@ enum HotkeyCommand {
     DeleteFocusedSample,
     AddFocusedToCollection,
     ToggleOverlay,
+    ToggleLoop,
 }
 
 /// Hotkey metadata surfaced to the UI.
@@ -127,6 +128,13 @@ const HOTKEY_ACTIONS: &[HotkeyAction] = &[
         scope: HotkeyScope::Global,
         command: HotkeyCommand::ToggleOverlay,
     },
+    HotkeyAction {
+        id: "toggle-loop",
+        label: "Toggle loop",
+        gesture: HotkeyGesture::new(Key::L),
+        scope: HotkeyScope::Global,
+        command: HotkeyCommand::ToggleLoop,
+    },
 ];
 
 pub(crate) fn iter_actions() -> impl Iterator<Item = HotkeyAction> {
@@ -170,6 +178,9 @@ impl EguiController {
             }
             HotkeyCommand::ToggleOverlay => {
                 self.ui.hotkeys.overlay_visible = !self.ui.hotkeys.overlay_visible;
+            }
+            HotkeyCommand::ToggleLoop => {
+                self.toggle_loop();
             }
         }
     }
