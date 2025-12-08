@@ -1,6 +1,6 @@
 [package]
 name = "sempal"
-version = "0.175.0"
+version = "0.176.0"
 edition = "2024"
 default-run = "sempal"
 
@@ -20,6 +20,10 @@ eframe = { version = "0.33.2", default-features = true }
 open = "5.3.3"
 image = "0.25.9"
 raw-window-handle = "0.6"
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.19", features = ["env-filter", "fmt", "time"] }
+tracing-appender = "0.2.4"
+time = { version = "0.3.44", features = ["formatting", "macros", "local-offset"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { version = "0.62.2", features = [

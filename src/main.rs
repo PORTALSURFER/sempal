@@ -3,10 +3,15 @@ use eframe::egui;
 use egui::viewport::IconData;
 use sempal::audio::AudioPlayer;
 use sempal::egui_app::ui::{EguiApp, MIN_VIEWPORT_SIZE};
+use sempal::logging;
 use sempal::waveform::WaveformRenderer;
 
 /// Launch the egui UI.
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    if let Err(err) = logging::init() {
+        eprintln!("Logging disabled: {err}");
+    }
+
     let renderer = WaveformRenderer::new(680, 260);
     let player = None::<std::rc::Rc<std::cell::RefCell<AudioPlayer>>>;
 

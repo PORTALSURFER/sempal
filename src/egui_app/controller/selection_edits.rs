@@ -286,7 +286,12 @@ fn apply_directional_fade(
     }
 }
 
-fn apply_muted_selection(samples: &mut [f32], channels: usize, start_frame: usize, end_frame: usize) {
+fn apply_muted_selection(
+    samples: &mut [f32],
+    channels: usize,
+    start_frame: usize,
+    end_frame: usize,
+) {
     if end_frame <= start_frame {
         return;
     }

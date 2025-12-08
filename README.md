@@ -28,6 +28,14 @@ Audio sample triage and collection building tool built with Rust and egui.
   - Windows: `%APPDATA%\com\sempal\sempal\config.json`
   - macOS: `~/Library/Application Support/com.sempal.sempal/config.json`
 
+## Logging
+
+- Startup initializes console logging and a per-launch log file in your OS data directory:
+  - Linux: `$HOME/.local/share/com/sempal/sempal/logs`
+  - Windows: `%LOCALAPPDATA%\com\sempal\sempal\logs`
+  - macOS: `~/Library/Application Support/com.sempal.sempal/logs`
+- Log filenames include the launch timestamp, and the 10 most recent files are retained by pruning the oldest.
+
 ## Documentation
 
 - [Usage guide](docs/usage.md)

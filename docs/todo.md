@@ -2,6 +2,11 @@
 
 --
 
+- lets add an option to remove a collection from the collection list to its context menu
+
+\plan - its possible to get lost waveforms in the waveform view, for example if I have a waveform selected, but then delete the entire source list.
+can you find edge cases like this where the waveform rendering does not align with what would typically be expected behavior like this.
+
 ---
 
 \plan - lets add an undo/redo system, capturing all actions. lets keep a history of the previous 10 actions.
