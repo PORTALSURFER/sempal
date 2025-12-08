@@ -1,7 +1,8 @@
 use super::test_support::{dummy_controller, sample_entry, write_test_wav};
 use super::*;
 use crate::egui_app::controller::collection_export;
-use crate::egui_app::state::{DragPayload, TriageFlagColumn, TriageFlagFilter};
+use crate::egui_app::controller::hotkeys;
+use crate::egui_app::state::{DragPayload, FocusContext, TriageFlagColumn, TriageFlagFilter};
 use crate::sample_sources::collections::CollectionMember;
 use crate::sample_sources::Collection;
 use hound::WavReader;
@@ -15,6 +16,14 @@ fn max_sample_amplitude(path: &Path) -> f32 {
         .samples::<f32>()
         .map(|s| s.unwrap().abs())
         .fold(0.0, f32::max)
+}
+
+fn prepare_browser_sample(controller: &mut EguiController, source: &SampleSource, name: &str) {
+    controller.sources.push(source.clone());
+    write_test_wav(&source.root.join(name), &[0.0, 0.1, -0.1]);
+    controller.wav_entries = vec![sample_entry(name, SampleTag::Neutral)];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
 }
 
 #[test]
@@ -953,4 +962,41 @@ fn read_failure_marks_sample_missing() {
         .missing_wavs
         .get(&source.id)
         .is_some_and(|set| set.contains(&rel)));
+}
+
+#[test]
+fn focusing_browser_row_updates_focus_context() {
+    let (mut controller, source) = dummy_controller();
+    prepare_browser_sample(&mut controller, &source, "focus.wav");
+    controller.focus_browser_row(0);
+    assert_eq!(controller.ui.focus.context, FocusContext::SampleBrowser);
+}
+
+#[test]
+fn selecting_collection_sample_updates_focus_context() {
+    let (mut controller, source) = dummy_controller();
+    prepare_browser_sample(&mut controller, &source, "col.wav");
+    let mut collection = Collection::new("Test");
+    collection.members.push(CollectionMember {
+        source_id: source.id.clone(),
+        relative_path: PathBuf::from("col.wav"),
+    });
+    controller.collections.push(collection.clone());
+    controller.selected_collection = Some(collection.id.clone());
+    controller.refresh_collections_ui();
+    controller.select_collection_sample(0);
+    assert_eq!(controller.ui.focus.context, FocusContext::CollectionSample);
+}
+
+#[test]
+fn hotkey_toggle_selection_dispatches_in_browser_context() {
+    let (mut controller, source) = dummy_controller();
+    prepare_browser_sample(&mut controller, &source, "toggle.wav");
+    controller.focus_browser_row(0);
+    assert_eq!(controller.ui.browser.selected_paths.len(), 1);
+    let action = hotkeys::iter_actions()
+        .find(|a| a.id == "toggle-select")
+        .expect("toggle-select hotkey");
+    controller.handle_hotkey(action, FocusContext::SampleBrowser);
+    assert!(controller.ui.browser.selected_paths.is_empty());
 }

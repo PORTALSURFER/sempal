@@ -2,7 +2,6 @@
 
 --
 
-
 \plan - lets add a contextual hotkey system. based on user focus, so we also need to add a user focus system if we dont have one yet.
 as a first hotkey, lets add 'x' to select the focused sample, 'n' to normalize the sample, 'd' to delete the sample, 'c' to add it to the current collection.  lets also add a hotkey ctrl+/ to show a visual popup, listing the currently available hotkeys in context of the currently focused item, global hotkeys if any.
 
@@ -34,3 +33,9 @@ and lets add migration code to find and convert the current config.json format/p
 \plan - add ability to select the audio output device, sample rate, and other typical audio output settings in a nice options menu.
 
 - if we are playing, lets make hitting esc stop playback
+
+- lets add support for hotkey chords, then lets add 'gw' to goto waveform, to set user focus to the waveform.
+in context of waveform focus, left/right arrows should move the playhead, lets add a stepwise motion, which is always the same visual size. make up/down zoom in/out, keeping the playhead at the center of zoom.
+shift+left/right to create a selection.  [ and ] to push the selection sides outward on either side. shift+[/] to push either side of the selection inward.
+lets add 'gs' to focus the source samples list, 'gc' to focus collection samples list, 'gS' to focus the source list, 'gC' to focus the collections list.
+

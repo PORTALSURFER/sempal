@@ -109,6 +109,7 @@ impl EguiController {
         };
         let rows = self.action_rows_from_primary(primary_row);
         self.ui.collections.selected_sample = None;
+        self.focus_browser_context();
         self.ui.browser.autoscroll = true;
         let mut last_error = None;
         for row in rows {
