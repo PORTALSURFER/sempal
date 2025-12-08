@@ -2,9 +2,15 @@
 
 --
 
----
+\plan - audio playback is not properly playing back then entire sample start to finish, it will stop too early, either with full audio or when playing a selection.
 
-lets add an option to normalize the audio selection as well, add 5ms fades to each side so we blend smoothly
+--
+
+\plan - when I drag/drop an audio selection into a collection, no longer also add a copy in the regular sample list. only add it to the collection.
+and if I drag it into the sample list, do not also add it to the active collection.
+
+\plan - lets add color the sample item label text with the triageflag color, so red/green or regular.
+
 ---
 
 - lets add a label showing the length of the audio selection, in ms or bigger units when it makes sense.

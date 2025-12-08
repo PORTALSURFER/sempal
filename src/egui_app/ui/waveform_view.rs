@@ -255,6 +255,15 @@ impl EguiApp {
                             close_menu = true;
                         }
                     }
+                    if ui
+                        .button("Normalize selection")
+                        .on_hover_text("Scale selection to full range with 5ms edge fades")
+                        .clicked()
+                    {
+                        if self.controller.normalize_waveform_selection().is_ok() {
+                            close_menu = true;
+                        }
+                    }
                     if close_menu {
                         ui.close();
                     }

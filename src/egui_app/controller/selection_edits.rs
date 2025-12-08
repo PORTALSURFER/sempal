@@ -1,7 +1,12 @@
 use super::collection_items_helpers::{file_metadata, read_samples_for_normalization};
 use super::*;
 use hound::SampleFormat;
-use std::path::PathBuf;
+use std::{path::PathBuf, time::Duration};
+
+#[path = "selection_normalize.rs"]
+mod selection_normalize;
+
+use selection_normalize::normalize_selection;
 
 /// Direction of a fade applied over the active selection.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -60,6 +65,17 @@ impl EguiController {
     /// Fade the selection toward silence from right to left.
     pub(crate) fn fade_waveform_selection_right_to_left(&mut self) -> Result<(), String> {
         self.fade_waveform_selection(FadeDirection::RightToLeft)
+    }
+
+    /// Normalize the active selection and apply short fades at the edges.
+    pub(crate) fn normalize_waveform_selection(&mut self) -> Result<(), String> {
+        let result = self.apply_selection_edit("Normalized selection", |buffer| {
+            normalize_selection(buffer, Duration::from_millis(5))
+        });
+        if let Err(err) = &result {
+            self.set_status(err.clone(), StatusTone::Error);
+        }
+        result
     }
 
     /// Silence the selected span without applying fades.
@@ -326,83 +342,5 @@ fn write_selection_wav(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn slice_frames_keeps_requested_range() {
-        let samples = vec![0.1, 0.2, 0.3, 0.4, 0.5, 0.6];
-        let sliced = slice_frames(&samples, 2, 1, 3);
-        assert_eq!(sliced, vec![0.3, 0.4, 0.5, 0.6]);
-    }
-
-    #[test]
-    fn trim_removes_target_span() {
-        let mut buffer = SelectionEditBuffer {
-            samples: vec![1.0_f32; 8],
-            channels: 1,
-            sample_rate: 48_000,
-            spec_channels: 1,
-            start_frame: 2,
-            end_frame: 6,
-        };
-        trim_buffer(&mut buffer).unwrap();
-        assert_eq!(buffer.samples.len(), 4);
-    }
-
-    #[test]
-    fn directional_fade_zeroes_expected_side() {
-        let mut samples = vec![1.0_f32; 6];
-        apply_directional_fade(&mut samples, 1, 0, 6, FadeDirection::LeftToRight);
-        assert!(samples[5].abs() < 1e-6);
-        let mut samples = vec![1.0_f32; 6];
-        apply_directional_fade(&mut samples, 1, 0, 6, FadeDirection::RightToLeft);
-        assert!(samples[0].abs() < 1e-6);
-    }
-
-    #[test]
-    fn mute_zeroes_selection_without_fades() {
-        let mut samples = vec![1.0_f32; 10];
-        apply_muted_selection(&mut samples, 1, 0, 10);
-        assert!(samples.iter().all(|sample| sample.abs() < 1e-6));
-    }
-
-    #[test]
-    fn crop_keeps_only_selection_frames() {
-        let mut buffer = SelectionEditBuffer {
-            samples: vec![0.0, 1.0, 2.0, 3.0],
-            channels: 1,
-            sample_rate: 44_100,
-            spec_channels: 1,
-            start_frame: 1,
-            end_frame: 3,
-        };
-        crop_buffer(&mut buffer).unwrap();
-        assert_eq!(buffer.samples, vec![1.0, 2.0]);
-    }
-
-    #[test]
-    fn selection_frame_bounds_include_tail() {
-        let bounds = SelectionRange::new(0.8, 1.0);
-        let (start, end) = selection_frame_bounds(5, bounds);
-        assert_eq!((start, end), (4, 5));
-    }
-
-    #[test]
-    fn directional_fade_with_single_frame_zeroes_sample() {
-        let mut samples = vec![0.5_f32, 1.0];
-        apply_directional_fade(&mut samples, 1, 1, 2, FadeDirection::LeftToRight);
-        assert!(samples[1].abs() < 1e-6);
-    }
-
-    #[test]
-    fn mute_respects_selection_bounds() {
-        let mut samples = vec![0.5_f32; 6];
-        apply_muted_selection(&mut samples, 1, 2, 4);
-        assert!((samples[0] - 0.5).abs() < 1e-6);
-        assert!((samples[1] - 0.5).abs() < 1e-6);
-        assert!(samples[2].abs() < 1e-6);
-        assert!(samples[3].abs() < 1e-6);
-        assert!((samples[4] - 0.5).abs() < 1e-6);
-    }
-}
+#[path = "selection_edits_tests.rs"]
+mod selection_edits_tests;
