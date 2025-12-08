@@ -2,14 +2,15 @@
 
 --
 
-\plan - while in loop mode, if we play with a mouseclick, we should still end up looping, right now this method will just play oneshot style. only playing with spacebar will loop.
-lets also add 'l' as a global hotkey to toggle looping. also, lets add a colored bar at the top of the waveform to indicate we are looping, not visible if not in loop mode, or very low opacity. a loopbar if you will. this bar should change/move with audio selections.
+---
+
+\plan - add a well featured, solid, logging system, using the tracing crate at the core, to log to console and file.
+we should keep track of max 10 log files, a new one each launch, delete the oldest one to make more room.
+add a date and time to the log file name.
 
 ---
 
-\plan - add a well feature, solid logging crate, using tracing, to log to console and file.
-we should keep track of max 10 log files, a new one each launch, delete the oldest one to make more room.
-add a date and time to the log file name.
+\plan - lets add an undo/redo system, capturing all actions. lets keep a history of the previous 10 actions.
 
 ---
 
