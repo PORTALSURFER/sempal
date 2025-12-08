@@ -2,10 +2,8 @@
 
 --
 
-- lets add an option to remove a collection from the collection list to its context menu
-
-\plan - its possible to get lost waveforms in the waveform view, for example if I have a waveform selected, but then delete the entire source list.
-can you find edge cases like this where the waveform rendering does not align with what would typically be expected behavior like this.
+\plan - its possible to get a lost waveforms in the waveform view, for example if I have a sample item selected, but then delete the entire source list, which includes this sample.
+can you search for edge cases like this where the waveform rendering does not align with what would typically be expected behavior like this.
 
 ---
 

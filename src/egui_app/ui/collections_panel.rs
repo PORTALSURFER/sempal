@@ -388,6 +388,14 @@ impl EguiApp {
                     .data_mut(|data| data.insert_temp(rename_id, rename_value));
                 ui.close();
             }
+            ui.separator();
+            if ui
+                .button(RichText::new("Delete collection").color(style::destructive_text()))
+                .clicked()
+            {
+                let _ = self.controller.delete_collection(&collection.id);
+                ui.close();
+            }
         });
     }
 }
