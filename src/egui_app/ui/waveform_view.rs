@@ -191,6 +191,80 @@ impl EguiApp {
                         ui.output_mut(|o| o.cursor_icon = CursorIcon::ResizeHorizontal);
                     }
                 }
+
+                let selection_menu = ui.interact(
+                    selection_rect,
+                    ui.id().with("selection_context_menu"),
+                    egui::Sense::click(),
+                );
+                selection_menu.context_menu(|ui| {
+                    let palette = style::palette();
+                    let mut close_menu = false;
+                    ui.label(RichText::new("Selection actions").color(palette.text_primary));
+                    if ui
+                        .button("Crop to selection")
+                        .on_hover_text("Overwrite the file with just this region")
+                        .clicked()
+                    {
+                        if self.controller.crop_waveform_selection().is_ok() {
+                            close_menu = true;
+                        }
+                    }
+                    if ui
+                        .button("Trim selection out")
+                        .on_hover_text("Remove the selection and close the gap")
+                        .clicked()
+                    {
+                        if self.controller.trim_waveform_selection().is_ok() {
+                            close_menu = true;
+                        }
+                    }
+                    ui.separator();
+                    ui.horizontal(|ui| {
+                        let fade_lr_button = egui::Button::new(
+                            RichText::new("\\ Fade to null").color(palette.text_primary),
+                        );
+                        let fade_lr = ui
+                            .add(fade_lr_button)
+                            .on_hover_text("Fade left to right down to silence");
+                        if fade_lr.clicked() {
+                            if self
+                                .controller
+                                .fade_waveform_selection_left_to_right()
+                                .is_ok()
+                            {
+                                close_menu = true;
+                            }
+                        }
+                        let fade_rl_button = egui::Button::new(
+                            RichText::new("/ Fade to null").color(palette.text_primary),
+                        );
+                        let fade_rl = ui
+                            .add(fade_rl_button)
+                            .on_hover_text("Fade right to left down to silence");
+                        if fade_rl.clicked() {
+                            if self
+                                .controller
+                                .fade_waveform_selection_right_to_left()
+                                .is_ok()
+                            {
+                                close_menu = true;
+                            }
+                        }
+                    });
+                    if ui
+                        .button("Mute selection (5 ms fade)")
+                        .on_hover_text("Silence the selection with quick edge fades")
+                        .clicked()
+                    {
+                        if self.controller.mute_waveform_selection().is_ok() {
+                            close_menu = true;
+                        }
+                    }
+                    if close_menu {
+                        ui.close();
+                    }
+                });
             }
             if self.controller.ui.waveform.playhead.visible {
                 let x = rect.left() + rect.width() * self.controller.ui.waveform.playhead.position;
