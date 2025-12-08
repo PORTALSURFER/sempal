@@ -7,6 +7,8 @@ pub mod egui_app;
 pub mod external_clipboard;
 /// Platform helpers for external drag-and-drop.
 pub mod external_drag;
+/// Logging setup helpers.
+pub mod logging;
 /// Sample source management.
 pub mod sample_sources;
 /// Selection math utilities.

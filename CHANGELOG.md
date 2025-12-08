@@ -1,3 +1,34 @@
+## [0.174.0] - 2025-12-08
+
+### 🚀 Features
+
+- Hide extensions in sample and collection labels
+- Highlight missing assets and safeguard waveform/playback
+- Bad file read now marked as missing
+- Add contextual hotkeys
+- Add waveform selection edit menu with crop/trim/fade/mute
+- Add source context menu sync and remap actions
+- Improve loop playback controls
+
+### 🐛 Bug Fixes
+
+- Embed Windows icon resource and add decoding tests
+- Improve waveform rendering accuracy and selection edit tests
+- Stop playback when escape is pressed
+- Clear selection on waveform click instead of playing when one exists
+
+### 💼 Other
+
+- Feat: accept external folder drops for sample sources
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* V0.174.0 (#9)
+## [0.153.0] - 2025-12-08
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* V0.153.0 (#8)
 ## [0.151.0] - 2025-12-07
 
 ### 🚀 Features
