@@ -2,18 +2,22 @@
 
 --
 
--- lets add a context menu to source items, add the option to hard sync, which rescans the entire folder.
-an option to quick sync, which just looks for new files, removed files, etc.
-lets also add an option to remap the source, and an option to remove the source from the source list.
-
----
+- lets make audio silence and trim just a hard actions instead, meaning don't add fades anymore
 
 \plan - while in loop mode, if we play with a mouseclick, we should still end up looping, right now this method will just play oneshot style. only playing with spacebar will loop.
 lets also add 'l' as a global hotkey to toggle looping. also, lets add a colored bar at the top of the waveform to indicate we are looping, a loopbar if you will. this bar should change/move with audio selections.
+
 ---
 
-\plan - add a strong and solid logging crate, using tracing, to log to console and file.
+\plan - add a well feature, solid logging crate, using tracing, to log to console and file.
+we should keep track of max 10 log files, a new one each launch, delete the oldest one to make more room.
+add a date and time to the log file name.
 
+---
+
+- lets add a label showing the length of the audio selection, in ms or bigger units when it makes sense.
+
+- lets add a label showing the length of the active waveform in the statusbar in ms, or bigger units when it makes sense.
 ---
 
 \plan - lets clean up the config location names so we don't get this double sempal/sempal structure. lets make it simple .sempal/

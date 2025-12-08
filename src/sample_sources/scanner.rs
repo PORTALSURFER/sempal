@@ -21,6 +21,15 @@ pub struct ScanStats {
     pub total_files: usize,
 }
 
+/// Scan strategy used when walking a source root.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScanMode {
+    /// Update the database with new/modified files and mark missing entries.
+    Quick,
+    /// Force a full rescan, pruning missing rows to rebuild state from disk.
+    Hard,
+}
+
 /// Errors that can occur while scanning a source folder.
 #[derive(Debug, Error)]
 pub enum ScanError {
@@ -40,6 +49,15 @@ pub enum ScanError {
 /// Recursively scan the source root, syncing .wav files into the database.
 /// Returns counts of added/updated/removed wav rows.
 pub fn scan_once(db: &SourceDatabase) -> Result<ScanStats, ScanError> {
+    scan(db, ScanMode::Quick)
+}
+
+/// Rescan the entire source, pruning rows for files that no longer exist.
+pub fn hard_rescan(db: &SourceDatabase) -> Result<ScanStats, ScanError> {
+    scan(db, ScanMode::Hard)
+}
+
+fn scan(db: &SourceDatabase, mode: ScanMode) -> Result<ScanStats, ScanError> {
     let root = ensure_root_dir(db)?;
     let mut stats = ScanStats::default();
     let mut existing = index_existing(db)?;
@@ -47,7 +65,7 @@ pub fn scan_once(db: &SourceDatabase) -> Result<ScanStats, ScanError> {
     visit_dir(&root, &mut |path| {
         sync_file(&mut batch, &root, path, &mut existing, &mut stats)
     })?;
-    mark_missing(&mut batch, existing, &mut stats)?;
+    mark_missing(&mut batch, existing, &mut stats, mode)?;
     batch.commit()?;
     Ok(stats)
 }
@@ -120,13 +138,22 @@ fn mark_missing(
     batch: &mut SourceWriteBatch<'_>,
     existing: HashMap<PathBuf, WavEntry>,
     stats: &mut ScanStats,
+    mode: ScanMode,
 ) -> Result<(), ScanError> {
     for leftover in existing.values() {
-        if leftover.missing {
-            continue;
+        match mode {
+            ScanMode::Quick => {
+                if leftover.missing {
+                    continue;
+                }
+                batch.set_missing(&leftover.relative_path, true)?;
+                stats.missing += 1;
+            }
+            ScanMode::Hard => {
+                batch.remove_file(&leftover.relative_path)?;
+                stats.missing += 1;
+            }
         }
-        batch.set_missing(&leftover.relative_path, true)?;
-        stats.missing += 1;
     }
     Ok(())
 }
@@ -267,5 +294,25 @@ mod tests {
         let handle = scan_in_background(dir.path().to_path_buf());
         let stats = handle.join().unwrap().unwrap();
         assert_eq!(stats.added, 1);
+    }
+
+    #[test]
+    fn hard_rescan_prunes_missing_rows() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("one.wav");
+        std::fs::write(&file_path, b"one").unwrap();
+        let db = SourceDatabase::open(dir.path()).unwrap();
+        scan_once(&db).unwrap();
+
+        std::fs::remove_file(&file_path).unwrap();
+        scan_once(&db).unwrap();
+        let rows = db.list_files().unwrap();
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0].missing);
+
+        let stats = hard_rescan(&db).unwrap();
+        assert_eq!(stats.missing, 1);
+        let rows = db.list_files().unwrap();
+        assert!(rows.is_empty());
     }
 }

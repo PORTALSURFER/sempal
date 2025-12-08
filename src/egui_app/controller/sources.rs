@@ -1,6 +1,7 @@
 use super::collection_export;
 use super::collection_export::delete_exported_file;
 use super::*;
+use std::fs;
 
 impl EguiController {
     /// Select the first available source or refresh the current one.
@@ -224,5 +225,59 @@ impl EguiController {
         source: &SampleSource,
     ) -> Result<Rc<SourceDatabase>, SourceDbError> {
         self.database_for(source)
+    }
+
+    /// Remap a source root via folder picker.
+    pub fn remap_source_via_dialog(&mut self, index: usize) {
+        let Some(path) = FileDialog::new().pick_folder() else {
+            return;
+        };
+        if let Err(error) = self.remap_source_to(index, path) {
+            self.set_status(error, StatusTone::Error);
+        }
+    }
+
+    /// Remap a source to a new root path, preserving the source id and tags.
+    pub fn remap_source_to(&mut self, index: usize, new_root: PathBuf) -> Result<(), String> {
+        let Some(existing) = self.sources.get(index) else {
+            return Err("Source not found".into());
+        };
+        let normalized = crate::sample_sources::config::normalize_path(new_root.as_path());
+        if !normalized.is_dir() {
+            return Err("Please select a directory".into());
+        }
+        if self
+            .sources
+            .iter()
+            .enumerate()
+            .any(|(i, source)| i != index && source.root == normalized)
+        {
+            return Err("Source already added".into());
+        }
+        let old_db_path = crate::sample_sources::database_path_for(&existing.root);
+        let new_db_path = crate::sample_sources::database_path_for(&normalized);
+        if old_db_path.exists() && !new_db_path.exists() {
+            let _ = fs::create_dir_all(&normalized);
+            fs::copy(&old_db_path, &new_db_path)
+                .map_err(|err| format!("Failed to copy database: {err}"))?;
+        }
+        SourceDatabase::open(&normalized)
+            .map_err(|err| format!("Failed to prepare database: {err}"))?;
+        let source_id = existing.id.clone();
+        self.sources[index].root = normalized.clone();
+        self.missing_sources.remove(&source_id);
+        self.missing_wavs.remove(&source_id);
+        self.db_cache.remove(&source_id);
+        self.wav_cache.remove(&source_id);
+        self.label_cache.remove(&source_id);
+        if self.selected_source.as_ref() == Some(&source_id) {
+            self.clear_wavs();
+            self.selected_source = Some(source_id.clone());
+        }
+        self.persist_config("Failed to save config after remapping source")?;
+        self.refresh_sources_ui();
+        self.queue_wav_load();
+        self.set_status("Source remapped", StatusTone::Info);
+        Ok(())
     }
 }
