@@ -32,3 +32,5 @@ lets also turn it from json into toml.
 and lets add migration code to find and convert the current config.json format/path to our new system
 
 \plan - add ability to select the audio output device, sample rate, and other typical audio output settings in a nice options menu.
+
+- if we are playing, lets make hitting esc stop playback

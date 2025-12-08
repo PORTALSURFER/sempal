@@ -484,7 +484,14 @@ impl EguiController {
             );
             return Ok(());
         }
-        let bytes = self.read_waveform_bytes(source, relative_path)?;
+        let bytes = match self.read_waveform_bytes(source, relative_path) {
+            Ok(bytes) => bytes,
+            Err(err) => {
+                self.mark_sample_missing(source, relative_path);
+                self.show_missing_waveform_notice(relative_path);
+                return Err(err);
+            }
+        };
         let decoded = self.renderer.decode_from_bytes(&bytes)?;
         let duration_seconds = decoded.duration_seconds;
         let sample_rate = decoded.sample_rate;
@@ -514,7 +521,14 @@ impl EguiController {
         source: &SampleSource,
         relative_path: &Path,
     ) -> Result<(), String> {
-        let bytes = self.read_waveform_bytes(source, relative_path)?;
+        let bytes = match self.read_waveform_bytes(source, relative_path) {
+            Ok(bytes) => bytes,
+            Err(err) => {
+                self.mark_sample_missing(source, relative_path);
+                self.show_missing_waveform_notice(relative_path);
+                return Err(err);
+            }
+        };
         let decoded = self.renderer.decode_from_bytes(&bytes)?;
         let duration_seconds = decoded.duration_seconds;
         let sample_rate = decoded.sample_rate;
@@ -626,6 +640,44 @@ impl EguiController {
             }
         }
         self.missing_wavs.insert(source_id.clone(), missing);
+    }
+
+    pub(super) fn mark_sample_missing(
+        &mut self,
+        source: &SampleSource,
+        relative_path: &Path,
+    ) {
+        match self.database_for(source) {
+            Ok(db) => {
+                let _ = db.set_missing(relative_path, true);
+            }
+            Err(SourceDbError::InvalidRoot(_)) => {
+                self.mark_source_missing(&source.id, "Source folder missing");
+            }
+            Err(err) => {
+                self.set_status(
+                    format!("Failed to update missing flag: {err}"),
+                    StatusTone::Warning,
+                );
+            }
+        }
+        if let Some(cache) = self.wav_cache.get_mut(&source.id) {
+            if let Some(entry) = cache.iter_mut().find(|entry| entry.relative_path == relative_path)
+            {
+                entry.missing = true;
+            }
+        }
+        if self.selected_source.as_ref() == Some(&source.id) {
+            if let Some(index) = self.wav_lookup.get(relative_path).copied() {
+                if let Some(entry) = self.wav_entries.get_mut(index) {
+                    entry.missing = true;
+                }
+            }
+        }
+        self.missing_wavs
+            .entry(source.id.clone())
+            .or_insert_with(HashSet::new)
+            .insert(relative_path.to_path_buf());
     }
 
     pub(super) fn ensure_missing_lookup_for_source(
