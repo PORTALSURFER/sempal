@@ -94,6 +94,21 @@ impl EguiController {
         let _ = self.play_audio(self.ui.waveform.loop_enabled, None);
     }
 
+    /// Stop playback when active, returning true if anything was stopped.
+    pub fn stop_playback_if_active(&mut self) -> bool {
+        self.pending_loop_disable_at = None;
+        let Some(player_rc) = self.player.as_ref() else {
+            return false;
+        };
+        let mut player = player_rc.borrow_mut();
+        if player.is_playing() {
+            player.stop();
+            self.ui.waveform.playhead.visible = false;
+            return true;
+        }
+        false
+    }
+
     /// Tag the focused/selected wavs and keep the current focus.
     pub fn tag_selected(&mut self, target: SampleTag) {
         let Some(selected_index) = self.selected_row_index() else {

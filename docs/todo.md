@@ -1,13 +1,15 @@
 \plan - lets do a housekeeping pass, clean up the codebase, reduce file lengths, improve DRYness, improve maintainability, collapse large structs/objects into clearly named smaller objects, add missing docs, improve symbol naming, find and resolve bugs, improve performance, etc.
 
 --
-- if we are playing, lets make hitting esc stop playback
 
+-- lets add a context menu to source items, add the option to hard sync, which rescans the entire folder.
+an option to quick sync, which just looks for new files, removed files, etc.
+lets also add an option to remap the source, and an option to remove the source from the source list.
 
 ---
 
 \plan - while in loop mode, if we play with a mouseclick, we should still end up looping, right now this method will just play oneshot style. only playing with spacebar will loop.
-
+lets also add 'l' as a global hotkey to toggle looping. also, lets add a colored bar at the top of the waveform to indicate we are looping, a loopbar if you will. this bar should change/move with audio selections.
 ---
 
 \plan - add a strong and solid logging crate, using tracing, to log to console and file.
