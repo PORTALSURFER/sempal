@@ -10,7 +10,10 @@ use std::path::PathBuf;
 ///
 /// Returns an error if the platform does not support outgoing drags.
 #[cfg(target_os = "windows")]
-pub fn start_file_drag(hwnd: windows::Win32::Foundation::HWND, paths: &[PathBuf]) -> Result<(), String> {
+pub fn start_file_drag(
+    hwnd: windows::Win32::Foundation::HWND,
+    paths: &[PathBuf],
+) -> Result<(), String> {
     if paths.is_empty() {
         return Err("No files to drag".into());
     }
@@ -34,11 +37,11 @@ mod platform {
         DRAGDROP_S_CANCEL, DRAGDROP_S_DROP, DRAGDROP_S_USEDEFAULTCURSORS, DV_E_FORMATETC,
         E_INVALIDARG, HGLOBAL, POINT,
     };
-    use windows::Win32::System::DataExchange::RegisterClipboardFormatW;
     use windows::Win32::System::Com::{
         DATADIR_GET, DVASPECT_CONTENT, FORMATETC, IAdviseSink, IDataObject, IEnumFORMATETC,
         STGMEDIUM, STGMEDIUM_0, TYMED_HGLOBAL,
     };
+    use windows::Win32::System::DataExchange::RegisterClipboardFormatW;
     use windows::Win32::System::Memory::{
         GMEM_MOVEABLE, GMEM_ZEROINIT, GlobalAlloc, GlobalLock, GlobalUnlock,
     };
@@ -48,7 +51,7 @@ mod platform {
     };
     use windows::Win32::System::SystemServices::{MK_LBUTTON, MODIFIERKEYS_FLAGS};
     use windows::Win32::UI::Shell::{DROPFILES, SHCreateStdEnumFmtEtc};
-    use windows::core::{w, HRESULT, Ref, BOOL};
+    use windows::core::{BOOL, HRESULT, Ref, w};
     use windows_implement::implement;
 
     /// RAII guard to balance COM initialization.
@@ -268,7 +271,10 @@ mod platform {
         }
     }
 
-    pub fn start_file_drag(_hwnd: windows::Win32::Foundation::HWND, paths: &[PathBuf]) -> Result<(), String> {
+    pub fn start_file_drag(
+        _hwnd: windows::Win32::Foundation::HWND,
+        paths: &[PathBuf],
+    ) -> Result<(), String> {
         let _com = ComApartment::new()?;
         let absolute: Vec<PathBuf> = paths.iter().map(normalize_path).collect();
         let data_object: IDataObject = FileDropDataObject::new(absolute)?.into();
@@ -329,8 +335,9 @@ mod platform {
     }
 
     fn drop_effect_medium(effect: DROPEFFECT) -> windows::core::Result<STGMEDIUM> {
-        let handle = unsafe { GlobalAlloc(GMEM_MOVEABLE | GMEM_ZEROINIT, std::mem::size_of::<u32>()) }
-            .map_err(|_| windows::core::Error::from_thread())?;
+        let handle =
+            unsafe { GlobalAlloc(GMEM_MOVEABLE | GMEM_ZEROINIT, std::mem::size_of::<u32>()) }
+                .map_err(|_| windows::core::Error::from_thread())?;
         let ptr = unsafe { GlobalLock(handle) } as *mut u32;
         if ptr.is_null() {
             unsafe {
@@ -399,9 +406,7 @@ mod platform {
 
 #[cfg(target_os = "windows")]
 fn normalize_path(path: &PathBuf) -> PathBuf {
-    let absolute = path
-        .canonicalize()
-        .unwrap_or_else(|_| path.to_path_buf());
+    let absolute = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
     let verbatim_prefix = "\\\\?\\";
     if absolute
         .as_os_str()

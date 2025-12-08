@@ -43,10 +43,10 @@ mod platform {
 
     impl Clipboard {
         fn new() -> Result<Self, String> {
-        unsafe { OpenClipboard(None) }.map_err(|err| format!("OpenClipboard failed: {err}"))?;
-        unsafe { EmptyClipboard() }.map_err(|err| format!("EmptyClipboard failed: {err}"))?;
-        Ok(Self)
-    }
+            unsafe { OpenClipboard(None) }.map_err(|err| format!("OpenClipboard failed: {err}"))?;
+            unsafe { EmptyClipboard() }.map_err(|err| format!("EmptyClipboard failed: {err}"))?;
+            Ok(Self)
+        }
     }
 
     impl Drop for Clipboard {

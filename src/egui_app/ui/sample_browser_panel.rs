@@ -4,8 +4,9 @@ use super::helpers::{
 };
 use super::style;
 use super::*;
-use crate::egui_app::ui::style::StatusTone;
 use crate::egui_app::state::TriageFlagFilter;
+use crate::egui_app::ui::style::StatusTone;
+use crate::egui_app::view_model;
 use eframe::egui::{self, RichText, StrokeKind, Ui};
 use std::path::Path;
 
@@ -75,7 +76,7 @@ impl EguiApp {
                         let mut label = self
                             .controller
                             .wav_label(entry_index)
-                            .unwrap_or_else(|| path.to_string_lossy().to_string());
+                            .unwrap_or_else(|| view_model::sample_display_label(&path));
                         if is_loaded {
                             label.push_str(" • loaded");
                         }
@@ -138,7 +139,7 @@ impl EguiApp {
                             if response.drag_started() {
                                 if let Some(pos) = response.interact_pointer_pos() {
                                     if let Some(source) = self.controller.current_source() {
-                                        let name = path.to_string_lossy().to_string();
+                                        let name = view_model::sample_display_label(&path);
                                         self.controller.start_sample_drag(
                                             source.id.clone(),
                                             path.clone(),

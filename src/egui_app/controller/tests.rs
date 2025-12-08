@@ -41,7 +41,7 @@ fn label_cache_builds_on_first_lookup() {
 
     assert!(controller.label_cache.get(&source.id).is_none());
     let label = controller.wav_label(1).unwrap();
-    assert_eq!(label, "b.wav");
+    assert_eq!(label, "b");
     assert!(controller.label_cache.get(&source.id).is_some());
 }
 
