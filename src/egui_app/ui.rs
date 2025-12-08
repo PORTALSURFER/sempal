@@ -210,6 +210,7 @@ impl eframe::App for EguiApp {
         let focus_context = self.controller.ui.focus.context;
         let collection_focus = matches!(focus_context, FocusContext::CollectionSample);
         let browser_has_selection = self.controller.ui.browser.selected.is_some();
+        let escape_pressed = ctx.input(|i| i.key_pressed(egui::Key::Escape));
         if collection_focus {
             self.controller.ui.browser.autoscroll = false;
             self.controller.ui.browser.selected = None;
@@ -220,7 +221,8 @@ impl eframe::App for EguiApp {
         if copy_shortcut_pressed(ctx) {
             self.controller.copy_selection_to_clipboard();
         }
-        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+        if escape_pressed {
+            let _ = self.controller.stop_playback_if_active();
             if !self.controller.ui.browser.selected_paths.is_empty() {
                 self.controller.clear_browser_selection();
             }
@@ -308,7 +310,7 @@ impl eframe::App for EguiApp {
         });
         self.render_drag_overlay(ctx);
         if self.controller.ui.hotkeys.overlay_visible {
-            if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            if escape_pressed {
                 self.controller.ui.hotkeys.overlay_visible = false;
             }
             let focus_actions = hotkeys::focused_actions(focus_context);
