@@ -4,10 +4,6 @@
 
 ---
 
-
-
----
-
 \plan - lets add an undo/redo system, capturing all actions. lets keep a history of the previous 10 actions.
 
 ---
