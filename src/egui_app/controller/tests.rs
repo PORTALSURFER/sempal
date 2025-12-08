@@ -7,6 +7,7 @@ use crate::sample_sources::Collection;
 use crate::sample_sources::collections::CollectionMember;
 use hound::WavReader;
 use std::io::Cursor;
+use std::mem;
 use std::path::{Path, PathBuf};
 use tempfile::tempdir;
 
@@ -550,6 +551,81 @@ fn waveform_image_resizes_to_view() {
 
     let size = controller.ui.waveform.image.as_ref().unwrap().image.size;
     assert_eq!(size, [24, 8]);
+}
+
+#[test]
+fn removing_selected_source_clears_waveform_view() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.cache_db(&source).unwrap();
+    let wav_path = source.root.join("one.wav");
+    write_test_wav(&wav_path, &[0.1, -0.1]);
+    controller.wav_entries = vec![sample_entry("one.wav", SampleTag::Neutral)];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+    controller
+        .load_waveform_for_selection(&source, Path::new("one.wav"))
+        .unwrap();
+
+    controller.remove_source(0);
+
+    assert!(controller.ui.waveform.image.is_none());
+    assert!(controller.ui.waveform.selection.is_none());
+    assert!(controller.loaded_audio.is_none());
+    assert!(controller.loaded_wav.is_none());
+}
+
+#[test]
+fn switching_sources_resets_waveform_state() {
+    let (mut controller, first) = dummy_controller();
+    controller.sources.push(first.clone());
+    controller.cache_db(&first).unwrap();
+    let wav_path = first.root.join("a.wav");
+    write_test_wav(&wav_path, &[0.0, 0.1]);
+    controller.wav_entries = vec![sample_entry("a.wav", SampleTag::Neutral)];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+    controller
+        .load_waveform_for_selection(&first, Path::new("a.wav"))
+        .unwrap();
+
+    let second_dir = tempdir().unwrap();
+    let second_root = second_dir.path().join("second");
+    std::fs::create_dir_all(&second_root).unwrap();
+    mem::forget(second_dir);
+    let second = SampleSource::new(second_root);
+    controller.sources.push(second.clone());
+
+    controller.select_source(Some(second.id.clone()));
+
+    assert!(controller.ui.waveform.image.is_none());
+    assert!(controller.ui.waveform.notice.is_none());
+    assert!(controller.loaded_audio.is_none());
+}
+
+#[test]
+fn pruning_missing_selection_clears_waveform_view() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.cache_db(&source).unwrap();
+    let wav_path = source.root.join("gone.wav");
+    write_test_wav(&wav_path, &[0.2, -0.2]);
+    controller.wav_entries = vec![sample_entry("gone.wav", SampleTag::Neutral)];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+    controller.selected_wav = Some(PathBuf::from("gone.wav"));
+    controller
+        .load_waveform_for_selection(&source, Path::new("gone.wav"))
+        .unwrap();
+
+    controller.wav_entries.clear();
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+
+    assert!(controller.ui.waveform.image.is_none());
+    assert!(controller.ui.waveform.selection.is_none());
+    assert!(controller.loaded_audio.is_none());
+    assert!(controller.loaded_wav.is_none());
 }
 
 #[test]

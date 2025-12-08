@@ -2,11 +2,6 @@
 
 --
 
-\plan - its possible to get a lost waveforms in the waveform view, for example if I have a sample item selected, but then delete the entire source list, which includes this sample.
-can you search for edge cases like this where the waveform rendering does not align with what would typically be expected behavior like this.
-
----
-
 \plan - lets add an undo/redo system, capturing all actions. lets keep a history of the previous 10 actions.
 
 ---
