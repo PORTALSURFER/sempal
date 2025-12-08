@@ -263,8 +263,20 @@ fn apply_directional_fade(
     for i in 0..frame_count {
         let progress = i as f32 / denom;
         let factor = match direction {
-            FadeDirection::LeftToRight => 1.0 - progress,
-            FadeDirection::RightToLeft => progress,
+            FadeDirection::LeftToRight => {
+                if frame_count == 1 {
+                    0.0
+                } else {
+                    1.0 - progress
+                }
+            }
+            FadeDirection::RightToLeft => {
+                if frame_count == 1 {
+                    0.0
+                } else {
+                    progress
+                }
+            }
         }
         .clamp(0.0, 1.0);
         let frame = start_frame + i;
@@ -293,19 +305,17 @@ fn apply_muted_selection(
         .round()
         .clamp(1.0, frame_count as f32) as usize;
     let fade_len = fade_frames.min((frame_count / 2).max(1)).max(1);
-    let tail_start = start_frame + frame_count - fade_len;
     let denom = fade_len as f32;
+    let tail_start = frame_count.saturating_sub(fade_len);
     for i in 0..frame_count {
-        let frame = start_frame + i;
         let factor = if i < fade_len {
             1.0 - ((i as f32 + 1.0) / denom)
-        } else if frame >= tail_start {
-            let tail = frame - tail_start;
-            (tail as f32 + 1.0) / denom
+        } else if i >= tail_start {
+            0.0
         } else {
             0.0
-        }
-        .clamp(0.0, 1.0);
+        };
+        let frame = start_frame + i;
         for ch in 0..channels {
             let idx = frame * channels + ch;
             if let Some(sample) = samples.get_mut(idx) {
@@ -372,9 +382,9 @@ mod tests {
         let mut samples = vec![1.0_f32; 10];
         apply_muted_selection(&mut samples, 1, 0, 10, 1000, 0.005);
         assert!(samples[0] < 1.0);
-        assert!(samples[9] > 0.0);
+        assert!(samples[9].abs() < 1e-6);
         assert!(samples[4].abs() < 1e-6);
-        assert!(samples[5] < 0.3);
+        assert!(samples[5].abs() < 1e-6);
     }
 
     #[test]
@@ -389,5 +399,30 @@ mod tests {
         };
         crop_buffer(&mut buffer).unwrap();
         assert_eq!(buffer.samples, vec![1.0, 2.0]);
+    }
+
+    #[test]
+    fn selection_frame_bounds_include_tail() {
+        let bounds = SelectionRange::new(0.8, 1.0);
+        let (start, end) = selection_frame_bounds(5, bounds);
+        assert_eq!((start, end), (4, 5));
+    }
+
+    #[test]
+    fn directional_fade_with_single_frame_zeroes_sample() {
+        let mut samples = vec![0.5_f32, 1.0];
+        apply_directional_fade(&mut samples, 1, 1, 2, FadeDirection::LeftToRight);
+        assert!(samples[1].abs() < 1e-6);
+    }
+
+    #[test]
+    fn mute_respects_selection_bounds() {
+        let mut samples = vec![0.5_f32; 6];
+        apply_muted_selection(&mut samples, 1, 2, 4, 10, 0.01);
+        assert!((samples[0] - 0.5).abs() < 1e-6);
+        assert!((samples[1] - 0.5).abs() < 1e-6);
+        assert!(samples[2].abs() < 1e-3);
+        assert!(samples[3].abs() < 1e-3);
+        assert!((samples[4] - 0.5).abs() < 1e-6);
     }
 }
