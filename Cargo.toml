@@ -1,6 +1,6 @@
 [package]
 name = "sempal"
-version = "0.156.0"
+version = "0.158.0"
 edition = "2024"
 default-run = "sempal"
 
@@ -44,6 +44,7 @@ semver = "1.0.27"
 [build-dependencies]
 semver = "1.0.27"
 toml_edit = "0.23.9"
+embed-resource = "3.0"
 
 [[bench]]
 name = "tagging"
