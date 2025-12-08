@@ -306,7 +306,9 @@ impl EguiApp {
                 } else if response.drag_stopped() {
                     self.controller.finish_selection_drag();
                 } else if response.clicked() {
-                    if let Some(value) = normalized {
+                    if self.controller.ui.waveform.selection.is_some() {
+                        self.controller.clear_selection();
+                    } else if let Some(value) = normalized {
                         self.controller.seek_to(value);
                     }
                 }
