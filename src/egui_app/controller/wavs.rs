@@ -97,6 +97,7 @@ impl EguiController {
     /// Select a wav coming from the sample browser and clear collection focus.
     pub fn select_from_browser(&mut self, path: &Path) {
         self.ui.collections.selected_sample = None;
+        self.focus_browser_context();
         self.select_wav_by_path(path);
     }
 
@@ -232,6 +233,15 @@ impl EguiController {
         }
     }
 
+    pub(super) fn focused_browser_row(&self) -> Option<usize> {
+        self.ui.browser.selected_visible
+    }
+
+    pub(super) fn focused_browser_path(&self) -> Option<PathBuf> {
+        let row = self.focused_browser_row()?;
+        self.browser_path_for_visible(row)
+    }
+
     fn browser_path_for_visible(&self, visible_row: usize) -> Option<PathBuf> {
         let index = self.ui.browser.visible.get(visible_row).copied()?;
         self.wav_entries
@@ -297,6 +307,7 @@ impl EguiController {
             return;
         };
         self.ui.collections.selected_sample = None;
+        self.focus_browser_context();
         self.ui.browser.autoscroll = true;
         if self.ui.browser.selection_anchor_visible.is_none() {
             self.ui.browser.selection_anchor_visible = Some(visible_row);
@@ -340,6 +351,7 @@ impl EguiController {
             return;
         };
         self.ui.collections.selected_sample = None;
+        self.focus_browser_context();
         self.ui.browser.autoscroll = true;
         match action {
             SelectionAction::Replace => {

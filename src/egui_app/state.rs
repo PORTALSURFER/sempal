@@ -17,6 +17,10 @@ pub struct UiState {
     pub waveform: WaveformState,
     pub drag: DragState,
     pub collections: CollectionsState,
+    /// Tracks which UI region currently owns keyboard focus.
+    pub focus: UiFocusState,
+    /// UI state for contextual hotkey affordances.
+    pub hotkeys: HotkeyUiState,
     /// Master output volume (0.0-1.0).
     pub volume: f32,
     pub loaded_wav: Option<PathBuf>,
@@ -33,6 +37,8 @@ impl Default for UiState {
             waveform: WaveformState::default(),
             drag: DragState::default(),
             collections: CollectionsState::default(),
+            focus: UiFocusState::default(),
+            hotkeys: HotkeyUiState::default(),
             volume: 1.0,
             loaded_wav: None,
             trash_folder: None,
@@ -102,6 +108,44 @@ impl Default for WaveformState {
 #[derive(Clone, Debug)]
 pub struct WaveformImage {
     pub image: egui::ColorImage,
+}
+
+/// Logical focus buckets used to drive contextual keyboard shortcuts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FocusContext {
+    /// No UI surface currently owns focus.
+    None,
+    /// The sample browser rows handle navigation/shortcuts.
+    SampleBrowser,
+    /// The collections sample list handles navigation/shortcuts.
+    CollectionSample,
+}
+
+/// Focus metadata shared between the controller and egui renderer.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct UiFocusState {
+    pub context: FocusContext,
+}
+
+impl UiFocusState {
+    /// Update the active focus context.
+    pub fn set_context(&mut self, context: FocusContext) {
+        self.context = context;
+    }
+}
+
+/// Presentation state for the contextual hotkey overlay.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct HotkeyUiState {
+    pub overlay_visible: bool,
+}
+
+impl Default for UiFocusState {
+    fn default() -> Self {
+        Self {
+            context: FocusContext::None,
+        }
+    }
 }
 
 /// Current playhead position/visibility.
