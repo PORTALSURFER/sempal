@@ -149,19 +149,25 @@ impl WaveformRenderer {
 
     fn sample_columns_for_width(samples: &[f32], width: u32) -> Vec<(f32, f32)> {
         let width = width.max(1) as usize;
-        let mut cols = vec![(0.0, 0.0); width];
         if samples.is_empty() {
-            return cols;
+            return vec![(0.0, 0.0); width];
         }
 
-        let chunk = (samples.len() / width).max(1);
+        let sample_count = samples.len();
+        let total = sample_count as f32;
+        let mut columns = vec![(0.0, 0.0); width];
 
-        for (x, col) in cols.iter_mut().enumerate() {
-            let start = x * chunk;
-            if start >= samples.len() {
-                break;
+        for (x, col) in columns.iter_mut().enumerate() {
+            let start = ((x as f32 * total) / width as f32)
+                .floor()
+                .min(sample_count.saturating_sub(1) as f32) as usize;
+            let mut end = (((x as f32 + 1.0) * total) / width as f32)
+                .ceil()
+                .max((start + 1) as f32)
+                .min(sample_count as f32) as usize;
+            if end <= start {
+                end = (start + 1).min(sample_count);
             }
-            let end = ((x + 1) * chunk).min(samples.len());
             let mut min: f32 = 1.0;
             let mut max: f32 = -1.0;
             for &sample in &samples[start..end] {
@@ -172,7 +178,7 @@ impl WaveformRenderer {
             *col = (min, max);
         }
 
-        cols
+        columns
     }
 
     fn paint_color_image(&self, columns: &[(f32, f32)]) -> ColorImage {
@@ -197,12 +203,13 @@ impl WaveformRenderer {
             vec![background; (width as usize) * (height as usize)],
         );
         let stride = width as usize;
-        let mid = (height / 2) as f32;
+        let half_height = (height.saturating_sub(1)) as f32 / 2.0;
+        let mid = half_height;
         let limit = height.saturating_sub(1) as f32;
 
         for (x, (min, max)) in columns.iter().enumerate() {
-            let top = (mid - max * (mid - 1.0)).clamp(0.0, limit) as u32;
-            let bottom = (mid - min * (mid - 1.0)).clamp(0.0, limit) as u32;
+            let top = (mid - max * half_height).clamp(0.0, limit) as u32;
+            let bottom = (mid - min * half_height).clamp(0.0, limit) as u32;
             for y in top..=bottom {
                 let idx = y as usize * stride + x;
                 if let Some(pixel) = image.pixels.get_mut(idx) {
@@ -248,5 +255,19 @@ mod tests {
         let renderer = WaveformRenderer::new(2, 2);
         let image = renderer.render_color_image_with_size(&[0.0, 0.5], 4, 6);
         assert_eq!(image.size, [4, 6]);
+    }
+
+    #[test]
+    fn sample_columns_cover_tail_sample() {
+        let samples = [0.1_f32, 0.1, 0.1, 0.1, 0.9];
+        let columns = WaveformRenderer::sample_columns_for_width(&samples, 2);
+        assert!((columns[1].1 - 0.9).abs() < 1e-6);
+    }
+
+    #[test]
+    fn sample_columns_replicate_sparse_audio() {
+        let samples = [0.75_f32];
+        let columns = WaveformRenderer::sample_columns_for_width(&samples, 4);
+        assert_eq!(columns, vec![(0.75, 0.75); 4]);
     }
 }

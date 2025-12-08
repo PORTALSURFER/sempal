@@ -1,18 +1,19 @@
 ## Goal
-- Add a waveform selection context menu with crop, trim/delete, directional fade-to-null, and mute-with-fade tools so users can edit the selected audio span directly.
+- Improve waveform rendering quality and selection accuracy, ensure all audio edit functions (fade, silence/mute, etc.) apply correctly to selections, and back everything with reliable automated tests.
 
 ## Proposed solutions
-- Attach a context menu to the waveform selection region that only appears when a selection exists and surfaces crop, trim, fade-out (`/` or `\` to show direction), and mute options with clear labels/tooltips.
-- Implement selection-based audio editing helpers (crop to selection, trim/remove selection gap, fade the selection to silence in a chosen direction, mute selection with a 5 ms edge fade) that reuse existing wav decode/write utilities and refresh waveform images, caches, and exports.
-- Provide status feedback and guard rails (e.g., disable when no loaded sample/selection) to avoid destructive actions without context.
-- Add focused tests covering audio processing math and controller flows so new edits do not regress playback/export behaviour.
+- Audit waveform rendering pipeline and selection math to find precision or aliasing issues; tighten sampling, interpolation, and drawing rules to keep visuals synced with audio data.
+- Review selection application path for fades, silence/mute, and related edits to ensure they act only within selection bounds, honor channels, and maintain metadata/cache consistency.
+- Introduce targeted property/fixture-based tests for waveform generation, selection math, and audio edit functions to guard against regressions.
+- Add integration-level tests that validate end-to-end selection application and resulting waveform/image updates where feasible with existing helpers.
 
 ## Step-by-step plan
-1. [x] Review waveform selection rendering and interaction wiring (`src/egui_app/ui/waveform_view.rs`, `src/egui_app/controller/playback.rs`, `src/egui_app/controller/selection_export.rs`) to confirm entry points for context menus and selection bounds.
-2. [x] Add controller-level selection edit APIs that reuse existing decoding helpers to crop to selection, trim/remove the selection span, apply directional fade-out to silence (`/` or `\`), and mute the selection with 5 ms edge fades while updating metadata caches, exports, and loaded waveform state.
-3. [x] Wire the waveform selection context menu UI to surface the new actions with clear labels/icons, enable/disable rules, and status messaging consistent with existing menus.
-4. [x] Add unit tests for the audio edit helpers (crop/trim/fade/mute) and controller responses (metadata refresh, waveform update), keeping functions/modules within size limits.
-5. [-] Perform a quick manual or scripted smoke test to ensure selection playback/export still work and new edits behave as expected.
+1. [-] Review waveform rendering and selection math (data preparation, downsampling, interpolation, draw) to identify where quality or accuracy is lost.
+2. [-] Trace selection-bound audio edit flows (fade in/out, directional fades, silence/mute) to confirm they clamp to selection, respect channels, and update caches/exports.
+3. [-] Implement rendering and selection accuracy fixes (e.g., improved downsampling/interpolation, bounds handling) without altering established UX.
+4. [-] Harden audio edit functions to correctly apply to selections (including edge fades for silence/mute) and keep metadata/waveform artifacts in sync.
+5. [-] Add comprehensive tests: unit/property tests for waveform math and selection operations, plus integration tests covering selection edits, rendering outputs, and cache/export updates.
+6. [-] Perform smoke checks for selection interaction, visual fidelity, playback, and export to validate changes.
 
 ## Code Style & Architecture Rules Reminder
 - Keep files under 400 lines; split when necessary.
