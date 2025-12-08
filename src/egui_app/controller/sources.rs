@@ -69,6 +69,8 @@ impl EguiController {
             return;
         }
         let removed = self.sources.remove(index);
+        self.missing_sources.remove(&removed.id);
+        self.missing_wavs.remove(&removed.id);
         self.db_cache.remove(&removed.id);
         for collection in self.collections.iter_mut() {
             let export_root = collection.export_path.clone();
@@ -98,7 +100,14 @@ impl EguiController {
     }
 
     pub(super) fn refresh_sources_ui(&mut self) {
-        self.ui.sources.rows = self.sources.iter().map(view_model::source_row).collect();
+        self.ui.sources.rows = self
+            .sources
+            .iter()
+            .map(|source| {
+                let missing = self.missing_sources.contains(&source.id);
+                view_model::source_row(source, missing)
+            })
+            .collect();
         self.ui.sources.menu_row = None;
         self.ui.sources.selected = self
             .selected_source
@@ -112,40 +121,47 @@ impl EguiController {
         self.sources.iter().find(|s| &s.id == selected).cloned()
     }
 
-    pub(super) fn drop_missing_source(&mut self, source_id: &SourceId, reason: &str) {
-        let Some(index) = self.sources.iter().position(|s| &s.id == source_id) else {
-            return;
-        };
-        let removed = self.sources.remove(index);
-        self.db_cache.remove(&removed.id);
-        for collection in self.collections.iter_mut() {
-            let export_root = collection.export_path.clone();
-            let folder_name = collection_export::collection_folder_name(collection);
-            let removed_members = collection.prune_source(&removed.id);
-            for member in removed_members {
-                delete_exported_file(export_root.clone(), &folder_name, &member);
+    pub(super) fn rebuild_missing_sources(&mut self) {
+        self.missing_sources.clear();
+        for source in &self.sources {
+            if !source.root.is_dir() {
+                self.missing_sources.insert(source.id.clone());
+                self.missing_wavs
+                    .entry(source.id.clone())
+                    .or_insert_with(std::collections::HashSet::new);
             }
         }
-        if self
-            .selected_source
-            .as_ref()
-            .is_some_and(|id| id == &removed.id)
-        {
-            self.selected_source = None;
-            self.selected_wav = None;
+    }
+
+    pub(super) fn mark_source_missing(&mut self, source_id: &SourceId, reason: &str) {
+        let inserted = self.missing_sources.insert(source_id.clone());
+        if inserted && self.selected_source.as_ref() == Some(source_id) {
             self.loaded_wav = None;
             self.loaded_audio = None;
             self.ui.loaded_wav = None;
+            self.decoded_waveform = None;
+            self.ui.waveform.image = None;
         }
-        let _ = self.persist_config("Failed to save config after removing source");
+        self.missing_wavs
+            .entry(source_id.clone())
+            .or_insert_with(std::collections::HashSet::new);
         self.refresh_sources_ui();
-        let _ = self.refresh_wavs();
-        self.refresh_collections_ui();
-        self.select_first_source();
-        self.set_status(
-            format!("{reason}: {}", removed.root.display()),
-            StatusTone::Warning,
-        );
+        if let Some(source) = self.sources.iter().find(|s| &s.id == source_id) {
+            self.set_status(
+                format!("{reason}: {}", source.root.display()),
+                StatusTone::Warning,
+            );
+        } else {
+            self.set_status(reason, StatusTone::Warning);
+        }
+    }
+
+    pub(super) fn clear_source_missing(&mut self, source_id: &SourceId) {
+        let removed = self.missing_sources.remove(source_id);
+        self.missing_wavs.remove(source_id);
+        if removed {
+            self.refresh_sources_ui();
+        }
     }
 
     fn select_source_internal(&mut self, id: Option<SourceId>, pending_path: Option<PathBuf>) {
@@ -184,6 +200,11 @@ impl EguiController {
         self.loaded_audio = None;
         self.ui.browser = SampleBrowserState::default();
         self.ui.loaded_wav = None;
+        if let Some(selected) = self.selected_source.as_ref() {
+            self.missing_wavs.remove(selected);
+        } else {
+            self.missing_wavs.clear();
+        }
     }
 
     pub(super) fn database_for(

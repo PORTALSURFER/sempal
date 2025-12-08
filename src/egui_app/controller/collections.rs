@@ -2,6 +2,7 @@ use super::collection_export;
 use super::*;
 use crate::sample_sources::SampleTag;
 use crate::sample_sources::collections::CollectionMember;
+use std::path::PathBuf;
 
 impl EguiController {
     /// Select a sample from the collection list and ensure it plays.
@@ -34,6 +35,14 @@ impl EguiController {
         self.selected_wav = None;
         self.loaded_wav = None;
         self.ui.loaded_wav = None;
+        if self.sample_missing(&target_source, &target_path) {
+            self.show_missing_waveform_notice(&target_path);
+            self.set_status(
+                format!("File missing: {}", target_path.display()),
+                StatusTone::Warning,
+            );
+            return;
+        }
         if let Err(err) = self.load_collection_waveform(&source, &target_path) {
             self.set_status(err, StatusTone::Error);
             return;
@@ -192,8 +201,30 @@ impl EguiController {
 
     pub(super) fn refresh_collections_ui(&mut self) {
         let selected_id = self.selected_collection.clone();
-        self.ui.collections.rows =
-            view_model::collection_rows(&self.collections, selected_id.as_ref());
+        let member_refs: Vec<Vec<(SourceId, PathBuf)>> = self
+            .collections
+            .iter()
+            .map(|collection| {
+                collection
+                    .members
+                    .iter()
+                    .map(|member| (member.source_id.clone(), member.relative_path.clone()))
+                    .collect()
+            })
+            .collect();
+        let collection_missing: Vec<bool> = member_refs
+            .iter()
+            .map(|members| {
+                members
+                    .iter()
+                    .any(|(source_id, path)| self.sample_missing(source_id, path))
+            })
+            .collect();
+        self.ui.collections.rows = view_model::collection_rows(
+            &self.collections,
+            selected_id.as_ref(),
+            &collection_missing,
+        );
         self.ui.collections.selected = selected_id
             .as_ref()
             .and_then(|id| self.collections.iter().position(|c| &c.id == id));
@@ -208,8 +239,24 @@ impl EguiController {
             .cloned();
         let sources = self.sources.clone();
         let mut tag_error: Option<String> = None;
-        self.ui.collections.samples =
-            view_model::collection_samples(selected.as_ref(), &sources, |member| {
+        let sample_missing_refs = selected.as_ref().map(|collection| {
+            collection
+                .members
+                .iter()
+                .map(|member| (member.source_id.clone(), member.relative_path.clone()))
+                .collect::<Vec<_>>()
+        });
+        let sample_missing_flags = sample_missing_refs.as_ref().map(|refs| {
+            refs.iter()
+                .map(|(source_id, path)| self.sample_missing(source_id, path))
+                .collect::<Vec<bool>>()
+        });
+        let missing_slice = sample_missing_flags.as_deref();
+        self.ui.collections.samples = view_model::collection_samples(
+            selected.as_ref(),
+            &sources,
+            missing_slice,
+            |member| {
                 match self.tag_for_collection_member(member) {
                     Ok(tag) => tag,
                     Err(err) => {
@@ -219,7 +266,8 @@ impl EguiController {
                         SampleTag::Neutral
                     }
                 }
-            });
+            },
+        );
         if let Some(err) = tag_error {
             self.set_status(err, StatusTone::Warning);
         }

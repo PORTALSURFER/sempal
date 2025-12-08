@@ -40,14 +40,15 @@ impl EguiController {
                     Ok(stats) => {
                         self.set_status(
                             format!(
-                                "Scan complete: {} added, {} updated, {} removed",
-                                stats.added, stats.updated, stats.removed
+                                "Scan complete: {} added, {} updated, {} missing",
+                                stats.added, stats.updated, stats.missing
                             ),
                             StatusTone::Info,
                         );
                         if let Some(source) = self.current_source() {
                             self.wav_cache.remove(&source.id);
                             self.label_cache.remove(&source.id);
+                            self.missing_wavs.remove(&source.id);
                         }
                         self.queue_wav_load();
                     }

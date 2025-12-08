@@ -51,6 +51,7 @@ pub struct SemanticPalette {
     pub triage_trash_subtle: Color32,
     pub triage_keep: Color32,
     pub text_contrast: Color32,
+    pub missing: Color32,
 }
 
 /// Primary UI palette values.
@@ -89,6 +90,7 @@ pub fn semantic_palette() -> SemanticPalette {
         triage_trash_subtle: Color32::from_rgb(116, 78, 74),
         triage_keep: Color32::from_rgb(126, 156, 126),
         text_contrast: Color32::WHITE,
+        missing: Color32::from_rgb(204, 132, 132),
     }
 }
 
@@ -117,6 +119,11 @@ pub fn high_contrast_text() -> Color32 {
 /// Destructive action text colour.
 pub fn destructive_text() -> Color32 {
     semantic_palette().destructive
+}
+
+/// Text colour for missing entities.
+pub fn missing_text() -> Color32 {
+    semantic_palette().missing
 }
 
 /// Text colour used for soft warnings.

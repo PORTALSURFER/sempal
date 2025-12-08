@@ -2,7 +2,8 @@ use super::style;
 use super::*;
 use crate::selection::SelectionEdge;
 use eframe::egui::{
-    self, Color32, CursorIcon, Frame, Margin, RichText, Stroke, StrokeKind, TextureOptions, Ui,
+    self, Align2, Color32, CursorIcon, Frame, Margin, RichText, Stroke, StrokeKind, TextStyle,
+    TextureOptions, Ui,
 };
 
 impl EguiApp {
@@ -34,6 +35,24 @@ impl EguiApp {
                 .update_waveform_size(target_width, target_height);
             let painter = ui.painter();
             let pointer_pos = response.hover_pos();
+            if let Some(message) = self.controller.ui.waveform.notice.as_ref() {
+                painter.rect_filled(rect, 0.0, palette.bg_primary);
+                painter.rect_stroke(
+                    rect,
+                    0.0,
+                    Stroke::new(2.0, palette.panel_outline),
+                    StrokeKind::Inside,
+                );
+                let font = TextStyle::Heading.resolve(ui.style());
+                painter.text(
+                    rect.center(),
+                    Align2::CENTER_CENTER,
+                    message,
+                    font,
+                    style::missing_text(),
+                );
+                return;
+            }
             let tex_id = if let Some(image) = &self.controller.ui.waveform.image {
                 let new_size = image.image.size;
                 if let Some(tex) = self.waveform_tex.as_mut() {

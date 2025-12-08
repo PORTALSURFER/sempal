@@ -35,7 +35,18 @@ impl EguiApp {
                         ui.push_id(&row.id, |ui| {
                             let row_width = ui.available_width();
                             let padding = ui.spacing().button_padding.x * 2.0;
-                            let label = clamp_label_for_width(&row.name, row_width - padding);
+                            let base_label =
+                                clamp_label_for_width(&row.name, row_width - padding);
+                            let label = if row.missing {
+                                format!("! {base_label}")
+                            } else {
+                                base_label
+                            };
+                            let text_color = if row.missing {
+                                style::missing_text()
+                            } else {
+                                style::high_contrast_text()
+                            };
                             let bg = is_selected.then_some(style::row_selected_fill());
                             let response = render_list_row(
                                 ui,
@@ -43,7 +54,7 @@ impl EguiApp {
                                 row_width,
                                 row_height,
                                 bg,
-                                style::high_contrast_text(),
+                                text_color,
                                 egui::Sense::click(),
                                 None,
                                 None,

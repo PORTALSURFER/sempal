@@ -3,6 +3,7 @@ use super::*;
 use crate::egui_app::controller::collection_export;
 use crate::egui_app::state::{DragPayload, TriageFlagColumn, TriageFlagFilter};
 use crate::sample_sources::collections::CollectionMember;
+use crate::sample_sources::Collection;
 use hound::WavReader;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
@@ -17,15 +18,16 @@ fn max_sample_amplitude(path: &Path) -> f32 {
 }
 
 #[test]
-fn missing_source_is_pruned_during_load() {
+fn missing_source_is_marked_during_load() {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source.clone());
     controller.selected_source = Some(source.id.clone());
     std::fs::remove_dir_all(&source.root).unwrap();
     controller.queue_wav_load();
     controller.poll_wav_loader();
-    assert!(controller.sources.is_empty());
-    assert!(controller.selected_source.is_none());
+    assert_eq!(controller.sources.len(), 1);
+    assert!(controller.missing_sources.contains(&source.id));
+    assert!(controller.ui.sources.rows.first().is_some_and(|row| row.missing));
 }
 
 #[test]
@@ -858,4 +860,69 @@ fn taking_out_trash_deletes_files() {
     assert!(!trash_root.join("nested").join("more.wav").exists());
     let remaining: Vec<_> = std::fs::read_dir(&trash_root).unwrap().collect();
     assert!(remaining.is_empty());
+}
+
+#[test]
+fn selecting_missing_sample_sets_waveform_notice() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.selected_source = Some(source.id.clone());
+    controller.wav_entries = vec![WavEntry {
+        relative_path: PathBuf::from("one.wav"),
+        file_size: 1,
+        modified_ns: 1,
+        tag: SampleTag::Neutral,
+        missing: true,
+    }];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+
+    controller.select_wav_by_path(Path::new("one.wav"));
+
+    assert!(controller
+        .ui
+        .waveform
+        .notice
+        .as_ref()
+        .is_some_and(|msg| msg.contains("one.wav")));
+    assert!(controller.loaded_audio.is_none());
+}
+
+#[test]
+fn collection_views_flag_missing_members() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.selected_source = Some(source.id.clone());
+    controller.wav_entries = vec![WavEntry {
+        relative_path: PathBuf::from("one.wav"),
+        file_size: 1,
+        modified_ns: 1,
+        tag: SampleTag::Neutral,
+        missing: true,
+    }];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+    controller.rebuild_missing_lookup_for_source(&source.id);
+
+    let mut collection = Collection::new("Test");
+    collection.members.push(CollectionMember {
+        source_id: source.id.clone(),
+        relative_path: PathBuf::from("one.wav"),
+    });
+    controller.selected_collection = Some(collection.id.clone());
+    controller.collections.push(collection);
+    controller.refresh_collections_ui();
+
+    assert!(controller
+        .ui
+        .collections
+        .rows
+        .first()
+        .is_some_and(|row| row.missing));
+    assert!(controller
+        .ui
+        .collections
+        .samples
+        .iter()
+        .any(|sample| sample.missing));
 }
