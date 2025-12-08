@@ -2,8 +2,6 @@
 
 --
 
-\plan - lets add the ability to drag drop folder externally, from the OS explorer for example, onto the sample source list, to add a new sample source 
-
 \plan - add ability to select the audio output device, sample rate, and other typical audio output settings in a nice options menu.
 
 \plan - for missing samples, lets add a missing icon clearly informing the user visually, keep then in the database though. later wil will add features to try and recover missing items.

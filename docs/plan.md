@@ -1,18 +1,15 @@
 ## Goal
-Ensure the Windows build of Sempal always displays the custom app icon in the taskbar/pinned apps instead of intermittently falling back to the default Windows placeholder.
+- Enable users to drag a folder from the OS file explorer onto the sample source list to add it as a new Sample Source without using the picker dialog.
 
-## Proposed Solutions
-- Investigate how the current runtime PNG-based icon setup interacts with Windows shell resources to identify why the icon sometimes disappears.
-- Provide a proper multi-resolution `.ico` asset derived from `assets/logo3.png` and bundle it via the Windows resource pipeline so the OS always has a native icon to show.
-- Keep the existing runtime `ViewportBuilder` icon initialization but load it from the `.ico` bytes (or a resilient PNG fallback) to ensure the window icon and the executable resource stay in sync.
-- Add validation steps (build-time checks or manual QA notes) so regressions around icon bundling are caught early.
+## Proposed solutions
+- Track the on-screen bounds of the sources panel inside `EguiApp` and watch egui`s `hovered_files`/`dropped_files`; when the cursor is over that rect, highlight it and forward dropped folder paths to `EguiController::add_source_from_path`.
+- Introduce a lightweight UI state flag (either in `EguiApp` or `SourcePanelState`) that marks when external drag payloads hover the panel, allowing us to reuse existing render helpers while keeping controller logic untouched except for consuming new drop events.
 
-## Step-by-Step Plan
-1. [x] Review `src/main.rs`, `build.rs`, and the assets directory to document how icons are currently loaded at runtime and during packaging, and pinpoint where Windows might miss a compiled icon resource.
-2. [x] Generate or import a multi-size `.ico` derived from `assets/logo3.png`, add it under `assets/`, and document the conversion approach so it can be regenerated.
-3. [x] Update `Cargo.toml`/`build.rs` to include the `.ico` through a Windows resource script (e.g., `winresource` or `embed-resource`), ensuring the executable always exposes the custom icon to the shell.
-4. [x] Adjust `load_app_icon()` (or a helper) to prefer the `.ico` data, fall back to the PNG when necessary, and add logging/tests to prevent silent icon failures.
-5. [~] Build the Windows target and perform manual verification (and/or automated assertions if feasible) confirming both the taskbar icon and runtime window icon show the custom artwork reliably. (Release/test builds complete; visual taskbar confirmation requires manual QA on Windows shell.)
+## Step-by-step plan
+1. [x] Inspect the current `EguiApp::update` loop plus `render_sources_panel` to confirm how pointer events and layout rects are managed, and decide where to store the panel bounds for drop-hit testing.
+2. [x] Update the sources panel rendering to record its bounding `Rect`, watch egui`s `hovered_files`, and render a visual cue (frame tint or overlay) whenever an external drag hovers the area with a path payload.
+3. [x] Extend the app update loop to process `dropped_files`: if the drop position falls inside the stored panel rect, normalize every dropped path, filter to directories, and call `EguiController::add_source_from_path`, bubbling any errors to the status bar.
+4. [x] Document manual QA steps to verify the drag/drop flow and watch for regressions in source selection and drag interactions when running the UI locally.
 
 ## Code Style & Architecture Rules Reminder
 - Keep files under 400 lines; split when necessary.
