@@ -16,6 +16,7 @@ pub(crate) mod hotkeys;
 mod sample_browser_actions;
 mod scans;
 mod selection_export;
+mod selection_edits;
 mod sources;
 mod trash;
 mod wavs;

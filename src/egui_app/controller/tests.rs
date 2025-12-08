@@ -516,6 +516,63 @@ fn waveform_image_resizes_to_view() {
 }
 
 #[test]
+fn cropping_selection_overwrites_file() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.selected_source = Some(source.id.clone());
+    controller.cache_db(&source).unwrap();
+    let wav_path = source.root.join("edit.wav");
+    write_test_wav(&wav_path, &[0.1, 0.2, 0.3, 0.4]);
+    controller.wav_entries = vec![sample_entry("edit.wav", SampleTag::Neutral)];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+    controller
+        .load_waveform_for_selection(&source, Path::new("edit.wav"))
+        .unwrap();
+    controller.ui.waveform.selection = Some(SelectionRange::new(0.25, 0.75));
+
+    controller.crop_waveform_selection().unwrap();
+
+    let samples: Vec<f32> = hound::WavReader::open(&wav_path)
+        .unwrap()
+        .samples::<f32>()
+        .map(|s| s.unwrap())
+        .collect();
+    assert_eq!(samples, vec![0.2, 0.3]);
+    assert!(controller.ui.waveform.selection.is_none());
+    assert_eq!(controller.ui.status.badge_label, "Info");
+}
+
+#[test]
+fn trimming_selection_removes_span() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.selected_source = Some(source.id.clone());
+    controller.cache_db(&source).unwrap();
+    let wav_path = source.root.join("trim.wav");
+    write_test_wav(&wav_path, &[0.0, 0.1, 0.2, 0.3]);
+    controller.wav_entries = vec![sample_entry("trim.wav", SampleTag::Neutral)];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+    controller
+        .load_waveform_for_selection(&source, Path::new("trim.wav"))
+        .unwrap();
+    controller.ui.waveform.selection = Some(SelectionRange::new(0.25, 0.75));
+
+    controller.trim_waveform_selection().unwrap();
+
+    let samples: Vec<f32> = hound::WavReader::open(&wav_path)
+        .unwrap()
+        .samples::<f32>()
+        .map(|s| s.unwrap())
+        .collect();
+    assert_eq!(samples, vec![0.0, 0.3]);
+    assert!(controller.ui.waveform.selection.is_none());
+    let entry = controller.wav_entries.first().unwrap();
+    assert!(entry.file_size > 0);
+}
+
+#[test]
 fn selection_drop_adds_clip_to_collection() {
     let temp = tempdir().unwrap();
     let root = temp.path().join("source");
