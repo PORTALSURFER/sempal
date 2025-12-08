@@ -12,7 +12,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut viewport = egui::ViewportBuilder::default()
         .with_min_inner_size(MIN_VIEWPORT_SIZE)
-        .with_maximized(true);
+        .with_maximized(true)
+        .with_drag_and_drop(true);
     if let Some(icon) = load_app_icon() {
         viewport = viewport.with_icon(icon);
     }
