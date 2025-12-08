@@ -208,13 +208,7 @@ pub fn inner_border() -> Stroke {
 
 /// Background used when hovering list rows.
 pub fn row_hover_fill() -> Color32 {
-    let palette = palette();
-    Color32::from_rgba_unmultiplied(
-        palette.accent_ice.r(),
-        palette.accent_ice.g(),
-        palette.accent_ice.b(),
-        28,
-    )
+    with_alpha(palette().accent_ice, 96)
 }
 
 /// Background used for selected list rows.
