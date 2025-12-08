@@ -42,6 +42,7 @@ pub struct WavEntry {
     pub file_size: u64,
     pub modified_ns: i64,
     pub tag: SampleTag,
+    pub missing: bool,
 }
 
 /// Errors returned when managing a source database.
@@ -107,17 +108,19 @@ impl SourceDatabase {
         let mut stmt = self
             .connection
             .prepare_cached(
-                "INSERT INTO wav_files (path, file_size, modified_ns, tag)
-                 VALUES (?1, ?2, ?3, ?4)
+                "INSERT INTO wav_files (path, file_size, modified_ns, tag, missing)
+                 VALUES (?1, ?2, ?3, ?4, ?5)
                  ON CONFLICT(path) DO UPDATE SET file_size = excluded.file_size,
-                                                modified_ns = excluded.modified_ns",
+                                                modified_ns = excluded.modified_ns,
+                                                missing = excluded.missing",
             )
             .map_err(map_sql_error)?;
         stmt.execute(params![
             path,
             file_size as i64,
             modified_ns,
-            SampleTag::Neutral.as_i64()
+            SampleTag::Neutral.as_i64(),
+            0i64
         ])
         .map_err(map_sql_error)?;
         Ok(())
@@ -141,6 +144,13 @@ impl SourceDatabase {
         batch.commit()
     }
 
+    /// Update the missing flag for a wav file by relative path.
+    pub fn set_missing(&self, relative_path: &Path, missing: bool) -> Result<(), SourceDbError> {
+        let mut batch = self.write_batch()?;
+        batch.set_missing(relative_path, missing)?;
+        batch.commit()
+    }
+
     /// Remove a wav file row by relative path.
     pub fn remove_file(&self, relative_path: &Path) -> Result<(), SourceDbError> {
         let path = normalize_relative_path(relative_path)?;
@@ -151,10 +161,9 @@ impl SourceDatabase {
 
     /// Fetch all tracked wav files for this source.
     pub fn list_files(&self) -> Result<Vec<WavEntry>, SourceDbError> {
-        let mut stmt = self
-            .connection
-            .prepare("SELECT path, file_size, modified_ns, tag FROM wav_files ORDER BY path ASC")
-            .map_err(map_sql_error)?;
+        let mut stmt = self.connection.prepare(
+            "SELECT path, file_size, modified_ns, tag, missing FROM wav_files ORDER BY path ASC",
+        ).map_err(map_sql_error)?;
         let rows = stmt
             .query_map([], |row| {
                 let path: String = row.get(0)?;
@@ -163,12 +172,27 @@ impl SourceDatabase {
                     file_size: row.get::<_, i64>(1)? as u64,
                     modified_ns: row.get(2)?,
                     tag: SampleTag::from_i64(row.get(3)?),
+                    missing: row.get::<_, i64>(4)? != 0,
                 })
             })
             .map_err(map_sql_error)?
             .collect::<Result<Vec<_>, _>>()
             .map_err(map_sql_error)?;
         Ok(rows)
+    }
+
+    /// Fetch relative paths that are currently marked missing.
+    pub fn list_missing_paths(&self) -> Result<Vec<PathBuf>, SourceDbError> {
+        let mut stmt = self
+            .connection
+            .prepare("SELECT path FROM wav_files WHERE missing != 0")
+            .map_err(map_sql_error)?;
+        let rows = stmt
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(map_sql_error)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(map_sql_error)?;
+        Ok(rows.into_iter().map(PathBuf::from).collect())
     }
 
     /// Start a write batch that wraps related mutations in a single transaction.
@@ -202,11 +226,12 @@ impl SourceDatabase {
                 path TEXT PRIMARY KEY,
                 file_size INTEGER NOT NULL,
                 modified_ns INTEGER NOT NULL,
-                tag INTEGER NOT NULL DEFAULT 0
+                tag INTEGER NOT NULL DEFAULT 0,
+                missing INTEGER NOT NULL DEFAULT 0
             );",
             )
             .map_err(map_sql_error)?;
-        ensure_tag_column(&self.connection)?;
+        ensure_optional_columns(&self.connection)?;
         Ok(())
     }
 }
@@ -227,17 +252,19 @@ impl<'conn> SourceWriteBatch<'conn> {
         let path = normalize_relative_path(relative_path)?;
         self.tx
             .prepare_cached(
-                "INSERT INTO wav_files (path, file_size, modified_ns, tag)
-                 VALUES (?1, ?2, ?3, ?4)
+                "INSERT INTO wav_files (path, file_size, modified_ns, tag, missing)
+                 VALUES (?1, ?2, ?3, ?4, ?5)
                  ON CONFLICT(path) DO UPDATE SET file_size = excluded.file_size,
-                                                modified_ns = excluded.modified_ns",
+                                                modified_ns = excluded.modified_ns,
+                                                missing = excluded.missing",
             )
             .map_err(map_sql_error)?
             .execute(params![
                 path,
                 file_size as i64,
                 modified_ns,
-                SampleTag::Neutral.as_i64()
+                SampleTag::Neutral.as_i64(),
+                0i64
             ])
             .map_err(map_sql_error)?;
         Ok(())
@@ -250,6 +277,22 @@ impl<'conn> SourceWriteBatch<'conn> {
             .prepare_cached("UPDATE wav_files SET tag = ?1 WHERE path = ?2")
             .map_err(map_sql_error)?
             .execute(params![tag.as_i64(), path])
+            .map_err(map_sql_error)?;
+        Ok(())
+    }
+
+    /// Update the missing flag for a wav row within the batch.
+    pub fn set_missing(
+        &mut self,
+        relative_path: &Path,
+        missing: bool,
+    ) -> Result<(), SourceDbError> {
+        let path = normalize_relative_path(relative_path)?;
+        let flag = if missing { 1i64 } else { 0i64 };
+        self.tx
+            .prepare_cached("UPDATE wav_files SET missing = ?1 WHERE path = ?2")
+            .map_err(map_sql_error)?
+            .execute(params![flag, path])
             .map_err(map_sql_error)?;
         Ok(())
     }
@@ -307,19 +350,27 @@ fn create_parent_if_needed(path: &Path) -> Result<(), SourceDbError> {
     Ok(())
 }
 
-fn ensure_tag_column(connection: &Connection) -> Result<(), SourceDbError> {
+fn ensure_optional_columns(connection: &Connection) -> Result<(), SourceDbError> {
     let mut stmt = connection
         .prepare("PRAGMA table_info(wav_files)")
         .map_err(map_sql_error)?;
-    let has_tag = stmt
+    let columns: std::collections::HashSet<String> = stmt
         .query_map([], |row| row.get::<_, String>(1))
         .map_err(map_sql_error)?
         .filter_map(Result::ok)
-        .any(|name| name == "tag");
-    if !has_tag {
+        .collect();
+    if !columns.contains("tag") {
         connection
             .execute(
                 "ALTER TABLE wav_files ADD COLUMN tag INTEGER NOT NULL DEFAULT 0",
+                [],
+            )
+            .map_err(map_sql_error)?;
+    }
+    if !columns.contains("missing") {
+        connection
+            .execute(
+                "ALTER TABLE wav_files ADD COLUMN missing INTEGER NOT NULL DEFAULT 0",
                 [],
             )
             .map_err(map_sql_error)?;
@@ -340,18 +391,22 @@ mod tests {
 
         let first = db.list_files().unwrap();
         assert_eq!(first[0].tag, SampleTag::Neutral);
+        assert!(!first[0].missing);
 
         db.set_tag(Path::new("one.wav"), SampleTag::Keep).unwrap();
         let second = db.list_files().unwrap();
         assert_eq!(second[0].tag, SampleTag::Keep);
+        assert!(!second[0].missing);
 
         db.upsert_file(Path::new("one.wav"), 12, 6).unwrap();
         let third = db.list_files().unwrap();
         assert_eq!(third[0].tag, SampleTag::Keep);
+        assert!(!third[0].missing);
 
         let reopened = SourceDatabase::open(dir.path()).unwrap();
         let fourth = reopened.list_files().unwrap();
         assert_eq!(fourth[0].tag, SampleTag::Keep);
+        assert!(!fourth[0].missing);
     }
 
     #[test]
@@ -380,7 +435,7 @@ mod tests {
     }
 
     #[test]
-    fn missing_tag_column_is_added_on_open() {
+    fn missing_columns_are_added_on_open() {
         let dir = tempdir().unwrap();
         let db_file = dir.path().join(DB_FILE_NAME);
         {
@@ -404,5 +459,19 @@ mod tests {
         let rows = db.list_files().unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].tag, SampleTag::Neutral);
+        assert!(!rows[0].missing);
+    }
+
+    #[test]
+    fn missing_flag_round_trips() {
+        let dir = tempdir().unwrap();
+        let db = SourceDatabase::open(dir.path()).unwrap();
+        db.upsert_file(Path::new("one.wav"), 10, 5).unwrap();
+        db.set_missing(Path::new("one.wav"), true).unwrap();
+        let rows = db.list_files().unwrap();
+        assert!(rows[0].missing);
+        db.set_missing(Path::new("one.wav"), false).unwrap();
+        let rows = db.list_files().unwrap();
+        assert!(!rows[0].missing);
     }
 }

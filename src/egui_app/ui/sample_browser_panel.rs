@@ -49,8 +49,12 @@ impl EguiApp {
                                 None => continue,
                             }
                         };
-                        let (tag, path) = match self.controller.wav_entry(entry_index) {
-                            Some(entry) => (entry.tag, entry.relative_path.clone()),
+                        let (tag, path, missing) = match self.controller.wav_entry(entry_index) {
+                            Some(entry) => (
+                                entry.tag,
+                                entry.relative_path.clone(),
+                                entry.missing,
+                            ),
                             None => continue,
                         };
                         let is_focused = selected_row == Some(row);
@@ -80,6 +84,9 @@ impl EguiApp {
                         if is_loaded {
                             label.push_str(" • loaded");
                         }
+                        if missing {
+                            label = format!("! {label}");
+                        }
                         let label_width =
                             row_width - padding - number_width - number_gap - trailing_space;
                         let label = clamp_label_for_width(&label, label_width);
@@ -89,6 +96,11 @@ impl EguiApp {
                             None
                         };
                         let number_text = format!("{}", row + 1);
+                        let text_color = if missing {
+                            style::missing_text()
+                        } else {
+                            palette.text_primary
+                        };
                         ui.push_id(&path, |ui| {
                             let response = render_list_row(
                                 ui,
@@ -96,7 +108,7 @@ impl EguiApp {
                                 row_width,
                                 row_height,
                                 bg,
-                                palette.text_primary,
+                                text_color,
                                 egui::Sense::click_and_drag(),
                                 Some(NumberColumn {
                                     text: &number_text,

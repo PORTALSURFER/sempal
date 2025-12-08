@@ -6,9 +6,10 @@ impl EguiController {
             return;
         };
         if !source.root.is_dir() {
-            self.drop_missing_source(&source.id, "Source folder missing");
+            self.mark_source_missing(&source.id, "Source folder missing");
             return;
         }
+        self.clear_source_missing(&source.id);
         if let Some(entries) = self.wav_cache.get(&source.id).cloned() {
             self.apply_wav_entries(entries, true, Some(source.id.clone()), None);
             return;
@@ -56,14 +57,14 @@ impl EguiController {
     fn handle_wav_load_error(&mut self, source_id: &SourceId, err: LoadEntriesError) {
         match err {
             LoadEntriesError::Db(SourceDbError::InvalidRoot(_)) => {
-                self.drop_missing_source(source_id, "Source folder missing");
+                self.mark_source_missing(source_id, "Source folder missing");
             }
             LoadEntriesError::Db(db_err) => {
                 self.set_status(format!("Failed to load wavs: {db_err}"), StatusTone::Error);
             }
             LoadEntriesError::Message(msg) => {
                 if msg.contains("not a directory") {
-                    self.drop_missing_source(source_id, "Source folder missing");
+                    self.mark_source_missing(source_id, "Source folder missing");
                 } else {
                     self.set_status(format!("Failed to load wavs: {msg}"), StatusTone::Error);
                 }
@@ -105,8 +106,15 @@ impl EguiController {
                     .unwrap_or(true);
             if needs_labels {
                 self.label_cache
-                    .insert(id, self.build_label_cache(&self.wav_entries));
+                    .insert(id.clone(), self.build_label_cache(&self.wav_entries));
             }
+            let missing: std::collections::HashSet<std::path::PathBuf> = self
+                .wav_entries
+                .iter()
+                .filter(|entry| entry.missing)
+                .map(|entry| entry.relative_path.clone())
+                .collect();
+            self.missing_wavs.insert(id, missing);
         }
         let prefix = if from_cache { "Cached" } else { "Loaded" };
         let suffix = elapsed

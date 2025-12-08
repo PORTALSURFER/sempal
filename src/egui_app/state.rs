@@ -73,6 +73,7 @@ pub struct SourceRowView {
     pub id: SourceId,
     pub name: String,
     pub path: String,
+    pub missing: bool,
 }
 
 /// Cached waveform image and playback overlays.
@@ -82,6 +83,7 @@ pub struct WaveformState {
     pub playhead: PlayheadState,
     pub selection: Option<SelectionRange>,
     pub loop_enabled: bool,
+    pub notice: Option<String>,
 }
 
 impl Default for WaveformState {
@@ -91,6 +93,7 @@ impl Default for WaveformState {
             playhead: PlayheadState::default(),
             selection: None,
             loop_enabled: false,
+            notice: None,
         }
     }
 }
@@ -243,6 +246,7 @@ pub struct CollectionRowView {
     pub selected: bool,
     pub count: usize,
     pub export_path: Option<PathBuf>,
+    pub missing: bool,
 }
 
 /// Display data for a sample inside a collection.
@@ -253,4 +257,5 @@ pub struct CollectionSampleView {
     pub path: PathBuf,
     pub label: String,
     pub tag: SampleTag,
+    pub missing: bool,
 }

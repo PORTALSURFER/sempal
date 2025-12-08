@@ -17,7 +17,7 @@ use super::{SourceDatabase, SourceDbError};
 pub struct ScanStats {
     pub added: usize,
     pub updated: usize,
-    pub removed: usize,
+    pub missing: usize,
     pub total_files: usize,
 }
 
@@ -47,7 +47,7 @@ pub fn scan_once(db: &SourceDatabase) -> Result<ScanStats, ScanError> {
     visit_dir(&root, &mut |path| {
         sync_file(&mut batch, &root, path, &mut existing, &mut stats)
     })?;
-    remove_missing(&mut batch, existing, &mut stats)?;
+    mark_missing(&mut batch, existing, &mut stats)?;
     batch.commit()?;
     Ok(stats)
 }
@@ -116,14 +116,17 @@ fn sync_file(
     Ok(())
 }
 
-fn remove_missing(
+fn mark_missing(
     batch: &mut SourceWriteBatch<'_>,
     existing: HashMap<PathBuf, WavEntry>,
     stats: &mut ScanStats,
 ) -> Result<(), ScanError> {
     for leftover in existing.values() {
-        batch.remove_file(&leftover.relative_path)?;
-        stats.removed += 1;
+        if leftover.missing {
+            continue;
+        }
+        batch.set_missing(&leftover.relative_path, true)?;
+        stats.missing += 1;
     }
     Ok(())
 }
@@ -169,7 +172,11 @@ fn apply_diff(
 ) -> Result<(), ScanError> {
     let path = facts.relative.clone();
     match existing.remove(&path) {
-        Some(entry) if entry.file_size == facts.size && entry.modified_ns == facts.modified_ns => {}
+        Some(entry) if entry.file_size == facts.size && entry.modified_ns == facts.modified_ns => {
+            if entry.missing {
+                batch.set_missing(&path, false)?;
+            }
+        }
         Some(_) => {
             batch.upsert_file(&path, facts.size, facts.modified_ns)?;
             stats.updated += 1;
@@ -203,7 +210,7 @@ mod tests {
     use tempfile::tempdir;
 
     #[test]
-    fn scan_add_update_remove() {
+    fn scan_add_update_mark_missing() {
         let dir = tempdir().unwrap();
         let file_path = dir.path().join("one.wav");
         std::fs::write(&file_path, b"one").unwrap();
@@ -221,8 +228,19 @@ mod tests {
 
         std::fs::remove_file(&file_path).unwrap();
         let third = scan_once(&db).unwrap();
-        assert_eq!(third.removed, 1);
-        assert_eq!(db.list_files().unwrap().len(), 0);
+        assert_eq!(third.missing, 1);
+        let rows = db.list_files().unwrap();
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0].missing);
+        let fourth = scan_once(&db).unwrap();
+        assert_eq!(fourth.missing, 0);
+
+        std::fs::write(&file_path, b"one").unwrap();
+        let fifth = scan_once(&db).unwrap();
+        assert_eq!(fifth.added, 0);
+        assert_eq!(fifth.updated, 1);
+        let rows = db.list_files().unwrap();
+        assert!(!rows[0].missing);
     }
 
     #[test]

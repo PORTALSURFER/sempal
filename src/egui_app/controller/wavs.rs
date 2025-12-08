@@ -1,5 +1,6 @@
 use super::*;
 use crate::waveform::DecodedWaveform;
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 impl EguiController {
@@ -28,6 +29,24 @@ impl EguiController {
             return;
         }
         self.selected_wav = Some(path.to_path_buf());
+        let missing = self
+            .wav_lookup
+            .get(path)
+            .and_then(|index| self.wav_entries.get(*index))
+            .map(|entry| entry.missing)
+            .unwrap_or(false);
+        if missing {
+            self.show_missing_waveform_notice(path);
+            self.set_status(
+                format!("File missing: {}", path.display()),
+                StatusTone::Warning,
+            );
+            self.suppress_autoplay_once = false;
+            if rebuild {
+                self.rebuild_browser_lists();
+            }
+            return;
+        }
         if let Some(source) = self.current_source() {
             if let Err(err) = self.load_waveform_for_selection(&source, path) {
                 self.set_status(err, StatusTone::Error);
@@ -471,6 +490,7 @@ impl EguiController {
         let sample_rate = decoded.sample_rate;
         let channels = decoded.channels;
         self.apply_waveform_image(decoded);
+        self.ui.waveform.notice = None;
         self.clear_waveform_selection();
         self.loaded_wav = Some(relative_path.to_path_buf());
         self.ui.loaded_wav = Some(relative_path.to_path_buf());
@@ -500,6 +520,7 @@ impl EguiController {
         let sample_rate = decoded.sample_rate;
         let channels = decoded.channels;
         self.apply_waveform_image(decoded);
+        self.ui.waveform.notice = None;
         self.clear_waveform_selection();
         self.loaded_wav = None;
         self.ui.loaded_wav = None;
@@ -587,6 +608,108 @@ impl EguiController {
             Err(err) => self.set_status(err, StatusTone::Warning),
         }
         Ok(())
+    }
+
+    pub(super) fn rebuild_missing_lookup_for_source(&mut self, source_id: &SourceId) {
+        let mut missing = HashSet::new();
+        if let Some(cache) = self.wav_cache.get(source_id) {
+            for entry in cache {
+                if entry.missing {
+                    missing.insert(entry.relative_path.clone());
+                }
+            }
+        } else if self.selected_source.as_ref() == Some(source_id) {
+            for entry in &self.wav_entries {
+                if entry.missing {
+                    missing.insert(entry.relative_path.clone());
+                }
+            }
+        }
+        self.missing_wavs.insert(source_id.clone(), missing);
+    }
+
+    pub(super) fn ensure_missing_lookup_for_source(
+        &mut self,
+        source: &SampleSource,
+    ) -> Result<(), String> {
+        if self.missing_wavs.contains_key(&source.id) {
+            return Ok(());
+        }
+        if self.missing_sources.contains(&source.id) {
+            self.missing_wavs
+                .entry(source.id.clone())
+                .or_insert_with(HashSet::new);
+            return Ok(());
+        }
+        let db = match self.database_for(source) {
+            Ok(db) => db,
+            Err(err) => {
+                if matches!(err, SourceDbError::InvalidRoot(_)) {
+                    self.mark_source_missing(&source.id, "Source folder missing");
+                }
+                return Err(err.to_string());
+            }
+        };
+        let paths = db
+            .list_missing_paths()
+            .map_err(|err| format!("Failed to read missing files: {err}"))?;
+        self.missing_wavs
+            .insert(source.id.clone(), paths.into_iter().collect());
+        Ok(())
+    }
+
+    pub(super) fn sample_missing(
+        &mut self,
+        source_id: &SourceId,
+        relative_path: &Path,
+    ) -> bool {
+        if self.missing_sources.contains(source_id) {
+            return true;
+        }
+        if self.selected_source.as_ref() == Some(source_id) {
+            if let Some(index) = self.wav_lookup.get(relative_path) {
+                if let Some(entry) = self.wav_entries.get(*index) {
+                    return entry.missing;
+                }
+            }
+        }
+        if let Some(cache) = self.wav_cache.get(source_id) {
+            if let Some(entry) = cache
+                .iter()
+                .find(|entry| entry.relative_path == relative_path)
+            {
+                return entry.missing;
+            }
+        }
+        if let Some(set) = self.missing_wavs.get(source_id) {
+            return set.contains(relative_path);
+        }
+        if let Some(source) = self.sources.iter().find(|s| &s.id == source_id).cloned() {
+            if let Err(err) = self.ensure_missing_lookup_for_source(&source) {
+                self.set_status(err, StatusTone::Warning);
+                return true;
+            }
+            if let Some(set) = self.missing_wavs.get(source_id) {
+                return set.contains(relative_path);
+            }
+        }
+        false
+    }
+
+    pub(super) fn show_missing_waveform_notice(&mut self, relative_path: &Path) {
+        let message = format!("File missing: {}", relative_path.display());
+        self.ui.waveform.notice = Some(message);
+        self.ui.waveform.image = None;
+        self.decoded_waveform = None;
+        self.ui.waveform.playhead = PlayheadState::default();
+        self.ui.waveform.selection = None;
+        self.selection.clear();
+        self.loaded_audio = None;
+        self.loaded_wav = None;
+        self.ui.loaded_wav = None;
+        if let Some(player) = self.player.as_ref() {
+            player.borrow_mut().stop();
+        }
     }
 }
 
