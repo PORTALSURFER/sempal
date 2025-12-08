@@ -247,8 +247,8 @@ impl EguiApp {
                         }
                     });
                     if ui
-                        .button("Mute selection (5 ms fade)")
-                        .on_hover_text("Silence the selection with quick edge fades")
+                        .button("Mute selection")
+                        .on_hover_text("Silence the selection without fades")
                         .clicked()
                     {
                         if self.controller.mute_waveform_selection().is_ok() {
