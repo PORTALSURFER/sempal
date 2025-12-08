@@ -28,6 +28,7 @@ use crate::{
         WaveformImage,
     },
     egui_app::{ui::style, ui::style::StatusTone, view_model},
+    sample_sources::scanner::ScanMode,
     sample_sources::{
         Collection, CollectionId, SampleSource, SampleTag, SourceDatabase, SourceDbError, SourceId,
         WavEntry,
@@ -181,6 +182,7 @@ struct WavLoadResult {
 
 struct ScanResult {
     source_id: SourceId,
+    mode: ScanMode,
     result: Result<
         crate::sample_sources::scanner::ScanStats,
         crate::sample_sources::scanner::ScanError,
