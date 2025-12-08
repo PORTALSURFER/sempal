@@ -654,11 +654,7 @@ impl EguiController {
         self.missing_wavs.insert(source_id.clone(), missing);
     }
 
-    pub(super) fn mark_sample_missing(
-        &mut self,
-        source: &SampleSource,
-        relative_path: &Path,
-    ) {
+    pub(super) fn mark_sample_missing(&mut self, source: &SampleSource, relative_path: &Path) {
         match self.database_for(source) {
             Ok(db) => {
                 let _ = db.set_missing(relative_path, true);
@@ -674,7 +670,9 @@ impl EguiController {
             }
         }
         if let Some(cache) = self.wav_cache.get_mut(&source.id) {
-            if let Some(entry) = cache.iter_mut().find(|entry| entry.relative_path == relative_path)
+            if let Some(entry) = cache
+                .iter_mut()
+                .find(|entry| entry.relative_path == relative_path)
             {
                 entry.missing = true;
             }
@@ -722,11 +720,7 @@ impl EguiController {
         Ok(())
     }
 
-    pub(super) fn sample_missing(
-        &mut self,
-        source_id: &SourceId,
-        relative_path: &Path,
-    ) -> bool {
+    pub(super) fn sample_missing(&mut self, source_id: &SourceId, relative_path: &Path) -> bool {
         if self.missing_sources.contains(source_id) {
             return true;
         }

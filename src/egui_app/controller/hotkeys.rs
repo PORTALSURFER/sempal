@@ -180,10 +180,7 @@ impl EguiController {
                 if let Some(row) = self.focused_browser_row() {
                     let _ = self.normalize_browser_sample(row);
                 } else {
-                    self.set_status(
-                        "Focus a sample to normalize it",
-                        StatusTone::Info,
-                    );
+                    self.set_status("Focus a sample to normalize it", StatusTone::Info);
                 }
             }
             FocusContext::CollectionSample => {
@@ -213,10 +210,7 @@ impl EguiController {
                 if let Some(row) = self.ui.collections.selected_sample {
                     let _ = self.delete_collection_sample(row);
                 } else {
-                    self.set_status(
-                        "Select a collection sample to delete it",
-                        StatusTone::Info,
-                    );
+                    self.set_status("Select a collection sample to delete it", StatusTone::Info);
                 }
             }
             FocusContext::None => {}

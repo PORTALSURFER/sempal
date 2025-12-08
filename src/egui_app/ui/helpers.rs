@@ -82,8 +82,7 @@ pub(super) fn render_list_row(
         ui.painter().rect_filled(marker_rect, 0.0, marker.color);
     }
     if response.hovered() {
-        ui.painter()
-            .rect_filled(rect, 0.0, style::row_hover_fill());
+        ui.painter().rect_filled(rect, 0.0, style::row_hover_fill());
     }
     ui.painter()
         .rect_stroke(rect, 0.0, style::inner_border(), StrokeKind::Inside);

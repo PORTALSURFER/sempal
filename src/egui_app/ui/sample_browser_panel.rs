@@ -50,11 +50,7 @@ impl EguiApp {
                             }
                         };
                         let (tag, path, missing) = match self.controller.wav_entry(entry_index) {
-                            Some(entry) => (
-                                entry.tag,
-                                entry.relative_path.clone(),
-                                entry.missing,
-                            ),
+                            Some(entry) => (entry.tag, entry.relative_path.clone(), entry.missing),
                             None => continue,
                         };
                         let is_focused = selected_row == Some(row);

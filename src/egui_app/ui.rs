@@ -17,7 +17,7 @@ pub const MIN_VIEWPORT_SIZE: [f32; 2] = [640.0, 400.0];
 
 use crate::{
     audio::AudioPlayer,
-    egui_app::controller::{hotkeys, EguiController},
+    egui_app::controller::{EguiController, hotkeys},
     egui_app::state::{FocusContext, TriageFlagColumn},
     sample_sources::SampleTag,
     waveform::WaveformRenderer,
@@ -57,9 +57,7 @@ fn copy_shortcut_pressed(ctx: &egui::Context) -> bool {
 }
 
 fn hotkey_triggered(ctx: &egui::Context, gesture: &hotkeys::HotkeyGesture) -> bool {
-    ctx.input(|input| {
-        input.key_pressed(gesture.key) && modifiers_match(&input.modifiers, gesture)
-    })
+    ctx.input(|input| input.key_pressed(gesture.key) && modifiers_match(&input.modifiers, gesture))
 }
 
 fn modifiers_match(modifiers: &egui::Modifiers, gesture: &hotkeys::HotkeyGesture) -> bool {

@@ -127,12 +127,6 @@ impl EguiApp {
                     style::with_alpha(palette.grid_strong, 180)
                 };
                 painter.rect_filled(handle_rect, 0.0, handle_color);
-                painter.rect_stroke(
-                    handle_rect,
-                    0.0,
-                    Stroke::new(1.5, highlight),
-                    StrokeKind::Inside,
-                );
                 if handle_response.drag_started() {
                     if let Some(pos) = handle_response.interact_pointer_pos() {
                         self.controller.start_selection_drag_payload(selection, pos);
@@ -274,26 +268,23 @@ impl EguiApp {
                 );
             }
 
-            // Waveform interactions: click to seek, shift-drag to select.
+            // Waveform interactions: click to seek, drag to select.
             if !edge_dragging {
-                let shift_down = ui.input(|i| i.modifiers.shift);
                 let pointer_pos = response.interact_pointer_pos();
                 let normalized =
                     pointer_pos.map(|pos| ((pos.x - rect.left()) / rect.width()).clamp(0.0, 1.0));
-                if shift_down && response.drag_started() {
+                if response.drag_started() {
                     if let Some(value) = normalized {
                         self.controller.start_selection_drag(value);
                     }
-                } else if shift_down && response.dragged() {
+                } else if response.dragged() {
                     if let Some(value) = normalized {
                         self.controller.update_selection_drag(value);
                     }
-                } else if shift_down && response.drag_stopped() {
+                } else if response.drag_stopped() {
                     self.controller.finish_selection_drag();
                 } else if response.clicked() {
-                    if shift_down {
-                        self.controller.clear_selection();
-                    } else if let Some(value) = normalized {
+                    if let Some(value) = normalized {
                         self.controller.seek_to(value);
                     }
                 }
@@ -303,7 +294,7 @@ impl EguiApp {
 }
 
 fn selection_handle_rect(selection_rect: egui::Rect) -> egui::Rect {
-    let handle_height = (selection_rect.height() / 3.0).max(12.0);
+    let handle_height = (selection_rect.height() / 6.0).max(10.0);
     egui::Rect::from_min_size(
         egui::pos2(
             selection_rect.left(),

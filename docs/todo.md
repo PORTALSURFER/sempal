@@ -39,6 +39,10 @@ lets add 'gs' to focus the source samples list, 'gc' to focus collection samples
 
 ---
 
+- the waveform looks broken sometimes, can you review it, increase the render quality and accuracy
+
+---
+
 ### v2
 
 \plan - add similarity search systems
