@@ -35,8 +35,7 @@ impl EguiApp {
                         ui.push_id(&row.id, |ui| {
                             let row_width = ui.available_width();
                             let padding = ui.spacing().button_padding.x * 2.0;
-                            let base_label =
-                                clamp_label_for_width(&row.name, row_width - padding);
+                            let base_label = clamp_label_for_width(&row.name, row_width - padding);
                             let label = if row.missing {
                                 format!("! {base_label}")
                             } else {

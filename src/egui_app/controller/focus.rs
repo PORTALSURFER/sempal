@@ -9,9 +9,7 @@ impl EguiController {
 
     /// Mark the collections sample list as the active focus surface.
     pub(super) fn focus_collection_context(&mut self) {
-        self.ui
-            .focus
-            .set_context(FocusContext::CollectionSample);
+        self.ui.focus.set_context(FocusContext::CollectionSample);
     }
 
     /// Clear focus when no interactive surface should process shortcuts.
