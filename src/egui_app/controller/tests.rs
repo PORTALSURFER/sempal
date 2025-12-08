@@ -926,3 +926,31 @@ fn collection_views_flag_missing_members() {
         .iter()
         .any(|sample| sample.missing));
 }
+
+#[test]
+fn read_failure_marks_sample_missing() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.selected_source = Some(source.id.clone());
+    let rel = PathBuf::from("gone.wav");
+    controller.wav_entries = vec![WavEntry {
+        relative_path: rel.clone(),
+        file_size: 1,
+        modified_ns: 1,
+        tag: SampleTag::Neutral,
+        missing: false,
+    }];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+
+    let err = controller
+        .load_waveform_for_selection(&source, &rel)
+        .unwrap_err();
+    assert!(err.contains("Failed to read"));
+    assert!(controller.sample_missing(&source.id, &rel));
+    assert!(controller.wav_entries[0].missing);
+    assert!(controller
+        .missing_wavs
+        .get(&source.id)
+        .is_some_and(|set| set.contains(&rel)));
+}
