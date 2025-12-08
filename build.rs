@@ -192,7 +192,6 @@ fn compiling_for_windows_target() -> bool {
 }
 
 fn compile_windows_resources() -> Result<(), Box<dyn std::error::Error>> {
-    embed_resource::compile("build/windows/sempal.rc", embed_resource::NONE)
-        .manifest_optional()?;
+    embed_resource::compile("build/windows/sempal.rc", embed_resource::NONE).manifest_optional()?;
     Ok(())
 }

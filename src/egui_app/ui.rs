@@ -31,6 +31,9 @@ pub struct EguiApp {
     visuals_set: bool,
     waveform_tex: Option<TextureHandle>,
     last_viewport_log: Option<(u32, u32, u32, u32, &'static str)>,
+    sources_panel_rect: Option<egui::Rect>,
+    sources_panel_drop_hovered: bool,
+    sources_panel_drop_armed: bool,
 }
 
 #[inline]
@@ -65,6 +68,9 @@ impl EguiApp {
             visuals_set: false,
             waveform_tex: None,
             last_viewport_log: None,
+            sources_panel_rect: None,
+            sources_panel_drop_hovered: false,
+            sources_panel_drop_armed: false,
         })
     }
 
@@ -99,6 +105,48 @@ impl EguiApp {
                 self.render_sample_browser(&mut browser_ui);
             }
         });
+    }
+
+    fn consume_source_panel_drops(&mut self, ctx: &egui::Context) {
+        let panel_hit = if self.sources_panel_drop_hovered || self.sources_panel_drop_armed {
+            true
+        } else if let Some(rect) = self.sources_panel_rect {
+            ctx.input(|i| {
+                i.pointer
+                    .hover_pos()
+                    .or_else(|| i.pointer.interact_pos())
+                    .map_or(false, |pos| rect.contains(pos))
+            })
+        } else {
+            false
+        };
+        if !panel_hit {
+            return;
+        }
+        let dropped_files = ctx.input(|i| i.raw.dropped_files.clone());
+        if dropped_files.is_empty() {
+            return;
+        }
+        let mut handled_directory = false;
+        for file in dropped_files {
+            let Some(path) = file.path else {
+                continue;
+            };
+            if !path.is_dir() {
+                continue;
+            }
+            handled_directory = true;
+            if let Err(err) = self.controller.add_source_from_path(path) {
+                self.controller.set_status(err, style::StatusTone::Error);
+            }
+        }
+        if !handled_directory {
+            self.controller.set_status(
+                "Drop a folder onto Sources to add it",
+                style::StatusTone::Warning,
+            );
+        }
+        self.sources_panel_drop_armed = false;
     }
 }
 
@@ -221,6 +269,7 @@ impl eframe::App for EguiApp {
             .min_width(220.0)
             .max_width(240.0)
             .show(ctx, |ui| self.render_sources_panel(ui));
+        self.consume_source_panel_drops(ctx);
         egui::SidePanel::right("collections")
             .resizable(false)
             .min_width(240.0)
