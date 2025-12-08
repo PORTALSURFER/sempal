@@ -9,9 +9,9 @@
 
 ## Step-by-step plan
 1. [x] Review waveform selection rendering and interaction wiring (`src/egui_app/ui/waveform_view.rs`, `src/egui_app/controller/playback.rs`, `src/egui_app/controller/selection_export.rs`) to confirm entry points for context menus and selection bounds.
-2. [~] Add controller-level selection edit APIs that reuse existing decoding helpers to crop to selection, trim/remove the selection span, apply directional fade-out to silence (`/` or `\`), and mute the selection with 5 ms edge fades while updating metadata caches, exports, and loaded waveform state.
-3. [-] Wire the waveform selection context menu UI to surface the new actions with clear labels/icons, enable/disable rules, and status messaging consistent with existing menus.
-4. [-] Add unit tests for the audio edit helpers (crop/trim/fade/mute) and controller responses (metadata refresh, waveform update), keeping functions/modules within size limits.
+2. [x] Add controller-level selection edit APIs that reuse existing decoding helpers to crop to selection, trim/remove the selection span, apply directional fade-out to silence (`/` or `\`), and mute the selection with 5 ms edge fades while updating metadata caches, exports, and loaded waveform state.
+3. [x] Wire the waveform selection context menu UI to surface the new actions with clear labels/icons, enable/disable rules, and status messaging consistent with existing menus.
+4. [x] Add unit tests for the audio edit helpers (crop/trim/fade/mute) and controller responses (metadata refresh, waveform update), keeping functions/modules within size limits.
 5. [-] Perform a quick manual or scripted smoke test to ensure selection playback/export still work and new edits behave as expected.
 
 ## Code Style & Architecture Rules Reminder

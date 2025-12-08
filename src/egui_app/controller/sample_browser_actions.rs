@@ -313,7 +313,11 @@ impl EguiController {
         }
     }
 
-    fn reexport_collections_for_sample(&mut self, source_id: &SourceId, relative_path: &Path) {
+    pub(super) fn reexport_collections_for_sample(
+        &mut self,
+        source_id: &SourceId,
+        relative_path: &Path,
+    ) {
         let mut targets = Vec::new();
         for collection in self.collections.iter() {
             if collection
