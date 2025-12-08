@@ -108,8 +108,7 @@ impl eframe::App for EguiApp {
         #[cfg(target_os = "windows")]
         {
             let frame = _frame;
-            self.controller
-                .set_drag_hwnd(hwnd_from_frame(frame));
+            self.controller.set_drag_hwnd(hwnd_from_frame(frame));
         }
         self.controller.tick_playhead();
         if let Some(pos) = ctx.input(|i| i.pointer.hover_pos().or_else(|| i.pointer.interact_pos()))

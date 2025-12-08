@@ -1,1 +1,0 @@
-- find slint api reference here https://docs.slint.dev/latest/docs/slint/reference
