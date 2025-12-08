@@ -1,8 +1,8 @@
 \plan - lets do a housekeeping pass, clean up the codebase, reduce file lengths, improve DRYness, improve maintainability, collapse large structs/objects into clearly named smaller objects, add missing docs, improve symbol naming, find and resolve bugs, improve performance, etc.
 
 --
-
 - if we are playing, lets make hitting esc stop playback
+
 
 ---
 
@@ -39,7 +39,9 @@ lets add 'gs' to focus the source samples list, 'gc' to focus collection samples
 
 ---
 
-- the waveform looks broken sometimes, can you review it, increase the render quality and accuracy
+\plan - long samples, like entire songs, can take a little while to fully load.
+Lets first investigate if we can improve loading times, lets also look into adding a caching system, so we keep a reasonably sized history of loaded samples so we can quickly replay them.
+also, I want ui interaction to take precedence over loading. right now navigation is blocked until we load a sample for example, lets break this link, it should be possible to move to the next item even if the sample was not yet fully loaded.
 
 ---
 
