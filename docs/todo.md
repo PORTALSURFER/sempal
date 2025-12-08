@@ -2,7 +2,7 @@
 
 --
 
-\plan - our icon is sometimes not visible in the windows taskbar, it shows some default windows app icon. but sometimes it does work oddly.
+\plan - lets add the ability to drag drop folder externally, from the OS explorer for example, onto the sample source list, to add a new sample source 
 
 \plan - add ability to select the audio output device, sample rate, and other typical audio output settings in a nice options menu.
 
@@ -25,8 +25,6 @@ as a first hotkey, lets add 'x' to select the focused sample, 'n' to normalize t
 \plan - let add a context menu to our audo selection block, with an option to crop, also add an option to trim to users can delete parts of the audio like silence. lets also add an option to add a simple fadeout to null, either left to right, or right to left, lets use / or \ icons to make the direction clear to users. the null.
 lets also add an opton to 'mute' which will null the entire selection, fading back into the audio at the far edges with a default of a 5 ms fade.
 
-\plan - lets add the ability to drag drop folder externally, from the OS explorer for example, onto the sample source list, to add a new sample source 
-
 \plan - add similarity search systems
 
 \plan - while in loop mode, if we play with a mouseclick, we should still end up looping, right now this method will just play oneshot style. only playing with spacebar will loop.
@@ -38,6 +36,5 @@ So in windows it would end up as %APPDATA%\Roaming\.sempal\config.json
 the config file should be a lean, app only file, not to store data in. just to set app flags, etc, maybe color themes in the future, etc.
 lets also turn it from json into toml.
 and lets add migration code to find and convert the current config.json format/path to our new system
-
 
 -- rls_cargo --bump patch --platform linux-x86_64 --platform linux-aarch64 --platform macos-aarch64 -x

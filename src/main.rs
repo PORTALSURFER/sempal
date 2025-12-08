@@ -36,9 +36,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn load_app_icon() -> Option<IconData> {
-    let bytes = include_bytes!("../assets/logo3.png");
-    let image = image::load_from_memory(bytes).ok()?;
-    let image = image.to_rgba8();
+    decode_icon(include_bytes!("../assets/logo3.ico")).or_else(|| {
+        eprintln!("Failed to decode logo3.ico; falling back to PNG icon.");
+        let fallback = decode_icon(include_bytes!("../assets/logo3.png"));
+        if fallback.is_none() {
+            eprintln!("Failed to decode logo3.png fallback for window icon.");
+        }
+        fallback
+    })
+}
+
+/// Convert raw embedded bytes into icon-friendly RGBA data.
+fn decode_icon(bytes: &[u8]) -> Option<IconData> {
+    let image = image::load_from_memory(bytes).ok()?.to_rgba8();
     let (width, height) = image.dimensions();
     Some(IconData {
         rgba: image.into_raw(),
@@ -60,5 +70,16 @@ impl eframe::App for LaunchError {
                 ui.label(&self.message);
             });
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn embedded_icons_decode() {
+        assert!(decode_icon(include_bytes!("../assets/logo3.ico")).is_some());
+        assert!(decode_icon(include_bytes!("../assets/logo3.png")).is_some());
     }
 }
