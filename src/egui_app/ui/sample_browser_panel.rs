@@ -132,7 +132,8 @@ impl EguiApp {
                                 } else if modifiers.command || modifiers.ctrl {
                                     self.controller.toggle_browser_row_selection(row);
                                 } else {
-                                    self.controller.focus_browser_row(row);
+                                    self.controller.clear_browser_selection();
+                                    self.controller.focus_browser_row_only(row);
                                 }
                             }
                             if is_focused {

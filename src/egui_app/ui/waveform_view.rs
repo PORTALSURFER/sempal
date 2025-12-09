@@ -2,8 +2,8 @@ use super::style;
 use super::*;
 use crate::selection::SelectionEdge;
 use eframe::egui::{
-    self, Align2, Color32, CursorIcon, Frame, Margin, RichText, Stroke, StrokeKind, TextStyle,
-    TextureOptions, Ui,
+    self, text::LayoutJob, Align2, Color32, CursorIcon, Frame, Margin, RichText, Stroke,
+    StrokeKind, TextStyle, TextureOptions, Ui,
 };
 
 impl EguiApp {
@@ -142,6 +142,39 @@ impl EguiApp {
                     ui.output_mut(|o| o.cursor_icon = CursorIcon::Grabbing);
                 } else if handle_response.hovered() {
                     ui.output_mut(|o| o.cursor_icon = CursorIcon::Grab);
+                }
+
+                if let Some(duration_label) =
+                    self.controller.ui.waveform.selection_duration.as_deref()
+                {
+                    let text_color = palette.text_primary;
+                    let galley = ui.ctx().fonts_mut(|f| {
+                        f.layout_job(LayoutJob::simple_singleline(
+                            duration_label.to_string(),
+                            TextStyle::Body.resolve(ui.style()),
+                            text_color,
+                        ))
+                    });
+                    let padding = egui::vec2(8.0, 4.0);
+                    let size = galley.size() + padding * 2.0;
+                    let top_offset = 8.0;
+                    let center = egui::pos2(
+                        selection_rect.center().x,
+                        selection_rect.top() + top_offset + size.y * 0.5,
+                    );
+                    let bg_rect = egui::Rect::from_center_size(center, size);
+                    painter.rect_filled(
+                        bg_rect,
+                        2.0,
+                        style::with_alpha(palette.bg_tertiary, 230),
+                    );
+                    painter.rect_stroke(
+                        bg_rect,
+                        2.0,
+                        Stroke::new(1.0, style::with_alpha(palette.grid_soft, 200)),
+                        StrokeKind::Inside,
+                    );
+                    painter.galley(bg_rect.left_top() + padding, galley, text_color);
                 }
 
                 let start_edge_rect =
