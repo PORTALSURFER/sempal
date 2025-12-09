@@ -194,7 +194,7 @@ impl EguiApp {
                                 let text_color = if sample.missing {
                                     style::missing_text()
                                 } else {
-                                    palette.text_primary
+                                    style::triage_label_color(sample.tag)
                                 };
                                 let response = render_list_row(
                                     ui,
