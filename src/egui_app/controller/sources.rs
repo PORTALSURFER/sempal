@@ -282,4 +282,25 @@ impl EguiController {
         self.set_status("Source remapped", StatusTone::Info);
         Ok(())
     }
+
+    /// Open the source root in the OS file explorer.
+    pub fn open_source_folder(&mut self, index: usize) {
+        let Some(source) = self.sources.get(index) else {
+            self.set_status("Source not found", StatusTone::Error);
+            return;
+        };
+        if !source.root.exists() {
+            self.set_status(
+                format!("Source folder missing: {}", source.root.display()),
+                StatusTone::Warning,
+            );
+            return;
+        }
+        if let Err(err) = open::that(&source.root) {
+            self.set_status(
+                format!("Could not open folder {}: {err}", source.root.display()),
+                StatusTone::Error,
+            );
+        }
+    }
 }
