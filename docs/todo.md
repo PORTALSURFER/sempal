@@ -2,8 +2,6 @@
 
 --
 
-\plan - when I resize the sides of the waveform selection, there is a slight stickyness at first, I need to move the mouse a couple pixels before it unlocks and we actually start resizing, this is very annoying for precise tweaks, lets improve this so its butter smooth and instant.
-
 ---
 
 \plan - I noticed we currently use our config file to store collection members? lets move this to use our sqlite db instead.
