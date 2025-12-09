@@ -392,17 +392,14 @@ impl EguiApp {
                         let per_step_factor = self.controller.ui.controls.wheel_zoom_factor;
                         // Use playhead when visible, otherwise pointer if available, otherwise center.
                         let zoom_steps = zoom_delta.y.abs().round().max(1.0) as u32;
-                        let focus_override = if let Some(pos) = response.interact_pointer_pos() {
-                            Some(
+                        let focus_override = response
+                            .hover_pos()
+                            .or_else(|| response.interact_pointer_pos())
+                            .map(|pos| {
                                 ((pos.x - rect.left()) / rect.width())
                                     .mul_add(view_width, view.start)
-                                    .clamp(0.0, 1.0),
-                            )
-                        } else if self.controller.ui.waveform.playhead.visible {
-                            None
-                        } else {
-                            None
-                        };
+                                    .clamp(0.0, 1.0)
+                            });
                         self.controller.zoom_waveform_steps_with_factor(
                             zoom_in,
                             zoom_steps,
