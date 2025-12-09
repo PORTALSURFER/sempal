@@ -53,11 +53,16 @@ impl EguiController {
     }
 
     /// Create or replace a selection anchored to the playhead.
-    pub(crate) fn create_selection_from_playhead(&mut self, to_left: bool) {
+    pub(crate) fn create_selection_from_playhead(
+        &mut self,
+        to_left: bool,
+        resume_playback: bool,
+        fine: bool,
+    ) {
         if !self.waveform_ready() {
             return;
         }
-        let step = self.waveform_step_size(false).max(MIN_SELECTION_WIDTH);
+        let step = self.waveform_step_size(fine).max(MIN_SELECTION_WIDTH);
         let anchor = self.waveform_focus_point();
         let range = if to_left {
             SelectionRange::new((anchor - step).clamp(0.0, 1.0), anchor)
@@ -66,32 +71,7 @@ impl EguiController {
         };
         self.selection.set_range(Some(range));
         self.apply_selection(Some(range));
-        self.set_playhead_and_seek(anchor);
-    }
-
-    /// Grow an existing selection from the focused edge or create a new one.
-    pub(crate) fn grow_selection_from_playhead(&mut self, to_left: bool) {
-        if !self.waveform_ready() {
-            return;
-        }
-        let step = self.waveform_step_size(false).max(MIN_SELECTION_WIDTH);
-        if let Some(selection) = self.selection.range().or(self.ui.waveform.selection) {
-            let mut start = selection.start();
-            let mut end = selection.end();
-            if to_left {
-                start -= step;
-            } else {
-                end += step;
-            }
-            let (clamped_start, clamped_end) = clamp_selection_bounds(start, end);
-            let range = SelectionRange::new(clamped_start, clamped_end);
-            self.selection.set_range(Some(range));
-            self.apply_selection(Some(range));
-            let playhead = if to_left { range.start() } else { range.end() };
-            self.set_playhead_and_seek(playhead);
-        } else {
-            self.create_selection_from_playhead(to_left);
-        }
+        self.set_playhead_after_selection(anchor, resume_playback);
     }
 
     /// Nudge a selection edge in or out by a fixed visual step.
@@ -131,6 +111,14 @@ impl EguiController {
         let px = if fine { PLAYHEAD_STEP_PX_FINE } else { PLAYHEAD_STEP_PX };
         let px_fraction = (px / width_px).min(1.0);
         self.ui.waveform.view.width() * px_fraction
+    }
+
+    fn set_playhead_after_selection(&mut self, position: f32, resume_playback: bool) {
+        if resume_playback && self.is_playing() {
+            self.set_playhead_and_seek(position);
+        } else {
+            self.set_playhead_no_seek(position);
+        }
     }
 
     fn set_playhead_and_seek(&mut self, position: f32) {
