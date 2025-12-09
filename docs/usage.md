@@ -6,6 +6,10 @@
 - **Collections (right):** Manage collections, export folders, and per-collection items; missing export paths or files are highlighted.
 - **Status bar (bottom):** Status badge/text, Options menu for trash actions, and a persistent volume slider.
 
+## Configuration & storage
+- App settings live in `~/.config/.sempal/config.toml` (respects the platform config directory); sources and collections are stored in `library.db` inside the same folder, and legacy `config.json` files are migrated automatically.
+- Per-source sample metadata stays beside each source as `.sempal_samples.db`, while logs remain under `.sempal/logs` in the user config directory to avoid temporary paths.
+
 ## Add and manage sources
 - Click **+** in the Sources panel or drop a folder onto it. Sempal creates/uses `.sempal_samples.db` inside that folder and loads its `.wav` entries; the first available row auto-loads.
 - Right-click a source row for **Quick sync**, **Hard sync (full rescan)**, **Remap source...**, or **Remove source**. New files added outside Sempal require a sync.

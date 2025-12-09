@@ -67,7 +67,7 @@ fn config_base_dir() -> Option<PathBuf> {
 }
 
 #[cfg(test)]
-fn set_config_base_override(path: PathBuf) {
+pub(crate) fn set_config_base_override(path: PathBuf) {
     let mut guard = CONFIG_BASE_OVERRIDE
         .lock()
         .expect("config base override mutex poisoned");
@@ -75,11 +75,30 @@ fn set_config_base_override(path: PathBuf) {
 }
 
 #[cfg(test)]
-fn clear_config_base_override() {
+pub(crate) fn clear_config_base_override() {
     let mut guard = CONFIG_BASE_OVERRIDE
         .lock()
         .expect("config base override mutex poisoned");
     *guard = None;
+}
+
+/// Guard that sets a temporary config base path for tests and restores the prior value.
+#[cfg(test)]
+pub struct ConfigBaseGuard;
+
+#[cfg(test)]
+impl ConfigBaseGuard {
+    pub fn set(path: PathBuf) -> Self {
+        set_config_base_override(path);
+        Self
+    }
+}
+
+#[cfg(test)]
+impl Drop for ConfigBaseGuard {
+    fn drop(&mut self) {
+        clear_config_base_override();
+    }
 }
 
 #[cfg(test)]
@@ -87,25 +106,10 @@ mod tests {
     use super::*;
     use tempfile::tempdir;
 
-    struct OverrideGuard;
-
-    impl OverrideGuard {
-        fn set(path: PathBuf) -> Self {
-            set_config_base_override(path);
-            Self
-        }
-    }
-
-    impl Drop for OverrideGuard {
-        fn drop(&mut self) {
-            clear_config_base_override();
-        }
-    }
-
     #[test]
     fn uses_override_for_root_dir() {
         let base = tempdir().unwrap();
-        let _guard = OverrideGuard::set(base.path().to_path_buf());
+        let _guard = ConfigBaseGuard::set(base.path().to_path_buf());
         let root = app_root_dir().unwrap();
         assert_eq!(root, base.path().join(APP_DIR_NAME));
         assert!(root.is_dir());
