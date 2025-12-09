@@ -512,6 +512,7 @@ fn exporting_selection_updates_entries_and_db() {
             Path::new("orig.wav"),
             SelectionRange::new(0.0, 0.5),
             Some(SampleTag::Keep),
+            true,
         )
         .unwrap();
 
@@ -729,8 +730,9 @@ fn selection_drop_adds_clip_to_collection() {
         controller
             .wav_entries
             .iter()
-            .any(|entry| &entry.relative_path == member_path)
+            .all(|entry| &entry.relative_path != member_path)
     );
+    assert!(controller.ui.browser.visible.is_empty());
     assert!(
         controller
             .ui
@@ -739,6 +741,135 @@ fn selection_drop_adds_clip_to_collection() {
             .iter()
             .any(|sample| sample.path == *member_path)
     );
+}
+
+#[test]
+fn selection_drop_to_browser_ignores_active_collection() {
+    let temp = tempdir().unwrap();
+    let root = temp.path().join("source");
+    std::fs::create_dir_all(&root).unwrap();
+    let renderer = WaveformRenderer::new(12, 12);
+    let mut controller = EguiController::new(renderer, None);
+    let source = SampleSource::new(root.clone());
+    controller.sources.push(source.clone());
+    controller.selected_source = Some(source.id.clone());
+
+    let orig = root.join("clip.wav");
+    write_test_wav(&orig, &[0.1, 0.2, 0.3, 0.4]);
+    controller
+        .load_waveform_for_selection(&source, Path::new("clip.wav"))
+        .unwrap();
+
+    let collection = Collection::new("Active");
+    let collection_id = collection.id.clone();
+    controller.collections.push(collection);
+    controller.selected_collection = Some(collection_id.clone());
+    controller.refresh_collections_ui();
+
+    controller.ui.drag.payload = Some(DragPayload::Selection {
+        source_id: source.id.clone(),
+        relative_path: PathBuf::from("clip.wav"),
+        bounds: SelectionRange::new(0.0, 0.5),
+    });
+    controller.ui.drag.hovering_browser = Some(TriageFlagColumn::Keep);
+    controller.finish_active_drag();
+
+    let collection = controller
+        .collections
+        .iter()
+        .find(|c| c.id == collection_id)
+        .unwrap();
+    assert!(collection.members.is_empty());
+    assert_eq!(controller.ui.browser.visible.len(), 1);
+    assert_eq!(controller.wav_entries.len(), 1);
+    assert_eq!(
+        controller.wav_entries[0].relative_path,
+        PathBuf::from("clip_sel.wav")
+    );
+}
+
+#[test]
+fn selection_drop_without_hover_falls_back_to_active_collection() {
+    let temp = tempdir().unwrap();
+    let root = temp.path().join("source");
+    std::fs::create_dir_all(&root).unwrap();
+    let renderer = WaveformRenderer::new(12, 12);
+    let mut controller = EguiController::new(renderer, None);
+    let source = SampleSource::new(root.clone());
+    controller.sources.push(source.clone());
+    controller.selected_source = Some(source.id.clone());
+
+    let orig = root.join("clip.wav");
+    write_test_wav(&orig, &[0.1, 0.2, 0.3, 0.4]);
+    controller
+        .load_waveform_for_selection(&source, Path::new("clip.wav"))
+        .unwrap();
+
+    let collection = Collection::new("Active");
+    let collection_id = collection.id.clone();
+    controller.collections.push(collection);
+    controller.selected_collection = Some(collection_id.clone());
+    controller.refresh_collections_ui();
+
+    controller.ui.drag.payload = Some(DragPayload::Selection {
+        source_id: source.id.clone(),
+        relative_path: PathBuf::from("clip.wav"),
+        bounds: SelectionRange::new(0.0, 0.5),
+    });
+    // No hover flags set; should fall back to active collection because there's no triage target.
+    controller.finish_active_drag();
+
+    let collection = controller
+        .collections
+        .iter()
+        .find(|c| c.id == collection_id)
+        .unwrap();
+    assert_eq!(collection.members.len(), 1);
+    assert!(root.join(&collection.members[0].relative_path).exists());
+    assert!(
+        controller
+            .wav_entries
+            .iter()
+            .all(|entry| entry.relative_path != collection.members[0].relative_path)
+    );
+}
+
+#[test]
+fn sample_drop_falls_back_to_active_collection() {
+    let temp = tempdir().unwrap();
+    let root = temp.path().join("source");
+    std::fs::create_dir_all(&root).unwrap();
+    let renderer = WaveformRenderer::new(12, 12);
+    let mut controller = EguiController::new(renderer, None);
+    let source = SampleSource::new(root.clone());
+    controller.sources.push(source.clone());
+    controller.selected_source = Some(source.id.clone());
+    controller.cache_db(&source).unwrap();
+    write_test_wav(&root.join("one.wav"), &[0.1, 0.2]);
+    controller.wav_entries = vec![sample_entry("one.wav", SampleTag::Neutral)];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+
+    let collection = Collection::new("Active");
+    let collection_id = collection.id.clone();
+    controller.collections.push(collection);
+    controller.selected_collection = Some(collection_id.clone());
+    controller.refresh_collections_ui();
+
+    controller.ui.drag.payload = Some(DragPayload::Sample {
+        source_id: source.id.clone(),
+        relative_path: PathBuf::from("one.wav"),
+    });
+    // No explicit hover set; relies on active collection fallback.
+    controller.finish_active_drag();
+
+    let collection = controller
+        .collections
+        .iter()
+        .find(|c| c.id == collection_id)
+        .unwrap();
+    assert_eq!(collection.members.len(), 1);
+    assert_eq!(collection.members[0].relative_path, PathBuf::from("one.wav"));
 }
 
 #[test]
