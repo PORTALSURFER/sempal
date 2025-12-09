@@ -1,4 +1,5 @@
 use super::*;
+use super::interaction_options::{clamp_scroll_speed, clamp_zoom_factor};
 
 impl EguiController {
     /// Load persisted configuration and populate initial UI state.
@@ -9,6 +10,16 @@ impl EguiController {
         self.ui.collections.enabled = self.feature_flags.collections_enabled;
         self.audio_output = cfg.audio_output.clone();
         self.ui.audio.selected = self.audio_output.clone();
+        self.controls = cfg.controls.clone();
+        self.controls.waveform_scroll_speed = clamp_scroll_speed(self.controls.waveform_scroll_speed);
+        self.controls.wheel_zoom_factor = clamp_zoom_factor(self.controls.wheel_zoom_factor);
+        self.controls.keyboard_zoom_factor = clamp_zoom_factor(self.controls.keyboard_zoom_factor);
+        self.ui.controls = crate::egui_app::state::InteractionOptionsState {
+            invert_waveform_scroll: self.controls.invert_waveform_scroll,
+            waveform_scroll_speed: self.controls.waveform_scroll_speed,
+            wheel_zoom_factor: self.controls.wheel_zoom_factor,
+            keyboard_zoom_factor: self.controls.keyboard_zoom_factor,
+        };
         self.refresh_audio_options();
         self.apply_volume(cfg.volume);
         self.ui.trash_folder = cfg.trash_folder.clone();
@@ -51,6 +62,7 @@ impl EguiController {
             last_selected_source: self.selected_source.clone(),
             audio_output: self.audio_output.clone(),
             volume: self.ui.volume,
+            controls: self.controls.clone(),
         })
     }
 

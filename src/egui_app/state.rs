@@ -24,6 +24,8 @@ pub struct UiState {
     pub hotkeys: HotkeyUiState,
     /// Audio device/options UI state.
     pub audio: AudioOptionsState,
+    /// Interaction and navigation tuning options.
+    pub controls: InteractionOptionsState,
     /// Master output volume (0.0-1.0).
     pub volume: f32,
     pub loaded_wav: Option<PathBuf>,
@@ -43,6 +45,7 @@ impl Default for UiState {
             focus: UiFocusState::default(),
             hotkeys: HotkeyUiState::default(),
             audio: AudioOptionsState::default(),
+            controls: InteractionOptionsState::default(),
             volume: 1.0,
             loaded_wav: None,
             trash_folder: None,
@@ -228,6 +231,26 @@ pub struct ActiveAudioOutput {
     pub sample_rate: u32,
     pub buffer_size_frames: Option<u32>,
     pub channel_count: u16,
+}
+
+/// Interaction tuning surfaced in the UI.
+#[derive(Clone, Debug)]
+pub struct InteractionOptionsState {
+    pub invert_waveform_scroll: bool,
+    pub waveform_scroll_speed: f32,
+    pub wheel_zoom_factor: f32,
+    pub keyboard_zoom_factor: f32,
+}
+
+impl Default for InteractionOptionsState {
+    fn default() -> Self {
+        Self {
+            invert_waveform_scroll: true,
+            waveform_scroll_speed: 1.2,
+            wheel_zoom_factor: 0.96,
+            keyboard_zoom_factor: 0.9,
+        }
+    }
 }
 
 impl From<&ResolvedOutput> for ActiveAudioOutput {

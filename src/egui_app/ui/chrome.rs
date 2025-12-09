@@ -175,7 +175,7 @@ impl EguiApp {
             },
         );
         ui.label(RichText::new(summary).color(palette.text_muted));
-        if ui.button("Open audio settings…").clicked() {
+        if ui.button("Open options…").clicked() {
             self.controller.ui.audio.panel_open = true;
             self.controller.refresh_audio_options();
         }
@@ -191,7 +191,7 @@ impl EguiApp {
             return;
         }
         let mut open = true;
-        egui::Window::new("Audio output settings")
+        egui::Window::new("Options")
             .open(&mut open)
             .collapsible(false)
             .resizable(false)
@@ -224,6 +224,44 @@ impl EguiApp {
                         RichText::new(current_warning.clone())
                             .color(style::status_badge_color(style::StatusTone::Warning)),
                     );
+                }
+                ui.separator();
+                ui.label(
+                    RichText::new("Waveform & Zoom")
+                        .strong()
+                        .color(style::palette().text_primary),
+                );
+                let mut invert_scroll = self.controller.ui.controls.invert_waveform_scroll;
+                if ui
+                    .checkbox(
+                        &mut invert_scroll,
+                        "Invert horizontal scroll (Shift + wheel)",
+                    )
+                    .clicked()
+                {
+                    self.controller.set_invert_waveform_scroll(invert_scroll);
+                }
+                let mut scroll_speed = self.controller.ui.controls.waveform_scroll_speed;
+                let scroll_slider = egui::Slider::new(&mut scroll_speed, 0.2..=3.0)
+                    .logarithmic(true)
+                    .text("Scroll speed")
+                    .suffix("×");
+                if ui.add(scroll_slider).changed() {
+                    self.controller.set_waveform_scroll_speed(scroll_speed);
+                }
+                let mut wheel_zoom = self.controller.ui.controls.wheel_zoom_factor;
+                let wheel_slider = egui::Slider::new(&mut wheel_zoom, 0.5..=0.995)
+                    .text("Wheel zoom factor")
+                    .clamping(SliderClamping::Always);
+                if ui.add(wheel_slider).changed() {
+                    self.controller.set_wheel_zoom_factor(wheel_zoom);
+                }
+                let mut keyboard_zoom = self.controller.ui.controls.keyboard_zoom_factor;
+                let keyboard_slider = egui::Slider::new(&mut keyboard_zoom, 0.5..=0.995)
+                    .text("Keyboard zoom factor")
+                    .clamping(SliderClamping::Always);
+                if ui.add(keyboard_slider).changed() {
+                    self.controller.set_keyboard_zoom_factor(keyboard_zoom);
                 }
             });
         self.controller.ui.audio.panel_open = open;
