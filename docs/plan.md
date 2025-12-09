@@ -1,19 +1,19 @@
 ## Goal
-- Make waveform texture generation smarter so zoomed views stay sharp without generating oversized textures, improving performance and avoiding GPU limits.
+- Keep the UI and navigation responsive while audio buffers and waveforms load asynchronously, so browsing and interaction are never blocked by IO or decoding.
 
 ## Proposed solutions
-- Render only the visible waveform slice at an appropriate resolution and reuse cached slices when panning or zooming.
-- Introduce a multi-resolution pyramid or dynamic downsampling/upsampling strategy to balance detail and memory.
-- Add adaptive texture sizing based on viewport and zoom, with safe caps and incremental updates.
-- Defer rendering updates until needed (e.g., after zoom/scroll settles) to reduce churn.
+- Offload waveform decoding and audio buffer preparation to a background loader (thread/task) that reports progress through the existing channel pattern.
+- Add lightweight UI state for "loading audio" vs "ready" so selection changes and navigation update immediately with placeholders and queued actions.
+- Gate playback so it starts when a ready buffer arrives, while allowing navigation (next/prev/seek) to pre-empt or cancel slower loads.
+- Optionally prefetch or prioritize likely-next samples when idle to reduce perceived latency without blocking foreground interactions.
 
 ## Step-by-step plan
-1. [x] Analyze current waveform rendering pipeline and identify where decoded samples are transformed into textures and how zoom/view bounds are applied.
-2. [x] Design a visible-region render strategy (slice-only or tiled) with sensible resolution targets and texture size caps; outline cache invalidation rules.
-3. [x] Implement adaptive texture generation for the active view, including panning/zoom hooks, and ensure GPU limits are respected.
-4. [x] Add guards for update frequency (debounce/throttle if needed) and verify playback/selection overlays still align with the rendered slice.
-5. [~] Write/adjust tests or diagnostics to cover zoomed rendering correctness and performance ceilings.
-6. [-] Manually verify zoom/pan interactions (wheel, arrows, chords) for clarity, no blurring, and no regressions.
+1. [-] Audit the current selection → load → play pipeline (controller navigation, waveform/audio loaders, hotkeys) to pinpoint where UI waits on IO/decoding.
+2. [-] Design a background audio/waveform loader API using the channel/work queue pattern with request IDs, cancellation of stale loads, and progress/error reporting hooks.
+3. [-] Refactor selection and navigation handlers to enqueue load requests and immediately update UI focus/selection, showing non-blocking loading state/placeholders.
+4. [-] Integrate playback initiation with async loads so playback triggers when buffers are ready; ensure navigation commands stay responsive and handle load failures gracefully.
+5. [-] Add UI cues and logging for loading states and fallbacks; make waveform rendering resilient to missing/pending data without blocking.
+6. [-] Add automated coverage for async load and stale-result handling, and manually verify startup and navigation remain smooth under slow IO.
 
 ## Code Style & Architecture Rules Reminder
 - Keep files under 400 lines; split when necessary.

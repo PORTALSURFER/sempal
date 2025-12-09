@@ -397,12 +397,11 @@ impl EguiApp {
             }
             if !edge_dragging {
                 let pointer_pos = response.interact_pointer_pos();
-                let normalize_to_waveform =
-                    |pos: egui::Pos2| {
-                        ((pos.x - rect.left()) / rect.width())
-                            .mul_add(view_width, view.start)
-                            .clamp(0.0, 1.0)
-                    };
+                let normalize_to_waveform = |pos: egui::Pos2| {
+                    ((pos.x - rect.left()) / rect.width())
+                        .mul_add(view_width, view.start)
+                        .clamp(0.0, 1.0)
+                };
                 // Anchor creation to the initial press so quick drags keep the original start.
                 let drag_start_normalized = if response.drag_started() {
                     if self.controller.ui.waveform.image.is_some() {
