@@ -1,6 +1,7 @@
 use super::helpers::{clamp_label_for_width, list_row_height, render_list_row};
 use super::style;
 use super::*;
+use crate::egui_app::state::FocusContext;
 use eframe::egui::{self, Align2, RichText, StrokeKind, TextStyle, Ui};
 
 impl EguiApp {
@@ -67,6 +68,14 @@ impl EguiApp {
                     }
                 });
         });
+        if matches!(self.controller.ui.focus.context, FocusContext::SourcesList) {
+            ui.painter().rect_stroke(
+                panel_rect,
+                0.0,
+                style::focused_row_stroke(),
+                StrokeKind::Outside,
+            );
+        }
         if drop_hovered {
             let painter = ui.painter();
             painter.rect_stroke(

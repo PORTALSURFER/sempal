@@ -478,4 +478,21 @@ fn paint_selection_edge_bracket(
     };
     let stroke = Stroke::new(EDGE_BRACKET_STROKE, color);
     painter.line_segment(
-        [egui::pos2(vertical_x, top), egui::pos2(vertic
+        [egui::pos2(vertical_x, top), egui::pos2(vertical_x, bottom)],
+        stroke,
+    );
+    painter.line_segment(
+        [
+            egui::pos2(horizontal_start, top),
+            egui::pos2(horizontal_end, top),
+        ],
+        stroke,
+    );
+    painter.line_segment(
+        [
+            egui::pos2(horizontal_start, bottom),
+            egui::pos2(horizontal_end, bottom),
+        ],
+        stroke,
+    );
+}
