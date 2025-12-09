@@ -122,6 +122,7 @@ impl EguiApp {
                     );
                 });
             });
+        self.render_audio_settings_window(ctx);
     }
 
     fn render_audio_options_menu(&mut self, ui: &mut egui::Ui) {
@@ -131,29 +132,75 @@ impl EguiApp {
                 .strong()
                 .color(palette.text_primary),
         );
-        self.render_audio_host_combo(ui);
-        self.render_audio_device_combo(ui);
-        self.render_audio_sample_rate_combo(ui);
-        self.render_audio_buffer_combo(ui);
-        if let Some(applied) = &self.controller.ui.audio.applied {
-            let buffer = applied
-                .buffer_size_frames
-                .map(|frames| format!(", buffer {frames}"))
-                .unwrap_or_default();
-            let host_label = applied.host_id.to_uppercase();
-            ui.label(
-                RichText::new(format!(
-                    "Active: {} via {} @ {} Hz ({} ch{buffer})",
-                    applied.device_name, host_label, applied.sample_rate, applied.channel_count
-                ))
-                .color(palette.text_muted),
-            );
+        let summary = self.controller.ui.audio.applied.as_ref().map_or_else(
+            || "Not initialized".to_string(),
+            |applied| {
+                let buffer = applied
+                    .buffer_size_frames
+                    .map(|frames| format!(", buffer {frames}"))
+                    .unwrap_or_default();
+                format!(
+                    "{} via {} @ {} Hz ({} ch{buffer})",
+                    applied.device_name,
+                    applied.host_id.to_uppercase(),
+                    applied.sample_rate,
+                    applied.channel_count
+                )
+            },
+        );
+        ui.label(RichText::new(summary).color(palette.text_muted));
+        if ui.button("Open audio settings…").clicked() {
+            self.controller.ui.audio.panel_open = true;
+            self.controller.refresh_audio_options();
         }
         if let Some(warning) = &self.controller.ui.audio.warning {
             ui.label(
                 RichText::new(warning).color(style::status_badge_color(style::StatusTone::Warning)),
             );
         }
+    }
+
+    fn render_audio_settings_window(&mut self, ctx: &egui::Context) {
+        if !self.controller.ui.audio.panel_open {
+            return;
+        }
+        let mut open = true;
+        egui::Window::new("Audio output settings")
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(false)
+            .default_width(320.0)
+            .show(ctx, |ui| {
+                ui.set_min_width(300.0);
+                self.render_audio_host_combo(ui);
+                self.render_audio_device_combo(ui);
+                self.render_audio_sample_rate_combo(ui);
+                self.render_audio_buffer_combo(ui);
+                if let Some(applied) = &self.controller.ui.audio.applied {
+                    let buffer = applied
+                        .buffer_size_frames
+                        .map(|frames| format!(", buffer {frames}"))
+                        .unwrap_or_default();
+                    let host_label = applied.host_id.to_uppercase();
+                    ui.label(
+                        RichText::new(format!(
+                            "Active: {} via {} @ {} Hz ({} ch{buffer})",
+                            applied.device_name,
+                            host_label,
+                            applied.sample_rate,
+                            applied.channel_count
+                        ))
+                        .color(style::palette().text_muted),
+                    );
+                }
+                if let Some(current_warning) = self.controller.ui.audio.warning.as_ref() {
+                    ui.label(
+                        RichText::new(current_warning.clone())
+                            .color(style::status_badge_color(style::StatusTone::Warning)),
+                    );
+                }
+            });
+        self.controller.ui.audio.panel_open = open;
     }
 
     fn render_audio_host_combo(&mut self, ui: &mut egui::Ui) {

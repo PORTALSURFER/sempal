@@ -3,7 +3,7 @@ use crate::egui_app::state::{ActiveAudioOutput, AudioDeviceView, AudioHostView};
 
 impl EguiController {
     /// Refresh available audio hosts/devices and normalize the selected configuration.
-    pub(super) fn refresh_audio_options(&mut self) {
+    pub(crate) fn refresh_audio_options(&mut self) {
         let mut warning = None;
         let hosts = crate::audio::available_hosts();
         let default_host = hosts
