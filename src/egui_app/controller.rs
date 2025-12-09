@@ -14,6 +14,7 @@ mod config;
 mod drag;
 mod focus;
 pub(crate) mod hotkeys;
+mod interaction_options;
 mod loading;
 mod playback;
 mod sample_browser_actions;
@@ -23,7 +24,6 @@ mod selection_export;
 mod sources;
 mod trash;
 mod waveform_navigation;
-mod interaction_options;
 mod wavs;
 
 use crate::{

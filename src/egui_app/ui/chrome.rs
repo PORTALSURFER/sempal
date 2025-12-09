@@ -263,6 +263,17 @@ impl EguiApp {
                 if ui.add(keyboard_slider).changed() {
                     self.controller.set_keyboard_zoom_factor(keyboard_zoom);
                 }
+                ui.add_space(6.0);
+                let mut yolo_mode = self.controller.ui.controls.destructive_yolo_mode;
+                let yolo_label = RichText::new("Yolo mode: apply destructive edits without confirmation")
+                    .color(style::destructive_text());
+                if ui.checkbox(&mut yolo_mode, yolo_label).changed() {
+                    self.controller.set_destructive_yolo_mode(yolo_mode);
+                }
+                ui.label(
+                    RichText::new("When off, crop/trim/fade/mute/normalize will ask before overwriting audio.")
+                        .color(style::status_badge_color(style::StatusTone::Warning)),
+                );
             });
         self.controller.ui.audio.panel_open = open;
     }
