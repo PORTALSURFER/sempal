@@ -1362,10 +1362,10 @@ fn playhead_step_size_tracks_view_zoom() {
     controller.ui.waveform.playhead.position = 0.5;
     controller.ui.waveform.playhead.visible = true;
 
-    controller.move_playhead_steps(1);
+    controller.move_playhead_steps(1, false, false);
     assert!((controller.ui.waveform.playhead.position - 0.66).abs() < 0.001);
 
     controller.zoom_waveform(true);
-    controller.move_playhead_steps(1);
+    controller.move_playhead_steps(1, false, false);
     assert!((controller.ui.waveform.playhead.position - 0.788).abs() < 0.001);
 }

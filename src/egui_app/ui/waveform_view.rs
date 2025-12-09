@@ -91,7 +91,10 @@ impl EguiApp {
             };
 
             if let Some(id) = tex_id {
-                let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
+                let uv = egui::Rect::from_min_max(
+                    egui::pos2(view.start, 0.0),
+                    egui::pos2(view.end, 1.0),
+                );
                 painter.image(id, rect, uv, style::high_contrast_text());
             } else {
                 painter.rect_filled(rect, 0.0, palette.bg_primary);
@@ -363,7 +366,25 @@ impl EguiApp {
                 );
             }
 
-            // Waveform interactions: click to seek, drag to select.
+            // Waveform interactions: scroll to zoom, click to seek, drag to select.
+            if response.hovered() {
+                let scroll_delta = ui.input(|i| i.raw_scroll_delta.y);
+                if scroll_delta.abs() > 0.0 {
+                    let zoom_in = scroll_delta > 0.0;
+                    // Use playhead when visible, otherwise pointer if available, otherwise center.
+                    if self.controller.ui.waveform.playhead.visible {
+                        self.controller.zoom_waveform(zoom_in);
+                    } else if let Some(pos) = pointer_pos {
+                        let normalized = ((pos.x - rect.left()) / rect.width())
+                            .mul_add(view_width, view.start)
+                            .clamp(0.0, 1.0);
+                        self.controller.scroll_waveform_view(normalized);
+                        self.controller.zoom_waveform(zoom_in);
+                    } else {
+                        self.controller.zoom_waveform(zoom_in);
+                    }
+                }
+            }
             if !edge_dragging {
                 let pointer_pos = response.interact_pointer_pos();
                 let normalize_to_waveform =
@@ -416,6 +437,38 @@ impl EguiApp {
                 }
             }
         });
+        ui.add_space(6.0);
+        let (scroll_rect, scroll_resp) = ui.allocate_exact_size(
+            egui::vec2(ui.available_width(), 10.0),
+            egui::Sense::click_and_drag(),
+        );
+        let view = self.controller.ui.waveform.view;
+        let view_width = view.width();
+        let scroll_bg = style::with_alpha(palette.bg_secondary, 180);
+        ui.painter().rect_filled(scroll_rect, 4.0, scroll_bg);
+        let indicator_width = scroll_rect.width() * view_width;
+        let indicator_x = scroll_rect.left() + scroll_rect.width() * view.start;
+        let indicator_rect = egui::Rect::from_min_size(
+            egui::pos2(indicator_x, scroll_rect.top()),
+            egui::vec2(indicator_width.max(8.0), scroll_rect.height()),
+        );
+        ui.painter().rect_filled(
+            indicator_rect,
+            4.0,
+            style::with_alpha(highlight, 200),
+        );
+        ui.painter().rect_stroke(
+            indicator_rect,
+            4.0,
+            Stroke::new(1.0, style::with_alpha(palette.text_primary, 180)),
+            StrokeKind::Outside,
+        );
+        if (scroll_resp.dragged() || scroll_resp.clicked()) && scroll_rect.width() > f32::EPSILON {
+            if let Some(pos) = scroll_resp.interact_pointer_pos() {
+                let frac = ((pos.x - scroll_rect.left()) / scroll_rect.width()).clamp(0.0, 1.0);
+                self.controller.scroll_waveform_view(frac);
+            }
+        }
         if matches!(
             self.controller.ui.focus.context,
             crate::egui_app::state::FocusContext::Waveform

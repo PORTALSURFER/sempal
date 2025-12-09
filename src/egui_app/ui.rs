@@ -335,7 +335,7 @@ impl EguiApp {
         actions: &[hotkeys::HotkeyAction],
         press: hotkeys::KeyPress,
         now: Instant,
-        ctx: &egui::Context,
+        _ctx: &egui::Context,
     ) -> bool {
         let starts_chord = actions.iter().any(|action| {
             action
@@ -471,17 +471,19 @@ impl eframe::App for EguiApp {
         }
         if input.arrow_right {
             if waveform_focus {
+                let was_playing = self.controller.is_playing();
                 if input.shift && ctrl_or_command {
                     self.controller.nudge_selection_edge(
                         crate::selection::SelectionEdge::End,
                         false,
+                        input.alt,
                     );
                 } else if input.shift {
                     self.controller.grow_selection_from_playhead(false);
                 } else if input.alt {
-                    self.controller.move_playhead_steps(1, true);
+                    self.controller.move_playhead_steps(1, true, was_playing);
                 } else {
-                    self.controller.move_playhead_steps(1, false);
+                    self.controller.move_playhead_steps(1, false, was_playing);
                 }
             } else if ctrl_or_command && browser_focus && browser_has_selection {
                 self.controller.move_selection_column(1);
@@ -500,15 +502,20 @@ impl eframe::App for EguiApp {
         }
         if input.arrow_left {
             if waveform_focus {
+                let was_playing = self.controller.is_playing();
                 if input.shift && ctrl_or_command {
                     self.controller
-                        .nudge_selection_edge(crate::selection::SelectionEdge::Start, false);
+                        .nudge_selection_edge(
+                            crate::selection::SelectionEdge::Start,
+                            false,
+                            input.alt,
+                        );
                 } else if input.shift {
                     self.controller.grow_selection_from_playhead(true);
                 } else if input.alt {
-                    self.controller.move_playhead_steps(-1, true);
+                    self.controller.move_playhead_steps(-1, true, was_playing);
                 } else {
-                    self.controller.move_playhead_steps(-1, false);
+                    self.controller.move_playhead_steps(-1, false, was_playing);
                 }
             } else if ctrl_or_command && browser_focus && browser_has_selection {
                 self.controller.move_selection_column(-1);
@@ -520,11 +527,19 @@ impl eframe::App for EguiApp {
         }
         if waveform_focus && input.bracket_left {
             self.controller
-                .nudge_selection_edge(crate::selection::SelectionEdge::Start, !input.shift);
+                .nudge_selection_edge(
+                    crate::selection::SelectionEdge::Start,
+                    !input.shift,
+                    false,
+                );
         }
         if waveform_focus && input.bracket_right {
             self.controller
-                .nudge_selection_edge(crate::selection::SelectionEdge::End, !input.shift);
+                .nudge_selection_edge(
+                    crate::selection::SelectionEdge::End,
+                    !input.shift,
+                    false,
+                );
         }
         self.process_hotkeys(ctx, focus_context);
         self.render_status(ctx);
