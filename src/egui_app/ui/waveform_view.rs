@@ -91,10 +91,7 @@ impl EguiApp {
             };
 
             if let Some(id) = tex_id {
-                let uv = egui::Rect::from_min_max(
-                    egui::pos2(view.start, 0.0),
-                    egui::pos2(view.end, 1.0),
-                );
+                let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
                 painter.image(id, rect, uv, style::high_contrast_text());
             } else {
                 painter.rect_filled(rect, 0.0, palette.bg_primary);
