@@ -1,4 +1,5 @@
 use super::*;
+use crate::egui_app::controller::audio_cache::FileMetadata;
 use crate::waveform::{DecodedWaveform, WaveformRenderer};
 use std::{
     fs,
@@ -17,6 +18,7 @@ pub(super) struct AudioLoadJob {
 pub(super) struct AudioLoadOutcome {
     pub decoded: DecodedWaveform,
     pub bytes: Vec<u8>,
+    pub metadata: FileMetadata,
 }
 
 #[derive(Debug)]
@@ -56,6 +58,17 @@ fn load_audio(
     job: &AudioLoadJob,
 ) -> Result<AudioLoadOutcome, AudioLoadError> {
     let full_path = job.root.join(&job.relative_path);
+    let metadata = fs::metadata(&full_path).map_err(|err| {
+        let missing = err.kind() == std::io::ErrorKind::NotFound;
+        if missing {
+            AudioLoadError::Missing(format!("File missing: {} ({err})", full_path.display()))
+        } else {
+            AudioLoadError::Failed(format!(
+                "Failed to read metadata for {}: {err}",
+                full_path.display()
+            ))
+        }
+    })?;
     let bytes = fs::read(&full_path).map_err(|err| {
         let missing = err.kind() == std::io::ErrorKind::NotFound;
         if missing {
@@ -64,8 +77,31 @@ fn load_audio(
             AudioLoadError::Failed(format!("Failed to read {}: {err}", full_path.display()))
         }
     })?;
+    let modified_ns = metadata
+        .modified()
+        .map_err(|err| {
+            AudioLoadError::Failed(format!(
+                "Missing modified time for {}: {err}",
+                full_path.display()
+            ))
+        })?
+        .duration_since(std::time::SystemTime::UNIX_EPOCH)
+        .map_err(|_| {
+            AudioLoadError::Failed(format!(
+                "File modified time is before epoch: {}",
+                full_path.display()
+            ))
+        })?
+        .as_nanos() as i64;
     let decoded = renderer
         .decode_from_bytes(&bytes)
         .map_err(AudioLoadError::Failed)?;
-    Ok(AudioLoadOutcome { decoded, bytes })
+    Ok(AudioLoadOutcome {
+        decoded,
+        bytes,
+        metadata: FileMetadata {
+            file_size: metadata.len(),
+            modified_ns,
+        },
+    })
 }

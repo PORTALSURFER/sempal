@@ -1,19 +1,19 @@
 ## Goal
-- Keep the UI and navigation responsive while audio buffers and waveforms load asynchronously, so browsing and interaction are never blocked by IO or decoding.
+- Reduce long-sample load time and playback latency by adding caching and a short history of loaded samples that stays in sync with edits.
 
 ## Proposed solutions
-- Offload waveform decoding and audio buffer preparation to a background loader (thread/task) that reports progress through the existing channel pattern.
-- Add lightweight UI state for "loading audio" vs "ready" so selection changes and navigation update immediately with placeholders and queued actions.
-- Gate playback so it starts when a ready buffer arrives, while allowing navigation (next/prev/seek) to pre-empt or cancel slower loads.
-- Optionally prefetch or prioritize likely-next samples when idle to reduce perceived latency without blocking foreground interactions.
+- Profile the current load path (disk read → decode → waveform render → playback) for long files to spot the slowest stages and quick wins.
+- Add a cache keyed by source ID + relative path + file metadata that stores decoded waveform data and audio bytes for reuse across selections and previews.
+- Maintain a bounded MRU history of recently loaded samples to enable instant replay without reloading or decoding.
+- Invalidate or refresh cached entries whenever edits occur (selection edits, trims, fades) or file metadata changes, falling back to fresh loads.
+- Consider preloading likely-next samples (e.g., neighbouring browser rows) when idle if it does not regress responsiveness.
 
 ## Step-by-step plan
-1. [-] Audit the current selection → load → play pipeline (controller navigation, waveform/audio loaders, hotkeys) to pinpoint where UI waits on IO/decoding.
-2. [-] Design a background audio/waveform loader API using the channel/work queue pattern with request IDs, cancellation of stale loads, and progress/error reporting hooks.
-3. [-] Refactor selection and navigation handlers to enqueue load requests and immediately update UI focus/selection, showing non-blocking loading state/placeholders.
-4. [-] Integrate playback initiation with async loads so playback triggers when buffers are ready; ensure navigation commands stay responsive and handle load failures gracefully.
-5. [-] Add UI cues and logging for loading states and fallbacks; make waveform rendering resilient to missing/pending data without blocking.
-6. [-] Add automated coverage for async load and stale-result handling, and manually verify startup and navigation remain smooth under slow IO.
+1. [x] Map the existing audio load lifecycle (controller queueing, `audio_loader`, waveform render, playback) and measure long-sample latency to identify bottlenecks.
+2. [x] Design cache structures keyed by source/path/metadata plus capacity/eviction rules, and define the history size and what artefacts (bytes/decoded/render meta) are stored.
+3. [x] Implement cache lookup/populate paths in the audio/waveform loader flow so selections and previews can short-circuit to cached results, with history-backed instant replay.
+4. [x] Wire cache invalidation on edits and metadata changes (selection edits, rescans) to prevent stale playback while keeping UI state consistent.
+5. [x] Add targeted tests/QA for cache hits, eviction, invalidation after edits, and long-sample playback to confirm latency improvements and stability.
 
 ## Code Style & Architecture Rules Reminder
 - Keep files under 400 lines; split when necessary.

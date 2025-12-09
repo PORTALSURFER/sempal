@@ -309,6 +309,10 @@ impl EguiController {
         }
         self.rebuild_missing_lookup_for_source(&source.id);
         self.update_selection_paths(source, old_path, &new_entry.relative_path);
+        self.invalidate_cached_audio(&source.id, old_path);
+        if old_path != new_entry.relative_path {
+            self.invalidate_cached_audio(&source.id, &new_entry.relative_path);
+        }
     }
 
     pub(super) fn update_selection_paths(

@@ -11,6 +11,7 @@ pub struct LoadedWaveform {
 }
 
 /// Raw audio data decoded from a wav file, ready to render or play.
+#[derive(Clone)]
 pub struct DecodedWaveform {
     pub samples: Vec<f32>,
     pub duration_seconds: f32,
