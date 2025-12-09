@@ -1,9 +1,9 @@
-\plan - lets do a housekeeping pass, clean up the codebase, reduce file lengths, improve DRYness, improve maintainability, collapse large structs/objects into clearly named smaller objects, add missing docs, improve symbol naming, find and resolve bugs, improve performance, etc.
+- lets do a housekeeping pass, clean up the codebase, reduce file lengths, improve DRYness, improve maintainability, collapse large structs/objects into clearly named smaller objects, add missing docs, improve symbol naming, find and resolve bugs, improve performance, etc.
+lets then write every task you find into @todo.md as a new todo item
 
 --
 
-\plan - add ability to select the audio output device, sample rate, and other typical audio output settings in a nice options menu.
-lets add support for ASIO drivers as well
+
 
 - lets add support for hotkey chords, then lets add 'gw' to goto waveform, to set user focus to the waveform.
 in context of waveform focus, left/right arrows should move the playhead, lets add a stepwise motion, which is always the same visual size. make up/down zoom in/out, keeping the playhead at the center of zoom.
