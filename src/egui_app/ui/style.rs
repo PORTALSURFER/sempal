@@ -161,6 +161,15 @@ pub fn triage_marker_color(tag: SampleTag) -> Option<Color32> {
     }
 }
 
+/// Text colour to match the triage flag used for a sample row.
+pub fn triage_label_color(tag: SampleTag) -> Color32 {
+    match tag {
+        SampleTag::Trash => semantic_palette().triage_trash,
+        SampleTag::Keep => semantic_palette().triage_keep,
+        SampleTag::Neutral => palette().text_primary,
+    }
+}
+
 /// Apply the shared palette to egui visuals for a consistent frame look.
 pub fn apply_visuals(visuals: &mut Visuals) {
     let palette = palette();
@@ -236,4 +245,18 @@ pub fn focused_row_stroke() -> Stroke {
 pub fn compartment_fill() -> Color32 {
     let palette = palette();
     palette.bg_secondary
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sample_sources::SampleTag;
+
+    #[test]
+    fn triage_label_color_matches_flags() {
+        let semantic = semantic_palette();
+        assert_eq!(triage_label_color(SampleTag::Trash), semantic.triage_trash);
+        assert_eq!(triage_label_color(SampleTag::Keep), semantic.triage_keep);
+        assert_eq!(triage_label_color(SampleTag::Neutral), palette().text_primary);
+    }
 }

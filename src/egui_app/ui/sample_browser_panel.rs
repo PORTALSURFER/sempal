@@ -95,7 +95,7 @@ impl EguiApp {
                         let text_color = if missing {
                             style::missing_text()
                         } else {
-                            palette.text_primary
+                            style::triage_label_color(tag)
                         };
                         ui.push_id(&path, |ui| {
                             let response = render_list_row(
