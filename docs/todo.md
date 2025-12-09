@@ -2,18 +2,8 @@
 
 --
 
----
-
-\plan - I noticed we currently use our config file to store collection members? lets move this to use our sqlite db instead.
-the config file should be a lean, app only file, not to store data in. just to set app flags, etc, maybe color themes in the future, etc.
-lets also turn it from json into toml.
-and lets add migration code to find and convert the current config.json format/path to our new system
-also we are writing key files to temp folders now I think, sometimes I will start our app, and all sources are broken because the app can't find some temp folder anymore, likely it was deleted by our os.
-lets put all key files in the user folder on said os.
-
----
-
 \plan - add ability to select the audio output device, sample rate, and other typical audio output settings in a nice options menu.
+lets add support for ASIO drivers as well
 
 - lets add support for hotkey chords, then lets add 'gw' to goto waveform, to set user focus to the waveform.
 in context of waveform focus, left/right arrows should move the playhead, lets add a stepwise motion, which is always the same visual size. make up/down zoom in/out, keeping the playhead at the center of zoom.
@@ -29,6 +19,8 @@ also, I want ui interaction to take precedence over loading. right now navigatio
 ---
 
 ### v2
+
+\plan - add audio recording
 
 \plan - add similarity search systems
 let’s wire a tiny ONNX demon into our app. 

@@ -1,17 +1,18 @@
 ## Goal
-- Remove the initial “sticky” feel when resizing waveform selection edges so edge drags respond instantly and smoothly for precise tweaks.
+- Move collection data out of the JSON config into SQLite, switch the config to a lean TOML settings file, migrate existing config.json content, and ensure all app files live in a stable user directory instead of temporary locations.
 
 ## Proposed solutions
-- Start selection edge drags on pointer-down inside the edge handles (skip egui’s drag threshold) and update continuously while the button is held.
-- Alternatively, lower/bypass drag thresholds only for selection edges via custom interaction handling while keeping other drags unchanged.
-- Confirm selection creation/seek behaviour and drag-and-drop handle interactions stay unchanged after the edge drag refinement.
+- Introduce a dedicated SQLite-backed storage for collections (and other persisted library data like sources if needed), keeping the config file for app settings only.
+- Replace JSON config with TOML, keeping schema focused on app flags/preferences and storing it under the user-specific app directory.
+- Add migration that detects the current config.json path, imports sources/collections into SQLite, rewrites settings to TOML, and cleans up legacy paths safely.
+- Audit path resolution so databases, config, logs, and other key files are rooted under the user folder (no temp dirs), with fallbacks/diagnostics when paths are unavailable.
 
 ## Step-by-step plan
-1. [x] Trace the current selection edge drag flow (UI responses in `waveform_view`, controller hooks, `SelectionState`) to confirm where the drag threshold delays updates.
-2. [x] Implement immediate edge dragging on pointer-down for selection brackets, ensuring normalized updates run every frame without waiting for drag thresholds.
-3. [x] Guard other interactions (selection creation, seek clicks, drag payload handle) so they remain unchanged and cursors/hover states still feel correct, and keep edge alignment stable when drags start.
-4. [-] Add/adjust tests or targeted UI logic checks for zero-threshold edge drags and document a brief manual QA pass for selection resize smoothness.
-5. [x] Run relevant tests (e.g., `cargo test` for selection/controller modules) and perform a quick manual resize check in the waveform view.
+1. [x] Audit current persistence flow (config usage, app_dirs paths, collection handling, per-source SQLite) to map which data lives in config.json and which files might land in temp locations.
+2. [x] Design the new storage layout: lean TOML config schema for app settings; SQLite schema/location for collections (and persisted sources if we move them) under the app’s user directory; decide file names and migration targets.
+3. [x] Implement storage changes and migration logic: add/extend SQLite layer for collections, switch config read/write to TOML, and create a migration that reads the legacy config.json, seeds the database, writes the new config, and preserves/backups legacy data when needed.
+4. [x] Update application logic to use the new storage: adjust controllers/UI to load/save collections and sources from SQLite, keep config interactions limited to app settings, and refresh any docs/help text that reference config behavior.
+5. [x] Add and run tests for the new persistence path: migration coverage, config TOML round-trips, SQLite collection ops, and checks that key files resolve to user directories; execute relevant cargo tests to guard regressions.
 
 ## Code Style & Architecture Rules Reminder
 - Keep files under 400 lines; split when necessary.
