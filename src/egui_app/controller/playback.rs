@@ -40,6 +40,11 @@ impl EguiController {
         }
     }
 
+    /// True while a selection drag gesture is active.
+    pub fn is_selection_dragging(&self) -> bool {
+        self.selection.is_dragging()
+    }
+
     /// Clear any active selection.
     pub fn clear_selection(&mut self) {
         if self.selection.clear() {

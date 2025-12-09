@@ -184,7 +184,11 @@ impl EguiApp {
                     ui.id().with("selection_edge_end"),
                     egui::Sense::click_and_drag(),
                 );
-                edge_dragging = start_edge_response.dragged()
+                let start_edge_pointer_down = start_edge_response.is_pointer_button_down_on();
+                let end_edge_pointer_down = end_edge_response.is_pointer_button_down_on();
+                edge_dragging = start_edge_pointer_down
+                    || end_edge_pointer_down
+                    || start_edge_response.dragged()
                     || start_edge_response.drag_started()
                     || end_edge_response.dragged()
                     || end_edge_response.drag_started();
@@ -192,25 +196,33 @@ impl EguiApp {
                     (SelectionEdge::Start, start_edge_rect, start_edge_response),
                     (SelectionEdge::End, end_edge_rect, end_edge_response),
                 ] {
-                    if edge_response.drag_started() {
+                    let pointer_down = edge_response.is_pointer_button_down_on();
+                    if edge_response.drag_started() || pointer_down {
                         self.controller.start_selection_edge_drag(edge);
                     }
-                    if edge_response.dragged() {
+                    if pointer_down || edge_response.dragged() {
                         if let Some(pos) = edge_response.interact_pointer_pos() {
                             let normalized = ((pos.x - rect.left()) / rect.width()).clamp(0.0, 1.0);
                             self.controller.update_selection_drag(normalized);
                         }
-                    } else if edge_response.drag_stopped() {
+                    }
+                    if edge_response.drag_stopped() {
                         self.controller.finish_selection_drag();
                     }
                     let edge_hovered = pointer_pos.map(|p| edge_rect.contains(p)).unwrap_or(false)
                         || edge_response.hovered()
+                        || pointer_down
                         || edge_response.dragged();
                     if edge_hovered {
                         let color = highlight;
                         paint_selection_edge_bracket(&painter, edge_rect, edge, color);
                         ui.output_mut(|o| o.cursor_icon = CursorIcon::ResizeHorizontal);
                     }
+                }
+                if !ui.ctx().input(|i| i.pointer.primary_down())
+                    && self.controller.is_selection_dragging()
+                {
+                    self.controller.finish_selection_drag();
                 }
 
                 let selection_menu = ui.interact(
