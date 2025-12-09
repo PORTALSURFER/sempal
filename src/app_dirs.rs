@@ -4,6 +4,8 @@
 //! defaulting to the OS config directory (e.g., `%APPDATA%` on Windows) and
 //! allowing a `SEMPAL_CONFIG_HOME` override for tests or portable setups.
 
+#[cfg(test)]
+use std::sync::MutexGuard;
 use std::{
     path::PathBuf,
     sync::{LazyLock, Mutex},
@@ -66,38 +68,25 @@ fn config_base_dir() -> Option<PathBuf> {
     BaseDirs::new().map(|dirs| dirs.config_dir().to_path_buf())
 }
 
-#[cfg(test)]
-pub(crate) fn set_config_base_override(path: PathBuf) {
-    let mut guard = CONFIG_BASE_OVERRIDE
-        .lock()
-        .expect("config base override mutex poisoned");
-    *guard = Some(path);
-}
-
-#[cfg(test)]
-pub(crate) fn clear_config_base_override() {
-    let mut guard = CONFIG_BASE_OVERRIDE
-        .lock()
-        .expect("config base override mutex poisoned");
-    *guard = None;
-}
-
 /// Guard that sets a temporary config base path for tests and restores the prior value.
 #[cfg(test)]
-pub struct ConfigBaseGuard;
+pub struct ConfigBaseGuard(MutexGuard<'static, Option<PathBuf>>);
 
 #[cfg(test)]
 impl ConfigBaseGuard {
     pub fn set(path: PathBuf) -> Self {
-        set_config_base_override(path);
-        Self
+        let mut guard = CONFIG_BASE_OVERRIDE
+            .lock()
+            .expect("config base override mutex poisoned");
+        *guard = Some(path);
+        Self(guard)
     }
 }
 
 #[cfg(test)]
 impl Drop for ConfigBaseGuard {
     fn drop(&mut self) {
-        clear_config_base_override();
+        *self.0 = None;
     }
 }
 

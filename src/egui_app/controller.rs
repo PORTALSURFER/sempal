@@ -2,6 +2,7 @@
 //! This module now delegates responsibilities into focused submodules to
 //! keep files small and behaviour easy to reason about.
 
+mod audio_options;
 mod clipboard;
 mod collection_export;
 mod collection_items;
@@ -22,7 +23,7 @@ mod trash;
 mod wavs;
 
 use crate::{
-    audio::AudioPlayer,
+    audio::{AudioOutputConfig, AudioPlayer},
     egui_app::state::{
         PlayheadState, SampleBrowserState, TriageFlagColumn, TriageFlagFilter, UiState,
         WaveformImage,
@@ -77,6 +78,7 @@ pub struct EguiController {
     suppress_autoplay_once: bool,
     pending_loop_disable_at: Option<Instant>,
     feature_flags: crate::sample_sources::config::FeatureFlags,
+    audio_output: AudioOutputConfig,
     trash_folder: Option<std::path::PathBuf>,
     selection: SelectionState,
     wav_job_tx: Sender<WavLoadJob>,
@@ -117,6 +119,7 @@ impl EguiController {
             suppress_autoplay_once: false,
             pending_loop_disable_at: None,
             feature_flags: crate::sample_sources::config::FeatureFlags::default(),
+            audio_output: AudioOutputConfig::default(),
             trash_folder: None,
             selection: SelectionState::new(),
             wav_job_tx,

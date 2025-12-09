@@ -4,7 +4,9 @@ use std::{
     time::{Duration, Instant},
 };
 
-use rodio::{Decoder, OutputStream, OutputStreamBuilder, Sink, Source};
+pub mod output;
+
+use rodio::{Decoder, OutputStream, Sink, Source};
 
 /// Simple audio helper that plays a loaded wav buffer and reports progress.
 pub struct AudioPlayer {
@@ -17,6 +19,7 @@ pub struct AudioPlayer {
     looping: bool,
     loop_offset: Option<f32>,
     volume: f32,
+    output: ResolvedOutput,
 }
 
 const SEGMENT_FADE: Duration = Duration::from_millis(5);
@@ -24,10 +27,14 @@ const SEGMENT_FADE: Duration = Duration::from_millis(5);
 impl AudioPlayer {
     /// Create a new audio player using the default output device.
     pub fn new() -> Result<Self, String> {
-        let stream = OutputStreamBuilder::open_default_stream()
-            .map_err(|error| format!("Audio init failed: {error}"))?;
+        Self::from_config(&AudioOutputConfig::default())
+    }
+
+    /// Create a new audio player honoring the requested output configuration.
+    pub fn from_config(config: &AudioOutputConfig) -> Result<Self, String> {
+        let outcome = open_output_stream(config)?;
         Ok(Self {
-            stream,
+            stream: outcome.stream,
             sink: None,
             current_audio: None,
             track_duration: None,
@@ -36,6 +43,7 @@ impl AudioPlayer {
             looping: false,
             loop_offset: None,
             volume: 1.0,
+            output: outcome.resolved,
         })
     }
 
@@ -312,6 +320,11 @@ impl AudioPlayer {
             sink.stop();
         }
     }
+
+    /// Active output configuration after initialization.
+    pub fn output_details(&self) -> &ResolvedOutput {
+        &self.output
+    }
 }
 
 fn normalized_progress(
@@ -430,3 +443,7 @@ where
 
 #[cfg(test)]
 mod tests;
+pub use output::{
+    AudioDeviceSummary, AudioHostSummary, AudioOutputConfig, ResolvedOutput, available_devices,
+    available_hosts, open_output_stream, supported_sample_rates,
+};
