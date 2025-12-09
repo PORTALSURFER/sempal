@@ -88,6 +88,10 @@ impl EguiApp {
                                     self.controller.open_trash_folder();
                                     close_menu = true;
                                 }
+                                if ui.button("Open config folder").clicked() {
+                                    self.controller.open_config_folder();
+                                    close_menu = true;
+                                }
                                 ui.separator();
                                 if ui.button("Move trashed samples to folder").clicked() {
                                     self.controller.move_all_trashed_to_folder();
