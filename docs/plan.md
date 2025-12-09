@@ -8,11 +8,11 @@
 - Build a dedicated options UI section using the existing Options menu to manage audio output settings with validation and helpful messaging.
 
 ## Step-by-step plan
-1. [-] Review the current audio pipeline (`src/audio.rs`, controller lifecycle, config load/save) to locate integration points for host/device selection and sample-rate overrides.
-2. [-] Extend persisted config/state to store audio output preferences (backend including ASIO on Windows, device identifier, sample rate, buffer/latency), with migration defaults and validation when unavailable.
-3. [-] Update the audio backend to instantiate `AudioPlayer` using the selected host/device/settings, add fallbacks to defaults on failure, and surface warnings/errors to the UI without disrupting playback.
-4. [-] Implement Options UI to list available hosts/devices/settings, allow switching (including ASIO where available), and persist user choices while matching existing menu styling.
-5. [-] Add tests/diagnostics for config migration and device selection logic (platform-gated where needed) and document the new audio settings behavior for manual verification.
+1. [x] Review the current audio pipeline (`src/audio.rs`, controller lifecycle, config load/save) to locate integration points for host/device selection and sample-rate overrides.
+2. [x] Extend persisted config/state to store audio output preferences (backend including ASIO on Windows, device identifier, sample rate, buffer/latency), with migration defaults and validation when unavailable.
+3. [x] Update the audio backend to instantiate `AudioPlayer` using the selected host/device/settings, add fallbacks to defaults on failure, and surface warnings/errors to the UI without disrupting playback.
+4. [x] Implement Options UI to list available hosts/devices/settings, allow switching (including ASIO where available), and persist user choices while matching existing menu styling.
+5. [~] Add tests/diagnostics for config migration and device selection logic (platform-gated where needed) and document the new audio settings behavior for manual verification.
 
 ## Code Style & Architecture Rules Reminder
 ### File and module structure

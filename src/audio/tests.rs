@@ -169,6 +169,7 @@ fn remaining_loop_duration_reports_time_left_in_cycle() {
         looping: true,
         loop_offset: None,
         volume: 1.0,
+        output: ResolvedOutput::default(),
     };
 
     let remaining = player.remaining_loop_duration().unwrap();
@@ -190,6 +191,7 @@ fn remaining_loop_duration_none_when_not_looping() {
         looping: false,
         loop_offset: None,
         volume: 1.0,
+        output: ResolvedOutput::default(),
     };
 
     assert!(player.remaining_loop_duration().is_none());
@@ -216,6 +218,7 @@ fn progress_wraps_full_loop_from_offset() {
         looping: true,
         loop_offset: Some(7.0),
         volume: 1.0,
+        output: ResolvedOutput::default(),
     };
 
     let progress = player.progress().unwrap();
@@ -269,6 +272,7 @@ fn play_range_accepts_zero_width_request() {
         looping: false,
         loop_offset: None,
         volume: 1.0,
+        output: ResolvedOutput::default(),
     };
     let bytes = vec![
         0x52, 0x49, 0x46, 0x46, 0x24, 0x80, 0x00, 0x00, 0x57, 0x41, 0x56, 0x45, 0x66, 0x6D, 0x74,

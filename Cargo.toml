@@ -1,11 +1,12 @@
 [package]
 name = "sempal"
-version = "0.208.0"
+version = "0.213.0"
 edition = "2024"
 default-run = "sempal"
 
 [dependencies]
 hound = "3.5.1"
+cpal = "0.16.0"
 rodio = { version = "0.21.1", default-features = true }
 sysinfo = "0.37.2"
 rusqlite = { version = "0.37.0", features = ["bundled"] }
@@ -27,6 +28,7 @@ tracing-appender = "0.2.4"
 time = { version = "0.3.44", features = ["formatting", "macros", "local-offset"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
+cpal = { version = "0.15.3", features = ["asio"] }
 windows = { version = "0.62.2", features = [
     "Win32_Foundation",
     "Win32_Graphics_Gdi",

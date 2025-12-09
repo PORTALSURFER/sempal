@@ -7,6 +7,9 @@ impl EguiController {
         self.feature_flags = cfg.feature_flags;
         self.trash_folder = cfg.trash_folder.clone();
         self.ui.collections.enabled = self.feature_flags.collections_enabled;
+        self.audio_output = cfg.audio_output.clone();
+        self.ui.audio.selected = self.audio_output.clone();
+        self.refresh_audio_options();
         self.apply_volume(cfg.volume);
         self.ui.trash_folder = cfg.trash_folder.clone();
         self.sources = cfg.sources.clone();
@@ -46,6 +49,7 @@ impl EguiController {
             feature_flags: self.feature_flags.clone(),
             trash_folder: self.trash_folder.clone(),
             last_selected_source: self.selected_source.clone(),
+            audio_output: self.audio_output.clone(),
             volume: self.ui.volume,
         })
     }

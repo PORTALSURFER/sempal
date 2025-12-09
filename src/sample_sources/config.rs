@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize, de::Error as SerdeDeError};
 use thiserror::Error;
 
-use crate::app_dirs;
+use crate::{app_dirs, audio::AudioOutputConfig};
 
 use super::{Collection, SampleSource};
 
@@ -20,6 +20,8 @@ pub struct AppConfig {
     pub feature_flags: FeatureFlags,
     pub trash_folder: Option<PathBuf>,
     pub last_selected_source: Option<super::SourceId>,
+    #[serde(default = "default_audio_output")]
+    pub audio_output: AudioOutputConfig,
     pub volume: f32,
 }
 
@@ -34,6 +36,8 @@ struct AppSettings {
     pub last_selected_source: Option<super::SourceId>,
     #[serde(default = "default_volume")]
     pub volume: f32,
+    #[serde(default = "default_audio_output")]
+    pub audio_output: AudioOutputConfig,
 }
 
 /// Toggleable features that can be persisted and evolve without breaking old configs.
@@ -136,6 +140,7 @@ pub fn load_or_default() -> Result<AppConfig, ConfigError> {
         feature_flags: settings.feature_flags,
         trash_folder: settings.trash_folder,
         last_selected_source: settings.last_selected_source,
+        audio_output: settings.audio_output,
         volume: settings.volume,
     })
 }
@@ -162,6 +167,7 @@ pub fn save_to_path(config: &AppConfig, path: &Path) -> Result<(), ConfigError> 
             trash_folder: config.trash_folder.clone(),
             last_selected_source: config.last_selected_source.clone(),
             volume: config.volume,
+            audio_output: config.audio_output.clone(),
         },
         path,
     )?;
@@ -206,6 +212,7 @@ fn migrate_legacy_config(legacy_path: &Path, new_path: &Path) -> Result<AppSetti
         feature_flags: legacy.feature_flags,
         trash_folder: legacy.trash_folder,
         last_selected_source: legacy.last_selected_source,
+        audio_output: legacy.audio_output,
         volume: legacy.volume,
     };
     save_settings_to_path(&settings, new_path)?;
@@ -296,6 +303,7 @@ mod tests {
                 feature_flags: FeatureFlags::default(),
                 trash_folder: Some(PathBuf::from("trash_here")),
                 last_selected_source: None,
+                audio_output: default_audio_output(),
                 volume: 0.9,
             };
             let data = serde_json::to_vec_pretty(&legacy).unwrap();
@@ -326,6 +334,29 @@ mod tests {
     }
 
     #[test]
+    fn audio_output_defaults_and_persists() {
+        let dir = tempdir().unwrap();
+        with_config_home(dir.path(), || {
+            let path = dir.path().join("cfg.toml");
+            let mut cfg = AppConfig::default();
+            cfg.audio_output.host = Some("asio".into());
+            cfg.audio_output.device = Some("Test Interface".into());
+            cfg.audio_output.sample_rate = Some(48_000);
+            cfg.audio_output.buffer_size = Some(512);
+
+            save_to_path(&cfg, &path).unwrap();
+            let loaded = super::load_settings_from(&path).unwrap();
+            assert_eq!(loaded.audio_output.host.as_deref(), Some("asio"));
+            assert_eq!(
+                loaded.audio_output.device.as_deref(),
+                Some("Test Interface")
+            );
+            assert_eq!(loaded.audio_output.sample_rate, Some(48_000));
+            assert_eq!(loaded.audio_output.buffer_size, Some(512));
+        });
+    }
+
+    #[test]
     fn trash_folder_round_trips() {
         let dir = tempdir().unwrap();
         with_config_home(dir.path(), || {
@@ -344,6 +375,10 @@ fn default_true() -> bool {
     true
 }
 
+fn default_audio_output() -> AudioOutputConfig {
+    AudioOutputConfig::default()
+}
+
 fn default_volume() -> f32 {
     1.0
 }
@@ -356,6 +391,7 @@ impl Default for AppConfig {
             feature_flags: FeatureFlags::default(),
             trash_folder: None,
             last_selected_source: None,
+            audio_output: default_audio_output(),
             volume: default_volume(),
         }
     }
@@ -367,6 +403,7 @@ impl Default for AppSettings {
             feature_flags: FeatureFlags::default(),
             trash_folder: None,
             last_selected_source: None,
+            audio_output: default_audio_output(),
             volume: default_volume(),
         }
     }
