@@ -6,6 +6,7 @@ use uuid::Uuid;
 pub mod collections;
 pub mod config;
 pub mod db;
+pub mod library;
 pub mod scan_state;
 pub mod scanner;
 
@@ -22,6 +23,11 @@ impl SourceId {
     /// Create a new unique source identifier.
     pub fn new() -> Self {
         Self(Uuid::new_v4().to_string())
+    }
+
+    /// Rehydrate a source identifier from a stored string.
+    pub fn from_string(id: impl Into<String>) -> Self {
+        Self(id.into())
     }
 
     /// Borrow the identifier as a string.

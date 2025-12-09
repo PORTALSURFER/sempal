@@ -15,6 +15,11 @@ impl CollectionId {
         Self(Uuid::new_v4().to_string())
     }
 
+    /// Rehydrate a collection identifier from a stored string.
+    pub fn from_string(id: impl Into<String>) -> Self {
+        Self(id.into())
+    }
+
     /// Borrow the identifier as a string slice.
     pub fn as_str(&self) -> &str {
         &self.0
