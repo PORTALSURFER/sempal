@@ -11,6 +11,7 @@ impl EguiController {
         self.decoded_waveform = None;
         self.ui.waveform.playhead = PlayheadState::default();
         self.ui.waveform.selection = None;
+        self.ui.waveform.selection_duration = None;
         self.selection.clear();
         self.loaded_audio = None;
         self.loaded_wav = None;
@@ -326,9 +327,7 @@ impl EguiController {
         self.ui.collections.selected_sample = None;
         self.focus_browser_context();
         self.ui.browser.autoscroll = true;
-        if self.ui.browser.selection_anchor_visible.is_none() {
-            self.ui.browser.selection_anchor_visible = Some(visible_row);
-        }
+        self.ui.browser.selection_anchor_visible = Some(visible_row);
         self.select_wav_by_path_with_rebuild(&path, true);
     }
 
@@ -376,7 +375,26 @@ impl EguiController {
                 self.set_single_browser_selection(&path);
             }
             SelectionAction::Toggle => {
-                self.ui.browser.selection_anchor_visible = Some(visible_row);
+                let anchor = self
+                    .ui
+                    .browser
+                    .selection_anchor_visible
+                    .or(self.ui.browser.selected_visible)
+                    .unwrap_or(visible_row);
+                self.ui.browser.selection_anchor_visible = Some(anchor);
+                if self.ui.browser.selected_paths.is_empty() && anchor != visible_row {
+                    if let Some(anchor_path) = self.browser_path_for_visible(anchor) {
+                        if !self
+                            .ui
+                            .browser
+                            .selected_paths
+                            .iter()
+                            .any(|p| p == &anchor_path)
+                        {
+                            self.ui.browser.selected_paths.push(anchor_path);
+                        }
+                    }
+                }
                 self.toggle_browser_selection(&path);
             }
             SelectionAction::Extend => {
@@ -588,6 +606,7 @@ impl EguiController {
     fn clear_waveform_selection(&mut self) {
         self.ui.waveform.playhead = PlayheadState::default();
         self.ui.waveform.selection = None;
+        self.ui.waveform.selection_duration = None;
         self.selection.clear();
     }
 

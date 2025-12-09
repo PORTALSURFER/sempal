@@ -88,6 +88,7 @@ pub struct WaveformState {
     pub image: Option<WaveformImage>,
     pub playhead: PlayheadState,
     pub selection: Option<SelectionRange>,
+    pub selection_duration: Option<String>,
     pub loop_enabled: bool,
     pub notice: Option<String>,
 }
@@ -98,6 +99,7 @@ impl Default for WaveformState {
             image: None,
             playhead: PlayheadState::default(),
             selection: None,
+            selection_duration: None,
             loop_enabled: false,
             notice: None,
         }

@@ -258,7 +258,7 @@ fn hotkey_tagging_applies_to_all_selected_rows() {
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
-    controller.focus_browser_row(0);
+    controller.focus_browser_row_only(0);
     controller.toggle_browser_row_selection(1);
     controller.tag_selected_left();
 
@@ -278,7 +278,7 @@ fn escape_clears_selection() {
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
-    controller.focus_browser_row(0);
+    controller.focus_browser_row_only(0);
     controller.toggle_browser_row_selection(1);
     assert_eq!(controller.ui.browser.selected_paths.len(), 2);
 
@@ -286,6 +286,31 @@ fn escape_clears_selection() {
 
     assert!(controller.ui.browser.selected_paths.is_empty());
     assert!(controller.ui.browser.selection_anchor_visible.is_none());
+}
+
+#[test]
+fn click_clears_selection_and_focuses_row() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.cache_db(&source).unwrap();
+    controller.wav_entries = vec![
+        sample_entry("one.wav", SampleTag::Neutral),
+        sample_entry("two.wav", SampleTag::Neutral),
+        sample_entry("three.wav", SampleTag::Neutral),
+    ];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+
+    controller.focus_browser_row(0);
+    controller.toggle_browser_row_selection(1);
+    assert_eq!(controller.ui.browser.selected_paths.len(), 2);
+
+    controller.clear_browser_selection();
+    controller.focus_browser_row_only(2);
+
+    assert!(controller.ui.browser.selected_paths.is_empty());
+    assert_eq!(controller.ui.browser.selected_visible, Some(2));
+    assert_eq!(controller.ui.browser.selection_anchor_visible, Some(2));
 }
 
 #[test]
@@ -300,7 +325,10 @@ fn ctrl_click_toggles_selection_and_focuses_row() {
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
-    controller.focus_browser_row(0);
+    controller.focus_browser_row_only(0);
+    assert!(controller.ui.browser.selected_paths.is_empty());
+    assert_eq!(controller.ui.browser.selection_anchor_visible, Some(0));
+
     controller.toggle_browser_row_selection(2);
 
     let selected: Vec<_> = controller
@@ -327,7 +355,7 @@ fn shift_click_extends_selection_range() {
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
-    controller.focus_browser_row(0);
+    controller.focus_browser_row_only(0);
     controller.extend_browser_selection_to_row(2);
 
     let selected: Vec<_> = controller
