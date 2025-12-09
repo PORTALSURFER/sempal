@@ -9,7 +9,7 @@
 ## Step-by-step plan
 1. [x] Trace the current selection edge drag flow (UI responses in `waveform_view`, controller hooks, `SelectionState`) to confirm where the drag threshold delays updates.
 2. [x] Implement immediate edge dragging on pointer-down for selection brackets, ensuring normalized updates run every frame without waiting for drag thresholds.
-3. [x] Guard other interactions (selection creation, seek clicks, drag payload handle) so they remain unchanged and cursors/hover states still feel correct.
+3. [x] Guard other interactions (selection creation, seek clicks, drag payload handle) so they remain unchanged and cursors/hover states still feel correct, and keep edge alignment stable when drags start.
 4. [-] Add/adjust tests or targeted UI logic checks for zero-threshold edge drags and document a brief manual QA pass for selection resize smoothness.
 5. [x] Run relevant tests (e.g., `cargo test` for selection/controller modules) and perform a quick manual resize check in the waveform view.
 
