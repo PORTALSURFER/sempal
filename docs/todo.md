@@ -2,7 +2,12 @@
 
 --
 
-\plan - lets add color the sample item label text with the triageflag color, so red/green or regular.
+-- when drag selecting audio, if we move quickly, we lose the original click position, instead the selection starts with an offset, this can never happen, it should always start exactly where we clicked first.
+
+
+-- lets add an entry to the source context menu top open the source folder in the os explorer
+
+\plan - lets color the sample item label text with the triageflag color, so red/green or regular.
 
 ---
 
