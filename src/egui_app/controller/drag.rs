@@ -75,20 +75,41 @@ impl EguiController {
                 return;
             }
         };
-        let collection_target = self
-            .ui
-            .drag
-            .hovering_collection
-            .clone()
-            .or_else(|| {
-                if self.ui.drag.hovering_drop_zone {
-                    self.current_collection_id()
-                } else {
-                    None
-                }
-            })
-            .or_else(|| self.current_collection_id());
         let triage_target = self.ui.drag.hovering_browser;
+        let collection_target = match &payload {
+            DragPayload::Sample { .. } => self
+                .ui
+                .drag
+                .hovering_collection
+                .clone()
+                .or_else(|| {
+                    if self.ui.drag.hovering_drop_zone {
+                        self.current_collection_id()
+                    } else {
+                        None
+                    }
+                })
+                .or_else(|| self.current_collection_id()),
+            DragPayload::Selection { .. } => self
+                .ui
+                .drag
+                .hovering_collection
+                .clone()
+                .or_else(|| {
+                    if self.ui.drag.hovering_drop_zone {
+                        self.current_collection_id()
+                    } else {
+                        None
+                    }
+                })
+                .or_else(|| {
+                    if triage_target.is_none() {
+                        self.current_collection_id()
+                    } else {
+                        None
+                    }
+                }),
+        };
         self.reset_drag();
         match payload {
             DragPayload::Sample {
@@ -102,13 +123,7 @@ impl EguiController {
                 relative_path,
                 bounds,
             } => {
-                self.handle_selection_drop(
-                    source_id,
-                    relative_path,
-                    bounds,
-                    collection_target,
-                    triage_target,
-                );
+                self.handle_selection_drop(source_id, relative_path, bounds, collection_target, triage_target);
             }
         }
     }
@@ -210,8 +225,13 @@ impl EguiController {
             .as_ref()
             .ok_or_else(|| "Load a sample before dragging a selection".to_string())?;
         let clip = self.selection_audio(&audio.source_id, &audio.relative_path)?;
-        let entry =
-            self.export_selection_clip(&clip.source_id, &clip.relative_path, bounds, None)?;
+        let entry = self.export_selection_clip(
+            &clip.source_id,
+            &clip.relative_path,
+            bounds,
+            None,
+            true,
+        )?;
         let source = self
             .sources
             .iter()
@@ -284,40 +304,80 @@ impl EguiController {
             TriageFlagColumn::Neutral => SampleTag::Neutral,
             TriageFlagColumn::Keep => SampleTag::Keep,
         });
-        match self.export_selection_clip(&source_id, &relative_path, bounds, target_tag) {
+        if triage_target.is_some() {
+            self.handle_selection_drop_to_browser(
+                &source_id,
+                &relative_path,
+                bounds,
+                target_tag,
+            );
+            return;
+        }
+        if let Some(collection_id) = collection_target {
+            self.handle_selection_drop_to_collection(
+                &source_id,
+                &relative_path,
+                bounds,
+                target_tag,
+                &collection_id,
+            );
+        }
+    }
+
+    fn handle_selection_drop_to_browser(
+        &mut self,
+        source_id: &SourceId,
+        relative_path: &Path,
+        bounds: SelectionRange,
+        target_tag: Option<SampleTag>,
+    ) {
+        match self.export_selection_clip(source_id, relative_path, bounds, target_tag, true) {
             Ok(entry) => {
-                if let Some(collection_id) = collection_target.as_ref() {
-                    self.selected_collection = Some(collection_id.clone());
-                    if let Some(source) = self.sources.iter().find(|s| s.id == source_id).cloned() {
-                        if let Err(err) = self.add_sample_to_collection_for_source(
-                            collection_id,
-                            &source,
-                            &entry.relative_path,
-                        ) {
-                            self.set_status(err, StatusTone::Error);
-                        }
-                    } else {
-                        self.set_status("Source not available for collection", StatusTone::Error);
-                    }
-                }
                 self.ui.browser.autoscroll = true;
                 self.suppress_autoplay_once = true;
                 self.select_wav_by_path(&entry.relative_path);
-                let status = if let Some(collection_id) = collection_target.as_ref() {
-                    let name = self
-                        .collections
-                        .iter()
-                        .find(|c| c.id == *collection_id)
-                        .map(|c| c.name.as_str())
-                        .unwrap_or("collection");
-                    format!(
-                        "Saved clip {} and added to {}",
-                        entry.relative_path.display(),
-                        name
-                    )
+                let status = format!("Saved clip {}", entry.relative_path.display());
+                self.set_status(status, StatusTone::Info);
+            }
+            Err(err) => self.set_status(err, StatusTone::Error),
+        }
+    }
+
+    fn handle_selection_drop_to_collection(
+        &mut self,
+        source_id: &SourceId,
+        relative_path: &Path,
+        bounds: SelectionRange,
+        target_tag: Option<SampleTag>,
+        collection_id: &CollectionId,
+    ) {
+        match self.export_selection_clip(source_id, relative_path, bounds, target_tag, false) {
+            Ok(entry) => {
+                self.selected_collection = Some(collection_id.clone());
+                if let Some(source) = self.sources.iter().find(|s| s.id == *source_id).cloned() {
+                    if let Err(err) = self.add_sample_to_collection_for_source(
+                        collection_id,
+                        &source,
+                        &entry.relative_path,
+                    ) {
+                        self.set_status(err, StatusTone::Error);
+                        return;
+                    }
                 } else {
-                    format!("Saved clip {}", entry.relative_path.display())
-                };
+                    self.set_status("Source not available for collection", StatusTone::Error);
+                    return;
+                }
+                let name = self
+                    .collections
+                    .iter()
+                    .find(|c| c.id == *collection_id)
+                    .map(|c| c.name.as_str())
+                    .unwrap_or("collection");
+                let status = format!(
+                    "Saved clip {} to {}",
+                    entry.relative_path.display(),
+                    name
+                );
                 self.set_status(status, StatusTone::Info);
             }
             Err(err) => self.set_status(err, StatusTone::Error),

@@ -11,6 +11,7 @@ impl EguiController {
         relative_path: &Path,
         bounds: SelectionRange,
         target_tag: Option<SampleTag>,
+        add_to_browser: bool,
     ) -> Result<WavEntry, String> {
         let audio = self.selection_audio(source_id, relative_path)?;
         let source = self
@@ -23,7 +24,7 @@ impl EguiController {
         let target_abs = source.root.join(&target_rel);
         let (samples, spec) = crop_selection_samples(&audio, bounds)?;
         write_selection_wav(&target_abs, &samples, spec)?;
-        self.record_selection_entry(&source, target_rel, target_tag)
+        self.record_selection_entry(&source, target_rel, target_tag, add_to_browser)
     }
 
     pub(super) fn selection_audio(
@@ -68,6 +69,7 @@ impl EguiController {
         source: &SampleSource,
         relative_path: PathBuf,
         target_tag: Option<SampleTag>,
+        add_to_browser: bool,
     ) -> Result<WavEntry, String> {
         let metadata = fs::metadata(source.root.join(&relative_path))
             .map_err(|err| format!("Failed to read saved clip: {err}"))?;
@@ -93,7 +95,9 @@ impl EguiController {
             db.set_tag(&entry.relative_path, entry.tag)
                 .map_err(|err| format!("Failed to tag clip: {err}"))?;
         }
-        self.insert_new_wav_entry(source, entry.clone());
+        if add_to_browser {
+            self.insert_new_wav_entry(source, entry.clone());
+        }
         Ok(entry)
     }
 
