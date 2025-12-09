@@ -20,6 +20,7 @@ mod selection_edits;
 mod selection_export;
 mod sources;
 mod trash;
+mod waveform_navigation;
 mod wavs;
 
 use crate::{

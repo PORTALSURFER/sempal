@@ -138,6 +138,12 @@ impl SelectionState {
         self.drag = None;
         changed
     }
+
+    /// Replace the current selection without marking a drag active.
+    pub fn set_range(&mut self, range: Option<SelectionRange>) {
+        self.range = range;
+        self.drag = None;
+    }
 }
 
 fn clamp01(value: f32) -> f32 {

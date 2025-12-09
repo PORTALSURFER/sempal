@@ -7,9 +7,84 @@ impl EguiController {
         self.ui.focus.set_context(FocusContext::SampleBrowser);
     }
 
+    /// Focus the sample browser, selecting a row if none is active.
+    pub(super) fn focus_browser_list(&mut self) {
+        let Some(target_row) = self
+            .ui
+            .browser
+            .selected_visible
+            .or(self.ui.browser.visible.first().copied())
+        else {
+            self.set_status("Add a source with samples first", StatusTone::Info);
+            return;
+        };
+        self.focus_browser_row_only(target_row);
+    }
+
+    /// Mark the waveform viewer as the active focus surface.
+    pub(crate) fn focus_waveform_context(&mut self) {
+        self.ui.focus.set_context(FocusContext::Waveform);
+    }
+
     /// Mark the collections sample list as the active focus surface.
     pub(super) fn focus_collection_context(&mut self) {
         self.ui.focus.set_context(FocusContext::CollectionSample);
+    }
+
+    /// Focus the collection samples list, selecting the current row or first row.
+    pub(super) fn focus_collection_samples_list(&mut self) {
+        let Some(collection) = self.current_collection() else {
+            self.set_status("Select a collection first", StatusTone::Info);
+            return;
+        };
+        if collection.members.is_empty() {
+            self.set_status("This collection has no samples yet", StatusTone::Info);
+            return;
+        }
+        let target = self
+            .ui
+            .collections
+            .selected_sample
+            .unwrap_or(0)
+            .min(collection.members.len().saturating_sub(1));
+        self.select_collection_sample(target);
+    }
+
+    /// Mark the sources list as the active focus surface.
+    pub(super) fn focus_sources_context(&mut self) {
+        self.ui.focus.set_context(FocusContext::SourcesList);
+    }
+
+    /// Focus the sources list, selecting the current row or the first available source.
+    pub(super) fn focus_sources_list(&mut self) {
+        if self.sources.is_empty() {
+            self.set_status("Add a source first", StatusTone::Info);
+            return;
+        }
+        let target = self.ui.sources.selected.unwrap_or(0).min(self.sources.len() - 1);
+        self.select_source_by_index(target);
+        self.focus_sources_context();
+    }
+
+    /// Mark the collections list as the active focus surface.
+    pub(super) fn focus_collections_list_context(&mut self) {
+        self.ui.focus.set_context(FocusContext::CollectionsList);
+    }
+
+    /// Focus the collections list, selecting the active row or the first entry.
+    pub(super) fn focus_collections_list(&mut self) {
+        if self.collections.is_empty() {
+            self.set_status("Create a collection to focus it", StatusTone::Info);
+            return;
+        }
+        let target = self
+            .ui
+            .collections
+            .selected
+            .unwrap_or(0)
+            .min(self.collections.len() - 1);
+        self.select_collection_by_index(Some(target));
+        self.focus_collections_list_context();
     }
 
     /// Clear focus when no interactive surface should process shortcuts.

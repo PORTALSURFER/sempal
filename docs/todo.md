@@ -3,10 +3,6 @@ lets then write every task you find into @todo.md as a new todo item
 
 --
 
-- lets add support for hotkey chords, then lets add 'gw' to goto waveform, to set user focus to the waveform.
-in context of waveform focus, left/right arrows should move the playhead, lets add a stepwise motion, which is always the same visual size. make up/down zoom in/out, keeping the playhead at the center of zoom.
-shift+left/right to create a selection.  [ and ] to push the selection sides outward on either side. shift+[/] to push either side of the selection inward.
-lets add 'gs' to focus the source samples list, 'gc' to focus collection samples list, 'gS' to focus the source list, 'gC' to focus the collections list.
 
 ---
 

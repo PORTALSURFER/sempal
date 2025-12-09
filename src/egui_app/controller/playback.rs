@@ -228,7 +228,9 @@ impl EguiController {
         self.poll_wav_loader();
         self.poll_scan();
         let Some(player) = self.player.as_ref().cloned() else {
-            self.ui.waveform.playhead.visible = false;
+            if self.decoded_waveform.is_none() {
+                self.ui.waveform.playhead.visible = false;
+            }
             return;
         };
         let should_resume = {
@@ -247,15 +249,19 @@ impl EguiController {
             player.borrow_mut().stop();
         }
         let player_ref = player.borrow();
-        if let Some(progress) = player_ref.progress() {
-            self.ui.waveform.playhead.position = progress;
-            self.ui.waveform.playhead.visible = player_ref.is_playing();
-        } else {
+        if player_ref.is_playing() {
+            if let Some(progress) = player_ref.progress() {
+                self.ui.waveform.playhead.position = progress;
+                self.ui.waveform.playhead.visible = true;
+            } else {
+                self.ui.waveform.playhead.visible = false;
+            }
+        } else if self.decoded_waveform.is_none() {
             self.ui.waveform.playhead.visible = false;
         }
     }
 
-    fn apply_selection(&mut self, range: Option<SelectionRange>) {
+    pub(super) fn apply_selection(&mut self, range: Option<SelectionRange>) {
         let label = range.and_then(|selection| self.selection_duration_label(selection));
         self.ui.waveform.selection = range;
         self.ui.waveform.selection_duration = label;
