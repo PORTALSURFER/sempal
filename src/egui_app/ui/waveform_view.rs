@@ -363,19 +363,23 @@ impl EguiApp {
 
             // Waveform interactions: scroll to zoom, click to seek, drag to select.
             if response.hovered() {
-                let mut scroll_delta = ui.input(|i| i.raw_scroll_delta);
+                let scroll_delta = ui.input(|i| i.raw_scroll_delta);
                 if scroll_delta != egui::Vec2::ZERO {
-                    // Invert wheel direction and bump speed for a snappier feel.
-                    let scroll_speed = 1.5;
-                    scroll_delta = -scroll_delta * scroll_speed;
                     let shift_down = ui.input(|i| i.modifiers.shift);
                     if shift_down && view_width < 1.0 {
                         // Pan the zoomed view horizontally when shift is held.
-                        let delta_x = if scroll_delta.x.abs() > 0.0 {
-                            scroll_delta.x
+                        let pan_delta = scroll_delta
+                            * self.controller.ui.controls.waveform_scroll_speed;
+                        let invert = if self.controller.ui.controls.invert_waveform_scroll {
+                            -1.0
                         } else {
-                            scroll_delta.y
+                            1.0
                         };
+                        let delta_x = if pan_delta.x.abs() > 0.0 {
+                            pan_delta.x
+                        } else {
+                            pan_delta.y
+                        } * invert;
                         if delta_x.abs() > 0.0 {
                             let view_center = view.start + view_width * 0.5;
                             let fraction_delta = (delta_x / rect.width()) * view_width;
@@ -383,22 +387,30 @@ impl EguiApp {
                             self.controller.scroll_waveform_view(target_center);
                         }
                     } else {
-                        let zoom_in = scroll_delta.y > 0.0;
+                        let zoom_delta = scroll_delta * 0.6;
+                        let zoom_in = zoom_delta.y > 0.0;
+                        let per_step_factor = self.controller.ui.controls.wheel_zoom_factor;
                         // Use playhead when visible, otherwise pointer if available, otherwise center.
-                        let zoom_steps = scroll_delta.y.abs().round().max(1.0) as u32;
-                        for _ in 0..zoom_steps {
-                            if self.controller.ui.waveform.playhead.visible {
-                                self.controller.zoom_waveform(zoom_in);
-                            } else if let Some(pos) = pointer_pos {
-                                let normalized = ((pos.x - rect.left()) / rect.width())
+                        let zoom_steps = zoom_delta.y.abs().round().max(1.0) as u32;
+                        let focus_override = if let Some(pos) = response.interact_pointer_pos() {
+                            Some(
+                                ((pos.x - rect.left()) / rect.width())
                                     .mul_add(view_width, view.start)
-                                    .clamp(0.0, 1.0);
-                                self.controller.scroll_waveform_view(normalized);
-                                self.controller.zoom_waveform(zoom_in);
-                            } else {
-                                self.controller.zoom_waveform(zoom_in);
-                            }
-                        }
+                                    .clamp(0.0, 1.0),
+                            )
+                        } else if self.controller.ui.waveform.playhead.visible {
+                            None
+                        } else {
+                            None
+                        };
+                        self.controller.zoom_waveform_steps_with_factor(
+                            zoom_in,
+                            zoom_steps,
+                            focus_override,
+                            Some(per_step_factor),
+                            false,
+                            false,
+                        );
                     }
                 }
             }

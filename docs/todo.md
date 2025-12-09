@@ -3,14 +3,15 @@ lets then write every task you find into @todo.md as a new todo item
 
 --
 
+\plan - add warnings whenever a destructive edit feature is used. also add a yolo mode in the options, which will just apply everything without this popup.
+
+-- add 'p' to process trash, meaning, move trashed items to the trash folder, with a warning unless in yolo mode
 
 ---
 
 -- lets make the regular sample list dropzone use the entire space available just like in collections and sample source list, so we can drop in audio selections much easier, especially when the sample list is short.
 
 ---
-
-\plan - add warnings whenever a destructive edit feature is used. also add a yolo mode in the options, which will just apply everything without this popup.
 
 ### v2
 
