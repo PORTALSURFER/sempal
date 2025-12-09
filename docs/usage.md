@@ -1,59 +1,52 @@
 # Sempal usage guide
 
-## Interface tour
-- **Sources (left):** Folders you added; click to load their samples.
-- **Waveform viewer (center, top):** Displays the current `.wav`, supports seeking, looping, and range selection.
-- **Samples list (center, bottom):** Single-column triage view with filter chips for All/Keep/Trash/Untagged.
-- **Collections (right):** Optional sidebar for grouping samples and exporting copies.
-- **Status bar (bottom):** Status badge/text and a master volume slider.
+## Layout at a glance
+- **Sources (left):** Add sample folders, rescan, remap, or remove them; missing sources are flagged.
+- **Center:** Waveform viewer (seek, loop, selection editing) above the Sample browser triage list (All/Keep/Trash/Untagged with numbered rows and keep/trash markers).
+- **Collections (right):** Manage collections, export folders, and per-collection items; missing export paths or files are highlighted.
+- **Status bar (bottom):** Status badge/text, Options menu for trash actions, and a persistent volume slider.
 
-## Working with sources
-- Click the **+** button in the Sources panel to pick a folder. Sempal opens/creates `.sempal_samples.db` inside that folder and loads its recorded `.wav` entries.
-- The first available sample auto-loads; selecting any row updates the waveform and, by default, starts playback.
-- New files added outside Sempal must be synced into the source database (the UI does not yet auto-scan the filesystem).
+## Add and manage sources
+- Click **+** in the Sources panel or drop a folder onto it. Sempal creates/uses `.sempal_samples.db` inside that folder and loads its `.wav` entries; the first available row auto-loads.
+- Right-click a source row for **Quick sync**, **Hard sync (full rescan)**, **Remap source...**, or **Remove source**. New files added outside Sempal require a sync.
+- Selecting any row loads the waveform and, by default, starts playback. Missing sources are prefixed with `!`.
 
-## Browsing, playback, and selections
-- Click anywhere on the waveform to seek and play from that point.
-- Toggle **Loop on/off** in the waveform header to loop either the current selection (when present) or the full file.
-- Create a selection with **Shift + drag** across the waveform. **Shift + click** clears it.
-- Drag the selection handle (at the bottom of the shaded region) to resize or to start a drag-and-drop. Dropping the selection onto the Samples list or a Collection saves a trimmed clip (`<name>_sel.wav`, `<name>_sel_2.wav`, …) alongside the source file and optionally tags/adds it to the drop target.
+## Browse and triage samples
+- Use filter chips (All/Keep/Trash/Untagged) to change the visible list. Rows show number columns and right-edge markers for Keep/Trash; missing files are prefixed with `!`.
+- Select rows with click; **Shift + click** extends the selection; **Ctrl/Cmd + click** toggles multi-select. **Up/Down** moves the focus; **Shift + Up/Down** extends the selection.
+- Tagging: **Right Arrow** -> Keep (Trash -> Neutral, others -> Keep). **Left Arrow** -> Trash (Keep -> Neutral, others -> Trash). **Ctrl/Cmd + Right/Left** moves the selection into the next/previous triage column.
+- Context menu on a sample row: Tag Keep/Neutral/Trash, **Normalize (overwrite)**, **Rename**, or **Delete file**. Actions apply to the focused row or the current multi-selection.
+- **Ctrl/Cmd + C** copies the focused/selected samples to the system clipboard as file drops (for DAWs/file managers).
+- Dragging a sample row into the browser area retags it to the active filter's column (All/Untagged -> Neutral).
 
-## Triage samples
-- Use the filter chips (All/Keep/Trash/Untagged) to control which rows appear. Colors mark keep/trash states; neutral rows remain uncolored.
-- Tagging:
-  - **Right Arrow:** Tag selected row Keep (Trash → Neutral, others → Keep).
-  - **Left Arrow:** Tag selected row Trash (Keep → Neutral, others → Trash).
-  - Drag a sample row onto the Samples list to retag it to the active filter’s column (All/Untagged → Neutral).
-- Selection movement:
-  - **Up/Down Arrows:** Move selection through the visible list; playback follows the selection when enabled.
-  - **Ctrl/Cmd + Right/Left:** Cycle the active filter chip.
+## Playback and waveform editing
+- **Space** toggles play/pause. **Escape** stops playback and clears browser selection. Click the waveform to seek; clicking while a selection exists clears it.
+- **Loop on/off** in the waveform header loops the current selection when present, otherwise the full file. A loop bar shows the active region; the playhead is drawn over the waveform.
+- Drag across the waveform to create a selection; drag the edge brackets to resize. The handle at the bottom of the selection supports drag-and-drop.
+- Right-click the selection for destructive edits (overwrite the source file): **Crop to selection**, **Trim selection out**, **Fade to null** (left->right or right->left), **Mute selection**, or **Normalize selection** (adds 5 ms edge fades).
+- Drag the selection handle:
+  - Onto the Sample browser to save a trimmed clip next to the source (`<name>_sel.wav`, `<name>_sel_2.wav`, ...) using the current filter as the tag.
+  - Onto a Collection to save the clip and add it there (exports into the collection's folder when configured).
+  - On Windows, dragging outside the window exports the clip and starts an external drag so you can drop into a DAW/file manager.
 
-## Trash management
-- Open the **Options** menu in the status bar to choose a trash folder. The choice is saved and reused.
-- **Move trashed samples to folder:** After confirmation, moves every sample tagged Trash from all sources into the trash folder (keeping relative names) and removes them from source lists/collections.
-- **Take out trash:** After confirmation, permanently deletes everything inside the trash folder.
-- **Open trash folder:** Opens the configured trash folder in your OS file explorer.
+## Collections and exports
+- Click **+** (feature-flag enabled by default) to create a collection. Set an export folder to copy members into `<export>/<collection-name>/`; rows show `!` when missing or when no export folder is set.
+- Add items by dragging sample rows or waveform selections onto a collection or its items area. Duplicate targets are highlighted while dragging.
+- Selecting a collection item loads it in the waveform; triage markers appear beside items.
+- Collection row menu: Set/Clear export folder, **Refresh export**, **Open export folder**, **Rename**, **Delete collection**.
+- Collection item menu: Tag Keep/Neutral/Trash, **Normalize (overwrite)**, **Rename**, **Delete from collection**.
 
-## Collections
-- Click the **+** button to create a collection (enabled by default via feature flags). You’ll be prompted to choose an export folder; if set, Sempal copies members into `<export>/<collection-name>/`.
-- Add items:
-  - Drag a sample row onto a collection in the sidebar, or onto the Collection items area when a collection is selected.
-  - Drag a waveform selection; dropping onto a collection both saves the clip and adds it.
-- Managing collections (right-click/long-press a collection row):
-  - Set or clear the export folder, refresh exports to reconcile disk vs. list, open the export folder, or rename the collection.
-- Selecting a collection item loads and (by default) plays it; the item list shows the source label and relative path.
+## Trash and cleanup
+- Open **Options** in the status bar to set or open the trash folder.
+- **Move trashed samples to folder:** Moves all samples tagged Trash from every source into the trash folder (keeps relative paths) and removes them from lists/collections.
+- **Take out trash:** Permanently deletes everything inside the trash folder.
 
-## Keyboard and mouse shortcuts
-- `Space`: Play/pause (respects current selection when available).
-- `Up/Down`: Move through visible samples (or collection items when that list has focus).
-- `Right Arrow`: Keep (or move Trash → Neutral).
-- `Left Arrow`: Trash (or Keep → Neutral).
-- `Ctrl/Cmd + Right/Left`: Cycle triage filter chips.
-- `Ctrl/Cmd + /`: Show or hide the contextual hotkey overlay for the currently focused list (browser or collections).
-- `X`: Toggle selection for the focused browser row.
-- `N`: Normalize the focused sample (browser rows overwrite the source file; collection rows overwrite the collection copy).
-- `D`: Delete the focused sample (from disk when browsing, or remove it from the active collection).
-- `C`: Add the focused browser sample to the selected collection.
-- `Shift + drag` on waveform: Create/adjust a selection; `Shift + click` clears.
-- Drag sample rows: Drop into a collection.
-- Drag selection handle: Export a trimmed clip to the Samples list or a collection.
+## Drag, drop, and clipboard tips
+- Drop folders onto the Sources panel to add them.
+- Drag sample rows to collections or back into the browser (for retagging) without using menus.
+- Drag selections or samples outside the window on Windows to start an external drag-out. Use **Ctrl/Cmd + C** to copy selections or rows as file drops.
+
+## Hotkeys (focus-aware)
+- Global: `Space` play/pause; `Esc` stop/clear selection; `L` toggle loop; `Ctrl/Cmd + /` toggle hotkey overlay; `F11` toggle maximized window.
+- Sample browser focus: `Up/Down` move; `Shift + Up/Down` extend selection; `Right Arrow` Keep; `Left Arrow` Trash; `Ctrl/Cmd + Right/Left` move selection across triage columns; `X` toggle selection; `N` normalize (overwrite); `D` delete; `C` add focused sample to the selected collection.
+- Collection item focus: `Up/Down` move; `N` normalize (overwrite collection copy); `D` delete from collection.

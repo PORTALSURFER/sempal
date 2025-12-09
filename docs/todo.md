@@ -1,10 +1,6 @@
 \plan - lets do a housekeeping pass, clean up the codebase, reduce file lengths, improve DRYness, improve maintainability, collapse large structs/objects into clearly named smaller objects, add missing docs, improve symbol naming, find and resolve bugs, improve performance, etc.
 
 --
-\plan - update the usage guide, it is outdated
-
-\plan - when I drag/drop an audio selection into a collection, no longer also add a copy in the regular sample list. only add it to the collection.
-and if I drag it into the sample list, do not also add it to the active collection.
 
 \plan - lets add color the sample item label text with the triageflag color, so red/green or regular.
 
