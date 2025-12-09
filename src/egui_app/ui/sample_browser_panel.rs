@@ -4,7 +4,7 @@ use super::helpers::{
 };
 use super::style;
 use super::*;
-use crate::egui_app::state::TriageFlagFilter;
+use crate::egui_app::state::{FocusContext, TriageFlagFilter};
 use crate::egui_app::ui::style::StatusTone;
 use crate::egui_app::view_model;
 use eframe::egui::{self, RichText, StrokeKind, Ui};
@@ -179,6 +179,14 @@ impl EguiApp {
                 });
             scroll_response
         });
+        if matches!(self.controller.ui.focus.context, FocusContext::SampleBrowser) {
+            ui.painter().rect_stroke(
+                frame_response.response.rect,
+                2.0,
+                style::focused_row_stroke(),
+                StrokeKind::Outside,
+            );
+        }
         let viewport_height = frame_response.inner.inner_rect.height();
         let content_height = frame_response.inner.content_size.y;
         let max_offset = (content_height - viewport_height).max(0.0);

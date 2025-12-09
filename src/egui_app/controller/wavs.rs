@@ -1,4 +1,5 @@
 use super::*;
+use crate::egui_app::state::WaveformView;
 use crate::waveform::DecodedWaveform;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -12,6 +13,7 @@ impl EguiController {
         self.ui.waveform.playhead = PlayheadState::default();
         self.ui.waveform.selection = None;
         self.ui.waveform.selection_duration = None;
+        self.ui.waveform.view = WaveformView::default();
         self.selection.clear();
         self.loaded_audio = None;
         self.loaded_wav = None;
@@ -551,6 +553,7 @@ impl EguiController {
         let sample_rate = decoded.sample_rate;
         let channels = decoded.channels;
         self.apply_waveform_image(decoded);
+        self.ui.waveform.view = WaveformView::default();
         self.ui.waveform.notice = None;
         self.clear_waveform_selection();
         self.loaded_wav = Some(relative_path.to_path_buf());
@@ -586,6 +589,7 @@ impl EguiController {
         let sample_rate = decoded.sample_rate;
         let channels = decoded.channels;
         self.apply_waveform_image(decoded);
+        self.ui.waveform.view = WaveformView::default();
         self.ui.waveform.notice = None;
         self.clear_waveform_selection();
         self.loaded_wav = None;

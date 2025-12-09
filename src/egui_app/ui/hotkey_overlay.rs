@@ -1,6 +1,6 @@
 use super::style;
 use crate::egui_app::{
-    controller::hotkeys::{HotkeyAction, HotkeyGesture},
+    controller::hotkeys::{HotkeyAction, HotkeyGesture, KeyPress},
     state::FocusContext,
 };
 use eframe::egui::{self, Align, Align2, Color32, Id, Layout, RichText, Vec2};
@@ -58,8 +58,11 @@ fn render_section(ui: &mut egui::Ui, title: &str, actions: &[HotkeyAction]) {
 
 fn focus_header(focus: FocusContext) -> &'static str {
     match focus {
+        FocusContext::Waveform => "Waveform",
         FocusContext::SampleBrowser => "Focused sample (browser)",
         FocusContext::CollectionSample => "Focused sample (collection)",
+        FocusContext::SourcesList => "Sources list",
+        FocusContext::CollectionsList => "Collections list",
         FocusContext::None => "Focused sample",
     }
 }
@@ -78,18 +81,11 @@ fn draw_backdrop(ctx: &egui::Context) {
 }
 
 fn gesture_label(gesture: &HotkeyGesture) -> String {
-    let mut parts: Vec<&'static str> = Vec::new();
-    if gesture.command {
-        parts.push(command_label());
+    let mut parts = vec![key_press_label(&gesture.first)];
+    if let Some(chord) = gesture.chord {
+        parts.push(key_press_label(&chord));
     }
-    if gesture.shift {
-        parts.push("Shift");
-    }
-    if gesture.alt {
-        parts.push("Alt");
-    }
-    parts.push(key_label(gesture));
-    parts.join(" + ")
+    parts.join(", ")
 }
 
 fn command_label() -> &'static str {
@@ -100,13 +96,32 @@ fn command_label() -> &'static str {
     }
 }
 
-fn key_label(gesture: &HotkeyGesture) -> &'static str {
-    match gesture.key {
+fn key_press_label(press: &KeyPress) -> String {
+    let mut parts: Vec<&'static str> = Vec::new();
+    if press.command {
+        parts.push(command_label());
+    }
+    if press.shift {
+        parts.push("Shift");
+    }
+    if press.alt {
+        parts.push("Alt");
+    }
+    parts.push(key_label(press.key));
+    parts.join(" + ")
+}
+
+fn key_label(key: egui::Key) -> &'static str {
+    match key {
         egui::Key::X => "X",
         egui::Key::N => "N",
         egui::Key::D => "D",
         egui::Key::C => "C",
         egui::Key::Slash => "/",
+        egui::Key::G => "G",
+        egui::Key::S => "S",
+        egui::Key::W => "W",
+        egui::Key::L => "L",
         _ => "Key",
     }
 }

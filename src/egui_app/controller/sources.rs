@@ -23,6 +23,17 @@ impl EguiController {
         self.select_source(id);
     }
 
+    /// Move source selection up or down by an offset.
+    pub fn nudge_source_selection(&mut self, offset: isize) {
+        if self.sources.is_empty() {
+            return;
+        }
+        let current = self.ui.sources.selected.unwrap_or(0) as isize;
+        let target = (current + offset).clamp(0, self.sources.len() as isize - 1) as usize;
+        self.select_source_by_index(target);
+        self.focus_sources_context();
+    }
+
     /// Change the selected source by id and refresh dependent state.
     pub fn select_source(&mut self, id: Option<SourceId>) {
         self.select_source_internal(id, None);

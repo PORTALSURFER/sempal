@@ -93,6 +93,8 @@ pub struct WaveformState {
     pub playhead: PlayheadState,
     pub selection: Option<SelectionRange>,
     pub selection_duration: Option<String>,
+    /// Current visible viewport within the waveform (0.0-1.0 normalized).
+    pub view: WaveformView,
     pub loop_enabled: bool,
     pub notice: Option<String>,
 }
@@ -104,6 +106,7 @@ impl Default for WaveformState {
             playhead: PlayheadState::default(),
             selection: None,
             selection_duration: None,
+            view: WaveformView::default(),
             loop_enabled: false,
             notice: None,
         }
@@ -116,15 +119,50 @@ pub struct WaveformImage {
     pub image: egui::ColorImage,
 }
 
+/// Normalized bounds describing the visible region of the waveform.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct WaveformView {
+    pub start: f32,
+    pub end: f32,
+}
+
+impl WaveformView {
+    /// Clamp the view to a valid range while keeping the width positive.
+    pub fn clamp(mut self) -> Self {
+        let width = (self.end - self.start).clamp(0.001, 1.0);
+        let start = self.start.clamp(0.0, 1.0 - width);
+        self.start = start;
+        self.end = (start + width).min(1.0);
+        self
+    }
+
+    /// Width of the viewport.
+    pub fn width(&self) -> f32 {
+        (self.end - self.start).max(0.001)
+    }
+}
+
+impl Default for WaveformView {
+    fn default() -> Self {
+        Self { start: 0.0, end: 1.0 }
+    }
+}
+
 /// Logical focus buckets used to drive contextual keyboard shortcuts.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FocusContext {
     /// No UI surface currently owns focus.
     None,
+    /// The waveform viewer handles navigation/shortcuts.
+    Waveform,
     /// The sample browser rows handle navigation/shortcuts.
     SampleBrowser,
     /// The collections sample list handles navigation/shortcuts.
     CollectionSample,
+    /// The sources list handles navigation/shortcuts.
+    SourcesList,
+    /// The collections list handles navigation/shortcuts.
+    CollectionsList,
 }
 
 /// Focus metadata shared between the controller and egui renderer.
