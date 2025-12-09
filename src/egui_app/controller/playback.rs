@@ -277,10 +277,11 @@ impl EguiController {
 
     pub(super) fn ensure_player(&mut self) -> Result<Option<Rc<RefCell<AudioPlayer>>>, String> {
         if self.player.is_none() {
-            let mut created =
-                AudioPlayer::new().map_err(|err| format!("Audio init failed: {err}"))?;
+            let mut created = AudioPlayer::from_config(&self.audio_output)
+                .map_err(|err| format!("Audio init failed: {err}"))?;
             created.set_volume(self.ui.volume);
             self.player = Some(Rc::new(RefCell::new(created)));
+            self.update_audio_output_status();
         }
         Ok(self.player.clone())
     }
