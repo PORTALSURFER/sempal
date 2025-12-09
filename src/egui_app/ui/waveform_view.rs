@@ -2,14 +2,15 @@ use super::style;
 use super::*;
 use crate::selection::SelectionEdge;
 use eframe::egui::{
-    self, Align2, Color32, CursorIcon, Frame, Margin, RichText, Stroke, StrokeKind, TextStyle,
-    TextureOptions, Ui, text::LayoutJob,
+    self, Align2, Color32, CursorIcon, Frame, Margin, Rgba, RichText, Stroke, StrokeKind,
+    TextStyle, TextureOptions, Ui, text::LayoutJob,
 };
 
 impl EguiApp {
     pub(super) fn render_waveform(&mut self, ui: &mut Ui) {
         let palette = style::palette();
         let highlight = palette.accent_copper;
+        let is_loading = self.controller.ui.waveform.loading.is_some();
         let frame = Frame::new()
             .fill(style::compartment_fill())
             .stroke(style::outer_border())
@@ -82,7 +83,9 @@ impl EguiApp {
                 let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
                 painter.image(id, rect, uv, style::high_contrast_text());
             } else {
-                painter.rect_filled(rect, 0.0, palette.bg_primary);
+                let loading_fill =
+                    waveform_loading_fill(ui, palette.bg_primary, palette.accent_copper);
+                painter.rect_filled(rect, 0.0, loading_fill);
             }
             painter.rect_stroke(
                 rect,
@@ -90,6 +93,10 @@ impl EguiApp {
                 Stroke::new(2.0, palette.panel_outline),
                 StrokeKind::Inside,
             );
+            if is_loading {
+                let glow = style::with_alpha(palette.accent_copper, 28);
+                painter.rect_filled(rect.shrink(2.0), 4.0, glow);
+            }
 
             if let Some(pos) = pointer_pos.filter(|p| rect.contains(*p)) {
                 let x = pos.x;
@@ -559,4 +566,18 @@ fn paint_selection_edge_bracket(
         ],
         stroke,
     );
+}
+
+fn waveform_loading_fill(ui: &Ui, base: Color32, accent: Color32) -> Color32 {
+    let time = ui.input(|i| i.time) as f32;
+    let pulse = ((time * 2.4).sin() * 0.5 + 0.5).clamp(0.0, 1.0);
+    let base_rgba: Rgba = base.into();
+    let accent_rgba: Rgba = accent.into();
+    let mixed = base_rgba * (1.0 - pulse * 0.12) + accent_rgba * (pulse * 0.08);
+    Color32::from_rgba_unmultiplied(
+        (mixed.r() * 255.0) as u8,
+        (mixed.g() * 255.0) as u8,
+        (mixed.b() * 255.0) as u8,
+        255,
+    )
 }
