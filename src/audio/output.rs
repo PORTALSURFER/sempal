@@ -1,5 +1,5 @@
-use rodio::cpal;
-use rodio::cpal::traits::{DeviceTrait, HostTrait};
+use cpal;
+use cpal::traits::{DeviceTrait, HostTrait};
 use rodio::{OutputStream, OutputStreamBuilder};
 use serde::{Deserialize, Serialize};
 

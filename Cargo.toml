@@ -1,6 +1,6 @@
 [package]
 name = "sempal"
-version = "0.213.0"
+version = "0.215.0"
 edition = "2024"
 default-run = "sempal"
 
@@ -28,7 +28,7 @@ tracing-appender = "0.2.4"
 time = { version = "0.3.44", features = ["formatting", "macros", "local-offset"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
-cpal = { version = "0.15.3", features = ["asio"] }
+cpal = { version = "0.16.0", features = ["asio"] }
 windows = { version = "0.62.2", features = [
     "Win32_Foundation",
     "Win32_Graphics_Gdi",
