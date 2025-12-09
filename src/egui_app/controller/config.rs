@@ -49,4 +49,24 @@ impl EguiController {
             volume: self.ui.volume,
         })
     }
+
+    /// Open the `.sempal` config directory in the OS file explorer.
+    pub fn open_config_folder(&mut self) {
+        match crate::app_dirs::app_root_dir() {
+            Ok(path) => {
+                if let Err(err) = open::that(&path) {
+                    self.set_status(
+                        format!("Could not open config folder {}: {err}", path.display()),
+                        StatusTone::Error,
+                    );
+                }
+            }
+            Err(err) => {
+                self.set_status(
+                    format!("Could not resolve config folder: {err}"),
+                    StatusTone::Error,
+                );
+            }
+        }
+    }
 }

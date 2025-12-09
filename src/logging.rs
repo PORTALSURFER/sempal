@@ -11,10 +11,11 @@ use std::{
     time::SystemTime,
 };
 
-use directories::ProjectDirs;
 use time::{OffsetDateTime, UtcOffset, format_description::FormatItem, macros::format_description};
 use tracing_appender::{non_blocking::WorkerGuard, rolling};
 use tracing_subscriber::{EnvFilter, Registry, fmt, prelude::*};
+
+use crate::app_dirs;
 
 /// Maximum number of log files to retain.
 const MAX_LOG_FILES: usize = 10;
@@ -100,13 +101,7 @@ pub fn init() -> Result<(), LoggingError> {
 }
 
 fn log_directory() -> Result<PathBuf, LoggingError> {
-    let dirs = ProjectDirs::from("com", "sempal", "sempal").ok_or(LoggingError::NoDataDir)?;
-    let path = dirs.data_local_dir().join("logs");
-    fs::create_dir_all(&path).map_err(|source| LoggingError::CreateDir {
-        path: path.clone(),
-        source,
-    })?;
-    Ok(path)
+    app_dirs::logs_dir().map_err(map_app_dir_error)
 }
 
 fn ensure_file_exists(path: &Path) -> Result<(), LoggingError> {
@@ -172,6 +167,15 @@ fn now_local_or_utc() -> OffsetDateTime {
 
 fn build_env_filter() -> EnvFilter {
     EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"))
+}
+
+fn map_app_dir_error(error: app_dirs::AppDirError) -> LoggingError {
+    match error {
+        app_dirs::AppDirError::NoBaseDir => LoggingError::NoDataDir,
+        app_dirs::AppDirError::CreateDir { path, source } => {
+            LoggingError::CreateDir { path, source }
+        }
+    }
 }
 
 #[cfg(test)]

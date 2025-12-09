@@ -1,4 +1,6 @@
 //! Library exports for reuse in benchmarks and tests.
+/// Application directory helpers.
+pub mod app_dirs;
 /// Audio playback utilities.
 pub mod audio;
 /// Shared egui UI modules.
