@@ -5,7 +5,60 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 /// Upper bound for waveform texture width to stay within GPU limits.
-const MAX_TEXTURE_WIDTH: u32 = 16_384;
+pub(super) const MAX_TEXTURE_WIDTH: u32 = 16_384;
+const MIN_VIEW_WIDTH_BASE: f32 = 0.001;
+const MIN_SAMPLES_PER_PIXEL: f32 = 1.0;
+const MAX_ZOOM_MULTIPLIER: f32 = 64.0;
+
+fn min_view_width_for(samples_len: usize, width_px: u32) -> f32 {
+    if samples_len == 0 {
+        return 1.0;
+    }
+    let samples = samples_len as f32;
+    let pixels = width_px.max(1) as f32;
+    (pixels * MIN_SAMPLES_PER_PIXEL / samples)
+        .clamp(MIN_VIEW_WIDTH_BASE, 1.0)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) struct WaveformRenderMeta {
+    pub view_start: f32,
+    pub view_end: f32,
+    pub size: [u32; 2],
+    pub samples_len: usize,
+    pub texture_width: u32,
+}
+
+impl WaveformRenderMeta {
+    fn matches(&self, other: &WaveformRenderMeta) -> bool {
+        const EPS: f32 = 1e-4;
+        self.samples_len == other.samples_len
+            && self.size == other.size
+            && self.texture_width == other.texture_width
+            && (self.view_start - other.view_start).abs() < EPS
+            && (self.view_end - other.view_end).abs() < EPS
+    }
+}
+
+impl EguiController {
+    pub(super) fn min_view_width(&self) -> f32 {
+        if let Some(decoded) = self.decoded_waveform.as_ref() {
+            min_view_width_for(decoded.samples.len(), self.waveform_size[0])
+        } else {
+            MIN_VIEW_WIDTH_BASE
+        }
+    }
+
+    #[allow(dead_code)]
+    pub(super) fn apply_view_bounds_with_min(&mut self, min_width: f32) -> WaveformView {
+        let mut view = self.ui.waveform.view.clamp();
+        let width = view.width().max(min_width);
+        view.start = view.start.min(1.0 - width);
+        view.end = (view.start + width).min(1.0);
+        self.ui.waveform.view = view;
+        view
+    }
+}
 
 impl EguiController {
     /// Reset all waveform and playback visuals.
@@ -21,6 +74,7 @@ impl EguiController {
         self.loaded_audio = None;
         self.loaded_wav = None;
         self.ui.loaded_wav = None;
+        self.waveform_render_meta = None;
         if let Some(player) = self.player.as_ref() {
             player.borrow_mut().stop();
         }
@@ -682,16 +736,56 @@ impl EguiController {
             return;
         };
         let [width, height] = self.waveform_size;
-        let view_width = self.ui.waveform.view.width().clamp(0.001, 1.0);
-        let zoom_scale = (1.0 / view_width).max(1.0);
-        let target = (width as f32 * zoom_scale).ceil().max(width as f32);
-        let effective_width = target
-            .min(MAX_TEXTURE_WIDTH as f32)
-            .max(width as f32) as u32;
+        let min_view_width = min_view_width_for(decoded.samples.len(), width);
+        let mut view = self.ui.waveform.view.clamp();
+        let width_clamped = view.width().max(min_view_width);
+        view.start = view.start.min(1.0 - width_clamped);
+        view.end = (view.start + width_clamped).min(1.0);
+        let view = view;
+        let max_zoom = (1.0 / min_view_width).min(MAX_ZOOM_MULTIPLIER);
+        let zoom_scale = (1.0 / width_clamped).min(max_zoom).max(1.0);
+        let target = (width as f32 * zoom_scale).ceil().max(width as f32) as usize;
+
+        let samples = &decoded.samples;
+        if samples.is_empty() {
+            self.ui.waveform.image = None;
+            return;
+        }
+        let total_samples = samples.len();
+        let start_idx = ((view.start * total_samples as f32).floor() as usize)
+            .min(total_samples.saturating_sub(1));
+        let mut end_idx =
+            ((view.end * total_samples as f32).ceil() as usize).clamp(start_idx + 1, total_samples);
+        if end_idx <= start_idx {
+            end_idx = (start_idx + 1).min(total_samples);
+        }
+        let upper_width = MAX_TEXTURE_WIDTH as usize;
+        let lower_bound = width.min(MAX_TEXTURE_WIDTH) as usize;
+        let effective_width = target.min(upper_width).max(lower_bound) as u32;
+        let desired_meta = WaveformRenderMeta {
+            view_start: view.start,
+            view_end: view.end,
+            size: [width, height],
+            samples_len: samples.len(),
+            texture_width: effective_width,
+        };
+        if self
+            .waveform_render_meta
+            .as_ref()
+            .is_some_and(|meta| meta.matches(&desired_meta))
+        {
+            return;
+        }
         let color_image = self
             .renderer
-            .render_color_image_with_size(&decoded.samples, effective_width, height);
-        self.ui.waveform.image = Some(WaveformImage { image: color_image });
+            .render_color_image_with_size(&samples[start_idx..end_idx], effective_width, height);
+        self.ui.waveform.image = Some(WaveformImage {
+            image: color_image,
+            view_start: view.start,
+            view_end: view.end,
+        });
+        self.ui.waveform.view = view;
+        self.waveform_render_meta = Some(desired_meta);
     }
 
     fn read_waveform_bytes(

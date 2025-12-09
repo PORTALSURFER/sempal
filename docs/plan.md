@@ -8,11 +8,11 @@
 - Defer rendering updates until needed (e.g., after zoom/scroll settles) to reduce churn.
 
 ## Step-by-step plan
-1. [-] Analyze current waveform rendering pipeline and identify where decoded samples are transformed into textures and how zoom/view bounds are applied.
-2. [-] Design a visible-region render strategy (slice-only or tiled) with sensible resolution targets and texture size caps; outline cache invalidation rules.
-3. [-] Implement adaptive texture generation for the active view, including panning/zoom hooks, and ensure GPU limits are respected.
-4. [-] Add guards for update frequency (debounce/throttle if needed) and verify playback/selection overlays still align with the rendered slice.
-5. [-] Write/adjust tests or diagnostics to cover zoomed rendering correctness and performance ceilings.
+1. [x] Analyze current waveform rendering pipeline and identify where decoded samples are transformed into textures and how zoom/view bounds are applied.
+2. [x] Design a visible-region render strategy (slice-only or tiled) with sensible resolution targets and texture size caps; outline cache invalidation rules.
+3. [x] Implement adaptive texture generation for the active view, including panning/zoom hooks, and ensure GPU limits are respected.
+4. [x] Add guards for update frequency (debounce/throttle if needed) and verify playback/selection overlays still align with the rendered slice.
+5. [~] Write/adjust tests or diagnostics to cover zoomed rendering correctness and performance ceilings.
 6. [-] Manually verify zoom/pan interactions (wheel, arrows, chords) for clarity, no blurring, and no regressions.
 
 ## Code Style & Architecture Rules Reminder
