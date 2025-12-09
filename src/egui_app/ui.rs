@@ -63,6 +63,7 @@ struct InputSnapshot {
     bracket_left: bool,
     bracket_right: bool,
     shift: bool,
+    alt: bool,
     ctrl: bool,
     command: bool,
 }
@@ -122,17 +123,28 @@ fn format_keypress(press: &Option<hotkeys::KeyPress>) -> String {
         .unwrap_or_else(|| "—".to_string())
 }
 
+fn consume_press(ctx: &egui::Context, press: hotkeys::KeyPress) {
+    let mut modifiers = egui::Modifiers::default();
+    modifiers.alt = press.alt;
+    modifiers.shift = press.shift;
+    modifiers.command = press.command;
+    modifiers.ctrl = press.command;
+    ctx.input_mut(|i| {
+        i.consume_key(modifiers, press.key);
+    });
+}
+
 impl EguiApp {
     fn ensure_initial_focus(&mut self, ctx: &egui::Context) {
         if self.requested_initial_focus {
             return;
         }
-        if ctx
-            .input(|i| i.viewport().focused.unwrap_or(true))
-        {
+        let is_focused = ctx.input(|i| i.viewport().focused.unwrap_or(false));
+        if is_focused {
             self.requested_initial_focus = true;
             return;
         }
+        self.requested_initial_focus = true;
         ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
     }
 }
@@ -261,10 +273,10 @@ impl EguiApp {
                 continue;
             };
             self.key_feedback.last_key = Some(press);
-            if self.try_handle_chord(&actions, press, focus, now) {
+            if self.try_handle_chord(ctx, &actions, press, focus, now) {
                 continue;
             }
-            if self.try_start_chord(&actions, press, now) {
+            if self.try_start_chord(&actions, press, now, ctx) {
                 continue;
             }
             if let Some(action) = actions
@@ -274,12 +286,16 @@ impl EguiApp {
                 .copied()
             {
                 self.controller.handle_hotkey(action, focus);
+                consume_press(ctx, press);
+                continue;
             }
+            // No hotkey matched; let it fall through without consuming to avoid system beeps.
         }
     }
 
     fn try_handle_chord(
         &mut self,
+        ctx: &egui::Context,
         actions: &[hotkeys::HotkeyAction],
         press: hotkeys::KeyPress,
         focus: FocusContext,
@@ -304,6 +320,8 @@ impl EguiApp {
             self.pending_chord = None;
             self.key_feedback.last_chord = Some((pending.first, press));
             self.key_feedback.pending_root = None;
+            consume_press(ctx, pending.first);
+            consume_press(ctx, press);
             self.controller.handle_hotkey(action, focus);
             return true;
         }
@@ -317,6 +335,7 @@ impl EguiApp {
         actions: &[hotkeys::HotkeyAction],
         press: hotkeys::KeyPress,
         now: Instant,
+        ctx: &egui::Context,
     ) -> bool {
         let starts_chord = actions.iter().any(|action| {
             action
@@ -377,6 +396,7 @@ impl eframe::App for EguiApp {
             bracket_left: i.key_pressed(egui::Key::OpenBracket),
             bracket_right: i.key_pressed(egui::Key::CloseBracket),
             shift: i.modifiers.shift,
+            alt: i.modifiers.alt,
             ctrl: i.modifiers.ctrl,
             command: i.modifiers.command,
         });
@@ -451,10 +471,17 @@ impl eframe::App for EguiApp {
         }
         if input.arrow_right {
             if waveform_focus {
-                if input.shift {
-                    self.controller.create_selection_from_playhead(false);
+                if input.shift && ctrl_or_command {
+                    self.controller.nudge_selection_edge(
+                        crate::selection::SelectionEdge::End,
+                        false,
+                    );
+                } else if input.shift {
+                    self.controller.grow_selection_from_playhead(false);
+                } else if input.alt {
+                    self.controller.move_playhead_steps(1, true);
                 } else {
-                    self.controller.move_playhead_steps(1);
+                    self.controller.move_playhead_steps(1, false);
                 }
             } else if ctrl_or_command && browser_focus && browser_has_selection {
                 self.controller.move_selection_column(1);
@@ -473,10 +500,15 @@ impl eframe::App for EguiApp {
         }
         if input.arrow_left {
             if waveform_focus {
-                if input.shift {
-                    self.controller.create_selection_from_playhead(true);
+                if input.shift && ctrl_or_command {
+                    self.controller
+                        .nudge_selection_edge(crate::selection::SelectionEdge::Start, false);
+                } else if input.shift {
+                    self.controller.grow_selection_from_playhead(true);
+                } else if input.alt {
+                    self.controller.move_playhead_steps(-1, true);
                 } else {
-                    self.controller.move_playhead_steps(-1);
+                    self.controller.move_playhead_steps(-1, false);
                 }
             } else if ctrl_or_command && browser_focus && browser_has_selection {
                 self.controller.move_selection_column(-1);
