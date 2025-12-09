@@ -17,7 +17,7 @@ pub const MIN_VIEWPORT_SIZE: [f32; 2] = [640.0, 400.0];
 
 use crate::{
     audio::AudioPlayer,
-    egui_app::controller::{hotkeys, EguiController},
+    egui_app::controller::{EguiController, hotkeys},
     egui_app::state::{FocusContext, TriageFlagColumn},
     sample_sources::SampleTag,
     waveform::WaveformRenderer,
@@ -26,9 +26,9 @@ use eframe::egui;
 use eframe::egui::{TextureHandle, Ui, UiBuilder};
 #[cfg(target_os = "windows")]
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+use std::time::{Duration, Instant};
 #[cfg(target_os = "windows")]
 use windows::Win32::Foundation::HWND;
-use std::time::{Duration, Instant};
 
 /// Renders the egui UI using the shared controller state.
 pub struct EguiApp {
@@ -281,8 +281,9 @@ impl EguiApp {
             }
             if let Some(action) = actions
                 .iter()
-                .find(|action| action.gesture.chord.is_none()
-                    && press_matches(&press, &action.gesture.first))
+                .find(|action| {
+                    action.gesture.chord.is_none() && press_matches(&press, &action.gesture.first)
+                })
                 .copied()
             {
                 self.controller.handle_hotkey(action, focus);
@@ -310,11 +311,13 @@ impl EguiApp {
         }
         if let Some(action) = actions
             .iter()
-            .find(|action| action
-                .gesture
-                .chord
-                .is_some_and(|second| press_matches(&press, &second))
-                && press_matches(&pending.first, &action.gesture.first))
+            .find(|action| {
+                action
+                    .gesture
+                    .chord
+                    .is_some_and(|second| press_matches(&press, &second))
+                    && press_matches(&pending.first, &action.gesture.first)
+            })
             .copied()
         {
             self.pending_chord = None;
@@ -527,12 +530,11 @@ impl eframe::App for EguiApp {
                 let has_selection = self.controller.ui.waveform.selection.is_some();
                 if input.shift && ctrl_or_command {
                     if has_selection {
-                        self.controller
-                            .nudge_selection_edge(
-                                crate::selection::SelectionEdge::Start,
-                                true,
-                                input.alt,
-                            );
+                        self.controller.nudge_selection_edge(
+                            crate::selection::SelectionEdge::Start,
+                            true,
+                            input.alt,
+                        );
                     } else {
                         self.controller.create_selection_from_playhead(
                             true,
@@ -542,12 +544,11 @@ impl eframe::App for EguiApp {
                     }
                 } else if input.shift {
                     if has_selection {
-                        self.controller
-                            .nudge_selection_edge(
-                                crate::selection::SelectionEdge::End,
-                                false,
-                                input.alt,
-                            );
+                        self.controller.nudge_selection_edge(
+                            crate::selection::SelectionEdge::End,
+                            false,
+                            input.alt,
+                        );
                     } else {
                         self.controller.create_selection_from_playhead(
                             true,
@@ -569,20 +570,18 @@ impl eframe::App for EguiApp {
             }
         }
         if waveform_focus && input.bracket_left {
-            self.controller
-                .nudge_selection_edge(
-                    crate::selection::SelectionEdge::Start,
-                    !input.shift,
-                    false,
-                );
+            self.controller.nudge_selection_edge(
+                crate::selection::SelectionEdge::Start,
+                !input.shift,
+                false,
+            );
         }
         if waveform_focus && input.bracket_right {
-            self.controller
-                .nudge_selection_edge(
-                    crate::selection::SelectionEdge::End,
-                    !input.shift,
-                    false,
-                );
+            self.controller.nudge_selection_edge(
+                crate::selection::SelectionEdge::End,
+                !input.shift,
+                false,
+            );
         }
         self.process_hotkeys(ctx, focus_context);
         self.render_status(ctx);

@@ -97,6 +97,8 @@ pub struct WaveformState {
     pub view: WaveformView,
     pub loop_enabled: bool,
     pub notice: Option<String>,
+    /// Optional path for the sample currently loading to drive UI affordances.
+    pub loading: Option<PathBuf>,
 }
 
 impl Default for WaveformState {
@@ -109,6 +111,7 @@ impl Default for WaveformState {
             view: WaveformView::default(),
             loop_enabled: false,
             notice: None,
+            loading: None,
         }
     }
 }
@@ -146,7 +149,10 @@ impl WaveformView {
 
 impl Default for WaveformView {
     fn default() -> Self {
-        Self { start: 0.0, end: 1.0 }
+        Self {
+            start: 0.0,
+            end: 1.0,
+        }
     }
 }
 

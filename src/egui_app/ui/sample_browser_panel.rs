@@ -179,7 +179,10 @@ impl EguiApp {
                 });
             scroll_response
         });
-        if matches!(self.controller.ui.focus.context, FocusContext::SampleBrowser) {
+        if matches!(
+            self.controller.ui.focus.context,
+            FocusContext::SampleBrowser
+        ) {
             ui.painter().rect_stroke(
                 frame_response.response.rect,
                 2.0,

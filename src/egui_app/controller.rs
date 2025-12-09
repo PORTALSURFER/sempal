@@ -2,6 +2,7 @@
 //! This module now delegates responsibilities into focused submodules to
 //! keep files small and behaviour easy to reason about.
 
+mod audio_loader;
 mod audio_options;
 mod clipboard;
 mod collection_export;
@@ -38,6 +39,7 @@ use crate::{
     selection::{SelectionRange, SelectionState},
     waveform::{DecodedWaveform, WaveformRenderer},
 };
+use audio_loader::{AudioLoadError, AudioLoadJob, AudioLoadOutcome, AudioLoadResult};
 use egui::Color32;
 use open;
 use rfd::FileDialog;
@@ -85,8 +87,13 @@ pub struct EguiController {
     selection: SelectionState,
     wav_job_tx: Sender<WavLoadJob>,
     wav_job_rx: Receiver<WavLoadResult>,
+    audio_job_tx: Sender<AudioLoadJob>,
+    audio_job_rx: Receiver<AudioLoadResult>,
     pending_source: Option<SourceId>,
     pending_select_path: Option<PathBuf>,
+    pending_audio: Option<PendingAudio>,
+    pending_playback: Option<PendingPlayback>,
+    next_audio_request_id: u64,
     scan_rx: Option<Receiver<ScanResult>>,
     scan_in_progress: bool,
     #[cfg(target_os = "windows")]
@@ -97,6 +104,7 @@ impl EguiController {
     /// Create a controller with shared renderer and optional audio player.
     pub fn new(renderer: WaveformRenderer, player: Option<Rc<RefCell<AudioPlayer>>>) -> Self {
         let (wav_job_tx, wav_job_rx) = spawn_wav_loader();
+        let (audio_job_tx, audio_job_rx) = audio_loader::spawn_audio_loader(renderer.clone());
         let (waveform_width, waveform_height) = renderer.dimensions();
         Self {
             ui: UiState::default(),
@@ -127,8 +135,13 @@ impl EguiController {
             selection: SelectionState::new(),
             wav_job_tx,
             wav_job_rx,
+            audio_job_tx,
+            audio_job_rx,
             pending_source: None,
             pending_select_path: None,
+            pending_audio: None,
+            pending_playback: None,
+            next_audio_request_id: 1,
             scan_rx: None,
             scan_in_progress: false,
             #[cfg(target_os = "windows")]
@@ -184,6 +197,28 @@ struct WavLoadResult {
     source_id: SourceId,
     result: Result<Vec<WavEntry>, LoadEntriesError>,
     elapsed: Duration,
+}
+
+#[derive(Clone)]
+struct PendingAudio {
+    request_id: u64,
+    source_id: SourceId,
+    relative_path: PathBuf,
+    intent: AudioLoadIntent,
+}
+
+#[derive(Clone)]
+struct PendingPlayback {
+    source_id: SourceId,
+    relative_path: PathBuf,
+    looped: bool,
+    start_override: Option<f32>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum AudioLoadIntent {
+    Selection,
+    CollectionPreview,
 }
 
 struct ScanResult {
