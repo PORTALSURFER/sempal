@@ -3632,7 +3632,7 @@ dependencies = [
 
 [[package]]
 name = "sempal"
-version = "0.202.0"
+version = "0.207.0"
 dependencies = [
  "criterion",
  "directories",
