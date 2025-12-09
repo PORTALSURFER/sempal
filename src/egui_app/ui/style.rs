@@ -257,6 +257,9 @@ mod tests {
         let semantic = semantic_palette();
         assert_eq!(triage_label_color(SampleTag::Trash), semantic.triage_trash);
         assert_eq!(triage_label_color(SampleTag::Keep), semantic.triage_keep);
-        assert_eq!(triage_label_color(SampleTag::Neutral), palette().text_primary);
+        assert_eq!(
+            triage_label_color(SampleTag::Neutral),
+            palette().text_primary
+        );
     }
 }

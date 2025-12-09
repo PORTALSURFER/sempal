@@ -2,8 +2,8 @@ use super::style;
 use super::*;
 use crate::selection::SelectionEdge;
 use eframe::egui::{
-    self, text::LayoutJob, Align2, Color32, CursorIcon, Frame, Margin, RichText, Stroke,
-    StrokeKind, TextStyle, TextureOptions, Ui,
+    self, Align2, Color32, CursorIcon, Frame, Margin, RichText, Stroke, StrokeKind, TextStyle,
+    TextureOptions, Ui, text::LayoutJob,
 };
 
 impl EguiApp {

@@ -123,7 +123,13 @@ impl EguiController {
                 relative_path,
                 bounds,
             } => {
-                self.handle_selection_drop(source_id, relative_path, bounds, collection_target, triage_target);
+                self.handle_selection_drop(
+                    source_id,
+                    relative_path,
+                    bounds,
+                    collection_target,
+                    triage_target,
+                );
             }
         }
     }
@@ -225,13 +231,8 @@ impl EguiController {
             .as_ref()
             .ok_or_else(|| "Load a sample before dragging a selection".to_string())?;
         let clip = self.selection_audio(&audio.source_id, &audio.relative_path)?;
-        let entry = self.export_selection_clip(
-            &clip.source_id,
-            &clip.relative_path,
-            bounds,
-            None,
-            true,
-        )?;
+        let entry =
+            self.export_selection_clip(&clip.source_id, &clip.relative_path, bounds, None, true)?;
         let source = self
             .sources
             .iter()
@@ -305,12 +306,7 @@ impl EguiController {
             TriageFlagColumn::Keep => SampleTag::Keep,
         });
         if triage_target.is_some() {
-            self.handle_selection_drop_to_browser(
-                &source_id,
-                &relative_path,
-                bounds,
-                target_tag,
-            );
+            self.handle_selection_drop_to_browser(&source_id, &relative_path, bounds, target_tag);
             return;
         }
         if let Some(collection_id) = collection_target {
@@ -373,11 +369,7 @@ impl EguiController {
                     .find(|c| c.id == *collection_id)
                     .map(|c| c.name.as_str())
                     .unwrap_or("collection");
-                let status = format!(
-                    "Saved clip {} to {}",
-                    entry.relative_path.display(),
-                    name
-                );
+                let status = format!("Saved clip {} to {}", entry.relative_path.display(), name);
                 self.set_status(status, StatusTone::Info);
             }
             Err(err) => self.set_status(err, StatusTone::Error),

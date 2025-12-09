@@ -897,7 +897,10 @@ fn sample_drop_falls_back_to_active_collection() {
         .find(|c| c.id == collection_id)
         .unwrap();
     assert_eq!(collection.members.len(), 1);
-    assert_eq!(collection.members[0].relative_path, PathBuf::from("one.wav"));
+    assert_eq!(
+        collection.members[0].relative_path,
+        PathBuf::from("one.wav")
+    );
 }
 
 #[test]

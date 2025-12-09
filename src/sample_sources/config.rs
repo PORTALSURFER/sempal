@@ -1,8 +1,9 @@
 use std::path::{Path, PathBuf};
 
-use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+
+use crate::app_dirs;
 
 use super::{Collection, SampleSource};
 
@@ -72,12 +73,7 @@ pub enum ConfigError {
 
 /// Resolve the configuration file path, ensuring the parent directory exists.
 pub fn config_path() -> Result<PathBuf, ConfigError> {
-    let dirs = ProjectDirs::from("com", "sempal", "sempal").ok_or(ConfigError::NoConfigDir)?;
-    let dir = dirs.config_dir();
-    std::fs::create_dir_all(dir).map_err(|source| ConfigError::CreateDir {
-        path: dir.to_path_buf(),
-        source,
-    })?;
+    let dir = app_dirs::app_root_dir().map_err(map_app_dir_error)?;
     Ok(dir.join(CONFIG_FILE_NAME))
 }
 
@@ -197,6 +193,15 @@ impl Default for AppConfig {
             trash_folder: None,
             last_selected_source: None,
             volume: default_volume(),
+        }
+    }
+}
+
+fn map_app_dir_error(error: app_dirs::AppDirError) -> ConfigError {
+    match error {
+        app_dirs::AppDirError::NoBaseDir => ConfigError::NoConfigDir,
+        app_dirs::AppDirError::CreateDir { path, source } => {
+            ConfigError::CreateDir { path, source }
         }
     }
 }
