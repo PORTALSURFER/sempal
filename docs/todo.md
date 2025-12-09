@@ -9,8 +9,15 @@ same for navigation, lets make navigation as fast and smooth as possible, loadin
 I want ui interaction to take precedence over loading. right now navigation is blocked until we load a sample for example, lets break this link, it should be possible to move to the next item even if the sample was not yet fully loaded.
 
 \plan - long samples, like entire songs, can take a little while to fully load.
-Lets first investigate if we can improve loading times, lets also look into adding a caching system, so we keep a reasonably sized history of loaded samples so we can quickly replay them.
+Lets first investigate if we can improve loading times, lets also look into adding a caching system, then keep a reasonably sized history of loaded samples so we can instantly replay them. make sure to disqualify this cache after edits ofc.
+
 ---
+
+-- lets make the regular sample list dropzone use the entire space available just like in collections and sample source list, so we can drop in audio selections much easier, especially when the sample list is short.
+
+---
+
+\plan - add warnings whenever a destructive edit feature is used. also add a yolo mode in the options, which will just apply everything without this popup.
 
 ### v2
 

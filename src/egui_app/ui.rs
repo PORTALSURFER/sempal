@@ -472,14 +472,35 @@ impl eframe::App for EguiApp {
         if input.arrow_right {
             if waveform_focus {
                 let was_playing = self.controller.is_playing();
+                let has_selection = self.controller.ui.waveform.selection.is_some();
                 if input.shift && ctrl_or_command {
-                    self.controller.nudge_selection_edge(
-                        crate::selection::SelectionEdge::End,
-                        false,
-                        input.alt,
-                    );
+                    if has_selection {
+                        self.controller.nudge_selection_edge(
+                            crate::selection::SelectionEdge::Start,
+                            false,
+                            input.alt,
+                        );
+                    } else {
+                        self.controller.create_selection_from_playhead(
+                            false,
+                            was_playing,
+                            input.alt,
+                        );
+                    }
                 } else if input.shift {
-                    self.controller.grow_selection_from_playhead(false);
+                    if has_selection {
+                        self.controller.nudge_selection_edge(
+                            crate::selection::SelectionEdge::End,
+                            true,
+                            input.alt,
+                        );
+                    } else {
+                        self.controller.create_selection_from_playhead(
+                            false,
+                            was_playing,
+                            input.alt,
+                        );
+                    }
                 } else if input.alt {
                     self.controller.move_playhead_steps(1, true, was_playing);
                 } else {
@@ -503,15 +524,37 @@ impl eframe::App for EguiApp {
         if input.arrow_left {
             if waveform_focus {
                 let was_playing = self.controller.is_playing();
+                let has_selection = self.controller.ui.waveform.selection.is_some();
                 if input.shift && ctrl_or_command {
-                    self.controller
-                        .nudge_selection_edge(
-                            crate::selection::SelectionEdge::Start,
-                            false,
+                    if has_selection {
+                        self.controller
+                            .nudge_selection_edge(
+                                crate::selection::SelectionEdge::Start,
+                                true,
+                                input.alt,
+                            );
+                    } else {
+                        self.controller.create_selection_from_playhead(
+                            true,
+                            was_playing,
                             input.alt,
                         );
+                    }
                 } else if input.shift {
-                    self.controller.grow_selection_from_playhead(true);
+                    if has_selection {
+                        self.controller
+                            .nudge_selection_edge(
+                                crate::selection::SelectionEdge::End,
+                                false,
+                                input.alt,
+                            );
+                    } else {
+                        self.controller.create_selection_from_playhead(
+                            true,
+                            was_playing,
+                            input.alt,
+                        );
+                    }
                 } else if input.alt {
                     self.controller.move_playhead_steps(-1, true, was_playing);
                 } else {
