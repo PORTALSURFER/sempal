@@ -3,6 +3,9 @@ lets then write every task you find into @todo.md as a new todo item
 
 --
 
+\plan - currently loading the app ui, and navigation, seems blocked by loading in the actual audio buffers. lets decouple this
+so we can load the app ui, sample list, etc, while the audio buffer is still loading in another process.
+same for navigation, lets make navigation as fast and smooth as possible, loading and playing audio in another process
 
 ---
 

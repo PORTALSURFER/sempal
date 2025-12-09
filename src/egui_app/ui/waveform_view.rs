@@ -436,39 +436,41 @@ impl EguiApp {
                     }
                 }
             }
-        });
-        ui.add_space(6.0);
-        let (scroll_rect, scroll_resp) = ui.allocate_exact_size(
-            egui::vec2(ui.available_width(), 10.0),
-            egui::Sense::click_and_drag(),
-        );
-        let view = self.controller.ui.waveform.view;
-        let view_width = view.width();
-        let scroll_bg = style::with_alpha(palette.bg_secondary, 180);
-        ui.painter().rect_filled(scroll_rect, 4.0, scroll_bg);
-        let indicator_width = scroll_rect.width() * view_width;
-        let indicator_x = scroll_rect.left() + scroll_rect.width() * view.start;
-        let indicator_rect = egui::Rect::from_min_size(
-            egui::pos2(indicator_x, scroll_rect.top()),
-            egui::vec2(indicator_width.max(8.0), scroll_rect.height()),
-        );
-        ui.painter().rect_filled(
-            indicator_rect,
-            4.0,
-            style::with_alpha(highlight, 200),
-        );
-        ui.painter().rect_stroke(
-            indicator_rect,
-            4.0,
-            Stroke::new(1.0, style::with_alpha(palette.text_primary, 180)),
-            StrokeKind::Outside,
-        );
-        if (scroll_resp.dragged() || scroll_resp.clicked()) && scroll_rect.width() > f32::EPSILON {
-            if let Some(pos) = scroll_resp.interact_pointer_pos() {
-                let frac = ((pos.x - scroll_rect.left()) / scroll_rect.width()).clamp(0.0, 1.0);
-                self.controller.scroll_waveform_view(frac);
+
+            let view = self.controller.ui.waveform.view;
+            let view_width = view.width();
+            if view_width < 1.0 {
+                let bar_height = 12.0;
+                let scroll_rect = egui::Rect::from_min_size(
+                    egui::pos2(rect.left(), rect.bottom() - bar_height),
+                    egui::vec2(rect.width(), bar_height),
+                );
+                let scroll_resp = ui.interact(
+                    scroll_rect,
+                    ui.id().with("waveform_scrollbar"),
+                    egui::Sense::click_and_drag(),
+                );
+                let scroll_bg = style::with_alpha(palette.bg_primary, 140);
+                painter.rect_filled(scroll_rect, 0.0, scroll_bg);
+                let indicator_width = scroll_rect.width() * view_width;
+                let indicator_x = scroll_rect.left() + scroll_rect.width() * view.start;
+                let indicator_rect = egui::Rect::from_min_size(
+                    egui::pos2(indicator_x, scroll_rect.top()),
+                    egui::vec2(indicator_width.max(8.0), scroll_rect.height()),
+                );
+                let thumb_color = style::with_alpha(palette.accent_ice, 200);
+                painter.rect_filled(indicator_rect, 0.0, thumb_color);
+                if (scroll_resp.dragged() || scroll_resp.clicked())
+                    && scroll_rect.width() > f32::EPSILON
+                {
+                    if let Some(pos) = scroll_resp.interact_pointer_pos() {
+                        let frac =
+                            ((pos.x - scroll_rect.left()) / scroll_rect.width()).clamp(0.0, 1.0);
+                        self.controller.scroll_waveform_view(frac);
+                    }
+                }
             }
-        }
+        });
         if matches!(
             self.controller.ui.focus.context,
             crate::egui_app::state::FocusContext::Waveform
