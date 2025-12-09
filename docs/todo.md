@@ -1,10 +1,7 @@
 \plan - lets do a housekeeping pass, clean up the codebase, reduce file lengths, improve DRYness, improve maintainability, collapse large structs/objects into clearly named smaller objects, add missing docs, improve symbol naming, find and resolve bugs, improve performance, etc.
 
 --
-
-\plan - audio playback is not properly playing back then entire sample start to finish, it will stop too early, either with full audio or when playing a selection.
-
---
+\plan - update the usage guide, it is outdated
 
 \plan - when I drag/drop an audio selection into a collection, no longer also add a copy in the regular sample list. only add it to the collection.
 and if I drag it into the sample list, do not also add it to the active collection.
@@ -31,6 +28,8 @@ So in windows it would end up as %APPDATA%\Roaming\.sempal\config.json
 the config file should be a lean, app only file, not to store data in. just to set app flags, etc, maybe color themes in the future, etc.
 lets also turn it from json into toml.
 and lets add migration code to find and convert the current config.json format/path to our new system
+also we are writing key files to temp folders now I think, sometimes I will start our app, and all sources are broken because the app can't find some temp folder anymore, likely it was deleted by our os.
+lets put all key files in the user folder on said os.
 
 ---
 
