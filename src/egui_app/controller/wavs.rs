@@ -16,8 +16,7 @@ fn min_view_width_for(samples_len: usize, width_px: u32) -> f32 {
     }
     let samples = samples_len as f32;
     let pixels = width_px.max(1) as f32;
-    (pixels * MIN_SAMPLES_PER_PIXEL / samples)
-        .clamp(MIN_VIEW_WIDTH_BASE, 1.0)
+    (pixels * MIN_SAMPLES_PER_PIXEL / samples).clamp(MIN_VIEW_WIDTH_BASE, 1.0)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -65,6 +64,7 @@ impl EguiController {
     pub(super) fn clear_waveform_view(&mut self) {
         self.ui.waveform.image = None;
         self.ui.waveform.notice = None;
+        self.ui.waveform.loading = None;
         self.decoded_waveform = None;
         self.ui.waveform.playhead = PlayheadState::default();
         self.ui.waveform.selection = None;
@@ -78,6 +78,8 @@ impl EguiController {
         if let Some(player) = self.player.as_ref() {
             player.borrow_mut().stop();
         }
+        self.pending_audio = None;
+        self.pending_playback = None;
     }
 
     /// Expose wav indices for a given triage flag column (used by virtualized rendering).
@@ -92,6 +94,140 @@ impl EguiController {
     /// Visible wav indices after applying the active sample browser filter.
     pub fn visible_browser_indices(&self) -> &[usize] {
         &self.ui.browser.visible
+    }
+
+    pub(super) fn poll_audio_loader(&mut self) {
+        while let Ok(message) = self.audio_job_rx.try_recv() {
+            let Some(pending) = self.pending_audio.clone() else {
+                continue;
+            };
+            if message.request_id != pending.request_id
+                || message.source_id != pending.source_id
+                || message.relative_path != pending.relative_path
+            {
+                continue;
+            }
+            self.pending_audio = None;
+            self.ui.waveform.loading = None;
+            match message.result {
+                Ok(outcome) => self.handle_audio_loaded(pending, outcome),
+                Err(err) => self.handle_audio_load_error(pending, err),
+            }
+        }
+    }
+
+    fn handle_audio_loaded(&mut self, pending: PendingAudio, outcome: AudioLoadOutcome) {
+        let Some(source) = self
+            .sources
+            .iter()
+            .find(|s| s.id == pending.source_id)
+            .cloned()
+        else {
+            return;
+        };
+        let duration_seconds = outcome.decoded.duration_seconds;
+        let sample_rate = outcome.decoded.sample_rate;
+        if let Err(err) = self.finish_waveform_load(
+            &source,
+            &pending.relative_path,
+            outcome.decoded,
+            outcome.bytes,
+            pending.intent,
+        ) {
+            self.pending_playback = None;
+            self.set_status(err, StatusTone::Error);
+            return;
+        }
+        let message =
+            Self::loaded_status_text(&pending.relative_path, duration_seconds, sample_rate);
+        self.set_status(message, StatusTone::Info);
+        self.maybe_trigger_pending_playback();
+    }
+
+    fn handle_audio_load_error(&mut self, pending: PendingAudio, error: AudioLoadError) {
+        let Some(source) = self
+            .sources
+            .iter()
+            .find(|s| s.id == pending.source_id)
+            .cloned()
+        else {
+            return;
+        };
+        if self.pending_playback.as_ref().is_some_and(|pending_play| {
+            pending_play.source_id == pending.source_id
+                && pending_play.relative_path == pending.relative_path
+        }) {
+            self.pending_playback = None;
+        }
+        match error {
+            AudioLoadError::Missing(msg) => {
+                self.mark_sample_missing(&source, &pending.relative_path);
+                self.show_missing_waveform_notice(&pending.relative_path);
+                self.set_status(msg, StatusTone::Warning);
+            }
+            AudioLoadError::Failed(msg) => {
+                self.set_status(msg, StatusTone::Error);
+            }
+        }
+    }
+
+    fn maybe_trigger_pending_playback(&mut self) {
+        let Some(pending) = self.pending_playback.clone() else {
+            return;
+        };
+        let Some(audio) = self.loaded_audio.as_ref() else {
+            return;
+        };
+        if audio.source_id != pending.source_id || audio.relative_path != pending.relative_path {
+            return;
+        }
+        self.pending_playback = None;
+        if let Err(err) = self.play_audio(pending.looped, pending.start_override) {
+            self.set_status(err, StatusTone::Error);
+        }
+    }
+
+    pub(super) fn queue_audio_load_for(
+        &mut self,
+        source: &SampleSource,
+        relative_path: &Path,
+        intent: AudioLoadIntent,
+        pending_playback: Option<PendingPlayback>,
+    ) -> Result<(), String> {
+        let request_id = self.next_audio_request_id;
+        self.next_audio_request_id = self.next_audio_request_id.wrapping_add(1).max(1);
+        let pending = PendingAudio {
+            request_id,
+            source_id: source.id.clone(),
+            relative_path: relative_path.to_path_buf(),
+            intent,
+        };
+        let job = AudioLoadJob {
+            request_id,
+            source_id: source.id.clone(),
+            root: source.root.clone(),
+            relative_path: relative_path.to_path_buf(),
+        };
+        self.audio_job_tx
+            .send(job)
+            .map_err(|_| "Failed to queue audio load".to_string())?;
+        self.pending_audio = Some(pending);
+        self.pending_playback = pending_playback;
+        self.ui.waveform.loading = Some(relative_path.to_path_buf());
+        self.ui.waveform.notice = None;
+        self.waveform_render_meta = None;
+        self.decoded_waveform = None;
+        self.ui.waveform.image = None;
+        self.loaded_audio = None;
+        self.loaded_wav = None;
+        self.ui.loaded_wav = None;
+        self.stop_playback_if_active();
+        self.clear_waveform_selection();
+        self.set_status(
+            format!("Loading {}", relative_path.display()),
+            StatusTone::Busy,
+        );
+        Ok(())
     }
 
     /// Select a wav row based on its path.
@@ -124,13 +260,28 @@ impl EguiController {
             return;
         }
         if let Some(source) = self.current_source() {
-            if let Err(err) = self.load_waveform_for_selection(&source, path) {
-                self.set_status(err, StatusTone::Error);
-            } else if self.feature_flags.autoplay_selection && !self.suppress_autoplay_once {
-                let _ = self.play_audio(self.ui.waveform.loop_enabled, None);
+            let autoplay = self.feature_flags.autoplay_selection && !self.suppress_autoplay_once;
+            self.suppress_autoplay_once = false;
+            let pending_playback = if autoplay {
+                Some(PendingPlayback {
+                    source_id: source.id.clone(),
+                    relative_path: path.to_path_buf(),
+                    looped: self.ui.waveform.loop_enabled,
+                    start_override: None,
+                })
             } else {
-                self.suppress_autoplay_once = false;
+                None
+            };
+            if let Err(err) = self.queue_audio_load_for(
+                &source,
+                path,
+                AudioLoadIntent::Selection,
+                pending_playback,
+            ) {
+                self.set_status(err, StatusTone::Error);
             }
+        } else {
+            self.suppress_autoplay_once = false;
         }
         if rebuild {
             self.rebuild_browser_lists();
@@ -608,20 +759,12 @@ impl EguiController {
         let decoded = self.renderer.decode_from_bytes(&bytes)?;
         let duration_seconds = decoded.duration_seconds;
         let sample_rate = decoded.sample_rate;
-        let channels = decoded.channels;
-        self.apply_waveform_image(decoded);
-        self.ui.waveform.view = WaveformView::default();
-        self.ui.waveform.notice = None;
-        self.clear_waveform_selection();
-        self.loaded_wav = Some(relative_path.to_path_buf());
-        self.ui.loaded_wav = Some(relative_path.to_path_buf());
-        self.sync_loaded_audio(
+        self.finish_waveform_load(
             source,
             relative_path,
-            duration_seconds,
-            sample_rate,
-            channels,
+            decoded,
             bytes,
+            AudioLoadIntent::Selection,
         )?;
         let message = Self::loaded_status_text(relative_path, duration_seconds, sample_rate);
         self.set_status(message, StatusTone::Info);
@@ -633,24 +776,41 @@ impl EguiController {
         source: &SampleSource,
         relative_path: &Path,
     ) -> Result<(), String> {
-        let bytes = match self.read_waveform_bytes(source, relative_path) {
-            Ok(bytes) => bytes,
-            Err(err) => {
-                self.mark_sample_missing(source, relative_path);
-                self.show_missing_waveform_notice(relative_path);
-                return Err(err);
-            }
-        };
-        let decoded = self.renderer.decode_from_bytes(&bytes)?;
+        self.queue_audio_load_for(
+            source,
+            relative_path,
+            AudioLoadIntent::CollectionPreview,
+            None,
+        )
+    }
+
+    fn finish_waveform_load(
+        &mut self,
+        source: &SampleSource,
+        relative_path: &Path,
+        decoded: DecodedWaveform,
+        bytes: Vec<u8>,
+        intent: AudioLoadIntent,
+    ) -> Result<(), String> {
         let duration_seconds = decoded.duration_seconds;
         let sample_rate = decoded.sample_rate;
         let channels = decoded.channels;
         self.apply_waveform_image(decoded);
         self.ui.waveform.view = WaveformView::default();
         self.ui.waveform.notice = None;
+        self.ui.waveform.loading = None;
         self.clear_waveform_selection();
-        self.loaded_wav = None;
-        self.ui.loaded_wav = None;
+        self.pending_audio = None;
+        match intent {
+            AudioLoadIntent::Selection => {
+                self.loaded_wav = Some(relative_path.to_path_buf());
+                self.ui.loaded_wav = Some(relative_path.to_path_buf());
+            }
+            AudioLoadIntent::CollectionPreview => {
+                self.loaded_wav = None;
+                self.ui.loaded_wav = None;
+            }
+        }
         self.sync_loaded_audio(
             source,
             relative_path,
@@ -658,10 +818,7 @@ impl EguiController {
             sample_rate,
             channels,
             bytes,
-        )?;
-        let message = Self::loaded_status_text(relative_path, duration_seconds, sample_rate);
-        self.set_status(message, StatusTone::Info);
-        Ok(())
+        )
     }
 
     fn clear_waveform_selection(&mut self) {
@@ -776,9 +933,11 @@ impl EguiController {
         {
             return;
         }
-        let color_image = self
-            .renderer
-            .render_color_image_with_size(&samples[start_idx..end_idx], effective_width, height);
+        let color_image = self.renderer.render_color_image_with_size(
+            &samples[start_idx..end_idx],
+            effective_width,
+            height,
+        );
         self.ui.waveform.image = Some(WaveformImage {
             image: color_image,
             view_start: view.start,

@@ -308,7 +308,12 @@ impl EguiController {
         if loaded_matches || selected_matches {
             self.loaded_wav = None;
             self.ui.loaded_wav = None;
-            if let Err(err) = self.load_waveform_for_selection(source, relative_path) {
+            let intent = if selected_matches {
+                AudioLoadIntent::Selection
+            } else {
+                AudioLoadIntent::CollectionPreview
+            };
+            if let Err(err) = self.queue_audio_load_for(source, relative_path, intent, None) {
                 self.set_status(err, StatusTone::Warning);
             }
         }

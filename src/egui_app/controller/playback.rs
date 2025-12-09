@@ -201,6 +201,39 @@ impl EguiController {
     /// Start playback over the current selection or full range.
     pub fn play_audio(&mut self, looped: bool, start_override: Option<f32>) -> Result<(), String> {
         self.pending_loop_disable_at = None;
+        if self.loaded_audio.is_none() {
+            if let Some(pending) = self.pending_audio.clone() {
+                self.pending_playback = Some(PendingPlayback {
+                    source_id: pending.source_id,
+                    relative_path: pending.relative_path,
+                    looped,
+                    start_override,
+                });
+                self.set_status("Loading audio…", StatusTone::Busy);
+                return Ok(());
+            }
+            let Some(selected) = self.selected_wav.clone() else {
+                return Err("Load a .wav file first".into());
+            };
+            let Some(source) = self.current_source() else {
+                return Err("Load a .wav file first".into());
+            };
+            let pending_playback = PendingPlayback {
+                source_id: source.id.clone(),
+                relative_path: selected.clone(),
+                looped,
+                start_override,
+            };
+            self.pending_playback = Some(pending_playback.clone());
+            self.queue_audio_load_for(
+                &source,
+                &selected,
+                AudioLoadIntent::Selection,
+                Some(pending_playback),
+            )?;
+            self.set_status(format!("Loading {}", selected.display()), StatusTone::Busy);
+            return Ok(());
+        }
         let player = self.ensure_player()?;
         let Some(player) = player else {
             return Err("Audio unavailable".into());
@@ -234,6 +267,7 @@ impl EguiController {
     /// Advance playhead position and visibility from the underlying player.
     pub fn tick_playhead(&mut self) {
         self.poll_wav_loader();
+        self.poll_audio_loader();
         self.poll_scan();
         let Some(player) = self.player.as_ref().cloned() else {
             if self.decoded_waveform.is_none() {

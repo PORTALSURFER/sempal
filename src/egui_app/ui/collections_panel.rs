@@ -4,9 +4,7 @@ use super::helpers::{
 };
 use super::style;
 use super::*;
-use crate::egui_app::state::{
-    CollectionRowView, CollectionSampleView, DragPayload, FocusContext,
-};
+use crate::egui_app::state::{CollectionRowView, CollectionSampleView, DragPayload, FocusContext};
 use eframe::egui::{self, RichText, Stroke, StrokeKind, Ui};
 use std::path::PathBuf;
 

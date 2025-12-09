@@ -40,7 +40,11 @@ impl EguiController {
         if !self.waveform_ready() {
             return;
         }
-        let factor = if zoom_in { ZOOM_IN_FACTOR } else { ZOOM_OUT_FACTOR };
+        let factor = if zoom_in {
+            ZOOM_IN_FACTOR
+        } else {
+            ZOOM_OUT_FACTOR
+        };
         let focus = self.waveform_focus_point();
         let min_width = self.min_view_width();
         let mut view = self.ui.waveform.view;
@@ -80,11 +84,7 @@ impl EguiController {
             return;
         }
         let step = self.waveform_step_size(fine).max(MIN_SELECTION_WIDTH);
-        let Some(selection) = self
-            .selection
-            .range()
-            .or(self.ui.waveform.selection)
-        else {
+        let Some(selection) = self.selection.range().or(self.ui.waveform.selection) else {
             self.set_status("Create a selection first", StatusTone::Info);
             return;
         };
@@ -108,7 +108,11 @@ impl EguiController {
 
     fn waveform_step_size(&self, fine: bool) -> f32 {
         let width_px = self.waveform_size[0].max(1) as f32;
-        let px = if fine { PLAYHEAD_STEP_PX_FINE } else { PLAYHEAD_STEP_PX };
+        let px = if fine {
+            PLAYHEAD_STEP_PX_FINE
+        } else {
+            PLAYHEAD_STEP_PX
+        };
         let px_fraction = (px / width_px).min(1.0);
         self.ui.waveform.view.width() * px_fraction
     }

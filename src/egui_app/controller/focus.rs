@@ -9,11 +9,11 @@ impl EguiController {
 
     /// Focus the sample browser, selecting a row if none is active.
     pub(super) fn focus_browser_list(&mut self) {
-        let Some(target_row) = self
-            .ui
-            .browser
-            .selected_visible
-            .or(self.ui.browser.visible.first().copied())
+        let Some(target_row) =
+            self.ui
+                .browser
+                .selected_visible
+                .or(self.ui.browser.visible.first().copied())
         else {
             self.set_status("Add a source with samples first", StatusTone::Info);
             return;
@@ -61,7 +61,12 @@ impl EguiController {
             self.set_status("Add a source first", StatusTone::Info);
             return;
         }
-        let target = self.ui.sources.selected.unwrap_or(0).min(self.sources.len() - 1);
+        let target = self
+            .ui
+            .sources
+            .selected
+            .unwrap_or(0)
+            .min(self.sources.len() - 1);
         self.select_source_by_index(target);
         self.focus_sources_context();
     }

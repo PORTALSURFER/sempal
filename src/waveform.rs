@@ -232,12 +232,10 @@ impl WaveformRenderer {
     ) -> ColorImage {
         let mut image = ColorImage::new(
             [width as usize, height as usize],
-            vec![Color32::from_rgba_unmultiplied(
-                background.r(),
-                background.g(),
-                background.b(),
-                0,
-            ); (width as usize) * (height as usize)],
+            vec![
+                Color32::from_rgba_unmultiplied(background.r(), background.g(), background.b(), 0,);
+                (width as usize) * (height as usize)
+            ],
         );
         let stride = width as usize;
         let half_height = (height.saturating_sub(1)) as f32 / 2.0;
