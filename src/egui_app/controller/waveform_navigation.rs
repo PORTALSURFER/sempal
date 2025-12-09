@@ -49,6 +49,7 @@ impl EguiController {
         view.end = focus + width * 0.5;
         self.ui.waveform.view = view.clamp();
         self.ensure_playhead_visible_in_view();
+        self.refresh_waveform_image();
     }
 
     /// Create or replace a selection anchored to the playhead.

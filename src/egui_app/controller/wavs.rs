@@ -4,6 +4,9 @@ use crate::waveform::DecodedWaveform;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
+/// Upper bound for waveform texture width to stay within GPU limits.
+const MAX_TEXTURE_WIDTH: u32 = 16_384;
+
 impl EguiController {
     /// Reset all waveform and playback visuals.
     pub(super) fn clear_waveform_view(&mut self) {
@@ -674,14 +677,20 @@ impl EguiController {
         self.refresh_waveform_image();
     }
 
-    fn refresh_waveform_image(&mut self) {
+    pub(crate) fn refresh_waveform_image(&mut self) {
         let Some(decoded) = self.decoded_waveform.as_ref() else {
             return;
         };
         let [width, height] = self.waveform_size;
-        let color_image =
-            self.renderer
-                .render_color_image_with_size(&decoded.samples, width, height);
+        let view_width = self.ui.waveform.view.width().clamp(0.001, 1.0);
+        let zoom_scale = (1.0 / view_width).max(1.0);
+        let target = (width as f32 * zoom_scale).ceil().max(width as f32);
+        let effective_width = target
+            .min(MAX_TEXTURE_WIDTH as f32)
+            .max(width as f32) as u32;
+        let color_image = self
+            .renderer
+            .render_color_image_with_size(&decoded.samples, effective_width, height);
         self.ui.waveform.image = Some(WaveformImage { image: color_image });
     }
 
