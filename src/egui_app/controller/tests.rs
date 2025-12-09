@@ -1376,6 +1376,58 @@ fn playhead_step_size_tracks_view_zoom() {
 }
 
 #[test]
+fn batched_zoom_matches_sequential_steps() {
+    let (mut batched, source_a) = dummy_controller();
+    prepare_browser_sample(&mut batched, &source_a, "zoom.wav");
+    batched.update_waveform_size(240, 24);
+    batched.select_wav_by_path(Path::new("zoom.wav"));
+    batched.ui.waveform.playhead.position = 0.4;
+    batched.ui.waveform.playhead.visible = true;
+
+    let (mut stepped, source_b) = dummy_controller();
+    prepare_browser_sample(&mut stepped, &source_b, "zoom.wav");
+    stepped.update_waveform_size(240, 24);
+    stepped.select_wav_by_path(Path::new("zoom.wav"));
+    stepped.ui.waveform.playhead.position = 0.4;
+    stepped.ui.waveform.playhead.visible = true;
+
+    batched.zoom_waveform_steps(true, 3, None);
+    for _ in 0..3 {
+        stepped.zoom_waveform(true);
+    }
+
+    let view_a = batched.ui.waveform.view;
+    let view_b = stepped.ui.waveform.view;
+    assert!((view_a.start - view_b.start).abs() < 1e-6);
+    assert!((view_a.end - view_b.end).abs() < 1e-6);
+}
+
+#[test]
+fn mouse_zoom_prefers_pointer_over_playhead() {
+    let (mut controller, _source) = dummy_controller();
+    controller.waveform_size = [240, 24];
+    controller.decoded_waveform = Some(DecodedWaveform {
+        samples: vec![0.0; 10_000],
+        duration_seconds: 1.0,
+        sample_rate: 48_000,
+        channels: 1,
+    });
+    controller.ui.waveform.playhead.position = 0.1;
+    controller.ui.waveform.playhead.visible = true;
+
+    controller.zoom_waveform_steps_with_factor(true, 1, Some(0.8), Some(0.5), false, false);
+
+    let center = (controller.ui.waveform.view.start + controller.ui.waveform.view.end) * 0.5;
+    let playhead_dist = (center - 0.1).abs();
+    let pointer_dist = (center - 0.8).abs();
+    assert!(
+        pointer_dist < playhead_dist,
+        "zoom centered closer to playhead ({playhead_dist}) than pointer ({pointer_dist}), center {center}"
+    );
+    assert!(controller.ui.waveform.view.start < controller.ui.waveform.view.end);
+}
+
+#[test]
 fn waveform_refresh_respects_view_slice_and_caps_width() {
     let (mut controller, _source) = dummy_controller();
     controller.waveform_size = [100, 10];

@@ -23,6 +23,7 @@ mod selection_export;
 mod sources;
 mod trash;
 mod waveform_navigation;
+mod interaction_options;
 mod wavs;
 
 use crate::{
@@ -88,6 +89,7 @@ pub struct EguiController {
     pending_loop_disable_at: Option<Instant>,
     feature_flags: crate::sample_sources::config::FeatureFlags,
     audio_output: AudioOutputConfig,
+    controls: crate::sample_sources::config::InteractionOptions,
     trash_folder: Option<std::path::PathBuf>,
     selection: SelectionState,
     wav_job_tx: Sender<WavLoadJob>,
@@ -137,6 +139,7 @@ impl EguiController {
             pending_loop_disable_at: None,
             feature_flags: crate::sample_sources::config::FeatureFlags::default(),
             audio_output: AudioOutputConfig::default(),
+            controls: crate::sample_sources::config::InteractionOptions::default(),
             trash_folder: None,
             selection: SelectionState::new(),
             wav_job_tx,

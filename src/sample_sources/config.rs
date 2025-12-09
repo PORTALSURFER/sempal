@@ -23,6 +23,8 @@ pub struct AppConfig {
     #[serde(default = "default_audio_output")]
     pub audio_output: AudioOutputConfig,
     pub volume: f32,
+    #[serde(default)]
+    pub controls: InteractionOptions,
 }
 
 /// App settings that belong in the TOML config file.
@@ -38,6 +40,8 @@ struct AppSettings {
     pub volume: f32,
     #[serde(default = "default_audio_output")]
     pub audio_output: AudioOutputConfig,
+    #[serde(default)]
+    pub controls: InteractionOptions,
 }
 
 /// Toggleable features that can be persisted and evolve without breaking old configs.
@@ -47,6 +51,30 @@ pub struct FeatureFlags {
     pub collections_enabled: bool,
     #[serde(default = "default_true")]
     pub autoplay_selection: bool,
+}
+
+/// Interaction tuning for waveform navigation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InteractionOptions {
+    #[serde(default = "default_true")]
+    pub invert_waveform_scroll: bool,
+    #[serde(default = "default_scroll_speed")]
+    pub waveform_scroll_speed: f32,
+    #[serde(default = "default_wheel_zoom_factor")]
+    pub wheel_zoom_factor: f32,
+    #[serde(default = "default_keyboard_zoom_factor")]
+    pub keyboard_zoom_factor: f32,
+}
+
+impl Default for InteractionOptions {
+    fn default() -> Self {
+        Self {
+            invert_waveform_scroll: true,
+            waveform_scroll_speed: default_scroll_speed(),
+            wheel_zoom_factor: default_wheel_zoom_factor(),
+            keyboard_zoom_factor: default_keyboard_zoom_factor(),
+        }
+    }
 }
 
 impl Default for FeatureFlags {
@@ -142,6 +170,7 @@ pub fn load_or_default() -> Result<AppConfig, ConfigError> {
         last_selected_source: settings.last_selected_source,
         audio_output: settings.audio_output,
         volume: settings.volume,
+        controls: settings.controls,
     })
 }
 
@@ -168,6 +197,7 @@ pub fn save_to_path(config: &AppConfig, path: &Path) -> Result<(), ConfigError> 
             last_selected_source: config.last_selected_source.clone(),
             volume: config.volume,
             audio_output: config.audio_output.clone(),
+            controls: config.controls.clone(),
         },
         path,
     )?;
@@ -214,6 +244,7 @@ fn migrate_legacy_config(legacy_path: &Path, new_path: &Path) -> Result<AppSetti
         last_selected_source: legacy.last_selected_source,
         audio_output: legacy.audio_output,
         volume: legacy.volume,
+        controls: InteractionOptions::default(),
     };
     save_settings_to_path(&settings, new_path)?;
     backup_legacy_file(legacy_path)?;
@@ -305,6 +336,7 @@ mod tests {
                 last_selected_source: None,
                 audio_output: default_audio_output(),
                 volume: 0.9,
+                controls: InteractionOptions::default(),
             };
             let data = serde_json::to_vec_pretty(&legacy).unwrap();
             std::fs::write(&legacy_path, data).unwrap();
@@ -383,6 +415,18 @@ fn default_volume() -> f32 {
     1.0
 }
 
+fn default_scroll_speed() -> f32 {
+    1.2
+}
+
+fn default_wheel_zoom_factor() -> f32 {
+    0.96
+}
+
+fn default_keyboard_zoom_factor() -> f32 {
+    0.9
+}
+
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
@@ -393,6 +437,7 @@ impl Default for AppConfig {
             last_selected_source: None,
             audio_output: default_audio_output(),
             volume: default_volume(),
+            controls: InteractionOptions::default(),
         }
     }
 }
@@ -405,6 +450,7 @@ impl Default for AppSettings {
             last_selected_source: None,
             audio_output: default_audio_output(),
             volume: default_volume(),
+            controls: InteractionOptions::default(),
         }
     }
 }

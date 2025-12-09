@@ -1,0 +1,61 @@
+use super::*;
+
+const MIN_SCROLL_SPEED: f32 = 0.2;
+const MAX_SCROLL_SPEED: f32 = 5.0;
+const MIN_ZOOM_FACTOR: f32 = 0.5;
+const MAX_ZOOM_FACTOR: f32 = 0.995;
+
+pub(super) fn clamp_scroll_speed(speed: f32) -> f32 {
+    speed.clamp(MIN_SCROLL_SPEED, MAX_SCROLL_SPEED)
+}
+
+pub(super) fn clamp_zoom_factor(factor: f32) -> f32 {
+    factor.clamp(MIN_ZOOM_FACTOR, MAX_ZOOM_FACTOR)
+}
+
+impl EguiController {
+    pub fn set_waveform_scroll_speed(&mut self, speed: f32) {
+        let clamped = clamp_scroll_speed(speed);
+        if (self.controls.waveform_scroll_speed - clamped).abs() < f32::EPSILON {
+            return;
+        }
+        self.controls.waveform_scroll_speed = clamped;
+        self.ui.controls.waveform_scroll_speed = clamped;
+        self.persist_controls();
+    }
+
+    pub fn set_invert_waveform_scroll(&mut self, invert: bool) {
+        if self.controls.invert_waveform_scroll == invert {
+            return;
+        }
+        self.controls.invert_waveform_scroll = invert;
+        self.ui.controls.invert_waveform_scroll = invert;
+        self.persist_controls();
+    }
+
+    pub fn set_wheel_zoom_factor(&mut self, factor: f32) {
+        let clamped = clamp_zoom_factor(factor);
+        if (self.controls.wheel_zoom_factor - clamped).abs() < f32::EPSILON {
+            return;
+        }
+        self.controls.wheel_zoom_factor = clamped;
+        self.ui.controls.wheel_zoom_factor = clamped;
+        self.persist_controls();
+    }
+
+    pub fn set_keyboard_zoom_factor(&mut self, factor: f32) {
+        let clamped = clamp_zoom_factor(factor);
+        if (self.controls.keyboard_zoom_factor - clamped).abs() < f32::EPSILON {
+            return;
+        }
+        self.controls.keyboard_zoom_factor = clamped;
+        self.ui.controls.keyboard_zoom_factor = clamped;
+        self.persist_controls();
+    }
+
+    fn persist_controls(&mut self) {
+        if let Err(err) = self.persist_config("Failed to save options") {
+            self.set_status(err, StatusTone::Warning);
+        }
+    }
+}

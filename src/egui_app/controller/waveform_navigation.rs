@@ -1,10 +1,10 @@
 use super::*;
+use crate::egui_app::state::WaveformView;
 use crate::selection::SelectionEdge;
 
 const PLAYHEAD_STEP_PX: f32 = 32.0;
 const PLAYHEAD_STEP_PX_FINE: f32 = 1.0;
-const ZOOM_IN_FACTOR: f32 = 0.8;
-const ZOOM_OUT_FACTOR: f32 = 1.0 / ZOOM_IN_FACTOR;
+const VIEW_EPSILON: f32 = 1e-5;
 
 impl EguiController {
     /// Focus the waveform viewer when a sample is loaded.
@@ -37,23 +37,41 @@ impl EguiController {
 
     /// Zoom the waveform while keeping the playhead centered.
     pub(crate) fn zoom_waveform(&mut self, zoom_in: bool) {
+        self.zoom_waveform_steps_with_factor(zoom_in, 1, None, None, true, true);
+    }
+
+    /// Zoom multiple steps around an optional focus point with a single render.
+    pub(crate) fn zoom_waveform_steps(&mut self, zoom_in: bool, steps: u32, focus: Option<f32>) {
+        self.zoom_waveform_steps_with_factor(zoom_in, steps, focus, None, true, true);
+    }
+
+    /// Zoom multiple steps with a custom zoom factor (used for mouse wheel tuning).
+    pub(crate) fn zoom_waveform_steps_with_factor(
+        &mut self,
+        zoom_in: bool,
+        steps: u32,
+        focus: Option<f32>,
+        factor_override: Option<f32>,
+        playhead_focus_when_playing: bool,
+        keep_playhead_visible: bool,
+    ) {
         if !self.waveform_ready() {
             return;
         }
-        let factor = if zoom_in {
-            ZOOM_IN_FACTOR
-        } else {
-            ZOOM_OUT_FACTOR
-        };
-        let focus = self.waveform_focus_point();
-        let min_width = self.min_view_width();
-        let mut view = self.ui.waveform.view;
-        let width = (view.width() * factor).clamp(min_width, 1.0);
-        view.start = focus - width * 0.5;
-        view.end = focus + width * 0.5;
-        self.ui.waveform.view = view.clamp();
-        self.ensure_playhead_visible_in_view();
-        self.refresh_waveform_image();
+        let steps = steps.max(1);
+        let mut changed = false;
+        for _ in 0..steps {
+            changed |= self.apply_zoom_step(
+                zoom_in,
+                focus,
+                factor_override,
+                playhead_focus_when_playing,
+                keep_playhead_visible,
+            );
+        }
+        if changed {
+            self.refresh_waveform_image();
+        }
     }
 
     /// Create or replace a selection anchored to the playhead.
@@ -189,6 +207,39 @@ impl EguiController {
             (view.start + view.end) * 0.5
         }
     }
+
+    fn apply_zoom_step(
+        &mut self,
+        zoom_in: bool,
+        focus: Option<f32>,
+        factor_override: Option<f32>,
+        playhead_focus_when_playing: bool,
+        keep_playhead_visible: bool,
+    ) -> bool {
+        if !self.waveform_ready() {
+            return false;
+        }
+        let default_factor = self.ui.controls.keyboard_zoom_factor.max(0.01);
+        let base = factor_override.unwrap_or(default_factor).max(0.01);
+        let factor = if zoom_in { base } else { 1.0 / base };
+        let focus = if playhead_focus_when_playing && self.is_playing() {
+            self.ui.waveform.playhead.visible = true;
+            self.ui.waveform.playhead.position
+        } else {
+            focus.unwrap_or_else(|| self.waveform_focus_point())
+        };
+        let min_width = self.min_view_width();
+        let original = self.ui.waveform.view;
+        let width = (original.width() * factor).clamp(min_width, 1.0);
+        let mut view = self.ui.waveform.view;
+        view.start = focus - width * 0.5;
+        view.end = focus + width * 0.5;
+        self.ui.waveform.view = view.clamp();
+        if keep_playhead_visible {
+            self.ensure_playhead_visible_in_view();
+        }
+        views_differ(original, self.ui.waveform.view)
+    }
 }
 
 fn clamp_selection_bounds(start: f32, end: f32) -> (f32, f32) {
@@ -202,4 +253,8 @@ fn clamp_selection_bounds(start: f32, end: f32) -> (f32, f32) {
         a = (b - MIN_SELECTION_WIDTH).max(0.0);
     }
     (a, b)
+}
+
+fn views_differ(a: WaveformView, b: WaveformView) -> bool {
+    (a.start - b.start).abs() > VIEW_EPSILON || (a.end - b.end).abs() > VIEW_EPSILON
 }
