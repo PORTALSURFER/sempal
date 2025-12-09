@@ -4,7 +4,9 @@ use super::helpers::{
 };
 use super::style;
 use super::*;
-use crate::egui_app::state::{CollectionRowView, CollectionSampleView, DragPayload};
+use crate::egui_app::state::{
+    CollectionRowView, CollectionSampleView, DragPayload, FocusContext,
+};
 use eframe::egui::{self, RichText, Stroke, StrokeKind, Ui};
 use std::path::PathBuf;
 
@@ -29,7 +31,7 @@ impl EguiApp {
             });
             ui.add_space(6.0);
             let rows = self.controller.ui.collections.rows.clone();
-            egui::ScrollArea::vertical()
+            let list_response = egui::ScrollArea::vertical()
                 .id_salt("collections_scroll")
                 .show(ui, |ui| {
                     let row_height = list_row_height(ui);
@@ -81,6 +83,17 @@ impl EguiApp {
                         });
                     }
                 });
+            if matches!(
+                self.controller.ui.focus.context,
+                FocusContext::CollectionsList
+            ) {
+                ui.painter().rect_stroke(
+                    list_response.response.rect,
+                    0.0,
+                    style::focused_row_stroke(),
+                    StrokeKind::Outside,
+                );
+            }
             ui.label(RichText::new("Collection items").color(palette.text_primary));
             self.render_collection_samples(ui, drag_active, pointer_pos);
         });
@@ -259,6 +272,17 @@ impl EguiApp {
         let mut state = scroll_response.inner.state;
         state.offset.y = desired_offset.clamp(0.0, max_offset);
         state.store(ui.ctx(), scroll_response.inner.id);
+        if matches!(
+            self.controller.ui.focus.context,
+            FocusContext::CollectionSample
+        ) {
+            ui.painter().rect_stroke(
+                scroll_response.response.rect,
+                0.0,
+                style::focused_row_stroke(),
+                StrokeKind::Outside,
+            );
+        }
         if drag_active {
             if let Some(pointer) = pointer_pos {
                 let target_rect = scroll_response.response.rect.expand2(egui::vec2(8.0, 0.0));
