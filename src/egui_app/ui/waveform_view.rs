@@ -15,18 +15,6 @@ impl EguiApp {
             .stroke(style::outer_border())
             .inner_margin(Margin::symmetric(10, 6));
         let frame_response = frame.show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.label(RichText::new("Waveform Viewer").color(palette.text_primary));
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let loop_enabled = self.controller.ui.waveform.loop_enabled;
-                    let text = if loop_enabled { "Loop on" } else { "Loop off" };
-                    let button = egui::Button::new(RichText::new(text).color(palette.text_primary));
-                    if ui.add(button).clicked() {
-                        self.controller.toggle_loop();
-                    }
-                });
-            });
-            ui.add_space(8.0);
             let desired = egui::vec2(ui.available_width(), 260.0);
             let (rect, response) = ui.allocate_exact_size(desired, egui::Sense::click_and_drag());
             let target_width = rect.width().round().max(1.0) as u32;
@@ -368,20 +356,36 @@ impl EguiApp {
 
             // Waveform interactions: scroll to zoom, click to seek, drag to select.
             if response.hovered() {
-                let scroll_delta = ui.input(|i| i.raw_scroll_delta.y);
-                if scroll_delta.abs() > 0.0 {
-                    let zoom_in = scroll_delta > 0.0;
-                    // Use playhead when visible, otherwise pointer if available, otherwise center.
-                    if self.controller.ui.waveform.playhead.visible {
-                        self.controller.zoom_waveform(zoom_in);
-                    } else if let Some(pos) = pointer_pos {
-                        let normalized = ((pos.x - rect.left()) / rect.width())
-                            .mul_add(view_width, view.start)
-                            .clamp(0.0, 1.0);
-                        self.controller.scroll_waveform_view(normalized);
-                        self.controller.zoom_waveform(zoom_in);
+                let scroll_delta = ui.input(|i| i.raw_scroll_delta);
+                if scroll_delta != egui::Vec2::ZERO {
+                    let shift_down = ui.input(|i| i.modifiers.shift);
+                    if shift_down && view_width < 1.0 {
+                        // Pan the zoomed view horizontally when shift is held.
+                        let delta_x = if scroll_delta.x.abs() > 0.0 {
+                            scroll_delta.x
+                        } else {
+                            scroll_delta.y
+                        };
+                        if delta_x.abs() > 0.0 {
+                            let view_center = view.start + view_width * 0.5;
+                            let fraction_delta = (delta_x / rect.width()) * view_width;
+                            let target_center = view_center + fraction_delta;
+                            self.controller.scroll_waveform_view(target_center);
+                        }
                     } else {
-                        self.controller.zoom_waveform(zoom_in);
+                        let zoom_in = scroll_delta.y > 0.0;
+                        // Use playhead when visible, otherwise pointer if available, otherwise center.
+                        if self.controller.ui.waveform.playhead.visible {
+                            self.controller.zoom_waveform(zoom_in);
+                        } else if let Some(pos) = pointer_pos {
+                            let normalized = ((pos.x - rect.left()) / rect.width())
+                                .mul_add(view_width, view.start)
+                                .clamp(0.0, 1.0);
+                            self.controller.scroll_waveform_view(normalized);
+                            self.controller.zoom_waveform(zoom_in);
+                        } else {
+                            self.controller.zoom_waveform(zoom_in);
+                        }
                     }
                 }
             }
