@@ -155,6 +155,7 @@ pub struct AudioOptionsState {
     pub selected: AudioOutputConfig,
     pub applied: Option<ActiveAudioOutput>,
     pub warning: Option<String>,
+    pub panel_open: bool,
 }
 
 /// Render-friendly audio host descriptor.
