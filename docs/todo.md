@@ -2,12 +2,6 @@
 
 --
 
-
-\plan - lets clean up the config location names so we don't get this double sempal/sempal structure. lets make it simple .sempal/
-So in windows it would end up as %APPDATA%\Roaming\.sempal\config.json
-
----
-
 \plan - when I resize the sides of the waveform selection, there is a slight stickyness at first, I need to move the mouse a couple pixels before it unlocks and we actually start resizing, this is very annoying for precise tweaks, lets improve this so its butter smooth and instant.
 
 ---
