@@ -1313,6 +1313,18 @@ fn focusing_browser_row_updates_focus_context() {
 }
 
 #[test]
+fn hotkey_focus_waveform_sets_context() {
+    let (mut controller, source) = dummy_controller();
+    prepare_browser_sample(&mut controller, &source, "wave.wav");
+    controller.select_wav_by_path(Path::new("wave.wav"));
+    let action = hotkeys::iter_actions()
+        .find(|a| a.id == "focus-waveform")
+        .expect("focus-waveform hotkey");
+    controller.handle_hotkey(action, FocusContext::None);
+    assert_eq!(controller.ui.focus.context, FocusContext::Waveform);
+}
+
+#[test]
 fn selecting_collection_sample_updates_focus_context() {
     let (mut controller, source) = dummy_controller();
     prepare_browser_sample(&mut controller, &source, "col.wav");
@@ -1339,4 +1351,21 @@ fn hotkey_toggle_selection_dispatches_in_browser_context() {
         .expect("toggle-select hotkey");
     controller.handle_hotkey(action, FocusContext::SampleBrowser);
     assert!(controller.ui.browser.selected_paths.is_empty());
+}
+
+#[test]
+fn playhead_step_size_tracks_view_zoom() {
+    let (mut controller, source) = dummy_controller();
+    prepare_browser_sample(&mut controller, &source, "zoom.wav");
+    controller.update_waveform_size(200, 10);
+    controller.select_wav_by_path(Path::new("zoom.wav"));
+    controller.ui.waveform.playhead.position = 0.5;
+    controller.ui.waveform.playhead.visible = true;
+
+    controller.move_playhead_steps(1);
+    assert!((controller.ui.waveform.playhead.position - 0.66).abs() < 0.001);
+
+    controller.zoom_waveform(true);
+    controller.move_playhead_steps(1);
+    assert!((controller.ui.waveform.playhead.position - 0.788).abs() < 0.001);
 }

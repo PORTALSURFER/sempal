@@ -68,6 +68,17 @@ impl EguiController {
         self.refresh_collections_ui();
     }
 
+    /// Move collection selection up or down by an offset.
+    pub fn nudge_collection_row(&mut self, offset: isize) {
+        if self.collections.is_empty() {
+            return;
+        }
+        let current = self.ui.collections.selected.unwrap_or(0) as isize;
+        let target = (current + offset).clamp(0, self.collections.len() as isize - 1) as usize;
+        self.select_collection_by_index(Some(target));
+        self.focus_collections_list_context();
+    }
+
     /// Create a new collection and persist.
     pub fn add_collection(&mut self) {
         if !self.feature_flags.collections_enabled {

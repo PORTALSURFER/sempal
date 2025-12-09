@@ -14,7 +14,7 @@ impl EguiApp {
             .fill(style::compartment_fill())
             .stroke(style::outer_border())
             .inner_margin(Margin::symmetric(10, 6));
-        frame.show(ui, |ui| {
+        let frame_response = frame.show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.label(RichText::new("Waveform Viewer").color(palette.text_primary));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -35,6 +35,12 @@ impl EguiApp {
                 .update_waveform_size(target_width, target_height);
             let painter = ui.painter();
             let pointer_pos = response.hover_pos();
+            let view = self.controller.ui.waveform.view;
+            let view_width = view.width();
+            let to_screen_x = |position: f32, rect: egui::Rect| {
+                let normalized = ((position - view.start) / view_width).clamp(0.0, 1.0);
+                rect.left() + rect.width() * normalized
+            };
             if let Some(message) = self.controller.ui.waveform.notice.as_ref() {
                 painter.rect_filled(rect, 0.0, palette.bg_primary);
                 painter.rect_stroke(
@@ -107,8 +113,10 @@ impl EguiApp {
 
             let mut edge_dragging = false;
             if let Some(selection) = self.controller.ui.waveform.selection {
-                let width = rect.width() * (selection.end() - selection.start()) as f32;
-                let x = rect.left() + rect.width() * selection.start() as f32;
+                let start_norm = ((selection.start() - view.start) / view_width).clamp(0.0, 1.0);
+                let end_norm = ((selection.end() - view.start) / view_width).clamp(0.0, 1.0);
+                let width = rect.width() * (end_norm - start_norm).max(0.0);
+                let x = rect.left() + rect.width() * start_norm;
                 let selection_rect = egui::Rect::from_min_size(
                     egui::pos2(x, rect.top()),
                     egui::vec2(width, rect.height()),
@@ -338,15 +346,17 @@ impl EguiApp {
                     .unwrap_or((0.0, 1.0));
                 let clamped_start = loop_start.clamp(0.0, 1.0);
                 let clamped_end = loop_end.clamp(clamped_start, 1.0);
-                let width = (clamped_end - clamped_start).max(0.0) * rect.width();
+                let start_norm = ((clamped_start - view.start) / view_width).clamp(0.0, 1.0);
+                let end_norm = ((clamped_end - view.start) / view_width).clamp(0.0, 1.0);
+                let width = (end_norm - start_norm).max(0.0) * rect.width();
                 let bar_rect = egui::Rect::from_min_size(
-                    egui::pos2(rect.left() + rect.width() * clamped_start, rect.top()),
+                    egui::pos2(rect.left() + rect.width() * start_norm, rect.top()),
                     egui::vec2(width.max(2.0), 6.0),
                 );
                 painter.rect_filled(bar_rect, 0.0, style::with_alpha(highlight, loop_bar_alpha));
             }
             if self.controller.ui.waveform.playhead.visible {
-                let x = rect.left() + rect.width() * self.controller.ui.waveform.playhead.position;
+                let x = to_screen_x(self.controller.ui.waveform.playhead.position, rect);
                 painter.line_segment(
                     [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
                     Stroke::new(2.0, highlight),
@@ -357,9 +367,16 @@ impl EguiApp {
             if !edge_dragging {
                 let pointer_pos = response.interact_pointer_pos();
                 let normalize_to_waveform =
-                    |pos: egui::Pos2| ((pos.x - rect.left()) / rect.width()).clamp(0.0, 1.0);
+                    |pos: egui::Pos2| {
+                        ((pos.x - rect.left()) / rect.width())
+                            .mul_add(view_width, view.start)
+                            .clamp(0.0, 1.0)
+                    };
                 // Anchor creation to the initial press so quick drags keep the original start.
                 let drag_start_normalized = if response.drag_started() {
+                    if self.controller.ui.waveform.image.is_some() {
+                        self.controller.focus_waveform_context();
+                    }
                     let press_origin = ui.ctx().input(|i| i.pointer.press_origin());
                     press_origin
                         .map(|pos| {
@@ -380,11 +397,17 @@ impl EguiApp {
                     }
                 } else if response.dragged() {
                     if let Some(value) = normalized {
+                        if self.controller.ui.waveform.image.is_some() {
+                            self.controller.focus_waveform_context();
+                        }
                         self.controller.update_selection_drag(value);
                     }
                 } else if response.drag_stopped() {
                     self.controller.finish_selection_drag();
                 } else if response.clicked() {
+                    if self.controller.ui.waveform.image.is_some() {
+                        self.controller.focus_waveform_context();
+                    }
                     if self.controller.ui.waveform.selection.is_some() {
                         self.controller.clear_selection();
                     } else if let Some(value) = normalized {
@@ -393,6 +416,17 @@ impl EguiApp {
                 }
             }
         });
+        if matches!(
+            self.controller.ui.focus.context,
+            crate::egui_app::state::FocusContext::Waveform
+        ) {
+            ui.painter().rect_stroke(
+                frame_response.response.rect,
+                2.0,
+                style::focused_row_stroke(),
+                StrokeKind::Outside,
+            );
+        }
     }
 }
 
@@ -444,21 +478,4 @@ fn paint_selection_edge_bracket(
     };
     let stroke = Stroke::new(EDGE_BRACKET_STROKE, color);
     painter.line_segment(
-        [egui::pos2(vertical_x, top), egui::pos2(vertical_x, bottom)],
-        stroke,
-    );
-    painter.line_segment(
-        [
-            egui::pos2(horizontal_start, top),
-            egui::pos2(horizontal_end, top),
-        ],
-        stroke,
-    );
-    painter.line_segment(
-        [
-            egui::pos2(horizontal_start, bottom),
-            egui::pos2(horizontal_end, bottom),
-        ],
-        stroke,
-    );
-}
+        [egui::pos2(vertical_x, top), egui::pos2(vertic

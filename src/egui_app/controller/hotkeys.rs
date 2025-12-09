@@ -21,6 +21,13 @@ impl HotkeyScope {
 /// Keyboard gesture used to trigger an action.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct HotkeyGesture {
+    pub(crate) first: KeyPress,
+    pub(crate) chord: Option<KeyPress>,
+}
+
+/// A single keypress plus modifier state.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct KeyPress {
     pub(crate) key: Key,
     pub(crate) command: bool,
     pub(crate) shift: bool,
@@ -28,6 +35,29 @@ pub(crate) struct HotkeyGesture {
 }
 
 impl HotkeyGesture {
+    pub const fn new(key: Key) -> Self {
+        Self {
+            first: KeyPress::new(key),
+            chord: None,
+        }
+    }
+
+    pub const fn with_command(key: Key) -> Self {
+        Self {
+            first: KeyPress::with_command(key),
+            chord: None,
+        }
+    }
+
+    pub const fn with_chord(first: KeyPress, second: KeyPress) -> Self {
+        Self {
+            first,
+            chord: Some(second),
+        }
+    }
+}
+
+impl KeyPress {
     pub const fn new(key: Key) -> Self {
         Self {
             key,
@@ -45,6 +75,15 @@ impl HotkeyGesture {
             alt: false,
         }
     }
+
+    pub const fn with_shift(key: Key) -> Self {
+        Self {
+            key,
+            command: false,
+            shift: true,
+            alt: false,
+        }
+    }
 }
 
 /// Logical identifier for controller-dispatched hotkey commands.
@@ -56,6 +95,11 @@ enum HotkeyCommand {
     AddFocusedToCollection,
     ToggleOverlay,
     ToggleLoop,
+    FocusWaveform,
+    FocusBrowserSamples,
+    FocusCollectionSamples,
+    FocusSourcesList,
+    FocusCollectionsList,
 }
 
 /// Hotkey metadata surfaced to the UI.
@@ -135,6 +179,41 @@ const HOTKEY_ACTIONS: &[HotkeyAction] = &[
         scope: HotkeyScope::Global,
         command: HotkeyCommand::ToggleLoop,
     },
+    HotkeyAction {
+        id: "focus-waveform",
+        label: "Focus waveform",
+        gesture: HotkeyGesture::with_chord(KeyPress::new(Key::G), KeyPress::new(Key::W)),
+        scope: HotkeyScope::Global,
+        command: HotkeyCommand::FocusWaveform,
+    },
+    HotkeyAction {
+        id: "focus-browser",
+        label: "Focus source samples",
+        gesture: HotkeyGesture::with_chord(KeyPress::new(Key::G), KeyPress::new(Key::S)),
+        scope: HotkeyScope::Global,
+        command: HotkeyCommand::FocusBrowserSamples,
+    },
+    HotkeyAction {
+        id: "focus-collection-samples",
+        label: "Focus collection samples",
+        gesture: HotkeyGesture::with_chord(KeyPress::new(Key::G), KeyPress::new(Key::C)),
+        scope: HotkeyScope::Global,
+        command: HotkeyCommand::FocusCollectionSamples,
+    },
+    HotkeyAction {
+        id: "focus-sources-list",
+        label: "Focus sources list",
+        gesture: HotkeyGesture::with_chord(KeyPress::new(Key::G), KeyPress::with_shift(Key::S)),
+        scope: HotkeyScope::Global,
+        command: HotkeyCommand::FocusSourcesList,
+    },
+    HotkeyAction {
+        id: "focus-collections-list",
+        label: "Focus collections list",
+        gesture: HotkeyGesture::with_chord(KeyPress::new(Key::G), KeyPress::with_shift(Key::C)),
+        scope: HotkeyScope::Global,
+        command: HotkeyCommand::FocusCollectionsList,
+    },
 ];
 
 pub(crate) fn iter_actions() -> impl Iterator<Item = HotkeyAction> {
@@ -182,6 +261,21 @@ impl EguiController {
             HotkeyCommand::ToggleLoop => {
                 self.toggle_loop();
             }
+            HotkeyCommand::FocusWaveform => {
+                self.focus_waveform();
+            }
+            HotkeyCommand::FocusBrowserSamples => {
+                self.focus_browser_list();
+            }
+            HotkeyCommand::FocusCollectionSamples => {
+                self.focus_collection_samples_list();
+            }
+            HotkeyCommand::FocusSourcesList => {
+                self.focus_sources_list();
+            }
+            HotkeyCommand::FocusCollectionsList => {
+                self.focus_collections_list();
+            }
         }
     }
 
@@ -204,7 +298,10 @@ impl EguiController {
                     );
                 }
             }
-            FocusContext::None => {}
+            FocusContext::None
+            | FocusContext::Waveform
+            | FocusContext::SourcesList
+            | FocusContext::CollectionsList => {}
         }
     }
 
@@ -224,7 +321,10 @@ impl EguiController {
                     self.set_status("Select a collection sample to delete it", StatusTone::Info);
                 }
             }
-            FocusContext::None => {}
+            FocusContext::None
+            | FocusContext::Waveform
+            | FocusContext::SourcesList
+            | FocusContext::CollectionsList => {}
         }
     }
 
