@@ -131,6 +131,11 @@ impl EguiApp {
                 close_menu = true;
             }
             ui.separator();
+            if ui.button("Open in file explorer").clicked() {
+                self.controller.select_source_by_index(index);
+                self.controller.open_source_folder(index);
+                close_menu = true;
+            }
             if ui.button("Remap source…").clicked() {
                 self.controller.select_source_by_index(index);
                 self.controller.remap_source_via_dialog(index);

@@ -4,8 +4,6 @@
 
 
 
--- lets add an entry to the source context menu top open the source folder in the os explorer
-
 \plan - lets color the sample item label text with the triageflag color, so red/green or regular.
 
 ---
