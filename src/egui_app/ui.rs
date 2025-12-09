@@ -38,6 +38,7 @@ pub struct EguiApp {
     sources_panel_rect: Option<egui::Rect>,
     sources_panel_drop_hovered: bool,
     sources_panel_drop_armed: bool,
+    selection_edge_offset: Option<f32>,
 }
 
 #[inline]
@@ -84,6 +85,7 @@ impl EguiApp {
             sources_panel_rect: None,
             sources_panel_drop_hovered: false,
             sources_panel_drop_armed: false,
+            selection_edge_offset: None,
         })
     }
 
