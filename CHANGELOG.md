@@ -1,3 +1,16 @@
+## [0.189.0] - 2025-12-09
+
+### 🚀 Features
+
+- Add selection normalization with edge fades
+
+### 🐛 Bug Fixes
+
+- Correct edge fade timing and duration math
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* V0.189.0 (#11)
 ## [0.180.0] - 2025-12-08
 
 ### 🚀 Features
