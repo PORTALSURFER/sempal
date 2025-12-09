@@ -302,10 +302,26 @@ impl EguiApp {
             // Waveform interactions: click to seek, drag to select.
             if !edge_dragging {
                 let pointer_pos = response.interact_pointer_pos();
-                let normalized =
-                    pointer_pos.map(|pos| ((pos.x - rect.left()) / rect.width()).clamp(0.0, 1.0));
+                let normalize_to_waveform =
+                    |pos: egui::Pos2| ((pos.x - rect.left()) / rect.width()).clamp(0.0, 1.0);
+                // Anchor creation to the initial press so quick drags keep the original start.
+                let drag_start_normalized = if response.drag_started() {
+                    let press_origin = ui.ctx().input(|i| i.pointer.press_origin());
+                    press_origin
+                        .map(|pos| {
+                            ui.ctx()
+                                .layer_transform_from_global(response.layer_id)
+                                .map(|transform| transform * pos)
+                                .unwrap_or(pos)
+                        })
+                        .map(normalize_to_waveform)
+                        .or_else(|| pointer_pos.map(normalize_to_waveform))
+                } else {
+                    None
+                };
+                let normalized = pointer_pos.map(normalize_to_waveform);
                 if response.drag_started() {
-                    if let Some(value) = normalized {
+                    if let Some(value) = drag_start_normalized {
                         self.controller.start_selection_drag(value);
                     }
                 } else if response.dragged() {
