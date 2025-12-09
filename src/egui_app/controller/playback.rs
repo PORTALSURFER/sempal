@@ -251,11 +251,15 @@ impl EguiController {
     }
 
     fn apply_selection(&mut self, range: Option<SelectionRange>) {
-        if let Some(range) = range {
-            self.ui.waveform.selection = Some(range);
-        } else {
-            self.ui.waveform.selection = None;
-        }
+        let label = range.and_then(|selection| self.selection_duration_label(selection));
+        self.ui.waveform.selection = range;
+        self.ui.waveform.selection_duration = label;
+    }
+
+    fn selection_duration_label(&self, range: SelectionRange) -> Option<String> {
+        let audio = self.loaded_audio.as_ref()?;
+        let seconds = (audio.duration_seconds * range.width()).max(0.0);
+        Some(format_selection_duration(seconds))
     }
 
     pub(super) fn apply_volume(&mut self, volume: f32) {
@@ -302,5 +306,56 @@ impl EguiController {
 
         self.pending_loop_disable_at = Some(Instant::now() + remaining);
         Ok(())
+    }
+}
+
+fn format_selection_duration(seconds: f32) -> String {
+    if !seconds.is_finite() || seconds <= 0.0 {
+        return "0 ms".to_string();
+    }
+    if seconds < 1.0 {
+        return format!("{:.0} ms", seconds * 1_000.0);
+    }
+    if seconds < 60.0 {
+        return format!("{:.2} s", seconds);
+    }
+    let minutes = (seconds / 60.0).floor() as u32;
+    let remaining = seconds - minutes as f32 * 60.0;
+    format!("{minutes}m {remaining:05.2}s")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::egui_app::controller::test_support;
+    use std::path::PathBuf;
+
+    #[test]
+    fn format_selection_duration_scales_units() {
+        assert_eq!(format_selection_duration(0.75), "750 ms");
+        assert_eq!(format_selection_duration(1.5), "1.50 s");
+        assert_eq!(format_selection_duration(125.0), "2m 05.00s");
+    }
+
+    #[test]
+    fn selection_duration_label_uses_loaded_audio() {
+        let (mut controller, source) = test_support::dummy_controller();
+        controller.loaded_audio = Some(LoadedAudio {
+            source_id: source.id.clone(),
+            relative_path: PathBuf::from("clip.wav"),
+            bytes: Vec::new(),
+            duration_seconds: 4.0,
+            sample_rate: 48_000,
+            channels: 2,
+        });
+        let label = controller.selection_duration_label(SelectionRange::new(0.25, 0.75));
+        assert_eq!(label.as_deref(), Some("2.00 s"));
+    }
+
+    #[test]
+    fn selection_duration_label_is_absent_without_audio() {
+        let (controller, _) = test_support::dummy_controller();
+        let label = controller.selection_duration_label(SelectionRange::new(0.0, 1.0));
+        assert!(label.is_none());
     }
 }

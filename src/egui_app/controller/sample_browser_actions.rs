@@ -289,6 +289,7 @@ impl EguiController {
                 self.ui.waveform.image = None;
                 self.ui.waveform.playhead = PlayheadState::default();
                 self.ui.waveform.selection = None;
+                self.ui.waveform.selection_duration = None;
                 self.selection.clear();
             }
         }

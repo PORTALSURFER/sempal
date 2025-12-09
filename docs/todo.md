@@ -2,12 +2,6 @@
 
 --
 
-- lets not automatically select the first item we click on with the mouse.
-instead, simply focus it just like key navigation does.
-however, if the user ctrl+clicks or shift+clicks another item, do include this first item in the created selection
-
-- lets add a label to an audio selection showing the length of the audio selection, in ms, or bigger units when it makes sense.
-
 \plan - lets clean up the config location names so we don't get this double sempal/sempal structure. lets make it simple .sempal/
 So in windows it would end up as %APPDATA%\Roaming\.sempal\config.json
 
