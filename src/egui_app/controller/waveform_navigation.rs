@@ -3,7 +3,6 @@ use crate::selection::SelectionEdge;
 
 const PLAYHEAD_STEP_PX: f32 = 32.0;
 const PLAYHEAD_STEP_PX_FINE: f32 = 1.0;
-const MIN_VIEW_WIDTH: f32 = 0.01;
 const ZOOM_IN_FACTOR: f32 = 0.8;
 const ZOOM_OUT_FACTOR: f32 = 1.0 / ZOOM_IN_FACTOR;
 
@@ -43,8 +42,9 @@ impl EguiController {
         }
         let factor = if zoom_in { ZOOM_IN_FACTOR } else { ZOOM_OUT_FACTOR };
         let focus = self.waveform_focus_point();
+        let min_width = self.min_view_width();
         let mut view = self.ui.waveform.view;
-        let width = (view.width() * factor).clamp(MIN_VIEW_WIDTH, 1.0);
+        let width = (view.width() * factor).clamp(min_width, 1.0);
         view.start = focus - width * 0.5;
         view.end = focus + width * 0.5;
         self.ui.waveform.view = view.clamp();
@@ -170,11 +170,13 @@ impl EguiController {
     /// Scroll the waveform viewport so its center aligns with the target fraction.
     pub(crate) fn scroll_waveform_view(&mut self, center: f32) {
         let mut view = self.ui.waveform.view;
-        let width = view.width();
+        let min_width = self.min_view_width();
+        let width = view.width().max(min_width);
         if width >= 1.0 {
             view.start = 0.0;
             view.end = 1.0;
             self.ui.waveform.view = view;
+            self.refresh_waveform_image();
             return;
         }
         let half = width * 0.5;
@@ -182,6 +184,7 @@ impl EguiController {
         view.start = start;
         view.end = (start + width).min(1.0);
         self.ui.waveform.view = view.clamp();
+        self.refresh_waveform_image();
     }
 
     fn waveform_focus_point(&self) -> f32 {

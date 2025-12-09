@@ -117,6 +117,8 @@ impl Default for WaveformState {
 #[derive(Clone, Debug)]
 pub struct WaveformImage {
     pub image: egui::ColorImage,
+    pub view_start: f32,
+    pub view_end: f32,
 }
 
 /// Normalized bounds describing the visible region of the waveform.

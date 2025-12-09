@@ -2,9 +2,12 @@ use super::test_support::{dummy_controller, sample_entry, write_test_wav};
 use super::*;
 use crate::egui_app::controller::collection_export;
 use crate::egui_app::controller::hotkeys;
-use crate::egui_app::state::{DragPayload, FocusContext, TriageFlagColumn, TriageFlagFilter};
+use crate::egui_app::state::{
+    DragPayload, FocusContext, TriageFlagColumn, TriageFlagFilter, WaveformView,
+};
 use crate::sample_sources::Collection;
 use crate::sample_sources::collections::CollectionMember;
+use crate::waveform::DecodedWaveform;
 use hound::WavReader;
 use std::io::Cursor;
 use std::mem;
@@ -1368,4 +1371,40 @@ fn playhead_step_size_tracks_view_zoom() {
     controller.zoom_waveform(true);
     controller.move_playhead_steps(1, false, false);
     assert!((controller.ui.waveform.playhead.position - 0.788).abs() < 0.001);
+}
+
+#[test]
+fn waveform_refresh_respects_view_slice_and_caps_width() {
+    let (mut controller, _source) = dummy_controller();
+    controller.waveform_size = [100, 10];
+    controller.ui.waveform.view = WaveformView {
+        start: 0.25,
+        end: 0.5,
+    };
+    controller.decoded_waveform = Some(DecodedWaveform {
+        samples: (0..1000).map(|i| i as f32).collect(),
+        duration_seconds: 1.0,
+        sample_rate: 48_000,
+        channels: 1,
+    });
+    controller.waveform_render_meta = None;
+    controller.refresh_waveform_image();
+    let image = controller
+        .ui
+        .waveform
+        .image
+        .as_ref()
+        .expect("waveform image");
+    assert!((image.view_start - 0.25).abs() < 1e-6);
+    assert!((image.view_end - 0.5).abs() < 1e-6);
+    let expected_width =
+        (controller.waveform_size[0] as f32 * (1.0 / 0.25).min(64.0)).ceil() as usize;
+    let samples_in_view = (0.5 - 0.25) * 1000.0;
+    let upper = samples_in_view as usize
+        .min(crate::egui_app::controller::wavs::MAX_TEXTURE_WIDTH as usize)
+        .max(1);
+    let lower = controller.waveform_size[0].min(crate::egui_app::controller::wavs::MAX_TEXTURE_WIDTH) as usize;
+    let clamped = expected_width.min(upper).max(lower);
+    assert_eq!(image.image.size[0], clamped);
+    assert_eq!(image.image.size[1], 10);
 }

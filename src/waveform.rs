@@ -87,7 +87,15 @@ impl WaveformRenderer {
     ) -> ColorImage {
         let width = width.max(1);
         let height = height.max(1);
-        let columns = Self::sample_columns_for_width(samples, width);
+        // Oversample horizontally to reduce aliasing, then combine down to the requested size.
+        let oversample = if width <= 4_096 { 4 } else { 2 };
+        let oversampled_width = width.saturating_mul(oversample);
+        let oversampled = Self::sample_columns_for_width(samples, oversampled_width);
+        let columns = if oversample == 1 {
+            oversampled
+        } else {
+            Self::downsample_columns(&oversampled, oversample as usize, width as usize)
+        };
         Self::paint_color_image_for_size(&columns, width, height, self.foreground, self.background)
     }
 
@@ -181,6 +189,30 @@ impl WaveformRenderer {
         columns
     }
 
+    fn downsample_columns(
+        columns: &[(f32, f32)],
+        factor: usize,
+        target_width: usize,
+    ) -> Vec<(f32, f32)> {
+        if factor <= 1 {
+            return columns.to_vec();
+        }
+        let mut result = vec![(0.0, 0.0); target_width.max(1)];
+        for (i, slot) in result.iter_mut().enumerate() {
+            let start = i.saturating_mul(factor);
+            let end = ((i + 1).saturating_mul(factor)).min(columns.len());
+            let slice = &columns[start..end.max(start + 1).min(columns.len())];
+            let mut min_v: f32 = 1.0;
+            let mut max_v: f32 = -1.0;
+            for (lo, hi) in slice {
+                min_v = min_v.min(*lo);
+                max_v = max_v.max(*hi);
+            }
+            *slot = (min_v, max_v);
+        }
+        result
+    }
+
     fn paint_color_image(&self, columns: &[(f32, f32)]) -> ColorImage {
         Self::paint_color_image_for_size(
             columns,
@@ -200,20 +232,45 @@ impl WaveformRenderer {
     ) -> ColorImage {
         let mut image = ColorImage::new(
             [width as usize, height as usize],
-            vec![background; (width as usize) * (height as usize)],
+            vec![Color32::from_rgba_unmultiplied(
+                background.r(),
+                background.g(),
+                background.b(),
+                0,
+            ); (width as usize) * (height as usize)],
         );
         let stride = width as usize;
         let half_height = (height.saturating_sub(1)) as f32 / 2.0;
         let mid = half_height;
         let limit = height.saturating_sub(1) as f32;
+        let thickness: f32 = 1.5;
+        let fg = (
+            foreground.r(),
+            foreground.g(),
+            foreground.b(),
+            foreground.a(),
+        );
 
         for (x, (min, max)) in columns.iter().enumerate() {
-            let top = (mid - max * half_height).clamp(0.0, limit) as u32;
-            let bottom = (mid - min * half_height).clamp(0.0, limit) as u32;
-            for y in top..=bottom {
+            let top = (mid - max * half_height).clamp(0.0, limit);
+            let bottom = (mid - min * half_height).clamp(0.0, limit);
+            let band_min = top.min(bottom) - thickness * 0.5;
+            let band_max = top.max(bottom) + thickness * 0.5;
+            let span = (band_max - band_min).max(1e-4);
+            let start_y = band_min.floor().clamp(0.0, limit) as u32;
+            let end_y = band_max.ceil().clamp(0.0, limit) as u32;
+            for y in start_y..=end_y {
+                let pixel_min = y as f32;
+                let pixel_max = pixel_min + 1.0;
+                let overlap = (band_max.min(pixel_max) - band_min.max(pixel_min)).max(0.0);
+                if overlap <= 0.0 {
+                    continue;
+                }
+                let coverage = (overlap / span).clamp(0.0, 1.0);
+                let alpha = ((fg.3 as f32) * coverage).round() as u8;
                 let idx = y as usize * stride + x;
                 if let Some(pixel) = image.pixels.get_mut(idx) {
-                    *pixel = foreground;
+                    *pixel = Color32::from_rgba_unmultiplied(fg.0, fg.1, fg.2, alpha);
                 }
             }
         }
