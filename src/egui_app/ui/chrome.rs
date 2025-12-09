@@ -48,7 +48,9 @@ impl EguiApp {
             )
             .show(ctx, |ui| {
                 let status = self.controller.ui.status.clone();
-                ui.columns(2, |columns| {
+                let chord_label = self.chord_status_label();
+                let key_label = format_keypress(&self.key_feedback.last_key);
+                ui.columns(3, |columns| {
                     columns[0].horizontal(|ui| {
                         ui.add_space(8.0);
                         let (badge_rect, _) =
@@ -66,7 +68,17 @@ impl EguiApp {
                         ui.separator();
                         ui.label(RichText::new(&status.text).color(palette.text_primary));
                     });
-                    columns[1].with_layout(
+                    columns[1].horizontal(|ui| {
+                        ui.add_space(8.0);
+                        ui.label(RichText::new("Key").color(palette.text_primary));
+                        ui.separator();
+                        ui.label(RichText::new(key_label).color(palette.text_primary));
+                        ui.separator();
+                        ui.label(RichText::new("Chord").color(palette.text_primary));
+                        ui.separator();
+                        ui.label(RichText::new(chord_label).color(palette.text_primary));
+                    });
+                    columns[2].with_layout(
                         egui::Layout::right_to_left(egui::Align::Center),
                         |ui| {
                             let mut close_menu = false;
@@ -123,6 +135,20 @@ impl EguiApp {
                 });
             });
         self.render_audio_settings_window(ctx);
+    }
+
+    fn chord_status_label(&self) -> String {
+        if let Some(pending) = self.key_feedback.pending_root {
+            return format!("{} …", format_keypress(&Some(pending)));
+        }
+        if let Some((first, second)) = self.key_feedback.last_chord {
+            return format!(
+                "{} + {}",
+                format_keypress(&Some(first)),
+                format_keypress(&Some(second))
+            );
+        }
+        "—".to_string()
     }
 
     fn render_audio_options_menu(&mut self, ui: &mut egui::Ui) {
