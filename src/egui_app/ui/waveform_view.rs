@@ -199,14 +199,28 @@ impl EguiApp {
                     let pointer_down = edge_response.is_pointer_button_down_on();
                     if edge_response.drag_started() || pointer_down {
                         self.controller.start_selection_edge_drag(edge);
+                        if self.selection_edge_offset.is_none() {
+                            let edge_pos = match edge {
+                                SelectionEdge::Start => selection_rect.left(),
+                                SelectionEdge::End => selection_rect.right(),
+                            };
+                            if let Some(pos) = edge_response.interact_pointer_pos() {
+                                self.selection_edge_offset = Some(pos.x - edge_pos);
+                            } else {
+                                self.selection_edge_offset = Some(0.0);
+                            }
+                        }
                     }
                     if pointer_down || edge_response.dragged() {
                         if let Some(pos) = edge_response.interact_pointer_pos() {
-                            let normalized = ((pos.x - rect.left()) / rect.width()).clamp(0.0, 1.0);
+                            let offset = self.selection_edge_offset.unwrap_or(0.0);
+                            let normalized =
+                                ((pos.x - offset - rect.left()) / rect.width()).clamp(0.0, 1.0);
                             self.controller.update_selection_drag(normalized);
                         }
                     }
                     if edge_response.drag_stopped() {
+                        self.selection_edge_offset = None;
                         self.controller.finish_selection_drag();
                     }
                     let edge_hovered = pointer_pos.map(|p| edge_rect.contains(p)).unwrap_or(false)
@@ -219,10 +233,11 @@ impl EguiApp {
                         ui.output_mut(|o| o.cursor_icon = CursorIcon::ResizeHorizontal);
                     }
                 }
-                if !ui.ctx().input(|i| i.pointer.primary_down())
-                    && self.controller.is_selection_dragging()
-                {
-                    self.controller.finish_selection_drag();
+                if !ui.ctx().input(|i| i.pointer.primary_down()) {
+                    if self.controller.is_selection_dragging() {
+                        self.controller.finish_selection_drag();
+                    }
+                    self.selection_edge_offset = None;
                 }
 
                 let selection_menu = ui.interact(
