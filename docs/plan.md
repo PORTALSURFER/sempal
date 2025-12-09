@@ -1,16 +1,15 @@
 # Goal
-- Prevent drag-and-drop from duplicating selection exports across destinations: dropping a selection onto a collection should not add it to the sample browser, and dropping into the sample browser should not also add it to the active collection.
+- Color sample item label text using the triage flag color (e.g., red/green) while preserving the regular/default styling when no flag is set.
 
 # Proposed solutions
-- Tighten drag target resolution so drops only apply to the explicitly hovered area, removing the implicit fallback to the currently selected collection.
-- Add a collection-targeted selection export path that registers the file for collection use without pushing it into the sample browser lists or changing browser focus.
-- Align UI/status updates and tests with the clarified drop behaviour to ensure regressions are caught.
+- Identify where sample item labels render and how triage flags are sourced; expose the flag color through the existing view model or component props.
+- Bind the label text color to the triage flag color with a safe default, ensuring accessibility and theme consistency.
+- Add targeted tests/visual checks to verify red/green/default rendering without affecting other label states.
 
 # Step-by-step plan
-1. [-] Trace the current drag/drop flow for samples and selections (controller drag handling, selection export, collection add helpers) to confirm where implicit dual-addition occurs.
-2. [-] Update drop target resolution to avoid defaulting to the active collection when hovering the sample browser or no collection target is indicated.
-3. [-] Implement collection-only selection exports: skip adding exported clips to browser state while still ensuring the collection can reference and tag the file.
-4. [-] Refresh UI/status cues and extend/adjust tests to lock in the new single-destination drop behaviour.
+1. [x] Map the sample item rendering pipeline (data model → view model → component) to locate the triage flag value and current label styling entry point.
+2. [x] Thread the triage flag color into the label rendering path with a default/fallback when no flag is present, keeping typography and layout unchanged.
+3. [x] Validate the behavior with focused tests or snapshots covering flagged red, flagged green, and unflagged labels; adjust any related docs or story fixtures if needed.
 
 # Code Style & Architecture Rules Reminder
 - Keep files under 400 lines; split when necessary.
