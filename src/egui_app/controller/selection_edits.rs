@@ -1,5 +1,6 @@
 use super::collection_items_helpers::{file_metadata, read_samples_for_normalization};
 use super::*;
+use crate::egui_app::state::{DestructiveEditPrompt, DestructiveSelectionEdit};
 use hound::SampleFormat;
 use std::{path::PathBuf, time::Duration};
 
@@ -17,7 +18,78 @@ pub(crate) enum FadeDirection {
     RightToLeft,
 }
 
+/// Result of a destructive edit request.
+pub(crate) enum SelectionEditRequest {
+    Applied,
+    Prompted,
+}
+
+impl DestructiveSelectionEdit {
+    fn title(&self) -> &'static str {
+        match self {
+            DestructiveSelectionEdit::CropSelection => "Crop selection",
+            DestructiveSelectionEdit::TrimSelection => "Trim selection",
+            DestructiveSelectionEdit::FadeLeftToRight => "Fade selection (left to right)",
+            DestructiveSelectionEdit::FadeRightToLeft => "Fade selection (right to left)",
+            DestructiveSelectionEdit::MuteSelection => "Mute selection",
+            DestructiveSelectionEdit::NormalizeSelection => "Normalize selection",
+        }
+    }
+
+    fn warning(&self) -> &'static str {
+        match self {
+            DestructiveSelectionEdit::CropSelection => {
+                "This will overwrite the file with only the selected region."
+            }
+            DestructiveSelectionEdit::TrimSelection => {
+                "This will remove the selected region and close the gap in the source file."
+            }
+            DestructiveSelectionEdit::FadeLeftToRight => {
+                "This will overwrite the selection with a fade down to silence."
+            }
+            DestructiveSelectionEdit::FadeRightToLeft => {
+                "This will overwrite the selection with a fade up from silence."
+            }
+            DestructiveSelectionEdit::MuteSelection => {
+                "This will overwrite the selection with silence."
+            }
+            DestructiveSelectionEdit::NormalizeSelection => {
+                "This will overwrite the selection with a normalized version and short fades."
+            }
+        }
+    }
+}
+
 impl EguiController {
+    /// Request a destructive edit, showing a confirmation unless yolo mode is enabled.
+    pub(crate) fn request_destructive_selection_edit(
+        &mut self,
+        edit: DestructiveSelectionEdit,
+    ) -> Result<SelectionEditRequest, String> {
+        if let Err(err) = self.selection_target() {
+            self.set_status(err.clone(), StatusTone::Error);
+            return Err(err);
+        }
+        if self.controls.destructive_yolo_mode {
+            self.ui.waveform.pending_destructive = None;
+            self.apply_selection_edit_kind(edit)?;
+            return Ok(SelectionEditRequest::Applied);
+        }
+        self.ui.waveform.pending_destructive = Some(prompt_for_edit(edit));
+        Ok(SelectionEditRequest::Prompted)
+    }
+
+    /// Apply the pending destructive edit after user confirmation.
+    pub(crate) fn apply_confirmed_destructive_edit(&mut self, edit: DestructiveSelectionEdit) {
+        self.ui.waveform.pending_destructive = None;
+        let _ = self.apply_selection_edit_kind(edit);
+    }
+
+    /// Clear any pending destructive edit prompt without applying it.
+    pub(crate) fn clear_destructive_prompt(&mut self) {
+        self.ui.waveform.pending_destructive = None;
+    }
+
     /// Crop the loaded sample to the active selection range and refresh caches/exports.
     pub(crate) fn crop_waveform_selection(&mut self) -> Result<(), String> {
         let result = self.apply_selection_edit("Cropped selection", crop_buffer);
@@ -85,6 +157,21 @@ impl EguiController {
             self.set_status(err.clone(), StatusTone::Error);
         }
         result
+    }
+
+    fn apply_selection_edit_kind(&mut self, edit: DestructiveSelectionEdit) -> Result<(), String> {
+        match edit {
+            DestructiveSelectionEdit::CropSelection => self.crop_waveform_selection(),
+            DestructiveSelectionEdit::TrimSelection => self.trim_waveform_selection(),
+            DestructiveSelectionEdit::FadeLeftToRight => {
+                self.fade_waveform_selection(FadeDirection::LeftToRight)
+            }
+            DestructiveSelectionEdit::FadeRightToLeft => {
+                self.fade_waveform_selection(FadeDirection::RightToLeft)
+            }
+            DestructiveSelectionEdit::MuteSelection => self.mute_waveform_selection(),
+            DestructiveSelectionEdit::NormalizeSelection => self.normalize_waveform_selection(),
+        }
     }
 
     fn apply_selection_edit<F>(&mut self, action_label: &str, mut edit: F) -> Result<(), String>
@@ -344,3 +431,11 @@ fn write_selection_wav(
 #[cfg(test)]
 #[path = "selection_edits_tests.rs"]
 mod selection_edits_tests;
+
+fn prompt_for_edit(edit: DestructiveSelectionEdit) -> DestructiveEditPrompt {
+    DestructiveEditPrompt {
+        edit,
+        title: edit.title().to_string(),
+        message: edit.warning().to_string(),
+    }
+}

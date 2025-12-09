@@ -53,6 +53,15 @@ impl EguiController {
         self.persist_controls();
     }
 
+    pub fn set_destructive_yolo_mode(&mut self, enabled: bool) {
+        if self.controls.destructive_yolo_mode == enabled {
+            return;
+        }
+        self.controls.destructive_yolo_mode = enabled;
+        self.ui.controls.destructive_yolo_mode = enabled;
+        self.persist_controls();
+    }
+
     fn persist_controls(&mut self) {
         if let Err(err) = self.persist_config("Failed to save options") {
             self.set_status(err, StatusTone::Warning);

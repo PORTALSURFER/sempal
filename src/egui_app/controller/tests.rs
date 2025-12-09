@@ -1,9 +1,11 @@
+use super::selection_edits::SelectionEditRequest;
 use super::test_support::{dummy_controller, sample_entry, write_test_wav};
 use super::*;
 use crate::egui_app::controller::collection_export;
 use crate::egui_app::controller::hotkeys;
 use crate::egui_app::state::{
-    DragPayload, FocusContext, TriageFlagColumn, TriageFlagFilter, WaveformView,
+    DestructiveSelectionEdit, DragPayload, FocusContext, TriageFlagColumn, TriageFlagFilter,
+    WaveformView,
 };
 use crate::sample_sources::Collection;
 use crate::sample_sources::collections::CollectionMember;
@@ -717,6 +719,98 @@ fn trimming_selection_removes_span() {
     assert!(controller.ui.waveform.selection.is_none());
     let entry = controller.wav_entries.first().unwrap();
     assert!(entry.file_size > 0);
+}
+
+#[test]
+fn destructive_edit_request_prompts_without_yolo_mode() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.selected_source = Some(source.id.clone());
+    controller.cache_db(&source).unwrap();
+    let wav_path = source.root.join("warn.wav");
+    write_test_wav(&wav_path, &[0.0, 0.1, 0.2, 0.3]);
+    controller.wav_entries = vec![sample_entry("warn.wav", SampleTag::Neutral)];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+    controller
+        .load_waveform_for_selection(&source, Path::new("warn.wav"))
+        .unwrap();
+    controller.ui.waveform.selection = Some(SelectionRange::new(0.25, 0.75));
+
+    let outcome = controller
+        .request_destructive_selection_edit(DestructiveSelectionEdit::CropSelection)
+        .unwrap();
+
+    assert!(matches!(outcome, SelectionEditRequest::Prompted));
+    assert!(controller.ui.waveform.pending_destructive.is_some());
+    let samples: Vec<f32> = hound::WavReader::open(&wav_path)
+        .unwrap()
+        .samples::<f32>()
+        .map(|s| s.unwrap())
+        .collect();
+    assert_eq!(samples.len(), 4);
+}
+
+#[test]
+fn yolo_mode_applies_destructive_edit_immediately() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.selected_source = Some(source.id.clone());
+    controller.cache_db(&source).unwrap();
+    let wav_path = source.root.join("yolo.wav");
+    write_test_wav(&wav_path, &[0.1, 0.2, 0.3, 0.4]);
+    controller.wav_entries = vec![sample_entry("yolo.wav", SampleTag::Neutral)];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+    controller
+        .load_waveform_for_selection(&source, Path::new("yolo.wav"))
+        .unwrap();
+    controller.ui.waveform.selection = Some(SelectionRange::new(0.25, 0.75));
+    controller.set_destructive_yolo_mode(true);
+
+    let outcome = controller
+        .request_destructive_selection_edit(DestructiveSelectionEdit::CropSelection)
+        .unwrap();
+
+    assert!(matches!(outcome, SelectionEditRequest::Applied));
+    assert!(controller.ui.waveform.pending_destructive.is_none());
+    let samples: Vec<f32> = hound::WavReader::open(&wav_path)
+        .unwrap()
+        .samples::<f32>()
+        .map(|s| s.unwrap())
+        .collect();
+    assert_eq!(samples, vec![0.2, 0.3]);
+}
+
+#[test]
+fn confirming_pending_destructive_edit_clears_prompt() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.selected_source = Some(source.id.clone());
+    controller.cache_db(&source).unwrap();
+    let wav_path = source.root.join("confirm.wav");
+    write_test_wav(&wav_path, &[0.0, 0.1, 0.2, 0.3]);
+    controller.wav_entries = vec![sample_entry("confirm.wav", SampleTag::Neutral)];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+    controller
+        .load_waveform_for_selection(&source, Path::new("confirm.wav"))
+        .unwrap();
+    controller.ui.waveform.selection = Some(SelectionRange::new(0.25, 0.75));
+    controller
+        .request_destructive_selection_edit(DestructiveSelectionEdit::TrimSelection)
+        .unwrap();
+    let prompt = controller.ui.waveform.pending_destructive.clone().unwrap();
+
+    controller.apply_confirmed_destructive_edit(prompt.edit);
+
+    assert!(controller.ui.waveform.pending_destructive.is_none());
+    let samples: Vec<f32> = hound::WavReader::open(&wav_path)
+        .unwrap()
+        .samples::<f32>()
+        .map(|s| s.unwrap())
+        .collect();
+    assert_eq!(samples, vec![0.0, 0.3]);
 }
 
 #[test]
