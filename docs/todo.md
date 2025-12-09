@@ -8,10 +8,6 @@ so we can load the app ui, sample list, etc, while the audio buffer is still loa
 same for navigation, lets make navigation as fast and smooth as possible, loading and playing audio in another process
 I want ui interaction to take precedence over loading. right now navigation is blocked until we load a sample for example, lets break this link, it should be possible to move to the next item even if the sample was not yet fully loaded.
 
-\plan - lets make our waveform texture system much smarter, we only ever see a small part of the waveform when zoomed in, do we really need this super high res texture, can't we make this much smarter and much more performant?
-
----
-
 \plan - long samples, like entire songs, can take a little while to fully load.
 Lets first investigate if we can improve loading times, lets also look into adding a caching system, so we keep a reasonably sized history of loaded samples so we can quickly replay them.
 ---

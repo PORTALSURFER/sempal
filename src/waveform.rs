@@ -34,7 +34,7 @@ impl WaveformRenderer {
             width,
             height,
             background: Color32::from_rgb(18, 16, 14),
-            foreground: Color32::from_rgb(230, 226, 220),
+            foreground: Color32::from_rgb(250, 246, 240),
         }
     }
 
@@ -243,7 +243,7 @@ impl WaveformRenderer {
         let half_height = (height.saturating_sub(1)) as f32 / 2.0;
         let mid = half_height;
         let limit = height.saturating_sub(1) as f32;
-        let thickness: f32 = 1.5;
+        let thickness: f32 = 2.2;
         let fg = (
             foreground.r(),
             foreground.g(),
@@ -256,7 +256,7 @@ impl WaveformRenderer {
             let bottom = (mid - min * half_height).clamp(0.0, limit);
             let band_min = top.min(bottom) - thickness * 0.5;
             let band_max = top.max(bottom) + thickness * 0.5;
-            let span = (band_max - band_min).max(1e-4);
+            let span = (band_max - band_min).max(thickness);
             let start_y = band_min.floor().clamp(0.0, limit) as u32;
             let end_y = band_max.ceil().clamp(0.0, limit) as u32;
             for y in start_y..=end_y {
@@ -267,7 +267,8 @@ impl WaveformRenderer {
                     continue;
                 }
                 let coverage = (overlap / span).clamp(0.0, 1.0);
-                let alpha = ((fg.3 as f32) * coverage).round() as u8;
+                let boosted = coverage.sqrt().max(0.45);
+                let alpha = ((fg.3 as f32) * boosted).round() as u8;
                 let idx = y as usize * stride + x;
                 if let Some(pixel) = image.pixels.get_mut(idx) {
                     *pixel = Color32::from_rgba_unmultiplied(fg.0, fg.1, fg.2, alpha);
