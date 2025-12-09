@@ -271,6 +271,7 @@ impl EguiController {
     }
 
     pub(super) fn clear_loaded_sample_if(&mut self, source: &SampleSource, relative_path: &Path) {
+        self.invalidate_cached_audio(&source.id, relative_path);
         if self.selected_source.as_ref() == Some(&source.id) {
             if self.selected_wav.as_deref() == Some(relative_path) {
                 self.selected_wav = None;
@@ -300,6 +301,7 @@ impl EguiController {
         source: &SampleSource,
         relative_path: &Path,
     ) {
+        self.invalidate_cached_audio(&source.id, relative_path);
         let loaded_matches = self.loaded_audio.as_ref().is_some_and(|audio| {
             audio.source_id == source.id && audio.relative_path == relative_path
         });

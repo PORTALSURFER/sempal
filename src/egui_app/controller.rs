@@ -2,6 +2,7 @@
 //! This module now delegates responsibilities into focused submodules to
 //! keep files small and behaviour easy to reason about.
 
+mod audio_cache;
 mod audio_loader;
 mod audio_options;
 mod clipboard;
@@ -39,6 +40,7 @@ use crate::{
     selection::{SelectionRange, SelectionState},
     waveform::{DecodedWaveform, WaveformRenderer},
 };
+use audio_cache::AudioCache;
 use audio_loader::{AudioLoadError, AudioLoadJob, AudioLoadOutcome, AudioLoadResult};
 use egui::Color32;
 use open;
@@ -56,6 +58,8 @@ use std::{
 
 /// Minimum selection width used to decide when to play a looped region.
 const MIN_SELECTION_WIDTH: f32 = 0.001;
+const AUDIO_CACHE_CAPACITY: usize = 12;
+const AUDIO_HISTORY_LIMIT: usize = 8;
 
 /// Maintains app state and bridges core logic to the egui UI.
 pub struct EguiController {
@@ -71,6 +75,7 @@ pub struct EguiController {
     wav_cache: HashMap<SourceId, Vec<WavEntry>>,
     missing_wavs: HashMap<SourceId, HashSet<PathBuf>>,
     label_cache: HashMap<SourceId, Vec<String>>,
+    audio_cache: AudioCache,
     wav_entries: Vec<WavEntry>,
     wav_lookup: HashMap<PathBuf, usize>,
     selected_source: Option<SourceId>,
@@ -119,6 +124,7 @@ impl EguiController {
             wav_cache: HashMap::new(),
             missing_wavs: HashMap::new(),
             label_cache: HashMap::new(),
+            audio_cache: AudioCache::new(AUDIO_CACHE_CAPACITY, AUDIO_HISTORY_LIMIT),
             wav_entries: Vec::new(),
             wav_lookup: HashMap::new(),
             selected_source: None,

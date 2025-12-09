@@ -3,8 +3,6 @@ lets then write every task you find into @todo.md as a new todo item
 
 --
 
-\plan - long samples, like entire songs, can take a little while to fully load.
-Lets first investigate if we can improve loading times, lets also look into adding a caching system, then keep a reasonably sized history of loaded samples so we can instantly replay them. make sure to disqualify this cache after edits ofc.
 
 ---
 

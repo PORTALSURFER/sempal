@@ -1,4 +1,5 @@
 use super::*;
+use super::audio_cache::{CacheKey, FileMetadata};
 use crate::egui_app::state::WaveformView;
 use crate::waveform::DecodedWaveform;
 use std::collections::HashSet;
@@ -125,13 +126,21 @@ impl EguiController {
         else {
             return;
         };
-        let duration_seconds = outcome.decoded.duration_seconds;
-        let sample_rate = outcome.decoded.sample_rate;
+        let AudioLoadOutcome {
+            decoded,
+            bytes,
+            metadata,
+        } = outcome;
+        let duration_seconds = decoded.duration_seconds;
+        let sample_rate = decoded.sample_rate;
+        let cache_key = CacheKey::new(&source.id, &pending.relative_path);
+        self.audio_cache
+            .insert(cache_key, metadata, decoded.clone(), bytes.clone());
         if let Err(err) = self.finish_waveform_load(
             &source,
             &pending.relative_path,
-            outcome.decoded,
-            outcome.bytes,
+            decoded,
+            bytes,
             pending.intent,
         ) {
             self.pending_playback = None;
@@ -208,10 +217,7 @@ impl EguiController {
             root: source.root.clone(),
             relative_path: relative_path.to_path_buf(),
         };
-        self.audio_job_tx
-            .send(job)
-            .map_err(|_| "Failed to queue audio load".to_string())?;
-        self.pending_audio = Some(pending);
+        self.pending_audio = None;
         self.pending_playback = pending_playback;
         self.ui.waveform.loading = Some(relative_path.to_path_buf());
         self.ui.waveform.notice = None;
@@ -227,7 +233,37 @@ impl EguiController {
             format!("Loading {}", relative_path.display()),
             StatusTone::Busy,
         );
+        if self.try_use_cached_audio(source, relative_path, intent)? {
+            self.maybe_trigger_pending_playback();
+            return Ok(());
+        }
+        self.audio_job_tx
+            .send(job)
+            .map_err(|_| "Failed to queue audio load".to_string())?;
+        self.pending_audio = Some(pending);
         Ok(())
+    }
+
+    fn try_use_cached_audio(
+        &mut self,
+        source: &SampleSource,
+        relative_path: &Path,
+        intent: AudioLoadIntent,
+    ) -> Result<bool, String> {
+        let metadata = match self.current_file_metadata(source, relative_path) {
+            Ok(meta) => meta,
+            Err(_) => return Ok(false),
+        };
+        let key = CacheKey::new(&source.id, relative_path);
+        let Some(hit) = self.audio_cache.get(&key, metadata) else {
+            return Ok(false);
+        };
+        let duration_seconds = hit.decoded.duration_seconds;
+        let sample_rate = hit.decoded.sample_rate;
+        self.finish_waveform_load(source, relative_path, hit.decoded, hit.bytes, intent)?;
+        let message = Self::loaded_status_text(relative_path, duration_seconds, sample_rate);
+        self.set_status(message, StatusTone::Info);
+        Ok(true)
     }
 
     /// Select a wav row based on its path.
@@ -748,6 +784,17 @@ impl EguiController {
             self.set_status(message, StatusTone::Info);
             return Ok(());
         }
+        if self.try_use_cached_audio(source, relative_path, AudioLoadIntent::Selection)? {
+            return Ok(());
+        }
+        let metadata = match self.current_file_metadata(source, relative_path) {
+            Ok(meta) => meta,
+            Err(err) => {
+                self.mark_sample_missing(source, relative_path);
+                self.show_missing_waveform_notice(relative_path);
+                return Err(err);
+            }
+        };
         let bytes = match self.read_waveform_bytes(source, relative_path) {
             Ok(bytes) => bytes,
             Err(err) => {
@@ -759,6 +806,9 @@ impl EguiController {
         let decoded = self.renderer.decode_from_bytes(&bytes)?;
         let duration_seconds = decoded.duration_seconds;
         let sample_rate = decoded.sample_rate;
+        let cache_key = CacheKey::new(&source.id, relative_path);
+        self.audio_cache
+            .insert(cache_key, metadata, decoded.clone(), bytes.clone());
         self.finish_waveform_load(
             source,
             relative_path,
@@ -956,6 +1006,35 @@ impl EguiController {
         fs::read(&full_path).map_err(|err| format!("Failed to read {}: {err}", full_path.display()))
     }
 
+    fn current_file_metadata(
+        &self,
+        source: &SampleSource,
+        relative_path: &Path,
+    ) -> Result<FileMetadata, String> {
+        let full_path = source.root.join(relative_path);
+        let metadata = fs::metadata(&full_path)
+            .map_err(|err| format!("Failed to read {}: {err}", full_path.display()))?;
+        let modified_ns = metadata
+            .modified()
+            .map_err(|err| format!("Missing modified time for {}: {err}", full_path.display()))?
+            .duration_since(std::time::SystemTime::UNIX_EPOCH)
+            .map_err(|_| "File modified time is before epoch".to_string())?
+            .as_nanos() as i64;
+        Ok(FileMetadata {
+            file_size: metadata.len(),
+            modified_ns,
+        })
+    }
+
+    pub(super) fn invalidate_cached_audio(
+        &mut self,
+        source_id: &SourceId,
+        relative_path: &Path,
+    ) {
+        let key = CacheKey::new(source_id, relative_path);
+        self.audio_cache.invalidate(&key);
+    }
+
     fn sync_loaded_audio(
         &mut self,
         source: &SampleSource,
@@ -1037,6 +1116,7 @@ impl EguiController {
             .entry(source.id.clone())
             .or_insert_with(HashSet::new)
             .insert(relative_path.to_path_buf());
+        self.invalidate_cached_audio(&source.id, relative_path);
     }
 
     pub(super) fn ensure_missing_lookup_for_source(

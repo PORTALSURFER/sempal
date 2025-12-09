@@ -1469,3 +1469,36 @@ fn play_request_is_deferred_until_audio_ready() {
     assert_eq!(pending.source_id, source.id);
     assert!(!pending.looped);
 }
+
+#[test]
+fn loading_flag_clears_after_audio_load() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.selected_source = Some(source.id.clone());
+    let rel = PathBuf::from("load.wav");
+    write_test_wav(&source.root.join(&rel), &[0.0, 0.5, -0.5]);
+    controller.wav_entries = vec![sample_entry("load.wav", SampleTag::Neutral)];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+
+    controller
+        .queue_audio_load_for(&source, &rel, AudioLoadIntent::Selection, None)
+        .expect("queue load");
+    assert_eq!(
+        controller.ui.waveform.loading.as_deref(),
+        Some(rel.as_path())
+    );
+
+    for _ in 0..50 {
+        controller.poll_audio_loader();
+        if controller.loaded_wav.as_deref() == Some(rel.as_path()) {
+            break;
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+
+    assert_eq!(controller.loaded_wav.as_deref(), Some(rel.as_path()));
+    assert!(controller.pending_audio.is_none());
+    assert!(controller.ui.waveform.loading.is_none());
+    assert!(controller.loaded_audio.is_some());
+}
