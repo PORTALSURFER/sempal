@@ -1,6 +1,6 @@
 use super::style;
 use crate::egui_app::{
-    controller::hotkeys::{HotkeyAction, HotkeyGesture, KeyPress},
+    controller::hotkeys::{self, HotkeyAction, HotkeyGesture},
     state::FocusContext,
 };
 use eframe::egui::{self, Align, Align2, Color32, Id, Layout, RichText, Vec2};
@@ -81,47 +81,9 @@ fn draw_backdrop(ctx: &egui::Context) {
 }
 
 fn gesture_label(gesture: &HotkeyGesture) -> String {
-    let mut parts = vec![key_press_label(&gesture.first)];
+    let mut parts = vec![hotkeys::format_keypress(&gesture.first)];
     if let Some(chord) = gesture.chord {
-        parts.push(key_press_label(&chord));
+        parts.push(hotkeys::format_keypress(&chord));
     }
     parts.join(", ")
-}
-
-fn command_label() -> &'static str {
-    if cfg!(target_os = "macos") {
-        "Cmd"
-    } else {
-        "Ctrl"
-    }
-}
-
-fn key_press_label(press: &KeyPress) -> String {
-    let mut parts: Vec<&'static str> = Vec::new();
-    if press.command {
-        parts.push(command_label());
-    }
-    if press.shift {
-        parts.push("Shift");
-    }
-    if press.alt {
-        parts.push("Alt");
-    }
-    parts.push(key_label(press.key));
-    parts.join(" + ")
-}
-
-fn key_label(key: egui::Key) -> &'static str {
-    match key {
-        egui::Key::X => "X",
-        egui::Key::N => "N",
-        egui::Key::D => "D",
-        egui::Key::C => "C",
-        egui::Key::Slash => "/",
-        egui::Key::G => "G",
-        egui::Key::S => "S",
-        egui::Key::W => "W",
-        egui::Key::L => "L",
-        _ => "Key",
-    }
 }

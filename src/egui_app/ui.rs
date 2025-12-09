@@ -41,6 +41,8 @@ pub struct EguiApp {
     sources_panel_drop_armed: bool,
     selection_edge_offset: Option<f32>,
     pending_chord: Option<PendingChord>,
+    key_feedback: KeyFeedback,
+    requested_initial_focus: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -63,6 +65,13 @@ struct InputSnapshot {
     shift: bool,
     ctrl: bool,
     command: bool,
+}
+
+#[derive(Default)]
+struct KeyFeedback {
+    last_key: Option<hotkeys::KeyPress>,
+    pending_root: Option<hotkeys::KeyPress>,
+    last_chord: Option<(hotkeys::KeyPress, hotkeys::KeyPress)>,
 }
 
 #[inline]
@@ -106,6 +115,28 @@ fn press_matches(press: &hotkeys::KeyPress, target: &hotkeys::KeyPress) -> bool 
         && press.alt == target.alt
 }
 
+fn format_keypress(press: &Option<hotkeys::KeyPress>) -> String {
+    press
+        .as_ref()
+        .map(hotkeys::format_keypress)
+        .unwrap_or_else(|| "—".to_string())
+}
+
+impl EguiApp {
+    fn ensure_initial_focus(&mut self, ctx: &egui::Context) {
+        if self.requested_initial_focus {
+            return;
+        }
+        if ctx
+            .input(|i| i.viewport().focused.unwrap_or(true))
+        {
+            self.requested_initial_focus = true;
+            return;
+        }
+        ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+    }
+}
+
 impl EguiApp {
     /// Create a new egui app, loading persisted configuration.
     pub fn new(
@@ -127,6 +158,8 @@ impl EguiApp {
             sources_panel_drop_armed: false,
             selection_edge_offset: None,
             pending_chord: None,
+            key_feedback: KeyFeedback::default(),
+            requested_initial_focus: false,
         })
     }
 
@@ -212,12 +245,14 @@ impl EguiApp {
             .collect();
         if actions.is_empty() {
             self.pending_chord = None;
+            self.key_feedback.pending_root = None;
             return;
         }
         let now = Instant::now();
         if let Some(pending) = self.pending_chord {
             if now.saturating_duration_since(pending.started_at) > CHORD_TIMEOUT {
                 self.pending_chord = None;
+                self.key_feedback.pending_root = None;
             }
         }
         let events = ctx.input(|i| i.events.clone());
@@ -225,6 +260,7 @@ impl EguiApp {
             let Some(press) = keypress_from_event(&event) else {
                 continue;
             };
+            self.key_feedback.last_key = Some(press);
             if self.try_handle_chord(&actions, press, focus, now) {
                 continue;
             }
@@ -266,10 +302,13 @@ impl EguiApp {
             .copied()
         {
             self.pending_chord = None;
+            self.key_feedback.last_chord = Some((pending.first, press));
+            self.key_feedback.pending_root = None;
             self.controller.handle_hotkey(action, focus);
             return true;
         }
         self.pending_chord = None;
+        self.key_feedback.pending_root = None;
         false
     }
 
@@ -290,6 +329,7 @@ impl EguiApp {
                 first: press,
                 started_at: now,
             });
+            self.key_feedback.pending_root = Some(press);
             return true;
         }
         false
@@ -299,6 +339,7 @@ impl EguiApp {
 impl eframe::App for EguiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.apply_visuals(ctx);
+        self.ensure_initial_focus(ctx);
         #[cfg(target_os = "windows")]
         {
             let frame = _frame;

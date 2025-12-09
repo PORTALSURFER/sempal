@@ -88,7 +88,7 @@ impl EguiApp {
                 FocusContext::CollectionsList
             ) {
                 ui.painter().rect_stroke(
-                    list_response.response.rect,
+                    list_response.inner_rect,
                     0.0,
                     style::focused_row_stroke(),
                     StrokeKind::Outside,
