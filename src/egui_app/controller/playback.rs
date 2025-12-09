@@ -223,6 +223,14 @@ impl EguiController {
         Ok(())
     }
 
+    /// True when the underlying player is currently playing.
+    pub fn is_playing(&self) -> bool {
+        self.player
+            .as_ref()
+            .map(|p| p.borrow().is_playing())
+            .unwrap_or(false)
+    }
+
     /// Advance playhead position and visibility from the underlying player.
     pub fn tick_playhead(&mut self) {
         self.poll_wav_loader();

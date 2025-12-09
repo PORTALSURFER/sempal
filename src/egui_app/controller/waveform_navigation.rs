@@ -2,7 +2,7 @@ use super::*;
 use crate::selection::SelectionEdge;
 
 const PLAYHEAD_STEP_PX: f32 = 32.0;
-const PLAYHEAD_STEP_PX_FINE: f32 = 8.0;
+const PLAYHEAD_STEP_PX_FINE: f32 = 1.0;
 const MIN_VIEW_WIDTH: f32 = 0.01;
 const ZOOM_IN_FACTOR: f32 = 0.8;
 const ZOOM_OUT_FACTOR: f32 = 1.0 / ZOOM_IN_FACTOR;
@@ -19,7 +19,7 @@ impl EguiController {
     }
 
     /// Move the playhead left/right by a fixed visual step.
-    pub(crate) fn move_playhead_steps(&mut self, steps: isize, fine: bool) {
+    pub(crate) fn move_playhead_steps(&mut self, steps: isize, fine: bool, resume_playback: bool) {
         if !self.waveform_ready() {
             return;
         }
@@ -29,7 +29,11 @@ impl EguiController {
         }
         let delta = step * steps as f32;
         let next = (self.ui.waveform.playhead.position + delta).clamp(0.0, 1.0);
-        self.set_playhead_and_seek(next);
+        if resume_playback && self.is_playing() {
+            self.set_playhead_and_seek(next);
+        } else {
+            self.set_playhead_no_seek(next);
+        }
     }
 
     /// Zoom the waveform while keeping the playhead centered.
@@ -90,11 +94,11 @@ impl EguiController {
     }
 
     /// Nudge a selection edge in or out by a fixed visual step.
-    pub(crate) fn nudge_selection_edge(&mut self, edge: SelectionEdge, outward: bool) {
+    pub(crate) fn nudge_selection_edge(&mut self, edge: SelectionEdge, outward: bool, fine: bool) {
         if !self.waveform_ready() {
             return;
         }
-        let step = self.waveform_step_size(false).max(MIN_SELECTION_WIDTH);
+        let step = self.waveform_step_size(fine).max(MIN_SELECTION_WIDTH);
         let Some(selection) = self
             .selection
             .range()
@@ -139,6 +143,15 @@ impl EguiController {
         let _ = self.play_audio(looped, Some(self.ui.waveform.playhead.position));
     }
 
+    fn set_playhead_no_seek(&mut self, position: f32) {
+        if !self.waveform_ready() {
+            return;
+        }
+        self.ui.waveform.playhead.position = position.clamp(0.0, 1.0);
+        self.ui.waveform.playhead.visible = true;
+        self.ensure_playhead_visible_in_view();
+    }
+
     fn ensure_playhead_visible_in_view(&mut self) {
         let mut view = self.ui.waveform.view;
         let width = view.width();
@@ -150,6 +163,23 @@ impl EguiController {
             view.end = pos;
             view.start = (view.end - width).max(0.0);
         }
+        self.ui.waveform.view = view.clamp();
+    }
+
+    /// Scroll the waveform viewport so its center aligns with the target fraction.
+    pub(crate) fn scroll_waveform_view(&mut self, center: f32) {
+        let mut view = self.ui.waveform.view;
+        let width = view.width();
+        if width >= 1.0 {
+            view.start = 0.0;
+            view.end = 1.0;
+            self.ui.waveform.view = view;
+            return;
+        }
+        let half = width * 0.5;
+        let start = (center - half).clamp(0.0, 1.0 - width);
+        view.start = start;
+        view.end = (start + width).min(1.0);
         self.ui.waveform.view = view.clamp();
     }
 
