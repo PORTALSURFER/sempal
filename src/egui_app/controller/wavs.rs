@@ -1,5 +1,5 @@
-use super::*;
 use super::audio_cache::{CacheKey, FileMetadata};
+use super::*;
 use crate::egui_app::state::WaveformView;
 use crate::waveform::DecodedWaveform;
 use std::collections::HashSet;
@@ -1026,11 +1026,7 @@ impl EguiController {
         })
     }
 
-    pub(super) fn invalidate_cached_audio(
-        &mut self,
-        source_id: &SourceId,
-        relative_path: &Path,
-    ) {
+    pub(super) fn invalidate_cached_audio(&mut self, source_id: &SourceId, relative_path: &Path) {
         let key = CacheKey::new(source_id, relative_path);
         self.audio_cache.invalidate(&key);
     }

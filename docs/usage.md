@@ -28,6 +28,7 @@
 - **Loop on/off** in the waveform header loops the current selection when present, otherwise the full file. A loop bar shows the active region; the playhead is drawn over the waveform.
 - Drag across the waveform to create a selection; drag the edge brackets to resize. The handle at the bottom of the selection supports drag-and-drop.
 - Right-click the selection for destructive edits (overwrite the source file): **Crop to selection**, **Trim selection out**, **Fade to null** (left->right or right->left), **Mute selection**, or **Normalize selection** (adds 5 ms edge fades).
+- Destructive edits prompt for confirmation before overwriting audio; enable **Yolo mode** in **Options** to apply them without prompting.
 - Drag the selection handle:
   - Onto the Sample browser to save a trimmed clip next to the source (`<name>_sel.wav`, `<name>_sel_2.wav`, ...) using the current filter as the tag.
   - Onto a Collection to save the clip and add it there (exports into the collection's folder when configured).

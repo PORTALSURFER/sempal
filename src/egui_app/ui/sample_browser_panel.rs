@@ -35,12 +35,22 @@ impl EguiApp {
             .fill(style::compartment_fill())
             .stroke(style::outer_border());
         let frame_response = bg_frame.show(ui, |ui| {
+            ui.set_min_height(list_height);
             let number_width = number_column_width(total_rows, ui);
             let number_gap = ui.spacing().button_padding.x * 0.5;
-            let scroll_response = egui::ScrollArea::vertical()
+            let scroll_area = egui::ScrollArea::vertical()
                 .id_salt("sample_browser_scroll")
-                .max_height(list_height)
-                .show_rows(ui, row_height, total_rows, |ui, row_range| {
+                .max_height(list_height);
+            let scroll_response = if total_rows == 0 {
+                scroll_area.show(ui, |ui| {
+                    let height = ui.available_height().max(list_height);
+                    ui.allocate_exact_size(
+                        egui::vec2(ui.available_width(), height),
+                        egui::Sense::hover(),
+                    );
+                })
+            } else {
+                scroll_area.show_rows(ui, row_height, total_rows, |ui, row_range| {
                     for row in row_range {
                         let entry_index = {
                             let indices = self.controller.visible_browser_indices();
@@ -176,7 +186,8 @@ impl EguiApp {
                             }
                         });
                     }
-                });
+                })
+            };
             scroll_response
         });
         if matches!(

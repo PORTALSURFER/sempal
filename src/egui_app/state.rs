@@ -102,6 +102,8 @@ pub struct WaveformState {
     pub notice: Option<String>,
     /// Optional path for the sample currently loading to drive UI affordances.
     pub loading: Option<PathBuf>,
+    /// Pending confirmation dialog for destructive edits.
+    pub pending_destructive: Option<DestructiveEditPrompt>,
 }
 
 impl Default for WaveformState {
@@ -115,6 +117,7 @@ impl Default for WaveformState {
             loop_enabled: false,
             notice: None,
             loading: None,
+            pending_destructive: None,
         }
     }
 }
@@ -240,6 +243,7 @@ pub struct InteractionOptionsState {
     pub waveform_scroll_speed: f32,
     pub wheel_zoom_factor: f32,
     pub keyboard_zoom_factor: f32,
+    pub destructive_yolo_mode: bool,
 }
 
 impl Default for InteractionOptionsState {
@@ -249,8 +253,28 @@ impl Default for InteractionOptionsState {
             waveform_scroll_speed: 1.2,
             wheel_zoom_factor: 0.96,
             keyboard_zoom_factor: 0.9,
+            destructive_yolo_mode: false,
         }
     }
+}
+
+/// Destructive selection edits that overwrite audio on disk.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DestructiveSelectionEdit {
+    CropSelection,
+    TrimSelection,
+    FadeLeftToRight,
+    FadeRightToLeft,
+    MuteSelection,
+    NormalizeSelection,
+}
+
+/// Confirmation prompt content for destructive edits.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DestructiveEditPrompt {
+    pub edit: DestructiveSelectionEdit,
+    pub title: String,
+    pub message: String,
 }
 
 impl From<&ResolvedOutput> for ActiveAudioOutput {

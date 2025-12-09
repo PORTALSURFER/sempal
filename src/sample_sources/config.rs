@@ -64,6 +64,8 @@ pub struct InteractionOptions {
     pub wheel_zoom_factor: f32,
     #[serde(default = "default_keyboard_zoom_factor")]
     pub keyboard_zoom_factor: f32,
+    #[serde(default)]
+    pub destructive_yolo_mode: bool,
 }
 
 impl Default for InteractionOptions {
@@ -73,6 +75,7 @@ impl Default for InteractionOptions {
             waveform_scroll_speed: default_scroll_speed(),
             wheel_zoom_factor: default_wheel_zoom_factor(),
             keyboard_zoom_factor: default_keyboard_zoom_factor(),
+            destructive_yolo_mode: false,
         }
     }
 }
