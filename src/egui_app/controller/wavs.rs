@@ -507,10 +507,17 @@ impl EguiController {
     ) -> Result<(), String> {
         if self.loaded_wav.as_deref() == Some(relative_path) {
             self.clear_waveform_selection();
-            self.set_status(
-                format!("Loaded {}", relative_path.display()),
-                StatusTone::Info,
-            );
+            let message = self
+                .loaded_audio_for(source, relative_path)
+                .map(|audio| {
+                    Self::loaded_status_text(
+                        relative_path,
+                        audio.duration_seconds,
+                        audio.sample_rate,
+                    )
+                })
+                .unwrap_or_else(|| format!("Loaded {}", relative_path.display()));
+            self.set_status(message, StatusTone::Info);
             return Ok(());
         }
         let bytes = match self.read_waveform_bytes(source, relative_path) {
@@ -538,10 +545,8 @@ impl EguiController {
             channels,
             bytes,
         )?;
-        self.set_status(
-            format!("Loaded {}", relative_path.display()),
-            StatusTone::Info,
-        );
+        let message = Self::loaded_status_text(relative_path, duration_seconds, sample_rate);
+        self.set_status(message, StatusTone::Info);
         Ok(())
     }
 
@@ -575,10 +580,8 @@ impl EguiController {
             channels,
             bytes,
         )?;
-        self.set_status(
-            format!("Loaded {}", relative_path.display()),
-            StatusTone::Info,
-        );
+        let message = Self::loaded_status_text(relative_path, duration_seconds, sample_rate);
+        self.set_status(message, StatusTone::Info);
         Ok(())
     }
 
@@ -586,6 +589,50 @@ impl EguiController {
         self.ui.waveform.playhead = PlayheadState::default();
         self.ui.waveform.selection = None;
         self.selection.clear();
+    }
+
+    fn loaded_status_text(relative_path: &Path, duration_seconds: f32, sample_rate: u32) -> String {
+        let duration_label = Self::format_duration(duration_seconds);
+        let rate_label = Self::format_sample_rate(sample_rate);
+        format!(
+            "Loaded {} ({duration_label} @ {rate_label})",
+            relative_path.display()
+        )
+    }
+
+    fn loaded_audio_for(
+        &self,
+        source: &SampleSource,
+        relative_path: &Path,
+    ) -> Option<&LoadedAudio> {
+        self.loaded_audio
+            .as_ref()
+            .filter(|audio| audio.source_id == source.id && audio.relative_path == relative_path)
+    }
+
+    fn format_duration(duration_seconds: f32) -> String {
+        if !duration_seconds.is_finite() || duration_seconds <= 0.0 {
+            return "0.00s".into();
+        }
+        if duration_seconds < 1.0 {
+            return format!("{:.0} ms", duration_seconds * 1_000.0);
+        }
+        if duration_seconds < 60.0 {
+            return format!("{:.2} s", duration_seconds);
+        }
+        let minutes = (duration_seconds / 60.0).floor() as u32;
+        let seconds = duration_seconds - minutes as f32 * 60.0;
+        format!("{minutes}m {seconds:05.2}s")
+    }
+
+    fn format_sample_rate(sample_rate: u32) -> String {
+        if sample_rate == 0 {
+            return "unknown".into();
+        }
+        if sample_rate >= 1_000 {
+            return format!("{:.1} kHz", sample_rate as f32 / 1_000.0);
+        }
+        format!("{sample_rate} Hz")
     }
 
     fn apply_waveform_image(&mut self, decoded: DecodedWaveform) {

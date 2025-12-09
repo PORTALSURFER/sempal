@@ -1,18 +1,18 @@
 ## Goal
-- Add an undo/redo system that captures user actions with a rolling history of the last 10 actions, and wire keyboard shortcuts (`u`/`Ctrl+Z` for undo, `U`/`Ctrl+Y` for redo) into the existing egui controller and hotkey overlay.
+- Add robust audio regression tests by generating wav fixtures (varying sample rates, lengths, channels) with known beeps and validating playback math/process matches expectations.
 
 ## Proposed solutions
-- Introduce an action history manager (command pattern) within the controller to record reversible operations and maintain a bounded stack (10 items) with redo support.
-- Define clear action types aligned with current controller responsibilities (sample selection edits, collection mutations, waveform/loop toggles, tagging/normalization) and ensure recording happens at the boundary where state mutates.
-- Surface undo/redo through new hotkey actions and status/hotkey UI hints, ensuring focus-aware behaviour matches current hotkey handling.
-- Cover the history manager with focused tests that validate stack limits, ordering, and state restoration across undo/redo sequences.
+- Build a small fixture generator that synthesizes deterministic beeps at different sample rates, durations, and channel counts, and writes temporary wavs for tests.
+- Add unit/integration tests that load these wavs through the existing decode/playback paths, asserting duration handling, seek/span math, and sample integrity.
+- Cover edge cases: very short clips, long clips, mono vs. stereo, odd sample rates, and selections/offsets to ensure half-span cutoffs never occur.
+- Keep tests hermetic by generating audio in-memory or in temp dirs, avoiding reliance on external assets.
 
 ## Step-by-step plan
-1. [-] Audit controller entry points and hotkey bindings to list undoable actions and decide granularity (selection toggles, collection edits, tag/flag changes, waveform toggles).
-2. [-] Design and implement an action history component (stack + redo stack) limited to 10 entries, defining action structs with apply/revert hooks that work with `EguiController` state.
-3. [-] Integrate history recording into existing controller methods for the chosen actions, ensuring state snapshots/deltas are captured at mutation boundaries without altering current behaviour when history is empty/full.
-4. [-] Add undo/redo triggers (`u`/`Ctrl+Z` and `U`/`Ctrl+Y`) to the hotkey system and UI overlay, updating status messaging to confirm actions taken.
-5. [-] Add unit/integration tests for the history manager and a representative set of actions to confirm correct undo/redo ordering, focus-aware hotkeys, and history truncation at 10 entries.
+1. [x] Design the fixture generator API (inputs: sample rate, duration, channels, tone frequency/pattern) and decide temp file handling for tests.
+2. [x] Implement the generator and helpers to load/normalize generated wavs via existing decode utilities.
+3. [x] Add tests for full-length playback math: duration detection, span boundaries, and playhead/progress across varied sample rates/durations/channels.
+4. [x] Add selection/offset tests to confirm playback spans cover the full requested range (no half-span audio cutoff) for looped and non-looped cases.
+5. [x] Validate tests are deterministic, performant, and isolated (clean up temp files) and document the new coverage.
 
 ## Code Style & Architecture Rules Reminder
 - Keep files under 400 lines; split when necessary.

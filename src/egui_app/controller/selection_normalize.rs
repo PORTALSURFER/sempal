@@ -23,8 +23,7 @@ pub(super) fn normalize_selection(
     for sample in &mut buffer.samples[start..end] {
         *sample = (*sample * scale).clamp(-1.0, 1.0);
     }
-    let fade_frames =
-        fade_frame_count(buffer.sample_rate.max(1), selection_frames, fade_duration);
+    let fade_frames = fade_frame_count(buffer.sample_rate.max(1), selection_frames, fade_duration);
     apply_edge_crossfades(
         &mut buffer.samples[start..end],
         &original,

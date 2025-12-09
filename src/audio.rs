@@ -1,5 +1,6 @@
 use std::{
     io::Cursor,
+    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -9,7 +10,7 @@ use rodio::{Decoder, OutputStream, OutputStreamBuilder, Sink, Source};
 pub struct AudioPlayer {
     stream: OutputStream,
     sink: Option<Sink>,
-    current_audio: Option<Vec<u8>>,
+    current_audio: Option<Arc<[u8]>>,
     track_duration: Option<f32>,
     started_at: Option<Instant>,
     play_span: Option<(f32, f32)>,
@@ -40,8 +41,14 @@ impl AudioPlayer {
 
     /// Store audio bytes and duration for later playback.
     pub fn set_audio(&mut self, data: Vec<u8>, duration: f32) {
-        self.current_audio = Some(data);
-        self.track_duration = Some(duration);
+        let audio = Arc::from(data);
+        let provided = duration.max(0.0);
+        let fallback = Self::decoder_duration(&audio)
+            .or_else(|| Self::wav_header_duration(&audio))
+            .unwrap_or(0.0);
+        let chosen = if provided > 0.0 { provided } else { fallback };
+        self.track_duration = Some(chosen);
+        self.current_audio = Some(audio);
         self.started_at = None;
         self.play_span = None;
         self.looping = false;
@@ -105,25 +112,14 @@ impl AudioPlayer {
             .track_duration
             .ok_or_else(|| "Load a .wav file first".to_string())?;
         let offset = start.clamp(0.0, 1.0) * duration;
-        let bytes = self
-            .current_audio
-            .as_ref()
-            .cloned()
-            .ok_or_else(|| "Load a .wav file first".to_string())?;
-        let byte_len = bytes.len() as u64;
+        let bytes = self.audio_bytes()?;
         if duration <= 0.0 {
             return Err("Load a .wav file first".into());
         }
 
         self.fade_out_current_sink();
 
-        let source = Decoder::builder()
-            .with_data(Cursor::new(bytes))
-            .with_byte_len(byte_len)
-            .with_seekable(true)
-            .with_hint("wav")
-            .build()
-            .map_err(|error| format!("Audio decode failed: {error}"))?;
+        let source = Self::decoder_from_bytes(bytes)?;
         let limited = source
             .fade_in(SEGMENT_FADE)
             .take_duration(Duration::from_secs_f32(duration))
@@ -202,12 +198,7 @@ impl AudioPlayer {
         duration: f32,
         looped: bool,
     ) -> Result<(), String> {
-        let bytes = self
-            .current_audio
-            .as_ref()
-            .cloned()
-            .ok_or_else(|| "Load a .wav file first".to_string())?;
-        let byte_len = bytes.len() as u64;
+        let bytes = self.audio_bytes()?;
         if duration <= 0.0 {
             return Err("Load a .wav file first".into());
         }
@@ -217,13 +208,7 @@ impl AudioPlayer {
 
         self.fade_out_current_sink();
 
-        let mut source = Decoder::builder()
-            .with_data(Cursor::new(bytes))
-            .with_byte_len(byte_len)
-            .with_seekable(true)
-            .with_hint("wav")
-            .build()
-            .map_err(|error| format!("Audio decode failed: {error}"))?;
+        let mut source = Self::decoder_from_bytes(bytes)?;
         source
             .try_seek(Duration::from_secs_f32(bounded_start))
             .map_err(Self::map_seek_error)?;
@@ -257,6 +242,67 @@ impl AudioPlayer {
             }
             _ => format!("Audio seek failed: {error}"),
         }
+    }
+
+    fn audio_bytes(&self) -> Result<Arc<[u8]>, String> {
+        self.current_audio
+            .as_ref()
+            .cloned()
+            .ok_or_else(|| "Load a .wav file first".to_string())
+    }
+
+    fn decoder_from_bytes(bytes: Arc<[u8]>) -> Result<Decoder<Cursor<Arc<[u8]>>>, String> {
+        let byte_len = bytes.len() as u64;
+        Decoder::builder()
+            .with_data(Cursor::new(bytes))
+            .with_byte_len(byte_len)
+            .with_seekable(true)
+            .with_hint("wav")
+            .build()
+            .map_err(|error| format!("Audio decode failed: {error}"))
+    }
+
+    fn decoder_duration(bytes: &Arc<[u8]>) -> Option<f32> {
+        Self::decoder_from_bytes(bytes.clone())
+            .ok()
+            .and_then(|decoder| decoder.total_duration())
+            .map(|duration| duration.as_secs_f32())
+    }
+
+    fn wav_header_duration(bytes: &Arc<[u8]>) -> Option<f32> {
+        let reader = hound::WavReader::new(Cursor::new(bytes.clone())).ok()?;
+        let spec = reader.spec();
+        let sample_rate = spec.sample_rate as f32;
+        let channels = spec.channels.max(1) as f32;
+        if sample_rate <= 0.0 {
+            return None;
+        }
+        Some(reader.duration() as f32 / (sample_rate * channels))
+    }
+
+    #[cfg(test)]
+    fn span_sample_count(
+        bytes: Arc<[u8]>,
+        start_seconds: f32,
+        end_seconds: f32,
+    ) -> Result<(usize, u32, u16), String> {
+        let mut source = Self::decoder_from_bytes(bytes)?;
+        source
+            .try_seek(Duration::from_secs_f32(start_seconds))
+            .map_err(Self::map_seek_error)?;
+        let span_length = (end_seconds - start_seconds).max(0.001);
+        let limited = source
+            .fade_in(SEGMENT_FADE)
+            .take_duration(Duration::from_secs_f32(span_length))
+            .buffered();
+        let mut faded = EdgeFade::new(limited, SEGMENT_FADE);
+        let sample_rate = faded.sample_rate();
+        let channels = faded.channels();
+        let mut count = 0usize;
+        while faded.next().is_some() {
+            count = count.saturating_add(1);
+        }
+        Ok((count, sample_rate, channels))
     }
 
     /// Mute and stop the current sink without blocking the UI thread.
@@ -295,6 +341,7 @@ struct EdgeFade<S> {
     total_secs: Option<f32>,
     fade_out_start: Option<f32>,
     sample_rate: u32,
+    channels: u16,
     samples_emitted: u64,
 }
 
@@ -313,12 +360,14 @@ impl<S> EdgeFade<S> {
             }
         });
         let sample_rate = inner.sample_rate();
+        let channels = inner.channels();
         Self {
             inner,
             fade_secs,
             total_secs,
             fade_out_start,
             sample_rate,
+            channels,
             samples_emitted: 0,
         }
     }
@@ -332,8 +381,8 @@ where
 
     fn next(&mut self) -> Option<Self::Item> {
         let sample = self.inner.next()?;
-        let time = if self.sample_rate > 0 {
-            self.samples_emitted as f32 / self.sample_rate as f32
+        let time = if self.sample_rate > 0 && self.channels > 0 {
+            self.samples_emitted as f32 / (self.sample_rate as f32 * self.channels as f32)
         } else {
             0.0
         };
@@ -380,127 +429,4 @@ where
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn normalized_progress_respects_span() {
-        let progress = normalized_progress(Some((2.0, 4.0)), 10.0, 1.0, false);
-        assert_eq!(progress, Some(0.3));
-    }
-
-    #[test]
-    fn normalized_progress_handles_elapsed_beyond_span() {
-        let progress = normalized_progress(Some((2.0, 4.0)), 10.0, 3.5, false);
-        assert_eq!(progress, Some(0.4));
-    }
-
-    #[test]
-    fn normalized_progress_loops_within_range() {
-        let progress = normalized_progress(Some((2.0, 4.0)), 10.0, 5.5, true);
-        assert!((progress.unwrap() - 0.35).abs() < 0.0001);
-    }
-
-    #[test]
-    fn normalized_progress_handles_full_track() {
-        let progress = normalized_progress(None, 8.0, 3.0, false);
-        assert_eq!(progress, Some(0.375));
-    }
-
-    #[test]
-    fn remaining_loop_duration_reports_time_left_in_cycle() {
-        let Ok(stream) = rodio::OutputStreamBuilder::open_default_stream() else {
-            return;
-        };
-        let started_at = Instant::now() - Duration::from_secs_f32(0.75);
-        let player = AudioPlayer {
-            stream,
-            sink: None,
-            current_audio: None,
-            track_duration: Some(8.0),
-            started_at: Some(started_at),
-            play_span: Some((1.0, 3.0)),
-            looping: true,
-            loop_offset: None,
-            volume: 1.0,
-        };
-
-        let remaining = player.remaining_loop_duration().unwrap();
-        assert!((remaining.as_secs_f32() - 1.25).abs() < 0.1);
-    }
-
-    #[test]
-    fn remaining_loop_duration_none_when_not_looping() {
-        let Ok(stream) = rodio::OutputStreamBuilder::open_default_stream() else {
-            return;
-        };
-        let player = AudioPlayer {
-            stream,
-            sink: None,
-            current_audio: None,
-            track_duration: Some(8.0),
-            started_at: Some(Instant::now()),
-            play_span: Some((1.0, 3.0)),
-            looping: false,
-            loop_offset: None,
-            volume: 1.0,
-        };
-
-        assert!(player.remaining_loop_duration().is_none());
-    }
-
-    #[test]
-    fn normalized_progress_returns_none_when_invalid_duration() {
-        assert_eq!(normalized_progress(None, 0.0, 1.0, false), None);
-        assert_eq!(normalized_progress(None, -1.0, 1.0, false), None);
-    }
-
-    #[test]
-    fn progress_wraps_full_loop_from_offset() {
-        let Ok(stream) = rodio::OutputStreamBuilder::open_default_stream() else {
-            return;
-        };
-        let player = AudioPlayer {
-            stream,
-            sink: None,
-            current_audio: None,
-            track_duration: Some(10.0),
-            started_at: Some(Instant::now() - Duration::from_secs_f32(2.0)),
-            play_span: Some((0.0, 10.0)),
-            looping: true,
-            loop_offset: Some(7.0),
-            volume: 1.0,
-        };
-
-        let progress = player.progress().unwrap();
-        assert!((progress - 0.9).abs() < 0.05);
-    }
-
-    #[test]
-    fn play_range_accepts_zero_width_request() {
-        let Ok(stream) = rodio::OutputStreamBuilder::open_default_stream() else {
-            // Skip when no audio device is available in the test environment.
-            return;
-        };
-        let mut player = AudioPlayer {
-            stream,
-            sink: None,
-            current_audio: None,
-            track_duration: None,
-            started_at: None,
-            play_span: None,
-            looping: false,
-            loop_offset: None,
-            volume: 1.0,
-        };
-        // A minimal valid 1s mono wav (header only, no samples needed for the span logic).
-        let bytes = vec![
-            0x52, 0x49, 0x46, 0x46, 0x24, 0x80, 0x00, 0x00, 0x57, 0x41, 0x56, 0x45, 0x66, 0x6D,
-            0x74, 0x20, 0x10, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x44, 0xAC, 0x00, 0x00,
-            0x88, 0x58, 0x01, 0x00, 0x02, 0x00, 0x10, 0x00, 0x64, 0x61, 0x74, 0x61, 0x00, 0x80,
-            0x00, 0x00, 0x00, 0x00,
-        ];
-        player.set_audio(bytes, 1.0);
-        assert!(player.play_range(0.5, 0.5, false).is_ok());
-    }
-}
+mod tests;
