@@ -222,9 +222,12 @@ impl EguiApp {
                     if pointer_down || edge_response.dragged() {
                         if let Some(pos) = edge_response.interact_pointer_pos() {
                             let offset = self.selection_edge_offset.unwrap_or(0.0);
-                            let normalized =
+                            let view_fraction =
                                 ((pos.x - offset - rect.left()) / rect.width()).clamp(0.0, 1.0);
-                            self.controller.update_selection_drag(normalized);
+                            let absolute =
+                                view.start + view_width.max(f32::EPSILON) * view_fraction;
+                            let clamped = absolute.clamp(0.0, 1.0);
+                            self.controller.update_selection_drag(clamped);
                         }
                     }
                     if edge_response.drag_stopped() {
