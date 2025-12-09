@@ -2,6 +2,7 @@
 
 --
 
+
 \plan - lets clean up the config location names so we don't get this double sempal/sempal structure. lets make it simple .sempal/
 So in windows it would end up as %APPDATA%\Roaming\.sempal\config.json
 

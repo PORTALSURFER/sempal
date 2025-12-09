@@ -1,17 +1,21 @@
-# Goal
-- Color sample item label text using the triage flag color (e.g., red/green) while preserving the regular/default styling when no flag is set.
+## Goal
+- Restyle the waveform selection duration label to be subtle, text-only, top-right aligned, smaller, and colored with a brighter, more opaque version of the selection color.
 
-# Proposed solutions
-- Identify where sample item labels render and how triage flags are sourced; expose the flag color through the existing view model or component props.
-- Bind the label text color to the triage flag color with a safe default, ensuring accessibility and theme consistency.
-- Add targeted tests/visual checks to verify red/green/default rendering without affecting other label states.
+## Proposed solutions
+- Adjust the selection label rendering in `src/egui_app/ui/waveform_view.rs` to remove the background and reposition the text to the selection’s top-right corner.
+- Use the existing selection highlight color with higher opacity/brightness for the text and choose a smaller text style for subtlety.
+- Keep selection duration computation intact; only tweak presentation and update any affected tests if layout changes are asserted.
 
-# Step-by-step plan
-1. [x] Map the sample item rendering pipeline (data model → view model → component) to locate the triage flag value and current label styling entry point.
-2. [x] Thread the triage flag color into the label rendering path with a default/fallback when no flag is present, keeping typography and layout unchanged.
-3. [x] Validate the behavior with focused tests or snapshots covering flagged red, flagged green, and unflagged labels; adjust any related docs or story fixtures if needed.
+## Step-by-step plan
+1. [x] Review current selection duration rendering to understand positioning, sizing, and color usage.
+2. [x] Update the selection label drawing to remove the background, apply the brighter selection color, shrink the text style, and align it to the selection’s top-right.
+3. [x] Run affected tests (or add/update if needed) to ensure selection duration rendering logic remains correct.
+4. [x] Iterate on label styling to add a subtle, full-width status bar background while keeping text legible.
+5. [x] Adjust selection duration bar to sit at the very top, with swapped colors (dark text on lighter bar) for clearer contrast.
+6. [x] Reposition the selection duration bar to the bottom of the selection to avoid clashing with the loop bar.
+7. [x] Restyle the selection drag handle to use the selection color with higher opacity/brightness for clearer visibility.
 
-# Code Style & Architecture Rules Reminder
+## Code Style & Architecture Rules Reminder
 - Keep files under 400 lines; split when necessary.
 - When functions require more than 5 arguments, group related values into a struct.
 - Each module must have one clear responsibility; split when responsibilities mix.

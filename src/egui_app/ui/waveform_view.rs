@@ -122,9 +122,9 @@ impl EguiApp {
                 );
                 let handle_hovered = handle_response.hovered() || handle_response.dragged();
                 let handle_color = if handle_hovered {
-                    style::with_alpha(highlight, 200)
+                    style::with_alpha(highlight, 235)
                 } else {
-                    style::with_alpha(palette.grid_strong, 180)
+                    style::with_alpha(highlight, 205)
                 };
                 painter.rect_filled(handle_rect, 0.0, handle_color);
                 if handle_response.drag_started() {
@@ -147,34 +147,28 @@ impl EguiApp {
                 if let Some(duration_label) =
                     self.controller.ui.waveform.selection_duration.as_deref()
                 {
-                    let text_color = palette.text_primary;
+                    let text_color = style::with_alpha(palette.bg_secondary, 240);
+                    let bar_color = style::with_alpha(highlight, 80);
                     let galley = ui.ctx().fonts_mut(|f| {
                         f.layout_job(LayoutJob::simple_singleline(
                             duration_label.to_string(),
-                            TextStyle::Body.resolve(ui.style()),
+                            TextStyle::Small.resolve(ui.style()),
                             text_color,
                         ))
                     });
-                    let padding = egui::vec2(8.0, 4.0);
-                    let size = galley.size() + padding * 2.0;
-                    let top_offset = 8.0;
-                    let center = egui::pos2(
-                        selection_rect.center().x,
-                        selection_rect.top() + top_offset + size.y * 0.5,
+                    let padding = egui::vec2(8.0, 2.0);
+                    let bar_height = galley.size().y + padding.y * 2.0;
+                    let bar_rect = egui::Rect::from_min_size(
+                        egui::pos2(selection_rect.left(), selection_rect.bottom() - bar_height),
+                        egui::vec2(selection_rect.width(), bar_height),
                     );
-                    let bg_rect = egui::Rect::from_center_size(center, size);
-                    painter.rect_filled(
-                        bg_rect,
-                        2.0,
-                        style::with_alpha(palette.bg_tertiary, 230),
+                    painter.rect_filled(bar_rect, 0.0, bar_color);
+                    let text_pos = egui::pos2(
+                        (bar_rect.right() - padding.x - galley.size().x)
+                            .max(bar_rect.left() + padding.x),
+                        bar_rect.top() + (bar_height - galley.size().y) * 0.5,
                     );
-                    painter.rect_stroke(
-                        bg_rect,
-                        2.0,
-                        Stroke::new(1.0, style::with_alpha(palette.grid_soft, 200)),
-                        StrokeKind::Inside,
-                    );
-                    painter.galley(bg_rect.left_top() + padding, galley, text_color);
+                    painter.galley(text_pos, galley, text_color);
                 }
 
                 let start_edge_rect =
