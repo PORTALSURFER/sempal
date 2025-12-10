@@ -99,6 +99,7 @@ pub struct WaveformState {
     pub last_start_marker: Option<f32>,
     pub selection: Option<SelectionRange>,
     pub selection_duration: Option<String>,
+    pub hover_time_label: Option<String>,
     pub channel_view: WaveformChannelView,
     /// Current visible viewport within the waveform (0.0-1.0 normalized).
     pub view: WaveformView,
@@ -118,6 +119,7 @@ impl Default for WaveformState {
             last_start_marker: None,
             selection: None,
             selection_duration: None,
+            hover_time_label: None,
             channel_view: WaveformChannelView::Mono,
             view: WaveformView::default(),
             loop_enabled: false,

@@ -328,6 +328,17 @@ impl EguiController {
         self.ui.waveform.selection_duration = label;
     }
 
+    /// Update the cached hover time label for the waveform cursor.
+    pub fn update_waveform_hover_time(&mut self, position: Option<f32>) {
+        if let (Some(position), Some(audio)) = (position, self.loaded_audio.as_ref()) {
+            let clamped = position.clamp(0.0, 1.0);
+            let seconds = audio.duration_seconds * clamped;
+            self.ui.waveform.hover_time_label = Some(format_timestamp_hms_ms(seconds));
+        } else {
+            self.ui.waveform.hover_time_label = None;
+        }
+    }
+
     fn selection_duration_label(&self, range: SelectionRange) -> Option<String> {
         let audio = self.loaded_audio.as_ref()?;
         let seconds = (audio.duration_seconds * range.width()).max(0.0);
@@ -397,6 +408,19 @@ fn format_selection_duration(seconds: f32) -> String {
     format!("{minutes}m {remaining:05.2}s")
 }
 
+/// Format an absolute timestamp into `HH:MM:SS:MS` where `MS` is zero-padded milliseconds.
+fn format_timestamp_hms_ms(seconds: f32) -> String {
+    if !seconds.is_finite() || seconds < 0.0 {
+        return "00:00:00:000".to_string();
+    }
+    let total_ms = (seconds * 1_000.0).round() as u64;
+    let hours = total_ms / 3_600_000;
+    let minutes = (total_ms / 60_000) % 60;
+    let secs = (total_ms / 1_000) % 60;
+    let millis = total_ms % 1_000;
+    format!("{hours:02}:{minutes:02}:{secs:02}:{millis:03}")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -430,5 +454,18 @@ mod tests {
         let (controller, _) = test_support::dummy_controller();
         let label = controller.selection_duration_label(SelectionRange::new(0.0, 1.0));
         assert!(label.is_none());
+    }
+
+    #[test]
+    fn format_timestamp_zero_pads_and_rounds() {
+        assert_eq!(format_timestamp_hms_ms(0.0), "00:00:00:000");
+        assert_eq!(format_timestamp_hms_ms(1.234), "00:00:01:234");
+        assert_eq!(format_timestamp_hms_ms(59.9995), "00:01:00:000");
+    }
+
+    #[test]
+    fn format_timestamp_handles_hours() {
+        assert_eq!(format_timestamp_hms_ms(3_661.789), "01:01:01:789");
+        assert_eq!(format_timestamp_hms_ms(-0.5), "00:00:00:000");
     }
 }
