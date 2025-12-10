@@ -139,6 +139,10 @@ enum HotkeyCommand {
     ToggleFolderSelection,
     NormalizeFocusedSample,
     DeleteFocusedSample,
+    DeleteFocusedFolder,
+    RenameFocusedFolder,
+    CreateFolder,
+    FocusFolderSearch,
     AddFocusedToCollection,
     ToggleOverlay,
     ToggleLoop,
@@ -185,6 +189,34 @@ const HOTKEY_ACTIONS: &[HotkeyAction] = &[
         gesture: HotkeyGesture::new(Key::X),
         scope: HotkeyScope::Focus(FocusContext::SourceFolders),
         command: HotkeyCommand::ToggleFolderSelection,
+    },
+    HotkeyAction {
+        id: "delete-folder",
+        label: "Delete folder",
+        gesture: HotkeyGesture::new(Key::D),
+        scope: HotkeyScope::Focus(FocusContext::SourceFolders),
+        command: HotkeyCommand::DeleteFocusedFolder,
+    },
+    HotkeyAction {
+        id: "rename-folder",
+        label: "Rename folder",
+        gesture: HotkeyGesture::new(Key::R),
+        scope: HotkeyScope::Focus(FocusContext::SourceFolders),
+        command: HotkeyCommand::RenameFocusedFolder,
+    },
+    HotkeyAction {
+        id: "new-folder",
+        label: "New folder",
+        gesture: HotkeyGesture::new(Key::N),
+        scope: HotkeyScope::Focus(FocusContext::SourceFolders),
+        command: HotkeyCommand::CreateFolder,
+    },
+    HotkeyAction {
+        id: "search-folders",
+        label: "Search folders",
+        gesture: HotkeyGesture::new(Key::F),
+        scope: HotkeyScope::Focus(FocusContext::SourceFolders),
+        command: HotkeyCommand::FocusFolderSearch,
     },
     HotkeyAction {
         id: "normalize-browser",
@@ -335,6 +367,26 @@ impl EguiController {
             }
             HotkeyCommand::DeleteFocusedSample => {
                 self.delete_focused_sample(focus);
+            }
+            HotkeyCommand::DeleteFocusedFolder => {
+                if matches!(focus, FocusContext::SourceFolders) {
+                    self.delete_focused_folder();
+                }
+            }
+            HotkeyCommand::RenameFocusedFolder => {
+                if matches!(focus, FocusContext::SourceFolders) {
+                    self.start_folder_rename();
+                }
+            }
+            HotkeyCommand::CreateFolder => {
+                if matches!(focus, FocusContext::SourceFolders) {
+                    self.start_new_folder();
+                }
+            }
+            HotkeyCommand::FocusFolderSearch => {
+                if matches!(focus, FocusContext::SourceFolders) {
+                    self.focus_folder_search();
+                }
             }
             HotkeyCommand::AddFocusedToCollection => {
                 if matches!(focus, FocusContext::SampleBrowser) {

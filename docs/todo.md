@@ -3,11 +3,6 @@ lets then write every task you find into @todo.md as a new todo item
 
 --
 
-
-\plan -- for our folder browser 
-lets add 'd' to delete a folder, warning user, 'r' to rename, and 'n' to create a new folder.
-'f' to fuzzy search
-
 \plan - lets make esc deselect audio if we have a selection active.
 
 \pan - lets make 'home' jump to the start of the sample if we have the waveform focused and 'end' jump to the end
@@ -20,6 +15,12 @@ lets align shift+click select of the sample browser with how it works in the fol
 also, if the user selects with ctrl, and then selects with ctrl+shift+click, add a new a to b selection where the ctrl select is not the new 'a' marker, in addition to what was already selected, typical ctrl+shift+click behaviour.
 
 - clear the dottes 'last playstart' line when we select/focus a new sample
+
+- lets add the ability to move samples around by drag dropping them onto a folder
+
+- lets add 'r' to rename to the sample browser
+
+- lets make 'f' focus fuzzy search in the sample browser
 
 ### v2
 
