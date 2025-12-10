@@ -1,15 +1,16 @@
 ## Goal
-- Add an `r` hotkey to the sample browser that triggers the same rename workflow currently available in the folder browser.
+- Make pressing `f` focus the sample browser's fuzzy search input so users can type queries without leaving the list.
 
 ## Proposed solutions
-- Mirror the folder browser rename flow: introduce a sample-browser-scoped hotkey that starts an inline rename prompt on the focused row, prefilled with the existing filename, and executes the existing sample rename controller path.
-- Ensure focus handling, cancel/confirm shortcuts, and UI refresh mirror the folder browser experience so caches, collections, and waveforms stay in sync after rename.
+- Add a sample-browser-scoped `f` hotkey that requests focus for the fuzzy search box while preserving existing navigation and playback behaviour.
+- Introduce a search focus request flag in the sample browser UI state (mirroring the folder search pattern) and have the filter UI honor it with `request_focus`.
 
 ## Step-by-step plan
-1. [-] Add a Sample Browser rename hotkey entry (gesture `r`) and command that kicks off rename when a sample row is focused.
-2. [-] Add controller/UI state to request a rename prompt for the focused sample, mirroring the folder browser approach (prefill current name, manage focus flags).
-3. [-] Render the inline rename editor for the targeted sample browser row, wiring confirm/cancel paths to the existing rename handler and restoring focus/selection states.
-4. [-] Extend tests and hotkey/help surfaces to cover the new rename shortcut and ensure browser state, caches, and collections remain consistent after rename.
+1. [x] Review existing sample browser search, focus, and hotkey plumbing (`controller/hotkeys.rs`, `controller/wavs.rs`, `state.rs`, `ui/sample_browser_panel.rs`) to map current behaviour and side effects.
+2. [x] Add controller/state support for a sample browser search focus request, ensuring focus context stays consistent and no autoplay is triggered.
+3. [x] Wire the `f` hotkey for the sample browser scope to trigger the search focus request without disturbing other shortcuts or selections.
+4. [x] Update the sample browser filter UI to honor the focus request flag and keep list rebuilding/filtering unchanged.
+5. [x] Add or adjust tests covering the new hotkey/search focus behaviour and run the relevant test suite.
 
 ## Code Style & Architecture Rules Reminder
 - Keep files under 400 lines; split when necessary.

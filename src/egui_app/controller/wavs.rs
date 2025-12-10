@@ -365,6 +365,12 @@ impl EguiController {
         }
     }
 
+    /// Request focus for the browser search input while keeping the browser context active.
+    pub(crate) fn focus_browser_search(&mut self) {
+        self.ui.browser.search_focus_requested = true;
+        self.focus_browser_context();
+    }
+
     /// Apply a fuzzy search query to the browser and refresh visible rows.
     pub fn set_browser_search(&mut self, query: impl Into<String>) {
         let query = query.into();

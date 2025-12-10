@@ -3,8 +3,6 @@ lets then write every task you find into @todo.md as a new todo item
 
 --
 
-\plan - lets make 'f' focus fuzzy search in the sample browser
-
 \plan - use the waveform cursor as start position when we hit space bar, if we have an active waveform cursor, esc should remove it, resetting start to the beginning of the sample again
 
 \plan - cancel renaming if the user clicks somewhere else
@@ -27,6 +25,7 @@ test audio::tests::decode_handles_varied_sample_rates_and_channels ... FAILED
 
 \plan - lets add a progress bar popup for slow tasks, for example, when moving trashed item to the trashed folder.
 
+\plan - when renaming samples, lets keep the .wav extension out of the renaming process
 
 ### v2
 
