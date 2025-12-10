@@ -400,6 +400,7 @@ impl EguiController {
             target,
             name: default,
         });
+        self.ui.sources.folders.rename_focus_requested = true;
     }
 
     pub(crate) fn start_new_folder(&mut self) {

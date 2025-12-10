@@ -236,13 +236,27 @@ impl EguiApp {
                 let focused_row = self.controller.ui.sources.folders.focused;
                 for (index, row) in rows.iter().enumerate() {
                     let is_focused = Some(index) == focused_row;
+                    let rename_match = matches!(
+                        self.controller.ui.sources.folders.pending_action,
+                        Some(crate::egui_app::state::FolderActionPrompt::Rename { ref target, .. })
+                            if target == &row.path
+                    );
                     let bg = if row.selected || is_focused {
                         Some(style::row_selected_fill())
                     } else {
                         None
                     };
                     let row_width = ui.available_width();
-                    let label = folder_row_label(row, row_width, ui);
+                    let label = if rename_match {
+                        String::new()
+                    } else {
+                        folder_row_label(row, row_width, ui)
+                    };
+                    let sense = if rename_match {
+                        egui::Sense::hover()
+                    } else {
+                        egui::Sense::click()
+                    };
                     let response = render_list_row(
                         ui,
                         &label,
@@ -250,7 +264,7 @@ impl EguiApp {
                         row_height,
                         bg,
                         style::high_contrast_text(),
-                        egui::Sense::click(),
+                        sense,
                         None,
                         None,
                     );
@@ -266,28 +280,32 @@ impl EguiApp {
                         ui.painter()
                             .rect_filled(marker_rect, 0.0, style::selection_marker_fill());
                     }
-                    if response.clicked() {
-                        let pointer = response.interact_pointer_pos();
-                        let hit_expand = row.has_children
-                            && pointer.map_or(false, |pos| {
-                                let padding = ui.spacing().button_padding.x;
-                                let indent = row.depth as f32 * 12.0;
-                                pos.x <= response.rect.left() + padding + indent + 14.0
-                            });
-                        if hit_expand {
-                            self.controller.toggle_folder_expanded(index);
-                        } else {
-                            let modifiers = ui.input(|i| i.modifiers);
-                            if modifiers.shift {
-                                self.controller.select_folder_range(index);
-                            } else if modifiers.command || modifiers.ctrl {
-                                self.controller.toggle_folder_row_selection(index);
+                    if rename_match {
+                        self.render_folder_rename_editor(ui, &response, row);
+                    } else {
+                        if response.clicked() {
+                            let pointer = response.interact_pointer_pos();
+                            let hit_expand = row.has_children
+                                && pointer.map_or(false, |pos| {
+                                    let padding = ui.spacing().button_padding.x;
+                                    let indent = row.depth as f32 * 12.0;
+                                    pos.x <= response.rect.left() + padding + indent + 14.0
+                                });
+                            if hit_expand {
+                                self.controller.toggle_folder_expanded(index);
                             } else {
-                                self.controller.replace_folder_selection(index);
+                                let modifiers = ui.input(|i| i.modifiers);
+                                if modifiers.shift {
+                                    self.controller.select_folder_range(index);
+                                } else if modifiers.command || modifiers.ctrl {
+                                    self.controller.toggle_folder_row_selection(index);
+                                } else {
+                                    self.controller.replace_folder_selection(index);
+                                }
                             }
+                        } else if response.secondary_clicked() {
+                            self.controller.focus_folder_row(index);
                         }
-                    } else if response.secondary_clicked() {
-                        self.controller.focus_folder_row(index);
                     }
                     if is_focused {
                         ui.painter().rect_stroke(
@@ -325,10 +343,55 @@ impl EguiApp {
             });
     }
 
+    fn render_folder_rename_editor(
+        &mut self,
+        ui: &mut Ui,
+        row_response: &egui::Response,
+        row: &crate::egui_app::state::FolderRowView,
+    ) {
+        let Some(prompt) = self.controller.ui.sources.folders.pending_action.as_mut() else {
+            return;
+        };
+        let name = match prompt {
+            crate::egui_app::state::FolderActionPrompt::Rename { name, .. } => name,
+            _ => return,
+        };
+        let padding = ui.spacing().button_padding.x;
+        let indent = row.depth as f32 * 12.0;
+        let mut edit_rect = row_response.rect;
+        edit_rect.min.x += padding + indent + 14.0;
+        edit_rect.max.x -= padding;
+        edit_rect.min.y += 2.0;
+        edit_rect.max.y -= 2.0;
+        let edit = egui::TextEdit::singleline(name)
+            .hint_text("Rename folder")
+            .frame(false)
+            .desired_width(edit_rect.width());
+        let response = ui.put(edit_rect, edit);
+        if self.controller.ui.sources.folders.rename_focus_requested || !response.has_focus() {
+            response.request_focus();
+            self.controller.ui.sources.folders.rename_focus_requested = false;
+        }
+        let enter = response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+        let escape = response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape));
+        if enter {
+            self.apply_pending_folder_rename();
+        } else if escape {
+            self.controller.ui.sources.folders.pending_action = None;
+            self.controller.ui.sources.folders.rename_focus_requested = false;
+        }
+    }
+
     fn render_folder_action_prompt(&mut self, ui: &mut Ui) {
         let Some(prompt) = self.controller.ui.sources.folders.pending_action.as_mut() else {
             return;
         };
+        if !matches!(
+            prompt,
+            crate::egui_app::state::FolderActionPrompt::Create { .. }
+        ) {
+            return;
+        }
         let palette = style::palette();
         let mut submit = false;
         let mut cancel = false;
@@ -344,9 +407,7 @@ impl EguiApp {
                     },
                     name,
                 ),
-                crate::egui_app::state::FolderActionPrompt::Rename { target, name } => {
-                    ("Rename folder", target.display().to_string(), name)
-                }
+                _ => unreachable!(),
             };
             ui.label(RichText::new(label).color(palette.text_primary));
             ui.label(RichText::new(path_display).color(palette.text_muted));
@@ -367,9 +428,7 @@ impl EguiApp {
                     crate::egui_app::state::FolderActionPrompt::Create { parent, name } => {
                         self.controller.create_folder(&parent, &name)
                     }
-                    crate::egui_app::state::FolderActionPrompt::Rename { target, name } => {
-                        self.controller.rename_folder(&target, &name)
-                    }
+                    crate::egui_app::state::FolderActionPrompt::Rename { .. } => unreachable!(),
                 };
                 match result {
                     Ok(()) => self.controller.ui.sources.folders.pending_action = None,
@@ -378,6 +437,19 @@ impl EguiApp {
             }
         } else if cancel {
             self.controller.ui.sources.folders.pending_action = None;
+        }
+    }
+
+    fn apply_pending_folder_rename(&mut self) {
+        let action = self.controller.ui.sources.folders.pending_action.clone();
+        if let Some(crate::egui_app::state::FolderActionPrompt::Rename { target, name }) = action {
+            match self.controller.rename_folder(&target, &name) {
+                Ok(()) => {
+                    self.controller.ui.sources.folders.pending_action = None;
+                    self.controller.ui.sources.folders.rename_focus_requested = false;
+                }
+                Err(err) => self.controller.set_status(err, style::StatusTone::Error),
+            }
         }
     }
 }
