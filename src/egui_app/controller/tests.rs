@@ -213,6 +213,40 @@ fn browser_filter_limits_visible_rows() {
 }
 
 #[test]
+fn browser_search_limits_visible_rows() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source);
+    controller.wav_entries = vec![
+        sample_entry("kick.wav", SampleTag::Neutral),
+        sample_entry("snare.wav", SampleTag::Neutral),
+        sample_entry("hat.wav", SampleTag::Neutral),
+    ];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+
+    controller.set_browser_search("snr");
+
+    assert_eq!(controller.visible_browser_indices(), &[1]);
+}
+
+#[test]
+fn browser_search_orders_results_by_score_then_index() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source);
+    controller.wav_entries = vec![
+        sample_entry("abc.wav", SampleTag::Neutral),
+        sample_entry("abc_extra.wav", SampleTag::Neutral),
+        sample_entry("abdc.wav", SampleTag::Neutral),
+    ];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+
+    controller.set_browser_search("abc");
+
+    assert_eq!(controller.visible_browser_indices(), &[0, 1, 2]);
+}
+
+#[test]
 fn tagging_keeps_selection_on_same_sample() {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source);

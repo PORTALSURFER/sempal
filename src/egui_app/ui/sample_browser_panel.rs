@@ -307,6 +307,16 @@ impl EguiApp {
                     self.controller.set_browser_filter(filter);
                 }
             }
+            ui.add_space(ui.spacing().item_spacing.x);
+            let mut query = self.controller.ui.browser.search_query.clone();
+            let response = ui.add(
+                egui::TextEdit::singleline(&mut query)
+                    .hint_text("Search...")
+                    .desired_width(160.0),
+            );
+            if response.changed() {
+                self.controller.set_browser_search(query);
+            }
         });
     }
 }

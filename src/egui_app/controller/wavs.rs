@@ -2,6 +2,8 @@ use super::audio_cache::{CacheKey, FileMetadata};
 use super::*;
 use crate::egui_app::state::WaveformView;
 use crate::waveform::DecodedWaveform;
+use fuzzy_matcher::skim::SkimMatcherV2;
+use fuzzy_matcher::FuzzyMatcher;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
@@ -352,6 +354,16 @@ impl EguiController {
         }
     }
 
+    /// Apply a fuzzy search query to the browser and refresh visible rows.
+    pub fn set_browser_search(&mut self, query: impl Into<String>) {
+        let query = query.into();
+        if self.ui.browser.search_query == query {
+            return;
+        }
+        self.ui.browser.search_query = query;
+        self.rebuild_browser_lists();
+    }
+
     /// Select a wav by absolute index into the full wav list.
     pub fn select_wav_by_index(&mut self, index: usize) {
         let path = match self.wav_entries.get(index) {
@@ -391,16 +403,8 @@ impl EguiController {
         }
         self.prune_browser_selection();
         let highlight_selection = self.ui.collections.selected_sample.is_none();
-        let focused_index = if highlight_selection {
-            self.selected_row_index()
-        } else {
-            None
-        };
-        let loaded_index = if highlight_selection {
-            self.loaded_row_index()
-        } else {
-            None
-        };
+        let focused_index = highlight_selection.then_some(self.selected_row_index()).flatten();
+        let loaded_index = highlight_selection.then_some(self.loaded_row_index()).flatten();
         self.reset_browser_ui();
 
         for i in 0..self.wav_entries.len() {
@@ -411,6 +415,11 @@ impl EguiController {
             };
             self.push_browser_row(i, tag, flags);
         }
+        let (visible, selected_visible, loaded_visible) =
+            self.build_visible_rows(focused_index, loaded_index);
+        self.ui.browser.visible = visible;
+        self.ui.browser.selected_visible = selected_visible;
+        self.ui.browser.loaded_visible = loaded_visible;
         let visible_len = self.ui.browser.visible.len();
         if let Some(anchor) = self.ui.browser.selection_anchor_visible {
             if anchor >= visible_len {
@@ -456,16 +465,6 @@ impl EguiController {
         };
         let row_index = target.len();
         target.push(entry_index);
-        if self.browser_filter_accepts(tag) {
-            let visible_row = self.ui.browser.visible.len();
-            self.ui.browser.visible.push(entry_index);
-            if flags.focused {
-                self.ui.browser.selected_visible = Some(visible_row);
-            }
-            if flags.loaded {
-                self.ui.browser.loaded_visible = Some(visible_row);
-            }
-        }
         if flags.focused {
             self.ui.browser.selected = Some(view_model::sample_browser_index_for(tag, row_index));
         }
@@ -475,6 +474,51 @@ impl EguiController {
                 self.ui.loaded_wav = Some(path.relative_path.clone());
             }
         }
+    }
+
+    fn build_visible_rows(
+        &mut self,
+        focused_index: Option<usize>,
+        loaded_index: Option<usize>,
+    ) -> (Vec<usize>, Option<usize>, Option<usize>) {
+        let search_query = self.active_search_query().map(str::to_string);
+        if search_query.is_none() {
+            let visible: Vec<usize> = self
+                .wav_entries
+                .iter()
+                .enumerate()
+                .filter(|(_, entry)| self.browser_filter_accepts(entry.tag))
+                .map(|(index, _)| index)
+                .collect();
+            let selected_visible =
+                focused_index.and_then(|idx| visible.iter().position(|i| *i == idx));
+            let loaded_visible =
+                loaded_index.and_then(|idx| visible.iter().position(|i| *i == idx));
+            return (visible, selected_visible, loaded_visible);
+        }
+        let query = search_query.unwrap();
+        let matcher = SkimMatcherV2::default();
+        let mut matches: Vec<(usize, i64)> = Vec::new();
+        for index in 0..self.wav_entries.len() {
+            let (tag, path) = match self.wav_entries.get(index) {
+                Some(entry) => (entry.tag, entry.relative_path.clone()),
+                None => continue,
+            };
+            if !self.browser_filter_accepts(tag) {
+                continue;
+            }
+            let label = self
+                .label_for(index)
+                .unwrap_or_else(|| view_model::sample_display_label(&path));
+            if let Some(score) = matcher.fuzzy_match(label.as_str(), query.as_str()) {
+                matches.push((index, score));
+            }
+        }
+        matches.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        let visible: Vec<usize> = matches.into_iter().map(|(index, _)| index).collect();
+        let selected_visible = focused_index.and_then(|idx| visible.iter().position(|i| *i == idx));
+        let loaded_visible = loaded_index.and_then(|idx| visible.iter().position(|i| *i == idx));
+        (visible, selected_visible, loaded_visible)
     }
 
     fn prune_browser_selection(&mut self) {
@@ -498,6 +542,15 @@ impl EguiController {
             TriageFlagFilter::Keep => matches!(tag, SampleTag::Keep),
             TriageFlagFilter::Trash => matches!(tag, SampleTag::Trash),
             TriageFlagFilter::Untagged => matches!(tag, SampleTag::Neutral),
+        }
+    }
+
+    fn active_search_query(&self) -> Option<&str> {
+        let query = self.ui.browser.search_query.trim();
+        if query.is_empty() {
+            None
+        } else {
+            Some(query)
         }
     }
 

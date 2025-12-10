@@ -3,6 +3,20 @@ lets then write every task you find into @todo.md as a new todo item
 
 --
 
+\plan - change color of the cursor line so it differs visually from the playhead.
+also, when the user clicks, leave behind a new dotted line, to indicate the last known play start position, again in another color
+
+\plan - lets add a tiny box next to the cursor line with in it the current location time in text in HH:MM:SS:MS format where MS is milliseconds
+
+\plan - lets improve our waveform rendering, increase the overall quality, and ensure its stable and high quality at all zoom levels. right now we have many holes, alias issues, and especially at high zoom levels it all breaks down.
+
+\plan - add a select random next sample. lets add shift+r as a hotkey to 'play next random sample'
+
+\plan - currently when 'gs' is used to jump to the sample list, we also automatically play the first sample we focus. lets not do that in this case, its a bit confusing, this action should focus the sample list, the fact that we also focus a sample item and thus play it is more a side effect, unwanted in this case.
+
+\plan - lets tighten up the ui layout right now we have a bunch of double borders/frames in places, please redesign this, I want tight borders, section against section with only ever single borders. no double borders, insets, etc
+
+
 ### v2
 
 \plan - add audio recording
