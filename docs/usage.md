@@ -25,7 +25,7 @@
 - Dragging a sample row into the browser area retags it to the active filter's column (All/Untagged -> Neutral).
 
 ## Playback and waveform editing
-- **Space** toggles play/pause. **Escape** stops playback and clears browser selection. Click the waveform to seek; clicking while a selection exists clears it.
+- **Space** toggles play/pause. **Escape** stops playback and clears browser and waveform selection. Click the waveform to seek; clicking while a selection exists clears it.
 - **Loop on/off** in the waveform header loops the current selection when present, otherwise the full file. A loop bar shows the active region; the playhead is drawn over the waveform.
 - Drag across the waveform to create a selection; drag the edge brackets to resize. The handle at the bottom of the selection supports drag-and-drop.
 - Right-click the selection for destructive edits (overwrite the source file): **Crop to selection**, **Trim selection out**, **Fade to null** (left->right or right->left), **Mute selection**, or **Normalize selection** (adds 5 ms edge fades).
@@ -53,6 +53,6 @@
 - Drag selections or samples outside the window on Windows to start an external drag-out. Use **Ctrl/Cmd + C** to copy selections or rows as file drops.
 
 ## Hotkeys (focus-aware)
-- Global: `Space` play/pause; `Esc` stop/clear selection; `L` toggle loop; `Shift + R` play a random visible sample and auto-play; `Ctrl/Cmd + Shift + R` step backward through random sample history; `Ctrl/Cmd + /` toggle hotkey overlay; `F11` toggle maximized window.
+- Global: `Space` play/pause; `Esc` stop/clear selections (including waveform); `L` toggle loop; `Shift + R` play a random visible sample and auto-play; `Ctrl/Cmd + Shift + R` step backward through random sample history; `Ctrl/Cmd + /` toggle hotkey overlay; `F11` toggle maximized window.
 - Sample browser focus: `Up/Down` move; `Shift + Up/Down` extend selection; `Right Arrow` Keep; `Left Arrow` Trash; `Ctrl/Cmd + Right/Left` move selection across triage columns; `X` toggle selection; `N` normalize (overwrite); `D` delete; `C` add focused sample to the selected collection.
 - Collection item focus: `Up/Down` move; `N` normalize (overwrite collection copy); `D` delete from collection.
