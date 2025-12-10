@@ -2,8 +2,8 @@ use super::audio_cache::{CacheKey, FileMetadata};
 use super::*;
 use crate::egui_app::state::WaveformView;
 use crate::waveform::DecodedWaveform;
-use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
+use fuzzy_matcher::skim::SkimMatcherV2;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
@@ -409,8 +409,12 @@ impl EguiController {
         }
         self.prune_browser_selection();
         let highlight_selection = self.ui.collections.selected_sample.is_none();
-        let focused_index = highlight_selection.then_some(self.selected_row_index()).flatten();
-        let loaded_index = highlight_selection.then_some(self.loaded_row_index()).flatten();
+        let focused_index = highlight_selection
+            .then_some(self.selected_row_index())
+            .flatten();
+        let loaded_index = highlight_selection
+            .then_some(self.loaded_row_index())
+            .flatten();
         self.reset_browser_ui();
 
         for i in 0..self.wav_entries.len() {
@@ -493,7 +497,10 @@ impl EguiController {
                 .wav_entries
                 .iter()
                 .enumerate()
-                .filter(|(_, entry)| self.browser_filter_accepts(entry.tag))
+                .filter(|(_, entry)| {
+                    self.browser_filter_accepts(entry.tag)
+                        && self.folder_filter_accepts(&entry.relative_path)
+                })
                 .map(|(index, _)| index)
                 .collect();
             let selected_visible =
@@ -510,7 +517,7 @@ impl EguiController {
                 Some(entry) => (entry.tag, entry.relative_path.clone()),
                 None => continue,
             };
-            if !self.browser_filter_accepts(tag) {
+            if !self.browser_filter_accepts(tag) || !self.folder_filter_accepts(&path) {
                 continue;
             }
             let label = self
@@ -553,11 +560,7 @@ impl EguiController {
 
     fn active_search_query(&self) -> Option<&str> {
         let query = self.ui.browser.search_query.trim();
-        if query.is_empty() {
-            None
-        } else {
-            Some(query)
-        }
+        if query.is_empty() { None } else { Some(query) }
     }
 
     pub(super) fn focused_browser_row(&self) -> Option<usize> {
@@ -1024,8 +1027,8 @@ impl EguiController {
         }
         let start_frame = ((view.start * total_frames as f32).floor() as usize)
             .min(total_frames.saturating_sub(1));
-        let mut end_frame = ((view.end * total_frames as f32).ceil() as usize)
-            .clamp(start_frame + 1, total_frames);
+        let mut end_frame =
+            ((view.end * total_frames as f32).ceil() as usize).clamp(start_frame + 1, total_frames);
         if end_frame <= start_frame {
             end_frame = (start_frame + 1).min(total_frames);
         }

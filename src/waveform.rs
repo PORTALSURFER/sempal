@@ -53,7 +53,10 @@ impl Default for WaveformChannelView {
 #[derive(Clone, Debug, PartialEq)]
 pub enum WaveformColumnView {
     Mono(Vec<(f32, f32)>),
-    SplitStereo { left: Vec<(f32, f32)>, right: Vec<(f32, f32)> },
+    SplitStereo {
+        left: Vec<(f32, f32)>,
+        right: Vec<(f32, f32)>,
+    },
 }
 
 /// Renders averaged waveforms from wav samples.
@@ -173,12 +176,7 @@ impl WaveformRenderer {
 
     /// Build column extrema for the provided samples using the renderer width and mono view.
     pub fn sample_columns(&self, samples: &[f32]) -> Vec<(f32, f32)> {
-        match Self::sample_columns_for_width(
-            samples,
-            1,
-            self.width,
-            WaveformChannelView::Mono,
-        ) {
+        match Self::sample_columns_for_width(samples, 1, self.width, WaveformChannelView::Mono) {
             WaveformColumnView::Mono(cols) => cols,
             _ => unreachable!("mono view should not produce split columns"),
         }
@@ -254,8 +252,7 @@ impl WaveformRenderer {
         }
         match view {
             WaveformChannelView::Mono => {
-                let columns =
-                    Self::sample_channel_columns(samples, channels, width, None);
+                let columns = Self::sample_channel_columns(samples, channels, width, None);
                 WaveformColumnView::Mono(columns)
             }
             WaveformChannelView::SplitStereo => {
@@ -299,17 +296,13 @@ impl WaveformRenderer {
             return columns.clone();
         }
         match columns {
-            WaveformColumnView::Mono(cols) => WaveformColumnView::Mono(Self::downsample_columns(
-                cols,
-                factor,
-                target_width,
-            )),
-            WaveformColumnView::SplitStereo { left, right } => {
-                WaveformColumnView::SplitStereo {
-                    left: Self::downsample_columns(left, factor, target_width),
-                    right: Self::downsample_columns(right, factor, target_width),
-                }
+            WaveformColumnView::Mono(cols) => {
+                WaveformColumnView::Mono(Self::downsample_columns(cols, factor, target_width))
             }
+            WaveformColumnView::SplitStereo { left, right } => WaveformColumnView::SplitStereo {
+                left: Self::downsample_columns(left, factor, target_width),
+                right: Self::downsample_columns(right, factor, target_width),
+            },
         }
     }
 
@@ -379,8 +372,7 @@ impl WaveformRenderer {
         let top_height = (split_height / 2).max(1);
         let bottom_height = split_height.saturating_sub(top_height).max(1);
 
-        let top =
-            Self::paint_color_image_for_size(left, width, top_height, foreground, background);
+        let top = Self::paint_color_image_for_size(left, width, top_height, foreground, background);
         let bottom =
             Self::paint_color_image_for_size(right, width, bottom_height, foreground, background);
 
@@ -456,9 +448,7 @@ impl WaveformRenderer {
                 Some(channel) => {
                     let channel = channel.min(channels.saturating_sub(1));
                     for frame in start..end {
-                        let idx = frame
-                            .saturating_mul(channels)
-                            .saturating_add(channel);
+                        let idx = frame.saturating_mul(channels).saturating_add(channel);
                         if let Some(sample) = samples.get(idx) {
                             let clamped = sample.clamp(-1.0, 1.0);
                             min = min.min(clamped);
@@ -520,25 +510,16 @@ mod tests {
     #[test]
     fn render_color_image_respects_requested_size() {
         let renderer = WaveformRenderer::new(2, 2);
-        let image = renderer.render_color_image_with_size(
-            &[0.0, 0.5],
-            1,
-            WaveformChannelView::Mono,
-            4,
-            6,
-        );
+        let image =
+            renderer.render_color_image_with_size(&[0.0, 0.5], 1, WaveformChannelView::Mono, 4, 6);
         assert_eq!(image.size, [4, 6]);
     }
 
     #[test]
     fn sample_columns_cover_tail_sample() {
         let samples = [0.1_f32, 0.1, 0.1, 0.1, 0.9];
-        let columns = WaveformRenderer::sample_columns_for_mode(
-            &samples,
-            1,
-            2,
-            WaveformChannelView::Mono,
-        );
+        let columns =
+            WaveformRenderer::sample_columns_for_mode(&samples, 1, 2, WaveformChannelView::Mono);
         let WaveformColumnView::Mono(cols) = columns else {
             panic!("expected mono columns")
         };
@@ -548,12 +529,8 @@ mod tests {
     #[test]
     fn sample_columns_replicate_sparse_audio() {
         let samples = [0.75_f32];
-        let columns = WaveformRenderer::sample_columns_for_mode(
-            &samples,
-            1,
-            4,
-            WaveformChannelView::Mono,
-        );
+        let columns =
+            WaveformRenderer::sample_columns_for_mode(&samples, 1, 4, WaveformChannelView::Mono);
         let WaveformColumnView::Mono(cols) = columns else {
             panic!("expected mono columns")
         };
@@ -564,12 +541,8 @@ mod tests {
     fn mono_view_preserves_multi_channel_peaks() {
         let samples = [1.0_f32, -1.0]; // L = 1.0, R = -1.0
 
-        let columns = WaveformRenderer::sample_columns_for_mode(
-            &samples,
-            2,
-            1,
-            WaveformChannelView::Mono,
-        );
+        let columns =
+            WaveformRenderer::sample_columns_for_mode(&samples, 2, 1, WaveformChannelView::Mono);
 
         let WaveformColumnView::Mono(cols) = columns else {
             panic!("expected mono columns")
@@ -598,17 +571,17 @@ mod tests {
     #[test]
     fn high_zoom_columns_keep_channel_extremes() {
         let samples = [1.0_f32, -1.0];
-        let columns = WaveformRenderer::sample_columns_for_mode(
-            &samples,
-            1,
-            64,
-            WaveformChannelView::Mono,
-        );
+        let columns =
+            WaveformRenderer::sample_columns_for_mode(&samples, 1, 64, WaveformChannelView::Mono);
         let WaveformColumnView::Mono(cols) = columns else {
             panic!("expected mono columns")
         };
-        let has_positive = cols.iter().any(|(min, max)| (*min - 1.0).abs() < 1e-6 && (*max - 1.0).abs() < 1e-6);
-        let has_negative = cols.iter().any(|(min, max)| (*min + 1.0).abs() < 1e-6 && (*max + 1.0).abs() < 1e-6);
+        let has_positive = cols
+            .iter()
+            .any(|(min, max)| (*min - 1.0).abs() < 1e-6 && (*max - 1.0).abs() < 1e-6);
+        let has_negative = cols
+            .iter()
+            .any(|(min, max)| (*min + 1.0).abs() < 1e-6 && (*max + 1.0).abs() < 1e-6);
         assert!(has_positive);
         assert!(has_negative);
     }
@@ -625,7 +598,14 @@ mod tests {
         let WaveformColumnView::SplitStereo { left, right } = columns else {
             panic!("expected split columns")
         };
-        assert!(left.iter().any(|(min, max)| (*min - 0.75).abs() < 1e-6 && (*max - 0.75).abs() < 1e-6));
-        assert!(right.iter().any(|(min, max)| (*min + 0.5).abs() < 1e-6 && (*max + 0.5).abs() < 1e-6));
+        assert!(
+            left.iter()
+                .any(|(min, max)| (*min - 0.75).abs() < 1e-6 && (*max - 0.75).abs() < 1e-6)
+        );
+        assert!(
+            right
+                .iter()
+                .any(|(min, max)| (*min + 0.5).abs() < 1e-6 && (*max + 0.5).abs() < 1e-6)
+        );
     }
 }

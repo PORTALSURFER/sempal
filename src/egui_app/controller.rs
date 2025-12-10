@@ -21,6 +21,7 @@ mod sample_browser_actions;
 mod scans;
 mod selection_edits;
 mod selection_export;
+mod source_folders;
 mod sources;
 mod trash;
 mod waveform_navigation;
@@ -29,8 +30,8 @@ mod wavs;
 use crate::{
     audio::{AudioOutputConfig, AudioPlayer},
     egui_app::state::{
-        PlayheadState, SampleBrowserState, TriageFlagColumn, TriageFlagFilter, UiState,
-        WaveformImage,
+        FolderBrowserUiState, PlayheadState, SampleBrowserState, TriageFlagColumn,
+        TriageFlagFilter, UiState, WaveformImage,
     },
     egui_app::{ui::style, ui::style::StatusTone, view_model},
     sample_sources::scanner::ScanMode,
@@ -106,6 +107,7 @@ pub struct EguiController {
     scan_in_progress: bool,
     random_history: VecDeque<RandomHistoryEntry>,
     random_history_cursor: Option<usize>,
+    folder_browsers: HashMap<SourceId, source_folders::FolderBrowserModel>,
     #[cfg(target_os = "windows")]
     drag_hwnd: Option<windows::Win32::Foundation::HWND>,
 }
@@ -158,6 +160,7 @@ impl EguiController {
             scan_in_progress: false,
             random_history: VecDeque::new(),
             random_history_cursor: None,
+            folder_browsers: HashMap::new(),
             #[cfg(target_os = "windows")]
             drag_hwnd: None,
         }

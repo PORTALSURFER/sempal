@@ -136,6 +136,7 @@ fn key_label(key: Key) -> &'static str {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum HotkeyCommand {
     ToggleFocusedSelection,
+    ToggleFolderSelection,
     NormalizeFocusedSample,
     DeleteFocusedSample,
     AddFocusedToCollection,
@@ -177,6 +178,13 @@ const HOTKEY_ACTIONS: &[HotkeyAction] = &[
         gesture: HotkeyGesture::new(Key::X),
         scope: HotkeyScope::Focus(FocusContext::SampleBrowser),
         command: HotkeyCommand::ToggleFocusedSelection,
+    },
+    HotkeyAction {
+        id: "toggle-folder-select",
+        label: "Toggle folder selection",
+        gesture: HotkeyGesture::new(Key::X),
+        scope: HotkeyScope::Focus(FocusContext::SourceFolders),
+        command: HotkeyCommand::ToggleFolderSelection,
     },
     HotkeyAction {
         id: "normalize-browser",
@@ -317,6 +325,11 @@ impl EguiController {
                     self.toggle_focused_selection();
                 }
             }
+            HotkeyCommand::ToggleFolderSelection => {
+                if matches!(focus, FocusContext::SourceFolders) {
+                    self.toggle_focused_folder_selection();
+                }
+            }
             HotkeyCommand::NormalizeFocusedSample => {
                 self.normalize_focused_sample(focus);
             }
@@ -379,6 +392,7 @@ impl EguiController {
             }
             FocusContext::None
             | FocusContext::Waveform
+            | FocusContext::SourceFolders
             | FocusContext::SourcesList
             | FocusContext::CollectionsList => {}
         }
@@ -402,6 +416,7 @@ impl EguiController {
             }
             FocusContext::None
             | FocusContext::Waveform
+            | FocusContext::SourceFolders
             | FocusContext::SourcesList
             | FocusContext::CollectionsList => {}
         }

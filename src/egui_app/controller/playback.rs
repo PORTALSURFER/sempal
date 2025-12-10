@@ -1,11 +1,11 @@
 use super::*;
 use crate::selection::SelectionEdge;
-use rand::seq::IteratorRandom;
 use rand::Rng;
+use rand::seq::IteratorRandom;
+#[cfg(test)]
+use rand::{SeedableRng, rngs::StdRng};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
-#[cfg(test)]
-use rand::{rngs::StdRng, SeedableRng};
 
 #[cfg(test)]
 const SHOULD_PLAY_RANDOM_SAMPLE: bool = false;
@@ -236,7 +236,13 @@ impl EguiController {
             self.set_status("Select a source first", StatusTone::Info);
             return;
         };
-        let Some((visible_row, entry_index)) = self.visible_browser_indices().iter().copied().enumerate().choose(rng) else {
+        let Some((visible_row, entry_index)) = self
+            .visible_browser_indices()
+            .iter()
+            .copied()
+            .enumerate()
+            .choose(rng)
+        else {
             self.set_status("No samples available to randomize", StatusTone::Info);
             return;
         };

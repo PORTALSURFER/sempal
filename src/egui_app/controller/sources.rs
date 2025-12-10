@@ -84,6 +84,7 @@ impl EguiController {
         self.missing_sources.remove(&removed.id);
         self.missing_wavs.remove(&removed.id);
         self.db_cache.remove(&removed.id);
+        self.clear_folder_state_for(&removed.id);
         for collection in self.collections.iter_mut() {
             let export_root = collection.export_path.clone();
             let folder_name = collection_export::collection_folder_name(collection);
@@ -216,6 +217,7 @@ impl EguiController {
         self.loaded_wav = None;
         self.loaded_audio = None;
         self.ui.browser = SampleBrowserState::default();
+        self.ui.sources.folders = FolderBrowserUiState::default();
         self.ui.loaded_wav = None;
         self.clear_waveform_view();
         if let Some(selected) = self.selected_source.as_ref() {

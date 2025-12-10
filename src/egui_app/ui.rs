@@ -442,6 +442,7 @@ impl eframe::App for EguiApp {
             focus_context,
             FocusContext::SampleBrowser | FocusContext::None
         );
+        let folder_focus = matches!(focus_context, FocusContext::SourceFolders);
         let collection_focus = matches!(focus_context, FocusContext::CollectionSample);
         let waveform_focus = matches!(focus_context, FocusContext::Waveform);
         let sources_focus = matches!(focus_context, FocusContext::SourcesList);
@@ -469,6 +470,7 @@ impl eframe::App for EguiApp {
             if !self.controller.ui.browser.selected_paths.is_empty() {
                 self.controller.clear_browser_selection();
             }
+            self.controller.clear_folder_selection();
         }
         if let Some(new_maximized) = ctx.input(|i| {
             if i.key_pressed(egui::Key::F11) {
@@ -488,6 +490,8 @@ impl eframe::App for EguiApp {
                 } else {
                     self.controller.nudge_selection(1);
                 }
+            } else if folder_focus {
+                self.controller.nudge_folder_focus(1);
             } else if waveform_focus {
                 self.controller.zoom_waveform(false);
             } else if sources_focus {
@@ -505,6 +509,8 @@ impl eframe::App for EguiApp {
                 } else {
                     self.controller.nudge_selection(-1);
                 }
+            } else if folder_focus {
+                self.controller.nudge_folder_focus(-1);
             } else if waveform_focus {
                 self.controller.zoom_waveform(true);
             } else if sources_focus {
@@ -550,6 +556,8 @@ impl eframe::App for EguiApp {
                 } else {
                     self.controller.move_playhead_steps(1, false, was_playing);
                 }
+            } else if folder_focus {
+                self.controller.expand_focused_folder();
             } else if ctrl_or_command && browser_focus && browser_has_selection {
                 self.controller.move_selection_column(1);
             } else if collection_focus {
@@ -602,6 +610,8 @@ impl eframe::App for EguiApp {
                 } else {
                     self.controller.move_playhead_steps(-1, false, was_playing);
                 }
+            } else if folder_focus {
+                self.controller.collapse_focused_folder();
             } else if ctrl_or_command && browser_focus && browser_has_selection {
                 self.controller.move_selection_column(-1);
             } else if collection_focus {
@@ -685,8 +695,7 @@ mod tests {
                 repeat: false,
                 modifiers: egui::Modifiers::default(),
             });
-            i.events
-                .push(egui::Event::Text(String::from("n")));
+            i.events.push(egui::Event::Text(String::from("n")));
             i.events.push(egui::Event::PointerGone);
         });
 

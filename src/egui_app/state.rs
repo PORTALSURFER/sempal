@@ -79,6 +79,7 @@ pub struct SourcePanelState {
     pub selected: Option<usize>,
     pub menu_row: Option<usize>,
     pub scroll_to: Option<usize>,
+    pub folders: FolderBrowserUiState,
 }
 
 /// Display data for a single source row.
@@ -88,6 +89,25 @@ pub struct SourceRowView {
     pub name: String,
     pub path: String,
     pub missing: bool,
+}
+
+/// UI state for browsing folders within the active source.
+#[derive(Clone, Debug, Default)]
+pub struct FolderBrowserUiState {
+    pub rows: Vec<FolderRowView>,
+    pub focused: Option<usize>,
+    pub scroll_to: Option<usize>,
+}
+
+/// Render-friendly folder row.
+#[derive(Clone, Debug)]
+pub struct FolderRowView {
+    pub path: PathBuf,
+    pub name: String,
+    pub depth: usize,
+    pub has_children: bool,
+    pub expanded: bool,
+    pub selected: bool,
 }
 
 /// Cached waveform image and playback overlays.
@@ -179,6 +199,8 @@ pub enum FocusContext {
     Waveform,
     /// The sample browser rows handle navigation/shortcuts.
     SampleBrowser,
+    /// The source folder browser handles navigation/shortcuts.
+    SourceFolders,
     /// The collections sample list handles navigation/shortcuts.
     CollectionSample,
     /// The sources list handles navigation/shortcuts.
