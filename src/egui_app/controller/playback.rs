@@ -248,6 +248,23 @@ impl EguiController {
         }
     }
 
+    /// Toggle sticky random navigation for Up/Down in the browser.
+    pub fn toggle_random_navigation_mode(&mut self) {
+        self.ui.browser.random_navigation_mode = !self.ui.browser.random_navigation_mode;
+        if self.ui.browser.random_navigation_mode {
+            self.set_status(
+                "Random navigation on: Up/Down jump to random samples",
+                StatusTone::Info,
+            );
+        } else {
+            self.set_status("Random navigation off", StatusTone::Info);
+        }
+    }
+
+    pub fn random_navigation_mode_enabled(&self) -> bool {
+        self.ui.browser.random_navigation_mode
+    }
+
     fn play_random_visible_sample_internal<R: Rng + ?Sized>(
         &mut self,
         rng: &mut R,

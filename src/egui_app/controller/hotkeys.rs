@@ -84,6 +84,15 @@ impl KeyPress {
             alt: false,
         }
     }
+
+    pub const fn with_alt(key: Key) -> Self {
+        Self {
+            key,
+            command: false,
+            shift: false,
+            alt: true,
+        }
+    }
 }
 
 /// Render a keypress in a user-friendly format (e.g. "Ctrl + G").
@@ -153,6 +162,7 @@ enum HotkeyCommand {
     FocusCollectionsList,
     PlayRandomSample,
     PlayPreviousRandomSample,
+    ToggleRandomNavigationMode,
 }
 
 /// Hotkey metadata surfaced to the UI.
@@ -313,6 +323,16 @@ const HOTKEY_ACTIONS: &[HotkeyAction] = &[
         command: HotkeyCommand::PlayRandomSample,
     },
     HotkeyAction {
+        id: "toggle-random-navigation-mode",
+        label: "Toggle random navigation mode",
+        gesture: HotkeyGesture {
+            first: KeyPress::with_alt(Key::R),
+            chord: None,
+        },
+        scope: HotkeyScope::Global,
+        command: HotkeyCommand::ToggleRandomNavigationMode,
+    },
+    HotkeyAction {
         id: "play-previous-random-sample",
         label: "Play previous random sample",
         gesture: HotkeyGesture {
@@ -419,6 +439,9 @@ impl EguiController {
             }
             HotkeyCommand::PlayPreviousRandomSample => {
                 self.play_previous_random_sample();
+            }
+            HotkeyCommand::ToggleRandomNavigationMode => {
+                self.toggle_random_navigation_mode();
             }
         }
     }

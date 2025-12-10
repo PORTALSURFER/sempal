@@ -661,21 +661,11 @@ impl EguiController {
     }
 
     pub fn extend_browser_selection_to_row(&mut self, visible_row: usize) {
-        self.apply_browser_selection(
-            visible_row,
-            SelectionAction::Extend {
-                additive: false,
-            },
-        );
+        self.apply_browser_selection(visible_row, SelectionAction::Extend { additive: false });
     }
 
     pub fn add_range_browser_selection(&mut self, visible_row: usize) {
-        self.apply_browser_selection(
-            visible_row,
-            SelectionAction::Extend {
-                additive: true,
-            },
-        );
+        self.apply_browser_selection(visible_row, SelectionAction::Extend { additive: true });
     }
 
     pub fn toggle_focused_selection(&mut self) {
