@@ -2,7 +2,7 @@
 lets then write every task you find into @todo.md as a new todo item
 
 --
-lets add a little 'selected folders' list below the folder browser, showing which folder are currently added to the selection group
+
 
 \plan -- for our folder browser 
 lets add 'd' to delete a folder, warning user, 'r' to rename, and 'n' to create a new folder.

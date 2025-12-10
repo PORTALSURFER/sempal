@@ -25,11 +25,10 @@ impl EguiApp {
                 }
             });
             ui.add_space(6.0);
-            let available_height = ui.available_height();
-            let source_list_height = (available_height * 0.25).max(140.0);
-            let folder_height = (available_height - source_list_height).max(160.0);
+            let source_list_height = (ui.available_height() * 0.25).max(140.0);
             self.render_sources_list(ui, source_list_height);
             ui.add_space(8.0);
+            let folder_height = ui.available_height().max(0.0);
             self.render_folder_browser(ui, folder_height);
         });
         if matches!(self.controller.ui.focus.context, FocusContext::SourcesList) {
@@ -188,6 +187,7 @@ impl EguiApp {
         let scroll_to = self.controller.ui.sources.folders.scroll_to;
         let frame_response = frame.show(ui, |ui| {
             ui.set_min_height(height);
+            ui.set_max_height(height);
             let rows = self.controller.ui.sources.folders.rows.clone();
             let row_height = list_row_height(ui);
             let scroll = egui::ScrollArea::vertical()
