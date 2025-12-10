@@ -2,6 +2,8 @@
 lets then write every task you find into @todo.md as a new todo item
 
 --
+\plan - lets add a section below the source list, keeping the source list maybe at 1/4th the full height. in this new section, add a folder browser for the selected source target, which effectily filters which sample items end up being presented in the sample browser, based on selection.
+lets add the same focus/selection system to this folder browser, so 'x' to select it etc, allowing for multiple folders selected at the same time. properly handling nested selections, lets make it so selecting a nested folder will automatically deselect its direct parent folder
 
 \plan - lets make esc deselect audio if we have a selection active.
 

@@ -1,5 +1,5 @@
 use super::style;
-use eframe::egui::{self, Align2, Color32, StrokeKind, TextStyle, Ui};
+use eframe::egui::{self, Align2, Color32, TextStyle, Ui};
 
 /// Metadata for rendering a fixed-width number column alongside a list row.
 pub(super) struct NumberColumn<'a> {
@@ -84,8 +84,11 @@ pub(super) fn render_list_row(
     if response.hovered() {
         ui.painter().rect_filled(rect, 0.0, style::row_hover_fill());
     }
-    ui.painter()
-        .rect_stroke(rect, 0.0, style::inner_border(), StrokeKind::Inside);
+    // Single divider to avoid stacking strokes between rows.
+    ui.painter().line_segment(
+        [rect.left_bottom(), rect.right_bottom()],
+        style::inner_border(),
+    );
     let font_id = TextStyle::Button.resolve(ui.style());
     let padding = ui.spacing().button_padding.x;
     let number_gap = padding * 0.5;
