@@ -17,6 +17,7 @@ pub const APP_DIR_NAME: &str = ".sempal";
 
 static CONFIG_BASE_OVERRIDE: LazyLock<Mutex<Option<PathBuf>>> = LazyLock::new(|| Mutex::new(None));
 // Prevent concurrent overrides from clobbering each other during tests.
+#[cfg(test)]
 static CONFIG_GUARD_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
 /// Errors that can occur while resolving or preparing application directories.
