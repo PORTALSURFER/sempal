@@ -491,7 +491,7 @@ impl eframe::App for EguiApp {
                     self.controller.nudge_selection(1);
                 }
             } else if folder_focus {
-                self.controller.nudge_folder_focus(1);
+                self.controller.nudge_folder_selection(1, input.shift);
             } else if waveform_focus {
                 self.controller.zoom_waveform(false);
             } else if sources_focus {
@@ -510,7 +510,7 @@ impl eframe::App for EguiApp {
                     self.controller.nudge_selection(-1);
                 }
             } else if folder_focus {
-                self.controller.nudge_folder_focus(-1);
+                self.controller.nudge_folder_selection(-1, input.shift);
             } else if waveform_focus {
                 self.controller.zoom_waveform(true);
             } else if sources_focus {
