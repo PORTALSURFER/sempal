@@ -7,9 +7,9 @@
 - Add regression coverage and manual checks to ensure hotkeys still dispatch their actions without beeps on Windows (normalize, delete, overlay toggle, focus changes).
 
 ## Step-by-step plan
-1. [-] Reproduce the beep on Windows and map the current hotkey processing path (event collection, chord handling, focus checks) to pinpoint unconsumed key events.
-2. [-] Update hotkey handling to consume matched keys—including chord roots where appropriate—while preserving existing focus rules and overlay behaviour.
-3. [-] Add targeted tests or harness coverage for hotkey dispatch/consumption and manually verify key flows on Windows to confirm beeps are eliminated and commands still run.
+1. [x] Reproduce the beep on Windows and map the current hotkey processing path (event collection, chord handling, focus checks) to pinpoint unconsumed key events.
+2. [x] Update hotkey handling to consume matched keys—including chord roots where appropriate—while preserving existing focus rules and overlay behaviour.
+3. [x] Add targeted tests or harness coverage for hotkey dispatch/consumption and manually verify key flows on Windows to confirm beeps are eliminated and commands still run.
 
 ## Code Style & Architecture Rules Reminder
 - Keep files under 400 lines; split when necessary.

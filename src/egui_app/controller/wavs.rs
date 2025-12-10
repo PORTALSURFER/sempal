@@ -11,11 +11,11 @@ const MIN_VIEW_WIDTH_BASE: f32 = 0.001;
 const MIN_SAMPLES_PER_PIXEL: f32 = 1.0;
 const MAX_ZOOM_MULTIPLIER: f32 = 64.0;
 
-fn min_view_width_for(samples_len: usize, width_px: u32) -> f32 {
-    if samples_len == 0 {
+fn min_view_width_for_frames(frame_count: usize, width_px: u32) -> f32 {
+    if frame_count == 0 {
         return 1.0;
     }
-    let samples = samples_len as f32;
+    let samples = frame_count as f32;
     let pixels = width_px.max(1) as f32;
     (pixels * MIN_SAMPLES_PER_PIXEL / samples).clamp(MIN_VIEW_WIDTH_BASE, 1.0)
 }
@@ -27,6 +27,8 @@ pub(super) struct WaveformRenderMeta {
     pub size: [u32; 2],
     pub samples_len: usize,
     pub texture_width: u32,
+    pub channel_view: crate::waveform::WaveformChannelView,
+    pub channels: u16,
 }
 
 impl WaveformRenderMeta {
@@ -35,6 +37,8 @@ impl WaveformRenderMeta {
         self.samples_len == other.samples_len
             && self.size == other.size
             && self.texture_width == other.texture_width
+            && self.channel_view == other.channel_view
+            && self.channels == other.channels
             && (self.view_start - other.view_start).abs() < EPS
             && (self.view_end - other.view_end).abs() < EPS
     }
@@ -43,7 +47,7 @@ impl WaveformRenderMeta {
 impl EguiController {
     pub(super) fn min_view_width(&self) -> f32 {
         if let Some(decoded) = self.decoded_waveform.as_ref() {
-            min_view_width_for(decoded.samples.len(), self.waveform_size[0])
+            min_view_width_for_frames(decoded.frame_count(), self.waveform_size[0])
         } else {
             MIN_VIEW_WIDTH_BASE
         }
@@ -943,7 +947,9 @@ impl EguiController {
             return;
         };
         let [width, height] = self.waveform_size;
-        let min_view_width = min_view_width_for(decoded.samples.len(), width);
+        let total_frames = decoded.frame_count();
+        let channels = decoded.channel_count();
+        let min_view_width = min_view_width_for_frames(total_frames, width);
         let mut view = self.ui.waveform.view.clamp();
         let width_clamped = view.width().max(min_view_width);
         view.start = view.start.min(1.0 - width_clamped);
@@ -953,19 +959,26 @@ impl EguiController {
         let zoom_scale = (1.0 / width_clamped).min(max_zoom).max(1.0);
         let target = (width as f32 * zoom_scale).ceil().max(width as f32) as usize;
 
-        let samples = &decoded.samples;
-        if samples.is_empty() {
+        if decoded.samples.is_empty() || total_frames == 0 {
             self.ui.waveform.image = None;
             return;
         }
-        let total_samples = samples.len();
-        let start_idx = ((view.start * total_samples as f32).floor() as usize)
-            .min(total_samples.saturating_sub(1));
-        let mut end_idx =
-            ((view.end * total_samples as f32).ceil() as usize).clamp(start_idx + 1, total_samples);
-        if end_idx <= start_idx {
-            end_idx = (start_idx + 1).min(total_samples);
+        let start_frame = ((view.start * total_frames as f32).floor() as usize)
+            .min(total_frames.saturating_sub(1));
+        let mut end_frame = ((view.end * total_frames as f32).ceil() as usize)
+            .clamp(start_frame + 1, total_frames);
+        if end_frame <= start_frame {
+            end_frame = (start_frame + 1).min(total_frames);
         }
+        let samples = &decoded.samples;
+        let total_samples = samples.len();
+        let start_idx = start_frame
+            .saturating_mul(channels)
+            .min(total_samples.saturating_sub(1));
+        let end_idx = end_frame
+            .saturating_mul(channels)
+            .min(total_samples)
+            .max(start_idx + 1);
         let upper_width = MAX_TEXTURE_WIDTH as usize;
         let lower_bound = width.min(MAX_TEXTURE_WIDTH) as usize;
         let effective_width = target.min(upper_width).max(lower_bound) as u32;
@@ -973,8 +986,10 @@ impl EguiController {
             view_start: view.start,
             view_end: view.end,
             size: [width, height],
-            samples_len: samples.len(),
+            samples_len: total_frames,
             texture_width: effective_width,
+            channel_view: self.ui.waveform.channel_view,
+            channels: decoded.channels,
         };
         if self
             .waveform_render_meta
@@ -985,6 +1000,8 @@ impl EguiController {
         }
         let color_image = self.renderer.render_color_image_with_size(
             &samples[start_idx..end_idx],
+            channels,
+            self.ui.waveform.channel_view,
             effective_width,
             height,
         );

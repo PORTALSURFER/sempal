@@ -6,6 +6,7 @@ use crate::audio::{AudioOutputConfig, ResolvedOutput};
 use crate::egui_app::ui::style;
 use crate::sample_sources::{CollectionId, SampleTag, SourceId};
 use crate::selection::SelectionRange;
+use crate::waveform::WaveformChannelView;
 use egui::{Color32, Pos2};
 use std::path::PathBuf;
 
@@ -96,6 +97,7 @@ pub struct WaveformState {
     pub playhead: PlayheadState,
     pub selection: Option<SelectionRange>,
     pub selection_duration: Option<String>,
+    pub channel_view: WaveformChannelView,
     /// Current visible viewport within the waveform (0.0-1.0 normalized).
     pub view: WaveformView,
     pub loop_enabled: bool,
@@ -113,6 +115,7 @@ impl Default for WaveformState {
             playhead: PlayheadState::default(),
             selection: None,
             selection_duration: None,
+            channel_view: WaveformChannelView::Mono,
             view: WaveformView::default(),
             loop_enabled: false,
             notice: None,
@@ -244,6 +247,7 @@ pub struct InteractionOptionsState {
     pub wheel_zoom_factor: f32,
     pub keyboard_zoom_factor: f32,
     pub destructive_yolo_mode: bool,
+    pub waveform_channel_view: WaveformChannelView,
 }
 
 impl Default for InteractionOptionsState {
@@ -254,6 +258,7 @@ impl Default for InteractionOptionsState {
             wheel_zoom_factor: 0.96,
             keyboard_zoom_factor: 0.9,
             destructive_yolo_mode: false,
+            waveform_channel_view: WaveformChannelView::Mono,
         }
     }
 }

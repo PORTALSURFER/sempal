@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize, de::Error as SerdeDeError};
 use thiserror::Error;
 
-use crate::{app_dirs, audio::AudioOutputConfig};
+use crate::{app_dirs, audio::AudioOutputConfig, waveform::WaveformChannelView};
 
 use super::{Collection, SampleSource};
 
@@ -66,6 +66,8 @@ pub struct InteractionOptions {
     pub keyboard_zoom_factor: f32,
     #[serde(default)]
     pub destructive_yolo_mode: bool,
+    #[serde(default)]
+    pub waveform_channel_view: WaveformChannelView,
 }
 
 impl Default for InteractionOptions {
@@ -76,6 +78,7 @@ impl Default for InteractionOptions {
             wheel_zoom_factor: default_wheel_zoom_factor(),
             keyboard_zoom_factor: default_keyboard_zoom_factor(),
             destructive_yolo_mode: false,
+            waveform_channel_view: WaveformChannelView::Mono,
         }
     }
 }

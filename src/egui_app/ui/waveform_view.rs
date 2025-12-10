@@ -11,6 +11,24 @@ impl EguiApp {
         let palette = style::palette();
         let highlight = palette.accent_copper;
         let is_loading = self.controller.ui.waveform.loading.is_some();
+        let mut view_mode = self.controller.ui.waveform.channel_view;
+        ui.horizontal(|ui| {
+            let mono = ui.selectable_value(
+                &mut view_mode,
+                crate::waveform::WaveformChannelView::Mono,
+                "Mono envelope",
+            );
+            mono.on_hover_text("Show peak envelope across all channels");
+            let split = ui.selectable_value(
+                &mut view_mode,
+                crate::waveform::WaveformChannelView::SplitStereo,
+                "Split L/R",
+            );
+            split.on_hover_text("Render the first two channels separately");
+        });
+        if view_mode != self.controller.ui.waveform.channel_view {
+            self.controller.set_waveform_channel_view(view_mode);
+        }
         let frame = Frame::new()
             .fill(style::compartment_fill())
             .stroke(style::outer_border())
