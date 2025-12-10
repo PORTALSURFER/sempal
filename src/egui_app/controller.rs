@@ -48,7 +48,7 @@ use open;
 use rfd::FileDialog;
 use std::{
     cell::RefCell,
-    collections::{HashMap, HashSet},
+    collections::{HashMap, HashSet, VecDeque},
     fs,
     path::{Path, PathBuf},
     rc::Rc,
@@ -61,6 +61,7 @@ use std::{
 const MIN_SELECTION_WIDTH: f32 = 0.001;
 const AUDIO_CACHE_CAPACITY: usize = 12;
 const AUDIO_HISTORY_LIMIT: usize = 8;
+const RANDOM_HISTORY_LIMIT: usize = 20;
 
 /// Maintains app state and bridges core logic to the egui UI.
 pub struct EguiController {
@@ -103,6 +104,8 @@ pub struct EguiController {
     next_audio_request_id: u64,
     scan_rx: Option<Receiver<ScanResult>>,
     scan_in_progress: bool,
+    random_history: VecDeque<RandomHistoryEntry>,
+    random_history_cursor: Option<usize>,
     #[cfg(target_os = "windows")]
     drag_hwnd: Option<windows::Win32::Foundation::HWND>,
 }
@@ -153,6 +156,8 @@ impl EguiController {
             next_audio_request_id: 1,
             scan_rx: None,
             scan_in_progress: false,
+            random_history: VecDeque::new(),
+            random_history_cursor: None,
             #[cfg(target_os = "windows")]
             drag_hwnd: None,
         }
@@ -195,6 +200,12 @@ fn status_badge(tone: StatusTone) -> (String, Color32) {
 struct RowFlags {
     focused: bool,
     loaded: bool,
+}
+
+#[derive(Clone)]
+struct RandomHistoryEntry {
+    source_id: SourceId,
+    relative_path: PathBuf,
 }
 
 struct WavLoadJob {

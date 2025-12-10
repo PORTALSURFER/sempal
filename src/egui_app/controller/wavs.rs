@@ -576,7 +576,7 @@ impl EguiController {
             .map(|entry| entry.relative_path.clone())
     }
 
-    fn visible_row_for_path(&self, path: &Path) -> Option<usize> {
+    pub(super) fn visible_row_for_path(&self, path: &Path) -> Option<usize> {
         let entry_index = self.wav_lookup.get(path)?;
         self.ui
             .browser
