@@ -2,7 +2,7 @@ use super::helpers::{clamp_label_for_width, list_row_height, render_list_row};
 use super::style;
 use super::*;
 use crate::egui_app::state::FocusContext;
-use eframe::egui::{self, Align2, RichText, StrokeKind, TextStyle, Ui};
+use eframe::egui::{self, Align, Align2, Layout, RichText, StrokeKind, TextStyle, Ui};
 
 impl EguiApp {
     pub(super) fn render_sources_panel(&mut self, ui: &mut Ui) {
@@ -182,7 +182,23 @@ impl EguiApp {
         let palette = style::palette();
         ui.horizontal(|ui| {
             ui.label(RichText::new("Folders").color(palette.text_primary));
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                let mut query = self.controller.ui.sources.folders.search_query.clone();
+                let response = ui.add(
+                    egui::TextEdit::singleline(&mut query)
+                        .hint_text("Search folders (f)...")
+                        .desired_width(180.0),
+                );
+                if self.controller.ui.sources.folders.search_focus_requested {
+                    response.request_focus();
+                    self.controller.ui.sources.folders.search_focus_requested = false;
+                }
+                if response.changed() {
+                    self.controller.set_folder_search(query);
+                }
+            });
         });
+        self.render_folder_action_prompt(ui);
         let frame = style::section_frame();
         let focused = matches!(
             self.controller.ui.focus.context,
@@ -307,6 +323,62 @@ impl EguiApp {
                     );
                 }
             });
+    }
+
+    fn render_folder_action_prompt(&mut self, ui: &mut Ui) {
+        let Some(prompt) = self.controller.ui.sources.folders.pending_action.as_mut() else {
+            return;
+        };
+        let palette = style::palette();
+        let mut submit = false;
+        let mut cancel = false;
+        ui.add_space(4.0);
+        ui.horizontal(|ui| {
+            let (label, path_display, name) = match prompt {
+                crate::egui_app::state::FolderActionPrompt::Create { parent, name } => (
+                    "Create folder",
+                    if parent.as_os_str().is_empty() {
+                        "at root".to_string()
+                    } else {
+                        parent.display().to_string()
+                    },
+                    name,
+                ),
+                crate::egui_app::state::FolderActionPrompt::Rename { target, name } => {
+                    ("Rename folder", target.display().to_string(), name)
+                }
+            };
+            ui.label(RichText::new(label).color(palette.text_primary));
+            ui.label(RichText::new(path_display).color(palette.text_muted));
+            let response = ui.add(
+                egui::TextEdit::singleline(name)
+                    .hint_text("Folder name")
+                    .desired_width(160.0),
+            );
+            submit |= response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+            cancel |= ui.input(|i| i.key_pressed(egui::Key::Escape));
+            submit |= ui.button("Apply").clicked();
+            cancel |= ui.button("Cancel").clicked();
+        });
+        let action = self.controller.ui.sources.folders.pending_action.clone();
+        if submit {
+            if let Some(action) = action {
+                let result = match action {
+                    crate::egui_app::state::FolderActionPrompt::Create { parent, name } => {
+                        self.controller.create_folder(&parent, &name)
+                    }
+                    crate::egui_app::state::FolderActionPrompt::Rename { target, name } => {
+                        self.controller.rename_folder(&target, &name)
+                    }
+                };
+                match result {
+                    Ok(()) => self.controller.ui.sources.folders.pending_action = None,
+                    Err(err) => self.controller.set_status(err, style::StatusTone::Error),
+                }
+            }
+        } else if cancel {
+            self.controller.ui.sources.folders.pending_action = None;
+        }
     }
 }
 

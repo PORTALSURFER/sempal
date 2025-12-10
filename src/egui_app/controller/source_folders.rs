@@ -1,6 +1,10 @@
 use super::*;
-use crate::egui_app::state::FolderRowView;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use crate::egui_app::state::{FolderActionPrompt, FolderRowView};
+use fuzzy_matcher::FuzzyMatcher;
+use fuzzy_matcher::skim::SkimMatcherV2;
+use rfd::{MessageButtons, MessageDialog, MessageDialogResult, MessageLevel};
+use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
 use std::path::{Path, PathBuf};
 
 #[derive(Clone, Copy)]
@@ -16,6 +20,8 @@ pub(super) struct FolderBrowserModel {
     focused: Option<PathBuf>,
     available: BTreeSet<PathBuf>,
     selection_anchor: Option<PathBuf>,
+    manual_folders: BTreeSet<PathBuf>,
+    search_query: String,
 }
 
 impl FolderBrowserModel {
@@ -42,13 +48,23 @@ impl EguiController {
             self.ui.sources.folders = FolderBrowserUiState::default();
             return;
         };
+        let Some(source) = self.current_source() else {
+            self.ui.sources.folders = FolderBrowserUiState::default();
+            return;
+        };
         let available = self.collect_folders();
         let snapshot = {
             let model = self
                 .folder_browsers
                 .entry(source_id.clone())
                 .or_insert_with(FolderBrowserModel::default);
+            model
+                .manual_folders
+                .retain(|path| source.root.join(path).is_dir());
             model.available = available;
+            for path in model.manual_folders.iter().cloned() {
+                model.available.insert(path);
+            }
             model.selected.retain(|path| model.available.contains(path));
             model.expanded.retain(|path| model.available.contains(path));
             if model.expanded.is_empty() {
@@ -71,6 +87,7 @@ impl EguiController {
             }
             model.clone()
         };
+        self.ui.sources.folders.search_query = snapshot.search_query.clone();
         self.build_folder_rows(&snapshot);
     }
 
@@ -114,6 +131,16 @@ impl EguiController {
         if selection_changed {
             self.rebuild_browser_lists();
         }
+    }
+
+    fn focused_folder_path(&self) -> Option<PathBuf> {
+        let row = self.ui.sources.folders.focused?;
+        self.ui
+            .sources
+            .folders
+            .rows
+            .get(row)
+            .map(|row| row.path.clone())
     }
 
     pub(crate) fn toggle_folder_row_selection(&mut self, row_index: usize) {
@@ -344,6 +371,129 @@ impl EguiController {
             .unwrap_or_default()
     }
 
+    pub(crate) fn delete_focused_folder(&mut self) {
+        let Some(target) = self.focused_folder_path() else {
+            self.set_status("Focus a folder to delete it", StatusTone::Info);
+            return;
+        };
+        match self.remove_folder(&target) {
+            Ok(()) => self.set_status(
+                format!("Deleted folder {}", target.display()),
+                StatusTone::Info,
+            ),
+            Err(err) => self.set_status(err, StatusTone::Error),
+        }
+    }
+
+    pub(crate) fn start_folder_rename(&mut self) {
+        let Some(target) = self.focused_folder_path() else {
+            self.set_status("Focus a folder to rename it", StatusTone::Info);
+            return;
+        };
+        let default = target
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map(str::to_string)
+            .unwrap_or_else(|| target.to_string_lossy().into_owned());
+        self.focus_folder_context();
+        self.ui.sources.folders.pending_action = Some(FolderActionPrompt::Rename {
+            target,
+            name: default,
+        });
+    }
+
+    pub(crate) fn start_new_folder(&mut self) {
+        let parent = self.focused_folder_path().unwrap_or_else(PathBuf::new);
+        self.focus_folder_context();
+        self.ui.sources.folders.pending_action = Some(FolderActionPrompt::Create {
+            parent,
+            name: String::new(),
+        });
+    }
+
+    pub(crate) fn rename_folder(&mut self, target: &Path, new_name: &str) -> Result<(), String> {
+        let name = normalize_folder_name(new_name)?;
+        let source = self
+            .current_source()
+            .ok_or_else(|| "Select a source first".to_string())?;
+        let new_relative = folder_with_name(target, &name);
+        if target == &new_relative {
+            return Ok(());
+        }
+        let absolute_old = source.root.join(target);
+        let absolute_new = source.root.join(&new_relative);
+        if !absolute_old.exists() {
+            return Err(format!("Folder not found: {}", target.display()));
+        }
+        if absolute_new.exists() {
+            return Err(format!("Folder already exists: {}", new_relative.display()));
+        }
+        let affected = self.folder_entries(target);
+        fs::rename(&absolute_old, &absolute_new)
+            .map_err(|err| format!("Failed to rename folder: {err}"))?;
+        self.rewrite_entries_for_folder(&source, target, &new_relative, &affected)?;
+        self.remap_manual_folders(target, &new_relative);
+        self.refresh_folder_browser();
+        self.set_status(
+            format!("Renamed folder to {}", new_relative.display()),
+            StatusTone::Info,
+        );
+        Ok(())
+    }
+
+    pub(crate) fn create_folder(&mut self, parent: &Path, name: &str) -> Result<(), String> {
+        let folder_name = normalize_folder_name(name)?;
+        let source = self
+            .current_source()
+            .ok_or_else(|| "Select a source first".to_string())?;
+        let relative = if parent.as_os_str().is_empty() {
+            PathBuf::from(&folder_name)
+        } else {
+            parent.join(&folder_name)
+        };
+        let destination = source.root.join(&relative);
+        if destination.exists() {
+            return Err(format!("Folder already exists: {}", relative.display()));
+        }
+        fs::create_dir_all(&destination)
+            .map_err(|err| format!("Failed to create folder: {err}"))?;
+        self.update_manual_folders(|set| {
+            set.insert(relative.clone());
+        });
+        self.refresh_folder_browser();
+        self.focus_folder_by_path(&relative);
+        self.set_status(
+            format!("Created folder {}", relative.display()),
+            StatusTone::Info,
+        );
+        Ok(())
+    }
+
+    pub(crate) fn set_folder_search(&mut self, query: String) {
+        if self.selected_source.is_none() {
+            self.ui.sources.folders.search_query = query;
+            return;
+        }
+        let snapshot = {
+            let Some(model) = self.current_folder_model_mut() else {
+                self.ui.sources.folders.search_query = query;
+                return;
+            };
+            if model.search_query == query {
+                return;
+            }
+            model.search_query = query.clone();
+            model.clone()
+        };
+        self.ui.sources.folders.search_query = query;
+        self.build_folder_rows(&snapshot);
+    }
+
+    pub(crate) fn focus_folder_search(&mut self) {
+        self.ui.sources.folders.search_focus_requested = true;
+        self.focus_folder_context();
+    }
+
     fn apply_folder_selection(&mut self, row_index: usize, mode: FolderSelectMode) {
         let Some((path, has_children)) = self
             .ui
@@ -411,21 +561,23 @@ impl EguiController {
     }
 
     fn build_folder_rows(&mut self, model: &FolderBrowserModel) {
+        self.ui.sources.folders.search_query = model.search_query.clone();
         let tree = self.build_folder_tree(&model.available);
+        let searching = !model.search_query.trim().is_empty();
         let mut rows = Vec::new();
-        let mut path_to_index: HashMap<PathBuf, usize> = HashMap::new();
-        self.flatten_folder_tree(
-            Path::new(""),
-            0,
-            &tree,
-            model,
-            &mut rows,
-            &mut path_to_index,
-        );
+        let expanded = if searching {
+            model.available.clone()
+        } else {
+            model.expanded.clone()
+        };
+        self.flatten_folder_tree(Path::new(""), 0, &tree, model, &expanded, &mut rows);
+        if searching {
+            rows = self.filter_folder_rows(rows, &model.search_query);
+        }
         let focused = model
             .focused
             .as_ref()
-            .and_then(|path| path_to_index.get(path).copied());
+            .and_then(|path| rows.iter().position(|row| &row.path == path));
         self.ui.sources.folders.rows = rows;
         self.ui.sources.folders.focused = focused;
         self.ui.sources.folders.scroll_to = focused;
@@ -478,21 +630,34 @@ impl EguiController {
         tree
     }
 
+    fn filter_folder_rows(&self, rows: Vec<FolderRowView>, query: &str) -> Vec<FolderRowView> {
+        let matcher = SkimMatcherV2::default();
+        let mut scored = Vec::new();
+        for row in rows {
+            let label = row.path.to_string_lossy();
+            if let Some(score) = matcher.fuzzy_match(label.as_ref(), query) {
+                scored.push((row, score));
+            }
+        }
+        scored.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.path.cmp(&b.0.path)));
+        scored.into_iter().map(|(row, _)| row).collect()
+    }
+
     fn flatten_folder_tree(
         &self,
         parent: &Path,
         depth: usize,
         tree: &BTreeMap<PathBuf, Vec<PathBuf>>,
         model: &FolderBrowserModel,
+        expanded: &BTreeSet<PathBuf>,
         rows: &mut Vec<FolderRowView>,
-        path_to_index: &mut HashMap<PathBuf, usize>,
     ) {
         let Some(children) = tree.get(parent) else {
             return;
         };
         for child in children {
             let has_children = tree.contains_key(child);
-            let expanded = model.expanded.contains(child);
+            let is_expanded = expanded.contains(child);
             let selected = model.selected.contains(child);
             let name = child
                 .file_name()
@@ -504,16 +669,205 @@ impl EguiController {
                 name,
                 depth,
                 has_children,
-                expanded,
+                expanded: is_expanded,
                 selected,
             };
-            let index = rows.len();
             rows.push(row);
-            path_to_index.insert(child.clone(), index);
-            if has_children && expanded {
-                self.flatten_folder_tree(child, depth + 1, tree, model, rows, path_to_index);
+            if has_children && is_expanded {
+                self.flatten_folder_tree(child, depth + 1, tree, model, expanded, rows);
             }
         }
+    }
+
+    fn folder_entries(&self, folder: &Path) -> Vec<WavEntry> {
+        self.wav_entries
+            .iter()
+            .cloned()
+            .filter(|entry| entry.relative_path.starts_with(folder))
+            .collect()
+    }
+
+    fn rewrite_entries_for_folder(
+        &mut self,
+        source: &SampleSource,
+        old_folder: &Path,
+        new_folder: &Path,
+        entries: &[WavEntry],
+    ) -> Result<(), String> {
+        if entries.is_empty() {
+            return Ok(());
+        }
+        self.update_folder_db_entries(source, old_folder, new_folder, entries)?;
+        self.update_folder_caches(source, old_folder, new_folder, entries)
+    }
+
+    fn update_folder_db_entries(
+        &mut self,
+        source: &SampleSource,
+        old_folder: &Path,
+        new_folder: &Path,
+        entries: &[WavEntry],
+    ) -> Result<(), String> {
+        let db = self
+            .database_for(source)
+            .map_err(|err| format!("Database unavailable: {err}"))?;
+        let mut batch = db
+            .write_batch()
+            .map_err(|err| format!("Failed to start database update: {err}"))?;
+        for entry in entries {
+            let suffix = entry
+                .relative_path
+                .strip_prefix(old_folder)
+                .unwrap_or_else(|_| Path::new(""));
+            let updated_path = new_folder.join(suffix);
+            batch
+                .remove_file(&entry.relative_path)
+                .map_err(|err| format!("Failed to drop old entry: {err}"))?;
+            batch
+                .upsert_file(&updated_path, entry.file_size, entry.modified_ns)
+                .map_err(|err| format!("Failed to register renamed file: {err}"))?;
+            batch
+                .set_tag(&updated_path, entry.tag)
+                .map_err(|err| format!("Failed to copy tag: {err}"))?;
+        }
+        batch
+            .commit()
+            .map_err(|err| format!("Failed to save rename: {err}"))
+    }
+
+    fn update_folder_caches(
+        &mut self,
+        source: &SampleSource,
+        old_folder: &Path,
+        new_folder: &Path,
+        entries: &[WavEntry],
+    ) -> Result<(), String> {
+        let mut collections_changed = false;
+        for entry in entries {
+            let suffix = entry
+                .relative_path
+                .strip_prefix(old_folder)
+                .unwrap_or_else(|_| Path::new(""));
+            let updated_path = new_folder.join(suffix);
+            let mut new_entry = entry.clone();
+            new_entry.relative_path = updated_path.clone();
+            new_entry.missing = false;
+            self.update_cached_entry(source, &entry.relative_path, new_entry);
+            if self.update_collections_for_rename(&source.id, &entry.relative_path, &updated_path) {
+                collections_changed = true;
+            }
+        }
+        if collections_changed {
+            self.persist_config("Failed to save collection after folder rename")?;
+        }
+        Ok(())
+    }
+
+    fn update_manual_folders<F>(&mut self, mut update: F)
+    where
+        F: FnMut(&mut BTreeSet<PathBuf>),
+    {
+        let Some(model) = self.current_folder_model_mut() else {
+            return;
+        };
+        update(&mut model.manual_folders);
+    }
+
+    fn remap_manual_folders(&mut self, old: &Path, new: &Path) {
+        self.update_manual_folders(|set| {
+            let descendants: Vec<PathBuf> = set
+                .iter()
+                .filter(|path| path.starts_with(old))
+                .cloned()
+                .collect();
+            set.retain(|path| !path.starts_with(old));
+            for path in descendants {
+                let suffix = path.strip_prefix(old).unwrap_or_else(|_| Path::new(""));
+                set.insert(new.join(suffix));
+            }
+        });
+    }
+
+    fn focus_folder_by_path(&mut self, path: &Path) {
+        let Some(model) = self.current_folder_model_mut() else {
+            return;
+        };
+        if !model.available.contains(path) {
+            return;
+        }
+        model.focused = Some(path.to_path_buf());
+        model.selection_anchor = Some(path.to_path_buf());
+        model.selected.clear();
+        model.selected.insert(path.to_path_buf());
+        let snapshot = model.clone();
+        self.build_folder_rows(&snapshot);
+        self.rebuild_browser_lists();
+    }
+
+    fn remove_folder(&mut self, target: &Path) -> Result<(), String> {
+        let source = self
+            .current_source()
+            .ok_or_else(|| "Select a source first".to_string())?;
+        let absolute = source.root.join(target);
+        if !absolute.exists() {
+            return Err(format!("Folder not found: {}", target.display()));
+        }
+        if !self.confirm_folder_delete(target) {
+            return Ok(());
+        }
+        let entries = self.folder_entries(target);
+        fs::remove_dir_all(&absolute).map_err(|err| format!("Failed to delete folder: {err}"))?;
+        let mut collections_changed = false;
+        if !entries.is_empty() {
+            let db = self
+                .database_for(&source)
+                .map_err(|err| format!("Database unavailable: {err}"))?;
+            let mut batch = db
+                .write_batch()
+                .map_err(|err| format!("Failed to start database update: {err}"))?;
+            for entry in &entries {
+                batch
+                    .remove_file(&entry.relative_path)
+                    .map_err(|err| format!("Failed to drop database row: {err}"))?;
+            }
+            batch
+                .commit()
+                .map_err(|err| format!("Failed to save folder delete: {err}"))?;
+        }
+        for entry in entries {
+            self.prune_cached_sample(&source, &entry.relative_path);
+            if self.remove_sample_from_collections(&source.id, &entry.relative_path) {
+                collections_changed = true;
+            }
+        }
+        if collections_changed {
+            self.persist_config("Failed to save collection after delete")?;
+        }
+        self.update_manual_folders(|set| {
+            set.retain(|path| !path.starts_with(target));
+        });
+        self.refresh_folder_browser();
+        self.ui.sources.folders.pending_action = None;
+        Ok(())
+    }
+
+    fn confirm_folder_delete(&self, target: &Path) -> bool {
+        if cfg!(test) {
+            return true;
+        }
+        let message = format!(
+            "Delete {} and all files inside it? This cannot be undone.",
+            target.display()
+        );
+        matches!(
+            MessageDialog::new()
+                .set_title("Delete folder")
+                .set_description(message)
+                .set_level(MessageLevel::Warning)
+                .set_buttons(MessageButtons::YesNo)
+                .show(),
+            MessageDialogResult::Yes
+        )
     }
 }
 
@@ -549,4 +903,31 @@ fn insert_folder(selected: &mut BTreeSet<PathBuf>, path: &Path, has_children: bo
     if has_children {
         remove_descendants(selected, path);
     }
+}
+
+fn normalize_folder_name(name: &str) -> Result<String, String> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return Err("Folder name cannot be empty".into());
+    }
+    if trimmed == "." || trimmed == ".." {
+        return Err("Folder name is invalid".into());
+    }
+    if trimmed.contains(['/', '\\']) {
+        return Err("Folder name cannot contain path separators".into());
+    }
+    Ok(trimmed.to_string())
+}
+
+fn folder_with_name(target: &Path, name: &str) -> PathBuf {
+    target.parent().map_or_else(
+        || PathBuf::from(name),
+        |parent| {
+            if parent.as_os_str().is_empty() {
+                PathBuf::from(name)
+            } else {
+                parent.join(name)
+            }
+        },
+    )
 }

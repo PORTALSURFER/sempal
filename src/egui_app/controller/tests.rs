@@ -1192,6 +1192,126 @@ fn browser_rename_updates_collections_and_lookup() {
 }
 
 #[test]
+fn creating_folder_tracks_manual_entry() -> Result<(), String> {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.refresh_folder_browser();
+
+    controller.create_folder(Path::new(""), "NewFolder")?;
+
+    assert!(source.root.join("NewFolder").is_dir());
+    assert!(
+        controller
+            .ui
+            .sources
+            .folders
+            .rows
+            .iter()
+            .any(|row| row.path == PathBuf::from("NewFolder"))
+    );
+    Ok(())
+}
+
+#[test]
+fn renaming_folder_updates_entries_and_tree() -> Result<(), String> {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    let folder = source.root.join("old");
+    std::fs::create_dir_all(&folder).unwrap();
+    write_test_wav(&folder.join("clip.wav"), &[0.1, -0.1]);
+    controller.wav_entries = vec![sample_entry("old/clip.wav", SampleTag::Neutral)];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+    controller.refresh_folder_browser();
+
+    controller.rename_folder(Path::new("old"), "new")?;
+
+    assert!(!folder.exists());
+    assert!(source.root.join("new/clip.wav").is_file());
+    assert_eq!(
+        controller.wav_entries[0].relative_path,
+        PathBuf::from("new/clip.wav")
+    );
+    assert!(
+        controller
+            .ui
+            .sources
+            .folders
+            .rows
+            .iter()
+            .any(|row| row.path == PathBuf::from("new"))
+    );
+    Ok(())
+}
+
+#[test]
+fn deleting_folder_removes_wavs() -> Result<(), String> {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    let target = source.root.join("gone");
+    std::fs::create_dir_all(&target).unwrap();
+    write_test_wav(&target.join("sample.wav"), &[0.0, 0.2]);
+    controller.wav_entries = vec![sample_entry("gone/sample.wav", SampleTag::Neutral)];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+    controller.refresh_folder_browser();
+    if let Some(index) = controller
+        .ui
+        .sources
+        .folders
+        .rows
+        .iter()
+        .position(|row| row.path == PathBuf::from("gone"))
+    {
+        controller.focus_folder_row(index);
+    }
+
+    controller.delete_focused_folder();
+
+    assert!(!target.exists());
+    assert!(controller.wav_entries.is_empty());
+    assert!(
+        controller
+            .ui
+            .sources
+            .folders
+            .rows
+            .iter()
+            .all(|row| row.path != PathBuf::from("gone"))
+    );
+    Ok(())
+}
+
+#[test]
+fn fuzzy_search_filters_folders() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    let kick = source.root.join("kick");
+    let snare = source.root.join("snare");
+    std::fs::create_dir_all(&kick).unwrap();
+    std::fs::create_dir_all(&snare).unwrap();
+    controller.wav_entries = vec![
+        sample_entry("kick/one.wav", SampleTag::Neutral),
+        sample_entry("snare/two.wav", SampleTag::Neutral),
+    ];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+    controller.refresh_folder_browser();
+
+    controller.set_folder_search("snr".to_string());
+
+    assert!(
+        controller
+            .ui
+            .sources
+            .folders
+            .rows
+            .iter()
+            .all(|row| row.path.starts_with(Path::new("snare")))
+    );
+}
+
+#[test]
 fn browser_normalize_refreshes_exports() -> Result<(), String> {
     let temp = tempdir().unwrap();
     let root = temp.path().join("source");

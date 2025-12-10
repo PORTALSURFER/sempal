@@ -352,7 +352,7 @@ impl EguiController {
         }
     }
 
-    fn update_collections_for_rename(
+    pub(super) fn update_collections_for_rename(
         &mut self,
         source_id: &SourceId,
         old_relative: &Path,
