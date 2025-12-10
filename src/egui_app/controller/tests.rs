@@ -1626,6 +1626,44 @@ fn waveform_refresh_respects_view_slice_and_caps_width() {
 }
 
 #[test]
+fn waveform_render_meta_rejects_small_shifts_when_zoomed_in() {
+    let base = super::wavs::WaveformRenderMeta {
+        view_start: 0.10,
+        view_end: 0.1009,
+        size: [240, 32],
+        samples_len: 10_000,
+        texture_width: 8_000,
+        channel_view: crate::waveform::WaveformChannelView::Mono,
+        channels: 2,
+    };
+    let shifted = super::wavs::WaveformRenderMeta {
+        view_start: 0.10095,
+        view_end: 0.10185,
+        ..base
+    };
+    assert!(!base.matches(&shifted));
+}
+
+#[test]
+fn waveform_render_meta_allows_small_shifts_on_full_view() {
+    let base = super::wavs::WaveformRenderMeta {
+        view_start: 0.0,
+        view_end: 1.0,
+        size: [240, 32],
+        samples_len: 10_000,
+        texture_width: 2_000,
+        channel_view: crate::waveform::WaveformChannelView::Mono,
+        channels: 1,
+    };
+    let minor_shift = super::wavs::WaveformRenderMeta {
+        view_start: 0.0005,
+        view_end: 1.0005,
+        ..base
+    };
+    assert!(base.matches(&minor_shift));
+}
+
+#[test]
 fn stale_audio_results_are_ignored() {
     let (mut controller, source) = dummy_controller();
     controller.feature_flags.autoplay_selection = false;
