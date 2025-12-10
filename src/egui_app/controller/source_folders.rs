@@ -222,6 +222,19 @@ impl EguiController {
         self.rebuild_browser_lists();
     }
 
+    pub(super) fn drop_folder_focus(&mut self) {
+        self.ui.sources.folders.focused = None;
+        self.ui.sources.folders.scroll_to = None;
+        let Some(model) = self.current_folder_model_mut() else {
+            return;
+        };
+        if model.focused.take().is_none() {
+            return;
+        }
+        let snapshot = model.clone();
+        self.build_folder_rows(&snapshot);
+    }
+
     pub(crate) fn toggle_folder_expanded(&mut self, row_index: usize) {
         let Some(path) = self
             .ui

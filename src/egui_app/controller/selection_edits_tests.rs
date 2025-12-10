@@ -118,10 +118,10 @@ fn smooth_selection_blends_multichannel_edges() {
     let mut buffer = SelectionEditBuffer {
         samples: vec![
             0.0_f32, 0.0, // frame 0
-            0.5, -0.5,    // frame 1 (before)
-            1.0, 1.0,     // frame 2 (selection start)
-            -1.0, -1.0,   // frame 3 (selection end)
-            -0.25, 0.25,  // frame 4 (after)
+            0.5, -0.5, // frame 1 (before)
+            1.0, 1.0, // frame 2 (selection start)
+            -1.0, -1.0, // frame 3 (selection end)
+            -0.25, 0.25, // frame 4 (after)
         ],
         channels: 2,
         sample_rate: 10_000,
