@@ -1,11 +1,10 @@
 ## Goal
-- Add a Shift + R hotkey that jumps to a random sample in the current browser view and immediately plays it, to speed up exploratory auditioning.
+- Add random sample playback shortcuts with a 20-item history so users can jump to a random visible sample (Shift + R) and step backward through recent picks (Ctrl/Cmd + Shift + R) without disrupting existing navigation.
 
 ## Proposed solutions
-- Introduce a controller helper that selects a random entry from the visible browser indices (respecting filters/search) and reuses existing selection and playback flows to load/play the chosen sample.
-- Register a new hotkey action in `controller::hotkeys` with a clear label and Shift + R binding, scoped so it works while browsing/focused samples without disrupting text input.
-- Surface the shortcut in the UI (hotkey overlay/usage docs) and ensure status feedback covers empty lists or missing sources.
-- Add deterministic tests around the random-selection helper and hotkey dispatch to keep selection, focus, and playback behaviour stable.
+- Keep random selection scoped to the current visible browser list, reuse existing focus/playback flows, and record each pick (source + path) into a bounded history that trims older entries.
+- Add a backward navigation action that re-focuses and plays prior random picks, handling missing sources/files gracefully and resetting the cursor when new randoms are added.
+- Surface both shortcuts in the hotkey registry/UI and cover behaviour with deterministic tests for history bounds, cursor movement, and edge cases.
 
 ## Step-by-step plan
 1. [x] Review current sample browser selection and playback pathways (`controller/playback.rs`, `controller/wavs.rs`, hotkey handling in `controller/hotkeys.rs` and `ui.rs`) to find the right hook for selecting and focusing a random visible sample.
@@ -13,6 +12,7 @@
 3. [x] Wire Shift + R into the hotkey registry with an appropriate scope/label, and connect it to the new random-play helper so the overlay and key handling trigger the behaviour.
 4. [x] Update user-facing hotkey documentation and add targeted tests covering random selection edge cases and hotkey dispatch; keep randomness deterministic in tests.
 5. [-] Manually sanity-check the new shortcut across focus contexts to confirm it doesn’t interfere with existing navigation or playback defaults.
+6. [x] Add random playback history (capped at 20 entries) and a Ctrl/Cmd + Shift + R hotkey to step backward through prior random picks, aligning playback and focus even across source changes.
 
 ## Code Style & Architecture Rules Reminder
 - Keep files under 400 lines; split when necessary.

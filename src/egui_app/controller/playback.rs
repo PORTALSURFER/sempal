@@ -2,6 +2,7 @@ use super::*;
 use crate::selection::SelectionEdge;
 use rand::seq::IteratorRandom;
 use rand::Rng;
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 #[cfg(test)]
 use rand::{rngs::StdRng, SeedableRng};
@@ -205,25 +206,94 @@ impl EguiController {
         self.play_random_visible_sample_internal(&mut rng, false);
     }
 
+    /// Play the previous entry from the random history stack.
+    pub fn play_previous_random_sample(&mut self) {
+        if self.random_history.is_empty() {
+            self.set_status("No random history yet", StatusTone::Info);
+            return;
+        }
+        let current = self
+            .random_history_cursor
+            .unwrap_or_else(|| self.random_history.len().saturating_sub(1));
+        if current == 0 {
+            self.random_history_cursor = Some(0);
+            self.set_status("Reached start of random history", StatusTone::Info);
+            return;
+        }
+        let target = current - 1;
+        self.random_history_cursor = Some(target);
+        if let Some(entry) = self.random_history.get(target).cloned() {
+            self.play_random_history_entry(entry);
+        }
+    }
+
     fn play_random_visible_sample_internal<R: Rng + ?Sized>(
         &mut self,
         rng: &mut R,
         start_playback: bool,
     ) {
-        let Some((visible_row, _)) = self
-            .visible_browser_indices()
-            .iter()
-            .enumerate()
-            .choose(rng)
-        else {
+        let Some(source_id) = self.selected_source.clone() else {
+            self.set_status("Select a source first", StatusTone::Info);
+            return;
+        };
+        let Some((visible_row, entry_index)) = self.visible_browser_indices().iter().copied().enumerate().choose(rng) else {
             self.set_status("No samples available to randomize", StatusTone::Info);
             return;
         };
+        let Some(path) = self
+            .wav_entries
+            .get(entry_index)
+            .map(|entry| entry.relative_path.clone())
+        else {
+            return;
+        };
+        self.push_random_history(source_id, path.clone());
         self.focus_browser_row_only(visible_row);
         if start_playback {
             if let Err(err) = self.play_audio(self.ui.waveform.loop_enabled, None) {
                 self.set_status(err, StatusTone::Error);
             }
+        }
+    }
+
+    fn push_random_history(&mut self, source_id: SourceId, relative_path: PathBuf) {
+        if let Some(cursor) = self.random_history_cursor {
+            if cursor + 1 < self.random_history.len() {
+                self.random_history.truncate(cursor + 1);
+            }
+        }
+        self.random_history.push_back(RandomHistoryEntry {
+            source_id,
+            relative_path,
+        });
+        if self.random_history.len() > RANDOM_HISTORY_LIMIT {
+            self.random_history.pop_front();
+            if let Some(cursor) = self.random_history_cursor {
+                self.random_history_cursor = Some(cursor.saturating_sub(1));
+            }
+        }
+        self.random_history_cursor = Some(self.random_history.len().saturating_sub(1));
+    }
+
+    fn play_random_history_entry(&mut self, entry: RandomHistoryEntry) {
+        if self.selected_source.as_ref() != Some(&entry.source_id) {
+            self.pending_playback = Some(PendingPlayback {
+                source_id: entry.source_id.clone(),
+                relative_path: entry.relative_path.clone(),
+                looped: self.ui.waveform.loop_enabled,
+                start_override: None,
+            });
+            self.pending_select_path = Some(entry.relative_path.clone());
+            self.select_source_internal(Some(entry.source_id), Some(entry.relative_path));
+            return;
+        }
+        if let Some(row) = self.visible_row_for_path(&entry.relative_path) {
+            self.focus_browser_row_only(row);
+        } else {
+            self.select_wav_by_path(&entry.relative_path);
+        }
+        if let Err(err) = self.play_audio(self.ui.waveform.loop_enabled, None) {
+            self.set_status(err, StatusTone::Error);
         }
     }
 

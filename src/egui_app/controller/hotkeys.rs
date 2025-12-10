@@ -147,6 +147,7 @@ enum HotkeyCommand {
     FocusSourcesList,
     FocusCollectionsList,
     PlayRandomSample,
+    PlayPreviousRandomSample,
 }
 
 /// Hotkey metadata surfaced to the UI.
@@ -271,6 +272,21 @@ const HOTKEY_ACTIONS: &[HotkeyAction] = &[
         scope: HotkeyScope::Global,
         command: HotkeyCommand::PlayRandomSample,
     },
+    HotkeyAction {
+        id: "play-previous-random-sample",
+        label: "Play previous random sample",
+        gesture: HotkeyGesture {
+            first: KeyPress {
+                key: Key::R,
+                command: true,
+                shift: true,
+                alt: false,
+            },
+            chord: None,
+        },
+        scope: HotkeyScope::Global,
+        command: HotkeyCommand::PlayPreviousRandomSample,
+    },
 ];
 
 pub(crate) fn iter_actions() -> impl Iterator<Item = HotkeyAction> {
@@ -335,6 +351,9 @@ impl EguiController {
             }
             HotkeyCommand::PlayRandomSample => {
                 self.play_random_visible_sample();
+            }
+            HotkeyCommand::PlayPreviousRandomSample => {
+                self.play_previous_random_sample();
             }
         }
     }

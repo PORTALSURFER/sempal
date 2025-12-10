@@ -2,6 +2,18 @@
 
 ### 🚀 Features
 
+- Add fuzzy search to sample browser
+- Add shift+space replay from last start marker
+
+### 🐛 Bug Fixes
+
+- Consume hotkey events to silence windows beeps
+- Cleanup resize handlers
+- Harden waveform sampling and render stability
+## [0.230.0] - 2025-12-10
+
+### 🚀 Features
+
 - Color sample labels using triage flags
 - Display waveform selection duration label
 - Make waveform selection edge drags respond immediately
@@ -36,6 +48,7 @@
 
 - Unify sempal dirs and add config menu entry
 - Outline plan for audio output settings and ASIO support
+- *(release)* V0.230.0 (#14)
 ## [0.189.0] - 2025-12-09
 
 ### 🚀 Features

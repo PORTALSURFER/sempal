@@ -1532,6 +1532,79 @@ fn random_sample_hotkey_is_registered() {
 }
 
 #[test]
+fn random_history_hotkey_is_registered() {
+    let action = hotkeys::iter_actions()
+        .find(|a| a.id == "play-previous-random-sample")
+        .expect("play-previous-random-sample hotkey");
+    assert_eq!(action.label, "Play previous random sample");
+    assert!(action.is_global());
+    assert_eq!(action.gesture.first.key, egui::Key::R);
+    assert!(action.gesture.first.shift);
+    assert!(action.gesture.first.command);
+    assert!(action.gesture.chord.is_none());
+}
+
+#[test]
+fn random_history_steps_backward() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.wav_entries = vec![
+        sample_entry("one.wav", SampleTag::Neutral),
+        sample_entry("two.wav", SampleTag::Neutral),
+    ];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+
+    let mut rng = StdRng::seed_from_u64(5);
+    let first_expected = controller
+        .visible_browser_indices()
+        .iter()
+        .enumerate()
+        .choose(&mut rng)
+        .map(|(row, _)| row);
+    controller.play_random_visible_sample_with_seed(5);
+
+    let mut rng = StdRng::seed_from_u64(9);
+    let second_expected = controller
+        .visible_browser_indices()
+        .iter()
+        .enumerate()
+        .choose(&mut rng)
+        .map(|(row, _)| row);
+    controller.play_random_visible_sample_with_seed(9);
+
+    assert_eq!(controller.ui.browser.selected_visible, second_expected);
+    assert_eq!(controller.random_history_cursor, Some(1));
+
+    controller.play_previous_random_sample();
+
+    assert_eq!(controller.random_history_cursor, Some(0));
+    assert_eq!(controller.ui.browser.selected_visible, first_expected);
+}
+
+#[test]
+fn random_history_trims_to_limit() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    let total = RANDOM_HISTORY_LIMIT + 5;
+    controller.wav_entries = (0..total)
+        .map(|i| sample_entry(&format!("{i}.wav"), SampleTag::Neutral))
+        .collect();
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+
+    for seed in 0..total as u64 {
+        controller.play_random_visible_sample_with_seed(seed);
+    }
+
+    assert_eq!(controller.random_history.len(), RANDOM_HISTORY_LIMIT);
+    assert_eq!(
+        controller.random_history_cursor,
+        Some(controller.random_history.len().saturating_sub(1))
+    );
+}
+
+#[test]
 fn random_sample_handles_empty_lists() {
     let (mut controller, _source) = dummy_controller();
 
