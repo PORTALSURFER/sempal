@@ -2,7 +2,6 @@
 lets then write every task you find into @todo.md as a new todo item
 
 --
----
 
 ### v2
 
