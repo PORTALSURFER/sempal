@@ -3755,7 +3755,7 @@ dependencies = [
 
 [[package]]
 name = "sempal"
-version = "0.226.0"
+version = "0.228.0"
 dependencies = [
  "cpal",
  "criterion",
