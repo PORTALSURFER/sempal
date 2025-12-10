@@ -33,6 +33,22 @@ fn directional_fade_zeroes_expected_side() {
 }
 
 #[test]
+fn directional_fade_left_to_right_zeroes_tail() {
+    let mut samples = vec![1.0_f32; 10];
+    apply_directional_fade(&mut samples, 1, 2, 6, FadeDirection::LeftToRight);
+    assert!((samples[1] - 1.0).abs() < 1e-6);
+    assert!(samples[6..].iter().all(|sample| sample.abs() < 1e-6));
+}
+
+#[test]
+fn directional_fade_right_to_left_zeroes_head() {
+    let mut samples = vec![1.0_f32; 10];
+    apply_directional_fade(&mut samples, 1, 3, 7, FadeDirection::RightToLeft);
+    assert!(samples[..3].iter().all(|sample| sample.abs() < 1e-6));
+    assert!((samples[9] - 1.0).abs() < 1e-6);
+}
+
+#[test]
 fn mute_zeroes_selection_without_fades() {
     let mut samples = vec![1.0_f32; 10];
     apply_muted_selection(&mut samples, 1, 0, 10);

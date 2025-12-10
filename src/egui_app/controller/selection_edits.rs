@@ -355,31 +355,47 @@ fn apply_directional_fade(
     end_frame: usize,
     direction: FadeDirection,
 ) {
-    if end_frame <= start_frame {
+    let channels = channels.max(1);
+    let total_frames = samples.len() / channels;
+    let (clamped_start, clamped_end) =
+        clamped_selection_span(total_frames, start_frame, end_frame);
+    if clamped_end <= clamped_start {
         return;
     }
-    let frame_count = end_frame - start_frame;
+    apply_fade_ramp(samples, channels, clamped_start, clamped_end, direction);
+    match direction {
+        FadeDirection::LeftToRight => {
+            apply_muted_selection(samples, channels, clamped_end, total_frames);
+        }
+        FadeDirection::RightToLeft => {
+            apply_muted_selection(samples, channels, 0, clamped_start);
+        }
+    }
+}
+
+fn clamped_selection_span(
+    total_frames: usize,
+    start_frame: usize,
+    end_frame: usize,
+) -> (usize, usize) {
+    let clamped_start = start_frame.min(total_frames);
+    let clamped_end = end_frame.min(total_frames);
+    (clamped_start, clamped_end)
+}
+
+fn apply_fade_ramp(
+    samples: &mut [f32],
+    channels: usize,
+    clamped_start: usize,
+    clamped_end: usize,
+    direction: FadeDirection,
+) {
+    let frame_count = clamped_end - clamped_start;
     let denom = (frame_count.saturating_sub(1)).max(1) as f32;
     for i in 0..frame_count {
         let progress = i as f32 / denom;
-        let factor = match direction {
-            FadeDirection::LeftToRight => {
-                if frame_count == 1 {
-                    0.0
-                } else {
-                    1.0 - progress
-                }
-            }
-            FadeDirection::RightToLeft => {
-                if frame_count == 1 {
-                    0.0
-                } else {
-                    progress
-                }
-            }
-        }
-        .clamp(0.0, 1.0);
-        let frame = start_frame + i;
+        let factor = fade_factor(frame_count, progress, direction);
+        let frame = clamped_start + i;
         for ch in 0..channels {
             let idx = frame * channels + ch;
             if let Some(sample) = samples.get_mut(idx) {
@@ -387,6 +403,17 @@ fn apply_directional_fade(
             }
         }
     }
+}
+
+fn fade_factor(frame_count: usize, progress: f32, direction: FadeDirection) -> f32 {
+    if frame_count == 1 {
+        return 0.0;
+    }
+    let factor = match direction {
+        FadeDirection::LeftToRight => 1.0 - progress,
+        FadeDirection::RightToLeft => progress,
+    };
+    factor.clamp(0.0, 1.0)
 }
 
 fn apply_muted_selection(
