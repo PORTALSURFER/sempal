@@ -1,17 +1,15 @@
 ## Goal
-- Add a sub-5ms fade-in when starting playback via mouse click and when restarting mid-play from the stop location to avoid pops, keeping behaviour aligned with file length, zoom level, and scroll position.
+- Stop Windows system beeps when triggering hotkeys (e.g., `N` normalize and similar shortcuts) while keeping existing shortcut behaviour intact.
 
 ## Proposed solutions
-- Extend the existing `AudioPlayer` segment pipeline (`fade_in`, `EdgeFade`, `SEGMENT_FADE` in src/audio.rs) with an explicit start-fade path for manual seeks/restarts, clamping fade duration against the active span length.
-- Thread the faded-start option through the egui controller paths that handle waveform clicks and play/pause/restart (`seek_to`, `set_playhead_and_seek`, looped playback) so normalized positions still map correctly regardless of zoom/scroll.
-- Add focused tests around short clips, offset seeks, and stop-location restarts to ensure the fade envelope prevents pops without altering playhead/view synchronisation.
+- Trace the hotkey event flow in `src/egui_app/ui.rs` and related controller code to find where handled key events fall through and let Windows play the default error beep.
+- Adjust key consumption so handled single-key and chord hotkeys are swallowed consistently (including pending chord roots) without disrupting text input or overlay visibility logic.
+- Add regression coverage and manual checks to ensure hotkeys still dispatch their actions without beeps on Windows (normalize, delete, overlay toggle, focus changes).
 
 ## Step-by-step plan
-1. [x] Trace current playback entry points (waveform click seeks, play/pause toggles, stop-and-restart flows) to map how they hit `play_audio` and `AudioPlayer::start_with_span`.
-2. [x] Update `AudioPlayer` to support a minimal start fade for arbitrary offsets (including restarts), clamping duration to the active span and keeping existing end fades intact.
-3. [x] Wire controller/UI flows to opt into the faded start on mouse seeks and mid-play restarts while preserving selection, loop, zoom, and scroll behaviours.
-4. [x] Add/extend tests covering fade length clamping, seek offsets, and short files to guard against popping regressions.
-5. [-] Manually verify playhead visibility and waveform view synchronisation during seek/restart with the new fades.
+1. [-] Reproduce the beep on Windows and map the current hotkey processing path (event collection, chord handling, focus checks) to pinpoint unconsumed key events.
+2. [-] Update hotkey handling to consume matched keys—including chord roots where appropriate—while preserving existing focus rules and overlay behaviour.
+3. [-] Add targeted tests or harness coverage for hotkey dispatch/consumption and manually verify key flows on Windows to confirm beeps are eliminated and commands still run.
 
 ## Code Style & Architecture Rules Reminder
 - Keep files under 400 lines; split when necessary.
