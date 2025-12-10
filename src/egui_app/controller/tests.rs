@@ -1854,6 +1854,21 @@ fn focusing_browser_row_updates_focus_context() {
 }
 
 #[test]
+fn hotkey_search_browser_requests_focus() {
+    let (mut controller, source) = dummy_controller();
+    prepare_browser_sample(&mut controller, &source, "find.wav");
+    controller.ui.browser.search_focus_requested = false;
+    let action = hotkeys::iter_actions()
+        .find(|a| a.id == "search-browser")
+        .expect("search-browser hotkey");
+
+    controller.handle_hotkey(action, FocusContext::SampleBrowser);
+
+    assert!(controller.ui.browser.search_focus_requested);
+    assert_eq!(controller.ui.focus.context, FocusContext::SampleBrowser);
+}
+
+#[test]
 fn hotkey_focus_waveform_sets_context() {
     let (mut controller, source) = dummy_controller();
     prepare_browser_sample(&mut controller, &source, "wave.wav");

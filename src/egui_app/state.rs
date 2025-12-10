@@ -389,6 +389,8 @@ pub struct SampleBrowserState {
     pub filter: TriageFlagFilter,
     /// Text query applied to visible rows via fuzzy search.
     pub search_query: String,
+    /// Flag to request focus for the search field in the UI.
+    pub search_focus_requested: bool,
     /// When enabled, Up/Down jump through random samples instead of list order.
     pub random_navigation_mode: bool,
     /// Pending inline action for the sample browser rows.
@@ -413,6 +415,7 @@ impl Default for SampleBrowserState {
             autoscroll: false,
             filter: TriageFlagFilter::All,
             search_query: String::new(),
+            search_focus_requested: false,
             random_navigation_mode: false,
             pending_action: None,
             rename_focus_requested: false,
