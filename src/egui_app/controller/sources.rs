@@ -176,7 +176,11 @@ impl EguiController {
         }
     }
 
-    fn select_source_internal(&mut self, id: Option<SourceId>, pending_path: Option<PathBuf>) {
+    pub(super) fn select_source_internal(
+        &mut self,
+        id: Option<SourceId>,
+        pending_path: Option<PathBuf>,
+    ) {
         let same_source = self.selected_source == id;
         self.pending_select_path = pending_path.clone();
         if same_source {
