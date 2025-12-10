@@ -382,9 +382,13 @@ impl EguiApp {
             let mut query = self.controller.ui.browser.search_query.clone();
             let response = ui.add(
                 egui::TextEdit::singleline(&mut query)
-                    .hint_text("Search...")
+                    .hint_text("Search samples (f)...")
                     .desired_width(160.0),
             );
+            if self.controller.ui.browser.search_focus_requested {
+                response.request_focus();
+                self.controller.ui.browser.search_focus_requested = false;
+            }
             if response.changed() {
                 self.controller.set_browser_search(query);
             }

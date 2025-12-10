@@ -131,6 +131,7 @@ fn key_label(key: Key) -> &'static str {
         egui::Key::S => "S",
         egui::Key::W => "W",
         egui::Key::L => "L",
+        egui::Key::F => "F",
         egui::Key::OpenBracket => "[",
         egui::Key::CloseBracket => "]",
         egui::Key::ArrowLeft => "Left",
@@ -153,6 +154,7 @@ enum HotkeyCommand {
     RenameFocusedSample,
     CreateFolder,
     FocusFolderSearch,
+    FocusBrowserSearch,
     AddFocusedToCollection,
     ToggleOverlay,
     ToggleLoop,
@@ -235,6 +237,13 @@ const HOTKEY_ACTIONS: &[HotkeyAction] = &[
         gesture: HotkeyGesture::new(Key::F),
         scope: HotkeyScope::Focus(FocusContext::SourceFolders),
         command: HotkeyCommand::FocusFolderSearch,
+    },
+    HotkeyAction {
+        id: "search-browser",
+        label: "Search samples",
+        gesture: HotkeyGesture::new(Key::F),
+        scope: HotkeyScope::Focus(FocusContext::SampleBrowser),
+        command: HotkeyCommand::FocusBrowserSearch,
     },
     HotkeyAction {
         id: "normalize-browser",
@@ -419,6 +428,11 @@ impl EguiController {
             HotkeyCommand::FocusFolderSearch => {
                 if matches!(focus, FocusContext::SourceFolders) {
                     self.focus_folder_search();
+                }
+            }
+            HotkeyCommand::FocusBrowserSearch => {
+                if matches!(focus, FocusContext::SampleBrowser) {
+                    self.focus_browser_search();
                 }
             }
             HotkeyCommand::AddFocusedToCollection => {
