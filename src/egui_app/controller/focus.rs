@@ -57,6 +57,11 @@ impl EguiController {
         self.ui.focus.set_context(FocusContext::SourcesList);
     }
 
+    /// Mark the source folder browser as the active focus surface.
+    pub(super) fn focus_folder_context(&mut self) {
+        self.ui.focus.set_context(FocusContext::SourceFolders);
+    }
+
     /// Focus the sources list, selecting the current row or the first available source.
     pub(super) fn focus_sources_list(&mut self) {
         if self.sources.is_empty() {
