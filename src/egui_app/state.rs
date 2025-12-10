@@ -99,6 +99,7 @@ pub struct FolderBrowserUiState {
     pub scroll_to: Option<usize>,
     pub search_query: String,
     pub search_focus_requested: bool,
+    pub rename_focus_requested: bool,
     pub pending_action: Option<FolderActionPrompt>,
 }
 
