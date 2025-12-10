@@ -3,7 +3,13 @@ lets then write every task you find into @todo.md as a new todo item
 
 --
 
-\plan - lets tighten up the ui layout right now we have a bunch of double borders/frames in places, please redesign this, I want tight borders, section against section with only ever single borders. no double borders, insets, etc
+\plan - lets make esc deselect audio if we have a selection active.
+
+\pan - lets make 'home' jump to the start of the sample if we have the waveform focused and 'end' jump to the end
+
+\plan - if we use keyboard nav in waveform view, and we played using shift+spacebar, make the next navigation move start from this used play position, not continue from where the actual play head is currently.
+lets also align with the mouse cursor more, so nav should not move the actual playhead, but move the cursor (currently greenish)  
+shift+spacebar should start from this cursor position if no previous play position exists yet.
 
 ### v2
 

@@ -1,6 +1,6 @@
 use super::style;
 use super::*;
-use eframe::egui::{self, Frame, RichText, SliderClamping, StrokeKind};
+use eframe::egui::{self, Frame, Margin, RichText, SliderClamping, StrokeKind};
 
 impl EguiApp {
     fn log_viewport_info(&mut self, ctx: &egui::Context) {
@@ -44,7 +44,8 @@ impl EguiApp {
             .frame(
                 Frame::new()
                     .fill(palette.bg_primary)
-                    .stroke(style::outer_border()),
+                    .stroke(style::section_stroke())
+                    .inner_margin(Margin::symmetric(10, 6)),
             )
             .show(ctx, |ui| {
                 let status = self.controller.ui.status.clone();
