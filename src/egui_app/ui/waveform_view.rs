@@ -195,7 +195,8 @@ impl EguiApp {
                     }
                 } else if handle_response.dragged() {
                     if let Some(pos) = handle_response.interact_pointer_pos() {
-                        self.controller.update_active_drag(pos, None, false, None);
+                        self.controller
+                            .update_active_drag(pos, None, false, None, None);
                     }
                 } else if handle_response.drag_stopped() {
                     self.controller.finish_active_drag();

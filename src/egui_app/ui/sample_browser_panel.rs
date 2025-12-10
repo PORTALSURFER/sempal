@@ -18,14 +18,14 @@ impl EguiApp {
         let drop_target = self.controller.triage_flag_drop_target();
         self.render_sample_browser_filter(ui);
         ui.add_space(6.0);
-        let list_height = ui.available_height().max(0.0);
+        let list_height = ui.available_height().max(160.0);
         let drag_active = self.controller.ui.drag.payload.is_some();
         let pointer_pos = ui
             .input(|i| i.pointer.hover_pos().or_else(|| i.pointer.interact_pos()))
             .or(self.controller.ui.drag.position);
         let autoscroll_enabled = self.controller.ui.browser.autoscroll
             && self.controller.ui.collections.selected_sample.is_none();
-        let row_height = list_row_height(ui);
+        let row_height = list_row_height(ui).clamp(18.0, 36.0);
         let row_metrics = RowMetrics {
             height: row_height,
             spacing: ui.spacing().item_spacing.y,
@@ -38,6 +38,7 @@ impl EguiApp {
             let number_gap = ui.spacing().button_padding.x * 0.5;
             let scroll_area = egui::ScrollArea::vertical()
                 .id_salt("sample_browser_scroll")
+                .auto_shrink([false; 2])
                 .max_height(list_height);
             let scroll_response = if total_rows == 0 {
                 scroll_area.show(ui, |ui| {
@@ -180,6 +181,7 @@ impl EguiApp {
                                         None,
                                         false,
                                         Some(drop_target),
+                                        None,
                                     );
                                 }
                             } else if response.drag_stopped() {
@@ -212,7 +214,7 @@ impl EguiApp {
             if let Some(pointer) = pointer_pos {
                 if frame_response.response.rect.contains(pointer) {
                     self.controller
-                        .update_active_drag(pointer, None, false, Some(drop_target));
+                        .update_active_drag(pointer, None, false, Some(drop_target), None);
                 }
             }
         }
