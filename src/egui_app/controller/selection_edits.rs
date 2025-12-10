@@ -6,8 +6,11 @@ use std::{path::PathBuf, time::Duration};
 
 #[path = "selection_normalize.rs"]
 mod selection_normalize;
+#[path = "selection_smooth.rs"]
+mod selection_smooth;
 
 use selection_normalize::normalize_selection;
+use selection_smooth::smooth_selection;
 
 /// Direction of a fade applied over the active selection.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -33,6 +36,7 @@ impl DestructiveSelectionEdit {
             DestructiveSelectionEdit::FadeRightToLeft => "Fade selection (right to left)",
             DestructiveSelectionEdit::MuteSelection => "Mute selection",
             DestructiveSelectionEdit::NormalizeSelection => "Normalize selection",
+            DestructiveSelectionEdit::SmoothSelection => "Smooth selection edges",
         }
     }
 
@@ -55,6 +59,9 @@ impl DestructiveSelectionEdit {
             }
             DestructiveSelectionEdit::NormalizeSelection => {
                 "This will overwrite the selection with a normalized version and short fades."
+            }
+            DestructiveSelectionEdit::SmoothSelection => {
+                "This will overwrite the selection with softened edges to reduce clicks."
             }
         }
     }
@@ -150,6 +157,17 @@ impl EguiController {
         result
     }
 
+    /// Smooth the selection edges with short raised-cosine crossfades.
+    pub(crate) fn smooth_waveform_selection(&mut self) -> Result<(), String> {
+        let result = self.apply_selection_edit("Smoothed selection", |buffer| {
+            smooth_selection(buffer, Duration::from_millis(8))
+        });
+        if let Err(err) = &result {
+            self.set_status(err.clone(), StatusTone::Error);
+        }
+        result
+    }
+
     /// Silence the selected span without applying fades.
     pub(crate) fn mute_waveform_selection(&mut self) -> Result<(), String> {
         let result = self.apply_selection_edit("Muted selection", mute_buffer);
@@ -171,6 +189,7 @@ impl EguiController {
             }
             DestructiveSelectionEdit::MuteSelection => self.mute_waveform_selection(),
             DestructiveSelectionEdit::NormalizeSelection => self.normalize_waveform_selection(),
+            DestructiveSelectionEdit::SmoothSelection => self.smooth_waveform_selection(),
         }
     }
 
