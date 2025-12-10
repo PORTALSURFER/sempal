@@ -2,6 +2,7 @@ use super::*;
 use crate::egui_app::state::DragPayload;
 use crate::egui_app::controller::collection_items_helpers::file_metadata;
 use egui::Pos2;
+use tracing::{debug, info, warn};
 
 impl EguiController {
     /// Start tracking a drag for a sample.
@@ -51,6 +52,7 @@ impl EguiController {
         hovering_drop_zone: bool,
         hovering_triage: Option<TriageFlagColumn>,
         hovering_folder: Option<PathBuf>,
+        hovering_folder_panel: bool,
     ) {
         if self.ui.drag.payload.is_none() {
             return;
@@ -59,7 +61,22 @@ impl EguiController {
         self.ui.drag.hovering_collection = hovering_collection;
         self.ui.drag.hovering_drop_zone = hovering_drop_zone;
         self.ui.drag.hovering_browser = hovering_triage;
-        self.ui.drag.hovering_folder = hovering_folder;
+        if hovering_folder_panel {
+            if let Some(folder) = hovering_folder {
+                debug!(
+                    "Drag hover folder {:?}",
+                    folder.display()
+                );
+                self.ui.drag.hovering_folder = Some(folder.clone());
+                self.ui.drag.last_hovering_folder = Some(folder);
+            } else {
+                // Keep the last hovered folder so drop can still land if cursor slips slightly.
+                self.ui.drag.hovering_folder = None;
+            }
+        } else {
+            self.ui.drag.hovering_folder = None;
+        }
+        self.ui.drag.hovering_folder_panel = hovering_folder_panel;
     }
 
     /// Refresh drag cursor position when payload is active, without touching hover targets.
@@ -78,22 +95,58 @@ impl EguiController {
                 return;
             }
         };
-        let triage_target = self.ui.drag.hovering_browser;
-        let folder_target = self.ui.drag.hovering_folder.clone();
+        info!(
+            "Finish drag payload={:?} hover_collection={:?} hover_drop_zone={} hover_browser={:?} hover_folder={:?} last_folder={:?} hover_folder_panel={}",
+            payload,
+            self.ui.drag.hovering_collection,
+            self.ui.drag.hovering_drop_zone,
+            self.ui.drag.hovering_browser,
+            self.ui.drag.hovering_folder,
+            self.ui.drag.last_hovering_folder,
+            self.ui.drag.hovering_folder_panel
+        );
+        let triage_target = if self.ui.drag.hovering_folder_panel {
+            None
+        } else {
+            self.ui.drag.hovering_browser
+        };
+        let folder_target = self
+            .ui
+            .drag
+            .hovering_folder
+            .clone()
+            .or_else(|| self.ui.drag.last_hovering_folder.clone());
+        let over_folder_panel = self.ui.drag.hovering_folder_panel;
+        if over_folder_panel && folder_target.is_none() {
+            self.reset_drag();
+            self.set_status(
+                "Drop onto a folder to move the sample",
+                StatusTone::Warning,
+            );
+            return;
+        }
+        debug!(
+            "Finish drag payload={:?} folder_target={:?} collection_target={:?} triage_target={:?}",
+            payload, folder_target, self.ui.drag.hovering_collection, triage_target
+        );
         let collection_target = match &payload {
-            DragPayload::Sample { .. } => self
-                .ui
-                .drag
-                .hovering_collection
-                .clone()
-                .or_else(|| {
-                    if self.ui.drag.hovering_drop_zone {
-                        self.current_collection_id()
-                    } else {
-                        None
-                    }
-                })
-                .or_else(|| self.current_collection_id()),
+            DragPayload::Sample { .. } => {
+                if over_folder_panel {
+                    None
+                } else {
+                    self.ui
+                        .drag
+                        .hovering_collection
+                        .clone()
+                        .or_else(|| {
+                            if self.ui.drag.hovering_drop_zone {
+                                self.current_collection_id()
+                            } else {
+                                None
+                            }
+                        })
+                }
+            }
             DragPayload::Selection { .. } => self
                 .ui
                 .drag
@@ -155,6 +208,8 @@ impl EguiController {
         self.ui.drag.hovering_drop_zone = false;
         self.ui.drag.hovering_browser = None;
         self.ui.drag.hovering_folder = None;
+        self.ui.drag.hovering_folder_panel = false;
+        self.ui.drag.last_hovering_folder = None;
         self.ui.drag.external_started = false;
     }
 
@@ -305,13 +360,28 @@ impl EguiController {
         relative_path: PathBuf,
         target_folder: &Path,
     ) {
+        info!(
+            "Folder drop requested: source_id={:?} path={} target={}",
+            source_id,
+            relative_path.display(),
+            target_folder.display()
+        );
         let Some(source) = self.sources.iter().find(|s| s.id == source_id).cloned() else {
+            warn!("Folder move: missing source {:?}", source_id);
             self.set_status("Source not available for move", StatusTone::Error);
             return;
         };
-        if self.selected_source.as_ref() != Some(&source.id) {
+        if self
+            .selected_source
+            .as_ref()
+            .is_some_and(|selected| selected != &source.id)
+        {
+            warn!(
+                "Folder move blocked: selected source {:?} differs from sample source {:?}",
+                self.selected_source, source.id
+            );
             self.set_status(
-                "Select the source to move samples into its folders",
+                "Switch to the sample's source before moving into its folders",
                 StatusTone::Warning,
             );
             return;
@@ -319,6 +389,7 @@ impl EguiController {
         let file_name = match relative_path.file_name() {
             Some(name) => name.to_owned(),
             None => {
+                warn!("Folder move aborted: missing file name for {:?}", relative_path);
                 self.set_status("Sample name unavailable for move", StatusTone::Error);
                 return;
             }
@@ -329,6 +400,7 @@ impl EguiController {
             target_folder.join(file_name)
         };
         if new_relative == relative_path {
+            info!("Folder move skipped: already in target {:?}", target_folder);
             self.set_status("Sample is already in that folder", StatusTone::Info);
             return;
         }
@@ -342,6 +414,10 @@ impl EguiController {
         }
         let absolute = source.root.join(&relative_path);
         if !absolute.exists() {
+            warn!(
+                "Folder move aborted: missing source file {}",
+                relative_path.display()
+            );
             self.set_status(
                 format!("File missing: {}", relative_path.display()),
                 StatusTone::Error,
@@ -350,6 +426,10 @@ impl EguiController {
         }
         let target_absolute = source.root.join(&new_relative);
         if target_absolute.exists() {
+            warn!(
+                "Folder move aborted: target already exists {}",
+                new_relative.display()
+            );
             self.set_status(
                 format!("A file already exists at {}", new_relative.display()),
                 StatusTone::Error,
@@ -359,6 +439,11 @@ impl EguiController {
         let tag = match self.sample_tag_for(&source, &relative_path) {
             Ok(tag) => tag,
             Err(err) => {
+                warn!(
+                    "Folder move aborted: failed to resolve tag for {}: {}",
+                    relative_path.display(),
+                    err
+                );
                 self.set_status(err, StatusTone::Error);
                 return;
             }
@@ -366,6 +451,12 @@ impl EguiController {
         if let Err(err) = std::fs::rename(&absolute, &target_absolute)
             .map_err(|err| format!("Failed to move file: {err}"))
         {
+            warn!(
+                "Folder move aborted: rename failed {} -> {} : {}",
+                absolute.display(),
+                target_absolute.display(),
+                err
+            );
             self.set_status(err, StatusTone::Error);
             return;
         }
@@ -373,6 +464,11 @@ impl EguiController {
             Ok(meta) => meta,
             Err(err) => {
                 let _ = std::fs::rename(&target_absolute, &absolute);
+                warn!(
+                    "Folder move aborted: metadata failed for {} : {}",
+                    target_absolute.display(),
+                    err
+                );
                 self.set_status(err, StatusTone::Error);
                 return;
             }
@@ -386,6 +482,12 @@ impl EguiController {
             tag,
         ) {
             let _ = std::fs::rename(&target_absolute, &absolute);
+            warn!(
+                "Folder move aborted: db rewrite failed {} -> {} : {}",
+                relative_path.display(),
+                new_relative.display(),
+                err
+            );
             self.set_status(err, StatusTone::Error);
             return;
         }
@@ -400,6 +502,11 @@ impl EguiController {
         if self.update_collections_for_rename(&source.id, &relative_path, &new_relative) {
             let _ = self.persist_config("Failed to save collections after move");
         }
+        info!(
+            "Folder move success: {} -> {}",
+            relative_path.display(),
+            new_relative.display()
+        );
         self.set_status(
             format!("Moved to {}", target_folder.display()),
             StatusTone::Info,
