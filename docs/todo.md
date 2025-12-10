@@ -3,9 +3,6 @@ lets then write every task you find into @todo.md as a new todo item
 
 --
 
-\plan - lets make esc deselect audio if we have a selection active.
-
-\pan - lets make 'home' jump to the start of the sample if we have the waveform focused and 'end' jump to the end
 
 \plan - if we use keyboard nav in waveform view, and we played using shift+spacebar, make the next navigation move start from this used play position, not continue from where the actual play head is currently.
 lets also align with the mouse cursor more, so nav should not move the actual playhead, but move the cursor (currently greenish)  
@@ -14,7 +11,7 @@ shift+spacebar should start from this cursor position if no previous play positi
 lets align shift+click select of the sample browser with how it works in the folder browser, select a to b.
 also, if the user selects with ctrl, and then selects with ctrl+shift+click, add a new a to b selection where the ctrl select is not the new 'a' marker, in addition to what was already selected, typical ctrl+shift+click behaviour.
 
-- clear the dottes 'last playstart' line when we select/focus a new sample
+- clear the dotted 'last playstart' line when we select/focus a new sample
 
 - lets add the ability to move samples around by drag dropping them onto a folder
 

@@ -57,7 +57,8 @@ impl EguiController {
 
     /// Clear any active selection.
     pub fn clear_selection(&mut self) {
-        if self.selection.clear() {
+        let cleared = self.selection.clear();
+        if cleared || self.ui.waveform.selection.is_some() {
             self.apply_selection(None);
         }
     }
@@ -142,6 +143,16 @@ impl EguiController {
             return true;
         }
         false
+    }
+
+    /// Handle Escape input by stopping playback and clearing selections across panels.
+    pub fn handle_escape(&mut self) {
+        let _ = self.stop_playback_if_active();
+        self.clear_selection();
+        if !self.ui.browser.selected_paths.is_empty() {
+            self.clear_browser_selection();
+        }
+        self.clear_folder_selection();
     }
 
     /// Tag the focused/selected wavs and keep the current focus.
