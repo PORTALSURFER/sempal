@@ -1943,6 +1943,26 @@ fn last_start_marker_clamps_and_resets() {
 }
 
 #[test]
+fn selecting_new_sample_clears_last_start_marker() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    write_test_wav(&source.root.join("a.wav"), &[0.0, 0.1]);
+    write_test_wav(&source.root.join("b.wav"), &[0.2, -0.2]);
+    controller.wav_entries = vec![
+        sample_entry("a.wav", SampleTag::Neutral),
+        sample_entry("b.wav", SampleTag::Neutral),
+    ];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+
+    controller.select_wav_by_path(Path::new("a.wav"));
+    controller.record_play_start(0.25);
+    controller.select_wav_by_path(Path::new("b.wav"));
+
+    assert!(controller.ui.waveform.last_start_marker.is_none());
+}
+
+#[test]
 fn replay_from_last_start_requeues_pending_playback() {
     let (mut controller, source) = dummy_controller();
     prepare_browser_sample(&mut controller, &source, "marker.wav");

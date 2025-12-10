@@ -289,6 +289,10 @@ impl EguiController {
         if !self.wav_lookup.contains_key(path) {
             return;
         }
+        let path_changed = self.selected_wav.as_deref() != Some(path);
+        if path_changed {
+            self.ui.waveform.last_start_marker = None;
+        }
         self.selected_wav = Some(path.to_path_buf());
         let missing = self
             .wav_lookup
