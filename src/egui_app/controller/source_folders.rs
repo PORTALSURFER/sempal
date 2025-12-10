@@ -269,9 +269,45 @@ impl EguiController {
         }
         let target = (current as isize + offset).clamp(0, len - 1) as usize;
         if extend {
-            self.select_folder_range(target);
+            self.add_folder_to_selection(target);
         } else {
             self.focus_folder_row(target);
+        }
+    }
+
+    pub(crate) fn add_folder_to_selection(&mut self, row_index: usize) {
+        let Some((path, has_children)) = self
+            .ui
+            .sources
+            .folders
+            .rows
+            .get(row_index)
+            .map(|row| (row.path.clone(), row.has_children))
+        else {
+            return;
+        };
+        let (snapshot, selection_changed) = {
+            let Some(model) = self.current_folder_model_mut() else {
+                return;
+            };
+            if !model.available.contains(&path) {
+                return;
+            }
+            let before = model.selected.clone();
+            insert_folder(&mut model.selected, &path, has_children);
+            if model.selection_anchor.is_none() {
+                model.selection_anchor = Some(path.clone());
+            }
+            model.focused = Some(path.clone());
+            let changed = before != model.selected;
+            (model.clone(), changed)
+        };
+        self.ui.sources.folders.focused = Some(row_index);
+        self.ui.sources.folders.scroll_to = Some(row_index);
+        self.focus_folder_context();
+        self.build_folder_rows(&snapshot);
+        if selection_changed {
+            self.rebuild_browser_lists();
         }
     }
 
