@@ -118,12 +118,42 @@ impl EguiApp {
                 painter.rect_filled(rect.shrink(2.0), 4.0, glow);
             }
 
+            self.controller.update_waveform_hover_time(None);
             if let Some(pos) = pointer_pos.filter(|p| rect.contains(*p)) {
                 let x = pos.x;
                 painter.line_segment(
                     [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
                     Stroke::new(1.0, style::with_alpha(cursor_color, 220)),
                 );
+                let normalized = ((pos.x - rect.left()) / rect.width())
+                    .mul_add(view_width, view.start)
+                    .clamp(0.0, 1.0);
+                self.controller
+                    .update_waveform_hover_time(Some(normalized));
+                if let Some(label) = self.controller.ui.waveform.hover_time_label.as_deref() {
+                    let text_color = style::with_alpha(palette.text_primary, 240);
+                    let galley = ui.ctx().fonts_mut(|f| {
+                        f.layout_job(LayoutJob::simple_singleline(
+                            label.to_string(),
+                            TextStyle::Monospace.resolve(ui.style()),
+                            text_color,
+                        ))
+                    });
+                    let padding = egui::vec2(6.0, 4.0);
+                    let size = galley.size() + padding * 2.0;
+                    let min_x = rect.left() + 4.0;
+                    let max_x = rect.right() - size.x - 4.0;
+                    let desired_x = pos.x + 8.0;
+                    let label_x = desired_x.clamp(min_x, max_x);
+                    let label_y = rect.top() + 8.0;
+                    let label_rect =
+                        egui::Rect::from_min_size(egui::pos2(label_x, label_y), size);
+                    let bg = style::with_alpha(palette.bg_primary, 235);
+                    let border = Stroke::new(1.0, style::with_alpha(palette.panel_outline, 220));
+                    painter.rect_filled(label_rect, 4.0, bg);
+                    painter.rect_stroke(label_rect, 4.0, border, StrokeKind::Inside);
+                    painter.galley(label_rect.min + padding, galley, text_color);
+                }
             }
 
             if let Some(marker_pos) = self.controller.ui.waveform.last_start_marker {
@@ -656,7 +686,6 @@ fn selection_handle_rect(selection_rect: egui::Rect) -> egui::Rect {
 const EDGE_HANDLE_WIDTH: f32 = 18.0;
 const EDGE_ICON_HEIGHT_FRACTION: f32 = 0.8;
 const EDGE_ICON_MIN_SIZE: f32 = 12.0;
-const EDGE_BRACKET_WIDTH: f32 = 10.0;
 const EDGE_BRACKET_STROKE: f32 = 1.5;
 
 fn selection_edge_handle_rect(selection_rect: egui::Rect, edge: SelectionEdge) -> egui::Rect {
@@ -684,29 +713,8 @@ fn paint_selection_edge_bracket(
     let center = edge_rect.center();
     let top = center.y - half_height;
     let bottom = center.y + half_height;
-    let (vertical_x, horizontal_start, horizontal_end) = match edge {
-        SelectionEdge::Start => (center.x, center.x, center.x + EDGE_BRACKET_WIDTH),
-        SelectionEdge::End => (center.x, center.x, center.x - EDGE_BRACKET_WIDTH),
-    };
     let stroke = Stroke::new(EDGE_BRACKET_STROKE, color);
-    painter.line_segment(
-        [egui::pos2(vertical_x, top), egui::pos2(vertical_x, bottom)],
-        stroke,
-    );
-    painter.line_segment(
-        [
-            egui::pos2(horizontal_start, top),
-            egui::pos2(horizontal_end, top),
-        ],
-        stroke,
-    );
-    painter.line_segment(
-        [
-            egui::pos2(horizontal_start, bottom),
-            egui::pos2(horizontal_end, bottom),
-        ],
-        stroke,
-    );
+    painter.line_segment([egui::pos2(center.x, top), egui::pos2(center.x, bottom)], stroke);
 }
 
 fn waveform_loading_fill(ui: &Ui, base: Color32, accent: Color32) -> Color32 {
