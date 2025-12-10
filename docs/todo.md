@@ -4,9 +4,8 @@ lets then write every task you find into @todo.md as a new todo item
 --
 lets add a little 'selected folders' list below the folder browser, showing which folder are currently added to the selection group
 
-\plan -- for our folder browser, lets not use a tree view, but a flat view, with .. at the top to jump back a folder, always visible in sticky mode
-lets add right arrow key to enter a folder, left arrow to jump back one level
-lets add 'd' to delete a folder, warn user,  'r' to rename, and 'n' to create a new folder.
+\plan -- for our folder browser 
+lets add 'd' to delete a folder, warning user, 'r' to rename, and 'n' to create a new folder.
 'f' to fuzzy search
 
 \plan - lets make esc deselect audio if we have a selection active.
@@ -16,6 +15,9 @@ lets add 'd' to delete a folder, warn user,  'r' to rename, and 'n' to create a 
 \plan - if we use keyboard nav in waveform view, and we played using shift+spacebar, make the next navigation move start from this used play position, not continue from where the actual play head is currently.
 lets also align with the mouse cursor more, so nav should not move the actual playhead, but move the cursor (currently greenish)  
 shift+spacebar should start from this cursor position if no previous play position exists yet.
+
+lets align shift+click select of the sample browser with how it works in the folder browser, select a to b.
+also, if the user selects with ctrl, and then selects with ctrl+shift+click, add a new a to b selection where the ctrl select is not the new 'a' marker, in addition to what was already selected, typical ctrl+shift+click behaviour.
 
 ### v2
 

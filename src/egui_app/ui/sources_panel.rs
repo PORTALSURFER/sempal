@@ -1,4 +1,4 @@
-use super::helpers::{RowMarker, clamp_label_for_width, list_row_height, render_list_row};
+use super::helpers::{clamp_label_for_width, list_row_height, render_list_row};
 use super::style;
 use super::*;
 use crate::egui_app::state::FocusContext;
@@ -223,10 +223,6 @@ impl EguiApp {
                     };
                     let row_width = ui.available_width();
                     let label = folder_row_label(row, row_width, ui);
-                    let marker = row.selected.then_some(RowMarker {
-                        width: 4.0,
-                        color: style::selection_marker_fill(),
-                    });
                     let response = render_list_row(
                         ui,
                         &label,
@@ -236,10 +232,19 @@ impl EguiApp {
                         style::high_contrast_text(),
                         egui::Sense::click(),
                         None,
-                        marker,
+                        None,
                     );
                     if Some(index) == scroll_to {
                         ui.scroll_to_rect(response.rect, None);
+                    }
+                    if row.selected {
+                        let marker_width = 4.0;
+                        let marker_rect = egui::Rect::from_min_max(
+                            response.rect.left_top(),
+                            response.rect.left_top() + egui::vec2(marker_width, row_height),
+                        );
+                        ui.painter()
+                            .rect_filled(marker_rect, 0.0, style::selection_marker_fill());
                     }
                     if response.clicked() {
                         let pointer = response.interact_pointer_pos();
