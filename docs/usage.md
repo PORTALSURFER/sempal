@@ -17,6 +17,7 @@
 
 ## Browse and triage samples
 - Use filter chips (All/Keep/Trash/Untagged) to change the visible list. Rows show number columns and right-edge markers for Keep/Trash; missing files are prefixed with `!`.
+- Type in the browser search box to fuzzy-match sample names within the current filter; clear the query to restore the full list.
 - Click focuses a row and clears any existing selection; **Shift + click** extends the selection; **Ctrl/Cmd + click** toggles multi-select while keeping the focused row in the set. **Up/Down** moves the focus; **Shift + Up/Down** extends the selection.
 - Tagging: **Right Arrow** -> Keep (Trash -> Neutral, others -> Keep). **Left Arrow** -> Trash (Keep -> Neutral, others -> Trash). **Ctrl/Cmd + Right/Left** moves the selection into the next/previous triage column.
 - Context menu on a sample row: Tag Keep/Neutral/Trash, **Normalize (overwrite)**, **Rename**, or **Delete file**. Actions apply to the focused row or the current multi-selection.

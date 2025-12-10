@@ -1,15 +1,16 @@
 ## Goal
-- Stop Windows system beeps when triggering hotkeys (e.g., `N` normalize and similar shortcuts) while keeping existing shortcut behaviour intact.
+- Add fuzzy search to the sample browser so users can quickly locate samples within the current filtering view.
 
 ## Proposed solutions
-- Trace the hotkey event flow in `src/egui_app/ui.rs` and related controller code to find where handled key events fall through and let Windows play the default error beep.
-- Adjust key consumption so handled single-key and chord hotkeys are swallowed consistently (including pending chord roots) without disrupting text input or overlay visibility logic.
-- Add regression coverage and manual checks to ensure hotkeys still dispatch their actions without beeps on Windows (normalize, delete, overlay toggle, focus changes).
+- Introduce a search query field in the sample browser header and filter visible rows with a fuzzy matcher scored against existing sample labels.
+- Leverage a lightweight Rust fuzzy-matching crate (or a small in-house matcher) to rank and filter without disrupting current tag-based filters.
+- Preserve existing autoscroll, selection, and tagging flows by applying search filtering on top of the current triage filter results.
 
 ## Step-by-step plan
-1. [x] Reproduce the beep on Windows and map the current hotkey processing path (event collection, chord handling, focus checks) to pinpoint unconsumed key events.
-2. [x] Update hotkey handling to consume matched keys—including chord roots where appropriate—while preserving existing focus rules and overlay behaviour.
-3. [x] Add targeted tests or harness coverage for hotkey dispatch/consumption and manually verify key flows on Windows to confirm beeps are eliminated and commands still run.
+1. [-] Review current sample browser data flow (state, controller rebuild logic, UI filter header) to identify hook points for search query + results.
+2. [-] Choose or implement a fuzzy matching strategy that fits existing dependencies and label caching; define how scores map to inclusion/ordering.
+3. [-] Add UI + state for the search field, wire controller filtering to combine triage filters with fuzzy results, and keep selection/autoscroll stable.
+4. [-] Add targeted tests for filtered visibility/order and update user-facing docs or hotkey hints to explain fuzzy search behaviour.
 
 ## Code Style & Architecture Rules Reminder
 - Keep files under 400 lines; split when necessary.
