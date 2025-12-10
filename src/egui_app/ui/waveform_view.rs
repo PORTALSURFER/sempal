@@ -104,24 +104,27 @@ impl EguiApp {
             }
 
             self.controller.update_waveform_hover_time(None);
-            let mut cursor_position = self.controller.ui.waveform.cursor;
             let mut hover_x = None;
+            let mut hovering = false;
             if let Some(pos) = pointer_pos.filter(|p| rect.contains(*p)) {
                 let normalized = ((pos.x - rect.left()) / rect.width())
                     .mul_add(view_width, view.start)
                     .clamp(0.0, 1.0);
-                cursor_position = Some(normalized);
                 hover_x = Some(pos.x);
-                self.controller.set_waveform_cursor(normalized);
+                hovering = true;
+                self.controller.set_waveform_cursor_from_hover(normalized);
                 self.controller.update_waveform_hover_time(Some(normalized));
             }
-
-            if let Some(cursor) = cursor_position {
+            let cursor_alpha = self.controller.waveform_cursor_alpha(hovering);
+            if let Some(cursor) = self.controller.ui.waveform.cursor {
                 let x = to_screen_x(cursor, rect);
-                painter.line_segment(
-                    [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
-                    Stroke::new(1.0, style::with_alpha(cursor_color, 220)),
-                );
+                let stroke_alpha = (220.0 * cursor_alpha).round().clamp(0.0, 255.0) as u8;
+                if stroke_alpha > 0 {
+                    painter.line_segment(
+                        [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
+                        Stroke::new(1.0, style::with_alpha(cursor_color, stroke_alpha)),
+                    );
+                }
             }
             if let Some(label) = self.controller.ui.waveform.hover_time_label.as_deref() {
                 if let Some(pointer_x) = hover_x {
