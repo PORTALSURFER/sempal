@@ -73,9 +73,7 @@ impl AudioPlayer {
 
     /// Stop any active playback.
     pub fn stop(&mut self) {
-        if let Some(sink) = self.sink.take() {
-            sink.stop();
-        }
+        self.fade_out_current_sink();
         self.started_at = None;
         self.play_span = None;
         self.looping = false;
@@ -127,12 +125,13 @@ impl AudioPlayer {
 
         self.fade_out_current_sink();
 
+        let fade = fade_duration(duration);
         let source = Self::decoder_from_bytes(bytes)?;
         let limited = source
-            .fade_in(SEGMENT_FADE)
+            .fade_in(fade)
             .take_duration(Duration::from_secs_f32(duration))
             .buffered();
-        let faded = EdgeFade::new(limited, SEGMENT_FADE);
+        let faded = EdgeFade::new(limited, fade);
         let repeated = faded
             .repeat_infinite()
             .skip_duration(Duration::from_secs_f32(offset));
@@ -213,6 +212,7 @@ impl AudioPlayer {
         let bounded_start = start_seconds.clamp(0.0, duration);
         let bounded_end = end_seconds.clamp(bounded_start, duration);
         let span_length = (bounded_end - bounded_start).max(0.001);
+        let fade = fade_duration(span_length);
 
         self.fade_out_current_sink();
 
@@ -221,10 +221,10 @@ impl AudioPlayer {
             .try_seek(Duration::from_secs_f32(bounded_start))
             .map_err(Self::map_seek_error)?;
         let limited = source
-            .fade_in(SEGMENT_FADE)
+            .fade_in(fade)
             .take_duration(Duration::from_secs_f32(span_length))
             .buffered();
-        let faded = EdgeFade::new(limited, SEGMENT_FADE);
+        let faded = EdgeFade::new(limited, fade);
 
         let final_source: Box<dyn Source<Item = f32> + Send> = if looped {
             Box::new(faded.repeat_infinite())
@@ -299,11 +299,12 @@ impl AudioPlayer {
             .try_seek(Duration::from_secs_f32(start_seconds))
             .map_err(Self::map_seek_error)?;
         let span_length = (end_seconds - start_seconds).max(0.001);
+        let fade = fade_duration(span_length);
         let limited = source
-            .fade_in(SEGMENT_FADE)
+            .fade_in(fade)
             .take_duration(Duration::from_secs_f32(span_length))
             .buffered();
-        let mut faded = EdgeFade::new(limited, SEGMENT_FADE);
+        let mut faded = EdgeFade::new(limited, fade);
         let sample_rate = faded.sample_rate();
         let channels = faded.channels();
         let mut count = 0usize;
@@ -315,16 +316,44 @@ impl AudioPlayer {
 
     /// Mute and stop the current sink without blocking the UI thread.
     fn fade_out_current_sink(&mut self) {
-        if let Some(sink) = self.sink.take() {
-            sink.set_volume(0.0);
+        let Some(mut sink) = self.sink.take() else {
+            return;
+        };
+        let start_volume = sink.volume();
+        if start_volume <= 0.0 {
             sink.stop();
+            return;
         }
+        let fade = SEGMENT_FADE;
+        if fade.is_zero() {
+            sink.stop();
+            return;
+        }
+        std::thread::spawn(move || {
+            let steps = 5u32;
+            let step_sleep = fade / steps;
+            for step in 0..steps {
+                let remaining = steps.saturating_sub(step + 1) as f32 / steps as f32;
+                sink.set_volume(start_volume * remaining.max(0.0));
+                std::thread::sleep(step_sleep);
+            }
+            sink.stop();
+        });
     }
 
     /// Active output configuration after initialization.
     pub fn output_details(&self) -> &ResolvedOutput {
         &self.output
     }
+}
+
+fn fade_duration(span_seconds: f32) -> Duration {
+    if span_seconds <= 0.0 {
+        return Duration::from_secs(0);
+    }
+    let max_fade = SEGMENT_FADE.as_secs_f32();
+    let clamped = max_fade.min(span_seconds * 0.5);
+    Duration::from_secs_f32(clamped.max(0.0))
 }
 
 fn normalized_progress(
