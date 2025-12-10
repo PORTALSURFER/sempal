@@ -3,26 +3,39 @@ Inspired by a microchip die
 
 ---
 
-## 1. Color Palette (Dark Grey / Black Industrial Theme)
+## 1. Color Palette (Current App Palette)
 
-### Primary Background
-- **#0A0A0C** — near-black metallic  
-  Use for: app background, large panels
+### Core surfaces
+- **#0C0B0A** — primary background for the app canvas and modal bases  
+- **#141210** — secondary background for panels and cards  
+- **#1C1A17** — tertiary background for controls and list rows to add depth  
+- **#2C2824** — panel outline for outer frames and strong dividers  
+- **#37322D** — grid strong for primary lines in displays and separators  
+- **#2A2622** — grid soft for secondary lines and subtle row backing
 
-### Secondary Backgrounds
-- **#1A1C1E**  
-- **#2A2C30**  
-  Use for: nested blocks, compartments, data panels
+### Text
+- **#E0E3EA** — primary text for labels, buttons, and inputs  
+- **#A6ADB8** — muted text for helper copy and secondary metadata  
+- **#FFFFFF** — high-contrast text on tinted badges/overlays
 
-### Highlight Metallics
-- **#6C7078** (steel grey)  
-- **#8C929B** (chip-trace grey)  
-- **#B9C0C8** (aluminum highlight)
+### Accents and feedback
+- **#98AC9E** — accent mint; selection fills, cursor trails, positive focus  
+- **#A8967E** — accent ice; focus strokes, hyperlinks, keyboard focus rings  
+- **#BA946C** — accent copper; waveform highlight/selection tone and warm accent  
+- **#BACCBA** — success state fills and badges  
+- **#C29E6C** — warning foregrounds and strokes  
+- **#B87070** — destructive/error strokes and text  
+- **#CCB084** — soft warning/informational fills
 
-### Accents (use sparingly)
-- **#7FFFD4** — electric mint, LED-like detail  
-- **#A7D9FF** — icy blue highlight  
-- **#C3A57A** — warm copper (optional wiring metaphor)
+### Badges and chips
+- Idle **#2A2E36**; Busy **#A49274**; Info **#9CB09E**; Warning **#C09E70**; Error **#B87070**
+
+### Interaction overlays & triage
+- Drag highlight **#B49C7E** (outline alpha varies by state)  
+- Duplicate hover: fill **#30343A**, stroke **#A49274**  
+- Triage: Trash **#9E6660** (subtle **#744E4A**), Keep **#7E9C7E**  
+- Missing marker **#CC8484**  
+- Palette source of truth: `src/egui_app/ui/style.rs` — keep these values in sync when the theme shifts.
 
 ---
 
@@ -130,54 +143,54 @@ Inspired by a microchip die
   - With 1–2 nested inner borders to mimic multi-layer chip regions
   - Optional 45° bevels on outer corners only if you need visual hierarchy
 - Use a slightly lighter background than the main app:
-  - **#111216** or **#15171A**
+  - **#141210 – #1C1A17**
 
 ### 6.2 Waveform View Style
 
 **Background**
-- Dark panel: **#101217 – #15171A**  
+- Dark panel: **#0C0B0A – #1C1A17**  
 - Overlay subtle vertical grid lines (beats/frames):
-  - Primary grid: **#242730** (1px)  
-  - Secondary grid: **#1A1D24** (thinner or lower opacity)  
-- Optional horizontal zero line: **#3C4048** (1px)
+  - Primary grid: **#37322D** (1px)  
+  - Secondary grid: **#2A2622** (thinner or lower opacity)  
+- Optional horizontal zero line: **#2C2824** (1px)
 
 **Waveform Curve**
 - Curved line is allowed here, but must feel “instrumental”:
   - 1–2px line
   - Primary color:
-    - Default: **#A7D9FF** (icy blue)
-    - Alternative highlight: **#7FFFD4** (electric mint) for selected/armed
+    - Default: **#BA946C** (accent copper)
+    - Alternative highlight: **#98AC9E** (accent mint) for selected/armed
   - No blur, no glow; if you need emphasis, use:
     - double-line effect (bright core, darker outline)
     - or stepped opacity segments
 
 **Filling / Energy**
 - Optional under-curve fill:
-  - Very subtle, 5–15% opacity of the waveform color
+  - Very subtle, 5–15% opacity of the waveform color (copper by default)
   - Hard clipped at zero (no soft feathering)
 - For selection regions:
-  - Rectangular bands with sharp edges, color: **#262C36** or **#1E2830**
+  - Rectangular bands with sharp edges, using **#BA946C** at low opacity (handles rise to 80–90% opacity)
 
 **Additional Details**
 - Peaks or markers depicted as:
-  - Thin vertical bars (no rounded markers)
+  - Thin vertical bars (no rounded markers), **#A8967E**
   - Small blocky ticks along the top or bottom
 - Zoom/pan handles: small square grips aligned to frame edges
 
 ### 6.3 Spectrogram / Frequency Displays
 
 **Background**
-- Same base as waveform (**#101217 – #15171A**)  
+- Same base as waveform (**#0C0B0A – #1C1A17**)  
 - Primary grid:
-  - Vertical lines for time (**#232630**)  
-  - Horizontal lines for frequency (**#242A33**)
+  - Vertical lines for time (**#2A2622**)  
+  - Horizontal lines for frequency (**#37322D**)
 
 **Color Mapping (Sci-Fi Hard Theme)**
 - Use a **cold, high-tech palette** with minimal hues:
-  - Low energy: **#111217 – #15171A**
-  - Mid energy: **#3D4A5C**
-  - High energy: **#A7D9FF**
-  - Saturated peaks (very sparing): **#7FFFD4**
+  - Low energy: **#0C0B0A – #1C1A17**
+  - Mid energy: **#30343A**
+  - High energy: **#98AC9E**
+  - Saturated peaks (very sparing): **#BA946C**
 - Avoid rainbow spectrums; keep it within blue–cyan range for coherence.
 
 **Rendering Style**
@@ -188,7 +201,7 @@ Inspired by a microchip die
 
 **Curves / Overlays**
 - Overlays like EQ curves or analysis lines:
-  - Thin 1px lines, **#C3A57A** (copper) or **#A7D9FF**
+  - Thin 1px lines, **#BA946C** (copper) or **#98AC9E** (mint)
   - Allow smooth curves but:
     - No dot handles with circles — use small squares/diamonds
     - No glow; emphasize with line thickness or double-line effect
@@ -200,28 +213,28 @@ Inspired by a microchip die
 - Curves allowed but:
   - Use crisp lines, no blur
   - Colors:
-    - Main: **#A7D9FF**
-    - Secondary/ghost: **#6C7078** with low opacity
+    - Main: **#BA946C** (accent copper)
+    - Secondary/ghost: **#98AC9E** with low opacity
 - Optional trail effect:
   - Simulated with alpha decay, not blur
 
 **Bar / Column Meters**
 - Use vertical or horizontal **rectangular segments**  
 - Segment colors:
-  - Low: **#3D4A5C**
-  - Mid: **#6C7078**
-  - High: **#A7D9FF** / **#7FFFD4** for peaks
+  - Low: **#30343A**
+  - Mid: **#37322D**
+  - High: **#98AC9E** / **#BA946C** for peaks
 - Peak hold indicator: small rectangular cap, no rounded shapes
 
 ### 6.5 Display Chrome & Labeling
 
 **Borders**
-- Outer border: **#262A30** (1–2px)  
-- Inner inset border: **#0A0A0C** or **#1A1C1E** to suggest depth
+- Outer border: **#2C2824** (1–2px)  
+- Inner inset border: **#0C0B0A** or **#141210** to suggest depth
 
 **Labels / Axis Text**
 - Typeface: monospaced or technical-looking sans-serif  
-- Color: **#B9C0C8** at 70–80% opacity  
+- Color: **#A6ADB8** at 70–80% opacity  
 - Alignment:
   - Frequency labels: left or right edge  
   - Time labels: bottom edge  
