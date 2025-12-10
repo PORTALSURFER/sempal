@@ -104,6 +104,18 @@ impl EguiController {
         false
     }
 
+    /// Play from the waveform cursor when available, falling back to last start/playhead.
+    pub fn play_from_cursor(&mut self) -> bool {
+        if !self.waveform_ready() {
+            return false;
+        }
+        if let Some(cursor) = self.ui.waveform.cursor {
+            self.seek_to(cursor);
+            return true;
+        }
+        self.replay_from_last_start()
+    }
+
     /// Remember the last user-requested play start position.
     pub fn record_play_start(&mut self, position: f32) {
         let clamped = position.clamp(0.0, 1.0);

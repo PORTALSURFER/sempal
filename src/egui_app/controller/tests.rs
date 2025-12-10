@@ -19,7 +19,7 @@ use std::io::Cursor;
 use std::mem;
 use std::path::{Path, PathBuf};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tempfile::tempdir;
 
 fn max_sample_amplitude(path: &Path) -> f32 {
@@ -2140,6 +2140,71 @@ fn replay_from_last_start_falls_back_to_cursor() {
         .expect("pending playback request");
     assert_eq!(pending.start_override, Some(0.25));
     assert_eq!(controller.ui.waveform.last_start_marker, Some(0.25));
+}
+
+#[test]
+fn play_from_cursor_prefers_cursor_position() {
+    let (mut controller, source) = dummy_controller();
+    prepare_browser_sample(&mut controller, &source, "cursor.wav");
+    controller.select_wav_by_path(Path::new("cursor.wav"));
+    controller.decoded_waveform = Some(DecodedWaveform {
+        samples: vec![0.0; 10_000],
+        duration_seconds: 1.0,
+        sample_rate: 48_000,
+        channels: 1,
+    });
+    controller.ui.waveform.cursor = Some(0.33);
+    controller.ui.waveform.last_start_marker = Some(0.1);
+
+    let handled = controller.play_from_cursor();
+
+    assert!(handled);
+    let pending = controller
+        .pending_playback
+        .as_ref()
+        .expect("pending playback request");
+    assert_eq!(pending.start_override, Some(0.33));
+    assert_eq!(controller.ui.waveform.last_start_marker, Some(0.33));
+}
+
+#[test]
+fn cursor_alpha_fades_before_reset() {
+    let (mut controller, source) = dummy_controller();
+    prepare_browser_sample(&mut controller, &source, "cursor.wav");
+    controller.decoded_waveform = Some(DecodedWaveform {
+        samples: vec![0.0; 10_000],
+        duration_seconds: 1.0,
+        sample_rate: 48_000,
+        channels: 1,
+    });
+    controller.ui.waveform.cursor = Some(0.4);
+    controller.ui.waveform.cursor_last_navigation_at =
+        Some(Instant::now() - Duration::from_millis(250));
+
+    let alpha = controller.waveform_cursor_alpha(false);
+
+    assert!((alpha - 0.5).abs() < 0.15);
+    assert_eq!(controller.ui.waveform.cursor, Some(0.4));
+}
+
+#[test]
+fn cursor_alpha_resets_after_idle_timeout() {
+    let (mut controller, source) = dummy_controller();
+    prepare_browser_sample(&mut controller, &source, "cursor.wav");
+    controller.decoded_waveform = Some(DecodedWaveform {
+        samples: vec![0.0; 10_000],
+        duration_seconds: 1.0,
+        sample_rate: 48_000,
+        channels: 1,
+    });
+    controller.ui.waveform.cursor = Some(0.4);
+    controller.ui.waveform.cursor_last_navigation_at =
+        Some(Instant::now() - Duration::from_millis(600));
+
+    let alpha = controller.waveform_cursor_alpha(false);
+
+    assert!(alpha <= f32::EPSILON);
+    assert_eq!(controller.ui.waveform.cursor, Some(0.0));
 }
 
 #[test]

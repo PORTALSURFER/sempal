@@ -1,10 +1,18 @@
 use super::*;
 use crate::egui_app::state::WaveformView;
 use crate::selection::SelectionEdge;
+use std::time::{Duration, Instant};
 
 const PLAYHEAD_STEP_PX: f32 = 32.0;
 const PLAYHEAD_STEP_PX_FINE: f32 = 1.0;
 const VIEW_EPSILON: f32 = 1e-5;
+const CURSOR_IDLE_FADE: Duration = Duration::from_millis(500);
+
+#[derive(Clone, Copy, Debug)]
+enum CursorUpdateSource {
+    Hover,
+    Navigation,
+}
 
 impl EguiController {
     /// Focus the waveform viewer when a sample is loaded.
@@ -121,7 +129,7 @@ impl EguiController {
         self.apply_selection(Some(range));
     }
 
-    fn waveform_ready(&self) -> bool {
+    pub(crate) fn waveform_ready(&self) -> bool {
         self.decoded_waveform.is_some()
     }
 
@@ -138,11 +146,24 @@ impl EguiController {
 
     /// Persist the waveform cursor and keep it within the visible view when possible.
     pub(crate) fn set_waveform_cursor(&mut self, position: f32) {
+        self.set_waveform_cursor_with_source(position, CursorUpdateSource::Navigation);
+    }
+
+    pub(crate) fn set_waveform_cursor_from_hover(&mut self, position: f32) {
+        self.set_waveform_cursor_with_source(position, CursorUpdateSource::Hover);
+    }
+
+    fn set_waveform_cursor_with_source(&mut self, position: f32, source: CursorUpdateSource) {
         if !self.waveform_ready() {
             return;
         }
         let clamped = position.clamp(0.0, 1.0);
         self.ui.waveform.cursor = Some(clamped);
+        let now = Instant::now();
+        match source {
+            CursorUpdateSource::Hover => self.ui.waveform.cursor_last_hover_at = Some(now),
+            CursorUpdateSource::Navigation => self.ui.waveform.cursor_last_navigation_at = Some(now),
+        }
         self.ensure_cursor_visible_in_view(clamped);
     }
 
@@ -175,7 +196,7 @@ impl EguiController {
         if !self.waveform_ready() {
             return;
         }
-        self.set_waveform_cursor(position);
+        self.set_waveform_cursor_with_source(position, CursorUpdateSource::Navigation);
         self.ui.waveform.playhead.position = position.clamp(0.0, 1.0);
         self.ui.waveform.playhead.visible = true;
         self.ensure_playhead_visible_in_view();
@@ -187,7 +208,7 @@ impl EguiController {
         if !self.waveform_ready() {
             return;
         }
-        self.set_waveform_cursor(position);
+        self.set_waveform_cursor_with_source(position, CursorUpdateSource::Navigation);
         self.ui.waveform.playhead.position = position.clamp(0.0, 1.0);
         self.ui.waveform.playhead.visible = true;
         self.ensure_playhead_visible_in_view();
@@ -221,6 +242,38 @@ impl EguiController {
         if views_differ(self.ui.waveform.view, clamped) {
             self.ui.waveform.view = clamped;
             self.refresh_waveform_image();
+        }
+    }
+
+    pub(crate) fn waveform_cursor_alpha(&mut self, hovering: bool) -> f32 {
+        if hovering {
+            self.ui.waveform.cursor_last_hover_at = Some(Instant::now());
+            return 1.0;
+        }
+        if !self.waveform_ready() {
+            return 0.0;
+        }
+        let Some(last_activity) = self.cursor_last_activity() else {
+            return 1.0;
+        };
+        let idle = Instant::now().saturating_duration_since(last_activity);
+        if idle >= CURSOR_IDLE_FADE {
+            self.ui.waveform.cursor = Some(0.0);
+            return 0.0;
+        }
+        let fraction = idle.as_secs_f32() / CURSOR_IDLE_FADE.as_secs_f32();
+        (1.0 - fraction).clamp(0.0, 1.0)
+    }
+
+    fn cursor_last_activity(&self) -> Option<Instant> {
+        match (
+            self.ui.waveform.cursor_last_hover_at,
+            self.ui.waveform.cursor_last_navigation_at,
+        ) {
+            (Some(hover), Some(nav)) => Some(hover.max(nav)),
+            (Some(hover), None) => Some(hover),
+            (None, Some(nav)) => Some(nav),
+            (None, None) => None,
         }
     }
 
