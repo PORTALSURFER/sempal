@@ -167,6 +167,14 @@ impl EguiController {
     }
 
     pub(crate) fn clear_folder_selection(&mut self) {
+        let focused_path = self.ui.sources.folders.focused.and_then(|idx| {
+            self.ui
+                .sources
+                .folders
+                .rows
+                .get(idx)
+                .map(|row| row.path.clone())
+        });
         let snapshot = {
             let Some(model) = self.current_folder_model_mut() else {
                 return;
@@ -175,11 +183,14 @@ impl EguiController {
                 return;
             }
             model.selected.clear();
-            model.focused = None;
+            if let Some(focused) = focused_path.clone() {
+                model.focused = Some(focused.clone());
+                model.selection_anchor = Some(focused);
+            }
             model.clone()
         };
-        self.ui.sources.folders.focused = None;
-        self.ui.sources.folders.scroll_to = None;
+        // Preserve focus on the last focused row even after clearing selection.
+        self.ui.sources.folders.scroll_to = self.ui.sources.folders.focused;
         self.build_folder_rows(&snapshot);
         self.rebuild_browser_lists();
     }
