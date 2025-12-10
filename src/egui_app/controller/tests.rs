@@ -1155,6 +1155,88 @@ fn sample_drop_falls_back_to_active_collection() {
 }
 
 #[test]
+fn sample_drop_to_folder_moves_and_updates_state() {
+    let temp = tempdir().unwrap();
+    let root = temp.path().join("source");
+    std::fs::create_dir_all(root.join("dest")).unwrap();
+    let renderer = WaveformRenderer::new(12, 12);
+    let mut controller = EguiController::new(renderer, None);
+    let source = SampleSource::new(root.clone());
+    controller.sources.push(source.clone());
+    controller.selected_source = Some(source.id.clone());
+    controller.cache_db(&source).unwrap();
+
+    write_test_wav(&root.join("one.wav"), &[0.1, 0.2]);
+    controller.wav_entries = vec![sample_entry("one.wav", SampleTag::Neutral)];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+
+    let mut collection = Collection::new("Dest");
+    let collection_id = collection.id.clone();
+    collection.add_member(source.id.clone(), PathBuf::from("one.wav"));
+    controller.collections.push(collection);
+    controller.selected_collection = Some(collection_id.clone());
+    controller.refresh_collections_ui();
+
+    controller.ui.drag.payload = Some(DragPayload::Sample {
+        source_id: source.id.clone(),
+        relative_path: PathBuf::from("one.wav"),
+    });
+    controller.ui.drag.hovering_folder = Some(PathBuf::from("dest"));
+    controller.finish_active_drag();
+
+    assert!(!root.join("one.wav").exists());
+    assert!(root.join("dest").join("one.wav").is_file());
+    assert!(controller
+        .wav_entries
+        .iter()
+        .any(|entry| entry.relative_path == PathBuf::from("dest").join("one.wav")));
+    let collection = controller
+        .collections
+        .iter()
+        .find(|c| c.id == collection_id)
+        .unwrap();
+    assert!(collection
+        .members
+        .iter()
+        .any(|m| m.relative_path == PathBuf::from("dest").join("one.wav")));
+}
+
+#[test]
+fn sample_drop_to_folder_rejects_conflicts() {
+    let temp = tempdir().unwrap();
+    let root = temp.path().join("source");
+    let dest = root.join("dest");
+    std::fs::create_dir_all(&dest).unwrap();
+    write_test_wav(&root.join("one.wav"), &[0.1, 0.2]);
+    write_test_wav(&dest.join("one.wav"), &[0.3, 0.4]);
+    let renderer = WaveformRenderer::new(12, 12);
+    let mut controller = EguiController::new(renderer, None);
+    let source = SampleSource::new(root.clone());
+    controller.sources.push(source.clone());
+    controller.selected_source = Some(source.id.clone());
+    controller.cache_db(&source).unwrap();
+
+    controller.wav_entries = vec![sample_entry("one.wav", SampleTag::Neutral)];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+
+    controller.ui.drag.payload = Some(DragPayload::Sample {
+        source_id: source.id.clone(),
+        relative_path: PathBuf::from("one.wav"),
+    });
+    controller.ui.drag.hovering_folder = Some(PathBuf::from("dest"));
+    controller.finish_active_drag();
+
+    assert!(root.join("one.wav").is_file());
+    assert!(dest.join("one.wav").is_file());
+    assert!(controller
+        .wav_entries
+        .iter()
+        .any(|entry| entry.relative_path == PathBuf::from("one.wav")));
+}
+
+#[test]
 fn export_path_copies_and_refreshes_members() -> Result<(), String> {
     let temp = tempdir().unwrap();
     let source_root = temp.path().join("source");

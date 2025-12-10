@@ -1,7 +1,7 @@
 use super::helpers::{clamp_label_for_width, list_row_height, render_list_row};
 use super::style;
 use super::*;
-use crate::egui_app::state::FocusContext;
+use crate::egui_app::state::{DragPayload, FocusContext};
 use eframe::egui::{self, Align, Align2, Layout, RichText, StrokeKind, TextStyle, Ui};
 
 impl EguiApp {
@@ -31,7 +31,12 @@ impl EguiApp {
             let remaining = ui.available_height();
             let folder_height = (remaining * 0.7).max(120.0).min(remaining);
             let selected_height = (remaining - folder_height).max(0.0);
-            self.render_folder_browser(ui, folder_height);
+            let drag_payload = self.controller.ui.drag.payload.clone();
+            let sample_drag_active = matches!(drag_payload, Some(DragPayload::Sample { .. }));
+            let pointer_pos = ui
+                .input(|i| i.pointer.hover_pos().or_else(|| i.pointer.interact_pos()))
+                .or(self.controller.ui.drag.position);
+            self.render_folder_browser(ui, folder_height, sample_drag_active, pointer_pos);
             ui.add_space(8.0);
             self.render_selected_folders(ui, selected_height);
         });
@@ -178,7 +183,13 @@ impl EguiApp {
             });
     }
 
-    fn render_folder_browser(&mut self, ui: &mut Ui, height: f32) {
+    fn render_folder_browser(
+        &mut self,
+        ui: &mut Ui,
+        height: f32,
+        sample_drag_active: bool,
+        pointer_pos: Option<egui::Pos2>,
+    ) {
         let palette = style::palette();
         ui.horizontal(|ui| {
             ui.label(RichText::new("Folders").color(palette.text_primary));
@@ -230,10 +241,11 @@ impl EguiApp {
                         text,
                         TextStyle::Body.resolve(ui.style()),
                         palette.text_muted,
-                    );
+                );
                     return;
                 }
                 let focused_row = self.controller.ui.sources.folders.focused;
+                let hovering_folder = self.controller.ui.drag.hovering_folder.clone();
                 for (index, row) in rows.iter().enumerate() {
                     let is_focused = Some(index) == focused_row;
                     let rename_match = matches!(
@@ -279,6 +291,30 @@ impl EguiApp {
                         );
                         ui.painter()
                             .rect_filled(marker_rect, 0.0, style::selection_marker_fill());
+                    }
+                    if sample_drag_active {
+                        if let Some(pointer) = pointer_pos {
+                            if response.rect.contains(pointer) {
+                                self.controller.update_active_drag(
+                                    pointer,
+                                    None,
+                                    false,
+                                    None,
+                                    Some(row.path.clone()),
+                                );
+                            }
+                        }
+                        if hovering_folder
+                            .as_ref()
+                            .is_some_and(|path| path == &row.path)
+                        {
+                            ui.painter().rect_stroke(
+                                response.rect.expand(2.0),
+                                0.0,
+                                style::drag_target_stroke(),
+                                StrokeKind::Inside,
+                            );
+                        }
                     }
                     if rename_match {
                         self.render_folder_rename_editor(ui, &response, row);

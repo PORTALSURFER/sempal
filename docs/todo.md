@@ -2,28 +2,31 @@
 lets then write every task you find into @todo.md as a new todo item
 
 --
+\plan - ctrl+spacebar should play from the waveform cursor. if the mouse no longer hovers, and the user is not navigating the cursor with keys, make it fade out and reset to start after 500ms    
 
-- lets add the ability to move samples around by drag dropping them onto a folder
+\plan - drop item focus of folders if the folder browser itself no longer has user focus.
 
-- lets add 'r' to rename to the sample browser
+\plan - lets add 'r' to rename to the sample browser, same functionality as rename in the folder browser.
 
-- lets make 'f' focus fuzzy search in the sample browser
+\plan - lets make 'f' focus fuzzy search in the sample browser
 
-- use the waveform cursor as start position when we hit space bar, if we have an active waveform cursor, esc should remove it, resetting start to the beginning of the sample again
+\plan - use the waveform cursor as start position when we hit space bar, if we have an active waveform cursor, esc should remove it, resetting start to the beginning of the sample again
 
-- cancel renaming if the user clicks somewhere else
+\plan - cancel renaming if the user clicks somewhere else
 
-- after deleting a sample or folder, jump focus to the one right after it
+\plan - after deleting a sample or folder, jump focus to the one right after it
 
-- add P or shift-p as a hotkey to move all trashed files to the trash folder
+\plan - add P or shift-p as a hotkey to move all trashed files to the trash folder
 
-- when we have a filter active, and we remove a sample from that filter, jump focus to the first next filter. for example, if we have the untagged filter active, and we mark a sample with a triageflag.
+\plan - when we have a filter active, and we remove a sample from that filter, jump focus to the first next filter. for example, if we have the untagged filter active, and we mark a sample with a triageflag.
 
-- please review this test, our app I believe is working correctly.
+\plan - please review this test, our app I believe is working correctly.
 if the test still applied, fix the app, otherwise fix or remove the test
 test audio::tests::decode_handles_varied_sample_rates_and_channels ... FAILED
 
-- lets log warnings, errors, etc via our logger tool so we see it in console and on in our file logs
+\plan - lets log warnings, errors, etc via our logger tool so we see it in console and on in our file logs
+
+\plan - also allow audio selection to get exported to external apps like a daw or create a file on disk by dropping it onto an os file explorer, creating a new wav file of said selection
 
 ### v2
 

@@ -455,6 +455,7 @@ pub struct DragState {
     pub hovering_collection: Option<CollectionId>,
     pub hovering_drop_zone: bool,
     pub hovering_browser: Option<TriageFlagColumn>,
+    pub hovering_folder: Option<PathBuf>,
     pub external_started: bool,
 }
 
