@@ -147,8 +147,12 @@ impl EguiController {
 
     /// Handle Escape input by stopping playback and clearing selections across panels.
     pub fn handle_escape(&mut self) {
-        let _ = self.stop_playback_if_active();
-        self.clear_selection();
+        let selection_active =
+            self.selection.range().is_some() || self.ui.waveform.selection.is_some();
+        let stopped_playback = self.stop_playback_if_active();
+        if !(selection_active && stopped_playback) {
+            self.clear_selection();
+        }
         if !self.ui.browser.selected_paths.is_empty() {
             self.clear_browser_selection();
         }

@@ -362,6 +362,29 @@ fn escape_handler_clears_waveform_and_browser_state() {
 }
 
 #[test]
+fn escape_stops_playback_before_clearing_selection() {
+    let Some(player) = crate::audio::AudioPlayer::playing_for_tests() else {
+        return;
+    };
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.cache_db(&source).unwrap();
+    controller.wav_entries = vec![sample_entry("one.wav", SampleTag::Neutral)];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+
+    controller.selection.set_range(Some(SelectionRange::new(0.25, 0.75)));
+    controller.apply_selection(controller.selection.range());
+    controller.player = Some(std::rc::Rc::new(std::cell::RefCell::new(player)));
+
+    controller.handle_escape();
+
+    assert!(controller.selection.range().is_some());
+    assert!(controller.ui.waveform.selection.is_some());
+    assert!(!controller.is_playing());
+}
+
+#[test]
 fn click_clears_selection_and_focuses_row() {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source.clone());

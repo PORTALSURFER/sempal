@@ -345,6 +345,29 @@ impl AudioPlayer {
     pub fn output_details(&self) -> &ResolvedOutput {
         &self.output
     }
+
+    #[cfg(test)]
+    /// Build a short-lived playing instance for tests that need an active sink.
+    pub fn playing_for_tests() -> Option<Self> {
+        use rodio::source::{SineWave, Source};
+
+        let outcome = open_output_stream(&AudioOutputConfig::default()).ok()?;
+        let sink = rodio::Sink::connect_new(outcome.stream.mixer());
+        sink.append(SineWave::new(220.0).take_duration(Duration::from_millis(50)));
+        sink.play();
+        Some(Self {
+            stream: outcome.stream,
+            sink: Some(sink),
+            current_audio: None,
+            track_duration: Some(0.05),
+            started_at: Some(Instant::now()),
+            play_span: Some((0.0, 0.05)),
+            looping: false,
+            loop_offset: None,
+            volume: 1.0,
+            output: outcome.resolved,
+        })
+    }
 }
 
 fn fade_duration(span_seconds: f32) -> Duration {
