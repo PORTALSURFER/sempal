@@ -3,8 +3,6 @@ lets then write every task you find into @todo.md as a new todo item
 
 --
 
-\plan - add a select random next sample. lets add shift+r as a hotkey to 'play next random sample'
-
 \plan - currently when 'gs' is used to jump to the sample list, we also automatically play the first sample we focus. lets not do that in this case, its a bit confusing, this action should focus the sample list, the fact that we also focus a sample item and thus play it is more a side effect, unwanted in this case.
 
 \plan - lets tighten up the ui layout right now we have a bunch of double borders/frames in places, please redesign this, I want tight borders, section against section with only ever single borders. no double borders, insets, etc

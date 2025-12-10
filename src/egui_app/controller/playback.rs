@@ -1,6 +1,15 @@
 use super::*;
 use crate::selection::SelectionEdge;
+use rand::seq::IteratorRandom;
+use rand::Rng;
 use std::time::{Duration, Instant};
+#[cfg(test)]
+use rand::{rngs::StdRng, SeedableRng};
+
+#[cfg(test)]
+const SHOULD_PLAY_RANDOM_SAMPLE: bool = false;
+#[cfg(not(test))]
+const SHOULD_PLAY_RANDOM_SAMPLE: bool = true;
 
 impl EguiController {
     /// Begin a selection drag at the given normalized position.
@@ -182,6 +191,40 @@ impl EguiController {
         let next_row = self.visible_row_after_offset(offset, &list);
         self.extend_browser_selection_to_row(next_row);
         let _ = self.play_audio(self.ui.waveform.loop_enabled, None);
+    }
+
+    /// Jump to a random visible sample in the browser and start playback.
+    pub fn play_random_visible_sample(&mut self) {
+        let mut rng = rand::rng();
+        self.play_random_visible_sample_internal(&mut rng, SHOULD_PLAY_RANDOM_SAMPLE);
+    }
+
+    #[cfg(test)]
+    pub(super) fn play_random_visible_sample_with_seed(&mut self, seed: u64) {
+        let mut rng = StdRng::seed_from_u64(seed);
+        self.play_random_visible_sample_internal(&mut rng, false);
+    }
+
+    fn play_random_visible_sample_internal<R: Rng + ?Sized>(
+        &mut self,
+        rng: &mut R,
+        start_playback: bool,
+    ) {
+        let Some((visible_row, _)) = self
+            .visible_browser_indices()
+            .iter()
+            .enumerate()
+            .choose(rng)
+        else {
+            self.set_status("No samples available to randomize", StatusTone::Info);
+            return;
+        };
+        self.focus_browser_row_only(visible_row);
+        if start_playback {
+            if let Err(err) = self.play_audio(self.ui.waveform.loop_enabled, None) {
+                self.set_status(err, StatusTone::Error);
+            }
+        }
     }
 
     /// Cycle the triage flag filter (-1 left, +1 right) to mirror old column navigation.

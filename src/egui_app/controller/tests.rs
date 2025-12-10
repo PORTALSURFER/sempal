@@ -10,7 +10,11 @@ use crate::egui_app::state::{
 use crate::sample_sources::Collection;
 use crate::sample_sources::collections::CollectionMember;
 use crate::waveform::DecodedWaveform;
+use egui;
 use hound::WavReader;
+use rand::rngs::StdRng;
+use rand::seq::IteratorRandom;
+use rand::SeedableRng;
 use std::io::Cursor;
 use std::mem;
 use std::path::{Path, PathBuf};
@@ -1484,6 +1488,60 @@ fn hotkey_toggle_selection_dispatches_in_browser_context() {
         .expect("toggle-select hotkey");
     controller.handle_hotkey(action, FocusContext::SampleBrowser);
     assert!(controller.ui.browser.selected_paths.is_empty());
+}
+
+#[test]
+fn random_sample_selection_uses_seeded_rng() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.wav_entries = vec![
+        sample_entry("one.wav", SampleTag::Neutral),
+        sample_entry("two.wav", SampleTag::Neutral),
+        sample_entry("three.wav", SampleTag::Neutral),
+    ];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+
+    let mut rng = StdRng::seed_from_u64(99);
+    let expected = controller
+        .visible_browser_indices()
+        .iter()
+        .enumerate()
+        .choose(&mut rng)
+        .map(|(row, _)| row);
+
+    controller.play_random_visible_sample_with_seed(99);
+
+    assert_eq!(controller.ui.browser.selected_visible, expected);
+    assert_eq!(controller.ui.browser.selection_anchor_visible, expected);
+    assert_eq!(controller.ui.focus.context, FocusContext::SampleBrowser);
+    assert!(controller.ui.browser.autoscroll);
+}
+
+#[test]
+fn random_sample_hotkey_is_registered() {
+    let action = hotkeys::iter_actions()
+        .find(|a| a.id == "play-random-sample")
+        .expect("play-random-sample hotkey");
+    assert_eq!(action.label, "Play random sample");
+    assert!(action.is_global());
+    assert_eq!(action.gesture.first.key, egui::Key::R);
+    assert!(action.gesture.first.shift);
+    assert!(!action.gesture.first.command);
+    assert!(action.gesture.chord.is_none());
+}
+
+#[test]
+fn random_sample_handles_empty_lists() {
+    let (mut controller, _source) = dummy_controller();
+
+    controller.play_random_visible_sample_with_seed(7);
+
+    assert_eq!(
+        controller.ui.status.text,
+        "No samples available to randomize"
+    );
+    assert_eq!(controller.ui.browser.selected_visible, None);
 }
 
 #[test]
