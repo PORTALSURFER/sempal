@@ -246,7 +246,7 @@ impl EguiApp {
             ui.label(RichText::new(label.to_string()).color(palette.text_primary));
             self.sample_tag_menu(ui, &mut close_menu, |app, tag| {
                 app.controller
-                    .tag_browser_samples(&action_rows, tag)
+                    .tag_browser_samples(&action_rows, tag, row)
                     .is_ok()
             });
             if ui

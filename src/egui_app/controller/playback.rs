@@ -188,6 +188,7 @@ impl EguiController {
                 last_error = Some(err);
             }
         }
+        self.refocus_after_filtered_removal(primary_row);
         if let Some(err) = last_error {
             self.set_status(err, StatusTone::Error);
         }

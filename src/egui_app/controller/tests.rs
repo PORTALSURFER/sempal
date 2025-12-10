@@ -292,6 +292,31 @@ fn left_tagging_from_keep_untags_then_trashes() {
 }
 
 #[test]
+fn tagging_under_filter_advances_focus_to_next_visible() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.cache_db(&source).unwrap();
+    controller.wav_entries = vec![
+        sample_entry("one.wav", SampleTag::Neutral),
+        sample_entry("two.wav", SampleTag::Neutral),
+        sample_entry("three.wav", SampleTag::Neutral),
+    ];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+    controller.set_browser_filter(TriageFlagFilter::Untagged);
+
+    controller.focus_browser_row_only(1);
+    controller.tag_selected(SampleTag::Keep);
+
+    assert_eq!(controller.visible_browser_indices(), &[0, 2]);
+    assert_eq!(controller.ui.browser.selected_visible, Some(1));
+    assert_eq!(
+        controller.selected_wav.as_deref(),
+        Some(Path::new("three.wav"))
+    );
+}
+
+#[test]
 fn hotkey_tagging_applies_to_all_selected_rows() {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source.clone());
@@ -623,7 +648,7 @@ fn tag_actions_apply_to_all_selected_rows() {
     let rows = controller.action_rows_from_primary(0);
 
     controller
-        .tag_browser_samples(&rows, SampleTag::Keep)
+        .tag_browser_samples(&rows, SampleTag::Keep, 0)
         .unwrap();
 
     assert_eq!(controller.wav_entries[0].tag, SampleTag::Keep);

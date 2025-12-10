@@ -29,13 +29,19 @@ impl EguiController {
     }
 
     /// Apply a triage flag to all targeted rows.
-    pub fn tag_browser_samples(&mut self, rows: &[usize], tag: SampleTag) -> Result<(), String> {
+    pub fn tag_browser_samples(
+        &mut self,
+        rows: &[usize],
+        tag: SampleTag,
+        primary_visible_row: usize,
+    ) -> Result<(), String> {
         let mut last_error = None;
         for &row in rows {
             if let Err(err) = self.tag_browser_sample(row, tag) {
                 last_error = Some(err);
             }
         }
+        self.refocus_after_filtered_removal(primary_visible_row);
         if let Some(err) = last_error {
             Err(err)
         } else {
@@ -423,5 +429,18 @@ impl EguiController {
             self.refresh_collections_ui();
         }
         changed
+    }
+
+    /// When tagging removes the focused sample from the active filter, move focus to the next
+    /// available visible row so keyboard navigation keeps flowing.
+    pub(super) fn refocus_after_filtered_removal(&mut self, primary_visible_row: usize) {
+        if matches!(self.ui.browser.filter, TriageFlagFilter::All) {
+            return;
+        }
+        if self.ui.browser.visible.is_empty() || self.ui.browser.selected_visible.is_some() {
+            return;
+        }
+        let target_row = primary_visible_row.min(self.ui.browser.visible.len().saturating_sub(1));
+        self.focus_browser_row_only(target_row);
     }
 }
