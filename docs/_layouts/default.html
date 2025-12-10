@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ page.title | escape }} | {{ site.title | default: "Sempal" }}</title>
+  <meta name="description" content="{{ page.description | default: site.description | escape }}">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="{{ '/assets/css/theme.css' | relative_url }}">
+</head>
+<body>
+  <div class="scanline-overlay" aria-hidden="true"></div>
+  <header class="masthead">
+    <div class="brand">
+      <div class="brand-mark">
+        <span class="mark-top"></span>
+        <span class="mark-mid"></span>
+        <span class="mark-bottom"></span>
+      </div>
+      <div class="brand-text">
+        <span class="brand-title">Sempal</span>
+        <span class="brand-sub">Microchip brutalism | dark ops</span>
+      </div>
+    </div>
+    <nav class="nav-links">
+      <a href="{{ '/' | relative_url }}">Overview</a>
+      <a href="{{ '/usage' | relative_url }}">Usage</a>
+      <a href="{{ '/styleguide' | relative_url }}">Style</a>
+      <a href="{{ '/performance_qa' | relative_url }}">Performance QA</a>
+    </nav>
+    <div class="status-chip" role="status">Alpha channel</div>
+  </header>
+
+  <main class="content-shell">
+    <div class="frame">
+      <div class="frame-topline"></div>
+      <div class="frame-body">
+        {{ content }}
+      </div>
+    </div>
+  </main>
+
+  <footer class="footnote">
+    <div class="foot-grid">
+      <div>
+        <div class="foot-label">Build intent</div>
+        <div class="foot-copy">Hard-edged, rectilinear audio tooling - no rounded corners, no fluff.</div>
+      </div>
+      <div>
+        <div class="foot-label">Get the app</div>
+        <div class="foot-copy"><a href="https://github.com/portalsurfm/sempal/releases">GitHub Releases</a> | <a href="https://github.com/portalsurfm/sempal">Source</a></div>
+      </div>
+      <div>
+        <div class="foot-label">Docs map</div>
+        <div class="foot-copy"><a href="{{ '/usage' | relative_url }}">Usage</a> | <a href="{{ '/styleguide' | relative_url }}">Style</a> | <a href="{{ '/performance_qa' | relative_url }}">Performance QA</a></div>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>
