@@ -1,18 +1,17 @@
 ## Goal
-- Align waveform keyboard navigation so shift+space playback sets the next navigation anchor to that start position, navigation moves the green cursor rather than the live playhead, and shift+space uses the cursor when no prior play start exists.
+- Add a “smooth” selection edit that rounds sharp edges in the chosen audio span to remove clicks from abrupt transitions (e.g., softening squared wave sections).
 
 ## Proposed solutions
-- Introduce a persistent waveform navigation cursor separate from the playhead, updated by keyboard navigation and mouse interactions, and rendered alongside the existing hover indicator.
-- Anchor shift+space playback to the last navigation cursor when no explicit play start marker exists while keeping current playback/loop behaviour intact.
-- Decouple navigation gestures from moving the active playhead; only seek when explicitly playing, otherwise move the cursor and keep the playhead untouched.
-- Add targeted tests covering cursor movement, shift+space fallback, and viewport clamping to avoid regressions.
+- Introduce a new destructive selection edit that applies a short edge crossfade (e.g., raised-cosine) over the selection boundaries while preserving the interior loudness.
+- Reuse the existing selection edit pipeline (buffer load → in-place processing → wav rewrite) with a dedicated smoothing helper and tests for small spans and multichannel audio.
+- Extend the waveform UI actions to trigger the smooth edit with the same confirmation flow and status messaging used by other destructive operations.
 
 ## Step-by-step plan
-1. [x] Review waveform navigation and playback flow (`ui.rs` input handling, `waveform_navigation.rs`, `playback.rs`, rendering) to confirm current anchors, playhead updates, and cursor drawing.
-2. [x] Add persistent waveform cursor state and rendering so keyboard navigation moves this cursor (not the playhead) while staying in sync with mouse hover/click affordances.
-3. [x] Update navigation logic to operate on the cursor and record shift+space starts as the next navigation origin; default shift+space to the cursor when no previous play position exists without shifting the live playhead.
-4. [x] Extend/adjust tests to cover cursor-driven navigation, shift+space fallback behaviour, and viewport clamping; verify no regressions in play/pause, selection, and zoom flows.
-5. [-] Do a quick manual pass for waveform keyboard navigation, cursor rendering, and shift+space playback anchoring.
+1. [-] Audit current selection edit flow (controller, prompts, UI buttons) to spot integration points for a new smooth edit and any constraints on selection bounds.
+2. [-] Design the smoothing algorithm (window shape, default fade duration, channel-aware frame math) and implement a pure helper with unit tests covering edge cases like tiny selections.
+3. [-] Wire the smooth edit into the controller/destructive edit enums and status messages so the operation can process the selected frames and rewrite the wav.
+4. [-] Add a waveform UI control to request the smooth edit, reusing the existing confirmation/yolo modes and hover help text.
+5. [-] Verify via tests (existing selection edit tests plus new smoothing cases) and, if feasible, a quick manual pass to ensure waveform refresh/export paths remain intact.
 
 ## Code Style & Architecture Rules Reminder
 - Keep files under 400 lines; split when necessary.

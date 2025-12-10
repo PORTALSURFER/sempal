@@ -353,15 +353,15 @@ impl AudioPlayer {
 
         let outcome = open_output_stream(&AudioOutputConfig::default()).ok()?;
         let sink = rodio::Sink::connect_new(outcome.stream.mixer());
-        sink.append(SineWave::new(220.0).take_duration(Duration::from_millis(50)));
+        sink.append(SineWave::new(220.0).take_duration(Duration::from_millis(500)));
         sink.play();
         Some(Self {
             stream: outcome.stream,
             sink: Some(sink),
             current_audio: None,
-            track_duration: Some(0.05),
+            track_duration: Some(0.5),
             started_at: Some(Instant::now()),
-            play_span: Some((0.0, 0.05)),
+            play_span: Some((0.0, 0.5)),
             looping: false,
             loop_offset: None,
             volume: 1.0,

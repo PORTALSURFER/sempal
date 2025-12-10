@@ -2,11 +2,6 @@
 lets then write every task you find into @todo.md as a new todo item
 
 --
-
-- when we add a fade to a selection in the waveform, extend the zero to the end or start of the sample, depending on the direction
-
-- add a 'smooth' feature to round off selected audio parts, to remove clicks sure to hard changes for example. rounding a square.
-
 - lets add in text the total item count of the currently visible sample items in the sample browser in small letter, far right aligned, to the right of the search bar
 
 - lets add the ability to move samples around by drag dropping them onto a folder
@@ -28,6 +23,8 @@ lets then write every task you find into @todo.md as a new todo item
 - please review this test, our app I believe is working correctly.
 if the test still applied, fix the app, otherwise fix or remove the test
 test audio::tests::decode_handles_varied_sample_rates_and_channels ... FAILED
+
+- lets log warnings, errors, etc via our logger tool so we see it in console and on in our file logs
 
 ### v2
 
