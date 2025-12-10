@@ -62,6 +62,18 @@ impl EguiController {
         self.persist_controls();
     }
 
+    pub fn set_waveform_channel_view(&mut self, view: crate::waveform::WaveformChannelView) {
+        if self.controls.waveform_channel_view == view {
+            return;
+        }
+        self.controls.waveform_channel_view = view;
+        self.ui.controls.waveform_channel_view = view;
+        self.ui.waveform.channel_view = view;
+        self.waveform_render_meta = None;
+        self.refresh_waveform_image();
+        self.persist_controls();
+    }
+
     fn persist_controls(&mut self) {
         if let Err(err) = self.persist_config("Failed to save options") {
             self.set_status(err, StatusTone::Warning);

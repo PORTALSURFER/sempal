@@ -21,7 +21,9 @@ impl EguiController {
             wheel_zoom_factor: self.controls.wheel_zoom_factor,
             keyboard_zoom_factor: self.controls.keyboard_zoom_factor,
             destructive_yolo_mode: self.controls.destructive_yolo_mode,
+            waveform_channel_view: self.controls.waveform_channel_view,
         };
+        self.ui.waveform.channel_view = self.controls.waveform_channel_view;
         self.refresh_audio_options();
         self.apply_volume(cfg.volume);
         self.ui.trash_folder = cfg.trash_folder.clone();
