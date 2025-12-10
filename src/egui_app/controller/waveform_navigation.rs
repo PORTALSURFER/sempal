@@ -12,6 +12,10 @@ impl EguiController {
         if self.waveform_ready() {
             self.focus_waveform_context();
             self.ensure_playhead_visible_in_view();
+        } else if self.selected_wav.is_some() || self.ui.waveform.loading.is_some() {
+            // Allow focusing while a waveform is selected or loading so the user can
+            // navigate once decoding finishes.
+            self.focus_waveform_context();
         } else {
             self.set_status("Load a sample to focus the waveform", StatusTone::Info);
         }

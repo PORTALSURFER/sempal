@@ -54,11 +54,16 @@ mod fixtures {
 
     impl WavFixture {
         pub fn sample_index_at(&self, seconds: f32) -> usize {
-            if self.frames == 0 {
+            let channels = self.spec.channels.max(1) as usize;
+            if self.frames == 0 || channels == 0 {
                 return 0;
             }
-            let raw = (seconds * self.spec.sample_rate as f32).round() as usize;
-            raw.min(self.frames.saturating_sub(1))
+            let frame = (seconds * self.spec.sample_rate as f32).round() as usize;
+            let clamped_frame = frame.min(self.frames.saturating_sub(1));
+            let total_samples = self.frames.saturating_mul(channels);
+            clamped_frame
+                .saturating_mul(channels)
+                .min(total_samples.saturating_sub(1))
         }
 
         pub fn expected_amplitude_at(&self, seconds: f32) -> f32 {
@@ -451,7 +456,8 @@ fn assert_fixture_decodes(renderer: &WaveformRenderer, fixture: fixtures::WavFix
     assert_eq!(decoded.sample_rate, fixture.spec.sample_rate);
     assert_eq!(decoded.channels, fixture.spec.channels);
     assert!((decoded.duration_seconds - fixture.spec.duration_seconds).abs() < 0.02);
-    assert_eq!(decoded.samples.len(), fixture.frames);
+    let expected_samples = fixture.frames.saturating_mul(fixture.spec.channels as usize);
+    assert_eq!(decoded.samples.len(), expected_samples);
 
     let pulse = fixture.spec.pulses.first().expect("missing pulse");
     let sample_time = pulse.start_seconds + pulse.duration_seconds * 0.5;

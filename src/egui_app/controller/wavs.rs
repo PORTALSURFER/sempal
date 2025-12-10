@@ -845,6 +845,9 @@ impl EguiController {
         source: &SampleSource,
         relative_path: &Path,
     ) -> Result<(), String> {
+        if self.selected_wav.as_deref() != Some(relative_path) {
+            self.selected_wav = Some(relative_path.to_path_buf());
+        }
         if self.loaded_wav.as_deref() == Some(relative_path) {
             self.clear_waveform_selection();
             let message = self
@@ -1043,6 +1046,7 @@ impl EguiController {
         if end_frame <= start_frame {
             end_frame = (start_frame + 1).min(total_frames);
         }
+        let frames_in_view = end_frame.saturating_sub(start_frame).max(1);
         let samples = &decoded.samples;
         let total_samples = samples.len();
         let start_idx = start_frame
@@ -1052,7 +1056,7 @@ impl EguiController {
             .saturating_mul(channels)
             .min(total_samples)
             .max(start_idx + 1);
-        let upper_width = MAX_TEXTURE_WIDTH as usize;
+        let upper_width = frames_in_view.min(MAX_TEXTURE_WIDTH as usize);
         let lower_bound = width.min(MAX_TEXTURE_WIDTH) as usize;
         let effective_width = target.min(upper_width).max(lower_bound) as u32;
         let desired_meta = WaveformRenderMeta {
