@@ -307,15 +307,12 @@ impl EguiController {
         });
         let selected_matches = self.selected_source.as_ref() == Some(&source.id)
             && self.selected_wav.as_deref() == Some(relative_path);
-        if loaded_matches || selected_matches {
+        if selected_matches || loaded_matches {
+            // Reload immediately so the UI and exports reflect normalized audio without waiting
+            // for the background loader.
             self.loaded_wav = None;
             self.ui.loaded_wav = None;
-            let intent = if selected_matches {
-                AudioLoadIntent::Selection
-            } else {
-                AudioLoadIntent::CollectionPreview
-            };
-            if let Err(err) = self.queue_audio_load_for(source, relative_path, intent, None) {
+            if let Err(err) = self.load_waveform_for_selection(source, relative_path) {
                 self.set_status(err, StatusTone::Warning);
             }
         }

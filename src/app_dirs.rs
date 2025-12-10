@@ -16,6 +16,8 @@ use thiserror::Error;
 pub const APP_DIR_NAME: &str = ".sempal";
 
 static CONFIG_BASE_OVERRIDE: LazyLock<Mutex<Option<PathBuf>>> = LazyLock::new(|| Mutex::new(None));
+// Prevent concurrent overrides from clobbering each other during tests.
+static CONFIG_GUARD_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
 /// Errors that can occur while resolving or preparing application directories.
 #[derive(Debug, Error)]
@@ -68,17 +70,26 @@ fn config_base_dir() -> Option<PathBuf> {
 
 /// Guard that sets a temporary config base path for tests and restores the prior value.
 #[cfg(test)]
-pub struct ConfigBaseGuard(Option<PathBuf>);
+pub struct ConfigBaseGuard {
+    previous: Option<PathBuf>,
+    _lock: std::sync::MutexGuard<'static, ()>,
+}
 
 #[cfg(test)]
 impl ConfigBaseGuard {
     pub fn set(path: PathBuf) -> Self {
+        let lock = CONFIG_GUARD_LOCK
+            .lock()
+            .expect("config guard lock poisoned");
         let mut guard = CONFIG_BASE_OVERRIDE
             .lock()
             .expect("config base override mutex poisoned");
         let previous = guard.clone();
         *guard = Some(path);
-        Self(previous)
+        Self {
+            previous,
+            _lock: lock,
+        }
     }
 }
 
@@ -86,7 +97,7 @@ impl ConfigBaseGuard {
 impl Drop for ConfigBaseGuard {
     fn drop(&mut self) {
         if let Ok(mut guard) = CONFIG_BASE_OVERRIDE.lock() {
-            *guard = self.0.take();
+            *guard = self.previous.take();
         }
     }
 }
