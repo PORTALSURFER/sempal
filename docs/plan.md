@@ -1,18 +1,17 @@
 ## Goal
-- Add random sample playback shortcuts with a 20-item history so users can jump to a random visible sample (Shift + R) and step backward through recent picks (Ctrl/Cmd + Shift + R) without disrupting existing navigation.
+- Update `docs/styleguide.md` colors to match the palette currently used in the app.
 
 ## Proposed solutions
-- Keep random selection scoped to the current visible browser list, reuse existing focus/playback flows, and record each pick (source + path) into a bounded history that trims older entries.
-- Add a backward navigation action that re-focuses and plays prior random picks, handling missing sources/files gracefully and resetting the cursor when new randoms are added.
-- Surface both shortcuts in the hotkey registry/UI and cover behaviour with deterministic tests for history bounds, cursor movement, and edge cases.
+- Extract the canonical color palette from the live app theme variables to use as the source of truth.
+- Compare existing color tokens and swatches in `docs/styleguide.md` against the app palette to spot mismatches.
+- Refresh the style guide color tables/swatches and usage notes to reflect the live palette and clarify primary/secondary/supporting roles.
+- Add quick guidance on keeping the style guide synced with future palette changes.
 
 ## Step-by-step plan
-1. [x] Review current sample browser selection and playback pathways (`controller/playback.rs`, `controller/wavs.rs`, hotkey handling in `controller/hotkeys.rs` and `ui.rs`) to find the right hook for selecting and focusing a random visible sample.
-2. [x] Implement a controller method that picks a random visible browser row (skipping empty states), updates focus/selection/autoscroll as existing navigation does, and kicks off playback through the established audio path.
-3. [x] Wire Shift + R into the hotkey registry with an appropriate scope/label, and connect it to the new random-play helper so the overlay and key handling trigger the behaviour.
-4. [x] Update user-facing hotkey documentation and add targeted tests covering random selection edge cases and hotkey dispatch; keep randomness deterministic in tests.
-5. [-] Manually sanity-check the new shortcut across focus contexts to confirm it doesn’t interfere with existing navigation or playback defaults.
-6. [x] Add random playback history (capped at 20 entries) and a Ctrl/Cmd + Shift + R hotkey to step backward through prior random picks, aligning playback and focus even across source changes.
+1. [-] Inventory current app color sources (theme variables/constants) and record the canonical palette and token names.
+2. [-] Review `docs/styleguide.md` to identify mismatches or outdated color entries versus the live palette.
+3. [-] Update `docs/styleguide.md` color tables/swatches and usage notes to align with the current app palette without altering other sections.
+4. [-] Quick pass to ensure naming, hex values, and guidance stay consistent and concise.
 
 ## Code Style & Architecture Rules Reminder
 - Keep files under 400 lines; split when necessary.
