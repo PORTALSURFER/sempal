@@ -1,15 +1,20 @@
-## [unreleased]
+## [0.239.0] - 2025-12-10
 
 ### 🚀 Features
 
 - Add fuzzy search to sample browser
 - Add shift+space replay from last start marker
+- Add random playback history and back hotkey
 
 ### 🐛 Bug Fixes
 
 - Consume hotkey events to silence windows beeps
 - Cleanup resize handlers
 - Harden waveform sampling and render stability
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* V0.239.0 (#15)
 ## [0.230.0] - 2025-12-10
 
 ### 🚀 Features
