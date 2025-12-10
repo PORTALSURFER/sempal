@@ -3,8 +3,6 @@ lets then write every task you find into @todo.md as a new todo item
 
 --
 
-\plan - change color of the cursor line so it differs visually from the playhead.
-also, when the user clicks, leave behind a new dotted line, to indicate the last known play start position, again in another color
 
 \plan - lets add a tiny box next to the cursor line with in it the current location time in text in HH:MM:SS:MS format where MS is milliseconds
 

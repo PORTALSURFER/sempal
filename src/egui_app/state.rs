@@ -95,6 +95,8 @@ pub struct SourceRowView {
 pub struct WaveformState {
     pub image: Option<WaveformImage>,
     pub playhead: PlayheadState,
+    /// Last play start position chosen by the user (normalized 0-1).
+    pub last_start_marker: Option<f32>,
     pub selection: Option<SelectionRange>,
     pub selection_duration: Option<String>,
     pub channel_view: WaveformChannelView,
@@ -113,6 +115,7 @@ impl Default for WaveformState {
         Self {
             image: None,
             playhead: PlayheadState::default(),
+            last_start_marker: None,
             selection: None,
             selection_duration: None,
             channel_view: WaveformChannelView::Mono,

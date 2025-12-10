@@ -74,6 +74,7 @@ impl EguiController {
         self.ui.waveform.loading = None;
         self.decoded_waveform = None;
         self.ui.waveform.playhead = PlayheadState::default();
+        self.ui.waveform.last_start_marker = None;
         self.ui.waveform.selection = None;
         self.ui.waveform.selection_duration = None;
         self.ui.waveform.view = WaveformView::default();
