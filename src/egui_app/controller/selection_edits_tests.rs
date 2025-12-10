@@ -95,6 +95,50 @@ fn mute_respects_selection_bounds() {
 }
 
 #[test]
+fn smooth_selection_crossfades_edges() {
+    let mut buffer = SelectionEditBuffer {
+        samples: vec![0.0_f32, 0.2, 1.0, 1.0, 0.6, -0.4, -0.1, 0.0],
+        channels: 1,
+        sample_rate: 48_000,
+        spec_channels: 1,
+        start_frame: 2,
+        end_frame: 6,
+    };
+
+    smooth_selection(&mut buffer, Duration::from_millis(8)).unwrap();
+
+    assert!((buffer.samples[2] - 0.2).abs() < 1e-6);
+    assert!((buffer.samples[3] - 1.0).abs() < 1e-6);
+    assert!((buffer.samples[4] - 0.6).abs() < 1e-6);
+    assert!((buffer.samples[5] + 0.1).abs() < 1e-6);
+}
+
+#[test]
+fn smooth_selection_blends_multichannel_edges() {
+    let mut buffer = SelectionEditBuffer {
+        samples: vec![
+            0.0_f32, 0.0, // frame 0
+            0.5, -0.5,    // frame 1 (before)
+            1.0, 1.0,     // frame 2 (selection start)
+            -1.0, -1.0,   // frame 3 (selection end)
+            -0.25, 0.25,  // frame 4 (after)
+        ],
+        channels: 2,
+        sample_rate: 10_000,
+        spec_channels: 2,
+        start_frame: 2,
+        end_frame: 4,
+    };
+
+    smooth_selection(&mut buffer, Duration::from_millis(5)).unwrap();
+
+    assert!((buffer.samples[4] - 0.75).abs() < 1e-6);
+    assert!((buffer.samples[5] - 0.25).abs() < 1e-6);
+    assert!((buffer.samples[6] + 0.625).abs() < 1e-6);
+    assert!((buffer.samples[7] + 0.375).abs() < 1e-6);
+}
+
+#[test]
 fn normalize_selection_scales_and_blends_edges() {
     let mut samples = vec![0.0_f32; 20];
     let selection_values = vec![
