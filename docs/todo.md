@@ -2,6 +2,7 @@
 lets then write every task you find into @todo.md as a new todo item
 
 --
+
 - when we add a fade to a selection in the waveform, extend the zero to the end or start of the sample, depending on the direction
 
 - add a 'smooth' feature to round off selected audio parts, to remove clicks sure to hard changes for example. rounding a square.
@@ -29,6 +30,7 @@ if the test still applied, fix the app, otherwise fix or remove the test
 test audio::tests::decode_handles_varied_sample_rates_and_channels ... FAILED
 
 ### v2
+
 \plan - add a bpm grid
 
 \plan - add warp markers
