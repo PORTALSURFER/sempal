@@ -28,8 +28,12 @@ impl EguiApp {
             let source_list_height = (ui.available_height() * 0.25).max(140.0);
             self.render_sources_list(ui, source_list_height);
             ui.add_space(8.0);
-            let folder_height = ui.available_height().max(0.0);
+            let remaining = ui.available_height();
+            let selected_section_reserved = 64.0;
+            let folder_height = (remaining - selected_section_reserved).max(120.0);
             self.render_folder_browser(ui, folder_height);
+            ui.add_space(8.0);
+            self.render_selected_folders(ui);
         });
         if matches!(self.controller.ui.focus.context, FocusContext::SourcesList) {
             ui.painter().rect_stroke(
@@ -282,6 +286,24 @@ impl EguiApp {
         });
         style::paint_section_border(ui, frame_response.response.rect, focused);
         self.controller.ui.sources.folders.scroll_to = None;
+    }
+
+    fn render_selected_folders(&mut self, ui: &mut Ui) {
+        let palette = style::palette();
+        ui.label(RichText::new("Selected folders").color(palette.text_primary));
+        let selected = self.controller.selected_folder_paths();
+        if selected.is_empty() {
+            ui.label(RichText::new("None").color(palette.text_muted));
+            return;
+        }
+        ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = 4.0;
+            for path in selected {
+                ui.label(
+                    RichText::new(format!("• {}", path.display())).color(palette.text_primary),
+                );
+            }
+        });
     }
 }
 
