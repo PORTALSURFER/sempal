@@ -466,11 +466,7 @@ impl eframe::App for EguiApp {
             self.controller.copy_selection_to_clipboard();
         }
         if input.escape {
-            let _ = self.controller.stop_playback_if_active();
-            if !self.controller.ui.browser.selected_paths.is_empty() {
-                self.controller.clear_browser_selection();
-            }
-            self.controller.clear_folder_selection();
+            self.controller.handle_escape();
         }
         if let Some(new_maximized) = ctx.input(|i| {
             if i.key_pressed(egui::Key::F11) {

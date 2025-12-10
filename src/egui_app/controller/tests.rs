@@ -334,6 +334,34 @@ fn escape_clears_selection() {
 }
 
 #[test]
+fn escape_handler_clears_waveform_and_browser_state() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.cache_db(&source).unwrap();
+    controller.wav_entries = vec![sample_entry("one.wav", SampleTag::Neutral)];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+
+    controller
+        .selection
+        .set_range(Some(SelectionRange::new(0.2, 0.8)));
+    controller.apply_selection(controller.selection.range());
+    controller
+        .ui
+        .browser
+        .selected_paths
+        .push(PathBuf::from("one.wav"));
+    controller.ui.browser.selection_anchor_visible = Some(0);
+
+    controller.handle_escape();
+
+    assert!(controller.selection.range().is_none());
+    assert!(controller.ui.waveform.selection.is_none());
+    assert!(controller.ui.browser.selected_paths.is_empty());
+    assert!(controller.ui.browser.selection_anchor_visible.is_none());
+}
+
+#[test]
 fn click_clears_selection_and_focuses_row() {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source.clone());
