@@ -3,8 +3,6 @@ lets then write every task you find into @todo.md as a new todo item
 
 --
 
-\plan - lets add 'r' to rename to the sample browser, same functionality as rename in the folder browser.
-
 \plan - lets make 'f' focus fuzzy search in the sample browser
 
 \plan - use the waveform cursor as start position when we hit space bar, if we have an active waveform cursor, esc should remove it, resetting start to the beginning of the sample again

@@ -391,6 +391,10 @@ pub struct SampleBrowserState {
     pub search_query: String,
     /// When enabled, Up/Down jump through random samples instead of list order.
     pub random_navigation_mode: bool,
+    /// Pending inline action for the sample browser rows.
+    pub pending_action: Option<SampleBrowserActionPrompt>,
+    /// Flag to request focus on the active inline rename editor.
+    pub rename_focus_requested: bool,
 }
 
 impl Default for SampleBrowserState {
@@ -410,6 +414,8 @@ impl Default for SampleBrowserState {
             filter: TriageFlagFilter::All,
             search_query: String::new(),
             random_navigation_mode: false,
+            pending_action: None,
+            rename_focus_requested: false,
         }
     }
 }
@@ -436,6 +442,12 @@ pub enum TriageFlagFilter {
     Keep,
     Trash,
     Untagged,
+}
+
+/// Pending inline action for the sample browser.
+#[derive(Clone, Debug)]
+pub enum SampleBrowserActionPrompt {
+    Rename { target: PathBuf, name: String },
 }
 
 /// Active drag payload carried across UI panels.

@@ -4,8 +4,8 @@ use super::*;
 use crate::egui_app::controller::collection_export;
 use crate::egui_app::controller::hotkeys;
 use crate::egui_app::state::{
-    DestructiveSelectionEdit, DragPayload, FocusContext, TriageFlagColumn, TriageFlagFilter,
-    WaveformView,
+    DestructiveSelectionEdit, DragPayload, FocusContext, SampleBrowserActionPrompt,
+    TriageFlagColumn, TriageFlagFilter, WaveformView,
 };
 use crate::sample_sources::Collection;
 use crate::sample_sources::collections::CollectionMember;
@@ -1394,6 +1394,30 @@ fn browser_rename_updates_collections_and_lookup() {
             .iter()
             .any(|m| m.relative_path == PathBuf::from("renamed.wav"))
     );
+}
+
+#[test]
+fn starting_browser_rename_queues_prompt_for_focused_row() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.selected_source = Some(source.id.clone());
+    controller.wav_entries = vec![sample_entry("one.wav", SampleTag::Neutral)];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+    controller.focus_browser_list();
+
+    controller.start_browser_rename();
+
+    let prompt = controller.ui.browser.pending_action.clone();
+    match prompt {
+        Some(SampleBrowserActionPrompt::Rename { target, name }) => {
+            assert_eq!(target, PathBuf::from("one.wav"));
+            assert_eq!(name, "one.wav");
+        }
+        _ => panic!("expected sample rename prompt"),
+    }
+    assert!(controller.ui.browser.rename_focus_requested);
+    assert_eq!(controller.ui.focus.context, FocusContext::SampleBrowser);
 }
 
 #[test]

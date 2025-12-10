@@ -1,6 +1,6 @@
 use super::audio_cache::{CacheKey, FileMetadata};
 use super::*;
-use crate::egui_app::state::WaveformView;
+use crate::egui_app::state::{SampleBrowserActionPrompt, WaveformView};
 use crate::waveform::DecodedWaveform;
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
@@ -654,6 +654,43 @@ impl EguiController {
         self.ui.browser.autoscroll = true;
         self.ui.browser.selection_anchor_visible = Some(visible_row);
         self.select_wav_by_path_with_rebuild(&path, true);
+    }
+
+    pub(crate) fn start_browser_rename(&mut self) {
+        let Some(path) = self.focused_browser_path() else {
+            self.set_status("Focus a sample to rename it", StatusTone::Info);
+            return;
+        };
+        let default = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map(str::to_string)
+            .unwrap_or_else(|| path.to_string_lossy().into_owned());
+        self.focus_browser_context();
+        self.ui.browser.pending_action = Some(SampleBrowserActionPrompt::Rename {
+            target: path,
+            name: default,
+        });
+        self.ui.browser.rename_focus_requested = true;
+    }
+
+    pub(crate) fn apply_pending_browser_rename(&mut self) {
+        let action = self.ui.browser.pending_action.clone();
+        if let Some(SampleBrowserActionPrompt::Rename { target, name }) = action {
+            let Some(row) = self.visible_row_for_path(&target) else {
+                self.ui.browser.pending_action = None;
+                self.ui.browser.rename_focus_requested = false;
+                self.set_status("Sample not found to rename", StatusTone::Info);
+                return;
+            };
+            match self.rename_browser_sample(row, &name) {
+                Ok(()) => {
+                    self.ui.browser.pending_action = None;
+                    self.ui.browser.rename_focus_requested = false;
+                }
+                Err(err) => self.set_status(err, StatusTone::Error),
+            }
+        }
     }
 
     pub fn toggle_browser_row_selection(&mut self, visible_row: usize) {
