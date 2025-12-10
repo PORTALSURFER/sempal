@@ -1,0 +1,1 @@
+- when building you will need asiosdk, you can find it at /mnt/e/lib/asiosdk/ASIOSDK, map this to CPAL_ASIO_DIR env var
