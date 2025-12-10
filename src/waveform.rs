@@ -143,7 +143,7 @@ impl WaveformRenderer {
         let width = width.max(1);
         let height = height.max(1);
         // Oversample horizontally to reduce aliasing, then combine down to the requested size.
-        let oversample = if width <= 4_096 { 4 } else { 2 };
+        let oversample = Self::oversample_factor(width, samples.len() / channels.max(1));
         let oversampled_width = width.saturating_mul(oversample);
         let oversampled =
             Self::sample_columns_for_width(samples, channels, oversampled_width, view);
@@ -254,72 +254,13 @@ impl WaveformRenderer {
         }
         match view {
             WaveformChannelView::Mono => {
-                let mut columns = vec![(0.0, 0.0); width];
-                let total = frame_count as f32;
-                for (x, col) in columns.iter_mut().enumerate() {
-                    let start = ((x as f32 * total) / width as f32)
-                        .floor()
-                        .min(frame_count.saturating_sub(1) as f32) as usize;
-                    let mut end = (((x as f32 + 1.0) * total) / width as f32)
-                        .ceil()
-                        .max((start + 1) as f32)
-                        .min(frame_count as f32) as usize;
-                    if end <= start {
-                        end = (start + 1).min(frame_count);
-                    }
-                    let mut min: f32 = 1.0;
-                    let mut max: f32 = -1.0;
-                    for frame in start..end {
-                        let frame_start = frame.saturating_mul(channels);
-                        let frame_end = frame_start + channels;
-                        let mut frame_min = 1.0_f32;
-                        let mut frame_max = -1.0_f32;
-                        for &sample in &samples[frame_start..frame_end.min(samples.len())] {
-                            let clamped = sample.clamp(-1.0, 1.0);
-                            frame_min = frame_min.min(clamped);
-                            frame_max = frame_max.max(clamped);
-                        }
-                        min = min.min(frame_min);
-                        max = max.max(frame_max);
-                    }
-                    *col = (min, max);
-                }
+                let columns =
+                    Self::sample_channel_columns(samples, channels, width, None);
                 WaveformColumnView::Mono(columns)
             }
             WaveformChannelView::SplitStereo => {
-                let build_channel_columns = |channel_index: usize| {
-                    let mut columns = vec![(0.0, 0.0); width];
-                    let total = frame_count as f32;
-                    for (x, col) in columns.iter_mut().enumerate() {
-                        let start = ((x as f32 * total) / width as f32)
-                            .floor()
-                            .min(frame_count.saturating_sub(1) as f32)
-                            as usize;
-                        let mut end = (((x as f32 + 1.0) * total) / width as f32)
-                            .ceil()
-                            .max((start + 1) as f32)
-                            .min(frame_count as f32) as usize;
-                        if end <= start {
-                            end = (start + 1).min(frame_count);
-                        }
-                        let mut min = 1.0_f32;
-                        let mut max = -1.0_f32;
-                        for frame in start..end {
-                            let idx = frame
-                                .saturating_mul(channels)
-                                .saturating_add(channel_index.min(channels.saturating_sub(1)));
-                            if let Some(sample) = samples.get(idx) {
-                                let clamped = sample.clamp(-1.0, 1.0);
-                                min = min.min(clamped);
-                                max = max.max(clamped);
-                            }
-                        }
-                        *col = (min, max);
-                    }
-                    columns
-                };
-                let left = build_channel_columns(0);
-                let right = build_channel_columns(1);
+                let left = Self::sample_channel_columns(samples, channels, width, Some(0));
+                let right = Self::sample_channel_columns(samples, channels, width, Some(1));
                 WaveformColumnView::SplitStereo { left, right }
             }
         }
@@ -475,6 +416,76 @@ impl WaveformRenderer {
             }
         }
     }
+
+    fn oversample_factor(width: u32, frame_count: usize) -> u32 {
+        if frame_count == 0 {
+            return 1;
+        }
+        if width <= 1_024 {
+            8
+        } else if width <= 4_096 {
+            4
+        } else {
+            2
+        }
+    }
+
+    fn sample_channel_columns(
+        samples: &[f32],
+        channels: usize,
+        width: usize,
+        channel_index: Option<usize>,
+    ) -> Vec<(f32, f32)> {
+        let frame_count = samples.len() / channels.max(1);
+        let total = frame_count as f32;
+        let mut columns = vec![(0.0, 0.0); width];
+        for (x, col) in columns.iter_mut().enumerate() {
+            let start = ((x as f32 * total) / width as f32)
+                .floor()
+                .min(frame_count.saturating_sub(1) as f32) as usize;
+            let mut end = (((x as f32 + 1.0) * total) / width as f32)
+                .ceil()
+                .max((start + 1) as f32)
+                .min(frame_count as f32) as usize;
+            if end <= start {
+                end = (start + 1).min(frame_count);
+            }
+            let mut min: f32 = 1.0;
+            let mut max: f32 = -1.0;
+            match channel_index {
+                Some(channel) => {
+                    let channel = channel.min(channels.saturating_sub(1));
+                    for frame in start..end {
+                        let idx = frame
+                            .saturating_mul(channels)
+                            .saturating_add(channel);
+                        if let Some(sample) = samples.get(idx) {
+                            let clamped = sample.clamp(-1.0, 1.0);
+                            min = min.min(clamped);
+                            max = max.max(clamped);
+                        }
+                    }
+                }
+                None => {
+                    for frame in start..end {
+                        let frame_start = frame.saturating_mul(channels);
+                        let frame_end = frame_start + channels;
+                        let mut frame_min = 1.0_f32;
+                        let mut frame_max = -1.0_f32;
+                        for &sample in &samples[frame_start..frame_end.min(samples.len())] {
+                            let clamped = sample.clamp(-1.0, 1.0);
+                            frame_min = frame_min.min(clamped);
+                            frame_max = frame_max.max(clamped);
+                        }
+                        min = min.min(frame_min);
+                        max = max.max(frame_max);
+                    }
+                }
+            }
+            *col = (min, max);
+        }
+        columns
+    }
 }
 
 #[cfg(test)]
@@ -582,5 +593,39 @@ mod tests {
         };
         assert_eq!(left, vec![(0.5, 0.5)]);
         assert_eq!(right, vec![(-0.25, -0.25)]);
+    }
+
+    #[test]
+    fn high_zoom_columns_keep_channel_extremes() {
+        let samples = [1.0_f32, -1.0];
+        let columns = WaveformRenderer::sample_columns_for_mode(
+            &samples,
+            1,
+            64,
+            WaveformChannelView::Mono,
+        );
+        let WaveformColumnView::Mono(cols) = columns else {
+            panic!("expected mono columns")
+        };
+        let has_positive = cols.iter().any(|(min, max)| (*min - 1.0).abs() < 1e-6 && (*max - 1.0).abs() < 1e-6);
+        let has_negative = cols.iter().any(|(min, max)| (*min + 1.0).abs() < 1e-6 && (*max + 1.0).abs() < 1e-6);
+        assert!(has_positive);
+        assert!(has_negative);
+    }
+
+    #[test]
+    fn split_channels_share_sampling_pipeline() {
+        let samples = [0.75_f32, -0.5, -0.25, 0.5];
+        let columns = WaveformRenderer::sample_columns_for_mode(
+            &samples,
+            2,
+            8,
+            WaveformChannelView::SplitStereo,
+        );
+        let WaveformColumnView::SplitStereo { left, right } = columns else {
+            panic!("expected split columns")
+        };
+        assert!(left.iter().any(|(min, max)| (*min - 0.75).abs() < 1e-6 && (*max - 0.75).abs() < 1e-6));
+        assert!(right.iter().any(|(min, max)| (*min + 0.5).abs() < 1e-6 && (*max + 0.5).abs() < 1e-6));
     }
 }

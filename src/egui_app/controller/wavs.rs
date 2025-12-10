@@ -34,15 +34,20 @@ pub(super) struct WaveformRenderMeta {
 }
 
 impl WaveformRenderMeta {
-    fn matches(&self, other: &WaveformRenderMeta) -> bool {
-        const EPS: f32 = 1e-4;
+    /// Check whether two render targets describe the same view and layout.
+    pub(super) fn matches(&self, other: &WaveformRenderMeta) -> bool {
+        let width = (self.view_end - self.view_start)
+            .abs()
+            .max((other.view_end - other.view_start).abs())
+            .max(1e-6);
+        let eps = (width * 0.01).max(1e-5);
         self.samples_len == other.samples_len
             && self.size == other.size
             && self.texture_width == other.texture_width
             && self.channel_view == other.channel_view
             && self.channels == other.channels
-            && (self.view_start - other.view_start).abs() < EPS
-            && (self.view_end - other.view_end).abs() < EPS
+            && (self.view_start - other.view_start).abs() < eps
+            && (self.view_end - other.view_end).abs() < eps
     }
 }
 
