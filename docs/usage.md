@@ -18,7 +18,7 @@
 ## Browse and triage samples
 - Use filter chips (All/Keep/Trash/Untagged) to change the visible list. Rows show number columns and right-edge markers for Keep/Trash; missing files are prefixed with `!`.
 - Type in the browser search box to fuzzy-match sample names within the current filter; clear the query to restore the full list.
-- Click focuses a row and clears any existing selection; **Shift + click** extends the selection; **Ctrl/Cmd + click** toggles multi-select while keeping the focused row in the set. **Up/Down** moves the focus; **Shift + Up/Down** extends the selection.
+- Click focuses a row and clears any existing selection; **Shift + click** extends the selection; **Ctrl/Cmd + click** toggles multi-select while keeping the focused row in the set. **Up/Down** moves the focus; **Shift + Up/Down** extends the selection. Toggle **Alt + R** to lock random navigation so **Up/Down** jump to random samples instead (Up replays the previous random pick).
 - Tagging: **Right Arrow** -> Keep (Trash -> Neutral, others -> Keep). **Left Arrow** -> Trash (Keep -> Neutral, others -> Trash). **Ctrl/Cmd + Right/Left** moves the selection into the next/previous triage column.
 - Context menu on a sample row: Tag Keep/Neutral/Trash, **Normalize (overwrite)**, **Rename**, or **Delete file**. Actions apply to the focused row or the current multi-selection.
 - **Ctrl/Cmd + C** copies the focused/selected samples to the system clipboard as file drops (for DAWs/file managers).
@@ -53,6 +53,6 @@
 - Drag selections or samples outside the window on Windows to start an external drag-out. Use **Ctrl/Cmd + C** to copy selections or rows as file drops.
 
 ## Hotkeys (focus-aware)
-- Global: `Space` play/pause; `Esc` stop/clear selections (including waveform); `L` toggle loop; `Shift + R` play a random visible sample and auto-play; `Ctrl/Cmd + Shift + R` step backward through random sample history; `Ctrl/Cmd + /` toggle hotkey overlay; `F11` toggle maximized window.
-- Sample browser focus: `Up/Down` move; `Shift + Up/Down` extend selection; `Right Arrow` Keep; `Left Arrow` Trash; `Ctrl/Cmd + Right/Left` move selection across triage columns; `X` toggle selection; `N` normalize (overwrite); `D` delete; `C` add focused sample to the selected collection.
+- Global: `Space` play/pause; `Esc` stop/clear selections (including waveform); `L` toggle loop; `Shift + R` play a random visible sample and auto-play; `Alt + R` toggle sticky random navigation (Up/Down jump to random samples while active); `Ctrl/Cmd + Shift + R` step backward through random sample history; `Ctrl/Cmd + /` toggle hotkey overlay; `F11` toggle maximized window.
+- Sample browser focus: `Up/Down` move (or jump randomly when sticky mode is on); `Shift + Up/Down` extend selection; `Right Arrow` Keep; `Left Arrow` Trash; `Ctrl/Cmd + Right/Left` move selection across triage columns; `X` toggle selection; `N` normalize (overwrite); `D` delete; `C` add focused sample to the selected collection.
 - Collection item focus: `Up/Down` move; `N` normalize (overwrite collection copy); `D` delete from collection.

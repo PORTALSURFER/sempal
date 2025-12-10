@@ -382,6 +382,8 @@ pub struct SampleBrowserState {
     pub filter: TriageFlagFilter,
     /// Text query applied to visible rows via fuzzy search.
     pub search_query: String,
+    /// When enabled, Up/Down jump through random samples instead of list order.
+    pub random_navigation_mode: bool,
 }
 
 impl Default for SampleBrowserState {
@@ -400,6 +402,7 @@ impl Default for SampleBrowserState {
             autoscroll: false,
             filter: TriageFlagFilter::All,
             search_query: String::new(),
+            random_navigation_mode: false,
         }
     }
 }

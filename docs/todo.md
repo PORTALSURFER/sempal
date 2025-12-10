@@ -2,7 +2,11 @@
 lets then write every task you find into @todo.md as a new todo item
 
 --
+- when we add a fade to a selection in the waveform, extend the zero to the end or start of the sample, depending on the direction
 
+- add a 'smooth' feature to round off selected audio parts, to remove clicks sure to hard changes for example. rounding a square.
+
+- lets add in text the total item count of the currently visible sample items in the sample browser in small letter, far right aligned, to the right of the search bar
 
 - lets add the ability to move samples around by drag dropping them onto a folder
 
@@ -21,6 +25,9 @@ lets then write every task you find into @todo.md as a new todo item
 - when we have a filter active, and we remove a sample from that filter, jump focus to the first next filter. for example, if we have the untagged filter active, and we mark a sample with a triageflag.
 
 ### v2
+\plan - add a bpm grid
+
+\plan - add warp markers
 
 \plan - add audio recording
 
