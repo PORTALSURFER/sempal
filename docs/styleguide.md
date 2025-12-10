@@ -1,3 +1,10 @@
+---
+layout: default
+title: Style Guide
+permalink: /styleguide
+description: Microchip brutalism rules that keep the Sempal UI coherent.
+---
+
 # Microchip Brutalism — GUI Style Guide
 Inspired by a microchip die
 

@@ -1,3 +1,10 @@
+---
+layout: default
+title: Performance QA
+permalink: /performance_qa
+description: Checklist for keeping huge sample libraries responsive in Sempal.
+---
+
 # Large-list Performance QA
 
 ## Goals
