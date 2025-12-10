@@ -1556,6 +1556,39 @@ fn mouse_zoom_prefers_pointer_over_playhead() {
 }
 
 #[test]
+fn last_start_marker_clamps_and_resets() {
+    let (mut controller, source) = dummy_controller();
+    prepare_browser_sample(&mut controller, &source, "marker.wav");
+
+    controller.record_play_start(-0.25);
+    assert_eq!(controller.ui.waveform.last_start_marker, Some(0.0));
+
+    controller.record_play_start(0.75);
+    assert_eq!(controller.ui.waveform.last_start_marker, Some(0.75));
+
+    controller.clear_waveform_view();
+    assert!(controller.ui.waveform.last_start_marker.is_none());
+}
+
+#[test]
+fn replay_from_last_start_requeues_pending_playback() {
+    let (mut controller, source) = dummy_controller();
+    prepare_browser_sample(&mut controller, &source, "marker.wav");
+    controller.select_wav_by_path(Path::new("marker.wav"));
+    controller.record_play_start(0.42);
+    controller.ui.waveform.playhead.visible = true;
+    controller.ui.waveform.playhead.position = 0.1;
+
+    let handled = controller.replay_from_last_start();
+    assert!(handled);
+    let pending = controller
+        .pending_playback
+        .as_ref()
+        .expect("pending playback request");
+    assert_eq!(pending.start_override, Some(0.42));
+}
+
+#[test]
 fn waveform_refresh_respects_view_slice_and_caps_width() {
     let (mut controller, _source) = dummy_controller();
     controller.waveform_size = [100, 10];

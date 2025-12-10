@@ -452,7 +452,14 @@ impl eframe::App for EguiApp {
             self.controller.ui.browser.selected = None;
         }
         if input.space {
-            self.controller.toggle_play_pause();
+            if input.shift {
+                let handled = self.controller.replay_from_last_start();
+                if !handled {
+                    self.controller.toggle_play_pause();
+                }
+            } else {
+                self.controller.toggle_play_pause();
+            }
         }
         if copy_shortcut_pressed(ctx) {
             self.controller.copy_selection_to_clipboard();
