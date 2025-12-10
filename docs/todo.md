@@ -19,6 +19,8 @@ shift+spacebar should start from this cursor position if no previous play positi
 lets align shift+click select of the sample browser with how it works in the folder browser, select a to b.
 also, if the user selects with ctrl, and then selects with ctrl+shift+click, add a new a to b selection where the ctrl select is not the new 'a' marker, in addition to what was already selected, typical ctrl+shift+click behaviour.
 
+- clear the dottes 'last playstart' line when we select/focus a new sample
+
 ### v2
 
 \plan - add audio recording

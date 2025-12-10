@@ -288,6 +288,16 @@ impl EguiController {
             .any(|folder| relative_path.starts_with(folder))
     }
 
+    pub(crate) fn selected_folder_paths(&self) -> Vec<PathBuf> {
+        let Some(id) = self.selected_source.as_ref() else {
+            return Vec::new();
+        };
+        self.folder_browsers
+            .get(id)
+            .map(|model| model.selected.iter().cloned().collect())
+            .unwrap_or_default()
+    }
+
     fn apply_folder_selection(&mut self, row_index: usize, mode: FolderSelectMode) {
         let Some((path, has_children)) = self
             .ui
