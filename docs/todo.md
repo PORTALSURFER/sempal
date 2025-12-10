@@ -24,6 +24,10 @@ lets then write every task you find into @todo.md as a new todo item
 
 - when we have a filter active, and we remove a sample from that filter, jump focus to the first next filter. for example, if we have the untagged filter active, and we mark a sample with a triageflag.
 
+- please review this test, our app I believe is working correctly.
+if the test still applied, fix the app, otherwise fix or remove the test
+test audio::tests::decode_handles_varied_sample_rates_and_channels ... FAILED
+
 ### v2
 \plan - add a bpm grid
 
