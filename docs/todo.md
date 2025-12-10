@@ -2,7 +2,6 @@
 lets then write every task you find into @todo.md as a new todo item
 
 --
-- lets add in text the total item count of the currently visible sample items in the sample browser in small letter, far right aligned, to the right of the search bar
 
 - lets add the ability to move samples around by drag dropping them onto a folder
 

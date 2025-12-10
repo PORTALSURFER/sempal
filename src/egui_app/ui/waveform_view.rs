@@ -367,6 +367,13 @@ impl EguiApp {
                         request_edit(DestructiveSelectionEdit::MuteSelection);
                     }
                     if ui
+                        .button("Smooth edges")
+                        .on_hover_text("Apply short raised-cosine crossfades at selection edges")
+                        .clicked()
+                    {
+                        request_edit(DestructiveSelectionEdit::SmoothSelection);
+                    }
+                    if ui
                         .button("Normalize selection")
                         .on_hover_text("Scale selection to full range with 5ms edge fades")
                         .clicked()

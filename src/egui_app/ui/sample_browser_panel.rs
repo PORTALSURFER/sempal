@@ -283,35 +283,53 @@ impl EguiApp {
 
     fn render_sample_browser_filter(&mut self, ui: &mut Ui) {
         let palette = style::palette();
-        ui.horizontal(|ui| {
-            ui.label(RichText::new("Filter").color(palette.text_primary));
-            for filter in [
-                TriageFlagFilter::All,
-                TriageFlagFilter::Keep,
-                TriageFlagFilter::Trash,
-                TriageFlagFilter::Untagged,
-            ] {
-                let selected = self.controller.ui.browser.filter == filter;
-                let label = match filter {
-                    TriageFlagFilter::All => "All",
-                    TriageFlagFilter::Keep => "Keep",
-                    TriageFlagFilter::Trash => "Trash",
-                    TriageFlagFilter::Untagged => "Untagged",
-                };
-                if ui.selectable_label(selected, label).clicked() {
-                    self.controller.set_browser_filter(filter);
-                }
-            }
-            ui.add_space(ui.spacing().item_spacing.x);
-            let mut query = self.controller.ui.browser.search_query.clone();
-            let response = ui.add(
-                egui::TextEdit::singleline(&mut query)
-                    .hint_text("Search...")
-                    .desired_width(160.0),
-            );
-            if response.changed() {
-                self.controller.set_browser_search(query);
-            }
-        });
+        let visible_count = self.controller.visible_browser_indices().len();
+        ui.with_layout(
+            egui::Layout::left_to_right(egui::Align::Center).with_main_justify(true),
+            |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Filter").color(palette.text_primary));
+                    for filter in [
+                        TriageFlagFilter::All,
+                        TriageFlagFilter::Keep,
+                        TriageFlagFilter::Trash,
+                        TriageFlagFilter::Untagged,
+                    ] {
+                        let selected = self.controller.ui.browser.filter == filter;
+                        let label = match filter {
+                            TriageFlagFilter::All => "All",
+                            TriageFlagFilter::Keep => "Keep",
+                            TriageFlagFilter::Trash => "Trash",
+                            TriageFlagFilter::Untagged => "Untagged",
+                        };
+                        if ui.selectable_label(selected, label).clicked() {
+                            self.controller.set_browser_filter(filter);
+                        }
+                    }
+                });
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let count_label = format!(
+                        "{} item{}",
+                        visible_count,
+                        if visible_count == 1 { "" } else { "s" }
+                    );
+                    ui.label(
+                        RichText::new(count_label)
+                            .color(palette.text_muted)
+                            .small(),
+                    );
+                    ui.add_space(ui.spacing().item_spacing.x);
+                    let mut query = self.controller.ui.browser.search_query.clone();
+                    let response = ui.add(
+                        egui::TextEdit::singleline(&mut query)
+                            .hint_text("Search...")
+                            .desired_width(160.0),
+                    );
+                    if response.changed() {
+                        self.controller.set_browser_search(query);
+                    }
+                });
+            },
+        );
     }
 }
