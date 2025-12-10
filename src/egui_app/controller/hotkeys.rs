@@ -116,6 +116,7 @@ fn key_label(key: Key) -> &'static str {
         egui::Key::N => "N",
         egui::Key::D => "D",
         egui::Key::C => "C",
+        egui::Key::R => "R",
         egui::Key::Slash => "/",
         egui::Key::G => "G",
         egui::Key::S => "S",
@@ -145,6 +146,7 @@ enum HotkeyCommand {
     FocusCollectionSamples,
     FocusSourcesList,
     FocusCollectionsList,
+    PlayRandomSample,
 }
 
 /// Hotkey metadata surfaced to the UI.
@@ -259,6 +261,16 @@ const HOTKEY_ACTIONS: &[HotkeyAction] = &[
         scope: HotkeyScope::Global,
         command: HotkeyCommand::FocusCollectionsList,
     },
+    HotkeyAction {
+        id: "play-random-sample",
+        label: "Play random sample",
+        gesture: HotkeyGesture {
+            first: KeyPress::with_shift(Key::R),
+            chord: None,
+        },
+        scope: HotkeyScope::Global,
+        command: HotkeyCommand::PlayRandomSample,
+    },
 ];
 
 pub(crate) fn iter_actions() -> impl Iterator<Item = HotkeyAction> {
@@ -320,6 +332,9 @@ impl EguiController {
             }
             HotkeyCommand::FocusCollectionsList => {
                 self.focus_collections_list();
+            }
+            HotkeyCommand::PlayRandomSample => {
+                self.play_random_visible_sample();
             }
         }
     }

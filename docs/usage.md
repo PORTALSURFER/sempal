@@ -53,6 +53,6 @@
 - Drag selections or samples outside the window on Windows to start an external drag-out. Use **Ctrl/Cmd + C** to copy selections or rows as file drops.
 
 ## Hotkeys (focus-aware)
-- Global: `Space` play/pause; `Esc` stop/clear selection; `L` toggle loop; `Ctrl/Cmd + /` toggle hotkey overlay; `F11` toggle maximized window.
+- Global: `Space` play/pause; `Esc` stop/clear selection; `L` toggle loop; `Shift + R` play a random visible sample and auto-play; `Ctrl/Cmd + /` toggle hotkey overlay; `F11` toggle maximized window.
 - Sample browser focus: `Up/Down` move; `Shift + Up/Down` extend selection; `Right Arrow` Keep; `Left Arrow` Trash; `Ctrl/Cmd + Right/Left` move selection across triage columns; `X` toggle selection; `N` normalize (overwrite); `D` delete; `C` add focused sample to the selected collection.
 - Collection item focus: `Up/Down` move; `N` normalize (overwrite collection copy); `D` delete from collection.
