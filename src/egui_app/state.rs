@@ -142,6 +142,10 @@ pub struct WaveformState {
     pub loading: Option<PathBuf>,
     /// Pending confirmation dialog for destructive edits.
     pub pending_destructive: Option<DestructiveEditPrompt>,
+    /// Last moment the waveform cursor was moved via mouse hover.
+    pub cursor_last_hover_at: Option<std::time::Instant>,
+    /// Last moment the waveform cursor was moved via keyboard/navigation.
+    pub cursor_last_navigation_at: Option<std::time::Instant>,
 }
 
 impl Default for WaveformState {
@@ -160,6 +164,8 @@ impl Default for WaveformState {
             notice: None,
             loading: None,
             pending_destructive: None,
+            cursor_last_hover_at: None,
+            cursor_last_navigation_at: None,
         }
     }
 }

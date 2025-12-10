@@ -3,10 +3,6 @@ lets then write every task you find into @todo.md as a new todo item
 
 --
 
-
-
-\plan - ctrl+spacebar should play from the waveform cursor. if the mouse no longer hovers, and the user is not navigating the cursor with keys, make it fade out and reset to start after 500ms    
-
 \plan - drop item focus of folders if the folder browser itself no longer has user focus.
 
 \plan - lets add 'r' to rename to the sample browser, same functionality as rename in the folder browser.
@@ -28,6 +24,13 @@ test audio::tests::decode_handles_varied_sample_rates_and_channels ... FAILED
 \plan - lets log warnings, errors, etc via our logger tool so we see it in console and on in our file logs
 
 \plan - also allow audio selection to get exported to external apps like a daw or create a file on disk by dropping it onto an os file explorer, creating a new wav file of said selection
+
+\plan - waveform does not update after an edit like adding a fade
+
+\plan - if we are in random mode (alt+r) and we have a filter on like untagged, and we flag a sample, currently move focus to the next sample in the list. but, if we are in random mode, we should focus the next random item instead.
+
+\plan - lets add a progress bar popup for slow tasks, for example, when moving trashed item to the trashed folder.
+
 
 ### v2
 

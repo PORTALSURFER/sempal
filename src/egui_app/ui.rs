@@ -453,7 +453,12 @@ impl eframe::App for EguiApp {
             self.controller.ui.browser.selected = None;
         }
         if input.space {
-            if input.shift {
+            if ctrl_or_command {
+                let handled = self.controller.play_from_cursor();
+                if !handled {
+                    self.controller.toggle_play_pause();
+                }
+            } else if input.shift {
                 let handled = self.controller.replay_from_last_start();
                 if !handled {
                     self.controller.toggle_play_pause();
