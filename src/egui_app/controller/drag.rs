@@ -1,5 +1,6 @@
 use super::*;
 use crate::egui_app::state::DragPayload;
+use crate::egui_app::controller::collection_items_helpers::file_metadata;
 use egui::Pos2;
 
 impl EguiController {
@@ -49,6 +50,7 @@ impl EguiController {
         hovering_collection: Option<CollectionId>,
         hovering_drop_zone: bool,
         hovering_triage: Option<TriageFlagColumn>,
+        hovering_folder: Option<PathBuf>,
     ) {
         if self.ui.drag.payload.is_none() {
             return;
@@ -57,6 +59,7 @@ impl EguiController {
         self.ui.drag.hovering_collection = hovering_collection;
         self.ui.drag.hovering_drop_zone = hovering_drop_zone;
         self.ui.drag.hovering_browser = hovering_triage;
+        self.ui.drag.hovering_folder = hovering_folder;
     }
 
     /// Refresh drag cursor position when payload is active, without touching hover targets.
@@ -76,6 +79,7 @@ impl EguiController {
             }
         };
         let triage_target = self.ui.drag.hovering_browser;
+        let folder_target = self.ui.drag.hovering_folder.clone();
         let collection_target = match &payload {
             DragPayload::Sample { .. } => self
                 .ui
@@ -116,7 +120,16 @@ impl EguiController {
                 source_id,
                 relative_path,
             } => {
-                self.handle_sample_drop(source_id, relative_path, collection_target, triage_target);
+                if let Some(folder) = folder_target {
+                    self.handle_sample_drop_to_folder(source_id, relative_path, &folder);
+                } else {
+                    self.handle_sample_drop(
+                        source_id,
+                        relative_path,
+                        collection_target,
+                        triage_target,
+                    );
+                }
             }
             DragPayload::Selection {
                 source_id,
@@ -141,6 +154,7 @@ impl EguiController {
         self.ui.drag.hovering_collection = None;
         self.ui.drag.hovering_drop_zone = false;
         self.ui.drag.hovering_browser = None;
+        self.ui.drag.hovering_folder = None;
         self.ui.drag.external_started = false;
     }
 
@@ -283,6 +297,113 @@ impl EguiController {
                 let _ = self.set_sample_tag(&relative_path, column);
             }
         }
+    }
+
+    fn handle_sample_drop_to_folder(
+        &mut self,
+        source_id: SourceId,
+        relative_path: PathBuf,
+        target_folder: &Path,
+    ) {
+        let Some(source) = self.sources.iter().find(|s| s.id == source_id).cloned() else {
+            self.set_status("Source not available for move", StatusTone::Error);
+            return;
+        };
+        if self.selected_source.as_ref() != Some(&source.id) {
+            self.set_status(
+                "Select the source to move samples into its folders",
+                StatusTone::Warning,
+            );
+            return;
+        }
+        let file_name = match relative_path.file_name() {
+            Some(name) => name.to_owned(),
+            None => {
+                self.set_status("Sample name unavailable for move", StatusTone::Error);
+                return;
+            }
+        };
+        let new_relative = if target_folder.as_os_str().is_empty() {
+            PathBuf::from(file_name)
+        } else {
+            target_folder.join(file_name)
+        };
+        if new_relative == relative_path {
+            self.set_status("Sample is already in that folder", StatusTone::Info);
+            return;
+        }
+        let destination_dir = source.root.join(target_folder);
+        if !destination_dir.is_dir() {
+            self.set_status(
+                format!("Folder not found: {}", target_folder.display()),
+                StatusTone::Error,
+            );
+            return;
+        }
+        let absolute = source.root.join(&relative_path);
+        if !absolute.exists() {
+            self.set_status(
+                format!("File missing: {}", relative_path.display()),
+                StatusTone::Error,
+            );
+            return;
+        }
+        let target_absolute = source.root.join(&new_relative);
+        if target_absolute.exists() {
+            self.set_status(
+                format!("A file already exists at {}", new_relative.display()),
+                StatusTone::Error,
+            );
+            return;
+        }
+        let tag = match self.sample_tag_for(&source, &relative_path) {
+            Ok(tag) => tag,
+            Err(err) => {
+                self.set_status(err, StatusTone::Error);
+                return;
+            }
+        };
+        if let Err(err) = std::fs::rename(&absolute, &target_absolute)
+            .map_err(|err| format!("Failed to move file: {err}"))
+        {
+            self.set_status(err, StatusTone::Error);
+            return;
+        }
+        let (file_size, modified_ns) = match file_metadata(&target_absolute) {
+            Ok(meta) => meta,
+            Err(err) => {
+                let _ = std::fs::rename(&target_absolute, &absolute);
+                self.set_status(err, StatusTone::Error);
+                return;
+            }
+        };
+        if let Err(err) = self.rewrite_db_entry_for_source(
+            &source,
+            &relative_path,
+            &new_relative,
+            file_size,
+            modified_ns,
+            tag,
+        ) {
+            let _ = std::fs::rename(&target_absolute, &absolute);
+            self.set_status(err, StatusTone::Error);
+            return;
+        }
+        let new_entry = WavEntry {
+            relative_path: new_relative.clone(),
+            file_size,
+            modified_ns,
+            tag,
+            missing: false,
+        };
+        self.update_cached_entry(&source, &relative_path, new_entry);
+        if self.update_collections_for_rename(&source.id, &relative_path, &new_relative) {
+            let _ = self.persist_config("Failed to save collections after move");
+        }
+        self.set_status(
+            format!("Moved to {}", target_folder.display()),
+            StatusTone::Info,
+        );
     }
 
     fn handle_selection_drop(

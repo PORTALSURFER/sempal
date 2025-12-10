@@ -74,6 +74,7 @@ impl EguiApp {
                                             Some(collection.id.clone()),
                                             false,
                                             None,
+                                            None,
                                         );
                                     }
                                 }
@@ -243,7 +244,8 @@ impl EguiApp {
                                     }
                                 } else if drag_active && response.dragged() {
                                     if let Some(pos) = response.interact_pointer_pos() {
-                                        self.controller.update_active_drag(pos, None, false, None);
+                                        self.controller
+                                            .update_active_drag(pos, None, false, None, None);
                                     }
                                 } else if response.drag_stopped() {
                                     self.controller.finish_active_drag();
@@ -281,6 +283,7 @@ impl EguiApp {
                         pointer,
                         current_collection_id.clone(),
                         true,
+                        None,
                         None,
                     );
                     ui.painter().rect_stroke(
