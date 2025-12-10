@@ -213,8 +213,14 @@ impl EguiApp {
         if drag_active {
             if let Some(pointer) = pointer_pos {
                 if frame_response.response.rect.contains(pointer) {
-                    self.controller
-                        .update_active_drag(pointer, None, false, Some(drop_target), None, false);
+                    self.controller.update_active_drag(
+                        pointer,
+                        None,
+                        false,
+                        Some(drop_target),
+                        None,
+                        false,
+                    );
                 }
             }
         }
@@ -321,11 +327,7 @@ impl EguiApp {
                 visible_count,
                 if visible_count == 1 { "" } else { "s" }
             );
-            ui.label(
-                RichText::new(count_label)
-                    .color(palette.text_muted)
-                    .small(),
-            );
+            ui.label(RichText::new(count_label).color(palette.text_muted).small());
         });
     }
 }

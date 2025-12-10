@@ -1,6 +1,6 @@
 use super::*;
-use crate::egui_app::state::DragPayload;
 use crate::egui_app::controller::collection_items_helpers::file_metadata;
+use crate::egui_app::state::DragPayload;
 use egui::Pos2;
 use tracing::{debug, info, warn};
 
@@ -63,10 +63,7 @@ impl EguiController {
         self.ui.drag.hovering_browser = hovering_triage;
         if hovering_folder_panel {
             if let Some(folder) = hovering_folder {
-                debug!(
-                    "Drag hover folder {:?}",
-                    folder.display()
-                );
+                debug!("Drag hover folder {:?}", folder.display());
                 self.ui.drag.hovering_folder = Some(folder.clone());
                 self.ui.drag.last_hovering_folder = Some(folder);
             } else {
@@ -119,10 +116,7 @@ impl EguiController {
         let over_folder_panel = self.ui.drag.hovering_folder_panel;
         if over_folder_panel && folder_target.is_none() {
             self.reset_drag();
-            self.set_status(
-                "Drop onto a folder to move the sample",
-                StatusTone::Warning,
-            );
+            self.set_status("Drop onto a folder to move the sample", StatusTone::Warning);
             return;
         }
         debug!(
@@ -134,17 +128,13 @@ impl EguiController {
                 if over_folder_panel {
                     None
                 } else {
-                    self.ui
-                        .drag
-                        .hovering_collection
-                        .clone()
-                        .or_else(|| {
-                            if self.ui.drag.hovering_drop_zone {
-                                self.current_collection_id()
-                            } else {
-                                None
-                            }
-                        })
+                    self.ui.drag.hovering_collection.clone().or_else(|| {
+                        if self.ui.drag.hovering_drop_zone {
+                            self.current_collection_id()
+                        } else {
+                            None
+                        }
+                    })
                 }
             }
             DragPayload::Selection { .. } => self
@@ -389,7 +379,10 @@ impl EguiController {
         let file_name = match relative_path.file_name() {
             Some(name) => name.to_owned(),
             None => {
-                warn!("Folder move aborted: missing file name for {:?}", relative_path);
+                warn!(
+                    "Folder move aborted: missing file name for {:?}",
+                    relative_path
+                );
                 self.set_status("Sample name unavailable for move", StatusTone::Error);
                 return;
             }

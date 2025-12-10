@@ -347,23 +347,24 @@ impl AudioPlayer {
     }
 
     #[cfg(test)]
-    /// Build a short-lived playing instance for tests that need an active sink.
+    /// Build a looped playing instance for tests that need an active sink.
     pub fn playing_for_tests() -> Option<Self> {
         use rodio::source::{SineWave, Source};
 
         let outcome = open_output_stream(&AudioOutputConfig::default()).ok()?;
         let sink = rodio::Sink::connect_new(outcome.stream.mixer());
-        sink.append(SineWave::new(220.0).take_duration(Duration::from_millis(500)));
+        // Loop the tone so playback stays active long enough for UI/controller tests to observe it.
+        sink.append(SineWave::new(220.0).repeat_infinite());
         sink.play();
         Some(Self {
             stream: outcome.stream,
             sink: Some(sink),
             current_audio: None,
-            track_duration: Some(0.5),
+            track_duration: Some(1.0),
             started_at: Some(Instant::now()),
-            play_span: Some((0.0, 0.5)),
-            looping: false,
-            loop_offset: None,
+            play_span: Some((0.0, 1.0)),
+            looping: true,
+            loop_offset: Some(0.0),
             volume: 1.0,
             output: outcome.resolved,
         })

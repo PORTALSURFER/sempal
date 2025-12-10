@@ -106,7 +106,15 @@ fn apply_edge_smoothing(
     }
     let denom = (fade_frames.saturating_sub(1)).max(1) as f32;
     apply_start_fade(smoothed, original, before, channels, fade_frames, denom);
-    apply_end_fade(smoothed, original, after, channels, fade_frames, denom, total_frames);
+    apply_end_fade(
+        smoothed,
+        original,
+        after,
+        channels,
+        fade_frames,
+        denom,
+        total_frames,
+    );
 }
 
 fn apply_start_fade(

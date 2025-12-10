@@ -376,8 +376,7 @@ fn apply_directional_fade(
 ) {
     let channels = channels.max(1);
     let total_frames = samples.len() / channels;
-    let (clamped_start, clamped_end) =
-        clamped_selection_span(total_frames, start_frame, end_frame);
+    let (clamped_start, clamped_end) = clamped_selection_span(total_frames, start_frame, end_frame);
     if clamped_end <= clamped_start {
         return;
     }
