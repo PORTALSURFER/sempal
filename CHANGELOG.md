@@ -1,3 +1,41 @@
+## [unreleased]
+
+### 🚀 Features
+
+- Color sample labels using triage flags
+- Display waveform selection duration label
+- Make waveform selection edge drags respond immediately
+- Stabilize immediate waveform edge drags
+- Migrate config to toml and move collections into sqlite
+- Add audio selection support with ASIO
+- Add chorded hotkeys and waveform navigation
+- Add chorded hotkeys and waveform navigation
+- Add focused outline to active panels
+- Display key feedback and request initial window focus
+- Improved zoom rendering
+- Decouple navigation from blocking audio loads
+- Add loading animation
+- Add audio caching with history and invalidation
+
+### 🐛 Bug Fixes
+
+- Allow selection drops to use active collection fallback without duplicating entries
+- Anchor waveform selection start to initial press
+- Audio menu dropdown were not working
+- Asio was not pickable
+- Keep selection edge drags aligned with zoomed viewport
+- Derive mouse zoom focus from hover position instead of playhead
+
+### 💼 Other
+
+- Fix zoom
+- Improve zoom detail
+- Fix: retarget selection hotkeys to consistent edges
+
+### ⚙️ Miscellaneous Tasks
+
+- Unify sempal dirs and add config menu entry
+- Outline plan for audio output settings and ASIO support
 ## [0.189.0] - 2025-12-09
 
 ### 🚀 Features
