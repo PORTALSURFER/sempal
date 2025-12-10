@@ -123,6 +123,23 @@ fn format_keypress(press: &Option<hotkeys::KeyPress>) -> String {
         .unwrap_or_else(|| "—".to_string())
 }
 
+fn press_text_variants(press: &hotkeys::KeyPress) -> &'static [&'static str] {
+    match press.key {
+        egui::Key::X => &["x", "X"],
+        egui::Key::N => &["n", "N"],
+        egui::Key::D => &["d", "D"],
+        egui::Key::C => &["c", "C"],
+        egui::Key::Slash => &["/", "?"],
+        egui::Key::G => &["g", "G"],
+        egui::Key::S => &["s", "S"],
+        egui::Key::W => &["w", "W"],
+        egui::Key::L => &["l", "L"],
+        egui::Key::OpenBracket => &["[", "{"],
+        egui::Key::CloseBracket => &["]", "}"],
+        _ => &[],
+    }
+}
+
 fn consume_press(ctx: &egui::Context, press: hotkeys::KeyPress) {
     let mut modifiers = egui::Modifiers::default();
     modifiers.alt = press.alt;
@@ -131,6 +148,14 @@ fn consume_press(ctx: &egui::Context, press: hotkeys::KeyPress) {
     modifiers.ctrl = press.command;
     ctx.input_mut(|i| {
         i.consume_key(modifiers, press.key);
+        let text_variants = press_text_variants(&press);
+        if !text_variants.is_empty() {
+            i.events.retain(|event| {
+                !matches!(event, egui::Event::Text(text) if text_variants
+                    .iter()
+                    .any(|candidate| text.eq_ignore_ascii_case(candidate)))
+            });
+        }
     });
 }
 
@@ -252,6 +277,7 @@ impl EguiApp {
 
     fn process_hotkeys(&mut self, ctx: &egui::Context, focus: FocusContext) {
         let overlay_open = self.controller.ui.hotkeys.overlay_visible;
+        let wants_text_input = ctx.wants_keyboard_input();
         let actions: Vec<_> = hotkeys::iter_actions()
             .filter(|action| (!overlay_open || action.is_global()) && action.is_active(focus))
             .collect();
@@ -273,10 +299,13 @@ impl EguiApp {
                 continue;
             };
             self.key_feedback.last_key = Some(press);
+            if wants_text_input && !press.command {
+                continue;
+            }
             if self.try_handle_chord(ctx, &actions, press, focus, now) {
                 continue;
             }
-            if self.try_start_chord(&actions, press, now, ctx) {
+            if self.try_start_chord(ctx, &actions, press, now, wants_text_input) {
                 continue;
             }
             if let Some(action) = actions
@@ -290,7 +319,7 @@ impl EguiApp {
                 consume_press(ctx, press);
                 continue;
             }
-            // No hotkey matched; let it fall through without consuming to avoid system beeps.
+            // No hotkey matched; let the event fall through for normal egui handling.
         }
     }
 
@@ -335,11 +364,15 @@ impl EguiApp {
 
     fn try_start_chord(
         &mut self,
+        ctx: &egui::Context,
         actions: &[hotkeys::HotkeyAction],
         press: hotkeys::KeyPress,
         now: Instant,
-        _ctx: &egui::Context,
+        wants_text_input: bool,
     ) -> bool {
+        if wants_text_input {
+            return false;
+        }
         let starts_chord = actions.iter().any(|action| {
             action
                 .gesture
@@ -352,6 +385,7 @@ impl EguiApp {
                 started_at: now,
             });
             self.key_feedback.pending_root = Some(press);
+            consume_press(ctx, press);
             return true;
         }
         false
@@ -625,5 +659,55 @@ fn hwnd_from_frame(frame: &eframe::Frame) -> Option<HWND> {
     match handle.as_raw() {
         RawWindowHandle::Win32(win) => Some(HWND(win.hwnd.get() as *mut _)),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn consume_press_drops_hotkey_events() {
+        let ctx = egui::Context::default();
+        let press = hotkeys::KeyPress::new(egui::Key::N);
+        ctx.input_mut(|i| {
+            i.events.push(egui::Event::Key {
+                key: egui::Key::N,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::default(),
+            });
+            i.events
+                .push(egui::Event::Text(String::from("n")));
+            i.events.push(egui::Event::PointerGone);
+        });
+
+        consume_press(&ctx, press);
+
+        let remaining = ctx.input(|i| i.events.clone());
+        assert_eq!(remaining.len(), 1);
+        assert!(matches!(remaining[0], egui::Event::PointerGone));
+    }
+
+    #[test]
+    fn consume_press_removes_uppercase_text() {
+        let ctx = egui::Context::default();
+        let press = hotkeys::KeyPress::new(egui::Key::C);
+        ctx.input_mut(|i| {
+            i.events.push(egui::Event::Key {
+                key: egui::Key::C,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::default(),
+            });
+            i.events.push(egui::Event::Text(String::from("C")));
+        });
+
+        consume_press(&ctx, press);
+
+        let remaining = ctx.input(|i| i.events.clone());
+        assert!(remaining.is_empty());
     }
 }
