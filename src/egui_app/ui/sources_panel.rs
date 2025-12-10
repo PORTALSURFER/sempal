@@ -29,11 +29,11 @@ impl EguiApp {
             self.render_sources_list(ui, source_list_height);
             ui.add_space(8.0);
             let remaining = ui.available_height();
-            let selected_section_reserved = 80.0;
-            let folder_height = (remaining - selected_section_reserved).max(120.0);
+            let folder_height = (remaining * 0.7).max(120.0).min(remaining);
+            let selected_height = (remaining - folder_height).max(0.0);
             self.render_folder_browser(ui, folder_height);
             ui.add_space(8.0);
-            self.render_selected_folders(ui);
+            self.render_selected_folders(ui, selected_height);
         });
         if matches!(self.controller.ui.focus.context, FocusContext::SourcesList) {
             ui.painter().rect_stroke(
@@ -288,10 +288,10 @@ impl EguiApp {
         self.controller.ui.sources.folders.scroll_to = None;
     }
 
-    fn render_selected_folders(&mut self, ui: &mut Ui) {
+    fn render_selected_folders(&mut self, ui: &mut Ui, max_height: f32) {
         let palette = style::palette();
         let selected = self.controller.selected_folder_paths();
-        let max_height = ui.available_height().max(0.0);
+        let max_height = max_height.max(0.0);
         egui::ScrollArea::vertical()
             .id_salt("selected_folders_scroll")
             .max_height(max_height)
