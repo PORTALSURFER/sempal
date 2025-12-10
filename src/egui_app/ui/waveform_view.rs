@@ -2,8 +2,8 @@ use super::style;
 use super::*;
 use crate::{egui_app::state::DestructiveSelectionEdit, selection::SelectionEdge};
 use eframe::egui::{
-    self, Align2, Color32, CursorIcon, Frame, Margin, Rgba, RichText, Stroke, StrokeKind,
-    TextStyle, TextureOptions, Ui, text::LayoutJob,
+    self, Align2, Color32, CursorIcon, Rgba, RichText, Stroke, StrokeKind, TextStyle,
+    TextureOptions, Ui, text::LayoutJob,
 };
 
 impl EguiApp {
@@ -31,10 +31,7 @@ impl EguiApp {
         if view_mode != self.controller.ui.waveform.channel_view {
             self.controller.set_waveform_channel_view(view_mode);
         }
-        let frame = Frame::new()
-            .fill(style::compartment_fill())
-            .stroke(style::outer_border())
-            .inner_margin(Margin::symmetric(10, 6));
+        let frame = style::section_frame();
         let frame_response = frame.show(ui, |ui| {
             let desired = egui::vec2(ui.available_width(), 260.0);
             let (rect, response) = ui.allocate_exact_size(desired, egui::Sense::click_and_drag());
@@ -52,12 +49,6 @@ impl EguiApp {
             };
             if let Some(message) = self.controller.ui.waveform.notice.as_ref() {
                 painter.rect_filled(rect, 0.0, palette.bg_primary);
-                painter.rect_stroke(
-                    rect,
-                    0.0,
-                    Stroke::new(2.0, palette.panel_outline),
-                    StrokeKind::Inside,
-                );
                 let font = TextStyle::Heading.resolve(ui.style());
                 painter.text(
                     rect.center(),
@@ -107,12 +98,6 @@ impl EguiApp {
                     waveform_loading_fill(ui, palette.bg_primary, palette.accent_copper);
                 painter.rect_filled(rect, 0.0, loading_fill);
             }
-            painter.rect_stroke(
-                rect,
-                0.0,
-                Stroke::new(2.0, palette.panel_outline),
-                StrokeKind::Inside,
-            );
             if is_loading {
                 let glow = style::with_alpha(palette.accent_copper, 28);
                 painter.rect_filled(rect.shrink(2.0), 4.0, glow);
@@ -552,6 +537,7 @@ impl EguiApp {
                 }
             }
         });
+        style::paint_section_border(ui, frame_response.response.rect, false);
         if let Some(prompt) = self.controller.ui.waveform.pending_destructive.clone() {
             self.render_destructive_edit_prompt(ui.ctx(), prompt);
         }
@@ -704,7 +690,7 @@ fn selection_edge_handle_rect(selection_rect: egui::Rect, edge: SelectionEdge) -
 fn paint_selection_edge_bracket(
     painter: &egui::Painter,
     edge_rect: egui::Rect,
-    edge: SelectionEdge,
+    _edge: SelectionEdge,
     color: Color32,
 ) {
     let height = (edge_rect.height() * EDGE_ICON_HEIGHT_FRACTION)

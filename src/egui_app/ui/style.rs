@@ -1,6 +1,6 @@
 use crate::sample_sources::SampleTag;
 use eframe::egui::{
-    Color32, Stroke, Visuals,
+    Color32, Frame, Margin, Rect, Stroke, StrokeKind, Ui, Visuals,
     epaint::{CornerRadius, Shadow},
     style::WidgetVisuals,
 };
@@ -205,8 +205,7 @@ fn set_rectilinear(vis: &mut WidgetVisuals, palette: Palette) {
 
 /// Border stroke for outer panels and frames.
 pub fn outer_border() -> Stroke {
-    let palette = palette();
-    Stroke::new(2.0, palette.panel_outline)
+    section_stroke()
 }
 
 /// Border stroke for list rows and interior dividers.
@@ -245,6 +244,31 @@ pub fn focused_row_stroke() -> Stroke {
 pub fn compartment_fill() -> Color32 {
     let palette = palette();
     palette.bg_secondary
+}
+
+/// Single-stroke frame used for panels and cards.
+pub fn section_frame() -> Frame {
+    Frame::new()
+        .fill(compartment_fill())
+        .stroke(Stroke::NONE)
+        .inner_margin(Margin::symmetric(6, 4))
+}
+
+/// Stroke used to separate adjacent sections without doubling borders.
+pub fn section_stroke() -> Stroke {
+    let palette = palette();
+    Stroke::new(1.5, palette.panel_outline)
+}
+
+/// Paint a section border, optionally highlighting focus without stacking strokes.
+pub fn paint_section_border(ui: &Ui, rect: Rect, focused: bool) {
+    let stroke = if focused {
+        focused_row_stroke()
+    } else {
+        section_stroke()
+    };
+    ui.painter()
+        .rect_stroke(rect, 0.0, stroke, StrokeKind::Inside);
 }
 
 #[cfg(test)]

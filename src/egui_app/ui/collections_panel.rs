@@ -147,9 +147,7 @@ impl EguiApp {
         let number_width = number_column_width(samples.len(), ui);
         let number_gap = ui.spacing().button_padding.x * 0.5;
         let available_height = ui.available_height();
-        let frame = egui::Frame::new()
-            .fill(style::compartment_fill())
-            .stroke(style::outer_border());
+        let frame = style::section_frame();
         let scroll_response = frame.show(ui, |ui| {
             ui.set_min_height(available_height);
             let scroll = egui::ScrollArea::vertical().id_salt("collection_items_scroll");
@@ -270,17 +268,11 @@ impl EguiApp {
         let mut state = scroll_response.inner.state;
         state.offset.y = desired_offset.clamp(0.0, max_offset);
         state.store(ui.ctx(), scroll_response.inner.id);
-        if matches!(
+        let focused = matches!(
             self.controller.ui.focus.context,
             FocusContext::CollectionSample
-        ) {
-            ui.painter().rect_stroke(
-                scroll_response.response.rect,
-                0.0,
-                style::focused_row_stroke(),
-                StrokeKind::Outside,
-            );
-        }
+        );
+        style::paint_section_border(ui, scroll_response.response.rect, focused);
         if drag_active {
             if let Some(pointer) = pointer_pos {
                 let target_rect = scroll_response.response.rect.expand2(egui::vec2(8.0, 0.0));

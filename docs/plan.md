@@ -1,17 +1,17 @@
 ## Goal
-- Update `docs/styleguide.md` colors to match the palette currently used in the app.
+- Redesign the UI layout to remove double borders/frames so adjacent sections share a single border with tighter spacing and no inset stacking.
 
 ## Proposed solutions
-- Extract the canonical color palette from the live app theme variables to use as the source of truth.
-- Compare existing color tokens and swatches in `docs/styleguide.md` against the app palette to spot mismatches.
-- Refresh the style guide color tables/swatches and usage notes to reflect the live palette and clarify primary/secondary/supporting roles.
-- Add quick guidance on keeping the style guide synced with future palette changes.
+- Audit the existing egui panels/cards to locate nested frames, duplicated strokes, and inset padding that create double outlines.
+- Standardize a single border style (thickness/color) and apply it to panel wrappers and headers while stripping redundant inner frames.
+- Adjust padding and spacing so sections butt against each other with only one separator line, preserving the current layout architecture.
+- Validate the updated layout across primary views (sources, waveform/triage stack, collections) to ensure consistent single-border treatment.
 
 ## Step-by-step plan
-1. [x] Inventory current app color sources (theme variables/constants) and record the canonical palette and token names.
-2. [x] Review `docs/styleguide.md` to identify mismatches or outdated color entries versus the live palette.
-3. [x] Update `docs/styleguide.md` color tables/swatches and usage notes to align with the current app palette without altering other sections.
-4. [x] Quick pass to ensure naming, hex values, and guidance stay consistent and concise.
+1. [-] Survey current egui layout containers (top bar, side panels, central stack, cards) to identify sources of double borders and inset frames.
+2. [-] Define and implement a shared single-border primitive and apply it to panel wrappers/headers, removing nested frame draws.
+3. [-] Tighten spacing and padding between adjacent sections so only one border remains where panels meet; adjust card layouts as needed.
+4. [-] Review key screens (sources list, triage columns, collections/drops, status footer) to confirm single-border consistency and update tests or visual captures if available.
 
 ## Code Style & Architecture Rules Reminder
 - Keep files under 400 lines; split when necessary.

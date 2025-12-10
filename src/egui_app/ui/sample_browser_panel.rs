@@ -31,9 +31,7 @@ impl EguiApp {
             spacing: ui.spacing().item_spacing.y,
         };
         let total_rows = self.controller.visible_browser_indices().len();
-        let bg_frame = egui::Frame::new()
-            .fill(style::compartment_fill())
-            .stroke(style::outer_border());
+        let bg_frame = style::section_frame();
         let frame_response = bg_frame.show(ui, |ui| {
             ui.set_min_height(list_height);
             let number_width = number_column_width(total_rows, ui);
@@ -190,17 +188,11 @@ impl EguiApp {
             };
             scroll_response
         });
-        if matches!(
+        let focused = matches!(
             self.controller.ui.focus.context,
             FocusContext::SampleBrowser
-        ) {
-            ui.painter().rect_stroke(
-                frame_response.response.rect,
-                2.0,
-                style::focused_row_stroke(),
-                StrokeKind::Outside,
-            );
-        }
+        );
+        style::paint_section_border(ui, frame_response.response.rect, focused);
         let viewport_height = frame_response.inner.inner_rect.height();
         let content_height = frame_response.inner.content_size.y;
         let max_offset = (content_height - viewport_height).max(0.0);
