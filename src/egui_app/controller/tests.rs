@@ -373,7 +373,9 @@ fn escape_stops_playback_before_clearing_selection() {
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
-    controller.selection.set_range(Some(SelectionRange::new(0.25, 0.75)));
+    controller
+        .selection
+        .set_range(Some(SelectionRange::new(0.25, 0.75)));
     controller.apply_selection(controller.selection.range());
     controller.player = Some(std::rc::Rc::new(std::cell::RefCell::new(player)));
 
@@ -1777,6 +1779,20 @@ fn random_history_hotkey_is_registered() {
 }
 
 #[test]
+fn random_navigation_toggle_hotkey_is_registered() {
+    let action = hotkeys::iter_actions()
+        .find(|a| a.id == "toggle-random-navigation-mode")
+        .expect("toggle-random-navigation-mode hotkey");
+    assert_eq!(action.label, "Toggle random navigation mode");
+    assert!(action.is_global());
+    assert_eq!(action.gesture.first.key, egui::Key::R);
+    assert!(action.gesture.first.alt);
+    assert!(!action.gesture.first.shift);
+    assert!(!action.gesture.first.command);
+    assert!(action.gesture.chord.is_none());
+}
+
+#[test]
 fn random_history_steps_backward() {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source.clone());
@@ -1847,6 +1863,26 @@ fn random_sample_handles_empty_lists() {
         "No samples available to randomize"
     );
     assert_eq!(controller.ui.browser.selected_visible, None);
+}
+
+#[test]
+fn random_navigation_mode_toggles_state_and_status() {
+    let (mut controller, _source) = dummy_controller();
+
+    assert!(!controller.random_navigation_mode_enabled());
+
+    controller.toggle_random_navigation_mode();
+
+    assert!(controller.random_navigation_mode_enabled());
+    assert_eq!(
+        controller.ui.status.text,
+        "Random navigation on: Up/Down jump to random samples"
+    );
+
+    controller.toggle_random_navigation_mode();
+
+    assert!(!controller.random_navigation_mode_enabled());
+    assert_eq!(controller.ui.status.text, "Random navigation off");
 }
 
 #[test]

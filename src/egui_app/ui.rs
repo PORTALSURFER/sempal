@@ -481,7 +481,9 @@ impl eframe::App for EguiApp {
             if collection_focus {
                 self.controller.nudge_collection_sample(1);
             } else if browser_focus {
-                if input.shift {
+                if self.controller.random_navigation_mode_enabled() {
+                    self.controller.play_random_visible_sample();
+                } else if input.shift {
                     self.controller.grow_selection(1);
                 } else {
                     self.controller.nudge_selection(1);
@@ -500,7 +502,9 @@ impl eframe::App for EguiApp {
             if collection_focus {
                 self.controller.nudge_collection_sample(-1);
             } else if browser_focus {
-                if input.shift {
+                if self.controller.random_navigation_mode_enabled() {
+                    self.controller.play_previous_random_sample();
+                } else if input.shift {
                     self.controller.grow_selection(-1);
                 } else {
                     self.controller.nudge_selection(-1);
