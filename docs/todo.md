@@ -1,10 +1,7 @@
-- lets do a housekeeping pass, clean up the codebase, reduce file lengths, improve DRYness, improve maintainability, collapse large structs/objects into clearly named smaller objects, add missing docs, improve symbol naming, find and resolve bugs, improve performance, etc.
+- lets do a housekeeping pass, clean up the codebase, cleanup warnings, reduce file lengths, improve DRYness, improve maintainability, collapse large structs/objects into clearly named smaller objects, add missing docs, improve symbol naming, find and resolve bugs, improve performance, etc.
 lets then write every task you find into @todo.md as a new todo item
 
 --
-
-lets align shift+click select of the sample browser with how it works in the folder browser, select a to b.
-also, if the user selects with ctrl, and then selects with ctrl+shift+click, add a new a to b selection where the ctrl select is not the new 'a' marker, in addition to what was already selected, typical ctrl+shift+click behaviour.
 
 - clear the dotted 'last playstart' line when we select/focus a new sample
 
@@ -13,6 +10,12 @@ also, if the user selects with ctrl, and then selects with ctrl+shift+click, add
 - lets add 'r' to rename to the sample browser
 
 - lets make 'f' focus fuzzy search in the sample browser
+
+- use the waveform cursor as start position when we hit space bar, if we have an active waveform cursor, esc should remove it, resetting start to the beginning of the sample again
+
+- cancel renaming if the user clicks somewhere else
+
+- after deleting a sample or folder, jump focus to the one right after it
 
 ### v2
 

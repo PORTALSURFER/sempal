@@ -135,9 +135,12 @@ impl EguiApp {
                             }
                             if response.clicked() {
                                 let modifiers = ui.input(|i| i.modifiers);
-                                if modifiers.shift {
+                                let ctrl = modifiers.command || modifiers.ctrl;
+                                if modifiers.shift && ctrl {
+                                    self.controller.add_range_browser_selection(row);
+                                } else if modifiers.shift {
                                     self.controller.extend_browser_selection_to_row(row);
-                                } else if modifiers.command || modifiers.ctrl {
+                                } else if ctrl {
                                     self.controller.toggle_browser_row_selection(row);
                                 } else {
                                     self.controller.clear_browser_selection();
