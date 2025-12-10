@@ -8,10 +8,10 @@
 - Add quick guidance on keeping the style guide synced with future palette changes.
 
 ## Step-by-step plan
-1. [-] Inventory current app color sources (theme variables/constants) and record the canonical palette and token names.
-2. [-] Review `docs/styleguide.md` to identify mismatches or outdated color entries versus the live palette.
-3. [-] Update `docs/styleguide.md` color tables/swatches and usage notes to align with the current app palette without altering other sections.
-4. [-] Quick pass to ensure naming, hex values, and guidance stay consistent and concise.
+1. [x] Inventory current app color sources (theme variables/constants) and record the canonical palette and token names.
+2. [x] Review `docs/styleguide.md` to identify mismatches or outdated color entries versus the live palette.
+3. [x] Update `docs/styleguide.md` color tables/swatches and usage notes to align with the current app palette without altering other sections.
+4. [x] Quick pass to ensure naming, hex values, and guidance stay consistent and concise.
 
 ## Code Style & Architecture Rules Reminder
 - Keep files under 400 lines; split when necessary.
