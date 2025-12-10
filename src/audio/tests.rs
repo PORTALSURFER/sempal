@@ -204,6 +204,35 @@ fn normalized_progress_returns_none_when_invalid_duration() {
 }
 
 #[test]
+fn fade_duration_clamps_to_span_length() {
+    let short = fade_duration(0.004);
+    assert!((short.as_secs_f32() - 0.002).abs() < 1e-6);
+    let long = fade_duration(0.25);
+    assert!((long.as_secs_f32() - SEGMENT_FADE.as_secs_f32()).abs() < 1e-6);
+    assert_eq!(fade_duration(0.0), Duration::from_secs(0));
+}
+
+#[test]
+fn edge_fade_ramps_start_samples() {
+    let fade = Duration::from_millis(5);
+    let source = ConstantSource::new(1_000, 1, 0.02, 1.0);
+    let samples: Vec<f32> = EdgeFade::new(source, fade).take(10).collect();
+    assert!(samples[0] < samples[1]);
+    assert!(samples[4] < 1.0);
+    assert!(samples[6] > 0.9);
+}
+
+#[test]
+fn edge_fade_handles_tiny_segments() {
+    let span_secs = 0.002;
+    let fade = fade_duration(span_secs);
+    let source = ConstantSource::new(1_000, 1, span_secs, 1.0);
+    let samples: Vec<f32> = EdgeFade::new(source, fade).collect();
+    assert_eq!(samples.len(), 2);
+    assert!(samples[0] < samples[1]);
+}
+
+#[test]
 fn progress_wraps_full_loop_from_offset() {
     let Ok(stream) = rodio::OutputStreamBuilder::open_default_stream() else {
         return;
