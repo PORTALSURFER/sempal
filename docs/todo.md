@@ -3,8 +3,6 @@ lets then write every task you find into @todo.md as a new todo item
 
 --
 
-\plan - drop item focus of folders if the folder browser itself no longer has user focus.
-
 \plan - lets add 'r' to rename to the sample browser, same functionality as rename in the folder browser.
 
 \plan - lets make 'f' focus fuzzy search in the sample browser

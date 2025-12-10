@@ -217,15 +217,16 @@ impl EguiApp {
         );
         let scroll_to = self.controller.ui.sources.folders.scroll_to;
         let mut hovered_folder = None;
-        let frame_response = frame.show(ui, |ui| {
-            ui.set_min_height(height);
-            ui.set_max_height(height);
-            let rows = self.controller.ui.sources.folders.rows.clone();
-            let row_height = list_row_height(ui);
-            let scroll = egui::ScrollArea::vertical()
-                .id_salt("folder_browser_scroll")
-                .max_height(height);
-            scroll.show(ui, |ui| {
+        let frame_response =
+            frame.show(ui, |ui| {
+                ui.set_min_height(height);
+                ui.set_max_height(height);
+                let rows = self.controller.ui.sources.folders.rows.clone();
+                let row_height = list_row_height(ui);
+                let scroll = egui::ScrollArea::vertical()
+                    .id_salt("folder_browser_scroll")
+                    .max_height(height);
+                scroll.show(ui, |ui| {
                 if rows.is_empty() {
                     let text = if self.controller.current_source().is_some() {
                         "No folders detected for this source"
@@ -357,29 +358,17 @@ impl EguiApp {
                     }
                 }
             });
-        });
+            });
         if sample_drag_active {
             if let Some(pointer) = pointer_pos {
                 if frame_response.response.rect.contains(pointer) {
                     if hovered_folder.is_none() {
-                        self.controller.update_active_drag(
-                            pointer,
-                            None,
-                            false,
-                            None,
-                            None,
-                            true,
-                        );
+                        self.controller
+                            .update_active_drag(pointer, None, false, None, None, true);
                     }
                 } else {
-                    self.controller.update_active_drag(
-                        pointer,
-                        None,
-                        false,
-                        None,
-                        None,
-                        false,
-                    );
+                    self.controller
+                        .update_active_drag(pointer, None, false, None, None, false);
                 }
             }
         }

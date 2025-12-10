@@ -1212,19 +1212,23 @@ fn sample_drop_to_folder_moves_and_updates_state() {
 
     assert!(!root.join("one.wav").exists());
     assert!(root.join("dest").join("one.wav").is_file());
-    assert!(controller
-        .wav_entries
-        .iter()
-        .any(|entry| entry.relative_path == PathBuf::from("dest").join("one.wav")));
+    assert!(
+        controller
+            .wav_entries
+            .iter()
+            .any(|entry| entry.relative_path == PathBuf::from("dest").join("one.wav"))
+    );
     let collection = controller
         .collections
         .iter()
         .find(|c| c.id == collection_id)
         .unwrap();
-    assert!(collection
-        .members
-        .iter()
-        .any(|m| m.relative_path == PathBuf::from("dest").join("one.wav")));
+    assert!(
+        collection
+            .members
+            .iter()
+            .any(|m| m.relative_path == PathBuf::from("dest").join("one.wav"))
+    );
 }
 
 #[test]
@@ -1255,10 +1259,12 @@ fn sample_drop_to_folder_rejects_conflicts() {
 
     assert!(root.join("one.wav").is_file());
     assert!(dest.join("one.wav").is_file());
-    assert!(controller
-        .wav_entries
-        .iter()
-        .any(|entry| entry.relative_path == PathBuf::from("one.wav")));
+    assert!(
+        controller
+            .wav_entries
+            .iter()
+            .any(|entry| entry.relative_path == PathBuf::from("one.wav"))
+    );
 }
 
 #[test]
@@ -1477,6 +1483,39 @@ fn deleting_folder_removes_wavs() -> Result<(), String> {
             .rows
             .iter()
             .all(|row| row.path != PathBuf::from("gone"))
+    );
+    Ok(())
+}
+
+#[test]
+fn folder_focus_clears_when_context_changes() -> Result<(), String> {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.selected_source = Some(source.id.clone());
+    controller.wav_entries = vec![sample_entry("one/sample.wav", SampleTag::Neutral)];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+    controller.refresh_folder_browser();
+    let row_index = controller
+        .ui
+        .sources
+        .folders
+        .rows
+        .iter()
+        .position(|row| row.path == PathBuf::from("one"))
+        .unwrap();
+
+    controller.replace_folder_selection(row_index);
+    assert_eq!(controller.ui.sources.folders.focused, Some(row_index));
+
+    controller.focus_browser_context();
+
+    assert!(controller.ui.sources.folders.focused.is_none());
+    controller.refresh_folder_browser();
+    assert!(controller.ui.sources.folders.focused.is_none());
+    assert_eq!(
+        controller.selected_folder_paths(),
+        vec![PathBuf::from("one")]
     );
     Ok(())
 }

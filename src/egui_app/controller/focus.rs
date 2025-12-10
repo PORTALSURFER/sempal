@@ -4,7 +4,7 @@ use crate::egui_app::state::FocusContext;
 impl EguiController {
     /// Mark the sample browser as the active focus surface.
     pub(super) fn focus_browser_context(&mut self) {
-        self.ui.focus.set_context(FocusContext::SampleBrowser);
+        self.set_focus_context(FocusContext::SampleBrowser);
     }
 
     /// Focus the sample browser, selecting a row if none is active.
@@ -25,12 +25,12 @@ impl EguiController {
 
     /// Mark the waveform viewer as the active focus surface.
     pub(crate) fn focus_waveform_context(&mut self) {
-        self.ui.focus.set_context(FocusContext::Waveform);
+        self.set_focus_context(FocusContext::Waveform);
     }
 
     /// Mark the collections sample list as the active focus surface.
     pub(super) fn focus_collection_context(&mut self) {
-        self.ui.focus.set_context(FocusContext::CollectionSample);
+        self.set_focus_context(FocusContext::CollectionSample);
     }
 
     /// Focus the collection samples list, selecting the current row or first row.
@@ -54,12 +54,12 @@ impl EguiController {
 
     /// Mark the sources list as the active focus surface.
     pub(super) fn focus_sources_context(&mut self) {
-        self.ui.focus.set_context(FocusContext::SourcesList);
+        self.set_focus_context(FocusContext::SourcesList);
     }
 
     /// Mark the source folder browser as the active focus surface.
     pub(super) fn focus_folder_context(&mut self) {
-        self.ui.focus.set_context(FocusContext::SourceFolders);
+        self.set_focus_context(FocusContext::SourceFolders);
     }
 
     /// Focus the sources list, selecting the current row or the first available source.
@@ -80,7 +80,7 @@ impl EguiController {
 
     /// Mark the collections list as the active focus surface.
     pub(super) fn focus_collections_list_context(&mut self) {
-        self.ui.focus.set_context(FocusContext::CollectionsList);
+        self.set_focus_context(FocusContext::CollectionsList);
     }
 
     /// Focus the collections list, selecting the active row or the first entry.
@@ -101,7 +101,7 @@ impl EguiController {
 
     /// Clear focus when no interactive surface should process shortcuts.
     pub(super) fn clear_focus_context(&mut self) {
-        self.ui.focus.set_context(FocusContext::None);
+        self.set_focus_context(FocusContext::None);
     }
 
     /// Clear focus when it currently belongs to the collections list.
@@ -109,5 +109,18 @@ impl EguiController {
         if matches!(self.ui.focus.context, FocusContext::CollectionSample) {
             self.clear_focus_context();
         }
+    }
+
+    fn set_focus_context(&mut self, context: FocusContext) {
+        let previous = self.ui.focus.context;
+        if previous == context {
+            return;
+        }
+        if matches!(previous, FocusContext::SourceFolders)
+            && !matches!(context, FocusContext::SourceFolders)
+        {
+            self.drop_folder_focus();
+        }
+        self.ui.focus.set_context(context);
     }
 }

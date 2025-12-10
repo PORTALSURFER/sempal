@@ -456,7 +456,9 @@ fn assert_fixture_decodes(renderer: &WaveformRenderer, fixture: fixtures::WavFix
     assert_eq!(decoded.sample_rate, fixture.spec.sample_rate);
     assert_eq!(decoded.channels, fixture.spec.channels);
     assert!((decoded.duration_seconds - fixture.spec.duration_seconds).abs() < 0.02);
-    let expected_samples = fixture.frames.saturating_mul(fixture.spec.channels as usize);
+    let expected_samples = fixture
+        .frames
+        .saturating_mul(fixture.spec.channels as usize);
     assert_eq!(decoded.samples.len(), expected_samples);
 
     let pulse = fixture.spec.pulses.first().expect("missing pulse");

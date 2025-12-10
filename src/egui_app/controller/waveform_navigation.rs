@@ -162,7 +162,9 @@ impl EguiController {
         let now = Instant::now();
         match source {
             CursorUpdateSource::Hover => self.ui.waveform.cursor_last_hover_at = Some(now),
-            CursorUpdateSource::Navigation => self.ui.waveform.cursor_last_navigation_at = Some(now),
+            CursorUpdateSource::Navigation => {
+                self.ui.waveform.cursor_last_navigation_at = Some(now)
+            }
         }
         self.ensure_cursor_visible_in_view(clamped);
     }
