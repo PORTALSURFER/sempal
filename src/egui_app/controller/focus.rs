@@ -18,6 +18,8 @@ impl EguiController {
             self.set_status("Add a source with samples first", StatusTone::Info);
             return;
         };
+        // Entering via the focus hotkey should not autoplay; suppress it for this selection.
+        self.suppress_autoplay_once = true;
         self.focus_browser_row_only(target_row);
     }
 

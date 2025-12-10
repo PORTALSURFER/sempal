@@ -446,6 +446,28 @@ fn shift_arrow_grows_selection() {
 }
 
 #[test]
+fn focus_hotkey_does_not_autoplay_browser_sample() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    write_test_wav(&source.root.join("one.wav"), &[0.0, 0.1]);
+    controller.wav_entries = vec![sample_entry("one.wav", SampleTag::Neutral)];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+
+    assert!(controller.feature_flags.autoplay_selection);
+
+    controller.focus_browser_list();
+
+    assert_eq!(controller.ui.focus.context, FocusContext::SampleBrowser);
+    assert_eq!(
+        controller.selected_wav.as_deref(),
+        Some(Path::new("one.wav"))
+    );
+    assert!(controller.pending_playback.is_none());
+    assert_eq!(controller.ui.browser.selected_visible, Some(0));
+}
+
+#[test]
 fn x_key_toggle_respects_focus() {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source);
