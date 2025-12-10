@@ -1,17 +1,15 @@
 ## Goal
-- Drop folder item focus whenever the folder browser no longer has user focus, while keeping existing selections intact.
+- Add an `r` hotkey to the sample browser that triggers the same rename workflow currently available in the folder browser.
 
 ## Proposed solutions
-- Track focus context transitions and clear the folder browser’s focused row when focus leaves `SourceFolders`, preserving selection state.
-- Gate folder row focus highlighting/rendering on active folder focus so UI matches keyboard focus ownership.
-- Add regression coverage to ensure focus is cleared on focus loss without disturbing selections or expansion state.
+- Mirror the folder browser rename flow: introduce a sample-browser-scoped hotkey that starts an inline rename prompt on the focused row, prefilled with the existing filename, and executes the existing sample rename controller path.
+- Ensure focus handling, cancel/confirm shortcuts, and UI refresh mirror the folder browser experience so caches, collections, and waveforms stay in sync after rename.
 
 ## Step-by-step plan
-1. [x] Review current folder focus management in controller and UI (e.g., `source_folders.rs`, `focus.rs`, `sources_panel.rs`) to map how focus is set and retained.
-2. [x] Design the focus-loss handling point (e.g., centralized context setter or UI loop) that clears folder item focus when `FocusContext` leaves `SourceFolders` without altering selections.
-3. [x] Implement the focus drop logic and adjust rendering to avoid showing a focused row when the browser lacks focus.
-4. [x] Add/extend unit tests around folder focus and selection to cover focus loss scenarios.
-5. [-] Manually verify folder navigation, selection, and drag/drop still behave as before when focus changes.
+1. [-] Add a Sample Browser rename hotkey entry (gesture `r`) and command that kicks off rename when a sample row is focused.
+2. [-] Add controller/UI state to request a rename prompt for the focused sample, mirroring the folder browser approach (prefill current name, manage focus flags).
+3. [-] Render the inline rename editor for the targeted sample browser row, wiring confirm/cancel paths to the existing rename handler and restoring focus/selection states.
+4. [-] Extend tests and hotkey/help surfaces to cover the new rename shortcut and ensure browser state, caches, and collections remain consistent after rename.
 
 ## Code Style & Architecture Rules Reminder
 - Keep files under 400 lines; split when necessary.
