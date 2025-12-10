@@ -70,9 +70,28 @@ impl EguiController {
     /// Seek to a normalized position and start playback.
     pub fn seek_to(&mut self, position: f32) {
         let looped = self.ui.waveform.loop_enabled;
+        self.record_play_start(position);
         if let Err(err) = self.play_audio(looped, Some(position)) {
             self.set_status(err, StatusTone::Error);
         }
+    }
+
+    /// Replay from the last clicked start (or the current playhead) when available.
+    pub fn replay_from_last_start(&mut self) -> bool {
+        if let Some(position) = self.ui.waveform.last_start_marker {
+            self.seek_to(position);
+            return true;
+        }
+        if self.ui.waveform.playhead.visible {
+            self.seek_to(self.ui.waveform.playhead.position);
+            return true;
+        }
+        false
+    }
+
+    /// Remember the last user-requested play start position.
+    pub fn record_play_start(&mut self, position: f32) {
+        self.ui.waveform.last_start_marker = Some(position.clamp(0.0, 1.0));
     }
 
     /// Update master output volume and persist the change.

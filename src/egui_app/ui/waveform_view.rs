@@ -10,6 +10,8 @@ impl EguiApp {
     pub(super) fn render_waveform(&mut self, ui: &mut Ui) {
         let palette = style::palette();
         let highlight = palette.accent_copper;
+        let cursor_color = palette.accent_mint;
+        let start_marker_color = palette.accent_ice;
         let is_loading = self.controller.ui.waveform.loading.is_some();
         let mut view_mode = self.controller.ui.waveform.channel_view;
         ui.horizontal(|ui| {
@@ -120,8 +122,24 @@ impl EguiApp {
                 let x = pos.x;
                 painter.line_segment(
                     [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
-                    Stroke::new(1.0, highlight),
+                    Stroke::new(1.0, style::with_alpha(cursor_color, 220)),
                 );
+            }
+
+            if let Some(marker_pos) = self.controller.ui.waveform.last_start_marker {
+                if marker_pos >= view.start && marker_pos <= view.end {
+                    let x = to_screen_x(marker_pos, rect);
+                    let stroke = Stroke::new(1.5, style::with_alpha(start_marker_color, 230));
+                    let mut y = rect.top();
+                    let bottom = rect.bottom();
+                    let dash = 6.0;
+                    let gap = 4.0;
+                    while y < bottom {
+                        let end = (y + dash).min(bottom);
+                        painter.line_segment([egui::pos2(x, y), egui::pos2(x, end)], stroke);
+                        y += dash + gap;
+                    }
+                }
             }
 
             let mut edge_dragging = false;
