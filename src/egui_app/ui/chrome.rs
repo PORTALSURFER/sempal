@@ -45,7 +45,7 @@ impl EguiApp {
                 Frame::new()
                     .fill(palette.bg_primary)
                     .stroke(style::section_stroke())
-                    .inner_margin(Margin::symmetric(10, 6)),
+                    .inner_margin(Margin::symmetric(8, 4)),
             )
             .show(ctx, |ui| {
                 let status = self.controller.ui.status.clone();
@@ -53,9 +53,9 @@ impl EguiApp {
                 let key_label = format_keypress(&self.key_feedback.last_key);
                 ui.columns(3, |columns| {
                     columns[0].horizontal(|ui| {
-                        ui.add_space(8.0);
+                        ui.add_space(6.0);
                         let (badge_rect, _) =
-                            ui.allocate_exact_size(egui::vec2(18.0, 18.0), egui::Sense::hover());
+                            ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
                         ui.painter()
                             .rect_filled(badge_rect, 0.0, status.badge_color);
                         ui.painter().rect_stroke(
@@ -64,13 +64,13 @@ impl EguiApp {
                             style::inner_border(),
                             StrokeKind::Inside,
                         );
-                        ui.add_space(10.0);
+                        ui.add_space(8.0);
                         ui.label(RichText::new(&status.badge_label).color(palette.text_primary));
                         ui.separator();
                         ui.label(RichText::new(&status.text).color(palette.text_primary));
                     });
                     columns[1].horizontal(|ui| {
-                        ui.add_space(8.0);
+                        ui.add_space(6.0);
                         ui.label(RichText::new("Key").color(palette.text_primary));
                         ui.separator();
                         ui.label(RichText::new(key_label).color(palette.text_primary));

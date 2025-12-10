@@ -269,6 +269,8 @@ impl EguiController {
         }
         let target = (current as isize + offset).clamp(0, len - 1) as usize;
         if extend {
+            // Include the currently focused row plus the target step.
+            self.add_folder_to_selection(current as usize);
             self.add_folder_to_selection(target);
         } else {
             self.focus_folder_row(target);
