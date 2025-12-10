@@ -339,6 +339,8 @@ pub struct SampleBrowserState {
     pub selected_paths: Vec<PathBuf>,
     pub autoscroll: bool,
     pub filter: TriageFlagFilter,
+    /// Text query applied to visible rows via fuzzy search.
+    pub search_query: String,
 }
 
 impl Default for SampleBrowserState {
@@ -356,6 +358,7 @@ impl Default for SampleBrowserState {
             selected_paths: Vec::new(),
             autoscroll: false,
             filter: TriageFlagFilter::All,
+            search_query: String::new(),
         }
     }
 }

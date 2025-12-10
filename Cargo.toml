@@ -1,6 +1,6 @@
 [package]
 name = "sempal"
-version = "0.232.0"
+version = "0.235.0"
 edition = "2024"
 default-run = "sempal"
 
@@ -26,6 +26,7 @@ tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter", "fmt", "time"] }
 tracing-appender = "0.2.4"
 time = { version = "0.3.44", features = ["formatting", "macros", "local-offset"] }
+fuzzy-matcher = "0.3.7"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 cpal = { version = "0.16.0", features = ["asio"] }
