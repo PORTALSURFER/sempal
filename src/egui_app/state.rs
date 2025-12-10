@@ -97,6 +97,9 @@ pub struct FolderBrowserUiState {
     pub rows: Vec<FolderRowView>,
     pub focused: Option<usize>,
     pub scroll_to: Option<usize>,
+    pub search_query: String,
+    pub search_focus_requested: bool,
+    pub pending_action: Option<FolderActionPrompt>,
 }
 
 /// Render-friendly folder row.
@@ -108,6 +111,13 @@ pub struct FolderRowView {
     pub has_children: bool,
     pub expanded: bool,
     pub selected: bool,
+}
+
+/// Pending inline action for the folder browser.
+#[derive(Clone, Debug)]
+pub enum FolderActionPrompt {
+    Create { parent: PathBuf, name: String },
+    Rename { target: PathBuf, name: String },
 }
 
 /// Cached waveform image and playback overlays.
