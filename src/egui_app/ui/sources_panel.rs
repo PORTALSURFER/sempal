@@ -216,6 +216,7 @@ impl EguiApp {
             FocusContext::SourceFolders
         );
         let scroll_to = self.controller.ui.sources.folders.scroll_to;
+        let mut hovered_folder = None;
         let frame_response = frame.show(ui, |ui| {
             ui.set_min_height(height);
             ui.set_max_height(height);
@@ -295,18 +296,21 @@ impl EguiApp {
                     if sample_drag_active {
                         if let Some(pointer) = pointer_pos {
                             if response.rect.contains(pointer) {
+                                hovered_folder = Some(row.path.clone());
                                 self.controller.update_active_drag(
                                     pointer,
                                     None,
                                     false,
                                     None,
                                     Some(row.path.clone()),
+                                    true,
                                 );
                             }
                         }
-                        if hovering_folder
-                            .as_ref()
-                            .is_some_and(|path| path == &row.path)
+                        if hovered_folder.as_ref().is_some_and(|path| path == &row.path)
+                            || hovering_folder
+                                .as_ref()
+                                .is_some_and(|path| path == &row.path)
                         {
                             ui.painter().rect_stroke(
                                 response.rect.expand(2.0),
@@ -354,6 +358,31 @@ impl EguiApp {
                 }
             });
         });
+        if sample_drag_active {
+            if let Some(pointer) = pointer_pos {
+                if frame_response.response.rect.contains(pointer) {
+                    if hovered_folder.is_none() {
+                        self.controller.update_active_drag(
+                            pointer,
+                            None,
+                            false,
+                            None,
+                            None,
+                            true,
+                        );
+                    }
+                } else {
+                    self.controller.update_active_drag(
+                        pointer,
+                        None,
+                        false,
+                        None,
+                        None,
+                        false,
+                    );
+                }
+            }
+        }
         style::paint_section_border(ui, frame_response.response.rect, focused);
         self.controller.ui.sources.folders.scroll_to = None;
     }

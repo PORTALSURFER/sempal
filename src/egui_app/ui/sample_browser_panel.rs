@@ -18,14 +18,14 @@ impl EguiApp {
         let drop_target = self.controller.triage_flag_drop_target();
         self.render_sample_browser_filter(ui);
         ui.add_space(6.0);
-        let list_height = ui.available_height().max(160.0);
+        let list_height = ui.available_height().max(0.0);
         let drag_active = self.controller.ui.drag.payload.is_some();
         let pointer_pos = ui
             .input(|i| i.pointer.hover_pos().or_else(|| i.pointer.interact_pos()))
             .or(self.controller.ui.drag.position);
         let autoscroll_enabled = self.controller.ui.browser.autoscroll
             && self.controller.ui.collections.selected_sample.is_none();
-        let row_height = list_row_height(ui).clamp(18.0, 36.0);
+        let row_height = list_row_height(ui);
         let row_metrics = RowMetrics {
             height: row_height,
             spacing: ui.spacing().item_spacing.y,
@@ -38,7 +38,6 @@ impl EguiApp {
             let number_gap = ui.spacing().button_padding.x * 0.5;
             let scroll_area = egui::ScrollArea::vertical()
                 .id_salt("sample_browser_scroll")
-                .auto_shrink([false; 2])
                 .max_height(list_height);
             let scroll_response = if total_rows == 0 {
                 scroll_area.show(ui, |ui| {
@@ -182,6 +181,7 @@ impl EguiApp {
                                         false,
                                         Some(drop_target),
                                         None,
+                                        false,
                                     );
                                 }
                             } else if response.drag_stopped() {
@@ -214,7 +214,7 @@ impl EguiApp {
             if let Some(pointer) = pointer_pos {
                 if frame_response.response.rect.contains(pointer) {
                     self.controller
-                        .update_active_drag(pointer, None, false, Some(drop_target), None);
+                        .update_active_drag(pointer, None, false, Some(drop_target), None, false);
                 }
             }
         }
@@ -286,52 +286,46 @@ impl EguiApp {
     fn render_sample_browser_filter(&mut self, ui: &mut Ui) {
         let palette = style::palette();
         let visible_count = self.controller.visible_browser_indices().len();
-        ui.with_layout(
-            egui::Layout::left_to_right(egui::Align::Center).with_main_justify(true),
-            |ui| {
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new("Filter").color(palette.text_primary));
-                    for filter in [
-                        TriageFlagFilter::All,
-                        TriageFlagFilter::Keep,
-                        TriageFlagFilter::Trash,
-                        TriageFlagFilter::Untagged,
-                    ] {
-                        let selected = self.controller.ui.browser.filter == filter;
-                        let label = match filter {
-                            TriageFlagFilter::All => "All",
-                            TriageFlagFilter::Keep => "Keep",
-                            TriageFlagFilter::Trash => "Trash",
-                            TriageFlagFilter::Untagged => "Untagged",
-                        };
-                        if ui.selectable_label(selected, label).clicked() {
-                            self.controller.set_browser_filter(filter);
-                        }
-                    }
-                });
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let count_label = format!(
-                        "{} item{}",
-                        visible_count,
-                        if visible_count == 1 { "" } else { "s" }
-                    );
-                    ui.label(
-                        RichText::new(count_label)
-                            .color(palette.text_muted)
-                            .small(),
-                    );
-                    ui.add_space(ui.spacing().item_spacing.x);
-                    let mut query = self.controller.ui.browser.search_query.clone();
-                    let response = ui.add(
-                        egui::TextEdit::singleline(&mut query)
-                            .hint_text("Search...")
-                            .desired_width(160.0),
-                    );
-                    if response.changed() {
-                        self.controller.set_browser_search(query);
-                    }
-                });
-            },
-        );
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Filter").color(palette.text_primary));
+            for filter in [
+                TriageFlagFilter::All,
+                TriageFlagFilter::Keep,
+                TriageFlagFilter::Trash,
+                TriageFlagFilter::Untagged,
+            ] {
+                let selected = self.controller.ui.browser.filter == filter;
+                let label = match filter {
+                    TriageFlagFilter::All => "All",
+                    TriageFlagFilter::Keep => "Keep",
+                    TriageFlagFilter::Trash => "Trash",
+                    TriageFlagFilter::Untagged => "Untagged",
+                };
+                if ui.selectable_label(selected, label).clicked() {
+                    self.controller.set_browser_filter(filter);
+                }
+            }
+            ui.add_space(ui.spacing().item_spacing.x);
+            let mut query = self.controller.ui.browser.search_query.clone();
+            let response = ui.add(
+                egui::TextEdit::singleline(&mut query)
+                    .hint_text("Search...")
+                    .desired_width(160.0),
+            );
+            if response.changed() {
+                self.controller.set_browser_search(query);
+            }
+            ui.add_space(ui.spacing().item_spacing.x);
+            let count_label = format!(
+                "{} item{}",
+                visible_count,
+                if visible_count == 1 { "" } else { "s" }
+            );
+            ui.label(
+                RichText::new(count_label)
+                    .color(palette.text_muted)
+                    .small(),
+            );
+        });
     }
 }

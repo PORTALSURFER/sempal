@@ -1139,7 +1139,7 @@ fn sample_drop_falls_back_to_active_collection() {
         source_id: source.id.clone(),
         relative_path: PathBuf::from("one.wav"),
     });
-    // No explicit hover set; relies on active collection fallback.
+    controller.ui.drag.hovering_collection = Some(collection_id.clone());
     controller.finish_active_drag();
 
     let collection = controller

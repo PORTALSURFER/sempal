@@ -2,6 +2,9 @@
 lets then write every task you find into @todo.md as a new todo item
 
 --
+
+\plan - if we have a filter active, and we remove a sample from that filter, jump focus to the first next item in the sample browser. for example, if we have the untagged filter active, and we mark a sample with a triageflag.
+
 \plan - ctrl+spacebar should play from the waveform cursor. if the mouse no longer hovers, and the user is not navigating the cursor with keys, make it fade out and reset to start after 500ms    
 
 \plan - drop item focus of folders if the folder browser itself no longer has user focus.
@@ -17,8 +20,6 @@ lets then write every task you find into @todo.md as a new todo item
 \plan - after deleting a sample or folder, jump focus to the one right after it
 
 \plan - add P or shift-p as a hotkey to move all trashed files to the trash folder
-
-\plan - when we have a filter active, and we remove a sample from that filter, jump focus to the first next filter. for example, if we have the untagged filter active, and we mark a sample with a triageflag.
 
 \plan - please review this test, our app I believe is working correctly.
 if the test still applied, fix the app, otherwise fix or remove the test
