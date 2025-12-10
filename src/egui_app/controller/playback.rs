@@ -93,6 +93,10 @@ impl EguiController {
             self.seek_to(position);
             return true;
         }
+        if let Some(cursor) = self.ui.waveform.cursor {
+            self.seek_to(cursor);
+            return true;
+        }
         if self.ui.waveform.playhead.visible {
             self.seek_to(self.ui.waveform.playhead.position);
             return true;
@@ -102,7 +106,9 @@ impl EguiController {
 
     /// Remember the last user-requested play start position.
     pub fn record_play_start(&mut self, position: f32) {
-        self.ui.waveform.last_start_marker = Some(position.clamp(0.0, 1.0));
+        let clamped = position.clamp(0.0, 1.0);
+        self.ui.waveform.last_start_marker = Some(clamped);
+        self.set_waveform_cursor(clamped);
     }
 
     /// Update master output volume and persist the change.

@@ -17,8 +17,8 @@ impl EguiController {
         }
     }
 
-    /// Move the playhead left/right by a fixed visual step.
-    pub(crate) fn move_playhead_steps(&mut self, steps: isize, fine: bool, resume_playback: bool) {
+    /// Move the waveform navigation cursor left/right by a fixed visual step.
+    pub(crate) fn move_playhead_steps(&mut self, steps: isize, fine: bool, _resume_playback: bool) {
         if !self.waveform_ready() {
             return;
         }
@@ -27,12 +27,9 @@ impl EguiController {
             return;
         }
         let delta = step * steps as f32;
-        let next = (self.ui.waveform.playhead.position + delta).clamp(0.0, 1.0);
-        if resume_playback && self.is_playing() {
-            self.set_playhead_and_seek(next);
-        } else {
-            self.set_playhead_no_seek(next);
-        }
+        let start = self.waveform_navigation_anchor();
+        let next = (start + delta).clamp(0.0, 1.0);
+        self.set_waveform_cursor(next);
     }
 
     /// Zoom the waveform while keeping the playhead centered.
@@ -135,6 +132,33 @@ impl EguiController {
         self.ui.waveform.view.width() * px_fraction
     }
 
+    /// Persist the waveform cursor and keep it within the visible view when possible.
+    pub(crate) fn set_waveform_cursor(&mut self, position: f32) {
+        if !self.waveform_ready() {
+            return;
+        }
+        let clamped = position.clamp(0.0, 1.0);
+        self.ui.waveform.cursor = Some(clamped);
+        self.ensure_cursor_visible_in_view(clamped);
+    }
+
+    fn waveform_navigation_anchor(&self) -> f32 {
+        if let Some(cursor) = self.ui.waveform.cursor {
+            return cursor;
+        }
+        if let Some(marker) = self.ui.waveform.last_start_marker {
+            return marker;
+        }
+        if self.ui.waveform.playhead.visible {
+            return self.ui.waveform.playhead.position;
+        }
+        if let Some(selection) = self.selection.range() {
+            return (selection.start() + selection.end()) * 0.5;
+        }
+        let view = self.ui.waveform.view;
+        (view.start + view.end) * 0.5
+    }
+
     fn set_playhead_after_selection(&mut self, position: f32, resume_playback: bool) {
         if resume_playback && self.is_playing() {
             self.set_playhead_and_seek(position);
@@ -147,6 +171,7 @@ impl EguiController {
         if !self.waveform_ready() {
             return;
         }
+        self.set_waveform_cursor(position);
         self.ui.waveform.playhead.position = position.clamp(0.0, 1.0);
         self.ui.waveform.playhead.visible = true;
         self.ensure_playhead_visible_in_view();
@@ -158,6 +183,7 @@ impl EguiController {
         if !self.waveform_ready() {
             return;
         }
+        self.set_waveform_cursor(position);
         self.ui.waveform.playhead.position = position.clamp(0.0, 1.0);
         self.ui.waveform.playhead.visible = true;
         self.ensure_playhead_visible_in_view();
@@ -175,6 +201,23 @@ impl EguiController {
             view.start = (view.end - width).max(0.0);
         }
         self.ui.waveform.view = view.clamp();
+    }
+
+    fn ensure_cursor_visible_in_view(&mut self, position: f32) {
+        let mut view = self.ui.waveform.view;
+        let width = view.width();
+        if position < view.start {
+            view.start = position;
+            view.end = (view.start + width).min(1.0);
+        } else if position > view.end {
+            view.end = position;
+            view.start = (view.end - width).max(0.0);
+        }
+        let clamped = view.clamp();
+        if views_differ(self.ui.waveform.view, clamped) {
+            self.ui.waveform.view = clamped;
+            self.refresh_waveform_image();
+        }
     }
 
     /// Scroll the waveform viewport so its center aligns with the target fraction.
@@ -198,7 +241,11 @@ impl EguiController {
     }
 
     fn waveform_focus_point(&self) -> f32 {
-        if self.ui.waveform.playhead.visible {
+        if let Some(cursor) = self.ui.waveform.cursor {
+            cursor
+        } else if let Some(marker) = self.ui.waveform.last_start_marker {
+            marker
+        } else if self.ui.waveform.playhead.visible {
             self.ui.waveform.playhead.position
         } else if let Some(selection) = self.selection.range() {
             (selection.start() + selection.end()) * 0.5

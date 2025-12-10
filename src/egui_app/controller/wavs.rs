@@ -80,6 +80,7 @@ impl EguiController {
         self.decoded_waveform = None;
         self.ui.waveform.playhead = PlayheadState::default();
         self.ui.waveform.last_start_marker = None;
+        self.ui.waveform.cursor = None;
         self.ui.waveform.selection = None;
         self.ui.waveform.selection_duration = None;
         self.ui.waveform.view = WaveformView::default();
@@ -607,17 +608,24 @@ impl EguiController {
         }
     }
 
-    fn extend_browser_selection_to(&mut self, target_visible: usize) {
+    fn extend_browser_selection_to(&mut self, target_visible: usize, additive: bool) {
         if self.ui.browser.visible.is_empty() {
             return;
         }
+        let max_row = self.ui.browser.visible.len().saturating_sub(1);
+        let target_visible = target_visible.min(max_row);
         let anchor = self
             .ui
             .browser
             .selection_anchor_visible
-            .unwrap_or_else(|| self.ui.browser.selected_visible.unwrap_or(target_visible));
+            .or(self.ui.browser.selected_visible)
+            .unwrap_or(target_visible)
+            .min(max_row);
         let start = anchor.min(target_visible);
         let end = anchor.max(target_visible);
+        if !additive {
+            self.ui.browser.selected_paths.clear();
+        }
         for row in start..=end {
             if let Some(path) = self.browser_path_for_visible(row) {
                 if !self.ui.browser.selected_paths.iter().any(|p| p == &path) {
@@ -625,6 +633,7 @@ impl EguiController {
                 }
             }
         }
+        self.ui.browser.selection_anchor_visible = Some(anchor);
     }
 
     pub fn focus_browser_row(&mut self, visible_row: usize) {
@@ -648,7 +657,21 @@ impl EguiController {
     }
 
     pub fn extend_browser_selection_to_row(&mut self, visible_row: usize) {
-        self.apply_browser_selection(visible_row, SelectionAction::Extend);
+        self.apply_browser_selection(
+            visible_row,
+            SelectionAction::Extend {
+                additive: false,
+            },
+        );
+    }
+
+    pub fn add_range_browser_selection(&mut self, visible_row: usize) {
+        self.apply_browser_selection(
+            visible_row,
+            SelectionAction::Extend {
+                additive: true,
+            },
+        );
     }
 
     pub fn toggle_focused_selection(&mut self) {
@@ -709,15 +732,8 @@ impl EguiController {
                 }
                 self.toggle_browser_selection(&path);
             }
-            SelectionAction::Extend => {
-                let anchor = self
-                    .ui
-                    .browser
-                    .selection_anchor_visible
-                    .or(self.ui.browser.selected_visible)
-                    .unwrap_or(visible_row);
-                self.ui.browser.selection_anchor_visible = Some(anchor);
-                self.extend_browser_selection_to(visible_row);
+            SelectionAction::Extend { additive } => {
+                self.extend_browser_selection_to(visible_row, additive);
             }
         }
         self.select_wav_by_path_with_rebuild(&path, false);
@@ -913,6 +929,7 @@ impl EguiController {
         let channels = decoded.channels;
         self.apply_waveform_image(decoded);
         self.ui.waveform.view = WaveformView::default();
+        self.ui.waveform.cursor = Some(0.0);
         self.ui.waveform.notice = None;
         self.ui.waveform.loading = None;
         self.clear_waveform_selection();
@@ -1269,5 +1286,5 @@ impl EguiController {
 enum SelectionAction {
     Replace,
     Toggle,
-    Extend,
+    Extend { additive: bool },
 }

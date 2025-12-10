@@ -451,8 +451,10 @@ fn shift_click_extends_selection_range() {
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
-    controller.focus_browser_row_only(0);
-    controller.extend_browser_selection_to_row(2);
+    controller.focus_browser_row(0);
+    controller.toggle_browser_row_selection(2);
+
+    controller.extend_browser_selection_to_row(1);
 
     let selected: Vec<_> = controller
         .ui
@@ -461,11 +463,48 @@ fn shift_click_extends_selection_range() {
         .iter()
         .cloned()
         .collect();
+    assert_eq!(selected.len(), 2);
+    assert!(selected.contains(&PathBuf::from("one.wav")));
+    assert!(selected.contains(&PathBuf::from("two.wav")));
+    assert!(!selected.contains(&PathBuf::from("three.wav")));
+    assert_eq!(controller.ui.browser.selected_visible, Some(1));
+    assert_eq!(controller.ui.browser.selection_anchor_visible, Some(0));
+}
+
+#[test]
+fn ctrl_shift_click_adds_range_without_resetting_anchor() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source);
+    controller.wav_entries = vec![
+        sample_entry("one.wav", SampleTag::Neutral),
+        sample_entry("two.wav", SampleTag::Neutral),
+        sample_entry("three.wav", SampleTag::Neutral),
+        sample_entry("four.wav", SampleTag::Neutral),
+        sample_entry("five.wav", SampleTag::Neutral),
+        sample_entry("six.wav", SampleTag::Neutral),
+    ];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+
+    controller.focus_browser_row(0);
+    controller.toggle_browser_row_selection(5);
+
+    controller.add_range_browser_selection(2);
+
+    let selected: Vec<_> = controller
+        .ui
+        .browser
+        .selected_paths
+        .iter()
+        .cloned()
+        .collect();
+    assert_eq!(selected.len(), 4);
     assert!(selected.contains(&PathBuf::from("one.wav")));
     assert!(selected.contains(&PathBuf::from("two.wav")));
     assert!(selected.contains(&PathBuf::from("three.wav")));
-    assert_eq!(controller.ui.browser.selected_visible, Some(2));
+    assert!(selected.contains(&PathBuf::from("six.wav")));
     assert_eq!(controller.ui.browser.selection_anchor_visible, Some(0));
+    assert_eq!(controller.ui.browser.selected_visible, Some(2));
 }
 
 #[test]
@@ -1811,20 +1850,29 @@ fn random_sample_handles_empty_lists() {
 }
 
 #[test]
-fn playhead_step_size_tracks_view_zoom() {
+fn cursor_step_size_tracks_view_zoom() {
     let (mut controller, source) = dummy_controller();
     prepare_browser_sample(&mut controller, &source, "zoom.wav");
     controller.update_waveform_size(200, 10);
     controller.select_wav_by_path(Path::new("zoom.wav"));
-    controller.ui.waveform.playhead.position = 0.5;
+    controller.decoded_waveform = Some(DecodedWaveform {
+        samples: vec![0.0; 10_000],
+        duration_seconds: 1.0,
+        sample_rate: 48_000,
+        channels: 1,
+    });
+    controller.ui.waveform.playhead.position = 0.1;
     controller.ui.waveform.playhead.visible = true;
+    controller.set_waveform_cursor(0.5);
 
     controller.move_playhead_steps(1, false, false);
-    assert!((controller.ui.waveform.playhead.position - 0.66).abs() < 0.001);
+    assert!((controller.ui.waveform.cursor.unwrap() - 0.66).abs() < 0.001);
+    assert!((controller.ui.waveform.playhead.position - 0.1).abs() < 0.001);
 
     controller.zoom_waveform(true);
     controller.move_playhead_steps(1, false, false);
-    assert!((controller.ui.waveform.playhead.position - 0.788).abs() < 0.001);
+    assert!((controller.ui.waveform.cursor.unwrap() - 0.804).abs() < 0.001);
+    assert!((controller.ui.waveform.playhead.position - 0.1).abs() < 0.001);
 }
 
 #[test]
@@ -1910,6 +1958,49 @@ fn replay_from_last_start_requeues_pending_playback() {
         .as_ref()
         .expect("pending playback request");
     assert_eq!(pending.start_override, Some(0.42));
+}
+
+#[test]
+fn replay_from_last_start_falls_back_to_cursor() {
+    let (mut controller, source) = dummy_controller();
+    prepare_browser_sample(&mut controller, &source, "marker.wav");
+    controller.select_wav_by_path(Path::new("marker.wav"));
+    controller.ui.waveform.cursor = Some(0.25);
+    controller.ui.waveform.last_start_marker = None;
+
+    let handled = controller.replay_from_last_start();
+
+    assert!(handled);
+    let pending = controller
+        .pending_playback
+        .as_ref()
+        .expect("pending playback request");
+    assert_eq!(pending.start_override, Some(0.25));
+    assert_eq!(controller.ui.waveform.last_start_marker, Some(0.25));
+}
+
+#[test]
+fn navigation_steps_anchor_to_cursor_instead_of_playhead() {
+    let (mut controller, source) = dummy_controller();
+    prepare_browser_sample(&mut controller, &source, "nav.wav");
+    controller.update_waveform_size(200, 10);
+    controller.select_wav_by_path(Path::new("nav.wav"));
+    controller.decoded_waveform = Some(DecodedWaveform {
+        samples: vec![0.0; 10_000],
+        duration_seconds: 1.0,
+        sample_rate: 48_000,
+        channels: 1,
+    });
+    controller.ui.waveform.playhead.position = 0.7;
+    controller.ui.waveform.playhead.visible = true;
+    controller.ui.waveform.cursor = Some(0.2);
+    controller.ui.waveform.last_start_marker = Some(0.2);
+
+    controller.move_playhead_steps(1, false, false);
+
+    let cursor = controller.ui.waveform.cursor.expect("cursor set");
+    assert!((cursor - 0.36).abs() < 0.001);
+    assert!((controller.ui.waveform.playhead.position - 0.7).abs() < 0.001);
 }
 
 #[test]

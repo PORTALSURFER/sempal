@@ -128,6 +128,8 @@ pub struct WaveformState {
     pub playhead: PlayheadState,
     /// Last play start position chosen by the user (normalized 0-1).
     pub last_start_marker: Option<f32>,
+    /// Persistent navigation cursor (normalized 0-1) used by keyboard navigation.
+    pub cursor: Option<f32>,
     pub selection: Option<SelectionRange>,
     pub selection_duration: Option<String>,
     pub hover_time_label: Option<String>,
@@ -148,6 +150,7 @@ impl Default for WaveformState {
             image: None,
             playhead: PlayheadState::default(),
             last_start_marker: None,
+            cursor: None,
             selection: None,
             selection_duration: None,
             hover_time_label: None,

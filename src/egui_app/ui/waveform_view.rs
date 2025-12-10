@@ -104,17 +104,27 @@ impl EguiApp {
             }
 
             self.controller.update_waveform_hover_time(None);
+            let mut cursor_position = self.controller.ui.waveform.cursor;
+            let mut hover_x = None;
             if let Some(pos) = pointer_pos.filter(|p| rect.contains(*p)) {
-                let x = pos.x;
+                let normalized = ((pos.x - rect.left()) / rect.width())
+                    .mul_add(view_width, view.start)
+                    .clamp(0.0, 1.0);
+                cursor_position = Some(normalized);
+                hover_x = Some(pos.x);
+                self.controller.set_waveform_cursor(normalized);
+                self.controller.update_waveform_hover_time(Some(normalized));
+            }
+
+            if let Some(cursor) = cursor_position {
+                let x = to_screen_x(cursor, rect);
                 painter.line_segment(
                     [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
                     Stroke::new(1.0, style::with_alpha(cursor_color, 220)),
                 );
-                let normalized = ((pos.x - rect.left()) / rect.width())
-                    .mul_add(view_width, view.start)
-                    .clamp(0.0, 1.0);
-                self.controller.update_waveform_hover_time(Some(normalized));
-                if let Some(label) = self.controller.ui.waveform.hover_time_label.as_deref() {
+            }
+            if let Some(label) = self.controller.ui.waveform.hover_time_label.as_deref() {
+                if let Some(pointer_x) = hover_x {
                     let text_color = style::with_alpha(palette.text_primary, 240);
                     let galley = ui.ctx().fonts_mut(|f| {
                         f.layout_job(LayoutJob::simple_singleline(
@@ -127,7 +137,7 @@ impl EguiApp {
                     let size = galley.size() + padding * 2.0;
                     let min_x = rect.left() + 4.0;
                     let max_x = rect.right() - size.x - 4.0;
-                    let desired_x = pos.x + 8.0;
+                    let desired_x = pointer_x + 8.0;
                     let label_x = desired_x.clamp(min_x, max_x);
                     let label_y = rect.top() + 8.0;
                     let label_rect = egui::Rect::from_min_size(egui::pos2(label_x, label_y), size);
