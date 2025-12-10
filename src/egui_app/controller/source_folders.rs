@@ -3,7 +3,7 @@ use crate::egui_app::state::{FolderActionPrompt, FolderRowView};
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use rfd::{MessageButtons, MessageDialog, MessageDialogResult, MessageLevel};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -744,6 +744,7 @@ impl EguiController {
         entries: &[WavEntry],
     ) -> Result<(), String> {
         let mut collections_changed = false;
+        let mut updates: Vec<(WavEntry, WavEntry)> = Vec::with_capacity(entries.len());
         for entry in entries {
             let suffix = entry
                 .relative_path
@@ -753,15 +754,48 @@ impl EguiController {
             let mut new_entry = entry.clone();
             new_entry.relative_path = updated_path.clone();
             new_entry.missing = false;
-            self.update_cached_entry(source, &entry.relative_path, new_entry);
+            updates.push((entry.clone(), new_entry));
             if self.update_collections_for_rename(&source.id, &entry.relative_path, &updated_path) {
                 collections_changed = true;
             }
         }
+        self.apply_folder_entry_updates(source, &updates);
         if collections_changed {
             self.persist_config("Failed to save collection after folder rename")?;
         }
         Ok(())
+    }
+
+    fn apply_folder_entry_updates(
+        &mut self,
+        source: &SampleSource,
+        updates: &[(WavEntry, WavEntry)],
+    ) {
+        if updates.is_empty() {
+            return;
+        }
+        if let Some(cache) = self.wav_cache.get_mut(&source.id) {
+            apply_entry_updates(cache, updates);
+        }
+        if self.selected_source.as_ref() == Some(&source.id) {
+            apply_entry_updates(&mut self.wav_entries, updates);
+            for (old_entry, new_entry) in updates {
+                self.update_selection_paths(
+                    source,
+                    &old_entry.relative_path,
+                    &new_entry.relative_path,
+                );
+                self.invalidate_cached_audio(&source.id, &old_entry.relative_path);
+                self.invalidate_cached_audio(&source.id, &new_entry.relative_path);
+            }
+            self.rebuild_wav_lookup();
+            self.rebuild_browser_lists();
+            self.label_cache
+                .insert(source.id.clone(), self.build_label_cache(&self.wav_entries));
+        } else {
+            self.label_cache.remove(&source.id);
+        }
+        self.rebuild_missing_lookup_for_source(&source.id);
     }
 
     fn update_manual_folders<F>(&mut self, mut update: F)
@@ -931,4 +965,25 @@ fn folder_with_name(target: &Path, name: &str) -> PathBuf {
             }
         },
     )
+}
+
+fn apply_entry_updates(list: &mut Vec<WavEntry>, updates: &[(WavEntry, WavEntry)]) {
+    if updates.is_empty() {
+        return;
+    }
+    let mut index_map: HashMap<PathBuf, usize> = list
+        .iter()
+        .enumerate()
+        .map(|(idx, entry)| (entry.relative_path.clone(), idx))
+        .collect();
+    for (old_entry, new_entry) in updates {
+        if let Some(idx) = index_map.remove(&old_entry.relative_path) {
+            list[idx] = new_entry.clone();
+            index_map.insert(new_entry.relative_path.clone(), idx);
+        } else {
+            list.push(new_entry.clone());
+            index_map.insert(new_entry.relative_path.clone(), list.len() - 1);
+        }
+    }
+    list.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
 }
