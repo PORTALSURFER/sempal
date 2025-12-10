@@ -253,6 +253,10 @@ impl EguiController {
     }
 
     pub(crate) fn nudge_folder_focus(&mut self, offset: isize) {
+        self.nudge_folder_selection(offset, false);
+    }
+
+    pub(crate) fn nudge_folder_selection(&mut self, offset: isize, extend: bool) {
         let Some(current) = self.ui.sources.folders.focused else {
             if !self.ui.sources.folders.rows.is_empty() {
                 self.focus_folder_row(0);
@@ -264,7 +268,11 @@ impl EguiController {
             return;
         }
         let target = (current as isize + offset).clamp(0, len - 1) as usize;
-        self.focus_folder_row(target);
+        if extend {
+            self.select_folder_range(target);
+        } else {
+            self.focus_folder_row(target);
+        }
     }
 
     pub(super) fn folder_selection_for_filter(&self) -> Option<&BTreeSet<PathBuf>> {
