@@ -4,7 +4,7 @@ use super::helpers::{
 };
 use super::style;
 use super::*;
-use crate::egui_app::state::{FocusContext, TriageFlagFilter};
+use crate::egui_app::state::{FocusContext, SampleBrowserActionPrompt, TriageFlagFilter};
 use crate::egui_app::ui::style::StatusTone;
 use crate::egui_app::view_model;
 use eframe::egui::{self, RichText, StrokeKind, Ui};
@@ -61,6 +61,11 @@ impl EguiApp {
                             Some(entry) => (entry.tag, entry.relative_path.clone(), entry.missing),
                             None => continue,
                         };
+                        let rename_match = matches!(
+                            self.controller.ui.browser.pending_action,
+                            Some(SampleBrowserActionPrompt::Rename { ref target, .. })
+                                if target == &path
+                        );
                         let is_focused = selected_row == Some(row);
                         let is_selected = self
                             .controller
@@ -93,7 +98,12 @@ impl EguiApp {
                         }
                         let label_width =
                             row_width - padding - number_width - number_gap - trailing_space;
-                        let label = clamp_label_for_width(&label, label_width);
+                        let display_label = clamp_label_for_width(&label, label_width);
+                        let row_label = if rename_match {
+                            String::new()
+                        } else {
+                            display_label.clone()
+                        };
                         let bg = if is_selected || is_focused {
                             Some(style::row_selected_fill())
                         } else {
@@ -106,14 +116,19 @@ impl EguiApp {
                             style::triage_label_color(tag)
                         };
                         ui.push_id(&path, |ui| {
+                            let sense = if rename_match {
+                                egui::Sense::hover()
+                            } else {
+                                egui::Sense::click_and_drag()
+                            };
                             let response = render_list_row(
                                 ui,
-                                &label,
+                                &row_label,
                                 row_width,
                                 row_height,
                                 bg,
                                 text_color,
-                                egui::Sense::click_and_drag(),
+                                sense,
                                 Some(NumberColumn {
                                     text: &number_text,
                                     width: number_width,
@@ -155,7 +170,18 @@ impl EguiApp {
                                     StrokeKind::Inside,
                                 );
                             }
-                            self.browser_sample_menu(&response, row, &path, &label);
+                            if rename_match {
+                                self.render_browser_rename_editor(
+                                    ui,
+                                    &response,
+                                    padding,
+                                    number_width,
+                                    number_gap,
+                                    trailing_space,
+                                );
+                            } else {
+                                self.browser_sample_menu(&response, row, &path, &display_label);
+                            }
                             if response.drag_started() {
                                 if let Some(pos) = response.interact_pointer_pos() {
                                     if let Some(source) = self.controller.current_source() {
@@ -287,6 +313,47 @@ impl EguiApp {
                 ui.close();
             }
         });
+    }
+
+    fn render_browser_rename_editor(
+        &mut self,
+        ui: &mut Ui,
+        row_response: &egui::Response,
+        padding: f32,
+        number_width: f32,
+        number_gap: f32,
+        trailing_space: f32,
+    ) {
+        let Some(prompt) = self.controller.ui.browser.pending_action.as_mut() else {
+            return;
+        };
+        let name = match prompt {
+            SampleBrowserActionPrompt::Rename { name, .. } => name,
+        };
+        let mut edit_rect = row_response.rect;
+        edit_rect.min.x += number_width + number_gap + padding;
+        edit_rect.max.x -= padding + trailing_space;
+        edit_rect.min.y += 2.0;
+        edit_rect.max.y -= 2.0;
+        let response = ui.put(
+            edit_rect,
+            egui::TextEdit::singleline(name)
+                .hint_text("Rename sample")
+                .frame(false)
+                .desired_width(edit_rect.width()),
+        );
+        if self.controller.ui.browser.rename_focus_requested || !response.has_focus() {
+            response.request_focus();
+            self.controller.ui.browser.rename_focus_requested = false;
+        }
+        let enter = response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+        let escape = response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape));
+        if enter {
+            self.controller.apply_pending_browser_rename();
+        } else if escape {
+            self.controller.ui.browser.pending_action = None;
+            self.controller.ui.browser.rename_focus_requested = false;
+        }
     }
 
     fn render_sample_browser_filter(&mut self, ui: &mut Ui) {

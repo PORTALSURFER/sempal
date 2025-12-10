@@ -150,6 +150,7 @@ enum HotkeyCommand {
     DeleteFocusedSample,
     DeleteFocusedFolder,
     RenameFocusedFolder,
+    RenameFocusedSample,
     CreateFolder,
     FocusFolderSearch,
     AddFocusedToCollection,
@@ -213,6 +214,13 @@ const HOTKEY_ACTIONS: &[HotkeyAction] = &[
         gesture: HotkeyGesture::new(Key::R),
         scope: HotkeyScope::Focus(FocusContext::SourceFolders),
         command: HotkeyCommand::RenameFocusedFolder,
+    },
+    HotkeyAction {
+        id: "rename-sample",
+        label: "Rename sample",
+        gesture: HotkeyGesture::new(Key::R),
+        scope: HotkeyScope::Focus(FocusContext::SampleBrowser),
+        command: HotkeyCommand::RenameFocusedSample,
     },
     HotkeyAction {
         id: "new-folder",
@@ -396,6 +404,11 @@ impl EguiController {
             HotkeyCommand::RenameFocusedFolder => {
                 if matches!(focus, FocusContext::SourceFolders) {
                     self.start_folder_rename();
+                }
+            }
+            HotkeyCommand::RenameFocusedSample => {
+                if matches!(focus, FocusContext::SampleBrowser) {
+                    self.start_browser_rename();
                 }
             }
             HotkeyCommand::CreateFolder => {
