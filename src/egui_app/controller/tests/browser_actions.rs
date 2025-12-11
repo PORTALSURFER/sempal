@@ -137,6 +137,59 @@ fn tag_actions_apply_to_all_selected_rows() {
 }
 
 #[test]
+fn delete_actions_apply_to_all_selected_rows() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.cache_db(&source).unwrap();
+    write_test_wav(&source.root.join("one.wav"), &[0.0, 0.1]);
+    write_test_wav(&source.root.join("two.wav"), &[0.0, 0.1]);
+    write_test_wav(&source.root.join("three.wav"), &[0.0, 0.1]);
+    controller.wav_entries = vec![
+        sample_entry("one.wav", SampleTag::Neutral),
+        sample_entry("two.wav", SampleTag::Neutral),
+        sample_entry("three.wav", SampleTag::Neutral),
+    ];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+
+    controller.focus_browser_row_only(0);
+    controller.toggle_browser_row_selection(1);
+    controller.toggle_browser_row_selection(2);
+    let rows = controller.action_rows_from_primary(0);
+
+    controller.delete_browser_samples(&rows).unwrap();
+
+    assert!(controller.wav_entries.is_empty());
+    assert!(!source.root.join("one.wav").exists());
+    assert!(!source.root.join("two.wav").exists());
+    assert!(!source.root.join("three.wav").exists());
+}
+
+#[test]
+fn normalize_actions_apply_to_all_selected_rows() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.cache_db(&source).unwrap();
+    write_test_wav(&source.root.join("one.wav"), &[0.0, 0.1]);
+    write_test_wav(&source.root.join("two.wav"), &[0.0, 0.1]);
+    controller.wav_entries = vec![
+        sample_entry("one.wav", SampleTag::Neutral),
+        sample_entry("two.wav", SampleTag::Neutral),
+    ];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+
+    controller.focus_browser_row_only(0);
+    controller.toggle_browser_row_selection(1);
+    let rows = controller.action_rows_from_primary(0);
+
+    controller.normalize_browser_samples(&rows).unwrap();
+
+    assert!(controller.wav_entries.iter().all(|e| e.modified_ns > 0));
+    assert!(controller.wav_entries.iter().all(|e| e.file_size > 0));
+}
+
+#[test]
 fn selection_persists_when_nudging_focus() {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source.clone());
