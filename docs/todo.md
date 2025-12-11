@@ -2,17 +2,6 @@
 lets then write every task you find into @todo.md as a new todo item
 
 --
-
-\plan - add P or shift-p as a hotkey to move all trashed files to the trash folder
-
-\plan - please review this test, our app I believe is working correctly.
-if the test still applied, fix the app, otherwise fix or remove the test
-test audio::tests::decode_handles_varied_sample_rates_and_channels ... FAILED
-
-\plan - lets log warnings, errors, etc via our logger tool so we see it in console and on in our file logs
-
-\plan - also allow audio selection to get exported to external apps like a daw or create a file on disk by dropping it onto an os file explorer, creating a new wav file of said selection
-
 \plan - waveform does not update after an edit like adding a fade
 
 \plan - if we are in random mode (alt+r) and we have a filter on like untagged, and we flag a sample, currently move focus to the next sample in the list. but, if we are in random mode, we should focus the next random item instead.
@@ -22,6 +11,10 @@ test audio::tests::decode_handles_varied_sample_rates_and_channels ... FAILED
 \plan - when renaming samples, lets keep the .wav extension out of the renaming process
 
 ### v2
+
+\plan - lets log warnings, errors, etc via our logger tool so we see it in console and on in our file logs
+
+\plan - also allow audio selection to get exported to external apps like a daw or create a file on disk by dropping it onto an os file explorer, creating a new wav file of said selection
 
 \plan - add a bpm grid
 

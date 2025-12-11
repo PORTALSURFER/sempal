@@ -49,6 +49,13 @@ impl HotkeyGesture {
         }
     }
 
+    pub const fn with_shift(key: Key) -> Self {
+        Self {
+            first: KeyPress::with_shift(key),
+            chord: None,
+        }
+    }
+
     pub const fn with_chord(first: KeyPress, second: KeyPress) -> Self {
         Self {
             first,
@@ -131,6 +138,7 @@ fn key_label(key: Key) -> &'static str {
         egui::Key::S => "S",
         egui::Key::W => "W",
         egui::Key::L => "L",
+        egui::Key::P => "P",
         egui::Key::F => "F",
         egui::Key::OpenBracket => "[",
         egui::Key::CloseBracket => "]",
@@ -166,6 +174,7 @@ enum HotkeyCommand {
     PlayRandomSample,
     PlayPreviousRandomSample,
     ToggleRandomNavigationMode,
+    MoveTrashedToFolder,
 }
 
 /// Hotkey metadata surfaced to the UI.
@@ -364,6 +373,20 @@ const HOTKEY_ACTIONS: &[HotkeyAction] = &[
         scope: HotkeyScope::Global,
         command: HotkeyCommand::PlayPreviousRandomSample,
     },
+    HotkeyAction {
+        id: "move-trashed-to-folder",
+        label: "Move trashed samples to folder",
+        gesture: HotkeyGesture::new(Key::P),
+        scope: HotkeyScope::Global,
+        command: HotkeyCommand::MoveTrashedToFolder,
+    },
+    HotkeyAction {
+        id: "move-trashed-to-folder-shift",
+        label: "Move trashed samples to folder",
+        gesture: HotkeyGesture::with_shift(Key::P),
+        scope: HotkeyScope::Global,
+        command: HotkeyCommand::MoveTrashedToFolder,
+    },
 ];
 
 pub(crate) fn iter_actions() -> impl Iterator<Item = HotkeyAction> {
@@ -469,6 +492,9 @@ impl EguiController {
             }
             HotkeyCommand::ToggleRandomNavigationMode => {
                 self.toggle_random_navigation_mode();
+            }
+            HotkeyCommand::MoveTrashedToFolder => {
+                self.move_all_trashed_to_folder();
             }
         }
     }
