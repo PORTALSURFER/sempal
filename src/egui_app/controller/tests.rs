@@ -2104,6 +2104,60 @@ fn random_navigation_toggle_hotkey_is_registered() {
 }
 
 #[test]
+fn trash_move_hotkeys_are_registered() {
+    let base = hotkeys::iter_actions()
+        .find(|a| a.id == "move-trashed-to-folder")
+        .expect("move-trashed-to-folder hotkey");
+    assert_eq!(base.label, "Move trashed samples to folder");
+    assert!(base.is_global());
+    assert_eq!(base.gesture.first.key, egui::Key::P);
+    assert!(!base.gesture.first.shift);
+
+    let shifted = hotkeys::iter_actions()
+        .find(|a| a.id == "move-trashed-to-folder-shift")
+        .expect("move-trashed-to-folder-shift hotkey");
+    assert_eq!(shifted.label, "Move trashed samples to folder");
+    assert!(shifted.is_global());
+    assert_eq!(shifted.gesture.first.key, egui::Key::P);
+    assert!(shifted.gesture.first.shift);
+}
+
+#[test]
+fn trash_move_hotkey_moves_samples() -> Result<(), String> {
+    let temp = tempdir().unwrap();
+    let trash_root = temp.path().join("trash");
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.trash_folder = Some(trash_root.clone());
+    controller.ui.trash_folder = Some(trash_root.clone());
+
+    let trash_file = source.root.join("trash.wav");
+    write_test_wav(&trash_file, &[0.1, -0.1]);
+
+    let db = controller
+        .database_for(&source)
+        .map_err(|err| format!("open db: {err}"))?;
+    db.upsert_file(Path::new("trash.wav"), 4, 1)
+        .map_err(|err| format!("upsert: {err}"))?;
+    db.set_tag(Path::new("trash.wav"), SampleTag::Trash)
+        .map_err(|err| format!("tag: {err}"))?;
+
+    controller.wav_entries = vec![sample_entry("trash.wav", SampleTag::Trash)];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+
+    let action = hotkeys::iter_actions()
+        .find(|a| a.id == "move-trashed-to-folder")
+        .expect("move-trashed-to-folder hotkey");
+    controller.handle_hotkey(action, FocusContext::None);
+
+    assert!(trash_root.join("trash.wav").is_file());
+    assert!(!trash_file.exists());
+    assert!(controller.ui.browser.trash.is_empty());
+    Ok(())
+}
+
+#[test]
 fn random_history_steps_backward() {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source.clone());
