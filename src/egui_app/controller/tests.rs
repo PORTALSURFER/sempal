@@ -1314,17 +1314,11 @@ fn export_path_copies_and_refreshes_members() -> Result<(), String> {
     let collection_id = collection.id.clone();
     controller.collections.push(collection);
     controller.selected_collection = Some(collection_id.clone());
+    controller.collection_export_root = Some(export_root.clone());
+    controller.ui.collection_export_root = Some(export_root.clone());
 
     let sample_path = source_root.join("one.wav");
     std::fs::write(&sample_path, b"data").unwrap();
-
-    if let Some(collection) = controller
-        .collections
-        .iter_mut()
-        .find(|c| c.id == collection_id)
-    {
-        collection.export_path = Some(export_root.clone());
-    }
     controller.add_sample_to_collection(&collection_id, Path::new("one.wav"))?;
     assert!(export_root.join("Test").join("one.wav").is_file());
 
@@ -1365,7 +1359,8 @@ fn renaming_collection_updates_export_folder() -> Result<(), String> {
     controller.sources.push(source.clone());
 
     let mut collection = Collection::new("Old");
-    collection.export_path = Some(export_root.clone());
+    controller.collection_export_root = Some(export_root.clone());
+    controller.ui.collection_export_root = Some(export_root.clone());
     std::fs::create_dir_all(export_root.join("Old")).unwrap();
     collection.add_member(source.id.clone(), PathBuf::from("one.wav"));
     let collection_id = collection.id.clone();
@@ -1765,7 +1760,9 @@ fn browser_normalize_refreshes_exports() -> Result<(), String> {
 
     let mut collection = Collection::new("Export");
     let collection_id = collection.id.clone();
-    collection.export_path = Some(export_root.clone());
+    let manual_dir = export_root.join("Delete");
+    std::fs::create_dir_all(&manual_dir).unwrap();
+    collection.export_path = Some(manual_dir.clone());
     collection.add_member(source.id.clone(), PathBuf::from("one.wav"));
     controller.collections.push(collection);
 
@@ -1781,7 +1778,7 @@ fn browser_normalize_refreshes_exports() -> Result<(), String> {
         .iter()
         .find(|c| c.id == collection_id)
         .unwrap();
-    let export_dir = collection_export::export_dir_for(collection)?;
+    let export_dir = collection_export::export_dir_for(collection, None)?;
     let exported_path = export_dir.join("one.wav");
     assert!(exported_path.is_file());
     assert!((max_sample_amplitude(&root.join("one.wav")) - 1.0).abs() < 1e-6);
@@ -1815,7 +1812,9 @@ fn browser_delete_prunes_collections_and_exports() -> Result<(), String> {
 
     let mut collection = Collection::new("Delete");
     let collection_id = collection.id.clone();
-    collection.export_path = Some(export_root.clone());
+    let manual_dir = export_root.join("Delete");
+    std::fs::create_dir_all(&manual_dir).unwrap();
+    collection.export_path = Some(manual_dir.clone());
     collection.add_member(source.id.clone(), PathBuf::from("delete.wav"));
     controller.collections.push(collection);
 
@@ -1835,7 +1834,7 @@ fn browser_delete_prunes_collections_and_exports() -> Result<(), String> {
         .find(|c| c.id == collection_id)
         .unwrap();
     assert!(collection.members.is_empty());
-    let export_dir = collection_export::export_dir_for(collection)?;
+    let export_dir = collection_export::export_dir_for(collection, None)?;
     assert!(!export_dir.join("delete.wav").exists());
     assert!(controller.wav_entries.is_empty());
     assert!(controller.ui.browser.visible.is_empty());

@@ -369,8 +369,10 @@ impl EguiController {
             {
                 targets.push((
                     collection.id.clone(),
-                    collection.export_path.clone(),
-                    collection_export::collection_folder_name(collection),
+                    collection_export::resolved_export_dir(
+                        collection,
+                        self.collection_export_root.as_deref(),
+                    ),
                 ));
             }
         }
@@ -378,8 +380,8 @@ impl EguiController {
             source_id: source_id.clone(),
             relative_path: relative_path.to_path_buf(),
         };
-        for (collection_id, export_root, folder_name) in targets {
-            collection_export::delete_exported_file(export_root.clone(), &folder_name, &member);
+        for (collection_id, export_dir) in targets {
+            collection_export::delete_exported_file(export_dir.clone(), &member);
             if let Err(err) = self.export_member_if_needed(&collection_id, &member) {
                 self.set_status(err, StatusTone::Warning);
             }
@@ -393,7 +395,7 @@ impl EguiController {
         new_relative: &Path,
     ) -> bool {
         let mut changed = false;
-        let mut exports: Vec<(CollectionId, Option<PathBuf>, String)> = Vec::new();
+        let mut exports: Vec<(CollectionId, Option<PathBuf>)> = Vec::new();
         for collection in self.collections.iter_mut() {
             let mut touched = false;
             for member in collection.members.iter_mut() {
@@ -406,8 +408,10 @@ impl EguiController {
             if touched {
                 exports.push((
                     collection.id.clone(),
-                    collection.export_path.clone(),
-                    collection_export::collection_folder_name(collection),
+                    collection_export::resolved_export_dir(
+                        collection,
+                        self.collection_export_root.as_deref(),
+                    ),
                 ));
             }
         }
@@ -416,16 +420,12 @@ impl EguiController {
                 source_id: source_id.clone(),
                 relative_path: new_relative.to_path_buf(),
             };
-            for (collection_id, export_root, folder_name) in exports {
+            for (collection_id, export_dir) in exports {
                 let old_member = CollectionMember {
                     source_id: source_id.clone(),
                     relative_path: old_relative.to_path_buf(),
                 };
-                collection_export::delete_exported_file(
-                    export_root.clone(),
-                    &folder_name,
-                    &old_member,
-                );
+                collection_export::delete_exported_file(export_dir.clone(), &old_member);
                 if let Err(err) = self.export_member_if_needed(&collection_id, &member) {
                     self.set_status(err, StatusTone::Warning);
                 }
@@ -448,12 +448,9 @@ impl EguiController {
             };
             if collection.remove_member(source_id, &member.relative_path) {
                 changed = true;
-                let folder_name = collection_export::collection_folder_name(collection);
-                collection_export::delete_exported_file(
-                    collection.export_path.clone(),
-                    &folder_name,
-                    &member,
-                );
+                let export_dir =
+                    collection_export::resolved_export_dir(collection, self.collection_export_root.as_deref());
+                collection_export::delete_exported_file(export_dir, &member);
             }
         }
         if changed {

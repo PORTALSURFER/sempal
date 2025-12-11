@@ -52,6 +52,8 @@ pub struct UiState {
     pub loaded_wav: Option<PathBuf>,
     /// Optional trash folder path configured by the user.
     pub trash_folder: Option<PathBuf>,
+    /// Optional global export root used for automatic collection exports.
+    pub collection_export_root: Option<PathBuf>,
 }
 
 impl Default for UiState {
@@ -71,6 +73,7 @@ impl Default for UiState {
             volume: 1.0,
             loaded_wav: None,
             trash_folder: None,
+            collection_export_root: None,
         }
     }
 }

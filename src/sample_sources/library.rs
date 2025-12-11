@@ -2,12 +2,13 @@
 
 use std::path::{Path, PathBuf};
 
-use rusqlite::{Connection, Transaction, params};
+use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use thiserror::Error;
 
 use super::{Collection, CollectionId, SampleSource, SourceId};
+use crate::sample_sources::config::normalize_path;
 use crate::app_dirs;
-use crate::sample_sources::collections::CollectionMember;
+use crate::sample_sources::collections::{CollectionMember, collection_folder_name_from_str};
 
 /// Filename for the global library database stored under the user app directory.
 pub const LIBRARY_DB_FILE_NAME: &str = "library.db";
@@ -18,6 +19,9 @@ pub struct LibraryState {
     pub sources: Vec<SampleSource>,
     pub collections: Vec<Collection>,
 }
+
+const COLLECTION_EXPORT_PATHS_VERSION_KEY: &str = "collections_export_paths_version";
+const COLLECTION_EXPORT_PATHS_VERSION_V2: &str = "2";
 
 /// Errors returned when operating on the library database.
 #[derive(Debug, Error)]
@@ -57,9 +61,10 @@ impl LibraryDatabase {
         let db_path = database_path()?;
         create_parent_if_needed(&db_path)?;
         let connection = Connection::open(&db_path)?;
-        let db = Self { connection };
+        let mut db = Self { connection };
         db.apply_pragmas()?;
         db.apply_schema()?;
+        db.migrate_collection_export_paths()?;
         Ok(db)
     }
 
@@ -298,6 +303,78 @@ impl LibraryDatabase {
             .map_err(map_sql_error)?;
         Ok(())
     }
+
+    fn migrate_collection_export_paths(&mut self) -> Result<(), LibraryError> {
+        let current =
+            self.get_metadata(COLLECTION_EXPORT_PATHS_VERSION_KEY)?;
+        if current.as_deref() == Some(COLLECTION_EXPORT_PATHS_VERSION_V2) {
+            return Ok(());
+        }
+        self.convert_export_paths_to_final_dirs()?;
+        self.set_metadata(
+            COLLECTION_EXPORT_PATHS_VERSION_KEY,
+            COLLECTION_EXPORT_PATHS_VERSION_V2,
+        )
+    }
+
+    fn convert_export_paths_to_final_dirs(&mut self) -> Result<(), LibraryError> {
+        let tx = self.connection.transaction().map_err(map_sql_error)?;
+        let mut select = tx
+            .prepare(
+                "SELECT id, name, export_path
+                 FROM collections
+                 WHERE export_path IS NOT NULL",
+            )
+            .map_err(map_sql_error)?;
+        let updates = select
+            .query_map([], |row| {
+                let id: String = row.get(0)?;
+                let name: String = row.get(1)?;
+                let export_path: String = row.get(2)?;
+                Ok((id, name, export_path))
+            })
+            .map_err(map_sql_error)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(map_sql_error)?;
+        drop(select);
+        if !updates.is_empty() {
+            let mut update = tx
+                .prepare("UPDATE collections SET export_path = ?1 WHERE id = ?2")
+                .map_err(map_sql_error)?;
+            for (id, name, export_path) in updates {
+                let legacy_root = PathBuf::from(export_path);
+                let folder_name = collection_folder_name_from_str(&name);
+                let new_path = normalize_path(legacy_root.join(folder_name).as_path());
+                update
+                    .execute(params![new_path.to_string_lossy(), id])
+                    .map_err(map_sql_error)?;
+            }
+        }
+        tx.commit().map_err(map_sql_error)
+    }
+
+    fn get_metadata(&self, key: &str) -> Result<Option<String>, LibraryError> {
+        self.connection
+            .query_row(
+                "SELECT value FROM metadata WHERE key = ?1",
+                params![key],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(map_sql_error)
+    }
+
+    fn set_metadata(&self, key: &str, value: &str) -> Result<(), LibraryError> {
+        self.connection
+            .execute(
+                "INSERT INTO metadata (key, value)
+                 VALUES (?1, ?2)
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                params![key, value],
+            )
+            .map_err(map_sql_error)?;
+        Ok(())
+    }
 }
 
 fn database_path() -> Result<PathBuf, LibraryError> {
@@ -383,6 +460,47 @@ mod tests {
             );
             let metadata = fs::metadata(db_path).unwrap();
             assert!(metadata.is_file());
+        });
+    }
+
+    #[test]
+    fn migrates_legacy_collection_export_paths() {
+        let temp = tempdir().unwrap();
+        with_config_home(temp.path(), || {
+            // Ensure schema exists.
+            let _ = load().unwrap();
+            let db_path = database_path().unwrap();
+            let conn = Connection::open(&db_path).unwrap();
+            conn.execute("DELETE FROM collection_members", [])
+                .unwrap();
+            conn.execute("DELETE FROM collections", []).unwrap();
+            conn.execute(
+                "DELETE FROM metadata WHERE key = ?1",
+                [COLLECTION_EXPORT_PATHS_VERSION_KEY],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO collections (id, name, export_path, sort_order) VALUES (?1, ?2, ?3, 0)",
+                params!["abc", "Demo/Name", "exports"],
+            )
+            .unwrap();
+            drop(conn);
+
+            let state = load().unwrap();
+            assert_eq!(state.collections.len(), 1);
+            let expected_path = PathBuf::from("exports").join("Demo_Name");
+            assert_eq!(state.collections[0].export_path, Some(expected_path));
+
+            let conn = Connection::open(database_path().unwrap()).unwrap();
+            let version: Option<String> = conn
+                .query_row(
+                    "SELECT value FROM metadata WHERE key = ?1",
+                    [COLLECTION_EXPORT_PATHS_VERSION_KEY],
+                    |row| row.get(0),
+                )
+                .optional()
+                .unwrap();
+            assert_eq!(version.as_deref(), Some(COLLECTION_EXPORT_PATHS_VERSION_V2));
         });
     }
 }
