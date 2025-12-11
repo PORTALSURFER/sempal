@@ -504,7 +504,7 @@ impl EguiController {
         loaded_index: Option<usize>,
     ) -> (Vec<usize>, Option<usize>, Option<usize>) {
         let search_query = self.active_search_query().map(str::to_string);
-        if search_query.is_none() {
+        let Some(query) = search_query else {
             let visible: Vec<usize> = self
                 .wav_entries
                 .iter()
@@ -520,8 +520,7 @@ impl EguiController {
             let loaded_visible =
                 loaded_index.and_then(|idx| visible.iter().position(|i| *i == idx));
             return (visible, selected_visible, loaded_visible);
-        }
-        let query = search_query.unwrap();
+        };
         let matcher = SkimMatcherV2::default();
         let mut matches: Vec<(usize, i64)> = Vec::new();
         for index in 0..self.wav_entries.len() {
