@@ -73,4 +73,3 @@ fn fuzzy_search_filters_folders() {
             .all(|row| row.path.starts_with(Path::new("snare")))
     );
 }
-

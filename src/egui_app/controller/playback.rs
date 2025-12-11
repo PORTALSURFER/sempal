@@ -719,11 +719,6 @@ mod tests {
         controller.update_playhead_from_progress(Some(0.9995), false);
 
         assert!(!controller.ui.waveform.playhead.visible);
-        assert!(controller
-            .ui
-            .waveform
-            .playhead
-            .active_span_end
-            .is_none());
+        assert!(controller.ui.waveform.playhead.active_span_end.is_none());
     }
 }

@@ -41,8 +41,11 @@ impl EguiController {
         source: &SampleSource,
         relative_path: &Path,
     ) -> Result<(), String> {
-        self.collections_ctrl()
-            .add_sample_to_collection_for_source(collection_id, source, relative_path)
+        self.collections_ctrl().add_sample_to_collection_for_source(
+            collection_id,
+            source,
+            relative_path,
+        )
     }
 
     pub fn nudge_collection_sample(&mut self, offset: isize) {

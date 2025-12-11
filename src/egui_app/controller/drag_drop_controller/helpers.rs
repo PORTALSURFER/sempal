@@ -49,7 +49,11 @@ impl DragDropController<'_> {
     }
 
     #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
-    pub(super) fn sample_absolute_path(&self, source_id: &SourceId, relative_path: &Path) -> PathBuf {
+    pub(super) fn sample_absolute_path(
+        &self,
+        source_id: &SourceId,
+        relative_path: &Path,
+    ) -> PathBuf {
         self.sources
             .iter()
             .find(|s| &s.id == source_id)
@@ -66,7 +70,11 @@ impl DragDropController<'_> {
         self.ui.drag.external_started = false;
     }
 
-    pub(super) fn selection_drag_label(&self, audio: &LoadedAudio, bounds: SelectionRange) -> String {
+    pub(super) fn selection_drag_label(
+        &self,
+        audio: &LoadedAudio,
+        bounds: SelectionRange,
+    ) -> String {
         let name = audio
             .relative_path
             .file_stem()
@@ -393,4 +401,3 @@ impl DragDropController<'_> {
         }
     }
 }
-

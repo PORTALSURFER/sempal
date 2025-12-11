@@ -53,11 +53,15 @@ fn selection_drop_adds_clip_to_collection() {
     });
     controller.ui.drag.set_target(
         DragSource::Collections,
-        DragTarget::CollectionsDropZone { collection_id: None },
+        DragTarget::CollectionsDropZone {
+            collection_id: None,
+        },
     );
     assert!(matches!(
         controller.ui.drag.active_target,
-        DragTarget::CollectionsDropZone { collection_id: None }
+        DragTarget::CollectionsDropZone {
+            collection_id: None
+        }
     ));
     controller.finish_active_drag();
 
@@ -183,4 +187,3 @@ fn sample_drop_to_folder_rejects_conflicts() {
             .any(|entry| entry.relative_path == PathBuf::from("one.wav"))
     );
 }
-
