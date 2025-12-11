@@ -666,7 +666,7 @@ impl EguiController {
             folder_rows = self.filter_folder_rows(folder_rows, &model.search_query);
         }
         let mut rows = Vec::new();
-        if self.selected_source.is_some() {
+        if self.selected_source.is_some() && !searching {
             let has_children = !folder_rows.is_empty();
             rows.push(FolderRowView {
                 path: PathBuf::new(),

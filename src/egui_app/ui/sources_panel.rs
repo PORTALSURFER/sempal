@@ -605,11 +605,11 @@ impl EguiApp {
             edit_response.request_focus();
             inline.focus_requested = false;
         }
-        let enter = edit_response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-        let escape = edit_response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape));
-        if enter {
+        let enter_pressed = ui.input(|i| i.key_pressed(egui::Key::Enter));
+        let escape_pressed = ui.input(|i| i.key_pressed(egui::Key::Escape));
+        if enter_pressed && (edit_response.has_focus() || edit_response.lost_focus()) {
             self.apply_pending_folder_creation();
-        } else if escape || edit_response.lost_focus() {
+        } else if escape_pressed || (edit_response.lost_focus() && !enter_pressed) {
             self.controller.cancel_new_folder_creation();
         }
     }
