@@ -496,18 +496,25 @@ impl EguiController {
             player.borrow_mut().stop();
         }
         let player_ref = player.borrow();
-        if player_ref.is_playing() {
-            if let Some(progress) = player_ref.progress() {
-                self.ui.waveform.playhead.position = progress;
-                if self.playhead_completed_span(progress, player_ref.is_looping()) {
-                    self.hide_waveform_playhead();
-                } else {
-                    self.ui.waveform.playhead.visible = true;
-                }
-            } else {
+        let is_playing = player_ref.is_playing();
+        let progress = player_ref.progress();
+        let is_looping = player_ref.is_looping();
+        drop(player_ref);
+        self.update_playhead_from_progress(progress, is_looping);
+        if !is_playing && self.decoded_waveform.is_none() {
+            self.hide_waveform_playhead();
+        }
+    }
+
+    fn update_playhead_from_progress(&mut self, progress: Option<f32>, is_looping: bool) {
+        if let Some(progress) = progress {
+            self.ui.waveform.playhead.position = progress;
+            if self.playhead_completed_span(progress, is_looping) {
                 self.hide_waveform_playhead();
+            } else {
+                self.ui.waveform.playhead.visible = true;
             }
-        } else if self.decoded_waveform.is_none() {
+        } else {
             self.hide_waveform_playhead();
         }
     }
@@ -692,5 +699,31 @@ mod tests {
     fn format_timestamp_handles_hours() {
         assert_eq!(format_timestamp_hms_ms(3_661.789), "01:01:01:789");
         assert_eq!(format_timestamp_hms_ms(-0.5), "00:00:00:000");
+    }
+
+    #[test]
+    fn playhead_progress_updates_position_without_play_state() {
+        let (mut controller, _source) = test_support::dummy_controller();
+
+        controller.update_playhead_from_progress(Some(0.42), false);
+
+        assert!(controller.ui.waveform.playhead.visible);
+        assert!((controller.ui.waveform.playhead.position - 0.42).abs() < 0.0001);
+    }
+
+    #[test]
+    fn playhead_progress_completion_hides_playhead() {
+        let (mut controller, _source) = test_support::dummy_controller();
+        controller.ui.waveform.playhead.active_span_end = Some(1.0);
+
+        controller.update_playhead_from_progress(Some(0.9995), false);
+
+        assert!(!controller.ui.waveform.playhead.visible);
+        assert!(controller
+            .ui
+            .waveform
+            .playhead
+            .active_span_end
+            .is_none());
     }
 }
