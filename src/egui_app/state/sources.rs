@@ -30,6 +30,7 @@ pub struct FolderBrowserUiState {
     pub search_focus_requested: bool,
     pub rename_focus_requested: bool,
     pub pending_action: Option<FolderActionPrompt>,
+    pub new_folder: Option<InlineFolderCreation>,
 }
 
 /// Render-friendly folder row.
@@ -47,6 +48,13 @@ pub struct FolderRowView {
 /// Pending inline action for the folder browser.
 #[derive(Clone, Debug)]
 pub enum FolderActionPrompt {
-    Create { parent: PathBuf, name: String },
     Rename { target: PathBuf, name: String },
+}
+
+/// Inline editor state for a pending folder creation.
+#[derive(Clone, Debug)]
+pub struct InlineFolderCreation {
+    pub parent: PathBuf,
+    pub name: String,
+    pub focus_requested: bool,
 }

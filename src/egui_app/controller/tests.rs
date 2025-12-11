@@ -1553,12 +1553,66 @@ fn start_new_folder_at_root_sets_root_parent() {
 
     controller.start_new_folder_at_root();
 
-    match &controller.ui.sources.folders.pending_action {
-        Some(crate::egui_app::state::FolderActionPrompt::Create { parent, .. }) => {
-            assert!(parent.as_os_str().is_empty())
-        }
-        other => panic!("unexpected action: {other:?}"),
-    }
+    let new_folder = controller.ui.sources.folders.new_folder.as_ref().unwrap();
+    assert!(new_folder.parent.as_os_str().is_empty());
+}
+
+#[test]
+fn start_new_folder_uses_focused_parent() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.selected_source = Some(source.id.clone());
+    let folder = source.root.join("clips");
+    std::fs::create_dir_all(&folder).unwrap();
+    write_test_wav(&folder.join("clip.wav"), &[0.2, -0.2]);
+    controller.wav_entries = vec![sample_entry("clips/clip.wav", SampleTag::Neutral)];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+    controller.refresh_folder_browser();
+    let folder_index = controller
+        .ui
+        .sources
+        .folders
+        .rows
+        .iter()
+        .position(|row| row.path == PathBuf::from("clips"))
+        .unwrap();
+
+    controller.focus_folder_row(folder_index);
+    controller.start_new_folder();
+
+    let new_folder = controller.ui.sources.folders.new_folder.as_ref().unwrap();
+    assert_eq!(new_folder.parent, PathBuf::from("clips"));
+    assert!(new_folder.focus_requested);
+}
+
+#[test]
+fn start_new_folder_clears_search_query() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.selected_source = Some(source.id.clone());
+    controller.refresh_folder_browser();
+    controller.set_folder_search("kick".to_string());
+    assert_eq!(controller.ui.sources.folders.search_query, "kick");
+
+    controller.start_new_folder();
+
+    assert!(controller.ui.sources.folders.search_query.is_empty());
+    assert!(controller.ui.sources.folders.new_folder.is_some());
+}
+
+#[test]
+fn cancelling_new_folder_creation_clears_state() {
+    let (mut controller, _) = dummy_controller();
+    controller.ui.sources.folders.new_folder = Some(crate::egui_app::state::InlineFolderCreation {
+        parent: PathBuf::new(),
+        name: "temp".into(),
+        focus_requested: false,
+    });
+
+    controller.cancel_new_folder_creation();
+
+    assert!(controller.ui.sources.folders.new_folder.is_none());
 }
 
 #[test]

@@ -1,5 +1,5 @@
 use super::*;
-use crate::egui_app::state::{FolderActionPrompt, FolderRowView};
+use crate::egui_app::state::{FolderActionPrompt, FolderRowView, InlineFolderCreation};
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use rfd::{MessageButtons, MessageDialog, MessageDialogResult, MessageLevel};
@@ -426,6 +426,7 @@ impl EguiController {
             .map(str::to_string)
             .unwrap_or_else(|| target.to_string_lossy().into_owned());
         self.focus_folder_context();
+        self.cancel_new_folder_creation();
         self.ui.sources.folders.pending_action = Some(FolderActionPrompt::Rename {
             target,
             name: default,
@@ -444,20 +445,66 @@ impl EguiController {
     }
 
     pub(crate) fn start_new_folder(&mut self) {
+        if self.current_source().is_none() {
+            self.set_status("Add a source before creating folders", StatusTone::Info);
+            return;
+        }
         let parent = self.focused_folder_path().unwrap_or_default();
-        self.focus_folder_context();
-        self.ui.sources.folders.pending_action = Some(FolderActionPrompt::Create {
-            parent,
-            name: String::new(),
-        });
+        self.begin_inline_folder_creation(parent);
     }
 
     pub(crate) fn start_new_folder_at_root(&mut self) {
+        if self.current_source().is_none() {
+            self.set_status("Add a source before creating folders", StatusTone::Info);
+            return;
+        }
+        self.begin_inline_folder_creation(PathBuf::new());
+    }
+
+    fn begin_inline_folder_creation(&mut self, parent: PathBuf) {
         self.focus_folder_context();
-        self.ui.sources.folders.pending_action = Some(FolderActionPrompt::Create {
-            parent: PathBuf::new(),
+        self.cancel_folder_rename();
+        self.cancel_new_folder_creation();
+        if !self.ui.sources.folders.search_query.trim().is_empty() {
+            self.set_folder_search(String::new());
+        }
+        self.ensure_folder_expanded_for_creation(&parent);
+        self.ui.sources.folders.new_folder = Some(InlineFolderCreation {
+            parent: parent.clone(),
             name: String::new(),
+            focus_requested: true,
         });
+        let focus_index = if parent.as_os_str().is_empty() {
+            Some(0)
+        } else {
+            self.ui
+                .sources
+                .folders
+                .rows
+                .iter()
+                .position(|row| row.path == parent)
+        };
+        if let Some(index) = focus_index {
+            self.ui.sources.folders.focused = Some(index);
+            self.ui.sources.folders.scroll_to = Some(index);
+        }
+    }
+
+    pub(crate) fn cancel_new_folder_creation(&mut self) {
+        self.ui.sources.folders.new_folder = None;
+    }
+
+    fn ensure_folder_expanded_for_creation(&mut self, parent: &Path) {
+        if parent.as_os_str().is_empty() {
+            return;
+        }
+        let Some(model) = self.current_folder_model_mut() else {
+            return;
+        };
+        if model.expanded.insert(parent.to_path_buf()) {
+            let snapshot = model.clone();
+            self.build_folder_rows(&snapshot);
+        }
     }
 
     pub(crate) fn rename_folder(&mut self, target: &Path, new_name: &str) -> Result<(), String> {
@@ -947,6 +994,7 @@ impl EguiController {
             self.ui.sources.folders.scroll_to = None;
         }
         self.ui.sources.folders.pending_action = None;
+        self.ui.sources.folders.new_folder = None;
         Ok(())
     }
 
