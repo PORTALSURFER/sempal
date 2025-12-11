@@ -1,7 +1,7 @@
 # Codebase review TODOs
 
 ## Correctness & robustness
-- In `src/sample_sources/scanner.rs`, `entries.flatten()` silently drops `read_dir` errors; consider collecting/logging errors so missing permissions or transient IO don’t hide files.
+
 - In `src/external_clipboard.rs` (Windows):
   - Remove unnecessary `GlobalUnlock` calls when `GlobalLock` fails.
   - Consider RAII wrappers for `HGLOBAL`/locks to reduce unsafe surface and clarify ownership transfer to the clipboard.
