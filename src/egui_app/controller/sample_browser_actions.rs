@@ -193,10 +193,11 @@ impl EguiController {
     fn try_rename_browser_sample(&mut self, row: usize, new_name: &str) -> Result<(), String> {
         let ctx = self.resolve_browser_sample(row)?;
         let tag = self.sample_tag_for(&ctx.source, &ctx.entry.relative_path)?;
+        let full_name = self.name_with_preserved_extension(&ctx.entry.relative_path, new_name)?;
         let new_relative = self.validate_new_sample_name_in_parent(
             &ctx.entry.relative_path,
             &ctx.source.root,
-            new_name,
+            &full_name,
         )?;
         let collections_changed = self.commit_browser_rename(&ctx, &new_relative, tag)?;
         if collections_changed {

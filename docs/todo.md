@@ -3,8 +3,6 @@ lets then write every task you find into @todo.md as a new todo item
 
 --
 
-\plan - when renaming samples, lets keep the .wav extension out of the renaming process
-
 ### v2
 
 \plan - lets log warnings, errors, etc via our logger tool so we see it in console and on in our file logs

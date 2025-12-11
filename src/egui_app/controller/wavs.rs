@@ -1,6 +1,7 @@
 use super::audio_cache::{CacheKey, FileMetadata};
 use super::*;
 use crate::egui_app::state::{SampleBrowserActionPrompt, WaveformView};
+use crate::egui_app::view_model;
 use crate::waveform::DecodedWaveform;
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
@@ -667,11 +668,7 @@ impl EguiController {
             self.set_status("Focus a sample to rename it", StatusTone::Info);
             return;
         };
-        let default = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .map(str::to_string)
-            .unwrap_or_else(|| path.to_string_lossy().into_owned());
+        let default = view_model::sample_display_label(&path);
         self.focus_browser_context();
         self.ui.browser.pending_action = Some(SampleBrowserActionPrompt::Rename {
             target: path,

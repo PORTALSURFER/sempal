@@ -50,6 +50,44 @@ impl EguiController {
         Ok(new_relative)
     }
 
+    /// Build a sanitized sample name that keeps the existing file extension.
+    pub(super) fn name_with_preserved_extension(
+        &self,
+        current_relative: &Path,
+        new_name: &str,
+    ) -> Result<String, String> {
+        let trimmed = new_name.trim();
+        if trimmed.is_empty() {
+            return Err("Name cannot be empty".into());
+        }
+        let Some(ext) = current_relative.extension().and_then(|ext| ext.to_str()) else {
+            return Ok(trimmed.to_string());
+        };
+        let ext_lower = ext.to_ascii_lowercase();
+        let should_strip_suffix = |suffix: &str| -> bool {
+            let suffix_lower = suffix.to_ascii_lowercase();
+            suffix_lower == ext_lower
+                || matches!(
+                    suffix_lower.as_str(),
+                    "wav" | "wave" | "flac" | "aif" | "aiff" | "mp3" | "ogg" | "opus"
+                )
+        };
+        let stem = if let Some((stem, suffix)) = trimmed.rsplit_once('.') {
+            if !stem.is_empty() && should_strip_suffix(suffix) {
+                stem
+            } else {
+                trimmed
+            }
+        } else {
+            trimmed
+        };
+        let stem = stem.trim_end_matches('.');
+        if stem.trim().is_empty() {
+            return Err("Name cannot be empty".into());
+        }
+        Ok(format!("{stem}.{ext}"))
+    }
+
     pub(super) fn apply_rename(
         &mut self,
         ctx: &CollectionSampleContext,
