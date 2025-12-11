@@ -286,11 +286,6 @@ impl EguiController {
         self.build_folder_rows(&snapshot);
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn nudge_folder_focus(&mut self, offset: isize) {
-        self.nudge_folder_selection(offset, false);
-    }
-
     pub(crate) fn nudge_folder_selection(&mut self, offset: isize, extend: bool) {
         let Some(current) = self.ui.sources.folders.focused else {
             if !self.ui.sources.folders.rows.is_empty() {
