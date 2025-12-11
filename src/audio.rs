@@ -316,7 +316,7 @@ impl AudioPlayer {
 
     /// Mute and stop the current sink without blocking the UI thread.
     fn fade_out_current_sink(&mut self) {
-        let Some(mut sink) = self.sink.take() else {
+        let Some(sink) = self.sink.take() else {
             return;
         };
         let start_volume = sink.volume();
@@ -460,10 +460,10 @@ where
         if time < self.fade_secs {
             factor *= (time / self.fade_secs).clamp(0.0, 1.0);
         }
-        if let (Some(total), Some(start)) = (self.total_secs, self.fade_out_start) {
-            if time > start {
-                factor *= ((total - time) / self.fade_secs).clamp(0.0, 1.0);
-            }
+        if let (Some(total), Some(start)) = (self.total_secs, self.fade_out_start)
+            && time > start
+        {
+            factor *= ((total - time) / self.fade_secs).clamp(0.0, 1.0);
         }
         Some(sample * factor)
     }

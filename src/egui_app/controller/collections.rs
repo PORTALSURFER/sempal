@@ -98,8 +98,7 @@ impl EguiController {
             if self
                 .collections
                 .iter()
-                .find(|c| c.id == current_id && c.export_path.is_none())
-                .is_some()
+                .any(|c| c.id == current_id && c.export_path.is_none())
             {
                 self.set_status(
                     "No export folder chosen; exports disabled",
@@ -313,11 +312,9 @@ impl EguiController {
         if len == 0 {
             self.ui.collections.selected_sample = None;
             self.clear_collection_focus_context();
-        } else if let Some(selected) = self.ui.collections.selected_sample {
-            if selected >= len {
-                self.ui.collections.selected_sample = Some(len.saturating_sub(1));
-                self.focus_collection_context();
-            }
+        } else if let Some(selected) = self.ui.collections.selected_sample && selected >= len {
+            self.ui.collections.selected_sample = Some(len.saturating_sub(1));
+            self.focus_collection_context();
         }
     }
 

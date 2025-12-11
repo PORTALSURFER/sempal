@@ -4,7 +4,7 @@ use rodio::{OutputStream, OutputStreamBuilder};
 use serde::{Deserialize, Serialize};
 
 /// Persisted audio output preferences chosen by the user.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct AudioOutputConfig {
     #[serde(default)]
     pub host: Option<String>,
@@ -14,17 +14,6 @@ pub struct AudioOutputConfig {
     pub sample_rate: Option<u32>,
     #[serde(default)]
     pub buffer_size: Option<u32>,
-}
-
-impl Default for AudioOutputConfig {
-    fn default() -> Self {
-        Self {
-            host: None,
-            device: None,
-            sample_rate: None,
-            buffer_size: None,
-        }
-    }
 }
 
 /// Available audio host (backend) presented to the user.
@@ -127,10 +116,8 @@ pub fn supported_sample_rates(host_id: &str, device_name: &str) -> Result<Vec<u3
             range.max_sample_rate().0,
         ));
     }
-    if supported.is_empty() {
-        if let Ok(default) = device.default_output_config() {
-            supported.push(default.sample_rate().0);
-        }
+    if supported.is_empty() && let Ok(default) = device.default_output_config() {
+        supported.push(default.sample_rate().0);
     }
     supported.sort_unstable();
     supported.dedup();
@@ -178,15 +165,11 @@ pub fn open_output_stream(config: &AudioOutputConfig) -> Result<OpenStreamOutcom
         cpal::BufferSize::Default => None,
         cpal::BufferSize::Fixed(size) => Some(*size),
     };
-    if let Some(rate) = config.sample_rate {
-        if rate != resolved_config.sample_rate() {
-            used_fallback = true;
-        }
+    if let Some(rate) = config.sample_rate && rate != resolved_config.sample_rate() {
+        used_fallback = true;
     }
-    if let Some(requested) = config.buffer_size {
-        if applied_buffer != Some(requested) {
-            used_fallback = true;
-        }
+    if let Some(requested) = config.buffer_size && applied_buffer != Some(requested) {
+        used_fallback = true;
     }
 
     Ok(OpenStreamOutcome {
@@ -213,7 +196,7 @@ fn resolve_host(id: Option<&str>) -> Result<(cpal::Host, String, bool), String> 
         .into_iter()
         .find(|candidate| candidate.name() == requested)
         .and_then(|id| cpal::host_from_id(id).ok())
-        .unwrap_or_else(|| default_host);
+        .unwrap_or(default_host);
     let resolved_id = host.id().name().to_string();
     let used_fallback = resolved_id != requested;
     Ok((host, resolved_id, used_fallback))
@@ -228,11 +211,11 @@ fn resolve_device(
         .ok_or_else(|| "No audio output devices found".to_string())?;
     let default_name = device_label(&default_device).unwrap_or_else(|| "Default device".into());
     let requested_name = name.unwrap_or(&default_name);
-    let mut devices = host
+    let devices = host
         .output_devices()
         .map_err(|err| format!("Could not list output devices: {err}"))?;
     let mut chosen = None;
-    while let Some(device) = devices.next() {
+    for device in devices {
         if device_label(&device)
             .as_ref()
             .is_some_and(|name| name == requested_name)

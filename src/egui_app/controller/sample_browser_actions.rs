@@ -220,7 +220,7 @@ impl EguiController {
         new_relative: &Path,
         tag: SampleTag,
     ) -> Result<bool, String> {
-        let (file_size, modified_ns) = self.apply_triage_rename(&ctx, &new_relative, tag)?;
+        let (file_size, modified_ns) = self.apply_triage_rename(ctx, new_relative, tag)?;
         let updated_path = new_relative.to_path_buf();
         self.update_cached_entry(
             &ctx.source,
@@ -319,16 +319,17 @@ impl EguiController {
                 self.ui.loaded_wav = None;
             }
         }
-        if let Some(audio) = self.loaded_audio.as_ref() {
-            if audio.source_id == source.id && audio.relative_path == relative_path {
-                self.loaded_audio = None;
-                self.decoded_waveform = None;
-                self.ui.waveform.image = None;
-                self.ui.waveform.playhead = PlayheadState::default();
-                self.ui.waveform.selection = None;
-                self.ui.waveform.selection_duration = None;
-                self.selection.clear();
-            }
+        if let Some(audio) = self.loaded_audio.as_ref()
+            && audio.source_id == source.id
+            && audio.relative_path == relative_path
+        {
+            self.loaded_audio = None;
+            self.decoded_waveform = None;
+            self.ui.waveform.image = None;
+            self.ui.waveform.playhead = PlayheadState::default();
+            self.ui.waveform.selection = None;
+            self.ui.waveform.selection_duration = None;
+            self.selection.clear();
         }
     }
 

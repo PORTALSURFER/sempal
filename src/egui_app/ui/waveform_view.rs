@@ -298,7 +298,7 @@ impl EguiApp {
                         || edge_response.dragged();
                     if edge_hovered {
                         let color = highlight;
-                        paint_selection_edge_bracket(&painter, edge_rect, edge, color);
+                        paint_selection_edge_bracket(painter, edge_rect, edge, color);
                         ui.output_mut(|o| o.cursor_icon = CursorIcon::ResizeHorizontal);
                     }
                 }
@@ -547,12 +547,11 @@ impl EguiApp {
                 painter.rect_filled(indicator_rect, 0.0, thumb_color);
                 if (scroll_resp.dragged() || scroll_resp.clicked())
                     && scroll_rect.width() > f32::EPSILON
+                    && let Some(pos) = scroll_resp.interact_pointer_pos()
                 {
-                    if let Some(pos) = scroll_resp.interact_pointer_pos() {
-                        let frac =
-                            ((pos.x - scroll_rect.left()) / scroll_rect.width()).clamp(0.0, 1.0);
-                        self.controller.scroll_waveform_view(frac);
-                    }
+                    let frac =
+                        ((pos.x - scroll_rect.left()) / scroll_rect.width()).clamp(0.0, 1.0);
+                    self.controller.scroll_waveform_view(frac);
                 }
             }
         });

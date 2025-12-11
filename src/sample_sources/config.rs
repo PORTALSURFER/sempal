@@ -300,115 +300,6 @@ pub fn normalize_path(path: &Path) -> PathBuf {
     PathBuf::from_iter(path.components())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use tempfile::tempdir;
-
-    fn with_config_home<T>(dir: &Path, f: impl FnOnce() -> T) -> T {
-        let _guard = crate::app_dirs::ConfigBaseGuard::set(dir.to_path_buf());
-        f()
-    }
-
-    #[test]
-    fn saves_settings_to_toml() {
-        let dir = tempdir().unwrap();
-        with_config_home(dir.path(), || {
-            let path = dir.path().join("cfg.toml");
-            let mut cfg = AppConfig::default();
-            cfg.volume = 0.42;
-            cfg.trash_folder = Some(PathBuf::from("trash"));
-            save_to_path(&cfg, &path).unwrap();
-            let loaded = super::load_settings_from(&path).unwrap();
-            assert!((loaded.volume - 0.42).abs() < f32::EPSILON);
-            assert_eq!(loaded.trash_folder, Some(PathBuf::from("trash")));
-        });
-    }
-
-    #[test]
-    fn migrates_from_legacy_json() {
-        let dir = tempdir().unwrap();
-        with_config_home(dir.path(), || {
-            let legacy_path = dir
-                .path()
-                .join(app_dirs::APP_DIR_NAME)
-                .join(LEGACY_CONFIG_FILE_NAME);
-            std::fs::create_dir_all(legacy_path.parent().unwrap()).unwrap();
-            let legacy = AppConfig {
-                sources: vec![SampleSource::new(PathBuf::from("old_source"))],
-                collections: vec![Collection::new("Old Collection")],
-                feature_flags: FeatureFlags::default(),
-                trash_folder: Some(PathBuf::from("trash_here")),
-                last_selected_source: None,
-                audio_output: default_audio_output(),
-                volume: 0.9,
-                controls: InteractionOptions::default(),
-            };
-            let data = serde_json::to_vec_pretty(&legacy).unwrap();
-            std::fs::write(&legacy_path, data).unwrap();
-
-            let loaded = load_or_default().unwrap();
-            assert_eq!(loaded.sources.len(), 1);
-            assert_eq!(loaded.collections.len(), 1);
-            assert_eq!(loaded.trash_folder, Some(PathBuf::from("trash_here")));
-
-            let backup = legacy_path.with_extension("json.bak");
-            assert!(backup.exists(), "expected backup file {}", backup.display());
-        });
-    }
-
-    #[test]
-    fn volume_defaults_and_persists() {
-        let dir = tempdir().unwrap();
-        with_config_home(dir.path(), || {
-            let path = dir.path().join("cfg.toml");
-            let mut cfg = AppConfig::default();
-            assert_eq!(cfg.volume, 1.0);
-            cfg.volume = 0.42;
-            save_to_path(&cfg, &path).unwrap();
-            let loaded = super::load_settings_from(&path).unwrap();
-            assert!((loaded.volume - 0.42).abs() < f32::EPSILON);
-        });
-    }
-
-    #[test]
-    fn audio_output_defaults_and_persists() {
-        let dir = tempdir().unwrap();
-        with_config_home(dir.path(), || {
-            let path = dir.path().join("cfg.toml");
-            let mut cfg = AppConfig::default();
-            cfg.audio_output.host = Some("asio".into());
-            cfg.audio_output.device = Some("Test Interface".into());
-            cfg.audio_output.sample_rate = Some(48_000);
-            cfg.audio_output.buffer_size = Some(512);
-
-            save_to_path(&cfg, &path).unwrap();
-            let loaded = super::load_settings_from(&path).unwrap();
-            assert_eq!(loaded.audio_output.host.as_deref(), Some("asio"));
-            assert_eq!(
-                loaded.audio_output.device.as_deref(),
-                Some("Test Interface")
-            );
-            assert_eq!(loaded.audio_output.sample_rate, Some(48_000));
-            assert_eq!(loaded.audio_output.buffer_size, Some(512));
-        });
-    }
-
-    #[test]
-    fn trash_folder_round_trips() {
-        let dir = tempdir().unwrap();
-        with_config_home(dir.path(), || {
-            let path = dir.path().join("cfg.toml");
-            let trash = PathBuf::from("trash_bin");
-            let mut cfg = AppConfig::default();
-            cfg.trash_folder = Some(trash.clone());
-            save_to_path(&cfg, &path).unwrap();
-            let loaded = super::load_settings_from(&path).unwrap();
-            assert_eq!(loaded.trash_folder, Some(trash));
-        });
-    }
-}
-
 fn default_true() -> bool {
     true
 }
@@ -467,5 +358,122 @@ fn map_app_dir_error(error: app_dirs::AppDirError) -> ConfigError {
         app_dirs::AppDirError::CreateDir { path, source } => {
             ConfigError::CreateDir { path, source }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    fn with_config_home<T>(dir: &Path, f: impl FnOnce() -> T) -> T {
+        let _guard = crate::app_dirs::ConfigBaseGuard::set(dir.to_path_buf());
+        f()
+    }
+
+    #[test]
+    fn saves_settings_to_toml() {
+        let dir = tempdir().unwrap();
+        with_config_home(dir.path(), || {
+            let path = dir.path().join("cfg.toml");
+            let cfg = AppConfig {
+                volume: 0.42,
+                trash_folder: Some(PathBuf::from("trash")),
+                ..AppConfig::default()
+            };
+            save_to_path(&cfg, &path).unwrap();
+            let loaded = super::load_settings_from(&path).unwrap();
+            assert!((loaded.volume - 0.42).abs() < f32::EPSILON);
+            assert_eq!(loaded.trash_folder, Some(PathBuf::from("trash")));
+        });
+    }
+
+    #[test]
+    fn migrates_from_legacy_json() {
+        let dir = tempdir().unwrap();
+        with_config_home(dir.path(), || {
+            let legacy_path = dir
+                .path()
+                .join(app_dirs::APP_DIR_NAME)
+                .join(LEGACY_CONFIG_FILE_NAME);
+            std::fs::create_dir_all(legacy_path.parent().unwrap()).unwrap();
+            let legacy = AppConfig {
+                sources: vec![SampleSource::new(PathBuf::from("old_source"))],
+                collections: vec![Collection::new("Old Collection")],
+                feature_flags: FeatureFlags::default(),
+                trash_folder: Some(PathBuf::from("trash_here")),
+                last_selected_source: None,
+                audio_output: default_audio_output(),
+                volume: 0.9,
+                controls: InteractionOptions::default(),
+            };
+            let data = serde_json::to_vec_pretty(&legacy).unwrap();
+            std::fs::write(&legacy_path, data).unwrap();
+
+            let loaded = load_or_default().unwrap();
+            assert_eq!(loaded.sources.len(), 1);
+            assert_eq!(loaded.collections.len(), 1);
+            assert_eq!(loaded.trash_folder, Some(PathBuf::from("trash_here")));
+
+            let backup = legacy_path.with_extension("json.bak");
+            assert!(backup.exists(), "expected backup file {}", backup.display());
+        });
+    }
+
+    #[test]
+    fn volume_defaults_and_persists() {
+        let dir = tempdir().unwrap();
+        with_config_home(dir.path(), || {
+            let path = dir.path().join("cfg.toml");
+            let mut cfg = AppConfig::default();
+            assert_eq!(cfg.volume, 1.0);
+            cfg.volume = 0.42;
+            save_to_path(&cfg, &path).unwrap();
+            let loaded = super::load_settings_from(&path).unwrap();
+            assert!((loaded.volume - 0.42).abs() < f32::EPSILON);
+        });
+    }
+
+    #[test]
+    fn audio_output_defaults_and_persists() {
+        let dir = tempdir().unwrap();
+        with_config_home(dir.path(), || {
+            let path = dir.path().join("cfg.toml");
+            let cfg = AppConfig {
+                audio_output: AudioOutputConfig {
+                    host: Some("asio".into()),
+                    device: Some("Test Interface".into()),
+                    sample_rate: Some(48_000),
+                    buffer_size: Some(512),
+                },
+                ..AppConfig::default()
+            };
+
+            save_to_path(&cfg, &path).unwrap();
+            let loaded = super::load_settings_from(&path).unwrap();
+            assert_eq!(loaded.audio_output.host.as_deref(), Some("asio"));
+            assert_eq!(
+                loaded.audio_output.device.as_deref(),
+                Some("Test Interface")
+            );
+            assert_eq!(loaded.audio_output.sample_rate, Some(48_000));
+            assert_eq!(loaded.audio_output.buffer_size, Some(512));
+        });
+    }
+
+    #[test]
+    fn trash_folder_round_trips() {
+        let dir = tempdir().unwrap();
+        with_config_home(dir.path(), || {
+            let path = dir.path().join("cfg.toml");
+            let trash = PathBuf::from("trash_bin");
+            let cfg = AppConfig {
+                trash_folder: Some(trash.clone()),
+                ..AppConfig::default()
+            };
+            save_to_path(&cfg, &path).unwrap();
+            let loaded = super::load_settings_from(&path).unwrap();
+            assert_eq!(loaded.trash_folder, Some(trash));
+        });
     }
 }

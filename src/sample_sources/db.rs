@@ -339,13 +339,11 @@ fn normalize_relative_path(path: &Path) -> Result<String, SourceDbError> {
 }
 
 fn create_parent_if_needed(path: &Path) -> Result<(), SourceDbError> {
-    if let Some(parent) = path.parent() {
-        if !parent.exists() {
-            std::fs::create_dir_all(parent).map_err(|source| SourceDbError::CreateDir {
-                path: parent.to_path_buf(),
-                source,
-            })?;
-        }
+    if let Some(parent) = path.parent() && !parent.exists() {
+        std::fs::create_dir_all(parent).map_err(|source| SourceDbError::CreateDir {
+            path: parent.to_path_buf(),
+            source,
+        })?;
     }
     Ok(())
 }

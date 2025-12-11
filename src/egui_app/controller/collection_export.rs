@@ -173,8 +173,7 @@ impl EguiController {
         let Some(collection) = self.collections.iter_mut().find(|c| &c.id == collection_id) else {
             return false;
         };
-        let added = collection.add_member(source.id.clone(), relative_path.to_path_buf());
-        added
+        collection.add_member(source.id.clone(), relative_path.to_path_buf())
     }
 
     fn remove_member_from_collection(
@@ -297,12 +296,11 @@ fn collect_exported_files(root: &Path) -> Result<Vec<PathBuf>, String> {
             let path = entry.path();
             if path.is_dir() {
                 stack.push(path);
-            } else if path.is_file() {
-                if let Some(name) = path.file_name() {
-                    if seen.insert(name.to_os_string()) {
-                        files.push(PathBuf::from(name));
-                    }
-                }
+            } else if path.is_file()
+                && let Some(name) = path.file_name()
+                && seen.insert(name.to_os_string())
+            {
+                files.push(PathBuf::from(name));
             }
         }
     }

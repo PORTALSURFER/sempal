@@ -19,11 +19,9 @@ fn main() {
     println!("cargo:rerun-if-changed=build/windows/sempal.rc");
     println!("cargo:rerun-if-changed=assets/logo3.ico");
 
-    if compiling_for_windows_target() {
-        if let Err(error) = compile_windows_resources() {
-            eprintln!("Failed to embed Windows resources: {error}");
-            std::process::exit(1);
-        }
+    if compiling_for_windows_target() && let Err(error) = compile_windows_resources() {
+        eprintln!("Failed to embed Windows resources: {error}");
+        std::process::exit(1);
     }
     if env::var("SKIP_VERSION_BUMP").is_ok() {
         println!("cargo:warning=Skipping version bump because SKIP_VERSION_BUMP is set");
