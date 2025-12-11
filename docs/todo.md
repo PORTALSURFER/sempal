@@ -2,7 +2,6 @@
 lets then write every task you find into @todo.md as a new todo item
 
 --
-\plan - waveform does not update after an edit like adding a fade
 
 \plan - if we are in random mode (alt+r) and we have a filter on like untagged, and we flag a sample, currently move focus to the next sample in the list. but, if we are in random mode, we should focus the next random item instead.
 

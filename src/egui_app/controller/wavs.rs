@@ -1049,6 +1049,9 @@ impl EguiController {
     }
 
     fn apply_waveform_image(&mut self, decoded: DecodedWaveform) {
+        // Force a rerender whenever decoded samples change, even if the view metadata is
+        // identical to the previous render.
+        self.waveform_render_meta = None;
         self.decoded_waveform = Some(decoded);
         self.refresh_waveform_image();
     }
