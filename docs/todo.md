@@ -61,4 +61,3 @@ this action should only add a new audio file to the collection
 
 - is we toggle on looping while already playing, keep playing in looped mode. right now playing will stop
 
-- when functions are applied to selected items in the sample browser, like deleting, flagging, etc, not all selected items are handled, only a couple selected items as a time are handled it seems. can you fix this so all selected items are handled at the same time correctly
