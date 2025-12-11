@@ -169,13 +169,19 @@ impl EguiController {
             return None;
         }
         let mut reasons = Vec::new();
-        if let Some(host) = self.audio_output.host.as_deref() && host != output.host_id {
+        if let Some(host) = self.audio_output.host.as_deref()
+            && host != output.host_id
+        {
             reasons.push(format!("host {host}"));
         }
-        if let Some(device) = self.audio_output.device.as_deref() && device != output.device_name {
+        if let Some(device) = self.audio_output.device.as_deref()
+            && device != output.device_name
+        {
             reasons.push(format!("device {device}"));
         }
-        if let Some(rate) = self.audio_output.sample_rate && rate != output.sample_rate {
+        if let Some(rate) = self.audio_output.sample_rate
+            && rate != output.sample_rate
+        {
             reasons.push(format!("sample rate {rate}"));
         }
         if let Some(size) = self.audio_output.buffer_size

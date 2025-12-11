@@ -443,7 +443,9 @@ impl EguiController {
         self.ui.browser.selected_visible = selected_visible;
         self.ui.browser.loaded_visible = loaded_visible;
         let visible_len = self.ui.browser.visible.len();
-        if let Some(anchor) = self.ui.browser.selection_anchor_visible && anchor >= visible_len {
+        if let Some(anchor) = self.ui.browser.selection_anchor_visible
+            && anchor >= visible_len
+        {
             self.ui.browser.selection_anchor_visible = self.ui.browser.selected_visible;
         }
     }
@@ -1256,9 +1258,7 @@ impl EguiController {
             return Ok(());
         }
         if self.missing_sources.contains(&source.id) {
-            self.missing_wavs
-                .entry(source.id.clone())
-                .or_default();
+            self.missing_wavs.entry(source.id.clone()).or_default();
             return Ok(());
         }
         let db = match self.database_for(source) {

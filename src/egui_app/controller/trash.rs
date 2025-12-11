@@ -113,7 +113,9 @@ impl EguiController {
             if dir == trash_root {
                 continue;
             }
-            if let Err(err) = fs::remove_dir(&dir) && dir.exists() {
+            if let Err(err) = fs::remove_dir(&dir)
+                && dir.exists()
+            {
                 errors.push(format!("Failed to remove folder {}: {err}", dir.display()));
             }
         }

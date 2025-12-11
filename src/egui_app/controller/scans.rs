@@ -54,7 +54,9 @@ impl EguiController {
     }
 
     pub(super) fn poll_scan(&mut self) {
-        if let Some(rx) = &self.scan_rx && let Ok(result) = rx.try_recv() {
+        if let Some(rx) = &self.scan_rx
+            && let Ok(result) = rx.try_recv()
+        {
             self.scan_in_progress = false;
             self.scan_rx = None;
             if Some(&result.source_id) != self.selected_source.as_ref() {

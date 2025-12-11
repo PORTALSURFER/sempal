@@ -284,8 +284,7 @@ impl EguiApp {
                         let offset = self.selection_edge_offset.unwrap_or(0.0);
                         let view_fraction =
                             ((pos.x - offset - rect.left()) / rect.width()).clamp(0.0, 1.0);
-                        let absolute =
-                            view.start + view_width.max(f32::EPSILON) * view_fraction;
+                        let absolute = view.start + view_width.max(f32::EPSILON) * view_fraction;
                         let clamped = absolute.clamp(0.0, 1.0);
                         self.controller.update_selection_drag(clamped);
                     }
@@ -293,8 +292,7 @@ impl EguiApp {
                         self.selection_edge_offset = None;
                         self.controller.finish_selection_drag();
                     }
-                    let edge_hovered = pointer_pos
-                        .is_some_and(|p| edge_rect.contains(p))
+                    let edge_hovered = pointer_pos.is_some_and(|p| edge_rect.contains(p))
                         || edge_response.hovered()
                         || pointer_down
                         || edge_response.dragged();
@@ -551,8 +549,7 @@ impl EguiApp {
                     && scroll_rect.width() > f32::EPSILON
                     && let Some(pos) = scroll_resp.interact_pointer_pos()
                 {
-                    let frac =
-                        ((pos.x - scroll_rect.left()) / scroll_rect.width()).clamp(0.0, 1.0);
+                    let frac = ((pos.x - scroll_rect.left()) / scroll_rect.width()).clamp(0.0, 1.0);
                     self.controller.scroll_waveform_view(frac);
                 }
             }

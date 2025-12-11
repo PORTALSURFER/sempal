@@ -277,9 +277,7 @@ impl EguiApp {
             FocusContext::CollectionSample
         );
         style::paint_section_border(ui, scroll_response.response.rect, focused);
-        if drag_active
-            && let Some(pointer) = pointer_pos
-        {
+        if drag_active && let Some(pointer) = pointer_pos {
             let target_rect = scroll_response.response.rect.expand2(egui::vec2(8.0, 0.0));
             if target_rect.contains(pointer) {
                 self.controller.update_active_drag(
@@ -335,8 +333,7 @@ impl EguiApp {
             let delete_btn = egui::Button::new(
                 RichText::new("Delete from collection").color(style::destructive_text()),
             );
-            if ui.add(delete_btn).clicked()
-                && self.controller.delete_collection_sample(row).is_ok()
+            if ui.add(delete_btn).clicked() && self.controller.delete_collection_sample(row).is_ok()
             {
                 close_menu = true;
             }
