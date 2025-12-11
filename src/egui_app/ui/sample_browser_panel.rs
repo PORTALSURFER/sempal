@@ -342,7 +342,7 @@ impl EguiApp {
                 .frame(false)
                 .desired_width(edit_rect.width()),
         );
-        if self.controller.ui.browser.rename_focus_requested || !response.has_focus() {
+        if self.controller.ui.browser.rename_focus_requested && !response.has_focus() {
             response.request_focus();
             self.controller.ui.browser.rename_focus_requested = false;
         }
@@ -351,8 +351,9 @@ impl EguiApp {
         if enter {
             self.controller.apply_pending_browser_rename();
         } else if escape {
-            self.controller.ui.browser.pending_action = None;
-            self.controller.ui.browser.rename_focus_requested = false;
+            self.controller.cancel_browser_rename();
+        } else if response.lost_focus() {
+            self.controller.cancel_browser_rename();
         }
     }
 

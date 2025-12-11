@@ -680,19 +680,22 @@ impl EguiController {
         self.ui.browser.rename_focus_requested = true;
     }
 
+    pub(crate) fn cancel_browser_rename(&mut self) {
+        self.ui.browser.pending_action = None;
+        self.ui.browser.rename_focus_requested = false;
+    }
+
     pub(crate) fn apply_pending_browser_rename(&mut self) {
         let action = self.ui.browser.pending_action.clone();
         if let Some(SampleBrowserActionPrompt::Rename { target, name }) = action {
             let Some(row) = self.visible_row_for_path(&target) else {
-                self.ui.browser.pending_action = None;
-                self.ui.browser.rename_focus_requested = false;
+                self.cancel_browser_rename();
                 self.set_status("Sample not found to rename", StatusTone::Info);
                 return;
             };
             match self.rename_browser_sample(row, &name) {
                 Ok(()) => {
-                    self.ui.browser.pending_action = None;
-                    self.ui.browser.rename_focus_requested = false;
+                    self.cancel_browser_rename();
                 }
                 Err(err) => self.set_status(err, StatusTone::Error),
             }

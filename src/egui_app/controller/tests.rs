@@ -1437,6 +1437,23 @@ fn starting_browser_rename_queues_prompt_for_focused_row() {
 }
 
 #[test]
+fn cancelling_browser_rename_clears_prompt() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.selected_source = Some(source.id.clone());
+    controller.wav_entries = vec![sample_entry("one.wav", SampleTag::Neutral)];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+    controller.focus_browser_list();
+    controller.start_browser_rename();
+
+    controller.cancel_browser_rename();
+
+    assert!(controller.ui.browser.pending_action.is_none());
+    assert!(!controller.ui.browser.rename_focus_requested);
+}
+
+#[test]
 fn creating_folder_tracks_manual_entry() -> Result<(), String> {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source.clone());
@@ -1487,6 +1504,23 @@ fn renaming_folder_updates_entries_and_tree() -> Result<(), String> {
             .any(|row| row.path == PathBuf::from("new"))
     );
     Ok(())
+}
+
+#[test]
+fn cancelling_folder_rename_clears_prompt() {
+    let (mut controller, _source) = dummy_controller();
+    controller.ui.sources.folders.pending_action = Some(
+        crate::egui_app::state::FolderActionPrompt::Rename {
+            target: PathBuf::from("folder"),
+            name: "folder".into(),
+        },
+    );
+    controller.ui.sources.folders.rename_focus_requested = true;
+
+    controller.cancel_folder_rename();
+
+    assert!(controller.ui.sources.folders.pending_action.is_none());
+    assert!(!controller.ui.sources.folders.rename_focus_requested);
 }
 
 #[test]
