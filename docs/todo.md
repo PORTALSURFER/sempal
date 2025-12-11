@@ -3,8 +3,6 @@ lets then write every task you find into @todo.md as a new todo item
 
 --
 
-\plan - if we are in random mode (alt+r) and we have a filter on like untagged, and we flag a sample, currently move focus to the next sample in the list. but, if we are in random mode, we should focus the next random item instead.
-
 \plan - when renaming samples, lets keep the .wav extension out of the renaming process
 
 ### v2

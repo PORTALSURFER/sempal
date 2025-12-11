@@ -246,6 +246,11 @@ impl EguiController {
         self.play_random_visible_sample_internal(&mut rng, false);
     }
 
+    /// Focus a random visible sample without starting playback (used for navigation flows).
+    pub fn focus_random_visible_sample(&mut self) {
+        let mut rng = rand::rng();
+        self.play_random_visible_sample_internal(&mut rng, false);
+    }
     /// Play the previous entry from the random history stack.
     pub fn play_previous_random_sample(&mut self) {
         if self.random_history.is_empty() {
