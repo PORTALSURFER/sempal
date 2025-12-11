@@ -136,18 +136,6 @@ impl EguiController {
         result
     }
 
-    /// Fade the selection toward silence from left to right.
-    #[allow(dead_code)]
-    pub(crate) fn fade_waveform_selection_left_to_right(&mut self) -> Result<(), String> {
-        self.fade_waveform_selection(FadeDirection::LeftToRight)
-    }
-
-    /// Fade the selection toward silence from right to left.
-    #[allow(dead_code)]
-    pub(crate) fn fade_waveform_selection_right_to_left(&mut self) -> Result<(), String> {
-        self.fade_waveform_selection(FadeDirection::RightToLeft)
-    }
-
     /// Normalize the active selection and apply short fades at the edges.
     pub(crate) fn normalize_waveform_selection(&mut self) -> Result<(), String> {
         let result = self.apply_selection_edit("Normalized selection", |buffer| {
