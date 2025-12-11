@@ -96,10 +96,10 @@ pub(super) fn render_list_row(
     let mut number_width = 0.0;
     if let Some(column) = number {
         number_width = column.width.max(0.0);
-        let x = rect.left() + padding + number_width;
+        let x = rect.left() + padding;
         ui.painter().text(
             egui::pos2(x, rect.center().y),
-            Align2::RIGHT_CENTER,
+            Align2::LEFT_CENTER,
             column.text,
             font_id.clone(),
             column.color,
