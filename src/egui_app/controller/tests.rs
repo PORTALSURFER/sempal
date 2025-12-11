@@ -1680,6 +1680,41 @@ fn folder_focus_clears_when_context_changes() -> Result<(), String> {
 }
 
 #[test]
+fn clearing_folder_selection_shows_all_samples() -> Result<(), String> {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.selected_source = Some(source.id.clone());
+    std::fs::create_dir_all(source.root.join("a")).unwrap();
+    std::fs::create_dir_all(source.root.join("b")).unwrap();
+    controller.wav_entries = vec![
+        sample_entry("a/one.wav", SampleTag::Neutral),
+        sample_entry("b/two.wav", SampleTag::Neutral),
+    ];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+    controller.refresh_folder_browser();
+
+    let folder_a = controller
+        .ui
+        .sources
+        .folders
+        .rows
+        .iter()
+        .position(|row| row.path == PathBuf::from("a"))
+        .unwrap();
+    controller.replace_folder_selection(folder_a);
+
+    assert_eq!(controller.selected_folder_paths(), vec![PathBuf::from("a")]);
+    assert_eq!(controller.visible_browser_indices(), &[0]);
+
+    controller.clear_folder_selection();
+
+    assert!(controller.selected_folder_paths().is_empty());
+    assert_eq!(controller.visible_browser_indices(), &[0, 1]);
+    Ok(())
+}
+
+#[test]
 fn fuzzy_search_filters_folders() {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source.clone());
