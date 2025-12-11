@@ -1,7 +1,6 @@
 # Codebase review TODOs
 
 ## Correctness & robustness
-
 - In `src/external_clipboard.rs` (Windows):
   - Remove unnecessary `GlobalUnlock` calls when `GlobalLock` fails.
   - Consider RAII wrappers for `HGLOBAL`/locks to reduce unsafe surface and clarify ownership transfer to the clipboard.
@@ -39,7 +38,6 @@
 - Standardize error types: a mix of `Result<_, String>` and typed errors exists; consider promoting key subsystems (audio, waveform, sources) to typed errors for consistency.
 - Consider feature-gating Windows-only code paths in UI/controller to reduce `cfg_attr(..., allow(dead_code))` clutter.
 
-
 - turn the left and right sidebars into resizable panels.
 
 - when the user dragdrops an audio selection into a collection, a copy of the selection is also added to the currently selected sample source target. please remove this side effect. 
@@ -59,4 +57,3 @@ lets unify these into a flat items list component, using the sample browser as l
 - in wavefrom context, add hotkey 'n' to normalize audio selection when a selection is available, otherwise just normalize the whole thing like the sample browser normalize does.
 
 - in wavefrom context, add hotkey 'c' to crop selection, and 'C/shift+c' for crop as non-destructive crop as new sample option, adding a new sample in the same location as the original with _crop001 added, etc.
-
