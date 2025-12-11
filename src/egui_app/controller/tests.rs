@@ -1509,6 +1509,58 @@ fn creating_folder_tracks_manual_entry() -> Result<(), String> {
 }
 
 #[test]
+fn folder_browser_includes_root_entry() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.selected_source = Some(source.id.clone());
+    controller.refresh_folder_browser();
+
+    let rows = &controller.ui.sources.folders.rows;
+    assert!(
+        rows.first()
+            .is_some_and(|row| row.is_root && row.path.as_os_str().is_empty())
+    );
+}
+
+#[test]
+fn root_entry_stays_above_real_folders() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.selected_source = Some(source.id.clone());
+    let folder = source.root.join("rooted");
+    std::fs::create_dir_all(&folder).unwrap();
+    write_test_wav(&folder.join("clip.wav"), &[0.2, -0.2]);
+    controller.wav_entries = vec![sample_entry("rooted/clip.wav", SampleTag::Neutral)];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+    controller.refresh_folder_browser();
+
+    let rows = &controller.ui.sources.folders.rows;
+    assert!(rows.first().is_some_and(|row| row.is_root));
+    assert!(
+        rows.get(1)
+            .is_some_and(|row| row.path == PathBuf::from("rooted"))
+    );
+}
+
+#[test]
+fn start_new_folder_at_root_sets_root_parent() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.selected_source = Some(source.id.clone());
+    controller.refresh_folder_browser();
+
+    controller.start_new_folder_at_root();
+
+    match &controller.ui.sources.folders.pending_action {
+        Some(crate::egui_app::state::FolderActionPrompt::Create { parent, .. }) => {
+            assert!(parent.as_os_str().is_empty())
+        }
+        other => panic!("unexpected action: {other:?}"),
+    }
+}
+
+#[test]
 fn renaming_folder_updates_entries_and_tree() -> Result<(), String> {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source.clone());

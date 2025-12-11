@@ -448,8 +448,10 @@ impl EguiController {
             };
             if collection.remove_member(source_id, &member.relative_path) {
                 changed = true;
-                let export_dir =
-                    collection_export::resolved_export_dir(collection, self.collection_export_root.as_deref());
+                let export_dir = collection_export::resolved_export_dir(
+                    collection,
+                    self.collection_export_root.as_deref(),
+                );
                 collection_export::delete_exported_file(export_dir, &member);
             }
         }

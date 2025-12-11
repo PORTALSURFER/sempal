@@ -41,6 +41,7 @@ pub struct FolderRowView {
     pub has_children: bool,
     pub expanded: bool,
     pub selected: bool,
+    pub is_root: bool,
 }
 
 /// Pending inline action for the folder browser.

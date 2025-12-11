@@ -3,7 +3,7 @@
 // Transitional helpers; wiring into the egui renderer will consume these.
 
 use crate::egui_app::state::{CollectionRowView, CollectionSampleView, SourceRowView};
-use crate::sample_sources::collections::{collection_folder_name_from_str, CollectionMember};
+use crate::sample_sources::collections::{CollectionMember, collection_folder_name_from_str};
 use crate::sample_sources::{Collection, CollectionId, SampleSource, SampleTag, WavEntry};
 use std::path::{Path, PathBuf};
 

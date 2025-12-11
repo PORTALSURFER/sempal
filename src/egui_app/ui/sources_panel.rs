@@ -162,11 +162,11 @@ impl EguiApp {
                             style::high_contrast_text()
                         };
                         let bg = is_selected.then_some(style::row_selected_fill());
-                let response = render_list_row(
-                    ui,
-                    &label,
-                    row_width,
-                    row_height,
+                        let response = render_list_row(
+                            ui,
+                            &label,
+                            row_width,
+                            row_height,
                             bg,
                             text_color,
                             egui::Sense::click(),
@@ -217,17 +217,86 @@ impl EguiApp {
         );
         let scroll_to = self.controller.ui.sources.folders.scroll_to;
         let mut hovered_folder = None;
-        let frame_response =
-            frame.show(ui, |ui| {
-                ui.set_min_height(height);
-                ui.set_max_height(height);
-                let rows = self.controller.ui.sources.folders.rows.clone();
-                let row_height = list_row_height(ui);
-                let scroll = egui::ScrollArea::vertical()
-                    .id_salt("folder_browser_scroll")
-                    .max_height(height);
-                scroll.show(ui, |ui| {
-                if rows.is_empty() {
+        let rows = self.controller.ui.sources.folders.rows.clone();
+        let root_row = rows.first().filter(|row| row.is_root).cloned();
+        let has_folder_rows = rows.iter().any(|row| !row.is_root);
+        let frame_response = frame.show(ui, |ui| {
+            ui.set_min_height(height);
+            ui.set_max_height(height);
+            let row_height = list_row_height(ui);
+            let hovering_folder = self.controller.ui.drag.hovering_folder.clone();
+            if let Some(root_row) = root_row.clone() {
+                let row_width = ui.available_width();
+                let is_focused = self.controller.ui.sources.folders.focused == Some(0);
+                let bg = if is_focused {
+                    Some(style::row_selected_fill())
+                } else {
+                    None
+                };
+                let response = render_list_row(
+                    ui,
+                    &folder_row_label(&root_row, row_width, ui),
+                    row_width,
+                    row_height,
+                    bg,
+                    style::high_contrast_text(),
+                    egui::Sense::click(),
+                    None,
+                    None,
+                );
+                if scroll_to == Some(0) {
+                    ui.scroll_to_rect(response.rect, None);
+                }
+                if sample_drag_active {
+                    if let Some(pointer) = pointer_pos
+                        && response.rect.contains(pointer)
+                    {
+                        hovered_folder = Some(root_row.path.clone());
+                        self.controller.update_active_drag(
+                            pointer,
+                            None,
+                            false,
+                            None,
+                            Some(root_row.path.clone()),
+                            true,
+                        );
+                    }
+                    if hovered_folder
+                        .as_ref()
+                        .is_some_and(|path| path == &root_row.path)
+                        || hovering_folder
+                            .as_ref()
+                            .is_some_and(|path| path == &root_row.path)
+                    {
+                        ui.painter().rect_stroke(
+                            response.rect.expand(2.0),
+                            0.0,
+                            style::drag_target_stroke(),
+                            StrokeKind::Inside,
+                        );
+                    }
+                }
+                if response.clicked() {
+                    self.controller.focus_folder_row(0);
+                } else if response.secondary_clicked() {
+                    self.controller.focus_folder_row(0);
+                }
+                self.root_row_menu(&response);
+                if is_focused {
+                    ui.painter().rect_stroke(
+                        response.rect,
+                        0.0,
+                        style::focused_row_stroke(),
+                        StrokeKind::Inside,
+                    );
+                }
+                ui.add_space(2.0);
+            }
+            let scroll = egui::ScrollArea::vertical()
+                .id_salt("folder_browser_scroll")
+                .max_height(height);
+            scroll.show(ui, |ui| {
+                if !has_folder_rows {
                     let text = if self.controller.current_source().is_some() {
                         "No folders detected for this source"
                     } else {
@@ -243,17 +312,22 @@ impl EguiApp {
                         text,
                         TextStyle::Body.resolve(ui.style()),
                         palette.text_muted,
-                );
+                    );
                     return;
                 }
                 let focused_row = self.controller.ui.sources.folders.focused;
                 let hovering_folder = self.controller.ui.drag.hovering_folder.clone();
                 for (index, row) in rows.iter().enumerate() {
+                    if row.is_root {
+                        continue;
+                    }
                     let is_focused = Some(index) == focused_row;
                     let rename_match = matches!(
                         self.controller.ui.sources.folders.pending_action,
-                        Some(crate::egui_app::state::FolderActionPrompt::Rename { ref target, .. })
-                            if target == &row.path
+                        Some(crate::egui_app::state::FolderActionPrompt::Rename {
+                            ref target,
+                            ..
+                        }) if target == &row.path
                     );
                     let bg = if row.selected || is_focused {
                         Some(style::row_selected_fill())
@@ -308,7 +382,9 @@ impl EguiApp {
                                 true,
                             );
                         }
-                        if hovered_folder.as_ref().is_some_and(|path| path == &row.path)
+                        if hovered_folder
+                            .as_ref()
+                            .is_some_and(|path| path == &row.path)
                             || hovering_folder
                                 .as_ref()
                                 .is_some_and(|path| path == &row.path)
@@ -357,7 +433,7 @@ impl EguiApp {
                     }
                 }
             });
-            });
+        });
         if sample_drag_active && let Some(pointer) = pointer_pos {
             if frame_response.response.rect.contains(pointer) {
                 if hovered_folder.is_none() {
@@ -381,9 +457,9 @@ impl EguiApp {
         ui.horizontal(|ui| {
             ui.label(RichText::new("Selected folders").color(palette.text_primary));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                let button = egui::Button::new(RichText::new("Clear selection").color(
-                    style::high_contrast_text(),
-                ))
+                let button = egui::Button::new(
+                    RichText::new("Clear selection").color(style::high_contrast_text()),
+                )
                 .small();
                 let response = ui
                     .add_enabled(has_selection, button)
@@ -554,6 +630,18 @@ impl EguiApp {
             }
         });
     }
+
+    fn root_row_menu(&mut self, response: &egui::Response) {
+        response.context_menu(|ui| {
+            let palette = style::palette();
+            ui.label(RichText::new(".").color(palette.text_primary));
+            ui.separator();
+            if ui.button("New folder at root").clicked() {
+                self.controller.start_new_folder_at_root();
+                ui.close();
+            }
+        });
+    }
 }
 
 fn folder_row_label(
@@ -561,6 +649,9 @@ fn folder_row_label(
     row_width: f32,
     ui: &Ui,
 ) -> String {
+    if row.is_root {
+        return ".".to_string();
+    }
     let padding = ui.spacing().button_padding.x * 2.0;
     let indent = "  ".repeat(row.depth);
     let icon = if row.has_children {
