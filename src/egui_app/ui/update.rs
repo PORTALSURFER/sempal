@@ -42,7 +42,6 @@ impl eframe::App for EguiApp {
         self.handle_escape_shortcut(ctx, &input);
         self.handle_window_shortcuts(ctx);
         self.handle_arrow_keys(&focus_flags, &input);
-        self.handle_bracket_shortcuts(&focus_flags, &input);
         self.process_hotkeys(ctx, focus_context);
         self.render_ui(ctx, &input, focus_context);
     }
@@ -339,17 +338,4 @@ impl EguiApp {
             .move_playhead_steps(step, input.alt, was_playing);
     }
 
-    fn handle_bracket_shortcuts(&mut self, focus: &FocusFlags, input: &InputSnapshot) {
-        if !(focus.waveform && (input.bracket_left || input.bracket_right)) {
-            return;
-        }
-        if input.bracket_left {
-            self.controller
-                .nudge_selection_edge(SelectionEdge::Start, !input.shift, false);
-        }
-        if input.bracket_right {
-            self.controller
-                .nudge_selection_edge(SelectionEdge::End, !input.shift, false);
-        }
-    }
 }

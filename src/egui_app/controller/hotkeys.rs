@@ -175,6 +175,8 @@ enum HotkeyCommand {
     PlayPreviousRandomSample,
     ToggleRandomNavigationMode,
     MoveTrashedToFolder,
+    TagKeepSelected,
+    TagTrashSelected,
 }
 
 /// Hotkey metadata surfaced to the UI.
@@ -387,6 +389,20 @@ const HOTKEY_ACTIONS: &[HotkeyAction] = &[
         scope: HotkeyScope::Global,
         command: HotkeyCommand::MoveTrashedToFolder,
     },
+    HotkeyAction {
+        id: "tag-trash",
+        label: "Trash sample(s)",
+        gesture: HotkeyGesture::new(Key::OpenBracket),
+        scope: HotkeyScope::Global,
+        command: HotkeyCommand::TagTrashSelected,
+    },
+    HotkeyAction {
+        id: "tag-keep",
+        label: "Keep sample(s)",
+        gesture: HotkeyGesture::new(Key::CloseBracket),
+        scope: HotkeyScope::Global,
+        command: HotkeyCommand::TagKeepSelected,
+    },
 ];
 
 pub(crate) fn iter_actions() -> impl Iterator<Item = HotkeyAction> {
@@ -495,6 +511,12 @@ impl EguiController {
             }
             HotkeyCommand::MoveTrashedToFolder => {
                 self.move_all_trashed_to_folder();
+            }
+            HotkeyCommand::TagKeepSelected => {
+                self.tag_selected(SampleTag::Keep);
+            }
+            HotkeyCommand::TagTrashSelected => {
+                self.tag_selected(SampleTag::Trash);
             }
         }
     }
