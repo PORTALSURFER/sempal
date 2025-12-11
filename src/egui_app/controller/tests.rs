@@ -1509,12 +1509,11 @@ fn renaming_folder_updates_entries_and_tree() -> Result<(), String> {
 #[test]
 fn cancelling_folder_rename_clears_prompt() {
     let (mut controller, _source) = dummy_controller();
-    controller.ui.sources.folders.pending_action = Some(
-        crate::egui_app::state::FolderActionPrompt::Rename {
+    controller.ui.sources.folders.pending_action =
+        Some(crate::egui_app::state::FolderActionPrompt::Rename {
             target: PathBuf::from("folder"),
             name: "folder".into(),
-        },
-    );
+        });
     controller.ui.sources.folders.rename_focus_requested = true;
 
     controller.cancel_folder_rename();
@@ -1846,6 +1845,43 @@ fn moving_trashed_samples_moves_and_prunes_state() -> Result<(), String> {
             .all(|entry| entry.relative_path != PathBuf::from("trash.wav"))
     );
     assert!(controller.ui.browser.trash.is_empty());
+    Ok(())
+}
+
+#[test]
+fn moving_trashed_samples_can_cancel_midway() -> Result<(), String> {
+    let temp = tempdir().unwrap();
+    let trash_root = temp.path().join("trash");
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.trash_folder = Some(trash_root.clone());
+    controller.ui.trash_folder = Some(trash_root.clone());
+
+    {
+        let db = controller.database_for(&source).unwrap();
+        for name in ["one.wav", "two.wav"] {
+            let path = source.root.join(name);
+            write_test_wav(&path, &[0.2, -0.2]);
+            db.upsert_file(Path::new(name), 4, 1).unwrap();
+            db.set_tag(Path::new(name), SampleTag::Trash).unwrap();
+        }
+    }
+
+    controller.wav_entries = vec![
+        sample_entry("one.wav", SampleTag::Trash),
+        sample_entry("two.wav", SampleTag::Trash),
+    ];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+    controller.progress_cancel_after = Some(1);
+
+    controller.move_all_trashed_to_folder();
+
+    assert!(trash_root.join("one.wav").is_file());
+    assert!(!source.root.join("one.wav").exists());
+    assert!(source.root.join("two.wav").exists());
+    assert!(!controller.ui.progress.visible);
+    assert!(controller.ui.status.text.contains("Canceled trash move"));
     Ok(())
 }
 

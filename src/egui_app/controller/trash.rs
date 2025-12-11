@@ -44,48 +44,23 @@ impl EguiController {
         let Ok(trash_root) = self.ensure_trash_folder_ready() else {
             return;
         };
+        let (batches, mut errors) = self.collect_trashed_batches();
+        let total: usize = batches.iter().map(|batch| batch.entries.len()).sum();
+        if total == 0 {
+            self.set_status("No trashed samples to move", StatusTone::Info);
+            return;
+        }
         self.set_status("Moving trashed samples...", StatusTone::Busy);
-        let mut moved = 0usize;
-        let mut removed_from_collections = false;
-        let mut errors = Vec::new();
-        let sources = self.sources.clone();
-        for source in sources {
-            let db = match self.database_for(&source) {
-                Ok(db) => db,
-                Err(err) => {
-                    errors.push(format!("{}: {err}", source.root.display()));
-                    continue;
-                }
-            };
-            let entries = match db.list_files() {
-                Ok(entries) => entries,
-                Err(err) => {
-                    errors.push(format!("{}: {err}", source.root.display()));
-                    continue;
-                }
-            };
-            for entry in entries.into_iter().filter(|e| e.tag == SampleTag::Trash) {
-                match self.move_single_to_trash(&source, &entry, &trash_root) {
-                    Ok(changed_collections) => {
-                        moved += 1;
-                        removed_from_collections |= changed_collections;
-                    }
-                    Err(err) => errors.push(err),
-                }
-            }
-        }
-        if removed_from_collections {
-            let _ = self.persist_config("Failed to save collections after trash move");
-        }
-        if errors.is_empty() {
-            self.set_status(format!("Moved {moved} trashed sample(s)"), StatusTone::Info);
-        } else {
-            let summary = format!("Moved {moved} sample(s) with {} error(s)", errors.len());
-            self.set_status(summary, StatusTone::Warning);
-            for err in errors {
-                eprintln!("Trash move error: {err}");
-            }
-        }
+        self.show_progress("Moving trashed samples", total, true);
+        let outcome = self.move_batches_to_trash(batches, &trash_root);
+        errors.extend(outcome.errors);
+        self.finish_trash_move(
+            total,
+            outcome.moved,
+            outcome.removed_from_collections,
+            errors,
+            outcome.cancelled,
+        );
     }
 
     /// Permanently delete the contents of the configured trash folder after confirmation.
@@ -202,6 +177,113 @@ impl EguiController {
         Ok(collections_changed)
     }
 
+    fn collect_trashed_batches(&mut self) -> (Vec<TrashMoveBatch>, Vec<String>) {
+        let mut batches = Vec::new();
+        let mut errors = Vec::new();
+        for source in self.sources.clone() {
+            let db = match self.database_for(&source) {
+                Ok(db) => db,
+                Err(err) => {
+                    errors.push(format!("{}: {err}", source.root.display()));
+                    continue;
+                }
+            };
+            let entries = match db.list_files() {
+                Ok(entries) => entries,
+                Err(err) => {
+                    errors.push(format!("{}: {err}", source.root.display()));
+                    continue;
+                }
+            };
+            let trashed: Vec<WavEntry> = entries
+                .into_iter()
+                .filter(|entry| entry.tag == SampleTag::Trash)
+                .collect();
+            if !trashed.is_empty() {
+                batches.push(TrashMoveBatch {
+                    source: source.clone(),
+                    entries: trashed,
+                });
+            }
+        }
+        (batches, errors)
+    }
+
+    fn move_batches_to_trash(
+        &mut self,
+        batches: Vec<TrashMoveBatch>,
+        trash_root: &Path,
+    ) -> TrashMoveOutcome {
+        let mut outcome = TrashMoveOutcome::default();
+        for batch in batches {
+            if self.transfer_batch_entries(batch, trash_root, &mut outcome) {
+                break;
+            }
+        }
+        if self.ui.progress.cancel_requested {
+            outcome.cancelled = true;
+        }
+        outcome
+    }
+
+    fn transfer_batch_entries(
+        &mut self,
+        batch: TrashMoveBatch,
+        trash_root: &Path,
+        outcome: &mut TrashMoveOutcome,
+    ) -> bool {
+        for entry in batch.entries {
+            if self.ui.progress.cancel_requested {
+                outcome.cancelled = true;
+                return true;
+            }
+            self.update_progress_detail(format!("Moving {}", entry.relative_path.display()));
+            match self.move_single_to_trash(&batch.source, &entry, trash_root) {
+                Ok(changed_collections) => {
+                    outcome.moved += 1;
+                    outcome.removed_from_collections |= changed_collections;
+                }
+                Err(err) => outcome.errors.push(err),
+            }
+            self.advance_progress();
+            #[cfg(test)]
+            if let Some(threshold) = self.progress_cancel_after {
+                if outcome.moved >= threshold {
+                    self.request_progress_cancel();
+                }
+            }
+        }
+        false
+    }
+
+    fn finish_trash_move(
+        &mut self,
+        total: usize,
+        moved: usize,
+        removed_from_collections: bool,
+        mut errors: Vec<String>,
+        cancelled: bool,
+    ) {
+        if removed_from_collections {
+            let _ = self.persist_config("Failed to save collections after trash move");
+        }
+        if cancelled {
+            self.set_status(
+                format!("Canceled trash move after {moved}/{total} sample(s)"),
+                StatusTone::Warning,
+            );
+        } else if errors.is_empty() {
+            self.set_status(format!("Moved {moved} trashed sample(s)"), StatusTone::Info);
+        } else {
+            let summary = format!("Moved {moved} sample(s) with {} error(s)", errors.len());
+            self.set_status(summary, StatusTone::Warning);
+        }
+        for err in errors.drain(..) {
+            eprintln!("Trash move error: {err}");
+        }
+        self.clear_progress();
+    }
+
     fn apply_trash_folder(&mut self, folder: Option<PathBuf>) -> Result<(), String> {
         let normalized = folder.map(|path| normalize_path(path.as_path()));
         if let Some(path) = normalized.as_ref() {
@@ -254,6 +336,29 @@ impl EguiController {
                 .show(),
             MessageDialogResult::Yes
         )
+    }
+}
+
+struct TrashMoveBatch {
+    source: SampleSource,
+    entries: Vec<WavEntry>,
+}
+
+struct TrashMoveOutcome {
+    moved: usize,
+    removed_from_collections: bool,
+    cancelled: bool,
+    errors: Vec<String>,
+}
+
+impl Default for TrashMoveOutcome {
+    fn default() -> Self {
+        Self {
+            moved: 0,
+            removed_from_collections: false,
+            cancelled: false,
+            errors: Vec::new(),
+        }
     }
 }
 
