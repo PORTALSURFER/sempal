@@ -84,19 +84,25 @@ impl EguiController {
 
     /// Delete a sample browser entry from disk, database, caches, and any collections.
     pub fn delete_browser_sample(&mut self, row: usize) -> Result<(), String> {
-        let result = self.try_delete_browser_sample(row);
-        if let Err(err) = &result {
-            self.set_status(err.clone(), StatusTone::Error);
-        }
-        result
+        self.delete_browser_samples(&[row])
     }
 
     /// Delete all targeted sample browser entries.
     pub fn delete_browser_samples(&mut self, rows: &[usize]) -> Result<(), String> {
+        let next_focus = self.next_browser_focus_after_delete(rows);
         let mut last_error = None;
         for &row in rows {
-            if let Err(err) = self.delete_browser_sample(row) {
+            if let Err(err) = self.try_delete_browser_sample(row) {
                 last_error = Some(err);
+            }
+        }
+        if let Some(path) = next_focus {
+            if self.wav_lookup.contains_key(&path) {
+                if let Some(row) = self.visible_row_for_path(&path) {
+                    self.focus_browser_row_only(row);
+                } else {
+                    self.select_wav_by_path_with_rebuild(&path, true);
+                }
             }
         }
         if let Some(err) = last_error {
@@ -137,6 +143,29 @@ impl EguiController {
             StatusTone::Info,
         );
         Ok(())
+    }
+
+    fn next_browser_focus_after_delete(&self, rows: &[usize]) -> Option<PathBuf> {
+        if rows.is_empty() || self.ui.browser.visible.is_empty() {
+            return None;
+        }
+        let mut sorted = rows.to_vec();
+        sorted.sort_unstable();
+        let highest = *sorted.last().unwrap();
+        let first = *sorted.first().unwrap_or(&highest);
+        let after = highest
+            .checked_add(1)
+            .and_then(|idx| self.ui.browser.visible.get(idx))
+            .and_then(|&entry_idx| self.wav_entries.get(entry_idx))
+            .map(|entry| entry.relative_path.clone());
+        if after.is_some() {
+            return after;
+        }
+        first
+            .checked_sub(1)
+            .and_then(|idx| self.ui.browser.visible.get(idx))
+            .and_then(|&entry_idx| self.wav_entries.get(entry_idx))
+            .map(|entry| entry.relative_path.clone())
     }
 
     fn try_delete_browser_sample(&mut self, row: usize) -> Result<(), String> {
