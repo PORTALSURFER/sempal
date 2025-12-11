@@ -2483,6 +2483,29 @@ fn trash_move_hotkeys_are_registered() {
 }
 
 #[test]
+fn bracket_tag_hotkeys_are_registered() {
+    let trash = hotkeys::iter_actions()
+        .find(|a| a.id == "tag-trash")
+        .expect("tag-trash hotkey");
+    assert_eq!(trash.label, "Trash sample(s)");
+    assert!(trash.is_global());
+    assert_eq!(trash.gesture.first.key, egui::Key::OpenBracket);
+    assert!(!trash.gesture.first.shift);
+    assert!(!trash.gesture.first.command);
+    assert!(!trash.gesture.first.alt);
+
+    let keep = hotkeys::iter_actions()
+        .find(|a| a.id == "tag-keep")
+        .expect("tag-keep hotkey");
+    assert_eq!(keep.label, "Keep sample(s)");
+    assert!(keep.is_global());
+    assert_eq!(keep.gesture.first.key, egui::Key::CloseBracket);
+    assert!(!keep.gesture.first.shift);
+    assert!(!keep.gesture.first.command);
+    assert!(!keep.gesture.first.alt);
+}
+
+#[test]
 fn trash_move_hotkey_moves_samples() -> Result<(), String> {
     let temp = tempdir().unwrap();
     let trash_root = temp.path().join("trash");
