@@ -47,9 +47,6 @@ this action should only add a new audio file to the collection
 
 - in the collection items list, the selected items will block scrolling, lets fix that. the user should be able to freely scroll
 
-- lets add the same select/focus system en styling as in the sample browser list also to the collection browser list.
-lets unify these into a flat items list component, using the sample browser as leading in terms of style and core list/navigation functionality.
-
 - in wavefrom context, add 't' to trim audio selection
 
 - in wavefrom context, add hotkeys '/' and '\' to fade audio selection, lets also adjust the fade algo so its a soft S curve, not a hard diagonal. 
@@ -57,3 +54,9 @@ lets unify these into a flat items list component, using the sample browser as l
 - in wavefrom context, add hotkey 'n' to normalize audio selection when a selection is available, otherwise just normalize the whole thing like the sample browser normalize does.
 
 - in wavefrom context, add hotkey 'c' to crop selection, and 'C/shift+c' for crop as non-destructive crop as new sample option, adding a new sample in the same location as the original with _crop001 added, etc.
+
+- lets sync up the collection list when a collection export root gets mapped, listing each direct subfolder as a collection entry
+
+- lets design an undo system which tracks every single action we can take with 20 undo steps. map undo to ctrl+z and u, and map redo to U and ctrl+y
+
+- is we toggle on looping while already playing, keep playing in looped mode. right now playing will stop

@@ -1,6 +1,6 @@
+use super::flat_items_list::{FlatItemsListConfig, render_flat_items_list};
 use super::helpers::{
-    NumberColumn, RowMarker, RowMetrics, clamp_label_for_width, list_row_height,
-    number_column_width, render_list_row, scroll_offset_to_reveal_row,
+    NumberColumn, RowMarker, clamp_label_for_width, list_row_height, render_list_row,
 };
 use super::style;
 use super::*;
@@ -139,146 +139,133 @@ impl EguiApp {
         } else {
             None
         };
-        let row_height = list_row_height(ui);
-        let row_metrics = RowMetrics {
-            height: row_height,
-            spacing: ui.spacing().item_spacing.y,
-        };
-        let number_width = number_column_width(samples.len(), ui);
-        let number_gap = ui.spacing().button_padding.x * 0.5;
         let available_height = ui.available_height();
-        let frame = style::section_frame();
-        let scroll_response = frame.show(ui, |ui| {
-            ui.set_min_height(available_height);
-            let scroll = egui::ScrollArea::vertical().id_salt("collection_items_scroll");
-            if samples.is_empty() {
-                scroll.show(ui, |ui| {
-                    let height = ui.available_height().max(available_height);
-                    ui.allocate_exact_size(
-                        egui::vec2(ui.available_width(), height),
-                        egui::Sense::hover(),
-                    );
-                })
-            } else {
-                scroll.show_rows(ui, row_height, samples.len(), |ui, row_range| {
-                    for row in row_range {
-                        let Some(sample) = samples.get(row) else {
-                            continue;
-                        };
-                        let row_width = ui.available_width();
-                        let padding = ui.spacing().button_padding.x * 2.0;
-                        let path = sample.path.clone();
-                        let mut label = format!("{} — {}", sample.source, sample.label);
-                        if sample.missing {
-                            label.insert_str(0, "! ");
-                        }
-                        let is_selected = Some(row) == selected_row;
-                        let is_duplicate_hover =
-                            drag_active && active_drag_path.as_ref().is_some_and(|p| p == &path);
-                        let triage_marker =
-                            style::triage_marker_color(sample.tag).map(|color| RowMarker {
-                                width: style::triage_marker_width(),
-                                color,
-                            });
-                        let trailing_space = triage_marker
-                            .as_ref()
-                            .map(|marker| marker.width + padding * 0.5)
-                            .unwrap_or(0.0);
-                        let bg = if is_duplicate_hover {
-                            Some(style::duplicate_hover_fill())
-                        } else if is_selected {
-                            Some(style::row_selected_fill())
-                        } else {
-                            None
-                        };
-                        ui.push_id(
-                            format!("{}:{}:{}", sample.source_id, sample.source, sample.label),
-                            |ui| {
-                                let label_width = row_width
-                                    - padding
-                                    - number_width
-                                    - number_gap
-                                    - trailing_space;
-                                let number_text = format!("{}", row + 1);
-                                let text_color = if sample.missing {
-                                    style::missing_text()
-                                } else {
-                                    style::triage_label_color(sample.tag)
-                                };
-                                let response = render_list_row(
-                                    ui,
-                                    &clamp_label_for_width(&label, label_width),
-                                    row_width,
-                                    row_height,
-                                    bg,
-                                    text_color,
-                                    egui::Sense::click_and_drag(),
-                                    Some(NumberColumn {
-                                        text: &number_text,
-                                        width: number_width,
-                                        color: palette.text_muted,
-                                    }),
-                                    triage_marker,
-                                );
-                                if response.clicked() {
-                                    self.controller.select_collection_sample(row);
-                                }
-                                self.collection_sample_menu(&response, row, sample);
-                                if is_duplicate_hover {
-                                    ui.painter().rect_stroke(
-                                        response.rect.expand(2.0),
-                                        0.0,
-                                        Stroke::new(2.0, style::duplicate_hover_stroke()),
-                                        StrokeKind::Inside,
-                                    );
-                                }
-                                if response.drag_started() {
-                                    if let Some(pos) = response.interact_pointer_pos() {
-                                        self.controller.start_sample_drag(
-                                            sample.source_id.clone(),
-                                            path.clone(),
-                                            sample.label.clone(),
-                                            pos,
-                                        );
-                                    }
-                                } else if drag_active && response.dragged() {
-                                    if let Some(pos) = response.interact_pointer_pos() {
-                                        self.controller.update_active_drag(
-                                            pos,
-                                            DragSource::Collections,
-                                            DragTarget::None,
-                                        );
-                                    }
-                                } else if response.drag_stopped() {
-                                    self.controller.finish_active_drag();
-                                }
-                            },
-                        );
-                    }
-                })
-            }
-        });
-        let viewport_height = scroll_response.inner.inner_rect.height();
-        let content_height = scroll_response.inner.content_size.y;
-        let max_offset = (content_height - viewport_height).max(0.0);
-        let mut desired_offset = scroll_response.inner.state.offset.y;
-        if let Some(row) = duplicate_row {
-            desired_offset =
-                scroll_offset_to_reveal_row(desired_offset, row, row_metrics, viewport_height, 1.0);
-        } else if let Some(row) = selected_row {
-            desired_offset =
-                scroll_offset_to_reveal_row(desired_offset, row, row_metrics, viewport_height, 1.0);
-        }
-        let mut state = scroll_response.inner.state;
-        state.offset.y = desired_offset.clamp(0.0, max_offset);
-        state.store(ui.ctx(), scroll_response.inner.id);
-        let focused = matches!(
+        let focused_section = matches!(
             self.controller.ui.focus.context,
             FocusContext::CollectionSample
         );
-        style::paint_section_border(ui, scroll_response.response.rect, focused);
+        let autoscroll_to = duplicate_row.or(selected_row);
+        let list_response = render_flat_items_list(
+            ui,
+            FlatItemsListConfig {
+                scroll_id_salt: "collection_items_scroll",
+                min_height: available_height,
+                total_rows: samples.len(),
+                focused_section,
+                autoscroll_to,
+                autoscroll_padding_rows: 1.0,
+            },
+            |ui, row, metrics| {
+                let Some(sample) = samples.get(row) else {
+                    return;
+                };
+                let row_width = ui.available_width();
+                let path = sample.path.clone();
+                let mut label = format!("{} — {}", sample.source, sample.label);
+                if sample.missing {
+                    label.insert_str(0, "! ");
+                }
+                let is_selected = Some(row) == selected_row;
+                let is_duplicate_hover =
+                    drag_active && active_drag_path.as_ref().is_some_and(|p| p == &path);
+                let triage_marker = style::triage_marker_color(sample.tag).map(|color| RowMarker {
+                    width: style::triage_marker_width(),
+                    color,
+                });
+                let trailing_space = triage_marker
+                    .as_ref()
+                    .map(|marker| marker.width + metrics.padding * 0.5)
+                    .unwrap_or(0.0);
+                let bg = if is_duplicate_hover {
+                    Some(style::duplicate_hover_fill())
+                } else if is_selected {
+                    Some(style::row_selected_fill())
+                } else {
+                    None
+                };
+                ui.push_id(
+                    format!("{}:{}:{}", sample.source_id, sample.source, sample.label),
+                    |ui| {
+                        let label_width = row_width
+                            - metrics.padding
+                            - metrics.number_width
+                            - metrics.number_gap
+                            - trailing_space;
+                        let number_text = format!("{}", row + 1);
+                        let text_color = if sample.missing {
+                            style::missing_text()
+                        } else {
+                            style::triage_label_color(sample.tag)
+                        };
+                        let response = render_list_row(
+                            ui,
+                            &clamp_label_for_width(&label, label_width),
+                            row_width,
+                            metrics.row_height,
+                            bg,
+                            text_color,
+                            egui::Sense::click_and_drag(),
+                            Some(NumberColumn {
+                                text: &number_text,
+                                width: metrics.number_width,
+                                color: palette.text_muted,
+                            }),
+                            triage_marker,
+                        );
+                        if is_selected {
+                            let marker_width = 4.0;
+                            let marker_rect = egui::Rect::from_min_max(
+                                response.rect.left_top(),
+                                response.rect.left_top()
+                                    + egui::vec2(marker_width, metrics.row_height),
+                            );
+                            ui.painter()
+                                .rect_filled(marker_rect, 0.0, style::selection_marker_fill());
+                            ui.painter().rect_stroke(
+                                response.rect,
+                                0.0,
+                                style::focused_row_stroke(),
+                                StrokeKind::Inside,
+                            );
+                        }
+                        if response.clicked() {
+                            self.controller.select_collection_sample(row);
+                        }
+                        self.collection_sample_menu(&response, row, sample);
+                        if is_duplicate_hover {
+                            ui.painter().rect_stroke(
+                                response.rect.expand(2.0),
+                                0.0,
+                                Stroke::new(2.0, style::duplicate_hover_stroke()),
+                                StrokeKind::Inside,
+                            );
+                        }
+                        if response.drag_started() {
+                            if let Some(pos) = response.interact_pointer_pos() {
+                                self.controller.start_sample_drag(
+                                    sample.source_id.clone(),
+                                    path.clone(),
+                                    sample.label.clone(),
+                                    pos,
+                                );
+                            }
+                        } else if drag_active && response.dragged() {
+                            if let Some(pos) = response.interact_pointer_pos() {
+                                self.controller.update_active_drag(
+                                    pos,
+                                    DragSource::Collections,
+                                    DragTarget::None,
+                                );
+                            }
+                        } else if response.drag_stopped() {
+                            self.controller.finish_active_drag();
+                        }
+                    },
+                );
+            },
+        );
         if drag_active && let Some(pointer) = pointer_pos {
-            let target_rect = scroll_response.response.rect.expand2(egui::vec2(8.0, 0.0));
+            let target_rect = list_response.frame_rect.expand2(egui::vec2(8.0, 0.0));
             if target_rect.contains(pointer) {
                 debug!(
                     "Collections drop zone hover: pointer={:?} rect={:?} current_collection_id={:?}",
