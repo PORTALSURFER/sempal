@@ -301,4 +301,3 @@ fn random_navigation_mode_toggles_state_and_status() {
     assert!(!controller.random_navigation_mode_enabled());
     assert_eq!(controller.ui.status.text, "Random navigation off");
 }
-

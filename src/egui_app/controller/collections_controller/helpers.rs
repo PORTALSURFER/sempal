@@ -217,4 +217,3 @@ impl CollectionsController<'_> {
         }
     }
 }
-

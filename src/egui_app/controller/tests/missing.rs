@@ -123,4 +123,3 @@ fn read_failure_marks_sample_missing() {
             .is_some_and(|set| set.contains(&rel))
     );
 }
-

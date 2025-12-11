@@ -53,11 +53,15 @@ fn selection_drop_adds_clip_to_collection() {
     });
     controller.ui.drag.set_target(
         DragSource::Collections,
-        DragTarget::CollectionsDropZone { collection_id: None },
+        DragTarget::CollectionsDropZone {
+            collection_id: None,
+        },
     );
     assert!(matches!(
         controller.ui.drag.active_target,
-        DragTarget::CollectionsDropZone { collection_id: None }
+        DragTarget::CollectionsDropZone {
+            collection_id: None
+        }
     ));
     controller.finish_active_drag();
 
@@ -311,5 +315,3 @@ fn sample_drop_without_selection_warns_even_with_collections() {
     );
     assert_eq!(controller.ui.status.badge_label, "Warning");
 }
-
-

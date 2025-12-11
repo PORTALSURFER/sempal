@@ -110,4 +110,3 @@ impl BrowserActions for BrowserController<'_> {
         }
     }
 }
-
