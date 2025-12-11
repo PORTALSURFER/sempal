@@ -70,8 +70,10 @@ impl BrowserController<'_> {
         }
         let mut sorted = rows.to_vec();
         sorted.sort_unstable();
-        let highest = *sorted.last().unwrap();
-        let first = *sorted.first().unwrap_or(&highest);
+        let Some(highest) = sorted.last().copied() else {
+            return None;
+        };
+        let first = sorted.first().copied().unwrap_or(highest);
         let after = highest
             .checked_add(1)
             .and_then(|idx| self.ui.browser.visible.get(idx))
