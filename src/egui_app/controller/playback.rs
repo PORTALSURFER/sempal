@@ -171,6 +171,12 @@ impl EguiController {
         if !(selection_active && stopped_playback) {
             self.clear_selection();
         }
+        let had_cursor = self.ui.waveform.cursor.take().is_some();
+        if had_cursor {
+            self.ui.waveform.cursor_last_hover_at = None;
+            self.ui.waveform.cursor_last_navigation_at = None;
+            self.ui.waveform.last_start_marker = Some(0.0);
+        }
         if !self.ui.browser.selected_paths.is_empty() {
             self.clear_browser_selection();
         }

@@ -1,16 +1,16 @@
 ## Goal
-- Make pressing `f` focus the sample browser's fuzzy search input so users can type queries without leaving the list.
+- Make the space bar start playback from the waveform cursor when present, and have Escape clear the active waveform cursor so playback defaults to the start of the sample again.
 
 ## Proposed solutions
-- Add a sample-browser-scoped `f` hotkey that requests focus for the fuzzy search box while preserving existing navigation and playback behaviour.
-- Introduce a search focus request flag in the sample browser UI state (mirroring the folder search pattern) and have the filter UI honor it with `request_focus`.
+- Adjust the space bar handler to prefer the persistent waveform cursor as the playback anchor while preserving existing modifier behaviour (shift/ctrl/command).
+- Update escape handling to clear the waveform cursor and reset the default start marker, keeping other Escape effects intact.
+- Add focused tests around playback start and cursor clearing to lock in the new behaviour without regressing selection and playback flows.
 
 ## Step-by-step plan
-1. [x] Review existing sample browser search, focus, and hotkey plumbing (`controller/hotkeys.rs`, `controller/wavs.rs`, `state.rs`, `ui/sample_browser_panel.rs`) to map current behaviour and side effects.
-2. [x] Add controller/state support for a sample browser search focus request, ensuring focus context stays consistent and no autoplay is triggered.
-3. [x] Wire the `f` hotkey for the sample browser scope to trigger the search focus request without disturbing other shortcuts or selections.
-4. [x] Update the sample browser filter UI to honor the focus request flag and keep list rebuilding/filtering unchanged.
-5. [x] Add or adjust tests covering the new hotkey/search focus behaviour and run the relevant test suite.
+1. [-] Review current waveform cursor usage for playback start and Escape handling in `src/egui_app/ui.rs`, `controller/playback.rs`, and `controller/waveform_navigation.rs` to map existing fallbacks.
+2. [-] Implement space bar behaviour to start from the active waveform cursor (with existing modifier paths unchanged) and ensure cursor-based starts update the last start marker appropriately.
+3. [-] Extend Escape handling to clear the waveform cursor and reset the default start to the beginning when a cursor was active, while preserving other Escape side effects.
+4. [-] Add or update tests covering space/Escape interactions with the waveform cursor and playback start fallbacks; run the relevant test suite.
 
 ## Code Style & Architecture Rules Reminder
 - Keep files under 400 lines; split when necessary.

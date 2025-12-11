@@ -3,8 +3,6 @@ lets then write every task you find into @todo.md as a new todo item
 
 --
 
-\plan - use the waveform cursor as start position when we hit space bar, if we have an active waveform cursor, esc should remove it, resetting start to the beginning of the sample again
-
 \plan - cancel renaming if the user clicks somewhere else
 
 \plan - after deleting a sample or folder, jump focus to the one right after it
