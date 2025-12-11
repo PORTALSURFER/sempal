@@ -33,6 +33,13 @@ pub(in crate::egui_app::controller) struct TriageSampleContext {
 impl BrowserController<'_> {
     pub(super) fn try_normalize_browser_sample(&mut self, row: usize) -> Result<(), String> {
         let ctx = self.resolve_browser_sample(row)?;
+        self.try_normalize_browser_sample_ctx(&ctx)
+    }
+
+    pub(super) fn try_normalize_browser_sample_ctx(
+        &mut self,
+        ctx: &TriageSampleContext,
+    ) -> Result<(), String> {
         let (file_size, modified_ns, tag) = self.normalize_and_save_for_path(
             &ctx.source,
             &ctx.entry.relative_path,
@@ -91,6 +98,13 @@ impl BrowserController<'_> {
 
     pub(super) fn try_delete_browser_sample(&mut self, row: usize) -> Result<(), String> {
         let ctx = self.resolve_browser_sample(row)?;
+        self.try_delete_browser_sample_ctx(&ctx)
+    }
+
+    pub(super) fn try_delete_browser_sample_ctx(
+        &mut self,
+        ctx: &TriageSampleContext,
+    ) -> Result<(), String> {
         std::fs::remove_file(&ctx.absolute_path)
             .map_err(|err| format!("Failed to delete file: {err}"))?;
         let db = self
