@@ -6,6 +6,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use tracing::warn;
 use thiserror::Error;
 
 use super::db::SourceWriteBatch;
@@ -98,7 +99,19 @@ fn visit_dir(
             path: dir.clone(),
             source,
         })?;
-        for entry in entries.flatten() {
+        for entry_result in entries {
+            let entry = match entry_result {
+                Ok(entry) => entry,
+                Err(err) => {
+                    warn!(
+                        dir = %dir.display(),
+                        error = %err,
+                        "Failed to read directory entry during scan"
+                    );
+                    continue;
+                }
+            };
+
             let path = entry.path();
             if path.is_dir() {
                 stack.push(path);
