@@ -7,6 +7,10 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+fn is_root_path(path: &Path) -> bool {
+    path.as_os_str().is_empty()
+}
+
 #[derive(Clone, Copy)]
 enum FolderSelectMode {
     Replace,
@@ -28,6 +32,7 @@ impl FolderBrowserModel {
     fn clear_focus_if_missing(&mut self) {
         if let Some(focused) = self.focused.clone()
             && !self.available.contains(&focused)
+            && !is_root_path(&focused)
         {
             self.focused = None;
         }
@@ -36,6 +41,7 @@ impl FolderBrowserModel {
     fn clear_anchor_if_missing(&mut self) {
         if let Some(anchor) = self.selection_anchor.clone()
             && !self.available.contains(&anchor)
+            && !is_root_path(&anchor)
         {
             self.selection_anchor = None;
         }
@@ -97,18 +103,30 @@ impl EguiController {
         if rows.is_empty() {
             return;
         }
+        if rows.get(row_index).is_some_and(|row| row.is_root) {
+            self.focus_folder_row(row_index);
+            return;
+        }
         let Some(anchor_idx) = self.folder_anchor_index(&rows) else {
             self.replace_folder_selection(row_index);
             return;
         };
         let anchor_idx = anchor_idx.min(rows.len().saturating_sub(1));
         let row_index = row_index.min(rows.len().saturating_sub(1));
+        if rows.get(anchor_idx).is_some_and(|row| row.is_root) {
+            self.replace_folder_selection(row_index);
+            return;
+        }
         let start = anchor_idx.min(row_index);
         let end = anchor_idx.max(row_index);
         let selection: Vec<(PathBuf, bool)> = rows[start..=end]
             .iter()
+            .filter(|row| !row.is_root)
             .map(|row| (row.path.clone(), row.has_children))
             .collect();
+        if selection.is_empty() {
+            return;
+        }
         let (snapshot, selection_changed) = {
             let Some(model) = self.current_folder_model_mut() else {
                 return;
@@ -158,6 +176,9 @@ impl EguiController {
         let Some(view) = self.ui.sources.folders.rows.get(row) else {
             return;
         };
+        if view.is_root {
+            return;
+        }
         if view.has_children && !view.expanded {
             self.toggle_folder_expanded(row);
         }
@@ -170,6 +191,9 @@ impl EguiController {
         let Some(view) = self.ui.sources.folders.rows.get(row) else {
             return;
         };
+        if view.is_root {
+            return;
+        }
         if view.has_children && view.expanded {
             self.toggle_folder_expanded(row);
             return;
@@ -207,7 +231,11 @@ impl EguiController {
             model.selected.clear();
             if let Some(focused) = focused_path.clone() {
                 model.focused = Some(focused.clone());
-                model.selection_anchor = Some(focused);
+                if is_root_path(&focused) {
+                    model.selection_anchor = None;
+                } else {
+                    model.selection_anchor = Some(focused);
+                }
             }
             model.clone()
         };
@@ -231,16 +259,13 @@ impl EguiController {
     }
 
     pub(crate) fn toggle_folder_expanded(&mut self, row_index: usize) {
-        let Some(path) = self
-            .ui
-            .sources
-            .folders
-            .rows
-            .get(row_index)
-            .map(|row| row.path.clone())
-        else {
+        let Some(row) = self.ui.sources.folders.rows.get(row_index).cloned() else {
             return;
         };
+        if row.is_root {
+            return;
+        }
+        let path = row.path.clone();
         let snapshot = {
             let Some(model) = self.current_folder_model_mut() else {
                 return;
@@ -261,21 +286,15 @@ impl EguiController {
     }
 
     pub(crate) fn focus_folder_row(&mut self, row_index: usize) {
-        let Some(path) = self
-            .ui
-            .sources
-            .folders
-            .rows
-            .get(row_index)
-            .map(|row| row.path.clone())
-        else {
+        let Some(row) = self.ui.sources.folders.rows.get(row_index).cloned() else {
             return;
         };
+        let path = row.path.clone();
         let snapshot = {
             let Some(model) = self.current_folder_model_mut() else {
                 return;
             };
-            if !model.available.contains(&path) {
+            if !row.is_root && !model.available.contains(&path) {
                 return;
             }
             model.focused = Some(path);
@@ -309,16 +328,13 @@ impl EguiController {
     }
 
     pub(crate) fn add_folder_to_selection(&mut self, row_index: usize) {
-        let Some((path, has_children)) = self
-            .ui
-            .sources
-            .folders
-            .rows
-            .get(row_index)
-            .map(|row| (row.path.clone(), row.has_children))
-        else {
+        let Some(row) = self.ui.sources.folders.rows.get(row_index).cloned() else {
             return;
         };
+        if row.is_root {
+            return;
+        }
+        let path = row.path.clone();
         let (snapshot, selection_changed) = {
             let Some(model) = self.current_folder_model_mut() else {
                 return;
@@ -327,7 +343,7 @@ impl EguiController {
                 return;
             }
             let before = model.selected.clone();
-            insert_folder(&mut model.selected, &path, has_children);
+            insert_folder(&mut model.selected, &path, row.has_children);
             if model.selection_anchor.is_none() {
                 model.selection_anchor = Some(path.clone());
             }
@@ -380,6 +396,10 @@ impl EguiController {
             self.set_status("Focus a folder to delete it", StatusTone::Info);
             return;
         };
+        if target.as_os_str().is_empty() {
+            self.set_status("Root folder cannot be deleted", StatusTone::Info);
+            return;
+        }
         match self.remove_folder(&target) {
             Ok(()) => self.set_status(
                 format!("Deleted folder {}", target.display()),
@@ -394,6 +414,10 @@ impl EguiController {
             self.set_status("Focus a folder to rename it", StatusTone::Info);
             return;
         };
+        if target.as_os_str().is_empty() {
+            self.set_status("Root folder cannot be renamed", StatusTone::Info);
+            return;
+        }
         let default = target
             .file_name()
             .and_then(|n| n.to_str())
@@ -422,6 +446,14 @@ impl EguiController {
         self.focus_folder_context();
         self.ui.sources.folders.pending_action = Some(FolderActionPrompt::Create {
             parent,
+            name: String::new(),
+        });
+    }
+
+    pub(crate) fn start_new_folder_at_root(&mut self) {
+        self.focus_folder_context();
+        self.ui.sources.folders.pending_action = Some(FolderActionPrompt::Create {
+            parent: PathBuf::new(),
             name: String::new(),
         });
     }
@@ -510,16 +542,13 @@ impl EguiController {
     }
 
     fn apply_folder_selection(&mut self, row_index: usize, mode: FolderSelectMode) {
-        let Some((path, has_children)) = self
-            .ui
-            .sources
-            .folders
-            .rows
-            .get(row_index)
-            .map(|row| (row.path.clone(), row.has_children))
-        else {
+        let Some(row) = self.ui.sources.folders.rows.get(row_index).cloned() else {
             return;
         };
+        if row.is_root {
+            return;
+        }
+        let path = row.path.clone();
         let (snapshot, selection_changed) = {
             let Some(model) = self.current_folder_model_mut() else {
                 return;
@@ -531,7 +560,7 @@ impl EguiController {
             match mode {
                 FolderSelectMode::Replace => {
                     model.selected.clear();
-                    insert_folder(&mut model.selected, &path, has_children);
+                    insert_folder(&mut model.selected, &path, row.has_children);
                     model.selection_anchor = Some(path.clone());
                 }
                 FolderSelectMode::Toggle => {
@@ -541,7 +570,7 @@ impl EguiController {
                             model.selection_anchor = None;
                         }
                     } else {
-                        insert_folder(&mut model.selected, &path, has_children);
+                        insert_folder(&mut model.selected, &path, row.has_children);
                         if model.selection_anchor.is_none() {
                             model.selection_anchor = Some(path.clone());
                         }
@@ -575,16 +604,30 @@ impl EguiController {
         self.ui.sources.folders.search_query = model.search_query.clone();
         let tree = self.build_folder_tree(&model.available);
         let searching = !model.search_query.trim().is_empty();
-        let mut rows = Vec::new();
+        let mut folder_rows = Vec::new();
         let expanded = if searching {
             model.available.clone()
         } else {
             model.expanded.clone()
         };
-        Self::flatten_folder_tree(Path::new(""), 0, &tree, model, &expanded, &mut rows);
+        Self::flatten_folder_tree(Path::new(""), 0, &tree, model, &expanded, &mut folder_rows);
         if searching {
-            rows = self.filter_folder_rows(rows, &model.search_query);
+            folder_rows = self.filter_folder_rows(folder_rows, &model.search_query);
         }
+        let mut rows = Vec::new();
+        if self.selected_source.is_some() {
+            let has_children = !folder_rows.is_empty();
+            rows.push(FolderRowView {
+                path: PathBuf::new(),
+                name: ".".into(),
+                depth: 0,
+                has_children,
+                expanded: true,
+                selected: false,
+                is_root: true,
+            });
+        }
+        rows.extend(folder_rows);
         let focused = model
             .focused
             .as_ref()
@@ -681,6 +724,7 @@ impl EguiController {
                 has_children,
                 expanded: is_expanded,
                 selected,
+                is_root: false,
             };
             rows.push(row);
             if has_children && is_expanded {

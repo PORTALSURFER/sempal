@@ -111,9 +111,7 @@ impl EguiApp {
                                     close_menu = true;
                                 }
                                 ui.separator();
-                                ui.label(
-                                    RichText::new("Trash folder").color(palette.text_primary),
-                                );
+                                ui.label(RichText::new("Trash folder").color(palette.text_primary));
                                 let trash_label = self
                                     .controller
                                     .ui
