@@ -59,7 +59,9 @@ impl EguiController {
                         .collections
                         .iter()
                         .find(|c| &c.id == collection_id)
-                        .and_then(|c| export_dir_for(c, self.collection_export_root.as_deref()).ok())
+                        .and_then(|c| {
+                            export_dir_for(c, self.collection_export_root.as_deref()).ok()
+                        })
                         .unwrap_or(normalized);
                     self.set_status(
                         format!("Exports enabled: {}", display.display()),
@@ -81,11 +83,7 @@ impl EguiController {
 
     /// Reconcile a collection with the current contents of its export folder.
     pub fn refresh_collection_export(&mut self, collection_id: &CollectionId) {
-        let Some(collection) = self
-            .collections
-            .iter()
-            .find(|c| &c.id == collection_id)
-        else {
+        let Some(collection) = self.collections.iter().find(|c| &c.id == collection_id) else {
             self.set_status("Collection not found", StatusTone::Error);
             return;
         };
@@ -133,11 +131,11 @@ impl EguiController {
         let Some(collection) = self.collections.iter().find(|c| &c.id == collection_id) else {
             return Err("Collection not found".into());
         };
-        let collection_dir = match export_dir_for(collection, self.collection_export_root.as_deref())
-        {
-            Ok(dir) => dir,
-            Err(_) => return Ok(()),
-        };
+        let collection_dir =
+            match export_dir_for(collection, self.collection_export_root.as_deref()) {
+                Ok(dir) => dir,
+                Err(_) => return Ok(()),
+            };
         let source = self
             .sources
             .iter()
@@ -399,18 +397,14 @@ pub(super) fn export_dir_for(
     collection: &Collection,
     global_root: Option<&Path>,
 ) -> Result<PathBuf, String> {
-    resolved_export_dir(collection, global_root)
-        .ok_or_else(|| "Set an export folder first".into())
+    resolved_export_dir(collection, global_root).ok_or_else(|| "Set an export folder first".into())
 }
 
 pub(super) fn collection_folder_name(collection: &Collection) -> String {
     collection.export_folder_name()
 }
 
-pub(super) fn delete_exported_file(
-    export_dir: Option<PathBuf>,
-    member: &CollectionMember,
-) {
+pub(super) fn delete_exported_file(export_dir: Option<PathBuf>, member: &CollectionMember) {
     let Some(dir) = export_dir else {
         return;
     };
@@ -460,11 +454,8 @@ mod tests {
         let mut collection = Collection::new("Manual");
         collection.export_path = Some(PathBuf::from("custom/manual"));
         controller.collections.push(collection);
-        let dir = resolved_export_dir(
-            &controller.collections[0],
-            Some(Path::new("global/root")),
-        )
-        .expect("dir");
+        let dir = resolved_export_dir(&controller.collections[0], Some(Path::new("global/root")))
+            .expect("dir");
         assert_eq!(dir, PathBuf::from("custom/manual"));
     }
 

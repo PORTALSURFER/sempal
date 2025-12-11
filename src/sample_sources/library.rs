@@ -6,9 +6,9 @@ use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use thiserror::Error;
 
 use super::{Collection, CollectionId, SampleSource, SourceId};
-use crate::sample_sources::config::normalize_path;
 use crate::app_dirs;
 use crate::sample_sources::collections::{CollectionMember, collection_folder_name_from_str};
+use crate::sample_sources::config::normalize_path;
 
 /// Filename for the global library database stored under the user app directory.
 pub const LIBRARY_DB_FILE_NAME: &str = "library.db";
@@ -305,8 +305,7 @@ impl LibraryDatabase {
     }
 
     fn migrate_collection_export_paths(&mut self) -> Result<(), LibraryError> {
-        let current =
-            self.get_metadata(COLLECTION_EXPORT_PATHS_VERSION_KEY)?;
+        let current = self.get_metadata(COLLECTION_EXPORT_PATHS_VERSION_KEY)?;
         if current.as_deref() == Some(COLLECTION_EXPORT_PATHS_VERSION_V2) {
             return Ok(());
         }
@@ -471,8 +470,7 @@ mod tests {
             let _ = load().unwrap();
             let db_path = database_path().unwrap();
             let conn = Connection::open(&db_path).unwrap();
-            conn.execute("DELETE FROM collection_members", [])
-                .unwrap();
+            conn.execute("DELETE FROM collection_members", []).unwrap();
             conn.execute("DELETE FROM collections", []).unwrap();
             conn.execute(
                 "DELETE FROM metadata WHERE key = ?1",
