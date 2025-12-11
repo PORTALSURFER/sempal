@@ -3,6 +3,7 @@
 mod chrome;
 mod collections_panel;
 mod drag_overlay;
+mod flat_items_list;
 mod helpers;
 mod hotkey_overlay;
 mod hotkey_runtime;
