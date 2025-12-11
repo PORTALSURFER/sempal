@@ -86,14 +86,42 @@ impl EguiApp {
                             let mut close_menu = false;
                             ui.menu_button("Options", |ui| {
                                 let palette = style::palette();
-                                let label = self
+                                ui.label(
+                                    RichText::new("Collection export root")
+                                        .color(palette.text_primary),
+                                );
+                                let export_label = self
+                                    .controller
+                                    .ui
+                                    .collection_export_root
+                                    .as_ref()
+                                    .map(|p| p.display().to_string())
+                                    .unwrap_or_else(|| "Not set".to_string());
+                                ui.label(RichText::new(export_label).color(palette.text_muted));
+                                if ui.button("Choose collection export root...").clicked() {
+                                    self.controller.pick_collection_export_root();
+                                    close_menu = true;
+                                }
+                                if ui.button("Open collection export root").clicked() {
+                                    self.controller.open_collection_export_root();
+                                    close_menu = true;
+                                }
+                                if ui.button("Clear collection export root").clicked() {
+                                    self.controller.clear_collection_export_root();
+                                    close_menu = true;
+                                }
+                                ui.separator();
+                                ui.label(
+                                    RichText::new("Trash folder").color(palette.text_primary),
+                                );
+                                let trash_label = self
                                     .controller
                                     .ui
                                     .trash_folder
                                     .as_ref()
                                     .map(|p| p.display().to_string())
                                     .unwrap_or_else(|| "Not set".to_string());
-                                ui.label(RichText::new(label).color(palette.text_primary));
+                                ui.label(RichText::new(trash_label).color(palette.text_muted));
                                 if ui.button("Choose trash folder...").clicked() {
                                     self.controller.pick_trash_folder();
                                     close_menu = true;

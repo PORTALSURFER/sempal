@@ -93,17 +93,19 @@ impl EguiController {
         let _ = self.persist_config("Failed to save collection");
         self.refresh_collections_ui();
         self.set_status("Collection created", StatusTone::Info);
-        if let Some(current_id) = self.selected_collection.clone() {
-            self.pick_collection_export_path(&current_id);
-            if self
-                .collections
-                .iter()
-                .any(|c| c.id == current_id && c.export_path.is_none())
-            {
-                self.set_status(
-                    "No export folder chosen; exports disabled",
-                    StatusTone::Warning,
-                );
+        if self.collection_export_root.is_none() {
+            if let Some(current_id) = self.selected_collection.clone() {
+                self.pick_collection_export_path(&current_id);
+                if self
+                    .collections
+                    .iter()
+                    .any(|c| c.id == current_id && c.export_path.is_none())
+                {
+                    self.set_status(
+                        "No export folder chosen; exports disabled",
+                        StatusTone::Warning,
+                    );
+                }
             }
         }
     }
@@ -149,35 +151,39 @@ impl EguiController {
             return;
         };
         let old_name = self.collections[index].name.clone();
-        let export_root = self.collections[index].export_path.clone();
         let new_folder_name = collection_export::collection_folder_name_from_str(trimmed);
-        if let Some(root) = export_root.clone() {
-            let old_folder = root.join(collection_export::collection_folder_name(
-                &self.collections[index],
-            ));
-            let new_folder = root.join(&new_folder_name);
-            if old_folder != new_folder {
-                if new_folder.exists() {
-                    self.set_status(
-                        format!("Export folder already exists: {}", new_folder.display()),
-                        StatusTone::Error,
-                    );
-                    return;
-                }
-                if old_folder.exists() {
-                    if let Err(err) = std::fs::rename(&old_folder, &new_folder) {
+        if let Some(old_folder) = collection_export::resolved_export_dir(
+            &self.collections[index],
+            self.collection_export_root.as_deref(),
+        ) {
+            if let Some(parent) = old_folder.parent() {
+                let new_folder = parent.join(&new_folder_name);
+                if old_folder != new_folder {
+                    if new_folder.exists() {
                         self.set_status(
-                            format!("Failed to rename export folder: {err}"),
+                            format!("Export folder already exists: {}", new_folder.display()),
                             StatusTone::Error,
                         );
                         return;
                     }
-                } else if let Err(err) = std::fs::create_dir_all(&new_folder) {
-                    self.set_status(
-                        format!("Failed to create export folder: {err}"),
-                        StatusTone::Error,
-                    );
-                    return;
+                    if old_folder.exists() {
+                        if let Err(err) = std::fs::rename(&old_folder, &new_folder) {
+                            self.set_status(
+                                format!("Failed to rename export folder: {err}"),
+                                StatusTone::Error,
+                            );
+                            return;
+                        }
+                    } else if let Err(err) = std::fs::create_dir_all(&new_folder) {
+                        self.set_status(
+                            format!("Failed to create export folder: {err}"),
+                            StatusTone::Error,
+                        );
+                        return;
+                    }
+                    if self.collections[index].export_path.is_some() {
+                        self.collections[index].export_path = Some(new_folder);
+                    }
                 }
             }
         }
@@ -265,6 +271,7 @@ impl EguiController {
             &self.collections,
             selected_id.as_ref(),
             &collection_missing,
+            self.collection_export_root.as_deref(),
         );
         self.ui.collections.selected = selected_id
             .as_ref()

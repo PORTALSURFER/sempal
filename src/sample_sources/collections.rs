@@ -108,6 +108,29 @@ impl Collection {
         });
         removed
     }
+
+    /// Compute the sanitized folder name used when exporting this collection.
+    pub fn export_folder_name(&self) -> String {
+        collection_folder_name_from_str(&self.name)
+    }
+}
+
+/// Sanitize a collection name into a filesystem-friendly folder name.
+pub fn collection_folder_name_from_str(name: &str) -> String {
+    let mut cleaned: String = name
+        .chars()
+        .map(|c| {
+            if matches!(c, '/' | '\\' | ':' | '*') {
+                '_'
+            } else {
+                c
+            }
+        })
+        .collect();
+    if cleaned.is_empty() {
+        cleaned.push_str("collection");
+    }
+    cleaned
 }
 
 #[cfg(test)]

@@ -3,9 +3,9 @@
 // Transitional helpers; wiring into the egui renderer will consume these.
 
 use crate::egui_app::state::{CollectionRowView, CollectionSampleView, SourceRowView};
-use crate::sample_sources::collections::CollectionMember;
+use crate::sample_sources::collections::{collection_folder_name_from_str, CollectionMember};
 use crate::sample_sources::{Collection, CollectionId, SampleSource, SampleTag, WavEntry};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Convert a sample source into a UI row.
 pub fn source_row(source: &SampleSource, missing: bool) -> SourceRowView {
@@ -28,6 +28,7 @@ pub fn collection_rows(
     collections: &[Collection],
     selected: Option<&CollectionId>,
     missing_flags: &[bool],
+    export_root: Option<&Path>,
 ) -> Vec<CollectionRowView> {
     collections
         .iter()
@@ -37,7 +38,10 @@ pub fn collection_rows(
             name: collection.name.clone(),
             selected: selected.is_some_and(|id| id == &collection.id),
             count: collection.members.len(),
-            export_path: collection.export_path.clone(),
+            export_path: collection
+                .export_path
+                .clone()
+                .or_else(|| export_root.map(|root| export_path_for(root, collection))),
             missing: missing_flags.get(index).copied().unwrap_or(false),
         })
         .collect()
@@ -119,6 +123,10 @@ pub fn sample_display_label(path: &Path) -> String {
                 .map(|name| name.to_string())
         })
         .unwrap_or_else(|| path.to_string_lossy().to_string())
+}
+
+fn export_path_for(root: &Path, collection: &Collection) -> PathBuf {
+    root.join(collection_folder_name_from_str(&collection.name))
 }
 
 #[cfg(test)]
