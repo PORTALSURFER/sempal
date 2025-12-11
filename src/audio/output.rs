@@ -116,7 +116,9 @@ pub fn supported_sample_rates(host_id: &str, device_name: &str) -> Result<Vec<u3
             range.max_sample_rate().0,
         ));
     }
-    if supported.is_empty() && let Ok(default) = device.default_output_config() {
+    if supported.is_empty()
+        && let Ok(default) = device.default_output_config()
+    {
         supported.push(default.sample_rate().0);
     }
     supported.sort_unstable();
@@ -165,10 +167,14 @@ pub fn open_output_stream(config: &AudioOutputConfig) -> Result<OpenStreamOutcom
         cpal::BufferSize::Default => None,
         cpal::BufferSize::Fixed(size) => Some(*size),
     };
-    if let Some(rate) = config.sample_rate && rate != resolved_config.sample_rate() {
+    if let Some(rate) = config.sample_rate
+        && rate != resolved_config.sample_rate()
+    {
         used_fallback = true;
     }
-    if let Some(requested) = config.buffer_size && applied_buffer != Some(requested) {
+    if let Some(requested) = config.buffer_size
+        && applied_buffer != Some(requested)
+    {
         used_fallback = true;
     }
 

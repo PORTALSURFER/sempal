@@ -143,9 +143,10 @@ fn dropping_sample_adds_to_collection_and_db() {
 
     let db = controller.database_for(&source).unwrap();
     let rows = db.list_files().unwrap();
-    assert!(rows
-        .iter()
-        .any(|row| row.relative_path == Path::new("sample.wav")));
+    assert!(
+        rows.iter()
+            .any(|row| row.relative_path == Path::new("sample.wav"))
+    );
 }
 
 #[test]
