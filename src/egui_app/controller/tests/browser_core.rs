@@ -327,4 +327,3 @@ fn tagging_under_filter_uses_random_focus_in_random_mode() {
     };
     assert!(selected_visible < controller.visible_browser_indices().len());
 }
-

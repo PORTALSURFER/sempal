@@ -213,4 +213,3 @@ fn cancelling_browser_rename_clears_prompt() {
     assert!(controller.ui.browser.pending_action.is_none());
     assert!(!controller.ui.browser.rename_focus_requested);
 }
-

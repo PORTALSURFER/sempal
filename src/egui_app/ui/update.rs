@@ -337,5 +337,4 @@ impl EguiApp {
         self.controller
             .move_playhead_steps(step, input.alt, was_playing);
     }
-
 }

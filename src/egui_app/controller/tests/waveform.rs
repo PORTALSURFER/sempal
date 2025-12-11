@@ -262,4 +262,3 @@ fn confirming_pending_destructive_edit_clears_prompt() {
         .collect();
     assert_eq!(samples, vec![0.0, 0.3]);
 }
-
