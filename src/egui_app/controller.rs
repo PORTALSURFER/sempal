@@ -9,23 +9,24 @@ mod clipboard;
 mod collection_export;
 mod collection_items;
 mod collection_items_helpers;
-mod collections;
 mod config;
-mod drag;
 mod focus;
 pub(crate) mod hotkeys;
 mod interaction_options;
 mod loading;
 mod playback;
 mod progress;
-mod sample_browser_actions;
 mod scans;
 mod selection_edits;
 mod selection_export;
 mod source_folders;
 mod sources;
 mod trash;
-mod waveform_navigation;
+mod browser_controller;
+mod collections_controller;
+mod drag_drop_controller;
+mod hotkeys_controller;
+mod waveform_controller;
 mod wavs;
 
 use crate::{
@@ -186,6 +187,28 @@ impl EguiController {
         self.ui.status.text = text.into();
         self.ui.status.badge_label = label;
         self.ui.status.badge_color = color;
+    }
+
+    pub(crate) fn browser(&mut self) -> browser_controller::BrowserController<'_> {
+        browser_controller::BrowserController::new(self)
+    }
+
+    pub(crate) fn waveform(&mut self) -> waveform_controller::WaveformController<'_> {
+        waveform_controller::WaveformController::new(self)
+    }
+
+    pub(crate) fn drag_drop(&mut self) -> drag_drop_controller::DragDropController<'_> {
+        drag_drop_controller::DragDropController::new(self)
+    }
+
+    pub(crate) fn collections_ctrl(
+        &mut self,
+    ) -> collections_controller::CollectionsController<'_> {
+        collections_controller::CollectionsController::new(self)
+    }
+
+    pub(crate) fn hotkeys_ctrl(&mut self) -> hotkeys_controller::HotkeysController<'_> {
+        hotkeys_controller::HotkeysController::new(self)
     }
 }
 
