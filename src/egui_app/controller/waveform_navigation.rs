@@ -1,12 +1,12 @@
 use super::*;
-use crate::egui_app::state::WaveformView;
+use crate::egui_app::state::{FocusContext, WaveformView};
 use crate::selection::SelectionEdge;
 use std::time::{Duration, Instant};
 
 const PLAYHEAD_STEP_PX: f32 = 32.0;
 const PLAYHEAD_STEP_PX_FINE: f32 = 1.0;
 const VIEW_EPSILON: f32 = 1e-5;
-const CURSOR_IDLE_FADE: Duration = Duration::from_millis(2_000);
+const CURSOR_IDLE_FADE: Duration = Duration::from_millis(500);
 
 #[derive(Clone, Copy, Debug)]
 enum CursorUpdateSource {
@@ -254,6 +254,9 @@ impl EguiController {
         }
         if !self.waveform_ready() {
             return 0.0;
+        }
+        if self.ui.focus.context == FocusContext::Waveform {
+            return 1.0;
         }
         let Some(last_activity) = self.cursor_last_activity() else {
             return 1.0;

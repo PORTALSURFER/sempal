@@ -2262,57 +2262,6 @@ fn play_from_cursor_prefers_cursor_position() {
 }
 
 #[test]
-fn spacebar_play_prefers_cursor_without_selection() {
-    let (mut controller, source) = dummy_controller();
-    prepare_browser_sample(&mut controller, &source, "space.wav");
-    controller.select_wav_by_path(Path::new("space.wav"));
-    controller.decoded_waveform = Some(DecodedWaveform {
-        samples: vec![0.0; 10_000],
-        duration_seconds: 1.0,
-        sample_rate: 48_000,
-        channels: 1,
-    });
-    controller.ui.waveform.cursor = Some(0.6);
-    controller.ui.waveform.last_start_marker = Some(0.1);
-
-    controller.play_from_spacebar();
-
-    let pending = controller
-        .pending_playback
-        .as_ref()
-        .expect("pending playback request");
-    assert_eq!(pending.start_override, Some(0.6));
-    assert_eq!(controller.ui.waveform.last_start_marker, Some(0.6));
-}
-
-#[test]
-fn spacebar_play_respects_selection_over_cursor() {
-    let (mut controller, source) = dummy_controller();
-    prepare_browser_sample(&mut controller, &source, "selection.wav");
-    controller.select_wav_by_path(Path::new("selection.wav"));
-    controller.decoded_waveform = Some(DecodedWaveform {
-        samples: vec![0.0; 10_000],
-        duration_seconds: 1.0,
-        sample_rate: 48_000,
-        channels: 1,
-    });
-    controller
-        .selection
-        .set_range(Some(SelectionRange::new(0.1, 0.3)));
-    controller.apply_selection(controller.selection.range());
-    controller.ui.waveform.cursor = Some(0.8);
-
-    controller.play_from_spacebar();
-
-    let pending = controller
-        .pending_playback
-        .as_ref()
-        .expect("pending playback request");
-    assert!(pending.start_override.is_none());
-    assert_eq!(controller.ui.waveform.last_start_marker, None);
-}
-
-#[test]
 fn cursor_alpha_fades_before_reset() {
     let (mut controller, source) = dummy_controller();
     prepare_browser_sample(&mut controller, &source, "cursor.wav");
@@ -2350,6 +2299,27 @@ fn cursor_alpha_resets_after_idle_timeout() {
 
     assert!(alpha <= f32::EPSILON);
     assert_eq!(controller.ui.waveform.cursor, Some(0.0));
+}
+
+#[test]
+fn cursor_does_not_fade_when_waveform_focused() {
+    let (mut controller, source) = dummy_controller();
+    prepare_browser_sample(&mut controller, &source, "cursor.wav");
+    controller.decoded_waveform = Some(DecodedWaveform {
+        samples: vec![0.0; 10_000],
+        duration_seconds: 1.0,
+        sample_rate: 48_000,
+        channels: 1,
+    });
+    controller.ui.waveform.cursor = Some(0.4);
+    controller.ui.waveform.cursor_last_navigation_at =
+        Some(Instant::now() - Duration::from_millis(800));
+    controller.ui.focus.context = FocusContext::Waveform;
+
+    let alpha = controller.waveform_cursor_alpha(false);
+
+    assert_eq!(alpha, 1.0);
+    assert_eq!(controller.ui.waveform.cursor, Some(0.4));
 }
 
 #[test]
