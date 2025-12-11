@@ -209,7 +209,6 @@ impl EguiApp {
                 }
             });
         });
-        self.render_folder_action_prompt(ui);
         let frame = style::section_frame();
         let focused = matches!(
             self.controller.ui.focus.context,
@@ -220,6 +219,21 @@ impl EguiApp {
         let rows = self.controller.ui.sources.folders.rows.clone();
         let root_row = rows.first().filter(|row| row.is_root).cloned();
         let has_folder_rows = rows.iter().any(|row| !row.is_root);
+        let mut inline_parent = self
+            .controller
+            .ui
+            .sources
+            .folders
+            .new_folder
+            .as_ref()
+            .map(|state| state.parent.clone());
+        if let Some(parent) = inline_parent.clone() {
+            if !parent.as_os_str().is_empty() && !rows.iter().any(|row| row.path == parent) {
+                self.controller.cancel_new_folder_creation();
+                inline_parent = None;
+            }
+        }
+        let inline_parent_for_rows = inline_parent.clone();
         let frame_response = frame.show(ui, |ui| {
             ui.set_min_height(height);
             ui.set_max_height(height);
@@ -293,11 +307,24 @@ impl EguiApp {
                 }
                 ui.add_space(2.0);
             }
+            let inline_parent = inline_parent_for_rows.clone();
             let scroll = egui::ScrollArea::vertical()
                 .id_salt("folder_browser_scroll")
                 .max_height(height);
             scroll.show(ui, |ui| {
+                let mut inline_rendered = false;
+                let inline_is_root = inline_parent
+                    .as_ref()
+                    .is_some_and(|path| path.as_os_str().is_empty());
+                if inline_is_root {
+                    inline_rendered = true;
+                    let row_width = ui.available_width();
+                    self.render_inline_new_folder_row(ui, 0, row_width, row_height);
+                }
                 if !has_folder_rows {
+                    if inline_is_root {
+                        return;
+                    }
                     let text = if self.controller.current_source().is_some() {
                         "No folders detected for this source"
                     } else {
@@ -432,6 +459,23 @@ impl EguiApp {
                             StrokeKind::Inside,
                         );
                     }
+                    if let Some(parent) = inline_parent.as_ref() {
+                        if parent == &row.path && !inline_rendered {
+                            let row_width = ui.available_width();
+                            self.render_inline_new_folder_row(
+                                ui,
+                                row.depth + 1,
+                                row_width,
+                                row_height,
+                            );
+                            inline_rendered = true;
+                        }
+                    }
+                }
+                if hovered_folder.is_none() {
+                    let pointer = pointer_pos.unwrap_or_default();
+                    self.controller
+                        .update_active_drag(pointer, None, false, None, None, false);
                 }
             });
         });
@@ -498,7 +542,6 @@ impl EguiApp {
         };
         let name = match prompt {
             crate::egui_app::state::FolderActionPrompt::Rename { name, .. } => name,
-            _ => return,
         };
         let padding = ui.spacing().button_padding.x;
         let indent = row.depth as f32 * 12.0;
@@ -525,61 +568,49 @@ impl EguiApp {
         }
     }
 
-    fn render_folder_action_prompt(&mut self, ui: &mut Ui) {
-        let Some(prompt) = self.controller.ui.sources.folders.pending_action.as_mut() else {
+    fn render_inline_new_folder_row(
+        &mut self,
+        ui: &mut Ui,
+        depth: usize,
+        row_width: f32,
+        row_height: f32,
+    ) {
+        let Some(inline) = self.controller.ui.sources.folders.new_folder.as_mut() else {
             return;
         };
-        if !matches!(
-            prompt,
-            crate::egui_app::state::FolderActionPrompt::Create { .. }
-        ) {
-            return;
+        let response = render_list_row(
+            ui,
+            "",
+            row_width,
+            row_height,
+            Some(style::row_selected_fill()),
+            style::high_contrast_text(),
+            egui::Sense::hover(),
+            None,
+            None,
+        );
+        let padding = ui.spacing().button_padding.x;
+        let indent = depth as f32 * 12.0;
+        let mut edit_rect = response.rect;
+        edit_rect.min.x += padding + indent + 14.0;
+        edit_rect.max.x -= padding;
+        edit_rect.min.y += 2.0;
+        edit_rect.max.y -= 2.0;
+        let edit = egui::TextEdit::singleline(&mut inline.name)
+            .hint_text("New folder name")
+            .frame(false)
+            .desired_width(edit_rect.width());
+        let edit_response = ui.put(edit_rect, edit);
+        if inline.focus_requested && !edit_response.has_focus() {
+            edit_response.request_focus();
+            inline.focus_requested = false;
         }
-        let palette = style::palette();
-        let mut submit = false;
-        let mut cancel = false;
-        ui.add_space(4.0);
-        ui.horizontal(|ui| {
-            let (label, path_display, name) = match prompt {
-                crate::egui_app::state::FolderActionPrompt::Create { parent, name } => (
-                    "Create folder",
-                    if parent.as_os_str().is_empty() {
-                        "at root".to_string()
-                    } else {
-                        parent.display().to_string()
-                    },
-                    name,
-                ),
-                _ => unreachable!(),
-            };
-            ui.label(RichText::new(label).color(palette.text_primary));
-            ui.label(RichText::new(path_display).color(palette.text_muted));
-            let response = ui.add(
-                egui::TextEdit::singleline(name)
-                    .hint_text("Folder name")
-                    .desired_width(160.0),
-            );
-            submit |= response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-            cancel |= ui.input(|i| i.key_pressed(egui::Key::Escape));
-            submit |= ui.button("Apply").clicked();
-            cancel |= ui.button("Cancel").clicked();
-        });
-        let action = self.controller.ui.sources.folders.pending_action.clone();
-        if submit {
-            if let Some(action) = action {
-                let result = match action {
-                    crate::egui_app::state::FolderActionPrompt::Create { parent, name } => {
-                        self.controller.create_folder(&parent, &name)
-                    }
-                    crate::egui_app::state::FolderActionPrompt::Rename { .. } => unreachable!(),
-                };
-                match result {
-                    Ok(()) => self.controller.ui.sources.folders.pending_action = None,
-                    Err(err) => self.controller.set_status(err, style::StatusTone::Error),
-                }
-            }
-        } else if cancel {
-            self.controller.ui.sources.folders.pending_action = None;
+        let enter = edit_response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+        let escape = edit_response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape));
+        if enter {
+            self.apply_pending_folder_creation();
+        } else if escape || edit_response.lost_focus() {
+            self.controller.cancel_new_folder_creation();
         }
     }
 
@@ -590,6 +621,16 @@ impl EguiApp {
                 Ok(()) => {
                     self.controller.cancel_folder_rename();
                 }
+                Err(err) => self.controller.set_status(err, style::StatusTone::Error),
+            }
+        }
+    }
+
+    fn apply_pending_folder_creation(&mut self) {
+        let inline = self.controller.ui.sources.folders.new_folder.clone();
+        if let Some(state) = inline {
+            match self.controller.create_folder(&state.parent, &state.name) {
+                Ok(()) => self.controller.ui.sources.folders.new_folder = None,
                 Err(err) => self.controller.set_status(err, style::StatusTone::Error),
             }
         }
