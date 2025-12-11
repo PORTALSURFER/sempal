@@ -17,6 +17,7 @@ pub(crate) mod hotkeys;
 mod interaction_options;
 mod loading;
 mod playback;
+mod progress;
 mod sample_browser_actions;
 mod scans;
 mod selection_edits;
@@ -30,8 +31,8 @@ mod wavs;
 use crate::{
     audio::{AudioOutputConfig, AudioPlayer},
     egui_app::state::{
-        FolderBrowserUiState, PlayheadState, SampleBrowserState, TriageFlagColumn,
-        TriageFlagFilter, UiState, WaveformImage,
+        FolderBrowserUiState, PlayheadState, ProgressOverlayState, SampleBrowserState,
+        TriageFlagColumn, TriageFlagFilter, UiState, WaveformImage,
     },
     egui_app::{ui::style, ui::style::StatusTone, view_model},
     sample_sources::scanner::ScanMode,
@@ -110,6 +111,8 @@ pub struct EguiController {
     folder_browsers: HashMap<SourceId, source_folders::FolderBrowserModel>,
     #[cfg(target_os = "windows")]
     drag_hwnd: Option<windows::Win32::Foundation::HWND>,
+    #[cfg(test)]
+    progress_cancel_after: Option<usize>,
 }
 
 impl EguiController {
@@ -163,6 +166,8 @@ impl EguiController {
             folder_browsers: HashMap::new(),
             #[cfg(target_os = "windows")]
             drag_hwnd: None,
+            #[cfg(test)]
+            progress_cancel_after: None,
         }
     }
 

@@ -5,6 +5,7 @@ mod collections_panel;
 mod drag_overlay;
 mod helpers;
 mod hotkey_overlay;
+mod progress_overlay;
 mod sample_browser_panel;
 mod sample_menus;
 mod sources_panel;
@@ -471,6 +472,9 @@ impl eframe::App for EguiApp {
         if copy_shortcut_pressed(ctx) {
             self.controller.copy_selection_to_clipboard();
         }
+        if input.escape && self.controller.ui.progress.visible {
+            self.controller.request_progress_cancel();
+        }
         if input.escape {
             self.controller.handle_escape();
         }
@@ -658,6 +662,7 @@ impl eframe::App for EguiApp {
             self.render_center(ui);
         });
         self.render_drag_overlay(ctx);
+        progress_overlay::render_progress_overlay(ctx, &mut self.controller.ui.progress);
         if self.controller.ui.hotkeys.overlay_visible {
             if input.escape {
                 self.controller.ui.hotkeys.overlay_visible = false;
