@@ -317,6 +317,33 @@ fn tagging_under_filter_advances_focus_to_next_visible() {
 }
 
 #[test]
+fn tagging_under_filter_uses_random_focus_in_random_mode() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.cache_db(&source).unwrap();
+    controller.wav_entries = vec![
+        sample_entry("one.wav", SampleTag::Neutral),
+        sample_entry("two.wav", SampleTag::Neutral),
+        sample_entry("three.wav", SampleTag::Neutral),
+    ];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+    controller.set_browser_filter(TriageFlagFilter::Untagged);
+    controller.toggle_random_navigation_mode();
+
+    controller.focus_browser_row_only(1);
+    controller.tag_selected(SampleTag::Keep);
+
+    assert_eq!(controller.visible_browser_indices(), &[0, 2]);
+    assert_eq!(controller.random_history.len(), 1);
+    assert_eq!(controller.random_history_cursor, Some(0));
+    let Some(selected_visible) = controller.ui.browser.selected_visible else {
+        panic!("expected a selected row");
+    };
+    assert!(selected_visible < controller.visible_browser_indices().len());
+}
+
+#[test]
 fn hotkey_tagging_applies_to_all_selected_rows() {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source.clone());
