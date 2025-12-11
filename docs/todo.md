@@ -3,7 +3,7 @@ lets then write every task you find into @todo.md as a new todo item
 
 --
 
-- if the user tried to drop a sample item into a collection when no collection is active, give the user clear feedback that this is not possible and they need to create a collection first.
+
 
 -lets move the item count label in the sample browser to the far right side right budding up against the right sidebar there
 

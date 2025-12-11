@@ -1209,6 +1209,37 @@ fn sample_drop_falls_back_to_active_collection() {
 }
 
 #[test]
+fn sample_drop_without_active_collection_warns() {
+    let temp = tempdir().unwrap();
+    let root = temp.path().join("source");
+    std::fs::create_dir_all(&root).unwrap();
+    let renderer = WaveformRenderer::new(12, 12);
+    let mut controller = EguiController::new(renderer, None);
+    let source = SampleSource::new(root.clone());
+    controller.sources.push(source.clone());
+    controller.selected_source = Some(source.id.clone());
+    controller.cache_db(&source).unwrap();
+    write_test_wav(&root.join("one.wav"), &[0.1, 0.2]);
+    controller.wav_entries = vec![sample_entry("one.wav", SampleTag::Neutral)];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+
+    controller.ui.drag.payload = Some(DragPayload::Sample {
+        source_id: source.id.clone(),
+        relative_path: PathBuf::from("one.wav"),
+    });
+    controller.ui.drag.hovering_drop_zone = true;
+    controller.finish_active_drag();
+
+    assert_eq!(
+        controller.ui.status.text,
+        "Create or select a collection before dropping samples"
+    );
+    assert_eq!(controller.ui.status.badge_label, "Warning");
+    assert!(controller.collections.is_empty());
+}
+
+#[test]
 fn sample_drop_to_folder_moves_and_updates_state() {
     let temp = tempdir().unwrap();
     let root = temp.path().join("source");
