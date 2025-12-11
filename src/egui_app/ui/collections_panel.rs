@@ -4,10 +4,13 @@ use super::helpers::{
 };
 use super::style;
 use super::*;
-use crate::egui_app::state::{CollectionRowView, CollectionSampleView, DragPayload, FocusContext};
+use crate::egui_app::state::{
+    CollectionRowView, CollectionSampleView, DragPayload, DragSource, DragTarget, FocusContext,
+};
 use crate::egui_app::view_model;
 use eframe::egui::{self, RichText, Stroke, StrokeKind, Ui};
 use std::path::PathBuf;
+use tracing::debug;
 
 impl EguiApp {
     pub(super) fn render_collections_panel(&mut self, ui: &mut Ui) {
@@ -73,11 +76,8 @@ impl EguiApp {
                             {
                                 self.controller.update_active_drag(
                                     pointer,
-                                    Some(collection.id.clone()),
-                                    false,
-                                    None,
-                                    None,
-                                    false,
+                                    DragSource::Collections,
+                                    DragTarget::CollectionsRow(collection.id.clone()),
                                 );
                             }
                         });
@@ -109,19 +109,17 @@ impl EguiApp {
         let samples = self.controller.ui.collections.samples.clone();
         let selected_row = self.controller.ui.collections.selected_sample;
         let current_collection_id = self.controller.current_collection_id();
-        let hovering_collection =
-            self.controller
-                .ui
-                .drag
-                .hovering_collection
-                .clone()
-                .or_else(|| {
-                    if self.controller.ui.drag.hovering_drop_zone {
-                        current_collection_id.clone()
-                    } else {
-                        None
-                    }
-                });
+        let hovering_collection = match &self.controller.ui.drag.active_target {
+            DragTarget::CollectionsRow(id) => Some(id.clone()),
+            DragTarget::CollectionsDropZone { collection_id } => {
+                if collection_id.is_none() {
+                    current_collection_id.clone()
+                } else {
+                    collection_id.clone()
+                }
+            }
+            _ => None,
+        };
         let active_drag_path = if drag_active {
             match &self.controller.ui.drag.payload {
                 Some(DragPayload::Sample { relative_path, .. }) => Some(relative_path.clone()),
@@ -246,7 +244,9 @@ impl EguiApp {
                                 } else if drag_active && response.dragged() {
                                     if let Some(pos) = response.interact_pointer_pos() {
                                         self.controller.update_active_drag(
-                                            pos, None, false, None, None, false,
+                                            pos,
+                                            DragSource::Collections,
+                                            DragTarget::None,
                                         );
                                     }
                                 } else if response.drag_stopped() {
@@ -280,13 +280,16 @@ impl EguiApp {
         if drag_active && let Some(pointer) = pointer_pos {
             let target_rect = scroll_response.response.rect.expand2(egui::vec2(8.0, 0.0));
             if target_rect.contains(pointer) {
+                debug!(
+                    "Collections drop zone hover: pointer={:?} rect={:?} current_collection_id={:?}",
+                    pointer, target_rect, current_collection_id
+                );
                 self.controller.update_active_drag(
                     pointer,
-                    current_collection_id.clone(),
-                    true,
-                    None,
-                    None,
-                    false,
+                    DragSource::Collections,
+                    DragTarget::CollectionsDropZone {
+                        collection_id: current_collection_id.clone(),
+                    },
                 );
                 ui.painter().rect_stroke(
                     target_rect,

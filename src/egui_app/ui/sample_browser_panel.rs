@@ -4,7 +4,9 @@ use super::helpers::{
 };
 use super::style;
 use super::*;
-use crate::egui_app::state::{FocusContext, SampleBrowserActionPrompt, TriageFlagFilter};
+use crate::egui_app::state::{
+    DragSource, DragTarget, FocusContext, SampleBrowserActionPrompt, TriageFlagFilter,
+};
 use crate::egui_app::ui::style::StatusTone;
 use crate::egui_app::view_model;
 use eframe::egui::{self, RichText, StrokeKind, Ui};
@@ -203,11 +205,8 @@ impl EguiApp {
                                 if let Some(pos) = response.interact_pointer_pos() {
                                     self.controller.update_active_drag(
                                         pos,
-                                        None,
-                                        false,
-                                        Some(drop_target),
-                                        None,
-                                        false,
+                                        DragSource::Browser,
+                                        DragTarget::BrowserTriage(drop_target),
                                     );
                                 }
                             } else if response.drag_stopped() {
@@ -241,11 +240,8 @@ impl EguiApp {
         {
             self.controller.update_active_drag(
                 pointer,
-                None,
-                false,
-                Some(drop_target),
-                None,
-                false,
+                DragSource::Browser,
+                DragTarget::BrowserTriage(drop_target),
             );
             ui.painter().rect_stroke(
                 frame_response.response.rect,

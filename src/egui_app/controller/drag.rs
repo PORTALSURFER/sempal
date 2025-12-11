@@ -1,6 +1,6 @@
 use super::*;
 use crate::egui_app::controller::collection_items_helpers::file_metadata;
-use crate::egui_app::state::DragPayload;
+use crate::egui_app::state::{DragPayload, DragSource, DragTarget};
 use egui::Pos2;
 use tracing::{debug, info, warn};
 
@@ -45,35 +45,16 @@ impl EguiController {
     }
 
     /// Update drag position and hover state.
-    pub fn update_active_drag(
-        &mut self,
-        pos: Pos2,
-        hovering_collection: Option<CollectionId>,
-        hovering_drop_zone: bool,
-        hovering_triage: Option<TriageFlagColumn>,
-        hovering_folder: Option<PathBuf>,
-        hovering_folder_panel: bool,
-    ) {
+    pub fn update_active_drag(&mut self, pos: Pos2, source: DragSource, target: DragTarget) {
         if self.ui.drag.payload.is_none() {
             return;
         }
+        debug!(
+            "update_active_drag: pos={:?} source={:?} target={:?}",
+            pos, source, target
+        );
         self.ui.drag.position = Some(pos);
-        self.ui.drag.hovering_collection = hovering_collection;
-        self.ui.drag.hovering_drop_zone = hovering_drop_zone;
-        self.ui.drag.hovering_browser = hovering_triage;
-        if hovering_folder_panel {
-            if let Some(folder) = hovering_folder {
-                debug!("Drag hover folder {:?}", folder.display());
-                self.ui.drag.hovering_folder = Some(folder.clone());
-                self.ui.drag.last_hovering_folder = Some(folder);
-            } else {
-                // Keep the last hovered folder so drop can still land if cursor slips slightly.
-                self.ui.drag.hovering_folder = None;
-            }
-        } else {
-            self.ui.drag.hovering_folder = None;
-        }
-        self.ui.drag.hovering_folder_panel = hovering_folder_panel;
+        self.ui.drag.set_target(source, target);
     }
 
     /// Refresh drag cursor position when payload is active, without touching hover targets.
@@ -87,82 +68,48 @@ impl EguiController {
     pub fn finish_active_drag(&mut self) {
         let payload = match self.ui.drag.payload.take() {
             Some(payload) => payload,
+
             None => {
                 self.reset_drag();
+
                 return;
             }
         };
+
+        let active_target = self.ui.drag.active_target.clone();
+
         info!(
-            "Finish drag payload={:?} hover_collection={:?} hover_drop_zone={} hover_browser={:?} hover_folder={:?} last_folder={:?} hover_folder_panel={}",
-            payload,
-            self.ui.drag.hovering_collection,
-            self.ui.drag.hovering_drop_zone,
-            self.ui.drag.hovering_browser,
-            self.ui.drag.hovering_folder,
-            self.ui.drag.last_hovering_folder,
-            self.ui.drag.hovering_folder_panel
+            "Finish drag payload={:?} active_target={:?} last_folder_target={:?}",
+            payload, active_target, self.ui.drag.last_folder_target
         );
-        let triage_target = if self.ui.drag.hovering_folder_panel {
-            None
-        } else {
-            self.ui.drag.hovering_browser
+
+        let (triage_target, folder_target, over_folder_panel) = match &active_target {
+            DragTarget::BrowserTriage(column) => (Some(*column), None, false),
+
+            DragTarget::FolderPanel { folder } => {
+                let target = folder
+                    .clone()
+                    .or_else(|| self.ui.drag.last_folder_target.clone());
+
+                (None, target, true)
+            }
+
+            _ => (None, None, false),
         };
-        let folder_target = self
-            .ui
-            .drag
-            .hovering_folder
-            .clone()
-            .or_else(|| self.ui.drag.last_hovering_folder.clone());
-        let over_folder_panel = self.ui.drag.hovering_folder_panel;
+
         if over_folder_panel && folder_target.is_none() {
             self.reset_drag();
+
             self.set_status("Drop onto a folder to move the sample", StatusTone::Warning);
+
             return;
         }
-        debug!(
-            "Finish drag payload={:?} folder_target={:?} collection_target={:?} triage_target={:?}",
-            payload, folder_target, self.ui.drag.hovering_collection, triage_target
-        );
+
         let current_collection_id = self.current_collection_id();
-        let collection_target = match &payload {
-            DragPayload::Sample { .. } => {
-                if over_folder_panel {
-                    None
-                } else {
-                    self.ui.drag.hovering_collection.clone().or_else(|| {
-                        if self.ui.drag.hovering_drop_zone {
-                            current_collection_id.clone()
-                        } else {
-                            None
-                        }
-                    })
-                }
-            }
-            DragPayload::Selection { .. } => self
-                .ui
-                .drag
-                .hovering_collection
-                .clone()
-                .or_else(|| {
-                    if self.ui.drag.hovering_drop_zone {
-                        current_collection_id.clone()
-                    } else {
-                        None
-                    }
-                })
-                .or_else(|| {
-                    if triage_target.is_none() {
-                        current_collection_id.clone()
-                    } else {
-                        None
-                    }
-                }),
-        };
+
         if matches!(payload, DragPayload::Sample { .. })
-            && self.ui.drag.hovering_drop_zone
+            && matches!(active_target, DragTarget::CollectionsDropZone { .. })
             && current_collection_id.is_none()
-            && collection_target.is_none()
-            && folder_target.is_none()
         {
             self.reset_drag();
             self.set_status(
@@ -171,10 +118,69 @@ impl EguiController {
             );
             return;
         }
+        let collection_target = match (&payload, &active_target) {
+            (_, DragTarget::CollectionsRow(id)) => Some(id.clone()),
+
+            (_, DragTarget::CollectionsDropZone { collection_id }) => collection_id
+                .clone()
+                .or_else(|| current_collection_id.clone()),
+
+            (DragPayload::Selection { .. }, _)
+                if triage_target.is_none() && folder_target.is_none() =>
+            {
+                current_collection_id.clone()
+            }
+
+            _ => None,
+        };
+
+        let drop_in_collections_panel =
+            matches!(active_target, DragTarget::CollectionsDropZone { .. })
+                || matches!(active_target, DragTarget::CollectionsRow(_))
+                || (self.collections.is_empty()
+                    && triage_target.is_none()
+                    && folder_target.is_none());
+
+        debug!(
+            "Collection drop context: drop_in_panel={} current_collection_id={:?} collection_target={:?} folder_target={:?} triage_target={:?} pointer_at={:?}",
+            drop_in_collections_panel,
+            current_collection_id,
+            collection_target,
+            folder_target,
+            triage_target,
+            self.ui.drag.position,
+        );
+
+        if matches!(payload, DragPayload::Sample { .. })
+            && drop_in_collections_panel
+            && current_collection_id.is_none()
+            && collection_target.is_none()
+            && folder_target.is_none()
+            && triage_target.is_none()
+        {
+            debug!(
+                "Blocked collection drop (no active collection): target={:?} collections_empty={} payload={:?}",
+                active_target,
+                self.collections.is_empty(),
+                payload,
+            );
+
+            self.reset_drag();
+
+            self.set_status(
+                "Create or select a collection before dropping samples",
+                StatusTone::Warning,
+            );
+
+            return;
+        }
+
         self.reset_drag();
+
         match payload {
             DragPayload::Sample {
                 source_id,
+
                 relative_path,
             } => {
                 if let Some(folder) = folder_target {
@@ -188,9 +194,12 @@ impl EguiController {
                     );
                 }
             }
+
             DragPayload::Selection {
                 source_id,
+
                 relative_path,
+
                 bounds,
             } => {
                 self.handle_selection_drop(
@@ -208,12 +217,8 @@ impl EguiController {
         self.ui.drag.payload = None;
         self.ui.drag.label.clear();
         self.ui.drag.position = None;
-        self.ui.drag.hovering_collection = None;
-        self.ui.drag.hovering_drop_zone = false;
-        self.ui.drag.hovering_browser = None;
-        self.ui.drag.hovering_folder = None;
-        self.ui.drag.hovering_folder_panel = false;
-        self.ui.drag.last_hovering_folder = None;
+        self.ui.drag.clear_all_targets();
+        self.ui.drag.last_folder_target = None;
         self.ui.drag.external_started = false;
     }
 
@@ -246,6 +251,9 @@ impl EguiController {
             return;
         }
         let payload = self.ui.drag.payload.clone();
+        self.ui
+            .drag
+            .set_target(DragSource::External, DragTarget::External);
         self.ui.drag.external_started = true;
         let status = match payload {
             Some(DragPayload::Sample {
@@ -278,9 +286,8 @@ impl EguiController {
         self.ui.drag.payload = Some(payload);
         self.ui.drag.label = label;
         self.ui.drag.position = Some(pos);
-        self.ui.drag.hovering_collection = None;
-        self.ui.drag.hovering_drop_zone = false;
-        self.ui.drag.hovering_browser = None;
+        self.ui.drag.clear_all_targets();
+        self.ui.drag.last_folder_target = None;
         self.ui.drag.external_started = false;
     }
 

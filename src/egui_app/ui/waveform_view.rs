@@ -1,6 +1,9 @@
 use super::style;
 use super::*;
-use crate::{egui_app::state::DestructiveSelectionEdit, selection::SelectionEdge};
+use crate::{
+    egui_app::state::{DestructiveSelectionEdit, DragSource, DragTarget},
+    selection::SelectionEdge,
+};
 use eframe::egui::{
     self, Align2, Color32, CursorIcon, Rgba, RichText, Stroke, StrokeKind, TextStyle,
     TextureOptions, Ui, text::LayoutJob,
@@ -199,8 +202,11 @@ impl EguiApp {
                     }
                 } else if handle_response.dragged() {
                     if let Some(pos) = handle_response.interact_pointer_pos() {
-                        self.controller
-                            .update_active_drag(pos, None, false, None, None, false);
+                        self.controller.update_active_drag(
+                            pos,
+                            DragSource::Waveform,
+                            DragTarget::None,
+                        );
                     }
                 } else if handle_response.drag_stopped() {
                     self.controller.finish_active_drag();
