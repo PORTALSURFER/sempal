@@ -3,8 +3,6 @@ lets then write every task you find into @todo.md as a new todo item
 
 --
 
-\plan - cancel renaming if the user clicks somewhere else
-
 \plan - after deleting a sample or folder, jump focus to the one right after it
 
 \plan - add P or shift-p as a hotkey to move all trashed files to the trash folder

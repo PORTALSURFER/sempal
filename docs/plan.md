@@ -1,16 +1,16 @@
 ## Goal
-- Make the space bar start playback from the waveform cursor when present, and have Escape clear the active waveform cursor so playback defaults to the start of the sample again.
+- Cancel inline renaming when the user clicks elsewhere so rename mode exits cleanly without applying unintended changes.
 
 ## Proposed solutions
-- Adjust the space bar handler to prefer the persistent waveform cursor as the playback anchor while preserving existing modifier behaviour (shift/ctrl/command).
-- Update escape handling to clear the waveform cursor and reset the default start marker, keeping other Escape effects intact.
-- Add focused tests around playback start and cursor clearing to lock in the new behaviour without regressing selection and playback flows.
+- Detect pointer/focus changes on inline rename inputs (samples and folders) and treat losing focus due to an external click as a cancel path.
+- Ensure rename prompts clear their temporary state when cancelled, keeping explicit apply/enter flows intact.
+- Add regression tests that simulate clicking away during rename to lock in the cancel behaviour for both sample and folder contexts.
 
 ## Step-by-step plan
-1. [-] Review current waveform cursor usage for playback start and Escape handling in `src/egui_app/ui.rs`, `controller/playback.rs`, and `controller/waveform_navigation.rs` to map existing fallbacks.
-2. [-] Implement space bar behaviour to start from the active waveform cursor (with existing modifier paths unchanged) and ensure cursor-based starts update the last start marker appropriately.
-3. [-] Extend Escape handling to clear the waveform cursor and reset the default start to the beginning when a cursor was active, while preserving other Escape side effects.
-4. [-] Add or update tests covering space/Escape interactions with the waveform cursor and playback start fallbacks; run the relevant test suite.
+1. [x] Review existing rename flows (sample browser and folder browser) in controller and UI layers to map how focus requests and temp state are tracked.
+2. [x] Implement focus-loss/click-away detection on inline rename widgets to exit rename mode without applying changes, clearing any stored temp text.
+3. [x] Wire controller/UI state resets so cancelled renames fully clear prompts and focus flags across both sample and folder rename paths.
+4. [x] Add/extend tests covering click-away cancellation for rename flows and run the relevant test suite to confirm behaviour.
 
 ## Code Style & Architecture Rules Reminder
 - Keep files under 400 lines; split when necessary.
