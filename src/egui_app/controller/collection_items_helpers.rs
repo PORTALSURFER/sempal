@@ -140,11 +140,11 @@ impl EguiController {
         else {
             return false;
         };
-        let folder_name = collection_export::collection_folder_name(collection);
-        let export_root = collection.export_path.clone();
+        let export_dir =
+            collection_export::resolved_export_dir(collection, self.collection_export_root.as_deref());
         let removed = collection.remove_member(&ctx.member.source_id, &ctx.member.relative_path);
         if removed {
-            collection_export::delete_exported_file(export_root, &folder_name, &ctx.member);
+            collection_export::delete_exported_file(export_dir, &ctx.member);
         }
         removed
     }
@@ -402,12 +402,9 @@ impl EguiController {
         new_relative: &Path,
     ) {
         if let Some(collection) = self.collections.iter().find(|c| c.id == ctx.collection_id) {
-            let folder_name = collection_export::collection_folder_name(collection);
-            collection_export::delete_exported_file(
-                collection.export_path.clone(),
-                &folder_name,
-                &ctx.member,
-            );
+            let export_dir =
+                collection_export::resolved_export_dir(collection, self.collection_export_root.as_deref());
+            collection_export::delete_exported_file(export_dir, &ctx.member);
         }
         let new_member = CollectionMember {
             source_id: ctx.member.source_id.clone(),

@@ -26,12 +26,13 @@ fn enable_export_with_existing_member(
     export_root: &Path,
 ) {
     std::fs::create_dir_all(export_root).unwrap();
+    controller.collection_export_root = Some(export_root.to_path_buf());
+    controller.ui.collection_export_root = Some(export_root.to_path_buf());
     if let Some(collection) = controller
         .collections
         .iter_mut()
         .find(|c| c.id == *collection_id)
     {
-        collection.export_path = Some(export_root.to_path_buf());
         if let Some(member) = collection.members.first().cloned() {
             controller
                 .export_member_if_needed(collection_id, &member)

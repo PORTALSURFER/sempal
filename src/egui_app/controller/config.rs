@@ -7,6 +7,7 @@ impl EguiController {
         let cfg = crate::sample_sources::config::load_or_default()?;
         self.feature_flags = cfg.feature_flags;
         self.trash_folder = cfg.trash_folder.clone();
+        self.collection_export_root = cfg.collection_export_root.clone();
         self.ui.collections.enabled = self.feature_flags.collections_enabled;
         self.audio_output = cfg.audio_output.clone();
         self.ui.audio.selected = self.audio_output.clone();
@@ -27,6 +28,7 @@ impl EguiController {
         self.refresh_audio_options();
         self.apply_volume(cfg.volume);
         self.ui.trash_folder = cfg.trash_folder.clone();
+        self.ui.collection_export_root = cfg.collection_export_root.clone();
         self.sources = cfg.sources.clone();
         self.rebuild_missing_sources();
         if !self.missing_sources.is_empty() {
@@ -63,6 +65,7 @@ impl EguiController {
             collections: self.collections.clone(),
             feature_flags: self.feature_flags.clone(),
             trash_folder: self.trash_folder.clone(),
+            collection_export_root: self.collection_export_root.clone(),
             last_selected_source: self.selected_source.clone(),
             audio_output: self.audio_output.clone(),
             volume: self.ui.volume,

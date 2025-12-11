@@ -19,6 +19,9 @@ pub struct AppConfig {
     pub collections: Vec<Collection>,
     pub feature_flags: FeatureFlags,
     pub trash_folder: Option<PathBuf>,
+    /// Optional default root used when creating collection export folders.
+    #[serde(default)]
+    pub collection_export_root: Option<PathBuf>,
     pub last_selected_source: Option<super::SourceId>,
     #[serde(default = "default_audio_output")]
     pub audio_output: AudioOutputConfig,
@@ -34,6 +37,8 @@ struct AppSettings {
     pub feature_flags: FeatureFlags,
     #[serde(default)]
     pub trash_folder: Option<PathBuf>,
+    #[serde(default)]
+    pub collection_export_root: Option<PathBuf>,
     #[serde(default)]
     pub last_selected_source: Option<super::SourceId>,
     #[serde(default = "default_volume")]
@@ -173,6 +178,7 @@ pub fn load_or_default() -> Result<AppConfig, ConfigError> {
         collections: library.collections,
         feature_flags: settings.feature_flags,
         trash_folder: settings.trash_folder,
+        collection_export_root: settings.collection_export_root,
         last_selected_source: settings.last_selected_source,
         audio_output: settings.audio_output,
         volume: settings.volume,
@@ -200,6 +206,7 @@ pub fn save_to_path(config: &AppConfig, path: &Path) -> Result<(), ConfigError> 
         &AppSettings {
             feature_flags: config.feature_flags.clone(),
             trash_folder: config.trash_folder.clone(),
+            collection_export_root: config.collection_export_root.clone(),
             last_selected_source: config.last_selected_source.clone(),
             volume: config.volume,
             audio_output: config.audio_output.clone(),
@@ -247,6 +254,7 @@ fn migrate_legacy_config(legacy_path: &Path, new_path: &Path) -> Result<AppSetti
     let settings = AppSettings {
         feature_flags: legacy.feature_flags,
         trash_folder: legacy.trash_folder,
+        collection_export_root: None,
         last_selected_source: legacy.last_selected_source,
         audio_output: legacy.audio_output,
         volume: legacy.volume,
@@ -331,6 +339,7 @@ impl Default for AppConfig {
             collections: Vec::new(),
             feature_flags: FeatureFlags::default(),
             trash_folder: None,
+            collection_export_root: None,
             last_selected_source: None,
             audio_output: default_audio_output(),
             volume: default_volume(),
@@ -344,6 +353,7 @@ impl Default for AppSettings {
         Self {
             feature_flags: FeatureFlags::default(),
             trash_folder: None,
+            collection_export_root: None,
             last_selected_source: None,
             audio_output: default_audio_output(),
             volume: default_volume(),
@@ -402,6 +412,7 @@ mod tests {
                 collections: vec![Collection::new("Old Collection")],
                 feature_flags: FeatureFlags::default(),
                 trash_folder: Some(PathBuf::from("trash_here")),
+                collection_export_root: None,
                 last_selected_source: None,
                 audio_output: default_audio_output(),
                 volume: 0.9,
@@ -474,6 +485,22 @@ mod tests {
             save_to_path(&cfg, &path).unwrap();
             let loaded = super::load_settings_from(&path).unwrap();
             assert_eq!(loaded.trash_folder, Some(trash));
+        });
+    }
+
+    #[test]
+    fn collection_export_root_round_trips() {
+        let dir = tempdir().unwrap();
+        with_config_home(dir.path(), || {
+            let path = dir.path().join("cfg.toml");
+            let root = PathBuf::from("exports");
+            let cfg = AppConfig {
+                collection_export_root: Some(root.clone()),
+                ..AppConfig::default()
+            };
+            save_to_path(&cfg, &path).unwrap();
+            let loaded = super::load_settings_from(&path).unwrap();
+            assert_eq!(loaded.collection_export_root, Some(root));
         });
     }
 }
