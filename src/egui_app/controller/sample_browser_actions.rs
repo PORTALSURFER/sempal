@@ -469,6 +469,10 @@ impl EguiController {
         if self.ui.browser.visible.is_empty() || self.ui.browser.selected_visible.is_some() {
             return;
         }
+        if self.random_navigation_mode_enabled() {
+            self.focus_random_visible_sample();
+            return;
+        }
         let target_row = primary_visible_row.min(self.ui.browser.visible.len().saturating_sub(1));
         self.focus_browser_row_only(target_row);
     }
