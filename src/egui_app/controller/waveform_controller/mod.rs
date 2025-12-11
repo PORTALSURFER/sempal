@@ -9,4 +9,3 @@ use super::*;
 use crate::egui_app::state::{FocusContext, WaveformView};
 use crate::selection::SelectionEdge;
 use std::time::{Duration, Instant};
-

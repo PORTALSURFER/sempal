@@ -382,5 +382,3 @@ fn clearing_folder_selection_shows_all_samples() -> Result<(), String> {
     assert_eq!(controller.visible_browser_indices(), &[0, 1]);
     Ok(())
 }
-
-
