@@ -123,6 +123,7 @@ impl EguiController {
             "Finish drag payload={:?} folder_target={:?} collection_target={:?} triage_target={:?}",
             payload, folder_target, self.ui.drag.hovering_collection, triage_target
         );
+        let current_collection_id = self.current_collection_id();
         let collection_target = match &payload {
             DragPayload::Sample { .. } => {
                 if over_folder_panel {
@@ -130,7 +131,7 @@ impl EguiController {
                 } else {
                     self.ui.drag.hovering_collection.clone().or_else(|| {
                         if self.ui.drag.hovering_drop_zone {
-                            self.current_collection_id()
+                            current_collection_id.clone()
                         } else {
                             None
                         }
@@ -144,19 +145,32 @@ impl EguiController {
                 .clone()
                 .or_else(|| {
                     if self.ui.drag.hovering_drop_zone {
-                        self.current_collection_id()
+                        current_collection_id.clone()
                     } else {
                         None
                     }
                 })
                 .or_else(|| {
                     if triage_target.is_none() {
-                        self.current_collection_id()
+                        current_collection_id.clone()
                     } else {
                         None
                     }
                 }),
         };
+        if matches!(payload, DragPayload::Sample { .. })
+            && self.ui.drag.hovering_drop_zone
+            && current_collection_id.is_none()
+            && collection_target.is_none()
+            && folder_target.is_none()
+        {
+            self.reset_drag();
+            self.set_status(
+                "Create or select a collection before dropping samples",
+                StatusTone::Warning,
+            );
+            return;
+        }
         self.reset_drag();
         match payload {
             DragPayload::Sample {
