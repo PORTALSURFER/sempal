@@ -2622,6 +2622,41 @@ fn waveform_render_meta_allows_small_shifts_on_full_view() {
 }
 
 #[test]
+fn waveform_rerenders_after_same_length_edit() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.selected_source = Some(source.id.clone());
+    controller.waveform_size = [32, 8];
+    let path = source.root.join("edit.wav");
+    write_test_wav(&path, &[0.1, 0.1, 0.1, 0.1]);
+
+    controller
+        .load_waveform_for_selection(&source, Path::new("edit.wav"))
+        .unwrap();
+    let before = controller
+        .ui
+        .waveform
+        .image
+        .as_ref()
+        .expect("waveform image")
+        .image
+        .clone();
+
+    write_test_wav(&path, &[1.0, -1.0, 1.0, -1.0]);
+    controller.refresh_waveform_for_sample(&source, Path::new("edit.wav"));
+    let after = controller
+        .ui
+        .waveform
+        .image
+        .as_ref()
+        .expect("refreshed waveform image")
+        .image
+        .clone();
+
+    assert_ne!(before.pixels, after.pixels);
+}
+
+#[test]
 fn stale_audio_results_are_ignored() {
     let (mut controller, source) = dummy_controller();
     controller.feature_flags.autoplay_selection = false;
