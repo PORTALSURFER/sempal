@@ -34,6 +34,7 @@ description: How to set up Sempal, triage samples, edit waveforms, and manage co
 ## Browse and triage
 - Filter chips (All/Keep/Trash/Untagged) change the visible list. Rows show number columns and right-edge keep/trash markers; missing files show `!`.
 - Search box performs fuzzy matching within the current filter; clear to restore the full list.
+- Dice button in the browser toolbar: click 🎲 to play a random visible sample; **Shift + click** toggles sticky random navigation (same as `Alt + R`).
 - Selection basics: click to focus; **Shift + click** extends; **Ctrl/Cmd + click** toggles multi-select while keeping focus. **Up/Down** moves focus; **Shift + Up/Down** extends. Toggle **Alt + R** to lock random navigation so **Up/Down** jump to random samples (Up replays the last pick).
 - Tagging: **Right Arrow** → Keep (Trash → Neutral, others → Keep). **Left Arrow** → Trash (Keep → Neutral, others → Trash). **Ctrl/Cmd + Right/Left** moves the selection across triage columns.
 - Row context menu: Tag Keep/Neutral/Trash, **Normalize (overwrite)**, **Rename**, **Delete file**. Applies to the focused row or multi-select.

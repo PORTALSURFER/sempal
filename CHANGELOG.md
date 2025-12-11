@@ -1,3 +1,73 @@
+## [0.287.0] - 2025-12-11
+
+### 🚀 Features
+
+- Improve folder browser selection markers and range clicks
+- Show selected folders summary below browser
+- Support shift+arrow range selection in folder browser
+- Add folder browser shortcuts for folder actions and search
+- Inline folder rename editing with enter/escape controls
+- Clear waveform selection on escape
+- Add sticky random navigation mode
+- Show visible sample count next to sample browser search bar
+- Allow dragging samples into folders
+- Refocus browser after tagging filtered samples
+- Add ctrl+space playback and idle cursor fadeout
+- Add sample browser rename hotkey
+- Focus sample browser search with hotkey f
+- Start spacebar playback from waveform cursor and clear it on escape
+- Keep waveform cursor visible when focused and refine space shortcut
+- Add trashed move hotkey
+- Focus random sample after filtered tagging in random mode
+- Preserve wav extensions during sample rename
+- Clear folder selection
+- Add folder browser context menu
+- Add sticky root entry to folder browser
+- Inline folder creation workflow
+- Inline folder creation workflow
+- Warn when dropping samples without active collection
+- Redesign drag/drop targeting
+- Right-align sample browser item count label
+
+### 🐛 Bug Fixes
+
+- Stop gs focus hotkey from auto-playing samples
+- Keep folder focus on esc and move selection marker left
+- Let folder browser fill remaining sidebar space
+- Confine selected folders list within sidebar space
+- Confine folder sidebar content and slim status bar
+- Preserve selection when stopping playback
+- Clear last playstart marker when switching samples
+- Extend directional fades to sample edges
+- Persist folder hover and log folder drag drops
+- Clear folder focus when context changes
+- Cancel inline renames when focus is lost
+- Keep browser and folder focus moving after deletes
+- Rerender waveform when audio content changes after edits
+- Hide waveform playhead when playback finishes
+
+### 🚜 Refactor
+
+- Split ui, state, and waveform into focused modules
+
+### 📚 Documentation
+
+- Refresh styleguide colors to match app palette
+- Convert usage guide for GitHub Pages
+
+### 🧪 Testing
+
+- Fix stuck test
+
+### ⚙️ Miscellaneous Tasks
+
+- *(ui)* Simplify section borders to avoid doubles
+- *(ui)* Reduce list row strokes to avoid double borders
+- Clean up clippy findings and add todo tracker
+- Clear controller and ui clippy warnings
+- Remove unused controller methods and tidy plan
+- Complete plan for black box migration
+- *(release)* V0.287.0 (#16)
 ## [0.239.0] - 2025-12-10
 
 ### 🚀 Features
