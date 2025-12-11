@@ -137,11 +137,13 @@ impl EguiController {
     }
 
     /// Fade the selection toward silence from left to right.
+    #[allow(dead_code)]
     pub(crate) fn fade_waveform_selection_left_to_right(&mut self) -> Result<(), String> {
         self.fade_waveform_selection(FadeDirection::LeftToRight)
     }
 
     /// Fade the selection toward silence from right to left.
+    #[allow(dead_code)]
     pub(crate) fn fade_waveform_selection_right_to_left(&mut self) -> Result<(), String> {
         self.fade_waveform_selection(FadeDirection::RightToLeft)
     }
@@ -277,7 +279,7 @@ struct SelectionEditBuffer {
 }
 
 fn load_selection_buffer(
-    absolute_path: &PathBuf,
+    absolute_path: &Path,
     selection: SelectionRange,
 ) -> Result<SelectionEditBuffer, String> {
     let (samples, spec) = read_samples_for_normalization(absolute_path)?;

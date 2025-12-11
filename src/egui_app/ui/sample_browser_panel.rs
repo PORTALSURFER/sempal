@@ -39,7 +39,7 @@ impl EguiApp {
             let scroll_area = egui::ScrollArea::vertical()
                 .id_salt("sample_browser_scroll")
                 .max_height(list_height);
-            let scroll_response = if total_rows == 0 {
+            if total_rows == 0 {
                 scroll_area.show(ui, |ui| {
                     let height = ui.available_height().max(list_height);
                     ui.allocate_exact_size(
@@ -216,8 +216,7 @@ impl EguiApp {
                         });
                     }
                 })
-            };
-            scroll_response
+            }
         });
         let focused = matches!(
             self.controller.ui.focus.context,
@@ -236,31 +235,24 @@ impl EguiApp {
         let mut state = frame_response.inner.state;
         state.offset.y = desired_offset.clamp(0.0, max_offset);
         state.store(ui.ctx(), frame_response.inner.id);
-        if drag_active {
-            if let Some(pointer) = pointer_pos {
-                if frame_response.response.rect.contains(pointer) {
-                    self.controller.update_active_drag(
-                        pointer,
-                        None,
-                        false,
-                        Some(drop_target),
-                        None,
-                        false,
-                    );
-                }
-            }
-        }
-        if drag_active {
-            if let Some(pointer) = pointer_pos {
-                if frame_response.response.rect.contains(pointer) {
-                    ui.painter().rect_stroke(
-                        frame_response.response.rect,
-                        0.0,
-                        style::drag_target_stroke(),
-                        StrokeKind::Inside,
-                    );
-                }
-            }
+        if drag_active
+            && let Some(pointer) = pointer_pos
+            && frame_response.response.rect.contains(pointer)
+        {
+            self.controller.update_active_drag(
+                pointer,
+                None,
+                false,
+                Some(drop_target),
+                None,
+                false,
+            );
+            ui.painter().rect_stroke(
+                frame_response.response.rect,
+                0.0,
+                style::drag_target_stroke(),
+                StrokeKind::Inside,
+            );
         }
     }
 
@@ -285,17 +277,15 @@ impl EguiApp {
                 .button("Normalize (overwrite)")
                 .on_hover_text("Scale to full range and overwrite the wav")
                 .clicked()
-            {
-                if self
+                && self
                     .controller
                     .normalize_browser_samples(&action_rows)
                     .is_ok()
-                {
-                    close_menu = true;
-                }
+            {
+                close_menu = true;
             }
             ui.separator();
-            let default_name = view_model::sample_display_label(&path);
+            let default_name = view_model::sample_display_label(path);
             let rename_id = ui.make_persistent_id(format!("rename:triage:{}", path.display()));
             if self.sample_rename_controls(ui, rename_id, default_name.as_str(), |app, value| {
                 app.controller.rename_browser_sample(row, value).is_ok()
@@ -304,10 +294,10 @@ impl EguiApp {
             }
             let delete_btn =
                 egui::Button::new(RichText::new("Delete file").color(style::destructive_text()));
-            if ui.add(delete_btn).clicked() {
-                if self.controller.delete_browser_samples(&action_rows).is_ok() {
-                    close_menu = true;
-                }
+            if ui.add(delete_btn).clicked()
+                && self.controller.delete_browser_samples(&action_rows).is_ok()
+            {
+                close_menu = true;
             }
             if close_menu {
                 ui.close();
@@ -350,9 +340,7 @@ impl EguiApp {
         let escape = response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape));
         if enter {
             self.controller.apply_pending_browser_rename();
-        } else if escape {
-            self.controller.cancel_browser_rename();
-        } else if response.lost_focus() {
+        } else if escape || response.lost_focus() {
             self.controller.cancel_browser_rename();
         }
     }

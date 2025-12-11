@@ -67,19 +67,18 @@ impl EguiApp {
                                 self.controller.select_collection_by_index(Some(index));
                             }
                             self.collection_row_menu(&response, collection);
-                            if drag_active {
-                                if let Some(pointer) = pointer_pos {
-                                    if response.rect.contains(pointer) {
-                                        self.controller.update_active_drag(
-                                            pointer,
-                                            Some(collection.id.clone()),
-                                            false,
-                                            None,
-                                            None,
-                                            false,
-                                        );
-                                    }
-                                }
+                            if drag_active
+                                && let Some(pointer) = pointer_pos
+                                && response.rect.contains(pointer)
+                            {
+                                self.controller.update_active_drag(
+                                    pointer,
+                                    Some(collection.id.clone()),
+                                    false,
+                                    None,
+                                    None,
+                                    false,
+                                );
                             }
                         });
                     }
@@ -278,25 +277,25 @@ impl EguiApp {
             FocusContext::CollectionSample
         );
         style::paint_section_border(ui, scroll_response.response.rect, focused);
-        if drag_active {
-            if let Some(pointer) = pointer_pos {
-                let target_rect = scroll_response.response.rect.expand2(egui::vec2(8.0, 0.0));
-                if target_rect.contains(pointer) {
-                    self.controller.update_active_drag(
-                        pointer,
-                        current_collection_id.clone(),
-                        true,
-                        None,
-                        None,
-                        false,
-                    );
-                    ui.painter().rect_stroke(
-                        target_rect,
-                        6.0,
-                        style::drag_target_stroke(),
-                        StrokeKind::Inside,
-                    );
-                }
+        if drag_active
+            && let Some(pointer) = pointer_pos
+        {
+            let target_rect = scroll_response.response.rect.expand2(egui::vec2(8.0, 0.0));
+            if target_rect.contains(pointer) {
+                self.controller.update_active_drag(
+                    pointer,
+                    current_collection_id.clone(),
+                    true,
+                    None,
+                    None,
+                    false,
+                );
+                ui.painter().rect_stroke(
+                    target_rect,
+                    6.0,
+                    style::drag_target_stroke(),
+                    StrokeKind::Inside,
+                );
             }
         }
     }
@@ -317,10 +316,9 @@ impl EguiApp {
                 .button("Normalize (overwrite)")
                 .on_hover_text("Scale to full range and overwrite the wav")
                 .clicked()
+                && self.controller.normalize_collection_sample(row).is_ok()
             {
-                if self.controller.normalize_collection_sample(row).is_ok() {
-                    close_menu = true;
-                }
+                close_menu = true;
             }
             ui.separator();
             let default_name = view_model::sample_display_label(&sample.path);
@@ -337,10 +335,10 @@ impl EguiApp {
             let delete_btn = egui::Button::new(
                 RichText::new("Delete from collection").color(style::destructive_text()),
             );
-            if ui.add(delete_btn).clicked() {
-                if self.controller.delete_collection_sample(row).is_ok() {
-                    close_menu = true;
-                }
+            if ui.add(delete_btn).clicked()
+                && self.controller.delete_collection_sample(row).is_ok()
+            {
+                close_menu = true;
             }
             if close_menu {
                 ui.close();
