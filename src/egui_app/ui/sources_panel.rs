@@ -278,6 +278,7 @@ impl EguiApp {
                 }
                 if response.clicked() {
                     self.controller.focus_folder_row(0);
+                    self.controller.clear_folder_selection();
                 } else if response.secondary_clicked() {
                     self.controller.focus_folder_row(0);
                 }
