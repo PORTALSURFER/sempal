@@ -246,4 +246,3 @@ impl DragDropActions for DragDropController<'_> {
     #[cfg(not(target_os = "windows"))]
     fn maybe_launch_external_drag(&mut self, _pointer_outside: bool) {}
 }
-

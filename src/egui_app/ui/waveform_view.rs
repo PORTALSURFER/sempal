@@ -721,10 +721,8 @@ mod tests {
 
     #[test]
     fn edge_handles_do_not_overlap_drag_handle() {
-        let selection_rect = egui::Rect::from_min_size(
-            egui::pos2(0.0, 0.0),
-            egui::vec2(50.0, 12.0),
-        );
+        let selection_rect =
+            egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(50.0, 12.0));
         let handle_rect = selection_handle_rect(selection_rect);
         let start_edge_rect = selection_edge_handle_rect(selection_rect, SelectionEdge::Start);
         let end_edge_rect = selection_edge_handle_rect(selection_rect, SelectionEdge::End);

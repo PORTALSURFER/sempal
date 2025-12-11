@@ -76,12 +76,7 @@ impl WaveformActions for WaveformController<'_> {
         }
     }
 
-    fn create_selection_from_playhead(
-        &mut self,
-        to_left: bool,
-        resume_playback: bool,
-        fine: bool,
-    ) {
+    fn create_selection_from_playhead(&mut self, to_left: bool, resume_playback: bool, fine: bool) {
         if !self.waveform_ready() {
             return;
         }
@@ -139,4 +134,3 @@ impl WaveformActions for WaveformController<'_> {
         self.refresh_waveform_image();
     }
 }
-

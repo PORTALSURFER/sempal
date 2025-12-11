@@ -312,5 +312,3 @@ fn navigation_steps_anchor_to_cursor_instead_of_playhead() {
     assert!((cursor - 0.36).abs() < 0.001);
     assert!((controller.ui.waveform.playhead.position - 0.7).abs() < 0.001);
 }
-
-
