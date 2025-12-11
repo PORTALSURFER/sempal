@@ -3,12 +3,7 @@ lets then write every task you find into @todo.md as a new todo item
 
 --
 
-- [x] Collapse nested build script windows resource guard to satisfy clippy.
-- [x] Normalize selection module docs and tighten waveform/audio utilities to cut clippy noise (mutability, defaults, map_or usage).
-- [x] Derive defaults for identifiers and waveform view variants to simplify config handling.
 
-
-- [ ] Replace deprecated uses of `criterion::black_box` in `benches/tagging.rs` with `std::hint::black_box` to future-proof benchmarks.
 
 - lets add a clear selection option in the selected folder list so can revert back to all see all samples in the source target again
 
