@@ -374,18 +374,34 @@ impl EguiApp {
 
     fn render_selected_folders(&mut self, ui: &mut Ui, max_height: f32) {
         let palette = style::palette();
-        let selected = self.controller.selected_folder_paths();
+        let selected_paths = self.controller.selected_folder_paths();
+        let has_selection = !selected_paths.is_empty();
         let max_height = max_height.max(0.0);
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Selected folders").color(palette.text_primary));
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                let button = egui::Button::new(RichText::new("Clear selection").color(
+                    style::high_contrast_text(),
+                ))
+                .small();
+                let response = ui
+                    .add_enabled(has_selection, button)
+                    .on_hover_text("Show samples from all folders in this source");
+                if response.clicked() {
+                    self.controller.clear_folder_selection();
+                }
+            });
+        });
         egui::ScrollArea::vertical()
             .id_salt("selected_folders_scroll")
             .max_height(max_height)
             .show(ui, |ui| {
-                if selected.is_empty() {
+                if selected_paths.is_empty() {
                     ui.label(RichText::new("No folders selected").color(palette.text_muted));
                     return;
                 }
                 ui.spacing_mut().item_spacing.y = 4.0;
-                for path in selected {
+                for path in selected_paths {
                     ui.label(
                         RichText::new(format!("• {}", path.display())).color(palette.text_primary),
                     );
