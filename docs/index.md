@@ -16,6 +16,7 @@ Sempal is an audio sample triage and collection builder with fast waveform previ
 - [Changelog](https://github.com/portalsurfer/sempal/blob/main/CHANGELOG.md)
 - [Latest downloads](https://github.com/portalsurfer/sempal/releases)
 - [Source on GitHub](https://github.com/portalsurfer/sempal)
+- [Buy me a coffee](https://buymeacoffee.com/portalsurfm)
 
 ## Highlights
 - Lightning-fast triage with keep/trash tagging, fuzzy search, and keyboard-first navigation.
