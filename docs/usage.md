@@ -60,6 +60,7 @@ description: How to set up Sempal, triage samples, edit waveforms, and manage co
 ## Trash and cleanup
 - Open **Options** in the status bar to set or open the trash folder.
 - **Move trashed samples to folder:** Moves all Trash-tagged samples from every source into the trash folder (keeps relative paths) and removes them from lists/collections.
+- Hotkey: Press `P` or `Shift + P` from anywhere to trigger **Move trashed samples to folder** (uses the configured trash folder and existing confirmation).
 - **Take out trash:** Permanently deletes everything inside the trash folder.
 
 ## Drag, drop, and clipboard tips
@@ -68,6 +69,6 @@ description: How to set up Sempal, triage samples, edit waveforms, and manage co
 - Drag selections or samples outside the window on Windows to start an external drag-out. Use **Ctrl/Cmd + C** to copy selections or rows as file drops.
 
 ## Hotkeys (focus-aware)
-- **Global:** `Space` play/pause; `Esc` stop/clear selections (including waveform); `L` toggle loop; `Shift + R` play a random visible sample and auto-play; `Alt + R` toggle sticky random navigation; `Ctrl/Cmd + Shift + R` step backward through random history; `Ctrl/Cmd + /` toggle hotkey overlay; `F11` toggle maximized window.
+- **Global:** `Space` play/pause; `Esc` stop/clear selections (including waveform); `L` toggle loop; `P` or `Shift + P` move trashed samples to the trash folder; `Shift + R` play a random visible sample and auto-play; `Alt + R` toggle sticky random navigation; `Ctrl/Cmd + Shift + R` step backward through random history; `Ctrl/Cmd + /` toggle hotkey overlay; `F11` toggle maximized window.
 - **Sample browser focus:** `Up/Down` move (or jump randomly when sticky mode is on); `Shift + Up/Down` extend; `Right Arrow` Keep; `Left Arrow` Trash; `Ctrl/Cmd + Right/Left` move across triage columns; `X` toggle selection; `N` normalize (overwrite); `D` delete; `C` add focused sample to the selected collection.
 - **Collection item focus:** `Up/Down` move; `N` normalize (overwrite collection copy); `D` delete from collection.
