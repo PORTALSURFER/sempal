@@ -98,6 +98,8 @@ impl Default for WaveformView {
 pub struct PlayheadState {
     pub position: f32,
     pub visible: bool,
+    /// Normalized end of the currently playing span, when any.
+    pub active_span_end: Option<f32>,
 }
 
 impl Default for PlayheadState {
@@ -105,6 +107,7 @@ impl Default for PlayheadState {
         Self {
             position: 0.0,
             visible: false,
+            active_span_end: None,
         }
     }
 }

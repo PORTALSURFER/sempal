@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 const SHOULD_PLAY_RANDOM_SAMPLE: bool = false;
 #[cfg(not(test))]
 const SHOULD_PLAY_RANDOM_SAMPLE: bool = true;
+const PLAYHEAD_COMPLETION_EPSILON: f32 = 0.001;
 
 impl EguiController {
     /// Begin a selection drag at the given normalized position.
@@ -153,13 +154,19 @@ impl EguiController {
         let Some(player_rc) = self.player.as_ref() else {
             return false;
         };
-        let mut player = player_rc.borrow_mut();
-        if player.is_playing() {
-            player.stop();
-            self.ui.waveform.playhead.visible = false;
-            return true;
+        let stopped = {
+            let mut player = player_rc.borrow_mut();
+            if player.is_playing() {
+                player.stop();
+                true
+            } else {
+                false
+            }
+        };
+        if stopped {
+            self.hide_waveform_playhead();
         }
-        false
+        stopped
     }
 
     /// Handle Escape input by stopping playback and clearing selections across panels.
@@ -448,6 +455,7 @@ impl EguiController {
         } else {
             player.borrow_mut().play_range(start, span_end, looped)?;
         }
+        self.ui.waveform.playhead.active_span_end = Some(span_end.clamp(0.0, 1.0));
         self.ui.waveform.playhead.visible = true;
         self.ui.waveform.playhead.position = start;
         Ok(())
@@ -468,7 +476,7 @@ impl EguiController {
         self.poll_scan();
         let Some(player) = self.player.as_ref().cloned() else {
             if self.decoded_waveform.is_none() {
-                self.ui.waveform.playhead.visible = false;
+                self.hide_waveform_playhead();
             }
             return;
         };
@@ -491,13 +499,52 @@ impl EguiController {
         if player_ref.is_playing() {
             if let Some(progress) = player_ref.progress() {
                 self.ui.waveform.playhead.position = progress;
-                self.ui.waveform.playhead.visible = true;
+                if self.playhead_completed_span(progress, player_ref.is_looping()) {
+                    self.hide_waveform_playhead();
+                } else {
+                    self.ui.waveform.playhead.visible = true;
+                }
             } else {
-                self.ui.waveform.playhead.visible = false;
+                self.hide_waveform_playhead();
             }
         } else if self.decoded_waveform.is_none() {
-            self.ui.waveform.playhead.visible = false;
+            self.hide_waveform_playhead();
         }
+    }
+
+    fn playhead_completed_span(&self, progress: f32, is_looping: bool) -> bool {
+        if is_looping {
+            return false;
+        }
+        let target = self
+            .ui
+            .waveform
+            .playhead
+            .active_span_end
+            .unwrap_or(1.0)
+            .clamp(0.0, 1.0);
+        progress + PLAYHEAD_COMPLETION_EPSILON >= target
+    }
+
+    fn hide_waveform_playhead(&mut self) {
+        self.ui.waveform.playhead.visible = false;
+        self.ui.waveform.playhead.active_span_end = None;
+    }
+
+    #[cfg(test)]
+    /// Expose playhead completion logic for unit tests.
+    pub(crate) fn playhead_completed_span_for_tests(
+        &self,
+        progress: f32,
+        is_looping: bool,
+    ) -> bool {
+        self.playhead_completed_span(progress, is_looping)
+    }
+
+    #[cfg(test)]
+    /// Allow tests to reset the playhead visibility tracking.
+    pub(crate) fn hide_waveform_playhead_for_tests(&mut self) {
+        self.hide_waveform_playhead();
     }
 
     pub(super) fn apply_selection(&mut self, range: Option<SelectionRange>) {

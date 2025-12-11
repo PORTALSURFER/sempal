@@ -2689,6 +2689,36 @@ fn mouse_zoom_prefers_pointer_over_playhead() {
 }
 
 #[test]
+fn playhead_completion_detects_full_span_end() {
+    let (controller, _source) = dummy_controller();
+
+    assert!(!controller.playhead_completed_span_for_tests(0.5, false));
+    assert!(controller.playhead_completed_span_for_tests(0.9995, false));
+    assert!(!controller.playhead_completed_span_for_tests(1.0, true));
+}
+
+#[test]
+fn playhead_completion_tracks_selection_end() {
+    let (mut controller, _source) = dummy_controller();
+    controller.ui.waveform.playhead.active_span_end = Some(0.25);
+
+    assert!(!controller.playhead_completed_span_for_tests(0.2, false));
+    assert!(controller.playhead_completed_span_for_tests(0.251, false));
+}
+
+#[test]
+fn hiding_playhead_clears_span_target() {
+    let (mut controller, _source) = dummy_controller();
+    controller.ui.waveform.playhead.visible = true;
+    controller.ui.waveform.playhead.active_span_end = Some(0.4);
+
+    controller.hide_waveform_playhead_for_tests();
+
+    assert!(!controller.ui.waveform.playhead.visible);
+    assert!(controller.ui.waveform.playhead.active_span_end.is_none());
+}
+
+#[test]
 fn last_start_marker_clamps_and_resets() {
     let (mut controller, source) = dummy_controller();
     prepare_browser_sample(&mut controller, &source, "marker.wav");
