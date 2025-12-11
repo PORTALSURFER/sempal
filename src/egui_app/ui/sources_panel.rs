@@ -1,7 +1,7 @@
 use super::helpers::{clamp_label_for_width, list_row_height, render_list_row};
 use super::style;
 use super::*;
-use crate::egui_app::state::{DragPayload, FocusContext};
+use crate::egui_app::state::{DragPayload, DragSource, DragTarget, FocusContext};
 use eframe::egui::{self, Align, Align2, Layout, RichText, StrokeKind, TextStyle, Ui};
 
 impl EguiApp {
@@ -238,7 +238,12 @@ impl EguiApp {
             ui.set_min_height(height);
             ui.set_max_height(height);
             let row_height = list_row_height(ui);
-            let hovering_folder = self.controller.ui.drag.hovering_folder.clone();
+            let active_folder_target = match &self.controller.ui.drag.active_target {
+                DragTarget::FolderPanel { folder } => folder
+                    .clone()
+                    .or_else(|| self.controller.ui.drag.last_folder_target.clone()),
+                _ => None,
+            };
             if let Some(root_row) = root_row.clone() {
                 let row_width = ui.available_width();
                 let is_focused = self.controller.ui.sources.folders.focused == Some(0);
@@ -268,17 +273,16 @@ impl EguiApp {
                         hovered_folder = Some(root_row.path.clone());
                         self.controller.update_active_drag(
                             pointer,
-                            None,
-                            false,
-                            None,
-                            Some(root_row.path.clone()),
-                            true,
+                            DragSource::Folders,
+                            DragTarget::FolderPanel {
+                                folder: Some(root_row.path.clone()),
+                            },
                         );
                     }
                     if hovered_folder
                         .as_ref()
                         .is_some_and(|path| path == &root_row.path)
-                        || hovering_folder
+                        || active_folder_target
                             .as_ref()
                             .is_some_and(|path| path == &root_row.path)
                     {
@@ -344,7 +348,12 @@ impl EguiApp {
                     return;
                 }
                 let focused_row = self.controller.ui.sources.folders.focused;
-                let hovering_folder = self.controller.ui.drag.hovering_folder.clone();
+                let active_folder_target = match &self.controller.ui.drag.active_target {
+                    DragTarget::FolderPanel { folder } => folder
+                        .clone()
+                        .or_else(|| self.controller.ui.drag.last_folder_target.clone()),
+                    _ => None,
+                };
                 for (index, row) in rows.iter().enumerate() {
                     if row.is_root {
                         continue;
@@ -403,17 +412,16 @@ impl EguiApp {
                             hovered_folder = Some(row.path.clone());
                             self.controller.update_active_drag(
                                 pointer,
-                                None,
-                                false,
-                                None,
-                                Some(row.path.clone()),
-                                true,
+                                DragSource::Folders,
+                                DragTarget::FolderPanel {
+                                    folder: Some(row.path.clone()),
+                                },
                             );
                         }
                         if hovered_folder
                             .as_ref()
                             .is_some_and(|path| path == &row.path)
-                            || hovering_folder
+                            || active_folder_target
                                 .as_ref()
                                 .is_some_and(|path| path == &row.path)
                         {
@@ -474,20 +482,26 @@ impl EguiApp {
                 }
                 if hovered_folder.is_none() {
                     let pointer = pointer_pos.unwrap_or_default();
-                    self.controller
-                        .update_active_drag(pointer, None, false, None, None, false);
+                    self.controller.update_active_drag(
+                        pointer,
+                        DragSource::Folders,
+                        DragTarget::FolderPanel { folder: None },
+                    );
                 }
             });
         });
         if sample_drag_active && let Some(pointer) = pointer_pos {
             if frame_response.response.rect.contains(pointer) {
                 if hovered_folder.is_none() {
-                    self.controller
-                        .update_active_drag(pointer, None, false, None, None, true);
+                    self.controller.update_active_drag(
+                        pointer,
+                        DragSource::Folders,
+                        DragTarget::FolderPanel { folder: None },
+                    );
                 }
             } else {
                 self.controller
-                    .update_active_drag(pointer, None, false, None, None, false);
+                    .update_active_drag(pointer, DragSource::Folders, DragTarget::None);
             }
         }
         style::paint_section_border(ui, frame_response.response.rect, focused);

@@ -3,8 +3,6 @@ lets then write every task you find into @todo.md as a new todo item
 
 --
 
-
-
 -lets move the item count label in the sample browser to the far right side right budding up against the right sidebar there
 
 - when the playhead reached the end, hide it

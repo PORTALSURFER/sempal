@@ -2,7 +2,9 @@ use super::browser::TriageFlagColumn;
 use crate::sample_sources::{CollectionId, SourceId};
 use crate::selection::SelectionRange;
 use egui::Pos2;
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::time::Instant;
 
 /// Active drag payload carried across UI panels.
 #[derive(Clone, Debug, PartialEq)]
@@ -18,17 +20,127 @@ pub enum DragPayload {
     },
 }
 
+/// Panel-originating drag target.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub enum DragSource {
+    Collections,
+    Browser,
+    Folders,
+    Waveform,
+    External,
+}
+
+/// Unified drag target variants.
+#[derive(Clone, Debug, PartialEq)]
+pub enum DragTarget {
+    None,
+    CollectionsRow(CollectionId),
+    CollectionsDropZone { collection_id: Option<CollectionId> },
+    BrowserTriage(TriageFlagColumn),
+    FolderPanel { folder: Option<PathBuf> },
+    External,
+}
+
+impl DragTarget {
+    fn priority(&self) -> u8 {
+        match self {
+            DragTarget::External => 5,
+            DragTarget::FolderPanel { .. } => 4,
+            DragTarget::CollectionsDropZone { .. } => 3,
+            DragTarget::CollectionsRow(_) => 2,
+            DragTarget::BrowserTriage(_) => 1,
+            DragTarget::None => 0,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct DragTargetSnapshot {
+    pub target: DragTarget,
+    pub source: DragSource,
+    pub recorded_at: Instant,
+}
+
+impl DragTargetSnapshot {
+    fn new(target: DragTarget, source: DragSource) -> Self {
+        Self {
+            target,
+            source,
+            recorded_at: Instant::now(),
+        }
+    }
+}
+
 /// Drag/hover state shared between the sample browser and collections.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct DragState {
     pub payload: Option<DragPayload>,
     pub label: String,
     pub position: Option<Pos2>,
-    pub hovering_collection: Option<CollectionId>,
-    pub hovering_drop_zone: bool,
-    pub hovering_browser: Option<TriageFlagColumn>,
-    pub hovering_folder: Option<PathBuf>,
-    pub hovering_folder_panel: bool,
-    pub last_hovering_folder: Option<PathBuf>,
+    targets: HashMap<DragSource, DragTarget>,
+    pub active_target: DragTarget,
+    pub target_history: Vec<DragTargetSnapshot>,
+    pub last_folder_target: Option<PathBuf>,
     pub external_started: bool,
+}
+
+impl Default for DragState {
+    fn default() -> Self {
+        Self {
+            payload: None,
+            label: String::new(),
+            position: None,
+            targets: HashMap::new(),
+            active_target: DragTarget::None,
+            target_history: Vec::new(),
+            last_folder_target: None,
+            external_started: false,
+        }
+    }
+}
+
+impl DragState {
+    pub fn clear_targets_from(&mut self, source: DragSource) {
+        self.targets.remove(&source);
+        self.recompute_active_target(source, DragTarget::None);
+    }
+
+    pub fn set_target(&mut self, source: DragSource, target: DragTarget) {
+        if let DragTarget::FolderPanel { folder: Some(path) } = &target {
+            self.last_folder_target = Some(path.clone());
+        }
+        self.targets.insert(source, target.clone());
+        self.recompute_active_target(source, target);
+    }
+
+    pub fn clear_all_targets(&mut self) {
+        self.targets.clear();
+        self.active_target = DragTarget::None;
+        self.record_transition(DragSource::External, DragTarget::None);
+    }
+
+    fn recompute_active_target(&mut self, source: DragSource, incoming: DragTarget) {
+        let new_active = self
+            .targets
+            .values()
+            .max_by_key(|target| target.priority())
+            .cloned()
+            .unwrap_or(DragTarget::None);
+        if self.active_target != new_active {
+            self.active_target = new_active.clone();
+            self.record_transition(source, new_active);
+        } else {
+            self.record_transition(source, incoming);
+        }
+    }
+
+    fn record_transition(&mut self, source: DragSource, target: DragTarget) {
+        self.target_history
+            .push(DragTargetSnapshot::new(target, source));
+        const MAX_HISTORY: usize = 64;
+        if self.target_history.len() > MAX_HISTORY {
+            let excess = self.target_history.len() - MAX_HISTORY;
+            self.target_history.drain(..excess);
+        }
+    }
 }
