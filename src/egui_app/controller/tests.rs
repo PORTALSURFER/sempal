@@ -1492,6 +1492,7 @@ fn creating_folder_tracks_manual_entry() -> Result<(), String> {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source.clone());
     controller.refresh_folder_browser();
+    assert!(controller.ui.sources.folders.rows[0].is_root);
 
     controller.create_folder(Path::new(""), "NewFolder")?;
 
@@ -1558,6 +1559,37 @@ fn start_new_folder_at_root_sets_root_parent() {
         }
         other => panic!("unexpected action: {other:?}"),
     }
+}
+
+#[test]
+fn selecting_root_clears_folder_selection() -> Result<(), String> {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.selected_source = Some(source.id.clone());
+    let folder = source.root.join("rooted");
+    std::fs::create_dir_all(&folder).unwrap();
+    write_test_wav(&folder.join("clip.wav"), &[0.2, -0.2]);
+    controller.wav_entries = vec![sample_entry("rooted/clip.wav", SampleTag::Neutral)];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+    controller.refresh_folder_browser();
+    let folder_index = controller
+        .ui
+        .sources
+        .folders
+        .rows
+        .iter()
+        .position(|row| row.path == PathBuf::from("rooted"))
+        .unwrap();
+
+    controller.replace_folder_selection(folder_index);
+    assert!(!controller.selected_folder_paths().is_empty());
+
+    controller.replace_folder_selection(0);
+
+    assert!(controller.selected_folder_paths().is_empty());
+    assert_eq!(controller.ui.sources.folders.focused, Some(0));
+    Ok(())
 }
 
 #[test]
