@@ -1,3 +1,4 @@
+use super::hotkey_runtime::format_keypress;
 use super::style;
 use super::*;
 use eframe::egui::{self, Frame, Margin, RichText, SliderClamping, StrokeKind};

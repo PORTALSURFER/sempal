@@ -140,9 +140,7 @@ impl EguiController {
         for source in &self.sources {
             if !source.root.is_dir() {
                 self.missing_sources.insert(source.id.clone());
-                self.missing_wavs
-                    .entry(source.id.clone())
-                    .or_default();
+                self.missing_wavs.entry(source.id.clone()).or_default();
             }
         }
     }
@@ -155,9 +153,7 @@ impl EguiController {
             self.ui.loaded_wav = None;
             self.clear_waveform_view();
         }
-        self.missing_wavs
-            .entry(source_id.clone())
-            .or_default();
+        self.missing_wavs.entry(source_id.clone()).or_default();
         self.refresh_sources_ui();
         if let Some(source) = self.sources.iter().find(|s| &s.id == source_id) {
             self.set_status(

@@ -316,9 +316,7 @@ impl EguiController {
         };
         self.push_random_history(source_id, path.clone());
         self.focus_browser_row_only(visible_row);
-        if start_playback
-            && let Err(err) = self.play_audio(self.ui.waveform.loop_enabled, None)
-        {
+        if start_playback && let Err(err) = self.play_audio(self.ui.waveform.loop_enabled, None) {
             self.set_status(err, StatusTone::Error);
         }
     }

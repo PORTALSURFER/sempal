@@ -357,9 +357,7 @@ impl EguiApp {
                 }
             });
             });
-        if sample_drag_active
-            && let Some(pointer) = pointer_pos
-        {
+        if sample_drag_active && let Some(pointer) = pointer_pos {
             if frame_response.response.rect.contains(pointer) {
                 if hovered_folder.is_none() {
                     self.controller

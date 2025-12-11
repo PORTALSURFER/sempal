@@ -19,7 +19,9 @@ fn main() {
     println!("cargo:rerun-if-changed=build/windows/sempal.rc");
     println!("cargo:rerun-if-changed=assets/logo3.ico");
 
-    if compiling_for_windows_target() && let Err(error) = compile_windows_resources() {
+    if compiling_for_windows_target()
+        && let Err(error) = compile_windows_resources()
+    {
         eprintln!("Failed to embed Windows resources: {error}");
         std::process::exit(1);
     }
