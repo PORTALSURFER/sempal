@@ -1,20 +1,14 @@
 ## Goal
-- Redesign drag-and-drop handling so one authoritative target definition drives all drop actions (collections, triage, folders, future panels) without conflicting hover updates.
+- Move the sample browser's item count label so it sits flush against the right sidebar while keeping the existing filter buttons and search box behaviour intact.
 
 ## Proposed solutions
-- Introduce a `DragTarget` enum held in `DragState` so panels report entering/exiting targets with structured data instead of toggling booleans.
-- Create a priority-aware resolver that records the latest target per panel (collections panel, triage area, folder panel, waveform) and exposes a deterministic active target.
-- Maintain per-panel hover ownership tokens so when a panel loses the pointer it explicitly clears its target contribution, preventing stale state.
-- Add integration-style tests that simulate drag paths bouncing between panels to ensure the resolver consistently selects the expected target and warning flows still work.
+- Rework `render_sample_browser_filter` so the existing horizontal row splits into left-aligned controls (filter buttons plus search field) and a right-aligned count label rendered via `ui.with_layout(egui::Layout::right_to_left(...))`, ensuring the count always hugs the sidebar.
+- Alternatively, wrap the left controls in a child `ui.horizontal` and then allocate a secondary `ui` with a right-aligned layout for the label, allowing us to keep the rendering logic localized and responsive without introducing spacer hacks.
 
 ## Step-by-step plan
-1. [x] Audit current drag state mutations across all panels (`ui/collections_panel.rs`, `ui/sample_browser_panel.rs`, `ui/sources_panel.rs`, `ui/waveform_view.rs`) and document every `update_active_drag` invocation plus its intent (see `docs/drag_audit.md` for details).
-2. [-] Design the `DragTarget` enum (variants for triage columns, collections rows/drop zone, folder panel, external drag, none) and extend `DragState` to store the current target plus optional debug history.
-3. [-] Define how external drag-outs (DAW/OS drops) interact with the new system—either as a dedicated enum variant or by pausing internal targets—and ensure `maybe_launch_external_drag`/`start_external_drag` cooperate with the unified drag state.
-4. [-] Refactor `update_active_drag` to accept the new target enum (and optional priority) along with pointer metadata; update each panel to call it on hover enter/exit and remove direct mutations of `hovering_*` fields.
-5. [-] Update `finish_active_drag`, `handle_sample_drop`, and selection drop paths to match on the new target enum so folder moves, collection adds, triage tagging, and warnings work off the unified state.
-6. [-] Add or adjust controller tests (and consider UI simulation tests) that reproduce key drag paths, including transitions between panels, external drag-out handoffs, and the “no active collection” case, ensuring the resolver always picks the intended target.
-7. [-] Provide optional debug instrumentation (e.g., feature-flagged logging or an inspector view) that surfaces target transitions for future troubleshooting without overwhelming normal logs.
+1. [x] Review `src/egui_app/ui/sample_browser_panel.rs::render_sample_browser_filter` to confirm current spacing, palette usage, and how `visible_count` is calculated so the refactor preserves behaviour.
+2. [x] Update the layout so the count label is rendered inside a right-aligned layout segment (e.g., right-to-left horizontal with fixed width or min size) while the filter buttons and search box remain grouped on the left, verifying it still respects dynamic widths and focus handling.
+3. [-] Manually test (or capture UI screenshots) across narrow and wide browser sizes to confirm the label hugs the sidebar, the row wraps gracefully, and no regressions occur in filter/search interactions; add or adjust UI regression tests if available.
 
 ## Code Style & Architecture Rules Reminder
 ### File and module structure
@@ -34,6 +28,6 @@
 
 ### Testing
 - All code should be well tested whenever feasible.
-- “Feasible” should be interpreted broadly: tests are expected in almost all cases.
+- "Feasible" should be interpreted broadly: tests are expected in almost all cases.
 - Prefer small, focused unit tests that validate behaviour clearly.
 - Do not allow untested logic unless explicitly approved by the user.
