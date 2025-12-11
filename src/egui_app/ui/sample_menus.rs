@@ -45,10 +45,10 @@ impl EguiApp {
         ui.ctx()
             .data_mut(|data| data.insert_temp(rename_id, value.clone()));
         let requested = edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-        if ui.button("Apply rename").clicked() || requested {
-            if on_rename(self, value.as_str()) {
-                return true;
-            }
+        if (ui.button("Apply rename").clicked() || requested)
+            && on_rename(self, value.as_str())
+        {
+            return true;
         }
         false
     }

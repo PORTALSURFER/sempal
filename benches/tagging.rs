@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
-use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
+use std::hint::black_box;
 use sempal::sample_sources::{SampleTag, SourceDatabase};
 use tempfile::tempdir;
 

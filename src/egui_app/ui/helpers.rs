@@ -58,6 +58,7 @@ pub(super) fn clamp_label_for_width(text: &str, available_width: f32) -> String 
     clipped
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn render_list_row(
     ui: &mut Ui,
     label: &str,

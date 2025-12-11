@@ -96,13 +96,11 @@ impl EguiController {
                 last_error = Some(err);
             }
         }
-        if let Some(path) = next_focus {
-            if self.wav_lookup.contains_key(&path) {
-                if let Some(row) = self.visible_row_for_path(&path) {
-                    self.focus_browser_row_only(row);
-                } else {
-                    self.select_wav_by_path_with_rebuild(&path, true);
-                }
+        if let Some(path) = next_focus && self.wav_lookup.contains_key(&path) {
+            if let Some(row) = self.visible_row_for_path(&path) {
+                self.focus_browser_row_only(row);
+            } else {
+                self.select_wav_by_path_with_rebuild(&path, true);
             }
         }
         if let Some(err) = last_error {

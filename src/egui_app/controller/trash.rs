@@ -113,10 +113,8 @@ impl EguiController {
             if dir == trash_root {
                 continue;
             }
-            if let Err(err) = fs::remove_dir(&dir) {
-                if dir.exists() {
-                    errors.push(format!("Failed to remove folder {}: {err}", dir.display()));
-                }
+            if let Err(err) = fs::remove_dir(&dir) && dir.exists() {
+                errors.push(format!("Failed to remove folder {}: {err}", dir.display()));
             }
         }
         if errors.is_empty() {
@@ -311,14 +309,14 @@ impl EguiController {
             );
             return Err(());
         }
-        if !path.exists() {
-            if let Err(err) = fs::create_dir_all(&path) {
-                self.set_status(
-                    format!("Unable to create trash folder {}: {err}", path.display()),
-                    StatusTone::Error,
-                );
-                return Err(());
-            }
+        if !path.exists()
+            && let Err(err) = fs::create_dir_all(&path)
+        {
+            self.set_status(
+                format!("Unable to create trash folder {}: {err}", path.display()),
+                StatusTone::Error,
+            );
+            return Err(());
         }
         Ok(path)
     }
@@ -344,22 +342,12 @@ struct TrashMoveBatch {
     entries: Vec<WavEntry>,
 }
 
+#[derive(Default)]
 struct TrashMoveOutcome {
     moved: usize,
     removed_from_collections: bool,
     cancelled: bool,
     errors: Vec<String>,
-}
-
-impl Default for TrashMoveOutcome {
-    fn default() -> Self {
-        Self {
-            moved: 0,
-            removed_from_collections: false,
-            cancelled: false,
-            errors: Vec::new(),
-        }
-    }
 }
 
 fn unique_destination(root: &Path, relative: &Path) -> Result<PathBuf, String> {

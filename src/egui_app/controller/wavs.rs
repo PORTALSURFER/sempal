@@ -443,10 +443,8 @@ impl EguiController {
         self.ui.browser.selected_visible = selected_visible;
         self.ui.browser.loaded_visible = loaded_visible;
         let visible_len = self.ui.browser.visible.len();
-        if let Some(anchor) = self.ui.browser.selection_anchor_visible {
-            if anchor >= visible_len {
-                self.ui.browser.selection_anchor_visible = self.ui.browser.selected_visible;
-            }
+        if let Some(anchor) = self.ui.browser.selection_anchor_visible && anchor >= visible_len {
+            self.ui.browser.selection_anchor_visible = self.ui.browser.selected_visible;
         }
     }
 
@@ -551,13 +549,13 @@ impl EguiController {
             .browser
             .selected_paths
             .retain(|path| self.wav_lookup.contains_key(path));
-        if let Some(path) = self.selected_wav.clone() {
-            if !self.wav_lookup.contains_key(&path) {
-                self.selected_wav = None;
-                self.ui.browser.selected = None;
-                self.ui.browser.selected_visible = None;
-                self.clear_waveform_view();
-            }
+        if let Some(path) = self.selected_wav.clone()
+            && !self.wav_lookup.contains_key(&path)
+        {
+            self.selected_wav = None;
+            self.ui.browser.selected = None;
+            self.ui.browser.selected_visible = None;
+            self.clear_waveform_view();
         }
     }
 
@@ -638,10 +636,10 @@ impl EguiController {
             self.ui.browser.selected_paths.clear();
         }
         for row in start..=end {
-            if let Some(path) = self.browser_path_for_visible(row) {
-                if !self.ui.browser.selected_paths.iter().any(|p| p == &path) {
-                    self.ui.browser.selected_paths.push(path);
-                }
+            if let Some(path) = self.browser_path_for_visible(row)
+                && !self.ui.browser.selected_paths.iter().any(|p| p == &path)
+            {
+                self.ui.browser.selected_paths.push(path);
             }
         }
         self.ui.browser.selection_anchor_visible = Some(anchor);
@@ -715,10 +713,10 @@ impl EguiController {
         let Some(path) = self.selected_wav.clone() else {
             return;
         };
-        if let Some(row) = self.ui.browser.selected_visible {
-            if self.ui.browser.selection_anchor_visible.is_none() {
-                self.ui.browser.selection_anchor_visible = Some(row);
-            }
+        if let Some(row) = self.ui.browser.selected_visible
+            && self.ui.browser.selection_anchor_visible.is_none()
+        {
+            self.ui.browser.selection_anchor_visible = Some(row);
         }
         self.toggle_browser_selection(&path);
         self.rebuild_browser_lists();
@@ -754,18 +752,17 @@ impl EguiController {
                     .or(self.ui.browser.selected_visible)
                     .unwrap_or(visible_row);
                 self.ui.browser.selection_anchor_visible = Some(anchor);
-                if self.ui.browser.selected_paths.is_empty() && anchor != visible_row {
-                    if let Some(anchor_path) = self.browser_path_for_visible(anchor) {
-                        if !self
-                            .ui
-                            .browser
-                            .selected_paths
-                            .iter()
-                            .any(|p| p == &anchor_path)
-                        {
-                            self.ui.browser.selected_paths.push(anchor_path);
-                        }
-                    }
+                if self.ui.browser.selected_paths.is_empty()
+                    && anchor != visible_row
+                    && let Some(anchor_path) = self.browser_path_for_visible(anchor)
+                    && !self
+                        .ui
+                        .browser
+                        .selected_paths
+                        .iter()
+                        .any(|p| p == &anchor_path)
+                {
+                    self.ui.browser.selected_paths.push(anchor_path);
                 }
                 self.toggle_browser_selection(&path);
             }
@@ -785,9 +782,7 @@ impl EguiController {
             .iter()
             .filter_map(|path| self.visible_row_for_path(path))
             .collect();
-        if rows.is_empty() {
-            rows.push(primary_visible_row);
-        } else if !rows.contains(&primary_visible_row) {
+        if !rows.contains(&primary_visible_row) {
             rows.push(primary_visible_row);
         }
         rows.sort_unstable();
@@ -851,20 +846,20 @@ impl EguiController {
                 return Err("Sample not found".into());
             }
         }
-        if let Some(cache) = self.wav_cache.get_mut(&source.id) {
-            if let Some(entry) = cache.iter_mut().find(|entry| entry.relative_path == path) {
-                entry.tag = target_tag;
-            }
+        if let Some(cache) = self.wav_cache.get_mut(&source.id)
+            && let Some(entry) = cache.iter_mut().find(|entry| entry.relative_path == path)
+        {
+            entry.tag = target_tag;
         }
         Ok(())
     }
 
     fn label_for(&mut self, index: usize) -> Option<String> {
         let source_id = self.selected_source.clone()?;
-        if let Some(cache) = self.label_cache.get(&source_id) {
-            if let Some(label) = cache.get(index) {
-                return Some(label.clone());
-            }
+        if let Some(cache) = self.label_cache.get(&source_id)
+            && let Some(label) = cache.get(index)
+        {
+            return Some(label.clone());
         }
         let labels: Vec<String> = self
             .wav_entries
@@ -1233,24 +1228,22 @@ impl EguiController {
                 );
             }
         }
-        if let Some(cache) = self.wav_cache.get_mut(&source.id) {
-            if let Some(entry) = cache
+        if let Some(cache) = self.wav_cache.get_mut(&source.id)
+            && let Some(entry) = cache
                 .iter_mut()
                 .find(|entry| entry.relative_path == relative_path)
-            {
-                entry.missing = true;
-            }
+        {
+            entry.missing = true;
         }
-        if self.selected_source.as_ref() == Some(&source.id) {
-            if let Some(index) = self.wav_lookup.get(relative_path).copied() {
-                if let Some(entry) = self.wav_entries.get_mut(index) {
-                    entry.missing = true;
-                }
-            }
+        if self.selected_source.as_ref() == Some(&source.id)
+            && let Some(index) = self.wav_lookup.get(relative_path).copied()
+            && let Some(entry) = self.wav_entries.get_mut(index)
+        {
+            entry.missing = true;
         }
         self.missing_wavs
             .entry(source.id.clone())
-            .or_insert_with(HashSet::new)
+            .or_default()
             .insert(relative_path.to_path_buf());
         self.invalidate_cached_audio(&source.id, relative_path);
     }
@@ -1265,7 +1258,7 @@ impl EguiController {
         if self.missing_sources.contains(&source.id) {
             self.missing_wavs
                 .entry(source.id.clone())
-                .or_insert_with(HashSet::new);
+                .or_default();
             return Ok(());
         }
         let db = match self.database_for(source) {
@@ -1289,20 +1282,18 @@ impl EguiController {
         if self.missing_sources.contains(source_id) {
             return true;
         }
-        if self.selected_source.as_ref() == Some(source_id) {
-            if let Some(index) = self.wav_lookup.get(relative_path) {
-                if let Some(entry) = self.wav_entries.get(*index) {
-                    return entry.missing;
-                }
-            }
+        if self.selected_source.as_ref() == Some(source_id)
+            && let Some(index) = self.wav_lookup.get(relative_path)
+            && let Some(entry) = self.wav_entries.get(*index)
+        {
+            return entry.missing;
         }
-        if let Some(cache) = self.wav_cache.get(source_id) {
-            if let Some(entry) = cache
+        if let Some(cache) = self.wav_cache.get(source_id)
+            && let Some(entry) = cache
                 .iter()
                 .find(|entry| entry.relative_path == relative_path)
-            {
-                return entry.missing;
-            }
+        {
+            return entry.missing;
         }
         if let Some(set) = self.missing_wavs.get(source_id) {
             return set.contains(relative_path);

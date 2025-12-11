@@ -1,3 +1,4 @@
+#![allow(clippy::cmp_owned, clippy::iter_cloned_collect)]
 use super::selection_edits::SelectionEditRequest;
 use super::test_support::{dummy_controller, sample_entry, write_test_wav};
 use super::*;
@@ -138,17 +139,13 @@ fn dropping_sample_adds_to_collection_and_db() {
         .find(|c| c.id == collection_id)
         .unwrap();
     assert_eq!(collection.members.len(), 1);
-    assert_eq!(
-        collection.members[0].relative_path,
-        PathBuf::from("sample.wav")
-    );
+    assert_eq!(collection.members[0].relative_path, Path::new("sample.wav"));
 
     let db = controller.database_for(&source).unwrap();
     let rows = db.list_files().unwrap();
-    assert!(
-        rows.iter()
-            .any(|row| row.relative_path == PathBuf::from("sample.wav"))
-    );
+    assert!(rows
+        .iter()
+        .any(|row| row.relative_path == Path::new("sample.wav")));
 }
 
 #[test]
@@ -497,13 +494,7 @@ fn ctrl_click_toggles_selection_and_focuses_row() {
 
     controller.toggle_browser_row_selection(2);
 
-    let selected: Vec<_> = controller
-        .ui
-        .browser
-        .selected_paths
-        .iter()
-        .cloned()
-        .collect();
+    let selected: Vec<_> = controller.ui.browser.selected_paths.to_vec();
     assert!(selected.contains(&PathBuf::from("one.wav")));
     assert!(selected.contains(&PathBuf::from("three.wav")));
     assert_eq!(controller.ui.browser.selected_visible, Some(2));
@@ -526,13 +517,7 @@ fn shift_click_extends_selection_range() {
 
     controller.extend_browser_selection_to_row(1);
 
-    let selected: Vec<_> = controller
-        .ui
-        .browser
-        .selected_paths
-        .iter()
-        .cloned()
-        .collect();
+    let selected: Vec<_> = controller.ui.browser.selected_paths.to_vec();
     assert_eq!(selected.len(), 2);
     assert!(selected.contains(&PathBuf::from("one.wav")));
     assert!(selected.contains(&PathBuf::from("two.wav")));

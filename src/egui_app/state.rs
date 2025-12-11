@@ -125,7 +125,7 @@ pub enum FolderActionPrompt {
 }
 
 /// Modal progress indicator for slow tasks.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct ProgressOverlayState {
     pub visible: bool,
     pub title: String,
@@ -158,20 +158,6 @@ impl ProgressOverlayState {
             0.0
         } else {
             (self.completed as f32 / self.total as f32).clamp(0.0, 1.0)
-        }
-    }
-}
-
-impl Default for ProgressOverlayState {
-    fn default() -> Self {
-        Self {
-            visible: false,
-            title: String::new(),
-            detail: None,
-            completed: 0,
-            total: 0,
-            cancelable: false,
-            cancel_requested: false,
         }
     }
 }

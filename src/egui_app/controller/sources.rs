@@ -142,7 +142,7 @@ impl EguiController {
                 self.missing_sources.insert(source.id.clone());
                 self.missing_wavs
                     .entry(source.id.clone())
-                    .or_insert_with(std::collections::HashSet::new);
+                    .or_default();
             }
         }
     }
@@ -157,7 +157,7 @@ impl EguiController {
         }
         self.missing_wavs
             .entry(source_id.clone())
-            .or_insert_with(std::collections::HashSet::new);
+            .or_default();
         self.refresh_sources_ui();
         if let Some(source) = self.sources.iter().find(|s| &s.id == source_id) {
             self.set_status(
