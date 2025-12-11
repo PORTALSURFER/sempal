@@ -1,14 +1,20 @@
 ## Goal
-- Ensure dropping a sample into the collections area while no collection is active produces clear feedback telling the user to create a collection first instead of silently failing.
+- Redesign drag-and-drop handling so one authoritative target definition drives all drop actions (collections, triage, folders, future panels) without conflicting hover updates.
 
 ## Proposed solutions
-- Detect drop attempts with `hovering_collection` or the collection drop zone when `current_collection_id` is `None`, and surface a warning through `set_status` describing that a collection must be created/selected first.
-- Alternatively, disable/ignore collection drop targets when there is no active collection and display an inline UI hint, but this still requires a controller-side warning to cover drag sources outside the panel.
+- Introduce a `DragTarget` enum held in `DragState` so panels report entering/exiting targets with structured data instead of toggling booleans.
+- Create a priority-aware resolver that records the latest target per panel (collections panel, triage area, folder panel, waveform) and exposes a deterministic active target.
+- Maintain per-panel hover ownership tokens so when a panel loses the pointer it explicitly clears its target contribution, preventing stale state.
+- Add integration-style tests that simulate drag paths bouncing between panels to ensure the resolver consistently selects the expected target and warning flows still work.
 
 ## Step-by-step plan
-1. [x] Trace the drag/drop flow (`egui_app/controller/drag.rs`, `ui/collections_panel.rs`) to document when `collection_target` becomes `None` even though the user hovered the collections area.
-2. [x] Implement a guard (likely in `finish_active_drag` or `handle_sample_drop`) that checks for the "drop into collection without active collection" scenario and calls `set_status` with guidance to create/select a collection; ensure hover/drop indicators stay consistent.
-3. [x] Add/adjust controller tests covering the new warning path to keep behaviour stable.
+1. [x] Audit current drag state mutations across all panels (`ui/collections_panel.rs`, `ui/sample_browser_panel.rs`, `ui/sources_panel.rs`, `ui/waveform_view.rs`) and document every `update_active_drag` invocation plus its intent (see `docs/drag_audit.md` for details).
+2. [-] Design the `DragTarget` enum (variants for triage columns, collections rows/drop zone, folder panel, external drag, none) and extend `DragState` to store the current target plus optional debug history.
+3. [-] Define how external drag-outs (DAW/OS drops) interact with the new system—either as a dedicated enum variant or by pausing internal targets—and ensure `maybe_launch_external_drag`/`start_external_drag` cooperate with the unified drag state.
+4. [-] Refactor `update_active_drag` to accept the new target enum (and optional priority) along with pointer metadata; update each panel to call it on hover enter/exit and remove direct mutations of `hovering_*` fields.
+5. [-] Update `finish_active_drag`, `handle_sample_drop`, and selection drop paths to match on the new target enum so folder moves, collection adds, triage tagging, and warnings work off the unified state.
+6. [-] Add or adjust controller tests (and consider UI simulation tests) that reproduce key drag paths, including transitions between panels, external drag-out handoffs, and the “no active collection” case, ensuring the resolver always picks the intended target.
+7. [-] Provide optional debug instrumentation (e.g., feature-flagged logging or an inspector view) that surfaces target transitions for future troubleshooting without overwhelming normal logs.
 
 ## Code Style & Architecture Rules Reminder
 ### File and module structure
