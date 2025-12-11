@@ -1,10 +1,6 @@
 # Codebase review TODOs
 
 ## High priority
-- Split very large modules (>400 LOC) to improve maintainability and align with project guidelines, especially:
-  - `src/egui_app/controller/tests.rs` (3102), consider moving to `tests/` or smaller scoped test modules.
-  - `src/egui_app/controller/wavs.rs` (1325), `src/egui_app/controller/source_folders.rs` (1118), `src/egui_app/ui/waveform_view.rs` (744), `src/egui_app/ui/sources_panel.rs` (720), `src/egui_app/controller/playback.rs` (696).
-- Reduce monolithic `EguiController` responsibility surface by extracting domain sub-controllers (browser, waveform, drag/drop, hotkeys, collections) behind clear interfaces.
 - Add/restore clippy + rustfmt CI checks, and document local workflow in `README.md` or `docs/styleguide.md`.
 
 ## Correctness & robustness
@@ -48,3 +44,24 @@
 - Replace `#[allow(clippy::too_many_arguments)]` in `src/egui_app/ui/helpers.rs` by grouping params into a struct or builder.
 - Standardize error types: a mix of `Result<_, String>` and typed errors exists; consider promoting key subsystems (audio, waveform, sources) to typed errors for consistency.
 - Consider feature-gating Windows-only code paths in UI/controller to reduce `cfg_attr(..., allow(dead_code))` clutter.
+
+
+- turn the left and right sidebars into resizable panels.
+
+- when the user dragdrops an audio selection into a collection, a copy of the selection is also added to the currently selected sample source target. please remove this side effect. 
+this action should only add a new audio file to the collection
+
+- moving trashed items to the trash folder will freeze the ui, lets turn this into an async background task instead. lets also add a progress bar in the statusbar to indicate the progression of this action.
+
+- in the collection items list, the selected items will block scrolling, lets fix that. the user should be able to freely scroll
+
+- lets add the same select/focus system en styling as in the sample browser list also to the collection browser list.
+lets unify these into a flat items list component, using the sample browser as leading in terms of style and core list/navigation functionality.
+
+- add 't' to trim audio selection
+
+- add hotkeys '/' and '\' to fade audio selection 
+
+- add hotkey 'n' to normalize audio selection
+
+- add hotkey 'c' to crop selection, and 'C/shift+c' for crop as non-destructive crop as new sample option, adding a new sample in the same location as the original with _crop001 added, etc.
