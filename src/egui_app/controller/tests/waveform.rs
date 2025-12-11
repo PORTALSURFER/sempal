@@ -1,0 +1,265 @@
+use super::super::selection_edits::SelectionEditRequest;
+use super::super::test_support::{dummy_controller, sample_entry, write_test_wav};
+use super::super::*;
+use super::common::*;
+use crate::egui_app::controller::collection_export;
+use crate::egui_app::controller::hotkeys;
+use crate::egui_app::state::{
+    DestructiveSelectionEdit, DragPayload, DragSource, DragTarget, FocusContext,
+    SampleBrowserActionPrompt, TriageFlagColumn, TriageFlagFilter, WaveformView,
+};
+use crate::sample_sources::Collection;
+use crate::sample_sources::collections::CollectionMember;
+use crate::waveform::DecodedWaveform;
+use egui;
+use hound::WavReader;
+use rand::SeedableRng;
+use rand::rngs::StdRng;
+use rand::seq::IteratorRandom;
+use std::io::Cursor;
+use std::mem;
+use std::path::{Path, PathBuf};
+use std::thread;
+use std::time::{Duration, Instant};
+use tempfile::tempdir;
+
+#[test]
+fn waveform_image_resizes_to_view() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    let wav_path = source.root.join("resize.wav");
+    write_test_wav(&wav_path, &[0.0, 0.25, -0.5, 0.75]);
+
+    controller
+        .load_waveform_for_selection(&source, Path::new("resize.wav"))
+        .unwrap();
+    controller.update_waveform_size(24, 8);
+
+    let size = controller.ui.waveform.image.as_ref().unwrap().image.size;
+    assert_eq!(size, [24, 8]);
+}
+
+#[test]
+fn removing_selected_source_clears_waveform_view() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.cache_db(&source).unwrap();
+    let wav_path = source.root.join("one.wav");
+    write_test_wav(&wav_path, &[0.1, -0.1]);
+    controller.wav_entries = vec![sample_entry("one.wav", SampleTag::Neutral)];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+    controller
+        .load_waveform_for_selection(&source, Path::new("one.wav"))
+        .unwrap();
+
+    controller.remove_source(0);
+
+    assert!(controller.ui.waveform.image.is_none());
+    assert!(controller.ui.waveform.selection.is_none());
+    assert!(controller.loaded_audio.is_none());
+    assert!(controller.loaded_wav.is_none());
+}
+
+#[test]
+fn switching_sources_resets_waveform_state() {
+    let (mut controller, first) = dummy_controller();
+    controller.sources.push(first.clone());
+    controller.cache_db(&first).unwrap();
+    let wav_path = first.root.join("a.wav");
+    write_test_wav(&wav_path, &[0.0, 0.1]);
+    controller.wav_entries = vec![sample_entry("a.wav", SampleTag::Neutral)];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+    controller
+        .load_waveform_for_selection(&first, Path::new("a.wav"))
+        .unwrap();
+
+    let second_dir = tempdir().unwrap();
+    let second_root = second_dir.path().join("second");
+    std::fs::create_dir_all(&second_root).unwrap();
+    mem::forget(second_dir);
+    let second = SampleSource::new(second_root);
+    controller.sources.push(second.clone());
+
+    controller.select_source(Some(second.id.clone()));
+
+    assert!(controller.ui.waveform.image.is_none());
+    assert!(controller.ui.waveform.notice.is_none());
+    assert!(controller.loaded_audio.is_none());
+}
+
+#[test]
+fn pruning_missing_selection_clears_waveform_view() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.cache_db(&source).unwrap();
+    let wav_path = source.root.join("gone.wav");
+    write_test_wav(&wav_path, &[0.2, -0.2]);
+    controller.wav_entries = vec![sample_entry("gone.wav", SampleTag::Neutral)];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+    controller.selected_wav = Some(PathBuf::from("gone.wav"));
+    controller
+        .load_waveform_for_selection(&source, Path::new("gone.wav"))
+        .unwrap();
+
+    controller.wav_entries.clear();
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+
+    assert!(controller.ui.waveform.image.is_none());
+    assert!(controller.ui.waveform.selection.is_none());
+    assert!(controller.loaded_audio.is_none());
+    assert!(controller.loaded_wav.is_none());
+}
+
+#[test]
+fn cropping_selection_overwrites_file() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.selected_source = Some(source.id.clone());
+    controller.cache_db(&source).unwrap();
+    let wav_path = source.root.join("edit.wav");
+    write_test_wav(&wav_path, &[0.1, 0.2, 0.3, 0.4]);
+    controller.wav_entries = vec![sample_entry("edit.wav", SampleTag::Neutral)];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+    controller
+        .load_waveform_for_selection(&source, Path::new("edit.wav"))
+        .unwrap();
+    controller.ui.waveform.selection = Some(SelectionRange::new(0.25, 0.75));
+
+    controller.crop_waveform_selection().unwrap();
+
+    let samples: Vec<f32> = hound::WavReader::open(&wav_path)
+        .unwrap()
+        .samples::<f32>()
+        .map(|s| s.unwrap())
+        .collect();
+    assert_eq!(samples, vec![0.2, 0.3]);
+    assert!(controller.ui.waveform.selection.is_none());
+    assert_eq!(controller.ui.status.badge_label, "Info");
+}
+
+#[test]
+fn trimming_selection_removes_span() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.selected_source = Some(source.id.clone());
+    controller.cache_db(&source).unwrap();
+    let wav_path = source.root.join("trim.wav");
+    write_test_wav(&wav_path, &[0.0, 0.1, 0.2, 0.3]);
+    controller.wav_entries = vec![sample_entry("trim.wav", SampleTag::Neutral)];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+    controller
+        .load_waveform_for_selection(&source, Path::new("trim.wav"))
+        .unwrap();
+    controller.ui.waveform.selection = Some(SelectionRange::new(0.25, 0.75));
+
+    controller.trim_waveform_selection().unwrap();
+
+    let samples: Vec<f32> = hound::WavReader::open(&wav_path)
+        .unwrap()
+        .samples::<f32>()
+        .map(|s| s.unwrap())
+        .collect();
+    assert_eq!(samples, vec![0.0, 0.3]);
+    assert!(controller.ui.waveform.selection.is_none());
+    let entry = controller.wav_entries.first().unwrap();
+    assert!(entry.file_size > 0);
+}
+
+#[test]
+fn destructive_edit_request_prompts_without_yolo_mode() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.selected_source = Some(source.id.clone());
+    controller.cache_db(&source).unwrap();
+    let wav_path = source.root.join("warn.wav");
+    write_test_wav(&wav_path, &[0.0, 0.1, 0.2, 0.3]);
+    controller.wav_entries = vec![sample_entry("warn.wav", SampleTag::Neutral)];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+    controller
+        .load_waveform_for_selection(&source, Path::new("warn.wav"))
+        .unwrap();
+    controller.ui.waveform.selection = Some(SelectionRange::new(0.25, 0.75));
+
+    let outcome = controller
+        .request_destructive_selection_edit(DestructiveSelectionEdit::CropSelection)
+        .unwrap();
+
+    assert!(matches!(outcome, SelectionEditRequest::Prompted));
+    assert!(controller.ui.waveform.pending_destructive.is_some());
+    let samples: Vec<f32> = hound::WavReader::open(&wav_path)
+        .unwrap()
+        .samples::<f32>()
+        .map(|s| s.unwrap())
+        .collect();
+    assert_eq!(samples.len(), 4);
+}
+
+#[test]
+fn yolo_mode_applies_destructive_edit_immediately() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.selected_source = Some(source.id.clone());
+    controller.cache_db(&source).unwrap();
+    let wav_path = source.root.join("yolo.wav");
+    write_test_wav(&wav_path, &[0.1, 0.2, 0.3, 0.4]);
+    controller.wav_entries = vec![sample_entry("yolo.wav", SampleTag::Neutral)];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+    controller
+        .load_waveform_for_selection(&source, Path::new("yolo.wav"))
+        .unwrap();
+    controller.ui.waveform.selection = Some(SelectionRange::new(0.25, 0.75));
+    controller.set_destructive_yolo_mode(true);
+
+    let outcome = controller
+        .request_destructive_selection_edit(DestructiveSelectionEdit::CropSelection)
+        .unwrap();
+
+    assert!(matches!(outcome, SelectionEditRequest::Applied));
+    assert!(controller.ui.waveform.pending_destructive.is_none());
+    let samples: Vec<f32> = hound::WavReader::open(&wav_path)
+        .unwrap()
+        .samples::<f32>()
+        .map(|s| s.unwrap())
+        .collect();
+    assert_eq!(samples, vec![0.2, 0.3]);
+}
+
+#[test]
+fn confirming_pending_destructive_edit_clears_prompt() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.selected_source = Some(source.id.clone());
+    controller.cache_db(&source).unwrap();
+    let wav_path = source.root.join("confirm.wav");
+    write_test_wav(&wav_path, &[0.0, 0.1, 0.2, 0.3]);
+    controller.wav_entries = vec![sample_entry("confirm.wav", SampleTag::Neutral)];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+    controller
+        .load_waveform_for_selection(&source, Path::new("confirm.wav"))
+        .unwrap();
+    controller.ui.waveform.selection = Some(SelectionRange::new(0.25, 0.75));
+    controller
+        .request_destructive_selection_edit(DestructiveSelectionEdit::TrimSelection)
+        .unwrap();
+    let prompt = controller.ui.waveform.pending_destructive.clone().unwrap();
+
+    controller.apply_confirmed_destructive_edit(prompt.edit);
+
+    assert!(controller.ui.waveform.pending_destructive.is_none());
+    let samples: Vec<f32> = hound::WavReader::open(&wav_path)
+        .unwrap()
+        .samples::<f32>()
+        .map(|s| s.unwrap())
+        .collect();
+    assert_eq!(samples, vec![0.0, 0.3]);
+}
+
