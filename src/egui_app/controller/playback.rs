@@ -43,10 +43,11 @@ impl EguiController {
             .as_ref()
             .map(|p| p.borrow().is_playing())
             .unwrap_or(false);
-        if is_playing && self.ui.waveform.loop_enabled {
-            if let Err(err) = self.play_audio(true, None) {
-                self.set_status(err, StatusTone::Error);
-            }
+        if is_playing
+            && self.ui.waveform.loop_enabled
+            && let Err(err) = self.play_audio(true, None)
+        {
+            self.set_status(err, StatusTone::Error);
         }
     }
 
@@ -71,10 +72,8 @@ impl EguiController {
             self.pending_loop_disable_at = None;
             return;
         }
-        if was_looping {
-            if let Err(err) = self.defer_loop_disable_after_cycle() {
-                self.set_status(err, StatusTone::Error);
-            }
+        if was_looping && let Err(err) = self.defer_loop_disable_after_cycle() {
+            self.set_status(err, StatusTone::Error);
         }
     }
 
@@ -317,18 +316,18 @@ impl EguiController {
         };
         self.push_random_history(source_id, path.clone());
         self.focus_browser_row_only(visible_row);
-        if start_playback {
-            if let Err(err) = self.play_audio(self.ui.waveform.loop_enabled, None) {
-                self.set_status(err, StatusTone::Error);
-            }
+        if start_playback
+            && let Err(err) = self.play_audio(self.ui.waveform.loop_enabled, None)
+        {
+            self.set_status(err, StatusTone::Error);
         }
     }
 
     fn push_random_history(&mut self, source_id: SourceId, relative_path: PathBuf) {
-        if let Some(cursor) = self.random_history_cursor {
-            if cursor + 1 < self.random_history.len() {
-                self.random_history.truncate(cursor + 1);
-            }
+        if let Some(cursor) = self.random_history_cursor
+            && cursor + 1 < self.random_history.len()
+        {
+            self.random_history.truncate(cursor + 1);
         }
         self.random_history.push_back(RandomHistoryEntry {
             source_id,

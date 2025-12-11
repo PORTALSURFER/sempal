@@ -247,10 +247,10 @@ impl EguiController {
             }
             self.advance_progress();
             #[cfg(test)]
-            if let Some(threshold) = self.progress_cancel_after {
-                if outcome.moved >= threshold {
-                    self.request_progress_cancel();
-                }
+            if let Some(threshold) = self.progress_cancel_after
+                && outcome.moved >= threshold
+            {
+                self.request_progress_cancel();
             }
         }
         false

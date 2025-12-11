@@ -105,7 +105,7 @@ impl EguiController {
         let cache = self
             .wav_cache
             .entry(source.id.clone())
-            .or_insert_with(Vec::new);
+            .or_default();
         cache.push(entry.clone());
         cache.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
 
@@ -201,11 +201,9 @@ fn slice_frames(
 }
 
 fn write_selection_wav(target: &Path, samples: &[f32], spec: hound::WavSpec) -> Result<(), String> {
-    if let Some(parent) = target.parent() {
-        if !parent.exists() {
-            fs::create_dir_all(parent)
-                .map_err(|err| format!("Failed to create folder {}: {err}", parent.display()))?;
-        }
+    if let Some(parent) = target.parent() && !parent.exists() {
+        fs::create_dir_all(parent)
+            .map_err(|err| format!("Failed to create folder {}: {err}", parent.display()))?;
     }
     let mut writer = hound::WavWriter::create(target, spec)
         .map_err(|err| format!("Failed to create clip: {err}"))?;

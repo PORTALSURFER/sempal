@@ -85,11 +85,11 @@ impl EguiController {
         self.refresh_folder_browser();
         self.rebuild_browser_lists();
         let mut pending_applied = false;
-        if let Some(path) = self.pending_select_path.take() {
-            if self.wav_lookup.contains_key(&path) {
-                self.select_wav_by_path(&path);
-                pending_applied = true;
-            }
+        if let Some(path) = self.pending_select_path.take()
+            && self.wav_lookup.contains_key(&path)
+        {
+            self.select_wav_by_path(&path);
+            pending_applied = true;
         }
         if !pending_applied
             && self.selected_wav.is_none()
