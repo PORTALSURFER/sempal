@@ -5,11 +5,6 @@ lets then write every task you find into @todo.md as a new todo item
 
 
 
-- lets add a clear selection option in the selected folder list so can revert back to all see all samples in the source target again
-
-- let simplify collection exports, lets add a single collection export folder in the global options. new collections added will then create subfolder inside of this.
-users can remap collections to custom folders as well manually if they like, this will make the collection directly to that chosen folder, and will take on the name of that folder, so not subfolders as we have now, but a direct link.
-
 - lets add a context menu to the folder brower items, add here the folder functions like deleting, renaming, etc
 
 - in the folder browser add a . entry at the very top, sticky, to represent the root of the source target, so that user can create a new folder at the source target level from this for example
