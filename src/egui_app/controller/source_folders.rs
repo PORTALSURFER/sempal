@@ -416,6 +416,16 @@ impl EguiController {
         self.ui.sources.folders.rename_focus_requested = true;
     }
 
+    pub(crate) fn cancel_folder_rename(&mut self) {
+        if matches!(
+            self.ui.sources.folders.pending_action,
+            Some(FolderActionPrompt::Rename { .. })
+        ) {
+            self.ui.sources.folders.pending_action = None;
+            self.ui.sources.folders.rename_focus_requested = false;
+        }
+    }
+
     pub(crate) fn start_new_folder(&mut self) {
         let parent = self.focused_folder_path().unwrap_or_else(PathBuf::new);
         self.focus_folder_context();

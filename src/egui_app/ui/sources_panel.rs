@@ -422,7 +422,7 @@ impl EguiApp {
             .frame(false)
             .desired_width(edit_rect.width());
         let response = ui.put(edit_rect, edit);
-        if self.controller.ui.sources.folders.rename_focus_requested || !response.has_focus() {
+        if self.controller.ui.sources.folders.rename_focus_requested && !response.has_focus() {
             response.request_focus();
             self.controller.ui.sources.folders.rename_focus_requested = false;
         }
@@ -431,8 +431,9 @@ impl EguiApp {
         if enter {
             self.apply_pending_folder_rename();
         } else if escape {
-            self.controller.ui.sources.folders.pending_action = None;
-            self.controller.ui.sources.folders.rename_focus_requested = false;
+            self.controller.cancel_folder_rename();
+        } else if response.lost_focus() {
+            self.controller.cancel_folder_rename();
         }
     }
 
@@ -499,8 +500,7 @@ impl EguiApp {
         if let Some(crate::egui_app::state::FolderActionPrompt::Rename { target, name }) = action {
             match self.controller.rename_folder(&target, &name) {
                 Ok(()) => {
-                    self.controller.ui.sources.folders.pending_action = None;
-                    self.controller.ui.sources.folders.rename_focus_requested = false;
+                    self.controller.cancel_folder_rename();
                 }
                 Err(err) => self.controller.set_status(err, style::StatusTone::Error),
             }
