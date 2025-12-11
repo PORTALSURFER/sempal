@@ -1,7 +1,6 @@
 # Codebase review TODOs
 
 ## High priority
-- Audit playhead correctness: some samples visually stop early; verify `AudioPlayer::progress` vs sink state and waveform view updates.
 - Split very large modules (>400 LOC) to improve maintainability and align with project guidelines, especially:
   - `src/egui_app/controller/tests.rs` (3102), consider moving to `tests/` or smaller scoped test modules.
   - `src/egui_app/controller/wavs.rs` (1325), `src/egui_app/controller/source_folders.rs` (1118), `src/egui_app/ui/waveform_view.rs` (744), `src/egui_app/ui/sources_panel.rs` (720), `src/egui_app/controller/playback.rs` (696).
@@ -18,7 +17,6 @@
   - Consider RAII wrappers for `HGLOBAL`/locks to reduce unsafe surface and clarify ownership transfer to the clipboard.
 - In `src/waveform/decode.rs`, confirm int scaling is correct for 24-bit WAV (current `samples::<i32>()` path is OK but worth adding fixture coverage).
 - In `src/audio.rs`, review span/loop math:
-  - `play_range` clamps then reuses `clamped_start` vs `bounded_start`; ensure intended behavior for near-end selections.
   - `progress` and `remaining_loop_duration` depend on wall-clock; confirm no drift/rounding issues on long loops.
 
 ## Performance

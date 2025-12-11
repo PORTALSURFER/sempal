@@ -109,7 +109,7 @@ impl AudioPlayer {
             }
         }
         self.loop_offset = None;
-        self.start_with_span(clamped_start, bounded_end, duration, looped)
+        self.start_with_span(bounded_start, bounded_end, duration, looped)
     }
 
     /// Loop the full track while starting playback at the given normalized position.
