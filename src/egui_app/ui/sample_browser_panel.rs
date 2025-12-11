@@ -378,6 +378,24 @@ impl EguiApp {
                 self.controller.set_browser_search(query);
             }
             ui.add_space(ui.spacing().item_spacing.x);
+            let random_mode_enabled = self.controller.random_navigation_mode_enabled();
+            let dice_label = RichText::new("🎲").color(if random_mode_enabled {
+                palette.text_primary
+            } else {
+                palette.text_muted
+            });
+            let dice_button = egui::Button::new(dice_label).selected(random_mode_enabled);
+            let dice_response = ui.add(dice_button).on_hover_text(
+                "Play a random visible sample (click)\nToggle sticky random navigation (Shift+click)",
+            );
+            if dice_response.clicked() {
+                let modifiers = ui.input(|i| i.modifiers);
+                if modifiers.shift {
+                    self.controller.toggle_random_navigation_mode();
+                } else {
+                    self.controller.play_random_visible_sample();
+                }
+            }
             let count_label = format!(
                 "{} item{}",
                 visible_count,
