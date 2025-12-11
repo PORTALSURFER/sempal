@@ -60,4 +60,3 @@ lets unify these into a flat items list component, using the sample browser as l
 
 - in wavefrom context, add hotkey 'c' to crop selection, and 'C/shift+c' for crop as non-destructive crop as new sample option, adding a new sample in the same location as the original with _crop001 added, etc.
 
-- lets add a version label to the statusbar in v0.32.0 format
