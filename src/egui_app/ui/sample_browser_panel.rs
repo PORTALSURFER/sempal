@@ -383,7 +383,13 @@ impl EguiApp {
                 visible_count,
                 if visible_count == 1 { "" } else { "s" }
             );
-            ui.label(RichText::new(count_label).color(palette.text_muted).small());
+            ui.allocate_ui_with_layout(
+                egui::vec2(ui.available_width(), 0.0),
+                egui::Layout::right_to_left(egui::Align::Center),
+                |ui| {
+                    ui.label(RichText::new(count_label).color(palette.text_muted).small());
+                },
+            );
         });
     }
 }
