@@ -67,7 +67,11 @@ impl EguiApp {
                                 None,
                             );
                             if response.clicked() {
-                                self.controller.select_collection_by_index(Some(index));
+                                if selected {
+                                    self.controller.select_collection_by_index(None);
+                                } else {
+                                    self.controller.select_collection_by_index(Some(index));
+                                }
                             }
                             self.collection_row_menu(&response, collection);
                             if drag_active
