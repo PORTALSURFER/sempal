@@ -5,13 +5,17 @@
 mod audio_cache;
 mod audio_loader;
 mod audio_options;
+mod browser_controller;
 mod clipboard;
 mod collection_export;
 mod collection_items;
 mod collection_items_helpers;
+mod collections_controller;
 mod config;
+mod drag_drop_controller;
 mod focus;
 pub(crate) mod hotkeys;
+mod hotkeys_controller;
 mod interaction_options;
 mod loading;
 mod playback;
@@ -22,10 +26,6 @@ mod selection_export;
 mod source_folders;
 mod sources;
 mod trash;
-mod browser_controller;
-mod collections_controller;
-mod drag_drop_controller;
-mod hotkeys_controller;
 mod waveform_controller;
 mod wavs;
 
@@ -201,9 +201,7 @@ impl EguiController {
         drag_drop_controller::DragDropController::new(self)
     }
 
-    pub(crate) fn collections_ctrl(
-        &mut self,
-    ) -> collections_controller::CollectionsController<'_> {
+    pub(crate) fn collections_ctrl(&mut self) -> collections_controller::CollectionsController<'_> {
         collections_controller::CollectionsController::new(self)
     }
 

@@ -22,6 +22,14 @@ Audio sample triage and collection building tool built with Rust and egui.
 - Or build once and run the binary: `cargo build --release` then `target/release/sempal`.
 - Playback uses your default audio output device.
 
+## Code style and linting
+
+- Install tooling once: `rustup component add rustfmt clippy`.
+- Format locally: `cargo fmt --all`.
+- Check formatting (same as CI): `cargo fmt --all -- --check`.
+- Lint locally (same as CI): `cargo clippy --all-targets`.
+- CI runs `rustfmt` and `clippy` on every push to `main` and all pull requests.
+
 ## Configuration and data
 
 - Each source folder gets a hidden `.sempal_samples.db` that tracks indexed `.wav` files and their tags.

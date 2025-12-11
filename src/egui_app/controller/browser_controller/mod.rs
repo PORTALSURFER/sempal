@@ -10,4 +10,3 @@ use super::collection_items_helpers::file_metadata;
 use super::*;
 use crate::sample_sources::collections::CollectionMember;
 use std::path::{Path, PathBuf};
-

@@ -48,14 +48,8 @@ impl EguiController {
             .create_selection_from_playhead(to_left, resume_playback, fine);
     }
 
-    pub(crate) fn nudge_selection_edge(
-        &mut self,
-        edge: SelectionEdge,
-        outward: bool,
-        fine: bool,
-    ) {
-        self.waveform()
-            .nudge_selection_edge(edge, outward, fine);
+    pub(crate) fn nudge_selection_edge(&mut self, edge: SelectionEdge, outward: bool, fine: bool) {
+        self.waveform().nudge_selection_edge(edge, outward, fine);
     }
 
     pub(crate) fn waveform_ready(&self) -> bool {
@@ -78,4 +72,3 @@ impl EguiController {
         self.waveform().scroll_waveform_view(center);
     }
 }
-

@@ -5,9 +5,6 @@ use super::*;
 use crate::egui_app::controller::collection_export;
 use crate::egui_app::controller::hotkeys;
 use crate::egui_app::controller::tests::common::{max_sample_amplitude, prepare_browser_sample};
-use rand::rngs::StdRng;
-use rand::prelude::IteratorRandom;
-use rand::SeedableRng;
 use crate::egui_app::state::{
     DestructiveSelectionEdit, DragPayload, DragSource, DragTarget, FocusContext,
     SampleBrowserActionPrompt, TriageFlagColumn, TriageFlagFilter, WaveformView,
@@ -17,22 +14,25 @@ use crate::sample_sources::collections::CollectionMember;
 use crate::waveform::DecodedWaveform;
 use egui;
 use hound::WavReader;
+use rand::SeedableRng;
+use rand::prelude::IteratorRandom;
+use rand::rngs::StdRng;
 use std::io::Cursor;
 use std::mem;
 use tempfile::tempdir;
 
-mod common;
+mod browser_actions;
 mod browser_core;
 mod browser_selection;
-mod browser_actions;
-mod waveform;
-mod drag_drop_selection;
-mod drag_drop_folders;
 mod collections;
+mod common;
+mod drag_drop_folders;
+mod drag_drop_selection;
+mod focus_random;
 mod folders_core;
 mod folders_search;
 mod missing;
-mod focus_random;
+mod waveform;
 mod waveform_nav_cursor;
 mod waveform_nav_render;
 
@@ -658,11 +658,15 @@ fn selection_drop_adds_clip_to_collection() {
     });
     controller.ui.drag.set_target(
         DragSource::Collections,
-        DragTarget::CollectionsDropZone { collection_id: None },
+        DragTarget::CollectionsDropZone {
+            collection_id: None,
+        },
     );
     assert!(matches!(
         controller.ui.drag.active_target,
-        DragTarget::CollectionsDropZone { collection_id: None }
+        DragTarget::CollectionsDropZone {
+            collection_id: None
+        }
     ));
     controller.finish_active_drag();
 

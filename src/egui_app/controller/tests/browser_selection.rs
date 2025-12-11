@@ -272,5 +272,3 @@ fn shift_arrow_grows_selection() {
     assert_eq!(controller.ui.browser.selection_anchor_visible, Some(1));
     assert_eq!(controller.ui.browser.selected_visible, Some(2));
 }
-
-
