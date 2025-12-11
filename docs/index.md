@@ -9,6 +9,8 @@ description: Audio sample triage and collection builder for fast waveform review
 
 Sempal is an audio sample triage and collection builder with fast waveform preview, destructive selection edits, and export workflows tuned for DAW users.
 
+<img src="{{ '/assets/screenshot.png' | relative_url }}" alt="Sempal screenshot" style="max-width: 100%; height: auto; margin: 1.5rem 0;" />
+
 ## Quick links
 - [Usage guide](/usage)
 - [Latest downloads](https://github.com/portalsurfm/sempal/releases)
