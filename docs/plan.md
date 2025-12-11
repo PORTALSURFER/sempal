@@ -1,16 +1,18 @@
 ## Goal
-- Cancel inline renaming when the user clicks elsewhere so rename mode exits cleanly without applying unintended changes.
+- Ensure that after deleting a sample or folder in the UI, focus moves to the next available item to keep keyboard navigation smooth.
 
 ## Proposed solutions
-- Detect pointer/focus changes on inline rename inputs (samples and folders) and treat losing focus due to an external click as a cancel path.
-- Ensure rename prompts clear their temporary state when cancelled, keeping explicit apply/enter flows intact.
-- Add regression tests that simulate clicking away during rename to lock in the cancel behaviour for both sample and folder contexts.
+- Determine the current focused row and next candidate before deletion, then reapply focus after the data/state rebuild.
+- Add helper logic to handle focus fallback (next item, otherwise previous, otherwise clear) that works with filtered/visible lists.
+- Cover both sample browser and folder browser flows, reusing existing selection/focus utilities where possible.
+- Add regression tests around deletion + focus to lock behaviour in.
 
 ## Step-by-step plan
-1. [x] Review existing rename flows (sample browser and folder browser) in controller and UI layers to map how focus requests and temp state are tracked.
-2. [x] Implement focus-loss/click-away detection on inline rename widgets to exit rename mode without applying changes, clearing any stored temp text.
-3. [x] Wire controller/UI state resets so cancelled renames fully clear prompts and focus flags across both sample and folder rename paths.
-4. [x] Add/extend tests covering click-away cancellation for rename flows and run the relevant test suite to confirm behaviour.
+1. [x] Map current focus and selection handling for sample and folder deletion paths to find the correct hook points.
+2. [x] Implement post-delete focus advancement for sample browser deletions, respecting filters and bounds.
+3. [x] Implement post-delete focus advancement for folder deletions, selecting the next available row or sensible fallback.
+4. [x] Add/extend controller tests to confirm focus jumps as expected after deletions.
+5. [x] Run relevant checks/tests to ensure regressions are caught.
 
 ## Code Style & Architecture Rules Reminder
 - Keep files under 400 lines; split when necessary.
