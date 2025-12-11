@@ -1527,6 +1527,7 @@ fn cancelling_folder_rename_clears_prompt() {
 fn deleting_folder_removes_wavs() -> Result<(), String> {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source.clone());
+    controller.selected_source = Some(source.id.clone());
     let target = source.root.join("gone");
     std::fs::create_dir_all(&target).unwrap();
     write_test_wav(&target.join("sample.wav"), &[0.0, 0.2]);
@@ -1557,6 +1558,52 @@ fn deleting_folder_removes_wavs() -> Result<(), String> {
             .rows
             .iter()
             .all(|row| row.path != PathBuf::from("gone"))
+    );
+    Ok(())
+}
+
+#[test]
+fn deleting_folder_moves_focus_to_next_available() -> Result<(), String> {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.selected_source = Some(source.id.clone());
+    for folder in ["a", "b", "c"] {
+        let path = source.root.join(folder);
+        std::fs::create_dir_all(&path).unwrap();
+        write_test_wav(&path.join(format!("{folder}.wav")), &[0.0, 0.2]);
+    }
+    controller.wav_entries = vec![
+        sample_entry("a/a.wav", SampleTag::Neutral),
+        sample_entry("b/b.wav", SampleTag::Neutral),
+        sample_entry("c/c.wav", SampleTag::Neutral),
+    ];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+    controller.refresh_folder_browser();
+    let focus_row = controller
+        .ui
+        .sources
+        .folders
+        .rows
+        .iter()
+        .position(|row| row.path == PathBuf::from("b"))
+        .unwrap();
+    controller.focus_folder_row(focus_row);
+
+    controller.delete_focused_folder();
+
+    let focused = controller.ui.sources.folders.focused.unwrap();
+    assert_eq!(
+        controller.ui.sources.folders.rows[focused].path,
+        PathBuf::from("c")
+    );
+
+    controller.delete_focused_folder();
+
+    let focused = controller.ui.sources.folders.focused.unwrap();
+    assert_eq!(
+        controller.ui.sources.folders.rows[focused].path,
+        PathBuf::from("a")
     );
     Ok(())
 }
@@ -1719,6 +1766,35 @@ fn browser_delete_prunes_collections_and_exports() -> Result<(), String> {
     assert!(!export_dir.join("delete.wav").exists());
     assert!(controller.wav_entries.is_empty());
     assert!(controller.ui.browser.visible.is_empty());
+    Ok(())
+}
+
+#[test]
+fn deleting_browser_sample_moves_focus_forward() -> Result<(), String> {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.selected_source = Some(source.id.clone());
+    for name in ["a.wav", "b.wav", "c.wav"] {
+        write_test_wav(&source.root.join(name), &[0.1, -0.1]);
+    }
+    controller.wav_entries = vec![
+        sample_entry("a.wav", SampleTag::Neutral),
+        sample_entry("b.wav", SampleTag::Neutral),
+        sample_entry("c.wav", SampleTag::Neutral),
+    ];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+
+    controller.focus_browser_row_only(1);
+    controller.delete_browser_sample(1)?;
+
+    assert_eq!(controller.selected_wav.as_deref(), Some(Path::new("c.wav")));
+    assert_eq!(controller.ui.browser.selected_visible, Some(1));
+
+    controller.delete_browser_sample(1)?;
+
+    assert_eq!(controller.selected_wav.as_deref(), Some(Path::new("a.wav")));
+    assert_eq!(controller.ui.browser.selected_visible, Some(0));
     Ok(())
 }
 

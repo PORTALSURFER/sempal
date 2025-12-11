@@ -870,6 +870,7 @@ impl EguiController {
         if !absolute.exists() {
             return Err(format!("Folder not found: {}", target.display()));
         }
+        let next_focus = self.next_folder_focus_after_delete(target);
         if !self.confirm_folder_delete(target) {
             return Ok(());
         }
@@ -905,6 +906,12 @@ impl EguiController {
             set.retain(|path| !path.starts_with(target));
         });
         self.refresh_folder_browser();
+        if let Some(path) = next_focus {
+            self.focus_folder_by_path(&path);
+        } else {
+            self.ui.sources.folders.focused = None;
+            self.ui.sources.folders.scroll_to = None;
+        }
         self.ui.sources.folders.pending_action = None;
         Ok(())
     }
@@ -926,6 +933,23 @@ impl EguiController {
                 .show(),
             MessageDialogResult::Yes
         )
+    }
+
+    fn next_folder_focus_after_delete(&self, target: &Path) -> Option<PathBuf> {
+        let rows = &self.ui.sources.folders.rows;
+        let target_index = rows.iter().position(|row| row.path == target)?;
+        let mut after = rows
+            .iter()
+            .skip(target_index + 1)
+            .filter(|row| !row.path.starts_with(target));
+        if let Some(row) = after.next() {
+            return Some(row.path.clone());
+        }
+        rows.iter()
+            .take(target_index)
+            .rev()
+            .find(|row| !row.path.starts_with(target))
+            .map(|row| row.path.clone())
     }
 }
 
