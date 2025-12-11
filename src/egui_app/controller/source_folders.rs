@@ -332,6 +332,8 @@ impl EguiController {
             return;
         };
         if row.is_root {
+            self.focus_folder_row(row_index);
+            self.clear_folder_selection();
             return;
         }
         let path = row.path.clone();
@@ -546,6 +548,8 @@ impl EguiController {
             return;
         };
         if row.is_root {
+            self.focus_folder_row(row_index);
+            self.clear_folder_selection();
             return;
         }
         let path = row.path.clone();
