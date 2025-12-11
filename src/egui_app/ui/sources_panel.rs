@@ -162,11 +162,11 @@ impl EguiApp {
                             style::high_contrast_text()
                         };
                         let bg = is_selected.then_some(style::row_selected_fill());
-                        let response = render_list_row(
-                            ui,
-                            &label,
-                            row_width,
-                            row_height,
+                let response = render_list_row(
+                    ui,
+                    &label,
+                    row_width,
+                    row_height,
                             bg,
                             text_color,
                             egui::Sense::click(),
@@ -346,6 +346,7 @@ impl EguiApp {
                     } else if response.secondary_clicked() {
                         self.controller.focus_folder_row(index);
                     }
+                    self.folder_row_menu(&response, index, row);
                     if is_focused {
                         ui.painter().rect_stroke(
                             response.rect,
@@ -515,6 +516,43 @@ impl EguiApp {
                 Err(err) => self.controller.set_status(err, style::StatusTone::Error),
             }
         }
+    }
+
+    fn folder_row_menu(
+        &mut self,
+        response: &egui::Response,
+        index: usize,
+        row: &crate::egui_app::state::FolderRowView,
+    ) {
+        response.context_menu(|ui| {
+            let palette = style::palette();
+            ui.label(RichText::new(row.name.clone()).color(palette.text_primary));
+            ui.separator();
+            let mut close_menu = false;
+            if ui.button("New subfolder").clicked() {
+                self.controller.focus_folder_row(index);
+                self.controller.start_new_folder();
+                close_menu = true;
+            }
+            if ui.button("Rename").clicked() {
+                self.controller.focus_folder_row(index);
+                self.controller.start_folder_rename();
+                close_menu = true;
+            }
+            let delete_button = egui::Button::new(
+                RichText::new("Delete")
+                    .color(style::destructive_text())
+                    .strong(),
+            );
+            if ui.add(delete_button).clicked() {
+                self.controller.focus_folder_row(index);
+                self.controller.delete_focused_folder();
+                close_menu = true;
+            }
+            if close_menu {
+                ui.close();
+            }
+        });
     }
 }
 
