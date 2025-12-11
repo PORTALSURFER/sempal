@@ -173,19 +173,17 @@ impl EguiController {
             self.toggle_folder_expanded(row);
             return;
         }
-        if let Some(parent) = view.path.parent() {
-            if !parent.as_os_str().is_empty() {
-                if let Some(parent_index) = self
-                    .ui
-                    .sources
-                    .folders
-                    .rows
-                    .iter()
-                    .position(|row| row.path == parent)
-                {
-                    self.focus_folder_row(parent_index);
-                }
-            }
+        if let Some(parent) = view.path.parent()
+            && !parent.as_os_str().is_empty()
+            && let Some(parent_index) = self
+                .ui
+                .sources
+                .folders
+                .rows
+                .iter()
+                .position(|row| row.path == parent)
+        {
+            self.focus_folder_row(parent_index);
         }
     }
 
@@ -288,6 +286,7 @@ impl EguiController {
         self.build_folder_rows(&snapshot);
     }
 
+    #[allow(dead_code)]
     pub(crate) fn nudge_folder_focus(&mut self, offset: isize) {
         self.nudge_folder_selection(offset, false);
     }
@@ -306,7 +305,7 @@ impl EguiController {
         let target = (current as isize + offset).clamp(0, len - 1) as usize;
         if extend {
             // Include the currently focused row plus the target step.
-            self.add_folder_to_selection(current as usize);
+            self.add_folder_to_selection(current);
             self.add_folder_to_selection(target);
         } else {
             self.focus_folder_row(target);
@@ -423,7 +422,7 @@ impl EguiController {
     }
 
     pub(crate) fn start_new_folder(&mut self) {
-        let parent = self.focused_folder_path().unwrap_or_else(PathBuf::new);
+        let parent = self.focused_folder_path().unwrap_or_default();
         self.focus_folder_context();
         self.ui.sources.folders.pending_action = Some(FolderActionPrompt::Create {
             parent,
@@ -437,7 +436,7 @@ impl EguiController {
             .current_source()
             .ok_or_else(|| "Select a source first".to_string())?;
         let new_relative = folder_with_name(target, &name);
-        if target == &new_relative {
+        if target == new_relative {
             return Ok(());
         }
         let absolute_old = source.root.join(target);
@@ -576,7 +575,7 @@ impl EguiController {
         Some(
             self.folder_browsers
                 .entry(id)
-                .or_insert_with(FolderBrowserModel::default),
+                .or_default(),
         )
     }
 
@@ -590,7 +589,7 @@ impl EguiController {
         } else {
             model.expanded.clone()
         };
-        self.flatten_folder_tree(Path::new(""), 0, &tree, model, &expanded, &mut rows);
+        Self::flatten_folder_tree(Path::new(""), 0, &tree, model, &expanded, &mut rows);
         if searching {
             rows = self.filter_folder_rows(rows, &model.search_query);
         }
@@ -664,7 +663,6 @@ impl EguiController {
     }
 
     fn flatten_folder_tree(
-        &self,
         parent: &Path,
         depth: usize,
         tree: &BTreeMap<PathBuf, Vec<PathBuf>>,
@@ -694,7 +692,7 @@ impl EguiController {
             };
             rows.push(row);
             if has_children && is_expanded {
-                self.flatten_folder_tree(child, depth + 1, tree, model, expanded, rows);
+                Self::flatten_folder_tree(child, depth + 1, tree, model, expanded, rows);
             }
         }
     }
@@ -702,8 +700,8 @@ impl EguiController {
     fn folder_entries(&self, folder: &Path) -> Vec<WavEntry> {
         self.wav_entries
             .iter()
-            .cloned()
             .filter(|entry| entry.relative_path.starts_with(folder))
+            .cloned()
             .collect()
     }
 

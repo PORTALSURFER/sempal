@@ -126,45 +126,46 @@ impl EguiApp {
                     );
                 }
             }
-            if let Some(label) = self.controller.ui.waveform.hover_time_label.as_deref() {
-                if let Some(pointer_x) = hover_x {
-                    let text_color = style::with_alpha(palette.text_primary, 240);
-                    let galley = ui.ctx().fonts_mut(|f| {
-                        f.layout_job(LayoutJob::simple_singleline(
-                            label.to_string(),
-                            TextStyle::Monospace.resolve(ui.style()),
-                            text_color,
-                        ))
-                    });
-                    let padding = egui::vec2(6.0, 4.0);
-                    let size = galley.size() + padding * 2.0;
-                    let min_x = rect.left() + 4.0;
-                    let max_x = rect.right() - size.x - 4.0;
-                    let desired_x = pointer_x + 8.0;
-                    let label_x = desired_x.clamp(min_x, max_x);
-                    let label_y = rect.top() + 8.0;
-                    let label_rect = egui::Rect::from_min_size(egui::pos2(label_x, label_y), size);
-                    let bg = style::with_alpha(palette.bg_primary, 235);
-                    let border = Stroke::new(1.0, style::with_alpha(palette.panel_outline, 220));
-                    painter.rect_filled(label_rect, 4.0, bg);
-                    painter.rect_stroke(label_rect, 4.0, border, StrokeKind::Inside);
-                    painter.galley(label_rect.min + padding, galley, text_color);
-                }
+            if let Some(label) = self.controller.ui.waveform.hover_time_label.as_deref()
+                && let Some(pointer_x) = hover_x
+            {
+                let text_color = style::with_alpha(palette.text_primary, 240);
+                let galley = ui.ctx().fonts_mut(|f| {
+                    f.layout_job(LayoutJob::simple_singleline(
+                        label.to_string(),
+                        TextStyle::Monospace.resolve(ui.style()),
+                        text_color,
+                    ))
+                });
+                let padding = egui::vec2(6.0, 4.0);
+                let size = galley.size() + padding * 2.0;
+                let min_x = rect.left() + 4.0;
+                let max_x = rect.right() - size.x - 4.0;
+                let desired_x = pointer_x + 8.0;
+                let label_x = desired_x.clamp(min_x, max_x);
+                let label_y = rect.top() + 8.0;
+                let label_rect = egui::Rect::from_min_size(egui::pos2(label_x, label_y), size);
+                let bg = style::with_alpha(palette.bg_primary, 235);
+                let border = Stroke::new(1.0, style::with_alpha(palette.panel_outline, 220));
+                painter.rect_filled(label_rect, 4.0, bg);
+                painter.rect_stroke(label_rect, 4.0, border, StrokeKind::Inside);
+                painter.galley(label_rect.min + padding, galley, text_color);
             }
 
-            if let Some(marker_pos) = self.controller.ui.waveform.last_start_marker {
-                if marker_pos >= view.start && marker_pos <= view.end {
-                    let x = to_screen_x(marker_pos, rect);
-                    let stroke = Stroke::new(1.5, style::with_alpha(start_marker_color, 230));
-                    let mut y = rect.top();
-                    let bottom = rect.bottom();
-                    let dash = 6.0;
-                    let gap = 4.0;
-                    while y < bottom {
-                        let end = (y + dash).min(bottom);
-                        painter.line_segment([egui::pos2(x, y), egui::pos2(x, end)], stroke);
-                        y += dash + gap;
-                    }
+            if let Some(marker_pos) = self.controller.ui.waveform.last_start_marker
+                && marker_pos >= view.start
+                && marker_pos <= view.end
+            {
+                let x = to_screen_x(marker_pos, rect);
+                let stroke = Stroke::new(1.5, style::with_alpha(start_marker_color, 230));
+                let mut y = rect.top();
+                let bottom = rect.bottom();
+                let dash = 6.0;
+                let gap = 4.0;
+                while y < bottom {
+                    let end = (y + dash).min(bottom);
+                    painter.line_segment([egui::pos2(x, y), egui::pos2(x, end)], stroke);
+                    y += dash + gap;
                 }
             }
 
@@ -277,22 +278,23 @@ impl EguiApp {
                             }
                         }
                     }
-                    if pointer_down || edge_response.dragged() {
-                        if let Some(pos) = edge_response.interact_pointer_pos() {
-                            let offset = self.selection_edge_offset.unwrap_or(0.0);
-                            let view_fraction =
-                                ((pos.x - offset - rect.left()) / rect.width()).clamp(0.0, 1.0);
-                            let absolute =
-                                view.start + view_width.max(f32::EPSILON) * view_fraction;
-                            let clamped = absolute.clamp(0.0, 1.0);
-                            self.controller.update_selection_drag(clamped);
-                        }
+                    if (pointer_down || edge_response.dragged())
+                        && let Some(pos) = edge_response.interact_pointer_pos()
+                    {
+                        let offset = self.selection_edge_offset.unwrap_or(0.0);
+                        let view_fraction =
+                            ((pos.x - offset - rect.left()) / rect.width()).clamp(0.0, 1.0);
+                        let absolute =
+                            view.start + view_width.max(f32::EPSILON) * view_fraction;
+                        let clamped = absolute.clamp(0.0, 1.0);
+                        self.controller.update_selection_drag(clamped);
                     }
                     if edge_response.drag_stopped() {
                         self.selection_edge_offset = None;
                         self.controller.finish_selection_drag();
                     }
-                    let edge_hovered = pointer_pos.map(|p| edge_rect.contains(p)).unwrap_or(false)
+                    let edge_hovered = pointer_pos
+                        .is_some_and(|p| edge_rect.contains(p))
                         || edge_response.hovered()
                         || pointer_down
                         || edge_response.dragged();

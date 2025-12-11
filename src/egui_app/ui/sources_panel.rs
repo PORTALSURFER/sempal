@@ -70,7 +70,7 @@ impl EguiApp {
     fn update_sources_panel_drop_state(&mut self, ctx: &egui::Context, rect: egui::Rect) -> bool {
         self.sources_panel_drop_hovered = ctx.input(|i| {
             let pointer_pos = i.pointer.hover_pos().or_else(|| i.pointer.interact_pos());
-            let pointer_over = pointer_pos.map_or(true, |pos| rect.contains(pos));
+            let pointer_over = pointer_pos.is_none_or(|pos| rect.contains(pos));
             let hovered_has_path = i.raw.hovered_files.iter().any(|file| file.path.is_some());
             hovered_has_path && pointer_over
         });
@@ -295,18 +295,18 @@ impl EguiApp {
                             .rect_filled(marker_rect, 0.0, style::selection_marker_fill());
                     }
                     if sample_drag_active {
-                        if let Some(pointer) = pointer_pos {
-                            if response.rect.contains(pointer) {
-                                hovered_folder = Some(row.path.clone());
-                                self.controller.update_active_drag(
-                                    pointer,
-                                    None,
-                                    false,
-                                    None,
-                                    Some(row.path.clone()),
-                                    true,
-                                );
-                            }
+                        if let Some(pointer) = pointer_pos
+                            && response.rect.contains(pointer)
+                        {
+                            hovered_folder = Some(row.path.clone());
+                            self.controller.update_active_drag(
+                                pointer,
+                                None,
+                                false,
+                                None,
+                                Some(row.path.clone()),
+                                true,
+                            );
                         }
                         if hovered_folder.as_ref().is_some_and(|path| path == &row.path)
                             || hovering_folder
@@ -323,30 +323,28 @@ impl EguiApp {
                     }
                     if rename_match {
                         self.render_folder_rename_editor(ui, &response, row);
-                    } else {
-                        if response.clicked() {
-                            let pointer = response.interact_pointer_pos();
-                            let hit_expand = row.has_children
-                                && pointer.map_or(false, |pos| {
-                                    let padding = ui.spacing().button_padding.x;
-                                    let indent = row.depth as f32 * 12.0;
-                                    pos.x <= response.rect.left() + padding + indent + 14.0
-                                });
-                            if hit_expand {
-                                self.controller.toggle_folder_expanded(index);
+                    } else if response.clicked() {
+                        let pointer = response.interact_pointer_pos();
+                        let hit_expand = row.has_children
+                            && pointer.is_some_and(|pos| {
+                                let padding = ui.spacing().button_padding.x;
+                                let indent = row.depth as f32 * 12.0;
+                                pos.x <= response.rect.left() + padding + indent + 14.0
+                            });
+                        if hit_expand {
+                            self.controller.toggle_folder_expanded(index);
+                        } else {
+                            let modifiers = ui.input(|i| i.modifiers);
+                            if modifiers.shift {
+                                self.controller.select_folder_range(index);
+                            } else if modifiers.command || modifiers.ctrl {
+                                self.controller.toggle_folder_row_selection(index);
                             } else {
-                                let modifiers = ui.input(|i| i.modifiers);
-                                if modifiers.shift {
-                                    self.controller.select_folder_range(index);
-                                } else if modifiers.command || modifiers.ctrl {
-                                    self.controller.toggle_folder_row_selection(index);
-                                } else {
-                                    self.controller.replace_folder_selection(index);
-                                }
+                                self.controller.replace_folder_selection(index);
                             }
-                        } else if response.secondary_clicked() {
-                            self.controller.focus_folder_row(index);
                         }
+                    } else if response.secondary_clicked() {
+                        self.controller.focus_folder_row(index);
                     }
                     if is_focused {
                         ui.painter().rect_stroke(
@@ -359,17 +357,17 @@ impl EguiApp {
                 }
             });
             });
-        if sample_drag_active {
-            if let Some(pointer) = pointer_pos {
-                if frame_response.response.rect.contains(pointer) {
-                    if hovered_folder.is_none() {
-                        self.controller
-                            .update_active_drag(pointer, None, false, None, None, true);
-                    }
-                } else {
+        if sample_drag_active
+            && let Some(pointer) = pointer_pos
+        {
+            if frame_response.response.rect.contains(pointer) {
+                if hovered_folder.is_none() {
                     self.controller
-                        .update_active_drag(pointer, None, false, None, None, false);
+                        .update_active_drag(pointer, None, false, None, None, true);
                 }
+            } else {
+                self.controller
+                    .update_active_drag(pointer, None, false, None, None, false);
             }
         }
         style::paint_section_border(ui, frame_response.response.rect, focused);
@@ -430,9 +428,7 @@ impl EguiApp {
         let escape = response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape));
         if enter {
             self.apply_pending_folder_rename();
-        } else if escape {
-            self.controller.cancel_folder_rename();
-        } else if response.lost_focus() {
+        } else if escape || response.lost_focus() {
             self.controller.cancel_folder_rename();
         }
     }

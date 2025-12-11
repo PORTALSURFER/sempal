@@ -50,6 +50,7 @@ impl EguiController {
     }
 
     /// Zoom multiple steps around an optional focus point with a single render.
+    #[allow(dead_code)]
     pub(crate) fn zoom_waveform_steps(&mut self, zoom_in: bool, steps: u32, focus: Option<f32>) {
         self.zoom_waveform_steps_with_factor(zoom_in, steps, focus, None, true, true);
     }

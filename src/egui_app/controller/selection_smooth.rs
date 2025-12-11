@@ -128,9 +128,9 @@ fn apply_start_fade(
     for frame in 0..fade_frames {
         let progress = fade_progress(frame, fade_frames, denom);
         let weight = raised_cosine(progress);
-        for ch in 0..channels {
+        for (ch, &value) in before.iter().enumerate().take(channels) {
             let idx = frame * channels + ch;
-            smoothed[idx] = lerp(before[ch], original[idx], weight);
+            smoothed[idx] = lerp(value, original[idx], weight);
         }
     }
 }
@@ -148,9 +148,9 @@ fn apply_end_fade(
         let progress = fade_progress(frame, fade_frames, denom);
         let weight = raised_cosine(progress);
         let frame_idx = total_frames.saturating_sub(fade_frames) + frame;
-        for ch in 0..channels {
+        for (ch, &value) in after.iter().enumerate().take(channels) {
             let idx = frame_idx * channels + ch;
-            smoothed[idx] = lerp(original[idx], after[ch], weight);
+            smoothed[idx] = lerp(original[idx], value, weight);
         }
     }
 }

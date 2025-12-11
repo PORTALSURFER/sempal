@@ -54,37 +54,33 @@ impl EguiController {
     }
 
     pub(super) fn poll_scan(&mut self) {
-        if let Some(rx) = &self.scan_rx {
-            if let Ok(result) = rx.try_recv() {
-                self.scan_in_progress = false;
-                self.scan_rx = None;
-                if Some(&result.source_id) != self.selected_source.as_ref() {
-                    return;
-                }
-                let label = match result.mode {
-                    ScanMode::Quick => "Quick sync",
-                    ScanMode::Hard => "Hard sync",
-                };
-                match result.result {
-                    Ok(stats) => {
-                        self.set_status(
-                            format!(
-                                "{label} complete: {} added, {} updated, {} missing",
-                                stats.added, stats.updated, stats.missing
-                            ),
-                            StatusTone::Info,
-                        );
-                        if let Some(source) = self.current_source() {
-                            self.wav_cache.remove(&source.id);
-                            self.label_cache.remove(&source.id);
-                            self.missing_wavs.remove(&source.id);
-                        }
-                        self.queue_wav_load();
+        if let Some(rx) = &self.scan_rx && let Ok(result) = rx.try_recv() {
+            self.scan_in_progress = false;
+            self.scan_rx = None;
+            if Some(&result.source_id) != self.selected_source.as_ref() {
+                return;
+            }
+            let label = match result.mode {
+                ScanMode::Quick => "Quick sync",
+                ScanMode::Hard => "Hard sync",
+            };
+            match result.result {
+                Ok(stats) => {
+                    self.set_status(
+                        format!(
+                            "{label} complete: {} added, {} updated, {} missing",
+                            stats.added, stats.updated, stats.missing
+                        ),
+                        StatusTone::Info,
+                    );
+                    if let Some(source) = self.current_source() {
+                        self.wav_cache.remove(&source.id);
+                        self.label_cache.remove(&source.id);
+                        self.missing_wavs.remove(&source.id);
                     }
-                    Err(err) => {
-                        self.set_status(format!("{label} failed: {err}"), StatusTone::Error)
-                    }
+                    self.queue_wav_load();
                 }
+                Err(err) => self.set_status(format!("{label} failed: {err}"), StatusTone::Error),
             }
         }
     }
