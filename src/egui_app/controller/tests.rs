@@ -1417,7 +1417,7 @@ fn browser_rename_updates_collections_and_lookup() {
     controller.collections.push(collection);
     controller.selected_collection = Some(collection_id.clone());
 
-    controller.rename_browser_sample(0, "renamed.wav").unwrap();
+    controller.rename_browser_sample(0, "renamed").unwrap();
 
     assert!(!root.join("one.wav").exists());
     assert!(root.join("renamed.wav").is_file());
@@ -1455,12 +1455,38 @@ fn starting_browser_rename_queues_prompt_for_focused_row() {
     match prompt {
         Some(SampleBrowserActionPrompt::Rename { target, name }) => {
             assert_eq!(target, PathBuf::from("one.wav"));
-            assert_eq!(name, "one.wav");
+            assert_eq!(name, "one");
         }
         _ => panic!("expected sample rename prompt"),
     }
     assert!(controller.ui.browser.rename_focus_requested);
     assert_eq!(controller.ui.focus.context, FocusContext::SampleBrowser);
+}
+
+#[test]
+fn browser_rename_preserves_extension_and_stem_with_dots() {
+    let temp = tempdir().unwrap();
+    let root = temp.path().join("source");
+    std::fs::create_dir_all(&root).unwrap();
+    let renderer = WaveformRenderer::new(12, 12);
+    let mut controller = EguiController::new(renderer, None);
+    let source = SampleSource::new(root.clone());
+    controller.sources.push(source.clone());
+    controller.selected_source = Some(source.id.clone());
+
+    let original = root.join("take.001.WAV");
+    write_test_wav(&original, &[0.1, -0.2]);
+    controller.wav_entries = vec![sample_entry("take.001.WAV", SampleTag::Neutral)];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+
+    controller.rename_browser_sample(0, "take.002").unwrap();
+    assert!(root.join("take.002.WAV").is_file());
+    assert!(!root.join("take.001.WAV").exists());
+
+    controller.rename_browser_sample(0, "final.mp3").unwrap();
+    assert!(root.join("final.WAV").is_file());
+    assert!(!root.join("take.002.WAV").exists());
 }
 
 #[test]

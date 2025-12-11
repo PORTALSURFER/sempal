@@ -30,7 +30,9 @@ impl EguiController {
         let result: Result<(), String> = (|| {
             let ctx = self.resolve_collection_sample(row)?;
             let tag = self.sample_tag_for(&ctx.source, &ctx.member.relative_path)?;
-            let new_relative = self.validate_new_sample_name(&ctx, new_name)?;
+            let full_name =
+                self.name_with_preserved_extension(&ctx.member.relative_path, new_name)?;
+            let new_relative = self.validate_new_sample_name(&ctx, &full_name)?;
             let (file_size, modified_ns) = self.apply_rename(&ctx, &new_relative, tag)?;
             self.update_collection_member_path(&ctx, &new_relative)?;
             self.update_cached_entry(
