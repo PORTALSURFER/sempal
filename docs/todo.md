@@ -1,12 +1,6 @@
 # Codebase review TODOs
 
-## High priority
-- Add/restore clippy + rustfmt CI checks, and document local workflow in `README.md` or `docs/styleguide.md`.
-
 ## Correctness & robustness
-- Replace a few production `unwrap`/`expect` sites with explicit error handling or safer patterns:
-  - `src/egui_app/controller/wavs.rs:524` uses `unwrap` after a guard; refactor to avoid clippy warning and future footguns.
-  - `src/egui_app/controller/sample_browser_actions.rs:160` uses `last().unwrap()`; can use `.last().copied()` with early-return.
 - In `src/sample_sources/scanner.rs`, `entries.flatten()` silently drops `read_dir` errors; consider collecting/logging errors so missing permissions or transient IO don’t hide files.
 - In `src/external_clipboard.rs` (Windows):
   - Remove unnecessary `GlobalUnlock` calls when `GlobalLock` fails.
@@ -58,10 +52,12 @@ this action should only add a new audio file to the collection
 - lets add the same select/focus system en styling as in the sample browser list also to the collection browser list.
 lets unify these into a flat items list component, using the sample browser as leading in terms of style and core list/navigation functionality.
 
-- add 't' to trim audio selection
+- in wavefrom context, add 't' to trim audio selection
 
-- add hotkeys '/' and '\' to fade audio selection 
+- in wavefrom context, add hotkeys '/' and '\' to fade audio selection, lets also adjust the fade algo so its a soft S curve, not a hard diagonal. 
 
-- add hotkey 'n' to normalize audio selection
+- in wavefrom context, add hotkey 'n' to normalize audio selection when a selection is available, otherwise just normalize the whole thing like the sample browser normalize does.
 
-- add hotkey 'c' to crop selection, and 'C/shift+c' for crop as non-destructive crop as new sample option, adding a new sample in the same location as the original with _crop001 added, etc.
+- in wavefrom context, add hotkey 'c' to crop selection, and 'C/shift+c' for crop as non-destructive crop as new sample option, adding a new sample in the same location as the original with _crop001 added, etc.
+
+- lets add a version label to the statusbar in v0.32.0 format
