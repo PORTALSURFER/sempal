@@ -157,7 +157,7 @@ fn format_log_file_name(now: OffsetDateTime) -> Result<String, LoggingError> {
 fn build_timer() -> fmt::time::OffsetTime<time::format_description::BorrowedFormatItem<'static>> {
     const DISPLAY_FORMAT: &[FormatItem<'static>] =
         format_description!("[year]-[month]-[day] [hour]:[minute]:[second]");
-    let offset = UtcOffset::current_local_offset().unwrap_or_else(|_| UtcOffset::UTC);
+    let offset = UtcOffset::current_local_offset().unwrap_or(UtcOffset::UTC);
     fmt::time::OffsetTime::new(offset, DISPLAY_FORMAT.into())
 }
 
@@ -204,12 +204,16 @@ mod tests {
         let remaining = fs::read_dir(dir.path())
             .unwrap()
             .filter(|entry| {
-                entry.as_ref().ok().map(|e| e.path()).map_or(false, |path| {
-                    path.extension()
-                        .and_then(|ext| ext.to_str())
-                        .map(|ext| ext == "log")
-                        .unwrap_or(false)
-                })
+                entry
+                    .as_ref()
+                    .ok()
+                    .map(|e| e.path())
+                    .is_some_and(|path| {
+                        path.extension()
+                            .and_then(|ext| ext.to_str())
+                            .map(|ext| ext == "log")
+                            .unwrap_or(false)
+                    })
             })
             .count();
         assert_eq!(remaining, 10);

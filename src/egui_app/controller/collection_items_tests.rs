@@ -1,5 +1,3 @@
-#![cfg(test)]
-
 use super::test_support::{dummy_controller, write_test_wav};
 use super::*;
 use std::path::Path;

@@ -26,18 +26,14 @@ pub(super) struct FolderBrowserModel {
 
 impl FolderBrowserModel {
     fn clear_focus_if_missing(&mut self) {
-        if let Some(focused) = self.focused.clone() {
-            if !self.available.contains(&focused) {
-                self.focused = None;
-            }
+        if let Some(focused) = self.focused.clone() && !self.available.contains(&focused) {
+            self.focused = None;
         }
     }
 
     fn clear_anchor_if_missing(&mut self) {
-        if let Some(anchor) = self.selection_anchor.clone() {
-            if !self.available.contains(&anchor) {
-                self.selection_anchor = None;
-            }
+        if let Some(anchor) = self.selection_anchor.clone() && !self.available.contains(&anchor) {
+            self.selection_anchor = None;
         }
     }
 }
@@ -57,7 +53,7 @@ impl EguiController {
             let model = self
                 .folder_browsers
                 .entry(source_id.clone())
-                .or_insert_with(FolderBrowserModel::default);
+                .or_default();
             model
                 .manual_folders
                 .retain(|path| source.root.join(path).is_dir());

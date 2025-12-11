@@ -1,7 +1,5 @@
 //! Helpers for tracking waveform selection ranges and drag interactions.
-///
-/// This module keeps selection math pure and testable so the UI integration code can stay small.
-
+//! This module keeps selection math pure and testable so the UI integration code can stay small.
 /// Normalized selection bounds over a waveform (0.0 - 1.0).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SelectionRange {

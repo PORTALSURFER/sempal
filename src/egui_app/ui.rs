@@ -143,11 +143,13 @@ fn press_text_variants(press: &hotkeys::KeyPress) -> &'static [&'static str] {
 }
 
 fn consume_press(ctx: &egui::Context, press: hotkeys::KeyPress) {
-    let mut modifiers = egui::Modifiers::default();
-    modifiers.alt = press.alt;
-    modifiers.shift = press.shift;
-    modifiers.command = press.command;
-    modifiers.ctrl = press.command;
+    let modifiers = egui::Modifiers {
+        alt: press.alt,
+        shift: press.shift,
+        command: press.command,
+        ctrl: press.command,
+        ..Default::default()
+    };
     ctx.input_mut(|i| {
         i.consume_key(modifiers, press.key);
         let text_variants = press_text_variants(&press);
@@ -243,7 +245,7 @@ impl EguiApp {
                 i.pointer
                     .hover_pos()
                     .or_else(|| i.pointer.interact_pos())
-                    .map_or(false, |pos| rect.contains(pos))
+                    .is_some_and(|pos| rect.contains(pos))
             })
         } else {
             false
@@ -289,11 +291,11 @@ impl EguiApp {
             return;
         }
         let now = Instant::now();
-        if let Some(pending) = self.pending_chord {
-            if now.saturating_duration_since(pending.started_at) > CHORD_TIMEOUT {
-                self.pending_chord = None;
-                self.key_feedback.pending_root = None;
-            }
+        if let Some(pending) = self.pending_chord
+            && now.saturating_duration_since(pending.started_at) > CHORD_TIMEOUT
+        {
+            self.pending_chord = None;
+            self.key_feedback.pending_root = None;
         }
         let events = ctx.input(|i| i.events.clone());
         for event in events {

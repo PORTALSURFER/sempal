@@ -1,5 +1,3 @@
-#![cfg(test)]
-
 use super::*;
 use hound::{SampleFormat, WavSpec, WavWriter};
 use std::path::{Path, PathBuf};

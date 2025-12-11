@@ -269,22 +269,20 @@ impl EguiController {
         source: &SampleSource,
         relative_path: &Path,
     ) -> Result<SampleTag, String> {
-        if let Some(cache) = self.wav_cache.get(&source.id) {
-            if let Some(entry) = cache
+        if let Some(cache) = self.wav_cache.get(&source.id)
+            && let Some(entry) = cache
                 .iter()
                 .find(|entry| entry.relative_path == relative_path)
-            {
-                return Ok(entry.tag);
-            }
+        {
+            return Ok(entry.tag);
         }
-        if self.selected_source.as_ref() == Some(&source.id) {
-            if let Some(entry) = self
+        if self.selected_source.as_ref() == Some(&source.id)
+            && let Some(entry) = self
                 .wav_entries
                 .iter()
                 .find(|entry| entry.relative_path == relative_path)
-            {
-                return Ok(entry.tag);
-            }
+        {
+            return Ok(entry.tag);
         }
         let db = self
             .database_for(source)
@@ -370,10 +368,11 @@ impl EguiController {
                 self.ui.loaded_wav = Some(new_path.to_path_buf());
             }
         }
-        if let Some(audio) = self.loaded_audio.as_mut() {
-            if audio.source_id == source.id && audio.relative_path == old_path {
-                audio.relative_path = new_path.to_path_buf();
-            }
+        if let Some(audio) = self.loaded_audio.as_mut()
+            && audio.source_id == source.id
+            && audio.relative_path == old_path
+        {
+            audio.relative_path = new_path.to_path_buf();
         }
     }
 
@@ -390,10 +389,10 @@ impl EguiController {
             .as_ref()
             .is_some_and(|id| id == &ctx.collection_id)
             && self.ui.collections.selected_sample == Some(ctx.row);
-        if loaded_matches || selected_matches {
-            if let Err(err) = self.load_collection_waveform(&ctx.source, relative_path) {
-                self.set_status(err, StatusTone::Warning);
-            }
+        if (loaded_matches || selected_matches)
+            && let Err(err) = self.load_collection_waveform(&ctx.source, relative_path)
+        {
+            self.set_status(err, StatusTone::Warning);
         }
     }
 

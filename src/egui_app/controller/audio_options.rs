@@ -11,11 +11,11 @@ impl EguiController {
             .find(|host| host.is_default)
             .map(|host| host.id.clone());
         let mut host_id = self.audio_output.host.clone().or(default_host.clone());
-        if let Some(id) = host_id.as_ref() {
-            if !hosts.iter().any(|host| &host.id == id) {
-                warning = Some(format!("Host {id} unavailable; using system default"));
-                host_id = default_host;
-            }
+        if let Some(id) = host_id.as_ref()
+            && !hosts.iter().any(|host| &host.id == id)
+        {
+            warning = Some(format!("Host {id} unavailable; using system default"));
+            host_id = default_host;
         }
         self.audio_output.host = host_id.clone();
         self.ui.audio.hosts = hosts
@@ -42,7 +42,7 @@ impl EguiController {
             .iter()
             .find(|d| d.is_default)
             .map(|d| d.name.clone())
-            .or_else(|| devices.get(0).map(|d| d.name.clone()));
+            .or_else(|| devices.first().map(|d| d.name.clone()));
         let mut device_name = self.audio_output.device.clone();
         if let Some(name) = device_name.as_ref() {
             if !devices.iter().any(|d| &d.name == name) {
@@ -73,13 +73,14 @@ impl EguiController {
             }
             _ => Vec::new(),
         };
-        if let Some(rate) = self.audio_output.sample_rate {
-            if !sample_rates.contains(&rate) && !sample_rates.is_empty() {
-                warning.get_or_insert_with(|| {
-                    format!("Sample rate {rate} unsupported; using {}", sample_rates[0])
-                });
-                self.audio_output.sample_rate = Some(sample_rates[0]);
-            }
+        if let Some(rate) = self.audio_output.sample_rate
+            && !sample_rates.contains(&rate)
+            && !sample_rates.is_empty()
+        {
+            warning.get_or_insert_with(|| {
+                format!("Sample rate {rate} unsupported; using {}", sample_rates[0])
+            });
+            self.audio_output.sample_rate = Some(sample_rates[0]);
         }
         self.ui.audio.sample_rates = sample_rates;
         self.ui.audio.selected = self.audio_output.clone();
@@ -168,25 +169,19 @@ impl EguiController {
             return None;
         }
         let mut reasons = Vec::new();
-        if let Some(host) = self.audio_output.host.as_deref() {
-            if host != output.host_id {
-                reasons.push(format!("host {host}"));
-            }
+        if let Some(host) = self.audio_output.host.as_deref() && host != output.host_id {
+            reasons.push(format!("host {host}"));
         }
-        if let Some(device) = self.audio_output.device.as_deref() {
-            if device != output.device_name {
-                reasons.push(format!("device {device}"));
-            }
+        if let Some(device) = self.audio_output.device.as_deref() && device != output.device_name {
+            reasons.push(format!("device {device}"));
         }
-        if let Some(rate) = self.audio_output.sample_rate {
-            if rate != output.sample_rate {
-                reasons.push(format!("sample rate {rate}"));
-            }
+        if let Some(rate) = self.audio_output.sample_rate && rate != output.sample_rate {
+            reasons.push(format!("sample rate {rate}"));
         }
-        if let Some(size) = self.audio_output.buffer_size {
-            if output.buffer_size_frames != Some(size) {
-                reasons.push(format!("buffer {size}"));
-            }
+        if let Some(size) = self.audio_output.buffer_size
+            && output.buffer_size_frames != Some(size)
+        {
+            reasons.push(format!("buffer {size}"));
         }
         let details = if reasons.is_empty() {
             "requested settings".to_string()
