@@ -101,9 +101,7 @@ fn collection_rename_moves_files_and_export() {
     let export_root = source.root.parent().unwrap().join("export");
     enable_export_with_existing_member(&mut controller, &collection_id, &export_root);
 
-    controller
-        .rename_collection_sample(0, "renamed.wav")
-        .unwrap();
+    controller.rename_collection_sample(0, "renamed").unwrap();
 
     assert!(!source.root.join("one.wav").exists());
     assert!(source.root.join("renamed.wav").is_file());
@@ -125,6 +123,22 @@ fn collection_rename_moves_files_and_export() {
         rows.iter()
             .any(|row| row.relative_path == Path::new("renamed.wav"))
     );
+}
+
+#[test]
+fn collection_rename_preserves_extension_and_handles_dots() {
+    let (mut controller, source, collection_id) = setup_collection_with_sample("loop.v1.WAV");
+    controller.selected_collection = Some(collection_id.clone());
+
+    controller.rename_collection_sample(0, "loop.v2").unwrap();
+    assert!(source.root.join("loop.v2.WAV").is_file());
+    assert!(!source.root.join("loop.v1.WAV").exists());
+
+    controller
+        .rename_collection_sample(0, "loop-final.mp3")
+        .unwrap();
+    assert!(source.root.join("loop-final.WAV").is_file());
+    assert!(!source.root.join("loop.v2.WAV").exists());
 }
 
 #[test]

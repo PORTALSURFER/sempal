@@ -295,9 +295,9 @@ impl EguiApp {
                 }
             }
             ui.separator();
-            let default_name = path.file_name().and_then(|n| n.to_str()).unwrap_or(label);
+            let default_name = view_model::sample_display_label(&path);
             let rename_id = ui.make_persistent_id(format!("rename:triage:{}", path.display()));
-            if self.sample_rename_controls(ui, rename_id, default_name, |app, value| {
+            if self.sample_rename_controls(ui, rename_id, default_name.as_str(), |app, value| {
                 app.controller.rename_browser_sample(row, value).is_ok()
             }) {
                 close_menu = true;

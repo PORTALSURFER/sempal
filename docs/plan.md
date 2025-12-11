@@ -1,15 +1,15 @@
 ## Goal
-- Ensure that when random navigation mode (Alt+R) is active, flagging a filtered sample (e.g., untagged) advances focus to the next random item rather than the next row in list order, while preserving existing behaviour when random mode is off.
+- Ensure sample renaming keeps the `.wav` extension out of the editable name and consistently preserves the original extension when applying renames.
 
 ## Proposed solutions
-- Inspect the current triage tagging flow and `refocus_after_filtered_removal` logic to identify where focus is advanced after a flag removes the item from the filtered list.
-- Route focus through the random navigation pathway when random mode is enabled (reusing random history/visibility constraints), with a safe fallback to sequential focus when random navigation is off or no random target exists.
-- Expand or adjust tests around random navigation + filtered tagging to lock in the new focus behaviour.
+- Map the current sample rename flows (browser, collections, inline editors) to see where the editable name is seeded and how file paths/extensions are constructed when committing a rename.
+- Change rename inputs to prefill only the basename (excluding `.wav`/extensions) and adjust commit logic to reattach the original extension automatically, guarding against accidental extension changes.
+- Add focused tests that verify renames preserve the extension, handle filenames containing additional dots in the stem, and keep collection/export metadata aligned.
 
 ## Step-by-step plan
-1. [-] Trace tagging/flagging and focus-advance logic (including filters and random navigation state) to pinpoint the right hook for changing post-flag focus.
-2. [-] Implement focus advancement that selects the next random visible sample when random navigation mode is enabled, falling back to list-ordered focus otherwise.
-3. [-] Update or add tests covering flagging under filtered views in random mode to verify the new navigation behaviour.
+1. [-] Audit sample rename UI/controller paths to understand how default rename text and destination paths are built, including any extension handling.
+2. [-] Update rename inputs and application logic to strip the `.wav` extension from user-facing text while reappending the original extension during file and metadata updates.
+3. [-] Extend or add tests covering rename-with-extension behaviour (including names with extra dots) across browser and collection contexts.
 
 ## Code Style & Architecture Rules Reminder
 - File and module structure
