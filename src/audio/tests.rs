@@ -260,6 +260,22 @@ fn progress_wraps_full_loop_from_offset() {
 }
 
 #[test]
+fn play_range_at_track_end_expands_backwards() {
+    let Ok(mut player) = AudioPlayer::new() else {
+        return;
+    };
+    let duration = 0.5;
+    player.set_audio(silent_wav_bytes(duration, 44_100, 1), duration);
+
+    assert!(player.play_range(1.0, 1.0, false).is_ok());
+    let (start, end) = player.play_span.expect("play span set");
+
+    assert!(start < duration);
+    assert!((end - duration).abs() < 0.0005);
+    assert!((start - (duration - 0.01)).abs() < 0.002);
+}
+
+#[test]
 fn set_audio_prefers_provided_duration() {
     let Ok(mut player) = AudioPlayer::new() else {
         return;
