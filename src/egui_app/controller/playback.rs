@@ -71,6 +71,29 @@ impl EguiController {
         self.ui.waveform.loop_enabled = !self.ui.waveform.loop_enabled;
         if self.ui.waveform.loop_enabled {
             self.pending_loop_disable_at = None;
+            if !was_looping {
+                if let Some(player_rc) = self.player.as_ref().cloned() {
+                    let (is_playing, progress) = {
+                        let player_ref = player_rc.borrow();
+                        (player_ref.is_playing(), player_ref.progress())
+                    };
+                    if is_playing {
+                        let start_override = progress.or_else(|| {
+                            if self.ui.waveform.playhead.visible {
+                                Some(self.ui.waveform.playhead.position)
+                            } else {
+                                self.ui
+                                    .waveform
+                                    .cursor
+                                    .or(self.ui.waveform.last_start_marker)
+                            }
+                        });
+                        if let Err(err) = self.play_audio(true, start_override) {
+                            self.set_status(err, StatusTone::Error);
+                        }
+                    }
+                }
+            }
             return;
         }
         if was_looping && let Err(err) = self.defer_loop_disable_after_cycle() {
