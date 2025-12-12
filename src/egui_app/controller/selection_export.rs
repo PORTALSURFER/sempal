@@ -137,6 +137,7 @@ impl EguiController {
         let cache = self.wav_cache.entry(source.id.clone()).or_default();
         cache.push(entry.clone());
         cache.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
+        self.rebuild_wav_cache_lookup(&source.id);
 
         if self.selected_source.as_ref() != Some(&source.id) {
             return;

@@ -74,6 +74,7 @@ impl EguiController {
     ) {
         if let Some(cache) = self.wav_cache.get_mut(&source.id) {
             cache.retain(|entry| entry.relative_path != relative_path);
+            self.rebuild_wav_cache_lookup(&source.id);
         }
         if self.selected_source.as_ref() == Some(&source.id) {
             self.wav_entries
