@@ -206,6 +206,36 @@ fn selecting_browser_sample_clears_collection_selection() {
 }
 
 #[test]
+fn selecting_collection_sample_does_not_switch_selected_source() {
+    let temp = tempdir().unwrap();
+    let root_a = temp.path().join("source_a");
+    let root_b = temp.path().join("source_b");
+    std::fs::create_dir_all(&root_a).unwrap();
+    std::fs::create_dir_all(&root_b).unwrap();
+    let renderer = WaveformRenderer::new(12, 12);
+    let mut controller = EguiController::new(renderer, None);
+    let source_a = SampleSource::new(root_a);
+    let source_b = SampleSource::new(root_b);
+    controller.sources.push(source_a.clone());
+    controller.sources.push(source_b.clone());
+    controller.selected_source = Some(source_a.id.clone());
+
+    let mut collection = Collection::new("Test");
+    collection.members.push(CollectionMember {
+        source_id: source_b.id.clone(),
+        relative_path: PathBuf::from("b.wav"),
+        clip_root: None,
+    });
+    controller.selected_collection = Some(collection.id.clone());
+    controller.collections.push(collection);
+    controller.refresh_collections_ui();
+
+    controller.select_collection_sample(0);
+
+    assert_eq!(controller.selected_source.as_ref(), Some(&source_a.id));
+}
+
+#[test]
 fn sample_tag_for_builds_wav_cache_lookup() {
     let temp = tempdir().unwrap();
     let root = temp.path().join("source");
