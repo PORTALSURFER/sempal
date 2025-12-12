@@ -16,6 +16,7 @@ impl EguiController {
         }
         self.wav_entries.clear();
         self.rebuild_wav_lookup();
+        self.browser_search_cache.invalidate();
         self.refresh_folder_browser();
         self.rebuild_browser_lists();
         if self.pending_source.as_ref() == Some(&source.id) {
@@ -82,6 +83,7 @@ impl EguiController {
     ) {
         self.wav_entries = entries;
         self.rebuild_wav_lookup();
+        self.browser_search_cache.invalidate();
         self.refresh_folder_browser();
         self.rebuild_browser_lists();
         let mut pending_applied = false;
