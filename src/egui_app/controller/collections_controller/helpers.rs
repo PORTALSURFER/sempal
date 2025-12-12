@@ -240,19 +240,6 @@ impl CollectionsController<'_> {
         }
     }
 
-    fn tag_for_collection_member(
-        &mut self,
-        member: &CollectionMember,
-    ) -> Result<SampleTag, String> {
-        let source = self.collection_member_source(member).ok_or_else(|| {
-            format!(
-                "Source not available for {}",
-                member.relative_path.display()
-            )
-        })?;
-        self.sample_tag_for(&source, &member.relative_path)
-    }
-
     pub(super) fn ensure_collection_selection(&mut self) {
         if self.selected_collection.is_some() {
             return;

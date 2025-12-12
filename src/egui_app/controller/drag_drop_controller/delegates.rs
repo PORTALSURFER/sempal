@@ -44,8 +44,4 @@ impl EguiController {
     pub fn maybe_launch_external_drag(&mut self, pointer_outside: bool) {
         self.drag_drop().maybe_launch_external_drag(pointer_outside);
     }
-
-    pub(super) fn reset_drag(&mut self) {
-        self.drag_drop().reset_drag();
-    }
 }
