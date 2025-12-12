@@ -153,21 +153,30 @@ impl AudioPlayer {
     pub fn progress(&self) -> Option<f32> {
         let duration = self.track_duration?;
         let started_at = self.started_at?;
-        let elapsed = started_at.elapsed().as_secs_f32();
-        let adjusted_elapsed = if self.looping {
-            let span_length = self
-                .play_span
-                .map(|(start, end)| (end - start).max(f32::EPSILON))
-                .unwrap_or(duration);
-            let offset = self
-                .loop_offset
-                .filter(|_| (span_length - duration).abs() < f32::EPSILON)
-                .unwrap_or(0.0);
-            elapsed + offset
+        if duration <= 0.0 {
+            return None;
+        }
+
+        let elapsed = started_at.elapsed();
+        let (span_start, span_end) = self.play_span.unwrap_or((0.0, duration));
+        let span_length_secs = (span_end - span_start).max(f32::EPSILON);
+        let span_length = duration_from_secs_f32(span_length_secs);
+        if span_length.is_zero() {
+            return None;
+        }
+
+        let base_offset = if self.looping {
+            duration_from_secs_f32(self.loop_offset.unwrap_or(0.0))
         } else {
-            elapsed
+            Duration::ZERO
         };
-        normalized_progress(self.play_span, duration, adjusted_elapsed, self.looping)
+        let within_span = if self.looping {
+            duration_mod(base_offset.saturating_add(elapsed), span_length)
+        } else {
+            elapsed.min(span_length)
+        };
+        let absolute_secs = span_start as f64 + within_span.as_secs_f64();
+        Some(((absolute_secs / duration as f64) as f32).clamp(0.0, 1.0))
     }
 
     /// True while the sink is still playing the queued audio.
@@ -191,11 +200,15 @@ impl AudioPlayer {
         }
         let started_at = self.started_at?;
         let (start, end) = self.play_span?;
-        let span_length = (end - start).max(f32::EPSILON);
-        let elapsed = started_at.elapsed().as_secs_f32();
-        let elapsed_in_span = elapsed % span_length;
-        let remaining = span_length - elapsed_in_span;
-        Some(Duration::from_secs_f32(remaining.max(0.0)))
+        let span_length_secs = (end - start).max(f32::EPSILON);
+        let span_length = duration_from_secs_f32(span_length_secs);
+        if span_length.is_zero() {
+            return None;
+        }
+        let elapsed = started_at.elapsed();
+        let base_offset = duration_from_secs_f32(self.loop_offset.unwrap_or(0.0));
+        let elapsed_in_span = duration_mod(base_offset.saturating_add(elapsed), span_length);
+        Some(span_length.saturating_sub(elapsed_in_span))
     }
 
     fn start_with_span(
@@ -380,6 +393,7 @@ fn fade_duration(span_seconds: f32) -> Duration {
     Duration::from_secs_f32(clamped.max(0.0))
 }
 
+#[cfg(test)]
 fn normalized_progress(
     span: Option<(f32, f32)>,
     duration: f32,
@@ -398,6 +412,24 @@ fn normalized_progress(
     };
     let absolute = start + within_span;
     Some((absolute / duration).clamp(0.0, 1.0))
+}
+
+fn duration_from_secs_f32(seconds: f32) -> Duration {
+    if !seconds.is_finite() || seconds <= 0.0 {
+        return Duration::ZERO;
+    }
+    Duration::from_secs_f64(seconds as f64)
+}
+
+fn duration_mod(value: Duration, modulus: Duration) -> Duration {
+    let modulus_nanos = modulus.as_nanos();
+    if modulus_nanos == 0 {
+        return Duration::ZERO;
+    }
+    let remainder = value.as_nanos() % modulus_nanos;
+    let secs = (remainder / 1_000_000_000) as u64;
+    let nanos = (remainder % 1_000_000_000) as u32;
+    Duration::new(secs, nanos)
 }
 
 #[derive(Clone)]
