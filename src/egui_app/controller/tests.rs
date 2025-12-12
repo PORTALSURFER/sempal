@@ -405,6 +405,7 @@ fn exporting_selection_updates_entries_and_db() {
             SelectionRange::new(0.0, 0.5),
             Some(SampleTag::Keep),
             true,
+            true,
         )
         .unwrap();
 
