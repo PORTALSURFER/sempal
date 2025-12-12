@@ -42,6 +42,9 @@ impl CollectionsActions for CollectionsController<'_> {
             return;
         };
         if Some(&target_source) != self.selected_source.as_ref() {
+            if self.sources.iter().any(|s| s.id == target_source) {
+                self.last_selected_browsable_source = Some(target_source.clone());
+            }
             self.selected_source = Some(target_source.clone());
             self.selected_wav = None;
             self.loaded_wav = None;
