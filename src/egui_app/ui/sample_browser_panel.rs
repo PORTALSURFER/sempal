@@ -106,6 +106,8 @@ impl EguiApp {
                     Some(style::duplicate_hover_fill())
                 } else if is_focused {
                     Some(style::row_selected_fill())
+                } else if is_selected {
+                    Some(style::row_multi_selected_fill())
                 } else {
                     None
                 };
@@ -397,4 +399,3 @@ impl EguiApp {
         });
     }
 }
-
