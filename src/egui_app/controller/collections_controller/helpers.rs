@@ -25,25 +25,78 @@ impl std::ops::DerefMut for CollectionsController<'_> {
 }
 
 impl CollectionsController<'_> {
+    pub(super) fn collection_member_source(&self, member: &CollectionMember) -> Option<SampleSource> {
+        if let Some(root) = member.clip_root.as_ref() {
+            return Some(SampleSource {
+                id: member.source_id.clone(),
+                root: root.clone(),
+            });
+        }
+        self.sources
+            .iter()
+            .find(|s| s.id == member.source_id)
+            .cloned()
+    }
+
+    pub(super) fn collection_member_missing(&mut self, member: &CollectionMember) -> bool {
+        if let Some(root) = member.clip_root.as_ref() {
+            return !root.join(&member.relative_path).is_file();
+        }
+        self.sample_missing(&member.source_id, &member.relative_path)
+    }
+
+    pub(super) fn add_clip_to_collection(
+        &mut self,
+        collection_id: &CollectionId,
+        clip_root: PathBuf,
+        clip_relative_path: PathBuf,
+    ) -> Result<(), String> {
+        if !self.feature_flags.collections_enabled {
+            return Err("Collections are disabled".into());
+        }
+        SourceDatabase::open(&clip_root)
+            .map_err(|err| format!("Failed to create clip database: {err}"))?;
+        let clip_source_id =
+            SourceId::from_string(format!("collection-{}", collection_id.as_str()));
+        let clip_source = SampleSource {
+            id: clip_source_id.clone(),
+            root: clip_root.clone(),
+        };
+        self.ensure_sample_db_entry(&clip_source, &clip_relative_path)?;
+        let new_member = CollectionMember {
+            source_id: clip_source_id,
+            relative_path: clip_relative_path.clone(),
+            clip_root: Some(clip_root),
+        };
+        let mut collections = self.collections.clone();
+        let Some(collection) = collections.iter_mut().find(|c| &c.id == collection_id) else {
+            return Err("Collection not found".into());
+        };
+        let already_present = collection.contains(
+            &new_member.source_id,
+            &new_member.relative_path,
+        );
+        if !already_present {
+            collection.members.push(new_member.clone());
+        }
+        self.collections = collections;
+        if already_present {
+            self.set_status("Already in collection", StatusTone::Info);
+            return Ok(());
+        }
+        self.finalize_collection_add(collection_id, &new_member, &new_member.relative_path)
+    }
+
     pub(super) fn refresh_collections_ui(&mut self) {
         let selected_id = self.selected_collection.clone();
-        let member_refs: Vec<Vec<(SourceId, PathBuf)>> = self
-            .collections
+        let collections_snapshot = self.collections.clone();
+        let collection_missing: Vec<bool> = collections_snapshot
             .iter()
             .map(|collection| {
                 collection
                     .members
                     .iter()
-                    .map(|member| (member.source_id.clone(), member.relative_path.clone()))
-                    .collect()
-            })
-            .collect();
-        let collection_missing: Vec<bool> = member_refs
-            .iter()
-            .map(|members| {
-                members
-                    .iter()
-                    .any(|(source_id, path)| self.sample_missing(source_id, path))
+                    .any(|member| self.collection_member_missing(member))
             })
             .collect();
         self.ui.collections.rows = view_model::collection_rows(
@@ -66,16 +119,11 @@ impl CollectionsController<'_> {
             .cloned();
         let sources = self.sources.clone();
         let mut tag_error: Option<String> = None;
-        let sample_missing_refs = selected.as_ref().map(|collection| {
+        let sample_missing_flags = selected.as_ref().map(|collection| {
             collection
                 .members
                 .iter()
-                .map(|member| (member.source_id.clone(), member.relative_path.clone()))
-                .collect::<Vec<_>>()
-        });
-        let sample_missing_flags = sample_missing_refs.as_ref().map(|refs| {
-            refs.iter()
-                .map(|(source_id, path)| self.sample_missing(source_id, path))
+                .map(|member| self.collection_member_missing(member))
                 .collect::<Vec<bool>>()
         });
         let missing_slice = sample_missing_flags.as_deref();
@@ -110,17 +158,12 @@ impl CollectionsController<'_> {
         &mut self,
         member: &CollectionMember,
     ) -> Result<SampleTag, String> {
-        let source = self
-            .sources
-            .iter()
-            .find(|s| s.id == member.source_id)
-            .cloned()
-            .ok_or_else(|| {
-                format!(
-                    "Source not available for {}",
-                    member.relative_path.display()
-                )
-            })?;
+        let source = self.collection_member_source(member).ok_or_else(|| {
+            format!(
+                "Source not available for {}",
+                member.relative_path.display()
+            )
+        })?;
         self.sample_tag_for(&source, &member.relative_path)
     }
 
@@ -174,6 +217,7 @@ impl CollectionsController<'_> {
         let new_member = CollectionMember {
             source_id: source.id.clone(),
             relative_path: relative_path.to_path_buf(),
+            clip_root: None,
         };
         let added = collection.add_member(
             new_member.source_id.clone(),

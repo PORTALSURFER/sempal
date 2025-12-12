@@ -48,6 +48,16 @@ impl EguiController {
         )
     }
 
+    pub(in crate::egui_app::controller) fn add_clip_to_collection(
+        &mut self,
+        collection_id: &CollectionId,
+        clip_root: PathBuf,
+        clip_relative_path: PathBuf,
+    ) -> Result<(), String> {
+        self.collections_ctrl()
+            .add_clip_to_collection(collection_id, clip_root, clip_relative_path)
+    }
+
     pub fn nudge_collection_sample(&mut self, offset: isize) {
         self.collections_ctrl().nudge_collection_sample(offset);
     }

@@ -157,6 +157,7 @@ impl EguiController {
         let member = CollectionMember {
             source_id: source_id.clone(),
             relative_path: relative_path.to_path_buf(),
+            clip_root: None,
         };
         for (collection_id, export_dir) in targets {
             collection_export::delete_exported_file(export_dir.clone(), &member);
@@ -197,11 +198,13 @@ impl EguiController {
             let member = CollectionMember {
                 source_id: source_id.clone(),
                 relative_path: new_relative.to_path_buf(),
+                clip_root: None,
             };
             for (collection_id, export_dir) in exports {
                 let old_member = CollectionMember {
                     source_id: source_id.clone(),
                     relative_path: old_relative.to_path_buf(),
+                    clip_root: None,
                 };
                 collection_export::delete_exported_file(export_dir.clone(), &old_member);
                 if let Err(err) = self.export_member_if_needed(&collection_id, &member) {
@@ -223,6 +226,7 @@ impl EguiController {
             let member = CollectionMember {
                 source_id: source_id.clone(),
                 relative_path: relative_path.to_path_buf(),
+                clip_root: None,
             };
             if collection.remove_member(source_id, &member.relative_path) {
                 changed = true;
