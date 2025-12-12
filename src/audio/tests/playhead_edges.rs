@@ -23,12 +23,13 @@ fn remaining_loop_duration_stays_within_span_on_long_elapsed() {
         sink: None,
         current_audio: None,
         track_duration: Some(8.0),
-        started_at: Some(Instant::now() - Duration::from_secs(60 * 60)),
+        started_at: Some(Instant::now()),
         play_span: Some(span),
         looping: true,
         loop_offset: None,
         volume: 1.0,
         output: ResolvedOutput::default(),
+        elapsed_override: Some(Duration::from_secs(60 * 60)),
     };
 
     let remaining = player.remaining_loop_duration().unwrap().as_secs_f32();
@@ -50,16 +51,16 @@ fn progress_math_is_stable_for_long_running_full_track_loops() {
         sink: None,
         current_audio: None,
         track_duration: Some(duration),
-        started_at: Some(Instant::now() - Duration::from_secs_f32(elapsed)),
+        started_at: Some(Instant::now()),
         play_span: Some((0.0, duration)),
         looping: true,
         loop_offset: Some(offset),
         volume: 1.0,
         output: ResolvedOutput::default(),
+        elapsed_override: Some(Duration::from_secs_f32(elapsed)),
     };
 
     let progress = player.progress().unwrap();
     let expected = ((offset as f64 + elapsed as f64) % duration as f64) / duration as f64;
     assert!((progress as f64 - expected).abs() < 0.01);
 }
-

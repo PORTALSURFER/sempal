@@ -20,6 +20,8 @@ pub struct AudioPlayer {
     loop_offset: Option<f32>,
     volume: f32,
     output: ResolvedOutput,
+    #[cfg(test)]
+    elapsed_override: Option<Duration>,
 }
 
 const SEGMENT_FADE: Duration = Duration::from_millis(5);
@@ -44,6 +46,8 @@ impl AudioPlayer {
             loop_offset: None,
             volume: 1.0,
             output: outcome.resolved,
+            #[cfg(test)]
+            elapsed_override: None,
         })
     }
 
@@ -61,6 +65,10 @@ impl AudioPlayer {
         self.play_span = None;
         self.looping = false;
         self.loop_offset = None;
+        #[cfg(test)]
+        {
+            self.elapsed_override = None;
+        }
     }
 
     /// Adjust master output volume for current and future playback.
@@ -78,6 +86,10 @@ impl AudioPlayer {
         self.play_span = None;
         self.looping = false;
         self.loop_offset = None;
+        #[cfg(test)]
+        {
+            self.elapsed_override = None;
+        }
     }
 
     /// Begin playback from the stored buffer.
@@ -146,6 +158,10 @@ impl AudioPlayer {
         self.looping = true;
         self.loop_offset = Some(offset);
         self.sink = Some(sink);
+        #[cfg(test)]
+        {
+            self.elapsed_override = None;
+        }
         Ok(())
     }
 
@@ -157,7 +173,7 @@ impl AudioPlayer {
             return None;
         }
 
-        let elapsed = started_at.elapsed();
+        let elapsed = self.elapsed_since(started_at);
         let (span_start, span_end) = self.play_span.unwrap_or((0.0, duration));
         let span_length_secs = (span_end - span_start).max(f32::EPSILON);
         let span_length = duration_from_secs_f32(span_length_secs);
@@ -205,10 +221,18 @@ impl AudioPlayer {
         if span_length.is_zero() {
             return None;
         }
-        let elapsed = started_at.elapsed();
+        let elapsed = self.elapsed_since(started_at);
         let base_offset = duration_from_secs_f32(self.loop_offset.unwrap_or(0.0));
         let elapsed_in_span = duration_mod(base_offset.saturating_add(elapsed), span_length);
         Some(span_length.saturating_sub(elapsed_in_span))
+    }
+
+    fn elapsed_since(&self, started_at: Instant) -> Duration {
+        #[cfg(test)]
+        if let Some(override_elapsed) = self.elapsed_override {
+            return override_elapsed;
+        }
+        started_at.elapsed()
     }
 
     fn start_with_span(
@@ -253,6 +277,10 @@ impl AudioPlayer {
         self.play_span = Some((bounded_start, bounded_start + span_length));
         self.looping = looped;
         self.sink = Some(sink);
+        #[cfg(test)]
+        {
+            self.elapsed_override = None;
+        }
         Ok(())
     }
 
@@ -380,6 +408,7 @@ impl AudioPlayer {
             loop_offset: Some(0.0),
             volume: 1.0,
             output: outcome.resolved,
+            elapsed_override: None,
         })
     }
 }

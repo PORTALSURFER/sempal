@@ -4,8 +4,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
-    mpsc::Sender,
 };
+#[cfg(not(test))]
+use std::sync::mpsc::Sender;
 
 pub(super) enum TrashMoveMessage {
     SetTotal(usize),
@@ -26,13 +27,37 @@ pub(super) struct TrashMoveFinished {
     pub(super) affected_sources: Vec<SourceId>,
 }
 
+#[cfg(not(test))]
 pub(super) fn run_trash_move_task(
     sources: Vec<SampleSource>,
-    mut collections: Vec<Collection>,
+    collections: Vec<Collection>,
     trash_root: PathBuf,
     cancel: Arc<AtomicBool>,
     sender: Option<&Sender<TrashMoveMessage>>,
 ) -> TrashMoveFinished {
+    run_trash_move_task_with_progress(
+        sources,
+        collections,
+        trash_root,
+        cancel,
+        |message| {
+            if let Some(tx) = sender {
+                let _ = tx.send(message);
+            }
+        },
+    )
+}
+
+pub(super) fn run_trash_move_task_with_progress<F>(
+    sources: Vec<SampleSource>,
+    mut collections: Vec<Collection>,
+    trash_root: PathBuf,
+    cancel: Arc<AtomicBool>,
+    mut on_message: F,
+) -> TrashMoveFinished
+where
+    F: FnMut(TrashMoveMessage),
+{
     let mut errors = Vec::new();
     let mut trashed_by_source: Vec<(SampleSource, Vec<WavEntry>)> = Vec::new();
     for source in sources {
@@ -66,9 +91,7 @@ pub(super) fn run_trash_move_task(
         .iter()
         .map(|(_, entries)| entries.len())
         .sum();
-    if let Some(tx) = sender {
-        let _ = tx.send(TrashMoveMessage::SetTotal(total));
-    }
+    on_message(TrashMoveMessage::SetTotal(total));
 
     if total == 0 {
         return TrashMoveFinished {
@@ -110,10 +133,8 @@ pub(super) fn run_trash_move_task(
                 break;
             }
             let detail = format!("Moving {}", entry.relative_path.display());
-            if let Some(tx) = sender
-                && completed % 5 == 0
-            {
-                let _ = tx.send(TrashMoveMessage::Progress {
+            if completed % 5 == 0 {
+                on_message(TrashMoveMessage::Progress {
                     completed,
                     detail: Some(detail.clone()),
                 });
@@ -139,12 +160,10 @@ pub(super) fn run_trash_move_task(
             }
 
             completed += 1;
-            if let Some(tx) = sender {
-                let _ = tx.send(TrashMoveMessage::Progress {
-                    completed,
-                    detail: Some(detail),
-                });
-            }
+            on_message(TrashMoveMessage::Progress {
+                completed,
+                detail: Some(detail),
+            });
         }
     }
 
@@ -227,4 +246,3 @@ fn move_to_trash(source: &SampleSource, entry: &WavEntry, trash_root: &Path) -> 
     }
     Ok(())
 }
-
