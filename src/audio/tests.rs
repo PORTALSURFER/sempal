@@ -182,6 +182,29 @@ fn remaining_loop_duration_reports_time_left_in_cycle() {
 }
 
 #[test]
+fn remaining_loop_duration_accounts_for_full_track_offset() {
+    let Ok(stream) = rodio::OutputStreamBuilder::open_default_stream() else {
+        return;
+    };
+    let started_at = Instant::now() - Duration::from_secs_f32(0.5);
+    let player = AudioPlayer {
+        stream,
+        sink: None,
+        current_audio: None,
+        track_duration: Some(8.0),
+        started_at: Some(started_at),
+        play_span: Some((0.0, 8.0)),
+        looping: true,
+        loop_offset: Some(2.0),
+        volume: 1.0,
+        output: ResolvedOutput::default(),
+    };
+
+    let remaining = player.remaining_loop_duration().unwrap();
+    assert!((remaining.as_secs_f32() - 5.5).abs() < 0.1);
+}
+
+#[test]
 fn remaining_loop_duration_none_when_not_looping() {
     let Ok(stream) = rodio::OutputStreamBuilder::open_default_stream() else {
         return;
