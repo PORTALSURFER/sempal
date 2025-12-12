@@ -35,23 +35,12 @@ impl CollectionsActions for CollectionsController<'_> {
         self.ui.browser.selected = None;
         self.ui.browser.autoscroll = false;
         self.refresh_collection_selection_ui();
-        let target_source = member.source_id.clone();
+        let _target_source = member.source_id.clone();
         let target_path = member.relative_path.clone();
         let Some(source) = self.collection_member_source(member) else {
             self.set_status("Source not available for this sample", StatusTone::Warning);
             return;
         };
-        if Some(&target_source) != self.selected_source.as_ref() {
-            if self.sources.iter().any(|s| s.id == target_source) {
-                self.last_selected_browsable_source = Some(target_source.clone());
-            }
-            self.selected_source = Some(target_source.clone());
-            self.selected_wav = None;
-            self.loaded_wav = None;
-            self.refresh_sources_ui();
-            self.queue_wav_load();
-            let _ = self.persist_config("Failed to save selection");
-        }
         self.selected_wav = None;
         self.loaded_wav = None;
         self.ui.loaded_wav = None;
