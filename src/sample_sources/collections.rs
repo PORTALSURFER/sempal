@@ -43,6 +43,11 @@ impl std::fmt::Display for CollectionId {
 pub struct CollectionMember {
     pub source_id: SourceId,
     pub relative_path: PathBuf,
+    /// Optional root directory for collection-owned clips.
+    ///
+    /// When set, `relative_path` is resolved against this root instead of a user source.
+    #[serde(default)]
+    pub clip_root: Option<PathBuf>,
 }
 
 /// User-managed grouping of samples.
@@ -83,6 +88,7 @@ impl Collection {
         self.members.push(CollectionMember {
             source_id,
             relative_path,
+            clip_root: None,
         });
         true
     }

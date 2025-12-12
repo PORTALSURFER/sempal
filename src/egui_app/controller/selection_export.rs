@@ -21,7 +21,7 @@ impl EguiController {
             .find(|s| &s.id == source_id)
             .cloned()
             .ok_or_else(|| "Source not available".to_string())?;
-        let target_rel = self.next_selection_path(&source, &audio.relative_path);
+        let target_rel = self.next_selection_path_in_dir(&source.root, &audio.relative_path);
         let target_abs = source.root.join(&target_rel);
         let (samples, spec) = crop_selection_samples(&audio, bounds)?;
         write_selection_wav(&target_abs, &samples, spec)?;
@@ -32,6 +32,28 @@ impl EguiController {
             add_to_browser,
             register_in_source,
         )
+    }
+
+    pub(super) fn export_selection_clip_to_root(
+        &mut self,
+        source_id: &SourceId,
+        relative_path: &Path,
+        bounds: SelectionRange,
+        target_tag: Option<SampleTag>,
+        clip_root: &Path,
+        name_hint: &Path,
+    ) -> Result<WavEntry, String> {
+        let audio = self.selection_audio(source_id, relative_path)?;
+        let target_rel = self.next_selection_path_in_dir(clip_root, name_hint);
+        let target_abs = clip_root.join(&target_rel);
+        let (samples, spec) = crop_selection_samples(&audio, bounds)?;
+        write_selection_wav(&target_abs, &samples, spec)?;
+        let source = SampleSource {
+            id: SourceId::new(),
+            root: clip_root.to_path_buf(),
+        };
+        // Collection-owned clips are not inserted into browser or source DB.
+        self.record_selection_entry(&source, target_rel, target_tag, false, false)
     }
 
     pub(super) fn selection_audio(
@@ -48,7 +70,7 @@ impl EguiController {
         Ok(audio.clone())
     }
 
-    fn next_selection_path(&self, source: &SampleSource, original: &Path) -> PathBuf {
+    fn next_selection_path_in_dir(&self, root: &Path, original: &Path) -> PathBuf {
         let parent = original.parent().unwrap_or_else(|| Path::new(""));
         let stem = original
             .file_stem()
@@ -63,7 +85,7 @@ impl EguiController {
                 format!("sel_{counter}")
             };
             let candidate = parent.join(format!("{stem}_{suffix}.wav"));
-            let absolute = source.root.join(&candidate);
+            let absolute = root.join(&candidate);
             if !absolute.exists() {
                 return candidate;
             }

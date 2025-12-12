@@ -63,7 +63,11 @@ pub fn collection_samples(
         .enumerate()
         .map(|(index, member)| CollectionSampleView {
             source_id: member.source_id.clone(),
-            source: source_label(sources, member.source_id.as_str()),
+            source: if member.clip_root.is_some() {
+                "Collection clip".to_string()
+            } else {
+                source_label(sources, member.source_id.as_str())
+            },
             path: member.relative_path.clone(),
             label: sample_display_label(&member.relative_path),
             tag: tag_lookup(member),

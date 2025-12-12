@@ -136,12 +136,18 @@ impl EguiController {
                 Ok(dir) => dir,
                 Err(_) => return Ok(()),
             };
-        let source = self
-            .sources
-            .iter()
-            .find(|s| s.id == member.source_id)
-            .cloned()
-            .ok_or_else(|| "Source not available for export".to_string())?;
+        let source = if let Some(root) = member.clip_root.as_ref() {
+            SampleSource {
+                id: member.source_id.clone(),
+                root: root.clone(),
+            }
+        } else {
+            self.sources
+                .iter()
+                .find(|s| s.id == member.source_id)
+                .cloned()
+                .ok_or_else(|| "Source not available for export".to_string())?
+        };
         ensure_export_dir(&collection_dir)?;
         copy_member_to_export(&collection_dir, &source, member)
     }
