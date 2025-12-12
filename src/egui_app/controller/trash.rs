@@ -1,5 +1,9 @@
 use super::*;
-use super::trash_move::{TrashMoveFinished, TrashMoveMessage, run_trash_move_task};
+use super::trash_move::{TrashMoveFinished, TrashMoveMessage};
+#[cfg(test)]
+use super::trash_move::run_trash_move_task_with_progress;
+#[cfg(not(test))]
+use super::trash_move::run_trash_move_task;
 use crate::sample_sources::config::normalize_path;
 use rfd::{FileDialog, MessageButtons, MessageDialog, MessageDialogResult, MessageLevel};
 use std::fs;
@@ -7,8 +11,9 @@ use std::path::PathBuf;
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
-    mpsc::channel,
 };
+#[cfg(not(test))]
+use std::sync::mpsc::channel;
 
 impl EguiController {
     /// Open a folder picker and persist the chosen trash folder.
@@ -63,10 +68,35 @@ impl EguiController {
         let sources = self.sources.clone();
         let collections = self.collections.clone();
 
-        if cfg!(test) {
-            let finished = run_trash_move_task(sources, collections, trash_root, cancel, None);
+        #[cfg(test)]
+        {
+            let cancel_after = self.progress_cancel_after;
+            let finished = run_trash_move_task_with_progress(
+                sources,
+                collections,
+                trash_root,
+                cancel.clone(),
+                |message| match message {
+                    TrashMoveMessage::SetTotal(total) => {
+                        self.ui.progress.total = total;
+                    }
+                    TrashMoveMessage::Progress { completed, detail } => {
+                        self.ui.progress.completed = completed;
+                        self.ui.progress.detail = detail;
+                        if let Some(cancel_after) = cancel_after
+                            && completed >= cancel_after
+                        {
+                            cancel.store(true, Ordering::Relaxed);
+                        }
+                    }
+                    TrashMoveMessage::Finished(_) => {}
+                },
+            );
             self.apply_trash_move_finished(finished);
-        } else {
+        }
+
+        #[cfg(not(test))]
+        {
             let (tx, rx) = channel();
             self.trash_move_cancel = Some(cancel.clone());
             self.trash_move_rx = Some(rx);
