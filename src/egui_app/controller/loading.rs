@@ -28,6 +28,19 @@ impl EguiController {
             source_id: source.id.clone(),
             root: source.root.clone(),
         };
+        if cfg!(test) {
+            let result = load_entries(&job);
+            match result {
+                Ok(entries) => {
+                    self.wav_cache.insert(source.id.clone(), entries.clone());
+                    self.rebuild_wav_cache_lookup(&source.id);
+                    self.apply_wav_entries(entries, false, Some(source.id.clone()), None);
+                }
+                Err(err) => self.handle_wav_load_error(&source.id, err),
+            }
+            self.pending_source = None;
+            return;
+        }
         let _ = self.wav_job_tx.send(job);
         self.set_status(
             format!("Loading wavs for {}", source.root.display()),
