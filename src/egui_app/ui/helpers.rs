@@ -58,23 +58,26 @@ pub(super) fn clamp_label_for_width(text: &str, available_width: f32) -> String 
     clipped
 }
 
-#[allow(clippy::too_many_arguments)]
-pub(super) fn render_list_row(
-    ui: &mut Ui,
-    label: &str,
-    row_width: f32,
-    row_height: f32,
-    bg: Option<Color32>,
-    text_color: Color32,
-    sense: egui::Sense,
-    number: Option<NumberColumn<'_>>,
-    marker: Option<RowMarker>,
-) -> egui::Response {
-    let (rect, response) = ui.allocate_exact_size(egui::vec2(row_width, row_height), sense);
-    if let Some(color) = bg {
+pub(super) struct ListRow<'a> {
+    pub label: &'a str,
+    pub row_width: f32,
+    pub row_height: f32,
+    pub bg: Option<Color32>,
+    pub text_color: Color32,
+    pub sense: egui::Sense,
+    pub number: Option<NumberColumn<'a>>,
+    pub marker: Option<RowMarker>,
+}
+
+pub(super) fn render_list_row(ui: &mut Ui, row: ListRow<'_>) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(
+        egui::vec2(row.row_width, row.row_height),
+        row.sense,
+    );
+    if let Some(color) = row.bg {
         ui.painter().rect_filled(rect, 0.0, color);
     }
-    if let Some(marker) = marker {
+    if let Some(marker) = row.marker {
         let width = marker.width.max(0.0);
         let marker_rect = egui::Rect::from_min_max(
             rect.right_top() - egui::vec2(width, 0.0),
@@ -94,7 +97,7 @@ pub(super) fn render_list_row(
     let padding = ui.spacing().button_padding.x;
     let number_gap = padding * 0.5;
     let mut number_width = 0.0;
-    if let Some(column) = number {
+    if let Some(column) = row.number {
         number_width = column.width.max(0.0);
         let x = rect.left() + padding;
         ui.painter().text(
@@ -110,9 +113,9 @@ pub(super) fn render_list_row(
     ui.painter().text(
         egui::pos2(label_x, rect.center().y),
         Align2::LEFT_CENTER,
-        label,
+        row.label,
         font_id,
-        text_color,
+        row.text_color,
     );
     response
 }

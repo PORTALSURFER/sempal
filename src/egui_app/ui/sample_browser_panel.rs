@@ -126,18 +126,20 @@ impl EguiApp {
                     };
                     let response = render_list_row(
                         ui,
-                        &row_label,
-                        row_width,
-                        metrics.row_height,
-                        bg,
-                        text_color,
-                        sense,
-                        Some(NumberColumn {
-                            text: &number_text,
-                            width: metrics.number_width,
-                            color: palette.text_muted,
-                        }),
-                        triage_marker,
+                        super::helpers::ListRow {
+                            label: &row_label,
+                            row_width,
+                            row_height: metrics.row_height,
+                            bg,
+                            text_color,
+                            sense,
+                            number: Some(NumberColumn {
+                                text: &number_text,
+                                width: metrics.number_width,
+                                color: palette.text_muted,
+                            }),
+                            marker: triage_marker,
+                        },
                     );
 
                     if is_selected {
