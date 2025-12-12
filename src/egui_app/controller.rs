@@ -26,6 +26,7 @@ mod selection_export;
 mod source_folders;
 mod sources;
 mod trash;
+mod trash_move;
 mod waveform_controller;
 mod wavs;
 
@@ -55,6 +56,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
     rc::Rc,
+    sync::Arc,
     sync::mpsc::{Receiver, Sender},
     thread,
     time::{Duration, Instant, SystemTime},
@@ -111,6 +113,8 @@ pub struct EguiController {
     next_audio_request_id: u64,
     scan_rx: Option<Receiver<ScanResult>>,
     scan_in_progress: bool,
+    trash_move_rx: Option<Receiver<trash_move::TrashMoveMessage>>,
+    trash_move_cancel: Option<Arc<std::sync::atomic::AtomicBool>>,
     random_history: VecDeque<RandomHistoryEntry>,
     random_history_cursor: Option<usize>,
     folder_browsers: HashMap<SourceId, source_folders::FolderBrowserModel>,
@@ -170,6 +174,8 @@ impl EguiController {
             next_audio_request_id: 1,
             scan_rx: None,
             scan_in_progress: false,
+            trash_move_rx: None,
+            trash_move_cancel: None,
             random_history: VecDeque::new(),
             random_history_cursor: None,
             folder_browsers: HashMap::new(),
