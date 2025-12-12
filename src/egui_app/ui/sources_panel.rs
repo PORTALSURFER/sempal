@@ -170,14 +170,16 @@ impl EguiApp {
                         let bg = is_selected.then_some(style::row_selected_fill());
                         let response = render_list_row(
                             ui,
-                            &label,
-                            row_width,
-                            row_height,
-                            bg,
-                            text_color,
-                            egui::Sense::click(),
-                            None,
-                            None,
+                            super::helpers::ListRow {
+                                label: &label,
+                                row_width,
+                                row_height,
+                                bg,
+                                text_color,
+                                sense: egui::Sense::click(),
+                                number: None,
+                                marker: None,
+                            },
                         )
                         .on_hover_text(&row.path);
                         if response.clicked() {
@@ -258,16 +260,19 @@ impl EguiApp {
                 } else {
                     None
                 };
+                let label = folder_row_label(&root_row, row_width, ui);
                 let response = render_list_row(
                     ui,
-                    &folder_row_label(&root_row, row_width, ui),
-                    row_width,
-                    row_height,
-                    bg,
-                    style::high_contrast_text(),
-                    egui::Sense::click(),
-                    None,
-                    None,
+                    super::helpers::ListRow {
+                        label: &label,
+                        row_width,
+                        row_height,
+                        bg,
+                        text_color: style::high_contrast_text(),
+                        sense: egui::Sense::click(),
+                        number: None,
+                        marker: None,
+                    },
                 );
                 if scroll_to == Some(0) {
                     ui.scroll_to_rect(response.rect, None);
@@ -390,14 +395,16 @@ impl EguiApp {
                     };
                     let response = render_list_row(
                         ui,
-                        &label,
-                        row_width,
-                        row_height,
-                        bg,
-                        style::high_contrast_text(),
-                        sense,
-                        None,
-                        None,
+                        super::helpers::ListRow {
+                            label: &label,
+                            row_width,
+                            row_height,
+                            bg,
+                            text_color: style::high_contrast_text(),
+                            sense,
+                            number: None,
+                            marker: None,
+                        },
                     );
                     if Some(index) == scroll_to {
                         ui.scroll_to_rect(response.rect, None);
@@ -600,14 +607,16 @@ impl EguiApp {
         };
         let response = render_list_row(
             ui,
-            "",
-            row_width,
-            row_height,
-            Some(style::row_selected_fill()),
-            style::high_contrast_text(),
-            egui::Sense::hover(),
-            None,
-            None,
+            super::helpers::ListRow {
+                label: "",
+                row_width,
+                row_height,
+                bg: Some(style::row_selected_fill()),
+                text_color: style::high_contrast_text(),
+                sense: egui::Sense::hover(),
+                number: None,
+                marker: None,
+            },
         );
         let padding = ui.spacing().button_padding.x;
         let indent = depth as f32 * 12.0;

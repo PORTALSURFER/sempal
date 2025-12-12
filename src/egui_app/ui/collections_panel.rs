@@ -57,14 +57,16 @@ impl EguiApp {
                             let bg = selected.then_some(style::row_selected_fill());
                             let response = render_list_row(
                                 ui,
-                                &label,
-                                row_width,
-                                row_height,
-                                bg,
-                                text_color,
-                                egui::Sense::click(),
-                                None,
-                                None,
+                                super::helpers::ListRow {
+                                    label: &label,
+                                    row_width,
+                                    row_height,
+                                    bg,
+                                    text_color,
+                                    sense: egui::Sense::click(),
+                                    number: None,
+                                    marker: None,
+                                },
                             );
                             if response.clicked() {
                                 if selected {
@@ -201,20 +203,23 @@ impl EguiApp {
                         } else {
                             style::triage_label_color(sample.tag)
                         };
+                        let clamped_label = clamp_label_for_width(&label, label_width);
                         let response = render_list_row(
                             ui,
-                            &clamp_label_for_width(&label, label_width),
-                            row_width,
-                            metrics.row_height,
-                            bg,
-                            text_color,
-                            egui::Sense::click_and_drag(),
-                            Some(NumberColumn {
-                                text: &number_text,
-                                width: metrics.number_width,
-                                color: palette.text_muted,
-                            }),
-                            triage_marker,
+                            super::helpers::ListRow {
+                                label: &clamped_label,
+                                row_width,
+                                row_height: metrics.row_height,
+                                bg,
+                                text_color,
+                                sense: egui::Sense::click_and_drag(),
+                                number: Some(NumberColumn {
+                                    text: &number_text,
+                                    width: metrics.number_width,
+                                    color: palette.text_muted,
+                                }),
+                                marker: triage_marker,
+                            },
                         );
                         if is_selected {
                             let marker_width = 4.0;
