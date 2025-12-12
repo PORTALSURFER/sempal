@@ -132,10 +132,9 @@ impl EguiController {
     }
 
     fn handle_audio_loaded(&mut self, pending: PendingAudio, outcome: AudioLoadOutcome) {
-        let Some(source) =
-            self.resolve_audio_source(&pending.source_id, &pending.relative_path)
-        else {
-            return;
+        let source = SampleSource {
+            id: pending.source_id.clone(),
+            root: pending.root.clone(),
         };
         let AudioLoadOutcome {
             decoded,
@@ -165,10 +164,9 @@ impl EguiController {
     }
 
     fn handle_audio_load_error(&mut self, pending: PendingAudio, error: AudioLoadError) {
-        let Some(source) =
-            self.resolve_audio_source(&pending.source_id, &pending.relative_path)
-        else {
-            return;
+        let source = SampleSource {
+            id: pending.source_id.clone(),
+            root: pending.root.clone(),
         };
         if self.pending_playback.as_ref().is_some_and(|pending_play| {
             pending_play.source_id == pending.source_id
@@ -186,30 +184,6 @@ impl EguiController {
                 self.set_status(msg, StatusTone::Error);
             }
         }
-    }
-
-    fn resolve_audio_source(
-        &self,
-        source_id: &SourceId,
-        relative_path: &Path,
-    ) -> Option<SampleSource> {
-        if let Some(source) = self.sources.iter().find(|s| &s.id == source_id).cloned() {
-            return Some(source);
-        }
-        for collection in &self.collections {
-            for member in &collection.members {
-                if &member.source_id == source_id
-                    && member.relative_path == relative_path
-                    && let Some(root) = member.clip_root.as_ref()
-                {
-                    return Some(SampleSource {
-                        id: source_id.clone(),
-                        root: root.clone(),
-                    });
-                }
-            }
-        }
-        None
     }
 
     fn maybe_trigger_pending_playback(&mut self) {
@@ -240,6 +214,7 @@ impl EguiController {
         let pending = PendingAudio {
             request_id,
             source_id: source.id.clone(),
+            root: source.root.clone(),
             relative_path: relative_path.to_path_buf(),
             intent,
         };

@@ -167,6 +167,7 @@ impl CollectionsActions for CollectionsController<'_> {
         };
         let old_name = self.collections[index].name.clone();
         let new_folder_name = collection_export::collection_folder_name_from_str(trimmed);
+        let mut clip_root_update: Option<(std::path::PathBuf, std::path::PathBuf)> = None;
         if let Some(old_folder) = collection_export::resolved_export_dir(
             &self.collections[index],
             self.collection_export_root.as_deref(),
@@ -197,12 +198,20 @@ impl CollectionsActions for CollectionsController<'_> {
                         return;
                     }
                     if self.collections[index].export_path.is_some() {
-                        self.collections[index].export_path = Some(new_folder);
+                        self.collections[index].export_path = Some(new_folder.clone());
                     }
+                    clip_root_update = Some((old_folder, new_folder));
                 }
             }
         }
         self.collections[index].name = trimmed.to_string();
+        if let Some((old_root, new_root)) = clip_root_update.as_ref() {
+            for member in self.collections[index].members.iter_mut() {
+                if member.clip_root.as_ref() == Some(old_root) {
+                    member.clip_root = Some(new_root.clone());
+                }
+            }
+        }
         if let Err(err) = self.persist_config("Failed to save collection") {
             self.set_status(err, StatusTone::Error);
             return;

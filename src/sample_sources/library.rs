@@ -22,6 +22,8 @@ pub struct LibraryState {
 
 const COLLECTION_EXPORT_PATHS_VERSION_KEY: &str = "collections_export_paths_version";
 const COLLECTION_EXPORT_PATHS_VERSION_V2: &str = "2";
+const COLLECTION_MEMBER_CLIP_ROOT_VERSION_KEY: &str = "collection_members_clip_root_version";
+const COLLECTION_MEMBER_CLIP_ROOT_VERSION_V1: &str = "1";
 
 /// Errors returned when operating on the library database.
 #[derive(Debug, Error)]
@@ -64,6 +66,7 @@ impl LibraryDatabase {
         let mut db = Self { connection };
         db.apply_pragmas()?;
         db.apply_schema()?;
+        db.migrate_collection_member_clip_roots()?;
         db.migrate_collection_export_paths()?;
         Ok(db)
     }
@@ -152,7 +155,7 @@ impl LibraryDatabase {
         let mut stmt = self
             .connection
             .prepare(
-                "SELECT collection_id, source_id, relative_path
+                "SELECT collection_id, source_id, relative_path, clip_root
                  FROM collection_members
                  ORDER BY sort_order ASC",
             )
@@ -161,12 +164,13 @@ impl LibraryDatabase {
             let collection_id: String = row.get(0)?;
             let source_id: String = row.get(1)?;
             let relative_path: String = row.get(2)?;
+            let clip_root: Option<String> = row.get(3)?;
             Ok((
                 collection_id,
                 CollectionMember {
                     source_id: SourceId::from_string(source_id),
                     relative_path: PathBuf::from(relative_path),
-                    clip_root: None,
+                    clip_root: clip_root.map(PathBuf::from),
                 },
             ))
         })
@@ -244,17 +248,22 @@ impl LibraryDatabase {
     ) -> Result<(), LibraryError> {
         let mut insert_member = tx
             .prepare(
-                "INSERT INTO collection_members (collection_id, source_id, relative_path, sort_order)
-                 VALUES (?1, ?2, ?3, ?4)",
+                "INSERT INTO collection_members (collection_id, source_id, relative_path, clip_root, sort_order)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
             )
             .map_err(map_sql_error)?;
         for collection in collections {
             for (member_idx, member) in collection.members.iter().enumerate() {
+                let clip_root_str = member
+                    .clip_root
+                    .as_ref()
+                    .map(|path| path.to_string_lossy().to_string());
                 insert_member
                     .execute(params![
                         collection.id.as_str(),
                         member.source_id.as_str(),
                         member.relative_path.to_string_lossy(),
+                        clip_root_str,
                         member_idx as i64
                     ])
                     .map_err(map_sql_error)?;
@@ -296,6 +305,7 @@ impl LibraryDatabase {
                     collection_id TEXT NOT NULL,
                     source_id TEXT NOT NULL,
                     relative_path TEXT NOT NULL,
+                    clip_root TEXT,
                     sort_order INTEGER NOT NULL,
                     PRIMARY KEY (collection_id, source_id, relative_path),
                     FOREIGN KEY(collection_id) REFERENCES collections(id) ON DELETE CASCADE
@@ -303,6 +313,30 @@ impl LibraryDatabase {
             )
             .map_err(map_sql_error)?;
         Ok(())
+    }
+
+    fn migrate_collection_member_clip_roots(&mut self) -> Result<(), LibraryError> {
+        let current = self.get_metadata(COLLECTION_MEMBER_CLIP_ROOT_VERSION_KEY)?;
+        if current.as_deref() == Some(COLLECTION_MEMBER_CLIP_ROOT_VERSION_V1) {
+            return Ok(());
+        }
+        let tx = self.connection.transaction().map_err(map_sql_error)?;
+        let alter_result =
+            tx.execute("ALTER TABLE collection_members ADD COLUMN clip_root TEXT", []);
+        match alter_result {
+            Ok(_) => {}
+            Err(err) => {
+                let message = err.to_string().to_ascii_lowercase();
+                if !message.contains("duplicate column") {
+                    return Err(map_sql_error(err));
+                }
+            }
+        }
+        tx.commit().map_err(map_sql_error)?;
+        self.set_metadata(
+            COLLECTION_MEMBER_CLIP_ROOT_VERSION_KEY,
+            COLLECTION_MEMBER_CLIP_ROOT_VERSION_V1,
+        )
     }
 
     fn migrate_collection_export_paths(&mut self) -> Result<(), LibraryError> {

@@ -45,10 +45,10 @@ impl DragTarget {
     fn priority(&self) -> u8 {
         match self {
             DragTarget::External => 5,
-            DragTarget::FolderPanel { .. } => 4,
-            DragTarget::CollectionsDropZone { .. } => 3,
-            DragTarget::CollectionsRow(_) => 2,
-            DragTarget::BrowserTriage(_) => 1,
+            DragTarget::CollectionsDropZone { .. } => 4,
+            DragTarget::CollectionsRow(_) => 3,
+            DragTarget::BrowserTriage(_) => 2,
+            DragTarget::FolderPanel { .. } => 1,
             DragTarget::None => 0,
         }
     }
