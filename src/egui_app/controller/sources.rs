@@ -291,6 +291,7 @@ impl EguiController {
         self.missing_wavs.remove(&source_id);
         self.db_cache.remove(&source_id);
         self.wav_cache.remove(&source_id);
+        self.wav_cache_lookup.remove(&source_id);
         self.label_cache.remove(&source_id);
         if self.selected_source.as_ref() == Some(&source_id) {
             self.clear_wavs();

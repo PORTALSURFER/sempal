@@ -34,7 +34,7 @@ impl CollectionsActions for CollectionsController<'_> {
         self.focus_collection_context();
         self.ui.browser.selected = None;
         self.ui.browser.autoscroll = false;
-        self.refresh_collections_ui();
+        self.refresh_collection_selection_ui();
         let target_source = member.source_id.clone();
         let target_path = member.relative_path.clone();
         let Some(source) = self.collection_member_source(member) else {
@@ -84,7 +84,8 @@ impl CollectionsActions for CollectionsController<'_> {
         self.ui.collections.selected_sample = None;
         self.clear_focus_context();
         self.ui.browser.autoscroll = false;
-        self.refresh_collections_ui();
+        self.refresh_collection_selection_ui();
+        self.refresh_collection_samples();
     }
 
     fn nudge_collection_row(&mut self, offset: isize) {

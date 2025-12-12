@@ -25,7 +25,10 @@ impl std::ops::DerefMut for CollectionsController<'_> {
 }
 
 impl CollectionsController<'_> {
-    pub(super) fn collection_member_source(&self, member: &CollectionMember) -> Option<SampleSource> {
+    pub(super) fn collection_member_source(
+        &self,
+        member: &CollectionMember,
+    ) -> Option<SampleSource> {
         if let Some(root) = member.clip_root.as_ref() {
             return Some(SampleSource {
                 id: member.source_id.clone(),
@@ -72,10 +75,7 @@ impl CollectionsController<'_> {
         let Some(collection) = collections.iter_mut().find(|c| &c.id == collection_id) else {
             return Err("Collection not found".into());
         };
-        let already_present = collection.contains(
-            &new_member.source_id,
-            &new_member.relative_path,
-        );
+        let already_present = collection.contains(&new_member.source_id, &new_member.relative_path);
         if !already_present {
             collection.members.push(new_member.clone());
         }
@@ -89,16 +89,31 @@ impl CollectionsController<'_> {
 
     pub(super) fn refresh_collections_ui(&mut self) {
         let selected_id = self.selected_collection.clone();
-        let collections_snapshot = self.collections.clone();
-        let collection_missing: Vec<bool> = collections_snapshot
-            .iter()
-            .map(|collection| {
-                collection
-                    .members
-                    .iter()
-                    .any(|member| self.collection_member_missing(member))
-            })
-            .collect();
+        let mut collection_missing: Vec<bool> = Vec::with_capacity(self.collections.len());
+        for collection_index in 0..self.collections.len() {
+            let mut missing = false;
+            let members_len = self.collections[collection_index].members.len();
+            for member_index in 0..members_len {
+                let (source_id, relative_path, clip_root) = {
+                    let member = &self.collections[collection_index].members[member_index];
+                    (
+                        member.source_id.clone(),
+                        member.relative_path.clone(),
+                        member.clip_root.clone(),
+                    )
+                };
+                let member_missing = if let Some(root) = clip_root.as_ref() {
+                    !root.join(&relative_path).is_file()
+                } else {
+                    self.sample_missing(&source_id, &relative_path)
+                };
+                if member_missing {
+                    missing = true;
+                    break;
+                }
+            }
+            collection_missing.push(missing);
+        }
         self.ui.collections.rows = view_model::collection_rows(
             &self.collections,
             selected_id.as_ref(),
@@ -111,25 +126,60 @@ impl CollectionsController<'_> {
         self.refresh_collection_samples();
     }
 
+    pub(super) fn refresh_collection_selection_ui(&mut self) {
+        if self.ui.collections.rows.is_empty() {
+            self.refresh_collections_ui();
+            return;
+        }
+        let selected_id = self.selected_collection.clone();
+        for row in self.ui.collections.rows.iter_mut() {
+            row.selected = selected_id.as_ref().is_some_and(|id| id == &row.id);
+        }
+        self.ui.collections.selected = selected_id
+            .as_ref()
+            .and_then(|id| self.collections.iter().position(|c| &c.id == id));
+    }
+
     pub(super) fn refresh_collection_samples(&mut self) {
-        let selected = self
+        let selected_index = self
             .selected_collection
             .as_ref()
-            .and_then(|id| self.collections.iter().find(|c| &c.id == id))
-            .cloned();
-        let sources = self.sources.clone();
+            .and_then(|id| self.collections.iter().position(|c| &c.id == id));
         let mut tag_error: Option<String> = None;
-        let sample_missing_flags = selected.as_ref().map(|collection| {
-            collection
-                .members
-                .iter()
-                .map(|member| self.collection_member_missing(member))
-                .collect::<Vec<bool>>()
-        });
-        let missing_slice = sample_missing_flags.as_deref();
-        self.ui.collections.samples =
-            view_model::collection_samples(selected.as_ref(), &sources, missing_slice, |member| {
-                match self.tag_for_collection_member(member) {
+        let Some(selected_index) = selected_index else {
+            self.ui.collections.samples.clear();
+            self.ui.collections.selected_sample = None;
+            self.clear_collection_focus_context();
+            return;
+        };
+
+        let members_len = self.collections[selected_index].members.len();
+        let mut samples = Vec::with_capacity(members_len);
+        for member_index in 0..members_len {
+            let (source_id, relative_path, clip_root) = {
+                let member = &self.collections[selected_index].members[member_index];
+                (
+                    member.source_id.clone(),
+                    member.relative_path.clone(),
+                    member.clip_root.clone(),
+                )
+            };
+            let missing = if let Some(root) = clip_root.as_ref() {
+                !root.join(&relative_path).is_file()
+            } else {
+                self.sample_missing(&source_id, &relative_path)
+            };
+            let source_label = if clip_root.is_some() {
+                "Collection clip".to_string()
+            } else {
+                source_label(&self.sources, &source_id)
+            };
+            let tag = if let Some(root) = clip_root.as_ref() {
+                let source = SampleSource {
+                    id: source_id.clone(),
+                    root: root.clone(),
+                };
+                match self.sample_tag_for(&source, &relative_path) {
                     Ok(tag) => tag,
                     Err(err) => {
                         if tag_error.is_none() {
@@ -138,7 +188,43 @@ impl CollectionsController<'_> {
                         SampleTag::Neutral
                     }
                 }
+            } else {
+                let source = self
+                    .sources
+                    .iter()
+                    .find(|s| s.id == source_id)
+                    .cloned();
+                match source {
+                    Some(source) => match self.sample_tag_for(&source, &relative_path) {
+                        Ok(tag) => tag,
+                        Err(err) => {
+                            if tag_error.is_none() {
+                                tag_error = Some(err);
+                            }
+                            SampleTag::Neutral
+                        }
+                    },
+                    None => {
+                        if tag_error.is_none() {
+                            tag_error = Some(format!(
+                                "Source not available for {}",
+                                relative_path.display()
+                            ));
+                        }
+                        SampleTag::Neutral
+                    }
+                }
+            };
+            samples.push(crate::egui_app::state::CollectionSampleView {
+                source_id,
+                source: source_label,
+                path: relative_path.clone(),
+                label: view_model::sample_display_label(&relative_path),
+                tag,
+                missing,
             });
+        }
+        self.ui.collections.samples = samples;
         if let Some(err) = tag_error {
             self.set_status(err, StatusTone::Warning);
         }
@@ -260,4 +346,18 @@ impl CollectionsController<'_> {
             index += 1;
         }
     }
+}
+
+fn source_label(sources: &[SampleSource], id: &SourceId) -> String {
+    sources
+        .iter()
+        .find(|s| &s.id == id)
+        .and_then(|source| {
+            source
+                .root
+                .file_name()
+                .and_then(|n| n.to_str())
+                .map(|n| n.to_string())
+        })
+        .unwrap_or_else(|| "Unknown source".to_string())
 }

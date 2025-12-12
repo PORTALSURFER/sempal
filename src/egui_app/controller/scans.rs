@@ -77,6 +77,7 @@ impl EguiController {
                     );
                     if let Some(source) = self.current_source() {
                         self.wav_cache.remove(&source.id);
+                        self.wav_cache_lookup.remove(&source.id);
                         self.label_cache.remove(&source.id);
                         self.missing_wavs.remove(&source.id);
                     }
@@ -90,6 +91,7 @@ impl EguiController {
     fn prepare_for_scan(&mut self, source: &SampleSource, mode: ScanMode) {
         if matches!(mode, ScanMode::Hard) {
             self.wav_cache.remove(&source.id);
+            self.wav_cache_lookup.remove(&source.id);
             self.label_cache.remove(&source.id);
             self.missing_wavs.remove(&source.id);
         }
