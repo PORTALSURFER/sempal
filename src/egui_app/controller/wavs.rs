@@ -8,6 +8,24 @@ use fuzzy_matcher::skim::SkimMatcherV2;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
+#[derive(Default)]
+pub(super) struct BrowserSearchCache {
+    source_id: Option<SourceId>,
+    query: String,
+    scores: Vec<Option<i64>>,
+    scratch: Vec<(usize, i64)>,
+    matcher: SkimMatcherV2,
+}
+
+impl BrowserSearchCache {
+    pub(super) fn invalidate(&mut self) {
+        self.source_id = None;
+        self.query.clear();
+        self.scores.clear();
+        self.scratch.clear();
+    }
+}
+
 /// Upper bound for waveform texture width to stay within GPU limits.
 pub(super) const MAX_TEXTURE_WIDTH: u32 = 16_384;
 const MIN_VIEW_WIDTH_BASE: f32 = 0.001;
@@ -415,7 +433,7 @@ impl EguiController {
 
     /// Retrieve a cached label for a wav entry by index.
     pub fn wav_label(&mut self, index: usize) -> Option<String> {
-        self.label_for(index)
+        self.label_for_ref(index).map(str::to_string)
     }
 
     pub(super) fn rebuild_wav_lookup(&mut self) {
@@ -513,8 +531,7 @@ impl EguiController {
         focused_index: Option<usize>,
         loaded_index: Option<usize>,
     ) -> (Vec<usize>, Option<usize>, Option<usize>) {
-        let search_query = self.active_search_query().map(str::to_string);
-        let Some(query) = search_query else {
+        let Some(query) = self.active_search_query().map(str::to_string) else {
             let visible: Vec<usize> = self
                 .wav_entries
                 .iter()
@@ -531,25 +548,31 @@ impl EguiController {
                 loaded_index.and_then(|idx| visible.iter().position(|i| *i == idx));
             return (visible, selected_visible, loaded_visible);
         };
-        let matcher = SkimMatcherV2::default();
-        let mut matches: Vec<(usize, i64)> = Vec::new();
-        for index in 0..self.wav_entries.len() {
-            let (tag, path) = match self.wav_entries.get(index) {
-                Some(entry) => (entry.tag, entry.relative_path.clone()),
-                None => continue,
-            };
-            if !self.browser_filter_accepts(tag) || !self.folder_filter_accepts(&path) {
+        self.ensure_search_scores(&query);
+        self.browser_search_cache.scratch.clear();
+        self.browser_search_cache
+            .scratch
+            .reserve(self.wav_entries.len().min(1024));
+
+        for (index, entry) in self.wav_entries.iter().enumerate() {
+            if !self.browser_filter_accepts(entry.tag)
+                || !self.folder_filter_accepts(&entry.relative_path)
+            {
                 continue;
             }
-            let label = self
-                .label_for(index)
-                .unwrap_or_else(|| view_model::sample_display_label(&path));
-            if let Some(score) = matcher.fuzzy_match(label.as_str(), query.as_str()) {
-                matches.push((index, score));
+            if let Some(score) = self.browser_search_cache.scores.get(index).and_then(|s| *s) {
+                self.browser_search_cache.scratch.push((index, score));
             }
         }
-        matches.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
-        let visible: Vec<usize> = matches.into_iter().map(|(index, _)| index).collect();
+        self.browser_search_cache
+            .scratch
+            .sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        let visible: Vec<usize> = self
+            .browser_search_cache
+            .scratch
+            .iter()
+            .map(|(index, _)| *index)
+            .collect();
         let selected_visible = focused_index.and_then(|idx| visible.iter().position(|i| *i == idx));
         let loaded_visible = loaded_index.and_then(|idx| visible.iter().position(|i| *i == idx));
         (visible, selected_visible, loaded_visible)
@@ -582,6 +605,42 @@ impl EguiController {
     fn active_search_query(&self) -> Option<&str> {
         let query = self.ui.browser.search_query.trim();
         if query.is_empty() { None } else { Some(query) }
+    }
+
+    fn ensure_search_scores(&mut self, query: &str) {
+        let source_id = self.selected_source.clone();
+        if self.browser_search_cache.source_id != source_id
+            || self.browser_search_cache.query != query
+            || self.browser_search_cache.scores.len() != self.wav_entries.len()
+        {
+            self.browser_search_cache.source_id = source_id;
+            self.browser_search_cache.query.clear();
+            self.browser_search_cache.query.push_str(query);
+            self.browser_search_cache.scores.clear();
+            self.browser_search_cache.scores.resize(self.wav_entries.len(), None);
+
+            let Some(source_id) = self.selected_source.clone() else {
+                return;
+            };
+            let needs_labels = self
+                .label_cache
+                .get(&source_id)
+                .map(|cached| cached.len() != self.wav_entries.len())
+                .unwrap_or(true);
+            if needs_labels {
+                self.label_cache
+                    .insert(source_id.clone(), self.build_label_cache(&self.wav_entries));
+            }
+            let Some(labels) = self.label_cache.get(&source_id) else {
+                return;
+            };
+            for index in 0..self.wav_entries.len() {
+                if let Some(label) = labels.get(index) {
+                    self.browser_search_cache.scores[index] =
+                        self.browser_search_cache.matcher.fuzzy_match(label.as_str(), query);
+                }
+            }
+        }
     }
 
     pub(super) fn focused_browser_row(&self) -> Option<usize> {
@@ -865,21 +924,20 @@ impl EguiController {
         Ok(())
     }
 
-    fn label_for(&mut self, index: usize) -> Option<String> {
+    fn label_for_ref(&mut self, index: usize) -> Option<&str> {
         let source_id = self.selected_source.clone()?;
-        if let Some(cache) = self.label_cache.get(&source_id)
-            && let Some(label) = cache.get(index)
-        {
-            return Some(label.clone());
+        let needs_labels = self
+            .label_cache
+            .get(&source_id)
+            .map(|cached| cached.len() != self.wav_entries.len())
+            .unwrap_or(true);
+        if needs_labels {
+            self.label_cache
+                .insert(source_id.clone(), self.build_label_cache(&self.wav_entries));
         }
-        let labels: Vec<String> = self
-            .wav_entries
-            .iter()
-            .map(|entry| view_model::sample_display_label(&entry.relative_path))
-            .collect();
-        let result = labels.get(index).cloned();
-        self.label_cache.insert(source_id, labels);
-        result
+        self.label_cache
+            .get(&source_id)
+            .and_then(|labels| labels.get(index).map(|s| s.as_str()))
     }
 
     pub(super) fn build_label_cache(&self, entries: &[WavEntry]) -> Vec<String> {
