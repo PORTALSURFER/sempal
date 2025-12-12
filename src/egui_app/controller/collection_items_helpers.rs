@@ -271,12 +271,15 @@ impl EguiController {
         source: &SampleSource,
         relative_path: &Path,
     ) -> Result<SampleTag, String> {
-        if let Some(cache) = self.wav_cache.get(&source.id)
-            && let Some(entry) = cache
-                .iter()
-                .find(|entry| entry.relative_path == relative_path)
-        {
-            return Ok(entry.tag);
+        if self.wav_cache.contains_key(&source.id) {
+            self.ensure_wav_cache_lookup(&source.id);
+            if let Some(lookup) = self.wav_cache_lookup.get(&source.id)
+                && let Some(index) = lookup.get(relative_path).copied()
+                && let Some(cache) = self.wav_cache.get(&source.id)
+                && let Some(entry) = cache.get(index)
+            {
+                return Ok(entry.tag);
+            }
         }
         if self.selected_source.as_ref() == Some(&source.id)
             && let Some(entry) = self
@@ -292,9 +295,8 @@ impl EguiController {
         let entries = db
             .list_files()
             .map_err(|err| format!("Failed to read database: {err}"))?;
-        self.wav_cache
-            .entry(source.id.clone())
-            .or_insert_with(|| entries.clone());
+        self.wav_cache.insert(source.id.clone(), entries.clone());
+        self.rebuild_wav_cache_lookup(&source.id);
         self.missing_wavs.insert(
             source.id.clone(),
             entries
@@ -337,6 +339,7 @@ impl EguiController {
     ) {
         if let Some(cache) = self.wav_cache.get_mut(&source.id) {
             replace_entry(cache, old_path, &new_entry);
+            self.rebuild_wav_cache_lookup(&source.id);
         }
         if self.selected_source.as_ref() == Some(&source.id) {
             replace_entry(&mut self.wav_entries, old_path, &new_entry);

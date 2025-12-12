@@ -880,6 +880,7 @@ impl EguiController {
         }
         if let Some(cache) = self.wav_cache.get_mut(&source.id) {
             apply_entry_updates(cache, updates);
+            self.rebuild_wav_cache_lookup(&source.id);
         }
         if self.selected_source.as_ref() == Some(&source.id) {
             apply_entry_updates(&mut self.wav_entries, updates);

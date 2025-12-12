@@ -443,6 +443,26 @@ impl EguiController {
         }
     }
 
+    pub(super) fn ensure_wav_cache_lookup(&mut self, source_id: &SourceId) {
+        if self.wav_cache_lookup.contains_key(source_id) {
+            return;
+        }
+        let Some(entries) = self.wav_cache.get(source_id) else {
+            return;
+        };
+        let lookup = entries
+            .iter()
+            .enumerate()
+            .map(|(index, entry)| (entry.relative_path.clone(), index))
+            .collect();
+        self.wav_cache_lookup.insert(source_id.clone(), lookup);
+    }
+
+    pub(super) fn rebuild_wav_cache_lookup(&mut self, source_id: &SourceId) {
+        self.wav_cache_lookup.remove(source_id);
+        self.ensure_wav_cache_lookup(source_id);
+    }
+
     pub(super) fn rebuild_browser_lists(&mut self) {
         if self.ui.collections.selected_sample.is_some() {
             self.ui.browser.autoscroll = false;
@@ -926,10 +946,18 @@ impl EguiController {
                 return Err("Sample not found".into());
             }
         }
-        if let Some(cache) = self.wav_cache.get_mut(&source.id)
-            && let Some(entry) = cache.iter_mut().find(|entry| entry.relative_path == path)
-        {
-            entry.tag = target_tag;
+        if self.wav_cache.contains_key(&source.id) {
+            self.ensure_wav_cache_lookup(&source.id);
+            if let Some(index) = self
+                .wav_cache_lookup
+                .get(&source.id)
+                .and_then(|lookup| lookup.get(path))
+                .copied()
+                && let Some(cache) = self.wav_cache.get_mut(&source.id)
+                && let Some(entry) = cache.get_mut(index)
+            {
+                entry.tag = target_tag;
+            }
         }
         Ok(())
     }
@@ -1356,12 +1384,18 @@ impl EguiController {
         {
             return entry.missing;
         }
-        if let Some(cache) = self.wav_cache.get(source_id)
-            && let Some(entry) = cache
-                .iter()
-                .find(|entry| entry.relative_path == relative_path)
-        {
-            return entry.missing;
+        if self.wav_cache.contains_key(source_id) {
+            self.ensure_wav_cache_lookup(source_id);
+            if let Some(index) = self
+                .wav_cache_lookup
+                .get(source_id)
+                .and_then(|lookup| lookup.get(relative_path))
+                .copied()
+                && let Some(cache) = self.wav_cache.get(source_id)
+                && let Some(entry) = cache.get(index)
+            {
+                return entry.missing;
+            }
         }
         if let Some(set) = self.missing_wavs.get(source_id) {
             return set.contains(relative_path);
