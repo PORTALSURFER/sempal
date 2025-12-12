@@ -28,6 +28,69 @@ impl WaveformRenderer {
         )
     }
 
+    /// Render an egui color image for a decoded waveform over a normalized view window.
+    ///
+    /// Uses a cached full-width column envelope keyed by zoom (view fraction) to reduce work
+    /// during panning at a constant zoom level.
+    pub fn render_color_image_for_view_with_size(
+        &self,
+        decoded: &DecodedWaveform,
+        view_start: f32,
+        view_end: f32,
+        view: WaveformChannelView,
+        width: u32,
+        height: u32,
+    ) -> ColorImage {
+        let width = width.max(1);
+        let height = height.max(1);
+        let channels = decoded.channel_count();
+        let frame_count = decoded.frame_count();
+        if decoded.samples.is_empty() || frame_count == 0 {
+            return self.render_color_image_with_size(&[], 1, WaveformChannelView::Mono, width, height);
+        }
+
+        let start = view_start.clamp(0.0, 1.0);
+        let end = view_end.clamp(start, 1.0);
+        let fraction = (end - start).max(0.000_001);
+        let full_width = self.cached_full_width(width, fraction, frame_count);
+        if let Some((start_col, end_col)) = self.columns_window(start, full_width, width) {
+            let cached = self
+                .zoom_cache
+                .get_or_compute(&decoded.samples, channels, view, full_width);
+            return match cached {
+                super::zoom_cache::CachedColumns::Mono(cols) => Self::paint_color_image_for_size(
+                    &cols[start_col..end_col],
+                    width,
+                    height,
+                    self.foreground,
+                    self.background,
+                ),
+                super::zoom_cache::CachedColumns::SplitStereo { left, right } => {
+                    Self::paint_split_color_image(
+                        &left[start_col..end_col],
+                        &right[start_col..end_col],
+                        width,
+                        height,
+                        self.foreground,
+                        self.background,
+                    )
+                }
+            };
+        }
+
+        // Fallback: sample only the visible frames directly.
+        let start_frame = ((start * frame_count as f32).floor() as usize)
+            .min(frame_count.saturating_sub(1));
+        let mut end_frame =
+            ((end * frame_count as f32).ceil() as usize).clamp(start_frame + 1, frame_count);
+        if end_frame <= start_frame {
+            end_frame = (start_frame + 1).min(frame_count);
+        }
+        let start_idx = start_frame.saturating_mul(channels);
+        let end_idx = end_frame.saturating_mul(channels).min(decoded.samples.len());
+        self.render_color_image_with_size(&decoded.samples[start_idx..end_idx], channels, view, width, height)
+    }
+
     /// Render an egui color image at an explicit size.
     pub fn render_color_image_with_size(
         &self,
@@ -39,16 +102,7 @@ impl WaveformRenderer {
     ) -> ColorImage {
         let width = width.max(1);
         let height = height.max(1);
-        // Oversample horizontally to reduce aliasing, then combine down to the requested size.
-        let oversample = Self::oversample_factor(width, samples.len() / channels.max(1));
-        let oversampled_width = width.saturating_mul(oversample);
-        let oversampled =
-            Self::sample_columns_for_width(samples, channels, oversampled_width, view);
-        let columns = if oversample == 1 {
-            oversampled
-        } else {
-            Self::downsample_columns_view(&oversampled, oversample as usize, width as usize)
-        };
+        let columns = Self::sample_columns_for_width(samples, channels, width, view);
         match columns {
             WaveformColumnView::Mono(cols) => Self::paint_color_image_for_size(
                 &cols,
@@ -68,6 +122,24 @@ impl WaveformRenderer {
         }
     }
 
+    fn cached_full_width(&self, width: u32, view_fraction: f32, frame_count: usize) -> u32 {
+        const MAX_CACHED_FULL_WIDTH: u32 = 200_000;
+        let desired = ((width as f32) / view_fraction).ceil().max(width as f32) as u32;
+        let frame_cap = frame_count.min(u32::MAX as usize) as u32;
+        desired.min(frame_cap).min(MAX_CACHED_FULL_WIDTH).max(width)
+    }
+
+    fn columns_window(&self, view_start: f32, full_width: u32, width: u32) -> Option<(usize, usize)> {
+        let full_width = full_width as usize;
+        let width = width as usize;
+        if full_width < width || width == 0 {
+            return None;
+        }
+        let max_start = full_width.saturating_sub(width);
+        let start = ((view_start * full_width as f32).floor() as usize).min(max_start);
+        Some((start, start + width))
+    }
+
     fn paint_color_image_for_size(
         columns: &[(f32, f32)],
         width: u32,
@@ -75,12 +147,10 @@ impl WaveformRenderer {
         foreground: Color32,
         background: Color32,
     ) -> ColorImage {
+        let fill = Color32::from_rgba_unmultiplied(background.r(), background.g(), background.b(), 0);
         let mut image = ColorImage::new(
             [width as usize, height as usize],
-            vec![
-                Color32::from_rgba_unmultiplied(background.r(), background.g(), background.b(), 0,);
-                (width as usize) * (height as usize)
-            ],
+            vec![fill; (width as usize) * (height as usize)],
         );
         let stride = width as usize;
         let half_height = (height.saturating_sub(1)) as f32 / 2.0;
@@ -138,12 +208,10 @@ impl WaveformRenderer {
         let bottom =
             Self::paint_color_image_for_size(right, width, bottom_height, foreground, background);
 
+        let fill = Color32::from_rgba_unmultiplied(background.r(), background.g(), background.b(), 0);
         let mut image = ColorImage::new(
             [width as usize, height as usize],
-            vec![
-                Color32::from_rgba_unmultiplied(background.r(), background.g(), background.b(), 0,);
-                (width as usize) * (height as usize)
-            ],
+            vec![fill; (width as usize) * (height as usize)],
         );
         Self::blit_image(&mut image, &top, 0);
         let bottom_offset = top_height as usize + gap as usize;
@@ -182,5 +250,25 @@ mod tests {
         let image =
             renderer.render_color_image_with_size(&[0.0, 0.5], 1, WaveformChannelView::Mono, 4, 6);
         assert_eq!(image.size, [4, 6]);
+    }
+
+    #[test]
+    fn render_color_image_for_view_respects_requested_size() {
+        let renderer = WaveformRenderer::new(2, 2);
+        let decoded = DecodedWaveform {
+            samples: vec![0.0, 0.5, -0.25, 0.25],
+            duration_seconds: 1.0,
+            sample_rate: 48_000,
+            channels: 1,
+        };
+        let image = renderer.render_color_image_for_view_with_size(
+            &decoded,
+            0.25,
+            0.75,
+            WaveformChannelView::Mono,
+            5,
+            3,
+        );
+        assert_eq!(image.size, [5, 3]);
     }
 }

@@ -1,6 +1,7 @@
 mod decode;
 mod render;
 mod sampling;
+mod zoom_cache;
 
 use egui::Color32;
 use egui::ColorImage;
@@ -39,7 +40,7 @@ impl DecodedWaveform {
 }
 
 /// Visual presentation mode for multi-channel audio.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum WaveformChannelView {
     /// Collapse all channels into one envelope using per-frame min/max to avoid phase cancellation.
     #[default]
@@ -64,6 +65,7 @@ pub struct WaveformRenderer {
     pub(crate) height: u32,
     pub(crate) background: Color32,
     pub(crate) foreground: Color32,
+    zoom_cache: std::sync::Arc<zoom_cache::WaveformZoomCache>,
 }
 
 impl WaveformRenderer {
@@ -74,6 +76,7 @@ impl WaveformRenderer {
             height,
             background: Color32::from_rgb(18, 16, 14),
             foreground: Color32::from_rgb(250, 246, 240),
+            zoom_cache: std::sync::Arc::new(zoom_cache::WaveformZoomCache::new()),
         }
     }
 
