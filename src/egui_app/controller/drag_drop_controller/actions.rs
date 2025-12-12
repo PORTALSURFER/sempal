@@ -101,7 +101,8 @@ impl DragDropActions for DragDropController<'_> {
             _ => (None, None, false),
         };
 
-        if over_folder_panel && folder_target.is_none() {
+        let is_sample_payload = matches!(payload, DragPayload::Sample { .. });
+        if is_sample_payload && over_folder_panel && folder_target.is_none() {
             self.reset_drag();
             self.set_status("Drop onto a folder to move the sample", StatusTone::Warning);
             return;

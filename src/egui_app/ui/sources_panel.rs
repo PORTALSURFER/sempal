@@ -33,6 +33,12 @@ impl EguiApp {
             let selected_height = (remaining - folder_height).max(0.0);
             let drag_payload = self.controller.ui.drag.payload.clone();
             let sample_drag_active = matches!(drag_payload, Some(DragPayload::Sample { .. }));
+            if drag_payload.is_some() && !sample_drag_active {
+                self.controller
+                    .ui
+                    .drag
+                    .clear_targets_from(DragSource::Folders);
+            }
             let pointer_pos = ui
                 .input(|i| i.pointer.hover_pos().or_else(|| i.pointer.interact_pos()))
                 .or(self.controller.ui.drag.position);
@@ -480,7 +486,7 @@ impl EguiApp {
                         }
                     }
                 }
-                if hovered_folder.is_none() {
+                if sample_drag_active && hovered_folder.is_none() {
                     let pointer = pointer_pos.unwrap_or_default();
                     self.controller.update_active_drag(
                         pointer,
