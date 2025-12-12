@@ -38,10 +38,4 @@ impl EguiController {
     pub fn maybe_launch_external_drag(&mut self, pointer_outside: bool) {
         self.drag_drop().maybe_launch_external_drag(pointer_outside);
     }
-
-    #[cfg(not(target_os = "windows"))]
-    /// No-op on non-Windows platforms (keeps call sites platform-agnostic).
-    pub fn maybe_launch_external_drag(&mut self, pointer_outside: bool) {
-        self.drag_drop().maybe_launch_external_drag(pointer_outside);
-    }
 }
