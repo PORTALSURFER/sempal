@@ -43,6 +43,7 @@ impl EguiController {
         self.selected_source = cfg
             .last_selected_source
             .filter(|id| self.sources.iter().any(|s| &s.id == id));
+        self.last_selected_browsable_source = self.selected_source.clone();
         self.ensure_collection_selection();
         self.refresh_sources_ui();
         self.refresh_collections_ui();
@@ -66,7 +67,11 @@ impl EguiController {
             feature_flags: self.feature_flags.clone(),
             trash_folder: self.trash_folder.clone(),
             collection_export_root: self.collection_export_root.clone(),
-            last_selected_source: self.selected_source.clone(),
+            last_selected_source: self
+                .selected_source
+                .clone()
+                .filter(|id| self.sources.iter().any(|s| &s.id == id))
+                .or_else(|| self.last_selected_browsable_source.clone()),
             audio_output: self.audio_output.clone(),
             volume: self.ui.volume,
             controls: self.controls.clone(),
