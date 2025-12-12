@@ -19,6 +19,20 @@ static CONFIG_BASE_OVERRIDE: LazyLock<Mutex<Option<PathBuf>>> = LazyLock::new(||
 // Prevent concurrent overrides from clobbering each other during tests.
 #[cfg(test)]
 static CONFIG_GUARD_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+#[cfg(test)]
+static TEST_CONFIG_INIT: LazyLock<()> = LazyLock::new(|| {
+    let dir = tempfile::tempdir().expect("create test config dir");
+    let path = dir.path().to_path_buf();
+    std::mem::forget(dir);
+    let guard = ConfigBaseGuard::set(path);
+    std::mem::forget(guard);
+});
+
+/// Ensure tests do not touch real user config directories.
+#[cfg(test)]
+pub fn ensure_test_config_base() {
+    LazyLock::force(&TEST_CONFIG_INIT);
+}
 
 /// Errors that can occur while resolving or preparing application directories.
 #[derive(Debug, Error)]
@@ -36,6 +50,8 @@ pub enum AppDirError {
 
 /// Return the root `.sempal` directory, creating it if needed.
 pub fn app_root_dir() -> Result<PathBuf, AppDirError> {
+    #[cfg(test)]
+    ensure_test_config_base();
     let base = config_base_dir().ok_or(AppDirError::NoBaseDir)?;
     let path = base.join(APP_DIR_NAME);
     std::fs::create_dir_all(&path).map_err(|source| AppDirError::CreateDir {

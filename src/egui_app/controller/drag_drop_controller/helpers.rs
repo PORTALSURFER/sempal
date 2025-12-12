@@ -385,13 +385,32 @@ impl DragDropController<'_> {
         target_tag: Option<SampleTag>,
         collection_id: &CollectionId,
     ) {
-        let clip_root = match crate::app_dirs::app_root_dir() {
-            Ok(root) => root.join("collection_clips").join(collection_id.as_str()),
-            Err(err) => {
-                self.set_status(err.to_string(), StatusTone::Error);
-                return;
-            }
+        let clip_root = self
+            .collections
+            .iter()
+            .find(|c| &c.id == collection_id)
+            .and_then(|collection| {
+                super::super::collection_export::resolved_export_dir(
+                    collection,
+                    self.collection_export_root.as_deref(),
+                )
+            })
+            .or_else(|| {
+                crate::app_dirs::app_root_dir()
+                    .ok()
+                    .map(|root| root.join("collection_clips").join(collection_id.as_str()))
+            });
+        let Some(clip_root) = clip_root else {
+            self.set_status("Collection export root unavailable", StatusTone::Error);
+            return;
         };
+        if clip_root.exists() && !clip_root.is_dir() {
+            self.set_status(
+                format!("Collection clip path is not a directory: {}", clip_root.display()),
+                StatusTone::Error,
+            );
+            return;
+        }
         if let Err(err) = std::fs::create_dir_all(&clip_root)
             .map_err(|err| format!("Failed to create collection clip folder: {err}"))
         {
