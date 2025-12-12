@@ -256,6 +256,7 @@ struct WavLoadResult {
 struct PendingAudio {
     request_id: u64,
     source_id: SourceId,
+    root: PathBuf,
     relative_path: PathBuf,
     intent: AudioLoadIntent,
 }
