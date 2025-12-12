@@ -2284,6 +2284,7 @@ fn cursor_step_size_tracks_view_zoom() {
     controller.select_wav_by_path(Path::new("zoom.wav"));
     controller.decoded_waveform = Some(DecodedWaveform {
         samples: vec![0.0; 10_000],
+        peaks: None,
         duration_seconds: 1.0,
         sample_rate: 48_000,
         channels: 1,
@@ -2335,6 +2336,7 @@ fn mouse_zoom_prefers_pointer_over_playhead() {
     controller.waveform_size = [240, 24];
     controller.decoded_waveform = Some(DecodedWaveform {
         samples: vec![0.0; 10_000],
+        peaks: None,
         duration_seconds: 1.0,
         sample_rate: 48_000,
         channels: 1,
@@ -2463,6 +2465,7 @@ fn play_from_cursor_prefers_cursor_position() {
     controller.select_wav_by_path(Path::new("cursor.wav"));
     controller.decoded_waveform = Some(DecodedWaveform {
         samples: vec![0.0; 10_000],
+        peaks: None,
         duration_seconds: 1.0,
         sample_rate: 48_000,
         channels: 1,
@@ -2487,6 +2490,7 @@ fn cursor_alpha_fades_before_reset() {
     prepare_browser_sample(&mut controller, &source, "cursor.wav");
     controller.decoded_waveform = Some(DecodedWaveform {
         samples: vec![0.0; 10_000],
+        peaks: None,
         duration_seconds: 1.0,
         sample_rate: 48_000,
         channels: 1,
@@ -2507,6 +2511,7 @@ fn cursor_alpha_resets_after_idle_timeout() {
     prepare_browser_sample(&mut controller, &source, "cursor.wav");
     controller.decoded_waveform = Some(DecodedWaveform {
         samples: vec![0.0; 10_000],
+        peaks: None,
         duration_seconds: 1.0,
         sample_rate: 48_000,
         channels: 1,
@@ -2527,6 +2532,7 @@ fn cursor_does_not_fade_when_waveform_focused() {
     prepare_browser_sample(&mut controller, &source, "cursor.wav");
     controller.decoded_waveform = Some(DecodedWaveform {
         samples: vec![0.0; 10_000],
+        peaks: None,
         duration_seconds: 1.0,
         sample_rate: 48_000,
         channels: 1,
@@ -2550,6 +2556,7 @@ fn navigation_steps_anchor_to_cursor_instead_of_playhead() {
     controller.select_wav_by_path(Path::new("nav.wav"));
     controller.decoded_waveform = Some(DecodedWaveform {
         samples: vec![0.0; 10_000],
+        peaks: None,
         duration_seconds: 1.0,
         sample_rate: 48_000,
         channels: 1,
@@ -2576,6 +2583,7 @@ fn waveform_refresh_respects_view_slice_and_caps_width() {
     };
     controller.decoded_waveform = Some(DecodedWaveform {
         samples: (0..1000).map(|i| i as f32).collect(),
+        peaks: None,
         duration_seconds: 1.0,
         sample_rate: 48_000,
         channels: 1,

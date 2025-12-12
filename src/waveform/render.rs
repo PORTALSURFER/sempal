@@ -19,6 +19,16 @@ impl WaveformRenderer {
         decoded: &DecodedWaveform,
         view: WaveformChannelView,
     ) -> ColorImage {
+        if decoded.samples.is_empty() {
+            return self.render_color_image_for_view_with_size(
+                decoded,
+                0.0,
+                1.0,
+                view,
+                self.width,
+                self.height,
+            );
+        }
         self.render_color_image_with_size(
             &decoded.samples,
             decoded.channel_count(),
@@ -45,13 +55,38 @@ impl WaveformRenderer {
         let height = height.max(1);
         let channels = decoded.channel_count();
         let frame_count = decoded.frame_count();
-        if decoded.samples.is_empty() || frame_count == 0 {
+        if frame_count == 0 {
             return self.render_color_image_with_size(&[], 1, WaveformChannelView::Mono, width, height);
         }
 
         let start = view_start.clamp(0.0, 1.0);
         let end = view_end.clamp(start, 1.0);
         let fraction = (end - start).max(0.000_001);
+
+        if decoded.samples.is_empty() {
+            if let Some(peaks) = decoded.peaks.as_ref() {
+                let columns = peaks.sample_columns_for_view(start, end, width, view);
+                return match columns {
+                    WaveformColumnView::Mono(cols) => Self::paint_color_image_for_size(
+                        &cols,
+                        width,
+                        height,
+                        self.foreground,
+                        self.background,
+                    ),
+                    WaveformColumnView::SplitStereo { left, right } => Self::paint_split_color_image(
+                        &left,
+                        &right,
+                        width,
+                        height,
+                        self.foreground,
+                        self.background,
+                    ),
+                };
+            }
+            return self.render_color_image_with_size(&[], 1, WaveformChannelView::Mono, width, height);
+        }
+
         let full_width = self.cached_full_width(width, fraction, frame_count);
         if let Some((start_col, end_col)) = self.columns_window(start, full_width, width) {
             let cached = self
@@ -257,6 +292,7 @@ mod tests {
         let renderer = WaveformRenderer::new(2, 2);
         let decoded = DecodedWaveform {
             samples: vec![0.0, 0.5, -0.25, 0.25],
+            peaks: None,
             duration_seconds: 1.0,
             sample_rate: 48_000,
             channels: 1,
