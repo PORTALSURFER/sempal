@@ -617,7 +617,9 @@ impl EguiController {
             self.browser_search_cache.query.clear();
             self.browser_search_cache.query.push_str(query);
             self.browser_search_cache.scores.clear();
-            self.browser_search_cache.scores.resize(self.wav_entries.len(), None);
+            self.browser_search_cache
+                .scores
+                .resize(self.wav_entries.len(), None);
 
             let Some(source_id) = self.selected_source.clone() else {
                 return;
@@ -636,8 +638,10 @@ impl EguiController {
             };
             for index in 0..self.wav_entries.len() {
                 if let Some(label) = labels.get(index) {
-                    self.browser_search_cache.scores[index] =
-                        self.browser_search_cache.matcher.fuzzy_match(label.as_str(), query);
+                    self.browser_search_cache.scores[index] = self
+                        .browser_search_cache
+                        .matcher
+                        .fuzzy_match(label.as_str(), query);
                 }
             }
         }
@@ -715,6 +719,7 @@ impl EguiController {
         self.ui.browser.selection_anchor_visible = Some(anchor);
     }
 
+    /// Focus a browser row and update multi-selection state.
     pub fn focus_browser_row(&mut self, visible_row: usize) {
         self.apply_browser_selection(visible_row, SelectionAction::Replace);
     }
@@ -767,18 +772,22 @@ impl EguiController {
         }
     }
 
+    /// Toggle whether a visible browser row is included in the multi-selection set.
     pub fn toggle_browser_row_selection(&mut self, visible_row: usize) {
         self.apply_browser_selection(visible_row, SelectionAction::Toggle);
     }
 
+    /// Extend the multi-selection range to a visible browser row (replaces the selection set).
     pub fn extend_browser_selection_to_row(&mut self, visible_row: usize) {
         self.apply_browser_selection(visible_row, SelectionAction::Extend { additive: false });
     }
 
+    /// Extend the multi-selection range to a visible browser row (adds to the selection set).
     pub fn add_range_browser_selection(&mut self, visible_row: usize) {
         self.apply_browser_selection(visible_row, SelectionAction::Extend { additive: true });
     }
 
+    /// Toggle the focused sample's inclusion in the browser multi-selection set.
     pub fn toggle_focused_selection(&mut self) {
         let Some(path) = self.selected_wav.clone() else {
             return;
@@ -844,6 +853,7 @@ impl EguiController {
         self.rebuild_browser_lists();
     }
 
+    /// Return the set of action rows for a primary row (multi-select aware).
     pub fn action_rows_from_primary(&self, primary_visible_row: usize) -> Vec<usize> {
         let mut rows: Vec<usize> = self
             .ui

@@ -314,6 +314,7 @@ impl EguiController {
         }
     }
 
+    /// Return whether sticky random navigation mode is enabled.
     pub fn random_navigation_mode_enabled(&self) -> bool {
         self.ui.browser.random_navigation_mode
     }
