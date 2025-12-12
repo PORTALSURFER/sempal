@@ -38,11 +38,6 @@
 - Standardize error types: a mix of `Result<_, String>` and typed errors exists; consider promoting key subsystems (audio, waveform, sources) to typed errors for consistency.
 - Consider feature-gating Windows-only code paths in UI/controller to reduce `cfg_attr(..., allow(dead_code))` clutter.
 
-- turn the left and right sidebars into resizable panels.
-
-- when the user dragdrops an audio selection into a collection, a copy of the selection is also added to the currently selected sample source target. please remove this side effect. 
-this action should only add a new audio file to the collection
-
 - moving trashed items to the trash folder will freeze the ui, lets turn this into an async background task instead. lets also add a progress bar in the statusbar to indicate the progression of this action.
 
 - in the collection items list, the selected items will block scrolling, lets fix that. the user should be able to freely scroll
@@ -59,4 +54,4 @@ this action should only add a new audio file to the collection
 
 - lets design an undo system which tracks every single action we can take with 20 undo steps. map undo to ctrl+z and u, and map redo to U and ctrl+y
 
-
+- turn the left and right sidebars into resizable panels.

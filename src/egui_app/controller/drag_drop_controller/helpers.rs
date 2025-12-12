@@ -94,8 +94,14 @@ impl DragDropController<'_> {
             .as_ref()
             .ok_or_else(|| "Load a sample before dragging a selection".to_string())?;
         let clip = self.selection_audio(&audio.source_id, &audio.relative_path)?;
-        let entry =
-            self.export_selection_clip(&clip.source_id, &clip.relative_path, bounds, None, true)?;
+        let entry = self.export_selection_clip(
+            &clip.source_id,
+            &clip.relative_path,
+            bounds,
+            None,
+            true,
+            true,
+        )?;
         let source = self
             .sources
             .iter()
@@ -352,7 +358,14 @@ impl DragDropController<'_> {
         bounds: SelectionRange,
         target_tag: Option<SampleTag>,
     ) {
-        match self.export_selection_clip(source_id, relative_path, bounds, target_tag, true) {
+        match self.export_selection_clip(
+            source_id,
+            relative_path,
+            bounds,
+            target_tag,
+            true,
+            true,
+        ) {
             Ok(entry) => {
                 self.ui.browser.autoscroll = true;
                 self.suppress_autoplay_once = true;
@@ -372,7 +385,14 @@ impl DragDropController<'_> {
         target_tag: Option<SampleTag>,
         collection_id: &CollectionId,
     ) {
-        match self.export_selection_clip(source_id, relative_path, bounds, target_tag, false) {
+        match self.export_selection_clip(
+            source_id,
+            relative_path,
+            bounds,
+            target_tag,
+            false,
+            false,
+        ) {
             Ok(entry) => {
                 self.selected_collection = Some(collection_id.clone());
                 if let Some(source) = self.sources.iter().find(|s| s.id == *source_id).cloned() {
