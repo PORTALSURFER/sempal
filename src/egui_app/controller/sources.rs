@@ -38,6 +38,7 @@ impl EguiController {
         self.select_source_internal(id, None);
     }
 
+    /// Refresh the wav list for the selected source (delegates to background load).
     pub fn refresh_wavs(&mut self) -> Result<(), SourceDbError> {
         // Maintained for compatibility; now delegates to background load.
         self.queue_wav_load();

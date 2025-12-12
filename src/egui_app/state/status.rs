@@ -10,6 +10,7 @@ pub struct StatusBarState {
 }
 
 impl StatusBarState {
+    /// Default status shown when no source is selected.
     pub fn idle() -> Self {
         Self {
             text: "Add a sample source to get started".into(),

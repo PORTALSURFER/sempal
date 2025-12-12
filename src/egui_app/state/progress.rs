@@ -11,6 +11,7 @@ pub struct ProgressOverlayState {
 }
 
 impl ProgressOverlayState {
+    /// Create and show a progress overlay with the provided title and total step count.
     pub fn new(title: impl Into<String>, total: usize, cancelable: bool) -> Self {
         Self {
             visible: true,
@@ -23,10 +24,12 @@ impl ProgressOverlayState {
         }
     }
 
+    /// Reset the overlay back to its default (hidden) state.
     pub fn reset(&mut self) {
         *self = Self::default();
     }
 
+    /// Return completion in the range `[0.0, 1.0]`.
     pub fn fraction(&self) -> f32 {
         if self.total == 0 {
             0.0
