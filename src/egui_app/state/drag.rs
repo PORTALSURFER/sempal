@@ -55,6 +55,7 @@ impl DragTarget {
 }
 
 #[derive(Clone, Debug)]
+/// Recorded drag target selection used for debugging/UX decisions.
 pub struct DragTargetSnapshot {
     pub target: DragTarget,
     pub source: DragSource,
@@ -100,11 +101,13 @@ impl Default for DragState {
 }
 
 impl DragState {
+    /// Clear any target associated with a given drag source.
     pub fn clear_targets_from(&mut self, source: DragSource) {
         self.targets.remove(&source);
         self.recompute_active_target(source, DragTarget::None);
     }
 
+    /// Set (or update) the drag target for a given source and recompute the active target.
     pub fn set_target(&mut self, source: DragSource, target: DragTarget) {
         if let DragTarget::FolderPanel { folder: Some(path) } = &target {
             self.last_folder_target = Some(path.clone());
@@ -113,6 +116,7 @@ impl DragState {
         self.recompute_active_target(source, target);
     }
 
+    /// Clear all known targets and reset the active target to `None`.
     pub fn clear_all_targets(&mut self) {
         self.targets.clear();
         self.active_target = DragTarget::None;

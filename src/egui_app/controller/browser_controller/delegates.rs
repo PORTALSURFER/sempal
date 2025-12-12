@@ -1,10 +1,12 @@
 use super::*;
 
 impl EguiController {
+    /// Apply a keep/trash/neutral tag to a single visible browser row.
     pub fn tag_browser_sample(&mut self, row: usize, tag: SampleTag) -> Result<(), String> {
         self.browser().tag_browser_sample(row, tag)
     }
 
+    /// Apply a keep/trash/neutral tag to multiple visible browser rows.
     pub fn tag_browser_samples(
         &mut self,
         rows: &[usize],
@@ -15,22 +17,27 @@ impl EguiController {
             .tag_browser_samples(rows, tag, primary_visible_row)
     }
 
+    /// Normalize a single visible browser row in-place (overwrites audio).
     pub fn normalize_browser_sample(&mut self, row: usize) -> Result<(), String> {
         self.browser().normalize_browser_sample(row)
     }
 
+    /// Normalize multiple visible browser rows in-place (overwrites audio).
     pub fn normalize_browser_samples(&mut self, rows: &[usize]) -> Result<(), String> {
         self.browser().normalize_browser_samples(rows)
     }
 
+    /// Rename a single visible browser row on disk and refresh dependent state.
     pub fn rename_browser_sample(&mut self, row: usize, new_name: &str) -> Result<(), String> {
         self.browser().rename_browser_sample(row, new_name)
     }
 
+    /// Delete the file for a single visible browser row and prune references.
     pub fn delete_browser_sample(&mut self, row: usize) -> Result<(), String> {
         self.browser().delete_browser_sample(row)
     }
 
+    /// Delete files for multiple visible browser rows and prune references.
     pub fn delete_browser_samples(&mut self, rows: &[usize]) -> Result<(), String> {
         self.browser().delete_browser_samples(rows)
     }
