@@ -59,3 +59,53 @@ impl WaveformRenderer {
         Ok(raw)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn wav_bytes_int(bits_per_sample: u16, channels: u16, samples: &[i32]) -> Vec<u8> {
+        let spec = hound::WavSpec {
+            channels,
+            sample_rate: 48_000,
+            bits_per_sample,
+            sample_format: SampleFormat::Int,
+        };
+        let mut cursor = std::io::Cursor::new(Vec::new());
+        {
+            let mut writer =
+                hound::WavWriter::new(&mut cursor, spec).expect("create wav writer");
+            for &sample in samples {
+                writer.write_sample(sample).expect("write sample");
+            }
+            writer.finalize().expect("finalize wav");
+        }
+        cursor.into_inner()
+    }
+
+    #[test]
+    fn decodes_24bit_int_scaling() {
+        let bits = 24;
+        let scale = (1i64 << (bits - 1)) as f32;
+        let max_pos = (scale as i32) - 1;
+        let min_neg = -(scale as i32);
+        let bytes = wav_bytes_int(bits, 1, &[0, max_pos, min_neg, 1, -1]);
+
+        let renderer = WaveformRenderer::new(1, 1);
+        let decoded = renderer
+            .decode_from_bytes(&bytes)
+            .expect("decode 24-bit wav");
+
+        let expected = vec![
+            0.0,
+            max_pos as f32 / scale,
+            min_neg as f32 / scale,
+            1.0 / scale,
+            -1.0 / scale,
+        ];
+        assert_eq!(decoded.samples.len(), expected.len());
+        for (got, exp) in decoded.samples.iter().zip(expected) {
+            assert!((got - exp).abs() < 1e-6, "got {got}, expected {exp}");
+        }
+    }
+}
