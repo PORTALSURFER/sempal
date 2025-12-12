@@ -11,6 +11,7 @@ use crate::egui_app::state::{
 use crate::sample_sources::Collection;
 use crate::sample_sources::collections::CollectionMember;
 use crate::waveform::DecodedWaveform;
+use crate::app_dirs::ConfigBaseGuard;
 use egui;
 use hound::WavReader;
 use rand::SeedableRng;
@@ -26,6 +27,7 @@ use tempfile::tempdir;
 #[test]
 fn selection_drop_adds_clip_to_collection() {
     let temp = tempdir().unwrap();
+    let _guard = ConfigBaseGuard::set(temp.path().to_path_buf());
     let root = temp.path().join("source");
     std::fs::create_dir_all(&root).unwrap();
     let renderer = WaveformRenderer::new(12, 12);
@@ -71,8 +73,11 @@ fn selection_drop_adds_clip_to_collection() {
         .find(|c| c.id == collection_id)
         .unwrap();
     assert_eq!(collection.members.len(), 1);
-    let member_path = &collection.members[0].relative_path;
-    assert!(root.join(member_path).exists());
+    let member = &collection.members[0];
+    let member_path = &member.relative_path;
+    let clip_root = member.clip_root.as_ref().expect("clip root set");
+    assert!(clip_root.join(member_path).exists());
+    assert!(!root.join(member_path).exists());
     assert!(
         controller
             .wav_entries

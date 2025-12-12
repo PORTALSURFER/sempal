@@ -93,6 +93,11 @@ fn selection_drop_adds_clip_to_collection() {
             .iter()
             .any(|sample| sample.path == *member_path)
     );
+
+    // Selecting the new collection clip should queue audio successfully.
+    let expected_path = member_path.clone();
+    controller.select_collection_sample(0);
+    assert_eq!(controller.ui.waveform.loading.as_ref(), Some(&expected_path));
 }
 
 #[test]
