@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 //! Shared state types for the egui UI.
 //! Temporary while the egui UI is being wired; types will be exercised by the renderer next.
 

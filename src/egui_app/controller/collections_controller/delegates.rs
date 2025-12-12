@@ -80,10 +80,6 @@ impl EguiController {
         self.collections_ctrl().refresh_collections_ui();
     }
 
-    pub(in crate::egui_app::controller) fn refresh_collection_samples(&mut self) {
-        self.collections_ctrl().refresh_collection_samples();
-    }
-
     pub(in crate::egui_app::controller) fn ensure_collection_selection(&mut self) {
         self.collections_ctrl().ensure_collection_selection();
     }

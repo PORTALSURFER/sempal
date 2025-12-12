@@ -15,7 +15,6 @@ pub(super) struct FlatItemsListConfig<'a> {
 
 pub(super) struct FlatItemsListMetrics {
     pub row_height: f32,
-    pub row_metrics: RowMetrics,
     pub number_width: f32,
     pub number_gap: f32,
     pub padding: f32,
@@ -23,7 +22,6 @@ pub(super) struct FlatItemsListMetrics {
 
 pub(super) struct FlatItemsListResponse {
     pub frame_rect: egui::Rect,
-    pub inner_rect: egui::Rect,
 }
 
 pub(super) fn render_flat_items_list(
@@ -41,7 +39,6 @@ pub(super) fn render_flat_items_list(
     let padding = ui.spacing().button_padding.x * 2.0;
     let metrics = FlatItemsListMetrics {
         row_height,
-        row_metrics,
         number_width,
         number_gap,
         padding,
@@ -91,7 +88,5 @@ pub(super) fn render_flat_items_list(
 
     FlatItemsListResponse {
         frame_rect: scroll_response.response.rect,
-        inner_rect: scroll_response.inner.inner_rect,
     }
 }
-

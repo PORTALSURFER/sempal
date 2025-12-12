@@ -96,11 +96,6 @@ impl BrowserController<'_> {
             .map(|entry| entry.relative_path.clone())
     }
 
-    pub(super) fn try_delete_browser_sample(&mut self, row: usize) -> Result<(), String> {
-        let ctx = self.resolve_browser_sample(row)?;
-        self.try_delete_browser_sample_ctx(&ctx)
-    }
-
     pub(super) fn try_delete_browser_sample_ctx(
         &mut self,
         ctx: &TriageSampleContext,
