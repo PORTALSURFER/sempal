@@ -23,9 +23,14 @@ static CONFIG_GUARD_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()))
 static TEST_CONFIG_INIT: LazyLock<()> = LazyLock::new(|| {
     let dir = tempfile::tempdir().expect("create test config dir");
     let path = dir.path().to_path_buf();
+    // Keep the directory alive for the test process.
     std::mem::forget(dir);
-    let guard = ConfigBaseGuard::set(path);
-    std::mem::forget(guard);
+    let mut guard = CONFIG_BASE_OVERRIDE
+        .lock()
+        .expect("config base override mutex poisoned");
+    if guard.is_none() {
+        *guard = Some(path);
+    }
 });
 
 /// Ensure tests do not touch real user config directories.
