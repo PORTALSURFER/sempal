@@ -25,6 +25,44 @@ impl std::ops::DerefMut for DragDropController<'_> {
 }
 
 impl DragDropController<'_> {
+    fn selection_clip_root_for_collection(
+        &self,
+        collection_id: &CollectionId,
+    ) -> Result<PathBuf, String> {
+        let preferred = self
+            .collections
+            .iter()
+            .find(|c| &c.id == collection_id)
+            .and_then(|collection| {
+                super::super::collection_export::resolved_export_dir(
+                    collection,
+                    self.collection_export_root.as_deref(),
+                )
+            });
+        if let Some(path) = preferred {
+            if path.exists() && !path.is_dir() {
+                tracing::warn!(
+                    "collection export path is not a directory, falling back: {}",
+                    path.display()
+                );
+            } else if std::fs::create_dir_all(&path).is_ok() {
+                return Ok(path);
+            } else {
+                tracing::warn!(
+                    "failed to create collection export path, falling back: {}",
+                    path.display()
+                );
+            }
+        }
+        let fallback = crate::app_dirs::app_root_dir()
+            .map_err(|err| err.to_string())?
+            .join("collection_clips")
+            .join(collection_id.as_str());
+        std::fs::create_dir_all(&fallback)
+            .map_err(|err| format!("Failed to create collection clip folder: {err}"))?;
+        Ok(fallback)
+    }
+
     pub(super) fn reset_drag(&mut self) {
         self.ui.drag.payload = None;
         self.ui.drag.label.clear();
@@ -385,38 +423,13 @@ impl DragDropController<'_> {
         target_tag: Option<SampleTag>,
         collection_id: &CollectionId,
     ) {
-        let clip_root = self
-            .collections
-            .iter()
-            .find(|c| &c.id == collection_id)
-            .and_then(|collection| {
-                super::super::collection_export::resolved_export_dir(
-                    collection,
-                    self.collection_export_root.as_deref(),
-                )
-            })
-            .or_else(|| {
-                crate::app_dirs::app_root_dir()
-                    .ok()
-                    .map(|root| root.join("collection_clips").join(collection_id.as_str()))
-            });
-        let Some(clip_root) = clip_root else {
-            self.set_status("Collection export root unavailable", StatusTone::Error);
-            return;
+        let clip_root = match self.selection_clip_root_for_collection(collection_id) {
+            Ok(root) => root,
+            Err(err) => {
+                self.set_status(err, StatusTone::Error);
+                return;
+            }
         };
-        if clip_root.exists() && !clip_root.is_dir() {
-            self.set_status(
-                format!("Collection clip path is not a directory: {}", clip_root.display()),
-                StatusTone::Error,
-            );
-            return;
-        }
-        if let Err(err) = std::fs::create_dir_all(&clip_root)
-            .map_err(|err| format!("Failed to create collection clip folder: {err}"))
-        {
-            self.set_status(err, StatusTone::Error);
-            return;
-        }
         match self.export_selection_clip_to_root(
             source_id,
             relative_path,
