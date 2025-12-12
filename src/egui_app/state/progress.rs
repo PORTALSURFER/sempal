@@ -2,6 +2,8 @@
 #[derive(Clone, Debug, Default)]
 pub struct ProgressOverlayState {
     pub visible: bool,
+    /// When true, the modal overlay is rendered (otherwise progress is status-bar only).
+    pub modal: bool,
     pub title: String,
     pub detail: Option<String>,
     pub completed: usize,
@@ -15,6 +17,7 @@ impl ProgressOverlayState {
     pub fn new(title: impl Into<String>, total: usize, cancelable: bool) -> Self {
         Self {
             visible: true,
+            modal: true,
             title: title.into(),
             detail: None,
             completed: 0,

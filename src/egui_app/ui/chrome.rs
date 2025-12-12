@@ -53,22 +53,79 @@ impl EguiApp {
                 let chord_label = self.chord_status_label();
                 let key_label = format_keypress(&self.key_feedback.last_key);
                 ui.columns(3, |columns| {
-                    columns[0].horizontal(|ui| {
-                        ui.add_space(6.0);
-                        let (badge_rect, _) =
-                            ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
-                        ui.painter()
-                            .rect_filled(badge_rect, 0.0, status.badge_color);
-                        ui.painter().rect_stroke(
-                            badge_rect,
-                            0.0,
-                            style::inner_border(),
-                            StrokeKind::Inside,
-                        );
-                        ui.add_space(8.0);
-                        ui.label(RichText::new(&status.badge_label).color(palette.text_primary));
-                        ui.separator();
-                        ui.label(RichText::new(&status.text).color(palette.text_primary));
+                    columns[0].vertical(|ui| {
+                        ui.horizontal(|ui| {
+                            ui.add_space(6.0);
+                            let (badge_rect, _) = ui.allocate_exact_size(
+                                egui::vec2(16.0, 16.0),
+                                egui::Sense::hover(),
+                            );
+                            ui.painter()
+                                .rect_filled(badge_rect, 0.0, status.badge_color);
+                            ui.painter().rect_stroke(
+                                badge_rect,
+                                0.0,
+                                style::inner_border(),
+                                StrokeKind::Inside,
+                            );
+                            ui.add_space(8.0);
+                            ui.label(RichText::new(&status.badge_label).color(palette.text_primary));
+                            ui.separator();
+                            ui.label(RichText::new(&status.text).color(palette.text_primary));
+                        });
+
+                        if self.controller.ui.progress.visible {
+                            ui.add_space(4.0);
+                            ui.horizontal(|ui| {
+                                ui.label(
+                                    RichText::new(&self.controller.ui.progress.title)
+                                        .color(palette.text_muted),
+                                );
+                                ui.separator();
+                                if let Some(detail) = self.controller.ui.progress.detail.as_deref() {
+                                    ui.label(RichText::new(detail).color(palette.text_muted));
+                                }
+                                ui.with_layout(
+                                    egui::Layout::right_to_left(egui::Align::Center),
+                                    |ui| {
+                                        if self.controller.ui.progress.cancelable {
+                                            let label = if self.controller.ui.progress.cancel_requested {
+                                                "Canceling..."
+                                            } else {
+                                                "Cancel"
+                                            };
+                                            if ui
+                                                .add_enabled(
+                                                    !self.controller.ui.progress.cancel_requested,
+                                                    egui::Button::new(label),
+                                                )
+                                                .clicked()
+                                            {
+                                                self.controller.ui.progress.cancel_requested = true;
+                                            }
+                                        }
+                                    },
+                                );
+                            });
+                            let fraction = self.controller.ui.progress.fraction();
+                            let mut bar = egui::ProgressBar::new(fraction)
+                                .desired_width(ui.available_width().max(40.0))
+                                .animate(true);
+                            bar = if self.controller.ui.progress.total > 0 {
+                                bar.text(format!(
+                                    "{} / {}",
+                                    self.controller
+                                        .ui
+                                        .progress
+                                        .completed
+                                        .min(self.controller.ui.progress.total),
+                                    self.controller.ui.progress.total
+                                ))
+                            } else {
+                                bar.text("Working...")
+                            };
+                            ui.add(bar);
+                        }
                     });
                     columns[1].horizontal(|ui| {
                         ui.add_space(6.0);

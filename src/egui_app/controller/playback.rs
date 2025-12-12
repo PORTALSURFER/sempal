@@ -498,6 +498,7 @@ impl EguiController {
         self.poll_wav_loader();
         self.poll_audio_loader();
         self.poll_scan();
+        self.poll_trash_move();
         let Some(player) = self.player.as_ref().cloned() else {
             if self.decoded_waveform.is_none() {
                 self.hide_waveform_playhead();
