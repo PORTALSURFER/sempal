@@ -55,3 +55,4 @@
 - lets design an undo system which tracks every single action we can take with 20 undo steps. map undo to ctrl+z and u, and map redo to U and ctrl+y
 
 - turn the left and right sidebars into resizable panels.
+
