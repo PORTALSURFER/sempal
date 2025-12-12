@@ -33,7 +33,7 @@ mod platform {
         CloseClipboard, EmptyClipboard, OpenClipboard, RegisterClipboardFormatW, SetClipboardData,
     };
     use windows::Win32::System::Memory::{
-        GMEM_MOVEABLE, GMEM_ZEROINIT, GlobalAlloc, GlobalLock, GlobalUnlock,
+        GMEM_MOVEABLE, GMEM_ZEROINIT, GlobalAlloc, GlobalFree, GlobalLock, GlobalUnlock,
     };
     use windows::Win32::System::Ole::{CF_HDROP, DROPEFFECT_COPY};
     use windows::Win32::UI::Shell::DROPFILES;
@@ -53,6 +53,64 @@ mod platform {
         fn drop(&mut self) {
             unsafe {
                 let _ = CloseClipboard();
+            }
+        }
+    }
+
+    struct OwnedHGlobal {
+        handle: HGLOBAL,
+        released: bool,
+    }
+
+    impl OwnedHGlobal {
+        fn new(bytes: usize) -> Result<Self, String> {
+            let handle = unsafe { GlobalAlloc(GMEM_MOVEABLE | GMEM_ZEROINIT, bytes) }
+                .map_err(|_| "GlobalAlloc failed".to_string())?;
+            Ok(Self {
+                handle,
+                released: false,
+            })
+        }
+
+        fn release(mut self) -> HGLOBAL {
+            self.released = true;
+            self.handle
+        }
+    }
+
+    impl Drop for OwnedHGlobal {
+        fn drop(&mut self) {
+            if !self.released {
+                unsafe {
+                    let _ = GlobalFree(self.handle);
+                }
+            }
+        }
+    }
+
+    struct GlobalLockGuard {
+        handle: HGLOBAL,
+        ptr: *mut core::ffi::c_void,
+    }
+
+    impl GlobalLockGuard {
+        unsafe fn new(handle: HGLOBAL) -> Result<Self, String> {
+            let ptr = GlobalLock(handle);
+            if ptr.is_null() {
+                return Err("GlobalLock failed".into());
+            }
+            Ok(Self { handle, ptr })
+        }
+
+        fn as_mut_ptr<T>(&self) -> *mut T {
+            self.ptr as *mut T
+        }
+    }
+
+    impl Drop for GlobalLockGuard {
+        fn drop(&mut self) {
+            unsafe {
+                let _ = GlobalUnlock(self.handle);
             }
         }
     }
@@ -86,21 +144,12 @@ mod platform {
     }
 
     fn create_drop_effect(effect: u32) -> Result<HGLOBAL, String> {
-        let handle =
-            unsafe { GlobalAlloc(GMEM_MOVEABLE | GMEM_ZEROINIT, std::mem::size_of::<u32>()) }
-                .map_err(|_| "GlobalAlloc failed".to_string())?;
-        let ptr = unsafe { GlobalLock(handle) } as *mut u32;
-        if ptr.is_null() {
-            unsafe {
-                let _ = GlobalUnlock(handle);
-            }
-            return Err("GlobalLock failed".into());
-        }
+        let owned = OwnedHGlobal::new(std::mem::size_of::<u32>())?;
+        let lock = unsafe { GlobalLockGuard::new(owned.handle) }?;
         unsafe {
-            *ptr = effect;
-            let _ = GlobalUnlock(handle);
+            *lock.as_mut_ptr::<u32>() = effect;
         }
-        Ok(handle)
+        Ok(owned.release())
     }
 
     fn create_hdrop(paths: &[PathBuf]) -> Result<HGLOBAL, String> {
@@ -116,33 +165,23 @@ mod platform {
         utf16_paths.push(0); // Double null-terminator.
         let bytes_needed =
             std::mem::size_of::<DROPFILES>() + utf16_paths.len() * std::mem::size_of::<u16>();
-        // SAFETY: allocating movable global memory for shell clipboard.
-        let handle = unsafe { GlobalAlloc(GMEM_MOVEABLE | GMEM_ZEROINIT, bytes_needed) }
-            .map_err(|_| "GlobalAlloc failed".to_string())?;
-        // SAFETY: lock global memory to populate DROPFILES header and path list.
-        let ptr = unsafe { GlobalLock(handle) };
-        if ptr.is_null() {
-            unsafe {
-                let _ = GlobalUnlock(handle);
-            }
-            return Err("GlobalLock failed".into());
-        }
+        let owned = OwnedHGlobal::new(bytes_needed)?;
+        let lock = unsafe { GlobalLockGuard::new(owned.handle) }?;
         unsafe {
-            let header = ptr as *mut DROPFILES;
+            let header = lock.as_mut_ptr::<DROPFILES>();
             *header = DROPFILES {
                 pFiles: std::mem::size_of::<DROPFILES>() as u32,
                 pt: windows::Win32::Foundation::POINT { x: 0, y: 0 },
                 fNC: false.into(),
                 fWide: true.into(),
             };
-            let data_ptr = (ptr as *mut u8).add(std::mem::size_of::<DROPFILES>());
+            let data_ptr = (lock.ptr as *mut u8).add(std::mem::size_of::<DROPFILES>());
             copy_nonoverlapping(
                 utf16_paths.as_ptr() as *const u8,
                 data_ptr,
                 utf16_paths.len() * std::mem::size_of::<u16>(),
             );
-            let _ = GlobalUnlock(handle);
         }
-        Ok(handle)
+        Ok(owned.release())
     }
 }
