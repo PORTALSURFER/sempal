@@ -72,6 +72,7 @@ impl EguiController {
             self.wav_entries
                 .retain(|entry| entry.relative_path != relative_path);
             self.rebuild_wav_lookup();
+            self.browser_search_cache.invalidate();
             self.rebuild_browser_lists();
             self.label_cache
                 .insert(source.id.clone(), self.build_label_cache(&self.wav_entries));
