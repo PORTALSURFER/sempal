@@ -44,62 +44,6 @@ impl WaveformRenderer {
         }
     }
 
-    pub(super) fn downsample_columns_view(
-        columns: &WaveformColumnView,
-        factor: usize,
-        target_width: usize,
-    ) -> WaveformColumnView {
-        if factor <= 1 {
-            return columns.clone();
-        }
-        match columns {
-            WaveformColumnView::Mono(cols) => {
-                WaveformColumnView::Mono(Self::downsample_columns(cols, factor, target_width))
-            }
-            WaveformColumnView::SplitStereo { left, right } => WaveformColumnView::SplitStereo {
-                left: Self::downsample_columns(left, factor, target_width),
-                right: Self::downsample_columns(right, factor, target_width),
-            },
-        }
-    }
-
-    pub(super) fn oversample_factor(width: u32, frame_count: usize) -> u32 {
-        if frame_count == 0 {
-            return 1;
-        }
-        if width <= 1_024 {
-            8
-        } else if width <= 4_096 {
-            4
-        } else {
-            2
-        }
-    }
-
-    fn downsample_columns(
-        columns: &[(f32, f32)],
-        factor: usize,
-        target_width: usize,
-    ) -> Vec<(f32, f32)> {
-        if factor <= 1 {
-            return columns.to_vec();
-        }
-        let mut result = vec![(0.0, 0.0); target_width.max(1)];
-        for (i, slot) in result.iter_mut().enumerate() {
-            let start = i.saturating_mul(factor);
-            let end = ((i + 1).saturating_mul(factor)).min(columns.len());
-            let slice = &columns[start..end.max(start + 1).min(columns.len())];
-            let mut min_v: f32 = 1.0;
-            let mut max_v: f32 = -1.0;
-            for (lo, hi) in slice {
-                min_v = min_v.min(*lo);
-                max_v = max_v.max(*hi);
-            }
-            *slot = (min_v, max_v);
-        }
-        result
-    }
-
     fn sample_channel_columns(
         samples: &[f32],
         channels: usize,

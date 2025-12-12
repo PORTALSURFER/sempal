@@ -1076,7 +1076,6 @@ impl EguiController {
         };
         let [width, height] = self.waveform_size;
         let total_frames = decoded.frame_count();
-        let channels = decoded.channel_count();
         let min_view_width = min_view_width_for_frames(total_frames, width);
         let mut view = self.ui.waveform.view.clamp();
         let width_clamped = view.width().max(min_view_width);
@@ -1099,15 +1098,6 @@ impl EguiController {
             end_frame = (start_frame + 1).min(total_frames);
         }
         let frames_in_view = end_frame.saturating_sub(start_frame).max(1);
-        let samples = &decoded.samples;
-        let total_samples = samples.len();
-        let start_idx = start_frame
-            .saturating_mul(channels)
-            .min(total_samples.saturating_sub(1));
-        let end_idx = end_frame
-            .saturating_mul(channels)
-            .min(total_samples)
-            .max(start_idx + 1);
         let upper_width = frames_in_view.min(MAX_TEXTURE_WIDTH as usize);
         let lower_bound = width.min(MAX_TEXTURE_WIDTH) as usize;
         let effective_width = target.min(upper_width).max(lower_bound) as u32;
@@ -1127,9 +1117,10 @@ impl EguiController {
         {
             return;
         }
-        let color_image = self.renderer.render_color_image_with_size(
-            &samples[start_idx..end_idx],
-            channels,
+        let color_image = self.renderer.render_color_image_for_view_with_size(
+            decoded,
+            view.start,
+            view.end,
             self.ui.waveform.channel_view,
             effective_width,
             height,
