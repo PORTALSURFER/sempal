@@ -8,6 +8,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+mod playhead_edges;
+
 mod fixtures {
     use super::*;
     use hound::{SampleFormat, WavSpec, WavWriter};
