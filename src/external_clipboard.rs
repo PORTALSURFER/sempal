@@ -28,12 +28,12 @@ mod platform {
     use std::os::windows::ffi::OsStrExt;
     use std::ptr::copy_nonoverlapping;
     use std::sync::OnceLock;
-    use windows::Win32::Foundation::{HANDLE, HGLOBAL};
+    use windows::Win32::Foundation::{GlobalFree, HANDLE, HGLOBAL};
     use windows::Win32::System::DataExchange::{
         CloseClipboard, EmptyClipboard, OpenClipboard, RegisterClipboardFormatW, SetClipboardData,
     };
     use windows::Win32::System::Memory::{
-        GMEM_MOVEABLE, GMEM_ZEROINIT, GlobalAlloc, GlobalFree, GlobalLock, GlobalUnlock,
+        GMEM_MOVEABLE, GMEM_ZEROINIT, GlobalAlloc, GlobalLock, GlobalUnlock,
     };
     use windows::Win32::System::Ole::{CF_HDROP, DROPEFFECT_COPY};
     use windows::Win32::UI::Shell::DROPFILES;
@@ -72,6 +72,10 @@ mod platform {
             })
         }
 
+        fn handle(&self) -> HGLOBAL {
+            self.handle
+        }
+
         fn release(mut self) -> HGLOBAL {
             self.released = true;
             self.handle
@@ -82,7 +86,7 @@ mod platform {
         fn drop(&mut self) {
             if !self.released {
                 unsafe {
-                    let _ = GlobalFree(self.handle);
+                    let _ = GlobalFree(Some(self.handle));
                 }
             }
         }
@@ -95,11 +99,15 @@ mod platform {
 
     impl GlobalLockGuard {
         unsafe fn new(handle: HGLOBAL) -> Result<Self, String> {
-            let ptr = GlobalLock(handle);
+            let ptr = unsafe { GlobalLock(handle) };
             if ptr.is_null() {
                 return Err("GlobalLock failed".into());
             }
             Ok(Self { handle, ptr })
+        }
+
+        fn ptr(&self) -> *mut core::ffi::c_void {
+            self.ptr
         }
 
         fn as_mut_ptr<T>(&self) -> *mut T {
@@ -117,15 +125,22 @@ mod platform {
 
     pub fn copy_file_paths(paths: &[PathBuf]) -> Result<(), String> {
         let _clipboard = Clipboard::new()?;
-        let hglobal = create_hdrop(paths)?;
+        let hdrop = create_hdrop(paths)?;
         let drop_effect = create_drop_effect(DROPEFFECT_COPY.0)?;
         let effect_format = preferred_drop_effect_format()?;
         // SAFETY: clipboard is open; ownership of the HGLOBAL transfers to the system on success.
-        unsafe { SetClipboardData(effect_format as u32, Some(HANDLE(drop_effect.0))) }
+        unsafe {
+            SetClipboardData(
+                effect_format as u32,
+                Some(HANDLE(drop_effect.handle().0)),
+            )
+        }
             .map_err(|err| format!("SetClipboardData(Preferred DropEffect) failed: {err}"))?;
+        let _ = drop_effect.release();
         // SAFETY: clipboard is open; ownership of the HGLOBAL transfers to the system on success.
-        unsafe { SetClipboardData(CF_HDROP.0 as u32, Some(HANDLE(hglobal.0))) }
+        unsafe { SetClipboardData(CF_HDROP.0 as u32, Some(HANDLE(hdrop.handle().0))) }
             .map_err(|err| format!("SetClipboardData failed: {err}"))?;
+        let _ = hdrop.release();
         Ok(())
     }
 
@@ -143,16 +158,16 @@ mod platform {
             .clone()
     }
 
-    fn create_drop_effect(effect: u32) -> Result<HGLOBAL, String> {
+    fn create_drop_effect(effect: u32) -> Result<OwnedHGlobal, String> {
         let owned = OwnedHGlobal::new(std::mem::size_of::<u32>())?;
         let lock = unsafe { GlobalLockGuard::new(owned.handle) }?;
         unsafe {
             *lock.as_mut_ptr::<u32>() = effect;
         }
-        Ok(owned.release())
+        Ok(owned)
     }
 
-    fn create_hdrop(paths: &[PathBuf]) -> Result<HGLOBAL, String> {
+    fn create_hdrop(paths: &[PathBuf]) -> Result<OwnedHGlobal, String> {
         let mut utf16_paths = Vec::new();
         for path in paths {
             let wide: Vec<u16> = path
@@ -175,13 +190,13 @@ mod platform {
                 fNC: false.into(),
                 fWide: true.into(),
             };
-            let data_ptr = (lock.ptr as *mut u8).add(std::mem::size_of::<DROPFILES>());
+            let data_ptr = (lock.ptr() as *mut u8).add(std::mem::size_of::<DROPFILES>());
             copy_nonoverlapping(
                 utf16_paths.as_ptr() as *const u8,
                 data_ptr,
                 utf16_paths.len() * std::mem::size_of::<u16>(),
             );
         }
-        Ok(owned.release())
+        Ok(owned)
     }
 }
