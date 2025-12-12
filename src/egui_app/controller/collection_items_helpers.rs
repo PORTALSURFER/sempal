@@ -413,6 +413,7 @@ impl EguiController {
         let new_member = CollectionMember {
             source_id: ctx.member.source_id.clone(),
             relative_path: new_relative.to_path_buf(),
+            clip_root: ctx.member.clip_root.clone(),
         };
         if let Err(err) = self.export_member_if_needed(&ctx.collection_id, &new_member) {
             self.set_status(err, StatusTone::Warning);

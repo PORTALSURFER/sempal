@@ -385,27 +385,34 @@ impl DragDropController<'_> {
         target_tag: Option<SampleTag>,
         collection_id: &CollectionId,
     ) {
-        match self.export_selection_clip(
+        let clip_root = match crate::app_dirs::app_root_dir() {
+            Ok(root) => root.join("collection_clips").join(collection_id.as_str()),
+            Err(err) => {
+                self.set_status(err.to_string(), StatusTone::Error);
+                return;
+            }
+        };
+        if let Err(err) = std::fs::create_dir_all(&clip_root)
+            .map_err(|err| format!("Failed to create collection clip folder: {err}"))
+        {
+            self.set_status(err, StatusTone::Error);
+            return;
+        }
+        match self.export_selection_clip_to_root(
             source_id,
             relative_path,
             bounds,
             target_tag,
-            false,
-            false,
+            &clip_root,
+            relative_path,
         ) {
             Ok(entry) => {
                 self.selected_collection = Some(collection_id.clone());
-                if let Some(source) = self.sources.iter().find(|s| s.id == *source_id).cloned() {
-                    if let Err(err) = self.add_sample_to_collection_for_source(
-                        collection_id,
-                        &source,
-                        &entry.relative_path,
-                    ) {
-                        self.set_status(err, StatusTone::Error);
-                        return;
-                    }
-                } else {
-                    self.set_status("Source not available for collection", StatusTone::Error);
+                let clip_relative = entry.relative_path.clone();
+                if let Err(err) =
+                    self.add_clip_to_collection(collection_id, clip_root, clip_relative)
+                {
+                    self.set_status(err, StatusTone::Error);
                     return;
                 }
                 let name = self

@@ -1673,6 +1673,7 @@ fn browser_normalize_refreshes_exports() -> Result<(), String> {
     let member = CollectionMember {
         source_id: source.id.clone(),
         relative_path: PathBuf::from("one.wav"),
+        clip_root: None,
     };
     controller.export_member_if_needed(&collection_id, &member)?;
     controller.normalize_browser_sample(0)?;
@@ -1725,6 +1726,7 @@ fn browser_delete_prunes_collections_and_exports() -> Result<(), String> {
     let member = CollectionMember {
         source_id: source.id.clone(),
         relative_path: PathBuf::from("delete.wav"),
+        clip_root: None,
     };
     controller.export_member_if_needed(&collection_id, &member)?;
     controller.delete_browser_sample(0)?;
@@ -1931,6 +1933,7 @@ fn collection_views_flag_missing_members() {
     collection.members.push(CollectionMember {
         source_id: source.id.clone(),
         relative_path: PathBuf::from("one.wav"),
+        clip_root: None,
     });
     controller.selected_collection = Some(collection.id.clone());
     controller.collections.push(collection);
@@ -2027,6 +2030,7 @@ fn selecting_collection_sample_updates_focus_context() {
     collection.members.push(CollectionMember {
         source_id: source.id.clone(),
         relative_path: PathBuf::from("col.wav"),
+        clip_root: None,
     });
     controller.collections.push(collection.clone());
     controller.selected_collection = Some(collection.id.clone());

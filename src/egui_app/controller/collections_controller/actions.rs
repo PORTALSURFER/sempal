@@ -37,7 +37,7 @@ impl CollectionsActions for CollectionsController<'_> {
         self.refresh_collections_ui();
         let target_source = member.source_id.clone();
         let target_path = member.relative_path.clone();
-        let Some(source) = self.sources.iter().find(|s| s.id == target_source).cloned() else {
+        let Some(source) = self.collection_member_source(member) else {
             self.set_status("Source not available for this sample", StatusTone::Warning);
             return;
         };
@@ -52,7 +52,7 @@ impl CollectionsActions for CollectionsController<'_> {
         self.selected_wav = None;
         self.loaded_wav = None;
         self.ui.loaded_wav = None;
-        if self.sample_missing(&target_source, &target_path) {
+        if self.collection_member_missing(member) {
             self.show_missing_waveform_notice(&target_path);
             self.set_status(
                 format!("File missing: {}", target_path.display()),

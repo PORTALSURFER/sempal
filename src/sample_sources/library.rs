@@ -166,6 +166,7 @@ impl LibraryDatabase {
                 CollectionMember {
                     source_id: SourceId::from_string(source_id),
                     relative_path: PathBuf::from(relative_path),
+                    clip_root: None,
                 },
             ))
         })
@@ -431,6 +432,7 @@ mod tests {
                     members: vec![CollectionMember {
                         source_id: SourceId::new(),
                         relative_path: PathBuf::from("file.wav"),
+                        clip_root: None,
                     }],
                     export_path: None,
                 }],
