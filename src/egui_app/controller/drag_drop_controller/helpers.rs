@@ -80,13 +80,7 @@ impl DragDropController<'_> {
         crate::external_drag::start_file_drag(hwnd, paths)
     }
 
-    #[cfg(not(target_os = "windows"))]
-    #[allow(dead_code)]
-    pub(super) fn start_external_drag(&self, _paths: &[PathBuf]) -> Result<(), String> {
-        Err("External drag-out is only supported on Windows in this build".into())
-    }
-
-    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+    #[cfg(target_os = "windows")]
     pub(super) fn sample_absolute_path(
         &self,
         source_id: &SourceId,
@@ -122,7 +116,7 @@ impl DragDropController<'_> {
         format!("{name} ({seconds:.2}s)")
     }
 
-    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+    #[cfg(target_os = "windows")]
     pub(super) fn export_selection_for_drag(
         &mut self,
         bounds: SelectionRange,

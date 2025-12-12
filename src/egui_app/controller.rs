@@ -185,9 +185,6 @@ impl EguiController {
         self.drag_hwnd = hwnd;
     }
 
-    #[cfg(not(target_os = "windows"))]
-    pub fn set_drag_hwnd(&mut self, _hwnd: Option<()>) {}
-
     pub(crate) fn set_status(&mut self, text: impl Into<String>, tone: StatusTone) {
         let (label, color) = status_badge(tone);
         self.ui.status.text = text.into();
