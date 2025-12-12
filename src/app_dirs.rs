@@ -20,23 +20,24 @@ static CONFIG_BASE_OVERRIDE: LazyLock<Mutex<Option<PathBuf>>> = LazyLock::new(||
 #[cfg(test)]
 static CONFIG_GUARD_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 #[cfg(test)]
-static TEST_CONFIG_INIT: LazyLock<()> = LazyLock::new(|| {
+static TEST_CONFIG_BASE: LazyLock<PathBuf> = LazyLock::new(|| {
     let dir = tempfile::tempdir().expect("create test config dir");
     let path = dir.path().to_path_buf();
     // Keep the directory alive for the test process.
     std::mem::forget(dir);
-    let mut guard = CONFIG_BASE_OVERRIDE
-        .lock()
-        .expect("config base override mutex poisoned");
-    if guard.is_none() {
-        *guard = Some(path);
-    }
+    path
 });
 
 /// Ensure tests do not touch real user config directories.
 #[cfg(test)]
 pub fn ensure_test_config_base() {
-    LazyLock::force(&TEST_CONFIG_INIT);
+    let test_base = LazyLock::force(&TEST_CONFIG_BASE).clone();
+    let mut guard = CONFIG_BASE_OVERRIDE
+        .lock()
+        .expect("config base override mutex poisoned");
+    if guard.is_none() {
+        *guard = Some(test_base);
+    }
 }
 
 /// Errors that can occur while resolving or preparing application directories.
@@ -136,5 +137,26 @@ mod tests {
         let root = app_root_dir().unwrap();
         assert_eq!(root, base.path().join(APP_DIR_NAME));
         assert!(root.is_dir());
+    }
+
+    #[test]
+    fn reapplies_test_override_when_cleared() {
+        {
+            let mut guard = CONFIG_BASE_OVERRIDE
+                .lock()
+                .expect("config base override mutex poisoned");
+            *guard = None;
+        }
+        let root = app_root_dir().unwrap();
+        assert!(root.ends_with(APP_DIR_NAME));
+
+        {
+            let mut guard = CONFIG_BASE_OVERRIDE
+                .lock()
+                .expect("config base override mutex poisoned");
+            *guard = None;
+        }
+        let root2 = app_root_dir().unwrap();
+        assert!(root2.ends_with(APP_DIR_NAME));
     }
 }

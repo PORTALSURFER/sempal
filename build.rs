@@ -25,6 +25,14 @@ fn main() {
         eprintln!("Failed to embed Windows resources: {error}");
         std::process::exit(1);
     }
+
+    let profile = env::var("PROFILE").unwrap_or_else(|_| "debug".into());
+    if profile != "release" {
+        println!(
+            "cargo:warning=Skipping version bump because PROFILE is {profile}"
+        );
+        return;
+    }
     if env::var("SKIP_VERSION_BUMP").is_ok() {
         println!("cargo:warning=Skipping version bump because SKIP_VERSION_BUMP is set");
         return;
