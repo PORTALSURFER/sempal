@@ -32,6 +32,7 @@ fn cursor_step_size_tracks_view_zoom() {
     controller.select_wav_by_path(Path::new("zoom.wav"));
     controller.decoded_waveform = Some(DecodedWaveform {
         samples: vec![0.0; 10_000],
+        peaks: None,
         duration_seconds: 1.0,
         sample_rate: 48_000,
         channels: 1,
@@ -60,6 +61,7 @@ fn waveform_refresh_respects_view_slice_and_caps_width() {
     };
     controller.decoded_waveform = Some(DecodedWaveform {
         samples: (0..1000).map(|i| i as f32).collect(),
+        peaks: None,
         duration_seconds: 1.0,
         sample_rate: 48_000,
         channels: 1,

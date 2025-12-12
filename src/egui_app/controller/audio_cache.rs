@@ -124,6 +124,7 @@ mod tests {
     fn decoded() -> DecodedWaveform {
         DecodedWaveform {
             samples: vec![0.1, 0.2],
+            peaks: None,
             duration_seconds: 1.0,
             sample_rate: 44_100,
             channels: 1,

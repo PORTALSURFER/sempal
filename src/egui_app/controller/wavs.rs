@@ -1086,7 +1086,7 @@ impl EguiController {
         let zoom_scale = (1.0 / width_clamped).min(max_zoom).max(1.0);
         let target = (width as f32 * zoom_scale).ceil().max(width as f32) as usize;
 
-        if decoded.samples.is_empty() || total_frames == 0 {
+        if (decoded.samples.is_empty() && decoded.peaks.is_none()) || total_frames == 0 {
             self.ui.waveform.image = None;
             return;
         }
