@@ -56,3 +56,5 @@
 
 - turn the left and right sidebars into resizable panels.
 
+- if we create a new sample in a collection by drag dropping an audio selection into the collection, and then restart the app, the collection item breaks.
+I believe we are currently creating the item and place the file in some temp folder, but it should get created at the location of the collection export path and mapped to that

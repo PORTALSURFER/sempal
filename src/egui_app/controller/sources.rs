@@ -196,6 +196,11 @@ impl EguiController {
         if pending_path.is_none() {
             self.ui.collections.selected_sample = None;
         }
+        if let Some(ref source_id) = id
+            && self.sources.iter().any(|s| &s.id == source_id)
+        {
+            self.last_selected_browsable_source = Some(source_id.clone());
+        }
         self.selected_source = id;
         self.selected_wav = None;
         self.loaded_wav = None;

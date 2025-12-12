@@ -308,6 +308,23 @@ impl EguiController {
         if !self.wav_lookup.contains_key(path) {
             return;
         }
+        // Selecting a browser wav should always clear any active collection selection so the
+        // waveform view follows the browser selection.
+        self.ui.collections.selected_sample = None;
+        if self.current_source().is_none() {
+            if let Some(source_id) = self
+                .last_selected_browsable_source
+                .clone()
+                .filter(|id| self.sources.iter().any(|s| &s.id == id))
+            {
+                self.selected_source = Some(source_id);
+                self.refresh_sources_ui();
+            } else if let Some(first) = self.sources.first().cloned() {
+                self.last_selected_browsable_source = Some(first.id.clone());
+                self.selected_source = Some(first.id);
+                self.refresh_sources_ui();
+            }
+        }
         let path_changed = self.selected_wav.as_deref() != Some(path);
         if path_changed {
             self.ui.waveform.last_start_marker = None;

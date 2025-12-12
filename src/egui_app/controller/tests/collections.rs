@@ -172,6 +172,60 @@ fn starting_browser_rename_queues_prompt_for_focused_row() {
 }
 
 #[test]
+fn selecting_browser_sample_clears_collection_selection() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.cache_db(&source).unwrap();
+
+    write_test_wav(&source.root.join("a.wav"), &[0.0]);
+    write_test_wav(&source.root.join("b.wav"), &[0.0]);
+    controller.wav_entries = vec![
+        sample_entry("a.wav", SampleTag::Neutral),
+        sample_entry("b.wav", SampleTag::Neutral),
+    ];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+
+    let mut collection = Collection::new("Test");
+    collection.members.push(CollectionMember {
+        source_id: source.id.clone(),
+        relative_path: PathBuf::from("a.wav"),
+        clip_root: None,
+    });
+    let collection_id = collection.id.clone();
+    controller.collections.push(collection);
+    controller.selected_collection = Some(collection_id);
+
+    controller.select_collection_sample(0);
+    assert_eq!(controller.ui.collections.selected_sample, Some(0));
+
+    controller.select_wav_by_path(Path::new("b.wav"));
+
+    assert!(controller.ui.collections.selected_sample.is_none());
+    assert_eq!(controller.selected_wav.as_deref(), Some(Path::new("b.wav")));
+}
+
+#[test]
+fn browser_selection_restores_last_browsable_source_after_clip_preview() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.cache_db(&source).unwrap();
+
+    write_test_wav(&source.root.join("a.wav"), &[0.0]);
+    controller.wav_entries = vec![sample_entry("a.wav", SampleTag::Neutral)];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+
+    controller.last_selected_browsable_source = Some(source.id.clone());
+    controller.selected_source = Some(SourceId::from_string("collection-test"));
+
+    controller.select_wav_by_path(Path::new("a.wav"));
+
+    assert_eq!(controller.selected_source.as_ref(), Some(&source.id));
+    assert_eq!(controller.ui.waveform.loading, Some(PathBuf::from("a.wav")));
+}
+
+#[test]
 fn browser_rename_preserves_extension_and_stem_with_dots() {
     let temp = tempdir().unwrap();
     let root = temp.path().join("source");
