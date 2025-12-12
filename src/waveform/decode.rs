@@ -14,8 +14,7 @@ impl WaveformRenderer {
             .map_err(|error| format!("Invalid wav: {error}"))?;
         let spec = reader.spec();
         let channels = spec.channels.max(1) as usize;
-        let total_samples = reader.duration() as usize;
-        let frames = total_samples / channels.max(1);
+        let frames = reader.duration() as usize;
         let duration_seconds = frames as f32 / spec.sample_rate.max(1) as f32;
 
         if frames > Self::MAX_FULL_SAMPLE_FRAMES {
@@ -87,8 +86,7 @@ impl WaveformRenderer {
         reader: &mut hound::WavReader<std::io::Cursor<&[u8]>>,
         channels: usize,
     ) -> Result<WaveformPeaks, String> {
-        let total_samples = reader.duration() as usize;
-        let total_frames = total_samples / channels.max(1);
+        let total_frames = reader.duration() as usize;
         let bucket_size_frames = Self::peak_bucket_size(total_frames).max(1);
         let bucket_count = total_frames.div_ceil(bucket_size_frames).max(1);
 
@@ -154,8 +152,7 @@ impl WaveformRenderer {
         bits_per_sample: u16,
     ) -> Result<WaveformPeaks, String> {
         let scale = (1i64 << bits_per_sample.saturating_sub(1)).max(1) as f32;
-        let total_samples = reader.duration() as usize;
-        let total_frames = total_samples / channels.max(1);
+        let total_frames = reader.duration() as usize;
         let bucket_size_frames = Self::peak_bucket_size(total_frames).max(1);
         let bucket_count = total_frames.div_ceil(bucket_size_frames).max(1);
 
