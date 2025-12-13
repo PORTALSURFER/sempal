@@ -7,7 +7,7 @@ use crate::egui_app::controller::hotkeys;
 use crate::egui_app::controller::tests::common::{max_sample_amplitude, prepare_browser_sample};
 use crate::egui_app::state::{
     DestructiveSelectionEdit, DragPayload, DragSource, DragTarget, FocusContext,
-    SampleBrowserActionPrompt, TriageFlagColumn, TriageFlagFilter, WaveformView,
+    SampleBrowserActionPrompt, TriageFlagColumn, WaveformView,
 };
 use crate::sample_sources::Collection;
 use crate::sample_sources::collections::CollectionMember;

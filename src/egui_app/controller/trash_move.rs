@@ -17,6 +17,7 @@ pub(super) enum TrashMoveMessage {
     Finished(TrashMoveFinished),
 }
 
+#[derive(Clone)]
 pub(super) struct TrashMoveFinished {
     pub(super) total: usize,
     pub(super) moved: usize,
@@ -94,7 +95,7 @@ where
     on_message(TrashMoveMessage::SetTotal(total));
 
     if total == 0 {
-        return TrashMoveFinished {
+        let finished = TrashMoveFinished {
             total,
             moved: 0,
             cancelled: cancel.load(Ordering::Relaxed),
@@ -103,6 +104,8 @@ where
             collections,
             affected_sources: Vec::new(),
         };
+        on_message(TrashMoveMessage::Finished(finished.clone()));
+        return finished;
     }
 
     #[derive(Hash, PartialEq, Eq)]
@@ -181,7 +184,7 @@ where
         }
     }
 
-    TrashMoveFinished {
+    let finished = TrashMoveFinished {
         total,
         moved,
         cancelled: cancel.load(Ordering::Relaxed),
@@ -189,7 +192,9 @@ where
         collections_changed,
         collections,
         affected_sources: affected_sources.into_iter().collect(),
-    }
+    };
+    on_message(TrashMoveMessage::Finished(finished.clone()));
+    finished
 }
 
 fn unique_destination(root: &Path, relative: &Path) -> Result<PathBuf, String> {
