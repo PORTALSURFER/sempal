@@ -165,6 +165,83 @@ fn trash_move_hotkeys_are_registered() {
 }
 
 #[test]
+fn tag_neutral_hotkey_is_registered() {
+    let action = hotkeys::iter_actions()
+        .find(|a| a.id == "tag-neutral")
+        .expect("tag-neutral hotkey");
+    assert_eq!(action.label, "Neutral sample(s)");
+    assert!(action.is_global());
+    assert_eq!(action.gesture.first.key, Key::Quote);
+    assert!(!action.gesture.first.shift);
+    assert!(!action.gesture.first.command);
+    assert!(!action.gesture.first.alt);
+    assert!(action.gesture.chord.is_none());
+}
+
+#[test]
+fn quote_hotkey_tags_selected_sample_neutral() {
+    let (mut controller, source) = dummy_controller();
+    prepare_browser_sample(&mut controller, &source, "neutral.wav");
+    controller.wav_entries[0].tag = SampleTag::Keep;
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+    controller.focus_browser_row(0);
+
+    let action = hotkeys::iter_actions()
+        .find(|a| a.id == "tag-neutral")
+        .expect("tag-neutral hotkey");
+    controller.handle_hotkey(action, FocusContext::None);
+
+    assert_eq!(controller.wav_entries[0].tag, SampleTag::Neutral);
+}
+
+#[test]
+fn tag_hotkeys_apply_to_collection_focus() {
+    let (mut controller, source) = dummy_controller();
+    controller.cache_db(&source).unwrap();
+    controller.sources.push(source.clone());
+    controller.selected_source = Some(source.id.clone());
+    write_test_wav(&source.root.join("col.wav"), &[0.1, 0.2]);
+
+    let collection = Collection::new("Test");
+    let collection_id = collection.id.clone();
+    controller.collections.push(collection);
+    controller.selected_collection = Some(collection_id.clone());
+    controller
+        .add_sample_to_collection(&collection_id, Path::new("col.wav"))
+        .unwrap();
+    controller.refresh_collections_ui();
+    controller.select_collection_sample(0);
+    assert_eq!(controller.ui.focus.context, FocusContext::CollectionSample);
+
+    let keep = hotkeys::iter_actions().find(|a| a.id == "tag-keep").unwrap();
+    controller.handle_hotkey(keep, FocusContext::CollectionSample);
+    assert_eq!(
+        controller.ui.collections.samples[0].tag,
+        SampleTag::Keep,
+        "keep hotkey"
+    );
+
+    let neutral = hotkeys::iter_actions()
+        .find(|a| a.id == "tag-neutral")
+        .unwrap();
+    controller.handle_hotkey(neutral, FocusContext::CollectionSample);
+    assert_eq!(
+        controller.ui.collections.samples[0].tag,
+        SampleTag::Neutral,
+        "neutral hotkey"
+    );
+
+    let trash = hotkeys::iter_actions().find(|a| a.id == "tag-trash").unwrap();
+    controller.handle_hotkey(trash, FocusContext::CollectionSample);
+    assert_eq!(
+        controller.ui.collections.samples[0].tag,
+        SampleTag::Trash,
+        "trash hotkey"
+    );
+}
+
+#[test]
 fn trash_move_hotkey_moves_samples() -> Result<(), String> {
     let temp = tempdir().unwrap();
     let trash_root = temp.path().join("trash");
