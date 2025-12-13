@@ -230,10 +230,57 @@ impl EguiController {
         self.focus_browser_context();
         self.ui.browser.autoscroll = true;
         let mut last_error = None;
+        let mut applied: Vec<(SourceId, PathBuf, SampleTag)> = Vec::new();
         for row in rows {
-            if let Err(err) = self.tag_browser_sample(row, target) {
-                last_error = Some(err);
+            let before = match self.resolve_browser_sample(row) {
+                Ok(ctx) => (ctx.source.id.clone(), ctx.entry.relative_path.clone(), ctx.entry.tag),
+                Err(err) => {
+                    last_error = Some(err);
+                    continue;
+                }
+            };
+            match self.tag_browser_sample(row, target) {
+                Ok(()) => applied.push(before),
+                Err(err) => last_error = Some(err),
             }
+        }
+        if !applied.is_empty() {
+            let label = match target {
+                SampleTag::Keep => "Tag keep",
+                SampleTag::Trash => "Tag trash",
+                SampleTag::Neutral => "Tag neutral",
+            };
+            let redo_updates: Vec<(SourceId, PathBuf, SampleTag)> = applied
+                .iter()
+                .map(|(source_id, path, _)| (source_id.clone(), path.clone(), target))
+                .collect();
+            self.push_undo_entry(super::undo::UndoEntry::<EguiController>::new(
+                label,
+                move |controller: &mut EguiController| {
+                    for (source_id, path, tag) in applied.iter() {
+                        let source = controller
+                            .sources
+                            .iter()
+                            .find(|s| &s.id == source_id)
+                            .cloned()
+                            .ok_or_else(|| "Source not available".to_string())?;
+                        controller.set_sample_tag_for_source(&source, path, *tag, false)?;
+                    }
+                    Ok(())
+                },
+                move |controller: &mut EguiController| {
+                    for (source_id, path, tag) in redo_updates.iter() {
+                        let source = controller
+                            .sources
+                            .iter()
+                            .find(|s| &s.id == source_id)
+                            .cloned()
+                            .ok_or_else(|| "Source not available".to_string())?;
+                        controller.set_sample_tag_for_source(&source, path, *tag, false)?;
+                    }
+                    Ok(())
+                },
+            ));
         }
         self.refocus_after_filtered_removal(primary_row);
         if let Some(err) = last_error {
