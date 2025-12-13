@@ -357,6 +357,26 @@ impl EguiController {
         }
     }
 
+    pub(super) fn insert_cached_entry(&mut self, source: &SampleSource, entry: WavEntry) {
+        if let Some(cache) = self.wav_cache.get_mut(&source.id) {
+            cache.push(entry.clone());
+            cache.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
+            self.rebuild_wav_cache_lookup(&source.id);
+        }
+        if self.selected_source.as_ref() == Some(&source.id) {
+            self.wav_entries.push(entry.clone());
+            self.wav_entries
+                .sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
+            self.rebuild_wav_lookup();
+            self.browser_search_cache.invalidate();
+            self.rebuild_browser_lists();
+            self.label_cache
+                .insert(source.id.clone(), self.build_label_cache(&self.wav_entries));
+        }
+        self.rebuild_missing_lookup_for_source(&source.id);
+        self.invalidate_cached_audio(&source.id, &entry.relative_path);
+    }
+
     pub(super) fn update_selection_paths(
         &mut self,
         source: &SampleSource,
