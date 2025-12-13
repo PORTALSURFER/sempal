@@ -1,6 +1,7 @@
 //! Global SQLite storage for sources and collections that should not live in the config file.
 
 use std::path::{Path, PathBuf};
+use std::sync::{LazyLock, Mutex};
 
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use thiserror::Error;
@@ -25,6 +26,8 @@ const COLLECTION_EXPORT_PATHS_VERSION_V2: &str = "2";
 const COLLECTION_MEMBER_CLIP_ROOT_VERSION_KEY: &str = "collection_members_clip_root_version";
 const COLLECTION_MEMBER_CLIP_ROOT_VERSION_V1: &str = "1";
 
+static LIBRARY_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+
 /// Errors returned when operating on the library database.
 #[derive(Debug, Error)]
 pub enum LibraryError {
@@ -44,12 +47,14 @@ pub enum LibraryError {
 
 /// Load all sources and collections from the global library database, creating it if missing.
 pub fn load() -> Result<LibraryState, LibraryError> {
+    let _guard = LIBRARY_LOCK.lock().expect("library lock mutex poisoned");
     let db = LibraryDatabase::open()?;
     db.load_state()
 }
 
 /// Persist sources and collections to the global library database, replacing existing rows.
 pub fn save(state: &LibraryState) -> Result<(), LibraryError> {
+    let _guard = LIBRARY_LOCK.lock().expect("library lock mutex poisoned");
     let mut db = LibraryDatabase::open()?;
     db.replace_state(state)
 }
