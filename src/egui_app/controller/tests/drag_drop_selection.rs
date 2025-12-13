@@ -198,6 +198,43 @@ fn selection_drop_to_browser_ignores_active_collection() {
 }
 
 #[test]
+fn selection_drop_to_browser_can_keep_source_focused() {
+    let temp = tempdir().unwrap();
+    let root = temp.path().join("source");
+    std::fs::create_dir_all(&root).unwrap();
+    let renderer = WaveformRenderer::new(12, 12);
+    let mut controller = EguiController::new(renderer, None);
+    let source = SampleSource::new(root.clone());
+    controller.sources.push(source.clone());
+    controller.selected_source = Some(source.id.clone());
+    controller.wav_entries = vec![sample_entry("clip.wav", SampleTag::Neutral)];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+
+    let orig = root.join("clip.wav");
+    write_test_wav(&orig, &[0.1, 0.2, 0.3, 0.4]);
+    controller
+        .load_waveform_for_selection(&source, Path::new("clip.wav"))
+        .unwrap();
+    assert_eq!(controller.selected_wav.as_deref(), Some(Path::new("clip.wav")));
+
+    controller.ui.drag.payload = Some(DragPayload::Selection {
+        source_id: source.id.clone(),
+        relative_path: PathBuf::from("clip.wav"),
+        bounds: SelectionRange::new(0.0, 0.5),
+        keep_source_focused: true,
+    });
+    controller.ui.drag.set_target(
+        DragSource::Browser,
+        DragTarget::BrowserTriage(TriageFlagColumn::Keep),
+    );
+    controller.finish_active_drag();
+
+    assert_eq!(controller.selected_wav.as_deref(), Some(Path::new("clip.wav")));
+    assert!(root.join("clip_sel.wav").is_file());
+}
+
+#[test]
 fn selection_drop_to_browser_creates_clip_in_focused_folder() {
     let temp = tempdir().unwrap();
     let root = temp.path().join("source");
