@@ -86,6 +86,12 @@ pub struct DragState {
     pub last_folder_target: Option<PathBuf>,
     pub external_started: bool,
     pub external_arm_at: Option<Instant>,
+    /// Best-effort signal that the cursor has left the app window mid-drag (Windows-only use).
+    ///
+    /// Some platforms/input backends stop sending pointer positions once the cursor leaves the
+    /// window. We latch this on `egui::Event::PointerGone` and clear it when pointer movement
+    /// resumes.
+    pub pointer_left_window: bool,
 }
 
 impl Default for DragState {
@@ -100,6 +106,7 @@ impl Default for DragState {
             last_folder_target: None,
             external_started: false,
             external_arm_at: None,
+            pointer_left_window: false,
         }
     }
 }
