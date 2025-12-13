@@ -181,6 +181,7 @@ pub(crate) enum HotkeyCommand {
     TrimSelection,
     FadeSelectionLeftToRight,
     FadeSelectionRightToLeft,
+    NormalizeWaveform,
 }
 
 /// Hotkey metadata surfaced to the UI.
@@ -277,6 +278,13 @@ const HOTKEY_ACTIONS: &[HotkeyAction] = &[
         gesture: HotkeyGesture::new(Key::N),
         scope: HotkeyScope::Focus(FocusContext::CollectionSample),
         command: HotkeyCommand::NormalizeFocusedSample,
+    },
+    HotkeyAction {
+        id: "normalize-waveform",
+        label: "Normalize selection/sample",
+        gesture: HotkeyGesture::new(Key::N),
+        scope: HotkeyScope::Focus(FocusContext::Waveform),
+        command: HotkeyCommand::NormalizeWaveform,
     },
     HotkeyAction {
         id: "delete-browser",

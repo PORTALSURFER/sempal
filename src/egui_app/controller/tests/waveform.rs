@@ -327,3 +327,56 @@ fn slash_hotkeys_prompt_fade_selection_in_waveform_focus() {
         DestructiveSelectionEdit::FadeRightToLeft
     );
 }
+
+#[test]
+fn n_hotkey_prompts_normalize_selection_when_selection_present() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.selected_source = Some(source.id.clone());
+    controller.cache_db(&source).unwrap();
+    let wav_path = source.root.join("normalize_select_hotkey.wav");
+    write_test_wav(&wav_path, &[0.0, 0.2, -0.6, 0.3]);
+    controller.wav_entries = vec![sample_entry("normalize_select_hotkey.wav", SampleTag::Neutral)];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+    controller
+        .load_waveform_for_selection(&source, Path::new("normalize_select_hotkey.wav"))
+        .unwrap();
+    controller.ui.waveform.selection = Some(SelectionRange::new(0.25, 0.75));
+
+    let action = hotkeys::iter_actions()
+        .find(|action| action.id == "normalize-waveform")
+        .unwrap();
+    controller.handle_hotkey(action, FocusContext::Waveform);
+
+    assert_eq!(
+        controller.ui.waveform.pending_destructive.as_ref().unwrap().edit,
+        DestructiveSelectionEdit::NormalizeSelection
+    );
+}
+
+#[test]
+fn n_hotkey_normalizes_whole_loaded_sample_when_no_selection() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.selected_source = Some(source.id.clone());
+    controller.cache_db(&source).unwrap();
+    let wav_path = source.root.join("normalize_full_hotkey.wav");
+    write_test_wav(&wav_path, &[0.1, -0.5, 0.25]);
+    controller.wav_entries = vec![sample_entry("normalize_full_hotkey.wav", SampleTag::Neutral)];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+    controller
+        .load_waveform_for_selection(&source, Path::new("normalize_full_hotkey.wav"))
+        .unwrap();
+    controller.ui.waveform.selection = None;
+
+    let action = hotkeys::iter_actions()
+        .find(|action| action.id == "normalize-waveform")
+        .unwrap();
+    controller.handle_hotkey(action, FocusContext::Waveform);
+
+    assert!(controller.ui.waveform.pending_destructive.is_none());
+    let peak = max_sample_amplitude(&wav_path);
+    assert!((peak - 1.0).abs() < 1e-4, "peak={peak}");
+}
