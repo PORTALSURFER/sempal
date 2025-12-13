@@ -8,7 +8,12 @@ pub(crate) trait DragDropActions {
         label: String,
         pos: Pos2,
     );
-    fn start_selection_drag_payload(&mut self, bounds: SelectionRange, pos: Pos2);
+    fn start_selection_drag_payload(
+        &mut self,
+        bounds: SelectionRange,
+        pos: Pos2,
+        keep_source_focused: bool,
+    );
     fn update_active_drag(&mut self, pos: Pos2, source: DragSource, target: DragTarget);
     fn refresh_drag_position(&mut self, pos: Pos2);
     fn finish_active_drag(&mut self);
@@ -32,7 +37,12 @@ impl DragDropActions for DragDropController<'_> {
         );
     }
 
-    fn start_selection_drag_payload(&mut self, bounds: SelectionRange, pos: Pos2) {
+    fn start_selection_drag_payload(
+        &mut self,
+        bounds: SelectionRange,
+        pos: Pos2,
+        keep_source_focused: bool,
+    ) {
         if bounds.width() < MIN_SELECTION_WIDTH {
             return;
         }
@@ -47,6 +57,7 @@ impl DragDropActions for DragDropController<'_> {
             source_id: audio.source_id.clone(),
             relative_path: audio.relative_path.clone(),
             bounds,
+            keep_source_focused,
         };
         let label = self.selection_drag_label(&audio, bounds);
         self.begin_drag(payload, label, pos);
@@ -194,6 +205,7 @@ impl DragDropActions for DragDropController<'_> {
                 source_id,
                 relative_path,
                 bounds,
+                keep_source_focused,
             } => {
                 self.handle_selection_drop(
                     source_id,
@@ -201,6 +213,7 @@ impl DragDropActions for DragDropController<'_> {
                     bounds,
                     collection_target,
                     triage_target,
+                    keep_source_focused,
                 );
             }
         }

@@ -101,9 +101,7 @@ impl EguiController {
             self.trash_move_cancel = Some(cancel.clone());
             self.trash_move_rx = Some(rx);
             std::thread::spawn(move || {
-                let finished =
-                    run_trash_move_task(sources, collections, trash_root, cancel, Some(&tx));
-                let _ = tx.send(TrashMoveMessage::Finished(finished));
+                let _ = run_trash_move_task(sources, collections, trash_root, cancel, Some(&tx));
             });
         }
     }

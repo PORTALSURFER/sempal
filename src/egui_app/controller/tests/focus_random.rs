@@ -1,26 +1,15 @@
-use super::super::selection_edits::SelectionEditRequest;
 use super::super::test_support::{dummy_controller, sample_entry, write_test_wav};
 use super::super::*;
-use super::common::*;
-use crate::egui_app::controller::collection_export;
 use crate::egui_app::controller::hotkeys;
-use crate::egui_app::state::{
-    DestructiveSelectionEdit, DragPayload, DragSource, DragTarget, FocusContext,
-    SampleBrowserActionPrompt, TriageFlagColumn, TriageFlagFilter, WaveformView,
-};
+use super::common::prepare_browser_sample;
+use crate::egui_app::state::FocusContext;
 use crate::sample_sources::Collection;
 use crate::sample_sources::collections::CollectionMember;
-use crate::waveform::DecodedWaveform;
-use egui;
-use hound::WavReader;
-use rand::SeedableRng;
+use egui::Key;
 use rand::rngs::StdRng;
 use rand::seq::IteratorRandom;
-use std::io::Cursor;
-use std::mem;
+use rand::SeedableRng;
 use std::path::{Path, PathBuf};
-use std::thread;
-use std::time::{Duration, Instant};
 use tempfile::tempdir;
 
 #[test]
@@ -123,7 +112,7 @@ fn random_sample_hotkey_is_registered() {
         .expect("play-random-sample hotkey");
     assert_eq!(action.label, "Play random sample");
     assert!(action.is_global());
-    assert_eq!(action.gesture.first.key, egui::Key::R);
+    assert_eq!(action.gesture.first.key, Key::R);
     assert!(action.gesture.first.shift);
     assert!(!action.gesture.first.command);
     assert!(action.gesture.chord.is_none());
@@ -136,7 +125,7 @@ fn random_history_hotkey_is_registered() {
         .expect("play-previous-random-sample hotkey");
     assert_eq!(action.label, "Play previous random sample");
     assert!(action.is_global());
-    assert_eq!(action.gesture.first.key, egui::Key::R);
+    assert_eq!(action.gesture.first.key, Key::R);
     assert!(action.gesture.first.shift);
     assert!(action.gesture.first.command);
     assert!(action.gesture.chord.is_none());
@@ -149,7 +138,7 @@ fn random_navigation_toggle_hotkey_is_registered() {
         .expect("toggle-random-navigation-mode hotkey");
     assert_eq!(action.label, "Toggle random navigation mode");
     assert!(action.is_global());
-    assert_eq!(action.gesture.first.key, egui::Key::R);
+    assert_eq!(action.gesture.first.key, Key::R);
     assert!(action.gesture.first.alt);
     assert!(!action.gesture.first.shift);
     assert!(!action.gesture.first.command);

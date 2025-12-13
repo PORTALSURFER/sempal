@@ -15,6 +15,8 @@
 let’s wire a tiny ONNX demon into our app. 
 Here are concrete step-by-steps from “no CLAP” to “Rust calls ONNX model and gets embeddings”.
 
+- add a name generator for samples
+
 split into:
 - One-time model export (Python side, dev only)
 - Wiring ONNX Runtime into Rust

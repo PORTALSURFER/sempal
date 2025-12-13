@@ -18,6 +18,7 @@ pub(crate) mod hotkeys;
 mod hotkeys_controller;
 mod interaction_options;
 mod loading;
+mod os_explorer;
 mod playback;
 mod progress;
 mod scans;
@@ -202,10 +203,12 @@ impl EguiController {
         self.ui.status.badge_color = color;
     }
 
+    #[allow(dead_code)]
     pub(crate) fn can_undo(&self) -> bool {
         self.undo_stack.can_undo()
     }
 
+    #[allow(dead_code)]
     pub(crate) fn can_redo(&self) -> bool {
         self.undo_stack.can_redo()
     }

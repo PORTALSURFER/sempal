@@ -1,26 +1,11 @@
 use super::super::selection_edits::SelectionEditRequest;
 use super::super::test_support::{dummy_controller, sample_entry, write_test_wav};
 use super::super::*;
-use super::common::*;
-use crate::egui_app::controller::collection_export;
-use crate::egui_app::controller::hotkeys;
-use crate::egui_app::state::{
-    DestructiveSelectionEdit, DragPayload, DragSource, DragTarget, FocusContext,
-    SampleBrowserActionPrompt, TriageFlagColumn, TriageFlagFilter, WaveformView,
-};
-use crate::sample_sources::Collection;
-use crate::sample_sources::collections::CollectionMember;
-use crate::waveform::DecodedWaveform;
-use egui;
+use super::common::max_sample_amplitude;
+use crate::egui_app::state::{DestructiveSelectionEdit, FocusContext};
 use hound::WavReader;
-use rand::SeedableRng;
-use rand::rngs::StdRng;
-use rand::seq::IteratorRandom;
-use std::io::Cursor;
 use std::mem;
 use std::path::{Path, PathBuf};
-use std::thread;
-use std::time::{Duration, Instant};
 use tempfile::tempdir;
 
 #[test]
@@ -132,7 +117,7 @@ fn cropping_selection_overwrites_file() {
 
     controller.crop_waveform_selection().unwrap();
 
-    let samples: Vec<f32> = hound::WavReader::open(&wav_path)
+    let samples: Vec<f32> = WavReader::open(&wav_path)
         .unwrap()
         .samples::<f32>()
         .map(|s| s.unwrap())
@@ -160,7 +145,7 @@ fn trimming_selection_removes_span() {
 
     controller.trim_waveform_selection().unwrap();
 
-    let samples: Vec<f32> = hound::WavReader::open(&wav_path)
+    let samples: Vec<f32> = WavReader::open(&wav_path)
         .unwrap()
         .samples::<f32>()
         .map(|s| s.unwrap())
@@ -193,7 +178,7 @@ fn destructive_edit_request_prompts_without_yolo_mode() {
 
     assert!(matches!(outcome, SelectionEditRequest::Prompted));
     assert!(controller.ui.waveform.pending_destructive.is_some());
-    let samples: Vec<f32> = hound::WavReader::open(&wav_path)
+    let samples: Vec<f32> = WavReader::open(&wav_path)
         .unwrap()
         .samples::<f32>()
         .map(|s| s.unwrap())

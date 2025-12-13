@@ -496,10 +496,14 @@ pub(crate) fn iter_actions() -> impl Iterator<Item = HotkeyAction> {
 }
 
 pub(crate) fn focused_actions(focus: FocusContext) -> Vec<HotkeyAction> {
+    let focus = match focus {
+        FocusContext::None => FocusContext::SampleBrowser,
+        other => other,
+    };
     HOTKEY_ACTIONS
         .iter()
         .copied()
-        .filter(|action| action.is_active(focus))
+        .filter(|action| matches!(action.scope, HotkeyScope::Focus(_)) && action.is_active(focus))
         .collect()
 }
 

@@ -111,15 +111,17 @@ impl EguiApp {
     fn render_panels(&mut self, ctx: &egui::Context) {
         self.render_status(ctx);
         egui::SidePanel::left("sources")
-            .resizable(false)
-            .min_width(220.0)
-            .max_width(240.0)
+            .resizable(true)
+            .default_width(230.0)
+            .min_width(200.0)
+            .max_width(520.0)
             .show(ctx, |ui| self.render_sources_panel(ui));
         self.consume_source_panel_drops(ctx);
         egui::SidePanel::right("collections")
-            .resizable(false)
-            .min_width(240.0)
-            .max_width(280.0)
+            .resizable(true)
+            .default_width(260.0)
+            .min_width(220.0)
+            .max_width(560.0)
             .show(ctx, |ui| self.render_collections_panel(ui));
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.set_min_height(ui.available_height());

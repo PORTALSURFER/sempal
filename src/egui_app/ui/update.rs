@@ -37,11 +37,11 @@ impl eframe::App for EguiApp {
         let focus_flags = FocusFlags::from_context(focus_context);
         self.handle_focus_side_effects(&focus_flags);
         let input = InputSnapshot::capture(ctx);
-        self.handle_space_shortcut(&input);
+        self.handle_space_shortcut(ctx, &input);
         self.handle_copy_shortcut(ctx);
         self.handle_escape_shortcut(ctx, &input);
         self.handle_window_shortcuts(ctx);
-        self.handle_arrow_keys(&focus_flags, &input);
+        self.handle_arrow_keys(ctx, &focus_flags, &input);
         self.process_hotkeys(ctx, focus_context);
         self.render_ui(ctx, &input, focus_context);
     }
@@ -75,14 +75,19 @@ impl EguiApp {
     }
 
     fn handle_focus_side_effects(&mut self, focus: &FocusFlags) {
+        if !focus.browser {
+            self.controller.blur_browser_focus();
+        }
         if focus.collection_sample {
             self.controller.ui.browser.autoscroll = false;
-            self.controller.ui.browser.selected = None;
         }
     }
 
-    fn handle_space_shortcut(&mut self, input: &InputSnapshot) {
+    fn handle_space_shortcut(&mut self, ctx: &egui::Context, input: &InputSnapshot) {
         if !input.space {
+            return;
+        }
+        if ctx.wants_keyboard_input() {
             return;
         }
         let ctrl_or_command = input.ctrl_or_command();
@@ -99,6 +104,7 @@ impl EguiApp {
         } else {
             self.controller.toggle_play_pause();
         }
+        consume_keypress(ctx, input, egui::Key::Space);
     }
 
     fn handle_copy_shortcut(&mut self, ctx: &egui::Context) {
@@ -119,6 +125,7 @@ impl EguiApp {
             self.controller.ui.hotkeys.overlay_visible = false;
             ctx.input_mut(|state| state.consume_key(egui::Modifiers::default(), egui::Key::Escape));
         }
+        ctx.input_mut(|state| state.consume_key(egui::Modifiers::default(), egui::Key::Escape));
     }
 
     fn handle_window_shortcuts(&self, ctx: &egui::Context) {
@@ -133,16 +140,19 @@ impl EguiApp {
         }
     }
 
-    fn handle_arrow_keys(&mut self, focus: &FocusFlags, input: &InputSnapshot) {
+    fn handle_arrow_keys(&mut self, ctx: &egui::Context, focus: &FocusFlags, input: &InputSnapshot) {
+        if ctx.wants_keyboard_input() {
+            return;
+        }
         let browser_has_selection = self.controller.ui.browser.selected.is_some();
         let ctrl_or_command = input.ctrl_or_command();
-        self.handle_arrow_down(focus, input);
-        self.handle_arrow_up(focus, input);
-        self.handle_arrow_right(focus, input, browser_has_selection, ctrl_or_command);
-        self.handle_arrow_left(focus, input, browser_has_selection, ctrl_or_command);
+        self.handle_arrow_down(ctx, focus, input);
+        self.handle_arrow_up(ctx, focus, input);
+        self.handle_arrow_right(ctx, focus, input, browser_has_selection, ctrl_or_command);
+        self.handle_arrow_left(ctx, focus, input, browser_has_selection, ctrl_or_command);
     }
 
-    fn handle_arrow_down(&mut self, focus: &FocusFlags, input: &InputSnapshot) {
+    fn handle_arrow_down(&mut self, ctx: &egui::Context, focus: &FocusFlags, input: &InputSnapshot) {
         if !input.arrow_down {
             return;
         }
@@ -165,9 +175,10 @@ impl EguiApp {
         } else if focus.collections_list {
             self.controller.nudge_collection_row(1);
         }
+        consume_keypress(ctx, input, egui::Key::ArrowDown);
     }
 
-    fn handle_arrow_up(&mut self, focus: &FocusFlags, input: &InputSnapshot) {
+    fn handle_arrow_up(&mut self, ctx: &egui::Context, focus: &FocusFlags, input: &InputSnapshot) {
         if !input.arrow_up {
             return;
         }
@@ -190,10 +201,12 @@ impl EguiApp {
         } else if focus.collections_list {
             self.controller.nudge_collection_row(-1);
         }
+        consume_keypress(ctx, input, egui::Key::ArrowUp);
     }
 
     fn handle_arrow_right(
         &mut self,
+        ctx: &egui::Context,
         focus: &FocusFlags,
         input: &InputSnapshot,
         browser_has_selection: bool,
@@ -220,10 +233,12 @@ impl EguiApp {
             };
             self.controller.tag_selected(target);
         }
+        consume_keypress(ctx, input, egui::Key::ArrowRight);
     }
 
     fn handle_arrow_left(
         &mut self,
+        ctx: &egui::Context,
         focus: &FocusFlags,
         input: &InputSnapshot,
         browser_has_selection: bool,
@@ -243,6 +258,7 @@ impl EguiApp {
         } else if focus.browser && browser_has_selection {
             self.controller.tag_selected_left();
         }
+        consume_keypress(ctx, input, egui::Key::ArrowLeft);
     }
 
     fn handle_waveform_arrow(
@@ -334,4 +350,13 @@ impl EguiApp {
         self.controller
             .move_playhead_steps(step, input.alt, was_playing);
     }
+}
+
+fn consume_keypress(ctx: &egui::Context, input: &InputSnapshot, key: egui::Key) {
+    let mut modifiers = egui::Modifiers::default();
+    modifiers.shift = input.shift;
+    modifiers.alt = input.alt;
+    modifiers.ctrl = input.ctrl;
+    modifiers.command = input.command;
+    ctx.input_mut(|state| state.consume_key(modifiers, key));
 }
