@@ -2,6 +2,10 @@
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 #[cfg(target_os = "windows")]
 use windows::Win32::Foundation::HWND;
+#[cfg(target_os = "windows")]
+use windows::Win32::Foundation::{POINT, RECT};
+#[cfg(target_os = "windows")]
+use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, GetWindowRect};
 
 #[cfg(target_os = "windows")]
 pub(super) fn hwnd_from_frame(frame: &eframe::Frame) -> Option<HWND> {
@@ -9,5 +13,25 @@ pub(super) fn hwnd_from_frame(frame: &eframe::Frame) -> Option<HWND> {
     match handle.as_raw() {
         RawWindowHandle::Win32(win) => Some(HWND(win.hwnd.get() as *mut _)),
         _ => None,
+    }
+}
+
+#[cfg(target_os = "windows")]
+pub(super) fn cursor_inside_hwnd(hwnd: HWND) -> Option<bool> {
+    unsafe {
+        let mut cursor = POINT::default();
+        if !GetCursorPos(&mut cursor).as_bool() {
+            return None;
+        }
+        let mut rect = RECT::default();
+        if !GetWindowRect(hwnd, &mut rect).as_bool() {
+            return None;
+        }
+        Some(
+            cursor.x >= rect.left
+                && cursor.x < rect.right
+                && cursor.y >= rect.top
+                && cursor.y < rect.bottom,
+        )
     }
 }
