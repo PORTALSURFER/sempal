@@ -150,7 +150,8 @@ impl EguiApp {
             self.controller.ui.focus.context,
             FocusContext::CollectionSample
         );
-        let autoscroll_to = duplicate_row.or(selected_row);
+        let scroll_to_sample = self.controller.ui.collections.scroll_to_sample.take();
+        let autoscroll_to = duplicate_row.or(scroll_to_sample);
         let list_response = render_flat_items_list(
             ui,
             FlatItemsListConfig {
