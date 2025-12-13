@@ -2,6 +2,7 @@ use super::super::selection_edits::SelectionEditRequest;
 use super::super::test_support::{dummy_controller, sample_entry, write_test_wav};
 use super::super::*;
 use super::common::*;
+use crate::app_dirs::ConfigBaseGuard;
 use crate::egui_app::controller::collection_export;
 use crate::egui_app::controller::hotkeys;
 use crate::egui_app::state::{
@@ -26,6 +27,7 @@ use tempfile::tempdir;
 #[test]
 fn selection_drop_adds_clip_to_collection() {
     let temp = tempdir().unwrap();
+    let _guard = ConfigBaseGuard::set(temp.path().to_path_buf());
     let root = temp.path().join("source");
     std::fs::create_dir_all(&root).unwrap();
     let renderer = WaveformRenderer::new(12, 12);
@@ -71,8 +73,11 @@ fn selection_drop_adds_clip_to_collection() {
         .find(|c| c.id == collection_id)
         .unwrap();
     assert_eq!(collection.members.len(), 1);
-    let member_path = &collection.members[0].relative_path;
-    assert!(root.join(member_path).exists());
+    let member = &collection.members[0];
+    let member_path = &member.relative_path;
+    let clip_root = member.clip_root.as_ref().expect("clip root set");
+    assert!(clip_root.join(member_path).exists());
+    assert!(!root.join(member_path).exists());
     assert!(
         controller
             .wav_entries
@@ -93,6 +98,7 @@ fn selection_drop_adds_clip_to_collection() {
 #[test]
 fn sample_drop_to_folder_moves_and_updates_state() {
     let temp = tempdir().unwrap();
+    let _guard = ConfigBaseGuard::set(temp.path().to_path_buf());
     let root = temp.path().join("source");
     std::fs::create_dir_all(root.join("dest")).unwrap();
     let renderer = WaveformRenderer::new(12, 12);
@@ -118,6 +124,10 @@ fn sample_drop_to_folder_moves_and_updates_state() {
         source_id: source.id.clone(),
         relative_path: PathBuf::from("one.wav"),
     });
+    controller.ui.drag.set_target(
+        DragSource::Browser,
+        DragTarget::BrowserTriage(TriageFlagColumn::Keep),
+    );
     controller.ui.drag.set_target(
         DragSource::Folders,
         DragTarget::FolderPanel {
@@ -150,6 +160,7 @@ fn sample_drop_to_folder_moves_and_updates_state() {
 #[test]
 fn sample_drop_to_folder_rejects_conflicts() {
     let temp = tempdir().unwrap();
+    let _guard = ConfigBaseGuard::set(temp.path().to_path_buf());
     let root = temp.path().join("source");
     let dest = root.join("dest");
     std::fs::create_dir_all(&dest).unwrap();

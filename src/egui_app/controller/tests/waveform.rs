@@ -262,3 +262,186 @@ fn confirming_pending_destructive_edit_clears_prompt() {
         .collect();
     assert_eq!(samples, vec![0.0, 0.3]);
 }
+
+#[test]
+fn t_hotkey_prompts_trim_selection_in_waveform_focus() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.selected_source = Some(source.id.clone());
+    controller.cache_db(&source).unwrap();
+    let wav_path = source.root.join("trim_hotkey.wav");
+    write_test_wav(&wav_path, &[0.0, 0.1, 0.2, 0.3]);
+    controller.wav_entries = vec![sample_entry("trim_hotkey.wav", SampleTag::Neutral)];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+    controller
+        .load_waveform_for_selection(&source, Path::new("trim_hotkey.wav"))
+        .unwrap();
+    controller.ui.waveform.selection = Some(SelectionRange::new(0.25, 0.75));
+
+    let action = hotkeys::iter_actions()
+        .find(|action| action.id == "trim-selection")
+        .unwrap();
+    controller.handle_hotkey(action, FocusContext::Waveform);
+
+    assert!(controller.ui.waveform.pending_destructive.is_some());
+    assert_eq!(
+        controller.ui.waveform.pending_destructive.as_ref().unwrap().edit,
+        DestructiveSelectionEdit::TrimSelection
+    );
+}
+
+#[test]
+fn slash_hotkeys_prompt_fade_selection_in_waveform_focus() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.selected_source = Some(source.id.clone());
+    controller.cache_db(&source).unwrap();
+    let wav_path = source.root.join("fade_hotkey.wav");
+    write_test_wav(&wav_path, &[0.0, 0.1, 0.2, 0.3]);
+    controller.wav_entries = vec![sample_entry("fade_hotkey.wav", SampleTag::Neutral)];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+    controller
+        .load_waveform_for_selection(&source, Path::new("fade_hotkey.wav"))
+        .unwrap();
+    controller.ui.waveform.selection = Some(SelectionRange::new(0.25, 0.75));
+
+    let backslash = hotkeys::iter_actions()
+        .find(|action| action.id == "fade-selection-left-to-right")
+        .unwrap();
+    controller.handle_hotkey(backslash, FocusContext::Waveform);
+    assert_eq!(
+        controller.ui.waveform.pending_destructive.as_ref().unwrap().edit,
+        DestructiveSelectionEdit::FadeLeftToRight
+    );
+
+    controller.ui.waveform.pending_destructive = None;
+
+    let slash = hotkeys::iter_actions()
+        .find(|action| action.id == "fade-selection-right-to-left")
+        .unwrap();
+    controller.handle_hotkey(slash, FocusContext::Waveform);
+    assert_eq!(
+        controller.ui.waveform.pending_destructive.as_ref().unwrap().edit,
+        DestructiveSelectionEdit::FadeRightToLeft
+    );
+}
+
+#[test]
+fn n_hotkey_prompts_normalize_selection_when_selection_present() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.selected_source = Some(source.id.clone());
+    controller.cache_db(&source).unwrap();
+    let wav_path = source.root.join("normalize_select_hotkey.wav");
+    write_test_wav(&wav_path, &[0.0, 0.2, -0.6, 0.3]);
+    controller.wav_entries = vec![sample_entry("normalize_select_hotkey.wav", SampleTag::Neutral)];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+    controller
+        .load_waveform_for_selection(&source, Path::new("normalize_select_hotkey.wav"))
+        .unwrap();
+    controller.ui.waveform.selection = Some(SelectionRange::new(0.25, 0.75));
+
+    let action = hotkeys::iter_actions()
+        .find(|action| action.id == "normalize-waveform")
+        .unwrap();
+    controller.handle_hotkey(action, FocusContext::Waveform);
+
+    assert_eq!(
+        controller.ui.waveform.pending_destructive.as_ref().unwrap().edit,
+        DestructiveSelectionEdit::NormalizeSelection
+    );
+}
+
+#[test]
+fn n_hotkey_normalizes_whole_loaded_sample_when_no_selection() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.selected_source = Some(source.id.clone());
+    controller.cache_db(&source).unwrap();
+    let wav_path = source.root.join("normalize_full_hotkey.wav");
+    write_test_wav(&wav_path, &[0.1, -0.5, 0.25]);
+    controller.wav_entries = vec![sample_entry("normalize_full_hotkey.wav", SampleTag::Neutral)];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+    controller
+        .load_waveform_for_selection(&source, Path::new("normalize_full_hotkey.wav"))
+        .unwrap();
+    controller.ui.waveform.selection = None;
+
+    let action = hotkeys::iter_actions()
+        .find(|action| action.id == "normalize-waveform")
+        .unwrap();
+    controller.handle_hotkey(action, FocusContext::Waveform);
+
+    assert!(controller.ui.waveform.pending_destructive.is_none());
+    let peak = max_sample_amplitude(&wav_path);
+    assert!((peak - 1.0).abs() < 1e-4, "peak={peak}");
+}
+
+#[test]
+fn c_hotkey_prompts_crop_selection_in_waveform_focus() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.selected_source = Some(source.id.clone());
+    controller.cache_db(&source).unwrap();
+    let wav_path = source.root.join("crop_hotkey.wav");
+    write_test_wav(&wav_path, &[0.0, 0.1, 0.2, 0.3]);
+    controller.wav_entries = vec![sample_entry("crop_hotkey.wav", SampleTag::Neutral)];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+    controller
+        .load_waveform_for_selection(&source, Path::new("crop_hotkey.wav"))
+        .unwrap();
+    controller.ui.waveform.selection = Some(SelectionRange::new(0.25, 0.75));
+
+    let action = hotkeys::iter_actions()
+        .find(|action| action.id == "crop-selection")
+        .unwrap();
+    controller.handle_hotkey(action, FocusContext::Waveform);
+
+    assert_eq!(
+        controller.ui.waveform.pending_destructive.as_ref().unwrap().edit,
+        DestructiveSelectionEdit::CropSelection
+    );
+}
+
+#[test]
+fn shift_c_hotkey_crops_selection_to_new_sample() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.selected_source = Some(source.id.clone());
+    controller.cache_db(&source).unwrap();
+    let wav_path = source.root.join("original.wav");
+    write_test_wav(&wav_path, &[0.0, 0.1, 0.2, 0.3]);
+    controller.wav_entries = vec![sample_entry("original.wav", SampleTag::Neutral)];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+    controller
+        .load_waveform_for_selection(&source, Path::new("original.wav"))
+        .unwrap();
+    controller.ui.waveform.selection = Some(SelectionRange::new(0.25, 0.75));
+
+    let action = hotkeys::iter_actions()
+        .find(|action| action.id == "crop-selection-new-sample")
+        .unwrap();
+    controller.handle_hotkey(action, FocusContext::Waveform);
+
+    let cropped_path = source.root.join("original_crop001.wav");
+    assert!(cropped_path.is_file());
+    let original_samples: Vec<f32> = hound::WavReader::open(&wav_path)
+        .unwrap()
+        .samples::<f32>()
+        .map(|s| s.unwrap())
+        .collect();
+    assert_eq!(original_samples, vec![0.0, 0.1, 0.2, 0.3]);
+
+    let cropped_samples: Vec<f32> = hound::WavReader::open(&cropped_path)
+        .unwrap()
+        .samples::<f32>()
+        .map(|s| s.unwrap())
+        .collect();
+    assert_eq!(cropped_samples, vec![0.1, 0.2]);
+}

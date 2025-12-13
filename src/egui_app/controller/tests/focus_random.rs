@@ -66,6 +66,7 @@ fn selecting_collection_sample_updates_focus_context() {
     collection.members.push(CollectionMember {
         source_id: source.id.clone(),
         relative_path: PathBuf::from("col.wav"),
+        clip_root: None,
     });
     controller.collections.push(collection.clone());
     controller.selected_collection = Some(collection.id.clone());

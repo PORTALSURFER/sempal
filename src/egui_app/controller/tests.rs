@@ -12,6 +12,7 @@ use crate::egui_app::state::{
 use crate::sample_sources::Collection;
 use crate::sample_sources::collections::CollectionMember;
 use crate::waveform::DecodedWaveform;
+use crate::app_dirs::ConfigBaseGuard;
 use egui;
 use hound::WavReader;
 use rand::SeedableRng;
@@ -62,114 +63,45 @@ fn escape_stops_playback_before_clearing_selection() {
 }
 
 #[test]
-fn click_clears_selection_and_focuses_row() {
+fn enabling_loop_while_playing_restarts_in_looped_mode() {
+    let Some(mut player) = crate::audio::AudioPlayer::playing_for_tests() else {
+        return;
+    };
+
+    let dir = tempdir().unwrap();
+    let wav_path = dir.path().join("loop_test.wav");
+    let long_samples = vec![0.1_f32; 240];
+    write_test_wav(&wav_path, &long_samples);
+    let bytes = std::fs::read(&wav_path).unwrap();
+    player.set_audio(bytes, 30.0);
+    player.play_range(0.0, 1.0, false).unwrap();
+
     let (mut controller, source) = dummy_controller();
-    controller.sources.push(source.clone());
-    controller.cache_db(&source).unwrap();
-    controller.wav_entries = vec![
-        sample_entry("one.wav", SampleTag::Neutral),
-        sample_entry("two.wav", SampleTag::Neutral),
-        sample_entry("three.wav", SampleTag::Neutral),
-    ];
-    controller.rebuild_wav_lookup();
-    controller.rebuild_browser_lists();
+    controller.loaded_audio = Some(super::LoadedAudio {
+        source_id: source.id.clone(),
+        relative_path: PathBuf::from("loop_test.wav"),
+        bytes: std::fs::read(&wav_path).unwrap(),
+        duration_seconds: 30.0,
+        sample_rate: 8,
+        channels: 1,
+    });
+    controller.player = Some(std::rc::Rc::new(std::cell::RefCell::new(player)));
 
-    controller.focus_browser_row(0);
-    controller.toggle_browser_row_selection(1);
-    assert_eq!(controller.ui.browser.selected_paths.len(), 2);
+    controller.ui.waveform.loop_enabled = false;
+    if !controller.is_playing() {
+        // Some environments may not keep the sink alive; skip in that case.
+        return;
+    }
 
-    controller.clear_browser_selection();
-    controller.focus_browser_row_only(2);
+    controller.toggle_loop();
 
-    assert!(controller.ui.browser.selected_paths.is_empty());
-    assert_eq!(controller.ui.browser.selected_visible, Some(2));
-    assert_eq!(controller.ui.browser.selection_anchor_visible, Some(2));
-}
-
-#[test]
-fn ctrl_click_toggles_selection_and_focuses_row() {
-    let (mut controller, source) = dummy_controller();
-    controller.sources.push(source);
-    controller.wav_entries = vec![
-        sample_entry("one.wav", SampleTag::Neutral),
-        sample_entry("two.wav", SampleTag::Neutral),
-        sample_entry("three.wav", SampleTag::Neutral),
-    ];
-    controller.rebuild_wav_lookup();
-    controller.rebuild_browser_lists();
-
-    controller.focus_browser_row_only(0);
-    assert!(controller.ui.browser.selected_paths.is_empty());
-    assert_eq!(controller.ui.browser.selection_anchor_visible, Some(0));
-
-    controller.toggle_browser_row_selection(2);
-
-    let selected: Vec<_> = controller.ui.browser.selected_paths.to_vec();
-    assert!(selected.contains(&PathBuf::from("one.wav")));
-    assert!(selected.contains(&PathBuf::from("three.wav")));
-    assert_eq!(controller.ui.browser.selected_visible, Some(2));
-}
-
-#[test]
-fn shift_click_extends_selection_range() {
-    let (mut controller, source) = dummy_controller();
-    controller.sources.push(source);
-    controller.wav_entries = vec![
-        sample_entry("one.wav", SampleTag::Neutral),
-        sample_entry("two.wav", SampleTag::Neutral),
-        sample_entry("three.wav", SampleTag::Neutral),
-    ];
-    controller.rebuild_wav_lookup();
-    controller.rebuild_browser_lists();
-
-    controller.focus_browser_row(0);
-    controller.toggle_browser_row_selection(2);
-
-    controller.extend_browser_selection_to_row(1);
-
-    let selected: Vec<_> = controller.ui.browser.selected_paths.to_vec();
-    assert_eq!(selected.len(), 2);
-    assert!(selected.contains(&PathBuf::from("one.wav")));
-    assert!(selected.contains(&PathBuf::from("two.wav")));
-    assert!(!selected.contains(&PathBuf::from("three.wav")));
-    assert_eq!(controller.ui.browser.selected_visible, Some(1));
-    assert_eq!(controller.ui.browser.selection_anchor_visible, Some(0));
-}
-
-#[test]
-fn ctrl_shift_click_adds_range_without_resetting_anchor() {
-    let (mut controller, source) = dummy_controller();
-    controller.sources.push(source);
-    controller.wav_entries = vec![
-        sample_entry("one.wav", SampleTag::Neutral),
-        sample_entry("two.wav", SampleTag::Neutral),
-        sample_entry("three.wav", SampleTag::Neutral),
-        sample_entry("four.wav", SampleTag::Neutral),
-        sample_entry("five.wav", SampleTag::Neutral),
-        sample_entry("six.wav", SampleTag::Neutral),
-    ];
-    controller.rebuild_wav_lookup();
-    controller.rebuild_browser_lists();
-
-    controller.focus_browser_row(0);
-    controller.toggle_browser_row_selection(5);
-
-    controller.add_range_browser_selection(2);
-
-    let selected: Vec<_> = controller
-        .ui
-        .browser
-        .selected_paths
-        .iter()
-        .cloned()
-        .collect();
-    assert_eq!(selected.len(), 4);
-    assert!(selected.contains(&PathBuf::from("one.wav")));
-    assert!(selected.contains(&PathBuf::from("two.wav")));
-    assert!(selected.contains(&PathBuf::from("three.wav")));
-    assert!(selected.contains(&PathBuf::from("six.wav")));
-    assert_eq!(controller.ui.browser.selection_anchor_visible, Some(0));
-    assert_eq!(controller.ui.browser.selected_visible, Some(2));
+    assert!(controller.ui.waveform.loop_enabled);
+    assert!(controller
+        .player
+        .as_ref()
+        .unwrap()
+        .borrow()
+        .is_looping());
 }
 
 #[test]
@@ -362,6 +294,7 @@ fn exporting_selection_updates_entries_and_db() {
             Path::new("orig.wav"),
             SelectionRange::new(0.0, 0.5),
             Some(SampleTag::Keep),
+            true,
             true,
         )
         .unwrap();
@@ -631,6 +564,7 @@ fn confirming_pending_destructive_edit_clears_prompt() {
 #[test]
 fn selection_drop_adds_clip_to_collection() {
     let temp = tempdir().unwrap();
+    let _guard = ConfigBaseGuard::set(temp.path().to_path_buf());
     let root = temp.path().join("source");
     std::fs::create_dir_all(&root).unwrap();
     let renderer = WaveformRenderer::new(12, 12);
@@ -676,8 +610,11 @@ fn selection_drop_adds_clip_to_collection() {
         .find(|c| c.id == collection_id)
         .unwrap();
     assert_eq!(collection.members.len(), 1);
-    let member_path = &collection.members[0].relative_path;
-    assert!(root.join(member_path).exists());
+    let member = &collection.members[0];
+    let member_path = &member.relative_path;
+    let clip_root = member.clip_root.as_ref().expect("clip root set");
+    assert!(clip_root.join(member_path).exists());
+    assert!(!root.join(member_path).exists());
     assert!(
         controller
             .wav_entries
@@ -746,6 +683,7 @@ fn selection_drop_to_browser_ignores_active_collection() {
 #[test]
 fn selection_drop_without_hover_falls_back_to_active_collection() {
     let temp = tempdir().unwrap();
+    let _guard = ConfigBaseGuard::set(temp.path().to_path_buf());
     let root = temp.path().join("source");
     std::fs::create_dir_all(&root).unwrap();
     let renderer = WaveformRenderer::new(12, 12);
@@ -780,7 +718,10 @@ fn selection_drop_without_hover_falls_back_to_active_collection() {
         .find(|c| c.id == collection_id)
         .unwrap();
     assert_eq!(collection.members.len(), 1);
-    assert!(root.join(&collection.members[0].relative_path).exists());
+    let member = &collection.members[0];
+    let clip_root = member.clip_root.as_ref().expect("clip root set");
+    assert!(clip_root.join(&member.relative_path).exists());
+    assert!(!root.join(&member.relative_path).exists());
     assert!(
         controller
             .wav_entries
@@ -1022,6 +963,7 @@ fn sample_drop_to_folder_rejects_conflicts() {
 #[test]
 fn export_path_copies_and_refreshes_members() -> Result<(), String> {
     let temp = tempdir().unwrap();
+    let _guard = ConfigBaseGuard::set(temp.path().to_path_buf());
     let source_root = temp.path().join("source");
     let export_root = temp.path().join("export");
     std::fs::create_dir_all(&source_root).unwrap();
@@ -1630,6 +1572,7 @@ fn browser_normalize_refreshes_exports() -> Result<(), String> {
     let member = CollectionMember {
         source_id: source.id.clone(),
         relative_path: PathBuf::from("one.wav"),
+        clip_root: None,
     };
     controller.export_member_if_needed(&collection_id, &member)?;
     controller.normalize_browser_sample(0)?;
@@ -1682,6 +1625,7 @@ fn browser_delete_prunes_collections_and_exports() -> Result<(), String> {
     let member = CollectionMember {
         source_id: source.id.clone(),
         relative_path: PathBuf::from("delete.wav"),
+        clip_root: None,
     };
     controller.export_member_if_needed(&collection_id, &member)?;
     controller.delete_browser_sample(0)?;
@@ -1888,6 +1832,7 @@ fn collection_views_flag_missing_members() {
     collection.members.push(CollectionMember {
         source_id: source.id.clone(),
         relative_path: PathBuf::from("one.wav"),
+        clip_root: None,
     });
     controller.selected_collection = Some(collection.id.clone());
     controller.collections.push(collection);
@@ -1984,6 +1929,7 @@ fn selecting_collection_sample_updates_focus_context() {
     collection.members.push(CollectionMember {
         source_id: source.id.clone(),
         relative_path: PathBuf::from("col.wav"),
+        clip_root: None,
     });
     controller.collections.push(collection.clone());
     controller.selected_collection = Some(collection.id.clone());
@@ -2228,6 +2174,7 @@ fn cursor_step_size_tracks_view_zoom() {
     controller.select_wav_by_path(Path::new("zoom.wav"));
     controller.decoded_waveform = Some(DecodedWaveform {
         samples: vec![0.0; 10_000],
+        peaks: None,
         duration_seconds: 1.0,
         sample_rate: 48_000,
         channels: 1,
@@ -2279,6 +2226,7 @@ fn mouse_zoom_prefers_pointer_over_playhead() {
     controller.waveform_size = [240, 24];
     controller.decoded_waveform = Some(DecodedWaveform {
         samples: vec![0.0; 10_000],
+        peaks: None,
         duration_seconds: 1.0,
         sample_rate: 48_000,
         channels: 1,
@@ -2407,6 +2355,7 @@ fn play_from_cursor_prefers_cursor_position() {
     controller.select_wav_by_path(Path::new("cursor.wav"));
     controller.decoded_waveform = Some(DecodedWaveform {
         samples: vec![0.0; 10_000],
+        peaks: None,
         duration_seconds: 1.0,
         sample_rate: 48_000,
         channels: 1,
@@ -2431,6 +2380,7 @@ fn cursor_alpha_fades_before_reset() {
     prepare_browser_sample(&mut controller, &source, "cursor.wav");
     controller.decoded_waveform = Some(DecodedWaveform {
         samples: vec![0.0; 10_000],
+        peaks: None,
         duration_seconds: 1.0,
         sample_rate: 48_000,
         channels: 1,
@@ -2451,6 +2401,7 @@ fn cursor_alpha_resets_after_idle_timeout() {
     prepare_browser_sample(&mut controller, &source, "cursor.wav");
     controller.decoded_waveform = Some(DecodedWaveform {
         samples: vec![0.0; 10_000],
+        peaks: None,
         duration_seconds: 1.0,
         sample_rate: 48_000,
         channels: 1,
@@ -2471,6 +2422,7 @@ fn cursor_does_not_fade_when_waveform_focused() {
     prepare_browser_sample(&mut controller, &source, "cursor.wav");
     controller.decoded_waveform = Some(DecodedWaveform {
         samples: vec![0.0; 10_000],
+        peaks: None,
         duration_seconds: 1.0,
         sample_rate: 48_000,
         channels: 1,
@@ -2494,6 +2446,7 @@ fn navigation_steps_anchor_to_cursor_instead_of_playhead() {
     controller.select_wav_by_path(Path::new("nav.wav"));
     controller.decoded_waveform = Some(DecodedWaveform {
         samples: vec![0.0; 10_000],
+        peaks: None,
         duration_seconds: 1.0,
         sample_rate: 48_000,
         channels: 1,
@@ -2520,6 +2473,7 @@ fn waveform_refresh_respects_view_slice_and_caps_width() {
     };
     controller.decoded_waveform = Some(DecodedWaveform {
         samples: (0..1000).map(|i| i as f32).collect(),
+        peaks: None,
         duration_seconds: 1.0,
         sample_rate: 48_000,
         channels: 1,

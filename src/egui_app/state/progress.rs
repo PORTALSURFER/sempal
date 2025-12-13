@@ -2,6 +2,8 @@
 #[derive(Clone, Debug, Default)]
 pub struct ProgressOverlayState {
     pub visible: bool,
+    /// When true, the modal overlay is rendered (otherwise progress is status-bar only).
+    pub modal: bool,
     pub title: String,
     pub detail: Option<String>,
     pub completed: usize,
@@ -11,9 +13,11 @@ pub struct ProgressOverlayState {
 }
 
 impl ProgressOverlayState {
+    /// Create and show a progress overlay with the provided title and total step count.
     pub fn new(title: impl Into<String>, total: usize, cancelable: bool) -> Self {
         Self {
             visible: true,
+            modal: true,
             title: title.into(),
             detail: None,
             completed: 0,
@@ -23,10 +27,12 @@ impl ProgressOverlayState {
         }
     }
 
+    /// Reset the overlay back to its default (hidden) state.
     pub fn reset(&mut self) {
         *self = Self::default();
     }
 
+    /// Return completion in the range `[0.0, 1.0]`.
     pub fn fraction(&self) -> f32 {
         if self.total == 0 {
             0.0

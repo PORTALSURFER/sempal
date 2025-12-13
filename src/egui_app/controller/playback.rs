@@ -71,6 +71,29 @@ impl EguiController {
         self.ui.waveform.loop_enabled = !self.ui.waveform.loop_enabled;
         if self.ui.waveform.loop_enabled {
             self.pending_loop_disable_at = None;
+            if !was_looping {
+                if let Some(player_rc) = self.player.as_ref().cloned() {
+                    let (is_playing, progress) = {
+                        let player_ref = player_rc.borrow();
+                        (player_ref.is_playing(), player_ref.progress())
+                    };
+                    if is_playing {
+                        let start_override = progress.or_else(|| {
+                            if self.ui.waveform.playhead.visible {
+                                Some(self.ui.waveform.playhead.position)
+                            } else {
+                                self.ui
+                                    .waveform
+                                    .cursor
+                                    .or(self.ui.waveform.last_start_marker)
+                            }
+                        });
+                        if let Err(err) = self.play_audio(true, start_override) {
+                            self.set_status(err, StatusTone::Error);
+                        }
+                    }
+                }
+            }
             return;
         }
         if was_looping && let Err(err) = self.defer_loop_disable_after_cycle() {
@@ -207,10 +230,57 @@ impl EguiController {
         self.focus_browser_context();
         self.ui.browser.autoscroll = true;
         let mut last_error = None;
+        let mut applied: Vec<(SourceId, PathBuf, SampleTag)> = Vec::new();
         for row in rows {
-            if let Err(err) = self.tag_browser_sample(row, target) {
-                last_error = Some(err);
+            let before = match self.resolve_browser_sample(row) {
+                Ok(ctx) => (ctx.source.id.clone(), ctx.entry.relative_path.clone(), ctx.entry.tag),
+                Err(err) => {
+                    last_error = Some(err);
+                    continue;
+                }
+            };
+            match self.tag_browser_sample(row, target) {
+                Ok(()) => applied.push(before),
+                Err(err) => last_error = Some(err),
             }
+        }
+        if !applied.is_empty() {
+            let label = match target {
+                SampleTag::Keep => "Tag keep",
+                SampleTag::Trash => "Tag trash",
+                SampleTag::Neutral => "Tag neutral",
+            };
+            let redo_updates: Vec<(SourceId, PathBuf, SampleTag)> = applied
+                .iter()
+                .map(|(source_id, path, _)| (source_id.clone(), path.clone(), target))
+                .collect();
+            self.push_undo_entry(super::undo::UndoEntry::<EguiController>::new(
+                label,
+                move |controller: &mut EguiController| {
+                    for (source_id, path, tag) in applied.iter() {
+                        let source = controller
+                            .sources
+                            .iter()
+                            .find(|s| &s.id == source_id)
+                            .cloned()
+                            .ok_or_else(|| "Source not available".to_string())?;
+                        controller.set_sample_tag_for_source(&source, path, *tag, false)?;
+                    }
+                    Ok(())
+                },
+                move |controller: &mut EguiController| {
+                    for (source_id, path, tag) in redo_updates.iter() {
+                        let source = controller
+                            .sources
+                            .iter()
+                            .find(|s| &s.id == source_id)
+                            .cloned()
+                            .ok_or_else(|| "Source not available".to_string())?;
+                        controller.set_sample_tag_for_source(&source, path, *tag, false)?;
+                    }
+                    Ok(())
+                },
+            ));
         }
         self.refocus_after_filtered_removal(primary_row);
         if let Some(err) = last_error {
@@ -291,6 +361,7 @@ impl EguiController {
         }
     }
 
+    /// Return whether sticky random navigation mode is enabled.
     pub fn random_navigation_mode_enabled(&self) -> bool {
         self.ui.browser.random_navigation_mode
     }
@@ -474,6 +545,7 @@ impl EguiController {
         self.poll_wav_loader();
         self.poll_audio_loader();
         self.poll_scan();
+        self.poll_trash_move();
         let Some(player) = self.player.as_ref().cloned() else {
             if self.decoded_waveform.is_none() {
                 self.hide_waveform_playhead();

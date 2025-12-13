@@ -271,12 +271,15 @@ impl EguiController {
         source: &SampleSource,
         relative_path: &Path,
     ) -> Result<SampleTag, String> {
-        if let Some(cache) = self.wav_cache.get(&source.id)
-            && let Some(entry) = cache
-                .iter()
-                .find(|entry| entry.relative_path == relative_path)
-        {
-            return Ok(entry.tag);
+        if self.wav_cache.contains_key(&source.id) {
+            self.ensure_wav_cache_lookup(&source.id);
+            if let Some(lookup) = self.wav_cache_lookup.get(&source.id)
+                && let Some(index) = lookup.get(relative_path).copied()
+                && let Some(cache) = self.wav_cache.get(&source.id)
+                && let Some(entry) = cache.get(index)
+            {
+                return Ok(entry.tag);
+            }
         }
         if self.selected_source.as_ref() == Some(&source.id)
             && let Some(entry) = self
@@ -292,9 +295,8 @@ impl EguiController {
         let entries = db
             .list_files()
             .map_err(|err| format!("Failed to read database: {err}"))?;
-        self.wav_cache
-            .entry(source.id.clone())
-            .or_insert_with(|| entries.clone());
+        self.wav_cache.insert(source.id.clone(), entries.clone());
+        self.rebuild_wav_cache_lookup(&source.id);
         self.missing_wavs.insert(
             source.id.clone(),
             entries
@@ -337,10 +339,12 @@ impl EguiController {
     ) {
         if let Some(cache) = self.wav_cache.get_mut(&source.id) {
             replace_entry(cache, old_path, &new_entry);
+            self.rebuild_wav_cache_lookup(&source.id);
         }
         if self.selected_source.as_ref() == Some(&source.id) {
             replace_entry(&mut self.wav_entries, old_path, &new_entry);
             self.rebuild_wav_lookup();
+            self.browser_search_cache.invalidate();
             self.rebuild_browser_lists();
             self.label_cache
                 .insert(source.id.clone(), self.build_label_cache(&self.wav_entries));
@@ -351,6 +355,26 @@ impl EguiController {
         if old_path != new_entry.relative_path {
             self.invalidate_cached_audio(&source.id, &new_entry.relative_path);
         }
+    }
+
+    pub(super) fn insert_cached_entry(&mut self, source: &SampleSource, entry: WavEntry) {
+        if let Some(cache) = self.wav_cache.get_mut(&source.id) {
+            cache.push(entry.clone());
+            cache.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
+            self.rebuild_wav_cache_lookup(&source.id);
+        }
+        if self.selected_source.as_ref() == Some(&source.id) {
+            self.wav_entries.push(entry.clone());
+            self.wav_entries
+                .sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
+            self.rebuild_wav_lookup();
+            self.browser_search_cache.invalidate();
+            self.rebuild_browser_lists();
+            self.label_cache
+                .insert(source.id.clone(), self.build_label_cache(&self.wav_entries));
+        }
+        self.rebuild_missing_lookup_for_source(&source.id);
+        self.invalidate_cached_audio(&source.id, &entry.relative_path);
     }
 
     pub(super) fn update_selection_paths(
@@ -413,6 +437,7 @@ impl EguiController {
         let new_member = CollectionMember {
             source_id: ctx.member.source_id.clone(),
             relative_path: new_relative.to_path_buf(),
+            clip_root: ctx.member.clip_root.clone(),
         };
         if let Err(err) = self.export_member_if_needed(&ctx.collection_id, &new_member) {
             self.set_status(err, StatusTone::Warning);

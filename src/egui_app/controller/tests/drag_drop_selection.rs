@@ -11,6 +11,7 @@ use crate::egui_app::state::{
 use crate::sample_sources::Collection;
 use crate::sample_sources::collections::CollectionMember;
 use crate::waveform::DecodedWaveform;
+use crate::app_dirs::ConfigBaseGuard;
 use egui;
 use hound::WavReader;
 use rand::SeedableRng;
@@ -26,6 +27,7 @@ use tempfile::tempdir;
 #[test]
 fn selection_drop_adds_clip_to_collection() {
     let temp = tempdir().unwrap();
+    let _guard = ConfigBaseGuard::set(temp.path().to_path_buf());
     let root = temp.path().join("source");
     std::fs::create_dir_all(&root).unwrap();
     let renderer = WaveformRenderer::new(12, 12);
@@ -71,8 +73,11 @@ fn selection_drop_adds_clip_to_collection() {
         .find(|c| c.id == collection_id)
         .unwrap();
     assert_eq!(collection.members.len(), 1);
-    let member_path = &collection.members[0].relative_path;
-    assert!(root.join(member_path).exists());
+    let member = &collection.members[0];
+    let member_path = &member.relative_path;
+    let clip_root = member.clip_root.as_ref().expect("clip root set");
+    assert!(clip_root.join(member_path).exists());
+    assert!(!root.join(member_path).exists());
     assert!(
         controller
             .wav_entries
@@ -88,6 +93,64 @@ fn selection_drop_adds_clip_to_collection() {
             .iter()
             .any(|sample| sample.path == *member_path)
     );
+
+    // Selecting the new collection clip should queue audio successfully.
+    let expected_path = member_path.clone();
+    controller.select_collection_sample(0);
+    assert_eq!(controller.ui.waveform.loading.as_ref(), Some(&expected_path));
+}
+
+#[test]
+fn selection_drop_uses_collection_export_dir_when_configured() {
+    let temp = tempdir().unwrap();
+    let _guard = ConfigBaseGuard::set(temp.path().to_path_buf());
+    let root = temp.path().join("source");
+    let export_root = temp.path().join("export");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::create_dir_all(&export_root).unwrap();
+    let renderer = WaveformRenderer::new(12, 12);
+    let mut controller = EguiController::new(renderer, None);
+    let source = SampleSource::new(root.clone());
+    controller.sources.push(source.clone());
+    controller.selected_source = Some(source.id.clone());
+    controller.collection_export_root = Some(export_root.clone());
+    controller.ui.collection_export_root = Some(export_root.clone());
+
+    let orig = root.join("clip.wav");
+    write_test_wav(&orig, &[0.1, 0.2, 0.3, 0.4]);
+    controller
+        .load_waveform_for_selection(&source, Path::new("clip.wav"))
+        .unwrap();
+
+    let collection = Collection::new("Crops");
+    let collection_id = collection.id.clone();
+    let export_dir = export_root.join(collection_export::collection_folder_name(&collection));
+    controller.collections.push(collection);
+    controller.selected_collection = Some(collection_id.clone());
+    controller.refresh_collections_ui();
+
+    controller.ui.drag.payload = Some(DragPayload::Selection {
+        source_id: source.id.clone(),
+        relative_path: PathBuf::from("clip.wav"),
+        bounds: SelectionRange::new(0.25, 0.75),
+    });
+    controller.ui.drag.set_target(
+        DragSource::Collections,
+        DragTarget::CollectionsDropZone {
+            collection_id: None,
+        },
+    );
+    controller.finish_active_drag();
+
+    let collection = controller
+        .collections
+        .iter()
+        .find(|c| c.id == collection_id)
+        .unwrap();
+    let member = &collection.members[0];
+    let clip_root = member.clip_root.as_ref().expect("clip root set");
+    assert_eq!(clip_root, &export_dir);
+    assert!(clip_root.join(&member.relative_path).exists());
 }
 
 #[test]
@@ -141,6 +204,7 @@ fn selection_drop_to_browser_ignores_active_collection() {
 #[test]
 fn selection_drop_without_hover_falls_back_to_active_collection() {
     let temp = tempdir().unwrap();
+    let _guard = ConfigBaseGuard::set(temp.path().to_path_buf());
     let root = temp.path().join("source");
     std::fs::create_dir_all(&root).unwrap();
     let renderer = WaveformRenderer::new(12, 12);
@@ -175,7 +239,10 @@ fn selection_drop_without_hover_falls_back_to_active_collection() {
         .find(|c| c.id == collection_id)
         .unwrap();
     assert_eq!(collection.members.len(), 1);
-    assert!(root.join(&collection.members[0].relative_path).exists());
+    let member = &collection.members[0];
+    let clip_root = member.clip_root.as_ref().expect("clip root set");
+    assert!(clip_root.join(&member.relative_path).exists());
+    assert!(!root.join(&member.relative_path).exists());
     assert!(
         controller
             .wav_entries

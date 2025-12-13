@@ -87,6 +87,7 @@ impl EguiController {
         result
     }
 
+    /// Tag the currently selected collection sample (if any).
     pub fn tag_selected_collection_sample(&mut self, tag: SampleTag) {
         let Some(row) = self.ui.collections.selected_sample else {
             return;
@@ -94,6 +95,7 @@ impl EguiController {
         let _ = self.tag_collection_sample(row, tag);
     }
 
+    /// Convenience tag action for "trash" direction on the selected collection sample.
     pub fn tag_selected_collection_left(&mut self) {
         let target = match self.selected_collection_tag() {
             Some(SampleTag::Keep) => SampleTag::Neutral,
@@ -102,6 +104,7 @@ impl EguiController {
         self.tag_selected_collection_sample(target);
     }
 
+    /// Tag of the currently selected collection sample (if any).
     pub fn selected_collection_tag(&self) -> Option<SampleTag> {
         let row = self.ui.collections.selected_sample?;
         self.ui

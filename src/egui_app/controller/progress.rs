@@ -1,14 +1,15 @@
 use super::*;
 
 impl EguiController {
-    /// Show a modal progress overlay with an optional cancel affordance.
-    pub(crate) fn show_progress(
+    /// Show status-bar progress without the modal overlay.
+    pub(crate) fn show_status_progress(
         &mut self,
         title: impl Into<String>,
         total: usize,
         cancelable: bool,
     ) {
         self.ui.progress = ProgressOverlayState::new(title, total, cancelable);
+        self.ui.progress.modal = false;
     }
 
     /// Update the current progress detail label without changing counts.
@@ -16,16 +17,6 @@ impl EguiController {
         if self.ui.progress.visible {
             self.ui.progress.detail = Some(detail.into());
         }
-    }
-
-    /// Advance the progress counter by one step.
-    pub(crate) fn advance_progress(&mut self) {
-        if !self.ui.progress.visible {
-            return;
-        }
-        let total = self.ui.progress.total;
-        let next = self.ui.progress.completed.saturating_add(1);
-        self.ui.progress.completed = if total == 0 { next } else { next.min(total) };
     }
 
     /// Clear any active progress overlay.

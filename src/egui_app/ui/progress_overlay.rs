@@ -3,7 +3,7 @@ use crate::egui_app::state::ProgressOverlayState;
 use eframe::egui::{self, Align2, Area, Color32, Frame, Id, ProgressBar, RichText, Stroke};
 
 pub(super) fn render_progress_overlay(ctx: &egui::Context, progress: &mut ProgressOverlayState) {
-    if !progress.visible {
+    if !progress.visible || !progress.modal {
         return;
     }
     draw_backdrop(ctx);
