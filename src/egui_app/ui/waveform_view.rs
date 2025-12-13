@@ -30,6 +30,20 @@ impl EguiApp {
                 "Split L/R",
             );
             split.on_hover_text("Render the first two channels separately");
+            ui.add_space(10.0);
+            let loop_enabled = self.controller.ui.waveform.loop_enabled;
+            let loop_label = if loop_enabled {
+                RichText::new("Loop: On").color(palette.accent_mint)
+            } else {
+                RichText::new("Loop: Off").color(palette.text_muted)
+            };
+            if ui
+                .add(egui::Button::new(loop_label))
+                .on_hover_text("Toggle loop playback for the current selection (or whole sample)")
+                .clicked()
+            {
+                self.controller.toggle_loop();
+            }
         });
         if view_mode != self.controller.ui.waveform.channel_view {
             self.controller.set_waveform_channel_view(view_mode);
