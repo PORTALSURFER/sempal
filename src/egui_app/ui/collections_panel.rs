@@ -80,10 +80,12 @@ impl EguiApp {
                                 && let Some(pointer) = pointer_pos
                                 && response.rect.contains(pointer)
                             {
+                                let shift_down = ui.input(|i| i.modifiers.shift);
                                 self.controller.update_active_drag(
                                     pointer,
                                     DragSource::Collections,
                                     DragTarget::CollectionsRow(collection.id.clone()),
+                                    shift_down,
                                 );
                             }
                         });
@@ -261,10 +263,12 @@ impl EguiApp {
                             }
                         } else if drag_active && response.dragged() {
                             if let Some(pos) = response.interact_pointer_pos() {
+                                let shift_down = ui.input(|i| i.modifiers.shift);
                                 self.controller.update_active_drag(
                                     pos,
                                     DragSource::Collections,
                                     DragTarget::None,
+                                    shift_down,
                                 );
                             }
                         } else if response.drag_stopped() {
@@ -281,12 +285,14 @@ impl EguiApp {
                     "Collections drop zone hover: pointer={:?} rect={:?} current_collection_id={:?}",
                     pointer, target_rect, current_collection_id
                 );
+                let shift_down = ui.input(|i| i.modifiers.shift);
                 self.controller.update_active_drag(
                     pointer,
                     DragSource::Collections,
                     DragTarget::CollectionsDropZone {
                         collection_id: current_collection_id.clone(),
                     },
+                    shift_down,
                 );
                 ui.painter().rect_stroke(
                     target_rect,

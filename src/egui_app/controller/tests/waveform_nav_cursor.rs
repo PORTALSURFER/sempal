@@ -13,6 +13,7 @@ fn cursor_step_size_tracks_view_zoom() {
     controller.update_waveform_size(200, 10);
     controller.select_wav_by_path(Path::new("zoom.wav"));
     controller.decoded_waveform = Some(DecodedWaveform {
+        cache_token: 1,
         samples: vec![0.0; 10_000],
         peaks: None,
         duration_seconds: 1.0,
@@ -65,6 +66,7 @@ fn mouse_zoom_prefers_pointer_over_playhead() {
     let (mut controller, _source) = dummy_controller();
     controller.waveform_size = [240, 24];
     controller.decoded_waveform = Some(DecodedWaveform {
+        cache_token: 1,
         samples: vec![0.0; 10_000],
         peaks: None,
         duration_seconds: 1.0,
@@ -194,6 +196,7 @@ fn play_from_cursor_prefers_cursor_position() {
     prepare_browser_sample(&mut controller, &source, "cursor.wav");
     controller.select_wav_by_path(Path::new("cursor.wav"));
     controller.decoded_waveform = Some(DecodedWaveform {
+        cache_token: 1,
         samples: vec![0.0; 10_000],
         peaks: None,
         duration_seconds: 1.0,
@@ -219,6 +222,7 @@ fn cursor_alpha_fades_before_reset() {
     let (mut controller, source) = dummy_controller();
     prepare_browser_sample(&mut controller, &source, "cursor.wav");
     controller.decoded_waveform = Some(DecodedWaveform {
+        cache_token: 1,
         samples: vec![0.0; 10_000],
         peaks: None,
         duration_seconds: 1.0,
@@ -240,6 +244,7 @@ fn cursor_alpha_resets_after_idle_timeout() {
     let (mut controller, source) = dummy_controller();
     prepare_browser_sample(&mut controller, &source, "cursor.wav");
     controller.decoded_waveform = Some(DecodedWaveform {
+        cache_token: 1,
         samples: vec![0.0; 10_000],
         peaks: None,
         duration_seconds: 1.0,
@@ -261,6 +266,7 @@ fn cursor_does_not_fade_when_waveform_focused() {
     let (mut controller, source) = dummy_controller();
     prepare_browser_sample(&mut controller, &source, "cursor.wav");
     controller.decoded_waveform = Some(DecodedWaveform {
+        cache_token: 1,
         samples: vec![0.0; 10_000],
         peaks: None,
         duration_seconds: 1.0,
@@ -285,6 +291,7 @@ fn navigation_steps_anchor_to_cursor_instead_of_playhead() {
     controller.update_waveform_size(200, 10);
     controller.select_wav_by_path(Path::new("nav.wav"));
     controller.decoded_waveform = Some(DecodedWaveform {
+        cache_token: 1,
         samples: vec![0.0; 10_000],
         peaks: None,
         duration_seconds: 1.0,
