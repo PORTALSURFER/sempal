@@ -1,10 +1,6 @@
 [package]
 name = "sempal"
-<<<<<<< HEAD
-version = "0.340.0"
-=======
 version = "0.343.0"
->>>>>>> origin/main
 edition = "2024"
 default-run = "sempal"
 
@@ -27,9 +23,17 @@ open = "5.3.3"
 image = "0.25.9"
 raw-window-handle = "0.6"
 tracing = "0.1.41"
-tracing-subscriber = { version = "0.3.19", features = ["env-filter", "fmt", "time"] }
+tracing-subscriber = { version = "0.3.19", features = [
+    "env-filter",
+    "fmt",
+    "time",
+] }
 tracing-appender = "0.2.4"
-time = { version = "0.3.44", features = ["formatting", "macros", "local-offset"] }
+time = { version = "0.3.44", features = [
+    "formatting",
+    "macros",
+    "local-offset",
+] }
 fuzzy-matcher = "0.3.7"
 rand = "0.9.2"
 
