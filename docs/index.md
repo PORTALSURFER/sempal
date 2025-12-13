@@ -12,7 +12,7 @@ Sempal is an audio sample triage and collection builder with fast waveform previ
 <img src="{{ '/assets/screenshot.png' | relative_url }}" alt="Sempal screenshot" style="max-width: 100%; height: auto; margin: 1.5rem 0;" />
 
 ## Quick links
-- [Usage guide](/usage)
+- [Usage guide](/https://github.com/portalsurfer/sempal/usage)
 - [Changelog](https://github.com/portalsurfer/sempal/blob/main/CHANGELOG.md)
 - [Latest downloads](https://github.com/portalsurfer/sempal/releases)
 - [Source on GitHub](https://github.com/portalsurfer/sempal)
