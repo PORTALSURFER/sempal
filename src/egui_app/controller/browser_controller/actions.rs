@@ -1,4 +1,6 @@
 use super::*;
+use super::helpers::TriageSampleContext;
+use std::collections::HashSet;
 
 pub(crate) trait BrowserActions {
     fn tag_browser_sample(&mut self, row: usize, tag: SampleTag) -> Result<(), String>;
@@ -38,10 +40,17 @@ impl BrowserActions for BrowserController<'_> {
         tag: SampleTag,
         primary_visible_row: usize,
     ) -> Result<(), String> {
-        let mut last_error = None;
-        for &row in rows {
-            if let Err(err) = self.tag_browser_sample(row, tag) {
+        let (contexts, mut last_error) = self.resolve_unique_browser_contexts(rows);
+        for ctx in contexts {
+            if let Err(err) =
+                self.set_sample_tag_for_source(&ctx.source, &ctx.entry.relative_path, tag, true)
+            {
                 last_error = Some(err);
+            } else {
+                self.set_status(
+                    format!("Tagged {} as {:?}", ctx.entry.relative_path.display(), tag),
+                    StatusTone::Info,
+                );
             }
         }
         self.refocus_after_filtered_removal(primary_visible_row);
@@ -61,9 +70,9 @@ impl BrowserActions for BrowserController<'_> {
     }
 
     fn normalize_browser_samples(&mut self, rows: &[usize]) -> Result<(), String> {
-        let mut last_error = None;
-        for &row in rows {
-            if let Err(err) = self.normalize_browser_sample(row) {
+        let (contexts, mut last_error) = self.resolve_unique_browser_contexts(rows);
+        for ctx in contexts {
+            if let Err(err) = self.try_normalize_browser_sample_ctx(&ctx) {
                 last_error = Some(err);
             }
         }
@@ -88,9 +97,9 @@ impl BrowserActions for BrowserController<'_> {
 
     fn delete_browser_samples(&mut self, rows: &[usize]) -> Result<(), String> {
         let next_focus = self.next_browser_focus_after_delete(rows);
-        let mut last_error = None;
-        for &row in rows {
-            if let Err(err) = self.try_delete_browser_sample(row) {
+        let (contexts, mut last_error) = self.resolve_unique_browser_contexts(rows);
+        for ctx in contexts {
+            if let Err(err) = self.try_delete_browser_sample_ctx(&ctx) {
                 last_error = Some(err);
             }
         }
@@ -108,5 +117,27 @@ impl BrowserActions for BrowserController<'_> {
         } else {
             Ok(())
         }
+    }
+}
+
+impl BrowserController<'_> {
+    fn resolve_unique_browser_contexts(
+        &mut self,
+        rows: &[usize],
+    ) -> (Vec<TriageSampleContext>, Option<String>) {
+        let mut contexts = Vec::with_capacity(rows.len());
+        let mut seen = HashSet::new();
+        let mut last_error = None;
+        for &row in rows {
+            match self.resolve_browser_sample(row) {
+                Ok(ctx) => {
+                    if seen.insert(ctx.entry.relative_path.clone()) {
+                        contexts.push(ctx);
+                    }
+                }
+                Err(err) => last_error = Some(err),
+            }
+        }
+        (contexts, last_error)
     }
 }

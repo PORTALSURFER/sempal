@@ -38,6 +38,7 @@ impl EguiController {
         self.select_source_internal(id, None);
     }
 
+    /// Refresh the wav list for the selected source (delegates to background load).
     pub fn refresh_wavs(&mut self) -> Result<(), SourceDbError> {
         // Maintained for compatibility; now delegates to background load.
         self.queue_wav_load();
@@ -196,6 +197,11 @@ impl EguiController {
         if pending_path.is_none() {
             self.ui.collections.selected_sample = None;
         }
+        if let Some(ref source_id) = id
+            && self.sources.iter().any(|s| &s.id == source_id)
+        {
+            self.last_selected_browsable_source = Some(source_id.clone());
+        }
         self.selected_source = id;
         self.selected_wav = None;
         self.loaded_wav = None;
@@ -285,6 +291,7 @@ impl EguiController {
         self.missing_wavs.remove(&source_id);
         self.db_cache.remove(&source_id);
         self.wav_cache.remove(&source_id);
+        self.wav_cache_lookup.remove(&source_id);
         self.label_cache.remove(&source_id);
         if self.selected_source.as_ref() == Some(&source_id) {
             self.clear_wavs();

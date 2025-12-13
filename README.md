@@ -21,6 +21,7 @@ Audio sample triage and collection building tool built with Rust and egui.
 - From the project root: `cargo run --release`.
 - Or build once and run the binary: `cargo build --release` then `target/release/sempal`.
 - Playback uses your default audio output device.
+- Windows (ASIO): If you want to build with ASIO support (or your build fails looking for the ASIO SDK), download the Steinberg ASIO SDK and set `CPAL_ASIO_DIR` to the SDK path (e.g. a folder named `ASIOSDK`) before running `cargo build`/`cargo run`.
 
 ## Code style and linting
 

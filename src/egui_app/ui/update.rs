@@ -72,9 +72,6 @@ impl EguiApp {
             self.controller
                 .maybe_launch_external_drag(pointer_outside || pointer_left);
         }
-        if self.controller.ui.drag.payload.is_some() && !ctx.input(|i| i.pointer.primary_down()) {
-            self.controller.finish_active_drag();
-        }
     }
 
     fn handle_focus_side_effects(&mut self, focus: &FocusFlags) {

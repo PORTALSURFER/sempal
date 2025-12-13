@@ -1,8 +1,19 @@
 use super::*;
+use super::trash_move::{TrashMoveFinished, TrashMoveMessage};
+#[cfg(test)]
+use super::trash_move::run_trash_move_task_with_progress;
+#[cfg(not(test))]
+use super::trash_move::run_trash_move_task;
 use crate::sample_sources::config::normalize_path;
 use rfd::{FileDialog, MessageButtons, MessageDialog, MessageDialogResult, MessageLevel};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
+#[cfg(not(test))]
+use std::sync::mpsc::channel;
 
 impl EguiController {
     /// Open a folder picker and persist the chosen trash folder.
@@ -35,6 +46,10 @@ impl EguiController {
 
     /// Move all samples tagged as Trash into the configured trash folder after confirmation.
     pub fn move_all_trashed_to_folder(&mut self) {
+        if self.trash_move_rx.is_some() {
+            self.set_status("Trash move already in progress", StatusTone::Warning);
+            return;
+        }
         if !self.confirm_warning(
             "Move trashed samples?",
             "All samples tagged as Trash will be moved to the configured trash folder and removed from sources/collections. Continue?",
@@ -44,23 +59,53 @@ impl EguiController {
         let Ok(trash_root) = self.ensure_trash_folder_ready() else {
             return;
         };
-        let (batches, mut errors) = self.collect_trashed_batches();
-        let total: usize = batches.iter().map(|batch| batch.entries.len()).sum();
-        if total == 0 {
-            self.set_status("No trashed samples to move", StatusTone::Info);
-            return;
-        }
         self.set_status("Moving trashed samples...", StatusTone::Busy);
-        self.show_progress("Moving trashed samples", total, true);
-        let outcome = self.move_batches_to_trash(batches, &trash_root);
-        errors.extend(outcome.errors);
-        self.finish_trash_move(
-            total,
-            outcome.moved,
-            outcome.removed_from_collections,
-            errors,
-            outcome.cancelled,
-        );
+        self.show_status_progress("Moving trashed samples", 0, true);
+        self.update_progress_detail("Scanning for trashed samples...");
+
+        let cancel = Arc::new(AtomicBool::new(false));
+
+        let sources = self.sources.clone();
+        let collections = self.collections.clone();
+
+        #[cfg(test)]
+        {
+            let cancel_after = self.progress_cancel_after;
+            let finished = run_trash_move_task_with_progress(
+                sources,
+                collections,
+                trash_root,
+                cancel.clone(),
+                |message| match message {
+                    TrashMoveMessage::SetTotal(total) => {
+                        self.ui.progress.total = total;
+                    }
+                    TrashMoveMessage::Progress { completed, detail } => {
+                        self.ui.progress.completed = completed;
+                        self.ui.progress.detail = detail;
+                        if let Some(cancel_after) = cancel_after
+                            && completed >= cancel_after
+                        {
+                            cancel.store(true, Ordering::Relaxed);
+                        }
+                    }
+                    TrashMoveMessage::Finished(_) => {}
+                },
+            );
+            self.apply_trash_move_finished(finished);
+        }
+
+        #[cfg(not(test))]
+        {
+            let (tx, rx) = channel();
+            self.trash_move_cancel = Some(cancel.clone());
+            self.trash_move_rx = Some(rx);
+            std::thread::spawn(move || {
+                let finished =
+                    run_trash_move_task(sources, collections, trash_root, cancel, Some(&tx));
+                let _ = tx.send(TrashMoveMessage::Finished(finished));
+            });
+        }
     }
 
     /// Permanently delete the contents of the configured trash folder after confirmation.
@@ -136,149 +181,93 @@ impl EguiController {
         }
     }
 
-    fn move_single_to_trash(
-        &mut self,
-        source: &SampleSource,
-        entry: &WavEntry,
-        trash_root: &Path,
-    ) -> Result<bool, String> {
-        let absolute = source.root.join(&entry.relative_path);
-        if !absolute.is_file() {
-            return Err(format!("File not found for trash: {}", absolute.display()));
+    pub(super) fn poll_trash_move(&mut self) {
+        let Some(rx) = self.trash_move_rx.as_ref() else {
+            return;
+        };
+        if let Some(cancel) = self.trash_move_cancel.as_ref()
+            && self.ui.progress.cancel_requested
+        {
+            cancel.store(true, Ordering::Relaxed);
         }
-        let destination = unique_destination(trash_root, &entry.relative_path)?;
-        if let Some(parent) = destination.parent() {
-            fs::create_dir_all(parent).map_err(|err| {
-                format!("Unable to prepare trash folder {}: {err}", parent.display())
-            })?;
-        }
-        if let Err(err) = fs::rename(&absolute, &destination) {
-            fs::copy(&absolute, &destination).map_err(|copy_err| {
-                format!(
-                    "Failed to move {} to trash: rename error {err}; copy error {copy_err}",
-                    absolute.display()
-                )
-            })?;
-            fs::remove_file(&absolute).map_err(|remove_err| {
-                format!(
-                    "Failed to remove original {} after copy: {remove_err}",
-                    absolute.display()
-                )
-            })?;
-        }
-        let db = self
-            .database_for(source)
-            .map_err(|err| format!("Database unavailable: {err}"))?;
-        db.remove_file(&entry.relative_path)
-            .map_err(|err| format!("Failed to drop database row: {err}"))?;
-        self.prune_cached_sample(source, &entry.relative_path);
-        let collections_changed =
-            self.remove_sample_from_collections(&source.id, &entry.relative_path);
-        Ok(collections_changed)
-    }
-
-    fn collect_trashed_batches(&mut self) -> (Vec<TrashMoveBatch>, Vec<String>) {
-        let mut batches = Vec::new();
-        let mut errors = Vec::new();
-        for source in self.sources.clone() {
-            let db = match self.database_for(&source) {
-                Ok(db) => db,
-                Err(err) => {
-                    errors.push(format!("{}: {err}", source.root.display()));
-                    continue;
+        let mut finished = None;
+        while let Ok(message) = rx.try_recv() {
+            match message {
+                TrashMoveMessage::SetTotal(total) => {
+                    self.ui.progress.total = total;
                 }
-            };
-            let entries = match db.list_files() {
-                Ok(entries) => entries,
-                Err(err) => {
-                    errors.push(format!("{}: {err}", source.root.display()));
-                    continue;
+                TrashMoveMessage::Progress { completed, detail } => {
+                    self.ui.progress.completed = completed;
+                    self.ui.progress.detail = detail;
                 }
-            };
-            let trashed: Vec<WavEntry> = entries
-                .into_iter()
-                .filter(|entry| entry.tag == SampleTag::Trash)
-                .collect();
-            if !trashed.is_empty() {
-                batches.push(TrashMoveBatch {
-                    source: source.clone(),
-                    entries: trashed,
-                });
-            }
-        }
-        (batches, errors)
-    }
-
-    fn move_batches_to_trash(
-        &mut self,
-        batches: Vec<TrashMoveBatch>,
-        trash_root: &Path,
-    ) -> TrashMoveOutcome {
-        let mut outcome = TrashMoveOutcome::default();
-        for batch in batches {
-            if self.transfer_batch_entries(batch, trash_root, &mut outcome) {
-                break;
-            }
-        }
-        if self.ui.progress.cancel_requested {
-            outcome.cancelled = true;
-        }
-        outcome
-    }
-
-    fn transfer_batch_entries(
-        &mut self,
-        batch: TrashMoveBatch,
-        trash_root: &Path,
-        outcome: &mut TrashMoveOutcome,
-    ) -> bool {
-        for entry in batch.entries {
-            if self.ui.progress.cancel_requested {
-                outcome.cancelled = true;
-                return true;
-            }
-            self.update_progress_detail(format!("Moving {}", entry.relative_path.display()));
-            match self.move_single_to_trash(&batch.source, &entry, trash_root) {
-                Ok(changed_collections) => {
-                    outcome.moved += 1;
-                    outcome.removed_from_collections |= changed_collections;
+                TrashMoveMessage::Finished(result) => {
+                    finished = Some(result);
+                    break;
                 }
-                Err(err) => outcome.errors.push(err),
-            }
-            self.advance_progress();
-            #[cfg(test)]
-            if let Some(threshold) = self.progress_cancel_after
-                && outcome.moved >= threshold
-            {
-                self.request_progress_cancel();
             }
         }
-        false
+        if let Some(result) = finished {
+            self.trash_move_rx = None;
+            self.trash_move_cancel = None;
+            self.apply_trash_move_finished(result);
+        }
     }
 
-    fn finish_trash_move(
-        &mut self,
-        total: usize,
-        moved: usize,
-        removed_from_collections: bool,
-        mut errors: Vec<String>,
-        cancelled: bool,
-    ) {
-        if removed_from_collections {
+    fn apply_trash_move_finished(&mut self, result: TrashMoveFinished) {
+        if result.collections_changed {
+            self.collections = result.collections;
+            self.refresh_collections_ui();
             let _ = self.persist_config("Failed to save collections after trash move");
         }
-        if cancelled {
+
+        for source_id in &result.affected_sources {
+            self.db_cache.remove(source_id);
+            self.wav_cache.remove(source_id);
+            self.wav_cache_lookup.remove(source_id);
+            self.label_cache.remove(source_id);
+            self.missing_wavs.remove(source_id);
+            self.folder_browsers.remove(source_id);
+        }
+
+        if let Some(source) = self.current_source()
+            && result.affected_sources.iter().any(|id| id == &source.id)
+        {
+            if let Some(loaded) = self.loaded_wav.as_ref() {
+                let absolute = source.root.join(loaded);
+                if !absolute.is_file() {
+                    self.clear_waveform_view();
+                }
+            }
+            self.queue_wav_load();
+        }
+
+        if result.cancelled {
             self.set_status(
-                format!("Canceled trash move after {moved}/{total} sample(s)"),
+                format!(
+                    "Canceled trash move after {}/{} sample(s)",
+                    result.moved, result.total
+                ),
                 StatusTone::Warning,
             );
-        } else if errors.is_empty() {
-            self.set_status(format!("Moved {moved} trashed sample(s)"), StatusTone::Info);
+        } else if result.total == 0 {
+            self.set_status("No trashed samples to move", StatusTone::Info);
+        } else if result.errors.is_empty() {
+            self.set_status(
+                format!("Moved {} trashed sample(s)", result.moved),
+                StatusTone::Info,
+            );
         } else {
-            let summary = format!("Moved {moved} sample(s) with {} error(s)", errors.len());
-            self.set_status(summary, StatusTone::Warning);
+            self.set_status(
+                format!(
+                    "Moved {} sample(s) with {} error(s)",
+                    result.moved,
+                    result.errors.len()
+                ),
+                StatusTone::Warning,
+            );
         }
-        for err in errors.drain(..) {
+
+        for err in result.errors {
             eprintln!("Trash move error: {err}");
         }
         self.clear_progress();
@@ -337,45 +326,4 @@ impl EguiController {
             MessageDialogResult::Yes
         )
     }
-}
-
-struct TrashMoveBatch {
-    source: SampleSource,
-    entries: Vec<WavEntry>,
-}
-
-#[derive(Default)]
-struct TrashMoveOutcome {
-    moved: usize,
-    removed_from_collections: bool,
-    cancelled: bool,
-    errors: Vec<String>,
-}
-
-fn unique_destination(root: &Path, relative: &Path) -> Result<PathBuf, String> {
-    let mut candidate = root.join(relative);
-    if !candidate.exists() {
-        return Ok(candidate);
-    }
-    let parent = candidate
-        .parent()
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| root.to_path_buf());
-    let stem = relative
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("file");
-    let ext = relative.extension().and_then(|e| e.to_str()).unwrap_or("");
-    for idx in 1..=1000 {
-        let mut name = format!("{stem}_{idx}");
-        if !ext.is_empty() {
-            name.push('.');
-            name.push_str(ext);
-        }
-        candidate = parent.join(name);
-        if !candidate.exists() {
-            return Ok(candidate);
-        }
-    }
-    Err("Could not create unique trash destination".into())
 }

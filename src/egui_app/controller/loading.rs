@@ -11,11 +11,13 @@ impl EguiController {
         }
         self.clear_source_missing(&source.id);
         if let Some(entries) = self.wav_cache.get(&source.id).cloned() {
+            self.ensure_wav_cache_lookup(&source.id);
             self.apply_wav_entries(entries, true, Some(source.id.clone()), None);
             return;
         }
         self.wav_entries.clear();
         self.rebuild_wav_lookup();
+        self.browser_search_cache.invalidate();
         self.refresh_folder_browser();
         self.rebuild_browser_lists();
         if self.pending_source.as_ref() == Some(&source.id) {
@@ -26,6 +28,19 @@ impl EguiController {
             source_id: source.id.clone(),
             root: source.root.clone(),
         };
+        if cfg!(test) {
+            let result = load_entries(&job);
+            match result {
+                Ok(entries) => {
+                    self.wav_cache.insert(source.id.clone(), entries.clone());
+                    self.rebuild_wav_cache_lookup(&source.id);
+                    self.apply_wav_entries(entries, false, Some(source.id.clone()), None);
+                }
+                Err(err) => self.handle_wav_load_error(&source.id, err),
+            }
+            self.pending_source = None;
+            return;
+        }
         let _ = self.wav_job_tx.send(job);
         self.set_status(
             format!("Loading wavs for {}", source.root.display()),
@@ -42,6 +57,7 @@ impl EguiController {
                 Ok(entries) => {
                     self.wav_cache
                         .insert(message.source_id.clone(), entries.clone());
+                    self.rebuild_wav_cache_lookup(&message.source_id);
                     self.apply_wav_entries(
                         entries,
                         false,
@@ -82,6 +98,7 @@ impl EguiController {
     ) {
         self.wav_entries = entries;
         self.rebuild_wav_lookup();
+        self.browser_search_cache.invalidate();
         self.refresh_folder_browser();
         self.rebuild_browser_lists();
         let mut pending_applied = false;

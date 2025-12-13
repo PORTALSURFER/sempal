@@ -25,6 +25,44 @@ impl std::ops::DerefMut for DragDropController<'_> {
 }
 
 impl DragDropController<'_> {
+    fn selection_clip_root_for_collection(
+        &self,
+        collection_id: &CollectionId,
+    ) -> Result<PathBuf, String> {
+        let preferred = self
+            .collections
+            .iter()
+            .find(|c| &c.id == collection_id)
+            .and_then(|collection| {
+                super::super::collection_export::resolved_export_dir(
+                    collection,
+                    self.collection_export_root.as_deref(),
+                )
+            });
+        if let Some(path) = preferred {
+            if path.exists() && !path.is_dir() {
+                tracing::warn!(
+                    "collection export path is not a directory, falling back: {}",
+                    path.display()
+                );
+            } else if std::fs::create_dir_all(&path).is_ok() {
+                return Ok(path);
+            } else {
+                tracing::warn!(
+                    "failed to create collection export path, falling back: {}",
+                    path.display()
+                );
+            }
+        }
+        let fallback = crate::app_dirs::app_root_dir()
+            .map_err(|err| err.to_string())?
+            .join("collection_clips")
+            .join(collection_id.as_str());
+        std::fs::create_dir_all(&fallback)
+            .map_err(|err| format!("Failed to create collection clip folder: {err}"))?;
+        Ok(fallback)
+    }
+
     pub(super) fn reset_drag(&mut self) {
         self.ui.drag.payload = None;
         self.ui.drag.label.clear();
@@ -42,13 +80,7 @@ impl DragDropController<'_> {
         crate::external_drag::start_file_drag(hwnd, paths)
     }
 
-    #[cfg(not(target_os = "windows"))]
-    #[allow(dead_code)]
-    pub(super) fn start_external_drag(&self, _paths: &[PathBuf]) -> Result<(), String> {
-        Err("External drag-out is only supported on Windows in this build".into())
-    }
-
-    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+    #[cfg(target_os = "windows")]
     pub(super) fn sample_absolute_path(
         &self,
         source_id: &SourceId,
@@ -84,7 +116,7 @@ impl DragDropController<'_> {
         format!("{name} ({seconds:.2}s)")
     }
 
-    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+    #[cfg(target_os = "windows")]
     pub(super) fn export_selection_for_drag(
         &mut self,
         bounds: SelectionRange,
@@ -94,8 +126,14 @@ impl DragDropController<'_> {
             .as_ref()
             .ok_or_else(|| "Load a sample before dragging a selection".to_string())?;
         let clip = self.selection_audio(&audio.source_id, &audio.relative_path)?;
-        let entry =
-            self.export_selection_clip(&clip.source_id, &clip.relative_path, bounds, None, true)?;
+        let entry = self.export_selection_clip(
+            &clip.source_id,
+            &clip.relative_path,
+            bounds,
+            None,
+            true,
+            true,
+        )?;
         let source = self
             .sources
             .iter()
@@ -352,7 +390,14 @@ impl DragDropController<'_> {
         bounds: SelectionRange,
         target_tag: Option<SampleTag>,
     ) {
-        match self.export_selection_clip(source_id, relative_path, bounds, target_tag, true) {
+        match self.export_selection_clip(
+            source_id,
+            relative_path,
+            bounds,
+            target_tag,
+            true,
+            true,
+        ) {
             Ok(entry) => {
                 self.ui.browser.autoscroll = true;
                 self.suppress_autoplay_once = true;
@@ -372,20 +417,28 @@ impl DragDropController<'_> {
         target_tag: Option<SampleTag>,
         collection_id: &CollectionId,
     ) {
-        match self.export_selection_clip(source_id, relative_path, bounds, target_tag, false) {
+        let clip_root = match self.selection_clip_root_for_collection(collection_id) {
+            Ok(root) => root,
+            Err(err) => {
+                self.set_status(err, StatusTone::Error);
+                return;
+            }
+        };
+        match self.export_selection_clip_to_root(
+            source_id,
+            relative_path,
+            bounds,
+            target_tag,
+            &clip_root,
+            relative_path,
+        ) {
             Ok(entry) => {
                 self.selected_collection = Some(collection_id.clone());
-                if let Some(source) = self.sources.iter().find(|s| s.id == *source_id).cloned() {
-                    if let Err(err) = self.add_sample_to_collection_for_source(
-                        collection_id,
-                        &source,
-                        &entry.relative_path,
-                    ) {
-                        self.set_status(err, StatusTone::Error);
-                        return;
-                    }
-                } else {
-                    self.set_status("Source not available for collection", StatusTone::Error);
+                let clip_relative = entry.relative_path.clone();
+                if let Err(err) =
+                    self.add_clip_to_collection(collection_id, clip_root, clip_relative)
+                {
+                    self.set_status(err, StatusTone::Error);
                     return;
                 }
                 let name = self

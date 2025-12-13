@@ -71,6 +71,7 @@ fn collection_views_flag_missing_members() {
     collection.members.push(CollectionMember {
         source_id: source.id.clone(),
         relative_path: PathBuf::from("one.wav"),
+        clip_root: None,
     });
     controller.selected_collection = Some(collection.id.clone());
     controller.collections.push(collection);
