@@ -136,6 +136,7 @@ fn key_label(key: Key) -> &'static str {
         egui::Key::U => "U",
         egui::Key::Y => "Y",
         egui::Key::Z => "Z",
+        egui::Key::M => "M",
         egui::Key::Slash => "/",
         egui::Key::Backslash => "\\",
         egui::Key::G => "G",
@@ -186,6 +187,7 @@ pub(crate) enum HotkeyCommand {
     TrimSelection,
     FadeSelectionLeftToRight,
     FadeSelectionRightToLeft,
+    MuteSelection,
     NormalizeWaveform,
     CropSelection,
     CropSelectionNewSample,
@@ -488,6 +490,13 @@ const HOTKEY_ACTIONS: &[HotkeyAction] = &[
         gesture: HotkeyGesture::new(Key::Slash),
         scope: HotkeyScope::Focus(FocusContext::Waveform),
         command: HotkeyCommand::FadeSelectionRightToLeft,
+    },
+    HotkeyAction {
+        id: "mute-selection",
+        label: "Mute selection",
+        gesture: HotkeyGesture::new(Key::M),
+        scope: HotkeyScope::Focus(FocusContext::Waveform),
+        command: HotkeyCommand::MuteSelection,
     },
 ];
 
