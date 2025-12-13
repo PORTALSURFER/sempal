@@ -144,13 +144,25 @@ impl HotkeysActions for HotkeysController<'_> {
                 self.move_all_trashed_to_folder();
             }
             HotkeyCommand::TagKeepSelected => {
-                self.tag_selected(SampleTag::Keep);
+                if matches!(focus, FocusContext::CollectionSample) {
+                    self.tag_selected_collection_sample(SampleTag::Keep);
+                } else {
+                    self.tag_selected(SampleTag::Keep);
+                }
             }
             HotkeyCommand::TagNeutralSelected => {
-                self.tag_selected(SampleTag::Neutral);
+                if matches!(focus, FocusContext::CollectionSample) {
+                    self.tag_selected_collection_sample(SampleTag::Neutral);
+                } else {
+                    self.tag_selected(SampleTag::Neutral);
+                }
             }
             HotkeyCommand::TagTrashSelected => {
-                self.tag_selected(SampleTag::Trash);
+                if matches!(focus, FocusContext::CollectionSample) {
+                    self.tag_selected_collection_sample(SampleTag::Trash);
+                } else {
+                    self.tag_selected(SampleTag::Trash);
+                }
             }
             HotkeyCommand::TrimSelection => {
                 if matches!(focus, FocusContext::Waveform) {
