@@ -11,6 +11,7 @@ pub struct CollectionsState {
     pub drop_ready: bool,
     pub drop_active: bool,
     pub selected_sample: Option<usize>,
+    pub scroll_to_sample: Option<usize>,
 }
 
 impl Default for CollectionsState {
@@ -23,6 +24,7 @@ impl Default for CollectionsState {
             drop_ready: false,
             drop_active: false,
             selected_sample: None,
+            scroll_to_sample: None,
         }
     }
 }

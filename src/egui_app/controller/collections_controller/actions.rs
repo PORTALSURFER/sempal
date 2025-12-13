@@ -31,6 +31,7 @@ impl CollectionsActions for CollectionsController<'_> {
         };
         self.selected_collection = Some(collection.id.clone());
         self.ui.collections.selected_sample = Some(index);
+        self.ui.collections.scroll_to_sample = Some(index);
         self.focus_collection_context();
         self.ui.browser.selected = None;
         self.ui.browser.autoscroll = false;
@@ -71,6 +72,7 @@ impl CollectionsActions for CollectionsController<'_> {
             self.selected_collection = None;
         }
         self.ui.collections.selected_sample = None;
+        self.ui.collections.scroll_to_sample = None;
         self.clear_focus_context();
         self.ui.browser.autoscroll = false;
         self.refresh_collection_selection_ui();

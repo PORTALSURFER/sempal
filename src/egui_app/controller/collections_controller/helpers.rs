@@ -231,11 +231,14 @@ impl CollectionsController<'_> {
         let len = self.ui.collections.samples.len();
         if len == 0 {
             self.ui.collections.selected_sample = None;
+            self.ui.collections.scroll_to_sample = None;
             self.clear_collection_focus_context();
         } else if let Some(selected) = self.ui.collections.selected_sample
             && selected >= len
         {
-            self.ui.collections.selected_sample = Some(len.saturating_sub(1));
+            let clamped = len.saturating_sub(1);
+            self.ui.collections.selected_sample = Some(clamped);
+            self.ui.collections.scroll_to_sample = Some(clamped);
             self.focus_collection_context();
         }
     }
