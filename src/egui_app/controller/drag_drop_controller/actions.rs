@@ -160,11 +160,6 @@ impl DragDropActions for DragDropController<'_> {
             (_, DragTarget::CollectionsDropZone { collection_id }) => collection_id
                 .clone()
                 .or_else(|| current_collection_id.clone()),
-            (DragPayload::Selection { .. }, _)
-                if triage_target.is_none() && folder_target.is_none() =>
-            {
-                current_collection_id.clone()
-            }
             _ => None,
         };
 
@@ -233,6 +228,10 @@ impl DragDropActions for DragDropController<'_> {
                 bounds,
                 keep_source_focused,
             } => {
+                if collection_target.is_none() && triage_target.is_none() && folder_target.is_none()
+                {
+                    return;
+                }
                 self.handle_selection_drop(
                     source_id,
                     relative_path,
