@@ -85,6 +85,7 @@ pub struct DragState {
     pub target_history: Vec<DragTargetSnapshot>,
     pub last_folder_target: Option<PathBuf>,
     pub external_started: bool,
+    pub external_arm_at: Option<Instant>,
 }
 
 impl Default for DragState {
@@ -98,6 +99,7 @@ impl Default for DragState {
             target_history: Vec::new(),
             last_folder_target: None,
             external_started: false,
+            external_arm_at: None,
         }
     }
 }
