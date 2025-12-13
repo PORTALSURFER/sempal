@@ -52,6 +52,7 @@ fn selection_drop_adds_clip_to_collection() {
         source_id: source.id.clone(),
         relative_path: PathBuf::from("clip.wav"),
         bounds: SelectionRange::new(0.25, 0.75),
+        keep_source_focused: false,
     });
     controller.ui.drag.set_target(
         DragSource::Collections,
@@ -133,6 +134,7 @@ fn selection_drop_uses_collection_export_dir_when_configured() {
         source_id: source.id.clone(),
         relative_path: PathBuf::from("clip.wav"),
         bounds: SelectionRange::new(0.25, 0.75),
+        keep_source_focused: false,
     });
     controller.ui.drag.set_target(
         DragSource::Collections,
@@ -180,6 +182,7 @@ fn selection_drop_to_browser_ignores_active_collection() {
         source_id: source.id.clone(),
         relative_path: PathBuf::from("clip.wav"),
         bounds: SelectionRange::new(0.0, 0.5),
+        keep_source_focused: false,
     });
     controller.ui.drag.set_target(
         DragSource::Browser,
@@ -229,6 +232,7 @@ fn selection_drop_without_hover_falls_back_to_active_collection() {
         source_id: source.id.clone(),
         relative_path: PathBuf::from("clip.wav"),
         bounds: SelectionRange::new(0.0, 0.5),
+        keep_source_focused: false,
     });
     // No hover flags set; should fall back to active collection because there's no triage target.
     controller.finish_active_drag();

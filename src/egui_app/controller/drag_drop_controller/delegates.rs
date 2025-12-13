@@ -14,8 +14,14 @@ impl EguiController {
     }
 
     /// Begin dragging the current waveform selection as a payload.
-    pub fn start_selection_drag_payload(&mut self, bounds: SelectionRange, pos: Pos2) {
-        self.drag_drop().start_selection_drag_payload(bounds, pos);
+    pub fn start_selection_drag_payload(
+        &mut self,
+        bounds: SelectionRange,
+        pos: Pos2,
+        keep_source_focused: bool,
+    ) {
+        self.drag_drop()
+            .start_selection_drag_payload(bounds, pos, keep_source_focused);
     }
 
     /// Update the active drag state with a new pointer position and target.

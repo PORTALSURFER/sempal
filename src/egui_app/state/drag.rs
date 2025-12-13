@@ -17,6 +17,8 @@ pub enum DragPayload {
         source_id: SourceId,
         relative_path: PathBuf,
         bounds: SelectionRange,
+        /// When true, keep focus on the source sample after exporting a clip.
+        keep_source_focused: bool,
     },
 }
 

@@ -355,6 +355,7 @@ impl DragDropController<'_> {
         bounds: SelectionRange,
         collection_target: Option<CollectionId>,
         triage_target: Option<TriageFlagColumn>,
+        keep_source_focused: bool,
     ) {
         if collection_target.is_none() && triage_target.is_none() {
             self.set_status(
@@ -369,7 +370,13 @@ impl DragDropController<'_> {
             TriageFlagColumn::Keep => SampleTag::Keep,
         });
         if triage_target.is_some() {
-            self.handle_selection_drop_to_browser(&source_id, &relative_path, bounds, target_tag);
+            self.handle_selection_drop_to_browser(
+                &source_id,
+                &relative_path,
+                bounds,
+                target_tag,
+                keep_source_focused,
+            );
             return;
         }
         if let Some(collection_id) = collection_target {
@@ -389,6 +396,7 @@ impl DragDropController<'_> {
         relative_path: &Path,
         bounds: SelectionRange,
         target_tag: Option<SampleTag>,
+        keep_source_focused: bool,
     ) {
         match self.export_selection_clip(
             source_id,
@@ -399,9 +407,11 @@ impl DragDropController<'_> {
             true,
         ) {
             Ok(entry) => {
-                self.ui.browser.autoscroll = true;
-                self.suppress_autoplay_once = true;
-                self.select_wav_by_path(&entry.relative_path);
+                if !keep_source_focused {
+                    self.ui.browser.autoscroll = true;
+                    self.suppress_autoplay_once = true;
+                    self.select_wav_by_path(&entry.relative_path);
+                }
                 let status = format!("Saved clip {}", entry.relative_path.display());
                 self.set_status(status, StatusTone::Info);
             }
