@@ -175,7 +175,9 @@ fn press_text_variants(press: &hotkeys::KeyPress) -> &'static [&'static str] {
         egui::Key::N => &["n", "N"],
         egui::Key::D => &["d", "D"],
         egui::Key::C => &["c", "C"],
+        egui::Key::T => &["t", "T"],
         egui::Key::Slash => &["/", "?"],
+        egui::Key::Backslash => &["\\", "|"],
         egui::Key::G => &["g", "G"],
         egui::Key::S => &["s", "S"],
         egui::Key::W => &["w", "W"],
@@ -248,6 +250,27 @@ mod tests {
                 modifiers: egui::Modifiers::default(),
             });
             i.events.push(egui::Event::Text(String::from("C")));
+        });
+
+        consume_press(&ctx, press);
+
+        let remaining = ctx.input(|i| i.events.clone());
+        assert!(remaining.is_empty());
+    }
+
+    #[test]
+    fn consume_press_removes_backslash_text() {
+        let ctx = egui::Context::default();
+        let press = hotkeys::KeyPress::new(egui::Key::Backslash);
+        ctx.input_mut(|i| {
+            i.events.push(egui::Event::Key {
+                key: egui::Key::Backslash,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::default(),
+            });
+            i.events.push(egui::Event::Text(String::from("\\")));
         });
 
         consume_press(&ctx, press);
