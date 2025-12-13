@@ -1,0 +1,1 @@
+- let also add a button for toggling loop mode in the waveform view
