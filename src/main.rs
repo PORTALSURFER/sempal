@@ -9,6 +9,11 @@ use sempal::waveform::WaveformRenderer;
 
 /// Launch the egui UI.
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    #[cfg(all(target_os = "windows", not(debug_assertions)))]
+    if log_console_requested() {
+        enable_windows_console();
+    }
+
     if let Err(err) = logging::init() {
         eprintln!("Logging disabled: {err}");
     }
@@ -40,6 +45,47 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ),
     )?;
     Ok(())
+}
+
+#[cfg(all(target_os = "windows", not(debug_assertions)))]
+fn log_console_requested() -> bool {
+    std::env::args_os().any(|arg| arg == "-log" || arg == "--log")
+}
+
+#[cfg(all(target_os = "windows", not(debug_assertions)))]
+fn enable_windows_console() {
+    use windows::Win32::Foundation::HANDLE;
+    use windows::Win32::Storage::FileSystem::{
+        CreateFileW, FILE_ATTRIBUTE_NORMAL, FILE_GENERIC_WRITE, FILE_SHARE_READ, FILE_SHARE_WRITE,
+        OPEN_EXISTING,
+    };
+    use windows::Win32::System::Console::{
+        ATTACH_PARENT_PROCESS, AttachConsole, AllocConsole, SetStdHandle, STD_ERROR_HANDLE,
+        STD_OUTPUT_HANDLE,
+    };
+
+    unsafe {
+        let attached = AttachConsole(ATTACH_PARENT_PROCESS).is_ok();
+        if !attached {
+            let _ = AllocConsole();
+        }
+
+        let Ok(handle) = CreateFileW(
+            windows::core::w!("CONOUT$"),
+            FILE_GENERIC_WRITE.0,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            None,
+            OPEN_EXISTING,
+            FILE_ATTRIBUTE_NORMAL,
+            None,
+        ) else {
+            return;
+        };
+
+        let handle = HANDLE(handle.0);
+        let _ = SetStdHandle(STD_OUTPUT_HANDLE, handle);
+        let _ = SetStdHandle(STD_ERROR_HANDLE, handle);
+    }
 }
 
 fn load_app_icon() -> Option<IconData> {
