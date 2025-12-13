@@ -76,7 +76,7 @@ impl EguiApp {
     }
 
     fn handle_focus_side_effects(&mut self, focus: &FocusFlags) {
-        if !focus.browser {
+        if !focus.browser && !focus.waveform {
             self.controller.blur_browser_focus();
         }
         if focus.collection_sample {
