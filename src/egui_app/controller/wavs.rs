@@ -468,11 +468,11 @@ impl EguiController {
             self.ui.browser.autoscroll = false;
         }
         self.prune_browser_selection();
-        let browser_has_focus = matches!(
+        let allow_highlight = matches!(
             self.ui.focus.context,
-            FocusContext::SampleBrowser | FocusContext::None
+            FocusContext::SampleBrowser | FocusContext::Waveform | FocusContext::None
         );
-        let highlight_selection = self.ui.collections.selected_sample.is_none() && browser_has_focus;
+        let highlight_selection = self.ui.collections.selected_sample.is_none() && allow_highlight;
         let focused_index = highlight_selection
             .then_some(self.selected_row_index())
             .flatten();
@@ -856,6 +856,9 @@ impl EguiController {
 
     /// Clear sample browser focus/selection when another surface takes focus.
     pub fn blur_browser_focus(&mut self) {
+        if matches!(self.ui.focus.context, FocusContext::Waveform) {
+            return;
+        }
         if self.ui.browser.selected.is_none()
             && self.ui.browser.selected_visible.is_none()
             && self.ui.browser.selection_anchor_visible.is_none()

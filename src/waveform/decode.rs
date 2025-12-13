@@ -1,5 +1,8 @@
 use super::{DecodedWaveform, WaveformPeaks, WaveformRenderer};
 use hound::SampleFormat;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static NEXT_CACHE_TOKEN: AtomicU64 = AtomicU64::new(1);
 
 impl WaveformRenderer {
     /// Decode wav bytes into samples and duration without rendering.
@@ -10,6 +13,7 @@ impl WaveformRenderer {
     const MAX_FULL_SAMPLE_FRAMES: usize = 2_500_000;
 
     fn load_decoded(&self, bytes: &[u8]) -> Result<DecodedWaveform, String> {
+        let cache_token = NEXT_CACHE_TOKEN.fetch_add(1, Ordering::Relaxed);
         let mut reader = hound::WavReader::new(std::io::Cursor::new(bytes))
             .map_err(|error| format!("Invalid wav: {error}"))?;
         let spec = reader.spec();
@@ -25,6 +29,7 @@ impl WaveformRenderer {
                 }
             };
             return Ok(DecodedWaveform {
+                cache_token,
                 samples: Vec::new(),
                 peaks: Some(peaks),
                 duration_seconds,
@@ -39,6 +44,7 @@ impl WaveformRenderer {
         };
 
         Ok(DecodedWaveform {
+            cache_token,
             samples,
             peaks: None,
             duration_seconds,
