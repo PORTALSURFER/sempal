@@ -203,10 +203,12 @@ impl EguiController {
         self.ui.status.badge_color = color;
     }
 
+    #[allow(dead_code)]
     pub(crate) fn can_undo(&self) -> bool {
         self.undo_stack.can_undo()
     }
 
+    #[allow(dead_code)]
     pub(crate) fn can_redo(&self) -> bool {
         self.undo_stack.can_redo()
     }

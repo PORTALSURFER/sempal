@@ -1,26 +1,8 @@
-use super::super::selection_edits::SelectionEditRequest;
+use hound::WavReader;
 use super::super::test_support::{dummy_controller, sample_entry, write_test_wav};
 use super::super::*;
-use super::common::*;
-use crate::egui_app::controller::collection_export;
-use crate::egui_app::controller::hotkeys;
-use crate::egui_app::state::{
-    DestructiveSelectionEdit, DragPayload, DragSource, DragTarget, FocusContext,
-    SampleBrowserActionPrompt, TriageFlagColumn, TriageFlagFilter, WaveformView,
-};
-use crate::sample_sources::Collection;
-use crate::sample_sources::collections::CollectionMember;
-use crate::waveform::DecodedWaveform;
-use egui;
-use hound::WavReader;
-use rand::SeedableRng;
-use rand::rngs::StdRng;
-use rand::seq::IteratorRandom;
-use std::io::Cursor;
-use std::mem;
+use crate::egui_app::state::FocusContext;
 use std::path::{Path, PathBuf};
-use std::thread;
-use std::time::{Duration, Instant};
 use tempfile::tempdir;
 
 #[test]
@@ -269,7 +251,7 @@ fn exporting_selection_updates_entries_and_db() {
     assert_eq!(controller.ui.browser.visible.len(), 1);
     let exported_path = root.join(&entry.relative_path);
     assert!(exported_path.exists());
-    let exported: Vec<f32> = hound::WavReader::open(&exported_path)
+    let exported: Vec<f32> = WavReader::open(&exported_path)
         .unwrap()
         .samples::<f32>()
         .map(|s| s.unwrap())
