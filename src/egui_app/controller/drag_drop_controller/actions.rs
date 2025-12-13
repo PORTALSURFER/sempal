@@ -14,8 +14,14 @@ pub(crate) trait DragDropActions {
         pos: Pos2,
         keep_source_focused: bool,
     );
-    fn update_active_drag(&mut self, pos: Pos2, source: DragSource, target: DragTarget);
-    fn refresh_drag_position(&mut self, pos: Pos2);
+    fn update_active_drag(
+        &mut self,
+        pos: Pos2,
+        source: DragSource,
+        target: DragTarget,
+        shift_down: bool,
+    );
+    fn refresh_drag_position(&mut self, pos: Pos2, shift_down: bool);
     fn finish_active_drag(&mut self);
 }
 
@@ -63,7 +69,13 @@ impl DragDropActions for DragDropController<'_> {
         self.begin_drag(payload, label, pos);
     }
 
-    fn update_active_drag(&mut self, pos: Pos2, source: DragSource, target: DragTarget) {
+    fn update_active_drag(
+        &mut self,
+        pos: Pos2,
+        source: DragSource,
+        target: DragTarget,
+        shift_down: bool,
+    ) {
         if self.ui.drag.payload.is_none() {
             return;
         }
@@ -73,11 +85,25 @@ impl DragDropActions for DragDropController<'_> {
         );
         self.ui.drag.position = Some(pos);
         self.ui.drag.set_target(source, target);
+        if let Some(DragPayload::Selection {
+            keep_source_focused,
+            ..
+        }) = self.ui.drag.payload.as_mut()
+        {
+            *keep_source_focused = shift_down;
+        }
     }
 
-    fn refresh_drag_position(&mut self, pos: Pos2) {
+    fn refresh_drag_position(&mut self, pos: Pos2, shift_down: bool) {
         if self.ui.drag.payload.is_some() {
             self.ui.drag.position = Some(pos);
+            if let Some(DragPayload::Selection {
+                keep_source_focused,
+                ..
+            }) = self.ui.drag.payload.as_mut()
+            {
+                *keep_source_focused = shift_down;
+            }
         }
     }
 

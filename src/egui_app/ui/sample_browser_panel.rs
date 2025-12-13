@@ -207,10 +207,12 @@ impl EguiApp {
                         }
                     } else if drag_active && response.dragged() {
                         if let Some(pos) = response.interact_pointer_pos() {
+                            let shift_down = ui.input(|i| i.modifiers.shift);
                             self.controller.update_active_drag(
                                 pos,
                                 DragSource::Browser,
                                 DragTarget::BrowserTriage(drop_target),
+                                shift_down,
                             );
                         }
                     } else if response.drag_stopped() {
@@ -228,10 +230,12 @@ impl EguiApp {
             && let Some(pointer) = pointer_pos
             && list_response.frame_rect.contains(pointer)
         {
+            let shift_down = ui.input(|i| i.modifiers.shift);
             self.controller.update_active_drag(
                 pointer,
                 DragSource::Browser,
                 DragTarget::BrowserTriage(drop_target),
+                shift_down,
             );
             ui.painter().rect_stroke(
                 list_response.frame_rect,

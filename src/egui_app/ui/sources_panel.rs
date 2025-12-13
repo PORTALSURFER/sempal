@@ -282,12 +282,14 @@ impl EguiApp {
                         && response.rect.contains(pointer)
                     {
                         hovered_folder = Some(root_row.path.clone());
+                        let shift_down = ui.input(|i| i.modifiers.shift);
                         self.controller.update_active_drag(
                             pointer,
                             DragSource::Folders,
                             DragTarget::FolderPanel {
                                 folder: Some(root_row.path.clone()),
                             },
+                            shift_down,
                         );
                     }
                     if hovered_folder
@@ -423,12 +425,14 @@ impl EguiApp {
                             && response.rect.contains(pointer)
                         {
                             hovered_folder = Some(row.path.clone());
+                            let shift_down = ui.input(|i| i.modifiers.shift);
                             self.controller.update_active_drag(
                                 pointer,
                                 DragSource::Folders,
                                 DragTarget::FolderPanel {
                                     folder: Some(row.path.clone()),
                                 },
+                                shift_down,
                             );
                         }
                         if hovered_folder
@@ -495,10 +499,12 @@ impl EguiApp {
                 }
                 if sample_drag_active && hovered_folder.is_none() {
                     let pointer = pointer_pos.unwrap_or_default();
+                    let shift_down = ui.input(|i| i.modifiers.shift);
                     self.controller.update_active_drag(
                         pointer,
                         DragSource::Folders,
                         DragTarget::FolderPanel { folder: None },
+                        shift_down,
                     );
                 }
             });
@@ -506,15 +512,18 @@ impl EguiApp {
         if sample_drag_active && let Some(pointer) = pointer_pos {
             if frame_response.response.rect.contains(pointer) {
                 if hovered_folder.is_none() {
+                    let shift_down = ui.input(|i| i.modifiers.shift);
                     self.controller.update_active_drag(
                         pointer,
                         DragSource::Folders,
                         DragTarget::FolderPanel { folder: None },
+                        shift_down,
                     );
                 }
             } else {
+                let shift_down = ui.input(|i| i.modifiers.shift);
                 self.controller
-                    .update_active_drag(pointer, DragSource::Folders, DragTarget::None);
+                    .update_active_drag(pointer, DragSource::Folders, DragTarget::None, shift_down);
             }
         }
         style::paint_section_border(ui, frame_response.response.rect, focused);
