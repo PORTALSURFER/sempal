@@ -52,6 +52,7 @@ fn selection_drop_adds_clip_to_collection() {
         source_id: source.id.clone(),
         relative_path: PathBuf::from("clip.wav"),
         bounds: SelectionRange::new(0.25, 0.75),
+        keep_source_focused: false,
     });
     controller.ui.drag.set_target(
         DragSource::Collections,

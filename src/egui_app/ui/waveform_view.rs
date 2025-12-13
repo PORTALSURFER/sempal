@@ -224,7 +224,12 @@ impl EguiApp {
                                 range: selection,
                             });
                         } else {
-                            self.controller.start_selection_drag_payload(selection, pos);
+                            let keep_source_focused = ui.input(|i| i.modifiers.shift);
+                            self.controller.start_selection_drag_payload(
+                                selection,
+                                pos,
+                                keep_source_focused,
+                            );
                         }
                     }
                 } else if handle_response.dragged() {
