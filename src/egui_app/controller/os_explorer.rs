@@ -6,9 +6,9 @@ pub(super) fn reveal_in_file_explorer(path: &Path) -> Result<(), String> {
     }
     #[cfg(target_os = "windows")]
     {
-        let status = std::process::Command::new("explorer")
-            .arg("/select,")
-            .arg(path)
+        let quoted = format!("/select,\"{}\"", path.display());
+        let status = std::process::Command::new("explorer.exe")
+            .arg(quoted)
             .status()
             .map_err(|err| format!("Failed to launch explorer: {err}"))?;
         if status.success() {
@@ -40,4 +40,3 @@ pub(super) fn reveal_in_file_explorer(path: &Path) -> Result<(), String> {
             .map_err(|err| format!("Could not open folder {}: {err}", parent.display()))
     }
 }
-
