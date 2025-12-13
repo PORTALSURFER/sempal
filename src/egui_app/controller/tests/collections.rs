@@ -2,6 +2,7 @@ use super::super::selection_edits::SelectionEditRequest;
 use super::super::test_support::{dummy_controller, sample_entry, write_test_wav};
 use super::super::*;
 use super::common::*;
+use crate::app_dirs::ConfigBaseGuard;
 use crate::egui_app::controller::collection_export;
 use crate::egui_app::controller::hotkeys;
 use crate::egui_app::state::{
@@ -26,6 +27,7 @@ use tempfile::tempdir;
 #[test]
 fn export_path_copies_and_refreshes_members() -> Result<(), String> {
     let temp = tempdir().unwrap();
+    let _guard = ConfigBaseGuard::set(temp.path().to_path_buf());
     let source_root = temp.path().join("source");
     let export_root = temp.path().join("export");
     std::fs::create_dir_all(&source_root).unwrap();

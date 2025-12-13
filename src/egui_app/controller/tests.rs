@@ -963,6 +963,7 @@ fn sample_drop_to_folder_rejects_conflicts() {
 #[test]
 fn export_path_copies_and_refreshes_members() -> Result<(), String> {
     let temp = tempdir().unwrap();
+    let _guard = ConfigBaseGuard::set(temp.path().to_path_buf());
     let source_root = temp.path().join("source");
     let export_root = temp.path().join("export");
     std::fs::create_dir_all(&source_root).unwrap();
