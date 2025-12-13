@@ -1,3 +1,73 @@
+## [unreleased]
+
+### 🚀 Features
+
+- *(hotkeys)* Bind brackets to trash/keep samples
+- *(ui)* Show app version in status bar
+- *(ui)* Unify sample and collection item lists via flat items list component and align selection/focus styling
+- *(ui)* Allow toggling selection on collection list rows
+- *(ui)* Add soft overlay highlight for multi-selected browser rows
+- *(ui)* Move trashed samples in background
+- *(hotkeys)* Add 't' to trim waveform selection
+- *(waveform)* Add / and \ fade hotkeys; soften fade curve
+- *(waveform)* Add 'n' normalize selection or whole sample
+- *(waveform)* Add crop hotkeys and non-destructive crop-as-new-sample
+- *(collections)* Sync entries from export root folders
+- *(undo)* Add 20-step undo/redo with hotkeys
+
+### 🐛 Bug Fixes
+
+- *(scanner)* Warn on read_dir entry errors instead of silently flattening
+- *(ui)* Left-align numbering in sample browser and collections lists
+- *(tests)* Seed loaded_audio so loop-toggle test exercises real path
+- *(dragdrop)* Prevent selection-to-collection drop from adding clip to current sample source
+- *(dragdrop)* Store selection-to-collection clips in app folder, not source
+- *(ui)* Restore browsable source on browser select after collection preview
+- *(test)* Avoid deadlocking ConfigBaseGuard during global test config init
+- *(windows-clipboard)* Remove bogus GlobalUnlock on lock failure and add RAII for HGLOBAL/locks
+- *(windows-clipboard)* Use correct GlobalFree import and release HGLOBAL only after SetClipboardData
+- *(audio)* Compute loop progress/remaining with Duration math
+- *(waveform)* Correct duration frame math for multichannel wavs
+- *(scanner)* Skip symlink dirs and tolerate read errors
+- Restore folder drop move for samples
+- Finalize drags after UI target update
+- *(test)* Isolate config in tests and skip version bump in non-release
+- *(tests)* Prevent Instant overflow and stabilize trash-move cancellation
+- *(ui)* Stop collection selection from locking scroll
+- *(windows)* Suppress hotkey beep by consuming backslash/t text events
+
+### 🚜 Refactor
+
+- *(tests)* Split controller tests into focused modules
+- *(controller)* Extract browser/waveform/drag-drop/hotkeys/collections sub-controllers behind clear interfaces
+- *(controller)* Extract browser/waveform/drag-drop/hotkeys/collections sub-controllers behind clear interfaces
+- Drop module-level dead_code allows
+- Replace render_list_row args struct
+- Cfg-gate windows drag-out paths
+
+### 📚 Documentation
+
+- Add Windows ASIO build note
+- Add missing rustdoc on public API
+
+### ⚡ Performance
+
+- *(waveform)* Cache sampled columns per zoom and remove oversampling
+- *(decode)* Decimate long wavs into peaks instead of full samples
+- *(browser)* Cache fuzzy search scores across rebuilds
+- Speed up collection switching
+- Avoid source reload when selecting collection items
+
+### 🧪 Testing
+
+- *(app_dirs)* Isolate config home to temp dir during tests
+- *(waveform)* Add 24-bit int WAV decode scaling coverage
+- *(controller)* Move browser selection integration tests to tests/
+
+### ⚙️ Miscellaneous Tasks
+
+- Add rustfmt and clippy checks with local workflow docs
+- *(controller)* Replace guarded unwraps with safer option handling
 ## [0.287.0] - 2025-12-11
 
 ### 🚀 Features
@@ -67,6 +137,7 @@
 - Clear controller and ui clippy warnings
 - Remove unused controller methods and tidy plan
 - Complete plan for black box migration
+- *(review)* Add comprehensive codebase review TODOs
 - *(release)* V0.287.0 (#16)
 ## [0.239.0] - 2025-12-10
 
