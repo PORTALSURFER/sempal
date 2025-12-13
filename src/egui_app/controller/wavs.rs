@@ -1279,7 +1279,9 @@ impl EguiController {
         relative_path: &Path,
     ) -> Result<Vec<u8>, String> {
         let full_path = source.root.join(relative_path);
-        fs::read(&full_path).map_err(|err| format!("Failed to read {}: {err}", full_path.display()))
+        let bytes =
+            fs::read(&full_path).map_err(|err| format!("Failed to read {}: {err}", full_path.display()))?;
+        Ok(crate::wav_sanitize::sanitize_wav_bytes(bytes))
     }
 
     fn current_file_metadata(
