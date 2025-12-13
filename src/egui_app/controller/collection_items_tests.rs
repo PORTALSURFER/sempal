@@ -1,6 +1,7 @@
 use super::test_support::{dummy_controller, write_test_wav};
 use super::*;
 use std::path::Path;
+use tempfile::tempdir;
 
 fn setup_collection_with_sample(file_name: &str) -> (EguiController, SampleSource, CollectionId) {
     let (mut controller, source) = dummy_controller();
@@ -92,6 +93,27 @@ fn collection_rows_expose_tags_in_ui() {
         .find(|row| row.relative_path == Path::new("one.wav"))
         .unwrap();
     assert_eq!(entry.tag, SampleTag::Neutral);
+}
+
+#[test]
+fn collection_clip_tagging_works_without_registered_source() {
+    let (mut controller, _source, collection_id) = setup_collection_with_sample("one.wav");
+    let temp = tempdir().unwrap();
+    let clip_root = temp.path().join("clips");
+    std::fs::create_dir_all(&clip_root).unwrap();
+    write_test_wav(&clip_root.join("clip_sel.wav"), &[0.2, -0.1]);
+
+    controller
+        .add_clip_to_collection(&collection_id, clip_root, PathBuf::from("clip_sel.wav"))
+        .unwrap();
+    controller.refresh_collections_ui();
+    controller.select_collection_sample(1);
+
+    controller.tag_selected_collection_sample(SampleTag::Keep);
+
+    assert_eq!(controller.ui.collections.samples[1].tag, SampleTag::Keep);
+    assert_ne!(controller.ui.status.text, "Source not available for this sample");
+    assert_ne!(controller.ui.status.badge_label, "Warning");
 }
 
 #[test]
