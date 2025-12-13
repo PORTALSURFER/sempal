@@ -21,6 +21,7 @@ description: How to set up Sempal, triage samples, edit waveforms, and manage co
 - **Center:** Waveform viewer (seek, loop, selection editing) above the Sample browser triage list (All/Keep/Trash/Untagged with numbered rows and keep/trash markers).
 - **Collections (right):** Manage collections, export folders, and per-collection items; missing export paths or files are highlighted.
 - **Status bar (bottom):** Status badge/text, Options menu for trash actions, and a persistent volume slider.
+- **Resizable sidebars:** Drag the vertical dividers to resize Sources and Collections.
 
 ## Configuration and storage
 - App settings live in `~/.config/.sempal/config.toml` (platform config dir); sources and collections are stored in `library.db` in the same folder. Legacy `config.json` files migrate automatically.
@@ -38,17 +39,19 @@ description: How to set up Sempal, triage samples, edit waveforms, and manage co
 - Selection basics: click to focus; **Shift + click** extends; **Ctrl/Cmd + click** toggles multi-select while keeping focus. **Up/Down** moves focus; **Shift + Up/Down** extends. Toggle **Alt + R** to lock random navigation so **Down** plays random visible samples and **Up** steps backward through random history.
 - Tagging: **Right Arrow** → Keep (Trash → Neutral, others → Keep). **Left Arrow** → Trash (Keep → Neutral, others → Trash). **Ctrl/Cmd + Right/Left** moves the selection across triage columns.
 - Row context menu: Tag Keep/Neutral/Trash, **Normalize (overwrite)**, **Rename**, **Delete file**. Applies to the focused row or multi-select.
+- Row context menu: **Open in file explorer** reveals the focused sample in your OS file manager.
 - **Ctrl/Cmd + C** copies focused/selected samples to the clipboard as file drops (for DAWs/file managers). Dragging a row into the browser retags it to the active filter (All/Untagged → Neutral).
 
 ## Playback and waveform editing
 - **Space** toggles play/pause. **Esc** stops playback and clears browser + waveform selection. Click waveform to seek; clicking while a selection exists clears it.
-- **Loop on/off** uses the selection when present, otherwise the full file; a loop bar shows the active region and the playhead.
-- Drag to create a selection; drag edge brackets to resize. The bottom handle supports drag-and-drop.
+- **Loop on/off** uses the selection when present, otherwise the full file; a loop bar shows the active region and the playhead. Toggle via hotkey `L` or the **Loop: On/Off** button above the waveform.
+- Drag to create a selection; drag edge brackets to resize. The bottom handle supports drag-and-drop and alternate gestures.
 - Right-click a selection for destructive edits (overwrites source): **Crop to selection**, **Trim selection out**, **Fade to null** (L→R or R→L), **Mute selection**, **Normalize selection** (adds 5 ms edge fades).
 - Destructive edits prompt for confirmation; enable **Yolo mode** in **Options** to apply without prompting.
 - Drag the selection handle:
   - Onto the Sample browser to save a trimmed clip beside the source (`<name>_sel.wav`, `<name>_sel_2.wav`, ...), tagged by the current filter.
   - Onto a Collection to save and add the clip there (exports into the collection folder when configured).
+  - Hold **Alt** while dragging to slide the selection left/right in time instead of exporting it.
   - On Windows, dragging outside the window exports and starts an external drag for DAWs/file managers.
 
 ## Collections and exports
