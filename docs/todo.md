@@ -1,14 +1,4 @@
-- every time I run our test suite, it will break my source target lists and collecton list next time I run a regular release build again
 
-- in the collection items list, the selected items will block scrolling, lets fix that. the user should be able to freely scroll
-
-- in wavefrom context, add 't' to trim audio selection
-
-- in wavefrom context, add hotkeys '/' and '\' to fade audio selection, lets also adjust the fade algo so its a soft S curve, not a hard diagonal. 
-
-- in wavefrom context, add hotkey 'n' to normalize audio selection when a selection is available, otherwise just normalize the whole thing like the sample browser normalize does.
-
-- in wavefrom context, add hotkey 'c' to crop selection, and 'C/shift+c' for crop as non-destructive crop as new sample option, adding a new sample in the same location as the original with _crop001 added, etc.
 
 - lets sync up the collection list when a collection export root gets mapped, listing each direct subfolder as a collection entry
 
@@ -51,3 +41,5 @@ warning: build failed, waiting for other jobs to finish...
 
   note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 warning: build failed, waiting for other jobs to finish...
+
+- if focus goes away from the sample browser context, for example, I focus an item in the collection list. make sure to stop focussing sample items in the browser 
