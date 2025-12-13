@@ -66,15 +66,32 @@ impl EguiApp {
                 ctx.request_repaint();
             }
             let (pointer_outside, pointer_left) = ctx.input(|i| {
+                if self.controller.ui.drag.payload.is_some() {
+                    let pointer_gone = i
+                        .events
+                        .iter()
+                        .any(|e| matches!(e, egui::Event::PointerGone));
+                    if pointer_gone {
+                        self.controller.ui.drag.pointer_left_window = true;
+                    }
+                    let pointer_moved = i.events.iter().any(|e| match e {
+                        egui::Event::PointerMoved(_) => true,
+                        _ => false,
+                    });
+                    if pointer_moved {
+                        self.controller.ui.drag.pointer_left_window = false;
+                    }
+                } else {
+                    self.controller.ui.drag.pointer_left_window = false;
+                }
+
                 // `interact_pos` may keep reporting the last in-window position even after the
                 // pointer leaves the window during a drag, which would prevent external drags
                 // from arming. Only treat `hover_pos` as "inside" for this purpose.
                 let inside = i.pointer.hover_pos().is_some();
-                let outside = self.controller.ui.drag.payload.is_some() && !inside;
-                let left = i
-                    .events
-                    .iter()
-                    .any(|e| matches!(e, egui::Event::PointerGone));
+                let outside = self.controller.ui.drag.payload.is_some()
+                    && (!inside || self.controller.ui.drag.pointer_left_window);
+                let left = self.controller.ui.drag.pointer_left_window;
                 (outside, left)
             });
             self.controller
