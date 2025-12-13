@@ -155,6 +155,9 @@ fn selection_drop_to_browser_ignores_active_collection() {
         .load_waveform_for_selection(&source, Path::new("clip.wav"))
         .unwrap();
     controller.ui.focus.context = FocusContext::Waveform;
+    controller.wav_entries = vec![sample_entry("clip.wav", SampleTag::Neutral)];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
 
     let collection = Collection::new("Active");
     let collection_id = collection.id.clone();
@@ -180,15 +183,67 @@ fn selection_drop_to_browser_ignores_active_collection() {
         .find(|c| c.id == collection_id)
         .unwrap();
     assert!(collection.members.is_empty());
-    assert_eq!(controller.ui.browser.visible.len(), 1);
-    assert_eq!(controller.wav_entries.len(), 1);
-    assert_eq!(
-        controller.wav_entries[0].relative_path,
-        PathBuf::from("clip_sel.wav")
+    assert!(
+        controller
+            .wav_entries
+            .iter()
+            .any(|entry| entry.relative_path == PathBuf::from("clip_sel.wav"))
     );
     assert_eq!(controller.selected_wav.as_deref(), Some(Path::new("clip_sel.wav")));
     assert_eq!(controller.ui.focus.context, FocusContext::SampleBrowser);
-    assert_eq!(controller.ui.browser.selected_visible, Some(0));
+    assert_eq!(
+        controller.ui.browser.selected_visible,
+        controller.visible_row_for_path(Path::new("clip_sel.wav"))
+    );
+}
+
+#[test]
+fn selection_drop_to_browser_respects_shift_pressed_mid_drag() {
+    let temp = tempdir().unwrap();
+    let _guard = ConfigBaseGuard::set(temp.path().to_path_buf());
+    let root = temp.path().join("source");
+    std::fs::create_dir_all(&root).unwrap();
+    let renderer = WaveformRenderer::new(12, 12);
+    let mut controller = EguiController::new(renderer, None);
+    let source = SampleSource::new(root.clone());
+    controller.sources.push(source.clone());
+    controller.selected_source = Some(source.id.clone());
+    controller.cache_db(&source).unwrap();
+
+    let orig = root.join("clip.wav");
+    write_test_wav(&orig, &[0.1, 0.2, 0.3, 0.4]);
+    controller
+        .load_waveform_for_selection(&source, Path::new("clip.wav"))
+        .unwrap();
+    controller.ui.focus.context = FocusContext::Waveform;
+    controller.wav_entries = vec![sample_entry("clip.wav", SampleTag::Neutral)];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+
+    controller.ui.drag.payload = Some(DragPayload::Selection {
+        source_id: source.id.clone(),
+        relative_path: PathBuf::from("clip.wav"),
+        bounds: SelectionRange::new(0.0, 0.5),
+        keep_source_focused: false,
+    });
+
+    // Simulate the user pressing shift mid-drag, before dropping onto the browser.
+    controller.update_active_drag(
+        eframe::egui::pos2(10.0, 10.0),
+        DragSource::Browser,
+        DragTarget::BrowserTriage(crate::egui_app::state::TriageFlagColumn::Keep),
+        true,
+    );
+    controller.finish_active_drag();
+
+    assert!(
+        controller
+            .wav_entries
+            .iter()
+            .any(|entry| entry.relative_path == PathBuf::from("clip_sel.wav"))
+    );
+    assert_eq!(controller.selected_wav.as_deref(), Some(Path::new("clip.wav")));
+    assert_eq!(controller.ui.focus.context, FocusContext::Waveform);
 }
 
 #[test]
