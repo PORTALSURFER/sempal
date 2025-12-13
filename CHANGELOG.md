@@ -1,4 +1,4 @@
-## [unreleased]
+## [0.340.0] - 2025-12-13
 
 ### 🚀 Features
 
@@ -68,6 +68,7 @@
 
 - Add rustfmt and clippy checks with local workflow docs
 - *(controller)* Replace guarded unwraps with safer option handling
+- *(release)* V0.340.0 (#24)
 ## [0.287.0] - 2025-12-11
 
 ### 🚀 Features
