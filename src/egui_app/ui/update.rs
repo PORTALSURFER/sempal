@@ -63,7 +63,8 @@ impl EguiApp {
         #[cfg(target_os = "windows")]
         {
             let (pointer_outside, pointer_left) = ctx.input(|i| {
-                let outside = i.pointer.primary_down() && i.pointer.hover_pos().is_none();
+                let inside = i.pointer.hover_pos().or_else(|| i.pointer.interact_pos()).is_some();
+                let outside = self.controller.ui.drag.payload.is_some() && !inside;
                 let left = i
                     .events
                     .iter()

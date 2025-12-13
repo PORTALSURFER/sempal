@@ -117,12 +117,18 @@ impl EguiController {
             .get(row)
             .cloned()
             .ok_or_else(|| "Sample not found".to_string())?;
-        let source = self
-            .sources
-            .iter()
-            .find(|s| s.id == member.source_id)
-            .cloned()
-            .ok_or_else(|| "Source not available for this sample".to_string())?;
+        let source = if let Some(root) = member.clip_root.as_ref() {
+            SampleSource {
+                id: member.source_id.clone(),
+                root: root.clone(),
+            }
+        } else {
+            self.sources
+                .iter()
+                .find(|s| s.id == member.source_id)
+                .cloned()
+                .ok_or_else(|| "Source not available for this sample".to_string())?
+        };
         Ok(CollectionSampleContext {
             collection_id: collection.id,
             absolute_path: source.root.join(&member.relative_path),

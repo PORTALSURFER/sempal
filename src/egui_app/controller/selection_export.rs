@@ -34,6 +34,42 @@ impl EguiController {
         )
     }
 
+    pub(super) fn export_selection_clip_in_folder(
+        &mut self,
+        source_id: &SourceId,
+        relative_path: &Path,
+        bounds: SelectionRange,
+        target_tag: Option<SampleTag>,
+        add_to_browser: bool,
+        register_in_source: bool,
+        folder: &Path,
+    ) -> Result<WavEntry, String> {
+        let audio = self.selection_audio(source_id, relative_path)?;
+        let source = self
+            .sources
+            .iter()
+            .find(|s| &s.id == source_id)
+            .cloned()
+            .ok_or_else(|| "Source not available".to_string())?;
+        let name_hint = folder.join(
+            audio.relative_path
+                .file_name()
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("selection.wav")),
+        );
+        let target_rel = self.next_selection_path_in_dir(&source.root, &name_hint);
+        let target_abs = source.root.join(&target_rel);
+        let (samples, spec) = crop_selection_samples(&audio, bounds)?;
+        write_selection_wav(&target_abs, &samples, spec)?;
+        self.record_selection_entry(
+            &source,
+            target_rel,
+            target_tag,
+            add_to_browser,
+            register_in_source,
+        )
+    }
+
     pub(super) fn export_selection_clip_to_root(
         &mut self,
         source_id: &SourceId,

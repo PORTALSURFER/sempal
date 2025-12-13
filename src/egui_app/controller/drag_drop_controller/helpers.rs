@@ -70,6 +70,7 @@ impl DragDropController<'_> {
         self.ui.drag.clear_all_targets();
         self.ui.drag.last_folder_target = None;
         self.ui.drag.external_started = false;
+        self.ui.drag.external_arm_at = None;
     }
 
     #[cfg(target_os = "windows")]
@@ -100,6 +101,7 @@ impl DragDropController<'_> {
         self.ui.drag.clear_all_targets();
         self.ui.drag.last_folder_target = None;
         self.ui.drag.external_started = false;
+        self.ui.drag.external_arm_at = None;
     }
 
     pub(super) fn selection_drag_label(
@@ -355,9 +357,10 @@ impl DragDropController<'_> {
         bounds: SelectionRange,
         collection_target: Option<CollectionId>,
         triage_target: Option<TriageFlagColumn>,
+        folder_target: Option<PathBuf>,
         keep_source_focused: bool,
     ) {
-        if collection_target.is_none() && triage_target.is_none() {
+        if collection_target.is_none() && triage_target.is_none() && folder_target.is_none() {
             self.set_status(
                 "Drag the selection onto Samples or a collection to save it",
                 StatusTone::Warning,
@@ -369,6 +372,18 @@ impl DragDropController<'_> {
             TriageFlagColumn::Neutral => SampleTag::Neutral,
             TriageFlagColumn::Keep => SampleTag::Keep,
         });
+        if let Some(folder) = folder_target.as_deref()
+            && !folder.as_os_str().is_empty()
+        {
+            self.handle_selection_drop_to_folder(
+                &source_id,
+                &relative_path,
+                bounds,
+                folder,
+                keep_source_focused,
+            );
+            return;
+        }
         if triage_target.is_some() {
             self.handle_selection_drop_to_browser(
                 &source_id,
@@ -390,6 +405,61 @@ impl DragDropController<'_> {
         }
     }
 
+    fn handle_selection_drop_to_folder(
+        &mut self,
+        source_id: &SourceId,
+        relative_path: &Path,
+        bounds: SelectionRange,
+        folder: &Path,
+        keep_source_focused: bool,
+    ) {
+        let Some(source) = self.sources.iter().find(|s| &s.id == source_id).cloned() else {
+            self.set_status("Source not available for selection export", StatusTone::Error);
+            return;
+        };
+        if self
+            .selected_source
+            .as_ref()
+            .is_some_and(|selected| selected != &source.id)
+        {
+            self.set_status(
+                "Switch to the sample's source before saving into its folders",
+                StatusTone::Warning,
+            );
+            return;
+        }
+        let destination = source.root.join(folder);
+        if !destination.is_dir() {
+            self.set_status(
+                format!("Folder not found: {}", folder.display()),
+                StatusTone::Error,
+            );
+            return;
+        }
+        match self.export_selection_clip_in_folder(
+            source_id,
+            relative_path,
+            bounds,
+            None,
+            true,
+            true,
+            folder,
+        ) {
+            Ok(entry) => {
+                if !keep_source_focused {
+                    self.ui.browser.autoscroll = true;
+                    self.suppress_autoplay_once = true;
+                    self.select_from_browser(&entry.relative_path);
+                }
+                self.set_status(
+                    format!("Saved clip {}", entry.relative_path.display()),
+                    StatusTone::Info,
+                );
+            }
+            Err(err) => self.set_status(err, StatusTone::Error),
+        }
+    }
+
     fn handle_selection_drop_to_browser(
         &mut self,
         source_id: &SourceId,
@@ -398,14 +468,43 @@ impl DragDropController<'_> {
         target_tag: Option<SampleTag>,
         keep_source_focused: bool,
     ) {
-        match self.export_selection_clip(
-            source_id,
-            relative_path,
-            bounds,
-            target_tag,
-            true,
-            true,
-        ) {
+        let folder_override = self
+            .selected_source
+            .as_ref()
+            .is_some_and(|selected| selected == source_id)
+            .then(|| {
+                self.ui.sources.folders.focused.and_then(|idx| {
+                    self.ui
+                        .sources
+                        .folders
+                        .rows
+                        .get(idx)
+                        .map(|row| row.path.clone())
+                })
+            })
+            .flatten()
+            .filter(|path| !path.as_os_str().is_empty());
+        let export = if let Some(folder) = folder_override.as_deref() {
+            self.export_selection_clip_in_folder(
+                source_id,
+                relative_path,
+                bounds,
+                target_tag,
+                true,
+                true,
+                folder,
+            )
+        } else {
+            self.export_selection_clip(
+                source_id,
+                relative_path,
+                bounds,
+                target_tag,
+                true,
+                true,
+            )
+        };
+        match export {
             Ok(entry) => {
                 if !keep_source_focused {
                     self.ui.browser.autoscroll = true;
