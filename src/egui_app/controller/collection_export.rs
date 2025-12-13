@@ -399,6 +399,9 @@ fn copy_member_to_export(
         .file_name()
         .ok_or_else(|| "Invalid filename for export".to_string())?;
     let dest = export_root.join(file_name);
+    if dest == source_path {
+        return Ok(());
+    }
     std::fs::create_dir_all(export_root).map_err(|err| {
         format!(
             "Failed to create export folder {}: {err}",

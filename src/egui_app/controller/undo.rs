@@ -57,10 +57,12 @@ impl<T> UndoStack<T> {
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn can_undo(&self) -> bool {
         !self.undo.is_empty()
     }
 
+    #[allow(dead_code)]
     pub(crate) fn can_redo(&self) -> bool {
         !self.redo.is_empty()
     }

@@ -30,6 +30,20 @@ impl EguiApp {
                 "Split L/R",
             );
             split.on_hover_text("Render the first two channels separately");
+            ui.add_space(10.0);
+            let loop_enabled = self.controller.ui.waveform.loop_enabled;
+            let loop_label = if loop_enabled {
+                RichText::new("Loop: On").color(palette.accent_mint)
+            } else {
+                RichText::new("Loop: Off").color(palette.text_muted)
+            };
+            if ui
+                .add(egui::Button::new(loop_label))
+                .on_hover_text("Toggle loop playback for the current selection (or whole sample)")
+                .clicked()
+            {
+                self.controller.toggle_loop();
+            }
         });
         if view_mode != self.controller.ui.waveform.channel_view {
             self.controller.set_waveform_channel_view(view_mode);
@@ -49,6 +63,10 @@ impl EguiApp {
             let to_screen_x = |position: f32, rect: egui::Rect| {
                 let normalized = ((position - view.start) / view_width).clamp(0.0, 1.0);
                 rect.left() + rect.width() * normalized
+            };
+            let to_wave_pos = |pos: egui::Pos2, rect: egui::Rect| {
+                let normalized = ((pos.x - rect.left()) / rect.width()).clamp(0.0, 1.0);
+                normalized.mul_add(view_width, view.start).clamp(0.0, 1.0)
             };
             if let Some(message) = self.controller.ui.waveform.notice.as_ref() {
                 painter.rect_filled(rect, 0.0, palette.bg_primary);
@@ -110,13 +128,48 @@ impl EguiApp {
             let mut hover_x = None;
             let mut hovering = false;
             if let Some(pos) = pointer_pos.filter(|p| rect.contains(*p)) {
+                let now = std::time::Instant::now();
+                let moved = self
+                    .controller
+                    .ui
+                    .waveform
+                    .hover_pointer_pos
+                    .map_or(true, |prev| prev.distance(pos) > 0.5);
+                if moved {
+                    self.controller.ui.waveform.hover_pointer_pos = Some(pos);
+                    self.controller.ui.waveform.hover_pointer_last_moved_at = Some(now);
+                }
+
                 let normalized = ((pos.x - rect.left()) / rect.width())
                     .mul_add(view_width, view.start)
                     .clamp(0.0, 1.0);
-                hover_x = Some(pos.x);
                 hovering = true;
-                self.controller.set_waveform_cursor_from_hover(normalized);
-                self.controller.update_waveform_hover_time(Some(normalized));
+                let allow_hover_override = moved
+                    || self
+                        .controller
+                        .ui
+                        .waveform
+                        .cursor_last_navigation_at
+                        .is_none_or(|nav| {
+                            self.controller
+                                .ui
+                                .waveform
+                                .hover_pointer_last_moved_at
+                                .is_none_or(|moved_at| nav <= moved_at)
+                        });
+
+                if allow_hover_override {
+                    hover_x = Some(pos.x);
+                    self.controller.set_waveform_cursor_from_hover(normalized);
+                    self.controller.update_waveform_hover_time(Some(normalized));
+                } else if let Some(cursor) = self.controller.ui.waveform.cursor {
+                    hover_x = Some(to_screen_x(cursor, rect));
+                    self.controller.update_waveform_hover_time(Some(cursor));
+                } else {
+                    hover_x = Some(pos.x);
+                    self.controller.set_waveform_cursor_from_hover(normalized);
+                    self.controller.update_waveform_hover_time(Some(normalized));
+                }
             }
             let cursor_alpha = self.controller.waveform_cursor_alpha(hovering);
             if let Some(cursor) = self.controller.ui.waveform.cursor {
@@ -198,18 +251,43 @@ impl EguiApp {
                 painter.rect_filled(handle_rect, 0.0, handle_color);
                 if handle_response.drag_started() {
                     if let Some(pos) = handle_response.interact_pointer_pos() {
-                        self.controller.start_selection_drag_payload(selection, pos);
+                        let alt = ui.input(|i| i.modifiers.alt);
+                        if alt {
+                            let anchor = to_wave_pos(pos, rect);
+                            self.selection_slide = Some(super::SelectionSlide {
+                                anchor,
+                                range: selection,
+                            });
+                        } else {
+                            let keep_source_focused = ui.input(|i| i.modifiers.shift);
+                            self.controller.start_selection_drag_payload(
+                                selection,
+                                pos,
+                                keep_source_focused,
+                            );
+                        }
                     }
                 } else if handle_response.dragged() {
                     if let Some(pos) = handle_response.interact_pointer_pos() {
-                        self.controller.update_active_drag(
-                            pos,
-                            DragSource::Waveform,
-                            DragTarget::None,
-                        );
+                        if let Some(slide) = self.selection_slide {
+                            let cursor = to_wave_pos(pos, rect);
+                            let delta = cursor - slide.anchor;
+                            self.controller
+                                .set_selection_range(slide.range.shift(delta));
+                        } else {
+                            self.controller.update_active_drag(
+                                pos,
+                                DragSource::Waveform,
+                                DragTarget::None,
+                            );
+                        }
                     }
                 } else if handle_response.drag_stopped() {
-                    self.controller.finish_active_drag();
+                    if self.selection_slide.take().is_some() {
+                        self.controller.finish_selection_drag();
+                    } else {
+                        self.controller.finish_active_drag();
+                    }
                 }
                 if handle_response.dragged() {
                     ui.output_mut(|o| o.cursor_icon = CursorIcon::Grabbing);

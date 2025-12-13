@@ -1,26 +1,8 @@
-use super::super::selection_edits::SelectionEditRequest;
-use super::super::test_support::{dummy_controller, sample_entry, write_test_wav};
+use super::super::test_support::{dummy_controller, sample_entry};
 use super::super::*;
-use super::common::*;
-use crate::egui_app::controller::collection_export;
-use crate::egui_app::controller::hotkeys;
-use crate::egui_app::state::{
-    DestructiveSelectionEdit, DragPayload, DragSource, DragTarget, FocusContext,
-    SampleBrowserActionPrompt, TriageFlagColumn, TriageFlagFilter, WaveformView,
-};
+use crate::egui_app::state::{DragPayload, DragSource, DragTarget, TriageFlagColumn, TriageFlagFilter};
 use crate::sample_sources::Collection;
-use crate::sample_sources::collections::CollectionMember;
-use crate::waveform::DecodedWaveform;
-use egui;
-use hound::WavReader;
-use rand::SeedableRng;
-use rand::rngs::StdRng;
-use rand::seq::IteratorRandom;
-use std::io::Cursor;
-use std::mem;
 use std::path::{Path, PathBuf};
-use std::thread;
-use std::time::{Duration, Instant};
 use tempfile::tempdir;
 
 #[test]
@@ -326,4 +308,27 @@ fn tagging_under_filter_uses_random_focus_in_random_mode() {
         panic!("expected a selected row");
     };
     assert!(selected_visible < controller.visible_browser_indices().len());
+}
+
+#[test]
+fn browser_selection_is_cleared_when_focus_leaves_browser() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source);
+    controller.wav_entries = vec![
+        sample_entry("one.wav", SampleTag::Neutral),
+        sample_entry("two.wav", SampleTag::Neutral),
+    ];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+
+    controller.focus_browser_row(0);
+    assert_eq!(controller.ui.browser.selected_visible, Some(0));
+    assert!(controller.ui.browser.selected.is_some());
+
+    controller.focus_collections_list_context();
+    controller.blur_browser_focus();
+
+    assert!(controller.ui.browser.selected_visible.is_none());
+    assert!(controller.ui.browser.selected.is_none());
+    assert!(controller.ui.browser.selected_paths.is_empty());
 }

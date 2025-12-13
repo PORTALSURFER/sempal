@@ -1,6 +1,6 @@
 use super::audio_cache::{CacheKey, FileMetadata};
 use super::*;
-use crate::egui_app::state::{SampleBrowserActionPrompt, WaveformView};
+use crate::egui_app::state::{FocusContext, SampleBrowserActionPrompt, WaveformView};
 use crate::egui_app::view_model;
 use crate::waveform::DecodedWaveform;
 use fuzzy_matcher::FuzzyMatcher;
@@ -468,7 +468,11 @@ impl EguiController {
             self.ui.browser.autoscroll = false;
         }
         self.prune_browser_selection();
-        let highlight_selection = self.ui.collections.selected_sample.is_none();
+        let browser_has_focus = matches!(
+            self.ui.focus.context,
+            FocusContext::SampleBrowser | FocusContext::None
+        );
+        let highlight_selection = self.ui.collections.selected_sample.is_none() && browser_has_focus;
         let focused_index = highlight_selection
             .then_some(self.selected_row_index())
             .flatten();
@@ -828,6 +832,42 @@ impl EguiController {
         }
         self.ui.browser.selected_paths.clear();
         self.ui.browser.selection_anchor_visible = None;
+        self.rebuild_browser_lists();
+    }
+
+    /// Reveal the given sample browser item in the OS file explorer.
+    pub fn reveal_browser_sample_in_file_explorer(&mut self, relative_path: &Path) {
+        let Some(source) = self.current_source() else {
+            self.set_status("Select a source first", StatusTone::Info);
+            return;
+        };
+        let absolute = source.root.join(relative_path);
+        if !absolute.exists() {
+            self.set_status(
+                format!("File missing: {}", absolute.display()),
+                StatusTone::Warning,
+            );
+            return;
+        }
+        if let Err(err) = super::os_explorer::reveal_in_file_explorer(&absolute) {
+            self.set_status(err, StatusTone::Error);
+        }
+    }
+
+    /// Clear sample browser focus/selection when another surface takes focus.
+    pub fn blur_browser_focus(&mut self) {
+        if self.ui.browser.selected.is_none()
+            && self.ui.browser.selected_visible.is_none()
+            && self.ui.browser.selection_anchor_visible.is_none()
+            && self.ui.browser.selected_paths.is_empty()
+        {
+            return;
+        }
+        self.ui.browser.autoscroll = false;
+        self.ui.browser.selected = None;
+        self.ui.browser.selected_visible = None;
+        self.ui.browser.selection_anchor_visible = None;
+        self.ui.browser.selected_paths.clear();
         self.rebuild_browser_lists();
     }
 
