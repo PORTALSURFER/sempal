@@ -48,6 +48,11 @@ impl HotkeysActions for HotkeysController<'_> {
             HotkeyCommand::NormalizeFocusedSample => {
                 self.normalize_focused_sample(focus);
             }
+            HotkeyCommand::NormalizeWaveform => {
+                if matches!(focus, FocusContext::Waveform) {
+                    self.normalize_waveform_selection_or_sample();
+                }
+            }
             HotkeyCommand::DeleteFocusedSample => {
                 self.delete_focused_sample(focus);
             }
@@ -151,6 +156,55 @@ impl HotkeysActions for HotkeysController<'_> {
 }
 
 impl HotkeysController<'_> {
+    fn normalize_waveform_selection_or_sample(&mut self) {
+        if self
+            .ui
+            .waveform
+            .selection
+            .is_some_and(|selection| selection.width() > 0.0)
+        {
+            let _ = self
+                .request_destructive_selection_edit(DestructiveSelectionEdit::NormalizeSelection);
+            return;
+        }
+        if let Err(err) = self.normalize_loaded_sample_like_browser() {
+            self.set_status(err, StatusTone::Error);
+        }
+    }
+
+    fn normalize_loaded_sample_like_browser(&mut self) -> Result<(), String> {
+        let audio = self
+            .loaded_audio
+            .as_ref()
+            .ok_or_else(|| "Load a sample to normalize it".to_string())?;
+        let source = self
+            .sources
+            .iter()
+            .find(|s| s.id == audio.source_id)
+            .cloned()
+            .ok_or_else(|| "Source not available for loaded sample".to_string())?;
+        let relative_path = audio.relative_path.clone();
+        let absolute_path = source.root.join(&relative_path);
+        let (file_size, modified_ns, tag) =
+            self.normalize_and_save_for_path(&source, &relative_path, &absolute_path)?;
+        self.upsert_metadata_for_source(&source, &relative_path, file_size, modified_ns)?;
+        let updated = WavEntry {
+            relative_path: relative_path.clone(),
+            file_size,
+            modified_ns,
+            tag,
+            missing: false,
+        };
+        self.update_cached_entry(&source, &relative_path, updated);
+        if self.selected_source.as_ref() == Some(&source.id) {
+            self.rebuild_browser_lists();
+        }
+        self.refresh_waveform_for_sample(&source, &relative_path);
+        self.reexport_collections_for_sample(&source.id, &relative_path);
+        self.set_status(format!("Normalized {}", relative_path.display()), StatusTone::Info);
+        Ok(())
+    }
+
     fn normalize_focused_sample(&mut self, focus: FocusContext) {
         match focus {
             FocusContext::SampleBrowser => {
