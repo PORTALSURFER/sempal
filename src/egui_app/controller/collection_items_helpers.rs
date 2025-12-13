@@ -454,7 +454,9 @@ impl EguiController {
 pub(super) fn read_samples_for_normalization(
     path: &Path,
 ) -> Result<(Vec<f32>, hound::WavSpec), String> {
-    let mut reader = hound::WavReader::open(path).map_err(|err| format!("Invalid wav: {err}"))?;
+    let bytes = crate::wav_sanitize::read_sanitized_wav_bytes(path)?;
+    let mut reader = hound::WavReader::new(std::io::Cursor::new(bytes))
+        .map_err(|err| format!("Invalid wav: {err}"))?;
     let spec = reader.spec();
     let samples = match spec.sample_format {
         SampleFormat::Float => reader
