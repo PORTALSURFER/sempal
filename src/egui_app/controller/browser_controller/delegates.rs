@@ -1,10 +1,12 @@
 use super::*;
 
 impl EguiController {
+    /// Apply a keep/trash/neutral tag to a single visible browser row.
     pub fn tag_browser_sample(&mut self, row: usize, tag: SampleTag) -> Result<(), String> {
         self.browser().tag_browser_sample(row, tag)
     }
 
+    /// Apply a keep/trash/neutral tag to multiple visible browser rows.
     pub fn tag_browser_samples(
         &mut self,
         rows: &[usize],
@@ -15,22 +17,27 @@ impl EguiController {
             .tag_browser_samples(rows, tag, primary_visible_row)
     }
 
+    /// Normalize a single visible browser row in-place (overwrites audio).
     pub fn normalize_browser_sample(&mut self, row: usize) -> Result<(), String> {
         self.browser().normalize_browser_sample(row)
     }
 
+    /// Normalize multiple visible browser rows in-place (overwrites audio).
     pub fn normalize_browser_samples(&mut self, rows: &[usize]) -> Result<(), String> {
         self.browser().normalize_browser_samples(rows)
     }
 
+    /// Rename a single visible browser row on disk and refresh dependent state.
     pub fn rename_browser_sample(&mut self, row: usize, new_name: &str) -> Result<(), String> {
         self.browser().rename_browser_sample(row, new_name)
     }
 
+    /// Delete the file for a single visible browser row and prune references.
     pub fn delete_browser_sample(&mut self, row: usize) -> Result<(), String> {
         self.browser().delete_browser_sample(row)
     }
 
+    /// Delete files for multiple visible browser rows and prune references.
     pub fn delete_browser_samples(&mut self, rows: &[usize]) -> Result<(), String> {
         self.browser().delete_browser_samples(rows)
     }
@@ -67,11 +74,13 @@ impl EguiController {
     ) {
         if let Some(cache) = self.wav_cache.get_mut(&source.id) {
             cache.retain(|entry| entry.relative_path != relative_path);
+            self.rebuild_wav_cache_lookup(&source.id);
         }
         if self.selected_source.as_ref() == Some(&source.id) {
             self.wav_entries
                 .retain(|entry| entry.relative_path != relative_path);
             self.rebuild_wav_lookup();
+            self.browser_search_cache.invalidate();
             self.rebuild_browser_lists();
             self.label_cache
                 .insert(source.id.clone(), self.build_label_cache(&self.wav_entries));
@@ -157,6 +166,7 @@ impl EguiController {
         let member = CollectionMember {
             source_id: source_id.clone(),
             relative_path: relative_path.to_path_buf(),
+            clip_root: None,
         };
         for (collection_id, export_dir) in targets {
             collection_export::delete_exported_file(export_dir.clone(), &member);
@@ -197,11 +207,13 @@ impl EguiController {
             let member = CollectionMember {
                 source_id: source_id.clone(),
                 relative_path: new_relative.to_path_buf(),
+                clip_root: None,
             };
             for (collection_id, export_dir) in exports {
                 let old_member = CollectionMember {
                     source_id: source_id.clone(),
                     relative_path: old_relative.to_path_buf(),
+                    clip_root: None,
                 };
                 collection_export::delete_exported_file(export_dir.clone(), &old_member);
                 if let Err(err) = self.export_member_if_needed(&collection_id, &member) {
@@ -223,6 +235,7 @@ impl EguiController {
             let member = CollectionMember {
                 source_id: source_id.clone(),
                 relative_path: relative_path.to_path_buf(),
+                clip_root: None,
             };
             if collection.remove_member(source_id, &member.relative_path) {
                 changed = true;

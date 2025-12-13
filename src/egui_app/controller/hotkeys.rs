@@ -132,7 +132,12 @@ fn key_label(key: Key) -> &'static str {
         egui::Key::D => "D",
         egui::Key::C => "C",
         egui::Key::R => "R",
+        egui::Key::T => "T",
+        egui::Key::U => "U",
+        egui::Key::Y => "Y",
+        egui::Key::Z => "Z",
         egui::Key::Slash => "/",
+        egui::Key::Backslash => "\\",
         egui::Key::G => "G",
         egui::Key::S => "S",
         egui::Key::W => "W",
@@ -152,6 +157,8 @@ fn key_label(key: Key) -> &'static str {
 /// Logical identifier for controller-dispatched hotkey commands.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum HotkeyCommand {
+    Undo,
+    Redo,
     ToggleFocusedSelection,
     ToggleFolderSelection,
     NormalizeFocusedSample,
@@ -176,6 +183,12 @@ pub(crate) enum HotkeyCommand {
     MoveTrashedToFolder,
     TagKeepSelected,
     TagTrashSelected,
+    TrimSelection,
+    FadeSelectionLeftToRight,
+    FadeSelectionRightToLeft,
+    NormalizeWaveform,
+    CropSelection,
+    CropSelectionNewSample,
 }
 
 /// Hotkey metadata surfaced to the UI.
@@ -203,6 +216,34 @@ impl HotkeyAction {
 }
 
 const HOTKEY_ACTIONS: &[HotkeyAction] = &[
+    HotkeyAction {
+        id: "undo-ctrl-z",
+        label: "Undo",
+        gesture: HotkeyGesture::with_command(Key::Z),
+        scope: HotkeyScope::Global,
+        command: HotkeyCommand::Undo,
+    },
+    HotkeyAction {
+        id: "undo-u",
+        label: "Undo",
+        gesture: HotkeyGesture::new(Key::U),
+        scope: HotkeyScope::Global,
+        command: HotkeyCommand::Undo,
+    },
+    HotkeyAction {
+        id: "redo-ctrl-y",
+        label: "Redo",
+        gesture: HotkeyGesture::with_command(Key::Y),
+        scope: HotkeyScope::Global,
+        command: HotkeyCommand::Redo,
+    },
+    HotkeyAction {
+        id: "redo-shift-u",
+        label: "Redo",
+        gesture: HotkeyGesture::with_shift(Key::U),
+        scope: HotkeyScope::Global,
+        command: HotkeyCommand::Redo,
+    },
     HotkeyAction {
         id: "toggle-select",
         label: "Toggle selection",
@@ -274,6 +315,13 @@ const HOTKEY_ACTIONS: &[HotkeyAction] = &[
         command: HotkeyCommand::NormalizeFocusedSample,
     },
     HotkeyAction {
+        id: "normalize-waveform",
+        label: "Normalize selection/sample",
+        gesture: HotkeyGesture::new(Key::N),
+        scope: HotkeyScope::Focus(FocusContext::Waveform),
+        command: HotkeyCommand::NormalizeWaveform,
+    },
+    HotkeyAction {
         id: "delete-browser",
         label: "Delete sample",
         gesture: HotkeyGesture::new(Key::D),
@@ -293,6 +341,20 @@ const HOTKEY_ACTIONS: &[HotkeyAction] = &[
         gesture: HotkeyGesture::new(Key::C),
         scope: HotkeyScope::Focus(FocusContext::SampleBrowser),
         command: HotkeyCommand::AddFocusedToCollection,
+    },
+    HotkeyAction {
+        id: "crop-selection",
+        label: "Crop selection",
+        gesture: HotkeyGesture::new(Key::C),
+        scope: HotkeyScope::Focus(FocusContext::Waveform),
+        command: HotkeyCommand::CropSelection,
+    },
+    HotkeyAction {
+        id: "crop-selection-new-sample",
+        label: "Crop selection as new sample",
+        gesture: HotkeyGesture::with_shift(Key::C),
+        scope: HotkeyScope::Focus(FocusContext::Waveform),
+        command: HotkeyCommand::CropSelectionNewSample,
     },
     HotkeyAction {
         id: "show-hotkeys",
@@ -405,6 +467,27 @@ const HOTKEY_ACTIONS: &[HotkeyAction] = &[
         gesture: HotkeyGesture::new(Key::CloseBracket),
         scope: HotkeyScope::Global,
         command: HotkeyCommand::TagKeepSelected,
+    },
+    HotkeyAction {
+        id: "trim-selection",
+        label: "Trim selection",
+        gesture: HotkeyGesture::new(Key::T),
+        scope: HotkeyScope::Focus(FocusContext::Waveform),
+        command: HotkeyCommand::TrimSelection,
+    },
+    HotkeyAction {
+        id: "fade-selection-left-to-right",
+        label: "Fade selection (left to right)",
+        gesture: HotkeyGesture::new(Key::Backslash),
+        scope: HotkeyScope::Focus(FocusContext::Waveform),
+        command: HotkeyCommand::FadeSelectionLeftToRight,
+    },
+    HotkeyAction {
+        id: "fade-selection-right-to-left",
+        label: "Fade selection (right to left)",
+        gesture: HotkeyGesture::new(Key::Slash),
+        scope: HotkeyScope::Focus(FocusContext::Waveform),
+        command: HotkeyCommand::FadeSelectionRightToLeft,
     },
 ];
 

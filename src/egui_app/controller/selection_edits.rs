@@ -12,6 +12,8 @@ mod selection_smooth;
 use selection_normalize::normalize_selection;
 use selection_smooth::smooth_selection;
 
+use super::undo;
+
 /// Direction of a fade applied over the active selection.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum FadeDirection {
@@ -106,6 +108,70 @@ impl EguiController {
         result
     }
 
+    /// Write the cropped selection to a new sample file alongside the original.
+    pub(crate) fn crop_waveform_selection_to_new_sample(&mut self) -> Result<(), String> {
+        let context = self.selection_target()?;
+        let new_relative = next_crop_relative_path(&context.relative_path, &context.source.root)?;
+        let new_absolute = context.source.root.join(&new_relative);
+
+        let mut buffer = load_selection_buffer(&context.absolute_path, context.selection)?;
+        crop_buffer(&mut buffer)?;
+        if buffer.samples.is_empty() {
+            return Err("Selection has no audio to crop".into());
+        }
+        let spec = hound::WavSpec {
+            channels: buffer.spec_channels,
+            sample_rate: buffer.sample_rate.max(1),
+            bits_per_sample: 32,
+            sample_format: SampleFormat::Float,
+        };
+        write_selection_wav(&new_absolute, &buffer.samples, spec)?;
+
+        let (file_size, modified_ns) = file_metadata(&new_absolute)?;
+        let tag = self.sample_tag_for(&context.source, &context.relative_path)?;
+        let db = self
+            .database_for(&context.source)
+            .map_err(|err| format!("Database unavailable: {err}"))?;
+        db.upsert_file(&new_relative, file_size, modified_ns)
+            .map_err(|err| format!("Failed to sync database entry: {err}"))?;
+        db.set_tag(&new_relative, tag)
+            .map_err(|err| format!("Failed to sync tag: {err}"))?;
+
+        self.insert_cached_entry(
+            &context.source,
+            WavEntry {
+                relative_path: new_relative.clone(),
+                file_size,
+                modified_ns,
+                tag,
+                missing: false,
+            },
+        );
+        self.refresh_waveform_for_sample(&context.source, &context.relative_path);
+        self.reexport_collections_for_sample(&context.source.id, &new_relative);
+
+        if let Ok(backup) = undo::OverwriteBackup::capture_before(&new_absolute) {
+            if backup.capture_after(&new_absolute).is_ok() {
+                self.push_undo_entry(self.crop_new_sample_undo_entry(
+                    format!("Cropped to new sample {}", new_relative.display()),
+                    context.source.id.clone(),
+                    new_relative.clone(),
+                    new_absolute.clone(),
+                    tag,
+                    backup,
+                ));
+            }
+        }
+
+        let _ = self.load_waveform_for_selection(&context.source, &new_relative);
+        self.focus_waveform();
+        self.set_status(
+            format!("Cropped to new sample {}", new_relative.display()),
+            StatusTone::Info,
+        );
+        Ok(())
+    }
+
     /// Remove the selected span from the loaded sample.
     pub(crate) fn trim_waveform_selection(&mut self) -> Result<(), String> {
         let result = self.apply_selection_edit("Trimmed selection", trim_buffer);
@@ -188,6 +254,7 @@ impl EguiController {
         F: FnMut(&mut SelectionEditBuffer) -> Result<(), String>,
     {
         let context = self.selection_target()?;
+        let backup = undo::OverwriteBackup::capture_before(&context.absolute_path)?;
         let mut buffer = load_selection_buffer(&context.absolute_path, context.selection)?;
         edit(&mut buffer)?;
         if buffer.samples.is_empty() {
@@ -200,6 +267,7 @@ impl EguiController {
             sample_format: SampleFormat::Float,
         };
         write_selection_wav(&context.absolute_path, &buffer.samples, spec)?;
+        backup.capture_after(&context.absolute_path)?;
         let (file_size, modified_ns) = file_metadata(&context.absolute_path)?;
         let tag = self.sample_tag_for(&context.source, &context.relative_path)?;
         let entry = WavEntry {
@@ -212,6 +280,13 @@ impl EguiController {
         self.update_cached_entry(&context.source, &context.relative_path, entry);
         self.refresh_waveform_for_sample(&context.source, &context.relative_path);
         self.reexport_collections_for_sample(&context.source.id, &context.relative_path);
+        self.push_undo_entry(self.selection_edit_undo_entry(
+            format!("{action_label} {}", context.relative_path.display()),
+            context.source.id.clone(),
+            context.relative_path.clone(),
+            context.absolute_path.clone(),
+            backup,
+        ));
         self.set_status(
             format!("{} {}", action_label, context.relative_path.display()),
             StatusTone::Info,
@@ -246,6 +321,175 @@ impl EguiController {
             absolute_path,
             selection,
         })
+    }
+
+    fn selection_edit_undo_entry(
+        &self,
+        label: String,
+        source_id: SourceId,
+        relative_path: PathBuf,
+        absolute_path: PathBuf,
+        backup: undo::OverwriteBackup,
+    ) -> undo::UndoEntry<EguiController> {
+        let before = backup.before.clone();
+        let after = backup.after.clone();
+        let backup_dir = backup.dir.clone();
+        let undo_source_id = source_id.clone();
+        let redo_source_id = source_id;
+        let undo_relative = relative_path.clone();
+        let redo_relative = relative_path;
+        let undo_absolute = absolute_path.clone();
+        let redo_absolute = absolute_path;
+        undo::UndoEntry::<EguiController>::new(
+            label,
+            move |controller: &mut EguiController| {
+                std::fs::copy(&before, &undo_absolute)
+                    .map_err(|err| format!("Failed to restore audio: {err}"))?;
+                controller.sync_after_audio_overwrite(&undo_source_id, &undo_relative)?;
+                Ok(())
+            },
+            move |controller: &mut EguiController| {
+                std::fs::copy(&after, &redo_absolute)
+                    .map_err(|err| format!("Failed to reapply audio: {err}"))?;
+                controller.sync_after_audio_overwrite(&redo_source_id, &redo_relative)?;
+                Ok(())
+            },
+        )
+        .with_cleanup_dir(backup_dir)
+    }
+
+    fn crop_new_sample_undo_entry(
+        &self,
+        label: String,
+        source_id: SourceId,
+        relative_path: PathBuf,
+        absolute_path: PathBuf,
+        tag: SampleTag,
+        backup: undo::OverwriteBackup,
+    ) -> undo::UndoEntry<EguiController> {
+        let after = backup.after.clone();
+        let backup_dir = backup.dir.clone();
+        let undo_source_id = source_id.clone();
+        let redo_source_id = source_id;
+        let undo_relative = relative_path.clone();
+        let redo_relative = relative_path;
+        let undo_absolute = absolute_path.clone();
+        let redo_absolute = absolute_path;
+        undo::UndoEntry::<EguiController>::new(
+            label,
+            move |controller: &mut EguiController| {
+                let source = controller
+                    .sources
+                    .iter()
+                    .find(|s| s.id == undo_source_id)
+                    .cloned()
+                    .ok_or_else(|| "Source not available".to_string())?;
+                let db = controller
+                    .database_for(&source)
+                    .map_err(|err| format!("Database unavailable: {err}"))?;
+                let _ = std::fs::remove_file(&undo_absolute);
+                let _ = db.remove_file(&undo_relative);
+                controller.prune_cached_sample(&source, &undo_relative);
+                Ok(())
+            },
+            move |controller: &mut EguiController| {
+                let source = controller
+                    .sources
+                    .iter()
+                    .find(|s| s.id == redo_source_id)
+                    .cloned()
+                    .ok_or_else(|| "Source not available".to_string())?;
+                let db = controller
+                    .database_for(&source)
+                    .map_err(|err| format!("Database unavailable: {err}"))?;
+                if let Some(parent) = redo_absolute.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                std::fs::copy(&after, &redo_absolute)
+                    .map_err(|err| format!("Failed to restore crop file: {err}"))?;
+                let (file_size, modified_ns) = file_metadata(&redo_absolute)?;
+                db.upsert_file(&redo_relative, file_size, modified_ns)
+                    .map_err(|err| format!("Failed to sync database entry: {err}"))?;
+                db.set_tag(&redo_relative, tag)
+                    .map_err(|err| format!("Failed to sync tag: {err}"))?;
+                controller.insert_cached_entry(
+                    &source,
+                    WavEntry {
+                        relative_path: redo_relative.clone(),
+                        file_size,
+                        modified_ns,
+                        tag,
+                        missing: false,
+                    },
+                );
+                controller.refresh_waveform_for_sample(&source, &redo_relative);
+                controller.reexport_collections_for_sample(&source.id, &redo_relative);
+                Ok(())
+            },
+        )
+        .with_cleanup_dir(backup_dir)
+    }
+
+    fn sync_after_audio_overwrite(
+        &mut self,
+        source_id: &SourceId,
+        relative_path: &Path,
+    ) -> Result<(), String> {
+        let source = self
+            .sources
+            .iter()
+            .find(|s| &s.id == source_id)
+            .cloned()
+            .ok_or_else(|| "Source not available".to_string())?;
+        let absolute_path = source.root.join(relative_path);
+        let (file_size, modified_ns) = file_metadata(&absolute_path)?;
+        let tag = self.sample_tag_for(&source, relative_path)?;
+        let entry = WavEntry {
+            relative_path: relative_path.to_path_buf(),
+            file_size,
+            modified_ns,
+            tag,
+            missing: false,
+        };
+        self.update_cached_entry(&source, relative_path, entry);
+        self.refresh_waveform_for_sample(&source, relative_path);
+        self.reexport_collections_for_sample(&source.id, relative_path);
+        Ok(())
+    }
+}
+
+fn next_crop_relative_path(relative_path: &Path, root: &Path) -> Result<PathBuf, String> {
+    let parent = relative_path.parent().unwrap_or(Path::new(""));
+    let stem = relative_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("sample");
+    let stem = stem.trim();
+    let stem = if stem.is_empty() { "sample" } else { stem };
+    let stem = strip_crop_suffix(stem);
+    let ext = relative_path.extension().and_then(|e| e.to_str());
+
+    for idx in 1..=999u32 {
+        let file_name = match ext {
+            Some(ext) if !ext.is_empty() => format!("{stem}_crop{idx:03}.{ext}"),
+            _ => format!("{stem}_crop{idx:03}"),
+        };
+        let candidate = parent.join(file_name);
+        if !root.join(&candidate).exists() {
+            return Ok(candidate);
+        }
+    }
+    Err("Could not find available crop filename".into())
+}
+
+fn strip_crop_suffix(stem: &str) -> &str {
+    let Some((prefix, suffix)) = stem.rsplit_once("_crop") else {
+        return stem;
+    };
+    if suffix.len() == 3 && suffix.chars().all(|c| c.is_ascii_digit()) && !prefix.is_empty() {
+        prefix
+    } else {
+        stem
     }
 }
 
@@ -417,11 +661,19 @@ fn fade_factor(frame_count: usize, progress: f32, direction: FadeDirection) -> f
     if frame_count == 1 {
         return 0.0;
     }
+    let curve = smootherstep(progress.clamp(0.0, 1.0));
     let factor = match direction {
-        FadeDirection::LeftToRight => 1.0 - progress,
-        FadeDirection::RightToLeft => progress,
+        FadeDirection::LeftToRight => 1.0 - curve,
+        FadeDirection::RightToLeft => curve,
     };
     factor.clamp(0.0, 1.0)
+}
+
+fn smootherstep(t: f32) -> f32 {
+    // 6t^5 - 15t^4 + 10t^3: smooth S-curve with zero slope at endpoints.
+    let t2 = t * t;
+    let t3 = t2 * t;
+    t3 * (t * (t * 6.0 - 15.0) + 10.0)
 }
 
 fn apply_muted_selection(

@@ -6,6 +6,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use tracing::warn;
 use thiserror::Error;
 
 use super::db::SourceWriteBatch;
@@ -94,17 +95,56 @@ fn visit_dir(
 ) -> Result<(), ScanError> {
     let mut stack = vec![root.to_path_buf()];
     while let Some(dir) = stack.pop() {
-        let entries = fs::read_dir(&dir).map_err(|source| ScanError::Io {
-            path: dir.clone(),
-            source,
-        })?;
-        for entry in entries.flatten() {
+        let entries = match fs::read_dir(&dir) {
+            Ok(entries) => entries,
+            Err(source) if dir != root => {
+                warn!(
+                    dir = %dir.display(),
+                    error = %source,
+                    "Failed to read directory during scan"
+                );
+                continue;
+            }
+            Err(source) => {
+                return Err(ScanError::Io {
+                    path: dir.clone(),
+                    source,
+                });
+            }
+        };
+        for entry_result in entries {
+            let entry = match entry_result {
+                Ok(entry) => entry,
+                Err(err) => {
+                    warn!(
+                        dir = %dir.display(),
+                        error = %err,
+                        "Failed to read directory entry during scan"
+                    );
+                    continue;
+                }
+            };
+
             let path = entry.path();
-            if path.is_dir() {
+            let file_type = match entry.file_type() {
+                Ok(file_type) => file_type,
+                Err(err) => {
+                    warn!(
+                        path = %path.display(),
+                        error = %err,
+                        "Failed to read file type during scan"
+                    );
+                    continue;
+                }
+            };
+            if file_type.is_symlink() {
+                continue;
+            }
+            if file_type.is_dir() {
                 stack.push(path);
                 continue;
             }
-            if is_wav(&path) {
+            if file_type.is_file() && is_wav(&path) {
                 visitor(&path)?;
             }
         }
@@ -314,5 +354,54 @@ mod tests {
         assert_eq!(stats.missing, 1);
         let rows = db.list_files().unwrap();
         assert!(rows.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn scan_tolerates_vanishing_nested_directories() {
+        let dir = tempdir().unwrap();
+        let one = dir.path().join("one.wav");
+        std::fs::write(&one, b"one").unwrap();
+
+        let vanishing = dir.path().join("vanishing");
+        std::fs::create_dir_all(&vanishing).unwrap();
+        std::fs::write(vanishing.join("two.wav"), b"two").unwrap();
+
+        let vanishing_for_thread = vanishing.clone();
+        let killer = std::thread::spawn(move || {
+            for _ in 0..200 {
+                let _ = std::fs::remove_dir_all(&vanishing_for_thread);
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+        });
+
+        let db = SourceDatabase::open(dir.path()).unwrap();
+        let stats = scan_once(&db).unwrap();
+        assert!(stats.total_files >= 1);
+
+        let rows = db.list_files().unwrap();
+        assert!(rows.iter().any(|row| row.relative_path == PathBuf::from("one.wav")));
+
+        let _ = killer.join();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn scan_skips_symlink_directories() {
+        use std::os::unix::fs as unix_fs;
+
+        let dir = tempdir().unwrap();
+        let nested = dir.path().join("nested");
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::write(nested.join("two.wav"), b"two").unwrap();
+        std::fs::write(dir.path().join("one.wav"), b"one").unwrap();
+
+        let link = dir.path().join("nested_link");
+        unix_fs::symlink(&nested, &link).unwrap();
+
+        let db = SourceDatabase::open(dir.path()).unwrap();
+        let stats = scan_once(&db).unwrap();
+        assert_eq!(stats.total_files, 2);
+        assert_eq!(stats.added, 2);
     }
 }

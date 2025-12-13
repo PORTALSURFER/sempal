@@ -31,28 +31,21 @@ impl CollectionsActions for CollectionsController<'_> {
         };
         self.selected_collection = Some(collection.id.clone());
         self.ui.collections.selected_sample = Some(index);
+        self.ui.collections.scroll_to_sample = Some(index);
         self.focus_collection_context();
         self.ui.browser.selected = None;
         self.ui.browser.autoscroll = false;
-        self.refresh_collections_ui();
-        let target_source = member.source_id.clone();
+        self.refresh_collection_selection_ui();
+        let _target_source = member.source_id.clone();
         let target_path = member.relative_path.clone();
-        let Some(source) = self.sources.iter().find(|s| s.id == target_source).cloned() else {
+        let Some(source) = self.collection_member_source(member) else {
             self.set_status("Source not available for this sample", StatusTone::Warning);
             return;
         };
-        if Some(&target_source) != self.selected_source.as_ref() {
-            self.selected_source = Some(target_source.clone());
-            self.selected_wav = None;
-            self.loaded_wav = None;
-            self.refresh_sources_ui();
-            self.queue_wav_load();
-            let _ = self.persist_config("Failed to save selection");
-        }
         self.selected_wav = None;
         self.loaded_wav = None;
         self.ui.loaded_wav = None;
-        if self.sample_missing(&target_source, &target_path) {
+        if self.collection_member_missing(member) {
             self.show_missing_waveform_notice(&target_path);
             self.set_status(
                 format!("File missing: {}", target_path.display()),
@@ -79,9 +72,11 @@ impl CollectionsActions for CollectionsController<'_> {
             self.selected_collection = None;
         }
         self.ui.collections.selected_sample = None;
+        self.ui.collections.scroll_to_sample = None;
         self.clear_focus_context();
         self.ui.browser.autoscroll = false;
-        self.refresh_collections_ui();
+        self.refresh_collection_selection_ui();
+        self.refresh_collection_samples();
     }
 
     fn nudge_collection_row(&mut self, offset: isize) {
@@ -164,6 +159,7 @@ impl CollectionsActions for CollectionsController<'_> {
         };
         let old_name = self.collections[index].name.clone();
         let new_folder_name = collection_export::collection_folder_name_from_str(trimmed);
+        let mut clip_root_update: Option<(std::path::PathBuf, std::path::PathBuf)> = None;
         if let Some(old_folder) = collection_export::resolved_export_dir(
             &self.collections[index],
             self.collection_export_root.as_deref(),
@@ -194,12 +190,20 @@ impl CollectionsActions for CollectionsController<'_> {
                         return;
                     }
                     if self.collections[index].export_path.is_some() {
-                        self.collections[index].export_path = Some(new_folder);
+                        self.collections[index].export_path = Some(new_folder.clone());
                     }
+                    clip_root_update = Some((old_folder, new_folder));
                 }
             }
         }
         self.collections[index].name = trimmed.to_string();
+        if let Some((old_root, new_root)) = clip_root_update.as_ref() {
+            for member in self.collections[index].members.iter_mut() {
+                if member.clip_root.as_ref() == Some(old_root) {
+                    member.clip_root = Some(new_root.clone());
+                }
+            }
+        }
         if let Err(err) = self.persist_config("Failed to save collection") {
             self.set_status(err, StatusTone::Error);
             return;

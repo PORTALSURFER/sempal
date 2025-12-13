@@ -1,10 +1,9 @@
-#![allow(dead_code)]
 //! Helpers to convert domain data into egui-facing view structs.
 // Transitional helpers; wiring into the egui renderer will consume these.
 
 use crate::egui_app::state::{CollectionRowView, CollectionSampleView, SourceRowView};
 use crate::sample_sources::collections::{CollectionMember, collection_folder_name_from_str};
-use crate::sample_sources::{Collection, CollectionId, SampleSource, SampleTag, WavEntry};
+use crate::sample_sources::{Collection, CollectionId, SampleSource, SampleTag};
 use std::path::{Path, PathBuf};
 
 /// Convert a sample source into a UI row.
@@ -63,7 +62,11 @@ pub fn collection_samples(
         .enumerate()
         .map(|(index, member)| CollectionSampleView {
             source_id: member.source_id.clone(),
-            source: source_label(sources, member.source_id.as_str()),
+            source: if member.clip_root.is_some() {
+                "Collection clip".to_string()
+            } else {
+                source_label(sources, member.source_id.as_str())
+            },
             path: member.relative_path.clone(),
             label: sample_display_label(&member.relative_path),
             tag: tag_lookup(member),
@@ -103,13 +106,6 @@ pub fn sample_browser_index_for(
         },
         row: index,
     }
-}
-
-/// Locate the entry index by path for reuse in selection bookkeeping.
-pub fn locate_entry(entries: &[WavEntry], target: &Path) -> Option<usize> {
-    entries
-        .iter()
-        .position(|entry| entry.relative_path == target)
 }
 
 /// Produce a user-facing sample label that omits folders and extensions.

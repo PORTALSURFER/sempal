@@ -26,6 +26,8 @@ mod selection_export;
 mod source_folders;
 mod sources;
 mod trash;
+mod trash_move;
+mod undo;
 mod waveform_controller;
 mod wavs;
 
@@ -55,6 +57,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
     rc::Rc,
+    sync::Arc,
     sync::mpsc::{Receiver, Sender},
     thread,
     time::{Duration, Instant, SystemTime},
@@ -65,6 +68,7 @@ const MIN_SELECTION_WIDTH: f32 = 0.001;
 const AUDIO_CACHE_CAPACITY: usize = 12;
 const AUDIO_HISTORY_LIMIT: usize = 8;
 const RANDOM_HISTORY_LIMIT: usize = 20;
+const UNDO_LIMIT: usize = 20;
 
 /// Maintains app state and bridges core logic to the egui UI.
 pub struct EguiController {
@@ -78,12 +82,15 @@ pub struct EguiController {
     collections: Vec<Collection>,
     db_cache: HashMap<SourceId, Rc<SourceDatabase>>,
     wav_cache: HashMap<SourceId, Vec<WavEntry>>,
+    wav_cache_lookup: HashMap<SourceId, HashMap<PathBuf, usize>>,
     missing_wavs: HashMap<SourceId, HashSet<PathBuf>>,
     label_cache: HashMap<SourceId, Vec<String>>,
+    browser_search_cache: wavs::BrowserSearchCache,
     audio_cache: AudioCache,
     wav_entries: Vec<WavEntry>,
     wav_lookup: HashMap<PathBuf, usize>,
     selected_source: Option<SourceId>,
+    last_selected_browsable_source: Option<SourceId>,
     selected_collection: Option<CollectionId>,
     selected_wav: Option<PathBuf>,
     loaded_wav: Option<PathBuf>,
@@ -108,9 +115,12 @@ pub struct EguiController {
     next_audio_request_id: u64,
     scan_rx: Option<Receiver<ScanResult>>,
     scan_in_progress: bool,
+    trash_move_rx: Option<Receiver<trash_move::TrashMoveMessage>>,
+    trash_move_cancel: Option<Arc<std::sync::atomic::AtomicBool>>,
     random_history: VecDeque<RandomHistoryEntry>,
     random_history_cursor: Option<usize>,
     folder_browsers: HashMap<SourceId, source_folders::FolderBrowserModel>,
+    undo_stack: undo::UndoStack<EguiController>,
     #[cfg(target_os = "windows")]
     drag_hwnd: Option<windows::Win32::Foundation::HWND>,
     #[cfg(test)]
@@ -134,12 +144,15 @@ impl EguiController {
             collections: Vec::new(),
             db_cache: HashMap::new(),
             wav_cache: HashMap::new(),
+            wav_cache_lookup: HashMap::new(),
             missing_wavs: HashMap::new(),
             label_cache: HashMap::new(),
+            browser_search_cache: wavs::BrowserSearchCache::default(),
             audio_cache: AudioCache::new(AUDIO_CACHE_CAPACITY, AUDIO_HISTORY_LIMIT),
             wav_entries: Vec::new(),
             wav_lookup: HashMap::new(),
             selected_source: None,
+            last_selected_browsable_source: None,
             selected_collection: None,
             selected_wav: None,
             loaded_wav: None,
@@ -164,9 +177,12 @@ impl EguiController {
             next_audio_request_id: 1,
             scan_rx: None,
             scan_in_progress: false,
+            trash_move_rx: None,
+            trash_move_cancel: None,
             random_history: VecDeque::new(),
             random_history_cursor: None,
             folder_browsers: HashMap::new(),
+            undo_stack: undo::UndoStack::new(UNDO_LIMIT),
             #[cfg(target_os = "windows")]
             drag_hwnd: None,
             #[cfg(test)]
@@ -179,14 +195,45 @@ impl EguiController {
         self.drag_hwnd = hwnd;
     }
 
-    #[cfg(not(target_os = "windows"))]
-    pub fn set_drag_hwnd(&mut self, _hwnd: Option<()>) {}
-
     pub(crate) fn set_status(&mut self, text: impl Into<String>, tone: StatusTone) {
         let (label, color) = status_badge(tone);
         self.ui.status.text = text.into();
         self.ui.status.badge_label = label;
         self.ui.status.badge_color = color;
+    }
+
+    pub(crate) fn can_undo(&self) -> bool {
+        self.undo_stack.can_undo()
+    }
+
+    pub(crate) fn can_redo(&self) -> bool {
+        self.undo_stack.can_redo()
+    }
+
+    pub(crate) fn undo(&mut self) {
+        let mut stack = std::mem::replace(&mut self.undo_stack, undo::UndoStack::new(UNDO_LIMIT));
+        let result = stack.undo(self);
+        self.undo_stack = stack;
+        match result {
+            Ok(Some(label)) => self.set_status(format!("Undid {label}"), StatusTone::Info),
+            Ok(None) => self.set_status("Nothing to undo", StatusTone::Info),
+            Err(err) => self.set_status(format!("Undo failed: {err}"), StatusTone::Error),
+        }
+    }
+
+    pub(crate) fn redo(&mut self) {
+        let mut stack = std::mem::replace(&mut self.undo_stack, undo::UndoStack::new(UNDO_LIMIT));
+        let result = stack.redo(self);
+        self.undo_stack = stack;
+        match result {
+            Ok(Some(label)) => self.set_status(format!("Redid {label}"), StatusTone::Info),
+            Ok(None) => self.set_status("Nothing to redo", StatusTone::Info),
+            Err(err) => self.set_status(format!("Redo failed: {err}"), StatusTone::Error),
+        }
+    }
+
+    pub(crate) fn push_undo_entry(&mut self, entry: undo::UndoEntry<EguiController>) {
+        self.undo_stack.push(entry);
     }
 
     pub(crate) fn browser(&mut self) -> browser_controller::BrowserController<'_> {
@@ -254,6 +301,7 @@ struct WavLoadResult {
 struct PendingAudio {
     request_id: u64,
     source_id: SourceId,
+    root: PathBuf,
     relative_path: PathBuf,
     intent: AudioLoadIntent,
 }

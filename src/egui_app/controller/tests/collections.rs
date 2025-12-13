@@ -2,6 +2,7 @@ use super::super::selection_edits::SelectionEditRequest;
 use super::super::test_support::{dummy_controller, sample_entry, write_test_wav};
 use super::super::*;
 use super::common::*;
+use crate::app_dirs::ConfigBaseGuard;
 use crate::egui_app::controller::collection_export;
 use crate::egui_app::controller::hotkeys;
 use crate::egui_app::state::{
@@ -26,6 +27,7 @@ use tempfile::tempdir;
 #[test]
 fn export_path_copies_and_refreshes_members() -> Result<(), String> {
     let temp = tempdir().unwrap();
+    let _guard = ConfigBaseGuard::set(temp.path().to_path_buf());
     let source_root = temp.path().join("source");
     let export_root = temp.path().join("export");
     std::fs::create_dir_all(&source_root).unwrap();
@@ -169,6 +171,152 @@ fn starting_browser_rename_queues_prompt_for_focused_row() {
     }
     assert!(controller.ui.browser.rename_focus_requested);
     assert_eq!(controller.ui.focus.context, FocusContext::SampleBrowser);
+}
+
+#[test]
+fn selecting_browser_sample_clears_collection_selection() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.cache_db(&source).unwrap();
+
+    write_test_wav(&source.root.join("a.wav"), &[0.0]);
+    write_test_wav(&source.root.join("b.wav"), &[0.0]);
+    controller.wav_entries = vec![
+        sample_entry("a.wav", SampleTag::Neutral),
+        sample_entry("b.wav", SampleTag::Neutral),
+    ];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+
+    let mut collection = Collection::new("Test");
+    collection.members.push(CollectionMember {
+        source_id: source.id.clone(),
+        relative_path: PathBuf::from("a.wav"),
+        clip_root: None,
+    });
+    let collection_id = collection.id.clone();
+    controller.collections.push(collection);
+    controller.selected_collection = Some(collection_id);
+
+    controller.select_collection_sample(0);
+    assert_eq!(controller.ui.collections.selected_sample, Some(0));
+
+    controller.select_wav_by_path(Path::new("b.wav"));
+
+    assert!(controller.ui.collections.selected_sample.is_none());
+    assert_eq!(controller.selected_wav.as_deref(), Some(Path::new("b.wav")));
+}
+
+#[test]
+fn selecting_collection_sample_does_not_switch_selected_source() {
+    let temp = tempdir().unwrap();
+    let root_a = temp.path().join("source_a");
+    let root_b = temp.path().join("source_b");
+    std::fs::create_dir_all(&root_a).unwrap();
+    std::fs::create_dir_all(&root_b).unwrap();
+    let renderer = WaveformRenderer::new(12, 12);
+    let mut controller = EguiController::new(renderer, None);
+    let source_a = SampleSource::new(root_a);
+    let source_b = SampleSource::new(root_b);
+    controller.sources.push(source_a.clone());
+    controller.sources.push(source_b.clone());
+    controller.selected_source = Some(source_a.id.clone());
+
+    let mut collection = Collection::new("Test");
+    collection.members.push(CollectionMember {
+        source_id: source_b.id.clone(),
+        relative_path: PathBuf::from("b.wav"),
+        clip_root: None,
+    });
+    controller.selected_collection = Some(collection.id.clone());
+    controller.collections.push(collection);
+    controller.refresh_collections_ui();
+
+    controller.select_collection_sample(0);
+
+    assert_eq!(controller.selected_source.as_ref(), Some(&source_a.id));
+}
+
+#[test]
+fn sample_tag_for_builds_wav_cache_lookup() {
+    let temp = tempdir().unwrap();
+    let root = temp.path().join("source");
+    std::fs::create_dir_all(&root).unwrap();
+    let renderer = WaveformRenderer::new(12, 12);
+    let mut controller = EguiController::new(renderer, None);
+    let source = SampleSource::new(root);
+    controller.sources.push(source.clone());
+
+    controller.wav_cache.insert(
+        source.id.clone(),
+        vec![
+            sample_entry("a.wav", SampleTag::Keep),
+            sample_entry("b.wav", SampleTag::Neutral),
+        ],
+    );
+    assert!(controller.wav_cache_lookup.get(&source.id).is_none());
+
+    let tag = controller.sample_tag_for(&source, Path::new("b.wav")).unwrap();
+    assert_eq!(tag, SampleTag::Neutral);
+    assert!(controller.wav_cache_lookup.contains_key(&source.id));
+    assert!(controller
+        .wav_cache_lookup
+        .get(&source.id)
+        .unwrap()
+        .contains_key(Path::new("b.wav")));
+}
+
+#[test]
+fn pruning_cached_sample_updates_wav_cache_lookup() {
+    let temp = tempdir().unwrap();
+    let root = temp.path().join("source");
+    std::fs::create_dir_all(&root).unwrap();
+    let renderer = WaveformRenderer::new(12, 12);
+    let mut controller = EguiController::new(renderer, None);
+    let source = SampleSource::new(root);
+    controller.sources.push(source.clone());
+
+    controller.wav_cache.insert(
+        source.id.clone(),
+        vec![
+            sample_entry("a.wav", SampleTag::Neutral),
+            sample_entry("b.wav", SampleTag::Neutral),
+        ],
+    );
+    controller.rebuild_wav_cache_lookup(&source.id);
+    assert!(controller
+        .wav_cache_lookup
+        .get(&source.id)
+        .unwrap()
+        .contains_key(Path::new("a.wav")));
+
+    controller.prune_cached_sample(&source, Path::new("a.wav"));
+
+    assert!(!controller
+        .wav_cache_lookup
+        .get(&source.id)
+        .unwrap()
+        .contains_key(Path::new("a.wav")));
+}
+
+#[test]
+fn browser_selection_restores_last_browsable_source_after_clip_preview() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.cache_db(&source).unwrap();
+
+    write_test_wav(&source.root.join("a.wav"), &[0.0]);
+    controller.wav_entries = vec![sample_entry("a.wav", SampleTag::Neutral)];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+
+    controller.last_selected_browsable_source = Some(source.id.clone());
+    controller.selected_source = Some(SourceId::from_string("collection-test"));
+
+    controller.select_wav_by_path(Path::new("a.wav"));
+
+    assert_eq!(controller.selected_source.as_ref(), Some(&source.id));
+    assert_eq!(controller.ui.waveform.loading, Some(PathBuf::from("a.wav")));
 }
 
 #[test]

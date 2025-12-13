@@ -8,6 +8,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+mod playhead_edges;
+
 mod fixtures {
     use super::*;
     use hound::{SampleFormat, WavSpec, WavWriter};
@@ -175,10 +177,35 @@ fn remaining_loop_duration_reports_time_left_in_cycle() {
         loop_offset: None,
         volume: 1.0,
         output: ResolvedOutput::default(),
+        elapsed_override: None,
     };
 
     let remaining = player.remaining_loop_duration().unwrap();
     assert!((remaining.as_secs_f32() - 1.25).abs() < 0.1);
+}
+
+#[test]
+fn remaining_loop_duration_accounts_for_full_track_offset() {
+    let Ok(stream) = rodio::OutputStreamBuilder::open_default_stream() else {
+        return;
+    };
+    let started_at = Instant::now() - Duration::from_secs_f32(0.5);
+    let player = AudioPlayer {
+        stream,
+        sink: None,
+        current_audio: None,
+        track_duration: Some(8.0),
+        started_at: Some(started_at),
+        play_span: Some((0.0, 8.0)),
+        looping: true,
+        loop_offset: Some(2.0),
+        volume: 1.0,
+        output: ResolvedOutput::default(),
+        elapsed_override: None,
+    };
+
+    let remaining = player.remaining_loop_duration().unwrap();
+    assert!((remaining.as_secs_f32() - 5.5).abs() < 0.1);
 }
 
 #[test]
@@ -197,6 +224,7 @@ fn remaining_loop_duration_none_when_not_looping() {
         loop_offset: None,
         volume: 1.0,
         output: ResolvedOutput::default(),
+        elapsed_override: None,
     };
 
     assert!(player.remaining_loop_duration().is_none());
@@ -253,6 +281,7 @@ fn progress_wraps_full_loop_from_offset() {
         loop_offset: Some(7.0),
         volume: 1.0,
         output: ResolvedOutput::default(),
+        elapsed_override: None,
     };
 
     let progress = player.progress().unwrap();
@@ -323,6 +352,7 @@ fn play_range_accepts_zero_width_request() {
         loop_offset: None,
         volume: 1.0,
         output: ResolvedOutput::default(),
+        elapsed_override: None,
     };
     let bytes = vec![
         0x52, 0x49, 0x46, 0x46, 0x24, 0x80, 0x00, 0x00, 0x57, 0x41, 0x56, 0x45, 0x66, 0x6D, 0x74,
