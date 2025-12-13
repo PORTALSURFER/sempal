@@ -75,7 +75,7 @@ impl EguiApp {
                 (outside, left)
             });
             self.controller
-                .maybe_launch_external_drag(pointer_outside || pointer_left);
+                .maybe_launch_external_drag(pointer_outside, pointer_left);
         }
     }
 
