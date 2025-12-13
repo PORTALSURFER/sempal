@@ -1,26 +1,7 @@
-use super::super::selection_edits::SelectionEditRequest;
-use super::super::test_support::{dummy_controller, sample_entry, write_test_wav};
+use super::super::test_support::{sample_entry, write_test_wav};
 use super::super::*;
-use crate::egui_app::controller::collection_export;
-use crate::egui_app::controller::hotkeys;
-use crate::egui_app::state::{
-    DestructiveSelectionEdit, DragPayload, DragSource, DragTarget, FocusContext,
-    SampleBrowserActionPrompt, TriageFlagColumn, TriageFlagFilter, WaveformView,
-};
-use crate::sample_sources::Collection;
-use crate::sample_sources::collections::CollectionMember;
-use crate::waveform::DecodedWaveform;
-use egui;
 use hound::WavReader;
-use rand::SeedableRng;
-use rand::rngs::StdRng;
-use rand::seq::IteratorRandom;
-use std::io::Cursor;
-use std::mem;
-use std::path::{Path, PathBuf};
-use std::thread;
-use std::time::{Duration, Instant};
-use tempfile::tempdir;
+use std::path::Path;
 
 pub(super) fn max_sample_amplitude(path: &Path) -> f32 {
     WavReader::open(path)
