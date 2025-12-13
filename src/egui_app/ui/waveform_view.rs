@@ -275,10 +275,12 @@ impl EguiApp {
                             self.controller
                                 .set_selection_range(slide.range.shift(delta));
                         } else {
+                            let shift_down = ui.input(|i| i.modifiers.shift);
                             self.controller.update_active_drag(
                                 pos,
                                 DragSource::Waveform,
                                 DragTarget::None,
+                                shift_down,
                             );
                         }
                     }
