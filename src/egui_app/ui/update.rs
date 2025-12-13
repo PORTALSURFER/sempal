@@ -62,6 +62,9 @@ impl EguiApp {
         }
         #[cfg(target_os = "windows")]
         {
+            if self.controller.ui.drag.payload.is_some() {
+                ctx.request_repaint();
+            }
             let (pointer_outside, pointer_left) = ctx.input(|i| {
                 // `interact_pos` may keep reporting the last in-window position even after the
                 // pointer leaves the window during a drag, which would prevent external drags

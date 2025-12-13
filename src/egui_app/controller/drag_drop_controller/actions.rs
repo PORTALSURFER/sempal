@@ -264,11 +264,7 @@ impl DragDropController<'_> {
             self.ui.drag.external_arm_at = None;
             return false;
         }
-        if pointer_left {
-            self.ui.drag.external_arm_at = None;
-            return true;
-        }
-        if !pointer_outside {
+        if !(pointer_outside || pointer_left) {
             self.ui.drag.external_arm_at = None;
             return false;
         }
@@ -367,7 +363,7 @@ mod external_drag_tests {
     }
 
     #[test]
-    fn external_drag_launches_immediately_when_pointer_leaves_window() {
+    fn external_drag_arms_on_pointer_gone_then_launches_after_dwell_time() {
         let renderer = WaveformRenderer::new(12, 12);
         let mut controller = EguiController::new(renderer, None);
         let mut drag = DragDropController::new(&mut controller);
@@ -377,7 +373,13 @@ mod external_drag_tests {
         });
 
         let start = Instant::now();
-        assert!(drag.should_launch_external_drag(false, true, start));
-        assert!(drag.ui.drag.external_arm_at.is_none());
+        assert!(!drag.should_launch_external_drag(false, true, start));
+        assert!(drag.ui.drag.external_arm_at.is_some());
+
+        assert!(drag.should_launch_external_drag(
+            true,
+            false,
+            start + DragDropController::EXTERNAL_DRAG_ARM_WINDOW
+        ));
     }
 }
