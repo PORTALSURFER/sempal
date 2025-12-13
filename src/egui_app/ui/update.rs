@@ -63,7 +63,10 @@ impl EguiApp {
         #[cfg(target_os = "windows")]
         {
             let (pointer_outside, pointer_left) = ctx.input(|i| {
-                let inside = i.pointer.hover_pos().or_else(|| i.pointer.interact_pos()).is_some();
+                // `interact_pos` may keep reporting the last in-window position even after the
+                // pointer leaves the window during a drag, which would prevent external drags
+                // from arming. Only treat `hover_pos` as "inside" for this purpose.
+                let inside = i.pointer.hover_pos().is_some();
                 let outside = self.controller.ui.drag.payload.is_some() && !inside;
                 let left = i
                     .events
