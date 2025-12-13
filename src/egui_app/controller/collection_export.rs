@@ -180,8 +180,71 @@ impl EguiController {
 
     fn set_collection_export_root(&mut self, path: Option<PathBuf>) -> Result<(), String> {
         self.collection_export_root = path.clone();
-        self.ui.collection_export_root = path;
+        self.ui.collection_export_root = path.clone();
+        if let Some(root) = path.as_deref() {
+            let _ = self.sync_collections_from_export_root_path(root);
+        }
         self.persist_config("Failed to save collection export root")
+    }
+
+    pub(crate) fn sync_collections_from_export_root_path(
+        &mut self,
+        root: &Path,
+    ) -> Result<usize, String> {
+        if !root.exists() {
+            return Ok(0);
+        }
+        if !root.is_dir() {
+            return Err(format!(
+                "Collection export root is not a directory: {}",
+                root.display()
+            ));
+        }
+        let mut created = 0usize;
+        let mut changed = false;
+        let entries = std::fs::read_dir(root)
+            .map_err(|err| format!("Failed to read export root {}: {err}", root.display()))?;
+        for entry in entries {
+            let entry =
+                entry.map_err(|err| format!("Failed to read export root entry: {err}"))?;
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            let Some(folder_name) = path.file_name().and_then(|name| name.to_str()) else {
+                continue;
+            };
+            if folder_name.starts_with('.') {
+                continue;
+            }
+            let normalized = crate::sample_sources::config::normalize_path(path.as_path());
+            if self
+                .collections
+                .iter()
+                .any(|c| c.export_path.as_ref() == Some(&normalized))
+            {
+                continue;
+            }
+            if let Some(existing) = self
+                .collections
+                .iter_mut()
+                .find(|c| c.export_path.is_none() && c.name == folder_name)
+            {
+                existing.export_path = Some(normalized);
+                changed = true;
+                continue;
+            }
+            let mut collection = Collection::new(folder_name);
+            collection.export_path = Some(normalized);
+            self.collections.push(collection);
+            created += 1;
+            changed = true;
+        }
+        if changed {
+            let _ = self.persist_config("Failed to save collections after export root sync");
+            self.refresh_collections_ui();
+        }
+        Ok(created)
     }
 
     fn export_all_members(&mut self, collection_id: &CollectionId) -> Result<(), String> {
@@ -429,6 +492,7 @@ pub(super) fn collection_folder_name_from_str(name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app_dirs::ConfigBaseGuard;
     use crate::sample_sources::Collection;
     use tempfile::tempdir;
 
@@ -478,5 +542,63 @@ mod tests {
         )
         .expect("dir");
         assert_eq!(dir, PathBuf::from("global").join("Global Collection"));
+    }
+
+    #[test]
+    fn setting_export_root_syncs_direct_subfolders_to_collections() {
+        let temp = tempdir().unwrap();
+        let _guard = ConfigBaseGuard::set(temp.path().to_path_buf());
+        let export_root = temp.path().join("export_root");
+        std::fs::create_dir_all(export_root.join("A")).unwrap();
+        std::fs::create_dir_all(export_root.join("B")).unwrap();
+        std::fs::create_dir_all(export_root.join(".hidden")).unwrap();
+        std::fs::write(export_root.join("not_a_dir.txt"), b"x").unwrap();
+
+        let renderer = crate::waveform::WaveformRenderer::new(4, 4);
+        let mut controller = EguiController::new(renderer, None);
+
+        let normalized_root = crate::sample_sources::config::normalize_path(export_root.as_path());
+        controller
+            .set_collection_export_root(Some(normalized_root.clone()))
+            .unwrap();
+
+        assert_eq!(controller.collections.len(), 2);
+        assert!(controller.collections.iter().any(|c| c.name == "A"));
+        assert!(controller.collections.iter().any(|c| c.name == "B"));
+
+        let expected_a =
+            crate::sample_sources::config::normalize_path(export_root.join("A").as_path());
+        let expected_b =
+            crate::sample_sources::config::normalize_path(export_root.join("B").as_path());
+        assert!(controller
+            .collections
+            .iter()
+            .any(|c| c.name == "A" && c.export_path.as_ref() == Some(&expected_a)));
+        assert!(controller
+            .collections
+            .iter()
+            .any(|c| c.name == "B" && c.export_path.as_ref() == Some(&expected_b)));
+    }
+
+    #[test]
+    fn sync_updates_existing_collection_export_path_by_name() {
+        let temp = tempdir().unwrap();
+        let _guard = ConfigBaseGuard::set(temp.path().to_path_buf());
+        let export_root = temp.path().join("export_root");
+        std::fs::create_dir_all(export_root.join("Existing")).unwrap();
+
+        let renderer = crate::waveform::WaveformRenderer::new(4, 4);
+        let mut controller = EguiController::new(renderer, None);
+        controller.collections.push(Collection::new("Existing"));
+
+        let created = controller
+            .sync_collections_from_export_root_path(export_root.as_path())
+            .unwrap();
+        assert_eq!(created, 0);
+        assert_eq!(controller.collections.len(), 1);
+
+        let expected =
+            crate::sample_sources::config::normalize_path(export_root.join("Existing").as_path());
+        assert_eq!(controller.collections[0].export_path.as_ref(), Some(&expected));
     }
 }
