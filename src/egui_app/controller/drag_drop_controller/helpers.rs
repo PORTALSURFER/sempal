@@ -41,18 +41,18 @@ impl DragDropController<'_> {
             });
         if let Some(path) = preferred {
             if path.exists() && !path.is_dir() {
-                tracing::warn!(
-                    "collection export path is not a directory, falling back: {}",
+                return Err(format!(
+                    "Collection export path is not a directory: {}",
                     path.display()
-                );
-            } else if std::fs::create_dir_all(&path).is_ok() {
-                return Ok(path);
-            } else {
-                tracing::warn!(
-                    "failed to create collection export path, falling back: {}",
-                    path.display()
-                );
+                ));
             }
+            std::fs::create_dir_all(&path).map_err(|err| {
+                format!(
+                    "Failed to create collection export path {}: {err}",
+                    path.display()
+                )
+            })?;
+            return Ok(path);
         }
         let fallback = crate::app_dirs::app_root_dir()
             .map_err(|err| err.to_string())?
@@ -424,13 +424,17 @@ impl DragDropController<'_> {
                 return;
             }
         };
+        let clip_name_hint = relative_path
+            .file_name()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("selection.wav"));
         match self.export_selection_clip_to_root(
             source_id,
             relative_path,
             bounds,
             target_tag,
             &clip_root,
-            relative_path,
+            &clip_name_hint,
         ) {
             Ok(entry) => {
                 self.selected_collection = Some(collection_id.clone());
