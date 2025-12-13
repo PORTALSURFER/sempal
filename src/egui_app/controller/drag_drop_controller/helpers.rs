@@ -70,6 +70,7 @@ impl DragDropController<'_> {
         self.ui.drag.clear_all_targets();
         self.ui.drag.last_folder_target = None;
         self.ui.drag.external_started = false;
+        self.ui.drag.external_arm_at = None;
     }
 
     #[cfg(target_os = "windows")]
@@ -100,6 +101,7 @@ impl DragDropController<'_> {
         self.ui.drag.clear_all_targets();
         self.ui.drag.last_folder_target = None;
         self.ui.drag.external_started = false;
+        self.ui.drag.external_arm_at = None;
     }
 
     pub(super) fn selection_drag_label(
