@@ -65,6 +65,16 @@ impl EguiApp {
             if self.controller.ui.drag.payload.is_some() {
                 ctx.request_repaint();
             }
+            let window_inside = self
+                .controller
+                .ui
+                .drag
+                .payload
+                .is_some()
+                .then(|| platform::hwnd_from_frame(_frame))
+                .flatten()
+                .and_then(platform::cursor_inside_hwnd);
+
             let (pointer_outside, pointer_left) = ctx.input(|i| {
                 if self.controller.ui.drag.payload.is_some() {
                     let pointer_gone = i
@@ -85,12 +95,14 @@ impl EguiApp {
                     self.controller.ui.drag.pointer_left_window = false;
                 }
 
-                // Use `interact_pos` to detect an in-window drag, but ignore it once we've
-                // observed `PointerGone` (it can keep reporting the last in-window position).
-                let hover_pos = i.pointer.hover_pos();
-                let interact_pos = i.pointer.interact_pos();
-                let inside = hover_pos.is_some()
-                    || (interact_pos.is_some() && !self.controller.ui.drag.pointer_left_window);
+                // Prefer the OS cursor/window geometry check when available; it's robust even
+                // when egui stops reporting pointer positions outside the window.
+                let inside = window_inside.unwrap_or_else(|| {
+                    let hover_pos = i.pointer.hover_pos();
+                    let interact_pos = i.pointer.interact_pos();
+                    hover_pos.is_some()
+                        || (interact_pos.is_some() && !self.controller.ui.drag.pointer_left_window)
+                });
                 let outside = self.controller.ui.drag.payload.is_some()
                     && (!inside || self.controller.ui.drag.pointer_left_window);
                 let left = self.controller.ui.drag.pointer_left_window;
