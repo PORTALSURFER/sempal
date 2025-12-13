@@ -290,3 +290,40 @@ fn t_hotkey_prompts_trim_selection_in_waveform_focus() {
         DestructiveSelectionEdit::TrimSelection
     );
 }
+
+#[test]
+fn slash_hotkeys_prompt_fade_selection_in_waveform_focus() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.selected_source = Some(source.id.clone());
+    controller.cache_db(&source).unwrap();
+    let wav_path = source.root.join("fade_hotkey.wav");
+    write_test_wav(&wav_path, &[0.0, 0.1, 0.2, 0.3]);
+    controller.wav_entries = vec![sample_entry("fade_hotkey.wav", SampleTag::Neutral)];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+    controller
+        .load_waveform_for_selection(&source, Path::new("fade_hotkey.wav"))
+        .unwrap();
+    controller.ui.waveform.selection = Some(SelectionRange::new(0.25, 0.75));
+
+    let backslash = hotkeys::iter_actions()
+        .find(|action| action.id == "fade-selection-left-to-right")
+        .unwrap();
+    controller.handle_hotkey(backslash, FocusContext::Waveform);
+    assert_eq!(
+        controller.ui.waveform.pending_destructive.as_ref().unwrap().edit,
+        DestructiveSelectionEdit::FadeLeftToRight
+    );
+
+    controller.ui.waveform.pending_destructive = None;
+
+    let slash = hotkeys::iter_actions()
+        .find(|action| action.id == "fade-selection-right-to-left")
+        .unwrap();
+    controller.handle_hotkey(slash, FocusContext::Waveform);
+    assert_eq!(
+        controller.ui.waveform.pending_destructive.as_ref().unwrap().edit,
+        DestructiveSelectionEdit::FadeRightToLeft
+    );
+}

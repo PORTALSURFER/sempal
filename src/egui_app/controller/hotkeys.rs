@@ -134,6 +134,7 @@ fn key_label(key: Key) -> &'static str {
         egui::Key::R => "R",
         egui::Key::T => "T",
         egui::Key::Slash => "/",
+        egui::Key::Backslash => "\\",
         egui::Key::G => "G",
         egui::Key::S => "S",
         egui::Key::W => "W",
@@ -178,6 +179,8 @@ pub(crate) enum HotkeyCommand {
     TagKeepSelected,
     TagTrashSelected,
     TrimSelection,
+    FadeSelectionLeftToRight,
+    FadeSelectionRightToLeft,
 }
 
 /// Hotkey metadata surfaced to the UI.
@@ -414,6 +417,20 @@ const HOTKEY_ACTIONS: &[HotkeyAction] = &[
         gesture: HotkeyGesture::new(Key::T),
         scope: HotkeyScope::Focus(FocusContext::Waveform),
         command: HotkeyCommand::TrimSelection,
+    },
+    HotkeyAction {
+        id: "fade-selection-left-to-right",
+        label: "Fade selection (left to right)",
+        gesture: HotkeyGesture::new(Key::Backslash),
+        scope: HotkeyScope::Focus(FocusContext::Waveform),
+        command: HotkeyCommand::FadeSelectionLeftToRight,
+    },
+    HotkeyAction {
+        id: "fade-selection-right-to-left",
+        label: "Fade selection (right to left)",
+        gesture: HotkeyGesture::new(Key::Slash),
+        scope: HotkeyScope::Focus(FocusContext::Waveform),
+        command: HotkeyCommand::FadeSelectionRightToLeft,
     },
 ];
 
