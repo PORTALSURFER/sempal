@@ -2,6 +2,7 @@ use super::*;
 use crate::egui_app::controller::hotkeys::{HotkeyAction, HotkeyCommand};
 use crate::egui_app::state::FocusContext;
 use crate::sample_sources::SampleTag;
+use crate::egui_app::state::DestructiveSelectionEdit;
 
 pub(crate) trait HotkeysActions {
     fn handle_hotkey(&mut self, action: HotkeyAction, focus: FocusContext);
@@ -123,6 +124,13 @@ impl HotkeysActions for HotkeysController<'_> {
             }
             HotkeyCommand::TagTrashSelected => {
                 self.tag_selected(SampleTag::Trash);
+            }
+            HotkeyCommand::TrimSelection => {
+                if matches!(focus, FocusContext::Waveform) {
+                    let _ = self.request_destructive_selection_edit(
+                        DestructiveSelectionEdit::TrimSelection,
+                    );
+                }
             }
         }
     }
