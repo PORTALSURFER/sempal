@@ -410,7 +410,7 @@ impl DragDropController<'_> {
                 if !keep_source_focused {
                     self.ui.browser.autoscroll = true;
                     self.suppress_autoplay_once = true;
-                    self.select_wav_by_path(&entry.relative_path);
+                    self.select_from_browser(&entry.relative_path);
                 }
                 let status = format!("Saved clip {}", entry.relative_path.display());
                 self.set_status(status, StatusTone::Info);
