@@ -64,6 +64,10 @@ impl EguiApp {
                 let normalized = ((position - view.start) / view_width).clamp(0.0, 1.0);
                 rect.left() + rect.width() * normalized
             };
+            let to_wave_pos = |pos: egui::Pos2, rect: egui::Rect| {
+                let normalized = ((pos.x - rect.left()) / rect.width()).clamp(0.0, 1.0);
+                normalized.mul_add(view_width, view.start).clamp(0.0, 1.0)
+            };
             if let Some(message) = self.controller.ui.waveform.notice.as_ref() {
                 painter.rect_filled(rect, 0.0, palette.bg_primary);
                 let font = TextStyle::Heading.resolve(ui.style());
@@ -212,18 +216,38 @@ impl EguiApp {
                 painter.rect_filled(handle_rect, 0.0, handle_color);
                 if handle_response.drag_started() {
                     if let Some(pos) = handle_response.interact_pointer_pos() {
-                        self.controller.start_selection_drag_payload(selection, pos);
+                        let alt = ui.input(|i| i.modifiers.alt);
+                        if alt {
+                            let anchor = to_wave_pos(pos, rect);
+                            self.selection_slide = Some(super::SelectionSlide {
+                                anchor,
+                                range: selection,
+                            });
+                        } else {
+                            self.controller.start_selection_drag_payload(selection, pos);
+                        }
                     }
                 } else if handle_response.dragged() {
                     if let Some(pos) = handle_response.interact_pointer_pos() {
-                        self.controller.update_active_drag(
-                            pos,
-                            DragSource::Waveform,
-                            DragTarget::None,
-                        );
+                        if let Some(slide) = self.selection_slide {
+                            let cursor = to_wave_pos(pos, rect);
+                            let delta = cursor - slide.anchor;
+                            self.controller
+                                .set_selection_range(slide.range.shift(delta));
+                        } else {
+                            self.controller.update_active_drag(
+                                pos,
+                                DragSource::Waveform,
+                                DragTarget::None,
+                            );
+                        }
                     }
                 } else if handle_response.drag_stopped() {
-                    self.controller.finish_active_drag();
+                    if self.selection_slide.take().is_some() {
+                        self.controller.finish_selection_drag();
+                    } else {
+                        self.controller.finish_active_drag();
+                    }
                 }
                 if handle_response.dragged() {
                     ui.output_mut(|o| o.cursor_icon = CursorIcon::Grabbing);

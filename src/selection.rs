@@ -39,6 +39,29 @@ impl SelectionRange {
     pub fn is_empty(&self) -> bool {
         self.width() == 0.0
     }
+
+    /// Shift the selection by the given delta, clamping to the waveform bounds.
+    pub fn shift(self, delta: f32) -> Self {
+        if !delta.is_finite() {
+            return self;
+        }
+        let width = self.width().clamp(0.0, 1.0);
+        if width >= 1.0 {
+            return SelectionRange::new(0.0, 1.0);
+        }
+        let mut start = self.start + delta;
+        let mut end = self.end + delta;
+        if start < 0.0 {
+            end -= start;
+            start = 0.0;
+        }
+        if end > 1.0 {
+            let over = end - 1.0;
+            start -= over;
+            end = 1.0;
+        }
+        SelectionRange::new(start, end)
+    }
 }
 
 /// The selection edge being dragged.
@@ -152,6 +175,12 @@ fn clamp01(value: f32) -> f32 {
 mod tests {
     use super::*;
 
+    fn assert_range_close(actual: SelectionRange, expected: SelectionRange) {
+        let eps = 1e-6;
+        assert!((actual.start() - expected.start()).abs() < eps);
+        assert!((actual.end() - expected.end()).abs() < eps);
+    }
+
     #[test]
     fn new_range_orders_bounds() {
         let range = SelectionRange::new(0.8, 0.2);
@@ -215,5 +244,19 @@ mod tests {
         state.begin_new(0.2);
         assert!(state.clear());
         assert!(state.range().is_none());
+    }
+
+    #[test]
+    fn shift_clamps_within_bounds() {
+        let range = SelectionRange::new(0.2, 0.4);
+        assert_range_close(range.shift(0.1), SelectionRange::new(0.3, 0.5));
+        assert_range_close(range.shift(-0.3), SelectionRange::new(0.0, 0.2));
+        assert_range_close(range.shift(1.0), SelectionRange::new(0.8, 1.0));
+    }
+
+    #[test]
+    fn shift_noops_on_nan() {
+        let range = SelectionRange::new(0.2, 0.4);
+        assert_eq!(range.shift(f32::NAN), range);
     }
 }
