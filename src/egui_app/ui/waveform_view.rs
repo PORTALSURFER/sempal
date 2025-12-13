@@ -128,13 +128,48 @@ impl EguiApp {
             let mut hover_x = None;
             let mut hovering = false;
             if let Some(pos) = pointer_pos.filter(|p| rect.contains(*p)) {
+                let now = std::time::Instant::now();
+                let moved = self
+                    .controller
+                    .ui
+                    .waveform
+                    .hover_pointer_pos
+                    .map_or(true, |prev| prev.distance(pos) > 0.5);
+                if moved {
+                    self.controller.ui.waveform.hover_pointer_pos = Some(pos);
+                    self.controller.ui.waveform.hover_pointer_last_moved_at = Some(now);
+                }
+
                 let normalized = ((pos.x - rect.left()) / rect.width())
                     .mul_add(view_width, view.start)
                     .clamp(0.0, 1.0);
-                hover_x = Some(pos.x);
                 hovering = true;
-                self.controller.set_waveform_cursor_from_hover(normalized);
-                self.controller.update_waveform_hover_time(Some(normalized));
+                let allow_hover_override = moved
+                    || self
+                        .controller
+                        .ui
+                        .waveform
+                        .cursor_last_navigation_at
+                        .is_none_or(|nav| {
+                            self.controller
+                                .ui
+                                .waveform
+                                .hover_pointer_last_moved_at
+                                .is_none_or(|moved_at| nav <= moved_at)
+                        });
+
+                if allow_hover_override {
+                    hover_x = Some(pos.x);
+                    self.controller.set_waveform_cursor_from_hover(normalized);
+                    self.controller.update_waveform_hover_time(Some(normalized));
+                } else if let Some(cursor) = self.controller.ui.waveform.cursor {
+                    hover_x = Some(to_screen_x(cursor, rect));
+                    self.controller.update_waveform_hover_time(Some(cursor));
+                } else {
+                    hover_x = Some(pos.x);
+                    self.controller.set_waveform_cursor_from_hover(normalized);
+                    self.controller.update_waveform_hover_time(Some(normalized));
+                }
             }
             let cursor_alpha = self.controller.waveform_cursor_alpha(hovering);
             if let Some(cursor) = self.controller.ui.waveform.cursor {
