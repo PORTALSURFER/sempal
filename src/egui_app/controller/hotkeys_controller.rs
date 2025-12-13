@@ -146,6 +146,9 @@ impl HotkeysActions for HotkeysController<'_> {
             HotkeyCommand::TagKeepSelected => {
                 self.tag_selected(SampleTag::Keep);
             }
+            HotkeyCommand::TagNeutralSelected => {
+                self.tag_selected(SampleTag::Neutral);
+            }
             HotkeyCommand::TagTrashSelected => {
                 self.tag_selected(SampleTag::Trash);
             }
