@@ -48,17 +48,23 @@ impl EguiApp {
         }
         let events = ctx.input(|i| i.events.clone());
         for event in events {
-            let Some(press) = keypress_from_event(&event) else {
+            let Some(key_event) = keypress_from_event(&event) else {
                 continue;
             };
+            let press = key_event.press;
             self.key_feedback.last_key = Some(press);
             if wants_text_input && !press.command {
                 continue;
             }
-            if self.try_handle_chord(ctx, &actions, press, focus, now) {
+            if key_event.repeat && self.pending_chord.is_some() {
+                consume_press(ctx, press);
                 continue;
             }
-            if self.try_start_chord(ctx, &actions, press, now, wants_text_input) {
+            if self.try_handle_chord(ctx, &actions, press, focus, now, key_event.repeat) {
+                continue;
+            }
+            if self.try_start_chord(ctx, &actions, press, now, wants_text_input, key_event.repeat)
+            {
                 continue;
             }
             if let Some(action) = actions
@@ -68,8 +74,10 @@ impl EguiApp {
                 })
                 .copied()
             {
-                self.controller.handle_hotkey(action, focus);
                 consume_press(ctx, press);
+                if !key_event.repeat {
+                    self.controller.handle_hotkey(action, focus);
+                }
                 continue;
             }
         }
@@ -82,6 +90,7 @@ impl EguiApp {
         press: hotkeys::KeyPress,
         focus: FocusContext,
         now: Instant,
+        repeat: bool,
     ) -> bool {
         let Some(pending) = self.pending_chord else {
             return false;
@@ -100,13 +109,15 @@ impl EguiApp {
                     && press_matches(&pending.first, &action.gesture.first)
             })
             .copied()
-        {
+            {
             self.pending_chord = None;
             self.key_feedback.last_chord = Some((pending.first, press));
             self.key_feedback.pending_root = None;
             consume_press(ctx, pending.first);
             consume_press(ctx, press);
-            self.controller.handle_hotkey(action, focus);
+            if !repeat {
+                self.controller.handle_hotkey(action, focus);
+            }
             return true;
         }
         self.pending_chord = None;
@@ -121,8 +132,9 @@ impl EguiApp {
         press: hotkeys::KeyPress,
         now: Instant,
         wants_text_input: bool,
+        repeat: bool,
     ) -> bool {
-        if wants_text_input {
+        if wants_text_input || repeat {
             return false;
         }
         let starts_chord = actions.iter().any(|action| {
@@ -144,20 +156,36 @@ impl EguiApp {
     }
 }
 
-fn keypress_from_event(event: &egui::Event) -> Option<hotkeys::KeyPress> {
+#[derive(Clone, Copy, Debug)]
+struct KeyEventPress {
+    press: hotkeys::KeyPress,
+    repeat: bool,
+}
+
+fn keypress_from_event(event: &egui::Event) -> Option<KeyEventPress> {
     match event {
         egui::Event::Key {
             key,
             pressed: true,
-            repeat: false,
+            repeat,
             modifiers,
             ..
-        } => Some(hotkeys::KeyPress {
-            key: *key,
-            command: modifiers.command || modifiers.ctrl,
-            shift: modifiers.shift,
-            alt: modifiers.alt,
-        }),
+        } => {
+            let command = if cfg!(target_os = "macos") {
+                modifiers.command
+            } else {
+                modifiers.ctrl
+            };
+            Some(KeyEventPress {
+                press: hotkeys::KeyPress {
+                    key: *key,
+                    command,
+                    shift: modifiers.shift,
+                    alt: modifiers.alt,
+                },
+                repeat: *repeat,
+            })
+        }
         _ => None,
     }
 }
@@ -193,13 +221,7 @@ fn press_text_variants(press: &hotkeys::KeyPress) -> &'static [&'static str] {
 }
 
 fn consume_press(ctx: &egui::Context, press: hotkeys::KeyPress) {
-    let modifiers = egui::Modifiers {
-        alt: press.alt,
-        shift: press.shift,
-        command: press.command,
-        ctrl: press.command,
-        ..Default::default()
-    };
+    let modifiers = keypress_modifiers(&press);
     ctx.input_mut(|i| {
         i.consume_key(modifiers, press.key);
         let text_variants = press_text_variants(&press);
@@ -211,6 +233,18 @@ fn consume_press(ctx: &egui::Context, press: hotkeys::KeyPress) {
             });
         }
     });
+}
+
+fn keypress_modifiers(press: &hotkeys::KeyPress) -> egui::Modifiers {
+    let mut modifiers = egui::Modifiers::default();
+    modifiers.alt = press.alt;
+    modifiers.shift = press.shift;
+    if cfg!(target_os = "macos") {
+        modifiers.command = press.command;
+    } else {
+        modifiers.ctrl = press.command;
+    }
+    modifiers
 }
 
 #[cfg(test)]
