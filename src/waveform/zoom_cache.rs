@@ -18,12 +18,13 @@ impl WaveformZoomCache {
 
     pub(super) fn get_or_compute(
         &self,
+        cache_token: u64,
         samples: &[f32],
         channels: usize,
         view: WaveformChannelView,
         width: u32,
     ) -> CachedColumns {
-        let key = CacheKey::new(samples, channels, view, width);
+        let key = CacheKey::new(cache_token, samples, channels, view, width);
         let mut inner = self.inner.lock().expect("waveform zoom cache lock");
         if let Some(hit) = inner.map.get(&key).cloned() {
             inner.touch(key);
@@ -54,7 +55,7 @@ pub(super) enum CachedColumns {
 
 #[derive(Clone, Copy, Debug, Eq)]
 struct CacheKey {
-    samples_ptr: usize,
+    cache_token: u64,
     samples_len: usize,
     channels: u16,
     view: WaveformChannelView,
@@ -62,9 +63,15 @@ struct CacheKey {
 }
 
 impl CacheKey {
-    fn new(samples: &[f32], channels: usize, view: WaveformChannelView, width: u32) -> Self {
+    fn new(
+        cache_token: u64,
+        samples: &[f32],
+        channels: usize,
+        view: WaveformChannelView,
+        width: u32,
+    ) -> Self {
         Self {
-            samples_ptr: samples.as_ptr() as usize,
+            cache_token,
             samples_len: samples.len(),
             channels: channels.min(u16::MAX as usize) as u16,
             view,
@@ -75,7 +82,7 @@ impl CacheKey {
 
 impl PartialEq for CacheKey {
     fn eq(&self, other: &Self) -> bool {
-        self.samples_ptr == other.samples_ptr
+        self.cache_token == other.cache_token
             && self.samples_len == other.samples_len
             && self.channels == other.channels
             && self.view == other.view
@@ -85,7 +92,7 @@ impl PartialEq for CacheKey {
 
 impl Hash for CacheKey {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.samples_ptr.hash(state);
+        self.cache_token.hash(state);
         self.samples_len.hash(state);
         self.channels.hash(state);
         self.view.hash(state);
@@ -127,5 +134,29 @@ impl CacheInner {
                 break;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn first_mono_column(columns: &CachedColumns) -> (f32, f32) {
+        match columns {
+            CachedColumns::Mono(cols) => cols[0],
+            CachedColumns::SplitStereo { .. } => panic!("expected mono columns"),
+        }
+    }
+
+    #[test]
+    fn cache_token_prevents_stale_hits_when_memory_is_reused() {
+        let cache = WaveformZoomCache::new();
+        let mut samples = vec![0.0_f32, 1.0, 0.0, 1.0];
+
+        let initial = cache.get_or_compute(1, &samples, 1, WaveformChannelView::Mono, 1);
+        samples.fill(1.0);
+        let changed = cache.get_or_compute(2, &samples, 1, WaveformChannelView::Mono, 1);
+
+        assert_ne!(first_mono_column(&initial), first_mono_column(&changed));
     }
 }

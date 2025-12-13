@@ -123,6 +123,7 @@ mod tests {
 
     fn decoded() -> DecodedWaveform {
         DecodedWaveform {
+            cache_token: 1,
             samples: vec![0.1, 0.2],
             peaks: None,
             duration_seconds: 1.0,

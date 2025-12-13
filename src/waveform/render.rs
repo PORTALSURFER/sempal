@@ -91,7 +91,7 @@ impl WaveformRenderer {
         if let Some((start_col, end_col)) = self.columns_window(start, full_width, width) {
             let cached = self
                 .zoom_cache
-                .get_or_compute(&decoded.samples, channels, view, full_width);
+                .get_or_compute(decoded.cache_token, &decoded.samples, channels, view, full_width);
             return match cached {
                 super::zoom_cache::CachedColumns::Mono(cols) => Self::paint_color_image_for_size(
                     &cols[start_col..end_col],
@@ -291,6 +291,7 @@ mod tests {
     fn render_color_image_for_view_respects_requested_size() {
         let renderer = WaveformRenderer::new(2, 2);
         let decoded = DecodedWaveform {
+            cache_token: 1,
             samples: vec![0.0, 0.5, -0.25, 0.25],
             peaks: None,
             duration_seconds: 1.0,
