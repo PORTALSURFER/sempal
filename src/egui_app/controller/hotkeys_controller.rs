@@ -35,6 +35,12 @@ impl std::ops::DerefMut for HotkeysController<'_> {
 impl HotkeysActions for HotkeysController<'_> {
     fn handle_hotkey(&mut self, action: HotkeyAction, focus: FocusContext) {
         match action.command() {
+            HotkeyCommand::Undo => {
+                self.undo();
+            }
+            HotkeyCommand::Redo => {
+                self.redo();
+            }
             HotkeyCommand::ToggleFocusedSelection => {
                 if matches!(focus, FocusContext::SampleBrowser) {
                     self.toggle_focused_selection();
