@@ -198,6 +198,71 @@ fn selection_drop_to_browser_ignores_active_collection() {
 }
 
 #[test]
+fn selection_drop_to_browser_creates_clip_in_focused_folder() {
+    let temp = tempdir().unwrap();
+    let root = temp.path().join("source");
+    let target = root.join("sub");
+    std::fs::create_dir_all(&target).unwrap();
+    let renderer = WaveformRenderer::new(12, 12);
+    let mut controller = EguiController::new(renderer, None);
+    let source = SampleSource::new(root.clone());
+    controller.sources.push(source.clone());
+    controller.selected_source = Some(source.id.clone());
+    controller.cache_db(&source).unwrap();
+
+    let orig = root.join("clip.wav");
+    write_test_wav(&orig, &[0.1, 0.2, 0.3, 0.4]);
+    controller
+        .load_waveform_for_selection(&source, Path::new("clip.wav"))
+        .unwrap();
+    controller.ui.focus.context = FocusContext::Waveform;
+    controller.wav_entries = vec![sample_entry("clip.wav", SampleTag::Neutral)];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+    controller.ui.sources.folders.rows = vec![
+        crate::egui_app::state::FolderRowView {
+            path: PathBuf::new(),
+            name: "Source".into(),
+            depth: 0,
+            has_children: true,
+            expanded: true,
+            selected: false,
+            is_root: true,
+        },
+        crate::egui_app::state::FolderRowView {
+            path: PathBuf::from("sub"),
+            name: "sub".into(),
+            depth: 1,
+            has_children: false,
+            expanded: false,
+            selected: false,
+            is_root: false,
+        },
+    ];
+    controller.ui.sources.folders.focused = Some(1);
+
+    controller.ui.drag.payload = Some(DragPayload::Selection {
+        source_id: source.id.clone(),
+        relative_path: PathBuf::from("clip.wav"),
+        bounds: SelectionRange::new(0.0, 0.5),
+        keep_source_focused: false,
+    });
+    controller.ui.drag.set_target(
+        DragSource::Browser,
+        DragTarget::BrowserTriage(TriageFlagColumn::Keep),
+    );
+    controller.finish_active_drag();
+
+    assert!(root.join("sub").join("clip_sel.wav").is_file());
+    assert!(
+        controller
+            .wav_entries
+            .iter()
+            .any(|entry| entry.relative_path == PathBuf::from("sub/clip_sel.wav"))
+    );
+}
+
+#[test]
 fn selection_drop_to_browser_respects_shift_pressed_mid_drag() {
     let temp = tempdir().unwrap();
     let _guard = ConfigBaseGuard::set(temp.path().to_path_buf());

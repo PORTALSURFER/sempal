@@ -398,14 +398,43 @@ impl DragDropController<'_> {
         target_tag: Option<SampleTag>,
         keep_source_focused: bool,
     ) {
-        match self.export_selection_clip(
-            source_id,
-            relative_path,
-            bounds,
-            target_tag,
-            true,
-            true,
-        ) {
+        let folder_override = self
+            .selected_source
+            .as_ref()
+            .is_some_and(|selected| selected == source_id)
+            .then(|| {
+                self.ui.sources.folders.focused.and_then(|idx| {
+                    self.ui
+                        .sources
+                        .folders
+                        .rows
+                        .get(idx)
+                        .map(|row| row.path.clone())
+                })
+            })
+            .flatten()
+            .filter(|path| !path.as_os_str().is_empty());
+        let export = if let Some(folder) = folder_override.as_deref() {
+            self.export_selection_clip_in_folder(
+                source_id,
+                relative_path,
+                bounds,
+                target_tag,
+                true,
+                true,
+                folder,
+            )
+        } else {
+            self.export_selection_clip(
+                source_id,
+                relative_path,
+                bounds,
+                target_tag,
+                true,
+                true,
+            )
+        };
+        match export {
             Ok(entry) => {
                 if !keep_source_focused {
                     self.ui.browser.autoscroll = true;
