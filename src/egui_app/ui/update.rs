@@ -85,10 +85,12 @@ impl EguiApp {
                     self.controller.ui.drag.pointer_left_window = false;
                 }
 
-                // `interact_pos` may keep reporting the last in-window position even after the
-                // pointer leaves the window during a drag, which would prevent external drags
-                // from arming. Only treat `hover_pos` as "inside" for this purpose.
-                let inside = i.pointer.hover_pos().is_some();
+                // Use `interact_pos` to detect an in-window drag, but ignore it once we've
+                // observed `PointerGone` (it can keep reporting the last in-window position).
+                let hover_pos = i.pointer.hover_pos();
+                let interact_pos = i.pointer.interact_pos();
+                let inside = hover_pos.is_some()
+                    || (interact_pos.is_some() && !self.controller.ui.drag.pointer_left_window);
                 let outside = self.controller.ui.drag.payload.is_some()
                     && (!inside || self.controller.ui.drag.pointer_left_window);
                 let left = self.controller.ui.drag.pointer_left_window;
