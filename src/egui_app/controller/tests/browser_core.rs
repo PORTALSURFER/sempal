@@ -332,3 +332,29 @@ fn browser_selection_is_cleared_when_focus_leaves_browser() {
     assert!(controller.ui.browser.selected.is_none());
     assert!(controller.ui.browser.selected_paths.is_empty());
 }
+
+#[test]
+fn browser_selection_is_retained_when_waveform_focused() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source);
+    controller.wav_entries = vec![
+        sample_entry("one.wav", SampleTag::Neutral),
+        sample_entry("two.wav", SampleTag::Neutral),
+    ];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+
+    controller.focus_browser_row(0);
+    assert_eq!(controller.selected_wav.as_deref(), Some(Path::new("one.wav")));
+    assert_eq!(controller.ui.browser.selected_visible, Some(0));
+
+    controller.focus_waveform_context();
+    controller.blur_browser_focus();
+
+    controller.rebuild_browser_lists();
+    assert_eq!(controller.selected_wav.as_deref(), Some(Path::new("one.wav")));
+    assert_eq!(
+        controller.ui.browser.selected_visible,
+        controller.visible_row_for_path(Path::new("one.wav"))
+    );
+}
