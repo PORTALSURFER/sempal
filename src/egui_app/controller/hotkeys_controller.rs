@@ -53,6 +53,19 @@ impl HotkeysActions for HotkeysController<'_> {
                     self.normalize_waveform_selection_or_sample();
                 }
             }
+            HotkeyCommand::CropSelection => {
+                if matches!(focus, FocusContext::Waveform) {
+                    let _ = self
+                        .request_destructive_selection_edit(DestructiveSelectionEdit::CropSelection);
+                }
+            }
+            HotkeyCommand::CropSelectionNewSample => {
+                if matches!(focus, FocusContext::Waveform) {
+                    if let Err(err) = self.crop_waveform_selection_to_new_sample() {
+                        self.set_status(err, StatusTone::Error);
+                    }
+                }
+            }
             HotkeyCommand::DeleteFocusedSample => {
                 self.delete_focused_sample(focus);
             }

@@ -106,6 +106,57 @@ impl EguiController {
         result
     }
 
+    /// Write the cropped selection to a new sample file alongside the original.
+    pub(crate) fn crop_waveform_selection_to_new_sample(&mut self) -> Result<(), String> {
+        let context = self.selection_target()?;
+        let new_relative = next_crop_relative_path(&context.relative_path, &context.source.root)?;
+        let new_absolute = context.source.root.join(&new_relative);
+
+        let mut buffer = load_selection_buffer(&context.absolute_path, context.selection)?;
+        crop_buffer(&mut buffer)?;
+        if buffer.samples.is_empty() {
+            return Err("Selection has no audio to crop".into());
+        }
+        let spec = hound::WavSpec {
+            channels: buffer.spec_channels,
+            sample_rate: buffer.sample_rate.max(1),
+            bits_per_sample: 32,
+            sample_format: SampleFormat::Float,
+        };
+        write_selection_wav(&new_absolute, &buffer.samples, spec)?;
+
+        let (file_size, modified_ns) = file_metadata(&new_absolute)?;
+        let tag = self.sample_tag_for(&context.source, &context.relative_path)?;
+        let db = self
+            .database_for(&context.source)
+            .map_err(|err| format!("Database unavailable: {err}"))?;
+        db.upsert_file(&new_relative, file_size, modified_ns)
+            .map_err(|err| format!("Failed to sync database entry: {err}"))?;
+        db.set_tag(&new_relative, tag)
+            .map_err(|err| format!("Failed to sync tag: {err}"))?;
+
+        self.insert_cached_entry(
+            &context.source,
+            WavEntry {
+                relative_path: new_relative.clone(),
+                file_size,
+                modified_ns,
+                tag,
+                missing: false,
+            },
+        );
+        self.refresh_waveform_for_sample(&context.source, &context.relative_path);
+        self.reexport_collections_for_sample(&context.source.id, &new_relative);
+
+        let _ = self.load_waveform_for_selection(&context.source, &new_relative);
+        self.focus_waveform();
+        self.set_status(
+            format!("Cropped to new sample {}", new_relative.display()),
+            StatusTone::Info,
+        );
+        Ok(())
+    }
+
     /// Remove the selected span from the loaded sample.
     pub(crate) fn trim_waveform_selection(&mut self) -> Result<(), String> {
         let result = self.apply_selection_edit("Trimmed selection", trim_buffer);
@@ -246,6 +297,41 @@ impl EguiController {
             absolute_path,
             selection,
         })
+    }
+}
+
+fn next_crop_relative_path(relative_path: &Path, root: &Path) -> Result<PathBuf, String> {
+    let parent = relative_path.parent().unwrap_or(Path::new(""));
+    let stem = relative_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("sample");
+    let stem = stem.trim();
+    let stem = if stem.is_empty() { "sample" } else { stem };
+    let stem = strip_crop_suffix(stem);
+    let ext = relative_path.extension().and_then(|e| e.to_str());
+
+    for idx in 1..=999u32 {
+        let file_name = match ext {
+            Some(ext) if !ext.is_empty() => format!("{stem}_crop{idx:03}.{ext}"),
+            _ => format!("{stem}_crop{idx:03}"),
+        };
+        let candidate = parent.join(file_name);
+        if !root.join(&candidate).exists() {
+            return Ok(candidate);
+        }
+    }
+    Err("Could not find available crop filename".into())
+}
+
+fn strip_crop_suffix(stem: &str) -> &str {
+    let Some((prefix, suffix)) = stem.rsplit_once("_crop") else {
+        return stem;
+    };
+    if suffix.len() == 3 && suffix.chars().all(|c| c.is_ascii_digit()) && !prefix.is_empty() {
+        prefix
+    } else {
+        stem
     }
 }
 

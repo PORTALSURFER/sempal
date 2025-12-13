@@ -182,6 +182,8 @@ pub(crate) enum HotkeyCommand {
     FadeSelectionLeftToRight,
     FadeSelectionRightToLeft,
     NormalizeWaveform,
+    CropSelection,
+    CropSelectionNewSample,
 }
 
 /// Hotkey metadata surfaced to the UI.
@@ -306,6 +308,20 @@ const HOTKEY_ACTIONS: &[HotkeyAction] = &[
         gesture: HotkeyGesture::new(Key::C),
         scope: HotkeyScope::Focus(FocusContext::SampleBrowser),
         command: HotkeyCommand::AddFocusedToCollection,
+    },
+    HotkeyAction {
+        id: "crop-selection",
+        label: "Crop selection",
+        gesture: HotkeyGesture::new(Key::C),
+        scope: HotkeyScope::Focus(FocusContext::Waveform),
+        command: HotkeyCommand::CropSelection,
+    },
+    HotkeyAction {
+        id: "crop-selection-new-sample",
+        label: "Crop selection as new sample",
+        gesture: HotkeyGesture::with_shift(Key::C),
+        scope: HotkeyScope::Focus(FocusContext::Waveform),
+        command: HotkeyCommand::CropSelectionNewSample,
     },
     HotkeyAction {
         id: "show-hotkeys",
