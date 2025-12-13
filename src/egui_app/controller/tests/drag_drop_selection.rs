@@ -1,7 +1,7 @@
 use super::super::test_support::{sample_entry, write_test_wav};
 use super::super::*;
 use crate::egui_app::controller::collection_export;
-use crate::egui_app::state::{DragPayload, DragSource, DragTarget};
+use crate::egui_app::state::{DragPayload, DragSource, DragTarget, FocusContext};
 use crate::sample_sources::Collection;
 use crate::app_dirs::ConfigBaseGuard;
 use std::path::{Path, PathBuf};
@@ -154,6 +154,7 @@ fn selection_drop_to_browser_ignores_active_collection() {
     controller
         .load_waveform_for_selection(&source, Path::new("clip.wav"))
         .unwrap();
+    controller.ui.focus.context = FocusContext::Waveform;
 
     let collection = Collection::new("Active");
     let collection_id = collection.id.clone();
@@ -185,6 +186,9 @@ fn selection_drop_to_browser_ignores_active_collection() {
         controller.wav_entries[0].relative_path,
         PathBuf::from("clip_sel.wav")
     );
+    assert_eq!(controller.selected_wav.as_deref(), Some(Path::new("clip_sel.wav")));
+    assert_eq!(controller.ui.focus.context, FocusContext::SampleBrowser);
+    assert_eq!(controller.ui.browser.selected_visible, Some(0));
 }
 
 #[test]
