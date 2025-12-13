@@ -1,6 +1,11 @@
 use hound::WavReader;
+use super::common::max_sample_amplitude;
 use super::super::test_support::{dummy_controller, sample_entry, write_test_wav};
 use super::super::*;
+use crate::egui_app::controller::collection_export;
+use crate::sample_sources::collections::CollectionMember;
+use crate::sample_sources::Collection;
+use std::io::Cursor;
 use crate::egui_app::state::FocusContext;
 use std::path::{Path, PathBuf};
 use tempfile::tempdir;
@@ -265,4 +270,136 @@ fn exporting_selection_updates_entries_and_db() {
         .find(|row| row.relative_path == entry.relative_path)
         .unwrap();
     assert_eq!(saved.tag, SampleTag::Keep);
+}
+
+#[test]
+fn browser_normalize_refreshes_exports() -> Result<(), String> {
+    let temp = tempdir().unwrap();
+    let root = temp.path().join("source");
+    let export_root = temp.path().join("export");
+    std::fs::create_dir_all(&root).unwrap();
+    let renderer = WaveformRenderer::new(16, 16);
+    let mut controller = EguiController::new(renderer, None);
+    let source = SampleSource::new(root.clone());
+    controller.selected_source = Some(source.id.clone());
+    controller.sources.push(source.clone());
+
+    write_test_wav(&root.join("one.wav"), &[0.25, -0.5]);
+    controller.wav_entries = vec![sample_entry("one.wav", SampleTag::Neutral)];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+    controller
+        .load_waveform_for_selection(&source, Path::new("one.wav"))
+        .unwrap();
+
+    let mut collection = Collection::new("Export");
+    let collection_id = collection.id.clone();
+    let manual_dir = export_root.join("Delete");
+    std::fs::create_dir_all(&manual_dir).unwrap();
+    collection.export_path = Some(manual_dir.clone());
+    collection.add_member(source.id.clone(), PathBuf::from("one.wav"));
+    controller.collections.push(collection);
+
+    let member = CollectionMember {
+        source_id: source.id.clone(),
+        relative_path: PathBuf::from("one.wav"),
+        clip_root: None,
+    };
+    controller.export_member_if_needed(&collection_id, &member)?;
+    controller.normalize_browser_sample(0)?;
+
+    let collection = controller
+        .collections
+        .iter()
+        .find(|c| c.id == collection_id)
+        .unwrap();
+    let export_dir = collection_export::export_dir_for(collection, None)?;
+    let exported_path = export_dir.join("one.wav");
+    assert!(exported_path.is_file());
+    assert!((max_sample_amplitude(&root.join("one.wav")) - 1.0).abs() < 1e-6);
+    assert!((max_sample_amplitude(&exported_path) - 1.0).abs() < 1e-6);
+    let loaded = controller.loaded_audio.as_ref().expect("loaded audio");
+    let max_loaded = WavReader::new(Cursor::new(loaded.bytes.as_slice()))
+        .unwrap()
+        .samples::<f32>()
+        .map(|s| s.unwrap().abs())
+        .fold(0.0, f32::max);
+    assert!((max_loaded - 1.0).abs() < 1e-6);
+    Ok(())
+}
+
+#[test]
+fn browser_delete_prunes_collections_and_exports() -> Result<(), String> {
+    let temp = tempdir().unwrap();
+    let root = temp.path().join("source");
+    let export_root = temp.path().join("export");
+    std::fs::create_dir_all(&root).unwrap();
+    let renderer = WaveformRenderer::new(10, 10);
+    let mut controller = EguiController::new(renderer, None);
+    let source = SampleSource::new(root.clone());
+    controller.selected_source = Some(source.id.clone());
+    controller.sources.push(source.clone());
+
+    write_test_wav(&root.join("delete.wav"), &[0.1, 0.2]);
+    controller.wav_entries = vec![sample_entry("delete.wav", SampleTag::Neutral)];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+
+    let mut collection = Collection::new("Delete");
+    let collection_id = collection.id.clone();
+    let manual_dir = export_root.join("Delete");
+    std::fs::create_dir_all(&manual_dir).unwrap();
+    collection.export_path = Some(manual_dir.clone());
+    collection.add_member(source.id.clone(), PathBuf::from("delete.wav"));
+    controller.collections.push(collection);
+
+    let member = CollectionMember {
+        source_id: source.id.clone(),
+        relative_path: PathBuf::from("delete.wav"),
+        clip_root: None,
+    };
+    controller.export_member_if_needed(&collection_id, &member)?;
+
+    let export_path = manual_dir.join("delete.wav");
+    assert!(export_path.is_file());
+    controller.delete_browser_sample(0)?;
+    assert!(!root.join("delete.wav").exists());
+    assert!(!export_path.exists());
+    assert!(controller
+        .collections
+        .iter()
+        .find(|c| c.id == collection_id)
+        .unwrap()
+        .members
+        .is_empty());
+    Ok(())
+}
+
+#[test]
+fn deleting_browser_sample_moves_focus_forward() -> Result<(), String> {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.selected_source = Some(source.id.clone());
+    for name in ["a.wav", "b.wav", "c.wav"] {
+        write_test_wav(&source.root.join(name), &[0.1, -0.1]);
+    }
+    controller.wav_entries = vec![
+        sample_entry("a.wav", SampleTag::Neutral),
+        sample_entry("b.wav", SampleTag::Neutral),
+        sample_entry("c.wav", SampleTag::Neutral),
+    ];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+    controller.focus_browser_row_only(1);
+
+    controller.delete_browser_sample(1)?;
+
+    assert_eq!(controller.selected_wav.as_deref(), Some(Path::new("c.wav")));
+    assert_eq!(controller.ui.browser.selected_visible, Some(1));
+
+    controller.delete_browser_sample(1)?;
+
+    assert_eq!(controller.selected_wav.as_deref(), Some(Path::new("a.wav")));
+    assert_eq!(controller.ui.browser.selected_visible, Some(0));
+    Ok(())
 }
