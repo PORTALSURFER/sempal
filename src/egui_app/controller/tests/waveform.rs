@@ -262,3 +262,31 @@ fn confirming_pending_destructive_edit_clears_prompt() {
         .collect();
     assert_eq!(samples, vec![0.0, 0.3]);
 }
+
+#[test]
+fn t_hotkey_prompts_trim_selection_in_waveform_focus() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source.clone());
+    controller.selected_source = Some(source.id.clone());
+    controller.cache_db(&source).unwrap();
+    let wav_path = source.root.join("trim_hotkey.wav");
+    write_test_wav(&wav_path, &[0.0, 0.1, 0.2, 0.3]);
+    controller.wav_entries = vec![sample_entry("trim_hotkey.wav", SampleTag::Neutral)];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+    controller
+        .load_waveform_for_selection(&source, Path::new("trim_hotkey.wav"))
+        .unwrap();
+    controller.ui.waveform.selection = Some(SelectionRange::new(0.25, 0.75));
+
+    let action = hotkeys::iter_actions()
+        .find(|action| action.id == "trim-selection")
+        .unwrap();
+    controller.handle_hotkey(action, FocusContext::Waveform);
+
+    assert!(controller.ui.waveform.pending_destructive.is_some());
+    assert_eq!(
+        controller.ui.waveform.pending_destructive.as_ref().unwrap().edit,
+        DestructiveSelectionEdit::TrimSelection
+    );
+}
