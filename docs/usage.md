@@ -26,6 +26,7 @@ description: How to set up Sempal, triage samples, edit waveforms, and manage co
 ## Configuration and storage
 - App settings live in `~/.config/.sempal/config.toml` (platform config dir); sources and collections are stored in `library.db` in the same folder. Legacy `config.json` files migrate automatically.
 - Each source keeps `.sempal_samples.db` beside the audio. Logs live under `.sempal/logs` in the config directory (not temp).
+- Windows release builds hide the console by default; launch with `-log` to open a console window and show live log output.
 
 ## Manage sources
 - Click **+** or drop a folder to add. Sempal creates/uses `.sempal_samples.db` and loads `.wav` entries.
