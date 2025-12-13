@@ -144,10 +144,25 @@ impl HotkeysActions for HotkeysController<'_> {
                 self.move_all_trashed_to_folder();
             }
             HotkeyCommand::TagKeepSelected => {
-                self.tag_selected(SampleTag::Keep);
+                if matches!(focus, FocusContext::CollectionSample) {
+                    self.tag_selected_collection_sample(SampleTag::Keep);
+                } else {
+                    self.tag_selected(SampleTag::Keep);
+                }
+            }
+            HotkeyCommand::TagNeutralSelected => {
+                if matches!(focus, FocusContext::CollectionSample) {
+                    self.tag_selected_collection_sample(SampleTag::Neutral);
+                } else {
+                    self.tag_selected(SampleTag::Neutral);
+                }
             }
             HotkeyCommand::TagTrashSelected => {
-                self.tag_selected(SampleTag::Trash);
+                if matches!(focus, FocusContext::CollectionSample) {
+                    self.tag_selected_collection_sample(SampleTag::Trash);
+                } else {
+                    self.tag_selected(SampleTag::Trash);
+                }
             }
             HotkeyCommand::TrimSelection => {
                 if matches!(focus, FocusContext::Waveform) {
@@ -167,6 +182,13 @@ impl HotkeysActions for HotkeysController<'_> {
                 if matches!(focus, FocusContext::Waveform) {
                     let _ = self.request_destructive_selection_edit(
                         DestructiveSelectionEdit::FadeRightToLeft,
+                    );
+                }
+            }
+            HotkeyCommand::MuteSelection => {
+                if matches!(focus, FocusContext::Waveform) {
+                    let _ = self.request_destructive_selection_edit(
+                        DestructiveSelectionEdit::MuteSelection,
                     );
                 }
             }

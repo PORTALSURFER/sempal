@@ -32,8 +32,11 @@ impl EguiApp {
             let folder_height = (remaining * 0.7).max(120.0).min(remaining);
             let selected_height = (remaining - folder_height).max(0.0);
             let drag_payload = self.controller.ui.drag.payload.clone();
-            let sample_drag_active = matches!(drag_payload, Some(DragPayload::Sample { .. }));
-            if drag_payload.is_some() && !sample_drag_active {
+            let folder_drop_active = matches!(
+                drag_payload,
+                Some(DragPayload::Sample { .. } | DragPayload::Selection { .. })
+            );
+            if drag_payload.is_some() && !folder_drop_active {
                 self.controller
                     .ui
                     .drag
@@ -42,7 +45,7 @@ impl EguiApp {
             let pointer_pos = ui
                 .input(|i| i.pointer.hover_pos().or_else(|| i.pointer.interact_pos()))
                 .or(self.controller.ui.drag.position);
-            self.render_folder_browser(ui, folder_height, sample_drag_active, pointer_pos);
+            self.render_folder_browser(ui, folder_height, folder_drop_active, pointer_pos);
             ui.add_space(8.0);
             self.render_selected_folders(ui, selected_height);
         });
@@ -195,7 +198,7 @@ impl EguiApp {
         &mut self,
         ui: &mut Ui,
         height: f32,
-        sample_drag_active: bool,
+        folder_drop_active: bool,
         pointer_pos: Option<egui::Pos2>,
     ) {
         let palette = style::palette();
@@ -277,7 +280,7 @@ impl EguiApp {
                 if scroll_to == Some(0) {
                     ui.scroll_to_rect(response.rect, None);
                 }
-                if sample_drag_active {
+                if folder_drop_active {
                     if let Some(pointer) = pointer_pos
                         && response.rect.contains(pointer)
                     {
@@ -420,7 +423,7 @@ impl EguiApp {
                         ui.painter()
                             .rect_filled(marker_rect, 0.0, style::selection_marker_fill());
                     }
-                    if sample_drag_active {
+                    if folder_drop_active {
                         if let Some(pointer) = pointer_pos
                             && response.rect.contains(pointer)
                         {
@@ -497,7 +500,7 @@ impl EguiApp {
                         }
                     }
                 }
-                if sample_drag_active && hovered_folder.is_none() {
+                if folder_drop_active && hovered_folder.is_none() {
                     let pointer = pointer_pos.unwrap_or_default();
                     let shift_down = ui.input(|i| i.modifiers.shift);
                     self.controller.update_active_drag(
@@ -509,7 +512,7 @@ impl EguiApp {
                 }
             });
         });
-        if sample_drag_active && let Some(pointer) = pointer_pos {
+        if folder_drop_active && let Some(pointer) = pointer_pos {
             if frame_response.response.rect.contains(pointer) {
                 if hovered_folder.is_none() {
                     let shift_down = ui.input(|i| i.modifiers.shift);
