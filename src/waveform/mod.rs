@@ -18,6 +18,11 @@ pub struct LoadedWaveform {
 /// Raw audio data decoded from a wav file, ready to render or play.
 #[derive(Clone)]
 pub struct DecodedWaveform {
+    /// Cache token that uniquely identifies this decoded sample payload for render caching.
+    ///
+    /// Render caches should key off this token rather than the sample slice pointer to avoid
+    /// stale cache hits when memory addresses are reused.
+    pub cache_token: u64,
     /// Interleaved `[-1.0, 1.0]` samples for the full file.
     ///
     /// For very long files this may be empty and `peaks` will be populated instead.
