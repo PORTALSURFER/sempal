@@ -385,7 +385,7 @@ fn selection_drop_without_hover_falls_back_to_active_collection() {
         bounds: SelectionRange::new(0.0, 0.5),
         keep_source_focused: false,
     });
-    // No hover flags set; should fall back to active collection because there's no triage target.
+    // No hover flags set; should cancel instead of creating collection clips implicitly.
     controller.finish_active_drag();
 
     let collection = controller
@@ -393,17 +393,7 @@ fn selection_drop_without_hover_falls_back_to_active_collection() {
         .iter()
         .find(|c| c.id == collection_id)
         .unwrap();
-    assert_eq!(collection.members.len(), 1);
-    let member = &collection.members[0];
-    let clip_root = member.clip_root.as_ref().expect("clip root set");
-    assert!(clip_root.join(&member.relative_path).exists());
-    assert!(!root.join(&member.relative_path).exists());
-    assert!(
-        controller
-            .wav_entries
-            .iter()
-            .all(|entry| entry.relative_path != collection.members[0].relative_path)
-    );
+    assert!(collection.members.is_empty());
 }
 
 #[test]
