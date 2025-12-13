@@ -254,6 +254,12 @@ impl EguiApp {
             let mut close_menu = false;
             let action_rows = self.controller.action_rows_from_primary(row);
             ui.label(RichText::new(label.to_string()).color(palette.text_primary));
+            if ui.button("Open in file explorer").clicked() {
+                self.controller
+                    .reveal_browser_sample_in_file_explorer(path);
+                close_menu = true;
+            }
+            ui.separator();
             self.sample_tag_menu(ui, &mut close_menu, |app, tag| {
                 app.controller
                     .tag_browser_samples(&action_rows, tag, row)
@@ -270,7 +276,6 @@ impl EguiApp {
             {
                 close_menu = true;
             }
-            ui.separator();
             let default_name = view_model::sample_display_label(path);
             let rename_id = ui.make_persistent_id(format!("rename:triage:{}", path.display()));
             if self.sample_rename_controls(ui, rename_id, default_name.as_str(), |app, value| {
