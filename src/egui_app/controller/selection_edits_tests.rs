@@ -84,6 +84,15 @@ fn directional_fade_with_single_frame_zeroes_sample() {
 }
 
 #[test]
+fn fade_factor_uses_soft_s_curve() {
+    let left_to_right = fade_factor(10, 0.25, FadeDirection::LeftToRight);
+    let right_to_left = fade_factor(10, 0.25, FadeDirection::RightToLeft);
+    // For a softer curve, early fade is gentler than linear.
+    assert!(left_to_right > 0.8, "expected softer fade, got {left_to_right}");
+    assert!(right_to_left < 0.2, "expected softer fade, got {right_to_left}");
+}
+
+#[test]
 fn mute_respects_selection_bounds() {
     let mut samples = vec![0.5_f32; 6];
     apply_muted_selection(&mut samples, 1, 2, 4);

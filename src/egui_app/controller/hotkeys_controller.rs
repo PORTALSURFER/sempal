@@ -132,6 +132,20 @@ impl HotkeysActions for HotkeysController<'_> {
                     );
                 }
             }
+            HotkeyCommand::FadeSelectionLeftToRight => {
+                if matches!(focus, FocusContext::Waveform) {
+                    let _ = self.request_destructive_selection_edit(
+                        DestructiveSelectionEdit::FadeLeftToRight,
+                    );
+                }
+            }
+            HotkeyCommand::FadeSelectionRightToLeft => {
+                if matches!(focus, FocusContext::Waveform) {
+                    let _ = self.request_destructive_selection_edit(
+                        DestructiveSelectionEdit::FadeRightToLeft,
+                    );
+                }
+            }
         }
     }
 }

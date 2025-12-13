@@ -417,11 +417,19 @@ fn fade_factor(frame_count: usize, progress: f32, direction: FadeDirection) -> f
     if frame_count == 1 {
         return 0.0;
     }
+    let curve = smootherstep(progress.clamp(0.0, 1.0));
     let factor = match direction {
-        FadeDirection::LeftToRight => 1.0 - progress,
-        FadeDirection::RightToLeft => progress,
+        FadeDirection::LeftToRight => 1.0 - curve,
+        FadeDirection::RightToLeft => curve,
     };
     factor.clamp(0.0, 1.0)
+}
+
+fn smootherstep(t: f32) -> f32 {
+    // 6t^5 - 15t^4 + 10t^3: smooth S-curve with zero slope at endpoints.
+    let t2 = t * t;
+    let t3 = t2 * t;
+    t3 * (t * (t * 6.0 - 15.0) + 10.0)
 }
 
 fn apply_muted_selection(
