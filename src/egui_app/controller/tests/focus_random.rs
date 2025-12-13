@@ -165,6 +165,37 @@ fn trash_move_hotkeys_are_registered() {
 }
 
 #[test]
+fn tag_neutral_hotkey_is_registered() {
+    let action = hotkeys::iter_actions()
+        .find(|a| a.id == "tag-neutral")
+        .expect("tag-neutral hotkey");
+    assert_eq!(action.label, "Neutral sample(s)");
+    assert!(action.is_global());
+    assert_eq!(action.gesture.first.key, Key::Quote);
+    assert!(!action.gesture.first.shift);
+    assert!(!action.gesture.first.command);
+    assert!(!action.gesture.first.alt);
+    assert!(action.gesture.chord.is_none());
+}
+
+#[test]
+fn quote_hotkey_tags_selected_sample_neutral() {
+    let (mut controller, source) = dummy_controller();
+    prepare_browser_sample(&mut controller, &source, "neutral.wav");
+    controller.wav_entries[0].tag = SampleTag::Keep;
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+    controller.focus_browser_row(0);
+
+    let action = hotkeys::iter_actions()
+        .find(|a| a.id == "tag-neutral")
+        .expect("tag-neutral hotkey");
+    controller.handle_hotkey(action, FocusContext::None);
+
+    assert_eq!(controller.wav_entries[0].tag, SampleTag::Neutral);
+}
+
+#[test]
 fn trash_move_hotkey_moves_samples() -> Result<(), String> {
     let temp = tempdir().unwrap();
     let trash_root = temp.path().join("trash");
