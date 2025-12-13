@@ -239,6 +239,7 @@ impl DragDropActions for DragDropController<'_> {
                     bounds,
                     collection_target,
                     triage_target,
+                    folder_target,
                     keep_source_focused,
                 );
             }
