@@ -52,6 +52,12 @@ impl EguiController {
         }
     }
 
+    /// Replace the current selection range without starting a drag gesture.
+    pub fn set_selection_range(&mut self, range: SelectionRange) {
+        self.selection.set_range(Some(range));
+        self.apply_selection(Some(range));
+    }
+
     /// True while a selection drag gesture is active.
     pub fn is_selection_dragging(&self) -> bool {
         self.selection.is_dragging()
