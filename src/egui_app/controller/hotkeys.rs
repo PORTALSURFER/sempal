@@ -132,6 +132,7 @@ fn key_label(key: Key) -> &'static str {
         egui::Key::D => "D",
         egui::Key::C => "C",
         egui::Key::R => "R",
+        egui::Key::T => "T",
         egui::Key::Slash => "/",
         egui::Key::G => "G",
         egui::Key::S => "S",
@@ -176,6 +177,7 @@ pub(crate) enum HotkeyCommand {
     MoveTrashedToFolder,
     TagKeepSelected,
     TagTrashSelected,
+    TrimSelection,
 }
 
 /// Hotkey metadata surfaced to the UI.
@@ -405,6 +407,13 @@ const HOTKEY_ACTIONS: &[HotkeyAction] = &[
         gesture: HotkeyGesture::new(Key::CloseBracket),
         scope: HotkeyScope::Global,
         command: HotkeyCommand::TagKeepSelected,
+    },
+    HotkeyAction {
+        id: "trim-selection",
+        label: "Trim selection",
+        gesture: HotkeyGesture::new(Key::T),
+        scope: HotkeyScope::Focus(FocusContext::Waveform),
+        command: HotkeyCommand::TrimSelection,
     },
 ];
 
