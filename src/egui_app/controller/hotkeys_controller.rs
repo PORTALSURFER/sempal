@@ -170,6 +170,13 @@ impl HotkeysActions for HotkeysController<'_> {
                     );
                 }
             }
+            HotkeyCommand::MuteSelection => {
+                if matches!(focus, FocusContext::Waveform) {
+                    let _ = self.request_destructive_selection_edit(
+                        DestructiveSelectionEdit::MuteSelection,
+                    );
+                }
+            }
         }
     }
 }
