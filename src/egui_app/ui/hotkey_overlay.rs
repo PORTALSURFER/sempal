@@ -16,7 +16,10 @@ pub(super) fn render_hotkey_overlay(
         return;
     }
     draw_backdrop(ctx);
-    let title = RichText::new("Hotkeys").strong();
+    let palette = style::palette();
+    let title = RichText::new("Hotkeys")
+        .strong()
+        .color(palette.accent_copper);
     let focus_label = focus_header(focus);
     egui::Area::new(egui::Id::new("hotkey_overlay_panel"))
         .order(egui::Order::Tooltip)
@@ -28,9 +31,9 @@ pub(super) fn render_hotkey_overlay(
                 ui.vertical(|ui| {
                     ui.heading(title);
                     ui.add_space(8.0);
-                    render_section(ui, focus_label, focus_actions);
+                    render_section(ui, focus_label, focus_actions, palette.accent_mint);
                     ui.add_space(6.0);
-                    render_section(ui, "Global", global_actions);
+                    render_section(ui, "Global", global_actions, palette.accent_ice);
                     ui.add_space(10.0);
                     if ui.button("Close").clicked() {
                         *visible = false;
@@ -40,8 +43,8 @@ pub(super) fn render_hotkey_overlay(
         });
 }
 
-fn render_section(ui: &mut egui::Ui, title: &str, actions: &[HotkeyAction]) {
-    ui.label(RichText::new(title).strong());
+fn render_section(ui: &mut egui::Ui, title: &str, actions: &[HotkeyAction], title_color: Color32) {
+    ui.label(RichText::new(title).strong().color(title_color));
     if actions.is_empty() {
         ui.label("No actions available");
         return;

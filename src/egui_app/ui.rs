@@ -35,9 +35,16 @@ pub struct EguiApp {
     sources_panel_drop_hovered: bool,
     sources_panel_drop_armed: bool,
     selection_edge_offset: Option<f32>,
+    selection_slide: Option<SelectionSlide>,
     pending_chord: Option<hotkey_runtime::PendingChord>,
     key_feedback: hotkey_runtime::KeyFeedback,
     requested_initial_focus: bool,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct SelectionSlide {
+    anchor: f32,
+    range: crate::selection::SelectionRange,
 }
 
 impl EguiApp {
@@ -60,6 +67,7 @@ impl EguiApp {
             sources_panel_drop_hovered: false,
             sources_panel_drop_armed: false,
             selection_edge_offset: None,
+            selection_slide: None,
             pending_chord: None,
             key_feedback: hotkey_runtime::KeyFeedback::default(),
             requested_initial_focus: false,

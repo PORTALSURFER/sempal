@@ -14,7 +14,6 @@ struct ControllerHarness {
     _config: SempalEnvGuard,
     _temp: TempDir,
     pub controller: EguiController,
-    pub source_root: PathBuf,
 }
 
 impl ControllerHarness {
@@ -50,7 +49,6 @@ impl ControllerHarness {
             _config: env,
             _temp: temp,
             controller,
-            source_root,
         }
     }
 }

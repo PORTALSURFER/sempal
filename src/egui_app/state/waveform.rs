@@ -29,6 +29,10 @@ pub struct WaveformState {
     pub cursor_last_hover_at: Option<std::time::Instant>,
     /// Last moment the waveform cursor was moved via keyboard/navigation.
     pub cursor_last_navigation_at: Option<std::time::Instant>,
+    /// Last pointer position seen over the waveform (screen space).
+    pub hover_pointer_pos: Option<egui::Pos2>,
+    /// Timestamp of the last time the pointer moved over the waveform.
+    pub hover_pointer_last_moved_at: Option<std::time::Instant>,
 }
 
 impl Default for WaveformState {
@@ -49,6 +53,8 @@ impl Default for WaveformState {
             pending_destructive: None,
             cursor_last_hover_at: None,
             cursor_last_navigation_at: None,
+            hover_pointer_pos: None,
+            hover_pointer_last_moved_at: None,
         }
     }
 }

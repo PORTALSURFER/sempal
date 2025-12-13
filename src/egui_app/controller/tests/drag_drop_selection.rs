@@ -1,27 +1,10 @@
-use super::super::selection_edits::SelectionEditRequest;
-use super::super::test_support::{dummy_controller, sample_entry, write_test_wav};
+use super::super::test_support::{sample_entry, write_test_wav};
 use super::super::*;
-use super::common::*;
 use crate::egui_app::controller::collection_export;
-use crate::egui_app::controller::hotkeys;
-use crate::egui_app::state::{
-    DestructiveSelectionEdit, DragPayload, DragSource, DragTarget, FocusContext,
-    SampleBrowserActionPrompt, TriageFlagColumn, TriageFlagFilter, WaveformView,
-};
+use crate::egui_app::state::{DragPayload, DragSource, DragTarget};
 use crate::sample_sources::Collection;
-use crate::sample_sources::collections::CollectionMember;
-use crate::waveform::DecodedWaveform;
 use crate::app_dirs::ConfigBaseGuard;
-use egui;
-use hound::WavReader;
-use rand::SeedableRng;
-use rand::rngs::StdRng;
-use rand::seq::IteratorRandom;
-use std::io::Cursor;
-use std::mem;
 use std::path::{Path, PathBuf};
-use std::thread;
-use std::time::{Duration, Instant};
 use tempfile::tempdir;
 
 #[test]
@@ -52,6 +35,7 @@ fn selection_drop_adds_clip_to_collection() {
         source_id: source.id.clone(),
         relative_path: PathBuf::from("clip.wav"),
         bounds: SelectionRange::new(0.25, 0.75),
+        keep_source_focused: false,
     });
     controller.ui.drag.set_target(
         DragSource::Collections,
@@ -133,6 +117,7 @@ fn selection_drop_uses_collection_export_dir_when_configured() {
         source_id: source.id.clone(),
         relative_path: PathBuf::from("clip.wav"),
         bounds: SelectionRange::new(0.25, 0.75),
+        keep_source_focused: false,
     });
     controller.ui.drag.set_target(
         DragSource::Collections,
@@ -180,6 +165,7 @@ fn selection_drop_to_browser_ignores_active_collection() {
         source_id: source.id.clone(),
         relative_path: PathBuf::from("clip.wav"),
         bounds: SelectionRange::new(0.0, 0.5),
+        keep_source_focused: false,
     });
     controller.ui.drag.set_target(
         DragSource::Browser,
@@ -229,6 +215,7 @@ fn selection_drop_without_hover_falls_back_to_active_collection() {
         source_id: source.id.clone(),
         relative_path: PathBuf::from("clip.wav"),
         bounds: SelectionRange::new(0.0, 0.5),
+        keep_source_focused: false,
     });
     // No hover flags set; should fall back to active collection because there's no triage target.
     controller.finish_active_drag();
