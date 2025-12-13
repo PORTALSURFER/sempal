@@ -133,6 +133,9 @@ fn key_label(key: Key) -> &'static str {
         egui::Key::C => "C",
         egui::Key::R => "R",
         egui::Key::T => "T",
+        egui::Key::U => "U",
+        egui::Key::Y => "Y",
+        egui::Key::Z => "Z",
         egui::Key::Slash => "/",
         egui::Key::Backslash => "\\",
         egui::Key::G => "G",
@@ -154,6 +157,8 @@ fn key_label(key: Key) -> &'static str {
 /// Logical identifier for controller-dispatched hotkey commands.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum HotkeyCommand {
+    Undo,
+    Redo,
     ToggleFocusedSelection,
     ToggleFolderSelection,
     NormalizeFocusedSample,
@@ -211,6 +216,34 @@ impl HotkeyAction {
 }
 
 const HOTKEY_ACTIONS: &[HotkeyAction] = &[
+    HotkeyAction {
+        id: "undo-ctrl-z",
+        label: "Undo",
+        gesture: HotkeyGesture::with_command(Key::Z),
+        scope: HotkeyScope::Global,
+        command: HotkeyCommand::Undo,
+    },
+    HotkeyAction {
+        id: "undo-u",
+        label: "Undo",
+        gesture: HotkeyGesture::new(Key::U),
+        scope: HotkeyScope::Global,
+        command: HotkeyCommand::Undo,
+    },
+    HotkeyAction {
+        id: "redo-ctrl-y",
+        label: "Redo",
+        gesture: HotkeyGesture::with_command(Key::Y),
+        scope: HotkeyScope::Global,
+        command: HotkeyCommand::Redo,
+    },
+    HotkeyAction {
+        id: "redo-shift-u",
+        label: "Redo",
+        gesture: HotkeyGesture::with_shift(Key::U),
+        scope: HotkeyScope::Global,
+        command: HotkeyCommand::Redo,
+    },
     HotkeyAction {
         id: "toggle-select",
         label: "Toggle selection",

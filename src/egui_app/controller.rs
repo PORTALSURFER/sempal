@@ -27,6 +27,7 @@ mod source_folders;
 mod sources;
 mod trash;
 mod trash_move;
+mod undo;
 mod waveform_controller;
 mod wavs;
 
@@ -67,6 +68,7 @@ const MIN_SELECTION_WIDTH: f32 = 0.001;
 const AUDIO_CACHE_CAPACITY: usize = 12;
 const AUDIO_HISTORY_LIMIT: usize = 8;
 const RANDOM_HISTORY_LIMIT: usize = 20;
+const UNDO_LIMIT: usize = 20;
 
 /// Maintains app state and bridges core logic to the egui UI.
 pub struct EguiController {
@@ -118,6 +120,7 @@ pub struct EguiController {
     random_history: VecDeque<RandomHistoryEntry>,
     random_history_cursor: Option<usize>,
     folder_browsers: HashMap<SourceId, source_folders::FolderBrowserModel>,
+    undo_stack: undo::UndoStack<EguiController>,
     #[cfg(target_os = "windows")]
     drag_hwnd: Option<windows::Win32::Foundation::HWND>,
     #[cfg(test)]
@@ -179,6 +182,7 @@ impl EguiController {
             random_history: VecDeque::new(),
             random_history_cursor: None,
             folder_browsers: HashMap::new(),
+            undo_stack: undo::UndoStack::new(UNDO_LIMIT),
             #[cfg(target_os = "windows")]
             drag_hwnd: None,
             #[cfg(test)]
@@ -196,6 +200,40 @@ impl EguiController {
         self.ui.status.text = text.into();
         self.ui.status.badge_label = label;
         self.ui.status.badge_color = color;
+    }
+
+    pub(crate) fn can_undo(&self) -> bool {
+        self.undo_stack.can_undo()
+    }
+
+    pub(crate) fn can_redo(&self) -> bool {
+        self.undo_stack.can_redo()
+    }
+
+    pub(crate) fn undo(&mut self) {
+        let mut stack = std::mem::replace(&mut self.undo_stack, undo::UndoStack::new(UNDO_LIMIT));
+        let result = stack.undo(self);
+        self.undo_stack = stack;
+        match result {
+            Ok(Some(label)) => self.set_status(format!("Undid {label}"), StatusTone::Info),
+            Ok(None) => self.set_status("Nothing to undo", StatusTone::Info),
+            Err(err) => self.set_status(format!("Undo failed: {err}"), StatusTone::Error),
+        }
+    }
+
+    pub(crate) fn redo(&mut self) {
+        let mut stack = std::mem::replace(&mut self.undo_stack, undo::UndoStack::new(UNDO_LIMIT));
+        let result = stack.redo(self);
+        self.undo_stack = stack;
+        match result {
+            Ok(Some(label)) => self.set_status(format!("Redid {label}"), StatusTone::Info),
+            Ok(None) => self.set_status("Nothing to redo", StatusTone::Info),
+            Err(err) => self.set_status(format!("Redo failed: {err}"), StatusTone::Error),
+        }
+    }
+
+    pub(crate) fn push_undo_entry(&mut self, entry: undo::UndoEntry<EguiController>) {
+        self.undo_stack.push(entry);
     }
 
     pub(crate) fn browser(&mut self) -> browser_controller::BrowserController<'_> {
