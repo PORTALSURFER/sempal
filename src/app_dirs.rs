@@ -9,6 +9,9 @@ use std::{
     sync::{LazyLock, Mutex},
 };
 
+#[cfg(test)]
+use std::cell::RefCell;
+
 use directories::BaseDirs;
 use thiserror::Error;
 
@@ -16,9 +19,6 @@ use thiserror::Error;
 pub const APP_DIR_NAME: &str = ".sempal";
 
 static CONFIG_BASE_OVERRIDE: LazyLock<Mutex<Option<PathBuf>>> = LazyLock::new(|| Mutex::new(None));
-// Prevent concurrent overrides from clobbering each other during tests.
-#[cfg(test)]
-static CONFIG_GUARD_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 #[cfg(test)]
 static TEST_CONFIG_BASE: LazyLock<PathBuf> = LazyLock::new(|| {
     let dir = tempfile::tempdir().expect("create test config dir");
@@ -27,6 +27,11 @@ static TEST_CONFIG_BASE: LazyLock<PathBuf> = LazyLock::new(|| {
     std::mem::forget(dir);
     path
 });
+
+#[cfg(test)]
+thread_local! {
+    static TEST_CONFIG_OVERRIDE: RefCell<Option<PathBuf>> = const { RefCell::new(None) };
+}
 
 /// Ensure tests do not touch real user config directories.
 #[cfg(test)]
@@ -78,6 +83,10 @@ pub fn logs_dir() -> Result<PathBuf, AppDirError> {
 }
 
 fn config_base_dir() -> Option<PathBuf> {
+    #[cfg(test)]
+    if let Some(path) = TEST_CONFIG_OVERRIDE.with(|override_path| override_path.borrow().clone()) {
+        return Some(path);
+    }
     if let Some(path) = CONFIG_BASE_OVERRIDE
         .lock()
         .ok()
@@ -95,33 +104,28 @@ fn config_base_dir() -> Option<PathBuf> {
 #[cfg(test)]
 pub struct ConfigBaseGuard {
     previous: Option<PathBuf>,
-    _lock: std::sync::MutexGuard<'static, ()>,
 }
 
 #[cfg(test)]
 impl ConfigBaseGuard {
     pub fn set(path: PathBuf) -> Self {
-        let lock = CONFIG_GUARD_LOCK
-            .lock()
-            .expect("config guard lock poisoned");
-        let mut guard = CONFIG_BASE_OVERRIDE
-            .lock()
-            .expect("config base override mutex poisoned");
-        let previous = guard.clone();
-        *guard = Some(path);
-        Self {
-            previous,
-            _lock: lock,
-        }
+        let previous = TEST_CONFIG_OVERRIDE.with(|override_path| {
+            let mut slot = override_path.borrow_mut();
+            let prev = slot.clone();
+            *slot = Some(path);
+            prev
+        });
+        Self { previous }
     }
 }
 
 #[cfg(test)]
 impl Drop for ConfigBaseGuard {
     fn drop(&mut self) {
-        if let Ok(mut guard) = CONFIG_BASE_OVERRIDE.lock() {
-            *guard = self.previous.take();
-        }
+        let previous = self.previous.take();
+        TEST_CONFIG_OVERRIDE.with(|override_path| {
+            *override_path.borrow_mut() = previous;
+        });
     }
 }
 

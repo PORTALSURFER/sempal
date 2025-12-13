@@ -18,6 +18,7 @@ pub(crate) mod hotkeys;
 mod hotkeys_controller;
 mod interaction_options;
 mod loading;
+mod os_explorer;
 mod playback;
 mod progress;
 mod scans;

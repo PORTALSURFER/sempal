@@ -327,3 +327,26 @@ fn tagging_under_filter_uses_random_focus_in_random_mode() {
     };
     assert!(selected_visible < controller.visible_browser_indices().len());
 }
+
+#[test]
+fn browser_selection_is_cleared_when_focus_leaves_browser() {
+    let (mut controller, source) = dummy_controller();
+    controller.sources.push(source);
+    controller.wav_entries = vec![
+        sample_entry("one.wav", SampleTag::Neutral),
+        sample_entry("two.wav", SampleTag::Neutral),
+    ];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+
+    controller.focus_browser_row(0);
+    assert_eq!(controller.ui.browser.selected_visible, Some(0));
+    assert!(controller.ui.browser.selected.is_some());
+
+    controller.focus_collections_list_context();
+    controller.blur_browser_focus();
+
+    assert!(controller.ui.browser.selected_visible.is_none());
+    assert!(controller.ui.browser.selected.is_none());
+    assert!(controller.ui.browser.selected_paths.is_empty());
+}
