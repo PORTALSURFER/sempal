@@ -7,6 +7,7 @@ use eframe::egui::{
 
 mod destructive_prompt;
 mod hover_overlay;
+mod interactions;
 mod overlays;
 mod selection_geometry;
 mod selection_menu;
@@ -155,138 +156,22 @@ impl EguiApp {
                 &to_screen_x,
             );
 
-            // Waveform interactions: scroll to zoom, click to seek, drag to select.
-            if response.hovered() {
-                let scroll_delta = ui.input(|i| i.raw_scroll_delta);
-                if scroll_delta != egui::Vec2::ZERO {
-                    let shift_down = ui.input(|i| i.modifiers.shift);
-                    if shift_down && view_width < 1.0 {
-                        // Pan the zoomed view horizontally when shift is held.
-                        let pan_delta =
-                            scroll_delta * self.controller.ui.controls.waveform_scroll_speed;
-                        let invert = if self.controller.ui.controls.invert_waveform_scroll {
-                            -1.0
-                        } else {
-                            1.0
-                        };
-                        let delta_x = if pan_delta.x.abs() > 0.0 {
-                            pan_delta.x
-                        } else {
-                            pan_delta.y
-                        } * invert;
-                        if delta_x.abs() > 0.0 {
-                            let view_center = view.start + view_width * 0.5;
-                            let fraction_delta = (delta_x / rect.width()) * view_width;
-                            let target_center = view_center + fraction_delta;
-                            self.controller.scroll_waveform_view(target_center);
-                        }
-                    } else {
-                        let zoom_delta = scroll_delta * 0.6;
-                        let zoom_in = zoom_delta.y > 0.0;
-                        let per_step_factor = self.controller.ui.controls.wheel_zoom_factor;
-                        // Use playhead when visible, otherwise pointer if available, otherwise center.
-                        let zoom_steps = zoom_delta.y.abs().round().max(1.0) as u32;
-                        let focus_override = response
-                            .hover_pos()
-                            .or_else(|| response.interact_pointer_pos())
-                            .map(|pos| {
-                                ((pos.x - rect.left()) / rect.width())
-                                    .mul_add(view_width, view.start)
-                                    .clamp(0.0, 1.0)
-                            });
-                        self.controller.zoom_waveform_steps_with_factor(
-                            zoom_in,
-                            zoom_steps,
-                            focus_override,
-                            Some(per_step_factor),
-                            false,
-                            false,
-                        );
-                    }
-                }
-            }
+            interactions::handle_waveform_interactions(self, ui, rect, &response, view, view_width);
             if !edge_dragging {
-                let pointer_pos = response.interact_pointer_pos();
-                let normalize_to_waveform = |pos: egui::Pos2| {
-                    ((pos.x - rect.left()) / rect.width())
-                        .mul_add(view_width, view.start)
-                        .clamp(0.0, 1.0)
-                };
-                // Anchor creation to the initial press so quick drags keep the original start.
-                let drag_start_normalized = if response.drag_started() {
-                    if self.controller.ui.waveform.image.is_some() {
-                        self.controller.focus_waveform_context();
-                    }
-                    let press_origin = ui.ctx().input(|i| i.pointer.press_origin());
-                    press_origin
-                        .map(|pos| {
-                            ui.ctx()
-                                .layer_transform_from_global(response.layer_id)
-                                .map(|transform| transform * pos)
-                                .unwrap_or(pos)
-                        })
-                        .map(normalize_to_waveform)
-                        .or_else(|| pointer_pos.map(normalize_to_waveform))
-                } else {
-                    None
-                };
-                let normalized = pointer_pos.map(normalize_to_waveform);
-                if response.drag_started() {
-                    if let Some(value) = drag_start_normalized {
-                        self.controller.start_selection_drag(value);
-                    }
-                } else if response.dragged() {
-                    if let Some(value) = normalized {
-                        if self.controller.ui.waveform.image.is_some() {
-                            self.controller.focus_waveform_context();
-                        }
-                        self.controller.update_selection_drag(value);
-                    }
-                } else if response.drag_stopped() {
-                    self.controller.finish_selection_drag();
-                } else if response.clicked() {
-                    if self.controller.ui.waveform.image.is_some() {
-                        self.controller.focus_waveform_context();
-                    }
-                    if self.controller.ui.waveform.selection.is_some() {
-                        self.controller.clear_selection();
-                    } else if let Some(value) = normalized {
-                        self.controller.seek_to(value);
-                    }
-                }
+                interactions::handle_waveform_pointer_interactions(
+                    self,
+                    ui,
+                    rect,
+                    &response,
+                    view,
+                    view_width,
+                );
             }
 
             let view = self.controller.ui.waveform.view;
             let view_width = view.width();
             if view_width < 1.0 {
-                let bar_height = 12.0;
-                let scroll_rect = egui::Rect::from_min_size(
-                    egui::pos2(rect.left(), rect.bottom() - bar_height),
-                    egui::vec2(rect.width(), bar_height),
-                );
-                let scroll_resp = ui.interact(
-                    scroll_rect,
-                    ui.id().with("waveform_scrollbar"),
-                    egui::Sense::click_and_drag(),
-                );
-                let scroll_bg = style::with_alpha(palette.bg_primary, 140);
-                ui.painter().rect_filled(scroll_rect, 0.0, scroll_bg);
-                let indicator_width = scroll_rect.width() * view_width;
-                let indicator_x = scroll_rect.left() + scroll_rect.width() * view.start;
-                let indicator_rect = egui::Rect::from_min_size(
-                    egui::pos2(indicator_x, scroll_rect.top()),
-                    egui::vec2(indicator_width.max(8.0), scroll_rect.height()),
-                );
-                let thumb_color = style::with_alpha(palette.accent_ice, 200);
-                ui.painter()
-                    .rect_filled(indicator_rect, 0.0, thumb_color);
-                if (scroll_resp.dragged() || scroll_resp.clicked())
-                    && scroll_rect.width() > f32::EPSILON
-                    && let Some(pos) = scroll_resp.interact_pointer_pos()
-                {
-                    let frac = ((pos.x - scroll_rect.left()) / scroll_rect.width()).clamp(0.0, 1.0);
-                    self.controller.scroll_waveform_view(frac);
-                }
+                interactions::render_waveform_scrollbar(self, ui, rect, view, view_width);
             }
         });
         style::paint_section_border(ui, frame_response.response.rect, false);
