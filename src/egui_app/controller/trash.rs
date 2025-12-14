@@ -218,13 +218,16 @@ impl EguiController {
             let _ = self.persist_config("Failed to save collections after trash move");
         }
 
+        let mut invalidator = source_cache_invalidator::SourceCacheInvalidator::new(
+            &mut self.db_cache,
+            &mut self.wav_cache,
+            &mut self.wav_cache_lookup,
+            &mut self.label_cache,
+            &mut self.missing_wavs,
+            &mut self.folder_browsers,
+        );
         for source_id in &result.affected_sources {
-            self.db_cache.remove(source_id);
-            self.wav_cache.remove(source_id);
-            self.wav_cache_lookup.remove(source_id);
-            self.label_cache.remove(source_id);
-            self.missing_wavs.remove(source_id);
-            self.folder_browsers.remove(source_id);
+            invalidator.invalidate_all(source_id);
         }
 
         if let Some(source) = self.current_source()
