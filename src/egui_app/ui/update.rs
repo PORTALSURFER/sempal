@@ -75,6 +75,18 @@ impl EguiApp {
                 .flatten()
                 .and_then(platform::cursor_inside_hwnd);
 
+            if self.controller.ui.drag.payload.is_some()
+                && matches!(window_inside, Some(false))
+                && !self.controller.ui.drag.external_started
+            {
+                // The pointer has left the window during an in-app drag. Hide all internal drag
+                // visuals (ghost + hover highlights) so the only remaining user action is to drop
+                // externally once the OS drag-out is triggered.
+                self.controller.ui.drag.position = None;
+                self.controller.ui.drag.label.clear();
+                self.controller.ui.drag.clear_all_targets();
+            }
+
             let (pointer_outside, pointer_left) = ctx.input(|i| {
                 if let Some(true) = window_inside {
                     // When the cursor re-enters the window, egui might not immediately emit a
