@@ -1,4 +1,3 @@
-- if I replay samples quickly so we restart while its still playing, I hear clicks, lets fix that so we fade out very quickly right before we restart
 
 - when I undo flagging of a sample in the browser, it should refocus the sample again also
 
