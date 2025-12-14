@@ -35,6 +35,7 @@ mod trash_move;
 mod undo;
 mod waveform_controller;
 mod wavs;
+mod wav_entries_loader;
 
 use crate::{
     audio::{AudioOutputConfig, AudioPlayer},
@@ -63,9 +64,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
     rc::Rc,
-    sync::mpsc::{Receiver, Sender},
-    thread,
-    time::{Duration, Instant, SystemTime},
+    time::{Duration, SystemTime},
 };
 
 /// Minimum selection width used to decide when to play a looped region.
@@ -95,7 +94,7 @@ pub struct EguiController {
 impl EguiController {
     /// Create a controller with shared renderer and optional audio player.
     pub fn new(renderer: WaveformRenderer, player: Option<Rc<RefCell<AudioPlayer>>>) -> Self {
-        let (wav_job_tx, wav_job_rx) = spawn_wav_loader();
+        let (wav_job_tx, wav_job_rx) = wav_entries_loader::spawn_wav_loader();
         let (audio_job_tx, audio_job_rx) = audio_loader::spawn_audio_loader(renderer.clone());
         let (waveform_width, waveform_height) = renderer.dimensions();
         let jobs = jobs::ControllerJobs {
@@ -284,34 +283,6 @@ fn status_badge(tone: StatusTone) -> (String, Color32) {
         ),
         StatusTone::Error => ("Error".into(), style::status_badge_color(StatusTone::Error)),
     }
-}
-
-fn spawn_wav_loader() -> (Sender<WavLoadJob>, Receiver<WavLoadResult>) {
-    let (tx, rx) = std::sync::mpsc::channel::<WavLoadJob>();
-    let (result_tx, result_rx) = std::sync::mpsc::channel::<WavLoadResult>();
-    thread::spawn(move || {
-        while let Ok(job) = rx.recv() {
-            let start = Instant::now();
-            let result = load_entries(&job);
-            let _ = result_tx.send(WavLoadResult {
-                source_id: job.source_id.clone(),
-                result,
-                elapsed: start.elapsed(),
-            });
-        }
-    });
-    (tx, result_rx)
-}
-
-fn load_entries(job: &WavLoadJob) -> Result<Vec<WavEntry>, LoadEntriesError> {
-    let db = SourceDatabase::open(&job.root).map_err(LoadEntriesError::Db)?;
-    let mut entries = db.list_files().map_err(LoadEntriesError::Db)?;
-    if entries.is_empty() {
-        // New sources start empty; trigger a quick scan to populate before reporting.
-        let _ = crate::sample_sources::scanner::scan_once(&db);
-        entries = db.list_files().map_err(LoadEntriesError::Db)?;
-    }
-    Ok(entries)
 }
 
 #[cfg(test)]

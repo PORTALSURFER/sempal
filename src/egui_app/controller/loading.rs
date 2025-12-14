@@ -33,7 +33,7 @@ impl EguiController {
             root: source.root.clone(),
         };
         if cfg!(test) {
-            let result = load_entries(&job);
+            let result = wav_entries_loader::load_entries(&job);
             match result {
                 Ok(entries) => {
                     self.cache.wav.entries.insert(source.id.clone(), entries.clone());
