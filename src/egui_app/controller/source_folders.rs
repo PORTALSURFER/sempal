@@ -890,13 +890,9 @@ impl EguiController {
                     &old_entry.relative_path,
                     &new_entry.relative_path,
                 );
-                self.invalidate_cached_audio(&source.id, &old_entry.relative_path);
-                self.invalidate_cached_audio(&source.id, &new_entry.relative_path);
             }
-            self.rebuild_wav_lookup();
-            self.rebuild_browser_lists();
-            self.label_cache
-                .insert(source.id.clone(), self.build_label_cache(&self.wav_entries));
+            self.invalidate_cached_audio_for_entry_updates(&source.id, updates);
+            self.sync_browser_after_wav_entries_mutation_keep_search_cache(&source.id);
         } else {
             self.label_cache.remove(&source.id);
         }
