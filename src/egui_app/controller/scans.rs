@@ -82,7 +82,7 @@ impl EguiController {
 	                            &mut self.wav_cache.lookup,
 	                            &mut self.browser_cache.labels,
 	                            &mut self.missing.wavs,
-	                            &mut self.folder_browsers,
+	                            &mut self.folder_browsers.models,
 	                        );
 	                        invalidator.invalidate_wav_related(&source.id);
 	                    }
@@ -101,7 +101,7 @@ impl EguiController {
 	                &mut self.wav_cache.lookup,
 	                &mut self.browser_cache.labels,
 	                &mut self.missing.wavs,
-	                &mut self.folder_browsers,
+	                &mut self.folder_browsers.models,
 	            );
 	            invalidator.invalidate_wav_related(&source.id);
 	        }

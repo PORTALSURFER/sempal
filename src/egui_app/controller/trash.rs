@@ -224,7 +224,7 @@ impl EguiController {
             &mut self.wav_cache.lookup,
             &mut self.browser_cache.labels,
             &mut self.missing.wavs,
-            &mut self.folder_browsers,
+            &mut self.folder_browsers.models,
         );
         for source_id in &result.affected_sources {
             invalidator.invalidate_all(source_id);

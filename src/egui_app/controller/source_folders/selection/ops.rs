@@ -139,6 +139,7 @@ impl EguiController {
             return Vec::new();
         };
         self.folder_browsers
+            .models
             .get(id)
             .map(|model| model.selected.iter().cloned().collect())
             .unwrap_or_default()
@@ -224,6 +225,7 @@ impl EguiController {
     fn current_folder_anchor_path(&self) -> Option<PathBuf> {
         let id = self.selection_ctx.selected_source.as_ref()?;
         self.folder_browsers
+            .models
             .get(id)
             .and_then(|model| model.selection_anchor.clone())
     }

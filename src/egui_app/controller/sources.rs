@@ -88,7 +88,7 @@ impl EguiController {
             &mut self.wav_cache.lookup,
             &mut self.browser_cache.labels,
             &mut self.missing.wavs,
-            &mut self.folder_browsers,
+            &mut self.folder_browsers.models,
         );
         invalidator.invalidate_all(&removed.id);
         for collection in self.collections.iter_mut() {
@@ -291,7 +291,7 @@ impl EguiController {
             &mut self.wav_cache.lookup,
             &mut self.browser_cache.labels,
             &mut self.missing.wavs,
-            &mut self.folder_browsers,
+            &mut self.folder_browsers.models,
         );
         invalidator.invalidate_db_cache(&source_id);
         invalidator.invalidate_wav_related(&source_id);
