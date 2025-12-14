@@ -40,5 +40,5 @@ pub(super) fn cursor_inside_hwnd(hwnd: HWND) -> Option<bool> {
 
 #[cfg(target_os = "windows")]
 pub(super) fn left_mouse_button_down() -> bool {
-    unsafe { (GetAsyncKeyState(VK_LBUTTON.0 as i32) & 0x8000) != 0 }
+    unsafe { ((GetAsyncKeyState(VK_LBUTTON.0 as i32) as u16) & 0x8000) != 0 }
 }
