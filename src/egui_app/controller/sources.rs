@@ -183,12 +183,12 @@ impl EguiController {
         pending_path: Option<PathBuf>,
     ) {
         let same_source = self.selection_state.ctx.selected_source == id;
-        self.jobs.pending_select_path = pending_path.clone();
+        self.runtime.jobs.pending_select_path = pending_path.clone();
             if same_source {
                 self.refresh_sources_ui();
-                if let Some(path) = self.jobs.pending_select_path.clone() {
+                if let Some(path) = self.runtime.jobs.pending_select_path.clone() {
                 if self.wav_entries.lookup.contains_key(&path) {
-                    self.jobs.pending_select_path = None;
+                    self.runtime.jobs.pending_select_path = None;
                     self.select_wav_by_path(&path);
                 } else {
                     self.queue_wav_load();

@@ -24,10 +24,10 @@ impl EguiController {
         }
         self.wav_entries.entries.clear();
         self.sync_after_wav_entries_changed();
-        if self.jobs.pending_source.as_ref() == Some(&source.id) {
+        if self.runtime.jobs.pending_source.as_ref() == Some(&source.id) {
             return;
         }
-        self.jobs.pending_source = Some(source.id.clone());
+        self.runtime.jobs.pending_source = Some(source.id.clone());
         let job = WavLoadJob {
             source_id: source.id.clone(),
             root: source.root.clone(),
@@ -42,10 +42,10 @@ impl EguiController {
                 }
                 Err(err) => self.handle_wav_load_error(&source.id, err),
             }
-            self.jobs.pending_source = None;
+            self.runtime.jobs.pending_source = None;
             return;
         }
-        let _ = self.jobs.wav_job_tx.send(job);
+        let _ = self.runtime.jobs.wav_job_tx.send(job);
         self.set_status(
             format!("Loading wavs for {}", source.root.display()),
             StatusTone::Info,
@@ -53,7 +53,7 @@ impl EguiController {
     }
 
     pub(super) fn poll_wav_loader(&mut self) {
-        while let Ok(message) = self.jobs.wav_job_rx.try_recv() {
+        while let Ok(message) = self.runtime.jobs.wav_job_rx.try_recv() {
             if Some(&message.source_id) != self.selection_state.ctx.selected_source.as_ref() {
                 continue;
             }
@@ -73,7 +73,7 @@ impl EguiController {
                 }
                 Err(err) => self.handle_wav_load_error(&message.source_id, err),
             }
-            self.jobs.pending_source = None;
+            self.runtime.jobs.pending_source = None;
         }
     }
 
@@ -105,7 +105,7 @@ impl EguiController {
         self.wav_entries.entries = entries;
         self.sync_after_wav_entries_changed();
         let mut pending_applied = false;
-        if let Some(path) = self.jobs.pending_select_path.take()
+        if let Some(path) = self.runtime.jobs.pending_select_path.take()
             && self.wav_entries.lookup.contains_key(&path)
         {
             self.select_wav_by_path(&path);

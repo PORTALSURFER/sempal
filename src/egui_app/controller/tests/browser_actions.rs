@@ -48,7 +48,7 @@ fn focus_hotkey_does_not_autoplay_browser_sample() {
         controller.wav_selection.selected_wav.as_deref(),
         Some(Path::new("one.wav"))
     );
-    assert!(controller.jobs.pending_playback.is_none());
+    assert!(controller.runtime.jobs.pending_playback.is_none());
     assert_eq!(controller.ui.browser.selected_visible, Some(0));
 }
 

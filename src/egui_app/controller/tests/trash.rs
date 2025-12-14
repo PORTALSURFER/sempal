@@ -80,7 +80,7 @@ fn moving_trashed_samples_can_cancel_midway() -> Result<(), String> {
     ];
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
-    controller.progress_cancel_after = Some(1);
+    controller.runtime.progress_cancel_after = Some(1);
 
     controller.move_all_trashed_to_folder();
 

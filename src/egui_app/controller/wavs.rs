@@ -40,8 +40,8 @@ impl EguiController {
         if let Some(player) = self.audio.player.as_ref() {
             player.borrow_mut().stop();
         }
-        self.jobs.pending_audio = None;
-        self.jobs.pending_playback = None;
+        self.runtime.jobs.pending_audio = None;
+        self.runtime.jobs.pending_playback = None;
     }
 
     /// Expose wav indices for a given triage flag column (used by virtualized rendering).

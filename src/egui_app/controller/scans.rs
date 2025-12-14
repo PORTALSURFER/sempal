@@ -13,7 +13,7 @@ impl EguiController {
     }
 
     fn request_scan_with_mode(&mut self, mode: ScanMode) {
-        if self.jobs.scan_in_progress {
+        if self.runtime.jobs.scan_in_progress {
             self.set_status("Scan already in progress", StatusTone::Info);
             return;
         }
@@ -23,8 +23,8 @@ impl EguiController {
         };
         self.prepare_for_scan(&source, mode);
         let (tx, rx) = std::sync::mpsc::channel();
-        self.jobs.scan_rx = Some(rx);
-        self.jobs.scan_in_progress = true;
+        self.runtime.jobs.scan_rx = Some(rx);
+        self.runtime.jobs.scan_in_progress = true;
         let status_label = match mode {
             ScanMode::Quick => "Quick sync",
             ScanMode::Hard => "Hard sync",
@@ -54,11 +54,11 @@ impl EguiController {
     }
 
     pub(super) fn poll_scan(&mut self) {
-        if let Some(rx) = &self.jobs.scan_rx
+        if let Some(rx) = &self.runtime.jobs.scan_rx
             && let Ok(result) = rx.try_recv()
         {
-            self.jobs.scan_in_progress = false;
-            self.jobs.scan_rx = None;
+            self.runtime.jobs.scan_in_progress = false;
+            self.runtime.jobs.scan_rx = None;
             if Some(&result.source_id) != self.selection_state.ctx.selected_source.as_ref() {
                 return;
             }

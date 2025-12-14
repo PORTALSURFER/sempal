@@ -182,7 +182,7 @@ fn waveform_rerenders_after_same_length_edit() {
         controller.ui.loaded_wav.as_deref(),
         Some(Path::new("b.wav"))
     );
-    assert!(controller.jobs.pending_audio.is_none());
+    assert!(controller.runtime.jobs.pending_audio.is_none());
 }
 
 #[test]
@@ -197,10 +197,11 @@ fn waveform_rerenders_after_same_length_edit() {
     controller.rebuild_browser_lists();
 
     controller.select_wav_by_path(Path::new("wait.wav"));
-    assert!(controller.jobs.pending_playback.is_none());
+    assert!(controller.runtime.jobs.pending_playback.is_none());
     let result = controller.play_audio(false, None);
     assert!(result.is_ok());
     let pending = controller
+        .runtime
         .jobs
         .pending_playback
         .as_ref()
@@ -241,7 +242,7 @@ fn loading_flag_clears_after_audio_load() {
         controller.wav_selection.loaded_wav.as_deref(),
         Some(rel.as_path())
     );
-    assert!(controller.jobs.pending_audio.is_none());
+    assert!(controller.runtime.jobs.pending_audio.is_none());
     assert!(controller.ui.waveform.loading.is_none());
     assert!(controller.wav_selection.loaded_audio.is_some());
 }

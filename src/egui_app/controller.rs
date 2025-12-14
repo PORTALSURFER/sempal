@@ -88,13 +88,11 @@ pub struct EguiController {
     selection_state: ControllerSelectionState,
     wav_selection: WavSelectionState,
     settings: AppSettingsState,
-    jobs: jobs::ControllerJobs,
+    runtime: ControllerRuntimeState,
     folder_browsers: FolderBrowsersState,
     history: ControllerHistoryState,
     #[cfg(target_os = "windows")]
     drag_hwnd: Option<windows::Win32::Foundation::HWND>,
-    #[cfg(test)]
-    progress_cancel_after: Option<usize>,
 }
 
 impl EguiController {
@@ -173,7 +171,11 @@ impl EguiController {
                 trash_folder: None,
                 collection_export_root: None,
             },
-            jobs,
+            runtime: ControllerRuntimeState {
+                jobs,
+                #[cfg(test)]
+                progress_cancel_after: None,
+            },
             folder_browsers: FolderBrowsersState {
                 models: HashMap::new(),
             },
@@ -186,8 +188,6 @@ impl EguiController {
             },
             #[cfg(target_os = "windows")]
             drag_hwnd: None,
-            #[cfg(test)]
-            progress_cancel_after: None,
         }
     }
 
@@ -343,6 +343,12 @@ struct ControllerAudioState {
     player: Option<Rc<RefCell<AudioPlayer>>>,
     cache: AudioCache,
     pending_loop_disable_at: Option<Instant>,
+}
+
+struct ControllerRuntimeState {
+    jobs: jobs::ControllerJobs,
+    #[cfg(test)]
+    progress_cancel_after: Option<usize>,
 }
 
 struct ControllerHistoryState {

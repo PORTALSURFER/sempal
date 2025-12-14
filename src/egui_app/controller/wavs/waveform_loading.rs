@@ -87,7 +87,7 @@ impl EguiController {
         self.ui.waveform.notice = None;
         self.ui.waveform.loading = None;
         self.clear_waveform_selection();
-        self.jobs.pending_audio = None;
+        self.runtime.jobs.pending_audio = None;
         match intent {
             AudioLoadIntent::Selection => {
                 self.wav_selection.loaded_wav = Some(relative_path.to_path_buf());

@@ -6,8 +6,8 @@ impl EguiController {
     pub fn play_audio(&mut self, looped: bool, start_override: Option<f32>) -> Result<(), String> {
         self.audio.pending_loop_disable_at = None;
         if self.wav_selection.loaded_audio.is_none() {
-            if let Some(pending) = self.jobs.pending_audio.clone() {
-                self.jobs.pending_playback = Some(PendingPlayback {
+            if let Some(pending) = self.runtime.jobs.pending_audio.clone() {
+                self.runtime.jobs.pending_playback = Some(PendingPlayback {
                     source_id: pending.source_id,
                     relative_path: pending.relative_path,
                     looped,
@@ -28,7 +28,7 @@ impl EguiController {
                 looped,
                 start_override,
             };
-            self.jobs.pending_playback = Some(pending_playback.clone());
+            self.runtime.jobs.pending_playback = Some(pending_playback.clone());
             self.queue_audio_load_for(
                 &source,
                 &selected,
