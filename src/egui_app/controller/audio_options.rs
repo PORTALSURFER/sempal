@@ -36,7 +36,7 @@ impl EguiController {
             match crate::audio::available_devices(host) {
                 Ok(list) => list,
                 Err(err) => {
-                    warning = Some(err);
+                    warning = Some(err.to_string());
                     Vec::new()
                 }
             }
