@@ -26,6 +26,7 @@ mod scans;
 mod selection_edits;
 mod selection_export;
 mod source_folders;
+mod source_cache_invalidator;
 mod sources;
 mod tagging_service;
 mod trash;
