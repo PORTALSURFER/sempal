@@ -97,21 +97,7 @@ impl EguiController {
         let (wav_job_tx, wav_job_rx) = wav_entries_loader::spawn_wav_loader();
         let (audio_job_tx, audio_job_rx) = audio_loader::spawn_audio_loader(renderer.clone());
         let (waveform_width, waveform_height) = renderer.dimensions();
-        let jobs = jobs::ControllerJobs {
-            wav_job_tx,
-            wav_job_rx,
-            audio_job_tx,
-            audio_job_rx,
-            pending_source: None,
-            pending_select_path: None,
-            pending_audio: None,
-            pending_playback: None,
-            next_audio_request_id: 1,
-            scan_rx: None,
-            scan_in_progress: false,
-            trash_move_rx: None,
-            trash_move_cancel: None,
-        };
+        let jobs = jobs::ControllerJobs::new(wav_job_tx, wav_job_rx, audio_job_tx, audio_job_rx);
         Self {
             ui: UiState::default(),
             audio: ControllerAudioState {
