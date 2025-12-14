@@ -317,6 +317,39 @@ fn tagging_under_filter_uses_random_focus_in_random_mode() {
 }
 
 #[test]
+fn undo_tagging_refocuses_original_sample_under_filter() {
+    let (mut controller, source) = dummy_controller();
+    controller.library.sources.push(source.clone());
+    controller.cache_db(&source).unwrap();
+    controller.wav_entries.entries = vec![
+        sample_entry("one.wav", SampleTag::Neutral),
+        sample_entry("two.wav", SampleTag::Neutral),
+        sample_entry("three.wav", SampleTag::Neutral),
+    ];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+    controller.set_browser_filter(TriageFlagFilter::Untagged);
+
+    controller.focus_browser_row_only(1);
+    controller.tag_selected(SampleTag::Keep);
+    assert_eq!(controller.visible_browser_indices(), &[0, 2]);
+    assert_eq!(
+        controller.sample_view.wav.selected_wav.as_deref(),
+        Some(Path::new("three.wav"))
+    );
+
+    controller.undo();
+
+    assert_eq!(controller.visible_browser_indices(), &[0, 1, 2]);
+    assert_eq!(controller.wav_entries.entries[1].tag, SampleTag::Neutral);
+    assert_eq!(
+        controller.sample_view.wav.selected_wav.as_deref(),
+        Some(Path::new("two.wav"))
+    );
+    assert_eq!(controller.ui.browser.selected_visible, Some(1));
+}
+
+#[test]
 fn browser_selection_is_cleared_when_focus_leaves_browser() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source);
