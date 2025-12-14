@@ -43,8 +43,7 @@ impl CollectionsActions for CollectionsController<'_> {
             return;
         };
         self.selected_wav = None;
-        self.loaded_wav = None;
-        self.ui.loaded_wav = None;
+        self.clear_waveform_view();
         if self.collection_member_missing(member) {
             self.show_missing_waveform_notice(&target_path);
             self.set_status(
