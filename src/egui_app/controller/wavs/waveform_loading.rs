@@ -39,7 +39,11 @@ impl EguiController {
                 return Err(err);
             }
         };
-        let decoded = self.sample_view.renderer.decode_from_bytes(&bytes)?;
+        let decoded = self
+            .sample_view
+            .renderer
+            .decode_from_bytes(&bytes)
+            .map_err(|e| e.to_string())?;
         let duration_seconds = decoded.duration_seconds;
         let sample_rate = decoded.sample_rate;
         let cache_key = CacheKey::new(&source.id, relative_path);
