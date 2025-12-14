@@ -1,3 +1,13 @@
+## [unreleased]
+
+### ⚙️ Miscellaneous Tasks
+
+- *(build)* Remove automatic version bump build script
+## [0.355.0] - 2025-12-14
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* V0.355.0 (#51)
 ## [nightly] - 2025-12-14
 
 ### 🐛 Bug Fixes
@@ -43,7 +53,6 @@
 ### 💼 Other
 
 - *(windows)* Enable Win32_UI_WindowsAndMessaging feature
-- *(build)* Remove automatic version bump build script
 
 ### 🚜 Refactor
 
