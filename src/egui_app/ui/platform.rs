@@ -20,11 +20,11 @@ pub(super) fn hwnd_from_frame(frame: &eframe::Frame) -> Option<HWND> {
 pub(super) fn cursor_inside_hwnd(hwnd: HWND) -> Option<bool> {
     unsafe {
         let mut cursor = POINT::default();
-        if !GetCursorPos(&mut cursor).as_bool() {
+        if GetCursorPos(&mut cursor).is_err() {
             return None;
         }
         let mut rect = RECT::default();
-        if !GetWindowRect(hwnd, &mut rect).as_bool() {
+        if GetWindowRect(hwnd, &mut rect).is_err() {
             return None;
         }
         Some(
