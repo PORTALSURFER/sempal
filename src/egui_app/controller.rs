@@ -12,6 +12,7 @@ mod collection_items;
 mod collection_items_helpers;
 mod collections_controller;
 mod config;
+mod controller_state;
 mod drag_drop_controller;
 mod focus;
 pub(crate) mod hotkeys;
@@ -52,6 +53,7 @@ use crate::{
 };
 use audio_cache::AudioCache;
 use audio_loader::{AudioLoadError, AudioLoadJob, AudioLoadOutcome, AudioLoadResult};
+pub(in crate::egui_app::controller) use controller_state::*;
 use egui::Color32;
 use open;
 use rfd::FileDialog;
@@ -284,161 +286,6 @@ fn status_badge(tone: StatusTone) -> (String, Color32) {
     }
 }
 
-#[derive(Clone)]
-struct RowFlags {
-    focused: bool,
-    loaded: bool,
-}
-
-struct MissingState {
-    sources: HashSet<SourceId>,
-    wavs: HashMap<SourceId, HashSet<PathBuf>>,
-}
-
-struct LibraryState {
-    sources: Vec<SampleSource>,
-    collections: Vec<Collection>,
-    missing: MissingState,
-}
-
-struct WavCacheState {
-    entries: HashMap<SourceId, Vec<WavEntry>>,
-    lookup: HashMap<SourceId, HashMap<PathBuf, usize>>,
-}
-
-struct WavSelectionState {
-    selected_wav: Option<PathBuf>,
-    loaded_wav: Option<PathBuf>,
-    loaded_audio: Option<LoadedAudio>,
-}
-
-struct ControllerSampleViewState {
-    renderer: WaveformRenderer,
-    waveform: WaveformState,
-    wav: WavSelectionState,
-}
-
-struct SelectionContextState {
-    selected_source: Option<SourceId>,
-    last_selected_browsable_source: Option<SourceId>,
-    selected_collection: Option<CollectionId>,
-}
-
-struct AppSettingsState {
-    feature_flags: crate::sample_sources::config::FeatureFlags,
-    audio_output: AudioOutputConfig,
-    controls: crate::sample_sources::config::InteractionOptions,
-    trash_folder: Option<std::path::PathBuf>,
-    collection_export_root: Option<PathBuf>,
-}
-
-struct LibraryCacheState {
-    db: HashMap<SourceId, Rc<SourceDatabase>>,
-    wav: WavCacheState,
-}
-
-struct BrowserCacheState {
-    labels: HashMap<SourceId, Vec<String>>,
-    search: wavs::BrowserSearchCache,
-}
-
-struct FolderBrowsersState {
-    models: HashMap<SourceId, source_folders::FolderBrowserModel>,
-}
-
-struct ControllerUiCacheState {
-    browser: BrowserCacheState,
-    folders: FolderBrowsersState,
-}
-
-struct ControllerSelectionState {
-    ctx: SelectionContextState,
-    range: SelectionState,
-    suppress_autoplay_once: bool,
-}
-
-struct ControllerAudioState {
-    player: Option<Rc<RefCell<AudioPlayer>>>,
-    cache: AudioCache,
-    pending_loop_disable_at: Option<Instant>,
-}
-
-struct ControllerRuntimeState {
-    jobs: jobs::ControllerJobs,
-    #[cfg(test)]
-    progress_cancel_after: Option<usize>,
-}
-
-struct ControllerHistoryState {
-    undo_stack: undo::UndoStack<EguiController>,
-    random_history: RandomHistoryState,
-}
-
-struct WavEntriesState {
-    entries: Vec<WavEntry>,
-    lookup: HashMap<PathBuf, usize>,
-}
-
-struct WaveformState {
-    size: [u32; 2],
-    decoded: Option<DecodedWaveform>,
-    render_meta: Option<crate::egui_app::controller::wavs::WaveformRenderMeta>,
-}
-
-#[derive(Clone)]
-struct RandomHistoryEntry {
-    source_id: SourceId,
-    relative_path: PathBuf,
-}
-
-struct RandomHistoryState {
-    entries: VecDeque<RandomHistoryEntry>,
-    cursor: Option<usize>,
-}
-
-struct WavLoadJob {
-    source_id: SourceId,
-    root: PathBuf,
-}
-
-struct WavLoadResult {
-    source_id: SourceId,
-    result: Result<Vec<WavEntry>, LoadEntriesError>,
-    elapsed: Duration,
-}
-
-#[derive(Clone)]
-struct PendingAudio {
-    request_id: u64,
-    source_id: SourceId,
-    root: PathBuf,
-    relative_path: PathBuf,
-    intent: AudioLoadIntent,
-}
-
-#[derive(Clone)]
-struct PendingPlayback {
-    source_id: SourceId,
-    relative_path: PathBuf,
-    looped: bool,
-    start_override: Option<f32>,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum AudioLoadIntent {
-    Selection,
-    CollectionPreview,
-}
-
-struct ScanResult {
-    source_id: SourceId,
-    mode: ScanMode,
-    result: Result<
-        crate::sample_sources::scanner::ScanStats,
-        crate::sample_sources::scanner::ScanError,
-    >,
-}
-
 fn spawn_wav_loader() -> (Sender<WavLoadJob>, Receiver<WavLoadResult>) {
     let (tx, rx) = std::sync::mpsc::channel::<WavLoadJob>();
     let (result_tx, result_rx) = std::sync::mpsc::channel::<WavLoadResult>();
@@ -465,37 +312,6 @@ fn load_entries(job: &WavLoadJob) -> Result<Vec<WavEntry>, LoadEntriesError> {
         entries = db.list_files().map_err(LoadEntriesError::Db)?;
     }
     Ok(entries)
-}
-
-#[derive(Debug)]
-enum LoadEntriesError {
-    Db(SourceDbError),
-    Message(String),
-}
-
-impl std::fmt::Display for LoadEntriesError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            LoadEntriesError::Db(err) => write!(f, "{err}"),
-            LoadEntriesError::Message(msg) => f.write_str(msg),
-        }
-    }
-}
-
-impl From<String> for LoadEntriesError {
-    fn from(value: String) -> Self {
-        LoadEntriesError::Message(value)
-    }
-}
-
-#[derive(Clone)]
-struct LoadedAudio {
-    source_id: SourceId,
-    relative_path: PathBuf,
-    bytes: Vec<u8>,
-    duration_seconds: f32,
-    sample_rate: u32,
-    channels: u16,
 }
 
 #[cfg(test)]
