@@ -4,6 +4,11 @@ pub(super) fn tag_selected(controller: &mut EguiController, target: SampleTag) {
     let Some(selected_index) = controller.selected_row_index() else {
         return;
     };
+    let refocus_path = controller
+        .wav_entries
+        .entries
+        .get(selected_index)
+        .map(|entry| entry.relative_path.clone());
     let primary_row = match controller
         .visible_browser_indices()
         .iter()
@@ -45,6 +50,7 @@ pub(super) fn tag_selected(controller: &mut EguiController, target: SampleTag) {
             .iter()
             .map(|(source_id, path, _)| (source_id.clone(), path.clone(), target))
             .collect();
+        let refocus_path_undo = refocus_path.clone();
         controller.push_undo_entry(super::undo::UndoEntry::<EguiController>::new(
             label,
             move |controller: &mut EguiController| {
@@ -57,6 +63,12 @@ pub(super) fn tag_selected(controller: &mut EguiController, target: SampleTag) {
                         .cloned()
                         .ok_or_else(|| "Source not available".to_string())?;
                     controller.set_sample_tag_for_source(&source, path, *tag, false)?;
+                }
+                if let Some(path) = refocus_path_undo.as_deref() {
+                    controller.selection_state.suppress_autoplay_once = true;
+                    if let Some(row) = controller.visible_row_for_path(path) {
+                        controller.focus_browser_row_only(row);
+                    }
                 }
                 Ok(())
             },
