@@ -13,7 +13,7 @@ impl EguiController {
     }
 
     fn request_scan_with_mode(&mut self, mode: ScanMode) {
-        if self.jobs.scan_in_progress {
+        if self.runtime.jobs.scan_in_progress() {
             self.set_status("Scan already in progress", StatusTone::Info);
             return;
         }
@@ -23,8 +23,7 @@ impl EguiController {
         };
         self.prepare_for_scan(&source, mode);
         let (tx, rx) = std::sync::mpsc::channel();
-        self.jobs.scan_rx = Some(rx);
-        self.jobs.scan_in_progress = true;
+        self.runtime.jobs.begin_scan(rx);
         let status_label = match mode {
             ScanMode::Quick => "Quick sync",
             ScanMode::Hard => "Hard sync",
@@ -53,56 +52,14 @@ impl EguiController {
         });
     }
 
-    pub(super) fn poll_scan(&mut self) {
-        if let Some(rx) = &self.jobs.scan_rx
-            && let Ok(result) = rx.try_recv()
-        {
-            self.jobs.scan_in_progress = false;
-            self.jobs.scan_rx = None;
-            if Some(&result.source_id) != self.selected_source.as_ref() {
-                return;
-            }
-            let label = match result.mode {
-                ScanMode::Quick => "Quick sync",
-                ScanMode::Hard => "Hard sync",
-            };
-            match result.result {
-                Ok(stats) => {
-                    self.set_status(
-                        format!(
-                            "{label} complete: {} added, {} updated, {} missing",
-                            stats.added, stats.updated, stats.missing
-                        ),
-                        StatusTone::Info,
-                    );
-                    if let Some(source) = self.current_source() {
-                        let mut invalidator = source_cache_invalidator::SourceCacheInvalidator::new(
-                            &mut self.db_cache,
-                            &mut self.wav_cache,
-                            &mut self.wav_cache_lookup,
-                            &mut self.label_cache,
-                            &mut self.missing_wavs,
-                            &mut self.folder_browsers,
-                        );
-                        invalidator.invalidate_wav_related(&source.id);
-                    }
-                    self.queue_wav_load();
-                }
-                Err(err) => self.set_status(format!("{label} failed: {err}"), StatusTone::Error),
-            }
-        }
-    }
-
     fn prepare_for_scan(&mut self, source: &SampleSource, mode: ScanMode) {
         if matches!(mode, ScanMode::Hard) {
-            let mut invalidator = source_cache_invalidator::SourceCacheInvalidator::new(
-                &mut self.db_cache,
-                &mut self.wav_cache,
-                &mut self.wav_cache_lookup,
-                &mut self.label_cache,
-                &mut self.missing_wavs,
-                &mut self.folder_browsers,
-            );
+            let mut invalidator =
+                source_cache_invalidator::SourceCacheInvalidator::new_from_state(
+                    &mut self.cache,
+                    &mut self.ui_cache,
+                    &mut self.library.missing,
+                );
             invalidator.invalidate_wav_related(&source.id);
         }
     }

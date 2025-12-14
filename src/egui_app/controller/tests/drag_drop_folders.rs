@@ -15,8 +15,8 @@ fn selection_drop_adds_clip_to_collection() {
     let renderer = WaveformRenderer::new(12, 12);
     let mut controller = EguiController::new(renderer, None);
     let source = SampleSource::new(root.clone());
-    controller.sources.push(source.clone());
-    controller.selected_source = Some(source.id.clone());
+    controller.library.sources.push(source.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
 
     let orig = root.join("clip.wav");
     write_test_wav(&orig, &[0.1, 0.2, 0.3, 0.4]);
@@ -26,8 +26,8 @@ fn selection_drop_adds_clip_to_collection() {
 
     let collection = Collection::new("Crops");
     let collection_id = collection.id.clone();
-    controller.collections.push(collection);
-    controller.selected_collection = Some(collection_id.clone());
+    controller.library.collections.push(collection);
+    controller.selection_state.ctx.selected_collection = Some(collection_id.clone());
     controller.refresh_collections_ui();
 
     controller.ui.drag.payload = Some(DragPayload::Selection {
@@ -50,8 +50,7 @@ fn selection_drop_adds_clip_to_collection() {
     ));
     controller.finish_active_drag();
 
-    let collection = controller
-        .collections
+    let collection = controller.library.collections
         .iter()
         .find(|c| c.id == collection_id)
         .unwrap();
@@ -64,6 +63,7 @@ fn selection_drop_adds_clip_to_collection() {
     assert!(
         controller
             .wav_entries
+            .entries
             .iter()
             .all(|entry| &entry.relative_path != member_path)
     );
@@ -87,20 +87,20 @@ fn sample_drop_to_folder_moves_and_updates_state() {
     let renderer = WaveformRenderer::new(12, 12);
     let mut controller = EguiController::new(renderer, None);
     let source = SampleSource::new(root.clone());
-    controller.sources.push(source.clone());
-    controller.selected_source = Some(source.id.clone());
+    controller.library.sources.push(source.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
     controller.cache_db(&source).unwrap();
 
     write_test_wav(&root.join("one.wav"), &[0.1, 0.2]);
-    controller.wav_entries = vec![sample_entry("one.wav", SampleTag::Neutral)];
+    controller.wav_entries.entries = vec![sample_entry("one.wav", SampleTag::Neutral)];
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
     let mut collection = Collection::new("Dest");
     let collection_id = collection.id.clone();
     collection.add_member(source.id.clone(), PathBuf::from("one.wav"));
-    controller.collections.push(collection);
-    controller.selected_collection = Some(collection_id.clone());
+    controller.library.collections.push(collection);
+    controller.selection_state.ctx.selected_collection = Some(collection_id.clone());
     controller.refresh_collections_ui();
 
     controller.ui.drag.payload = Some(DragPayload::Sample {
@@ -124,11 +124,11 @@ fn sample_drop_to_folder_moves_and_updates_state() {
     assert!(
         controller
             .wav_entries
+            .entries
             .iter()
             .any(|entry| entry.relative_path == PathBuf::from("dest").join("one.wav"))
     );
-    let collection = controller
-        .collections
+    let collection = controller.library.collections
         .iter()
         .find(|c| c.id == collection_id)
         .unwrap();
@@ -152,11 +152,11 @@ fn sample_drop_to_folder_rejects_conflicts() {
     let renderer = WaveformRenderer::new(12, 12);
     let mut controller = EguiController::new(renderer, None);
     let source = SampleSource::new(root.clone());
-    controller.sources.push(source.clone());
-    controller.selected_source = Some(source.id.clone());
+    controller.library.sources.push(source.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
     controller.cache_db(&source).unwrap();
 
-    controller.wav_entries = vec![sample_entry("one.wav", SampleTag::Neutral)];
+    controller.wav_entries.entries = vec![sample_entry("one.wav", SampleTag::Neutral)];
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
@@ -177,6 +177,7 @@ fn sample_drop_to_folder_rejects_conflicts() {
     assert!(
         controller
             .wav_entries
+            .entries
             .iter()
             .any(|entry| entry.relative_path == PathBuf::from("one.wav"))
     );

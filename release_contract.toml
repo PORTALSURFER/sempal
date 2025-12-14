@@ -1,0 +1,19 @@
+app_name = "sempal"
+repo_slug = "PORTALSURFER/sempal"
+channels = ["nightly", "stable"]
+targets = ["x86_64-pc-windows-msvc"]
+
+[platform_labels]
+windows = "windows"
+x86_64 = "x86_64"
+
+[templates]
+stable_asset = "{APP_NAME}-v{VERSION}-windows-x86_64.zip"
+nightly_asset = "{APP_NAME}-nightly-windows-x86_64.zip"
+stable_checksums = "checksums-v{VERSION}.txt"
+nightly_checksums = "checksums-nightly.txt"
+
+[archive_layout]
+root_dir = "{APP_NAME}"
+files = ["{APP_NAME}.exe", "update-manifest.json"]
+optional_dirs = ["resources"]

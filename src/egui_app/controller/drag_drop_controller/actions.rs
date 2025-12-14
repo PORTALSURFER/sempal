@@ -54,7 +54,7 @@ impl DragDropActions for DragDropController<'_> {
         if bounds.width() < MIN_SELECTION_WIDTH {
             return;
         }
-        let Some(audio) = self.loaded_audio.clone() else {
+        let Some(audio) = self.sample_view.wav.loaded_audio.clone() else {
             self.set_status(
                 "Load a sample before dragging a selection",
                 StatusTone::Warning,
@@ -174,7 +174,7 @@ impl DragDropActions for DragDropController<'_> {
         let drop_in_collections_panel =
             matches!(active_target, DragTarget::CollectionsDropZone { .. })
                 || matches!(active_target, DragTarget::CollectionsRow(_))
-                || (self.collections.is_empty()
+                || (self.library.collections.is_empty()
                     && triage_target.is_none()
                     && folder_target.is_none());
 
@@ -198,7 +198,7 @@ impl DragDropActions for DragDropController<'_> {
             debug!(
                 "Blocked collection drop (no active collection): target={:?} collections_empty={} payload={:?}",
                 active_target,
-                self.collections.is_empty(),
+                self.library.collections.is_empty(),
                 payload,
             );
 

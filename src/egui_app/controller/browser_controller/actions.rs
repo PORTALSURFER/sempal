@@ -104,7 +104,7 @@ impl BrowserActions for BrowserController<'_> {
             }
         }
         if let Some(path) = next_focus
-            && self.wav_lookup.contains_key(&path)
+            && self.wav_entries.lookup.contains_key(&path)
         {
             if let Some(row) = self.visible_row_for_path(&path) {
                 self.focus_browser_row_only(row);

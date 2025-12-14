@@ -56,6 +56,7 @@ impl EguiController {
             .ok_or_else(|| "Sample not found".to_string())?;
         let entry = self
             .wav_entries
+            .entries
             .get(index)
             .cloned()
             .ok_or_else(|| "Sample not found".to_string())?;
@@ -72,16 +73,17 @@ impl EguiController {
         source: &SampleSource,
         relative_path: &Path,
     ) {
-        if let Some(cache) = self.wav_cache.get_mut(&source.id) {
+        if let Some(cache) = self.cache.wav.entries.get_mut(&source.id) {
             cache.retain(|entry| entry.relative_path != relative_path);
             self.rebuild_wav_cache_lookup(&source.id);
         }
-        if self.selected_source.as_ref() == Some(&source.id) {
+        if self.selection_state.ctx.selected_source.as_ref() == Some(&source.id) {
             self.wav_entries
+                .entries
                 .retain(|entry| entry.relative_path != relative_path);
             self.sync_browser_after_wav_entries_mutation(&source.id);
         } else {
-            self.label_cache.remove(&source.id);
+            self.ui_cache.browser.labels.remove(&source.id);
         }
         self.rebuild_missing_lookup_for_source(&source.id);
         self.clear_loaded_sample_if(source, relative_path);
@@ -93,18 +95,18 @@ impl EguiController {
         relative_path: &Path,
     ) {
         self.invalidate_cached_audio(&source.id, relative_path);
-        if self.selected_source.as_ref() == Some(&source.id) {
-            if self.selected_wav.as_deref() == Some(relative_path) {
-                self.selected_wav = None;
+        if self.selection_state.ctx.selected_source.as_ref() == Some(&source.id) {
+            if self.sample_view.wav.selected_wav.as_deref() == Some(relative_path) {
+                self.sample_view.wav.selected_wav = None;
             }
-            if self.loaded_wav.as_deref() == Some(relative_path) {
-                self.loaded_wav = None;
+            if self.sample_view.wav.loaded_wav.as_deref() == Some(relative_path) {
+                self.sample_view.wav.loaded_wav = None;
             }
             if self.ui.loaded_wav.as_deref() == Some(relative_path) {
                 self.ui.loaded_wav = None;
             }
         }
-        if let Some(audio) = self.loaded_audio.as_ref()
+        if let Some(audio) = self.sample_view.wav.loaded_audio.as_ref()
             && audio.source_id == source.id
             && audio.relative_path == relative_path
         {
@@ -126,19 +128,19 @@ impl EguiController {
         relative_path: &Path,
     ) {
         let mut targets = Vec::new();
-        for collection in self.collections.iter() {
+        for collection in self.library.collections.iter() {
             if collection
                 .members
                 .iter()
                 .any(|m| &m.source_id == source_id && m.relative_path == relative_path)
             {
-                targets.push((
-                    collection.id.clone(),
-                    collection_export::resolved_export_dir(
-                        collection,
-                        self.collection_export_root.as_deref(),
-                    ),
-                ));
+                    targets.push((
+                        collection.id.clone(),
+                        collection_export::resolved_export_dir(
+                            collection,
+                            self.settings.collection_export_root.as_deref(),
+                        ),
+                    ));
             }
         }
         let member = CollectionMember {
@@ -162,7 +164,7 @@ impl EguiController {
     ) -> bool {
         let mut changed = false;
         let mut exports: Vec<(CollectionId, Option<PathBuf>)> = Vec::new();
-        for collection in self.collections.iter_mut() {
+        for collection in self.library.collections.iter_mut() {
             let mut touched = false;
             for member in collection.members.iter_mut() {
                 if &member.source_id == source_id && member.relative_path == old_relative {
@@ -176,7 +178,7 @@ impl EguiController {
                     collection.id.clone(),
                     collection_export::resolved_export_dir(
                         collection,
-                        self.collection_export_root.as_deref(),
+                        self.settings.collection_export_root.as_deref(),
                     ),
                 ));
             }
@@ -209,7 +211,7 @@ impl EguiController {
         relative_path: &Path,
     ) -> bool {
         let mut changed = false;
-        for collection in self.collections.iter_mut() {
+        for collection in self.library.collections.iter_mut() {
             let member = CollectionMember {
                 source_id: source_id.clone(),
                 relative_path: relative_path.to_path_buf(),
@@ -219,7 +221,7 @@ impl EguiController {
                 changed = true;
                 let export_dir = collection_export::resolved_export_dir(
                     collection,
-                    self.collection_export_root.as_deref(),
+                    self.settings.collection_export_root.as_deref(),
                 );
                 collection_export::delete_exported_file(export_dir, &member);
             }
