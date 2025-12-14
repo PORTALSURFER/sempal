@@ -2,6 +2,26 @@ use cpal;
 use cpal::traits::{DeviceTrait, HostTrait};
 use rodio::{OutputStream, OutputStreamBuilder};
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub enum AudioOutputError {
+    #[error("No audio output devices found")]
+    NoOutputDevices,
+    #[error("Could not list output devices: {source}")]
+    ListOutputDevices { source: cpal::DevicesError },
+    #[error("Failed to read supported configs for {host_id}: {source}")]
+    SupportedOutputConfigs {
+        host_id: String,
+        source: cpal::SupportedStreamConfigsError,
+    },
+    #[error("Failed to open stream: {source}")]
+    OpenStream { source: rodio::StreamError },
+    #[error("Failed to open default stream: {source}")]
+    OpenDefaultStream { source: rodio::StreamError },
+    #[error("Audio init failed: {source}")]
+    AudioInitFailed { source: rodio::StreamError },
+}
 
 /// Persisted audio output preferences chosen by the user.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -81,7 +101,7 @@ pub fn available_hosts() -> Vec<AudioHostSummary> {
 }
 
 /// Enumerate output devices for a specific host.
-pub fn available_devices(host_id: &str) -> Result<Vec<AudioDeviceSummary>, String> {
+pub fn available_devices(host_id: &str) -> Result<Vec<AudioDeviceSummary>, AudioOutputError> {
     let (host, id, _) = resolve_host(Some(host_id))?;
     let default_name = host
         .default_output_device()
@@ -89,7 +109,7 @@ pub fn available_devices(host_id: &str) -> Result<Vec<AudioDeviceSummary>, Strin
         .unwrap_or_else(|| "System default".to_string());
     let devices = host
         .output_devices()
-        .map_err(|err| format!("Could not list output devices: {err}"))?
+        .map_err(|source| AudioOutputError::ListOutputDevices { source })?
         .filter_map(|device| {
             let name = device_label(&device)?;
             Some(AudioDeviceSummary {
@@ -103,13 +123,19 @@ pub fn available_devices(host_id: &str) -> Result<Vec<AudioDeviceSummary>, Strin
 }
 
 /// Sample rates supported by the given host/device pair.
-pub fn supported_sample_rates(host_id: &str, device_name: &str) -> Result<Vec<u32>, String> {
+pub fn supported_sample_rates(
+    host_id: &str,
+    device_name: &str,
+) -> Result<Vec<u32>, AudioOutputError> {
     let (host, resolved_host, _) = resolve_host(Some(host_id))?;
     let (device, _, _) = resolve_device(&host, Some(device_name))?;
     let mut supported = Vec::new();
     for range in device
         .supported_output_configs()
-        .map_err(|err| format!("Failed to read supported configs for {resolved_host}: {err}"))?
+        .map_err(|source| AudioOutputError::SupportedOutputConfigs {
+            host_id: resolved_host.clone(),
+            source,
+        })?
     {
         supported.extend(sample_rates_in_range(
             range.min_sample_rate().0,
@@ -127,12 +153,14 @@ pub fn supported_sample_rates(host_id: &str, device_name: &str) -> Result<Vec<u3
 }
 
 /// Open an audio stream honoring user preferences with safe fallbacks.
-pub fn open_output_stream(config: &AudioOutputConfig) -> Result<OpenStreamOutcome, String> {
+pub fn open_output_stream(config: &AudioOutputConfig) -> Result<OpenStreamOutcome, AudioOutputError> {
     let (host, host_id, host_fallback) = resolve_host(config.host.as_deref())?;
     let (device, device_name, device_fallback) = resolve_device(&host, config.device.as_deref())?;
 
     let mut builder =
-        OutputStreamBuilder::from_device(device).map_err(map_stream_error("open stream"))?;
+        OutputStreamBuilder::from_device(device).map_err(|source| AudioOutputError::OpenStream {
+            source,
+        })?;
     if let Some(rate) = config.sample_rate {
         builder = builder.with_sample_rate(rate);
     }
@@ -150,15 +178,16 @@ pub fn open_output_stream(config: &AudioOutputConfig) -> Result<OpenStreamOutcom
             let default_host = cpal::default_host();
             let fallback_device = default_host
                 .default_output_device()
-                .ok_or_else(|| format!("Audio init failed: {err}"))?;
+                .ok_or_else(|| AudioOutputError::AudioInitFailed { source: err })?;
             resolved_host_id = default_host.id().name().to_string();
             resolved_device_name =
                 device_label(&fallback_device).unwrap_or_else(|| "Default device".to_string());
-            let fallback_builder = OutputStreamBuilder::from_device(fallback_device)
-                .map_err(map_stream_error("open default stream"))?;
+            let fallback_builder = OutputStreamBuilder::from_device(fallback_device).map_err(
+                |source| AudioOutputError::OpenDefaultStream { source },
+            )?;
             fallback_builder
                 .open_stream_or_fallback()
-                .map_err(map_stream_error("open default stream"))?
+                .map_err(|source| AudioOutputError::OpenDefaultStream { source })?
         }
     };
 
@@ -191,7 +220,7 @@ pub fn open_output_stream(config: &AudioOutputConfig) -> Result<OpenStreamOutcom
     })
 }
 
-fn resolve_host(id: Option<&str>) -> Result<(cpal::Host, String, bool), String> {
+fn resolve_host(id: Option<&str>) -> Result<(cpal::Host, String, bool), AudioOutputError> {
     let default_host = cpal::default_host();
     let default_id = default_host.id().name().to_string();
     let Some(requested) = id else {
@@ -211,15 +240,15 @@ fn resolve_host(id: Option<&str>) -> Result<(cpal::Host, String, bool), String> 
 fn resolve_device(
     host: &cpal::Host,
     name: Option<&str>,
-) -> Result<(cpal::Device, String, bool), String> {
+) -> Result<(cpal::Device, String, bool), AudioOutputError> {
     let default_device = host
         .default_output_device()
-        .ok_or_else(|| "No audio output devices found".to_string())?;
+        .ok_or(AudioOutputError::NoOutputDevices)?;
     let default_name = device_label(&default_device).unwrap_or_else(|| "Default device".into());
     let requested_name = name.unwrap_or(&default_name);
     let devices = host
         .output_devices()
-        .map_err(|err| format!("Could not list output devices: {err}"))?;
+        .map_err(|source| AudioOutputError::ListOutputDevices { source })?;
     let mut chosen = None;
     for device in devices {
         if device_label(&device)
@@ -259,10 +288,6 @@ fn sample_rates_in_range(min: u32, max: u32) -> Vec<u32> {
         .copied()
         .filter(|rate| *rate >= min && *rate <= max)
         .collect()
-}
-
-fn map_stream_error(action: &'static str) -> impl FnOnce(rodio::StreamError) -> String {
-    move |err| format!("Failed to {action}: {err}")
 }
 
 #[cfg(test)]
