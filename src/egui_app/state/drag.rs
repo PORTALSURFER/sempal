@@ -101,6 +101,8 @@ pub struct DragState {
     pub os_left_mouse_pressed: bool,
     /// True only on the frame the OS transitions the left mouse button from down -> up.
     pub os_left_mouse_released: bool,
+    /// OS cursor position in client points (Windows-only; best-effort).
+    pub os_cursor_pos: Option<Pos2>,
     os_left_mouse_down_last: bool,
 }
 
@@ -121,6 +123,7 @@ impl Default for DragState {
             os_left_mouse_down: false,
             os_left_mouse_pressed: false,
             os_left_mouse_released: false,
+            os_cursor_pos: None,
             os_left_mouse_down_last: false,
         }
     }
