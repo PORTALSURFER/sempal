@@ -169,6 +169,8 @@ fn remaining_loop_duration_reports_time_left_in_cycle() {
     let player = AudioPlayer {
         stream,
         sink: None,
+        fade_out: None,
+        sink_format: None,
         current_audio: None,
         track_duration: Some(8.0),
         started_at: Some(started_at),
@@ -193,6 +195,8 @@ fn remaining_loop_duration_accounts_for_full_track_offset() {
     let player = AudioPlayer {
         stream,
         sink: None,
+        fade_out: None,
+        sink_format: None,
         current_audio: None,
         track_duration: Some(8.0),
         started_at: Some(started_at),
@@ -216,6 +220,8 @@ fn remaining_loop_duration_none_when_not_looping() {
     let player = AudioPlayer {
         stream,
         sink: None,
+        fade_out: None,
+        sink_format: None,
         current_audio: None,
         track_duration: Some(8.0),
         started_at: Some(Instant::now()),
@@ -266,6 +272,26 @@ fn edge_fade_handles_tiny_segments() {
 }
 
 #[test]
+fn fade_out_on_request_ramps_to_zero_and_stops() {
+    let source = ConstantSource::new(1_000, 2, 1.0, 1.0);
+    let handle = FadeOutHandle::new();
+    let mut faded = FadeOutOnRequest::new(source, handle.clone());
+
+    let mut samples: Vec<f32> = faded.by_ref().take(4).collect();
+    handle.request_fade_out_frames(3);
+    samples.extend(faded);
+
+    assert_eq!(samples.len(), 10);
+    // Fade begins at a frame boundary, so each stereo frame shares the same factor.
+    assert_eq!(samples[4], 1.0);
+    assert_eq!(samples[5], 1.0);
+    assert_eq!(samples[6], 0.5);
+    assert_eq!(samples[7], 0.5);
+    assert_eq!(samples[8], 0.0);
+    assert_eq!(samples[9], 0.0);
+}
+
+#[test]
 fn progress_wraps_full_loop_from_offset() {
     let Ok(stream) = rodio::OutputStreamBuilder::open_default_stream() else {
         return;
@@ -273,6 +299,8 @@ fn progress_wraps_full_loop_from_offset() {
     let player = AudioPlayer {
         stream,
         sink: None,
+        fade_out: None,
+        sink_format: None,
         current_audio: None,
         track_duration: Some(10.0),
         started_at: Some(Instant::now() - Duration::from_secs_f32(2.0)),
@@ -344,6 +372,8 @@ fn play_range_accepts_zero_width_request() {
     let mut player = AudioPlayer {
         stream,
         sink: None,
+        fade_out: None,
+        sink_format: None,
         current_audio: None,
         track_duration: None,
         started_at: None,
