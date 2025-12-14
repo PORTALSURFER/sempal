@@ -14,7 +14,7 @@ fn cursor_step_size_tracks_view_zoom() {
     prepare_browser_sample(&mut controller, &source, "zoom.wav");
     controller.update_waveform_size(200, 10);
     controller.select_wav_by_path(Path::new("zoom.wav"));
-    controller.decoded_waveform = Some(DecodedWaveform {
+    controller.sample_view.waveform.decoded = Some(DecodedWaveform {
         cache_token: 1,
         samples: vec![0.0; 10_000],
         peaks: None,
@@ -39,12 +39,12 @@ fn cursor_step_size_tracks_view_zoom() {
 #[test]
 fn waveform_refresh_respects_view_slice_and_caps_width() {
     let (mut controller, _source) = dummy_controller();
-    controller.waveform_size = [100, 10];
+    controller.sample_view.waveform.size = [100, 10];
     controller.ui.waveform.view = WaveformView {
         start: 0.25,
         end: 0.5,
     };
-    controller.decoded_waveform = Some(DecodedWaveform {
+    controller.sample_view.waveform.decoded = Some(DecodedWaveform {
         cache_token: 1,
         samples: (0..1000).map(|i| i as f32).collect(),
         peaks: None,
@@ -52,7 +52,7 @@ fn waveform_refresh_respects_view_slice_and_caps_width() {
         sample_rate: 48_000,
         channels: 1,
     });
-    controller.waveform_render_meta = None;
+    controller.sample_view.waveform.render_meta = None;
     controller.refresh_waveform_image();
     let image = controller
         .ui
@@ -63,12 +63,12 @@ fn waveform_refresh_respects_view_slice_and_caps_width() {
     assert!((image.view_start - 0.25).abs() < 1e-6);
     assert!((image.view_end - 0.5).abs() < 1e-6);
     let expected_width =
-        (controller.waveform_size[0] as f32 * (1.0f32 / 0.25).min(64.0f32)).ceil() as usize;
+        (controller.sample_view.waveform.size[0] as f32 * (1.0f32 / 0.25).min(64.0f32)).ceil() as usize;
     let samples_in_view = (0.5 - 0.25) * 1000.0;
     let upper = (samples_in_view as usize)
         .min(crate::egui_app::controller::wavs::MAX_TEXTURE_WIDTH as usize)
         .max(1);
-    let lower = controller.waveform_size[0]
+    let lower = controller.sample_view.waveform.size[0]
         .min(crate::egui_app::controller::wavs::MAX_TEXTURE_WIDTH) as usize;
     let clamped = expected_width.min(upper).max(lower);
     assert_eq!(image.image.size[0], clamped);
@@ -116,9 +116,9 @@ fn waveform_render_meta_allows_small_shifts_on_full_view() {
 #[test]
 fn waveform_rerenders_after_same_length_edit() {
     let (mut controller, source) = dummy_controller();
-    controller.sources.push(source.clone());
-    controller.selected_source = Some(source.id.clone());
-    controller.waveform_size = [32, 8];
+    controller.library.sources.push(source.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
+    controller.sample_view.waveform.size = [32, 8];
     let path = source.root.join("edit.wav");
     write_test_wav(&path, &[0.1, 0.1, 0.1, 0.1]);
 
@@ -148,15 +148,15 @@ fn waveform_rerenders_after_same_length_edit() {
     assert_ne!(before.pixels, after.pixels);
 }
 
-#[test]
-fn stale_audio_results_are_ignored() {
-    let (mut controller, source) = dummy_controller();
-    controller.feature_flags.autoplay_selection = false;
-    controller.sources.push(source.clone());
-    controller.selected_source = Some(source.id.clone());
+    #[test]
+    fn stale_audio_results_are_ignored() {
+        let (mut controller, source) = dummy_controller();
+        controller.settings.feature_flags.autoplay_selection = false;
+    controller.library.sources.push(source.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
     write_test_wav(&source.root.join("a.wav"), &[0.0, 0.1]);
     write_test_wav(&source.root.join("b.wav"), &[0.0, -0.1]);
-    controller.wav_entries = vec![
+    controller.wav_entries.entries = vec![
         sample_entry("a.wav", SampleTag::Neutral),
         sample_entry("b.wav", SampleTag::Neutral),
     ];
@@ -167,37 +167,41 @@ fn stale_audio_results_are_ignored() {
     controller.select_wav_by_path(Path::new("b.wav"));
 
     for _ in 0..20 {
-        controller.poll_audio_loader();
-        if controller.loaded_wav.as_deref() == Some(Path::new("b.wav")) {
+        controller.poll_background_jobs();
+        if controller.sample_view.wav.loaded_wav.as_deref() == Some(Path::new("b.wav")) {
             break;
         }
         thread::sleep(Duration::from_millis(10));
     }
 
-    assert_eq!(controller.loaded_wav.as_deref(), Some(Path::new("b.wav")));
+    assert_eq!(
+        controller.sample_view.wav.loaded_wav.as_deref(),
+        Some(Path::new("b.wav"))
+    );
     assert_eq!(
         controller.ui.loaded_wav.as_deref(),
         Some(Path::new("b.wav"))
     );
-    assert!(controller.jobs.pending_audio.is_none());
+    assert!(controller.runtime.jobs.pending_audio.is_none());
 }
 
 #[test]
-fn play_request_is_deferred_until_audio_ready() {
-    let (mut controller, source) = dummy_controller();
-    controller.feature_flags.autoplay_selection = false;
-    controller.sources.push(source.clone());
-    controller.selected_source = Some(source.id.clone());
+    fn play_request_is_deferred_until_audio_ready() {
+        let (mut controller, source) = dummy_controller();
+        controller.settings.feature_flags.autoplay_selection = false;
+    controller.library.sources.push(source.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
     write_test_wav(&source.root.join("wait.wav"), &[0.0, 0.2, -0.2]);
-    controller.wav_entries = vec![sample_entry("wait.wav", SampleTag::Neutral)];
+    controller.wav_entries.entries = vec![sample_entry("wait.wav", SampleTag::Neutral)];
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
     controller.select_wav_by_path(Path::new("wait.wav"));
-    assert!(controller.jobs.pending_playback.is_none());
+    assert!(controller.runtime.jobs.pending_playback.is_none());
     let result = controller.play_audio(false, None);
     assert!(result.is_ok());
     let pending = controller
+        .runtime
         .jobs
         .pending_playback
         .as_ref()
@@ -210,11 +214,11 @@ fn play_request_is_deferred_until_audio_ready() {
 #[test]
 fn loading_flag_clears_after_audio_load() {
     let (mut controller, source) = dummy_controller();
-    controller.sources.push(source.clone());
-    controller.selected_source = Some(source.id.clone());
+    controller.library.sources.push(source.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
     let rel = PathBuf::from("load.wav");
     write_test_wav(&source.root.join(&rel), &[0.0, 0.5, -0.5]);
-    controller.wav_entries = vec![sample_entry("load.wav", SampleTag::Neutral)];
+    controller.wav_entries.entries = vec![sample_entry("load.wav", SampleTag::Neutral)];
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
@@ -227,15 +231,18 @@ fn loading_flag_clears_after_audio_load() {
     );
 
     for _ in 0..50 {
-        controller.poll_audio_loader();
-        if controller.loaded_wav.as_deref() == Some(rel.as_path()) {
+        controller.poll_background_jobs();
+        if controller.sample_view.wav.loaded_wav.as_deref() == Some(rel.as_path()) {
             break;
         }
         thread::sleep(Duration::from_millis(10));
     }
 
-    assert_eq!(controller.loaded_wav.as_deref(), Some(rel.as_path()));
-    assert!(controller.jobs.pending_audio.is_none());
+    assert_eq!(
+        controller.sample_view.wav.loaded_wav.as_deref(),
+        Some(rel.as_path())
+    );
+    assert!(controller.runtime.jobs.pending_audio.is_none());
     assert!(controller.ui.waveform.loading.is_none());
-    assert!(controller.loaded_audio.is_some());
+    assert!(controller.sample_view.wav.loaded_audio.is_some());
 }

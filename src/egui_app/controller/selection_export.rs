@@ -15,8 +15,7 @@ impl EguiController {
         register_in_source: bool,
     ) -> Result<WavEntry, String> {
         let audio = self.selection_audio(source_id, relative_path)?;
-        let source = self
-            .sources
+        let source = self.library.sources
             .iter()
             .find(|s| &s.id == source_id)
             .cloned()
@@ -45,8 +44,7 @@ impl EguiController {
         folder: &Path,
     ) -> Result<WavEntry, String> {
         let audio = self.selection_audio(source_id, relative_path)?;
-        let source = self
-            .sources
+        let source = self.library.sources
             .iter()
             .find(|s| &s.id == source_id)
             .cloned()
@@ -97,7 +95,7 @@ impl EguiController {
         source_id: &SourceId,
         relative_path: &Path,
     ) -> Result<LoadedAudio, String> {
-        let Some(audio) = self.loaded_audio.as_ref() else {
+        let Some(audio) = self.sample_view.wav.loaded_audio.as_ref() else {
             return Err("Selection audio not available; load a sample first".into());
         };
         if &audio.source_id != source_id || audio.relative_path != relative_path {
@@ -170,16 +168,17 @@ impl EguiController {
     }
 
     fn insert_new_wav_entry(&mut self, source: &SampleSource, entry: WavEntry) {
-        let cache = self.wav_cache.entry(source.id.clone()).or_default();
+        let cache = self.cache.wav.entries.entry(source.id.clone()).or_default();
         cache.push(entry.clone());
         cache.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
         self.rebuild_wav_cache_lookup(&source.id);
 
-        if self.selected_source.as_ref() != Some(&source.id) {
+        if self.selection_state.ctx.selected_source.as_ref() != Some(&source.id) {
             return;
         }
-        self.wav_entries.push(entry);
+        self.wav_entries.entries.push(entry);
         self.wav_entries
+            .entries
             .sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
         self.sync_browser_after_wav_entries_mutation_keep_search_cache(&source.id);
         self.rebuild_missing_lookup_for_source(&source.id);
@@ -263,6 +262,25 @@ fn slice_frames(
     cropped
 }
 
+fn write_selection_wav(target: &Path, samples: &[f32], spec: hound::WavSpec) -> Result<(), String> {
+    if let Some(parent) = target.parent()
+        && !parent.exists()
+    {
+        fs::create_dir_all(parent)
+            .map_err(|err| format!("Failed to create folder {}: {err}", parent.display()))?;
+    }
+    let mut writer = hound::WavWriter::create(target, spec)
+        .map_err(|err| format!("Failed to create clip: {err}"))?;
+    for sample in samples {
+        writer
+            .write_sample(*sample)
+            .map_err(|err| format!("Failed to write clip: {err}"))?;
+    }
+    writer
+        .finalize()
+        .map_err(|err| format!("Failed to finalize clip: {err}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -281,7 +299,7 @@ mod tests {
         let renderer = crate::waveform::WaveformRenderer::new(12, 12);
         let mut controller = EguiController::new(renderer, None);
         let source = SampleSource::new(source_root.clone());
-        controller.sources.push(source.clone());
+        controller.library.sources.push(source.clone());
 
         let orig = source_root.join("drums").join("clip.wav");
         write_test_wav(&orig, &[0.1, 0.2, 0.3, 0.4]);
@@ -304,23 +322,4 @@ mod tests {
         assert!(clip_root.join(&entry.relative_path).is_file());
         assert!(!clip_root.join("drums").join(&entry.relative_path).exists());
     }
-}
-
-fn write_selection_wav(target: &Path, samples: &[f32], spec: hound::WavSpec) -> Result<(), String> {
-    if let Some(parent) = target.parent()
-        && !parent.exists()
-    {
-        fs::create_dir_all(parent)
-            .map_err(|err| format!("Failed to create folder {}: {err}", parent.display()))?;
-    }
-    let mut writer = hound::WavWriter::create(target, spec)
-        .map_err(|err| format!("Failed to create clip: {err}"))?;
-    for sample in samples {
-        writer
-            .write_sample(*sample)
-            .map_err(|err| format!("Failed to write clip: {err}"))?;
-    }
-    writer
-        .finalize()
-        .map_err(|err| format!("Failed to finalize clip: {err}"))
 }

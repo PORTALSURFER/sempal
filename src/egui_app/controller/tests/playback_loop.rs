@@ -18,7 +18,7 @@ fn enabling_loop_while_playing_restarts_in_looped_mode() {
     player.play_range(0.0, 1.0, false).unwrap();
 
     let (mut controller, source) = dummy_controller();
-    controller.loaded_audio = Some(LoadedAudio {
+    controller.sample_view.wav.loaded_audio = Some(LoadedAudio {
         source_id: source.id.clone(),
         relative_path: PathBuf::from("loop_test.wav"),
         bytes: std::fs::read(&wav_path).unwrap(),
@@ -26,7 +26,7 @@ fn enabling_loop_while_playing_restarts_in_looped_mode() {
         sample_rate: 8,
         channels: 1,
     });
-    controller.player = Some(std::rc::Rc::new(std::cell::RefCell::new(player)));
+    controller.audio.player = Some(std::rc::Rc::new(std::cell::RefCell::new(player)));
 
     controller.ui.waveform.loop_enabled = false;
     if !controller.is_playing() {
@@ -38,6 +38,7 @@ fn enabling_loop_while_playing_restarts_in_looped_mode() {
 
     assert!(controller.ui.waveform.loop_enabled);
     assert!(controller
+        .audio
         .player
         .as_ref()
         .unwrap()

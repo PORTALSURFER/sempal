@@ -8,8 +8,8 @@ fn moving_trashed_samples_moves_and_prunes_state() -> Result<(), String> {
     let temp = tempdir().unwrap();
     let trash_root = temp.path().join("trash");
     let (mut controller, source) = dummy_controller();
-    controller.sources.push(source.clone());
-    controller.trash_folder = Some(trash_root.clone());
+    controller.library.sources.push(source.clone());
+    controller.settings.trash_folder = Some(trash_root.clone());
     controller.ui.trash_folder = Some(trash_root.clone());
 
     let trash_file = source.root.join("trash.wav");
@@ -24,7 +24,7 @@ fn moving_trashed_samples_moves_and_prunes_state() -> Result<(), String> {
         .unwrap();
     db.set_tag(Path::new("keep.wav"), SampleTag::Keep).unwrap();
 
-    controller.wav_entries = vec![
+    controller.wav_entries.entries = vec![
         sample_entry("trash.wav", SampleTag::Trash),
         sample_entry("keep.wav", SampleTag::Keep),
     ];
@@ -43,10 +43,11 @@ fn moving_trashed_samples_moves_and_prunes_state() -> Result<(), String> {
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].relative_path, PathBuf::from("keep.wav"));
     assert_eq!(rows[0].tag, SampleTag::Keep);
-    assert_eq!(controller.wav_entries.len(), 1);
+    assert_eq!(controller.wav_entries.entries.len(), 1);
     assert!(
         controller
             .wav_entries
+            .entries
             .iter()
             .all(|entry| entry.relative_path != PathBuf::from("trash.wav"))
     );
@@ -59,8 +60,8 @@ fn moving_trashed_samples_can_cancel_midway() -> Result<(), String> {
     let temp = tempdir().unwrap();
     let trash_root = temp.path().join("trash");
     let (mut controller, source) = dummy_controller();
-    controller.sources.push(source.clone());
-    controller.trash_folder = Some(trash_root.clone());
+    controller.library.sources.push(source.clone());
+    controller.settings.trash_folder = Some(trash_root.clone());
     controller.ui.trash_folder = Some(trash_root.clone());
 
     {
@@ -73,13 +74,13 @@ fn moving_trashed_samples_can_cancel_midway() -> Result<(), String> {
         }
     }
 
-    controller.wav_entries = vec![
+    controller.wav_entries.entries = vec![
         sample_entry("one.wav", SampleTag::Trash),
         sample_entry("two.wav", SampleTag::Trash),
     ];
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
-    controller.progress_cancel_after = Some(1);
+    controller.runtime.progress_cancel_after = Some(1);
 
     controller.move_all_trashed_to_folder();
 
@@ -100,7 +101,7 @@ fn taking_out_trash_deletes_files() {
     std::fs::write(trash_root.join("nested").join("more.wav"), b"more").unwrap();
 
     let (mut controller, _source) = dummy_controller();
-    controller.trash_folder = Some(trash_root.clone());
+    controller.settings.trash_folder = Some(trash_root.clone());
     controller.ui.trash_folder = Some(trash_root.clone());
 
     controller.take_out_trash();
