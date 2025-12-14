@@ -6,9 +6,9 @@ use std::time::Instant;
 #[test]
 fn hotkey_tagging_applies_to_all_selected_rows() {
     let (mut controller, source) = dummy_controller();
-    controller.sources.push(source.clone());
+    controller.library.sources.push(source.clone());
     controller.cache_db(&source).unwrap();
-    controller.wav_entries = vec![
+    controller.wav_entries.entries = vec![
         sample_entry("one.wav", SampleTag::Neutral),
         sample_entry("two.wav", SampleTag::Neutral),
     ];
@@ -19,16 +19,16 @@ fn hotkey_tagging_applies_to_all_selected_rows() {
     controller.toggle_browser_row_selection(1);
     controller.tag_selected_left();
 
-    assert_eq!(controller.wav_entries[0].tag, SampleTag::Trash);
-    assert_eq!(controller.wav_entries[1].tag, SampleTag::Trash);
+    assert_eq!(controller.wav_entries.entries[0].tag, SampleTag::Trash);
+    assert_eq!(controller.wav_entries.entries[1].tag, SampleTag::Trash);
 }
 
 #[test]
 fn escape_clears_selection() {
     let (mut controller, source) = dummy_controller();
-    controller.sources.push(source.clone());
+    controller.library.sources.push(source.clone());
     controller.cache_db(&source).unwrap();
-    controller.wav_entries = vec![
+    controller.wav_entries.entries = vec![
         sample_entry("one.wav", SampleTag::Neutral),
         sample_entry("two.wav", SampleTag::Neutral),
     ];
@@ -48,16 +48,17 @@ fn escape_clears_selection() {
 #[test]
 fn escape_handler_clears_waveform_and_browser_state() {
     let (mut controller, source) = dummy_controller();
-    controller.sources.push(source.clone());
+    controller.library.sources.push(source.clone());
     controller.cache_db(&source).unwrap();
-    controller.wav_entries = vec![sample_entry("one.wav", SampleTag::Neutral)];
+    controller.wav_entries.entries = vec![sample_entry("one.wav", SampleTag::Neutral)];
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
     controller
-        .selection
+        .selection_state
+        .range
         .set_range(Some(SelectionRange::new(0.2, 0.8)));
-    controller.apply_selection(controller.selection.range());
+    controller.apply_selection(controller.selection_state.range.range());
     controller
         .ui
         .browser
@@ -67,7 +68,7 @@ fn escape_handler_clears_waveform_and_browser_state() {
 
     controller.handle_escape();
 
-    assert!(controller.selection.range().is_none());
+    assert!(controller.selection_state.range.range().is_none());
     assert!(controller.ui.waveform.selection.is_none());
     assert!(controller.ui.browser.selected_paths.is_empty());
     assert!(controller.ui.browser.selection_anchor_visible.is_none());
@@ -95,21 +96,22 @@ fn escape_stops_playback_before_clearing_selection() {
         return;
     };
     let (mut controller, source) = dummy_controller();
-    controller.sources.push(source.clone());
+    controller.library.sources.push(source.clone());
     controller.cache_db(&source).unwrap();
-    controller.wav_entries = vec![sample_entry("one.wav", SampleTag::Neutral)];
+    controller.wav_entries.entries = vec![sample_entry("one.wav", SampleTag::Neutral)];
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
     controller
-        .selection
+        .selection_state
+        .range
         .set_range(Some(SelectionRange::new(0.25, 0.75)));
-    controller.apply_selection(controller.selection.range());
-    controller.player = Some(std::rc::Rc::new(std::cell::RefCell::new(player)));
+    controller.apply_selection(controller.selection_state.range.range());
+    controller.audio.player = Some(std::rc::Rc::new(std::cell::RefCell::new(player)));
 
     controller.handle_escape();
 
-    assert!(controller.selection.range().is_some());
+    assert!(controller.selection_state.range.range().is_some());
     assert!(controller.ui.waveform.selection.is_some());
     assert!(!controller.is_playing());
 }
@@ -117,9 +119,9 @@ fn escape_stops_playback_before_clearing_selection() {
 #[test]
 fn click_clears_selection_and_focuses_row() {
     let (mut controller, source) = dummy_controller();
-    controller.sources.push(source.clone());
+    controller.library.sources.push(source.clone());
     controller.cache_db(&source).unwrap();
-    controller.wav_entries = vec![
+    controller.wav_entries.entries = vec![
         sample_entry("one.wav", SampleTag::Neutral),
         sample_entry("two.wav", SampleTag::Neutral),
         sample_entry("three.wav", SampleTag::Neutral),
@@ -142,8 +144,8 @@ fn click_clears_selection_and_focuses_row() {
 #[test]
 fn ctrl_click_toggles_selection_and_focuses_row() {
     let (mut controller, source) = dummy_controller();
-    controller.sources.push(source);
-    controller.wav_entries = vec![
+    controller.library.sources.push(source);
+    controller.wav_entries.entries = vec![
         sample_entry("one.wav", SampleTag::Neutral),
         sample_entry("two.wav", SampleTag::Neutral),
         sample_entry("three.wav", SampleTag::Neutral),
@@ -166,8 +168,8 @@ fn ctrl_click_toggles_selection_and_focuses_row() {
 #[test]
 fn shift_click_extends_selection_range() {
     let (mut controller, source) = dummy_controller();
-    controller.sources.push(source);
-    controller.wav_entries = vec![
+    controller.library.sources.push(source);
+    controller.wav_entries.entries = vec![
         sample_entry("one.wav", SampleTag::Neutral),
         sample_entry("two.wav", SampleTag::Neutral),
         sample_entry("three.wav", SampleTag::Neutral),
@@ -192,8 +194,8 @@ fn shift_click_extends_selection_range() {
 #[test]
 fn ctrl_shift_click_adds_range_without_resetting_anchor() {
     let (mut controller, source) = dummy_controller();
-    controller.sources.push(source);
-    controller.wav_entries = vec![
+    controller.library.sources.push(source);
+    controller.wav_entries.entries = vec![
         sample_entry("one.wav", SampleTag::Neutral),
         sample_entry("two.wav", SampleTag::Neutral),
         sample_entry("three.wav", SampleTag::Neutral),
@@ -228,8 +230,8 @@ fn ctrl_shift_click_adds_range_without_resetting_anchor() {
 #[test]
 fn shift_arrow_grows_selection() {
     let (mut controller, source) = dummy_controller();
-    controller.sources.push(source);
-    controller.wav_entries = vec![
+    controller.library.sources.push(source);
+    controller.wav_entries.entries = vec![
         sample_entry("one.wav", SampleTag::Neutral),
         sample_entry("two.wav", SampleTag::Neutral),
         sample_entry("three.wav", SampleTag::Neutral),
