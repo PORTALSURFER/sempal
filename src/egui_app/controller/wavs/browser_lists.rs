@@ -41,14 +41,16 @@ impl EguiController {
     }
 
     pub(in crate::egui_app::controller) fn selected_row_index(&self) -> Option<usize> {
-        self.sample_view.wav
+        self.sample_view
+            .wav
             .selected_wav
             .as_ref()
             .and_then(|path| self.wav_entries.lookup.get(path).copied())
     }
 
     pub(in crate::egui_app::controller) fn loaded_row_index(&self) -> Option<usize> {
-        self.sample_view.wav
+        self.sample_view
+            .wav
             .loaded_wav
             .as_ref()
             .and_then(|path| self.wav_entries.lookup.get(path).copied())

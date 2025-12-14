@@ -1,5 +1,5 @@
-use super::io;
 use super::super::*;
+use super::io;
 use hound::SampleFormat;
 use std::path::Path;
 
@@ -74,7 +74,10 @@ impl EguiController {
         let entries = db
             .list_files()
             .map_err(|err| format!("Failed to read database: {err}"))?;
-        self.cache.wav.entries.insert(source.id.clone(), entries.clone());
+        self.cache
+            .wav
+            .entries
+            .insert(source.id.clone(), entries.clone());
         self.rebuild_wav_cache_lookup(&source.id);
         self.library.missing.wavs.insert(
             source.id.clone(),

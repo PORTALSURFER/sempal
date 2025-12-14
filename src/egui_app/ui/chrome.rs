@@ -56,10 +56,8 @@ impl EguiApp {
                     columns[0].vertical(|ui| {
                         ui.horizontal(|ui| {
                             ui.add_space(6.0);
-                            let (badge_rect, _) = ui.allocate_exact_size(
-                                egui::vec2(16.0, 16.0),
-                                egui::Sense::hover(),
-                            );
+                            let (badge_rect, _) = ui
+                                .allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
                             ui.painter()
                                 .rect_filled(badge_rect, 0.0, status.badge_color);
                             ui.painter().rect_stroke(
@@ -69,7 +67,9 @@ impl EguiApp {
                                 StrokeKind::Inside,
                             );
                             ui.add_space(8.0);
-                            ui.label(RichText::new(&status.badge_label).color(palette.text_primary));
+                            ui.label(
+                                RichText::new(&status.badge_label).color(palette.text_primary),
+                            );
                             ui.separator();
                             ui.label(RichText::new(&status.text).color(palette.text_primary));
                         });
@@ -82,18 +82,20 @@ impl EguiApp {
                                         .color(palette.text_muted),
                                 );
                                 ui.separator();
-                                if let Some(detail) = self.controller.ui.progress.detail.as_deref() {
+                                if let Some(detail) = self.controller.ui.progress.detail.as_deref()
+                                {
                                     ui.label(RichText::new(detail).color(palette.text_muted));
                                 }
                                 ui.with_layout(
                                     egui::Layout::right_to_left(egui::Align::Center),
                                     |ui| {
                                         if self.controller.ui.progress.cancelable {
-                                            let label = if self.controller.ui.progress.cancel_requested {
-                                                "Canceling..."
-                                            } else {
-                                                "Cancel"
-                                            };
+                                            let label =
+                                                if self.controller.ui.progress.cancel_requested {
+                                                    "Canceling..."
+                                                } else {
+                                                    "Cancel"
+                                                };
                                             if ui
                                                 .add_enabled(
                                                     !self.controller.ui.progress.cancel_requested,
@@ -215,7 +217,10 @@ impl EguiApp {
                             ui.add_space(10.0);
                             match self.controller.ui.update.status {
                                 crate::egui_app::state::UpdateStatus::Checking => {
-                                    ui.label(RichText::new("Checking updates…").color(palette.text_muted));
+                                    ui.label(
+                                        RichText::new("Checking updates…")
+                                            .color(palette.text_muted),
+                                    );
                                     ui.add_space(10.0);
                                 }
                                 crate::egui_app::state::UpdateStatus::UpdateAvailable => {

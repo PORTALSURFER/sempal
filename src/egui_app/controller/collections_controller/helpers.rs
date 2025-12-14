@@ -35,7 +35,8 @@ impl CollectionsController<'_> {
                 root: root.clone(),
             });
         }
-        self.library.sources
+        self.library
+            .sources
             .iter()
             .find(|s| s.id == member.source_id)
             .cloned()
@@ -142,7 +143,8 @@ impl CollectionsController<'_> {
 
     pub(super) fn refresh_collection_samples(&mut self) {
         let selected_index = self
-            .selection_state.ctx
+            .selection_state
+            .ctx
             .selected_collection
             .as_ref()
             .and_then(|id| self.library.collections.iter().position(|c| &c.id == id));
@@ -190,7 +192,9 @@ impl CollectionsController<'_> {
                     }
                 }
             } else {
-                let source = self.library.sources
+                let source = self
+                    .library
+                    .sources
                     .iter()
                     .find(|s| s.id == source_id)
                     .cloned();
@@ -276,7 +280,11 @@ impl CollectionsController<'_> {
 
     pub(super) fn current_collection(&self) -> Option<Collection> {
         let selected = self.selection_state.ctx.selected_collection.as_ref()?;
-        self.library.collections.iter().find(|c| &c.id == selected).cloned()
+        self.library
+            .collections
+            .iter()
+            .find(|c| &c.id == selected)
+            .cloned()
     }
 
     pub(super) fn add_sample_to_collection_inner(

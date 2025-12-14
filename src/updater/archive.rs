@@ -1,8 +1,4 @@
-use std::{
-    fs::File,
-    io::Read,
-    path::Path,
-};
+use std::{fs::File, io::Read, path::Path};
 
 use sha2::{Digest, Sha256};
 
@@ -19,7 +15,10 @@ pub(super) fn download_text(url: &str) -> Result<Vec<u8>, UpdateError> {
     Ok(bytes)
 }
 
-pub(super) fn parse_checksums_for_asset(checksums: &[u8], asset_name: &str) -> Result<String, UpdateError> {
+pub(super) fn parse_checksums_for_asset(
+    checksums: &[u8],
+    asset_name: &str,
+) -> Result<String, UpdateError> {
     let text = std::str::from_utf8(checksums)
         .map_err(|err| UpdateError::Invalid(format!("Invalid checksums file: {err}")))?;
     for line in text.lines() {
@@ -117,9 +116,8 @@ pub(super) fn download_release_asset(
     asset_name: &str,
     dest: &Path,
 ) -> Result<(), UpdateError> {
-    let asset = github::find_asset(release, asset_name).ok_or_else(|| {
-        UpdateError::Invalid(format!("Missing release asset {asset_name}"))
-    })?;
+    let asset = github::find_asset(release, asset_name)
+        .ok_or_else(|| UpdateError::Invalid(format!("Missing release asset {asset_name}")))?;
     download_to_file(&asset.browser_download_url, dest)?;
     Ok(())
 }
@@ -128,8 +126,7 @@ pub(super) fn download_release_asset_bytes(
     release: &github::Release,
     asset_name: &str,
 ) -> Result<Vec<u8>, UpdateError> {
-    let asset = github::find_asset(release, asset_name).ok_or_else(|| {
-        UpdateError::Invalid(format!("Missing release asset {asset_name}"))
-    })?;
+    let asset = github::find_asset(release, asset_name)
+        .ok_or_else(|| UpdateError::Invalid(format!("Missing release asset {asset_name}")))?;
     download_text(&asset.browser_download_url)
 }

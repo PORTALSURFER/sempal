@@ -1,5 +1,8 @@
 //! Entry point for the egui-based Sempal UI.
-#![cfg_attr(all(not(debug_assertions), target_os = "windows"), windows_subsystem = "windows")]
+#![cfg_attr(
+    all(not(debug_assertions), target_os = "windows"),
+    windows_subsystem = "windows"
+)]
 use eframe::egui;
 use egui::viewport::IconData;
 use sempal::audio::AudioPlayer;
@@ -60,8 +63,8 @@ fn enable_windows_console() {
         OPEN_EXISTING,
     };
     use windows::Win32::System::Console::{
-        ATTACH_PARENT_PROCESS, AttachConsole, AllocConsole, SetStdHandle, STD_ERROR_HANDLE,
-        STD_OUTPUT_HANDLE,
+        ATTACH_PARENT_PROCESS, AllocConsole, AttachConsole, STD_ERROR_HANDLE, STD_OUTPUT_HANDLE,
+        SetStdHandle,
     };
 
     unsafe {

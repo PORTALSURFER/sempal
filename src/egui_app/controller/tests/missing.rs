@@ -99,7 +99,9 @@ fn read_failure_marks_sample_missing() {
     assert!(controller.sample_missing(&source.id, &rel));
     assert!(controller.wav_entries.entries[0].missing);
     assert!(
-        controller.library.missing
+        controller
+            .library
+            .missing
             .wavs
             .get(&source.id)
             .is_some_and(|set| set.contains(&rel))

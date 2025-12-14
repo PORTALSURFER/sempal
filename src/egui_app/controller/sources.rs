@@ -99,7 +99,8 @@ impl EguiController {
             }
         }
         if self
-            .selection_state.ctx
+            .selection_state
+            .ctx
             .selected_source
             .as_ref()
             .is_some_and(|id| id == &removed.id)
@@ -117,7 +118,9 @@ impl EguiController {
     }
 
     pub(super) fn refresh_sources_ui(&mut self) {
-        self.ui.sources.rows = self.library.sources
+        self.ui.sources.rows = self
+            .library
+            .sources
             .iter()
             .map(|source| {
                 let missing = self.library.missing.sources.contains(&source.id);
@@ -126,7 +129,8 @@ impl EguiController {
             .collect();
         self.ui.sources.menu_row = None;
         self.ui.sources.selected = self
-            .selection_state.ctx
+            .selection_state
+            .ctx
             .selected_source
             .as_ref()
             .and_then(|id| self.library.sources.iter().position(|s| &s.id == id));
@@ -135,7 +139,11 @@ impl EguiController {
 
     pub(crate) fn current_source(&self) -> Option<SampleSource> {
         let selected = self.selection_state.ctx.selected_source.as_ref()?;
-        self.library.sources.iter().find(|s| &s.id == selected).cloned()
+        self.library
+            .sources
+            .iter()
+            .find(|s| &s.id == selected)
+            .cloned()
     }
 
     pub(super) fn rebuild_missing_sources(&mut self) {
@@ -143,7 +151,11 @@ impl EguiController {
         for source in &self.library.sources {
             if !source.root.is_dir() {
                 self.library.missing.sources.insert(source.id.clone());
-                self.library.missing.wavs.entry(source.id.clone()).or_default();
+                self.library
+                    .missing
+                    .wavs
+                    .entry(source.id.clone())
+                    .or_default();
             }
         }
     }
@@ -153,7 +165,11 @@ impl EguiController {
         if inserted && self.selection_state.ctx.selected_source.as_ref() == Some(source_id) {
             self.clear_waveform_view();
         }
-        self.library.missing.wavs.entry(source_id.clone()).or_default();
+        self.library
+            .missing
+            .wavs
+            .entry(source_id.clone())
+            .or_default();
         self.refresh_sources_ui();
         if let Some(source) = self.library.sources.iter().find(|s| &s.id == source_id) {
             self.set_status(
@@ -179,10 +195,12 @@ impl EguiController {
         pending_path: Option<PathBuf>,
     ) {
         let same_source = self.selection_state.ctx.selected_source == id;
-        self.runtime.jobs.set_pending_select_path(pending_path.clone());
-            if same_source {
-                self.refresh_sources_ui();
-                if let Some(path) = self.runtime.jobs.pending_select_path() {
+        self.runtime
+            .jobs
+            .set_pending_select_path(pending_path.clone());
+        if same_source {
+            self.refresh_sources_ui();
+            if let Some(path) = self.runtime.jobs.pending_select_path() {
                 if self.wav_entries.lookup.contains_key(&path) {
                     self.runtime.jobs.set_pending_select_path(None);
                     self.select_wav_by_path(&path);
@@ -256,7 +274,9 @@ impl EguiController {
         if !normalized.is_dir() {
             return Err("Please select a directory".into());
         }
-        if self.library.sources
+        if self
+            .library
+            .sources
             .iter()
             .enumerate()
             .any(|(i, source)| i != index && source.root == normalized)

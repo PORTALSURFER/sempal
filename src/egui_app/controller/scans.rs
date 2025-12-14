@@ -54,12 +54,11 @@ impl EguiController {
 
     fn prepare_for_scan(&mut self, source: &SampleSource, mode: ScanMode) {
         if matches!(mode, ScanMode::Hard) {
-            let mut invalidator =
-                source_cache_invalidator::SourceCacheInvalidator::new_from_state(
-                    &mut self.cache,
-                    &mut self.ui_cache,
-                    &mut self.library.missing,
-                );
+            let mut invalidator = source_cache_invalidator::SourceCacheInvalidator::new_from_state(
+                &mut self.cache,
+                &mut self.ui_cache,
+                &mut self.library.missing,
+            );
             invalidator.invalidate_wav_related(&source.id);
         }
     }

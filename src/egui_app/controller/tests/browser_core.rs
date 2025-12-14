@@ -1,6 +1,8 @@
 use super::super::test_support::{dummy_controller, sample_entry};
 use super::super::*;
-use crate::egui_app::state::{DragPayload, DragSource, DragTarget, TriageFlagColumn, TriageFlagFilter};
+use crate::egui_app::state::{
+    DragPayload, DragSource, DragTarget, TriageFlagColumn, TriageFlagFilter,
+};
 use crate::sample_sources::Collection;
 use std::path::{Path, PathBuf};
 use tempfile::tempdir;
@@ -102,7 +104,9 @@ fn dropping_sample_adds_to_collection_and_db() {
 
     controller.finish_active_drag();
 
-    let collection = controller.library.collections
+    let collection = controller
+        .library
+        .collections
         .iter()
         .find(|c| c.id == collection_id)
         .unwrap();

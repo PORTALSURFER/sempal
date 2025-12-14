@@ -12,8 +12,10 @@ pub enum WaveformDecodeError {
 #[derive(Debug, Error)]
 pub enum WaveformLoadError {
     #[error("Failed to read {path}: {source}")]
-    Read { path: PathBuf, source: std::io::Error },
+    Read {
+        path: PathBuf,
+        source: std::io::Error,
+    },
     #[error(transparent)]
     Decode(#[from] WaveformDecodeError),
 }
-

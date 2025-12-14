@@ -48,15 +48,16 @@ impl EguiController {
         // Backfill clip roots for legacy collection-owned clips that were not persisted.
         for collection in self.library.collections.iter_mut() {
             let expected_source_prefix = format!("collection-{}", collection.id.as_str());
-            let resolved_root = crate::egui_app::controller::collection_export::resolved_export_dir(
-                collection,
-                self.settings.collection_export_root.as_deref(),
-            )
-            .or_else(|| {
-                crate::app_dirs::app_root_dir()
-                    .ok()
-                    .map(|root| root.join("collection_clips").join(collection.id.as_str()))
-            });
+            let resolved_root =
+                crate::egui_app::controller::collection_export::resolved_export_dir(
+                    collection,
+                    self.settings.collection_export_root.as_deref(),
+                )
+                .or_else(|| {
+                    crate::app_dirs::app_root_dir()
+                        .ok()
+                        .map(|root| root.join("collection_clips").join(collection.id.as_str()))
+                });
             if let Some(root) = resolved_root {
                 for member in collection.members.iter_mut() {
                     if member.clip_root.is_none()
@@ -98,11 +99,17 @@ impl EguiController {
             trash_folder: self.settings.trash_folder.clone(),
             collection_export_root: self.settings.collection_export_root.clone(),
             last_selected_source: self
-                .selection_state.ctx
+                .selection_state
+                .ctx
                 .selected_source
                 .clone()
                 .filter(|id| self.library.sources.iter().any(|s| &s.id == id))
-                .or_else(|| self.selection_state.ctx.last_selected_browsable_source.clone()),
+                .or_else(|| {
+                    self.selection_state
+                        .ctx
+                        .last_selected_browsable_source
+                        .clone()
+                }),
             audio_output: self.settings.audio_output.clone(),
             volume: self.ui.volume,
             controls: self.settings.controls.clone(),

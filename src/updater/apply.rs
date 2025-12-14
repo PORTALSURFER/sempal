@@ -7,8 +7,8 @@ use std::{
 use serde::Deserialize;
 
 use super::{
-    UpdateChannel, UpdateError, UpdaterRunArgs, archive, ensure_child_path, expected_checksums_name,
-    expected_zip_asset_name, fs_ops, github,
+    UpdateChannel, UpdateError, UpdaterRunArgs, archive, ensure_child_path,
+    expected_checksums_name, expected_zip_asset_name, fs_ops, github,
 };
 
 /// Parsed `update-manifest.json` embedded in release archives.
@@ -140,7 +140,9 @@ fn validate_root_dir(unpack_dir: &Path, expected: &str) -> Result<PathBuf, Updat
     }
     let root = dirs.pop().unwrap();
     let Some(name) = root.file_name().and_then(|s| s.to_str()) else {
-        return Err(UpdateError::Invalid("Invalid archive root directory".into()));
+        return Err(UpdateError::Invalid(
+            "Invalid archive root directory".into(),
+        ));
     };
     if name != expected {
         return Err(UpdateError::Invalid(format!(

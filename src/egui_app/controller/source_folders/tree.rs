@@ -52,7 +52,9 @@ impl EguiController {
         };
         let available = self.collect_folders();
         let snapshot = {
-            let model = self.ui_cache.folders
+            let model = self
+                .ui_cache
+                .folders
                 .models
                 .entry(source_id.clone())
                 .or_default();

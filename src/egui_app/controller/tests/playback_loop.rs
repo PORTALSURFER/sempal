@@ -37,11 +37,13 @@ fn enabling_loop_while_playing_restarts_in_looped_mode() {
     controller.toggle_loop();
 
     assert!(controller.ui.waveform.loop_enabled);
-    assert!(controller
-        .audio
-        .player
-        .as_ref()
-        .unwrap()
-        .borrow()
-        .is_looping());
+    assert!(
+        controller
+            .audio
+            .player
+            .as_ref()
+            .unwrap()
+            .borrow()
+            .is_looping()
+    );
 }

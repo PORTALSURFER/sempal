@@ -56,7 +56,13 @@ impl WaveformRenderer {
         let channels = decoded.channel_count();
         let frame_count = decoded.frame_count();
         if frame_count == 0 {
-            return self.render_color_image_with_size(&[], 1, WaveformChannelView::Mono, width, height);
+            return self.render_color_image_with_size(
+                &[],
+                1,
+                WaveformChannelView::Mono,
+                width,
+                height,
+            );
         }
 
         let start = view_start.clamp(0.0, 1.0);
@@ -74,24 +80,36 @@ impl WaveformRenderer {
                         self.foreground,
                         self.background,
                     ),
-                    WaveformColumnView::SplitStereo { left, right } => Self::paint_split_color_image(
-                        &left,
-                        &right,
-                        width,
-                        height,
-                        self.foreground,
-                        self.background,
-                    ),
+                    WaveformColumnView::SplitStereo { left, right } => {
+                        Self::paint_split_color_image(
+                            &left,
+                            &right,
+                            width,
+                            height,
+                            self.foreground,
+                            self.background,
+                        )
+                    }
                 };
             }
-            return self.render_color_image_with_size(&[], 1, WaveformChannelView::Mono, width, height);
+            return self.render_color_image_with_size(
+                &[],
+                1,
+                WaveformChannelView::Mono,
+                width,
+                height,
+            );
         }
 
         let full_width = self.cached_full_width(width, fraction, frame_count);
         if let Some((start_col, end_col)) = self.columns_window(start, full_width, width) {
-            let cached = self
-                .zoom_cache
-                .get_or_compute(decoded.cache_token, &decoded.samples, channels, view, full_width);
+            let cached = self.zoom_cache.get_or_compute(
+                decoded.cache_token,
+                &decoded.samples,
+                channels,
+                view,
+                full_width,
+            );
             return match cached {
                 super::zoom_cache::CachedColumns::Mono(cols) => Self::paint_color_image_for_size(
                     &cols[start_col..end_col],
@@ -114,16 +132,24 @@ impl WaveformRenderer {
         }
 
         // Fallback: sample only the visible frames directly.
-        let start_frame = ((start * frame_count as f32).floor() as usize)
-            .min(frame_count.saturating_sub(1));
+        let start_frame =
+            ((start * frame_count as f32).floor() as usize).min(frame_count.saturating_sub(1));
         let mut end_frame =
             ((end * frame_count as f32).ceil() as usize).clamp(start_frame + 1, frame_count);
         if end_frame <= start_frame {
             end_frame = (start_frame + 1).min(frame_count);
         }
         let start_idx = start_frame.saturating_mul(channels);
-        let end_idx = end_frame.saturating_mul(channels).min(decoded.samples.len());
-        self.render_color_image_with_size(&decoded.samples[start_idx..end_idx], channels, view, width, height)
+        let end_idx = end_frame
+            .saturating_mul(channels)
+            .min(decoded.samples.len());
+        self.render_color_image_with_size(
+            &decoded.samples[start_idx..end_idx],
+            channels,
+            view,
+            width,
+            height,
+        )
     }
 
     /// Render an egui color image at an explicit size.
@@ -164,7 +190,12 @@ impl WaveformRenderer {
         desired.min(frame_cap).min(MAX_CACHED_FULL_WIDTH).max(width)
     }
 
-    fn columns_window(&self, view_start: f32, full_width: u32, width: u32) -> Option<(usize, usize)> {
+    fn columns_window(
+        &self,
+        view_start: f32,
+        full_width: u32,
+        width: u32,
+    ) -> Option<(usize, usize)> {
         let full_width = full_width as usize;
         let width = width as usize;
         if full_width < width || width == 0 {
@@ -182,7 +213,8 @@ impl WaveformRenderer {
         foreground: Color32,
         background: Color32,
     ) -> ColorImage {
-        let fill = Color32::from_rgba_unmultiplied(background.r(), background.g(), background.b(), 0);
+        let fill =
+            Color32::from_rgba_unmultiplied(background.r(), background.g(), background.b(), 0);
         let mut image = ColorImage::new(
             [width as usize, height as usize],
             vec![fill; (width as usize) * (height as usize)],
@@ -243,7 +275,8 @@ impl WaveformRenderer {
         let bottom =
             Self::paint_color_image_for_size(right, width, bottom_height, foreground, background);
 
-        let fill = Color32::from_rgba_unmultiplied(background.r(), background.g(), background.b(), 0);
+        let fill =
+            Color32::from_rgba_unmultiplied(background.r(), background.g(), background.b(), 0);
         let mut image = ColorImage::new(
             [width as usize, height as usize],
             vec![fill; (width as usize) * (height as usize)],

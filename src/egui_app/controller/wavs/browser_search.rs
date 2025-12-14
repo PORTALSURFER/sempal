@@ -47,7 +47,8 @@ impl EguiController {
         };
         self.ensure_search_scores(&query);
         self.ui_cache.browser.search.scratch.clear();
-        self.ui_cache.browser
+        self.ui_cache
+            .browser
             .search
             .scratch
             .reserve(self.wav_entries.entries.len().min(1024));
@@ -58,7 +59,9 @@ impl EguiController {
             {
                 continue;
             }
-            if let Some(score) = self.ui_cache.browser
+            if let Some(score) = self
+                .ui_cache
+                .browser
                 .search
                 .scores
                 .get(index)
@@ -67,18 +70,20 @@ impl EguiController {
                 self.ui_cache.browser.search.scratch.push((index, score));
             }
         }
-        self.ui_cache.browser
+        self.ui_cache
+            .browser
             .search
             .scratch
             .sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
-        let visible: Vec<usize> = self.ui_cache.browser
+        let visible: Vec<usize> = self
+            .ui_cache
+            .browser
             .search
             .scratch
             .iter()
             .map(|(index, _)| *index)
             .collect();
-        let selected_visible =
-            focused_index.and_then(|idx| visible.iter().position(|i| *i == idx));
+        let selected_visible = focused_index.and_then(|idx| visible.iter().position(|i| *i == idx));
         let loaded_visible = loaded_index.and_then(|idx| visible.iter().position(|i| *i == idx));
         (visible, selected_visible, loaded_visible)
     }
@@ -107,7 +112,8 @@ impl EguiController {
             self.ui_cache.browser.search.query.clear();
             self.ui_cache.browser.search.query.push_str(query);
             self.ui_cache.browser.search.scores.clear();
-            self.ui_cache.browser
+            self.ui_cache
+                .browser
                 .search
                 .scores
                 .resize(self.wav_entries.entries.len(), None);
@@ -115,22 +121,27 @@ impl EguiController {
             let Some(source_id) = self.selection_state.ctx.selected_source.clone() else {
                 return;
             };
-            let needs_labels = self.ui_cache.browser
+            let needs_labels = self
+                .ui_cache
+                .browser
                 .labels
                 .get(&source_id)
                 .map(|cached| cached.len() != self.wav_entries.entries.len())
                 .unwrap_or(true);
             if needs_labels {
-                self.ui_cache.browser
-                    .labels
-                    .insert(source_id.clone(), self.build_label_cache(&self.wav_entries.entries));
+                self.ui_cache.browser.labels.insert(
+                    source_id.clone(),
+                    self.build_label_cache(&self.wav_entries.entries),
+                );
             }
             let Some(labels) = self.ui_cache.browser.labels.get(&source_id) else {
                 return;
             };
             for index in 0..self.wav_entries.entries.len() {
                 if let Some(label) = labels.get(index) {
-                    self.ui_cache.browser.search.scores[index] = self.ui_cache.browser
+                    self.ui_cache.browser.search.scores[index] = self
+                        .ui_cache
+                        .browser
                         .search
                         .matcher
                         .fuzzy_match(label.as_str(), query);
@@ -141,17 +152,21 @@ impl EguiController {
 
     pub(super) fn label_for_ref(&mut self, index: usize) -> Option<&str> {
         let source_id = self.selection_state.ctx.selected_source.clone()?;
-        let needs_labels = self.ui_cache.browser
+        let needs_labels = self
+            .ui_cache
+            .browser
             .labels
             .get(&source_id)
             .map(|cached| cached.len() != self.wav_entries.entries.len())
             .unwrap_or(true);
         if needs_labels {
-            self.ui_cache.browser
-                .labels
-                .insert(source_id.clone(), self.build_label_cache(&self.wav_entries.entries));
+            self.ui_cache.browser.labels.insert(
+                source_id.clone(),
+                self.build_label_cache(&self.wav_entries.entries),
+            );
         }
-        self.ui_cache.browser
+        self.ui_cache
+            .browser
             .labels
             .get(&source_id)
             .and_then(|labels| labels.get(index).map(|s| s.as_str()))
