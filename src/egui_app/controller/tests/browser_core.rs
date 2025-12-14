@@ -14,7 +14,7 @@ fn missing_source_is_marked_during_load() {
     controller.queue_wav_load();
     controller.poll_wav_loader();
     assert_eq!(controller.sources.len(), 1);
-    assert!(controller.missing_sources.contains(&source.id));
+    assert!(controller.missing.sources.contains(&source.id));
     assert!(
         controller
             .ui

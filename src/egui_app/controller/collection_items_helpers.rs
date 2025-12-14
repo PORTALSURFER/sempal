@@ -303,7 +303,7 @@ impl EguiController {
             .map_err(|err| format!("Failed to read database: {err}"))?;
         self.wav_cache.insert(source.id.clone(), entries.clone());
         self.rebuild_wav_cache_lookup(&source.id);
-        self.missing_wavs.insert(
+        self.missing.wavs.insert(
             source.id.clone(),
             entries
                 .iter()

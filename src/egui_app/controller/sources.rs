@@ -81,13 +81,13 @@ impl EguiController {
             return;
         }
         let removed = self.sources.remove(index);
-        self.missing_sources.remove(&removed.id);
+        self.missing.sources.remove(&removed.id);
         let mut invalidator = source_cache_invalidator::SourceCacheInvalidator::new(
             &mut self.db_cache,
             &mut self.wav_cache,
             &mut self.wav_cache_lookup,
             &mut self.label_cache,
-            &mut self.missing_wavs,
+            &mut self.missing.wavs,
             &mut self.folder_browsers,
         );
         invalidator.invalidate_all(&removed.id);
@@ -123,7 +123,7 @@ impl EguiController {
             .sources
             .iter()
             .map(|source| {
-                let missing = self.missing_sources.contains(&source.id);
+                let missing = self.missing.sources.contains(&source.id);
                 view_model::source_row(source, missing)
             })
             .collect();
@@ -141,21 +141,21 @@ impl EguiController {
     }
 
     pub(super) fn rebuild_missing_sources(&mut self) {
-        self.missing_sources.clear();
+        self.missing.sources.clear();
         for source in &self.sources {
             if !source.root.is_dir() {
-                self.missing_sources.insert(source.id.clone());
-                self.missing_wavs.entry(source.id.clone()).or_default();
+                self.missing.sources.insert(source.id.clone());
+                self.missing.wavs.entry(source.id.clone()).or_default();
             }
         }
     }
 
     pub(super) fn mark_source_missing(&mut self, source_id: &SourceId, reason: &str) {
-        let inserted = self.missing_sources.insert(source_id.clone());
+        let inserted = self.missing.sources.insert(source_id.clone());
         if inserted && self.selected_source.as_ref() == Some(source_id) {
             self.clear_waveform_view();
         }
-        self.missing_wavs.entry(source_id.clone()).or_default();
+        self.missing.wavs.entry(source_id.clone()).or_default();
         self.refresh_sources_ui();
         if let Some(source) = self.sources.iter().find(|s| &s.id == source_id) {
             self.set_status(
@@ -168,8 +168,8 @@ impl EguiController {
     }
 
     pub(super) fn clear_source_missing(&mut self, source_id: &SourceId) {
-        let removed = self.missing_sources.remove(source_id);
-        self.missing_wavs.remove(source_id);
+        let removed = self.missing.sources.remove(source_id);
+        self.missing.wavs.remove(source_id);
         if removed {
             self.refresh_sources_ui();
         }
@@ -219,9 +219,9 @@ impl EguiController {
         self.ui.sources.folders = FolderBrowserUiState::default();
         self.clear_waveform_view();
         if let Some(selected) = self.selected_source.as_ref() {
-            self.missing_wavs.remove(selected);
+            self.missing.wavs.remove(selected);
         } else {
-            self.missing_wavs.clear();
+            self.missing.wavs.clear();
         }
     }
 
@@ -282,13 +282,13 @@ impl EguiController {
             .map_err(|err| format!("Failed to prepare database: {err}"))?;
         let source_id = existing.id.clone();
         self.sources[index].root = normalized.clone();
-        self.missing_sources.remove(&source_id);
+        self.missing.sources.remove(&source_id);
         let mut invalidator = source_cache_invalidator::SourceCacheInvalidator::new(
             &mut self.db_cache,
             &mut self.wav_cache,
             &mut self.wav_cache_lookup,
             &mut self.label_cache,
-            &mut self.missing_wavs,
+            &mut self.missing.wavs,
             &mut self.folder_browsers,
         );
         invalidator.invalidate_db_cache(&source_id);

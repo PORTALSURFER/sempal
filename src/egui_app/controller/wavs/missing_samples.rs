@@ -21,7 +21,7 @@ impl EguiController {
                 }
             }
         }
-        self.missing_wavs.insert(source_id.clone(), missing);
+        self.missing.wavs.insert(source_id.clone(), missing);
     }
 
     pub(in crate::egui_app::controller) fn mark_sample_missing(
@@ -56,7 +56,8 @@ impl EguiController {
         {
             entry.missing = true;
         }
-        self.missing_wavs
+        self.missing
+            .wavs
             .entry(source.id.clone())
             .or_default()
             .insert(relative_path.to_path_buf());
@@ -64,11 +65,11 @@ impl EguiController {
     }
 
     fn ensure_missing_lookup_for_source(&mut self, source: &SampleSource) -> Result<(), String> {
-        if self.missing_wavs.contains_key(&source.id) {
+        if self.missing.wavs.contains_key(&source.id) {
             return Ok(());
         }
-        if self.missing_sources.contains(&source.id) {
-            self.missing_wavs.entry(source.id.clone()).or_default();
+        if self.missing.sources.contains(&source.id) {
+            self.missing.wavs.entry(source.id.clone()).or_default();
             return Ok(());
         }
         let db = match self.database_for(source) {
@@ -83,7 +84,8 @@ impl EguiController {
         let paths = db
             .list_missing_paths()
             .map_err(|err| format!("Failed to read missing files: {err}"))?;
-        self.missing_wavs
+        self.missing
+            .wavs
             .insert(source.id.clone(), paths.into_iter().collect());
         Ok(())
     }
@@ -93,7 +95,7 @@ impl EguiController {
         source_id: &SourceId,
         relative_path: &Path,
     ) -> bool {
-        if self.missing_sources.contains(source_id) {
+        if self.missing.sources.contains(source_id) {
             return true;
         }
         if self.selected_source.as_ref() == Some(source_id)
@@ -115,7 +117,7 @@ impl EguiController {
                 return entry.missing;
             }
         }
-        if let Some(set) = self.missing_wavs.get(source_id) {
+        if let Some(set) = self.missing.wavs.get(source_id) {
             return set.contains(relative_path);
         }
         if let Some(source) = self.sources.iter().find(|s| &s.id == source_id).cloned() {
@@ -123,7 +125,7 @@ impl EguiController {
                 self.set_status(err, StatusTone::Warning);
                 return true;
             }
-            if let Some(set) = self.missing_wavs.get(source_id) {
+            if let Some(set) = self.missing.wavs.get(source_id) {
                 return set.contains(relative_path);
             }
         }
@@ -139,4 +141,3 @@ impl EguiController {
         self.ui.waveform.notice = Some(message);
     }
 }
-

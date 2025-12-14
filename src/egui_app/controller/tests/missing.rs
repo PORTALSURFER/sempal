@@ -100,7 +100,8 @@ fn read_failure_marks_sample_missing() {
     assert!(controller.wav_entries[0].missing);
     assert!(
         controller
-            .missing_wavs
+            .missing
+            .wavs
             .get(&source.id)
             .is_some_and(|set| set.contains(&rel))
     );

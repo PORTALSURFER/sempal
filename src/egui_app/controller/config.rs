@@ -31,8 +31,8 @@ impl EguiController {
         self.ui.collection_export_root = cfg.collection_export_root.clone();
         self.sources = cfg.sources.clone();
         self.rebuild_missing_sources();
-        if !self.missing_sources.is_empty() {
-            let count = self.missing_sources.len();
+        if !self.missing.sources.is_empty() {
+            let count = self.missing.sources.len();
             let suffix = if count == 1 { "" } else { "s" };
             self.set_status(
                 format!("{count} source{suffix} unavailable"),

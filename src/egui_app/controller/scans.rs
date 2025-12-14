@@ -81,7 +81,7 @@ impl EguiController {
                             &mut self.wav_cache,
                             &mut self.wav_cache_lookup,
                             &mut self.label_cache,
-                            &mut self.missing_wavs,
+                            &mut self.missing.wavs,
                             &mut self.folder_browsers,
                         );
                         invalidator.invalidate_wav_related(&source.id);
@@ -100,7 +100,7 @@ impl EguiController {
                 &mut self.wav_cache,
                 &mut self.wav_cache_lookup,
                 &mut self.label_cache,
-                &mut self.missing_wavs,
+                &mut self.missing.wavs,
                 &mut self.folder_browsers,
             );
             invalidator.invalidate_wav_related(&source.id);

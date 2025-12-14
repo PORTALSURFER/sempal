@@ -81,12 +81,11 @@ pub struct EguiController {
     decoded_waveform: Option<DecodedWaveform>,
     player: Option<Rc<RefCell<AudioPlayer>>>,
     sources: Vec<SampleSource>,
-    missing_sources: HashSet<SourceId>,
     collections: Vec<Collection>,
     db_cache: HashMap<SourceId, Rc<SourceDatabase>>,
     wav_cache: HashMap<SourceId, Vec<WavEntry>>,
     wav_cache_lookup: HashMap<SourceId, HashMap<PathBuf, usize>>,
-    missing_wavs: HashMap<SourceId, HashSet<PathBuf>>,
+    missing: MissingState,
     label_cache: HashMap<SourceId, Vec<String>>,
     browser_search_cache: wavs::BrowserSearchCache,
     audio_cache: AudioCache,
@@ -145,12 +144,14 @@ impl EguiController {
             decoded_waveform: None,
             player,
             sources: Vec::new(),
-            missing_sources: HashSet::new(),
             collections: Vec::new(),
             db_cache: HashMap::new(),
             wav_cache: HashMap::new(),
             wav_cache_lookup: HashMap::new(),
-            missing_wavs: HashMap::new(),
+            missing: MissingState {
+                sources: HashSet::new(),
+                wavs: HashMap::new(),
+            },
             label_cache: HashMap::new(),
             browser_search_cache: wavs::BrowserSearchCache::default(),
             audio_cache: AudioCache::new(AUDIO_CACHE_CAPACITY, AUDIO_HISTORY_LIMIT),
@@ -275,6 +276,11 @@ fn status_badge(tone: StatusTone) -> (String, Color32) {
 struct RowFlags {
     focused: bool,
     loaded: bool,
+}
+
+struct MissingState {
+    sources: HashSet<SourceId>,
+    wavs: HashMap<SourceId, HashSet<PathBuf>>,
 }
 
 #[derive(Clone)]
