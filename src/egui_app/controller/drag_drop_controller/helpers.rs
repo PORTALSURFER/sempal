@@ -72,6 +72,7 @@ impl DragDropController<'_> {
         self.ui.drag.external_started = false;
         self.ui.drag.external_arm_at = None;
         self.ui.drag.pointer_left_window = false;
+        self.ui.drag.pending_os_drag = None;
     }
 
     #[cfg(target_os = "windows")]
@@ -104,6 +105,7 @@ impl DragDropController<'_> {
         self.ui.drag.external_started = false;
         self.ui.drag.external_arm_at = None;
         self.ui.drag.pointer_left_window = false;
+        self.ui.drag.pending_os_drag = None;
     }
 
     pub(super) fn selection_drag_label(
