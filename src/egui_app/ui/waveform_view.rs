@@ -2,10 +2,11 @@ use super::style;
 use super::*;
 use eframe::egui::{
     self, Align2, Color32, Rgba, RichText, Stroke, StrokeKind, TextStyle,
-    TextureOptions, Ui, text::LayoutJob,
+    TextureOptions, Ui,
 };
 
 mod destructive_prompt;
+mod hover_overlay;
 mod selection_geometry;
 mod selection_menu;
 mod selection_overlay;
@@ -121,90 +122,16 @@ impl EguiApp {
                 ui.painter().rect_filled(rect.shrink(2.0), 4.0, glow);
             }
 
-            self.controller.update_waveform_hover_time(None);
-            let mut hover_x = None;
-            let mut hovering = false;
-            if let Some(pos) = pointer_pos.filter(|p| rect.contains(*p)) {
-                let now = std::time::Instant::now();
-                let moved = self
-                    .controller
-                    .ui
-                    .waveform
-                    .hover_pointer_pos
-                    .map_or(true, |prev| prev.distance(pos) > 0.5);
-                if moved {
-                    self.controller.ui.waveform.hover_pointer_pos = Some(pos);
-                    self.controller.ui.waveform.hover_pointer_last_moved_at = Some(now);
-                }
-
-                let normalized = ((pos.x - rect.left()) / rect.width())
-                    .mul_add(view_width, view.start)
-                    .clamp(0.0, 1.0);
-                hovering = true;
-                let allow_hover_override = moved
-                    || self
-                        .controller
-                        .ui
-                        .waveform
-                        .cursor_last_navigation_at
-                        .is_none_or(|nav| {
-                            self.controller
-                                .ui
-                                .waveform
-                                .hover_pointer_last_moved_at
-                                .is_none_or(|moved_at| nav <= moved_at)
-                        });
-
-                if allow_hover_override {
-                    hover_x = Some(pos.x);
-                    self.controller.set_waveform_cursor_from_hover(normalized);
-                    self.controller.update_waveform_hover_time(Some(normalized));
-                } else if let Some(cursor) = self.controller.ui.waveform.cursor {
-                    hover_x = Some(to_screen_x(cursor, rect));
-                    self.controller.update_waveform_hover_time(Some(cursor));
-                } else {
-                    hover_x = Some(pos.x);
-                    self.controller.set_waveform_cursor_from_hover(normalized);
-                    self.controller.update_waveform_hover_time(Some(normalized));
-                }
-            }
-            let cursor_alpha = self.controller.waveform_cursor_alpha(hovering);
-            if let Some(cursor) = self.controller.ui.waveform.cursor {
-                let x = to_screen_x(cursor, rect);
-                let stroke_alpha = (220.0 * cursor_alpha).round().clamp(0.0, 255.0) as u8;
-                if stroke_alpha > 0 {
-                    ui.painter().line_segment(
-                        [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
-                        Stroke::new(1.0, style::with_alpha(cursor_color, stroke_alpha)),
-                    );
-                }
-            }
-            if let Some(label) = self.controller.ui.waveform.hover_time_label.as_deref()
-                && let Some(pointer_x) = hover_x
-            {
-                let text_color = style::with_alpha(palette.text_primary, 240);
-                let galley = ui.ctx().fonts_mut(|f| {
-                    f.layout_job(LayoutJob::simple_singleline(
-                        label.to_string(),
-                        TextStyle::Monospace.resolve(ui.style()),
-                        text_color,
-                    ))
-                });
-                let padding = egui::vec2(6.0, 4.0);
-                let size = galley.size() + padding * 2.0;
-                let min_x = rect.left() + 4.0;
-                let max_x = rect.right() - size.x - 4.0;
-                let desired_x = pointer_x + 8.0;
-                let label_x = desired_x.clamp(min_x, max_x);
-                let label_y = rect.top() + 8.0;
-                let label_rect = egui::Rect::from_min_size(egui::pos2(label_x, label_y), size);
-                let bg = style::with_alpha(palette.bg_primary, 235);
-                let border = Stroke::new(1.0, style::with_alpha(palette.panel_outline, 220));
-                ui.painter().rect_filled(label_rect, 4.0, bg);
-                ui.painter()
-                    .rect_stroke(label_rect, 4.0, border, StrokeKind::Inside);
-                ui.painter().galley(label_rect.min + padding, galley, text_color);
-            }
+            hover_overlay::render_hover_overlay(
+                self,
+                ui,
+                rect,
+                pointer_pos,
+                view,
+                view_width,
+                cursor_color,
+                &to_screen_x,
+            );
 
             if let Some(marker_pos) = self.controller.ui.waveform.last_start_marker
                 && marker_pos >= view.start
