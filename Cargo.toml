@@ -68,8 +68,6 @@ windows-core = "0.62.2"
 criterion = "0.8.1"
 
 [build-dependencies]
-semver = "1.0.27"
-toml_edit = "0.23.9"
 embed-resource = "3.0"
 
 [[bench]]

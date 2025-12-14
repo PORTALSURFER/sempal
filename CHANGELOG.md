@@ -43,6 +43,7 @@
 ### 💼 Other
 
 - *(windows)* Enable Win32_UI_WindowsAndMessaging feature
+- *(build)* Remove automatic version bump build script
 
 ### 🚜 Refactor
 
