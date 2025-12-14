@@ -5,7 +5,7 @@ impl EguiController {
         &self,
     ) -> Option<&BTreeSet<PathBuf>> {
         let id = self.selection_state.ctx.selected_source.as_ref()?;
-        self.folder_browsers.models.get(id).map(|model| &model.selected)
+        self.ui_cache.folders.models.get(id).map(|model| &model.selected)
     }
 
     pub(in crate::egui_app::controller) fn folder_filter_accepts(&self, relative_path: &Path) -> bool {

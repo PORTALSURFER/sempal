@@ -110,7 +110,7 @@ impl EguiController {
             self.invalidate_cached_audio_for_entry_updates(&source.id, updates);
             self.sync_browser_after_wav_entries_mutation_keep_search_cache(&source.id);
         } else {
-            self.browser_cache.labels.remove(&source.id);
+            self.ui_cache.browser.labels.remove(&source.id);
         }
         self.rebuild_missing_lookup_for_source(&source.id);
     }

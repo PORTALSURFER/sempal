@@ -16,8 +16,7 @@ impl EguiController {
         };
         let available = self.collect_folders();
         let snapshot = {
-            let model = self
-                .folder_browsers
+            let model = self.ui_cache.folders
                 .models
                 .entry(source_id.clone())
                 .or_default();
@@ -56,7 +55,7 @@ impl EguiController {
 
     pub(super) fn current_folder_model_mut(&mut self) -> Option<&mut FolderBrowserModel> {
         let id = self.selection_state.ctx.selected_source.clone()?;
-        Some(self.folder_browsers.models.entry(id).or_default())
+        Some(self.ui_cache.folders.models.entry(id).or_default())
     }
 
     pub(super) fn build_folder_rows(&mut self, model: &FolderBrowserModel) {

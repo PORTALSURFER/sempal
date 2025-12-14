@@ -219,9 +219,9 @@ impl EguiController {
         source_id: &SourceId,
     ) {
         self.rebuild_wav_lookup();
-        self.browser_cache.search.invalidate();
+        self.ui_cache.browser.search.invalidate();
         self.rebuild_browser_lists();
-        self.browser_cache
+        self.ui_cache.browser
             .labels
             .insert(source_id.clone(), self.build_label_cache(&self.wav_entries.entries));
     }
@@ -232,7 +232,7 @@ impl EguiController {
     ) {
         self.rebuild_wav_lookup();
         self.rebuild_browser_lists();
-        self.browser_cache
+        self.ui_cache.browser
             .labels
             .insert(source_id.clone(), self.build_label_cache(&self.wav_entries.entries));
     }

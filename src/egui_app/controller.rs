@@ -81,13 +81,12 @@ pub struct EguiController {
     waveform: WaveformState,
     library: LibraryState,
     cache: LibraryCacheState,
-    browser_cache: BrowserCacheState,
+    ui_cache: ControllerUiCacheState,
     wav_entries: WavEntriesState,
     selection_state: ControllerSelectionState,
     wav_selection: WavSelectionState,
     settings: AppSettingsState,
     runtime: ControllerRuntimeState,
-    folder_browsers: FolderBrowsersState,
     history: ControllerHistoryState,
     #[cfg(target_os = "windows")]
     drag_hwnd: Option<windows::Win32::Foundation::HWND>,
@@ -142,9 +141,14 @@ impl EguiController {
                     lookup: HashMap::new(),
                 },
             },
-            browser_cache: BrowserCacheState {
-                labels: HashMap::new(),
-                search: wavs::BrowserSearchCache::default(),
+            ui_cache: ControllerUiCacheState {
+                browser: BrowserCacheState {
+                    labels: HashMap::new(),
+                    search: wavs::BrowserSearchCache::default(),
+                },
+                folders: FolderBrowsersState {
+                    models: HashMap::new(),
+                },
             },
             wav_entries: WavEntriesState {
                 entries: Vec::new(),
@@ -175,9 +179,6 @@ impl EguiController {
                 jobs,
                 #[cfg(test)]
                 progress_cancel_after: None,
-            },
-            folder_browsers: FolderBrowsersState {
-                models: HashMap::new(),
             },
             history: ControllerHistoryState {
                 undo_stack: undo::UndoStack::new(UNDO_LIMIT),
@@ -337,6 +338,11 @@ struct BrowserCacheState {
 
 struct FolderBrowsersState {
     models: HashMap<SourceId, source_folders::FolderBrowserModel>,
+}
+
+struct ControllerUiCacheState {
+    browser: BrowserCacheState,
+    folders: FolderBrowsersState,
 }
 
 struct ControllerSelectionState {

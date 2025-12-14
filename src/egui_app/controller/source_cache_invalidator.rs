@@ -54,4 +54,3 @@ impl<'a> SourceCacheInvalidator<'a> {
         self.invalidate_folder_browser(source_id);
     }
 }
-
