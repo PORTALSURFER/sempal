@@ -302,8 +302,8 @@ fn tagging_under_filter_uses_random_focus_in_random_mode() {
     controller.tag_selected(SampleTag::Keep);
 
     assert_eq!(controller.visible_browser_indices(), &[0, 2]);
-    assert_eq!(controller.random_history.len(), 1);
-    assert_eq!(controller.random_history_cursor, Some(0));
+    assert_eq!(controller.random_history.entries.len(), 1);
+    assert_eq!(controller.random_history.cursor, Some(0));
     let Some(selected_visible) = controller.ui.browser.selected_visible else {
         panic!("expected a selected row");
     };

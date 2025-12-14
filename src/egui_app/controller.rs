@@ -108,8 +108,7 @@ pub struct EguiController {
     collection_export_root: Option<PathBuf>,
     selection: SelectionState,
     jobs: jobs::ControllerJobs,
-    random_history: VecDeque<RandomHistoryEntry>,
-    random_history_cursor: Option<usize>,
+    random_history: RandomHistoryState,
     folder_browsers: HashMap<SourceId, source_folders::FolderBrowserModel>,
     undo_stack: undo::UndoStack<EguiController>,
     #[cfg(target_os = "windows")]
@@ -173,8 +172,10 @@ impl EguiController {
             collection_export_root: None,
             selection: SelectionState::new(),
             jobs,
-            random_history: VecDeque::new(),
-            random_history_cursor: None,
+            random_history: RandomHistoryState {
+                entries: VecDeque::new(),
+                cursor: None,
+            },
             folder_browsers: HashMap::new(),
             undo_stack: undo::UndoStack::new(UNDO_LIMIT),
             #[cfg(target_os = "windows")]
@@ -280,6 +281,11 @@ struct RowFlags {
 struct RandomHistoryEntry {
     source_id: SourceId,
     relative_path: PathBuf,
+}
+
+struct RandomHistoryState {
+    entries: VecDeque<RandomHistoryEntry>,
+    cursor: Option<usize>,
 }
 
 struct WavLoadJob {
