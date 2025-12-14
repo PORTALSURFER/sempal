@@ -4,8 +4,8 @@ use std::path::Path;
 
 impl EguiController {
     pub(in crate::egui_app::controller) fn poll_audio_loader(&mut self) {
-        while let Ok(message) = self.runtime.jobs.audio_job_rx.try_recv() {
-            let Some(pending) = self.runtime.jobs.pending_audio.clone() else {
+        while let Ok(message) = self.runtime.jobs.try_recv_audio_result() {
+            let Some(pending) = self.runtime.jobs.pending_audio() else {
                 continue;
             };
             if message.request_id != pending.request_id
@@ -14,7 +14,7 @@ impl EguiController {
             {
                 continue;
             }
-            self.runtime.jobs.pending_audio = None;
+            self.runtime.jobs.set_pending_audio(None);
             self.ui.waveform.loading = None;
             match message.result {
                 Ok(outcome) => self.handle_audio_loaded(pending, outcome),
@@ -45,7 +45,7 @@ impl EguiController {
             bytes,
             pending.intent,
         ) {
-            self.runtime.jobs.pending_playback = None;
+            self.runtime.jobs.set_pending_playback(None);
             self.set_status(err, StatusTone::Error);
             return;
         }
@@ -60,11 +60,11 @@ impl EguiController {
             id: pending.source_id.clone(),
             root: pending.root.clone(),
         };
-        if self.runtime.jobs.pending_playback.as_ref().is_some_and(|pending_play| {
+        if self.runtime.jobs.pending_playback().as_ref().is_some_and(|pending_play| {
             pending_play.source_id == pending.source_id
                 && pending_play.relative_path == pending.relative_path
         }) {
-            self.runtime.jobs.pending_playback = None;
+            self.runtime.jobs.set_pending_playback(None);
         }
         match error {
             AudioLoadError::Missing(msg) => {
@@ -79,7 +79,7 @@ impl EguiController {
     }
 
     fn maybe_trigger_pending_playback(&mut self) {
-        let Some(pending) = self.runtime.jobs.pending_playback.clone() else {
+        let Some(pending) = self.runtime.jobs.pending_playback() else {
             return;
         };
         let Some(audio) = self.sample_view.wav.loaded_audio.as_ref() else {
@@ -88,7 +88,7 @@ impl EguiController {
         if audio.source_id != pending.source_id || audio.relative_path != pending.relative_path {
             return;
         }
-        self.runtime.jobs.pending_playback = None;
+        self.runtime.jobs.set_pending_playback(None);
         if let Err(err) = self.play_audio(pending.looped, pending.start_override) {
             self.set_status(err, StatusTone::Error);
         }
@@ -101,8 +101,7 @@ impl EguiController {
         intent: AudioLoadIntent,
         pending_playback: Option<PendingPlayback>,
     ) -> Result<(), String> {
-        let request_id = self.runtime.jobs.next_audio_request_id;
-        self.runtime.jobs.next_audio_request_id = self.runtime.jobs.next_audio_request_id.wrapping_add(1).max(1);
+        let request_id = self.runtime.jobs.next_audio_request_id();
         let pending = PendingAudio {
             request_id,
             source_id: source.id.clone(),
@@ -116,8 +115,8 @@ impl EguiController {
             root: source.root.clone(),
             relative_path: relative_path.to_path_buf(),
         };
-        self.runtime.jobs.pending_audio = None;
-        self.runtime.jobs.pending_playback = pending_playback;
+        self.runtime.jobs.set_pending_audio(None);
+        self.runtime.jobs.set_pending_playback(pending_playback);
         self.ui.waveform.loading = Some(relative_path.to_path_buf());
         self.ui.waveform.notice = None;
         self.sample_view.waveform.render_meta = None;
@@ -133,11 +132,11 @@ impl EguiController {
             self.maybe_trigger_pending_playback();
             return Ok(());
         }
-        self.runtime.jobs
-            .audio_job_tx
-            .send(job)
-            .map_err(|_| "Failed to queue audio load".to_string())?;
-        self.runtime.jobs.pending_audio = Some(pending);
+        self.runtime
+            .jobs
+            .send_audio_job(job)
+            .map_err(|()| "Failed to queue audio load".to_string())?;
+        self.runtime.jobs.set_pending_audio(Some(pending));
         Ok(())
     }
 

@@ -113,12 +113,15 @@ fn push_random_history(controller: &mut EguiController, source_id: SourceId, rel
 
 fn play_random_history_entry(controller: &mut EguiController, entry: RandomHistoryEntry) {
     if controller.selection_state.ctx.selected_source.as_ref() != Some(&entry.source_id) {
-        controller.runtime.jobs.pending_playback = Some(PendingPlayback {
+        controller
+            .runtime
+            .jobs
+            .set_pending_playback(Some(PendingPlayback {
             source_id: entry.source_id.clone(),
             relative_path: entry.relative_path.clone(),
             looped: controller.ui.waveform.loop_enabled,
             start_override: None,
-        });
+        }));
         controller.runtime.jobs.pending_select_path = Some(entry.relative_path.clone());
         controller.select_source_internal(Some(entry.source_id), Some(entry.relative_path));
         return;

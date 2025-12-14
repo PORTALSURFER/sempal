@@ -6,13 +6,13 @@ impl EguiController {
     pub fn play_audio(&mut self, looped: bool, start_override: Option<f32>) -> Result<(), String> {
         self.audio.pending_loop_disable_at = None;
         if self.sample_view.wav.loaded_audio.is_none() {
-            if let Some(pending) = self.runtime.jobs.pending_audio.clone() {
-                self.runtime.jobs.pending_playback = Some(PendingPlayback {
+            if let Some(pending) = self.runtime.jobs.pending_audio() {
+                self.runtime.jobs.set_pending_playback(Some(PendingPlayback {
                     source_id: pending.source_id,
                     relative_path: pending.relative_path,
                     looped,
                     start_override,
-                });
+                }));
                 self.set_status("Loading audio…", StatusTone::Busy);
                 return Ok(());
             }
@@ -28,7 +28,7 @@ impl EguiController {
                 looped,
                 start_override,
             };
-            self.runtime.jobs.pending_playback = Some(pending_playback.clone());
+            self.runtime.jobs.set_pending_playback(Some(pending_playback.clone()));
             self.queue_audio_load_for(
                 &source,
                 &selected,

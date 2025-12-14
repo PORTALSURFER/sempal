@@ -10,6 +10,8 @@ use std::{
     },
 };
 
+type TryRecvError = std::sync::mpsc::TryRecvError;
+
 pub(in super) struct ControllerJobs {
     pub(in super) wav_job_tx: Sender<WavLoadJob>,
     pub(in super) wav_job_rx: Receiver<WavLoadResult>,
@@ -47,5 +49,38 @@ impl ControllerJobs {
         &self,
     ) -> Result<WavLoadResult, std::sync::mpsc::TryRecvError> {
         self.wav_job_rx.try_recv()
+    }
+
+    pub(in super) fn pending_audio(&self) -> Option<PendingAudio> {
+        self.pending_audio.clone()
+    }
+
+    pub(in super) fn set_pending_audio(&mut self, pending: Option<PendingAudio>) {
+        self.pending_audio = pending;
+    }
+
+    pub(in super) fn pending_playback(&self) -> Option<PendingPlayback> {
+        self.pending_playback.clone()
+    }
+
+    pub(in super) fn set_pending_playback(&mut self, pending: Option<PendingPlayback>) {
+        self.pending_playback = pending;
+    }
+
+    pub(in super) fn next_audio_request_id(&mut self) -> u64 {
+        let request_id = self.next_audio_request_id;
+        self.next_audio_request_id = self
+            .next_audio_request_id
+            .wrapping_add(1)
+            .max(1);
+        request_id
+    }
+
+    pub(in super) fn send_audio_job(&self, job: AudioLoadJob) -> Result<(), ()> {
+        self.audio_job_tx.send(job).map_err(|_| ())
+    }
+
+    pub(in super) fn try_recv_audio_result(&self) -> Result<AudioLoadResult, TryRecvError> {
+        self.audio_job_rx.try_recv()
     }
 }
