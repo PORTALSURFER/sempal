@@ -439,6 +439,27 @@ impl EguiController {
             .insert(source_id.clone(), self.build_label_cache(&self.wav_entries));
     }
 
+    pub(in crate::egui_app::controller) fn sync_browser_after_wav_entries_mutation_keep_search_cache(
+        &mut self,
+        source_id: &SourceId,
+    ) {
+        self.rebuild_wav_lookup();
+        self.rebuild_browser_lists();
+        self.label_cache
+            .insert(source_id.clone(), self.build_label_cache(&self.wav_entries));
+    }
+
+    pub(in crate::egui_app::controller) fn invalidate_cached_audio_for_entry_updates(
+        &mut self,
+        source_id: &SourceId,
+        updates: &[(WavEntry, WavEntry)],
+    ) {
+        for (old_entry, new_entry) in updates {
+            self.invalidate_cached_audio(source_id, &old_entry.relative_path);
+            self.invalidate_cached_audio(source_id, &new_entry.relative_path);
+        }
+    }
+
     pub(super) fn ensure_wav_cache_lookup(&mut self, source_id: &SourceId) {
         if self.wav_cache_lookup.contains_key(source_id) {
             return;
