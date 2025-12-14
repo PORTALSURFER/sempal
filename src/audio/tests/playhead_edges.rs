@@ -21,6 +21,8 @@ fn remaining_loop_duration_stays_within_span_on_long_elapsed() {
     let player = AudioPlayer {
         stream,
         sink: None,
+        fade_out: None,
+        sink_format: None,
         current_audio: None,
         track_duration: Some(8.0),
         started_at: Some(Instant::now()),
@@ -49,6 +51,8 @@ fn progress_math_is_stable_for_long_running_full_track_loops() {
     let player = AudioPlayer {
         stream,
         sink: None,
+        fade_out: None,
+        sink_format: None,
         current_audio: None,
         track_duration: Some(duration),
         started_at: Some(Instant::now()),
