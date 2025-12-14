@@ -26,25 +26,18 @@ impl CollectionsActions for CollectionsController<'_> {
         let Some(collection) = self.current_collection() else {
             return;
         };
-        let Some(member) = collection.members.get(index) else {
+        let Some(member) = collection.members.get(index).cloned() else {
             return;
         };
-        self.selected_collection = Some(collection.id.clone());
-        self.ui.collections.selected_sample = Some(index);
-        self.ui.collections.scroll_to_sample = Some(index);
-        self.focus_collection_context();
-        self.ui.browser.selected = None;
-        self.ui.browser.autoscroll = false;
-        self.refresh_collection_selection_ui();
-        let _target_source = member.source_id.clone();
+        self.apply_collection_sample_selection_ui(&collection.id, index);
         let target_path = member.relative_path.clone();
-        let Some(source) = self.collection_member_source(member) else {
+        let Some(source) = self.collection_member_source(&member) else {
             self.set_status("Source not available for this sample", StatusTone::Warning);
             return;
         };
         self.selected_wav = None;
         self.clear_waveform_view();
-        if self.collection_member_missing(member) {
+        if self.collection_member_missing(&member) {
             self.show_missing_waveform_notice(&target_path);
             self.set_status(
                 format!("File missing: {}", target_path.display()),
@@ -56,10 +49,7 @@ impl CollectionsActions for CollectionsController<'_> {
             self.set_status(err, StatusTone::Error);
             return;
         }
-        if self.feature_flags.autoplay_selection {
-            let looped = self.ui.waveform.loop_enabled;
-            let _ = self.play_audio(looped, None);
-        }
+        self.maybe_autoplay_selection();
     }
 
     fn select_collection_by_index(&mut self, index: Option<usize>) {
@@ -253,5 +243,25 @@ impl CollectionsActions for CollectionsController<'_> {
         let current = selected_row as isize;
         let next = (current + offset).clamp(0, total as isize - 1) as usize;
         self.select_collection_sample(next);
+    }
+}
+
+impl CollectionsController<'_> {
+    fn apply_collection_sample_selection_ui(&mut self, collection_id: &CollectionId, index: usize) {
+        self.selected_collection = Some(collection_id.clone());
+        self.ui.collections.selected_sample = Some(index);
+        self.ui.collections.scroll_to_sample = Some(index);
+        self.focus_collection_context();
+        self.ui.browser.selected = None;
+        self.ui.browser.autoscroll = false;
+        self.refresh_collection_selection_ui();
+    }
+
+    fn maybe_autoplay_selection(&mut self) {
+        if !self.feature_flags.autoplay_selection {
+            return;
+        }
+        let looped = self.ui.waveform.loop_enabled;
+        let _ = self.play_audio(looped, None);
     }
 }
