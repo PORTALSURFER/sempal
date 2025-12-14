@@ -83,9 +83,9 @@ impl EguiController {
         let removed = self.sources.remove(index);
         self.missing.sources.remove(&removed.id);
         let mut invalidator = source_cache_invalidator::SourceCacheInvalidator::new(
-            &mut self.db_cache,
-            &mut self.wav_cache.entries,
-            &mut self.wav_cache.lookup,
+            &mut self.cache.db,
+            &mut self.cache.wav.entries,
+            &mut self.cache.wav.lookup,
             &mut self.browser_cache.labels,
             &mut self.missing.wavs,
             &mut self.folder_browsers.models,
@@ -231,11 +231,11 @@ impl EguiController {
         &mut self,
         source: &SampleSource,
     ) -> Result<Rc<SourceDatabase>, SourceDbError> {
-        if let Some(existing) = self.db_cache.get(&source.id) {
+        if let Some(existing) = self.cache.db.get(&source.id) {
             return Ok(existing.clone());
         }
         let db = Rc::new(SourceDatabase::open(&source.root)?);
-        self.db_cache.insert(source.id.clone(), db.clone());
+        self.cache.db.insert(source.id.clone(), db.clone());
         Ok(db)
     }
 
@@ -286,9 +286,9 @@ impl EguiController {
         self.sources[index].root = normalized.clone();
         self.missing.sources.remove(&source_id);
         let mut invalidator = source_cache_invalidator::SourceCacheInvalidator::new(
-            &mut self.db_cache,
-            &mut self.wav_cache.entries,
-            &mut self.wav_cache.lookup,
+            &mut self.cache.db,
+            &mut self.cache.wav.entries,
+            &mut self.cache.wav.lookup,
             &mut self.browser_cache.labels,
             &mut self.missing.wavs,
             &mut self.folder_browsers.models,

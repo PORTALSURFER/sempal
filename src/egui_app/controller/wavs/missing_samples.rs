@@ -8,7 +8,7 @@ impl EguiController {
         source_id: &SourceId,
     ) {
         let mut missing = HashSet::new();
-        if let Some(cache) = self.wav_cache.entries.get(source_id) {
+        if let Some(cache) = self.cache.wav.entries.get(source_id) {
             for entry in cache {
                 if entry.missing {
                     missing.insert(entry.relative_path.clone());
@@ -43,7 +43,7 @@ impl EguiController {
                 );
             }
         }
-        if let Some(cache) = self.wav_cache.entries.get_mut(&source.id)
+        if let Some(cache) = self.cache.wav.entries.get_mut(&source.id)
             && let Some(entry) = cache
                 .iter_mut()
                 .find(|entry| entry.relative_path == relative_path)
@@ -104,15 +104,16 @@ impl EguiController {
         {
             return entry.missing;
         }
-        if self.wav_cache.entries.contains_key(source_id) {
+        if self.cache.wav.entries.contains_key(source_id) {
             self.ensure_wav_cache_lookup(source_id);
             if let Some(index) = self
-                .wav_cache
+                .cache
+                .wav
                 .lookup
                 .get(source_id)
                 .and_then(|lookup| lookup.get(relative_path))
                 .copied()
-                && let Some(cache) = self.wav_cache.entries.get(source_id)
+                && let Some(cache) = self.cache.wav.entries.get(source_id)
                 && let Some(entry) = cache.get(index)
             {
                 return entry.missing;

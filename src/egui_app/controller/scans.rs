@@ -77,9 +77,9 @@ impl EguiController {
                     );
 	                    if let Some(source) = self.current_source() {
 	                        let mut invalidator = source_cache_invalidator::SourceCacheInvalidator::new(
-	                            &mut self.db_cache,
-	                            &mut self.wav_cache.entries,
-	                            &mut self.wav_cache.lookup,
+	                            &mut self.cache.db,
+	                            &mut self.cache.wav.entries,
+	                            &mut self.cache.wav.lookup,
 	                            &mut self.browser_cache.labels,
 	                            &mut self.missing.wavs,
 	                            &mut self.folder_browsers.models,
@@ -96,9 +96,9 @@ impl EguiController {
     fn prepare_for_scan(&mut self, source: &SampleSource, mode: ScanMode) {
 	        if matches!(mode, ScanMode::Hard) {
 	            let mut invalidator = source_cache_invalidator::SourceCacheInvalidator::new(
-	                &mut self.db_cache,
-	                &mut self.wav_cache.entries,
-	                &mut self.wav_cache.lookup,
+	                &mut self.cache.db,
+	                &mut self.cache.wav.entries,
+	                &mut self.cache.wav.lookup,
 	                &mut self.browser_cache.labels,
 	                &mut self.missing.wavs,
 	                &mut self.folder_browsers.models,
