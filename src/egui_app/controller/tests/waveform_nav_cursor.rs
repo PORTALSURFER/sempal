@@ -12,7 +12,7 @@ fn cursor_step_size_tracks_view_zoom() {
     prepare_browser_sample(&mut controller, &source, "zoom.wav");
     controller.update_waveform_size(200, 10);
     controller.select_wav_by_path(Path::new("zoom.wav"));
-    controller.decoded_waveform = Some(DecodedWaveform {
+    controller.sample_view.waveform.decoded = Some(DecodedWaveform {
         cache_token: 1,
         samples: vec![0.0; 10_000],
         peaks: None,
@@ -64,8 +64,8 @@ fn batched_zoom_matches_sequential_steps() {
 #[test]
 fn mouse_zoom_prefers_pointer_over_playhead() {
     let (mut controller, _source) = dummy_controller();
-    controller.waveform_size = [240, 24];
-    controller.decoded_waveform = Some(DecodedWaveform {
+    controller.sample_view.waveform.size = [240, 24];
+    controller.sample_view.waveform.decoded = Some(DecodedWaveform {
         cache_token: 1,
         samples: vec![0.0; 10_000],
         peaks: None,
@@ -136,10 +136,10 @@ fn last_start_marker_clamps_and_resets() {
 #[test]
 fn selecting_new_sample_clears_last_start_marker() {
     let (mut controller, source) = dummy_controller();
-    controller.sources.push(source.clone());
+    controller.library.sources.push(source.clone());
     write_test_wav(&source.root.join("a.wav"), &[0.0, 0.1]);
     write_test_wav(&source.root.join("b.wav"), &[0.2, -0.2]);
-    controller.wav_entries = vec![
+    controller.wav_entries.entries = vec![
         sample_entry("a.wav", SampleTag::Neutral),
         sample_entry("b.wav", SampleTag::Neutral),
     ];
@@ -165,6 +165,7 @@ fn replay_from_last_start_requeues_pending_playback() {
     let handled = controller.replay_from_last_start();
     assert!(handled);
     let pending = controller
+        .runtime
         .jobs
         .pending_playback
         .as_ref()
@@ -184,6 +185,7 @@ fn replay_from_last_start_falls_back_to_cursor() {
 
     assert!(handled);
     let pending = controller
+        .runtime
         .jobs
         .pending_playback
         .as_ref()
@@ -197,7 +199,7 @@ fn play_from_cursor_prefers_cursor_position() {
     let (mut controller, source) = dummy_controller();
     prepare_browser_sample(&mut controller, &source, "cursor.wav");
     controller.select_wav_by_path(Path::new("cursor.wav"));
-    controller.decoded_waveform = Some(DecodedWaveform {
+    controller.sample_view.waveform.decoded = Some(DecodedWaveform {
         cache_token: 1,
         samples: vec![0.0; 10_000],
         peaks: None,
@@ -212,6 +214,7 @@ fn play_from_cursor_prefers_cursor_position() {
 
     assert!(handled);
     let pending = controller
+        .runtime
         .jobs
         .pending_playback
         .as_ref()
@@ -224,7 +227,7 @@ fn play_from_cursor_prefers_cursor_position() {
 fn cursor_alpha_fades_before_reset() {
     let (mut controller, source) = dummy_controller();
     prepare_browser_sample(&mut controller, &source, "cursor.wav");
-    controller.decoded_waveform = Some(DecodedWaveform {
+    controller.sample_view.waveform.decoded = Some(DecodedWaveform {
         cache_token: 1,
         samples: vec![0.0; 10_000],
         peaks: None,
@@ -246,7 +249,7 @@ fn cursor_alpha_fades_before_reset() {
 fn cursor_alpha_resets_after_idle_timeout() {
     let (mut controller, source) = dummy_controller();
     prepare_browser_sample(&mut controller, &source, "cursor.wav");
-    controller.decoded_waveform = Some(DecodedWaveform {
+    controller.sample_view.waveform.decoded = Some(DecodedWaveform {
         cache_token: 1,
         samples: vec![0.0; 10_000],
         peaks: None,
@@ -268,7 +271,7 @@ fn cursor_alpha_resets_after_idle_timeout() {
 fn cursor_does_not_fade_when_waveform_focused() {
     let (mut controller, source) = dummy_controller();
     prepare_browser_sample(&mut controller, &source, "cursor.wav");
-    controller.decoded_waveform = Some(DecodedWaveform {
+    controller.sample_view.waveform.decoded = Some(DecodedWaveform {
         cache_token: 1,
         samples: vec![0.0; 10_000],
         peaks: None,
@@ -293,7 +296,7 @@ fn navigation_steps_anchor_to_cursor_instead_of_playhead() {
     prepare_browser_sample(&mut controller, &source, "nav.wav");
     controller.update_waveform_size(200, 10);
     controller.select_wav_by_path(Path::new("nav.wav"));
-    controller.decoded_waveform = Some(DecodedWaveform {
+    controller.sample_view.waveform.decoded = Some(DecodedWaveform {
         cache_token: 1,
         samples: vec![0.0; 10_000],
         peaks: None,

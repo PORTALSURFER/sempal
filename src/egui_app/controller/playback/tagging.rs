@@ -45,8 +45,7 @@ pub(super) fn tag_selected(controller: &mut EguiController, target: SampleTag) {
             label,
             move |controller: &mut EguiController| {
                 for (source_id, path, tag) in applied.iter() {
-                    let source = controller
-                        .sources
+                    let source = controller.library.sources
                         .iter()
                         .find(|s| &s.id == source_id)
                         .cloned()
@@ -57,8 +56,7 @@ pub(super) fn tag_selected(controller: &mut EguiController, target: SampleTag) {
             },
             move |controller: &mut EguiController| {
                 for (source_id, path, tag) in redo_updates.iter() {
-                    let source = controller
-                        .sources
+                    let source = controller.library.sources
                         .iter()
                         .find(|s| &s.id == source_id)
                         .cloned()

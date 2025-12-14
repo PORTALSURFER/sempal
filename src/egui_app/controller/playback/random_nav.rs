@@ -21,21 +21,23 @@ pub(super) fn focus_random_visible_sample(controller: &mut EguiController) {
 }
 
 pub(super) fn play_previous_random_sample(controller: &mut EguiController) {
-    if controller.random_history.is_empty() {
+    if controller.history.random_history.entries.is_empty() {
         controller.set_status("No random history yet", StatusTone::Info);
         return;
     }
     let current = controller
-        .random_history_cursor
-        .unwrap_or_else(|| controller.random_history.len().saturating_sub(1));
+        .history
+        .random_history
+        .cursor
+        .unwrap_or_else(|| controller.history.random_history.entries.len().saturating_sub(1));
     if current == 0 {
-        controller.random_history_cursor = Some(0);
+        controller.history.random_history.cursor = Some(0);
         controller.set_status("Reached start of random history", StatusTone::Info);
         return;
     }
     let target = current - 1;
-    controller.random_history_cursor = Some(target);
-    if let Some(entry) = controller.random_history.get(target).cloned() {
+    controller.history.random_history.cursor = Some(target);
+    if let Some(entry) = controller.history.random_history.entries.get(target).cloned() {
         play_random_history_entry(controller, entry);
     }
 }
@@ -61,7 +63,7 @@ fn play_random_visible_sample_internal<R: Rng + ?Sized>(
     rng: &mut R,
     start_playback: bool,
 ) {
-    let Some(source_id) = controller.selected_source.clone() else {
+    let Some(source_id) = controller.selection_state.ctx.selected_source.clone() else {
         controller.set_status("Select a source first", StatusTone::Info);
         return;
     };
@@ -77,6 +79,7 @@ fn play_random_visible_sample_internal<R: Rng + ?Sized>(
     };
     let Some(path) = controller
         .wav_entries
+        .entries
         .get(entry_index)
         .map(|entry| entry.relative_path.clone())
     else {
@@ -90,33 +93,39 @@ fn play_random_visible_sample_internal<R: Rng + ?Sized>(
 }
 
 fn push_random_history(controller: &mut EguiController, source_id: SourceId, relative_path: PathBuf) {
-    if let Some(cursor) = controller.random_history_cursor
-        && cursor + 1 < controller.random_history.len()
+    if let Some(cursor) = controller.history.random_history.cursor
+        && cursor + 1 < controller.history.random_history.entries.len()
     {
-        controller.random_history.truncate(cursor + 1);
+        controller.history.random_history.entries.truncate(cursor + 1);
     }
-    controller.random_history.push_back(RandomHistoryEntry {
+    controller.history.random_history.entries.push_back(RandomHistoryEntry {
         source_id,
         relative_path,
     });
-    if controller.random_history.len() > RANDOM_HISTORY_LIMIT {
-        controller.random_history.pop_front();
-        if let Some(cursor) = controller.random_history_cursor {
-            controller.random_history_cursor = Some(cursor.saturating_sub(1));
+    if controller.history.random_history.entries.len() > RANDOM_HISTORY_LIMIT {
+        controller.history.random_history.entries.pop_front();
+        if let Some(cursor) = controller.history.random_history.cursor {
+            controller.history.random_history.cursor = Some(cursor.saturating_sub(1));
         }
     }
-    controller.random_history_cursor = Some(controller.random_history.len().saturating_sub(1));
+    controller.history.random_history.cursor = Some(controller.history.random_history.entries.len().saturating_sub(1));
 }
 
 fn play_random_history_entry(controller: &mut EguiController, entry: RandomHistoryEntry) {
-    if controller.selected_source.as_ref() != Some(&entry.source_id) {
-        controller.jobs.pending_playback = Some(PendingPlayback {
+    if controller.selection_state.ctx.selected_source.as_ref() != Some(&entry.source_id) {
+        controller
+            .runtime
+            .jobs
+            .set_pending_playback(Some(PendingPlayback {
             source_id: entry.source_id.clone(),
             relative_path: entry.relative_path.clone(),
             looped: controller.ui.waveform.loop_enabled,
             start_override: None,
-        });
-        controller.jobs.pending_select_path = Some(entry.relative_path.clone());
+        }));
+        controller
+            .runtime
+            .jobs
+            .set_pending_select_path(Some(entry.relative_path.clone()));
         controller.select_source_internal(Some(entry.source_id), Some(entry.relative_path));
         return;
     }
@@ -129,4 +138,3 @@ fn play_random_history_entry(controller: &mut EguiController, entry: RandomHisto
         controller.set_status(err, StatusTone::Error);
     }
 }
-

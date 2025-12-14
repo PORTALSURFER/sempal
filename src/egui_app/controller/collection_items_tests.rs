@@ -6,15 +6,15 @@ use tempfile::tempdir;
 fn setup_collection_with_sample(file_name: &str) -> (EguiController, SampleSource, CollectionId) {
     let (mut controller, source) = dummy_controller();
     controller.cache_db(&source).unwrap();
-    controller.sources.push(source.clone());
-    controller.selected_source = Some(source.id.clone());
+    controller.library.sources.push(source.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
     let path = source.root.join(file_name);
     write_test_wav(&path, &[0.2, -0.4, 0.3, -0.1]);
 
     let collection = Collection::new("Test");
     let collection_id = collection.id.clone();
-    controller.selected_collection = Some(collection_id.clone());
-    controller.collections.push(collection);
+    controller.selection_state.ctx.selected_collection = Some(collection_id.clone());
+    controller.library.collections.push(collection);
     controller
         .add_sample_to_collection(&collection_id, Path::new(file_name))
         .unwrap();
@@ -27,10 +27,9 @@ fn enable_export_with_existing_member(
     export_root: &Path,
 ) {
     std::fs::create_dir_all(export_root).unwrap();
-    controller.collection_export_root = Some(export_root.to_path_buf());
+    controller.settings.collection_export_root = Some(export_root.to_path_buf());
     controller.ui.collection_export_root = Some(export_root.to_path_buf());
-    if let Some(collection) = controller
-        .collections
+    if let Some(collection) = controller.library.collections
         .iter_mut()
         .find(|c| c.id == *collection_id)
     {
@@ -126,8 +125,7 @@ fn collection_rename_moves_files_and_export() {
 
     assert!(!source.root.join("one.wav").exists());
     assert!(source.root.join("renamed.wav").is_file());
-    let collection = controller
-        .collections
+    let collection = controller.library.collections
         .iter()
         .find(|c| c.id == collection_id)
         .unwrap();
@@ -149,7 +147,7 @@ fn collection_rename_moves_files_and_export() {
 #[test]
 fn collection_rename_preserves_extension_and_handles_dots() {
     let (mut controller, source, collection_id) = setup_collection_with_sample("loop.v1.WAV");
-    controller.selected_collection = Some(collection_id.clone());
+    controller.selection_state.ctx.selected_collection = Some(collection_id.clone());
 
     controller.rename_collection_sample(0, "loop.v2").unwrap();
     assert!(source.root.join("loop.v2.WAV").is_file());
@@ -166,14 +164,14 @@ fn collection_rename_preserves_extension_and_handles_dots() {
 fn collection_normalize_overwrites_audio() {
     let (mut controller, source) = dummy_controller();
     controller.cache_db(&source).unwrap();
-    controller.sources.push(source.clone());
-    controller.selected_source = Some(source.id.clone());
+    controller.library.sources.push(source.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
     let wav_path = source.root.join("normalize.wav");
     write_test_wav(&wav_path, &[0.1, -0.25, 0.4, -0.2]);
     let collection = Collection::new("Test");
     let collection_id = collection.id.clone();
-    controller.selected_collection = Some(collection_id.clone());
-    controller.collections.push(collection);
+    controller.selection_state.ctx.selected_collection = Some(collection_id.clone());
+    controller.library.collections.push(collection);
     controller
         .add_sample_to_collection(&collection_id, Path::new("normalize.wav"))
         .unwrap();
