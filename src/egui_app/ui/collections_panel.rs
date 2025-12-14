@@ -231,8 +231,11 @@ impl EguiApp {
                                 response.rect.left_top()
                                     + egui::vec2(marker_width, metrics.row_height),
                             );
-                            ui.painter()
-                                .rect_filled(marker_rect, 0.0, style::selection_marker_fill());
+                            ui.painter().rect_filled(
+                                marker_rect,
+                                0.0,
+                                style::selection_marker_fill(),
+                            );
                             ui.painter().rect_stroke(
                                 response.rect,
                                 0.0,
@@ -252,7 +255,10 @@ impl EguiApp {
                                 StrokeKind::Inside,
                             );
                         }
-                        if response.drag_started() {
+                        let should_start_drag =
+                            response.drag_started() || (!drag_active && response.dragged());
+                        if should_start_drag {
+                            self.controller.ui.drag.pending_os_drag = None;
                             if let Some(pos) = response.interact_pointer_pos() {
                                 self.controller.start_sample_drag(
                                     sample.source_id.clone(),
@@ -260,6 +266,57 @@ impl EguiApp {
                                     sample.label.clone(),
                                     pos,
                                 );
+                            }
+                        } else if !drag_active
+                            && self.controller.ui.drag.payload.is_none()
+                            && self.controller.ui.drag.os_left_mouse_pressed
+                            && self.controller.ui.drag.pending_os_drag.is_none()
+                        {
+                            let pointer_pos = ui.input(|i| {
+                                i.pointer.hover_pos().or_else(|| i.pointer.interact_pos())
+                            });
+                            let pointer_pos = pointer_pos.or(self.controller.ui.drag.os_cursor_pos);
+                            if let Some(pos) = pointer_pos {
+                                if !response.rect.contains(pos) {
+                                    return;
+                                }
+                                self.controller.ui.drag.pending_os_drag =
+                                    Some(crate::egui_app::state::PendingOsDragStart {
+                                        payload: DragPayload::Sample {
+                                            source_id: sample.source_id.clone(),
+                                            relative_path: path.clone(),
+                                        },
+                                        label: sample.label.clone(),
+                                        origin: pos,
+                                    });
+                            }
+                        } else if !drag_active
+                            && self.controller.ui.drag.payload.is_none()
+                            && self.controller.ui.drag.os_left_mouse_down
+                            && let Some(pending) = self.controller.ui.drag.pending_os_drag.clone()
+                            && let DragPayload::Sample {
+                                source_id: pending_source_id,
+                                relative_path,
+                            } = &pending.payload
+                            && *pending_source_id == sample.source_id
+                            && *relative_path == path
+                        {
+                            let pointer_pos = ui.input(|i| {
+                                i.pointer.hover_pos().or_else(|| i.pointer.interact_pos())
+                            });
+                            let pointer_pos = pointer_pos.or(self.controller.ui.drag.os_cursor_pos);
+                            if let Some(pos) = pointer_pos {
+                                let moved_sq = (pos - pending.origin).length_sq();
+                                const START_DRAG_DISTANCE_SQ: f32 = 4.0 * 4.0;
+                                if moved_sq >= START_DRAG_DISTANCE_SQ {
+                                    self.controller.ui.drag.pending_os_drag = None;
+                                    self.controller.start_sample_drag(
+                                        pending_source_id.clone(),
+                                        relative_path.clone(),
+                                        pending.label,
+                                        pos,
+                                    );
+                                }
                             }
                         } else if drag_active && response.dragged() {
                             if let Some(pos) = response.interact_pointer_pos() {

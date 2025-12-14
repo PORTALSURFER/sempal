@@ -165,6 +165,7 @@ fn replay_from_last_start_requeues_pending_playback() {
     let handled = controller.replay_from_last_start();
     assert!(handled);
     let pending = controller
+        .jobs
         .pending_playback
         .as_ref()
         .expect("pending playback request");
@@ -183,6 +184,7 @@ fn replay_from_last_start_falls_back_to_cursor() {
 
     assert!(handled);
     let pending = controller
+        .jobs
         .pending_playback
         .as_ref()
         .expect("pending playback request");
@@ -210,6 +212,7 @@ fn play_from_cursor_prefers_cursor_position() {
 
     assert!(handled);
     let pending = controller
+        .jobs
         .pending_playback
         .as_ref()
         .expect("pending playback request");

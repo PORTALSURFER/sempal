@@ -79,11 +79,7 @@ impl EguiController {
         if self.selected_source.as_ref() == Some(&source.id) {
             self.wav_entries
                 .retain(|entry| entry.relative_path != relative_path);
-            self.rebuild_wav_lookup();
-            self.browser_search_cache.invalidate();
-            self.rebuild_browser_lists();
-            self.label_cache
-                .insert(source.id.clone(), self.build_label_cache(&self.wav_entries));
+            self.sync_browser_after_wav_entries_mutation(&source.id);
         } else {
             self.label_cache.remove(&source.id);
         }
@@ -112,13 +108,7 @@ impl EguiController {
             && audio.source_id == source.id
             && audio.relative_path == relative_path
         {
-            self.loaded_audio = None;
-            self.decoded_waveform = None;
-            self.ui.waveform.image = None;
-            self.ui.waveform.playhead = PlayheadState::default();
-            self.ui.waveform.selection = None;
-            self.ui.waveform.selection_duration = None;
-            self.selection.clear();
+            self.clear_loaded_audio_and_waveform_visuals();
         }
     }
 
@@ -127,19 +117,7 @@ impl EguiController {
         source: &SampleSource,
         relative_path: &Path,
     ) {
-        self.invalidate_cached_audio(&source.id, relative_path);
-        let loaded_matches = self.loaded_audio.as_ref().is_some_and(|audio| {
-            audio.source_id == source.id && audio.relative_path == relative_path
-        });
-        let selected_matches = self.selected_source.as_ref() == Some(&source.id)
-            && self.selected_wav.as_deref() == Some(relative_path);
-        if selected_matches || loaded_matches {
-            self.loaded_wav = None;
-            self.ui.loaded_wav = None;
-            if let Err(err) = self.load_waveform_for_selection(source, relative_path) {
-                self.set_status(err, StatusTone::Warning);
-            }
-        }
+        self.reload_waveform_for_selection_if_active(source, relative_path);
     }
 
     pub(in crate::egui_app::controller) fn reexport_collections_for_sample(

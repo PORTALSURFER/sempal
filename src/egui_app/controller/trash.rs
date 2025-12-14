@@ -46,7 +46,7 @@ impl EguiController {
 
     /// Move all samples tagged as Trash into the configured trash folder after confirmation.
     pub fn move_all_trashed_to_folder(&mut self) {
-        if self.trash_move_rx.is_some() {
+        if self.jobs.trash_move_rx.is_some() {
             self.set_status("Trash move already in progress", StatusTone::Warning);
             return;
         }
@@ -98,8 +98,8 @@ impl EguiController {
         #[cfg(not(test))]
         {
             let (tx, rx) = channel();
-            self.trash_move_cancel = Some(cancel.clone());
-            self.trash_move_rx = Some(rx);
+            self.jobs.trash_move_cancel = Some(cancel.clone());
+            self.jobs.trash_move_rx = Some(rx);
             std::thread::spawn(move || {
                 let _ = run_trash_move_task(sources, collections, trash_root, cancel, Some(&tx));
             });
@@ -180,10 +180,10 @@ impl EguiController {
     }
 
     pub(super) fn poll_trash_move(&mut self) {
-        let Some(rx) = self.trash_move_rx.as_ref() else {
+        let Some(rx) = self.jobs.trash_move_rx.as_ref() else {
             return;
         };
-        if let Some(cancel) = self.trash_move_cancel.as_ref()
+        if let Some(cancel) = self.jobs.trash_move_cancel.as_ref()
             && self.ui.progress.cancel_requested
         {
             cancel.store(true, Ordering::Relaxed);
@@ -205,8 +205,8 @@ impl EguiController {
             }
         }
         if let Some(result) = finished {
-            self.trash_move_rx = None;
-            self.trash_move_cancel = None;
+            self.jobs.trash_move_rx = None;
+            self.jobs.trash_move_cancel = None;
             self.apply_trash_move_finished(result);
         }
     }
@@ -218,13 +218,16 @@ impl EguiController {
             let _ = self.persist_config("Failed to save collections after trash move");
         }
 
+        let mut invalidator = source_cache_invalidator::SourceCacheInvalidator::new(
+            &mut self.db_cache,
+            &mut self.wav_cache,
+            &mut self.wav_cache_lookup,
+            &mut self.label_cache,
+            &mut self.missing_wavs,
+            &mut self.folder_browsers,
+        );
         for source_id in &result.affected_sources {
-            self.db_cache.remove(source_id);
-            self.wav_cache.remove(source_id);
-            self.wav_cache_lookup.remove(source_id);
-            self.label_cache.remove(source_id);
-            self.missing_wavs.remove(source_id);
-            self.folder_browsers.remove(source_id);
+            invalidator.invalidate_all(source_id);
         }
 
         if let Some(source) = self.current_source()

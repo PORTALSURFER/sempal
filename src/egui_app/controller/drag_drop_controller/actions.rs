@@ -81,6 +81,9 @@ impl DragDropActions for DragDropController<'_> {
         if self.ui.drag.payload.is_none() {
             return;
         }
+        if self.ui.drag.pointer_left_window {
+            return;
+        }
         debug!(
             "update_active_drag: pos={:?} source={:?} target={:?}",
             pos, source, target
@@ -98,6 +101,9 @@ impl DragDropActions for DragDropController<'_> {
 
     fn refresh_drag_position(&mut self, pos: Pos2, shift_down: bool) {
         if self.ui.drag.payload.is_some() {
+            if self.ui.drag.pointer_left_window {
+                return;
+            }
             self.ui.drag.position = Some(pos);
             if let Some(DragPayload::Selection {
                 keep_source_focused,
@@ -251,15 +257,20 @@ impl DragDropActions for DragDropController<'_> {
 
 impl DragDropController<'_> {
     #[cfg(any(target_os = "windows", test))]
-    const EXTERNAL_DRAG_ARM_WINDOW: Duration = Duration::from_millis(50);
+    const EXTERNAL_DRAG_ARM_WINDOW: Duration = Duration::from_millis(250);
 
     #[cfg(any(target_os = "windows", test))]
-    pub(super) fn should_launch_external_drag(&mut self, pointer_outside: bool, now: Instant) -> bool {
+    pub(super) fn should_launch_external_drag(
+        &mut self,
+        pointer_outside: bool,
+        pointer_left: bool,
+        now: Instant,
+    ) -> bool {
         if self.ui.drag.payload.is_none() {
             self.ui.drag.external_arm_at = None;
             return false;
         }
-        if !pointer_outside {
+        if !(pointer_outside || pointer_left) {
             self.ui.drag.external_arm_at = None;
             return false;
         }
@@ -271,11 +282,11 @@ impl DragDropController<'_> {
     }
 
     #[cfg(target_os = "windows")]
-    pub(super) fn maybe_launch_external_drag(&mut self, pointer_outside: bool) {
+    pub(super) fn maybe_launch_external_drag(&mut self, pointer_outside: bool, pointer_left: bool) {
         if self.ui.drag.external_started {
             return;
         }
-        if !self.should_launch_external_drag(pointer_outside, Instant::now()) {
+        if !self.should_launch_external_drag(pointer_outside, pointer_left, Instant::now()) {
             return;
         }
         self.ui.drag.external_started = true;
@@ -303,8 +314,7 @@ impl DragDropController<'_> {
                 self.set_status(message, StatusTone::Info);
             }
             Err(err) => {
-                self.ui.drag.external_started = false;
-                self.ui.drag.external_arm_at = None;
+                self.reset_drag();
                 self.set_status(err, StatusTone::Error);
             }
         }
@@ -326,10 +336,10 @@ mod external_drag_tests {
         });
 
         let start = Instant::now();
-        assert!(!drag.should_launch_external_drag(true, start));
+        assert!(!drag.should_launch_external_drag(true, false, start));
         assert!(drag.ui.drag.external_arm_at.is_some());
 
-        assert!(!drag.should_launch_external_drag(false, start));
+        assert!(!drag.should_launch_external_drag(false, false, start));
         assert!(drag.ui.drag.external_arm_at.is_none());
     }
 
@@ -344,13 +354,36 @@ mod external_drag_tests {
         });
 
         let start = Instant::now();
-        assert!(!drag.should_launch_external_drag(true, start));
+        assert!(!drag.should_launch_external_drag(true, false, start));
         assert!(!drag.should_launch_external_drag(
             true,
+            false,
             start + DragDropController::EXTERNAL_DRAG_ARM_WINDOW - Duration::from_millis(1)
         ));
         assert!(drag.should_launch_external_drag(
             true,
+            false,
+            start + DragDropController::EXTERNAL_DRAG_ARM_WINDOW
+        ));
+    }
+
+    #[test]
+    fn external_drag_arms_on_pointer_gone_then_launches_after_dwell_time() {
+        let renderer = WaveformRenderer::new(12, 12);
+        let mut controller = EguiController::new(renderer, None);
+        let mut drag = DragDropController::new(&mut controller);
+        drag.ui.drag.payload = Some(DragPayload::Sample {
+            source_id: SourceId::new(),
+            relative_path: PathBuf::from("one.wav"),
+        });
+
+        let start = Instant::now();
+        assert!(!drag.should_launch_external_drag(false, true, start));
+        assert!(drag.ui.drag.external_arm_at.is_some());
+
+        assert!(drag.should_launch_external_drag(
+            true,
+            false,
             start + DragDropController::EXTERNAL_DRAG_ARM_WINDOW
         ));
     }
