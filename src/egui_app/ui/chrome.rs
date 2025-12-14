@@ -73,61 +73,6 @@ impl EguiApp {
                             ui.separator();
                             ui.label(RichText::new(&status.text).color(palette.text_primary));
                         });
-
-                        if self.controller.ui.progress.visible {
-                            ui.add_space(4.0);
-                            ui.horizontal(|ui| {
-                                ui.label(
-                                    RichText::new(&self.controller.ui.progress.title)
-                                        .color(palette.text_muted),
-                                );
-                                ui.separator();
-                                if let Some(detail) = self.controller.ui.progress.detail.as_deref()
-                                {
-                                    ui.label(RichText::new(detail).color(palette.text_muted));
-                                }
-                                ui.with_layout(
-                                    egui::Layout::right_to_left(egui::Align::Center),
-                                    |ui| {
-                                        if self.controller.ui.progress.cancelable {
-                                            let label =
-                                                if self.controller.ui.progress.cancel_requested {
-                                                    "Canceling..."
-                                                } else {
-                                                    "Cancel"
-                                                };
-                                            if ui
-                                                .add_enabled(
-                                                    !self.controller.ui.progress.cancel_requested,
-                                                    egui::Button::new(label),
-                                                )
-                                                .clicked()
-                                            {
-                                                self.controller.ui.progress.cancel_requested = true;
-                                            }
-                                        }
-                                    },
-                                );
-                            });
-                            let fraction = self.controller.ui.progress.fraction();
-                            let mut bar = egui::ProgressBar::new(fraction)
-                                .desired_width(ui.available_width().max(40.0))
-                                .animate(true);
-                            bar = if self.controller.ui.progress.total > 0 {
-                                bar.text(format!(
-                                    "{} / {}",
-                                    self.controller
-                                        .ui
-                                        .progress
-                                        .completed
-                                        .min(self.controller.ui.progress.total),
-                                    self.controller.ui.progress.total
-                                ))
-                            } else {
-                                bar.text("Working...")
-                            };
-                            ui.add(bar);
-                        }
                     });
                     columns[1].horizontal(|ui| {
                         ui.add_space(6.0);
@@ -285,6 +230,45 @@ impl EguiApp {
                                 .clamping(SliderClamping::Always);
                             if ui.add(slider).changed() {
                                 self.controller.set_volume(volume);
+                            }
+                            if self.controller.ui.progress.visible {
+                                ui.add_space(10.0);
+                                let progress = &self.controller.ui.progress;
+                                let fraction = progress.fraction();
+                                let mut bar = egui::ProgressBar::new(fraction)
+                                    .desired_width(180.0)
+                                    .animate(true);
+                                bar = bar.fill(style::status_badge_color(style::StatusTone::Busy));
+                                bar = if progress.total > 0 {
+                                    bar.text(format!(
+                                        "{} / {}",
+                                        progress.completed.min(progress.total),
+                                        progress.total
+                                    ))
+                                } else {
+                                    bar.text("Working…")
+                                };
+                                let tooltip = match progress.detail.as_deref() {
+                                    Some(detail) => format!("{}\n{}", progress.title, detail),
+                                    None => progress.title.clone(),
+                                };
+                                ui.add(bar).on_hover_text(tooltip);
+                                if progress.cancelable {
+                                    let label = if progress.cancel_requested {
+                                        "Canceling…"
+                                    } else {
+                                        "Cancel"
+                                    };
+                                    if ui
+                                        .add_enabled(
+                                            !progress.cancel_requested,
+                                            egui::Button::new(label),
+                                        )
+                                        .clicked()
+                                    {
+                                        self.controller.ui.progress.cancel_requested = true;
+                                    }
+                                }
                             }
                         },
                     );
