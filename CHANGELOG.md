@@ -1,8 +1,4 @@
-## [unreleased]
-
-### 🐛 Bug Fixes
-
-- *(ui)* Clarify update available message
+## [0.358.0] - 2025-12-14
 
 ### ⚙️ Miscellaneous Tasks
 
