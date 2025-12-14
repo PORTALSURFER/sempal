@@ -88,31 +88,18 @@ impl EguiApp {
             }
 
             let (pointer_outside, pointer_left) = ctx.input(|i| {
-                if let Some(true) = window_inside {
-                    // When the cursor re-enters the window, egui might not immediately emit a
-                    // `PointerMoved` event (depending on the platform/backend). Use the OS-level
-                    // inside check as the source of truth to clear the leave latch.
-                    self.controller.ui.drag.pointer_left_window = false;
-                } else if let Some(false) = window_inside
-                    && self.controller.ui.drag.payload.is_some()
-                {
-                    self.controller.ui.drag.pointer_left_window = true;
-                }
-
                 if self.controller.ui.drag.payload.is_some() {
+                    if matches!(window_inside, Some(false)) {
+                        // Once the pointer leaves the window during a drag, permanently disable
+                        // in-app dragging until the gesture completes (external-only).
+                        self.controller.ui.drag.pointer_left_window = true;
+                    }
                     let pointer_gone = i
                         .events
                         .iter()
                         .any(|e| matches!(e, egui::Event::PointerGone));
                     if pointer_gone {
                         self.controller.ui.drag.pointer_left_window = true;
-                    }
-                    let pointer_moved = i.events.iter().any(|e| match e {
-                        egui::Event::PointerMoved(_) => true,
-                        _ => false,
-                    });
-                    if pointer_moved {
-                        self.controller.ui.drag.pointer_left_window = false;
                     }
                 } else {
                     self.controller.ui.drag.pointer_left_window = false;
