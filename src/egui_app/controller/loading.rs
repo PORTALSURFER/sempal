@@ -105,7 +105,7 @@ impl EguiController {
         self.wav_entries.entries = entries;
         self.sync_after_wav_entries_changed();
         let mut pending_applied = false;
-        if let Some(path) = self.runtime.jobs.pending_select_path.take()
+        if let Some(path) = self.runtime.jobs.take_pending_select_path()
             && self.wav_entries.lookup.contains_key(&path)
         {
             self.select_wav_by_path(&path);

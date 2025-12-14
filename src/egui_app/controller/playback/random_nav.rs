@@ -122,7 +122,10 @@ fn play_random_history_entry(controller: &mut EguiController, entry: RandomHisto
             looped: controller.ui.waveform.loop_enabled,
             start_override: None,
         }));
-        controller.runtime.jobs.pending_select_path = Some(entry.relative_path.clone());
+        controller
+            .runtime
+            .jobs
+            .set_pending_select_path(Some(entry.relative_path.clone()));
         controller.select_source_internal(Some(entry.source_id), Some(entry.relative_path));
         return;
     }

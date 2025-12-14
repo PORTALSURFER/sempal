@@ -6,6 +6,7 @@ use std::{
     path::PathBuf,
     sync::{
         Arc,
+        atomic::AtomicBool,
         mpsc::{Receiver, Sender},
     },
 };
@@ -51,6 +52,18 @@ impl ControllerJobs {
         self.wav_job_rx.try_recv()
     }
 
+    pub(in super) fn set_pending_select_path(&mut self, path: Option<PathBuf>) {
+        self.pending_select_path = path;
+    }
+
+    pub(in super) fn pending_select_path(&self) -> Option<PathBuf> {
+        self.pending_select_path.clone()
+    }
+
+    pub(in super) fn take_pending_select_path(&mut self) -> Option<PathBuf> {
+        self.pending_select_path.take()
+    }
+
     pub(in super) fn pending_audio(&self) -> Option<PendingAudio> {
         self.pending_audio.clone()
     }
@@ -82,5 +95,53 @@ impl ControllerJobs {
 
     pub(in super) fn try_recv_audio_result(&self) -> Result<AudioLoadResult, TryRecvError> {
         self.audio_job_rx.try_recv()
+    }
+
+    pub(in super) fn scan_in_progress(&self) -> bool {
+        self.scan_in_progress
+    }
+
+    pub(in super) fn begin_scan(&mut self, rx: Receiver<ScanResult>) {
+        self.scan_rx = Some(rx);
+        self.scan_in_progress = true;
+    }
+
+    pub(in super) fn try_recv_scan_result(&mut self) -> Option<ScanResult> {
+        let Some(rx) = self.scan_rx.as_ref() else {
+            return None;
+        };
+        let Ok(result) = rx.try_recv() else {
+            return None;
+        };
+        self.scan_in_progress = false;
+        self.scan_rx = None;
+        Some(result)
+    }
+
+    pub(in super) fn trash_move_in_progress(&self) -> bool {
+        self.trash_move_rx.is_some()
+    }
+
+    #[cfg(not(test))]
+    pub(in super) fn start_trash_move(
+        &mut self,
+        rx: Receiver<trash_move::TrashMoveMessage>,
+        cancel: Arc<AtomicBool>,
+    ) {
+        self.trash_move_cancel = Some(cancel);
+        self.trash_move_rx = Some(rx);
+    }
+
+    pub(in super) fn trash_move_rx(&self) -> Option<&Receiver<trash_move::TrashMoveMessage>> {
+        self.trash_move_rx.as_ref()
+    }
+
+    pub(in super) fn trash_move_cancel(&self) -> Option<Arc<AtomicBool>> {
+        self.trash_move_cancel.clone()
+    }
+
+    pub(in super) fn clear_trash_move(&mut self) {
+        self.trash_move_rx = None;
+        self.trash_move_cancel = None;
     }
 }

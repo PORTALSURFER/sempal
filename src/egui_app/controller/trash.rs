@@ -46,7 +46,7 @@ impl EguiController {
 
     /// Move all samples tagged as Trash into the configured trash folder after confirmation.
     pub fn move_all_trashed_to_folder(&mut self) {
-        if self.runtime.jobs.trash_move_rx.is_some() {
+        if self.runtime.jobs.trash_move_in_progress() {
             self.set_status("Trash move already in progress", StatusTone::Warning);
             return;
         }
@@ -98,8 +98,7 @@ impl EguiController {
         #[cfg(not(test))]
         {
             let (tx, rx) = channel();
-            self.runtime.jobs.trash_move_cancel = Some(cancel.clone());
-            self.runtime.jobs.trash_move_rx = Some(rx);
+            self.runtime.jobs.start_trash_move(rx, cancel.clone());
             std::thread::spawn(move || {
                 let _ = run_trash_move_task(sources, collections, trash_root, cancel, Some(&tx));
             });
@@ -180,10 +179,10 @@ impl EguiController {
     }
 
     pub(super) fn poll_trash_move(&mut self) {
-        let Some(rx) = self.runtime.jobs.trash_move_rx.as_ref() else {
+        let Some(rx) = self.runtime.jobs.trash_move_rx() else {
             return;
         };
-        if let Some(cancel) = self.runtime.jobs.trash_move_cancel.as_ref()
+        if let Some(cancel) = self.runtime.jobs.trash_move_cancel().as_ref()
             && self.ui.progress.cancel_requested
         {
             cancel.store(true, Ordering::Relaxed);
@@ -205,8 +204,7 @@ impl EguiController {
             }
         }
         if let Some(result) = finished {
-            self.runtime.jobs.trash_move_rx = None;
-            self.runtime.jobs.trash_move_cancel = None;
+            self.runtime.jobs.clear_trash_move();
             self.apply_trash_move_finished(result);
         }
     }
