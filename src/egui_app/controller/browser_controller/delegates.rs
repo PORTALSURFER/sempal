@@ -117,19 +117,7 @@ impl EguiController {
         source: &SampleSource,
         relative_path: &Path,
     ) {
-        self.invalidate_cached_audio(&source.id, relative_path);
-        let loaded_matches = self.loaded_audio.as_ref().is_some_and(|audio| {
-            audio.source_id == source.id && audio.relative_path == relative_path
-        });
-        let selected_matches = self.selected_source.as_ref() == Some(&source.id)
-            && self.selected_wav.as_deref() == Some(relative_path);
-        if selected_matches || loaded_matches {
-            self.loaded_wav = None;
-            self.ui.loaded_wav = None;
-            if let Err(err) = self.load_waveform_for_selection(source, relative_path) {
-                self.set_status(err, StatusTone::Warning);
-            }
-        }
+        self.reload_waveform_for_selection_if_active(source, relative_path);
     }
 
     pub(in crate::egui_app::controller) fn reexport_collections_for_sample(
