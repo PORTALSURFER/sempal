@@ -7,9 +7,9 @@ use std::path::{Path, PathBuf};
 #[test]
 fn selecting_missing_sample_sets_waveform_notice() {
     let (mut controller, source) = dummy_controller();
-    controller.sources.push(source.clone());
-    controller.selected_source = Some(source.id.clone());
-    controller.wav_entries = vec![WavEntry {
+    controller.library.sources.push(source.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
+    controller.wav_entries.entries = vec![WavEntry {
         relative_path: PathBuf::from("one.wav"),
         file_size: 1,
         modified_ns: 1,
@@ -29,15 +29,15 @@ fn selecting_missing_sample_sets_waveform_notice() {
             .as_ref()
             .is_some_and(|msg| msg.contains("one.wav"))
     );
-    assert!(controller.loaded_audio.is_none());
+    assert!(controller.sample_view.wav.loaded_audio.is_none());
 }
 
 #[test]
 fn collection_views_flag_missing_members() {
     let (mut controller, source) = dummy_controller();
-    controller.sources.push(source.clone());
-    controller.selected_source = Some(source.id.clone());
-    controller.wav_entries = vec![WavEntry {
+    controller.library.sources.push(source.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
+    controller.wav_entries.entries = vec![WavEntry {
         relative_path: PathBuf::from("one.wav"),
         file_size: 1,
         modified_ns: 1,
@@ -54,8 +54,8 @@ fn collection_views_flag_missing_members() {
         relative_path: PathBuf::from("one.wav"),
         clip_root: None,
     });
-    controller.selected_collection = Some(collection.id.clone());
-    controller.collections.push(collection);
+    controller.selection_state.ctx.selected_collection = Some(collection.id.clone());
+    controller.library.collections.push(collection);
     controller.refresh_collections_ui();
 
     assert!(
@@ -79,10 +79,10 @@ fn collection_views_flag_missing_members() {
 #[test]
 fn read_failure_marks_sample_missing() {
     let (mut controller, source) = dummy_controller();
-    controller.sources.push(source.clone());
-    controller.selected_source = Some(source.id.clone());
+    controller.library.sources.push(source.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
     let rel = PathBuf::from("gone.wav");
-    controller.wav_entries = vec![WavEntry {
+    controller.wav_entries.entries = vec![WavEntry {
         relative_path: rel.clone(),
         file_size: 1,
         modified_ns: 1,
@@ -97,10 +97,10 @@ fn read_failure_marks_sample_missing() {
         .unwrap_err();
     assert!(err.contains("Failed to read"));
     assert!(controller.sample_missing(&source.id, &rel));
-    assert!(controller.wav_entries[0].missing);
+    assert!(controller.wav_entries.entries[0].missing);
     assert!(
-        controller
-            .missing_wavs
+        controller.library.missing
+            .wavs
             .get(&source.id)
             .is_some_and(|set| set.contains(&rel))
     );

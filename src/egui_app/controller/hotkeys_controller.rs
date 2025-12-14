@@ -214,12 +214,11 @@ impl HotkeysController<'_> {
     }
 
     fn normalize_loaded_sample_like_browser(&mut self) -> Result<(), String> {
-        let audio = self
+        let audio = self.sample_view.wav
             .loaded_audio
             .as_ref()
             .ok_or_else(|| "Load a sample to normalize it".to_string())?;
-        let source = self
-            .sources
+        let source = self.library.sources
             .iter()
             .find(|s| s.id == audio.source_id)
             .cloned()
@@ -237,7 +236,7 @@ impl HotkeysController<'_> {
             missing: false,
         };
         self.update_cached_entry(&source, &relative_path, updated);
-        if self.selected_source.as_ref() == Some(&source.id) {
+        if self.selection_state.ctx.selected_source.as_ref() == Some(&source.id) {
             self.rebuild_browser_lists();
         }
         self.refresh_waveform_for_sample(&source, &relative_path);

@@ -83,7 +83,7 @@ mod tests {
     #[test]
     fn selection_duration_label_uses_loaded_audio() {
         let (mut controller, source) = test_support::dummy_controller();
-        controller.loaded_audio = Some(LoadedAudio {
+        controller.sample_view.wav.loaded_audio = Some(LoadedAudio {
             source_id: source.id.clone(),
             relative_path: PathBuf::from("clip.wav"),
             bytes: Vec::new(),

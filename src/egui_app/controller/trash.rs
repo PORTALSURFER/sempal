@@ -1,5 +1,7 @@
 use super::*;
-use super::trash_move::{TrashMoveFinished, TrashMoveMessage};
+use super::trash_move::TrashMoveFinished;
+#[cfg(test)]
+use super::trash_move::TrashMoveMessage;
 #[cfg(test)]
 use super::trash_move::run_trash_move_task_with_progress;
 #[cfg(not(test))]
@@ -10,8 +12,10 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::{
     Arc,
-    atomic::{AtomicBool, Ordering},
+    atomic::AtomicBool,
 };
+#[cfg(test)]
+use std::sync::atomic::Ordering;
 #[cfg(not(test))]
 use std::sync::mpsc::channel;
 
@@ -46,7 +50,7 @@ impl EguiController {
 
     /// Move all samples tagged as Trash into the configured trash folder after confirmation.
     pub fn move_all_trashed_to_folder(&mut self) {
-        if self.jobs.trash_move_rx.is_some() {
+        if self.runtime.jobs.trash_move_in_progress() {
             self.set_status("Trash move already in progress", StatusTone::Warning);
             return;
         }
@@ -65,12 +69,12 @@ impl EguiController {
 
         let cancel = Arc::new(AtomicBool::new(false));
 
-        let sources = self.sources.clone();
-        let collections = self.collections.clone();
+        let sources = self.library.sources.clone();
+        let collections = self.library.collections.clone();
 
         #[cfg(test)]
         {
-            let cancel_after = self.progress_cancel_after;
+            let cancel_after = self.runtime.progress_cancel_after;
             let finished = run_trash_move_task_with_progress(
                 sources,
                 collections,
@@ -98,8 +102,7 @@ impl EguiController {
         #[cfg(not(test))]
         {
             let (tx, rx) = channel();
-            self.jobs.trash_move_cancel = Some(cancel.clone());
-            self.jobs.trash_move_rx = Some(rx);
+            self.runtime.jobs.start_trash_move(rx, cancel.clone());
             std::thread::spawn(move || {
                 let _ = run_trash_move_task(sources, collections, trash_root, cancel, Some(&tx));
             });
@@ -179,52 +182,17 @@ impl EguiController {
         }
     }
 
-    pub(super) fn poll_trash_move(&mut self) {
-        let Some(rx) = self.jobs.trash_move_rx.as_ref() else {
-            return;
-        };
-        if let Some(cancel) = self.jobs.trash_move_cancel.as_ref()
-            && self.ui.progress.cancel_requested
-        {
-            cancel.store(true, Ordering::Relaxed);
-        }
-        let mut finished = None;
-        while let Ok(message) = rx.try_recv() {
-            match message {
-                TrashMoveMessage::SetTotal(total) => {
-                    self.ui.progress.total = total;
-                }
-                TrashMoveMessage::Progress { completed, detail } => {
-                    self.ui.progress.completed = completed;
-                    self.ui.progress.detail = detail;
-                }
-                TrashMoveMessage::Finished(result) => {
-                    finished = Some(result);
-                    break;
-                }
-            }
-        }
-        if let Some(result) = finished {
-            self.jobs.trash_move_rx = None;
-            self.jobs.trash_move_cancel = None;
-            self.apply_trash_move_finished(result);
-        }
-    }
-
-    fn apply_trash_move_finished(&mut self, result: TrashMoveFinished) {
+    pub(super) fn apply_trash_move_finished(&mut self, result: TrashMoveFinished) {
         if result.collections_changed {
-            self.collections = result.collections;
+            self.library.collections = result.collections;
             self.refresh_collections_ui();
             let _ = self.persist_config("Failed to save collections after trash move");
         }
 
-        let mut invalidator = source_cache_invalidator::SourceCacheInvalidator::new(
-            &mut self.db_cache,
-            &mut self.wav_cache,
-            &mut self.wav_cache_lookup,
-            &mut self.label_cache,
-            &mut self.missing_wavs,
-            &mut self.folder_browsers,
+        let mut invalidator = source_cache_invalidator::SourceCacheInvalidator::new_from_state(
+            &mut self.cache,
+            &mut self.ui_cache,
+            &mut self.library.missing,
         );
         for source_id in &result.affected_sources {
             invalidator.invalidate_all(source_id);
@@ -233,7 +201,7 @@ impl EguiController {
         if let Some(source) = self.current_source()
             && result.affected_sources.iter().any(|id| id == &source.id)
         {
-            if let Some(loaded) = self.loaded_wav.as_ref() {
+            if let Some(loaded) = self.sample_view.wav.loaded_wav.as_ref() {
                 let absolute = source.root.join(loaded);
                 if !absolute.is_file() {
                     self.clear_waveform_view();
@@ -284,13 +252,13 @@ impl EguiController {
                 format!("Unable to create trash folder {}: {err}", path.display())
             })?;
         }
-        self.trash_folder = normalized.clone();
+        self.settings.trash_folder = normalized.clone();
         self.ui.trash_folder = normalized;
         self.persist_config("Failed to save trash folder")
     }
 
     fn ensure_trash_folder_ready(&mut self) -> Result<PathBuf, ()> {
-        let Some(path) = self.trash_folder.clone() else {
+        let Some(path) = self.settings.trash_folder.clone() else {
             self.set_status("Set a trash folder first", StatusTone::Warning);
             return Err(());
         };
