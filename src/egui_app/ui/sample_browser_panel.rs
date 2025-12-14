@@ -1,7 +1,7 @@
 use super::flat_items_list::{FlatItemsListConfig, render_flat_items_list};
 use super::helpers::{
-    InlineTextEditAction, NumberColumn, RowMarker, clamp_label_for_width,
-    render_inline_text_edit, render_list_row,
+    InlineTextEditAction, NumberColumn, RowMarker, clamp_label_for_width, render_inline_text_edit,
+    render_list_row,
 };
 use super::style;
 use super::*;

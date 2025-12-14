@@ -215,6 +215,7 @@ impl EguiApp {
                                 }
                             });
                             ui.add_space(10.0);
+                            const APP_VERSION: &str = concat!("v", env!("CARGO_PKG_VERSION"));
                             match self.controller.ui.update.status {
                                 crate::egui_app::state::UpdateStatus::Checking => {
                                     ui.label(
@@ -231,7 +232,28 @@ impl EguiApp {
                                         .available_tag
                                         .clone()
                                         .unwrap_or_else(|| "Update available".to_string());
-                                    if ui.button(label).clicked() {
+                                    ui.label(
+                                        RichText::new("Update available")
+                                            .color(style::destructive_text())
+                                            .strong(),
+                                    );
+                                    ui.horizontal(|ui| {
+                                        ui.label(
+                                            RichText::new("Current:").color(palette.text_muted),
+                                        );
+                                        ui.label(
+                                            RichText::new(APP_VERSION).color(palette.text_muted),
+                                        );
+                                    });
+                                    ui.horizontal(|ui| {
+                                        ui.label(RichText::new("New:").color(palette.text_muted));
+                                        ui.label(
+                                            RichText::new(&label)
+                                                .color(style::destructive_text())
+                                                .strong(),
+                                        );
+                                    });
+                                    if ui.button("Open update page").clicked() {
                                         self.controller.open_update_link();
                                     }
                                     if ui.button("Install").clicked() {
@@ -250,8 +272,12 @@ impl EguiApp {
                                 }
                                 crate::egui_app::state::UpdateStatus::Idle => {}
                             }
-                            const APP_VERSION: &str = concat!("v", env!("CARGO_PKG_VERSION"));
-                            ui.label(RichText::new(APP_VERSION).color(palette.text_muted));
+                            if !matches!(
+                                self.controller.ui.update.status,
+                                crate::egui_app::state::UpdateStatus::UpdateAvailable
+                            ) {
+                                ui.label(RichText::new(APP_VERSION).color(palette.text_muted));
+                            }
                             ui.add_space(10.0);
                             let mut volume = self.controller.ui.volume;
                             let slider = egui::Slider::new(&mut volume, 0.0..=1.0)
