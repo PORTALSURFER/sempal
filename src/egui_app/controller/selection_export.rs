@@ -262,6 +262,25 @@ fn slice_frames(
     cropped
 }
 
+fn write_selection_wav(target: &Path, samples: &[f32], spec: hound::WavSpec) -> Result<(), String> {
+    if let Some(parent) = target.parent()
+        && !parent.exists()
+    {
+        fs::create_dir_all(parent)
+            .map_err(|err| format!("Failed to create folder {}: {err}", parent.display()))?;
+    }
+    let mut writer = hound::WavWriter::create(target, spec)
+        .map_err(|err| format!("Failed to create clip: {err}"))?;
+    for sample in samples {
+        writer
+            .write_sample(*sample)
+            .map_err(|err| format!("Failed to write clip: {err}"))?;
+    }
+    writer
+        .finalize()
+        .map_err(|err| format!("Failed to finalize clip: {err}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -303,23 +322,4 @@ mod tests {
         assert!(clip_root.join(&entry.relative_path).is_file());
         assert!(!clip_root.join("drums").join(&entry.relative_path).exists());
     }
-}
-
-fn write_selection_wav(target: &Path, samples: &[f32], spec: hound::WavSpec) -> Result<(), String> {
-    if let Some(parent) = target.parent()
-        && !parent.exists()
-    {
-        fs::create_dir_all(parent)
-            .map_err(|err| format!("Failed to create folder {}: {err}", parent.display()))?;
-    }
-    let mut writer = hound::WavWriter::create(target, spec)
-        .map_err(|err| format!("Failed to create clip: {err}"))?;
-    for sample in samples {
-        writer
-            .write_sample(*sample)
-            .map_err(|err| format!("Failed to write clip: {err}"))?;
-    }
-    writer
-        .finalize()
-        .map_err(|err| format!("Failed to finalize clip: {err}"))
 }
