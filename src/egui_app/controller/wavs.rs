@@ -428,6 +428,17 @@ impl EguiController {
         }
     }
 
+    pub(in crate::egui_app::controller) fn sync_browser_after_wav_entries_mutation(
+        &mut self,
+        source_id: &SourceId,
+    ) {
+        self.rebuild_wav_lookup();
+        self.browser_search_cache.invalidate();
+        self.rebuild_browser_lists();
+        self.label_cache
+            .insert(source_id.clone(), self.build_label_cache(&self.wav_entries));
+    }
+
     pub(super) fn ensure_wav_cache_lookup(&mut self, source_id: &SourceId) {
         if self.wav_cache_lookup.contains_key(source_id) {
             return;
