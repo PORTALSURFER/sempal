@@ -252,7 +252,9 @@ impl EguiApp {
                                 StrokeKind::Inside,
                             );
                         }
-                        if response.drag_started() {
+                        let should_start_drag =
+                            response.drag_started() || (!drag_active && response.dragged());
+                        if should_start_drag {
                             if let Some(pos) = response.interact_pointer_pos() {
                                 self.controller.start_sample_drag(
                                     sample.source_id.clone(),
