@@ -251,7 +251,7 @@ impl DragDropActions for DragDropController<'_> {
 
 impl DragDropController<'_> {
     #[cfg(any(target_os = "windows", test))]
-    const EXTERNAL_DRAG_ARM_WINDOW: Duration = Duration::from_millis(50);
+    const EXTERNAL_DRAG_ARM_WINDOW: Duration = Duration::from_millis(250);
 
     #[cfg(any(target_os = "windows", test))]
     pub(super) fn should_launch_external_drag(
