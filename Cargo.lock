@@ -3907,7 +3907,6 @@ dependencies = [
  "thiserror 2.0.17",
  "time",
  "toml 0.8.23",
- "toml_edit 0.23.9",
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
@@ -4587,7 +4586,6 @@ dependencies = [
  "indexmap",
  "toml_datetime 0.7.3",
  "toml_parser",
- "toml_writer",
  "winnow",
 ]
 
