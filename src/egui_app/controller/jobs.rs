@@ -15,6 +15,7 @@ use std::{
 
 type TryRecvError = std::sync::mpsc::TryRecvError;
 
+#[cfg_attr(test, allow(dead_code))]
 pub(in super) enum JobMessage {
     WavLoaded(WavLoadResult),
     AudioLoaded(AudioLoadResult),
@@ -34,7 +35,7 @@ pub(in super) struct ControllerJobs {
     pub(in super) pending_playback: Option<PendingPlayback>,
     pub(in super) next_audio_request_id: u64,
     pub(in super) scan_in_progress: bool,
-    pub(in super) trash_move_rx: Option<Receiver<trash_move::TrashMoveMessage>>,
+    pub(in super) trash_move_in_progress: bool,
     pub(in super) trash_move_cancel: Option<Arc<std::sync::atomic::AtomicBool>>,
 }
 
@@ -58,7 +59,7 @@ impl ControllerJobs {
             pending_playback: None,
             next_audio_request_id: 1,
             scan_in_progress: false,
-            trash_move_rx: None,
+            trash_move_in_progress: false,
             trash_move_cancel: None,
         };
         jobs.forward_wav_results(wav_job_rx);
@@ -234,30 +235,62 @@ impl ControllerJobs {
     }
 
     pub(in super) fn trash_move_in_progress(&self) -> bool {
-        self.trash_move_rx.is_some()
+        self.trash_move_in_progress
     }
 
-    #[cfg(not(test))]
+    #[cfg_attr(test, allow(dead_code))]
     pub(in super) fn start_trash_move(
         &mut self,
         rx: Receiver<trash_move::TrashMoveMessage>,
         cancel: Arc<AtomicBool>,
     ) {
+        self.trash_move_in_progress = true;
         self.trash_move_cancel = Some(cancel);
-        self.trash_move_rx = Some(rx);
-    }
-
-    pub(in super) fn trash_move_rx(&self) -> Option<&Receiver<trash_move::TrashMoveMessage>> {
-        self.trash_move_rx.as_ref()
+        let tx = self.message_tx.clone();
+        thread::spawn(move || {
+            while let Ok(message) = rx.recv() {
+                let is_finished = matches!(message, trash_move::TrashMoveMessage::Finished(_));
+                let _ = tx.send(JobMessage::TrashMove(message));
+                if is_finished {
+                    break;
+                }
+            }
+        });
     }
 
     pub(in super) fn trash_move_cancel(&self) -> Option<Arc<AtomicBool>> {
         self.trash_move_cancel.clone()
     }
 
+    pub(in super) fn try_recv_trash_move_message(
+        &mut self,
+    ) -> Result<trash_move::TrashMoveMessage, TryRecvError> {
+        if let Some(idx) = self
+            .buffered
+            .iter()
+            .enumerate()
+            .find_map(|(idx, message)| matches!(message, JobMessage::TrashMove(_)).then_some(idx))
+        {
+            let message = self.buffered.remove(idx).expect("index checked");
+            let JobMessage::TrashMove(message) = message else {
+                unreachable!("index checked for trash move messages");
+            };
+            return Ok(message);
+        }
+        loop {
+            let message = self.message_rx.try_recv()?;
+            match message {
+                JobMessage::TrashMove(message) => return Ok(message),
+                other => self.buffered.push_back(other),
+            }
+        }
+    }
+
     pub(in super) fn clear_trash_move(&mut self) {
-        self.trash_move_rx = None;
+        self.trash_move_in_progress = false;
         self.trash_move_cancel = None;
+        self.buffered
+            .retain(|message| !matches!(message, JobMessage::TrashMove(_)));
     }
 
 }

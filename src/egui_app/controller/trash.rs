@@ -179,16 +179,16 @@ impl EguiController {
     }
 
     pub(super) fn poll_trash_move(&mut self) {
-        let Some(rx) = self.runtime.jobs.trash_move_rx() else {
+        if !self.runtime.jobs.trash_move_in_progress() {
             return;
-        };
+        }
         if let Some(cancel) = self.runtime.jobs.trash_move_cancel().as_ref()
             && self.ui.progress.cancel_requested
         {
             cancel.store(true, Ordering::Relaxed);
         }
         let mut finished = None;
-        while let Ok(message) = rx.try_recv() {
+        while let Ok(message) = self.runtime.jobs.try_recv_trash_move_message() {
             match message {
                 TrashMoveMessage::SetTotal(total) => {
                     self.ui.progress.total = total;
