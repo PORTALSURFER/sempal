@@ -108,13 +108,7 @@ impl EguiController {
             && audio.source_id == source.id
             && audio.relative_path == relative_path
         {
-            self.loaded_audio = None;
-            self.decoded_waveform = None;
-            self.ui.waveform.image = None;
-            self.ui.waveform.playhead = PlayheadState::default();
-            self.ui.waveform.selection = None;
-            self.ui.waveform.selection_duration = None;
-            self.selection.clear();
+            self.clear_loaded_audio_and_waveform_visuals();
         }
     }
 

@@ -1325,6 +1325,16 @@ impl EguiController {
         self.clear_waveform_view();
         self.ui.waveform.notice = Some(message);
     }
+
+    pub(in crate::egui_app::controller) fn clear_loaded_audio_and_waveform_visuals(&mut self) {
+        self.loaded_audio = None;
+        self.decoded_waveform = None;
+        self.ui.waveform.image = None;
+        self.ui.waveform.playhead = PlayheadState::default();
+        self.ui.waveform.selection = None;
+        self.ui.waveform.selection_duration = None;
+        self.selection.clear();
+    }
 }
 
 #[derive(Clone, Copy)]
