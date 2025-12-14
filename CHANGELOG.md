@@ -1,3 +1,12 @@
+## [unreleased]
+
+### 🐛 Bug Fixes
+
+- *(ui)* Clarify update available message
+
+### ⚙️ Miscellaneous Tasks
+
+- *(changelog)* V0.357.0 (#54)
 ## [0.355.0] - 2025-12-14
 
 ### ⚙️ Miscellaneous Tasks
