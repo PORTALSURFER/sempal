@@ -211,11 +211,14 @@ impl EguiApp {
                         && self.controller.ui.drag.payload.is_none()
                         && self.controller.ui.drag.os_left_mouse_pressed
                         && self.controller.ui.drag.pending_os_drag.is_none()
-                        && response.hovered()
                     {
                         let pointer_pos = ui
-                            .input(|i| i.pointer.hover_pos().or_else(|| i.pointer.interact_pos()));
+                            .input(|i| i.pointer.hover_pos().or_else(|| i.pointer.interact_pos()))
+                            .or(self.controller.ui.drag.os_cursor_pos);
                         if let Some(pos) = pointer_pos {
+                            if !response.rect.contains(pos) {
+                                return;
+                            }
                             if let Some(source) = self.controller.current_source() {
                                 let name = view_model::sample_display_label(&path);
                                 self.controller.ui.drag.pending_os_drag =
@@ -240,7 +243,8 @@ impl EguiApp {
                         && *relative_path == path
                     {
                         let pointer_pos = ui
-                            .input(|i| i.pointer.hover_pos().or_else(|| i.pointer.interact_pos()));
+                            .input(|i| i.pointer.hover_pos().or_else(|| i.pointer.interact_pos()))
+                            .or(self.controller.ui.drag.os_cursor_pos);
                         if let Some(pos) = pointer_pos {
                             let moved_sq = (pos - pending.origin).length_sq();
                             const START_DRAG_DISTANCE_SQ: f32 = 4.0 * 4.0;

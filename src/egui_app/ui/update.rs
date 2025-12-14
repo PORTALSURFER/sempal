@@ -56,6 +56,9 @@ impl EguiApp {
             .set_drag_hwnd(platform::hwnd_from_frame(_frame));
         #[cfg(target_os = "windows")]
         {
+            let pixels_per_point = ctx.pixels_per_point();
+            self.controller.ui.drag.os_cursor_pos = platform::hwnd_from_frame(_frame)
+                .and_then(|hwnd| platform::cursor_pos_in_client_points(hwnd, pixels_per_point));
             let left_mouse_down = platform::left_mouse_button_down();
             self.controller
                 .ui

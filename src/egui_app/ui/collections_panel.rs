@@ -271,12 +271,15 @@ impl EguiApp {
                             && self.controller.ui.drag.payload.is_none()
                             && self.controller.ui.drag.os_left_mouse_pressed
                             && self.controller.ui.drag.pending_os_drag.is_none()
-                            && response.hovered()
                         {
                             let pointer_pos = ui.input(|i| {
                                 i.pointer.hover_pos().or_else(|| i.pointer.interact_pos())
                             });
+                            let pointer_pos = pointer_pos.or(self.controller.ui.drag.os_cursor_pos);
                             if let Some(pos) = pointer_pos {
+                                if !response.rect.contains(pos) {
+                                    return;
+                                }
                                 self.controller.ui.drag.pending_os_drag =
                                     Some(crate::egui_app::state::PendingOsDragStart {
                                         payload: DragPayload::Sample {
@@ -301,6 +304,7 @@ impl EguiApp {
                             let pointer_pos = ui.input(|i| {
                                 i.pointer.hover_pos().or_else(|| i.pointer.interact_pos())
                             });
+                            let pointer_pos = pointer_pos.or(self.controller.ui.drag.os_cursor_pos);
                             if let Some(pos) = pointer_pos {
                                 let moved_sq = (pos - pending.origin).length_sq();
                                 const START_DRAG_DISTANCE_SQ: f32 = 4.0 * 4.0;
