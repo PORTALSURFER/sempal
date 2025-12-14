@@ -379,12 +379,14 @@ impl EguiApp {
                 if ui.add(scroll_slider).changed() {
                     self.controller.set_waveform_scroll_speed(scroll_speed);
                 }
-                let mut wheel_zoom = self.controller.ui.controls.wheel_zoom_factor;
-                let wheel_slider = egui::Slider::new(&mut wheel_zoom, 0.5..=0.995)
-                    .text("Wheel zoom factor")
+                let mut wheel_zoom_speed = self.controller.wheel_zoom_speed();
+                let wheel_slider = egui::Slider::new(&mut wheel_zoom_speed, 0.1..=20.0)
+                    .logarithmic(true)
+                    .text("Wheel zoom speed")
+                    .suffix("×")
                     .clamping(SliderClamping::Always);
                 if ui.add(wheel_slider).changed() {
-                    self.controller.set_wheel_zoom_factor(wheel_zoom);
+                    self.controller.set_wheel_zoom_speed(wheel_zoom_speed);
                 }
                 let mut keyboard_zoom = self.controller.ui.controls.keyboard_zoom_factor;
                 let keyboard_slider = egui::Slider::new(&mut keyboard_zoom, 0.5..=0.995)
