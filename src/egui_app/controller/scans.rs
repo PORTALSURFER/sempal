@@ -70,17 +70,15 @@ impl EguiController {
                         ),
                         StatusTone::Info,
                     );
-	                    if let Some(source) = self.current_source() {
-	                        let mut invalidator = source_cache_invalidator::SourceCacheInvalidator::new(
-	                            &mut self.cache.db,
-	                            &mut self.cache.wav.entries,
-	                            &mut self.cache.wav.lookup,
-	                            &mut self.ui_cache.browser.labels,
-	                            &mut self.library.missing.wavs,
-	                            &mut self.ui_cache.folders.models,
-	                        );
-	                        invalidator.invalidate_wav_related(&source.id);
-	                    }
+                    if let Some(source) = self.current_source() {
+                        let mut invalidator =
+                            source_cache_invalidator::SourceCacheInvalidator::new_from_state(
+                                &mut self.cache,
+                                &mut self.ui_cache,
+                                &mut self.library.missing,
+                            );
+                        invalidator.invalidate_wav_related(&source.id);
+                    }
                     self.queue_wav_load();
                 }
                 Err(err) => self.set_status(format!("{label} failed: {err}"), StatusTone::Error),
@@ -89,16 +87,14 @@ impl EguiController {
     }
 
     fn prepare_for_scan(&mut self, source: &SampleSource, mode: ScanMode) {
-	        if matches!(mode, ScanMode::Hard) {
-	            let mut invalidator = source_cache_invalidator::SourceCacheInvalidator::new(
-	                &mut self.cache.db,
-	                &mut self.cache.wav.entries,
-	                &mut self.cache.wav.lookup,
-	                &mut self.ui_cache.browser.labels,
-	                &mut self.library.missing.wavs,
-	                &mut self.ui_cache.folders.models,
-	            );
-	            invalidator.invalidate_wav_related(&source.id);
-	        }
-	    }
+        if matches!(mode, ScanMode::Hard) {
+            let mut invalidator =
+                source_cache_invalidator::SourceCacheInvalidator::new_from_state(
+                    &mut self.cache,
+                    &mut self.ui_cache,
+                    &mut self.library.missing,
+                );
+            invalidator.invalidate_wav_related(&source.id);
+        }
+    }
 }

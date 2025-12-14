@@ -82,13 +82,10 @@ impl EguiController {
         }
         let removed = self.library.sources.remove(index);
         self.library.missing.sources.remove(&removed.id);
-        let mut invalidator = source_cache_invalidator::SourceCacheInvalidator::new(
-            &mut self.cache.db,
-            &mut self.cache.wav.entries,
-            &mut self.cache.wav.lookup,
-            &mut self.ui_cache.browser.labels,
-            &mut self.library.missing.wavs,
-            &mut self.ui_cache.folders.models,
+        let mut invalidator = source_cache_invalidator::SourceCacheInvalidator::new_from_state(
+            &mut self.cache,
+            &mut self.ui_cache,
+            &mut self.library.missing,
         );
         invalidator.invalidate_all(&removed.id);
         for collection in self.library.collections.iter_mut() {
@@ -278,13 +275,10 @@ impl EguiController {
         let source_id = existing.id.clone();
         self.library.sources[index].root = normalized.clone();
         self.library.missing.sources.remove(&source_id);
-        let mut invalidator = source_cache_invalidator::SourceCacheInvalidator::new(
-            &mut self.cache.db,
-            &mut self.cache.wav.entries,
-            &mut self.cache.wav.lookup,
-            &mut self.ui_cache.browser.labels,
-            &mut self.library.missing.wavs,
-            &mut self.ui_cache.folders.models,
+        let mut invalidator = source_cache_invalidator::SourceCacheInvalidator::new_from_state(
+            &mut self.cache,
+            &mut self.ui_cache,
+            &mut self.library.missing,
         );
         invalidator.invalidate_db_cache(&source_id);
         invalidator.invalidate_wav_related(&source_id);
