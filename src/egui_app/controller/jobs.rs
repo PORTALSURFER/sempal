@@ -33,7 +33,6 @@ pub(in super) struct ControllerJobs {
     pub(in super) pending_audio: Option<PendingAudio>,
     pub(in super) pending_playback: Option<PendingPlayback>,
     pub(in super) next_audio_request_id: u64,
-    pub(in super) scan_rx: Option<Receiver<ScanResult>>,
     pub(in super) scan_in_progress: bool,
     pub(in super) trash_move_rx: Option<Receiver<trash_move::TrashMoveMessage>>,
     pub(in super) trash_move_cancel: Option<Arc<std::sync::atomic::AtomicBool>>,
@@ -58,7 +57,6 @@ impl ControllerJobs {
             pending_audio: None,
             pending_playback: None,
             next_audio_request_id: 1,
-            scan_rx: None,
             scan_in_progress: false,
             trash_move_rx: None,
             trash_move_cancel: None,
@@ -194,20 +192,45 @@ impl ControllerJobs {
     }
 
     pub(in super) fn begin_scan(&mut self, rx: Receiver<ScanResult>) {
-        self.scan_rx = Some(rx);
         self.scan_in_progress = true;
+        let tx = self.message_tx.clone();
+        thread::spawn(move || {
+            if let Ok(result) = rx.recv() {
+                let _ = tx.send(JobMessage::ScanFinished(result));
+            }
+        });
     }
 
     pub(in super) fn try_recv_scan_result(&mut self) -> Option<ScanResult> {
-        let Some(rx) = self.scan_rx.as_ref() else {
+        if !self.scan_in_progress {
             return None;
-        };
-        let Ok(result) = rx.try_recv() else {
-            return None;
-        };
-        self.scan_in_progress = false;
-        self.scan_rx = None;
-        Some(result)
+        }
+        if let Some(idx) = self
+            .buffered
+            .iter()
+            .enumerate()
+            .find_map(|(idx, message)| matches!(message, JobMessage::ScanFinished(_)).then_some(idx))
+        {
+            let message = self.buffered.remove(idx).expect("index checked");
+            let JobMessage::ScanFinished(result) = message else {
+                unreachable!("index checked for scan results");
+            };
+            self.scan_in_progress = false;
+            return Some(result);
+        }
+        loop {
+            let message = match self.message_rx.try_recv() {
+                Ok(message) => message,
+                Err(TryRecvError::Empty | TryRecvError::Disconnected) => return None,
+            };
+            match message {
+                JobMessage::ScanFinished(result) => {
+                    self.scan_in_progress = false;
+                    return Some(result);
+                }
+                other => self.buffered.push_back(other),
+            }
+        }
     }
 
     pub(in super) fn trash_move_in_progress(&self) -> bool {
