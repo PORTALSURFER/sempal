@@ -1,6 +1,6 @@
 [package]
 name = "sempal"
-version = "0.346.0"
+version = "0.348.0"
 edition = "2024"
 default-run = "sempal"
 
