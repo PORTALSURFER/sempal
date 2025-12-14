@@ -349,11 +349,7 @@ impl EguiController {
         }
         if self.selected_source.as_ref() == Some(&source.id) {
             replace_entry(&mut self.wav_entries, old_path, &new_entry);
-            self.rebuild_wav_lookup();
-            self.browser_search_cache.invalidate();
-            self.rebuild_browser_lists();
-            self.label_cache
-                .insert(source.id.clone(), self.build_label_cache(&self.wav_entries));
+            self.sync_browser_after_wav_entries_mutation(&source.id);
         }
         self.rebuild_missing_lookup_for_source(&source.id);
         self.update_selection_paths(source, old_path, &new_entry.relative_path);
@@ -373,11 +369,7 @@ impl EguiController {
             self.wav_entries.push(entry.clone());
             self.wav_entries
                 .sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
-            self.rebuild_wav_lookup();
-            self.browser_search_cache.invalidate();
-            self.rebuild_browser_lists();
-            self.label_cache
-                .insert(source.id.clone(), self.build_label_cache(&self.wav_entries));
+            self.sync_browser_after_wav_entries_mutation(&source.id);
         }
         self.rebuild_missing_lookup_for_source(&source.id);
         self.invalidate_cached_audio(&source.id, &entry.relative_path);
@@ -454,7 +446,9 @@ impl EguiController {
 pub(super) fn read_samples_for_normalization(
     path: &Path,
 ) -> Result<(Vec<f32>, hound::WavSpec), String> {
-    let mut reader = hound::WavReader::open(path).map_err(|err| format!("Invalid wav: {err}"))?;
+    let bytes = crate::wav_sanitize::read_sanitized_wav_bytes(path)?;
+    let mut reader = hound::WavReader::new(std::io::Cursor::new(bytes))
+        .map_err(|err| format!("Invalid wav: {err}"))?;
     let spec = reader.spec();
     let samples = match spec.sample_format {
         SampleFormat::Float => reader

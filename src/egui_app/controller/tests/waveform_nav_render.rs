@@ -179,7 +179,7 @@ fn stale_audio_results_are_ignored() {
         controller.ui.loaded_wav.as_deref(),
         Some(Path::new("b.wav"))
     );
-    assert!(controller.pending_audio.is_none());
+    assert!(controller.jobs.pending_audio.is_none());
 }
 
 #[test]
@@ -194,10 +194,11 @@ fn play_request_is_deferred_until_audio_ready() {
     controller.rebuild_browser_lists();
 
     controller.select_wav_by_path(Path::new("wait.wav"));
-    assert!(controller.pending_playback.is_none());
+    assert!(controller.jobs.pending_playback.is_none());
     let result = controller.play_audio(false, None);
     assert!(result.is_ok());
     let pending = controller
+        .jobs
         .pending_playback
         .as_ref()
         .expect("pending playback to be queued");
@@ -234,7 +235,7 @@ fn loading_flag_clears_after_audio_load() {
     }
 
     assert_eq!(controller.loaded_wav.as_deref(), Some(rel.as_path()));
-    assert!(controller.pending_audio.is_none());
+    assert!(controller.jobs.pending_audio.is_none());
     assert!(controller.ui.waveform.loading.is_none());
     assert!(controller.loaded_audio.is_some());
 }

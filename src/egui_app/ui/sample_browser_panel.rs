@@ -3,7 +3,7 @@ use super::helpers::{NumberColumn, RowMarker, clamp_label_for_width, render_list
 use super::style;
 use super::*;
 use crate::egui_app::state::{
-    DragSource, DragTarget, FocusContext, SampleBrowserActionPrompt, TriageFlagFilter,
+    DragPayload, DragSource, DragTarget, FocusContext, SampleBrowserActionPrompt, TriageFlagFilter,
 };
 use crate::egui_app::ui::style::StatusTone;
 use crate::egui_app::view_model;
@@ -146,8 +146,7 @@ impl EguiApp {
                         let marker_width = 4.0;
                         let marker_rect = egui::Rect::from_min_max(
                             response.rect.left_top(),
-                            response.rect.left_top()
-                                + egui::vec2(marker_width, metrics.row_height),
+                            response.rect.left_top() + egui::vec2(marker_width, metrics.row_height),
                         );
                         ui.painter()
                             .rect_filled(marker_rect, 0.0, style::selection_marker_fill());
@@ -188,7 +187,10 @@ impl EguiApp {
                         self.browser_sample_menu(&response, row, &path, &display_label);
                     }
 
-                    if response.drag_started() {
+                    let should_start_drag =
+                        response.drag_started() || (!drag_active && response.dragged());
+                    if should_start_drag {
+                        self.controller.ui.drag.pending_os_drag = None;
                         if let Some(pos) = response.interact_pointer_pos() {
                             if let Some(source) = self.controller.current_source() {
                                 let name = view_model::sample_display_label(&path);
@@ -202,6 +204,57 @@ impl EguiApp {
                                 self.controller.set_status(
                                     "Select a source before dragging",
                                     StatusTone::Warning,
+                                );
+                            }
+                        }
+                    } else if !drag_active
+                        && self.controller.ui.drag.payload.is_none()
+                        && self.controller.ui.drag.os_left_mouse_pressed
+                        && self.controller.ui.drag.pending_os_drag.is_none()
+                    {
+                        let pointer_pos = ui
+                            .input(|i| i.pointer.hover_pos().or_else(|| i.pointer.interact_pos()))
+                            .or(self.controller.ui.drag.os_cursor_pos);
+                        if let Some(pos) = pointer_pos {
+                            if !response.rect.contains(pos) {
+                                return;
+                            }
+                            if let Some(source) = self.controller.current_source() {
+                                let name = view_model::sample_display_label(&path);
+                                self.controller.ui.drag.pending_os_drag =
+                                    Some(crate::egui_app::state::PendingOsDragStart {
+                                        payload: DragPayload::Sample {
+                                            source_id: source.id.clone(),
+                                            relative_path: path.clone(),
+                                        },
+                                        label: name,
+                                        origin: pos,
+                                    });
+                            }
+                        }
+                    } else if !drag_active
+                        && self.controller.ui.drag.payload.is_none()
+                        && self.controller.ui.drag.os_left_mouse_down
+                        && let Some(pending) = self.controller.ui.drag.pending_os_drag.clone()
+                        && let DragPayload::Sample {
+                            source_id,
+                            relative_path,
+                        } = &pending.payload
+                        && *relative_path == path
+                    {
+                        let pointer_pos = ui
+                            .input(|i| i.pointer.hover_pos().or_else(|| i.pointer.interact_pos()))
+                            .or(self.controller.ui.drag.os_cursor_pos);
+                        if let Some(pos) = pointer_pos {
+                            let moved_sq = (pos - pending.origin).length_sq();
+                            const START_DRAG_DISTANCE_SQ: f32 = 4.0 * 4.0;
+                            if moved_sq >= START_DRAG_DISTANCE_SQ {
+                                self.controller.ui.drag.pending_os_drag = None;
+                                self.controller.start_sample_drag(
+                                    source_id.clone(),
+                                    relative_path.clone(),
+                                    pending.label,
+                                    pos,
                                 );
                             }
                         }
@@ -259,8 +312,7 @@ impl EguiApp {
             let action_rows = self.controller.action_rows_from_primary(row);
             ui.label(RichText::new(label.to_string()).color(palette.text_primary));
             if ui.button("Open in file explorer").clicked() {
-                self.controller
-                    .reveal_browser_sample_in_file_explorer(path);
+                self.controller.reveal_browser_sample_in_file_explorer(path);
                 close_menu = true;
             }
             ui.separator();

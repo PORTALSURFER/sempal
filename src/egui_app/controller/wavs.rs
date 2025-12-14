@@ -1,30 +1,16 @@
 use super::audio_cache::{CacheKey, FileMetadata};
 use super::*;
-use crate::egui_app::state::{FocusContext, SampleBrowserActionPrompt, WaveformView};
+use crate::egui_app::state::{FocusContext, WaveformView};
 use crate::egui_app::view_model;
 use crate::waveform::DecodedWaveform;
-use fuzzy_matcher::FuzzyMatcher;
-use fuzzy_matcher::skim::SkimMatcherV2;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-#[derive(Default)]
-pub(super) struct BrowserSearchCache {
-    source_id: Option<SourceId>,
-    query: String,
-    scores: Vec<Option<i64>>,
-    scratch: Vec<(usize, i64)>,
-    matcher: SkimMatcherV2,
-}
+mod browser_search;
+mod browser_actions;
+mod audio_loading;
 
-impl BrowserSearchCache {
-    pub(super) fn invalidate(&mut self) {
-        self.source_id = None;
-        self.query.clear();
-        self.scores.clear();
-        self.scratch.clear();
-    }
-}
+pub(super) use browser_search::BrowserSearchCache;
 
 /// Upper bound for waveform texture width to stay within GPU limits.
 pub(super) const MAX_TEXTURE_WIDTH: u32 = 16_384;
@@ -111,8 +97,8 @@ impl EguiController {
         if let Some(player) = self.player.as_ref() {
             player.borrow_mut().stop();
         }
-        self.pending_audio = None;
-        self.pending_playback = None;
+        self.jobs.pending_audio = None;
+        self.jobs.pending_playback = None;
     }
 
     /// Expose wav indices for a given triage flag column (used by virtualized rendering).
@@ -129,167 +115,7 @@ impl EguiController {
         &self.ui.browser.visible
     }
 
-    pub(super) fn poll_audio_loader(&mut self) {
-        while let Ok(message) = self.audio_job_rx.try_recv() {
-            let Some(pending) = self.pending_audio.clone() else {
-                continue;
-            };
-            if message.request_id != pending.request_id
-                || message.source_id != pending.source_id
-                || message.relative_path != pending.relative_path
-            {
-                continue;
-            }
-            self.pending_audio = None;
-            self.ui.waveform.loading = None;
-            match message.result {
-                Ok(outcome) => self.handle_audio_loaded(pending, outcome),
-                Err(err) => self.handle_audio_load_error(pending, err),
-            }
-        }
-    }
-
-    fn handle_audio_loaded(&mut self, pending: PendingAudio, outcome: AudioLoadOutcome) {
-        let source = SampleSource {
-            id: pending.source_id.clone(),
-            root: pending.root.clone(),
-        };
-        let AudioLoadOutcome {
-            decoded,
-            bytes,
-            metadata,
-        } = outcome;
-        let duration_seconds = decoded.duration_seconds;
-        let sample_rate = decoded.sample_rate;
-        let cache_key = CacheKey::new(&source.id, &pending.relative_path);
-        self.audio_cache
-            .insert(cache_key, metadata, decoded.clone(), bytes.clone());
-        if let Err(err) = self.finish_waveform_load(
-            &source,
-            &pending.relative_path,
-            decoded,
-            bytes,
-            pending.intent,
-        ) {
-            self.pending_playback = None;
-            self.set_status(err, StatusTone::Error);
-            return;
-        }
-        let message =
-            Self::loaded_status_text(&pending.relative_path, duration_seconds, sample_rate);
-        self.set_status(message, StatusTone::Info);
-        self.maybe_trigger_pending_playback();
-    }
-
-    fn handle_audio_load_error(&mut self, pending: PendingAudio, error: AudioLoadError) {
-        let source = SampleSource {
-            id: pending.source_id.clone(),
-            root: pending.root.clone(),
-        };
-        if self.pending_playback.as_ref().is_some_and(|pending_play| {
-            pending_play.source_id == pending.source_id
-                && pending_play.relative_path == pending.relative_path
-        }) {
-            self.pending_playback = None;
-        }
-        match error {
-            AudioLoadError::Missing(msg) => {
-                self.mark_sample_missing(&source, &pending.relative_path);
-                self.show_missing_waveform_notice(&pending.relative_path);
-                self.set_status(msg, StatusTone::Warning);
-            }
-            AudioLoadError::Failed(msg) => {
-                self.set_status(msg, StatusTone::Error);
-            }
-        }
-    }
-
-    fn maybe_trigger_pending_playback(&mut self) {
-        let Some(pending) = self.pending_playback.clone() else {
-            return;
-        };
-        let Some(audio) = self.loaded_audio.as_ref() else {
-            return;
-        };
-        if audio.source_id != pending.source_id || audio.relative_path != pending.relative_path {
-            return;
-        }
-        self.pending_playback = None;
-        if let Err(err) = self.play_audio(pending.looped, pending.start_override) {
-            self.set_status(err, StatusTone::Error);
-        }
-    }
-
-    pub(super) fn queue_audio_load_for(
-        &mut self,
-        source: &SampleSource,
-        relative_path: &Path,
-        intent: AudioLoadIntent,
-        pending_playback: Option<PendingPlayback>,
-    ) -> Result<(), String> {
-        let request_id = self.next_audio_request_id;
-        self.next_audio_request_id = self.next_audio_request_id.wrapping_add(1).max(1);
-        let pending = PendingAudio {
-            request_id,
-            source_id: source.id.clone(),
-            root: source.root.clone(),
-            relative_path: relative_path.to_path_buf(),
-            intent,
-        };
-        let job = AudioLoadJob {
-            request_id,
-            source_id: source.id.clone(),
-            root: source.root.clone(),
-            relative_path: relative_path.to_path_buf(),
-        };
-        self.pending_audio = None;
-        self.pending_playback = pending_playback;
-        self.ui.waveform.loading = Some(relative_path.to_path_buf());
-        self.ui.waveform.notice = None;
-        self.waveform_render_meta = None;
-        self.decoded_waveform = None;
-        self.ui.waveform.image = None;
-        self.loaded_audio = None;
-        self.loaded_wav = None;
-        self.ui.loaded_wav = None;
-        self.stop_playback_if_active();
-        self.clear_waveform_selection();
-        self.set_status(
-            format!("Loading {}", relative_path.display()),
-            StatusTone::Busy,
-        );
-        if self.try_use_cached_audio(source, relative_path, intent)? {
-            self.maybe_trigger_pending_playback();
-            return Ok(());
-        }
-        self.audio_job_tx
-            .send(job)
-            .map_err(|_| "Failed to queue audio load".to_string())?;
-        self.pending_audio = Some(pending);
-        Ok(())
-    }
-
-    fn try_use_cached_audio(
-        &mut self,
-        source: &SampleSource,
-        relative_path: &Path,
-        intent: AudioLoadIntent,
-    ) -> Result<bool, String> {
-        let metadata = match self.current_file_metadata(source, relative_path) {
-            Ok(meta) => meta,
-            Err(_) => return Ok(false),
-        };
-        let key = CacheKey::new(&source.id, relative_path);
-        let Some(hit) = self.audio_cache.get(&key, metadata) else {
-            return Ok(false);
-        };
-        let duration_seconds = hit.decoded.duration_seconds;
-        let sample_rate = hit.decoded.sample_rate;
-        self.finish_waveform_load(source, relative_path, hit.decoded, hit.bytes, intent)?;
-        let message = Self::loaded_status_text(relative_path, duration_seconds, sample_rate);
-        self.set_status(message, StatusTone::Info);
-        Ok(true)
-    }
+    // Audio load queueing/polling moved to `audio_loading` submodule.
 
     /// Select a wav row based on its path.
     pub fn select_wav_by_path(&mut self, path: &Path) {
@@ -443,6 +269,38 @@ impl EguiController {
         }
     }
 
+    pub(in crate::egui_app::controller) fn sync_browser_after_wav_entries_mutation(
+        &mut self,
+        source_id: &SourceId,
+    ) {
+        self.rebuild_wav_lookup();
+        self.browser_search_cache.invalidate();
+        self.rebuild_browser_lists();
+        self.label_cache
+            .insert(source_id.clone(), self.build_label_cache(&self.wav_entries));
+    }
+
+    pub(in crate::egui_app::controller) fn sync_browser_after_wav_entries_mutation_keep_search_cache(
+        &mut self,
+        source_id: &SourceId,
+    ) {
+        self.rebuild_wav_lookup();
+        self.rebuild_browser_lists();
+        self.label_cache
+            .insert(source_id.clone(), self.build_label_cache(&self.wav_entries));
+    }
+
+    pub(in crate::egui_app::controller) fn invalidate_cached_audio_for_entry_updates(
+        &mut self,
+        source_id: &SourceId,
+        updates: &[(WavEntry, WavEntry)],
+    ) {
+        for (old_entry, new_entry) in updates {
+            self.invalidate_cached_audio(source_id, &old_entry.relative_path);
+            self.invalidate_cached_audio(source_id, &new_entry.relative_path);
+        }
+    }
+
     pub(super) fn ensure_wav_cache_lookup(&mut self, source_id: &SourceId) {
         if self.wav_cache_lookup.contains_key(source_id) {
             return;
@@ -550,58 +408,6 @@ impl EguiController {
         }
     }
 
-    fn build_visible_rows(
-        &mut self,
-        focused_index: Option<usize>,
-        loaded_index: Option<usize>,
-    ) -> (Vec<usize>, Option<usize>, Option<usize>) {
-        let Some(query) = self.active_search_query().map(str::to_string) else {
-            let visible: Vec<usize> = self
-                .wav_entries
-                .iter()
-                .enumerate()
-                .filter(|(_, entry)| {
-                    self.browser_filter_accepts(entry.tag)
-                        && self.folder_filter_accepts(&entry.relative_path)
-                })
-                .map(|(index, _)| index)
-                .collect();
-            let selected_visible =
-                focused_index.and_then(|idx| visible.iter().position(|i| *i == idx));
-            let loaded_visible =
-                loaded_index.and_then(|idx| visible.iter().position(|i| *i == idx));
-            return (visible, selected_visible, loaded_visible);
-        };
-        self.ensure_search_scores(&query);
-        self.browser_search_cache.scratch.clear();
-        self.browser_search_cache
-            .scratch
-            .reserve(self.wav_entries.len().min(1024));
-
-        for (index, entry) in self.wav_entries.iter().enumerate() {
-            if !self.browser_filter_accepts(entry.tag)
-                || !self.folder_filter_accepts(&entry.relative_path)
-            {
-                continue;
-            }
-            if let Some(score) = self.browser_search_cache.scores.get(index).and_then(|s| *s) {
-                self.browser_search_cache.scratch.push((index, score));
-            }
-        }
-        self.browser_search_cache
-            .scratch
-            .sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
-        let visible: Vec<usize> = self
-            .browser_search_cache
-            .scratch
-            .iter()
-            .map(|(index, _)| *index)
-            .collect();
-        let selected_visible = focused_index.and_then(|idx| visible.iter().position(|i| *i == idx));
-        let loaded_visible = loaded_index.and_then(|idx| visible.iter().position(|i| *i == idx));
-        (visible, selected_visible, loaded_visible)
-    }
-
     fn prune_browser_selection(&mut self) {
         self.ui
             .browser
@@ -614,60 +420,6 @@ impl EguiController {
             self.ui.browser.selected = None;
             self.ui.browser.selected_visible = None;
             self.clear_waveform_view();
-        }
-    }
-
-    fn browser_filter_accepts(&self, tag: SampleTag) -> bool {
-        match self.ui.browser.filter {
-            TriageFlagFilter::All => true,
-            TriageFlagFilter::Keep => matches!(tag, SampleTag::Keep),
-            TriageFlagFilter::Trash => matches!(tag, SampleTag::Trash),
-            TriageFlagFilter::Untagged => matches!(tag, SampleTag::Neutral),
-        }
-    }
-
-    fn active_search_query(&self) -> Option<&str> {
-        let query = self.ui.browser.search_query.trim();
-        if query.is_empty() { None } else { Some(query) }
-    }
-
-    fn ensure_search_scores(&mut self, query: &str) {
-        let source_id = self.selected_source.clone();
-        if self.browser_search_cache.source_id != source_id
-            || self.browser_search_cache.query != query
-            || self.browser_search_cache.scores.len() != self.wav_entries.len()
-        {
-            self.browser_search_cache.source_id = source_id;
-            self.browser_search_cache.query.clear();
-            self.browser_search_cache.query.push_str(query);
-            self.browser_search_cache.scores.clear();
-            self.browser_search_cache
-                .scores
-                .resize(self.wav_entries.len(), None);
-
-            let Some(source_id) = self.selected_source.clone() else {
-                return;
-            };
-            let needs_labels = self
-                .label_cache
-                .get(&source_id)
-                .map(|cached| cached.len() != self.wav_entries.len())
-                .unwrap_or(true);
-            if needs_labels {
-                self.label_cache
-                    .insert(source_id.clone(), self.build_label_cache(&self.wav_entries));
-            }
-            let Some(labels) = self.label_cache.get(&source_id) else {
-                return;
-            };
-            for index in 0..self.wav_entries.len() {
-                if let Some(label) = labels.get(index) {
-                    self.browser_search_cache.scores[index] = self
-                        .browser_search_cache
-                        .matcher
-                        .fuzzy_match(label.as_str(), query);
-                }
-            }
         }
     }
 
@@ -685,252 +437,6 @@ impl EguiController {
         self.wav_entries
             .get(index)
             .map(|entry| entry.relative_path.clone())
-    }
-
-    pub(super) fn visible_row_for_path(&self, path: &Path) -> Option<usize> {
-        let entry_index = self.wav_lookup.get(path)?;
-        self.ui
-            .browser
-            .visible
-            .iter()
-            .position(|idx| idx == entry_index)
-    }
-
-    fn set_single_browser_selection(&mut self, path: &Path) {
-        self.ui.browser.selected_paths.clear();
-        self.ui.browser.selected_paths.push(path.to_path_buf());
-    }
-
-    fn toggle_browser_selection(&mut self, path: &Path) {
-        if let Some(pos) = self
-            .ui
-            .browser
-            .selected_paths
-            .iter()
-            .position(|p| p == path)
-        {
-            self.ui.browser.selected_paths.remove(pos);
-        } else {
-            self.ui.browser.selected_paths.push(path.to_path_buf());
-        }
-    }
-
-    fn extend_browser_selection_to(&mut self, target_visible: usize, additive: bool) {
-        if self.ui.browser.visible.is_empty() {
-            return;
-        }
-        let max_row = self.ui.browser.visible.len().saturating_sub(1);
-        let target_visible = target_visible.min(max_row);
-        let anchor = self
-            .ui
-            .browser
-            .selection_anchor_visible
-            .or(self.ui.browser.selected_visible)
-            .unwrap_or(target_visible)
-            .min(max_row);
-        let start = anchor.min(target_visible);
-        let end = anchor.max(target_visible);
-        if !additive {
-            self.ui.browser.selected_paths.clear();
-        }
-        for row in start..=end {
-            if let Some(path) = self.browser_path_for_visible(row)
-                && !self.ui.browser.selected_paths.iter().any(|p| p == &path)
-            {
-                self.ui.browser.selected_paths.push(path);
-            }
-        }
-        self.ui.browser.selection_anchor_visible = Some(anchor);
-    }
-
-    /// Focus a browser row and update multi-selection state.
-    pub fn focus_browser_row(&mut self, visible_row: usize) {
-        self.apply_browser_selection(visible_row, SelectionAction::Replace);
-    }
-
-    /// Focus a browser row without mutating the multi-selection set.
-    pub fn focus_browser_row_only(&mut self, visible_row: usize) {
-        let Some(path) = self.browser_path_for_visible(visible_row) else {
-            return;
-        };
-        self.ui.collections.selected_sample = None;
-        self.focus_browser_context();
-        self.ui.browser.autoscroll = true;
-        self.ui.browser.selection_anchor_visible = Some(visible_row);
-        self.select_wav_by_path_with_rebuild(&path, true);
-    }
-
-    pub(crate) fn start_browser_rename(&mut self) {
-        let Some(path) = self.focused_browser_path() else {
-            self.set_status("Focus a sample to rename it", StatusTone::Info);
-            return;
-        };
-        let default = view_model::sample_display_label(&path);
-        self.focus_browser_context();
-        self.ui.browser.pending_action = Some(SampleBrowserActionPrompt::Rename {
-            target: path,
-            name: default,
-        });
-        self.ui.browser.rename_focus_requested = true;
-    }
-
-    pub(crate) fn cancel_browser_rename(&mut self) {
-        self.ui.browser.pending_action = None;
-        self.ui.browser.rename_focus_requested = false;
-    }
-
-    pub(crate) fn apply_pending_browser_rename(&mut self) {
-        let action = self.ui.browser.pending_action.clone();
-        if let Some(SampleBrowserActionPrompt::Rename { target, name }) = action {
-            let Some(row) = self.visible_row_for_path(&target) else {
-                self.cancel_browser_rename();
-                self.set_status("Sample not found to rename", StatusTone::Info);
-                return;
-            };
-            match self.rename_browser_sample(row, &name) {
-                Ok(()) => {
-                    self.cancel_browser_rename();
-                }
-                Err(err) => self.set_status(err, StatusTone::Error),
-            }
-        }
-    }
-
-    /// Toggle whether a visible browser row is included in the multi-selection set.
-    pub fn toggle_browser_row_selection(&mut self, visible_row: usize) {
-        self.apply_browser_selection(visible_row, SelectionAction::Toggle);
-    }
-
-    /// Extend the multi-selection range to a visible browser row (replaces the selection set).
-    pub fn extend_browser_selection_to_row(&mut self, visible_row: usize) {
-        self.apply_browser_selection(visible_row, SelectionAction::Extend { additive: false });
-    }
-
-    /// Extend the multi-selection range to a visible browser row (adds to the selection set).
-    pub fn add_range_browser_selection(&mut self, visible_row: usize) {
-        self.apply_browser_selection(visible_row, SelectionAction::Extend { additive: true });
-    }
-
-    /// Toggle the focused sample's inclusion in the browser multi-selection set.
-    pub fn toggle_focused_selection(&mut self) {
-        let Some(path) = self.selected_wav.clone() else {
-            return;
-        };
-        if let Some(row) = self.ui.browser.selected_visible
-            && self.ui.browser.selection_anchor_visible.is_none()
-        {
-            self.ui.browser.selection_anchor_visible = Some(row);
-        }
-        self.toggle_browser_selection(&path);
-        self.rebuild_browser_lists();
-    }
-
-    /// Clear the multi-selection set.
-    pub fn clear_browser_selection(&mut self) {
-        if self.ui.browser.selected_paths.is_empty() {
-            return;
-        }
-        self.ui.browser.selected_paths.clear();
-        self.ui.browser.selection_anchor_visible = None;
-        self.rebuild_browser_lists();
-    }
-
-    /// Reveal the given sample browser item in the OS file explorer.
-    pub fn reveal_browser_sample_in_file_explorer(&mut self, relative_path: &Path) {
-        let Some(source) = self.current_source() else {
-            self.set_status("Select a source first", StatusTone::Info);
-            return;
-        };
-        let absolute = source.root.join(relative_path);
-        if !absolute.exists() {
-            self.set_status(
-                format!("File missing: {}", absolute.display()),
-                StatusTone::Warning,
-            );
-            return;
-        }
-        if let Err(err) = super::os_explorer::reveal_in_file_explorer(&absolute) {
-            self.set_status(err, StatusTone::Error);
-        }
-    }
-
-    /// Clear sample browser focus/selection when another surface takes focus.
-    pub fn blur_browser_focus(&mut self) {
-        if matches!(self.ui.focus.context, FocusContext::Waveform) {
-            return;
-        }
-        if self.ui.browser.selected.is_none()
-            && self.ui.browser.selected_visible.is_none()
-            && self.ui.browser.selection_anchor_visible.is_none()
-            && self.ui.browser.selected_paths.is_empty()
-        {
-            return;
-        }
-        self.ui.browser.autoscroll = false;
-        self.ui.browser.selected = None;
-        self.ui.browser.selected_visible = None;
-        self.ui.browser.selection_anchor_visible = None;
-        self.ui.browser.selected_paths.clear();
-        self.rebuild_browser_lists();
-    }
-
-    fn apply_browser_selection(&mut self, visible_row: usize, action: SelectionAction) {
-        let Some(path) = self.browser_path_for_visible(visible_row) else {
-            return;
-        };
-        self.ui.collections.selected_sample = None;
-        self.focus_browser_context();
-        self.ui.browser.autoscroll = true;
-        match action {
-            SelectionAction::Replace => {
-                self.ui.browser.selection_anchor_visible = Some(visible_row);
-                self.set_single_browser_selection(&path);
-            }
-            SelectionAction::Toggle => {
-                let anchor = self
-                    .ui
-                    .browser
-                    .selection_anchor_visible
-                    .or(self.ui.browser.selected_visible)
-                    .unwrap_or(visible_row);
-                self.ui.browser.selection_anchor_visible = Some(anchor);
-                if self.ui.browser.selected_paths.is_empty()
-                    && anchor != visible_row
-                    && let Some(anchor_path) = self.browser_path_for_visible(anchor)
-                    && !self
-                        .ui
-                        .browser
-                        .selected_paths
-                        .iter()
-                        .any(|p| p == &anchor_path)
-                {
-                    self.ui.browser.selected_paths.push(anchor_path);
-                }
-                self.toggle_browser_selection(&path);
-            }
-            SelectionAction::Extend { additive } => {
-                self.extend_browser_selection_to(visible_row, additive);
-            }
-        }
-        self.select_wav_by_path_with_rebuild(&path, false);
-        self.rebuild_browser_lists();
-    }
-
-    /// Return the set of action rows for a primary row (multi-select aware).
-    pub fn action_rows_from_primary(&self, primary_visible_row: usize) -> Vec<usize> {
-        let mut rows: Vec<usize> = self
-            .ui
-            .browser
-            .selected_paths
-            .iter()
-            .filter_map(|path| self.visible_row_for_path(path))
-            .collect();
-        if !rows.contains(&primary_visible_row) {
-            rows.push(primary_visible_row);
-        }
-        rows.sort_unstable();
-        rows.dedup();
-        rows
     }
 
     pub(super) fn set_sample_tag(
@@ -965,67 +471,19 @@ impl EguiController {
         require_present: bool,
     ) -> Result<(), String> {
         let db = self.database_for(source).map_err(|err| err.to_string())?;
-        self.apply_tag_to_caches(source, path, target_tag, require_present)?;
+        let mut tagging = tagging_service::TaggingService::new(
+            self.selected_source.as_ref(),
+            &mut self.wav_entries,
+            &self.wav_lookup,
+            &mut self.wav_cache,
+            &mut self.wav_cache_lookup,
+        );
+        tagging.apply_sample_tag(source, path, target_tag, require_present)?;
         let _ = db.set_tag(path, target_tag);
         if self.selected_source.as_ref() == Some(&source.id) {
             self.rebuild_browser_lists();
         }
         Ok(())
-    }
-
-    fn apply_tag_to_caches(
-        &mut self,
-        source: &SampleSource,
-        path: &Path,
-        target_tag: SampleTag,
-        require_present: bool,
-    ) -> Result<(), String> {
-        if self.selected_source.as_ref() == Some(&source.id) {
-            if let Some(index) = self.wav_lookup.get(path).copied() {
-                if let Some(entry) = self.wav_entries.get_mut(index) {
-                    entry.tag = target_tag;
-                }
-            } else if require_present {
-                return Err("Sample not found".into());
-            }
-        }
-        if self.wav_cache.contains_key(&source.id) {
-            self.ensure_wav_cache_lookup(&source.id);
-            if let Some(index) = self
-                .wav_cache_lookup
-                .get(&source.id)
-                .and_then(|lookup| lookup.get(path))
-                .copied()
-                && let Some(cache) = self.wav_cache.get_mut(&source.id)
-                && let Some(entry) = cache.get_mut(index)
-            {
-                entry.tag = target_tag;
-            }
-        }
-        Ok(())
-    }
-
-    fn label_for_ref(&mut self, index: usize) -> Option<&str> {
-        let source_id = self.selected_source.clone()?;
-        let needs_labels = self
-            .label_cache
-            .get(&source_id)
-            .map(|cached| cached.len() != self.wav_entries.len())
-            .unwrap_or(true);
-        if needs_labels {
-            self.label_cache
-                .insert(source_id.clone(), self.build_label_cache(&self.wav_entries));
-        }
-        self.label_cache
-            .get(&source_id)
-            .and_then(|labels| labels.get(index).map(|s| s.as_str()))
-    }
-
-    pub(super) fn build_label_cache(&self, entries: &[WavEntry]) -> Vec<String> {
-        entries
-            .iter()
-            .map(|entry| view_model::sample_display_label(&entry.relative_path))
-            .collect()
     }
 
     pub(super) fn load_waveform_for_selection(
@@ -1118,7 +576,7 @@ impl EguiController {
         self.ui.waveform.notice = None;
         self.ui.waveform.loading = None;
         self.clear_waveform_selection();
-        self.pending_audio = None;
+        self.jobs.pending_audio = None;
         match intent {
             AudioLoadIntent::Selection => {
                 self.loaded_wav = Some(relative_path.to_path_buf());
@@ -1279,7 +737,9 @@ impl EguiController {
         relative_path: &Path,
     ) -> Result<Vec<u8>, String> {
         let full_path = source.root.join(relative_path);
-        fs::read(&full_path).map_err(|err| format!("Failed to read {}: {err}", full_path.display()))
+        let bytes =
+            fs::read(&full_path).map_err(|err| format!("Failed to read {}: {err}", full_path.display()))?;
+        Ok(crate::wav_sanitize::sanitize_wav_bytes(bytes))
     }
 
     fn current_file_metadata(
@@ -1460,11 +920,34 @@ impl EguiController {
         self.clear_waveform_view();
         self.ui.waveform.notice = Some(message);
     }
-}
 
-#[derive(Clone, Copy)]
-enum SelectionAction {
-    Replace,
-    Toggle,
-    Extend { additive: bool },
+    pub(in crate::egui_app::controller) fn clear_loaded_audio_and_waveform_visuals(&mut self) {
+        self.loaded_audio = None;
+        self.decoded_waveform = None;
+        self.ui.waveform.image = None;
+        self.ui.waveform.playhead = PlayheadState::default();
+        self.ui.waveform.selection = None;
+        self.ui.waveform.selection_duration = None;
+        self.selection.clear();
+    }
+
+    pub(in crate::egui_app::controller) fn reload_waveform_for_selection_if_active(
+        &mut self,
+        source: &SampleSource,
+        relative_path: &Path,
+    ) {
+        self.invalidate_cached_audio(&source.id, relative_path);
+        let loaded_matches = self.loaded_audio.as_ref().is_some_and(|audio| {
+            audio.source_id == source.id && audio.relative_path == relative_path
+        });
+        let selected_matches = self.selected_source.as_ref() == Some(&source.id)
+            && self.selected_wav.as_deref() == Some(relative_path);
+        if selected_matches || loaded_matches {
+            self.loaded_wav = None;
+            self.ui.loaded_wav = None;
+            if let Err(err) = self.load_waveform_for_selection(source, relative_path) {
+                self.set_status(err, StatusTone::Warning);
+            }
+        }
+    }
 }

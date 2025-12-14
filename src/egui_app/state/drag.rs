@@ -86,6 +86,24 @@ pub struct DragState {
     pub last_folder_target: Option<PathBuf>,
     pub external_started: bool,
     pub external_arm_at: Option<Instant>,
+    /// Best-effort signal that the cursor has left the app window mid-drag (Windows-only use).
+    ///
+    /// Some platforms/input backends stop sending pointer positions once the cursor leaves the
+    /// window. We latch this on `egui::Event::PointerGone` and clear it when pointer movement
+    /// resumes.
+    pub pointer_left_window: bool,
+    /// When Windows doesn't deliver a reliable press event (e.g. after an external drag/drop),
+    /// we use OS-level mouse state to synthesize drag starts on hovered widgets.
+    pub pending_os_drag: Option<PendingOsDragStart>,
+    /// True while the OS reports the left mouse button as held down (Windows-only use).
+    pub os_left_mouse_down: bool,
+    /// True only on the frame the OS transitions the left mouse button from up -> down.
+    pub os_left_mouse_pressed: bool,
+    /// True only on the frame the OS transitions the left mouse button from down -> up.
+    pub os_left_mouse_released: bool,
+    /// OS cursor position in client points (Windows-only; best-effort).
+    pub os_cursor_pos: Option<Pos2>,
+    os_left_mouse_down_last: bool,
 }
 
 impl Default for DragState {
@@ -100,11 +118,36 @@ impl Default for DragState {
             last_folder_target: None,
             external_started: false,
             external_arm_at: None,
+            pointer_left_window: false,
+            pending_os_drag: None,
+            os_left_mouse_down: false,
+            os_left_mouse_pressed: false,
+            os_left_mouse_released: false,
+            os_cursor_pos: None,
+            os_left_mouse_down_last: false,
         }
     }
 }
 
+/// Deferred drag start candidate used when the OS eats the initial mouse press event.
+#[derive(Clone, Debug)]
+pub struct PendingOsDragStart {
+    pub payload: DragPayload,
+    pub label: String,
+    pub origin: Pos2,
+}
+
 impl DragState {
+    pub fn update_os_mouse_state(&mut self, left_mouse_down: bool) {
+        self.os_left_mouse_down = left_mouse_down;
+        self.os_left_mouse_pressed = left_mouse_down && !self.os_left_mouse_down_last;
+        self.os_left_mouse_released = !left_mouse_down && self.os_left_mouse_down_last;
+        self.os_left_mouse_down_last = left_mouse_down;
+        if self.os_left_mouse_released {
+            self.pending_os_drag = None;
+        }
+    }
+
     /// Clear any target associated with a given drag source.
     pub fn clear_targets_from(&mut self, source: DragSource) {
         self.targets.remove(&source);

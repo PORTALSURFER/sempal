@@ -17,3 +17,5 @@ pub mod sample_sources;
 pub mod selection;
 /// Waveform decoding and rendering helpers.
 pub mod waveform;
+/// WAV header sanitization helpers.
+pub mod wav_sanitize;

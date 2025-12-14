@@ -82,9 +82,15 @@ impl EguiController {
         }
         let removed = self.sources.remove(index);
         self.missing_sources.remove(&removed.id);
-        self.missing_wavs.remove(&removed.id);
-        self.db_cache.remove(&removed.id);
-        self.clear_folder_state_for(&removed.id);
+        let mut invalidator = source_cache_invalidator::SourceCacheInvalidator::new(
+            &mut self.db_cache,
+            &mut self.wav_cache,
+            &mut self.wav_cache_lookup,
+            &mut self.label_cache,
+            &mut self.missing_wavs,
+            &mut self.folder_browsers,
+        );
+        invalidator.invalidate_all(&removed.id);
         for collection in self.collections.iter_mut() {
             let export_dir = collection_export::resolved_export_dir(
                 collection,
@@ -102,9 +108,6 @@ impl EguiController {
         {
             self.selected_source = None;
             self.selected_wav = None;
-            self.loaded_wav = None;
-            self.loaded_audio = None;
-            self.ui.loaded_wav = None;
             self.clear_waveform_view();
         }
         let _ = self.persist_config("Failed to save config after removing source");
@@ -150,9 +153,6 @@ impl EguiController {
     pub(super) fn mark_source_missing(&mut self, source_id: &SourceId, reason: &str) {
         let inserted = self.missing_sources.insert(source_id.clone());
         if inserted && self.selected_source.as_ref() == Some(source_id) {
-            self.loaded_wav = None;
-            self.loaded_audio = None;
-            self.ui.loaded_wav = None;
             self.clear_waveform_view();
         }
         self.missing_wavs.entry(source_id.clone()).or_default();
@@ -181,12 +181,12 @@ impl EguiController {
         pending_path: Option<PathBuf>,
     ) {
         let same_source = self.selected_source == id;
-        self.pending_select_path = pending_path.clone();
+        self.jobs.pending_select_path = pending_path.clone();
         if same_source {
             self.refresh_sources_ui();
-            if let Some(path) = self.pending_select_path.clone() {
+            if let Some(path) = self.jobs.pending_select_path.clone() {
                 if self.wav_lookup.contains_key(&path) {
-                    self.pending_select_path = None;
+                    self.jobs.pending_select_path = None;
                     self.select_wav_by_path(&path);
                 } else {
                     self.queue_wav_load();
@@ -204,8 +204,6 @@ impl EguiController {
         }
         self.selected_source = id;
         self.selected_wav = None;
-        self.loaded_wav = None;
-        self.loaded_audio = None;
         self.clear_waveform_view();
         self.refresh_sources_ui();
         self.queue_wav_load();
@@ -217,11 +215,8 @@ impl EguiController {
         self.wav_entries.clear();
         self.wav_lookup.clear();
         self.selected_wav = None;
-        self.loaded_wav = None;
-        self.loaded_audio = None;
         self.ui.browser = SampleBrowserState::default();
         self.ui.sources.folders = FolderBrowserUiState::default();
-        self.ui.loaded_wav = None;
         self.clear_waveform_view();
         if let Some(selected) = self.selected_source.as_ref() {
             self.missing_wavs.remove(selected);
@@ -288,11 +283,16 @@ impl EguiController {
         let source_id = existing.id.clone();
         self.sources[index].root = normalized.clone();
         self.missing_sources.remove(&source_id);
-        self.missing_wavs.remove(&source_id);
-        self.db_cache.remove(&source_id);
-        self.wav_cache.remove(&source_id);
-        self.wav_cache_lookup.remove(&source_id);
-        self.label_cache.remove(&source_id);
+        let mut invalidator = source_cache_invalidator::SourceCacheInvalidator::new(
+            &mut self.db_cache,
+            &mut self.wav_cache,
+            &mut self.wav_cache_lookup,
+            &mut self.label_cache,
+            &mut self.missing_wavs,
+            &mut self.folder_browsers,
+        );
+        invalidator.invalidate_db_cache(&source_id);
+        invalidator.invalidate_wav_related(&source_id);
         if self.selected_source.as_ref() == Some(&source_id) {
             self.clear_wavs();
             self.selected_source = Some(source_id.clone());
