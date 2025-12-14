@@ -77,9 +77,7 @@ impl BrowserController<'_> {
         }
         let mut sorted = rows.to_vec();
         sorted.sort_unstable();
-        let Some(highest) = sorted.last().copied() else {
-            return None;
-        };
+        let highest = sorted.last().copied()?;
         let first = sorted.first().copied().unwrap_or(highest);
         let after = highest
             .checked_add(1)

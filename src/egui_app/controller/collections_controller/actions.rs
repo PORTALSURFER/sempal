@@ -91,18 +91,20 @@ impl CollectionsActions for CollectionsController<'_> {
         let _ = self.persist_config("Failed to save collection");
         self.refresh_collections_ui();
         self.set_status("Collection created", StatusTone::Info);
-        if self.settings.collection_export_root.is_none() {
-            if let Some(current_id) = self.selection_state.ctx.selected_collection.clone() {
-                self.pick_collection_export_path(&current_id);
-                if self.library.collections
-                    .iter()
-                    .any(|c| c.id == current_id && c.export_path.is_none())
-                {
-                    self.set_status(
-                        "No export folder chosen; exports disabled",
-                        StatusTone::Warning,
-                    );
-                }
+        if self.settings.collection_export_root.is_none()
+            && let Some(current_id) = self.selection_state.ctx.selected_collection.clone()
+        {
+            self.pick_collection_export_path(&current_id);
+            if self
+                .library
+                .collections
+                .iter()
+                .any(|c| c.id == current_id && c.export_path.is_none())
+            {
+                self.set_status(
+                    "No export folder chosen; exports disabled",
+                    StatusTone::Warning,
+                );
             }
         }
     }
