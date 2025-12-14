@@ -1,0 +1,61 @@
+# Updater Contract (Sempal)
+
+This document describes the release artifact shapes produced by `rls_cargo` and consumed by the in-app update checker / `sempal-updater` helper.
+
+Canonical source of truth for naming and layout is `release_contract.toml`.
+
+## Channels
+
+- `stable`: immutable releases tagged `v{VERSION}` (GitHub `prerelease=false`)
+- `nightly`: rolling release tagged `nightly` (GitHub `prerelease=true`)
+
+## Asset naming
+
+For `windows` + `x86_64` (`x86_64-pc-windows-msvc`):
+
+- Stable zip: `sempal-v{VERSION}-windows-x86_64.zip`
+- Nightly zip: `sempal-nightly-windows-x86_64.zip`
+- Stable checksums: `checksums-v{VERSION}.txt`
+- Nightly checksums: `checksums-nightly.txt`
+
+The checksums file is expected to include a SHA-256 entry for the zip asset:
+
+```
+<sha256>  <zip_filename>
+```
+
+## Zip layout
+
+The zip expands to exactly one root folder:
+
+```
+sempal/
+  sempal.exe
+  update-manifest.json
+  resources/            (optional)
+```
+
+## `update-manifest.json` schema
+
+The updater validates at least:
+
+- `app`: must be `sempal`
+- `channel`: `stable` or `nightly`
+- `target`: Rust target triple, e.g. `x86_64-pc-windows-msvc`
+- `platform`: `windows`
+- `arch`: `x86_64`
+- `files`: list of file names expected inside `sempal/`
+
+Minimal example:
+
+```json
+{
+  "app": "sempal",
+  "channel": "stable",
+  "target": "x86_64-pc-windows-msvc",
+  "platform": "windows",
+  "arch": "x86_64",
+  "files": ["sempal.exe", "update-manifest.json"]
+}
+```
+

@@ -1,6 +1,6 @@
 use super::{
-    AudioLoadJob, AudioLoadResult, PendingAudio, PendingPlayback, ScanResult, SourceId, WavLoadJob,
-    WavLoadResult, trash_move,
+    AudioLoadJob, AudioLoadResult, PendingAudio, PendingPlayback, ScanResult, SourceId,
+    UpdateCheckResult, WavLoadJob, WavLoadResult, trash_move,
 };
 use std::{
     path::PathBuf,
@@ -20,6 +20,7 @@ pub(in super) enum JobMessage {
     AudioLoaded(AudioLoadResult),
     ScanFinished(ScanResult),
     TrashMove(trash_move::TrashMoveMessage),
+    UpdateChecked(UpdateCheckResult),
 }
 
 pub(in super) struct ControllerJobs {
@@ -35,6 +36,7 @@ pub(in super) struct ControllerJobs {
     pub(in super) scan_in_progress: bool,
     pub(in super) trash_move_in_progress: bool,
     pub(in super) trash_move_cancel: Option<Arc<std::sync::atomic::AtomicBool>>,
+    pub(in super) update_check_in_progress: bool,
 }
 
 impl ControllerJobs {
@@ -58,6 +60,7 @@ impl ControllerJobs {
             scan_in_progress: false,
             trash_move_in_progress: false,
             trash_move_cancel: None,
+            update_check_in_progress: false,
         };
         jobs.forward_wav_results(wav_job_rx);
         jobs.forward_audio_results(audio_job_rx);
@@ -188,6 +191,26 @@ impl ControllerJobs {
     pub(in super) fn clear_trash_move(&mut self) {
         self.trash_move_in_progress = false;
         self.trash_move_cancel = None;
+    }
+
+    pub(in super) fn update_check_in_progress(&self) -> bool {
+        self.update_check_in_progress
+    }
+
+    pub(in super) fn begin_update_check(&mut self, request: crate::updater::UpdateCheckRequest) {
+        if self.update_check_in_progress {
+            return;
+        }
+        self.update_check_in_progress = true;
+        let tx = self.message_tx.clone();
+        thread::spawn(move || {
+            let result = super::updates::run_update_check(request);
+            let _ = tx.send(JobMessage::UpdateChecked(UpdateCheckResult { result }));
+        });
+    }
+
+    pub(in super) fn clear_update_check(&mut self) {
+        self.update_check_in_progress = false;
     }
 
 }

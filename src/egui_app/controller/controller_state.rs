@@ -90,6 +90,7 @@ pub(super) struct SelectionContextState {
 
 pub(super) struct AppSettingsState {
     pub(super) feature_flags: crate::sample_sources::config::FeatureFlags,
+    pub(super) updates: crate::sample_sources::config::UpdateSettings,
     pub(super) audio_output: AudioOutputConfig,
     pub(super) controls: crate::sample_sources::config::InteractionOptions,
     pub(super) trash_folder: Option<std::path::PathBuf>,
@@ -216,6 +217,11 @@ pub(super) struct ScanResult {
         crate::sample_sources::scanner::ScanStats,
         crate::sample_sources::scanner::ScanError,
     >,
+}
+
+#[derive(Clone)]
+pub(super) struct UpdateCheckResult {
+    pub(super) result: Result<crate::updater::UpdateCheckOutcome, String>,
 }
 
 #[derive(Debug)]

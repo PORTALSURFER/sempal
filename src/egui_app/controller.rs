@@ -34,6 +34,7 @@ mod tagging_service;
 mod trash;
 mod trash_move;
 mod undo;
+mod updates;
 mod waveform_controller;
 mod wavs;
 mod wav_entries_loader;
@@ -158,6 +159,7 @@ impl EguiController {
             },
             settings: AppSettingsState {
                 feature_flags: crate::sample_sources::config::FeatureFlags::default(),
+                updates: crate::sample_sources::config::UpdateSettings::default(),
                 audio_output: AudioOutputConfig::default(),
                 controls: crate::sample_sources::config::InteractionOptions::default(),
                 trash_folder: None,
