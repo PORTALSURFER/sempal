@@ -107,7 +107,7 @@ impl EguiController {
             .is_some_and(|id| id == &removed.id)
         {
             self.selected_source = None;
-            self.selected_wav = None;
+            self.wav_selection.selected_wav = None;
             self.clear_waveform_view();
         }
         let _ = self.persist_config("Failed to save config after removing source");
@@ -203,7 +203,7 @@ impl EguiController {
             self.last_selected_browsable_source = Some(source_id.clone());
         }
         self.selected_source = id;
-        self.selected_wav = None;
+        self.wav_selection.selected_wav = None;
         self.clear_waveform_view();
         self.refresh_sources_ui();
         self.queue_wav_load();
@@ -214,7 +214,7 @@ impl EguiController {
     fn clear_wavs(&mut self) {
         self.wav_entries.clear();
         self.wav_lookup.clear();
-        self.selected_wav = None;
+        self.wav_selection.selected_wav = None;
         self.ui.browser = SampleBrowserState::default();
         self.ui.sources.folders = FolderBrowserUiState::default();
         self.clear_waveform_view();

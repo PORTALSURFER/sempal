@@ -215,6 +215,7 @@ impl HotkeysController<'_> {
 
     fn normalize_loaded_sample_like_browser(&mut self) -> Result<(), String> {
         let audio = self
+            .wav_selection
             .loaded_audio
             .as_ref()
             .ok_or_else(|| "Load a sample to normalize it".to_string())?;

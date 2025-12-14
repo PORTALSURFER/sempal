@@ -93,9 +93,7 @@ pub struct EguiController {
     selected_source: Option<SourceId>,
     last_selected_browsable_source: Option<SourceId>,
     selected_collection: Option<CollectionId>,
-    selected_wav: Option<PathBuf>,
-    loaded_wav: Option<PathBuf>,
-    loaded_audio: Option<LoadedAudio>,
+    wav_selection: WavSelectionState,
     waveform_render_meta: Option<crate::egui_app::controller::wavs::WaveformRenderMeta>,
     suppress_autoplay_once: bool,
     pending_loop_disable_at: Option<Instant>,
@@ -161,9 +159,11 @@ impl EguiController {
             selected_source: None,
             last_selected_browsable_source: None,
             selected_collection: None,
-            selected_wav: None,
-            loaded_wav: None,
-            loaded_audio: None,
+            wav_selection: WavSelectionState {
+                selected_wav: None,
+                loaded_wav: None,
+                loaded_audio: None,
+            },
             waveform_render_meta: None,
             suppress_autoplay_once: false,
             pending_loop_disable_at: None,
@@ -287,6 +287,12 @@ struct MissingState {
 struct WavCacheState {
     entries: HashMap<SourceId, Vec<WavEntry>>,
     lookup: HashMap<SourceId, HashMap<PathBuf, usize>>,
+}
+
+struct WavSelectionState {
+    selected_wav: Option<PathBuf>,
+    loaded_wav: Option<PathBuf>,
+    loaded_audio: Option<LoadedAudio>,
 }
 
 #[derive(Clone)]

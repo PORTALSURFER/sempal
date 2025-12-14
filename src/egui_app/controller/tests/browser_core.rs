@@ -51,8 +51,8 @@ fn sample_browser_indices_track_tags() {
         sample_entry("neutral.wav", SampleTag::Neutral),
         sample_entry("keep.wav", SampleTag::Keep),
     ];
-    controller.selected_wav = Some(PathBuf::from("neutral.wav"));
-    controller.loaded_wav = Some(PathBuf::from("keep.wav"));
+    controller.wav_selection.selected_wav = Some(PathBuf::from("neutral.wav"));
+    controller.wav_selection.loaded_wav = Some(PathBuf::from("keep.wav"));
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
@@ -153,7 +153,7 @@ fn browser_autoscroll_disabled_when_collection_selected() {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source);
     controller.wav_entries = vec![sample_entry("one.wav", SampleTag::Neutral)];
-    controller.selected_wav = Some(PathBuf::from("one.wav"));
+    controller.wav_selection.selected_wav = Some(PathBuf::from("one.wav"));
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
     controller.ui.collections.selected_sample = Some(0);
@@ -225,14 +225,14 @@ fn tagging_keeps_selection_on_same_sample() {
         sample_entry("one.wav", SampleTag::Neutral),
         sample_entry("two.wav", SampleTag::Neutral),
     ];
-    controller.selected_wav = Some(PathBuf::from("one.wav"));
+    controller.wav_selection.selected_wav = Some(PathBuf::from("one.wav"));
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
     controller.tag_selected(SampleTag::Keep);
 
     assert_eq!(
-        controller.selected_wav.as_deref(),
+        controller.wav_selection.selected_wav.as_deref(),
         Some(Path::new("one.wav"))
     );
     assert_eq!(controller.ui.browser.selected_visible, Some(0));
@@ -247,7 +247,7 @@ fn left_tagging_from_keep_untags_then_trashes() {
         sample_entry("one.wav", SampleTag::Keep),
         sample_entry("two.wav", SampleTag::Neutral),
     ];
-    controller.selected_wav = Some(PathBuf::from("one.wav"));
+    controller.wav_selection.selected_wav = Some(PathBuf::from("one.wav"));
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
@@ -278,7 +278,7 @@ fn tagging_under_filter_advances_focus_to_next_visible() {
     assert_eq!(controller.visible_browser_indices(), &[0, 2]);
     assert_eq!(controller.ui.browser.selected_visible, Some(1));
     assert_eq!(
-        controller.selected_wav.as_deref(),
+        controller.wav_selection.selected_wav.as_deref(),
         Some(Path::new("three.wav"))
     );
 }
@@ -345,14 +345,20 @@ fn browser_selection_is_retained_when_waveform_focused() {
     controller.rebuild_browser_lists();
 
     controller.focus_browser_row(0);
-    assert_eq!(controller.selected_wav.as_deref(), Some(Path::new("one.wav")));
+    assert_eq!(
+        controller.wav_selection.selected_wav.as_deref(),
+        Some(Path::new("one.wav"))
+    );
     assert_eq!(controller.ui.browser.selected_visible, Some(0));
 
     controller.focus_waveform_context();
     controller.blur_browser_focus();
 
     controller.rebuild_browser_lists();
-    assert_eq!(controller.selected_wav.as_deref(), Some(Path::new("one.wav")));
+    assert_eq!(
+        controller.wav_selection.selected_wav.as_deref(),
+        Some(Path::new("one.wav"))
+    );
     assert_eq!(
         controller.ui.browser.selected_visible,
         controller.visible_row_for_path(Path::new("one.wav"))

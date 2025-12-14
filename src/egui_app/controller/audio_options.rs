@@ -149,7 +149,7 @@ impl EguiController {
     }
 
     fn rebuild_audio_player(&mut self) -> Result<(), String> {
-        let loaded_audio = self.loaded_audio.clone();
+        let loaded_audio = self.wav_selection.loaded_audio.clone();
         self.player = None;
         let Some(player_rc) = self.ensure_player()? else {
             self.ui.audio.applied = None;

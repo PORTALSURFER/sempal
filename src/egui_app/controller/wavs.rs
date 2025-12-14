@@ -33,8 +33,8 @@ impl EguiController {
         self.ui.waveform.selection_duration = None;
         self.ui.waveform.view = WaveformView::default();
         self.selection.clear();
-        self.loaded_audio = None;
-        self.loaded_wav = None;
+        self.wav_selection.loaded_audio = None;
+        self.wav_selection.loaded_wav = None;
         self.ui.loaded_wav = None;
         self.waveform_render_meta = None;
         if let Some(player) = self.player.as_ref() {
@@ -87,11 +87,11 @@ impl EguiController {
                 self.refresh_sources_ui();
             }
         }
-        let path_changed = self.selected_wav.as_deref() != Some(path);
+        let path_changed = self.wav_selection.selected_wav.as_deref() != Some(path);
         if path_changed {
             self.ui.waveform.last_start_marker = None;
         }
-        self.selected_wav = Some(path.to_path_buf());
+        self.wav_selection.selected_wav = Some(path.to_path_buf());
         let missing = self
             .wav_lookup
             .get(path)

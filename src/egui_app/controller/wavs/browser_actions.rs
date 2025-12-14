@@ -134,7 +134,7 @@ impl EguiController {
 
     /// Toggle the focused sample's inclusion in the browser multi-selection set.
     pub fn toggle_focused_selection(&mut self) {
-        let Some(path) = self.selected_wav.clone() else {
+        let Some(path) = self.wav_selection.selected_wav.clone() else {
             return;
         };
         if let Some(row) = self.ui.browser.selected_visible

@@ -23,7 +23,7 @@ impl WaveformActions for WaveformController<'_> {
         if self.waveform_ready() {
             self.focus_waveform_context();
             self.ensure_playhead_visible_in_view();
-        } else if self.selected_wav.is_some() || self.ui.waveform.loading.is_some() {
+        } else if self.wav_selection.selected_wav.is_some() || self.ui.waveform.loading.is_some() {
             self.focus_waveform_context();
         } else {
             self.set_status("Load a sample to focus the waveform", StatusTone::Info);

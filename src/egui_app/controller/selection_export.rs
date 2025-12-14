@@ -97,7 +97,7 @@ impl EguiController {
         source_id: &SourceId,
         relative_path: &Path,
     ) -> Result<LoadedAudio, String> {
-        let Some(audio) = self.loaded_audio.as_ref() else {
+        let Some(audio) = self.wav_selection.loaded_audio.as_ref() else {
             return Err("Selection audio not available; load a sample first".into());
         };
         if &audio.source_id != source_id || audio.relative_path != relative_path {

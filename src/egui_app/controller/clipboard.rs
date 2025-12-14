@@ -52,7 +52,7 @@ impl EguiController {
                 .iter()
                 .map(|p| source.root.join(p))
                 .collect()
-        } else if let Some(selected) = self.selected_wav.as_ref() {
+        } else if let Some(selected) = self.wav_selection.selected_wav.as_ref() {
             vec![source.root.join(selected)]
         } else {
             Vec::new()

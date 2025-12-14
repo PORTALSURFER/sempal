@@ -18,7 +18,7 @@ fn enabling_loop_while_playing_restarts_in_looped_mode() {
     player.play_range(0.0, 1.0, false).unwrap();
 
     let (mut controller, source) = dummy_controller();
-    controller.loaded_audio = Some(LoadedAudio {
+    controller.wav_selection.loaded_audio = Some(LoadedAudio {
         source_id: source.id.clone(),
         relative_path: PathBuf::from("loop_test.wav"),
         bytes: std::fs::read(&wav_path).unwrap(),

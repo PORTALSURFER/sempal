@@ -54,7 +54,7 @@ impl DragDropActions for DragDropController<'_> {
         if bounds.width() < MIN_SELECTION_WIDTH {
             return;
         }
-        let Some(audio) = self.loaded_audio.clone() else {
+        let Some(audio) = self.wav_selection.loaded_audio.clone() else {
             self.set_status(
                 "Load a sample before dragging a selection",
                 StatusTone::Warning,

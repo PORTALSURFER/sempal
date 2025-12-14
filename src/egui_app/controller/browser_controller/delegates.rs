@@ -94,17 +94,17 @@ impl EguiController {
     ) {
         self.invalidate_cached_audio(&source.id, relative_path);
         if self.selected_source.as_ref() == Some(&source.id) {
-            if self.selected_wav.as_deref() == Some(relative_path) {
-                self.selected_wav = None;
+            if self.wav_selection.selected_wav.as_deref() == Some(relative_path) {
+                self.wav_selection.selected_wav = None;
             }
-            if self.loaded_wav.as_deref() == Some(relative_path) {
-                self.loaded_wav = None;
+            if self.wav_selection.loaded_wav.as_deref() == Some(relative_path) {
+                self.wav_selection.loaded_wav = None;
             }
             if self.ui.loaded_wav.as_deref() == Some(relative_path) {
                 self.ui.loaded_wav = None;
             }
         }
-        if let Some(audio) = self.loaded_audio.as_ref()
+        if let Some(audio) = self.wav_selection.loaded_audio.as_ref()
             && audio.source_id == source.id
             && audio.relative_path == relative_path
         {

@@ -111,7 +111,7 @@ impl EguiController {
             pending_applied = true;
         }
         if !pending_applied
-            && self.selected_wav.is_none()
+            && self.wav_selection.selected_wav.is_none()
             && self.ui.collections.selected_sample.is_none()
             && !self.wav_entries.is_empty()
         {

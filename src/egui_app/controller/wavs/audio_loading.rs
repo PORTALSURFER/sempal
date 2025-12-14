@@ -82,7 +82,7 @@ impl EguiController {
         let Some(pending) = self.jobs.pending_playback.clone() else {
             return;
         };
-        let Some(audio) = self.loaded_audio.as_ref() else {
+        let Some(audio) = self.wav_selection.loaded_audio.as_ref() else {
             return;
         };
         if audio.source_id != pending.source_id || audio.relative_path != pending.relative_path {
@@ -123,8 +123,8 @@ impl EguiController {
         self.waveform_render_meta = None;
         self.decoded_waveform = None;
         self.ui.waveform.image = None;
-        self.loaded_audio = None;
-        self.loaded_wav = None;
+        self.wav_selection.loaded_audio = None;
+        self.wav_selection.loaded_wav = None;
         self.ui.loaded_wav = None;
         self.stop_playback_if_active();
         self.clear_waveform_selection();

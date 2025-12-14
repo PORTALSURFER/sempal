@@ -5,7 +5,7 @@ impl EguiController {
     /// Start playback over the current selection or full range.
     pub fn play_audio(&mut self, looped: bool, start_override: Option<f32>) -> Result<(), String> {
         self.pending_loop_disable_at = None;
-        if self.loaded_audio.is_none() {
+        if self.wav_selection.loaded_audio.is_none() {
             if let Some(pending) = self.jobs.pending_audio.clone() {
                 self.jobs.pending_playback = Some(PendingPlayback {
                     source_id: pending.source_id,
@@ -16,7 +16,7 @@ impl EguiController {
                 self.set_status("Loading audio…", StatusTone::Busy);
                 return Ok(());
             }
-            let Some(selected) = self.selected_wav.clone() else {
+            let Some(selected) = self.wav_selection.selected_wav.clone() else {
                 return Err("Load a .wav file first".into());
             };
             let Some(source) = self.current_source() else {
@@ -159,7 +159,7 @@ impl EguiController {
 
     /// Update the cached hover time label for the waveform cursor.
     pub fn update_waveform_hover_time(&mut self, position: Option<f32>) {
-        if let (Some(position), Some(audio)) = (position, self.loaded_audio.as_ref()) {
+        if let (Some(position), Some(audio)) = (position, self.wav_selection.loaded_audio.as_ref()) {
             let clamped = position.clamp(0.0, 1.0);
             let seconds = audio.duration_seconds * clamped;
             self.ui.waveform.hover_time_label = Some(format_timestamp_hms_ms(seconds));
@@ -169,7 +169,7 @@ impl EguiController {
     }
 
     pub(super) fn selection_duration_label(&self, range: SelectionRange) -> Option<String> {
-        let audio = self.loaded_audio.as_ref()?;
+        let audio = self.wav_selection.loaded_audio.as_ref()?;
         let seconds = (audio.duration_seconds * range.width()).max(0.0);
         Some(format_selection_duration(seconds))
     }

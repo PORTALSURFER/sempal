@@ -187,7 +187,10 @@ fn selecting_browser_sample_clears_collection_selection() {
     controller.select_wav_by_path(Path::new("b.wav"));
 
     assert!(controller.ui.collections.selected_sample.is_none());
-    assert_eq!(controller.selected_wav.as_deref(), Some(Path::new("b.wav")));
+    assert_eq!(
+        controller.wav_selection.selected_wav.as_deref(),
+        Some(Path::new("b.wav"))
+    );
 }
 
 #[test]

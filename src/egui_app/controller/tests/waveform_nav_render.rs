@@ -168,13 +168,16 @@ fn stale_audio_results_are_ignored() {
 
     for _ in 0..20 {
         controller.poll_audio_loader();
-        if controller.loaded_wav.as_deref() == Some(Path::new("b.wav")) {
+        if controller.wav_selection.loaded_wav.as_deref() == Some(Path::new("b.wav")) {
             break;
         }
         thread::sleep(Duration::from_millis(10));
     }
 
-    assert_eq!(controller.loaded_wav.as_deref(), Some(Path::new("b.wav")));
+    assert_eq!(
+        controller.wav_selection.loaded_wav.as_deref(),
+        Some(Path::new("b.wav"))
+    );
     assert_eq!(
         controller.ui.loaded_wav.as_deref(),
         Some(Path::new("b.wav"))
@@ -228,14 +231,17 @@ fn loading_flag_clears_after_audio_load() {
 
     for _ in 0..50 {
         controller.poll_audio_loader();
-        if controller.loaded_wav.as_deref() == Some(rel.as_path()) {
+        if controller.wav_selection.loaded_wav.as_deref() == Some(rel.as_path()) {
             break;
         }
         thread::sleep(Duration::from_millis(10));
     }
 
-    assert_eq!(controller.loaded_wav.as_deref(), Some(rel.as_path()));
+    assert_eq!(
+        controller.wav_selection.loaded_wav.as_deref(),
+        Some(rel.as_path())
+    );
     assert!(controller.jobs.pending_audio.is_none());
     assert!(controller.ui.waveform.loading.is_none());
-    assert!(controller.loaded_audio.is_some());
+    assert!(controller.wav_selection.loaded_audio.is_some());
 }
