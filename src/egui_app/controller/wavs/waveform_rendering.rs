@@ -132,7 +132,9 @@ impl EguiController {
         {
             return;
         }
-        let color_image = self.renderer.render_color_image_for_view_with_size(
+        let color_image = self.sample_view
+            .renderer
+            .render_color_image_for_view_with_size(
             decoded,
             view.start,
             view.end,

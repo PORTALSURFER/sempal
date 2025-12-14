@@ -76,7 +76,6 @@ const UNDO_LIMIT: usize = 20;
 /// Maintains app state and bridges core logic to the egui UI.
 pub struct EguiController {
     pub ui: UiState,
-    renderer: WaveformRenderer,
     audio: ControllerAudioState,
     sample_view: ControllerSampleViewState,
     library: LibraryState,
@@ -114,13 +113,13 @@ impl EguiController {
         };
         Self {
             ui: UiState::default(),
-            renderer,
             audio: ControllerAudioState {
                 player,
                 cache: AudioCache::new(AUDIO_CACHE_CAPACITY, AUDIO_HISTORY_LIMIT),
                 pending_loop_disable_at: None,
             },
             sample_view: ControllerSampleViewState {
+                renderer,
                 waveform: WaveformState {
                     size: [waveform_width, waveform_height],
                     decoded: None,
@@ -314,6 +313,7 @@ struct WavSelectionState {
 }
 
 struct ControllerSampleViewState {
+    renderer: WaveformRenderer,
     waveform: WaveformState,
     wav: WavSelectionState,
 }
