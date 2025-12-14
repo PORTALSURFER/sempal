@@ -59,7 +59,7 @@ impl BrowserController<'_> {
             missing: false,
         };
         self.update_cached_entry(&ctx.source, &ctx.entry.relative_path, updated);
-        if self.selected_source.as_ref() == Some(&ctx.source.id) {
+        if self.selection_state.ctx.selected_source.as_ref() == Some(&ctx.source.id) {
             self.rebuild_browser_lists();
         }
         self.refresh_waveform_for_sample(&ctx.source, &ctx.entry.relative_path);
@@ -77,14 +77,12 @@ impl BrowserController<'_> {
         }
         let mut sorted = rows.to_vec();
         sorted.sort_unstable();
-        let Some(highest) = sorted.last().copied() else {
-            return None;
-        };
+        let highest = sorted.last().copied()?;
         let first = sorted.first().copied().unwrap_or(highest);
         let after = highest
             .checked_add(1)
             .and_then(|idx| self.ui.browser.visible.get(idx))
-            .and_then(|&entry_idx| self.wav_entries.get(entry_idx))
+            .and_then(|&entry_idx| self.wav_entries.entries.get(entry_idx))
             .map(|entry| entry.relative_path.clone());
         if after.is_some() {
             return after;
@@ -92,7 +90,7 @@ impl BrowserController<'_> {
         first
             .checked_sub(1)
             .and_then(|idx| self.ui.browser.visible.get(idx))
-            .and_then(|&entry_idx| self.wav_entries.get(entry_idx))
+            .and_then(|&entry_idx| self.wav_entries.entries.get(entry_idx))
             .map(|entry| entry.relative_path.clone())
     }
 

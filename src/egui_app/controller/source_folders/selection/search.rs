@@ -2,7 +2,7 @@ use super::super::*;
 
 impl EguiController {
     pub(crate) fn set_folder_search(&mut self, query: String) {
-        if self.selected_source.is_none() {
+        if self.selection_state.ctx.selected_source.is_none() {
             self.ui.sources.folders.search_query = query;
             return;
         }

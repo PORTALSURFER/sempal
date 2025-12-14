@@ -4,30 +4,31 @@ use crate::selection::SelectionEdge;
 impl EguiController {
     /// Begin a selection drag at the given normalized position.
     pub fn start_selection_drag(&mut self, position: f32) {
-        let range = self.selection.begin_new(position);
+        let range = self.selection_state.range.begin_new(position);
         self.apply_selection(Some(range));
     }
 
     /// Begin dragging a specific selection edge; returns true when a selection exists.
     pub fn start_selection_edge_drag(&mut self, edge: SelectionEdge) -> bool {
-        if !self.selection.begin_edge_drag(edge) {
+        if !self.selection_state.range.begin_edge_drag(edge) {
             return false;
         }
-        self.apply_selection(self.selection.range());
+        self.apply_selection(self.selection_state.range.range());
         true
     }
 
     /// Update the active selection drag with a new normalized position.
     pub fn update_selection_drag(&mut self, position: f32) {
-        if let Some(range) = self.selection.update_drag(position) {
+        if let Some(range) = self.selection_state.range.update_drag(position) {
             self.apply_selection(Some(range));
         }
     }
 
     /// Finish a selection drag gesture.
     pub fn finish_selection_drag(&mut self) {
-        self.selection.finish_drag();
+        self.selection_state.range.finish_drag();
         let is_playing = self
+            .audio
             .player
             .as_ref()
             .map(|p| p.borrow().is_playing())
@@ -42,18 +43,18 @@ impl EguiController {
 
     /// Replace the current selection range without starting a drag gesture.
     pub fn set_selection_range(&mut self, range: SelectionRange) {
-        self.selection.set_range(Some(range));
+        self.selection_state.range.set_range(Some(range));
         self.apply_selection(Some(range));
     }
 
     /// True while a selection drag gesture is active.
     pub fn is_selection_dragging(&self) -> bool {
-        self.selection.is_dragging()
+        self.selection_state.range.is_dragging()
     }
 
     /// Clear any active selection.
     pub fn clear_selection(&mut self) {
-        let cleared = self.selection.clear();
+        let cleared = self.selection_state.range.clear();
         if cleared || self.ui.waveform.selection.is_some() {
             self.apply_selection(None);
         }
@@ -64,9 +65,9 @@ impl EguiController {
         let was_looping = self.ui.waveform.loop_enabled;
         self.ui.waveform.loop_enabled = !self.ui.waveform.loop_enabled;
         if self.ui.waveform.loop_enabled {
-            self.pending_loop_disable_at = None;
+            self.audio.pending_loop_disable_at = None;
             if !was_looping {
-                if let Some(player_rc) = self.player.as_ref().cloned() {
+                if let Some(player_rc) = self.audio.player.as_ref().cloned() {
                     let (is_playing, progress) = {
                         let player_ref = player_rc.borrow();
                         (player_ref.is_playing(), player_ref.progress())
@@ -167,8 +168,8 @@ impl EguiController {
 
     /// Stop playback when active, returning true if anything was stopped.
     pub fn stop_playback_if_active(&mut self) -> bool {
-        self.pending_loop_disable_at = None;
-        let Some(player_rc) = self.player.as_ref() else {
+        self.audio.pending_loop_disable_at = None;
+        let Some(player_rc) = self.audio.player.as_ref() else {
             return false;
         };
         let stopped = {
@@ -188,7 +189,7 @@ impl EguiController {
 
     /// Handle Escape input by stopping playback and clearing selections across panels.
     pub fn handle_escape(&mut self) {
-        let selection_active = self.selection.range().is_some() || self.ui.waveform.selection.is_some();
+        let selection_active = self.selection_state.range.range().is_some() || self.ui.waveform.selection.is_some();
         let stopped_playback = self.stop_playback_if_active();
         if !(selection_active && stopped_playback) {
             self.clear_selection();
@@ -205,4 +206,3 @@ impl EguiController {
         self.clear_folder_selection();
     }
 }
-

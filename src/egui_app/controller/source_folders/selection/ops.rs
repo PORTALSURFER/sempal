@@ -135,10 +135,11 @@ impl EguiController {
     }
 
     pub(crate) fn selected_folder_paths(&self) -> Vec<PathBuf> {
-        let Some(id) = self.selected_source.as_ref() else {
+        let Some(id) = self.selection_state.ctx.selected_source.as_ref() else {
             return Vec::new();
         };
-        self.folder_browsers
+        self.ui_cache.folders
+            .models
             .get(id)
             .map(|model| model.selected.iter().cloned().collect())
             .unwrap_or_default()
@@ -222,8 +223,9 @@ impl EguiController {
     }
 
     fn current_folder_anchor_path(&self) -> Option<PathBuf> {
-        let id = self.selected_source.as_ref()?;
-        self.folder_browsers
+        let id = self.selection_state.ctx.selected_source.as_ref()?;
+        self.ui_cache.folders
+            .models
             .get(id)
             .and_then(|model| model.selection_anchor.clone())
     }

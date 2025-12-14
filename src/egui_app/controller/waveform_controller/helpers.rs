@@ -37,7 +37,7 @@ pub(super) enum CursorUpdateSource {
 
 impl WaveformController<'_> {
     pub(crate) fn waveform_ready(&self) -> bool {
-        self.decoded_waveform.is_some()
+        self.sample_view.waveform.decoded.is_some()
     }
 
     #[cfg(test)]
@@ -46,7 +46,7 @@ impl WaveformController<'_> {
     }
 
     pub(super) fn waveform_step_size(&self, fine: bool) -> f32 {
-        let width_px = self.waveform_size[0].max(1) as f32;
+        let width_px = self.sample_view.waveform.size[0].max(1) as f32;
         let px = if fine {
             PLAYHEAD_STEP_PX_FINE
         } else {
@@ -94,7 +94,7 @@ impl WaveformController<'_> {
         if self.ui.waveform.playhead.visible {
             return self.ui.waveform.playhead.position;
         }
-        if let Some(selection) = self.selection.range() {
+        if let Some(selection) = self.selection_state.range.range() {
             return (selection.start() + selection.end()) * 0.5;
         }
         let view = self.ui.waveform.view;
@@ -205,7 +205,7 @@ impl WaveformController<'_> {
             marker
         } else if self.ui.waveform.playhead.visible {
             self.ui.waveform.playhead.position
-        } else if let Some(selection) = self.selection.range() {
+        } else if let Some(selection) = self.selection_state.range.range() {
             (selection.start() + selection.end()) * 0.5
         } else {
             let view = self.ui.waveform.view;

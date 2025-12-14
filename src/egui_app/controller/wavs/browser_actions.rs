@@ -9,7 +9,7 @@ impl EguiController {
         &self,
         path: &Path,
     ) -> Option<usize> {
-        let entry_index = self.wav_lookup.get(path)?;
+        let entry_index = self.wav_entries.lookup.get(path)?;
         self.ui
             .browser
             .visible
@@ -134,7 +134,7 @@ impl EguiController {
 
     /// Toggle the focused sample's inclusion in the browser multi-selection set.
     pub fn toggle_focused_selection(&mut self) {
-        let Some(path) = self.selected_wav.clone() else {
+        let Some(path) = self.sample_view.wav.selected_wav.clone() else {
             return;
         };
         if let Some(row) = self.ui.browser.selected_visible

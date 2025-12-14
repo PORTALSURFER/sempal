@@ -1,4 +1,4 @@
-use super::{SourceDatabase, SourceId};
+use super::{ControllerUiCacheState, LibraryCacheState, MissingState, SourceDatabase, SourceId};
 use std::{
     collections::{HashMap, HashSet},
     path::PathBuf,
@@ -15,6 +15,21 @@ pub(in super) struct SourceCacheInvalidator<'a> {
 }
 
 impl<'a> SourceCacheInvalidator<'a> {
+    pub(in super) fn new_from_state(
+        cache: &'a mut LibraryCacheState,
+        ui_cache: &'a mut ControllerUiCacheState,
+        missing: &'a mut MissingState,
+    ) -> Self {
+        Self::new(
+            &mut cache.db,
+            &mut cache.wav.entries,
+            &mut cache.wav.lookup,
+            &mut ui_cache.browser.labels,
+            &mut missing.wavs,
+            &mut ui_cache.folders.models,
+        )
+    }
+
     pub(in super) fn new(
         db_cache: &'a mut HashMap<SourceId, Rc<SourceDatabase>>,
         wav_cache: &'a mut HashMap<SourceId, Vec<super::WavEntry>>,
@@ -54,4 +69,3 @@ impl<'a> SourceCacheInvalidator<'a> {
         self.invalidate_folder_browser(source_id);
     }
 }
-
