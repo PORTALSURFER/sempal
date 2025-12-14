@@ -25,11 +25,14 @@ pub(super) fn play_previous_random_sample(controller: &mut EguiController) {
         controller.set_status("No random history yet", StatusTone::Info);
         return;
     }
-    let current = controller
-        .history
-        .random_history
-        .cursor
-        .unwrap_or_else(|| controller.history.random_history.entries.len().saturating_sub(1));
+    let current = controller.history.random_history.cursor.unwrap_or_else(|| {
+        controller
+            .history
+            .random_history
+            .entries
+            .len()
+            .saturating_sub(1)
+    });
     if current == 0 {
         controller.history.random_history.cursor = Some(0);
         controller.set_status("Reached start of random history", StatusTone::Info);
@@ -37,7 +40,13 @@ pub(super) fn play_previous_random_sample(controller: &mut EguiController) {
     }
     let target = current - 1;
     controller.history.random_history.cursor = Some(target);
-    if let Some(entry) = controller.history.random_history.entries.get(target).cloned() {
+    if let Some(entry) = controller
+        .history
+        .random_history
+        .entries
+        .get(target)
+        .cloned()
+    {
         play_random_history_entry(controller, entry);
     }
 }
@@ -87,28 +96,49 @@ fn play_random_visible_sample_internal<R: Rng + ?Sized>(
     };
     push_random_history(controller, source_id, path.clone());
     controller.focus_browser_row_only(visible_row);
-    if start_playback && let Err(err) = controller.play_audio(controller.ui.waveform.loop_enabled, None) {
+    if start_playback
+        && let Err(err) = controller.play_audio(controller.ui.waveform.loop_enabled, None)
+    {
         controller.set_status(err, StatusTone::Error);
     }
 }
 
-fn push_random_history(controller: &mut EguiController, source_id: SourceId, relative_path: PathBuf) {
+fn push_random_history(
+    controller: &mut EguiController,
+    source_id: SourceId,
+    relative_path: PathBuf,
+) {
     if let Some(cursor) = controller.history.random_history.cursor
         && cursor + 1 < controller.history.random_history.entries.len()
     {
-        controller.history.random_history.entries.truncate(cursor + 1);
+        controller
+            .history
+            .random_history
+            .entries
+            .truncate(cursor + 1);
     }
-    controller.history.random_history.entries.push_back(RandomHistoryEntry {
-        source_id,
-        relative_path,
-    });
+    controller
+        .history
+        .random_history
+        .entries
+        .push_back(RandomHistoryEntry {
+            source_id,
+            relative_path,
+        });
     if controller.history.random_history.entries.len() > RANDOM_HISTORY_LIMIT {
         controller.history.random_history.entries.pop_front();
         if let Some(cursor) = controller.history.random_history.cursor {
             controller.history.random_history.cursor = Some(cursor.saturating_sub(1));
         }
     }
-    controller.history.random_history.cursor = Some(controller.history.random_history.entries.len().saturating_sub(1));
+    controller.history.random_history.cursor = Some(
+        controller
+            .history
+            .random_history
+            .entries
+            .len()
+            .saturating_sub(1),
+    );
 }
 
 fn play_random_history_entry(controller: &mut EguiController, entry: RandomHistoryEntry) {
@@ -117,11 +147,11 @@ fn play_random_history_entry(controller: &mut EguiController, entry: RandomHisto
             .runtime
             .jobs
             .set_pending_playback(Some(PendingPlayback {
-            source_id: entry.source_id.clone(),
-            relative_path: entry.relative_path.clone(),
-            looped: controller.ui.waveform.loop_enabled,
-            start_override: None,
-        }));
+                source_id: entry.source_id.clone(),
+                relative_path: entry.relative_path.clone(),
+                looped: controller.ui.waveform.loop_enabled,
+                start_override: None,
+            }));
         controller
             .runtime
             .jobs

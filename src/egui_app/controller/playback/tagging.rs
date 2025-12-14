@@ -20,7 +20,11 @@ pub(super) fn tag_selected(controller: &mut EguiController, target: SampleTag) {
     let mut applied: Vec<(SourceId, PathBuf, SampleTag)> = Vec::new();
     for row in rows {
         let before = match controller.resolve_browser_sample(row) {
-            Ok(ctx) => (ctx.source.id.clone(), ctx.entry.relative_path.clone(), ctx.entry.tag),
+            Ok(ctx) => (
+                ctx.source.id.clone(),
+                ctx.entry.relative_path.clone(),
+                ctx.entry.tag,
+            ),
             Err(err) => {
                 last_error = Some(err);
                 continue;
@@ -45,7 +49,9 @@ pub(super) fn tag_selected(controller: &mut EguiController, target: SampleTag) {
             label,
             move |controller: &mut EguiController| {
                 for (source_id, path, tag) in applied.iter() {
-                    let source = controller.library.sources
+                    let source = controller
+                        .library
+                        .sources
                         .iter()
                         .find(|s| &s.id == source_id)
                         .cloned()
@@ -56,7 +62,9 @@ pub(super) fn tag_selected(controller: &mut EguiController, target: SampleTag) {
             },
             move |controller: &mut EguiController| {
                 for (source_id, path, tag) in redo_updates.iter() {
-                    let source = controller.library.sources
+                    let source = controller
+                        .library
+                        .sources
                         .iter()
                         .find(|s| &s.id == source_id)
                         .cloned()
@@ -90,4 +98,3 @@ pub(super) fn tag_selected_left(controller: &mut EguiController) {
     };
     controller.tag_selected(target);
 }
-

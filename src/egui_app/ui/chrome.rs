@@ -189,6 +189,10 @@ impl EguiApp {
                                     self.controller.open_config_folder();
                                     close_menu = true;
                                 }
+                                if ui.button("Check for updates").clicked() {
+                                    self.controller.check_for_updates_now();
+                                    close_menu = true;
+                                }
                                 ui.separator();
                                 self.render_audio_options_menu(ui);
                                 ui.separator();
@@ -209,6 +213,38 @@ impl EguiApp {
                                 }
                             });
                             ui.add_space(10.0);
+                            match self.controller.ui.update.status {
+                                crate::egui_app::state::UpdateStatus::Checking => {
+                                    ui.label(RichText::new("Checking updates…").color(palette.text_muted));
+                                    ui.add_space(10.0);
+                                }
+                                crate::egui_app::state::UpdateStatus::UpdateAvailable => {
+                                    let label = self
+                                        .controller
+                                        .ui
+                                        .update
+                                        .available_tag
+                                        .clone()
+                                        .unwrap_or_else(|| "Update available".to_string());
+                                    if ui.button(label).clicked() {
+                                        self.controller.open_update_link();
+                                    }
+                                    if ui.button("Install").clicked() {
+                                        self.controller.install_update_and_exit();
+                                    }
+                                    if ui.button("Dismiss").clicked() {
+                                        self.controller.dismiss_update_notification();
+                                    }
+                                    ui.add_space(10.0);
+                                }
+                                crate::egui_app::state::UpdateStatus::Error => {
+                                    if ui.button("Update check failed").clicked() {
+                                        self.controller.check_for_updates_now();
+                                    }
+                                    ui.add_space(10.0);
+                                }
+                                crate::egui_app::state::UpdateStatus::Idle => {}
+                            }
                             const APP_VERSION: &str = concat!("v", env!("CARGO_PKG_VERSION"));
                             ui.label(RichText::new(APP_VERSION).color(palette.text_muted));
                             ui.add_space(10.0);

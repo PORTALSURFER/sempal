@@ -107,8 +107,14 @@ impl EguiController {
                         self.apply_trash_move_finished(result);
                     }
                 },
+                JobMessage::UpdateChecked(message) => {
+                    self.runtime.jobs.clear_update_check();
+                    match message.result {
+                        Ok(outcome) => self.apply_update_check_result(outcome),
+                        Err(err) => self.apply_update_check_error(err),
+                    }
+                }
             }
         }
     }
 }
-

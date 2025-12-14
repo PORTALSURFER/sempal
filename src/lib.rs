@@ -19,3 +19,5 @@ pub mod selection;
 pub mod waveform;
 /// WAV header sanitization helpers.
 pub mod wav_sanitize;
+/// Update check + installer helper utilities.
+pub mod updater;

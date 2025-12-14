@@ -33,4 +33,3 @@ fn visible_row_after_offset(controller: &EguiController, offset: isize, list: &[
         .unwrap_or(0) as isize;
     (current_row + offset).clamp(0, list.len() as isize - 1) as usize
 }
-

@@ -1,8 +1,44 @@
 use super::*;
+use crate::egui_app::state::FolderRowView;
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
+
+fn is_root_path(path: &Path) -> bool {
+    path.as_os_str().is_empty()
+}
+
+#[derive(Clone, Default)]
+pub(in crate::egui_app::controller) struct FolderBrowserModel {
+    pub(super) selected: BTreeSet<PathBuf>,
+    pub(super) expanded: BTreeSet<PathBuf>,
+    pub(super) focused: Option<PathBuf>,
+    pub(super) available: BTreeSet<PathBuf>,
+    pub(super) selection_anchor: Option<PathBuf>,
+    pub(super) manual_folders: BTreeSet<PathBuf>,
+    pub(super) search_query: String,
+}
+
+impl FolderBrowserModel {
+    fn clear_focus_if_missing(&mut self) {
+        if let Some(focused) = self.focused.clone()
+            && !self.available.contains(&focused)
+            && !is_root_path(&focused)
+        {
+            self.focused = None;
+        }
+    }
+
+    fn clear_anchor_if_missing(&mut self) {
+        if let Some(anchor) = self.selection_anchor.clone()
+            && !self.available.contains(&anchor)
+            && !is_root_path(&anchor)
+        {
+            self.selection_anchor = None;
+        }
+    }
+}
 
 impl EguiController {
     pub(in crate::egui_app::controller) fn refresh_folder_browser(&mut self) {

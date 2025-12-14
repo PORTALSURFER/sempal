@@ -164,3 +164,24 @@ impl EguiController {
             .collect()
     }
 }
+
+pub(super) fn set_browser_filter(controller: &mut EguiController, filter: TriageFlagFilter) {
+    if controller.ui.browser.filter != filter {
+        controller.ui.browser.filter = filter;
+        controller.rebuild_browser_lists();
+    }
+}
+
+pub(super) fn focus_browser_search(controller: &mut EguiController) {
+    controller.ui.browser.search_focus_requested = true;
+    controller.focus_browser_context();
+}
+
+pub(super) fn set_browser_search(controller: &mut EguiController, query: impl Into<String>) {
+    let query = query.into();
+    if controller.ui.browser.search_query == query {
+        return;
+    }
+    controller.ui.browser.search_query = query;
+    controller.rebuild_browser_lists();
+}
