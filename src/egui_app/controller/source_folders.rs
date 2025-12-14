@@ -367,10 +367,6 @@ impl EguiController {
         self.folder_browsers.get(id).map(|model| &model.selected)
     }
 
-    pub(super) fn clear_folder_state_for(&mut self, source_id: &SourceId) {
-        self.folder_browsers.remove(source_id);
-    }
-
     pub(super) fn folder_filter_accepts(&self, relative_path: &Path) -> bool {
         let Some(selection) = self.folder_selection_for_filter() else {
             return true;

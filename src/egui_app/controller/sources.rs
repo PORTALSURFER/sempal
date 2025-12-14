@@ -82,9 +82,15 @@ impl EguiController {
         }
         let removed = self.sources.remove(index);
         self.missing_sources.remove(&removed.id);
-        self.missing_wavs.remove(&removed.id);
-        self.db_cache.remove(&removed.id);
-        self.clear_folder_state_for(&removed.id);
+        let mut invalidator = source_cache_invalidator::SourceCacheInvalidator::new(
+            &mut self.db_cache,
+            &mut self.wav_cache,
+            &mut self.wav_cache_lookup,
+            &mut self.label_cache,
+            &mut self.missing_wavs,
+            &mut self.folder_browsers,
+        );
+        invalidator.invalidate_all(&removed.id);
         for collection in self.collections.iter_mut() {
             let export_dir = collection_export::resolved_export_dir(
                 collection,
