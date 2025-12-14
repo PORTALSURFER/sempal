@@ -1,6 +1,13 @@
 use super::*;
 
 impl EguiController {
+    fn sync_after_wav_entries_changed(&mut self) {
+        self.rebuild_wav_lookup();
+        self.browser_search_cache.invalidate();
+        self.refresh_folder_browser();
+        self.rebuild_browser_lists();
+    }
+
     pub(super) fn queue_wav_load(&mut self) {
         let Some(source) = self.current_source() else {
             return;
@@ -16,10 +23,7 @@ impl EguiController {
             return;
         }
         self.wav_entries.clear();
-        self.rebuild_wav_lookup();
-        self.browser_search_cache.invalidate();
-        self.refresh_folder_browser();
-        self.rebuild_browser_lists();
+        self.sync_after_wav_entries_changed();
         if self.jobs.pending_source.as_ref() == Some(&source.id) {
             return;
         }
@@ -97,10 +101,7 @@ impl EguiController {
         elapsed: Option<Duration>,
     ) {
         self.wav_entries = entries;
-        self.rebuild_wav_lookup();
-        self.browser_search_cache.invalidate();
-        self.refresh_folder_browser();
-        self.rebuild_browser_lists();
+        self.sync_after_wav_entries_changed();
         let mut pending_applied = false;
         if let Some(path) = self.jobs.pending_select_path.take()
             && self.wav_lookup.contains_key(&path)
