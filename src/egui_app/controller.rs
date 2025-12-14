@@ -77,18 +77,16 @@ const UNDO_LIMIT: usize = 20;
 pub struct EguiController {
     pub ui: UiState,
     renderer: WaveformRenderer,
-    player: Option<Rc<RefCell<AudioPlayer>>>,
+    audio: ControllerAudioState,
     waveform: WaveformState,
     sources: Vec<SampleSource>,
     collections: Vec<Collection>,
     cache: LibraryCacheState,
     missing: MissingState,
     browser_cache: BrowserCacheState,
-    audio_cache: AudioCache,
     wav_entries: WavEntriesState,
     selection_state: ControllerSelectionState,
     wav_selection: WavSelectionState,
-    pending_loop_disable_at: Option<Instant>,
     settings: AppSettingsState,
     jobs: jobs::ControllerJobs,
     random_history: RandomHistoryState,
@@ -124,7 +122,11 @@ impl EguiController {
         Self {
             ui: UiState::default(),
             renderer,
-            player,
+            audio: ControllerAudioState {
+                player,
+                cache: AudioCache::new(AUDIO_CACHE_CAPACITY, AUDIO_HISTORY_LIMIT),
+                pending_loop_disable_at: None,
+            },
             waveform: WaveformState {
                 size: [waveform_width, waveform_height],
                 decoded: None,
@@ -147,7 +149,6 @@ impl EguiController {
                 labels: HashMap::new(),
                 search: wavs::BrowserSearchCache::default(),
             },
-            audio_cache: AudioCache::new(AUDIO_CACHE_CAPACITY, AUDIO_HISTORY_LIMIT),
             wav_entries: WavEntriesState {
                 entries: Vec::new(),
                 lookup: HashMap::new(),
@@ -166,7 +167,6 @@ impl EguiController {
                 loaded_wav: None,
                 loaded_audio: None,
             },
-            pending_loop_disable_at: None,
             settings: AppSettingsState {
                 feature_flags: crate::sample_sources::config::FeatureFlags::default(),
                 audio_output: AudioOutputConfig::default(),
@@ -330,6 +330,12 @@ struct ControllerSelectionState {
     ctx: SelectionContextState,
     range: SelectionState,
     suppress_autoplay_once: bool,
+}
+
+struct ControllerAudioState {
+    player: Option<Rc<RefCell<AudioPlayer>>>,
+    cache: AudioCache,
+    pending_loop_disable_at: Option<Instant>,
 }
 
 struct WavEntriesState {

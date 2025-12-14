@@ -26,7 +26,7 @@ fn enabling_loop_while_playing_restarts_in_looped_mode() {
         sample_rate: 8,
         channels: 1,
     });
-    controller.player = Some(std::rc::Rc::new(std::cell::RefCell::new(player)));
+    controller.audio.player = Some(std::rc::Rc::new(std::cell::RefCell::new(player)));
 
     controller.ui.waveform.loop_enabled = false;
     if !controller.is_playing() {
@@ -38,6 +38,7 @@ fn enabling_loop_while_playing_restarts_in_looped_mode() {
 
     assert!(controller.ui.waveform.loop_enabled);
     assert!(controller
+        .audio
         .player
         .as_ref()
         .unwrap()

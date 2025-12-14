@@ -43,7 +43,7 @@ impl EguiController {
         let duration_seconds = decoded.duration_seconds;
         let sample_rate = decoded.sample_rate;
         let cache_key = CacheKey::new(&source.id, relative_path);
-        self.audio_cache
+        self.audio.cache
             .insert(cache_key, metadata, decoded.clone(), bytes.clone());
         self.finish_waveform_load(
             source,
@@ -170,7 +170,7 @@ impl EguiController {
         relative_path: &Path,
     ) {
         let key = CacheKey::new(source_id, relative_path);
-        self.audio_cache.invalidate(&key);
+        self.audio.cache.invalidate(&key);
     }
 
     fn sync_loaded_audio(

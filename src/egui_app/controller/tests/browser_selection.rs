@@ -107,7 +107,7 @@ fn escape_stops_playback_before_clearing_selection() {
         .range
         .set_range(Some(SelectionRange::new(0.25, 0.75)));
     controller.apply_selection(controller.selection_state.range.range());
-    controller.player = Some(std::rc::Rc::new(std::cell::RefCell::new(player)));
+    controller.audio.player = Some(std::rc::Rc::new(std::cell::RefCell::new(player)));
 
     controller.handle_escape();
 

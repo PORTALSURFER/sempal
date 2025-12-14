@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 impl EguiController {
     /// Start playback over the current selection or full range.
     pub fn play_audio(&mut self, looped: bool, start_override: Option<f32>) -> Result<(), String> {
-        self.pending_loop_disable_at = None;
+        self.audio.pending_loop_disable_at = None;
         if self.wav_selection.loaded_audio.is_none() {
             if let Some(pending) = self.jobs.pending_audio.clone() {
                 self.jobs.pending_playback = Some(PendingPlayback {
@@ -64,7 +64,7 @@ impl EguiController {
 
     /// True when the underlying player is currently playing.
     pub fn is_playing(&self) -> bool {
-        self.player
+        self.audio.player
             .as_ref()
             .map(|p| p.borrow().is_playing())
             .unwrap_or(false)
@@ -76,7 +76,7 @@ impl EguiController {
         self.poll_audio_loader();
         self.poll_scan();
         self.poll_trash_move();
-        let Some(player) = self.player.as_ref().cloned() else {
+        let Some(player) = self.audio.player.as_ref().cloned() else {
             if self.waveform.decoded.is_none() {
                 self.hide_waveform_playhead();
             }
@@ -84,9 +84,9 @@ impl EguiController {
         };
         let should_resume = {
             let player_ref = player.borrow();
-            match self.pending_loop_disable_at {
+            match self.audio.pending_loop_disable_at {
                 Some(_) if !player_ref.is_playing() || !player_ref.is_looping() => {
-                    self.pending_loop_disable_at = None;
+                    self.audio.pending_loop_disable_at = None;
                     false
                 }
                 Some(deadline) => Instant::now() >= deadline,
@@ -94,7 +94,7 @@ impl EguiController {
             }
         };
         if should_resume {
-            self.pending_loop_disable_at = None;
+            self.audio.pending_loop_disable_at = None;
             player.borrow_mut().stop();
         }
         let player_ref = player.borrow();
@@ -178,7 +178,7 @@ impl EguiController {
     pub(in crate::egui_app::controller) fn apply_volume(&mut self, volume: f32) {
         let clamped = volume.clamp(0.0, 1.0);
         self.ui.volume = clamped;
-        if let Some(player) = self.player.as_ref() {
+        if let Some(player) = self.audio.player.as_ref() {
             player.borrow_mut().set_volume(clamped);
         }
     }
@@ -186,18 +186,18 @@ impl EguiController {
     pub(in crate::egui_app::controller) fn ensure_player(
         &mut self,
     ) -> Result<Option<Rc<RefCell<AudioPlayer>>>, String> {
-        if self.player.is_none() {
+        if self.audio.player.is_none() {
             let mut created = AudioPlayer::from_config(&self.settings.audio_output)
                 .map_err(|err| format!("Audio init failed: {err}"))?;
             created.set_volume(self.ui.volume);
-            self.player = Some(Rc::new(RefCell::new(created)));
+            self.audio.player = Some(Rc::new(RefCell::new(created)));
             self.update_audio_output_status();
         }
-        Ok(self.player.clone())
+        Ok(self.audio.player.clone())
     }
 
     pub(super) fn defer_loop_disable_after_cycle(&mut self) -> Result<(), String> {
-        self.pending_loop_disable_at = None;
+        self.audio.pending_loop_disable_at = None;
         let Some(player_rc) = self.ensure_player()? else {
             return Ok(());
         };
@@ -220,7 +220,7 @@ impl EguiController {
             return Ok(());
         }
 
-        self.pending_loop_disable_at = Some(Instant::now() + remaining);
+        self.audio.pending_loop_disable_at = Some(Instant::now() + remaining);
         Ok(())
     }
 }

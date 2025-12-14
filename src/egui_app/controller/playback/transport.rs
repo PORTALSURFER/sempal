@@ -28,6 +28,7 @@ impl EguiController {
     pub fn finish_selection_drag(&mut self) {
         self.selection_state.range.finish_drag();
         let is_playing = self
+            .audio
             .player
             .as_ref()
             .map(|p| p.borrow().is_playing())
@@ -64,9 +65,9 @@ impl EguiController {
         let was_looping = self.ui.waveform.loop_enabled;
         self.ui.waveform.loop_enabled = !self.ui.waveform.loop_enabled;
         if self.ui.waveform.loop_enabled {
-            self.pending_loop_disable_at = None;
+            self.audio.pending_loop_disable_at = None;
             if !was_looping {
-                if let Some(player_rc) = self.player.as_ref().cloned() {
+                if let Some(player_rc) = self.audio.player.as_ref().cloned() {
                     let (is_playing, progress) = {
                         let player_ref = player_rc.borrow();
                         (player_ref.is_playing(), player_ref.progress())
@@ -167,8 +168,8 @@ impl EguiController {
 
     /// Stop playback when active, returning true if anything was stopped.
     pub fn stop_playback_if_active(&mut self) -> bool {
-        self.pending_loop_disable_at = None;
-        let Some(player_rc) = self.player.as_ref() else {
+        self.audio.pending_loop_disable_at = None;
+        let Some(player_rc) = self.audio.player.as_ref() else {
             return false;
         };
         let stopped = {
@@ -205,4 +206,3 @@ impl EguiController {
         self.clear_folder_selection();
     }
 }
-

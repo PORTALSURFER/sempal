@@ -36,7 +36,7 @@ impl EguiController {
         let duration_seconds = decoded.duration_seconds;
         let sample_rate = decoded.sample_rate;
         let cache_key = CacheKey::new(&source.id, &pending.relative_path);
-        self.audio_cache
+        self.audio.cache
             .insert(cache_key, metadata, decoded.clone(), bytes.clone());
         if let Err(err) = self.finish_waveform_load(
             &source,
@@ -152,7 +152,7 @@ impl EguiController {
             Err(_) => return Ok(false),
         };
         let key = CacheKey::new(&source.id, relative_path);
-        let Some(hit) = self.audio_cache.get(&key, metadata) else {
+        let Some(hit) = self.audio.cache.get(&key, metadata) else {
             return Ok(false);
         };
         let duration_seconds = hit.decoded.duration_seconds;

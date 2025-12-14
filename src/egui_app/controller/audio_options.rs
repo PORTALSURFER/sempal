@@ -146,7 +146,7 @@ impl EguiController {
     }
 
     pub(super) fn update_audio_output_status(&mut self) {
-        if let Some(player) = self.player.as_ref() {
+        if let Some(player) = self.audio.player.as_ref() {
             let output = player.borrow().output_details().clone();
             self.ui.audio.applied = Some(ActiveAudioOutput::from(&output));
             self.ui.audio.warning = self.audio_fallback_message(&output);
@@ -155,7 +155,7 @@ impl EguiController {
 
     fn rebuild_audio_player(&mut self) -> Result<(), String> {
         let loaded_audio = self.wav_selection.loaded_audio.clone();
-        self.player = None;
+        self.audio.player = None;
         let Some(player_rc) = self.ensure_player()? else {
             self.ui.audio.applied = None;
             return Err("Audio unavailable".into());

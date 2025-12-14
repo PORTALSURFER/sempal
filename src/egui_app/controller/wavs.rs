@@ -37,7 +37,7 @@ impl EguiController {
         self.wav_selection.loaded_wav = None;
         self.ui.loaded_wav = None;
         self.waveform.render_meta = None;
-        if let Some(player) = self.player.as_ref() {
+        if let Some(player) = self.audio.player.as_ref() {
             player.borrow_mut().stop();
         }
         self.jobs.pending_audio = None;
