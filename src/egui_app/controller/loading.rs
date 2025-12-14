@@ -52,32 +52,7 @@ impl EguiController {
         );
     }
 
-    pub(super) fn poll_wav_loader(&mut self) {
-        while let Ok(message) = self.runtime.jobs.try_recv_wav_result() {
-            if Some(&message.source_id) != self.selection_state.ctx.selected_source.as_ref() {
-                continue;
-            }
-            match message.result {
-                Ok(entries) => {
-                    self.cache
-                        .wav
-                        .entries
-                        .insert(message.source_id.clone(), entries.clone());
-                    self.rebuild_wav_cache_lookup(&message.source_id);
-                    self.apply_wav_entries(
-                        entries,
-                        false,
-                        Some(message.source_id.clone()),
-                        Some(message.elapsed),
-                    );
-                }
-                Err(err) => self.handle_wav_load_error(&message.source_id, err),
-            }
-            self.runtime.jobs.clear_wav_load_pending();
-        }
-    }
-
-    fn handle_wav_load_error(&mut self, source_id: &SourceId, err: LoadEntriesError) {
+    pub(super) fn handle_wav_load_error(&mut self, source_id: &SourceId, err: LoadEntriesError) {
         match err {
             LoadEntriesError::Db(SourceDbError::InvalidRoot(_)) => {
                 self.mark_source_missing(source_id, "Source folder missing");
@@ -95,7 +70,7 @@ impl EguiController {
         }
     }
 
-    fn apply_wav_entries(
+    pub(super) fn apply_wav_entries(
         &mut self,
         entries: Vec<WavEntry>,
         from_cache: bool,

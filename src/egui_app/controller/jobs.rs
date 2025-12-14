@@ -3,7 +3,6 @@ use super::{
     WavLoadResult, trash_move,
 };
 use std::{
-    collections::VecDeque,
     path::PathBuf,
     sync::{
         Arc,
@@ -28,7 +27,6 @@ pub(in super) struct ControllerJobs {
     pub(in super) audio_job_tx: Sender<AudioLoadJob>,
     message_tx: Sender<JobMessage>,
     message_rx: Receiver<JobMessage>,
-    buffered: VecDeque<JobMessage>,
     pub(in super) pending_source: Option<SourceId>,
     pub(in super) pending_select_path: Option<PathBuf>,
     pub(in super) pending_audio: Option<PendingAudio>,
@@ -52,7 +50,6 @@ impl ControllerJobs {
             audio_job_tx,
             message_tx,
             message_rx,
-            buffered: VecDeque::new(),
             pending_source: None,
             pending_select_path: None,
             pending_audio: None,
@@ -65,6 +62,10 @@ impl ControllerJobs {
         jobs.forward_wav_results(wav_job_rx);
         jobs.forward_audio_results(audio_job_rx);
         jobs
+    }
+
+    pub(in super) fn try_recv_message(&self) -> Result<JobMessage, TryRecvError> {
+        self.message_rx.try_recv()
     }
 
     pub(in super) fn forward_wav_results(&self, rx: Receiver<WavLoadResult>) {
@@ -99,30 +100,6 @@ impl ControllerJobs {
 
     pub(in super) fn send_wav_job(&self, job: WavLoadJob) {
         let _ = self.wav_job_tx.send(job);
-    }
-
-    pub(in super) fn try_recv_wav_result(
-        &mut self,
-    ) -> Result<WavLoadResult, std::sync::mpsc::TryRecvError> {
-        if let Some(idx) = self
-            .buffered
-            .iter()
-            .enumerate()
-            .find_map(|(idx, message)| matches!(message, JobMessage::WavLoaded(_)).then_some(idx))
-        {
-            let message = self.buffered.remove(idx).expect("index checked");
-            let JobMessage::WavLoaded(result) = message else {
-                unreachable!("index checked for wav results");
-            };
-            return Ok(result);
-        }
-        loop {
-            let message = self.message_rx.try_recv()?;
-            match message {
-                JobMessage::WavLoaded(result) => return Ok(result),
-                other => self.buffered.push_back(other),
-            }
-        }
     }
 
     pub(in super) fn set_pending_select_path(&mut self, path: Option<PathBuf>) {
@@ -166,28 +143,6 @@ impl ControllerJobs {
         self.audio_job_tx.send(job).map_err(|_| ())
     }
 
-    pub(in super) fn try_recv_audio_result(&mut self) -> Result<AudioLoadResult, TryRecvError> {
-        if let Some(idx) = self
-            .buffered
-            .iter()
-            .enumerate()
-            .find_map(|(idx, message)| matches!(message, JobMessage::AudioLoaded(_)).then_some(idx))
-        {
-            let message = self.buffered.remove(idx).expect("index checked");
-            let JobMessage::AudioLoaded(result) = message else {
-                unreachable!("index checked for audio results");
-            };
-            return Ok(result);
-        }
-        loop {
-            let message = self.message_rx.try_recv()?;
-            match message {
-                JobMessage::AudioLoaded(result) => return Ok(result),
-                other => self.buffered.push_back(other),
-            }
-        }
-    }
-
     pub(in super) fn scan_in_progress(&self) -> bool {
         self.scan_in_progress
     }
@@ -200,38 +155,6 @@ impl ControllerJobs {
                 let _ = tx.send(JobMessage::ScanFinished(result));
             }
         });
-    }
-
-    pub(in super) fn try_recv_scan_result(&mut self) -> Option<ScanResult> {
-        if !self.scan_in_progress {
-            return None;
-        }
-        if let Some(idx) = self
-            .buffered
-            .iter()
-            .enumerate()
-            .find_map(|(idx, message)| matches!(message, JobMessage::ScanFinished(_)).then_some(idx))
-        {
-            let message = self.buffered.remove(idx).expect("index checked");
-            let JobMessage::ScanFinished(result) = message else {
-                unreachable!("index checked for scan results");
-            };
-            self.scan_in_progress = false;
-            return Some(result);
-        }
-        loop {
-            let message = match self.message_rx.try_recv() {
-                Ok(message) => message,
-                Err(TryRecvError::Empty | TryRecvError::Disconnected) => return None,
-            };
-            match message {
-                JobMessage::ScanFinished(result) => {
-                    self.scan_in_progress = false;
-                    return Some(result);
-                }
-                other => self.buffered.push_back(other),
-            }
-        }
     }
 
     pub(in super) fn trash_move_in_progress(&self) -> bool {
@@ -262,35 +185,9 @@ impl ControllerJobs {
         self.trash_move_cancel.clone()
     }
 
-    pub(in super) fn try_recv_trash_move_message(
-        &mut self,
-    ) -> Result<trash_move::TrashMoveMessage, TryRecvError> {
-        if let Some(idx) = self
-            .buffered
-            .iter()
-            .enumerate()
-            .find_map(|(idx, message)| matches!(message, JobMessage::TrashMove(_)).then_some(idx))
-        {
-            let message = self.buffered.remove(idx).expect("index checked");
-            let JobMessage::TrashMove(message) = message else {
-                unreachable!("index checked for trash move messages");
-            };
-            return Ok(message);
-        }
-        loop {
-            let message = self.message_rx.try_recv()?;
-            match message {
-                JobMessage::TrashMove(message) => return Ok(message),
-                other => self.buffered.push_back(other),
-            }
-        }
-    }
-
     pub(in super) fn clear_trash_move(&mut self) {
         self.trash_move_in_progress = false;
         self.trash_move_cancel = None;
-        self.buffered
-            .retain(|message| !matches!(message, JobMessage::TrashMove(_)));
     }
 
 }

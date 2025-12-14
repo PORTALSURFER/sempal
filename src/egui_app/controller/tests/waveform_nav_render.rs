@@ -167,7 +167,7 @@ fn waveform_rerenders_after_same_length_edit() {
     controller.select_wav_by_path(Path::new("b.wav"));
 
     for _ in 0..20 {
-        controller.poll_audio_loader();
+        controller.poll_background_jobs();
         if controller.sample_view.wav.loaded_wav.as_deref() == Some(Path::new("b.wav")) {
             break;
         }
@@ -231,7 +231,7 @@ fn loading_flag_clears_after_audio_load() {
     );
 
     for _ in 0..50 {
-        controller.poll_audio_loader();
+        controller.poll_background_jobs();
         if controller.sample_view.wav.loaded_wav.as_deref() == Some(rel.as_path()) {
             break;
         }

@@ -5,6 +5,7 @@
 mod audio_cache;
 mod audio_loader;
 mod audio_options;
+mod background_jobs;
 mod browser_controller;
 mod clipboard;
 mod collection_export;

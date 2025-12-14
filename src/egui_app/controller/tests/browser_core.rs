@@ -12,7 +12,7 @@ fn missing_source_is_marked_during_load() {
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
     std::fs::remove_dir_all(&source.root).unwrap();
     controller.queue_wav_load();
-    controller.poll_wav_loader();
+    controller.poll_background_jobs();
     assert_eq!(controller.library.sources.len(), 1);
     assert!(controller.library.missing.sources.contains(&source.id));
     assert!(

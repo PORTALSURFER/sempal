@@ -72,10 +72,7 @@ impl EguiController {
 
     /// Advance playhead position and visibility from the underlying player.
     pub fn tick_playhead(&mut self) {
-        self.poll_wav_loader();
-        self.poll_audio_loader();
-        self.poll_scan();
-        self.poll_trash_move();
+        self.poll_background_jobs();
         let Some(player) = self.audio.player.as_ref().cloned() else {
             if self.sample_view.waveform.decoded.is_none() {
                 self.hide_waveform_playhead();

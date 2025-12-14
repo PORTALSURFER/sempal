@@ -3,27 +3,11 @@ use super::*;
 use std::path::Path;
 
 impl EguiController {
-    pub(in crate::egui_app::controller) fn poll_audio_loader(&mut self) {
-        while let Ok(message) = self.runtime.jobs.try_recv_audio_result() {
-            let Some(pending) = self.runtime.jobs.pending_audio() else {
-                continue;
-            };
-            if message.request_id != pending.request_id
-                || message.source_id != pending.source_id
-                || message.relative_path != pending.relative_path
-            {
-                continue;
-            }
-            self.runtime.jobs.set_pending_audio(None);
-            self.ui.waveform.loading = None;
-            match message.result {
-                Ok(outcome) => self.handle_audio_loaded(pending, outcome),
-                Err(err) => self.handle_audio_load_error(pending, err),
-            }
-        }
-    }
-
-    fn handle_audio_loaded(&mut self, pending: PendingAudio, outcome: AudioLoadOutcome) {
+    pub(in crate::egui_app::controller) fn handle_audio_loaded(
+        &mut self,
+        pending: PendingAudio,
+        outcome: AudioLoadOutcome,
+    ) {
         let source = SampleSource {
             id: pending.source_id.clone(),
             root: pending.root.clone(),
@@ -55,7 +39,11 @@ impl EguiController {
         self.maybe_trigger_pending_playback();
     }
 
-    fn handle_audio_load_error(&mut self, pending: PendingAudio, error: AudioLoadError) {
+    pub(in crate::egui_app::controller) fn handle_audio_load_error(
+        &mut self,
+        pending: PendingAudio,
+        error: AudioLoadError,
+    ) {
         let source = SampleSource {
             id: pending.source_id.clone(),
             root: pending.root.clone(),

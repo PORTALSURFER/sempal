@@ -1,5 +1,7 @@
 use super::*;
-use super::trash_move::{TrashMoveFinished, TrashMoveMessage};
+use super::trash_move::TrashMoveFinished;
+#[cfg(test)]
+use super::trash_move::TrashMoveMessage;
 #[cfg(test)]
 use super::trash_move::run_trash_move_task_with_progress;
 #[cfg(not(test))]
@@ -10,8 +12,10 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::{
     Arc,
-    atomic::{AtomicBool, Ordering},
+    atomic::AtomicBool,
 };
+#[cfg(test)]
+use std::sync::atomic::Ordering;
 #[cfg(not(test))]
 use std::sync::mpsc::channel;
 
@@ -178,38 +182,7 @@ impl EguiController {
         }
     }
 
-    pub(super) fn poll_trash_move(&mut self) {
-        if !self.runtime.jobs.trash_move_in_progress() {
-            return;
-        }
-        if let Some(cancel) = self.runtime.jobs.trash_move_cancel().as_ref()
-            && self.ui.progress.cancel_requested
-        {
-            cancel.store(true, Ordering::Relaxed);
-        }
-        let mut finished = None;
-        while let Ok(message) = self.runtime.jobs.try_recv_trash_move_message() {
-            match message {
-                TrashMoveMessage::SetTotal(total) => {
-                    self.ui.progress.total = total;
-                }
-                TrashMoveMessage::Progress { completed, detail } => {
-                    self.ui.progress.completed = completed;
-                    self.ui.progress.detail = detail;
-                }
-                TrashMoveMessage::Finished(result) => {
-                    finished = Some(result);
-                    break;
-                }
-            }
-        }
-        if let Some(result) = finished {
-            self.runtime.jobs.clear_trash_move();
-            self.apply_trash_move_finished(result);
-        }
-    }
-
-    fn apply_trash_move_finished(&mut self, result: TrashMoveFinished) {
+    pub(super) fn apply_trash_move_finished(&mut self, result: TrashMoveFinished) {
         if result.collections_changed {
             self.library.collections = result.collections;
             self.refresh_collections_ui();
