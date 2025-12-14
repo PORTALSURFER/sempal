@@ -4,6 +4,9 @@ const MIN_SCROLL_SPEED: f32 = 0.2;
 const MAX_SCROLL_SPEED: f32 = 5.0;
 const MIN_ZOOM_FACTOR: f32 = 0.5;
 const MAX_ZOOM_FACTOR: f32 = 0.995;
+const WHEEL_ZOOM_ANCHOR_FACTOR: f32 = 0.96;
+const MIN_WHEEL_ZOOM_SPEED: f32 = 0.1;
+const MAX_WHEEL_ZOOM_SPEED: f32 = 20.0;
 
 pub(super) fn clamp_scroll_speed(speed: f32) -> f32 {
     speed.clamp(MIN_SCROLL_SPEED, MAX_SCROLL_SPEED)
@@ -11,6 +14,20 @@ pub(super) fn clamp_scroll_speed(speed: f32) -> f32 {
 
 pub(super) fn clamp_zoom_factor(factor: f32) -> f32 {
     factor.clamp(MIN_ZOOM_FACTOR, MAX_ZOOM_FACTOR)
+}
+
+fn clamp_wheel_zoom_speed(speed: f32) -> f32 {
+    speed.clamp(MIN_WHEEL_ZOOM_SPEED, MAX_WHEEL_ZOOM_SPEED)
+}
+
+fn wheel_zoom_speed_to_factor(speed: f32) -> f32 {
+    let speed = clamp_wheel_zoom_speed(speed);
+    clamp_zoom_factor(WHEEL_ZOOM_ANCHOR_FACTOR.powf(speed))
+}
+
+fn wheel_zoom_factor_to_speed(factor: f32) -> f32 {
+    let factor = clamp_zoom_factor(factor);
+    clamp_wheel_zoom_speed(factor.ln() / WHEEL_ZOOM_ANCHOR_FACTOR.ln())
 }
 
 impl EguiController {
@@ -44,6 +61,15 @@ impl EguiController {
         self.settings.controls.wheel_zoom_factor = clamped;
         self.ui.controls.wheel_zoom_factor = clamped;
         self.persist_controls();
+    }
+
+    pub fn wheel_zoom_speed(&self) -> f32 {
+        wheel_zoom_factor_to_speed(self.ui.controls.wheel_zoom_factor)
+    }
+
+    /// Set and persist wheel zoom speed (low = slower, high = faster).
+    pub fn set_wheel_zoom_speed(&mut self, speed: f32) {
+        self.set_wheel_zoom_factor(wheel_zoom_speed_to_factor(speed));
     }
 
     /// Set and persist keyboard zoom factor (clamped).
@@ -83,6 +109,34 @@ impl EguiController {
     fn persist_controls(&mut self) {
         if let Err(err) = self.persist_config("Failed to save options") {
             self.set_status(err, StatusTone::Warning);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn wheel_zoom_speed_mapping_is_monotonic() {
+        let slow = wheel_zoom_speed_to_factor(0.2);
+        let medium = wheel_zoom_speed_to_factor(1.0);
+        let fast = wheel_zoom_speed_to_factor(10.0);
+
+        assert!(slow > medium, "expected slower speed to zoom less per step");
+        assert!(medium > fast, "expected higher speed to zoom more per step");
+    }
+
+    #[test]
+    fn wheel_zoom_speed_round_trips_with_factor() {
+        let speeds = [0.2, 0.5, 1.0, 2.0, 8.0, 16.0];
+        for speed in speeds {
+            let factor = wheel_zoom_speed_to_factor(speed);
+            let round_tripped = wheel_zoom_factor_to_speed(factor);
+            assert!(
+                (speed - round_tripped).abs() < 0.02,
+                "speed {speed} round-tripped to {round_tripped} via factor {factor}"
+            );
         }
     }
 }
