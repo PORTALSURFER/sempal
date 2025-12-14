@@ -81,6 +81,9 @@ impl DragDropActions for DragDropController<'_> {
         if self.ui.drag.payload.is_none() {
             return;
         }
+        if self.ui.drag.pointer_left_window {
+            return;
+        }
         debug!(
             "update_active_drag: pos={:?} source={:?} target={:?}",
             pos, source, target
@@ -98,6 +101,9 @@ impl DragDropActions for DragDropController<'_> {
 
     fn refresh_drag_position(&mut self, pos: Pos2, shift_down: bool) {
         if self.ui.drag.payload.is_some() {
+            if self.ui.drag.pointer_left_window {
+                return;
+            }
             self.ui.drag.position = Some(pos);
             if let Some(DragPayload::Selection {
                 keep_source_focused,
