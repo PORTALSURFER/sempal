@@ -1,4 +1,7 @@
-use super::helpers::{clamp_label_for_width, list_row_height, render_list_row};
+use super::helpers::{
+    InlineTextEditAction, clamp_label_for_width, list_row_height, render_inline_text_edit,
+    render_list_row,
+};
 use super::style;
 use super::*;
 use crate::egui_app::state::{DragPayload, DragSource, DragTarget, FocusContext};
@@ -593,21 +596,16 @@ impl EguiApp {
         edit_rect.max.x -= padding;
         edit_rect.min.y += 2.0;
         edit_rect.max.y -= 2.0;
-        let edit = egui::TextEdit::singleline(name)
-            .hint_text("Rename folder")
-            .frame(false)
-            .desired_width(edit_rect.width());
-        let response = ui.put(edit_rect, edit);
-        if self.controller.ui.sources.folders.rename_focus_requested && !response.has_focus() {
-            response.request_focus();
-            self.controller.ui.sources.folders.rename_focus_requested = false;
-        }
-        let enter = response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-        let escape = response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape));
-        if enter {
-            self.apply_pending_folder_rename();
-        } else if escape || response.lost_focus() {
-            self.controller.cancel_folder_rename();
+        match render_inline_text_edit(
+            ui,
+            edit_rect,
+            name,
+            "Rename folder",
+            &mut self.controller.ui.sources.folders.rename_focus_requested,
+        ) {
+            InlineTextEditAction::Submit => self.apply_pending_folder_rename(),
+            InlineTextEditAction::Cancel => self.controller.cancel_folder_rename(),
+            InlineTextEditAction::None => {}
         }
     }
 
@@ -641,21 +639,16 @@ impl EguiApp {
         edit_rect.max.x -= padding;
         edit_rect.min.y += 2.0;
         edit_rect.max.y -= 2.0;
-        let edit = egui::TextEdit::singleline(&mut inline.name)
-            .hint_text("New folder name")
-            .frame(false)
-            .desired_width(edit_rect.width());
-        let edit_response = ui.put(edit_rect, edit);
-        if inline.focus_requested && !edit_response.has_focus() {
-            edit_response.request_focus();
-            inline.focus_requested = false;
-        }
-        let enter_pressed = ui.input(|i| i.key_pressed(egui::Key::Enter));
-        let escape_pressed = ui.input(|i| i.key_pressed(egui::Key::Escape));
-        if enter_pressed && (edit_response.has_focus() || edit_response.lost_focus()) {
-            self.apply_pending_folder_creation();
-        } else if escape_pressed || (edit_response.lost_focus() && !enter_pressed) {
-            self.controller.cancel_new_folder_creation();
+        match render_inline_text_edit(
+            ui,
+            edit_rect,
+            &mut inline.name,
+            "New folder name",
+            &mut inline.focus_requested,
+        ) {
+            InlineTextEditAction::Submit => self.apply_pending_folder_creation(),
+            InlineTextEditAction::Cancel => self.controller.cancel_new_folder_creation(),
+            InlineTextEditAction::None => {}
         }
     }
 
