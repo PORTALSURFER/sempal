@@ -426,13 +426,13 @@ impl EguiController {
 
     fn play_random_history_entry(&mut self, entry: RandomHistoryEntry) {
         if self.selected_source.as_ref() != Some(&entry.source_id) {
-            self.pending_playback = Some(PendingPlayback {
+            self.jobs.pending_playback = Some(PendingPlayback {
                 source_id: entry.source_id.clone(),
                 relative_path: entry.relative_path.clone(),
                 looped: self.ui.waveform.loop_enabled,
                 start_override: None,
             });
-            self.pending_select_path = Some(entry.relative_path.clone());
+            self.jobs.pending_select_path = Some(entry.relative_path.clone());
             self.select_source_internal(Some(entry.source_id), Some(entry.relative_path));
             return;
         }
@@ -483,8 +483,8 @@ impl EguiController {
     pub fn play_audio(&mut self, looped: bool, start_override: Option<f32>) -> Result<(), String> {
         self.pending_loop_disable_at = None;
         if self.loaded_audio.is_none() {
-            if let Some(pending) = self.pending_audio.clone() {
-                self.pending_playback = Some(PendingPlayback {
+            if let Some(pending) = self.jobs.pending_audio.clone() {
+                self.jobs.pending_playback = Some(PendingPlayback {
                     source_id: pending.source_id,
                     relative_path: pending.relative_path,
                     looped,
@@ -505,7 +505,7 @@ impl EguiController {
                 looped,
                 start_override,
             };
-            self.pending_playback = Some(pending_playback.clone());
+            self.jobs.pending_playback = Some(pending_playback.clone());
             self.queue_audio_load_for(
                 &source,
                 &selected,
