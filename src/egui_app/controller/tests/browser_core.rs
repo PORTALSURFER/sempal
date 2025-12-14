@@ -36,10 +36,10 @@ fn label_cache_builds_on_first_lookup() {
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
-    assert!(!controller.label_cache.contains_key(&source.id));
+    assert!(!controller.browser_cache.labels.contains_key(&source.id));
     let label = controller.wav_label(1).unwrap();
     assert_eq!(label, "b");
-    assert!(controller.label_cache.contains_key(&source.id));
+    assert!(controller.browser_cache.labels.contains_key(&source.id));
 }
 
 #[test]

@@ -86,7 +86,7 @@ impl EguiController {
             &mut self.db_cache,
             &mut self.wav_cache.entries,
             &mut self.wav_cache.lookup,
-            &mut self.label_cache,
+            &mut self.browser_cache.labels,
             &mut self.missing.wavs,
             &mut self.folder_browsers,
         );
@@ -289,7 +289,7 @@ impl EguiController {
             &mut self.db_cache,
             &mut self.wav_cache.entries,
             &mut self.wav_cache.lookup,
-            &mut self.label_cache,
+            &mut self.browser_cache.labels,
             &mut self.missing.wavs,
             &mut self.folder_browsers,
         );

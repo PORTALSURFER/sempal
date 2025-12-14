@@ -84,8 +84,7 @@ pub struct EguiController {
     db_cache: HashMap<SourceId, Rc<SourceDatabase>>,
     wav_cache: WavCacheState,
     missing: MissingState,
-    label_cache: HashMap<SourceId, Vec<String>>,
-    browser_search_cache: wavs::BrowserSearchCache,
+    browser_cache: BrowserCacheState,
     audio_cache: AudioCache,
     wav_entries: WavEntriesState,
     selection_ctx: SelectionContextState,
@@ -145,8 +144,10 @@ impl EguiController {
                 sources: HashSet::new(),
                 wavs: HashMap::new(),
             },
-            label_cache: HashMap::new(),
-            browser_search_cache: wavs::BrowserSearchCache::default(),
+            browser_cache: BrowserCacheState {
+                labels: HashMap::new(),
+                search: wavs::BrowserSearchCache::default(),
+            },
             audio_cache: AudioCache::new(AUDIO_CACHE_CAPACITY, AUDIO_HISTORY_LIMIT),
             wav_entries: WavEntriesState {
                 entries: Vec::new(),
@@ -306,6 +307,11 @@ struct AppSettingsState {
     controls: crate::sample_sources::config::InteractionOptions,
     trash_folder: Option<std::path::PathBuf>,
     collection_export_root: Option<PathBuf>,
+}
+
+struct BrowserCacheState {
+    labels: HashMap<SourceId, Vec<String>>,
+    search: wavs::BrowserSearchCache,
 }
 
 struct WavEntriesState {

@@ -3,7 +3,7 @@ use super::*;
 impl EguiController {
     fn sync_after_wav_entries_changed(&mut self) {
         self.rebuild_wav_lookup();
-        self.browser_search_cache.invalidate();
+        self.browser_cache.search.invalidate();
         self.refresh_folder_browser();
         self.rebuild_browser_lists();
     }
@@ -121,12 +121,14 @@ impl EguiController {
         if let Some(id) = source_id {
             let needs_labels = !from_cache
                 || self
-                    .label_cache
+                    .browser_cache
+                    .labels
                     .get(&id)
                     .map(|cached| cached.len() != self.wav_entries.entries.len())
                     .unwrap_or(true);
             if needs_labels {
-                self.label_cache
+                self.browser_cache
+                    .labels
                     .insert(id.clone(), self.build_label_cache(&self.wav_entries.entries));
             }
             let missing: std::collections::HashSet<std::path::PathBuf> = self

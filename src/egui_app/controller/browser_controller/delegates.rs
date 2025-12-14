@@ -83,7 +83,7 @@ impl EguiController {
                 .retain(|entry| entry.relative_path != relative_path);
             self.sync_browser_after_wav_entries_mutation(&source.id);
         } else {
-            self.label_cache.remove(&source.id);
+            self.browser_cache.labels.remove(&source.id);
         }
         self.rebuild_missing_lookup_for_source(&source.id);
         self.clear_loaded_sample_if(source, relative_path);
