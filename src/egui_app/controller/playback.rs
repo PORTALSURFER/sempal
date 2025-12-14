@@ -4,6 +4,7 @@ use std::path::PathBuf;
 mod random_nav;
 mod player;
 mod browser_nav;
+mod tagging;
 mod transport;
 
 #[cfg(test)]
@@ -15,78 +16,7 @@ const PLAYHEAD_COMPLETION_EPSILON: f32 = 0.001;
 impl EguiController {
     /// Tag the focused/selected wavs and keep the current focus.
     pub fn tag_selected(&mut self, target: SampleTag) {
-        let Some(selected_index) = self.selected_row_index() else {
-            return;
-        };
-        let primary_row = match self
-            .visible_browser_indices()
-            .iter()
-            .position(|idx| *idx == selected_index)
-        {
-            Some(row) => row,
-            None => return,
-        };
-        let rows = self.action_rows_from_primary(primary_row);
-        self.ui.collections.selected_sample = None;
-        self.focus_browser_context();
-        self.ui.browser.autoscroll = true;
-        let mut last_error = None;
-        let mut applied: Vec<(SourceId, PathBuf, SampleTag)> = Vec::new();
-        for row in rows {
-            let before = match self.resolve_browser_sample(row) {
-                Ok(ctx) => (ctx.source.id.clone(), ctx.entry.relative_path.clone(), ctx.entry.tag),
-                Err(err) => {
-                    last_error = Some(err);
-                    continue;
-                }
-            };
-            match self.tag_browser_sample(row, target) {
-                Ok(()) => applied.push(before),
-                Err(err) => last_error = Some(err),
-            }
-        }
-        if !applied.is_empty() {
-            let label = match target {
-                SampleTag::Keep => "Tag keep",
-                SampleTag::Trash => "Tag trash",
-                SampleTag::Neutral => "Tag neutral",
-            };
-            let redo_updates: Vec<(SourceId, PathBuf, SampleTag)> = applied
-                .iter()
-                .map(|(source_id, path, _)| (source_id.clone(), path.clone(), target))
-                .collect();
-            self.push_undo_entry(super::undo::UndoEntry::<EguiController>::new(
-                label,
-                move |controller: &mut EguiController| {
-                    for (source_id, path, tag) in applied.iter() {
-                        let source = controller
-                            .sources
-                            .iter()
-                            .find(|s| &s.id == source_id)
-                            .cloned()
-                            .ok_or_else(|| "Source not available".to_string())?;
-                        controller.set_sample_tag_for_source(&source, path, *tag, false)?;
-                    }
-                    Ok(())
-                },
-                move |controller: &mut EguiController| {
-                    for (source_id, path, tag) in redo_updates.iter() {
-                        let source = controller
-                            .sources
-                            .iter()
-                            .find(|s| &s.id == source_id)
-                            .cloned()
-                            .ok_or_else(|| "Source not available".to_string())?;
-                        controller.set_sample_tag_for_source(&source, path, *tag, false)?;
-                    }
-                    Ok(())
-                },
-            ));
-        }
-        self.refocus_after_filtered_removal(primary_row);
-        if let Some(err) = last_error {
-            self.set_status(err, StatusTone::Error);
-        }
+        tagging::tag_selected(self, target);
     }
 
     /// Move selection within the current sample browser list by an offset and play.
@@ -131,22 +61,12 @@ impl EguiController {
 
     /// Cycle the triage flag filter (-1 left, +1 right) to mirror old column navigation.
     pub fn move_selection_column(&mut self, delta: isize) {
-        use crate::egui_app::state::TriageFlagFilter::*;
-        let filters = [All, Keep, Trash, Untagged];
-        let current = self.ui.browser.filter;
-        let current_idx = filters.iter().position(|f| f == &current).unwrap_or(0) as isize;
-        let target_idx = (current_idx + delta).clamp(0, (filters.len() as isize) - 1) as usize;
-        let target = filters[target_idx];
-        self.set_browser_filter(target);
+        tagging::move_selection_column(self, delta);
     }
 
     /// Tag leftwards: Keep -> Neutral, otherwise -> Trash.
     pub fn tag_selected_left(&mut self) {
-        let target = match self.selected_tag() {
-            Some(SampleTag::Keep) => SampleTag::Neutral,
-            _ => SampleTag::Trash,
-        };
-        self.tag_selected(target);
+        tagging::tag_selected_left(self);
     }
 
 }
