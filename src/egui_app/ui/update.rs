@@ -54,6 +54,14 @@ impl EguiApp {
         #[cfg(target_os = "windows")]
         self.controller
             .set_drag_hwnd(platform::hwnd_from_frame(_frame));
+        #[cfg(target_os = "windows")]
+        {
+            let left_mouse_down = platform::left_mouse_button_down();
+            self.controller
+                .ui
+                .drag
+                .update_os_mouse_state(left_mouse_down);
+        }
         self.controller.tick_playhead();
         if let Some(pos) = ctx.input(|i| i.pointer.hover_pos().or_else(|| i.pointer.interact_pos()))
         {
@@ -192,7 +200,12 @@ impl EguiApp {
         }
     }
 
-    fn handle_arrow_keys(&mut self, ctx: &egui::Context, focus: &FocusFlags, input: &InputSnapshot) {
+    fn handle_arrow_keys(
+        &mut self,
+        ctx: &egui::Context,
+        focus: &FocusFlags,
+        input: &InputSnapshot,
+    ) {
         if ctx.wants_keyboard_input() {
             return;
         }
@@ -204,7 +217,12 @@ impl EguiApp {
         self.handle_arrow_left(ctx, focus, input, browser_has_selection, ctrl_or_command);
     }
 
-    fn handle_arrow_down(&mut self, ctx: &egui::Context, focus: &FocusFlags, input: &InputSnapshot) {
+    fn handle_arrow_down(
+        &mut self,
+        ctx: &egui::Context,
+        focus: &FocusFlags,
+        input: &InputSnapshot,
+    ) {
         if !input.arrow_down {
             return;
         }

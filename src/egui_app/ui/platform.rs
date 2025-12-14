@@ -5,6 +5,8 @@ use windows::Win32::Foundation::HWND;
 #[cfg(target_os = "windows")]
 use windows::Win32::Foundation::{POINT, RECT};
 #[cfg(target_os = "windows")]
+use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
+#[cfg(target_os = "windows")]
 use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, GetWindowRect};
 
 #[cfg(target_os = "windows")]
@@ -34,4 +36,9 @@ pub(super) fn cursor_inside_hwnd(hwnd: HWND) -> Option<bool> {
                 && cursor.y < rect.bottom,
         )
     }
+}
+
+#[cfg(target_os = "windows")]
+pub(super) fn left_mouse_button_down() -> bool {
+    unsafe { (GetAsyncKeyState(VK_LBUTTON.0 as i32) & 0x8000) != 0 }
 }
