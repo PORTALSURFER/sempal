@@ -16,6 +16,72 @@
 - *(windows)* Avoid losing internal drag on brief pointer leave
 - *(windows)* Restore external drag-out while keeping internal drags
 - *(collections)* Allow tagging clip-root members
+- *(wav)* Tolerate ill-formed headers via rodio fallback
+- *(wav)* Sanitize nonstandard fmt chunk sizes
+- *(windows)* Restore external drag-out by detecting pointer leave correctly
+- *(windows)* Trigger external drag on PointerGone event
+- *(windows)* Keep in-app drag active when cursor briefly leaves window
+- *(windows)* Preserve drag when leaving and reentering window
+- *(windows)* Treat interact_pos as inside during in-window drags
+- *(windows)* Detect drag-out using OS cursor position
+- *(windows)* Handle Win32 API Result return types
+- *(windows)* Clear leave latch when OS cursor re-enters window
+- *(windows)* Increase external drag arm delay to avoid accidental launch
+- *(windows)* Hide internal drag preview after leaving window
+- *(windows)* Cancel in-app drag updates after leaving window
+- *(ui)* Start drags even when window unfocused
+- *(windows)* Reset in-app drag after external drag ends
+- *(windows)* Allow drag-start after external drag
+- *(windows)* Correct GetAsyncKeyState bitmask
+- *(windows)* Use OS cursor position for drag-start recovery
+
+### 💼 Other
+
+- *(windows)* Enable Win32_UI_WindowsAndMessaging feature
+
+### 🚜 Refactor
+
+- *(tests)* Move controller tests into dedicated modules
+- *(controller/wavs)* Extract browser search+label cache helpers into submodule
+- *(controller)* Group async jobs and pending state
+- *(controller)* Extract tagging service
+- *(controller)* Centralize source cache invalidation
+- *(controller)* Centralize wav list UI sync
+- *(controller/wavs)* Centralize browser sync after entry mutations
+- *(controller)* Rely on clear_waveform_view for loaded resets
+- *(controller)* Reuse helpers when folder ops mutate entries
+- *(controller)* Reuse browser sync helper for selection exports
+- *(controller)* Invalidate caches when removing sources
+- *(controller)* Reuse clear_waveform_view for collection sample selection
+- *(controller/collections)* Extract helpers for sample selection
+- *(controller)* Centralize clearing loaded waveform visuals
+- *(controller)* Centralize waveform reload for active sample
+- *(controller/wavs)* Extract browser actions module
+- *(controller/source_folders)* Extract folder actions module
+- *(controller/source_folders)* Extract selection and navigation module
+- *(controller/source_folders)* Extract folder tree/search module
+- *(controller/source_folders)* Split folder selection module
+- *(ui/waveform_view)* Extract destructive edit prompt
+- *(ui/waveform_view)* Extract selection geometry helpers
+- *(ui/waveform_view)* Extract selection context menu
+- *(ui/waveform_view)* Extract selection overlay interactions
+- *(ui/waveform_view)* Extract hover cursor overlay
+- *(ui/waveform_view)* Extract marker/loop/playhead overlays
+- *(ui/waveform_view)* Extract base interactions
+- *(ui/waveform_view)* Extract base rendering and texture upload
+- *(ui/waveform_view)* Extract controls row
+- *(controller/playback)* Extract transport and selection ops
+- *(controller/playback)* Extract random navigation module
+- *(controller/playback)* Extract player and playhead logic
+- *(controller/playback)* Extract browser navigation helpers
+- *(controller/playback)* Extract tagging and triage helpers
+- *(controller/playback)* Extract formatting helpers
+- *(controller/wavs)* Extract audio loading module
+
+### 📚 Documentation
+
+- Refresh usage guide for config paths, exports, and hotkeys
+- Add refactor strategy for small PR module splits
 ## [0.342.0] - 2025-12-13
 
 ### ⚙️ Miscellaneous Tasks
