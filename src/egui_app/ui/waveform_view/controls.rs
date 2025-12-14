@@ -1,5 +1,5 @@
-use super::*;
 use super::style;
+use super::*;
 use eframe::egui::{self, RichText, Ui};
 
 pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: &style::Palette) {
@@ -36,4 +36,3 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
         app.controller.set_waveform_channel_view(view_mode);
     }
 }
-

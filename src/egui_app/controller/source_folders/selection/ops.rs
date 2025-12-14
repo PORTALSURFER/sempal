@@ -1,4 +1,46 @@
 use super::super::*;
+use crate::egui_app::state::FolderRowView;
+use std::collections::BTreeSet;
+
+fn ancestors(path: &Path) -> Vec<PathBuf> {
+    let mut result = Vec::new();
+    let mut current = path.parent();
+    while let Some(parent) = current {
+        if parent.as_os_str().is_empty() {
+            break;
+        }
+        result.push(parent.to_path_buf());
+        current = parent.parent();
+    }
+    result
+}
+
+fn remove_descendants(selected: &mut BTreeSet<PathBuf>, path: &Path) {
+    let descendants: Vec<PathBuf> = selected
+        .iter()
+        .filter(|candidate| candidate != &path && candidate.starts_with(path))
+        .cloned()
+        .collect();
+    for descendant in descendants {
+        selected.remove(&descendant);
+    }
+}
+
+fn insert_folder(selected: &mut BTreeSet<PathBuf>, path: &Path, has_children: bool) {
+    selected.insert(path.to_path_buf());
+    for ancestor in ancestors(path) {
+        selected.remove(&ancestor);
+    }
+    if has_children {
+        remove_descendants(selected, path);
+    }
+}
+
+#[derive(Clone, Copy)]
+enum FolderSelectMode {
+    Replace,
+    Toggle,
+}
 
 impl EguiController {
     pub(crate) fn replace_folder_selection(&mut self, row_index: usize) {
@@ -85,7 +127,7 @@ impl EguiController {
             model.selected.clear();
             if let Some(focused) = focused_path.clone() {
                 model.focused = Some(focused.clone());
-                if is_root_path(&focused) {
+                if focused.as_os_str().is_empty() {
                     model.selection_anchor = None;
                 } else {
                     model.selection_anchor = Some(focused);
