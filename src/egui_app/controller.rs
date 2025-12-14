@@ -89,9 +89,8 @@ pub struct EguiController {
     wav_selection: WavSelectionState,
     settings: AppSettingsState,
     jobs: jobs::ControllerJobs,
-    random_history: RandomHistoryState,
     folder_browsers: FolderBrowsersState,
-    undo_stack: undo::UndoStack<EguiController>,
+    history: ControllerHistoryState,
     #[cfg(target_os = "windows")]
     drag_hwnd: Option<windows::Win32::Foundation::HWND>,
     #[cfg(test)]
@@ -175,14 +174,16 @@ impl EguiController {
                 collection_export_root: None,
             },
             jobs,
-            random_history: RandomHistoryState {
-                entries: VecDeque::new(),
-                cursor: None,
-            },
             folder_browsers: FolderBrowsersState {
                 models: HashMap::new(),
             },
-            undo_stack: undo::UndoStack::new(UNDO_LIMIT),
+            history: ControllerHistoryState {
+                undo_stack: undo::UndoStack::new(UNDO_LIMIT),
+                random_history: RandomHistoryState {
+                    entries: VecDeque::new(),
+                    cursor: None,
+                },
+            },
             #[cfg(target_os = "windows")]
             drag_hwnd: None,
             #[cfg(test)]
@@ -204,18 +205,21 @@ impl EguiController {
 
     #[allow(dead_code)]
     pub(crate) fn can_undo(&self) -> bool {
-        self.undo_stack.can_undo()
+        self.history.undo_stack.can_undo()
     }
 
     #[allow(dead_code)]
     pub(crate) fn can_redo(&self) -> bool {
-        self.undo_stack.can_redo()
+        self.history.undo_stack.can_redo()
     }
 
     pub(crate) fn undo(&mut self) {
-        let mut stack = std::mem::replace(&mut self.undo_stack, undo::UndoStack::new(UNDO_LIMIT));
+        let mut stack = std::mem::replace(
+            &mut self.history.undo_stack,
+            undo::UndoStack::new(UNDO_LIMIT),
+        );
         let result = stack.undo(self);
-        self.undo_stack = stack;
+        self.history.undo_stack = stack;
         match result {
             Ok(Some(label)) => self.set_status(format!("Undid {label}"), StatusTone::Info),
             Ok(None) => self.set_status("Nothing to undo", StatusTone::Info),
@@ -224,9 +228,12 @@ impl EguiController {
     }
 
     pub(crate) fn redo(&mut self) {
-        let mut stack = std::mem::replace(&mut self.undo_stack, undo::UndoStack::new(UNDO_LIMIT));
+        let mut stack = std::mem::replace(
+            &mut self.history.undo_stack,
+            undo::UndoStack::new(UNDO_LIMIT),
+        );
         let result = stack.redo(self);
-        self.undo_stack = stack;
+        self.history.undo_stack = stack;
         match result {
             Ok(Some(label)) => self.set_status(format!("Redid {label}"), StatusTone::Info),
             Ok(None) => self.set_status("Nothing to redo", StatusTone::Info),
@@ -235,7 +242,7 @@ impl EguiController {
     }
 
     pub(crate) fn push_undo_entry(&mut self, entry: undo::UndoEntry<EguiController>) {
-        self.undo_stack.push(entry);
+        self.history.undo_stack.push(entry);
     }
 
     pub(crate) fn browser(&mut self) -> browser_controller::BrowserController<'_> {
@@ -336,6 +343,11 @@ struct ControllerAudioState {
     player: Option<Rc<RefCell<AudioPlayer>>>,
     cache: AudioCache,
     pending_loop_disable_at: Option<Instant>,
+}
+
+struct ControllerHistoryState {
+    undo_stack: undo::UndoStack<EguiController>,
+    random_history: RandomHistoryState,
 }
 
 struct WavEntriesState {

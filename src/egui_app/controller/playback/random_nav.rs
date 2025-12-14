@@ -21,22 +21,23 @@ pub(super) fn focus_random_visible_sample(controller: &mut EguiController) {
 }
 
 pub(super) fn play_previous_random_sample(controller: &mut EguiController) {
-    if controller.random_history.entries.is_empty() {
+    if controller.history.random_history.entries.is_empty() {
         controller.set_status("No random history yet", StatusTone::Info);
         return;
     }
     let current = controller
+        .history
         .random_history
         .cursor
-        .unwrap_or_else(|| controller.random_history.entries.len().saturating_sub(1));
+        .unwrap_or_else(|| controller.history.random_history.entries.len().saturating_sub(1));
     if current == 0 {
-        controller.random_history.cursor = Some(0);
+        controller.history.random_history.cursor = Some(0);
         controller.set_status("Reached start of random history", StatusTone::Info);
         return;
     }
     let target = current - 1;
-    controller.random_history.cursor = Some(target);
-    if let Some(entry) = controller.random_history.entries.get(target).cloned() {
+    controller.history.random_history.cursor = Some(target);
+    if let Some(entry) = controller.history.random_history.entries.get(target).cloned() {
         play_random_history_entry(controller, entry);
     }
 }
@@ -92,22 +93,22 @@ fn play_random_visible_sample_internal<R: Rng + ?Sized>(
 }
 
 fn push_random_history(controller: &mut EguiController, source_id: SourceId, relative_path: PathBuf) {
-    if let Some(cursor) = controller.random_history.cursor
-        && cursor + 1 < controller.random_history.entries.len()
+    if let Some(cursor) = controller.history.random_history.cursor
+        && cursor + 1 < controller.history.random_history.entries.len()
     {
-        controller.random_history.entries.truncate(cursor + 1);
+        controller.history.random_history.entries.truncate(cursor + 1);
     }
-    controller.random_history.entries.push_back(RandomHistoryEntry {
+    controller.history.random_history.entries.push_back(RandomHistoryEntry {
         source_id,
         relative_path,
     });
-    if controller.random_history.entries.len() > RANDOM_HISTORY_LIMIT {
-        controller.random_history.entries.pop_front();
-        if let Some(cursor) = controller.random_history.cursor {
-            controller.random_history.cursor = Some(cursor.saturating_sub(1));
+    if controller.history.random_history.entries.len() > RANDOM_HISTORY_LIMIT {
+        controller.history.random_history.entries.pop_front();
+        if let Some(cursor) = controller.history.random_history.cursor {
+            controller.history.random_history.cursor = Some(cursor.saturating_sub(1));
         }
     }
-    controller.random_history.cursor = Some(controller.random_history.entries.len().saturating_sub(1));
+    controller.history.random_history.cursor = Some(controller.history.random_history.entries.len().saturating_sub(1));
 }
 
 fn play_random_history_entry(controller: &mut EguiController, entry: RandomHistoryEntry) {

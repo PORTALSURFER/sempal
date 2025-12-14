@@ -306,11 +306,11 @@ fn random_history_steps_backward() {
     controller.play_random_visible_sample_with_seed(9);
 
     assert_eq!(controller.ui.browser.selected_visible, second_expected);
-    assert_eq!(controller.random_history.cursor, Some(1));
+    assert_eq!(controller.history.random_history.cursor, Some(1));
 
     controller.play_previous_random_sample();
 
-    assert_eq!(controller.random_history.cursor, Some(0));
+    assert_eq!(controller.history.random_history.cursor, Some(0));
     assert_eq!(controller.ui.browser.selected_visible, first_expected);
 }
 
@@ -329,10 +329,10 @@ fn random_history_trims_to_limit() {
         controller.play_random_visible_sample_with_seed(seed);
     }
 
-    assert_eq!(controller.random_history.entries.len(), RANDOM_HISTORY_LIMIT);
+    assert_eq!(controller.history.random_history.entries.len(), RANDOM_HISTORY_LIMIT);
     assert_eq!(
-        controller.random_history.cursor,
-        Some(controller.random_history.entries.len().saturating_sub(1))
+        controller.history.random_history.cursor,
+        Some(controller.history.random_history.entries.len().saturating_sub(1))
     );
 }
 
