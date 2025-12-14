@@ -1,0 +1,10 @@
+[defaults]
+app_name = "sempal"
+repo = "PORTALSURFER/sempal"
+channel = "nightly"
+merge_method = "squash"
+platforms = []
+
+[flow]
+base = "main"
+from = "next"
