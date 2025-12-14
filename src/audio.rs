@@ -34,7 +34,7 @@ impl AudioPlayer {
 
     /// Create a new audio player honoring the requested output configuration.
     pub fn from_config(config: &AudioOutputConfig) -> Result<Self, String> {
-        let outcome = open_output_stream(config)?;
+        let outcome = open_output_stream(config).map_err(|err| err.to_string())?;
         Ok(Self {
             stream: outcome.stream,
             sink: None,
@@ -558,6 +558,6 @@ where
 #[cfg(test)]
 mod tests;
 pub use output::{
-    AudioDeviceSummary, AudioHostSummary, AudioOutputConfig, ResolvedOutput, available_devices,
-    available_hosts, open_output_stream, supported_sample_rates,
+    AudioDeviceSummary, AudioHostSummary, AudioOutputConfig, AudioOutputError, ResolvedOutput,
+    available_devices, available_hosts, open_output_stream, supported_sample_rates,
 };
