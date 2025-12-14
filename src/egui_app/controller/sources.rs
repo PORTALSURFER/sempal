@@ -102,9 +102,6 @@ impl EguiController {
         {
             self.selected_source = None;
             self.selected_wav = None;
-            self.loaded_wav = None;
-            self.loaded_audio = None;
-            self.ui.loaded_wav = None;
             self.clear_waveform_view();
         }
         let _ = self.persist_config("Failed to save config after removing source");
@@ -150,9 +147,6 @@ impl EguiController {
     pub(super) fn mark_source_missing(&mut self, source_id: &SourceId, reason: &str) {
         let inserted = self.missing_sources.insert(source_id.clone());
         if inserted && self.selected_source.as_ref() == Some(source_id) {
-            self.loaded_wav = None;
-            self.loaded_audio = None;
-            self.ui.loaded_wav = None;
             self.clear_waveform_view();
         }
         self.missing_wavs.entry(source_id.clone()).or_default();
@@ -204,8 +198,6 @@ impl EguiController {
         }
         self.selected_source = id;
         self.selected_wav = None;
-        self.loaded_wav = None;
-        self.loaded_audio = None;
         self.clear_waveform_view();
         self.refresh_sources_ui();
         self.queue_wav_load();
@@ -217,11 +209,8 @@ impl EguiController {
         self.wav_entries.clear();
         self.wav_lookup.clear();
         self.selected_wav = None;
-        self.loaded_wav = None;
-        self.loaded_audio = None;
         self.ui.browser = SampleBrowserState::default();
         self.ui.sources.folders = FolderBrowserUiState::default();
-        self.ui.loaded_wav = None;
         self.clear_waveform_view();
         if let Some(selected) = self.selected_source.as_ref() {
             self.missing_wavs.remove(selected);
