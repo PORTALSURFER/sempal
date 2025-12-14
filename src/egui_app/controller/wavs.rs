@@ -844,42 +844,17 @@ impl EguiController {
         require_present: bool,
     ) -> Result<(), String> {
         let db = self.database_for(source).map_err(|err| err.to_string())?;
-        self.apply_tag_to_caches(source, path, target_tag, require_present)?;
+        let mut tagging = tagging_service::TaggingService::new(
+            self.selected_source.as_ref(),
+            &mut self.wav_entries,
+            &self.wav_lookup,
+            &mut self.wav_cache,
+            &mut self.wav_cache_lookup,
+        );
+        tagging.apply_sample_tag(source, path, target_tag, require_present)?;
         let _ = db.set_tag(path, target_tag);
         if self.selected_source.as_ref() == Some(&source.id) {
             self.rebuild_browser_lists();
-        }
-        Ok(())
-    }
-
-    fn apply_tag_to_caches(
-        &mut self,
-        source: &SampleSource,
-        path: &Path,
-        target_tag: SampleTag,
-        require_present: bool,
-    ) -> Result<(), String> {
-        if self.selected_source.as_ref() == Some(&source.id) {
-            if let Some(index) = self.wav_lookup.get(path).copied() {
-                if let Some(entry) = self.wav_entries.get_mut(index) {
-                    entry.tag = target_tag;
-                }
-            } else if require_present {
-                return Err("Sample not found".into());
-            }
-        }
-        if self.wav_cache.contains_key(&source.id) {
-            self.ensure_wav_cache_lookup(&source.id);
-            if let Some(index) = self
-                .wav_cache_lookup
-                .get(&source.id)
-                .and_then(|lookup| lookup.get(path))
-                .copied()
-                && let Some(cache) = self.wav_cache.get_mut(&source.id)
-                && let Some(entry) = cache.get_mut(index)
-            {
-                entry.tag = target_tag;
-            }
         }
         Ok(())
     }

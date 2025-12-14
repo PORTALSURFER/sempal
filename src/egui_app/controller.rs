@@ -27,6 +27,7 @@ mod selection_edits;
 mod selection_export;
 mod source_folders;
 mod sources;
+mod tagging_service;
 mod trash;
 mod trash_move;
 mod undo;
