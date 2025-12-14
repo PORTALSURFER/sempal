@@ -1,10 +1,3 @@
-- zoom sensitivity settings are a bit weird, its now super high, almost full, ander higher will make zooming slower
-lowering the value and zoom starts going really fast. lets make this more intuitive
-low values should be slow zoom, high values fast zoom.
-
-- renaming items in the sample browser does not work yet. it will also draw the input text on top of the existing item right now, making it very hard to read what the user is writing
-please align it much more with how folder renaming works. an for dryness, lets merge/reuse what we can.
-
 - if I replay samples quickly so we restart while its still playing, I hear clicks, lets fix that so we fade out very quickly right before we restart
 
 - when I undo flagging of a sample in the browser, it should refocus the sample again also
