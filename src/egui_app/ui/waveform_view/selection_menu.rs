@@ -3,6 +3,21 @@ use super::*;
 use crate::egui_app::state::DestructiveSelectionEdit;
 use eframe::egui::{self, RichText};
 
+pub(super) fn attach_selection_context_menu(
+    app: &mut EguiApp,
+    ui: &mut egui::Ui,
+    selection_rect: egui::Rect,
+) {
+    let selection_menu = ui.interact(
+        selection_rect,
+        ui.id().with("selection_context_menu"),
+        egui::Sense::click(),
+    );
+    selection_menu.context_menu(|ui| {
+        render_selection_context_menu(app, ui);
+    });
+}
+
 pub(super) fn render_selection_context_menu(app: &mut EguiApp, ui: &mut egui::Ui) {
     let palette = style::palette();
     let mut close_menu = false;
@@ -75,4 +90,3 @@ pub(super) fn render_selection_context_menu(app: &mut EguiApp, ui: &mut egui::Ui
         ui.close();
     }
 }
-

@@ -95,7 +95,7 @@ pub(super) fn render_hover_overlay(
         ui.painter().rect_filled(label_rect, 4.0, bg);
         ui.painter()
             .rect_stroke(label_rect, 4.0, border, StrokeKind::Inside);
-        ui.painter().galley(label_rect.min + padding, galley, text_color);
+        ui.painter()
+            .galley(label_rect.min + padding, galley, text_color);
     }
 }
-

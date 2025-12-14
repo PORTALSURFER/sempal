@@ -1,6 +1,6 @@
 [package]
 name = "sempal"
-version = "0.353.0"
+version = "0.354.0"
 edition = "2024"
 default-run = "sempal"
 
@@ -36,6 +36,11 @@ time = { version = "0.3.44", features = [
 ] }
 fuzzy-matcher = "0.3.7"
 rand = "0.9.2"
+semver = "1.0.27"
+sha2 = "0.10.9"
+tempfile = "3.23.0"
+ureq = { version = "2.12.1", features = ["json", "tls"] }
+zip = { version = "2.2.1", default-features = false, features = ["deflate"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 cpal = { version = "0.16.0", features = ["asio"] }
@@ -60,9 +65,7 @@ windows-implement = "0.60.2"
 windows-core = "0.62.2"
 
 [dev-dependencies]
-tempfile = "3.23.0"
 criterion = "0.8.1"
-semver = "1.0.27"
 
 [build-dependencies]
 semver = "1.0.27"

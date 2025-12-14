@@ -1,12 +1,12 @@
 use super::*;
 use std::path::PathBuf;
 
-mod random_nav;
-mod player;
 mod browser_nav;
+mod formatting;
+mod player;
+mod random_nav;
 mod tagging;
 mod transport;
-mod formatting;
 
 use formatting::{format_selection_duration, format_timestamp_hms_ms};
 
@@ -17,6 +17,139 @@ const SHOULD_PLAY_RANDOM_SAMPLE: bool = true;
 const PLAYHEAD_COMPLETION_EPSILON: f32 = 0.001;
 
 impl EguiController {
+    pub fn start_selection_drag(&mut self, position: f32) {
+        transport::start_selection_drag(self, position);
+    }
+
+    pub fn start_selection_edge_drag(&mut self, edge: crate::selection::SelectionEdge) -> bool {
+        transport::start_selection_edge_drag(self, edge)
+    }
+
+    pub fn update_selection_drag(&mut self, position: f32) {
+        transport::update_selection_drag(self, position);
+    }
+
+    pub fn finish_selection_drag(&mut self) {
+        transport::finish_selection_drag(self);
+    }
+
+    pub fn set_selection_range(&mut self, range: SelectionRange) {
+        transport::set_selection_range(self, range);
+    }
+
+    pub fn is_selection_dragging(&self) -> bool {
+        transport::is_selection_dragging(self)
+    }
+
+    pub fn clear_selection(&mut self) {
+        transport::clear_selection(self);
+    }
+
+    pub fn toggle_loop(&mut self) {
+        transport::toggle_loop(self);
+    }
+
+    pub fn seek_to(&mut self, position: f32) {
+        transport::seek_to(self, position);
+    }
+
+    pub fn replay_from_last_start(&mut self) -> bool {
+        transport::replay_from_last_start(self)
+    }
+
+    pub fn play_from_cursor(&mut self) -> bool {
+        transport::play_from_cursor(self)
+    }
+
+    pub fn record_play_start(&mut self, position: f32) {
+        transport::record_play_start(self, position);
+    }
+
+    pub fn set_volume(&mut self, volume: f32) {
+        transport::set_volume(self, volume);
+    }
+
+    pub fn toggle_play_pause(&mut self) {
+        transport::toggle_play_pause(self);
+    }
+
+    pub fn stop_playback_if_active(&mut self) -> bool {
+        transport::stop_playback_if_active(self)
+    }
+
+    pub fn handle_escape(&mut self) {
+        transport::handle_escape(self);
+    }
+
+    pub fn play_audio(&mut self, looped: bool, start_override: Option<f32>) -> Result<(), String> {
+        player::play_audio(self, looped, start_override)
+    }
+
+    pub fn is_playing(&self) -> bool {
+        player::is_playing(self)
+    }
+
+    pub fn tick_playhead(&mut self) {
+        player::tick_playhead(self);
+    }
+
+    #[allow(dead_code)]
+    pub(super) fn update_playhead_from_progress(
+        &mut self,
+        progress: Option<f32>,
+        is_looping: bool,
+    ) {
+        player::update_playhead_from_progress(self, progress, is_looping);
+    }
+
+    pub(super) fn hide_waveform_playhead(&mut self) {
+        player::hide_waveform_playhead(self);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn playhead_completed_span_for_tests(
+        &self,
+        progress: f32,
+        is_looping: bool,
+    ) -> bool {
+        player::playhead_completed_span_for_tests(self, progress, is_looping)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn hide_waveform_playhead_for_tests(&mut self) {
+        player::hide_waveform_playhead_for_tests(self);
+    }
+
+    pub(in crate::egui_app::controller) fn apply_selection(
+        &mut self,
+        range: Option<SelectionRange>,
+    ) {
+        player::apply_selection(self, range);
+    }
+
+    pub fn update_waveform_hover_time(&mut self, position: Option<f32>) {
+        player::update_waveform_hover_time(self, position);
+    }
+
+    #[allow(dead_code)]
+    pub(super) fn selection_duration_label(&self, range: SelectionRange) -> Option<String> {
+        player::selection_duration_label(self, range)
+    }
+
+    pub(in crate::egui_app::controller) fn apply_volume(&mut self, volume: f32) {
+        player::apply_volume(self, volume);
+    }
+
+    pub(in crate::egui_app::controller) fn ensure_player(
+        &mut self,
+    ) -> Result<Option<Rc<RefCell<AudioPlayer>>>, String> {
+        player::ensure_player(self)
+    }
+
+    pub(super) fn defer_loop_disable_after_cycle(&mut self) -> Result<(), String> {
+        player::defer_loop_disable_after_cycle(self)
+    }
+
     /// Tag the focused/selected wavs and keep the current focus.
     pub fn tag_selected(&mut self, target: SampleTag) {
         tagging::tag_selected(self, target);
@@ -71,7 +204,6 @@ impl EguiController {
     pub fn tag_selected_left(&mut self) {
         tagging::tag_selected_left(self);
     }
-
 }
 
 #[cfg(test)]

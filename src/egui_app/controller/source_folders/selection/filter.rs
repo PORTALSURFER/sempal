@@ -1,4 +1,5 @@
 use super::super::*;
+use std::collections::BTreeSet;
 
 impl EguiController {
     pub(in crate::egui_app::controller) fn folder_selection_for_filter(

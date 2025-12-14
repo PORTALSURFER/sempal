@@ -11,6 +11,7 @@ mod hotkeys;
 mod progress;
 mod sources;
 mod status;
+mod update;
 mod waveform;
 
 pub use audio::*;
@@ -23,6 +24,7 @@ pub use hotkeys::*;
 pub use progress::*;
 pub use sources::*;
 pub use status::*;
+pub use update::*;
 pub use waveform::*;
 
 use std::path::PathBuf;
@@ -48,6 +50,8 @@ pub struct UiState {
     pub controls: InteractionOptionsState,
     /// Master output volume (0.0-1.0).
     pub volume: f32,
+    /// Release update status / notification state.
+    pub update: UpdateUiState,
     pub loaded_wav: Option<PathBuf>,
     /// Optional trash folder path configured by the user.
     pub trash_folder: Option<PathBuf>,
@@ -70,6 +74,7 @@ impl Default for UiState {
             audio: AudioOptionsState::default(),
             controls: InteractionOptionsState::default(),
             volume: 1.0,
+            update: UpdateUiState::default(),
             loaded_wav: None,
             trash_folder: None,
             collection_export_root: None,

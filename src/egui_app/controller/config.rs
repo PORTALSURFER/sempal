@@ -6,6 +6,7 @@ impl EguiController {
     pub fn load_configuration(&mut self) -> Result<(), crate::sample_sources::config::ConfigError> {
         let cfg = crate::sample_sources::config::load_or_default()?;
         self.settings.feature_flags = cfg.feature_flags;
+        self.settings.updates = cfg.updates.clone();
         self.settings.trash_folder = cfg.trash_folder.clone();
         self.settings.collection_export_root = cfg.collection_export_root.clone();
         self.ui.collections.enabled = self.settings.feature_flags.collections_enabled;
@@ -31,6 +32,8 @@ impl EguiController {
         self.apply_volume(cfg.volume);
         self.ui.trash_folder = cfg.trash_folder.clone();
         self.ui.collection_export_root = cfg.collection_export_root.clone();
+        self.ui.update.last_seen_nightly_published_at =
+            cfg.updates.last_seen_nightly_published_at.clone();
         self.library.sources = cfg.sources.clone();
         self.rebuild_missing_sources();
         if !self.library.missing.sources.is_empty() {
@@ -75,6 +78,7 @@ impl EguiController {
         if self.selection_state.ctx.selected_source.is_some() {
             let _ = self.refresh_wavs();
         }
+        self.maybe_check_for_updates_on_startup();
         Ok(())
     }
 
@@ -90,6 +94,7 @@ impl EguiController {
             sources: self.library.sources.clone(),
             collections: self.library.collections.clone(),
             feature_flags: self.settings.feature_flags.clone(),
+            updates: self.settings.updates.clone(),
             trash_folder: self.settings.trash_folder.clone(),
             collection_export_root: self.settings.collection_export_root.clone(),
             last_selected_source: self

@@ -73,4 +73,3 @@ mod tests {
         assert!(end_edge_rect.bottom() <= handle_rect.top());
     }
 }
-
