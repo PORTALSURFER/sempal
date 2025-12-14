@@ -9,7 +9,7 @@ impl EguiController {
         &self,
         path: &Path,
     ) -> Option<usize> {
-        let entry_index = self.wav_lookup.get(path)?;
+        let entry_index = self.wav_entries.lookup.get(path)?;
         self.ui
             .browser
             .visible

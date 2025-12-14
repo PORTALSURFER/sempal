@@ -290,6 +290,7 @@ impl EguiController {
         if self.selection_ctx.selected_source.as_ref() == Some(&source.id)
             && let Some(entry) = self
                 .wav_entries
+                .entries
                 .iter()
                 .find(|entry| entry.relative_path == relative_path)
         {
@@ -348,7 +349,7 @@ impl EguiController {
             self.rebuild_wav_cache_lookup(&source.id);
         }
         if self.selection_ctx.selected_source.as_ref() == Some(&source.id) {
-            replace_entry(&mut self.wav_entries, old_path, &new_entry);
+            replace_entry(&mut self.wav_entries.entries, old_path, &new_entry);
             self.sync_browser_after_wav_entries_mutation(&source.id);
         }
         self.rebuild_missing_lookup_for_source(&source.id);
@@ -366,8 +367,9 @@ impl EguiController {
             self.rebuild_wav_cache_lookup(&source.id);
         }
         if self.selection_ctx.selected_source.as_ref() == Some(&source.id) {
-            self.wav_entries.push(entry.clone());
+            self.wav_entries.entries.push(entry.clone());
             self.wav_entries
+                .entries
                 .sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
             self.sync_browser_after_wav_entries_mutation(&source.id);
         }

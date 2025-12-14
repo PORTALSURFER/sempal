@@ -64,6 +64,7 @@ fn selection_drop_adds_clip_to_collection() {
     assert!(
         controller
             .wav_entries
+            .entries
             .iter()
             .all(|entry| &entry.relative_path != member_path)
     );
@@ -92,7 +93,7 @@ fn sample_drop_to_folder_moves_and_updates_state() {
     controller.cache_db(&source).unwrap();
 
     write_test_wav(&root.join("one.wav"), &[0.1, 0.2]);
-    controller.wav_entries = vec![sample_entry("one.wav", SampleTag::Neutral)];
+    controller.wav_entries.entries = vec![sample_entry("one.wav", SampleTag::Neutral)];
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
@@ -124,6 +125,7 @@ fn sample_drop_to_folder_moves_and_updates_state() {
     assert!(
         controller
             .wav_entries
+            .entries
             .iter()
             .any(|entry| entry.relative_path == PathBuf::from("dest").join("one.wav"))
     );
@@ -156,7 +158,7 @@ fn sample_drop_to_folder_rejects_conflicts() {
     controller.selection_ctx.selected_source = Some(source.id.clone());
     controller.cache_db(&source).unwrap();
 
-    controller.wav_entries = vec![sample_entry("one.wav", SampleTag::Neutral)];
+    controller.wav_entries.entries = vec![sample_entry("one.wav", SampleTag::Neutral)];
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
@@ -177,6 +179,7 @@ fn sample_drop_to_folder_rejects_conflicts() {
     assert!(
         controller
             .wav_entries
+            .entries
             .iter()
             .any(|entry| entry.relative_path == PathBuf::from("one.wav"))
     );

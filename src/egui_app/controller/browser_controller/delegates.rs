@@ -56,6 +56,7 @@ impl EguiController {
             .ok_or_else(|| "Sample not found".to_string())?;
         let entry = self
             .wav_entries
+            .entries
             .get(index)
             .cloned()
             .ok_or_else(|| "Sample not found".to_string())?;
@@ -78,6 +79,7 @@ impl EguiController {
         }
         if self.selection_ctx.selected_source.as_ref() == Some(&source.id) {
             self.wav_entries
+                .entries
                 .retain(|entry| entry.relative_path != relative_path);
             self.sync_browser_after_wav_entries_mutation(&source.id);
         } else {

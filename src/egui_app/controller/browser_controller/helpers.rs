@@ -84,7 +84,7 @@ impl BrowserController<'_> {
         let after = highest
             .checked_add(1)
             .and_then(|idx| self.ui.browser.visible.get(idx))
-            .and_then(|&entry_idx| self.wav_entries.get(entry_idx))
+            .and_then(|&entry_idx| self.wav_entries.entries.get(entry_idx))
             .map(|entry| entry.relative_path.clone());
         if after.is_some() {
             return after;
@@ -92,7 +92,7 @@ impl BrowserController<'_> {
         first
             .checked_sub(1)
             .and_then(|idx| self.ui.browser.visible.get(idx))
-            .and_then(|&entry_idx| self.wav_entries.get(entry_idx))
+            .and_then(|&entry_idx| self.wav_entries.entries.get(entry_idx))
             .map(|entry| entry.relative_path.clone())
     }
 

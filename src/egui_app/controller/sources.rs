@@ -184,10 +184,10 @@ impl EguiController {
     ) {
         let same_source = self.selection_ctx.selected_source == id;
         self.jobs.pending_select_path = pending_path.clone();
-        if same_source {
-            self.refresh_sources_ui();
-            if let Some(path) = self.jobs.pending_select_path.clone() {
-                if self.wav_lookup.contains_key(&path) {
+            if same_source {
+                self.refresh_sources_ui();
+                if let Some(path) = self.jobs.pending_select_path.clone() {
+                if self.wav_entries.lookup.contains_key(&path) {
                     self.jobs.pending_select_path = None;
                     self.select_wav_by_path(&path);
                 } else {
@@ -214,8 +214,8 @@ impl EguiController {
     }
 
     fn clear_wavs(&mut self) {
-        self.wav_entries.clear();
-        self.wav_lookup.clear();
+        self.wav_entries.entries.clear();
+        self.wav_entries.lookup.clear();
         self.wav_selection.selected_wav = None;
         self.ui.browser = SampleBrowserState::default();
         self.ui.sources.folders = FolderBrowserUiState::default();

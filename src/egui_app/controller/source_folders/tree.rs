@@ -94,7 +94,7 @@ impl EguiController {
 
     fn collect_folders(&self) -> BTreeSet<PathBuf> {
         let mut folders = BTreeSet::new();
-        for entry in &self.wav_entries {
+        for entry in &self.wav_entries.entries {
             let mut current = entry.relative_path.parent();
             while let Some(path) = current {
                 if !path.as_os_str().is_empty() {

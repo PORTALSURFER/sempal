@@ -78,6 +78,7 @@ fn play_random_visible_sample_internal<R: Rng + ?Sized>(
     };
     let Some(path) = controller
         .wav_entries
+        .entries
         .get(entry_index)
         .map(|entry| entry.relative_path.clone())
     else {

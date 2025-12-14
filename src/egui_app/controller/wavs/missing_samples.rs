@@ -15,7 +15,7 @@ impl EguiController {
                 }
             }
         } else if self.selection_ctx.selected_source.as_ref() == Some(source_id) {
-            for entry in &self.wav_entries {
+            for entry in &self.wav_entries.entries {
                 if entry.missing {
                     missing.insert(entry.relative_path.clone());
                 }
@@ -51,8 +51,8 @@ impl EguiController {
             entry.missing = true;
         }
         if self.selection_ctx.selected_source.as_ref() == Some(&source.id)
-            && let Some(index) = self.wav_lookup.get(relative_path).copied()
-            && let Some(entry) = self.wav_entries.get_mut(index)
+            && let Some(index) = self.wav_entries.lookup.get(relative_path).copied()
+            && let Some(entry) = self.wav_entries.entries.get_mut(index)
         {
             entry.missing = true;
         }
@@ -99,8 +99,8 @@ impl EguiController {
             return true;
         }
         if self.selection_ctx.selected_source.as_ref() == Some(source_id)
-            && let Some(index) = self.wav_lookup.get(relative_path)
-            && let Some(entry) = self.wav_entries.get(*index)
+            && let Some(index) = self.wav_entries.lookup.get(relative_path)
+            && let Some(entry) = self.wav_entries.entries.get(*index)
         {
             return entry.missing;
         }

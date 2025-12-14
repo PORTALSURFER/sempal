@@ -46,7 +46,7 @@ fn root_entry_stays_above_real_folders() {
     let folder = source.root.join("rooted");
     std::fs::create_dir_all(&folder).unwrap();
     write_test_wav(&folder.join("clip.wav"), &[0.2, -0.2]);
-    controller.wav_entries = vec![sample_entry("rooted/clip.wav", SampleTag::Neutral)];
+    controller.wav_entries.entries = vec![sample_entry("rooted/clip.wav", SampleTag::Neutral)];
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
     controller.refresh_folder_browser();
@@ -80,7 +80,7 @@ fn start_new_folder_uses_focused_parent() {
     let folder = source.root.join("clips");
     std::fs::create_dir_all(&folder).unwrap();
     write_test_wav(&folder.join("clip.wav"), &[0.2, -0.2]);
-    controller.wav_entries = vec![sample_entry("clips/clip.wav", SampleTag::Neutral)];
+    controller.wav_entries.entries = vec![sample_entry("clips/clip.wav", SampleTag::Neutral)];
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
     controller.refresh_folder_browser();
@@ -138,7 +138,7 @@ fn selecting_root_clears_folder_selection() -> Result<(), String> {
     let folder = source.root.join("rooted");
     std::fs::create_dir_all(&folder).unwrap();
     write_test_wav(&folder.join("clip.wav"), &[0.2, -0.2]);
-    controller.wav_entries = vec![sample_entry("rooted/clip.wav", SampleTag::Neutral)];
+    controller.wav_entries.entries = vec![sample_entry("rooted/clip.wav", SampleTag::Neutral)];
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
     controller.refresh_folder_browser();
@@ -168,7 +168,7 @@ fn renaming_folder_updates_entries_and_tree() -> Result<(), String> {
     let folder = source.root.join("old");
     std::fs::create_dir_all(&folder).unwrap();
     write_test_wav(&folder.join("clip.wav"), &[0.1, -0.1]);
-    controller.wav_entries = vec![sample_entry("old/clip.wav", SampleTag::Neutral)];
+    controller.wav_entries.entries = vec![sample_entry("old/clip.wav", SampleTag::Neutral)];
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
     controller.refresh_folder_browser();
@@ -178,7 +178,7 @@ fn renaming_folder_updates_entries_and_tree() -> Result<(), String> {
     assert!(!folder.exists());
     assert!(source.root.join("new/clip.wav").is_file());
     assert_eq!(
-        controller.wav_entries[0].relative_path,
+        controller.wav_entries.entries[0].relative_path,
         PathBuf::from("new/clip.wav")
     );
     assert!(
@@ -217,7 +217,7 @@ fn deleting_folder_removes_wavs() -> Result<(), String> {
     let target = source.root.join("gone");
     std::fs::create_dir_all(&target).unwrap();
     write_test_wav(&target.join("sample.wav"), &[0.0, 0.2]);
-    controller.wav_entries = vec![sample_entry("gone/sample.wav", SampleTag::Neutral)];
+    controller.wav_entries.entries = vec![sample_entry("gone/sample.wav", SampleTag::Neutral)];
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
     controller.refresh_folder_browser();
@@ -235,7 +235,7 @@ fn deleting_folder_removes_wavs() -> Result<(), String> {
     controller.delete_focused_folder();
 
     assert!(!target.exists());
-    assert!(controller.wav_entries.is_empty());
+    assert!(controller.wav_entries.entries.is_empty());
     assert!(
         controller
             .ui
@@ -258,7 +258,7 @@ fn deleting_folder_moves_focus_to_next_available() -> Result<(), String> {
         std::fs::create_dir_all(&path).unwrap();
         write_test_wav(&path.join(format!("{folder}.wav")), &[0.0, 0.2]);
     }
-    controller.wav_entries = vec![
+    controller.wav_entries.entries = vec![
         sample_entry("a/a.wav", SampleTag::Neutral),
         sample_entry("b/b.wav", SampleTag::Neutral),
         sample_entry("c/c.wav", SampleTag::Neutral),
@@ -299,7 +299,7 @@ fn folder_focus_clears_when_context_changes() -> Result<(), String> {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source.clone());
     controller.selection_ctx.selected_source = Some(source.id.clone());
-    controller.wav_entries = vec![sample_entry("one/sample.wav", SampleTag::Neutral)];
+    controller.wav_entries.entries = vec![sample_entry("one/sample.wav", SampleTag::Neutral)];
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
     controller.refresh_folder_browser();
@@ -334,7 +334,7 @@ fn clearing_folder_selection_shows_all_samples() -> Result<(), String> {
     controller.selection_ctx.selected_source = Some(source.id.clone());
     std::fs::create_dir_all(source.root.join("a")).unwrap();
     std::fs::create_dir_all(source.root.join("b")).unwrap();
-    controller.wav_entries = vec![
+    controller.wav_entries.entries = vec![
         sample_entry("a/one.wav", SampleTag::Neutral),
         sample_entry("b/two.wav", SampleTag::Neutral),
     ];

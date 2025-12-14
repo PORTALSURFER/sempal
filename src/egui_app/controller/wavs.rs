@@ -67,7 +67,7 @@ impl EguiController {
 
     /// Select a wav row based on its path, optionally delaying the browser rebuild.
     pub fn select_wav_by_path_with_rebuild(&mut self, path: &Path, rebuild: bool) {
-        if !self.wav_lookup.contains_key(path) {
+        if !self.wav_entries.lookup.contains_key(path) {
             return;
         }
         // Selecting a browser wav should always clear any active collection selection so the
@@ -94,9 +94,10 @@ impl EguiController {
         }
         self.wav_selection.selected_wav = Some(path.to_path_buf());
         let missing = self
-            .wav_lookup
+            .wav_entries
+            .lookup
             .get(path)
-            .and_then(|index| self.wav_entries.get(*index))
+            .and_then(|index| self.wav_entries.entries.get(*index))
             .map(|entry| entry.missing)
             .unwrap_or(false);
         if missing {
@@ -152,7 +153,7 @@ impl EguiController {
     /// Current tag of the selected wav, if any.
     pub fn selected_tag(&self) -> Option<SampleTag> {
         self.selected_row_index()
-            .and_then(|idx| self.wav_entries.get(idx))
+            .and_then(|idx| self.wav_entries.entries.get(idx))
             .map(|entry| entry.tag)
     }
 
@@ -182,7 +183,7 @@ impl EguiController {
 
     /// Select a wav by absolute index into the full wav list.
     pub fn select_wav_by_index(&mut self, index: usize) {
-        let path = match self.wav_entries.get(index) {
+        let path = match self.wav_entries.entries.get(index) {
             Some(entry) => entry.relative_path.clone(),
             None => return,
         };
@@ -198,7 +199,7 @@ impl EguiController {
 
     /// Retrieve a wav entry by absolute index.
     pub fn wav_entry(&self, index: usize) -> Option<&WavEntry> {
-        self.wav_entries.get(index)
+        self.wav_entries.entries.get(index)
     }
 
     /// Retrieve a cached label for a wav entry by index.
@@ -207,9 +208,9 @@ impl EguiController {
     }
 
     pub(super) fn rebuild_wav_lookup(&mut self) {
-        self.wav_lookup.clear();
-        for (index, entry) in self.wav_entries.iter().enumerate() {
-            self.wav_lookup.insert(entry.relative_path.clone(), index);
+        self.wav_entries.lookup.clear();
+        for (index, entry) in self.wav_entries.entries.iter().enumerate() {
+            self.wav_entries.lookup.insert(entry.relative_path.clone(), index);
         }
     }
 
@@ -221,7 +222,7 @@ impl EguiController {
         self.browser_search_cache.invalidate();
         self.rebuild_browser_lists();
         self.label_cache
-            .insert(source_id.clone(), self.build_label_cache(&self.wav_entries));
+            .insert(source_id.clone(), self.build_label_cache(&self.wav_entries.entries));
     }
 
     pub(in crate::egui_app::controller) fn sync_browser_after_wav_entries_mutation_keep_search_cache(
@@ -231,7 +232,7 @@ impl EguiController {
         self.rebuild_wav_lookup();
         self.rebuild_browser_lists();
         self.label_cache
-            .insert(source_id.clone(), self.build_label_cache(&self.wav_entries));
+            .insert(source_id.clone(), self.build_label_cache(&self.wav_entries.entries));
     }
 
     pub(in crate::egui_app::controller) fn invalidate_cached_audio_for_entry_updates(
@@ -299,8 +300,8 @@ impl EguiController {
         let db = self.database_for(source).map_err(|err| err.to_string())?;
         let mut tagging = tagging_service::TaggingService::new(
             self.selection_ctx.selected_source.as_ref(),
-            &mut self.wav_entries,
-            &self.wav_lookup,
+            &mut self.wav_entries.entries,
+            &self.wav_entries.lookup,
             &mut self.wav_cache.entries,
             &mut self.wav_cache.lookup,
         );

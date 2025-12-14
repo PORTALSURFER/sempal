@@ -24,7 +24,7 @@ fn moving_trashed_samples_moves_and_prunes_state() -> Result<(), String> {
         .unwrap();
     db.set_tag(Path::new("keep.wav"), SampleTag::Keep).unwrap();
 
-    controller.wav_entries = vec![
+    controller.wav_entries.entries = vec![
         sample_entry("trash.wav", SampleTag::Trash),
         sample_entry("keep.wav", SampleTag::Keep),
     ];
@@ -43,10 +43,11 @@ fn moving_trashed_samples_moves_and_prunes_state() -> Result<(), String> {
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].relative_path, PathBuf::from("keep.wav"));
     assert_eq!(rows[0].tag, SampleTag::Keep);
-    assert_eq!(controller.wav_entries.len(), 1);
+    assert_eq!(controller.wav_entries.entries.len(), 1);
     assert!(
         controller
             .wav_entries
+            .entries
             .iter()
             .all(|entry| entry.relative_path != PathBuf::from("trash.wav"))
     );
@@ -73,7 +74,7 @@ fn moving_trashed_samples_can_cancel_midway() -> Result<(), String> {
         }
     }
 
-    controller.wav_entries = vec![
+    controller.wav_entries.entries = vec![
         sample_entry("one.wav", SampleTag::Trash),
         sample_entry("two.wav", SampleTag::Trash),
     ];

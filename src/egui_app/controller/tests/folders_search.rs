@@ -32,7 +32,7 @@ fn fuzzy_search_filters_folders() {
     let snare = source.root.join("snare");
     std::fs::create_dir_all(&kick).unwrap();
     std::fs::create_dir_all(&snare).unwrap();
-    controller.wav_entries = vec![
+    controller.wav_entries.entries = vec![
         sample_entry("kick/one.wav", SampleTag::Neutral),
         sample_entry("snare/two.wav", SampleTag::Neutral),
     ];

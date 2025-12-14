@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 impl EguiController {
     pub(super) fn folder_entries(&self, folder: &Path) -> Vec<WavEntry> {
         self.wav_entries
+            .entries
             .iter()
             .filter(|entry| entry.relative_path.starts_with(folder))
             .cloned()
@@ -98,7 +99,7 @@ impl EguiController {
             self.rebuild_wav_cache_lookup(&source.id);
         }
         if self.selection_ctx.selected_source.as_ref() == Some(&source.id) {
-            apply_entry_updates(&mut self.wav_entries, updates);
+            apply_entry_updates(&mut self.wav_entries.entries, updates);
             for (old_entry, new_entry) in updates {
                 self.update_selection_paths(
                     source,

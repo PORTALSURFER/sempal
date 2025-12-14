@@ -139,7 +139,7 @@ fn selecting_new_sample_clears_last_start_marker() {
     controller.sources.push(source.clone());
     write_test_wav(&source.root.join("a.wav"), &[0.0, 0.1]);
     write_test_wav(&source.root.join("b.wav"), &[0.2, -0.2]);
-    controller.wav_entries = vec![
+    controller.wav_entries.entries = vec![
         sample_entry("a.wav", SampleTag::Neutral),
         sample_entry("b.wav", SampleTag::Neutral),
     ];

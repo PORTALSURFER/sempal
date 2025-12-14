@@ -22,7 +22,7 @@ impl EguiController {
             self.apply_wav_entries(entries, true, Some(source.id.clone()), None);
             return;
         }
-        self.wav_entries.clear();
+        self.wav_entries.entries.clear();
         self.sync_after_wav_entries_changed();
         if self.jobs.pending_source.as_ref() == Some(&source.id) {
             return;
@@ -101,11 +101,11 @@ impl EguiController {
         source_id: Option<SourceId>,
         elapsed: Option<Duration>,
     ) {
-        self.wav_entries = entries;
+        self.wav_entries.entries = entries;
         self.sync_after_wav_entries_changed();
         let mut pending_applied = false;
         if let Some(path) = self.jobs.pending_select_path.take()
-            && self.wav_lookup.contains_key(&path)
+            && self.wav_entries.lookup.contains_key(&path)
         {
             self.select_wav_by_path(&path);
             pending_applied = true;
@@ -113,7 +113,7 @@ impl EguiController {
         if !pending_applied
             && self.wav_selection.selected_wav.is_none()
             && self.ui.collections.selected_sample.is_none()
-            && !self.wav_entries.is_empty()
+            && !self.wav_entries.entries.is_empty()
         {
             self.suppress_autoplay_once = true;
             self.select_wav_by_index(0);
@@ -123,14 +123,15 @@ impl EguiController {
                 || self
                     .label_cache
                     .get(&id)
-                    .map(|cached| cached.len() != self.wav_entries.len())
+                    .map(|cached| cached.len() != self.wav_entries.entries.len())
                     .unwrap_or(true);
             if needs_labels {
                 self.label_cache
-                    .insert(id.clone(), self.build_label_cache(&self.wav_entries));
+                    .insert(id.clone(), self.build_label_cache(&self.wav_entries.entries));
             }
             let missing: std::collections::HashSet<std::path::PathBuf> = self
                 .wav_entries
+                .entries
                 .iter()
                 .filter(|entry| entry.missing)
                 .map(|entry| entry.relative_path.clone())
@@ -142,7 +143,7 @@ impl EguiController {
             .map(|d| format!(" in {} ms", d.as_millis()))
             .unwrap_or_default();
         self.set_status(
-            format!("{prefix} {} wav files{suffix}", self.wav_entries.len()),
+            format!("{prefix} {} wav files{suffix}", self.wav_entries.entries.len()),
             StatusTone::Info,
         );
     }

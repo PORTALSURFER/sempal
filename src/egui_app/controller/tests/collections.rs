@@ -100,7 +100,7 @@ fn browser_rename_updates_collections_and_lookup() {
     controller.selection_ctx.selected_source = Some(source.id.clone());
 
     write_test_wav(&root.join("one.wav"), &[0.1, -0.2]);
-    controller.wav_entries = vec![sample_entry("one.wav", SampleTag::Neutral)];
+    controller.wav_entries.entries = vec![sample_entry("one.wav", SampleTag::Neutral)];
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
@@ -115,10 +115,10 @@ fn browser_rename_updates_collections_and_lookup() {
     assert!(!root.join("one.wav").exists());
     assert!(root.join("renamed.wav").is_file());
     assert_eq!(
-        controller.wav_entries[0].relative_path,
+        controller.wav_entries.entries[0].relative_path,
         PathBuf::from("renamed.wav")
     );
-    assert!(controller.wav_lookup.contains_key(Path::new("renamed.wav")));
+    assert!(controller.wav_entries.lookup.contains_key(Path::new("renamed.wav")));
     let collection = controller
         .collections
         .iter()
@@ -137,7 +137,7 @@ fn starting_browser_rename_queues_prompt_for_focused_row() {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source.clone());
     controller.selection_ctx.selected_source = Some(source.id.clone());
-    controller.wav_entries = vec![sample_entry("one.wav", SampleTag::Neutral)];
+    controller.wav_entries.entries = vec![sample_entry("one.wav", SampleTag::Neutral)];
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
     controller.focus_browser_list();
@@ -164,7 +164,7 @@ fn selecting_browser_sample_clears_collection_selection() {
 
     write_test_wav(&source.root.join("a.wav"), &[0.0]);
     write_test_wav(&source.root.join("b.wav"), &[0.0]);
-    controller.wav_entries = vec![
+    controller.wav_entries.entries = vec![
         sample_entry("a.wav", SampleTag::Neutral),
         sample_entry("b.wav", SampleTag::Neutral),
     ];
@@ -295,7 +295,7 @@ fn browser_selection_restores_last_browsable_source_after_clip_preview() {
     controller.cache_db(&source).unwrap();
 
     write_test_wav(&source.root.join("a.wav"), &[0.0]);
-    controller.wav_entries = vec![sample_entry("a.wav", SampleTag::Neutral)];
+    controller.wav_entries.entries = vec![sample_entry("a.wav", SampleTag::Neutral)];
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
@@ -321,7 +321,7 @@ fn browser_rename_preserves_extension_and_stem_with_dots() {
 
     let original = root.join("take.001.WAV");
     write_test_wav(&original, &[0.1, -0.2]);
-    controller.wav_entries = vec![sample_entry("take.001.WAV", SampleTag::Neutral)];
+    controller.wav_entries.entries = vec![sample_entry("take.001.WAV", SampleTag::Neutral)];
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
@@ -339,7 +339,7 @@ fn cancelling_browser_rename_clears_prompt() {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source.clone());
     controller.selection_ctx.selected_source = Some(source.id.clone());
-    controller.wav_entries = vec![sample_entry("one.wav", SampleTag::Neutral)];
+    controller.wav_entries.entries = vec![sample_entry("one.wav", SampleTag::Neutral)];
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
     controller.focus_browser_list();

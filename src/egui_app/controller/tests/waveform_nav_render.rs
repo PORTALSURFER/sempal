@@ -156,7 +156,7 @@ fn waveform_rerenders_after_same_length_edit() {
     controller.selection_ctx.selected_source = Some(source.id.clone());
     write_test_wav(&source.root.join("a.wav"), &[0.0, 0.1]);
     write_test_wav(&source.root.join("b.wav"), &[0.0, -0.1]);
-    controller.wav_entries = vec![
+    controller.wav_entries.entries = vec![
         sample_entry("a.wav", SampleTag::Neutral),
         sample_entry("b.wav", SampleTag::Neutral),
     ];
@@ -192,7 +192,7 @@ fn waveform_rerenders_after_same_length_edit() {
     controller.sources.push(source.clone());
     controller.selection_ctx.selected_source = Some(source.id.clone());
     write_test_wav(&source.root.join("wait.wav"), &[0.0, 0.2, -0.2]);
-    controller.wav_entries = vec![sample_entry("wait.wav", SampleTag::Neutral)];
+    controller.wav_entries.entries = vec![sample_entry("wait.wav", SampleTag::Neutral)];
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
@@ -217,7 +217,7 @@ fn loading_flag_clears_after_audio_load() {
     controller.selection_ctx.selected_source = Some(source.id.clone());
     let rel = PathBuf::from("load.wav");
     write_test_wav(&source.root.join(&rel), &[0.0, 0.5, -0.5]);
-    controller.wav_entries = vec![sample_entry("load.wav", SampleTag::Neutral)];
+    controller.wav_entries.entries = vec![sample_entry("load.wav", SampleTag::Neutral)];
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 

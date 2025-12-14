@@ -178,8 +178,9 @@ impl EguiController {
         if self.selection_ctx.selected_source.as_ref() != Some(&source.id) {
             return;
         }
-        self.wav_entries.push(entry);
+        self.wav_entries.entries.push(entry);
         self.wav_entries
+            .entries
             .sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
         self.sync_browser_after_wav_entries_mutation_keep_search_cache(&source.id);
         self.rebuild_missing_lookup_for_source(&source.id);

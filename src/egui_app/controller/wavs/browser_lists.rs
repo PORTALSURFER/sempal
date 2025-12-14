@@ -19,8 +19,8 @@ impl EguiController {
             .flatten();
         self.reset_browser_ui();
 
-        for i in 0..self.wav_entries.len() {
-            let tag = self.wav_entries[i].tag;
+        for i in 0..self.wav_entries.entries.len() {
+            let tag = self.wav_entries.entries[i].tag;
             let flags = RowFlags {
                 focused: Some(i) == focused_index,
                 loaded: Some(i) == loaded_index,
@@ -44,14 +44,14 @@ impl EguiController {
         self.wav_selection
             .selected_wav
             .as_ref()
-            .and_then(|path| self.wav_lookup.get(path).copied())
+            .and_then(|path| self.wav_entries.lookup.get(path).copied())
     }
 
     pub(in crate::egui_app::controller) fn loaded_row_index(&self) -> Option<usize> {
         self.wav_selection
             .loaded_wav
             .as_ref()
-            .and_then(|path| self.wav_lookup.get(path).copied())
+            .and_then(|path| self.wav_entries.lookup.get(path).copied())
     }
 
     fn reset_browser_ui(&mut self) {
@@ -84,7 +84,7 @@ impl EguiController {
         }
         if flags.loaded {
             self.ui.browser.loaded = Some(view_model::sample_browser_index_for(tag, row_index));
-            if let Some(path) = self.wav_entries.get(entry_index) {
+            if let Some(path) = self.wav_entries.entries.get(entry_index) {
                 self.ui.loaded_wav = Some(path.relative_path.clone());
             }
         }
@@ -94,9 +94,9 @@ impl EguiController {
         self.ui
             .browser
             .selected_paths
-            .retain(|path| self.wav_lookup.contains_key(path));
+            .retain(|path| self.wav_entries.lookup.contains_key(path));
         if let Some(path) = self.wav_selection.selected_wav.clone()
-            && !self.wav_lookup.contains_key(&path)
+            && !self.wav_entries.lookup.contains_key(&path)
         {
             self.wav_selection.selected_wav = None;
             self.ui.browser.selected = None;
@@ -117,6 +117,7 @@ impl EguiController {
     pub(super) fn browser_path_for_visible(&self, visible_row: usize) -> Option<PathBuf> {
         let index = self.ui.browser.visible.get(visible_row).copied()?;
         self.wav_entries
+            .entries
             .get(index)
             .map(|entry| entry.relative_path.clone())
     }

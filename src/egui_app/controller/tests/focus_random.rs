@@ -81,7 +81,7 @@ fn hotkey_toggle_selection_dispatches_in_browser_context() {
 fn random_sample_selection_uses_seeded_rng() {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source.clone());
-    controller.wav_entries = vec![
+    controller.wav_entries.entries = vec![
         sample_entry("one.wav", SampleTag::Neutral),
         sample_entry("two.wav", SampleTag::Neutral),
         sample_entry("three.wav", SampleTag::Neutral),
@@ -182,7 +182,7 @@ fn tag_neutral_hotkey_is_registered() {
 fn quote_hotkey_tags_selected_sample_neutral() {
     let (mut controller, source) = dummy_controller();
     prepare_browser_sample(&mut controller, &source, "neutral.wav");
-    controller.wav_entries[0].tag = SampleTag::Keep;
+    controller.wav_entries.entries[0].tag = SampleTag::Keep;
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
     controller.focus_browser_row(0);
@@ -192,7 +192,7 @@ fn quote_hotkey_tags_selected_sample_neutral() {
         .expect("tag-neutral hotkey");
     controller.handle_hotkey(action, FocusContext::None);
 
-    assert_eq!(controller.wav_entries[0].tag, SampleTag::Neutral);
+    assert_eq!(controller.wav_entries.entries[0].tag, SampleTag::Neutral);
 }
 
 #[test]
@@ -261,7 +261,7 @@ fn trash_move_hotkey_moves_samples() -> Result<(), String> {
     db.set_tag(Path::new("trash.wav"), SampleTag::Trash)
         .map_err(|err| format!("tag: {err}"))?;
 
-    controller.wav_entries = vec![sample_entry("trash.wav", SampleTag::Trash)];
+    controller.wav_entries.entries = vec![sample_entry("trash.wav", SampleTag::Trash)];
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
@@ -280,7 +280,7 @@ fn trash_move_hotkey_moves_samples() -> Result<(), String> {
 fn random_history_steps_backward() {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source.clone());
-    controller.wav_entries = vec![
+    controller.wav_entries.entries = vec![
         sample_entry("one.wav", SampleTag::Neutral),
         sample_entry("two.wav", SampleTag::Neutral),
     ];
@@ -319,7 +319,7 @@ fn random_history_trims_to_limit() {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source.clone());
     let total = RANDOM_HISTORY_LIMIT + 5;
-    controller.wav_entries = (0..total)
+    controller.wav_entries.entries = (0..total)
         .map(|i| sample_entry(&format!("{i}.wav"), SampleTag::Neutral))
         .collect();
     controller.rebuild_wav_lookup();

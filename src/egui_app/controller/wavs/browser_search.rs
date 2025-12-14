@@ -30,6 +30,7 @@ impl EguiController {
         let Some(query) = self.active_search_query().map(str::to_string) else {
             let visible: Vec<usize> = self
                 .wav_entries
+                .entries
                 .iter()
                 .enumerate()
                 .filter(|(_, entry)| {
@@ -48,9 +49,9 @@ impl EguiController {
         self.browser_search_cache.scratch.clear();
         self.browser_search_cache
             .scratch
-            .reserve(self.wav_entries.len().min(1024));
+            .reserve(self.wav_entries.entries.len().min(1024));
 
-        for (index, entry) in self.wav_entries.iter().enumerate() {
+        for (index, entry) in self.wav_entries.entries.iter().enumerate() {
             if !self.browser_filter_accepts(entry.tag)
                 || !self.folder_filter_accepts(&entry.relative_path)
             {
@@ -93,7 +94,7 @@ impl EguiController {
         let source_id = self.selection_ctx.selected_source.clone();
         if self.browser_search_cache.source_id != source_id
             || self.browser_search_cache.query != query
-            || self.browser_search_cache.scores.len() != self.wav_entries.len()
+            || self.browser_search_cache.scores.len() != self.wav_entries.entries.len()
         {
             self.browser_search_cache.source_id = source_id;
             self.browser_search_cache.query.clear();
@@ -101,7 +102,7 @@ impl EguiController {
             self.browser_search_cache.scores.clear();
             self.browser_search_cache
                 .scores
-                .resize(self.wav_entries.len(), None);
+                .resize(self.wav_entries.entries.len(), None);
 
             let Some(source_id) = self.selection_ctx.selected_source.clone() else {
                 return;
@@ -109,16 +110,16 @@ impl EguiController {
             let needs_labels = self
                 .label_cache
                 .get(&source_id)
-                .map(|cached| cached.len() != self.wav_entries.len())
+                .map(|cached| cached.len() != self.wav_entries.entries.len())
                 .unwrap_or(true);
             if needs_labels {
                 self.label_cache
-                    .insert(source_id.clone(), self.build_label_cache(&self.wav_entries));
+                    .insert(source_id.clone(), self.build_label_cache(&self.wav_entries.entries));
             }
             let Some(labels) = self.label_cache.get(&source_id) else {
                 return;
             };
-            for index in 0..self.wav_entries.len() {
+            for index in 0..self.wav_entries.entries.len() {
                 if let Some(label) = labels.get(index) {
                     self.browser_search_cache.scores[index] = self
                         .browser_search_cache
@@ -134,11 +135,11 @@ impl EguiController {
         let needs_labels = self
             .label_cache
             .get(&source_id)
-            .map(|cached| cached.len() != self.wav_entries.len())
+            .map(|cached| cached.len() != self.wav_entries.entries.len())
             .unwrap_or(true);
         if needs_labels {
             self.label_cache
-                .insert(source_id.clone(), self.build_label_cache(&self.wav_entries));
+                .insert(source_id.clone(), self.build_label_cache(&self.wav_entries.entries));
         }
         self.label_cache
             .get(&source_id)
