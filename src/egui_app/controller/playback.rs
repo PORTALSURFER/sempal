@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 mod random_nav;
 mod player;
+mod browser_nav;
 mod transport;
 
 #[cfg(test)]
@@ -90,24 +91,12 @@ impl EguiController {
 
     /// Move selection within the current sample browser list by an offset and play.
     pub fn nudge_selection(&mut self, offset: isize) {
-        let list = self.visible_browser_indices().to_vec();
-        if list.is_empty() {
-            return;
-        };
-        let next_row = self.visible_row_after_offset(offset, &list);
-        self.focus_browser_row_only(next_row);
-        let _ = self.play_audio(self.ui.waveform.loop_enabled, None);
+        browser_nav::nudge_selection(self, offset);
     }
 
     /// Extend selection with shift navigation while keeping the current focus for playback.
     pub fn grow_selection(&mut self, offset: isize) {
-        let list = self.visible_browser_indices().to_vec();
-        if list.is_empty() {
-            return;
-        };
-        let next_row = self.visible_row_after_offset(offset, &list);
-        self.extend_browser_selection_to_row(next_row);
-        let _ = self.play_audio(self.ui.waveform.loop_enabled, None);
+        browser_nav::grow_selection(self, offset);
     }
 
     /// Jump to a random visible sample in the browser and start playback.
@@ -158,19 +147,6 @@ impl EguiController {
             _ => SampleTag::Trash,
         };
         self.tag_selected(target);
-    }
-
-    fn visible_row_after_offset(&self, offset: isize, list: &[usize]) -> usize {
-        let current_row = self
-            .ui
-            .browser
-            .selected_visible
-            .or_else(|| {
-                self.selected_row_index()
-                    .and_then(|idx| list.iter().position(|i| *i == idx))
-            })
-            .unwrap_or(0) as isize;
-        (current_row + offset).clamp(0, list.len() as isize - 1) as usize
     }
 
 }
