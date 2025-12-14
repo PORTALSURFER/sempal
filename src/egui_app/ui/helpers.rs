@@ -70,10 +70,8 @@ pub(super) struct ListRow<'a> {
 }
 
 pub(super) fn render_list_row(ui: &mut Ui, row: ListRow<'_>) -> egui::Response {
-    let (rect, response) = ui.allocate_exact_size(
-        egui::vec2(row.row_width, row.row_height),
-        row.sense,
-    );
+    let (rect, response) =
+        ui.allocate_exact_size(egui::vec2(row.row_width, row.row_height), row.sense);
     if let Some(color) = row.bg {
         ui.painter().rect_filled(rect, 0.0, color);
     }

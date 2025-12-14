@@ -14,8 +14,8 @@ mod selection_normalize;
 #[path = "../selection_smooth.rs"]
 mod selection_smooth;
 
-use buffer::{SelectionEditBuffer, SelectionTarget};
 use buffer::write_selection_wav;
+use buffer::{SelectionEditBuffer, SelectionTarget};
 use selection_normalize::normalize_selection;
 use selection_smooth::smooth_selection;
 
@@ -89,8 +89,7 @@ impl EguiController {
             buffer::next_crop_relative_path(&context.relative_path, &context.source.root)?;
         let new_absolute = context.source.root.join(&new_relative);
 
-        let mut buffer =
-            buffer::load_selection_buffer(&context.absolute_path, context.selection)?;
+        let mut buffer = buffer::load_selection_buffer(&context.absolute_path, context.selection)?;
         crop_buffer(&mut buffer)?;
         if buffer.samples.is_empty() {
             return Err("Selection has no audio to crop".into());
@@ -157,7 +156,10 @@ impl EguiController {
     }
 
     /// Fade the selected span down to silence using the given direction.
-    pub(crate) fn fade_waveform_selection(&mut self, direction: FadeDirection) -> Result<(), String> {
+    pub(crate) fn fade_waveform_selection(
+        &mut self,
+        direction: FadeDirection,
+    ) -> Result<(), String> {
         let result = self.apply_selection_edit("Applied fade", |buffer| {
             apply_directional_fade(
                 &mut buffer.samples,

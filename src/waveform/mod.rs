@@ -98,8 +98,8 @@ impl WaveformPeaks {
         let start = view_start.clamp(0.0, 1.0);
         let end = view_end.clamp(start, 1.0);
 
-        let start_frame = ((start * total_frames as f32).floor() as usize)
-            .min(total_frames.saturating_sub(1));
+        let start_frame =
+            ((start * total_frames as f32).floor() as usize).min(total_frames.saturating_sub(1));
         let mut end_frame =
             ((end * total_frames as f32).ceil() as usize).clamp(start_frame + 1, total_frames);
         if end_frame <= start_frame {
@@ -178,7 +178,9 @@ mod peaks_tests {
             total_frames: 100,
             channels: 1,
             bucket_size_frames: 10,
-            mono: (0..10).map(|i| (-(i as f32) / 10.0, i as f32 / 10.0)).collect(),
+            mono: (0..10)
+                .map(|i| (-(i as f32) / 10.0, i as f32 / 10.0))
+                .collect(),
             left: None,
             right: None,
         };

@@ -1,7 +1,7 @@
 use super::super::collection_export;
+use super::super::*;
 use super::CollectionSampleContext;
 use super::io::replace_entry;
-use super::super::*;
 use crate::sample_sources::collections::CollectionMember;
 use std::path::Path;
 
@@ -156,9 +156,14 @@ impl EguiController {
         ctx: &CollectionSampleContext,
         relative_path: &Path,
     ) {
-        let loaded_matches = self.sample_view.wav.loaded_audio.as_ref().is_some_and(|audio| {
-            audio.source_id == ctx.source.id && audio.relative_path == relative_path
-        });
+        let loaded_matches = self
+            .sample_view
+            .wav
+            .loaded_audio
+            .as_ref()
+            .is_some_and(|audio| {
+                audio.source_id == ctx.source.id && audio.relative_path == relative_path
+            });
         let selected_matches = self
             .selection_state
             .ctx

@@ -1,12 +1,12 @@
-use hound::WavReader;
-use super::common::max_sample_amplitude;
 use super::super::test_support::{dummy_controller, sample_entry, write_test_wav};
 use super::super::*;
+use super::common::max_sample_amplitude;
 use crate::egui_app::controller::collection_export;
-use crate::sample_sources::collections::CollectionMember;
-use crate::sample_sources::Collection;
-use std::io::Cursor;
 use crate::egui_app::state::FocusContext;
+use crate::sample_sources::Collection;
+use crate::sample_sources::collections::CollectionMember;
+use hound::WavReader;
+use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use tempfile::tempdir;
 
@@ -172,8 +172,20 @@ fn normalize_actions_apply_to_all_selected_rows() {
 
     controller.normalize_browser_samples(&rows).unwrap();
 
-    assert!(controller.wav_entries.entries.iter().all(|e| e.modified_ns > 0));
-    assert!(controller.wav_entries.entries.iter().all(|e| e.file_size > 0));
+    assert!(
+        controller
+            .wav_entries
+            .entries
+            .iter()
+            .all(|e| e.modified_ns > 0)
+    );
+    assert!(
+        controller
+            .wav_entries
+            .entries
+            .iter()
+            .all(|e| e.file_size > 0)
+    );
 }
 
 #[test]
@@ -308,7 +320,9 @@ fn browser_normalize_refreshes_exports() -> Result<(), String> {
     controller.export_member_if_needed(&collection_id, &member)?;
     controller.normalize_browser_sample(0)?;
 
-    let collection = controller.library.collections
+    let collection = controller
+        .library
+        .collections
         .iter()
         .find(|c| c.id == collection_id)
         .unwrap();
@@ -317,7 +331,9 @@ fn browser_normalize_refreshes_exports() -> Result<(), String> {
     assert!(exported_path.is_file());
     assert!((max_sample_amplitude(&root.join("one.wav")) - 1.0).abs() < 1e-6);
     assert!((max_sample_amplitude(&exported_path) - 1.0).abs() < 1e-6);
-    let loaded = controller.sample_view.wav
+    let loaded = controller
+        .sample_view
+        .wav
         .loaded_audio
         .as_ref()
         .expect("loaded audio");
@@ -367,12 +383,16 @@ fn browser_delete_prunes_collections_and_exports() -> Result<(), String> {
     controller.delete_browser_sample(0)?;
     assert!(!root.join("delete.wav").exists());
     assert!(!export_path.exists());
-    assert!(controller.library.collections
-        .iter()
-        .find(|c| c.id == collection_id)
-        .unwrap()
-        .members
-        .is_empty());
+    assert!(
+        controller
+            .library
+            .collections
+            .iter()
+            .find(|c| c.id == collection_id)
+            .unwrap()
+            .members
+            .is_empty()
+    );
     Ok(())
 }
 

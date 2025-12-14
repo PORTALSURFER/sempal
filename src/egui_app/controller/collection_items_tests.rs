@@ -29,7 +29,9 @@ fn enable_export_with_existing_member(
     std::fs::create_dir_all(export_root).unwrap();
     controller.settings.collection_export_root = Some(export_root.to_path_buf());
     controller.ui.collection_export_root = Some(export_root.to_path_buf());
-    if let Some(collection) = controller.library.collections
+    if let Some(collection) = controller
+        .library
+        .collections
         .iter_mut()
         .find(|c| c.id == *collection_id)
     {
@@ -111,7 +113,10 @@ fn collection_clip_tagging_works_without_registered_source() {
     controller.tag_selected_collection_sample(SampleTag::Keep);
 
     assert_eq!(controller.ui.collections.samples[1].tag, SampleTag::Keep);
-    assert_ne!(controller.ui.status.text, "Source not available for this sample");
+    assert_ne!(
+        controller.ui.status.text,
+        "Source not available for this sample"
+    );
     assert_ne!(controller.ui.status.badge_label, "Warning");
 }
 
@@ -125,7 +130,9 @@ fn collection_rename_moves_files_and_export() {
 
     assert!(!source.root.join("one.wav").exists());
     assert!(source.root.join("renamed.wav").is_file());
-    let collection = controller.library.collections
+    let collection = controller
+        .library
+        .collections
         .iter()
         .find(|c| c.id == collection_id)
         .unwrap();

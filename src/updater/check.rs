@@ -1,7 +1,7 @@
 use semver::Version;
 
-use super::{UpdateChannel, UpdateError};
 use super::github;
+use super::{UpdateChannel, UpdateError};
 
 /// Input for checking whether an update is available.
 #[derive(Debug, Clone)]
@@ -25,7 +25,9 @@ pub enum UpdateCheckOutcome {
     },
 }
 
-pub(super) fn check_for_updates(request: UpdateCheckRequest) -> Result<UpdateCheckOutcome, UpdateError> {
+pub(super) fn check_for_updates(
+    request: UpdateCheckRequest,
+) -> Result<UpdateCheckOutcome, UpdateError> {
     let release = github::fetch_release(&request.repo, request.channel)?;
 
     match request.channel {
@@ -34,15 +36,19 @@ pub(super) fn check_for_updates(request: UpdateCheckRequest) -> Result<UpdateChe
     }
 }
 
-fn stable_outcome(current: &Version, release: github::Release) -> Result<UpdateCheckOutcome, UpdateError> {
+fn stable_outcome(
+    current: &Version,
+    release: github::Release,
+) -> Result<UpdateCheckOutcome, UpdateError> {
     let tag = release.tag_name.trim().to_string();
     let Some(version_text) = tag.strip_prefix('v') else {
         return Err(UpdateError::Invalid(format!(
             "Stable release tag must be 'v{{VERSION}}', got '{tag}'"
         )));
     };
-    let latest = Version::parse(version_text)
-        .map_err(|err| UpdateError::Invalid(format!("Invalid stable version '{version_text}': {err}")))?;
+    let latest = Version::parse(version_text).map_err(|err| {
+        UpdateError::Invalid(format!("Invalid stable version '{version_text}': {err}"))
+    })?;
     if &latest > current {
         Ok(UpdateCheckOutcome::UpdateAvailable {
             tag,
@@ -85,4 +91,3 @@ fn nightly_outcome(
         Ok(UpdateCheckOutcome::UpToDate)
     }
 }
-

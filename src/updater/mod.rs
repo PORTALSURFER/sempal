@@ -89,7 +89,10 @@ pub fn open_release_page(url: &str) -> Result<(), String> {
     open::that(url).map_err(|err| err.to_string())
 }
 
-fn expected_zip_asset_name(identity: &RuntimeIdentity, version: Option<&str>) -> Result<String, UpdateError> {
+fn expected_zip_asset_name(
+    identity: &RuntimeIdentity,
+    version: Option<&str>,
+) -> Result<String, UpdateError> {
     if identity.platform != "windows" || identity.arch != "x86_64" {
         return Err(UpdateError::Invalid(format!(
             "Unsupported platform/arch {}/{}",
@@ -98,7 +101,8 @@ fn expected_zip_asset_name(identity: &RuntimeIdentity, version: Option<&str>) ->
     }
     let name = match identity.channel {
         UpdateChannel::Stable => {
-            let version = version.ok_or_else(|| UpdateError::Invalid("Missing stable version".into()))?;
+            let version =
+                version.ok_or_else(|| UpdateError::Invalid("Missing stable version".into()))?;
             format!("{APP_NAME}-v{version}-windows-x86_64.zip")
         }
         UpdateChannel::Nightly => format!("{APP_NAME}-nightly-windows-x86_64.zip"),
@@ -106,10 +110,14 @@ fn expected_zip_asset_name(identity: &RuntimeIdentity, version: Option<&str>) ->
     Ok(name)
 }
 
-fn expected_checksums_name(identity: &RuntimeIdentity, version: Option<&str>) -> Result<String, UpdateError> {
+fn expected_checksums_name(
+    identity: &RuntimeIdentity,
+    version: Option<&str>,
+) -> Result<String, UpdateError> {
     let name = match identity.channel {
         UpdateChannel::Stable => {
-            let version = version.ok_or_else(|| UpdateError::Invalid("Missing stable version".into()))?;
+            let version =
+                version.ok_or_else(|| UpdateError::Invalid("Missing stable version".into()))?;
             format!("checksums-v{version}.txt")
         }
         UpdateChannel::Nightly => "checksums-nightly.txt".to_string(),

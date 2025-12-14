@@ -291,4 +291,3 @@ pub(super) const HOTKEY_ACTIONS: &[HotkeyAction] = &[
         command: HotkeyCommand::MuteSelection,
     },
 ];
-

@@ -1,5 +1,5 @@
-use super::CollectionSampleContext;
 use super::super::*;
+use super::CollectionSampleContext;
 use std::path::{Path, PathBuf};
 
 impl EguiController {

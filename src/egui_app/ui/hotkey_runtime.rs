@@ -63,8 +63,14 @@ impl EguiApp {
             if self.try_handle_chord(ctx, &actions, press, focus, now, key_event.repeat) {
                 continue;
             }
-            if self.try_start_chord(ctx, &actions, press, now, wants_text_input, key_event.repeat)
-            {
+            if self.try_start_chord(
+                ctx,
+                &actions,
+                press,
+                now,
+                wants_text_input,
+                key_event.repeat,
+            ) {
                 continue;
             }
             if let Some(action) = actions
@@ -109,7 +115,7 @@ impl EguiApp {
                     && press_matches(&pending.first, &action.gesture.first)
             })
             .copied()
-            {
+        {
             self.pending_chord = None;
             self.key_feedback.last_chord = Some((pending.first, press));
             self.key_feedback.pending_root = None;

@@ -3,9 +3,7 @@ mod support;
 use support::{sempal_env::SempalEnvGuard, wav::write_test_wav};
 
 use sempal::{
-    egui_app::controller::EguiController,
-    sample_sources::SampleTag,
-    waveform::WaveformRenderer,
+    egui_app::controller::EguiController, sample_sources::SampleTag, waveform::WaveformRenderer,
 };
 use std::{path::PathBuf, time::Duration};
 use tempfile::TempDir;
@@ -148,7 +146,13 @@ fn ctrl_shift_click_adds_range_without_resetting_anchor() {
 
     controller.add_range_browser_selection(2);
 
-    let selected: Vec<_> = controller.ui.browser.selected_paths.iter().cloned().collect();
+    let selected: Vec<_> = controller
+        .ui
+        .browser
+        .selected_paths
+        .iter()
+        .cloned()
+        .collect();
     assert_eq!(selected.len(), 4);
     assert!(selected.contains(&row0));
     assert!(selected.contains(&row1));
@@ -165,7 +169,8 @@ fn browser_tagging_via_controller_updates_rows() {
 
     controller.focus_browser_row_only(0);
     controller.toggle_browser_row_selection(1);
-    controller.tag_browser_samples(&[0, 1], SampleTag::Trash, 0)
+    controller
+        .tag_browser_samples(&[0, 1], SampleTag::Trash, 0)
         .expect("tag browser samples");
 
     assert_eq!(controller.ui.browser.trash.len(), 2);

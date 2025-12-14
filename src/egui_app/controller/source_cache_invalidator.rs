@@ -5,7 +5,7 @@ use std::{
     rc::Rc,
 };
 
-pub(in super) struct SourceCacheInvalidator<'a> {
+pub(super) struct SourceCacheInvalidator<'a> {
     db_cache: &'a mut HashMap<SourceId, Rc<SourceDatabase>>,
     wav_cache: &'a mut HashMap<SourceId, Vec<super::WavEntry>>,
     wav_cache_lookup: &'a mut HashMap<SourceId, HashMap<PathBuf, usize>>,
@@ -15,7 +15,7 @@ pub(in super) struct SourceCacheInvalidator<'a> {
 }
 
 impl<'a> SourceCacheInvalidator<'a> {
-    pub(in super) fn new_from_state(
+    pub(super) fn new_from_state(
         cache: &'a mut LibraryCacheState,
         ui_cache: &'a mut ControllerUiCacheState,
         missing: &'a mut MissingState,
@@ -30,7 +30,7 @@ impl<'a> SourceCacheInvalidator<'a> {
         )
     }
 
-    pub(in super) fn new(
+    pub(super) fn new(
         db_cache: &'a mut HashMap<SourceId, Rc<SourceDatabase>>,
         wav_cache: &'a mut HashMap<SourceId, Vec<super::WavEntry>>,
         wav_cache_lookup: &'a mut HashMap<SourceId, HashMap<PathBuf, usize>>,
@@ -48,22 +48,22 @@ impl<'a> SourceCacheInvalidator<'a> {
         }
     }
 
-    pub(in super) fn invalidate_wav_related(&mut self, source_id: &SourceId) {
+    pub(super) fn invalidate_wav_related(&mut self, source_id: &SourceId) {
         self.wav_cache.remove(source_id);
         self.wav_cache_lookup.remove(source_id);
         self.label_cache.remove(source_id);
         self.missing_wavs.remove(source_id);
     }
 
-    pub(in super) fn invalidate_db_cache(&mut self, source_id: &SourceId) {
+    pub(super) fn invalidate_db_cache(&mut self, source_id: &SourceId) {
         self.db_cache.remove(source_id);
     }
 
-    pub(in super) fn invalidate_folder_browser(&mut self, source_id: &SourceId) {
+    pub(super) fn invalidate_folder_browser(&mut self, source_id: &SourceId) {
         self.folder_browsers.remove(source_id);
     }
 
-    pub(in super) fn invalidate_all(&mut self, source_id: &SourceId) {
+    pub(super) fn invalidate_all(&mut self, source_id: &SourceId) {
         self.invalidate_db_cache(source_id);
         self.invalidate_wav_related(source_id);
         self.invalidate_folder_browser(source_id);

@@ -15,7 +15,9 @@ impl EguiController {
         register_in_source: bool,
     ) -> Result<WavEntry, String> {
         let audio = self.selection_audio(source_id, relative_path)?;
-        let source = self.library.sources
+        let source = self
+            .library
+            .sources
             .iter()
             .find(|s| &s.id == source_id)
             .cloned()
@@ -44,13 +46,16 @@ impl EguiController {
         folder: &Path,
     ) -> Result<WavEntry, String> {
         let audio = self.selection_audio(source_id, relative_path)?;
-        let source = self.library.sources
+        let source = self
+            .library
+            .sources
             .iter()
             .find(|s| &s.id == source_id)
             .cloned()
             .ok_or_else(|| "Source not available".to_string())?;
         let name_hint = folder.join(
-            audio.relative_path
+            audio
+                .relative_path
                 .file_name()
                 .map(PathBuf::from)
                 .unwrap_or_else(|| PathBuf::from("selection.wav")),
@@ -318,7 +323,12 @@ mod tests {
             )
             .unwrap();
 
-        assert!(entry.relative_path.parent().is_none_or(|p| p.as_os_str().is_empty()));
+        assert!(
+            entry
+                .relative_path
+                .parent()
+                .is_none_or(|p| p.as_os_str().is_empty())
+        );
         assert!(clip_root.join(&entry.relative_path).is_file());
         assert!(!clip_root.join("drums").join(&entry.relative_path).exists());
     }

@@ -1,6 +1,6 @@
-use super::io;
-use super::CollectionSampleContext;
 use super::super::*;
+use super::CollectionSampleContext;
+use super::io;
 use std::path::Path;
 
 impl EguiController {

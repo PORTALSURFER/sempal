@@ -525,8 +525,12 @@ impl EguiApp {
                 }
             } else {
                 let shift_down = ui.input(|i| i.modifiers.shift);
-                self.controller
-                    .update_active_drag(pointer, DragSource::Folders, DragTarget::None, shift_down);
+                self.controller.update_active_drag(
+                    pointer,
+                    DragSource::Folders,
+                    DragTarget::None,
+                    shift_down,
+                );
             }
         }
         style::paint_section_border(ui, frame_response.response.rect, focused);

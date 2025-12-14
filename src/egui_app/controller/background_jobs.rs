@@ -1,6 +1,6 @@
-use super::*;
 use super::jobs::JobMessage;
 use super::trash_move::TrashMoveMessage;
+use super::*;
 use std::sync::atomic::Ordering;
 
 impl EguiController {
@@ -14,7 +14,10 @@ impl EguiController {
         loop {
             let message = match self.runtime.jobs.try_recv_message() {
                 Ok(message) => message,
-                Err(std::sync::mpsc::TryRecvError::Empty | std::sync::mpsc::TryRecvError::Disconnected) => {
+                Err(
+                    std::sync::mpsc::TryRecvError::Empty
+                    | std::sync::mpsc::TryRecvError::Disconnected,
+                ) => {
                     break;
                 }
             };
@@ -62,7 +65,8 @@ impl EguiController {
                 }
                 JobMessage::ScanFinished(result) => {
                     self.runtime.jobs.scan_in_progress = false;
-                    if Some(&result.source_id) != self.selection_state.ctx.selected_source.as_ref() {
+                    if Some(&result.source_id) != self.selection_state.ctx.selected_source.as_ref()
+                    {
                         continue;
                     }
                     let label = match result.mode {

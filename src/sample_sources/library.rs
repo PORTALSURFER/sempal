@@ -326,8 +326,10 @@ impl LibraryDatabase {
             return Ok(());
         }
         let tx = self.connection.transaction().map_err(map_sql_error)?;
-        let alter_result =
-            tx.execute("ALTER TABLE collection_members ADD COLUMN clip_root TEXT", []);
+        let alter_result = tx.execute(
+            "ALTER TABLE collection_members ADD COLUMN clip_root TEXT",
+            [],
+        );
         match alter_result {
             Ok(_) => {}
             Err(err) => {

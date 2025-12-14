@@ -1,6 +1,6 @@
-use super::fs_ops::{copy_member_to_export, ensure_export_dir};
-use super::export_dir_for;
 use super::super::*;
+use super::export_dir_for;
+use super::fs_ops::{copy_member_to_export, ensure_export_dir};
 use crate::sample_sources::collections::CollectionMember;
 
 impl EguiController {
@@ -76,8 +76,7 @@ impl EguiController {
         let entries = std::fs::read_dir(root)
             .map_err(|err| format!("Failed to read export root {}: {err}", root.display()))?;
         for entry in entries {
-            let entry =
-                entry.map_err(|err| format!("Failed to read export root entry: {err}"))?;
+            let entry = entry.map_err(|err| format!("Failed to read export root entry: {err}"))?;
             let path = entry.path();
             if !path.is_dir() {
                 continue;
@@ -133,10 +132,8 @@ impl EguiController {
         else {
             return false;
         };
-        let export_dir = super::resolved_export_dir(
-            collection,
-            self.settings.collection_export_root.as_deref(),
-        );
+        let export_dir =
+            super::resolved_export_dir(collection, self.settings.collection_export_root.as_deref());
         let removed = collection.remove_member(&member.source_id, &member.relative_path);
         if removed {
             super::delete_exported_file(export_dir, member);

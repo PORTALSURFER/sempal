@@ -73,7 +73,8 @@ impl CollectionsActions for CollectionsController<'_> {
             return;
         }
         let current = self.ui.collections.selected.unwrap_or(0) as isize;
-        let target = (current + offset).clamp(0, self.library.collections.len() as isize - 1) as usize;
+        let target =
+            (current + offset).clamp(0, self.library.collections.len() as isize - 1) as usize;
         self.select_collection_by_index(Some(target));
         self.focus_collections_list_context();
     }
@@ -111,7 +112,12 @@ impl CollectionsActions for CollectionsController<'_> {
 
     fn delete_collection(&mut self, collection_id: &CollectionId) -> Result<(), String> {
         let result: Result<String, String> = (|| {
-            let Some(index) = self.library.collections.iter().position(|c| &c.id == collection_id) else {
+            let Some(index) = self
+                .library
+                .collections
+                .iter()
+                .position(|c| &c.id == collection_id)
+            else {
                 return Err("Collection not found".into());
             };
             let removed = self.library.collections.remove(index);
@@ -143,7 +149,12 @@ impl CollectionsActions for CollectionsController<'_> {
             self.set_status("Collection name cannot be empty", StatusTone::Error);
             return;
         }
-        let Some(index) = self.library.collections.iter().position(|c| &c.id == collection_id) else {
+        let Some(index) = self
+            .library
+            .collections
+            .iter()
+            .position(|c| &c.id == collection_id)
+        else {
             self.set_status("Collection not found", StatusTone::Error);
             return;
         };

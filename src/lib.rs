@@ -15,9 +15,9 @@ pub mod logging;
 pub mod sample_sources;
 /// Selection math utilities.
 pub mod selection;
-/// Waveform decoding and rendering helpers.
-pub mod waveform;
-/// WAV header sanitization helpers.
-pub mod wav_sanitize;
 /// Update check + installer helper utilities.
 pub mod updater;
+/// WAV header sanitization helpers.
+pub mod wav_sanitize;
+/// Waveform decoding and rendering helpers.
+pub mod waveform;

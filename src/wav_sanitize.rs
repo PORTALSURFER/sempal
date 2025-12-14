@@ -17,15 +17,16 @@ pub fn sanitize_wav_bytes(mut bytes: Vec<u8>) -> Vec<u8> {
     let mut offset = 12usize;
     while offset + 8 <= bytes.len() {
         let id = &bytes[offset..offset + 4];
-        let chunk_size = u32::from_le_bytes(bytes[offset + 4..offset + 8].try_into().unwrap())
-            as usize;
+        let chunk_size =
+            u32::from_le_bytes(bytes[offset + 4..offset + 8].try_into().unwrap()) as usize;
         let chunk_data = offset + 8;
         if chunk_data + chunk_size > bytes.len() {
             break;
         }
 
         if id == b"fmt " {
-            if let Some(repaired) = shrink_pcm_fmt_chunk_with_padding(&mut bytes, offset, chunk_size)
+            if let Some(repaired) =
+                shrink_pcm_fmt_chunk_with_padding(&mut bytes, offset, chunk_size)
             {
                 return repaired;
             }
@@ -43,7 +44,8 @@ pub fn sanitize_wav_bytes(mut bytes: Vec<u8>) -> Vec<u8> {
 
 /// Read a file and return sanitized bytes.
 pub fn read_sanitized_wav_bytes(path: &Path) -> Result<Vec<u8>, String> {
-    let bytes = std::fs::read(path).map_err(|err| format!("Failed to read {}: {err}", path.display()))?;
+    let bytes =
+        std::fs::read(path).map_err(|err| format!("Failed to read {}: {err}", path.display()))?;
     Ok(sanitize_wav_bytes(bytes))
 }
 

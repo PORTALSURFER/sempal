@@ -62,8 +62,9 @@ fn waveform_refresh_respects_view_slice_and_caps_width() {
         .expect("waveform image");
     assert!((image.view_start - 0.25).abs() < 1e-6);
     assert!((image.view_end - 0.5).abs() < 1e-6);
-    let expected_width =
-        (controller.sample_view.waveform.size[0] as f32 * (1.0f32 / 0.25).min(64.0f32)).ceil() as usize;
+    let expected_width = (controller.sample_view.waveform.size[0] as f32
+        * (1.0f32 / 0.25).min(64.0f32))
+    .ceil() as usize;
     let samples_in_view = (0.5 - 0.25) * 1000.0;
     let upper = (samples_in_view as usize)
         .min(crate::egui_app::controller::wavs::MAX_TEXTURE_WIDTH as usize)
@@ -148,10 +149,10 @@ fn waveform_rerenders_after_same_length_edit() {
     assert_ne!(before.pixels, after.pixels);
 }
 
-    #[test]
-    fn stale_audio_results_are_ignored() {
-        let (mut controller, source) = dummy_controller();
-        controller.settings.feature_flags.autoplay_selection = false;
+#[test]
+fn stale_audio_results_are_ignored() {
+    let (mut controller, source) = dummy_controller();
+    controller.settings.feature_flags.autoplay_selection = false;
     controller.library.sources.push(source.clone());
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
     write_test_wav(&source.root.join("a.wav"), &[0.0, 0.1]);
@@ -186,9 +187,9 @@ fn waveform_rerenders_after_same_length_edit() {
 }
 
 #[test]
-    fn play_request_is_deferred_until_audio_ready() {
-        let (mut controller, source) = dummy_controller();
-        controller.settings.feature_flags.autoplay_selection = false;
+fn play_request_is_deferred_until_audio_ready() {
+    let (mut controller, source) = dummy_controller();
+    controller.settings.feature_flags.autoplay_selection = false;
     controller.library.sources.push(source.clone());
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
     write_test_wav(&source.root.join("wait.wav"), &[0.0, 0.2, -0.2]);

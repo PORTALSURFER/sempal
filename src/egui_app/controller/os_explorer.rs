@@ -46,7 +46,10 @@ pub(super) fn reveal_in_file_explorer(path: &Path) -> Result<(), String> {
         if status.success() {
             return Ok(());
         }
-        return Err(format!("Finder exited unsuccessfully for {}", path.display()));
+        return Err(format!(
+            "Finder exited unsuccessfully for {}",
+            path.display()
+        ));
     }
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     {
