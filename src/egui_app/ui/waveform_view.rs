@@ -8,6 +8,7 @@ mod destructive_prompt;
 mod hover_overlay;
 mod interactions;
 mod overlays;
+mod selection_drag;
 mod selection_geometry;
 mod selection_menu;
 mod selection_overlay;
@@ -74,12 +75,7 @@ impl EguiApp {
             interactions::handle_waveform_interactions(self, ui, rect, &response, view, view_width);
             if !edge_dragging {
                 interactions::handle_waveform_pointer_interactions(
-                    self,
-                    ui,
-                    rect,
-                    &response,
-                    view,
-                    view_width,
+                    self, ui, rect, &response, view, view_width,
                 );
             }
 

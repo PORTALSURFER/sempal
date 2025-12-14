@@ -70,7 +70,11 @@ pub(super) fn render_waveform_base(
     true
 }
 
-fn waveform_loading_fill(ui: &egui::Ui, base: egui::Color32, accent: egui::Color32) -> egui::Color32 {
+fn waveform_loading_fill(
+    ui: &egui::Ui,
+    base: egui::Color32,
+    accent: egui::Color32,
+) -> egui::Color32 {
     let time = ui.input(|i| i.time) as f32;
     let pulse = ((time * 2.4).sin() * 0.5 + 0.5).clamp(0.0, 1.0);
     let base_rgba: Rgba = base.into();
@@ -83,4 +87,3 @@ fn waveform_loading_fill(ui: &egui::Ui, base: egui::Color32, accent: egui::Color
         255,
     )
 }
-

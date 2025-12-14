@@ -64,4 +64,3 @@ pub(super) fn render_overlays(
         );
     }
 }
-
