@@ -284,13 +284,13 @@ impl EguiController {
                 format!("Unable to create trash folder {}: {err}", path.display())
             })?;
         }
-        self.trash_folder = normalized.clone();
+        self.settings.trash_folder = normalized.clone();
         self.ui.trash_folder = normalized;
         self.persist_config("Failed to save trash folder")
     }
 
     fn ensure_trash_folder_ready(&mut self) -> Result<PathBuf, ()> {
-        let Some(path) = self.trash_folder.clone() else {
+        let Some(path) = self.settings.trash_folder.clone() else {
             self.set_status("Set a trash folder first", StatusTone::Warning);
             return Err(());
         };

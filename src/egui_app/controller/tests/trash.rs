@@ -9,7 +9,7 @@ fn moving_trashed_samples_moves_and_prunes_state() -> Result<(), String> {
     let trash_root = temp.path().join("trash");
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source.clone());
-    controller.trash_folder = Some(trash_root.clone());
+    controller.settings.trash_folder = Some(trash_root.clone());
     controller.ui.trash_folder = Some(trash_root.clone());
 
     let trash_file = source.root.join("trash.wav");
@@ -60,7 +60,7 @@ fn moving_trashed_samples_can_cancel_midway() -> Result<(), String> {
     let trash_root = temp.path().join("trash");
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source.clone());
-    controller.trash_folder = Some(trash_root.clone());
+    controller.settings.trash_folder = Some(trash_root.clone());
     controller.ui.trash_folder = Some(trash_root.clone());
 
     {
@@ -100,7 +100,7 @@ fn taking_out_trash_deletes_files() {
     std::fs::write(trash_root.join("nested").join("more.wav"), b"more").unwrap();
 
     let (mut controller, _source) = dummy_controller();
-    controller.trash_folder = Some(trash_root.clone());
+    controller.settings.trash_folder = Some(trash_root.clone());
     controller.ui.trash_folder = Some(trash_root.clone());
 
     controller.take_out_trash();

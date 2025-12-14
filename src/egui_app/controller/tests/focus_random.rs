@@ -247,7 +247,7 @@ fn trash_move_hotkey_moves_samples() -> Result<(), String> {
     let trash_root = temp.path().join("trash");
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source.clone());
-    controller.trash_folder = Some(trash_root.clone());
+    controller.settings.trash_folder = Some(trash_root.clone());
     controller.ui.trash_folder = Some(trash_root.clone());
 
     let trash_file = source.root.join("trash.wav");

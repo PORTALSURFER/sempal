@@ -10,14 +10,19 @@ impl EguiController {
             .iter()
             .find(|host| host.is_default)
             .map(|host| host.id.clone());
-        let mut host_id = self.audio_output.host.clone().or(default_host.clone());
+        let mut host_id = self
+            .settings
+            .audio_output
+            .host
+            .clone()
+            .or(default_host.clone());
         if let Some(id) = host_id.as_ref()
             && !hosts.iter().any(|host| &host.id == id)
         {
             warning = Some(format!("Host {id} unavailable; using system default"));
             host_id = default_host;
         }
-        self.audio_output.host = host_id.clone();
+        self.settings.audio_output.host = host_id.clone();
         self.ui.audio.hosts = hosts
             .iter()
             .map(|host| AudioHostView {
@@ -43,7 +48,7 @@ impl EguiController {
             .find(|d| d.is_default)
             .map(|d| d.name.clone())
             .or_else(|| devices.first().map(|d| d.name.clone()));
-        let mut device_name = self.audio_output.device.clone();
+        let mut device_name = self.settings.audio_output.device.clone();
         if let Some(name) = device_name.as_ref() {
             if !devices.iter().any(|d| &d.name == name) {
                 warning.get_or_insert_with(|| {
@@ -57,7 +62,7 @@ impl EguiController {
         } else {
             device_name = default_device.clone();
         }
-        self.audio_output.device = device_name.clone();
+        self.settings.audio_output.device = device_name.clone();
         self.ui.audio.devices = devices
             .iter()
             .map(|device| AudioDeviceView {
@@ -73,63 +78,63 @@ impl EguiController {
             }
             _ => Vec::new(),
         };
-        if let Some(rate) = self.audio_output.sample_rate
+        if let Some(rate) = self.settings.audio_output.sample_rate
             && !sample_rates.contains(&rate)
             && !sample_rates.is_empty()
         {
             warning.get_or_insert_with(|| {
                 format!("Sample rate {rate} unsupported; using {}", sample_rates[0])
             });
-            self.audio_output.sample_rate = Some(sample_rates[0]);
+            self.settings.audio_output.sample_rate = Some(sample_rates[0]);
         }
         self.ui.audio.sample_rates = sample_rates;
-        self.ui.audio.selected = self.audio_output.clone();
+        self.ui.audio.selected = self.settings.audio_output.clone();
         self.ui.audio.warning = warning;
     }
 
     /// Update the selected host and rebuild the audio stream.
     pub fn set_audio_host(&mut self, host: Option<String>) {
-        if self.audio_output.host == host {
+        if self.settings.audio_output.host == host {
             return;
         }
-        self.audio_output.host = host;
+        self.settings.audio_output.host = host;
         self.refresh_audio_options();
         self.apply_audio_selection();
     }
 
     /// Update the selected device and rebuild the audio stream.
     pub fn set_audio_device(&mut self, device: Option<String>) {
-        if self.audio_output.device == device {
+        if self.settings.audio_output.device == device {
             return;
         }
-        self.audio_output.device = device;
+        self.settings.audio_output.device = device;
         self.refresh_audio_options();
         self.apply_audio_selection();
     }
 
     /// Update the selected sample rate and rebuild the audio stream.
     pub fn set_audio_sample_rate(&mut self, sample_rate: Option<u32>) {
-        if self.audio_output.sample_rate == sample_rate {
+        if self.settings.audio_output.sample_rate == sample_rate {
             return;
         }
-        self.audio_output.sample_rate = sample_rate;
+        self.settings.audio_output.sample_rate = sample_rate;
         self.ui.audio.selected.sample_rate = sample_rate;
         self.apply_audio_selection();
     }
 
     /// Update the selected buffer size (frames) and rebuild the audio stream.
     pub fn set_audio_buffer_size(&mut self, buffer_size: Option<u32>) {
-        if self.audio_output.buffer_size == buffer_size {
+        if self.settings.audio_output.buffer_size == buffer_size {
             return;
         }
-        self.audio_output.buffer_size = buffer_size;
+        self.settings.audio_output.buffer_size = buffer_size;
         self.ui.audio.selected.buffer_size = buffer_size;
         self.apply_audio_selection();
     }
 
     /// Apply current audio config to the player and persist config.
     pub(super) fn apply_audio_selection(&mut self) {
-        self.ui.audio.selected = self.audio_output.clone();
+        self.ui.audio.selected = self.settings.audio_output.clone();
         match self.rebuild_audio_player() {
             Ok(_) => {
                 let _ = self.persist_config("Failed to save audio settings");
@@ -169,22 +174,22 @@ impl EguiController {
             return None;
         }
         let mut reasons = Vec::new();
-        if let Some(host) = self.audio_output.host.as_deref()
+        if let Some(host) = self.settings.audio_output.host.as_deref()
             && host != output.host_id
         {
             reasons.push(format!("host {host}"));
         }
-        if let Some(device) = self.audio_output.device.as_deref()
+        if let Some(device) = self.settings.audio_output.device.as_deref()
             && device != output.device_name
         {
             reasons.push(format!("device {device}"));
         }
-        if let Some(rate) = self.audio_output.sample_rate
+        if let Some(rate) = self.settings.audio_output.sample_rate
             && rate != output.sample_rate
         {
             reasons.push(format!("sample rate {rate}"));
         }
-        if let Some(size) = self.audio_output.buffer_size
+        if let Some(size) = self.settings.audio_output.buffer_size
             && output.buffer_size_frames != Some(size)
         {
             reasons.push(format!("buffer {size}"));

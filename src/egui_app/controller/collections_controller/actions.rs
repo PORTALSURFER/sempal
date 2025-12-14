@@ -79,7 +79,7 @@ impl CollectionsActions for CollectionsController<'_> {
     }
 
     fn add_collection(&mut self) {
-        if !self.feature_flags.collections_enabled {
+        if !self.settings.feature_flags.collections_enabled {
             return;
         }
         let name = self.next_collection_name();
@@ -91,7 +91,7 @@ impl CollectionsActions for CollectionsController<'_> {
         let _ = self.persist_config("Failed to save collection");
         self.refresh_collections_ui();
         self.set_status("Collection created", StatusTone::Info);
-        if self.collection_export_root.is_none() {
+        if self.settings.collection_export_root.is_none() {
             if let Some(current_id) = self.selection_ctx.selected_collection.clone() {
                 self.pick_collection_export_path(&current_id);
                 if self
@@ -151,7 +151,7 @@ impl CollectionsActions for CollectionsController<'_> {
         let mut clip_root_update: Option<(std::path::PathBuf, std::path::PathBuf)> = None;
         if let Some(old_folder) = collection_export::resolved_export_dir(
             &self.collections[index],
-            self.collection_export_root.as_deref(),
+            self.settings.collection_export_root.as_deref(),
         ) {
             if let Some(parent) = old_folder.parent() {
                 let new_folder = parent.join(&new_folder_name);
@@ -209,7 +209,7 @@ impl CollectionsActions for CollectionsController<'_> {
         collection_id: &CollectionId,
         relative_path: &Path,
     ) -> Result<(), String> {
-        if !self.feature_flags.collections_enabled {
+        if !self.settings.feature_flags.collections_enabled {
             return Err("Collections are disabled".into());
         }
         let Some(source) = self.current_source() else {
@@ -224,7 +224,7 @@ impl CollectionsActions for CollectionsController<'_> {
         source: &SampleSource,
         relative_path: &Path,
     ) -> Result<(), String> {
-        if !self.feature_flags.collections_enabled {
+        if !self.settings.feature_flags.collections_enabled {
             return Err("Collections are disabled".into());
         }
         self.add_sample_to_collection_inner(collection_id, source, relative_path)
@@ -258,7 +258,7 @@ impl CollectionsController<'_> {
     }
 
     fn maybe_autoplay_selection(&mut self) {
-        if !self.feature_flags.autoplay_selection {
+        if !self.settings.feature_flags.autoplay_selection {
             return;
         }
         let looped = self.ui.waveform.loop_enabled;

@@ -93,11 +93,7 @@ pub struct EguiController {
     wav_selection: WavSelectionState,
     suppress_autoplay_once: bool,
     pending_loop_disable_at: Option<Instant>,
-    feature_flags: crate::sample_sources::config::FeatureFlags,
-    audio_output: AudioOutputConfig,
-    controls: crate::sample_sources::config::InteractionOptions,
-    trash_folder: Option<std::path::PathBuf>,
-    collection_export_root: Option<PathBuf>,
+    settings: AppSettingsState,
     selection: SelectionState,
     jobs: jobs::ControllerJobs,
     random_history: RandomHistoryState,
@@ -167,11 +163,13 @@ impl EguiController {
             },
             suppress_autoplay_once: false,
             pending_loop_disable_at: None,
-            feature_flags: crate::sample_sources::config::FeatureFlags::default(),
-            audio_output: AudioOutputConfig::default(),
-            controls: crate::sample_sources::config::InteractionOptions::default(),
-            trash_folder: None,
-            collection_export_root: None,
+            settings: AppSettingsState {
+                feature_flags: crate::sample_sources::config::FeatureFlags::default(),
+                audio_output: AudioOutputConfig::default(),
+                controls: crate::sample_sources::config::InteractionOptions::default(),
+                trash_folder: None,
+                collection_export_root: None,
+            },
             selection: SelectionState::new(),
             jobs,
             random_history: RandomHistoryState {
@@ -299,6 +297,14 @@ struct SelectionContextState {
     selected_source: Option<SourceId>,
     last_selected_browsable_source: Option<SourceId>,
     selected_collection: Option<CollectionId>,
+}
+
+struct AppSettingsState {
+    feature_flags: crate::sample_sources::config::FeatureFlags,
+    audio_output: AudioOutputConfig,
+    controls: crate::sample_sources::config::InteractionOptions,
+    trash_folder: Option<std::path::PathBuf>,
+    collection_export_root: Option<PathBuf>,
 }
 
 struct WaveformState {

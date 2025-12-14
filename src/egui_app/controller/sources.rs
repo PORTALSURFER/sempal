@@ -94,7 +94,7 @@ impl EguiController {
         for collection in self.collections.iter_mut() {
             let export_dir = collection_export::resolved_export_dir(
                 collection,
-                self.collection_export_root.as_deref(),
+                self.settings.collection_export_root.as_deref(),
             );
             let removed_members = collection.prune_source(&removed.id);
             for member in removed_members {

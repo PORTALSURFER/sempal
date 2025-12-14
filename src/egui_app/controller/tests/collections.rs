@@ -26,7 +26,7 @@ fn export_path_copies_and_refreshes_members() -> Result<(), String> {
     let collection_id = collection.id.clone();
     controller.collections.push(collection);
     controller.selection_ctx.selected_collection = Some(collection_id.clone());
-    controller.collection_export_root = Some(export_root.clone());
+    controller.settings.collection_export_root = Some(export_root.clone());
     controller.ui.collection_export_root = Some(export_root.clone());
 
     let sample_path = source_root.join("one.wav");
@@ -71,7 +71,7 @@ fn renaming_collection_updates_export_folder() -> Result<(), String> {
     controller.sources.push(source.clone());
 
     let mut collection = Collection::new("Old");
-    controller.collection_export_root = Some(export_root.clone());
+    controller.settings.collection_export_root = Some(export_root.clone());
     controller.ui.collection_export_root = Some(export_root.clone());
     std::fs::create_dir_all(export_root.join("Old")).unwrap();
     collection.add_member(source.id.clone(), PathBuf::from("one.wav"));

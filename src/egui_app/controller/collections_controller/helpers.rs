@@ -54,7 +54,7 @@ impl CollectionsController<'_> {
         clip_root: PathBuf,
         clip_relative_path: PathBuf,
     ) -> Result<(), String> {
-        if !self.feature_flags.collections_enabled {
+        if !self.settings.feature_flags.collections_enabled {
             return Err("Collections are disabled".into());
         }
         SourceDatabase::open(&clip_root)
@@ -118,7 +118,7 @@ impl CollectionsController<'_> {
             &self.collections,
             selected_id.as_ref(),
             &collection_missing,
-            self.collection_export_root.as_deref(),
+            self.settings.collection_export_root.as_deref(),
         );
         self.ui.collections.selected = selected_id
             .as_ref()

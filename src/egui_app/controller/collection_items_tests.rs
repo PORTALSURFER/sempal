@@ -27,7 +27,7 @@ fn enable_export_with_existing_member(
     export_root: &Path,
 ) {
     std::fs::create_dir_all(export_root).unwrap();
-    controller.collection_export_root = Some(export_root.to_path_buf());
+    controller.settings.collection_export_root = Some(export_root.to_path_buf());
     controller.ui.collection_export_root = Some(export_root.to_path_buf());
     if let Some(collection) = controller
         .collections

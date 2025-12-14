@@ -5,26 +5,28 @@ impl EguiController {
     /// Load persisted configuration and populate initial UI state.
     pub fn load_configuration(&mut self) -> Result<(), crate::sample_sources::config::ConfigError> {
         let cfg = crate::sample_sources::config::load_or_default()?;
-        self.feature_flags = cfg.feature_flags;
-        self.trash_folder = cfg.trash_folder.clone();
-        self.collection_export_root = cfg.collection_export_root.clone();
-        self.ui.collections.enabled = self.feature_flags.collections_enabled;
-        self.audio_output = cfg.audio_output.clone();
-        self.ui.audio.selected = self.audio_output.clone();
-        self.controls = cfg.controls.clone();
-        self.controls.waveform_scroll_speed =
-            clamp_scroll_speed(self.controls.waveform_scroll_speed);
-        self.controls.wheel_zoom_factor = clamp_zoom_factor(self.controls.wheel_zoom_factor);
-        self.controls.keyboard_zoom_factor = clamp_zoom_factor(self.controls.keyboard_zoom_factor);
+        self.settings.feature_flags = cfg.feature_flags;
+        self.settings.trash_folder = cfg.trash_folder.clone();
+        self.settings.collection_export_root = cfg.collection_export_root.clone();
+        self.ui.collections.enabled = self.settings.feature_flags.collections_enabled;
+        self.settings.audio_output = cfg.audio_output.clone();
+        self.ui.audio.selected = self.settings.audio_output.clone();
+        self.settings.controls = cfg.controls.clone();
+        self.settings.controls.waveform_scroll_speed =
+            clamp_scroll_speed(self.settings.controls.waveform_scroll_speed);
+        self.settings.controls.wheel_zoom_factor =
+            clamp_zoom_factor(self.settings.controls.wheel_zoom_factor);
+        self.settings.controls.keyboard_zoom_factor =
+            clamp_zoom_factor(self.settings.controls.keyboard_zoom_factor);
         self.ui.controls = crate::egui_app::state::InteractionOptionsState {
-            invert_waveform_scroll: self.controls.invert_waveform_scroll,
-            waveform_scroll_speed: self.controls.waveform_scroll_speed,
-            wheel_zoom_factor: self.controls.wheel_zoom_factor,
-            keyboard_zoom_factor: self.controls.keyboard_zoom_factor,
-            destructive_yolo_mode: self.controls.destructive_yolo_mode,
-            waveform_channel_view: self.controls.waveform_channel_view,
+            invert_waveform_scroll: self.settings.controls.invert_waveform_scroll,
+            waveform_scroll_speed: self.settings.controls.waveform_scroll_speed,
+            wheel_zoom_factor: self.settings.controls.wheel_zoom_factor,
+            keyboard_zoom_factor: self.settings.controls.keyboard_zoom_factor,
+            destructive_yolo_mode: self.settings.controls.destructive_yolo_mode,
+            waveform_channel_view: self.settings.controls.waveform_channel_view,
         };
-        self.ui.waveform.channel_view = self.controls.waveform_channel_view;
+        self.ui.waveform.channel_view = self.settings.controls.waveform_channel_view;
         self.refresh_audio_options();
         self.apply_volume(cfg.volume);
         self.ui.trash_folder = cfg.trash_folder.clone();
@@ -45,7 +47,7 @@ impl EguiController {
             let expected_source_prefix = format!("collection-{}", collection.id.as_str());
             let resolved_root = crate::egui_app::controller::collection_export::resolved_export_dir(
                 collection,
-                self.collection_export_root.as_deref(),
+                self.settings.collection_export_root.as_deref(),
             )
             .or_else(|| {
                 crate::app_dirs::app_root_dir()
@@ -87,18 +89,18 @@ impl EguiController {
         crate::sample_sources::config::save(&crate::sample_sources::config::AppConfig {
             sources: self.sources.clone(),
             collections: self.collections.clone(),
-            feature_flags: self.feature_flags.clone(),
-            trash_folder: self.trash_folder.clone(),
-            collection_export_root: self.collection_export_root.clone(),
+            feature_flags: self.settings.feature_flags.clone(),
+            trash_folder: self.settings.trash_folder.clone(),
+            collection_export_root: self.settings.collection_export_root.clone(),
             last_selected_source: self
                 .selection_ctx
                 .selected_source
                 .clone()
                 .filter(|id| self.sources.iter().any(|s| &s.id == id))
                 .or_else(|| self.selection_ctx.last_selected_browsable_source.clone()),
-            audio_output: self.audio_output.clone(),
+            audio_output: self.settings.audio_output.clone(),
             volume: self.ui.volume,
-            controls: self.controls.clone(),
+            controls: self.settings.controls.clone(),
         })
     }
 

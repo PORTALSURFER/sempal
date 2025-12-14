@@ -39,7 +39,7 @@ fn focus_hotkey_does_not_autoplay_browser_sample() {
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
-    assert!(controller.feature_flags.autoplay_selection);
+    assert!(controller.settings.feature_flags.autoplay_selection);
 
     controller.focus_browser_list();
 

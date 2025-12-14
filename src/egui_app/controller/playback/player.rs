@@ -186,7 +186,7 @@ impl EguiController {
         &mut self,
     ) -> Result<Option<Rc<RefCell<AudioPlayer>>>, String> {
         if self.player.is_none() {
-            let mut created = AudioPlayer::from_config(&self.audio_output)
+            let mut created = AudioPlayer::from_config(&self.settings.audio_output)
                 .map_err(|err| format!("Audio init failed: {err}"))?;
             created.set_volume(self.ui.volume);
             self.player = Some(Rc::new(RefCell::new(created)));

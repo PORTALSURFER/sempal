@@ -112,7 +112,7 @@ impl EguiController {
             return;
         }
         if let Some(source) = self.current_source() {
-            let autoplay = self.feature_flags.autoplay_selection && !self.suppress_autoplay_once;
+            let autoplay = self.settings.feature_flags.autoplay_selection && !self.suppress_autoplay_once;
             self.suppress_autoplay_once = false;
             let pending_playback = if autoplay {
                 Some(PendingPlayback {

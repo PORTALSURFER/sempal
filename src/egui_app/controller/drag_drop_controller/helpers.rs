@@ -36,7 +36,7 @@ impl DragDropController<'_> {
             .and_then(|collection| {
                 super::super::collection_export::resolved_export_dir(
                     collection,
-                    self.collection_export_root.as_deref(),
+                    self.settings.collection_export_root.as_deref(),
                 )
             });
         if let Some(path) = preferred {

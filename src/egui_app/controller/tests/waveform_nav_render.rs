@@ -148,10 +148,10 @@ fn waveform_rerenders_after_same_length_edit() {
     assert_ne!(before.pixels, after.pixels);
 }
 
-#[test]
-fn stale_audio_results_are_ignored() {
-    let (mut controller, source) = dummy_controller();
-    controller.feature_flags.autoplay_selection = false;
+    #[test]
+    fn stale_audio_results_are_ignored() {
+        let (mut controller, source) = dummy_controller();
+        controller.settings.feature_flags.autoplay_selection = false;
     controller.sources.push(source.clone());
     controller.selection_ctx.selected_source = Some(source.id.clone());
     write_test_wav(&source.root.join("a.wav"), &[0.0, 0.1]);
@@ -186,9 +186,9 @@ fn stale_audio_results_are_ignored() {
 }
 
 #[test]
-fn play_request_is_deferred_until_audio_ready() {
-    let (mut controller, source) = dummy_controller();
-    controller.feature_flags.autoplay_selection = false;
+    fn play_request_is_deferred_until_audio_ready() {
+        let (mut controller, source) = dummy_controller();
+        controller.settings.feature_flags.autoplay_selection = false;
     controller.sources.push(source.clone());
     controller.selection_ctx.selected_source = Some(source.id.clone());
     write_test_wav(&source.root.join("wait.wav"), &[0.0, 0.2, -0.2]);

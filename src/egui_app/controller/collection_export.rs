@@ -28,7 +28,7 @@ impl EguiController {
 
     /// Open the global export root in the system file explorer.
     pub fn open_collection_export_root(&mut self) {
-        let Some(path) = self.collection_export_root.clone() else {
+        let Some(path) = self.settings.collection_export_root.clone() else {
             self.set_status("Set a collection export root first", StatusTone::Warning);
             return;
         };
@@ -60,7 +60,7 @@ impl EguiController {
                         .iter()
                         .find(|c| &c.id == collection_id)
                         .and_then(|c| {
-                            export_dir_for(c, self.collection_export_root.as_deref()).ok()
+                            export_dir_for(c, self.settings.collection_export_root.as_deref()).ok()
                         })
                         .unwrap_or(normalized);
                     self.set_status(
@@ -87,7 +87,8 @@ impl EguiController {
             self.set_status("Collection not found", StatusTone::Error);
             return;
         };
-        if resolved_export_dir(collection, self.collection_export_root.as_deref()).is_none() {
+        if resolved_export_dir(collection, self.settings.collection_export_root.as_deref()).is_none()
+        {
             self.set_status("Set an export folder first", StatusTone::Warning);
             return;
         };
@@ -107,7 +108,8 @@ impl EguiController {
             self.set_status("Collection not found", StatusTone::Error);
             return;
         };
-        let Ok(dir) = export_dir_for(collection, self.collection_export_root.as_deref()) else {
+        let Ok(dir) = export_dir_for(collection, self.settings.collection_export_root.as_deref())
+        else {
             self.set_status("Set an export folder first", StatusTone::Warning);
             return;
         };
@@ -132,7 +134,7 @@ impl EguiController {
             return Err("Collection not found".into());
         };
         let collection_dir =
-            match export_dir_for(collection, self.collection_export_root.as_deref()) {
+            match export_dir_for(collection, self.settings.collection_export_root.as_deref()) {
                 Ok(dir) => dir,
                 Err(_) => return Ok(()),
             };
@@ -179,7 +181,7 @@ impl EguiController {
     }
 
     fn set_collection_export_root(&mut self, path: Option<PathBuf>) -> Result<(), String> {
-        self.collection_export_root = path.clone();
+        self.settings.collection_export_root = path.clone();
         self.ui.collection_export_root = path.clone();
         if let Some(root) = path.as_deref() {
             let _ = self.sync_collections_from_export_root_path(root);
@@ -265,7 +267,8 @@ impl EguiController {
         let Some(collection) = self.collections.iter().find(|c| &c.id == collection_id) else {
             return Err("Collection not found".into());
         };
-        let collection_dir = export_dir_for(collection, self.collection_export_root.as_deref())?;
+        let collection_dir =
+            export_dir_for(collection, self.settings.collection_export_root.as_deref())?;
         if !collection_dir.exists() {
             return Err(format!(
                 "Export folder missing: {}",
@@ -311,7 +314,8 @@ impl EguiController {
         let Some(collection) = self.collections.iter_mut().find(|c| &c.id == collection_id) else {
             return false;
         };
-        let export_dir = resolved_export_dir(collection, self.collection_export_root.as_deref());
+        let export_dir =
+            resolved_export_dir(collection, self.settings.collection_export_root.as_deref());
         let removed = collection.remove_member(&member.source_id, &member.relative_path);
         if removed {
             delete_exported_file(export_dir, member);
@@ -536,12 +540,12 @@ mod tests {
     fn resolved_export_dir_uses_global_root_when_missing_override() {
         let renderer = crate::waveform::WaveformRenderer::new(4, 4);
         let mut controller = EguiController::new(renderer, None);
-        controller.collection_export_root = Some(PathBuf::from("global"));
+        controller.settings.collection_export_root = Some(PathBuf::from("global"));
         let collection = Collection::new("Global Collection");
         controller.collections.push(collection);
         let dir = resolved_export_dir(
             &controller.collections[0],
-            controller.collection_export_root.as_deref(),
+            controller.settings.collection_export_root.as_deref(),
         )
         .expect("dir");
         assert_eq!(dir, PathBuf::from("global").join("Global Collection"));

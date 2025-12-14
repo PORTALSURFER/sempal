@@ -97,7 +97,7 @@ fn selection_drop_uses_collection_export_dir_when_configured() {
     let source = SampleSource::new(root.clone());
     controller.sources.push(source.clone());
     controller.selection_ctx.selected_source = Some(source.id.clone());
-    controller.collection_export_root = Some(export_root.clone());
+    controller.settings.collection_export_root = Some(export_root.clone());
     controller.ui.collection_export_root = Some(export_root.clone());
 
     let orig = root.join("clip.wav");

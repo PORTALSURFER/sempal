@@ -79,7 +79,7 @@ impl EguiController {
             self.set_status(err.clone(), StatusTone::Error);
             return Err(err);
         }
-        if self.controls.destructive_yolo_mode {
+        if self.settings.controls.destructive_yolo_mode {
             self.ui.waveform.pending_destructive = None;
             self.apply_selection_edit_kind(edit)?;
             return Ok(SelectionEditRequest::Applied);
