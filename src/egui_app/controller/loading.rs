@@ -24,10 +24,10 @@ impl EguiController {
         }
         self.wav_entries.entries.clear();
         self.sync_after_wav_entries_changed();
-        if self.runtime.jobs.pending_source.as_ref() == Some(&source.id) {
+        if self.runtime.jobs.wav_load_pending_for(&source.id) {
             return;
         }
-        self.runtime.jobs.pending_source = Some(source.id.clone());
+        self.runtime.jobs.mark_wav_load_pending(source.id.clone());
         let job = WavLoadJob {
             source_id: source.id.clone(),
             root: source.root.clone(),
@@ -42,10 +42,10 @@ impl EguiController {
                 }
                 Err(err) => self.handle_wav_load_error(&source.id, err),
             }
-            self.runtime.jobs.pending_source = None;
+            self.runtime.jobs.clear_wav_load_pending();
             return;
         }
-        let _ = self.runtime.jobs.wav_job_tx.send(job);
+        self.runtime.jobs.send_wav_job(job);
         self.set_status(
             format!("Loading wavs for {}", source.root.display()),
             StatusTone::Info,
@@ -53,7 +53,7 @@ impl EguiController {
     }
 
     pub(super) fn poll_wav_loader(&mut self) {
-        while let Ok(message) = self.runtime.jobs.wav_job_rx.try_recv() {
+        while let Ok(message) = self.runtime.jobs.try_recv_wav_result() {
             if Some(&message.source_id) != self.selection_state.ctx.selected_source.as_ref() {
                 continue;
             }
@@ -73,7 +73,7 @@ impl EguiController {
                 }
                 Err(err) => self.handle_wav_load_error(&message.source_id, err),
             }
-            self.runtime.jobs.pending_source = None;
+            self.runtime.jobs.clear_wav_load_pending();
         }
     }
 

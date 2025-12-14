@@ -26,3 +26,26 @@ pub(in super) struct ControllerJobs {
     pub(in super) trash_move_cancel: Option<Arc<std::sync::atomic::AtomicBool>>,
 }
 
+impl ControllerJobs {
+    pub(in super) fn wav_load_pending_for(&self, source_id: &SourceId) -> bool {
+        self.pending_source.as_ref() == Some(source_id)
+    }
+
+    pub(in super) fn mark_wav_load_pending(&mut self, source_id: SourceId) {
+        self.pending_source = Some(source_id);
+    }
+
+    pub(in super) fn clear_wav_load_pending(&mut self) {
+        self.pending_source = None;
+    }
+
+    pub(in super) fn send_wav_job(&self, job: WavLoadJob) {
+        let _ = self.wav_job_tx.send(job);
+    }
+
+    pub(in super) fn try_recv_wav_result(
+        &self,
+    ) -> Result<WavLoadResult, std::sync::mpsc::TryRecvError> {
+        self.wav_job_rx.try_recv()
+    }
+}
