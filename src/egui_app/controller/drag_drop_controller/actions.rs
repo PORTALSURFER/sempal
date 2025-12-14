@@ -314,8 +314,7 @@ impl DragDropController<'_> {
                 self.set_status(message, StatusTone::Info);
             }
             Err(err) => {
-                self.ui.drag.external_started = false;
-                self.ui.drag.external_arm_at = None;
+                self.reset_drag();
                 self.set_status(err, StatusTone::Error);
             }
         }
