@@ -118,6 +118,42 @@ pub(super) fn render_list_row(ui: &mut Ui, row: ListRow<'_>) -> egui::Response {
     response
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum InlineTextEditAction {
+    None,
+    Submit,
+    Cancel,
+}
+
+pub(super) fn render_inline_text_edit(
+    ui: &mut Ui,
+    rect: egui::Rect,
+    value: &mut String,
+    hint: &str,
+    focus_requested: &mut bool,
+) -> InlineTextEditAction {
+    let edit = egui::TextEdit::singleline(value)
+        .hint_text(hint)
+        .frame(false)
+        .desired_width(rect.width());
+    let response = ui.put(rect, edit);
+    if *focus_requested && !response.has_focus() {
+        response.request_focus();
+        *focus_requested = false;
+    }
+    let enter_pressed = ui.input(|i| i.key_pressed(egui::Key::Enter));
+    let escape_pressed = ui.input(|i| i.key_pressed(egui::Key::Escape));
+    if enter_pressed && (response.has_focus() || response.lost_focus()) {
+        InlineTextEditAction::Submit
+    } else if escape_pressed && (response.has_focus() || response.lost_focus()) {
+        InlineTextEditAction::Cancel
+    } else if response.lost_focus() {
+        InlineTextEditAction::Cancel
+    } else {
+        InlineTextEditAction::None
+    }
+}
+
 pub(super) fn scroll_offset_to_reveal_row(
     current_offset: f32,
     row: usize,
