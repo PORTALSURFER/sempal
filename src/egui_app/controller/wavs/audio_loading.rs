@@ -120,8 +120,8 @@ impl EguiController {
         self.jobs.pending_playback = pending_playback;
         self.ui.waveform.loading = Some(relative_path.to_path_buf());
         self.ui.waveform.notice = None;
-        self.waveform_render_meta = None;
-        self.decoded_waveform = None;
+        self.waveform.render_meta = None;
+        self.waveform.decoded = None;
         self.ui.waveform.image = None;
         self.wav_selection.loaded_audio = None;
         self.wav_selection.loaded_wav = None;

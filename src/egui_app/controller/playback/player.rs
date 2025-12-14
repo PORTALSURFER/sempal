@@ -76,7 +76,7 @@ impl EguiController {
         self.poll_scan();
         self.poll_trash_move();
         let Some(player) = self.player.as_ref().cloned() else {
-            if self.decoded_waveform.is_none() {
+            if self.waveform.decoded.is_none() {
                 self.hide_waveform_playhead();
             }
             return;
@@ -102,7 +102,7 @@ impl EguiController {
         let is_looping = player_ref.is_looping();
         drop(player_ref);
         self.update_playhead_from_progress(progress, is_looping);
-        if !is_playing && self.decoded_waveform.is_none() {
+        if !is_playing && self.waveform.decoded.is_none() {
             self.hide_waveform_playhead();
         }
     }

@@ -14,7 +14,7 @@ fn cursor_step_size_tracks_view_zoom() {
     prepare_browser_sample(&mut controller, &source, "zoom.wav");
     controller.update_waveform_size(200, 10);
     controller.select_wav_by_path(Path::new("zoom.wav"));
-    controller.decoded_waveform = Some(DecodedWaveform {
+    controller.waveform.decoded = Some(DecodedWaveform {
         cache_token: 1,
         samples: vec![0.0; 10_000],
         peaks: None,
@@ -39,12 +39,12 @@ fn cursor_step_size_tracks_view_zoom() {
 #[test]
 fn waveform_refresh_respects_view_slice_and_caps_width() {
     let (mut controller, _source) = dummy_controller();
-    controller.waveform_size = [100, 10];
+    controller.waveform.size = [100, 10];
     controller.ui.waveform.view = WaveformView {
         start: 0.25,
         end: 0.5,
     };
-    controller.decoded_waveform = Some(DecodedWaveform {
+    controller.waveform.decoded = Some(DecodedWaveform {
         cache_token: 1,
         samples: (0..1000).map(|i| i as f32).collect(),
         peaks: None,
@@ -52,7 +52,7 @@ fn waveform_refresh_respects_view_slice_and_caps_width() {
         sample_rate: 48_000,
         channels: 1,
     });
-    controller.waveform_render_meta = None;
+    controller.waveform.render_meta = None;
     controller.refresh_waveform_image();
     let image = controller
         .ui
@@ -63,12 +63,12 @@ fn waveform_refresh_respects_view_slice_and_caps_width() {
     assert!((image.view_start - 0.25).abs() < 1e-6);
     assert!((image.view_end - 0.5).abs() < 1e-6);
     let expected_width =
-        (controller.waveform_size[0] as f32 * (1.0f32 / 0.25).min(64.0f32)).ceil() as usize;
+        (controller.waveform.size[0] as f32 * (1.0f32 / 0.25).min(64.0f32)).ceil() as usize;
     let samples_in_view = (0.5 - 0.25) * 1000.0;
     let upper = (samples_in_view as usize)
         .min(crate::egui_app::controller::wavs::MAX_TEXTURE_WIDTH as usize)
         .max(1);
-    let lower = controller.waveform_size[0]
+    let lower = controller.waveform.size[0]
         .min(crate::egui_app::controller::wavs::MAX_TEXTURE_WIDTH) as usize;
     let clamped = expected_width.min(upper).max(lower);
     assert_eq!(image.image.size[0], clamped);
@@ -118,7 +118,7 @@ fn waveform_rerenders_after_same_length_edit() {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source.clone());
     controller.selected_source = Some(source.id.clone());
-    controller.waveform_size = [32, 8];
+    controller.waveform.size = [32, 8];
     let path = source.root.join("edit.wav");
     write_test_wav(&path, &[0.1, 0.1, 0.1, 0.1]);
 

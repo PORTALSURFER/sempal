@@ -204,7 +204,7 @@ impl EguiController {
 
     pub(in crate::egui_app::controller) fn clear_loaded_audio_and_waveform_visuals(&mut self) {
         self.wav_selection.loaded_audio = None;
-        self.decoded_waveform = None;
+        self.waveform.decoded = None;
         self.ui.waveform.image = None;
         self.ui.waveform.playhead = PlayheadState::default();
         self.ui.waveform.selection = None;

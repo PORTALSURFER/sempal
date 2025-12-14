@@ -53,7 +53,7 @@ impl EguiController {
     }
 
     pub(crate) fn waveform_ready(&self) -> bool {
-        self.decoded_waveform.is_some()
+        self.waveform.decoded.is_some()
     }
 
     pub(crate) fn set_waveform_cursor(&mut self, position: f32) {

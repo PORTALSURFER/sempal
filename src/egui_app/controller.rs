@@ -77,9 +77,8 @@ const UNDO_LIMIT: usize = 20;
 pub struct EguiController {
     pub ui: UiState,
     renderer: WaveformRenderer,
-    waveform_size: [u32; 2],
-    decoded_waveform: Option<DecodedWaveform>,
     player: Option<Rc<RefCell<AudioPlayer>>>,
+    waveform: WaveformState,
     sources: Vec<SampleSource>,
     collections: Vec<Collection>,
     db_cache: HashMap<SourceId, Rc<SourceDatabase>>,
@@ -94,7 +93,6 @@ pub struct EguiController {
     last_selected_browsable_source: Option<SourceId>,
     selected_collection: Option<CollectionId>,
     wav_selection: WavSelectionState,
-    waveform_render_meta: Option<crate::egui_app::controller::wavs::WaveformRenderMeta>,
     suppress_autoplay_once: bool,
     pending_loop_disable_at: Option<Instant>,
     feature_flags: crate::sample_sources::config::FeatureFlags,
@@ -137,9 +135,12 @@ impl EguiController {
         Self {
             ui: UiState::default(),
             renderer,
-            waveform_size: [waveform_width, waveform_height],
-            decoded_waveform: None,
             player,
+            waveform: WaveformState {
+                size: [waveform_width, waveform_height],
+                decoded: None,
+                render_meta: None,
+            },
             sources: Vec::new(),
             collections: Vec::new(),
             db_cache: HashMap::new(),
@@ -164,7 +165,6 @@ impl EguiController {
                 loaded_wav: None,
                 loaded_audio: None,
             },
-            waveform_render_meta: None,
             suppress_autoplay_once: false,
             pending_loop_disable_at: None,
             feature_flags: crate::sample_sources::config::FeatureFlags::default(),
@@ -293,6 +293,12 @@ struct WavSelectionState {
     selected_wav: Option<PathBuf>,
     loaded_wav: Option<PathBuf>,
     loaded_audio: Option<LoadedAudio>,
+}
+
+struct WaveformState {
+    size: [u32; 2],
+    decoded: Option<DecodedWaveform>,
+    render_meta: Option<crate::egui_app::controller::wavs::WaveformRenderMeta>,
 }
 
 #[derive(Clone)]

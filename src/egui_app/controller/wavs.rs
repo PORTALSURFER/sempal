@@ -25,7 +25,7 @@ impl EguiController {
         self.ui.waveform.image = None;
         self.ui.waveform.notice = None;
         self.ui.waveform.loading = None;
-        self.decoded_waveform = None;
+        self.waveform.decoded = None;
         self.ui.waveform.playhead = PlayheadState::default();
         self.ui.waveform.last_start_marker = None;
         self.ui.waveform.cursor = None;
@@ -36,7 +36,7 @@ impl EguiController {
         self.wav_selection.loaded_audio = None;
         self.wav_selection.loaded_wav = None;
         self.ui.loaded_wav = None;
-        self.waveform_render_meta = None;
+        self.waveform.render_meta = None;
         if let Some(player) = self.player.as_ref() {
             player.borrow_mut().stop();
         }
