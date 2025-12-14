@@ -1,8 +1,8 @@
 ## [unreleased]
 
-### ⚙️ Miscellaneous Tasks
+### 🐛 Bug Fixes
 
-- *(build)* Remove automatic version bump build script
+- *(audio)* Fade out quickly on rapid sample restart
 ## [0.355.0] - 2025-12-14
 
 ### ⚙️ Miscellaneous Tasks
