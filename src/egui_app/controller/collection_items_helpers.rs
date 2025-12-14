@@ -349,11 +349,7 @@ impl EguiController {
         }
         if self.selected_source.as_ref() == Some(&source.id) {
             replace_entry(&mut self.wav_entries, old_path, &new_entry);
-            self.rebuild_wav_lookup();
-            self.browser_search_cache.invalidate();
-            self.rebuild_browser_lists();
-            self.label_cache
-                .insert(source.id.clone(), self.build_label_cache(&self.wav_entries));
+            self.sync_browser_after_wav_entries_mutation(&source.id);
         }
         self.rebuild_missing_lookup_for_source(&source.id);
         self.update_selection_paths(source, old_path, &new_entry.relative_path);
@@ -373,11 +369,7 @@ impl EguiController {
             self.wav_entries.push(entry.clone());
             self.wav_entries
                 .sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
-            self.rebuild_wav_lookup();
-            self.browser_search_cache.invalidate();
-            self.rebuild_browser_lists();
-            self.label_cache
-                .insert(source.id.clone(), self.build_label_cache(&self.wav_entries));
+            self.sync_browser_after_wav_entries_mutation(&source.id);
         }
         self.rebuild_missing_lookup_for_source(&source.id);
         self.invalidate_cached_audio(&source.id, &entry.relative_path);
