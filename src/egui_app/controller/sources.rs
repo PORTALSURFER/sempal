@@ -230,12 +230,7 @@ impl EguiController {
         &mut self,
         source: &SampleSource,
     ) -> Result<Rc<SourceDatabase>, SourceDbError> {
-        if let Some(existing) = self.cache.db.get(&source.id) {
-            return Ok(existing.clone());
-        }
-        let db = Rc::new(SourceDatabase::open(&source.root)?);
-        self.cache.db.insert(source.id.clone(), db.clone());
-        Ok(db)
+        self.cache.database_for(source)
     }
 
     pub(super) fn cache_db(

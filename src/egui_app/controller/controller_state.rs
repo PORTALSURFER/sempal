@@ -79,6 +79,21 @@ pub(super) struct LibraryCacheState {
     pub(super) wav: WavCacheState,
 }
 
+impl LibraryCacheState {
+    /// Resolve or open the database for `source`, caching the handle.
+    pub(super) fn database_for(
+        &mut self,
+        source: &SampleSource,
+    ) -> Result<Rc<SourceDatabase>, SourceDbError> {
+        if let Some(existing) = self.db.get(&source.id) {
+            return Ok(existing.clone());
+        }
+        let db = Rc::new(SourceDatabase::open(&source.root)?);
+        self.db.insert(source.id.clone(), db.clone());
+        Ok(db)
+    }
+}
+
 pub(super) struct BrowserCacheState {
     pub(super) labels: HashMap<SourceId, Vec<String>>,
     pub(super) search: wavs::BrowserSearchCache,
