@@ -1,5 +1,8 @@
 use super::flat_items_list::{FlatItemsListConfig, render_flat_items_list};
-use super::helpers::{NumberColumn, RowMarker, clamp_label_for_width, render_list_row};
+use super::helpers::{
+    InlineTextEditAction, NumberColumn, RowMarker, clamp_label_for_width,
+    render_inline_text_edit, render_list_row,
+};
 use super::style;
 use super::*;
 use crate::egui_app::state::{
@@ -96,7 +99,11 @@ impl EguiApp {
                     - metrics.number_width
                     - metrics.number_gap
                     - trailing_space;
-                let row_label = clamp_label_for_width(&label, row_label_width);
+                let row_label = if rename_match {
+                    String::new()
+                } else {
+                    clamp_label_for_width(&label, row_label_width)
+                };
                 let bg = if drag_active
                     && pointer_pos
                         .as_ref()
@@ -372,23 +379,16 @@ impl EguiApp {
         edit_rect.max.x -= padding + trailing_space;
         edit_rect.min.y += 2.0;
         edit_rect.max.y -= 2.0;
-        let response = ui.put(
+        match render_inline_text_edit(
+            ui,
             edit_rect,
-            egui::TextEdit::singleline(name)
-                .hint_text("Rename sample")
-                .frame(false)
-                .desired_width(edit_rect.width()),
-        );
-        if self.controller.ui.browser.rename_focus_requested && !response.has_focus() {
-            response.request_focus();
-            self.controller.ui.browser.rename_focus_requested = false;
-        }
-        let enter = response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-        let escape = response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape));
-        if enter {
-            self.controller.apply_pending_browser_rename();
-        } else if escape || response.lost_focus() {
-            self.controller.cancel_browser_rename();
+            name,
+            "Rename sample",
+            &mut self.controller.ui.browser.rename_focus_requested,
+        ) {
+            InlineTextEditAction::Submit => self.controller.apply_pending_browser_rename(),
+            InlineTextEditAction::Cancel => self.controller.cancel_browser_rename(),
+            InlineTextEditAction::None => {}
         }
     }
 
