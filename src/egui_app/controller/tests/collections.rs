@@ -230,20 +230,21 @@ fn sample_tag_for_builds_wav_cache_lookup() {
     let source = SampleSource::new(root);
     controller.sources.push(source.clone());
 
-    controller.wav_cache.insert(
+    controller.wav_cache.entries.insert(
         source.id.clone(),
         vec![
             sample_entry("a.wav", SampleTag::Keep),
             sample_entry("b.wav", SampleTag::Neutral),
         ],
     );
-    assert!(controller.wav_cache_lookup.get(&source.id).is_none());
+    assert!(controller.wav_cache.lookup.get(&source.id).is_none());
 
     let tag = controller.sample_tag_for(&source, Path::new("b.wav")).unwrap();
     assert_eq!(tag, SampleTag::Neutral);
-    assert!(controller.wav_cache_lookup.contains_key(&source.id));
+    assert!(controller.wav_cache.lookup.contains_key(&source.id));
     assert!(controller
-        .wav_cache_lookup
+        .wav_cache
+        .lookup
         .get(&source.id)
         .unwrap()
         .contains_key(Path::new("b.wav")));
@@ -259,7 +260,7 @@ fn pruning_cached_sample_updates_wav_cache_lookup() {
     let source = SampleSource::new(root);
     controller.sources.push(source.clone());
 
-    controller.wav_cache.insert(
+    controller.wav_cache.entries.insert(
         source.id.clone(),
         vec![
             sample_entry("a.wav", SampleTag::Neutral),
@@ -268,7 +269,8 @@ fn pruning_cached_sample_updates_wav_cache_lookup() {
     );
     controller.rebuild_wav_cache_lookup(&source.id);
     assert!(controller
-        .wav_cache_lookup
+        .wav_cache
+        .lookup
         .get(&source.id)
         .unwrap()
         .contains_key(Path::new("a.wav")));
@@ -276,7 +278,8 @@ fn pruning_cached_sample_updates_wav_cache_lookup() {
     controller.prune_cached_sample(&source, Path::new("a.wav"));
 
     assert!(!controller
-        .wav_cache_lookup
+        .wav_cache
+        .lookup
         .get(&source.id)
         .unwrap()
         .contains_key(Path::new("a.wav")));

@@ -277,11 +277,11 @@ impl EguiController {
         source: &SampleSource,
         relative_path: &Path,
     ) -> Result<SampleTag, String> {
-        if self.wav_cache.contains_key(&source.id) {
+        if self.wav_cache.entries.contains_key(&source.id) {
             self.ensure_wav_cache_lookup(&source.id);
-            if let Some(lookup) = self.wav_cache_lookup.get(&source.id)
+            if let Some(lookup) = self.wav_cache.lookup.get(&source.id)
                 && let Some(index) = lookup.get(relative_path).copied()
-                && let Some(cache) = self.wav_cache.get(&source.id)
+                && let Some(cache) = self.wav_cache.entries.get(&source.id)
                 && let Some(entry) = cache.get(index)
             {
                 return Ok(entry.tag);
@@ -301,7 +301,7 @@ impl EguiController {
         let entries = db
             .list_files()
             .map_err(|err| format!("Failed to read database: {err}"))?;
-        self.wav_cache.insert(source.id.clone(), entries.clone());
+        self.wav_cache.entries.insert(source.id.clone(), entries.clone());
         self.rebuild_wav_cache_lookup(&source.id);
         self.missing.wavs.insert(
             source.id.clone(),
@@ -343,7 +343,7 @@ impl EguiController {
         old_path: &Path,
         new_entry: WavEntry,
     ) {
-        if let Some(cache) = self.wav_cache.get_mut(&source.id) {
+        if let Some(cache) = self.wav_cache.entries.get_mut(&source.id) {
             replace_entry(cache, old_path, &new_entry);
             self.rebuild_wav_cache_lookup(&source.id);
         }
@@ -360,7 +360,7 @@ impl EguiController {
     }
 
     pub(super) fn insert_cached_entry(&mut self, source: &SampleSource, entry: WavEntry) {
-        if let Some(cache) = self.wav_cache.get_mut(&source.id) {
+        if let Some(cache) = self.wav_cache.entries.get_mut(&source.id) {
             cache.push(entry.clone());
             cache.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
             self.rebuild_wav_cache_lookup(&source.id);

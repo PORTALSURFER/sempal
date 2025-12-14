@@ -84,8 +84,8 @@ impl EguiController {
         self.missing.sources.remove(&removed.id);
         let mut invalidator = source_cache_invalidator::SourceCacheInvalidator::new(
             &mut self.db_cache,
-            &mut self.wav_cache,
-            &mut self.wav_cache_lookup,
+            &mut self.wav_cache.entries,
+            &mut self.wav_cache.lookup,
             &mut self.label_cache,
             &mut self.missing.wavs,
             &mut self.folder_browsers,
@@ -285,8 +285,8 @@ impl EguiController {
         self.missing.sources.remove(&source_id);
         let mut invalidator = source_cache_invalidator::SourceCacheInvalidator::new(
             &mut self.db_cache,
-            &mut self.wav_cache,
-            &mut self.wav_cache_lookup,
+            &mut self.wav_cache.entries,
+            &mut self.wav_cache.lookup,
             &mut self.label_cache,
             &mut self.missing.wavs,
             &mut self.folder_browsers,

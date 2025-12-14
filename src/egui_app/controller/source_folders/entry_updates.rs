@@ -93,7 +93,7 @@ impl EguiController {
         if updates.is_empty() {
             return;
         }
-        if let Some(cache) = self.wav_cache.get_mut(&source.id) {
+        if let Some(cache) = self.wav_cache.entries.get_mut(&source.id) {
             apply_entry_updates(cache, updates);
             self.rebuild_wav_cache_lookup(&source.id);
         }
@@ -160,4 +160,3 @@ fn apply_entry_updates(list: &mut Vec<WavEntry>, updates: &[(WavEntry, WavEntry)
     }
     list.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
 }
-

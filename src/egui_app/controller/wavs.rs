@@ -245,10 +245,10 @@ impl EguiController {
     }
 
     pub(super) fn ensure_wav_cache_lookup(&mut self, source_id: &SourceId) {
-        if self.wav_cache_lookup.contains_key(source_id) {
+        if self.wav_cache.lookup.contains_key(source_id) {
             return;
         }
-        let Some(entries) = self.wav_cache.get(source_id) else {
+        let Some(entries) = self.wav_cache.entries.get(source_id) else {
             return;
         };
         let lookup = entries
@@ -256,11 +256,11 @@ impl EguiController {
             .enumerate()
             .map(|(index, entry)| (entry.relative_path.clone(), index))
             .collect();
-        self.wav_cache_lookup.insert(source_id.clone(), lookup);
+        self.wav_cache.lookup.insert(source_id.clone(), lookup);
     }
 
     pub(super) fn rebuild_wav_cache_lookup(&mut self, source_id: &SourceId) {
-        self.wav_cache_lookup.remove(source_id);
+        self.wav_cache.lookup.remove(source_id);
         self.ensure_wav_cache_lookup(source_id);
     }
 
@@ -300,8 +300,8 @@ impl EguiController {
             self.selected_source.as_ref(),
             &mut self.wav_entries,
             &self.wav_lookup,
-            &mut self.wav_cache,
-            &mut self.wav_cache_lookup,
+            &mut self.wav_cache.entries,
+            &mut self.wav_cache.lookup,
         );
         tagging.apply_sample_tag(source, path, target_tag, require_present)?;
         let _ = db.set_tag(path, target_tag);

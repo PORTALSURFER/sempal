@@ -170,7 +170,7 @@ impl EguiController {
     }
 
     fn insert_new_wav_entry(&mut self, source: &SampleSource, entry: WavEntry) {
-        let cache = self.wav_cache.entry(source.id.clone()).or_default();
+        let cache = self.wav_cache.entries.entry(source.id.clone()).or_default();
         cache.push(entry.clone());
         cache.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
         self.rebuild_wav_cache_lookup(&source.id);

@@ -17,7 +17,7 @@ impl EguiController {
             return;
         }
         self.clear_source_missing(&source.id);
-        if let Some(entries) = self.wav_cache.get(&source.id).cloned() {
+        if let Some(entries) = self.wav_cache.entries.get(&source.id).cloned() {
             self.ensure_wav_cache_lookup(&source.id);
             self.apply_wav_entries(entries, true, Some(source.id.clone()), None);
             return;
@@ -36,7 +36,7 @@ impl EguiController {
             let result = load_entries(&job);
             match result {
                 Ok(entries) => {
-                    self.wav_cache.insert(source.id.clone(), entries.clone());
+                    self.wav_cache.entries.insert(source.id.clone(), entries.clone());
                     self.rebuild_wav_cache_lookup(&source.id);
                     self.apply_wav_entries(entries, false, Some(source.id.clone()), None);
                 }
@@ -60,6 +60,7 @@ impl EguiController {
             match message.result {
                 Ok(entries) => {
                     self.wav_cache
+                        .entries
                         .insert(message.source_id.clone(), entries.clone());
                     self.rebuild_wav_cache_lookup(&message.source_id);
                     self.apply_wav_entries(

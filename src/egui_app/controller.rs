@@ -83,8 +83,7 @@ pub struct EguiController {
     sources: Vec<SampleSource>,
     collections: Vec<Collection>,
     db_cache: HashMap<SourceId, Rc<SourceDatabase>>,
-    wav_cache: HashMap<SourceId, Vec<WavEntry>>,
-    wav_cache_lookup: HashMap<SourceId, HashMap<PathBuf, usize>>,
+    wav_cache: WavCacheState,
     missing: MissingState,
     label_cache: HashMap<SourceId, Vec<String>>,
     browser_search_cache: wavs::BrowserSearchCache,
@@ -146,8 +145,10 @@ impl EguiController {
             sources: Vec::new(),
             collections: Vec::new(),
             db_cache: HashMap::new(),
-            wav_cache: HashMap::new(),
-            wav_cache_lookup: HashMap::new(),
+            wav_cache: WavCacheState {
+                entries: HashMap::new(),
+                lookup: HashMap::new(),
+            },
             missing: MissingState {
                 sources: HashSet::new(),
                 wavs: HashMap::new(),
@@ -281,6 +282,11 @@ struct RowFlags {
 struct MissingState {
     sources: HashSet<SourceId>,
     wavs: HashMap<SourceId, HashSet<PathBuf>>,
+}
+
+struct WavCacheState {
+    entries: HashMap<SourceId, Vec<WavEntry>>,
+    lookup: HashMap<SourceId, HashMap<PathBuf, usize>>,
 }
 
 #[derive(Clone)]
