@@ -1,3 +1,21 @@
+## [unreleased]
+
+### 🚀 Features
+
+- *(hotkeys)* Add M hotkey to mute selection
+- *(hotkeys)* Add quote hotkey to tag neutral
+- *(hotkeys)* Apply triage tags in collection focus
+- *(drag-drop)* Save selection clips in focused folder
+- *(drag-drop)* Allow selection drops onto folders
+- *(ui)* Highlight folder drops for selection drags
+
+### 🐛 Bug Fixes
+
+- *(windows)* Reveal sample selects correct file
+- *(drag-drop)* Cancel selection drop without target
+- *(windows)* Avoid losing internal drag on brief pointer leave
+- *(windows)* Restore external drag-out while keeping internal drags
+- *(collections)* Allow tagging clip-root members
 ## [0.342.0] - 2025-12-13
 
 ### ⚙️ Miscellaneous Tasks
@@ -24,6 +42,11 @@
 - *(waveform)* Add crop hotkeys and non-destructive crop-as-new-sample
 - *(collections)* Sync entries from export root folders
 - *(undo)* Add 20-step undo/redo with hotkeys
+- *(ui)* Make left/right sidebars resizable panels
+- *(ui)* Add loop toggle button to waveform view
+- *(waveform)* Alt-drag selection handle slides selection
+- *(waveform)* Keep source focused on shift-drag selection export
+- Add -log to show console in release
 
 ### 🐛 Bug Fixes
 
@@ -45,6 +68,20 @@
 - *(tests)* Prevent Instant overflow and stabilize trash-move cancellation
 - *(ui)* Stop collection selection from locking scroll
 - *(windows)* Suppress hotkey beep by consuming backslash/t text events
+- *(hotkeys)* Prevent Windows beep on held keys
+- *(collections)* Store selection-drop clips in export dir
+- *(windows)* Consume handled hotkeys to prevent system beep
+- *(ui)* Color hotkey overlay headings and dedupe actions
+- *(windows)* Hide console window in release builds
+- Reveal file in Windows Explorer
+- Let keyboard cursor override idle mouse hover
+- Enable windows console and filesystem APIs
+- Enable Win32_Storage for windows crate
+- Enable Win32_Security for CreateFileW
+- *(waveform)* Avoid stale zoom-cache after edits
+- *(ui)* Focus new clip after selection drop
+- *(dragdrop)* Update shift behavior during selection drag
+- *(ui)* Keep browser selection visible when waveform focused
 
 ### 🚜 Refactor
 
@@ -59,6 +96,8 @@
 
 - Add Windows ASIO build note
 - Add missing rustdoc on public API
+- Update usage guide
+- Refresh usage guide
 
 ### ⚡ Performance
 
@@ -78,6 +117,7 @@
 
 - Add rustfmt and clippy checks with local workflow docs
 - *(controller)* Replace guarded unwraps with safer option handling
+- Resolve compile warnings
 - *(release)* V0.340.0 (#24)
 ## [0.287.0] - 2025-12-11
 
