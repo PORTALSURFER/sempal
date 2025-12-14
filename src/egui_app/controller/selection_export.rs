@@ -181,10 +181,7 @@ impl EguiController {
         self.wav_entries.push(entry);
         self.wav_entries
             .sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
-        self.rebuild_wav_lookup();
-        self.rebuild_browser_lists();
-        self.label_cache
-            .insert(source.id.clone(), self.build_label_cache(&self.wav_entries));
+        self.sync_browser_after_wav_entries_mutation_keep_search_cache(&source.id);
         self.rebuild_missing_lookup_for_source(&source.id);
     }
 }

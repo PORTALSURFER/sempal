@@ -1,0 +1,19 @@
+#![allow(clippy::cmp_owned, clippy::iter_cloned_collect)]
+
+mod browser_actions;
+mod browser_core;
+mod browser_selection;
+mod collections;
+mod common;
+mod drag_drop_folders;
+mod drag_drop_selection;
+mod focus_random;
+mod folders_core;
+mod folders_search;
+mod missing;
+mod playback_loop;
+mod trash;
+mod waveform;
+mod waveform_nav_cursor;
+mod waveform_nav_render;
+

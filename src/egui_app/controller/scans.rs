@@ -13,7 +13,7 @@ impl EguiController {
     }
 
     fn request_scan_with_mode(&mut self, mode: ScanMode) {
-        if self.scan_in_progress {
+        if self.jobs.scan_in_progress {
             self.set_status("Scan already in progress", StatusTone::Info);
             return;
         }
@@ -23,8 +23,8 @@ impl EguiController {
         };
         self.prepare_for_scan(&source, mode);
         let (tx, rx) = std::sync::mpsc::channel();
-        self.scan_rx = Some(rx);
-        self.scan_in_progress = true;
+        self.jobs.scan_rx = Some(rx);
+        self.jobs.scan_in_progress = true;
         let status_label = match mode {
             ScanMode::Quick => "Quick sync",
             ScanMode::Hard => "Hard sync",
@@ -54,11 +54,11 @@ impl EguiController {
     }
 
     pub(super) fn poll_scan(&mut self) {
-        if let Some(rx) = &self.scan_rx
+        if let Some(rx) = &self.jobs.scan_rx
             && let Ok(result) = rx.try_recv()
         {
-            self.scan_in_progress = false;
-            self.scan_rx = None;
+            self.jobs.scan_in_progress = false;
+            self.jobs.scan_rx = None;
             if Some(&result.source_id) != self.selected_source.as_ref() {
                 return;
             }
@@ -76,10 +76,15 @@ impl EguiController {
                         StatusTone::Info,
                     );
                     if let Some(source) = self.current_source() {
-                        self.wav_cache.remove(&source.id);
-                        self.wav_cache_lookup.remove(&source.id);
-                        self.label_cache.remove(&source.id);
-                        self.missing_wavs.remove(&source.id);
+                        let mut invalidator = source_cache_invalidator::SourceCacheInvalidator::new(
+                            &mut self.db_cache,
+                            &mut self.wav_cache,
+                            &mut self.wav_cache_lookup,
+                            &mut self.label_cache,
+                            &mut self.missing_wavs,
+                            &mut self.folder_browsers,
+                        );
+                        invalidator.invalidate_wav_related(&source.id);
                     }
                     self.queue_wav_load();
                 }
@@ -90,10 +95,15 @@ impl EguiController {
 
     fn prepare_for_scan(&mut self, source: &SampleSource, mode: ScanMode) {
         if matches!(mode, ScanMode::Hard) {
-            self.wav_cache.remove(&source.id);
-            self.wav_cache_lookup.remove(&source.id);
-            self.label_cache.remove(&source.id);
-            self.missing_wavs.remove(&source.id);
+            let mut invalidator = source_cache_invalidator::SourceCacheInvalidator::new(
+                &mut self.db_cache,
+                &mut self.wav_cache,
+                &mut self.wav_cache_lookup,
+                &mut self.label_cache,
+                &mut self.missing_wavs,
+                &mut self.folder_browsers,
+            );
+            invalidator.invalidate_wav_related(&source.id);
         }
     }
 }

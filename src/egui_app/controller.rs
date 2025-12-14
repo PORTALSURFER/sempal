@@ -17,6 +17,7 @@ mod focus;
 pub(crate) mod hotkeys;
 mod hotkeys_controller;
 mod interaction_options;
+mod jobs;
 mod loading;
 mod os_explorer;
 mod playback;
@@ -25,7 +26,9 @@ mod scans;
 mod selection_edits;
 mod selection_export;
 mod source_folders;
+mod source_cache_invalidator;
 mod sources;
+mod tagging_service;
 mod trash;
 mod trash_move;
 mod undo;
@@ -58,7 +61,6 @@ use std::{
     fs,
     path::{Path, PathBuf},
     rc::Rc,
-    sync::Arc,
     sync::mpsc::{Receiver, Sender},
     thread,
     time::{Duration, Instant, SystemTime},
@@ -105,19 +107,7 @@ pub struct EguiController {
     trash_folder: Option<std::path::PathBuf>,
     collection_export_root: Option<PathBuf>,
     selection: SelectionState,
-    wav_job_tx: Sender<WavLoadJob>,
-    wav_job_rx: Receiver<WavLoadResult>,
-    audio_job_tx: Sender<AudioLoadJob>,
-    audio_job_rx: Receiver<AudioLoadResult>,
-    pending_source: Option<SourceId>,
-    pending_select_path: Option<PathBuf>,
-    pending_audio: Option<PendingAudio>,
-    pending_playback: Option<PendingPlayback>,
-    next_audio_request_id: u64,
-    scan_rx: Option<Receiver<ScanResult>>,
-    scan_in_progress: bool,
-    trash_move_rx: Option<Receiver<trash_move::TrashMoveMessage>>,
-    trash_move_cancel: Option<Arc<std::sync::atomic::AtomicBool>>,
+    jobs: jobs::ControllerJobs,
     random_history: VecDeque<RandomHistoryEntry>,
     random_history_cursor: Option<usize>,
     folder_browsers: HashMap<SourceId, source_folders::FolderBrowserModel>,
@@ -134,6 +124,21 @@ impl EguiController {
         let (wav_job_tx, wav_job_rx) = spawn_wav_loader();
         let (audio_job_tx, audio_job_rx) = audio_loader::spawn_audio_loader(renderer.clone());
         let (waveform_width, waveform_height) = renderer.dimensions();
+        let jobs = jobs::ControllerJobs {
+            wav_job_tx,
+            wav_job_rx,
+            audio_job_tx,
+            audio_job_rx,
+            pending_source: None,
+            pending_select_path: None,
+            pending_audio: None,
+            pending_playback: None,
+            next_audio_request_id: 1,
+            scan_rx: None,
+            scan_in_progress: false,
+            trash_move_rx: None,
+            trash_move_cancel: None,
+        };
         Self {
             ui: UiState::default(),
             renderer,
@@ -167,19 +172,7 @@ impl EguiController {
             trash_folder: None,
             collection_export_root: None,
             selection: SelectionState::new(),
-            wav_job_tx,
-            wav_job_rx,
-            audio_job_tx,
-            audio_job_rx,
-            pending_source: None,
-            pending_select_path: None,
-            pending_audio: None,
-            pending_playback: None,
-            next_audio_request_id: 1,
-            scan_rx: None,
-            scan_in_progress: false,
-            trash_move_rx: None,
-            trash_move_cancel: None,
+            jobs,
             random_history: VecDeque::new(),
             random_history_cursor: None,
             folder_browsers: HashMap::new(),
