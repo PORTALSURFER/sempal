@@ -95,7 +95,7 @@ fn load_audio(
         .as_nanos() as i64;
     let decoded = renderer
         .decode_from_bytes(&bytes)
-        .map_err(AudioLoadError::Failed)?;
+        .map_err(|err| AudioLoadError::Failed(err.to_string()))?;
     Ok(AudioLoadOutcome {
         decoded,
         bytes,

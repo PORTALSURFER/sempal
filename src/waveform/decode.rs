@@ -1,4 +1,4 @@
-use super::{DecodedWaveform, WaveformPeaks, WaveformRenderer};
+use super::{DecodedWaveform, WaveformDecodeError, WaveformPeaks, WaveformRenderer};
 use hound::SampleFormat;
 use rodio::{Decoder, Source};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -8,13 +8,13 @@ static NEXT_CACHE_TOKEN: AtomicU64 = AtomicU64::new(1);
 
 impl WaveformRenderer {
     /// Decode wav bytes into samples and duration without rendering.
-    pub fn decode_from_bytes(&self, bytes: &[u8]) -> Result<DecodedWaveform, String> {
+    pub fn decode_from_bytes(&self, bytes: &[u8]) -> Result<DecodedWaveform, WaveformDecodeError> {
         self.load_decoded(bytes)
     }
 
     const MAX_FULL_SAMPLE_FRAMES: usize = 2_500_000;
 
-    fn load_decoded(&self, bytes: &[u8]) -> Result<DecodedWaveform, String> {
+    fn load_decoded(&self, bytes: &[u8]) -> Result<DecodedWaveform, WaveformDecodeError> {
         let cache_token = NEXT_CACHE_TOKEN.fetch_add(1, Ordering::Relaxed);
         let mut reader = match hound::WavReader::new(std::io::Cursor::new(bytes)) {
             Ok(reader) => reader,
@@ -61,7 +61,7 @@ impl WaveformRenderer {
         &self,
         bytes: &[u8],
         cache_token: u64,
-    ) -> Result<DecodedWaveform, String> {
+    ) -> Result<DecodedWaveform, WaveformDecodeError> {
         let owned: Arc<[u8]> = Arc::from(bytes.to_vec());
         let byte_len = owned.len() as u64;
         let decoder = Decoder::builder()
@@ -70,7 +70,9 @@ impl WaveformRenderer {
             .with_seekable(false)
             .with_hint("wav")
             .build()
-            .map_err(|error| format!("Invalid wav: {error}"))?;
+            .map_err(|error| WaveformDecodeError::Invalid {
+                message: error.to_string(),
+            })?;
 
         let sample_rate = decoder.sample_rate().max(1);
         let channels = decoder.channels().max(1);
@@ -111,7 +113,7 @@ impl WaveformRenderer {
         sample_rate: u32,
         channels: u16,
         frames_estimate: usize,
-    ) -> Result<DecodedWaveform, String>
+    ) -> Result<DecodedWaveform, WaveformDecodeError>
     where
         I: Iterator<Item = f32>,
     {
@@ -198,10 +200,10 @@ impl WaveformRenderer {
 
     fn read_float_samples(
         reader: &mut hound::WavReader<std::io::Cursor<&[u8]>>,
-    ) -> Result<Vec<f32>, String> {
+    ) -> Result<Vec<f32>, WaveformDecodeError> {
         let raw: Vec<f32> = reader
             .samples::<f32>()
-            .map(|s| s.map_err(|error| format!("Sample error: {error}")))
+            .map(|s| s.map_err(|source| WaveformDecodeError::Sample { source }))
             .collect::<Result<_, _>>()?;
         Ok(raw)
     }
@@ -209,13 +211,13 @@ impl WaveformRenderer {
     fn read_int_samples(
         reader: &mut hound::WavReader<std::io::Cursor<&[u8]>>,
         bits_per_sample: u16,
-    ) -> Result<Vec<f32>, String> {
+    ) -> Result<Vec<f32>, WaveformDecodeError> {
         let scale = (1i64 << bits_per_sample.saturating_sub(1)).max(1) as f32;
         let raw: Vec<f32> = reader
             .samples::<i32>()
             .map(|s| {
                 s.map(|v| v as f32 / scale)
-                    .map_err(|error| format!("Sample error: {error}"))
+                    .map_err(|source| WaveformDecodeError::Sample { source })
             })
             .collect::<Result<_, _>>()?;
         Ok(raw)
@@ -234,7 +236,7 @@ impl WaveformRenderer {
     fn build_peaks_from_float(
         reader: &mut hound::WavReader<std::io::Cursor<&[u8]>>,
         channels: usize,
-    ) -> Result<WaveformPeaks, String> {
+    ) -> Result<WaveformPeaks, WaveformDecodeError> {
         let total_frames = reader.duration() as usize;
         let bucket_size_frames = Self::peak_bucket_size(total_frames).max(1);
         let bucket_count = total_frames.div_ceil(bucket_size_frames).max(1);
@@ -253,7 +255,7 @@ impl WaveformRenderer {
 
         let mut iter = reader
             .samples::<f32>()
-            .map(|s| s.map_err(|error| format!("Sample error: {error}")));
+            .map(|s| s.map_err(|source| WaveformDecodeError::Sample { source }));
         for frame in 0..total_frames {
             let bucket = frame / bucket_size_frames;
             let mut frame_min = 1.0_f32;
@@ -299,7 +301,7 @@ impl WaveformRenderer {
         reader: &mut hound::WavReader<std::io::Cursor<&[u8]>>,
         channels: usize,
         bits_per_sample: u16,
-    ) -> Result<WaveformPeaks, String> {
+    ) -> Result<WaveformPeaks, WaveformDecodeError> {
         let scale = (1i64 << bits_per_sample.saturating_sub(1)).max(1) as f32;
         let total_frames = reader.duration() as usize;
         let bucket_size_frames = Self::peak_bucket_size(total_frames).max(1);
@@ -319,7 +321,7 @@ impl WaveformRenderer {
 
         let mut iter = reader
             .samples::<i32>()
-            .map(|s| s.map_err(|error| format!("Sample error: {error}")));
+            .map(|s| s.map_err(|source| WaveformDecodeError::Sample { source }));
         for frame in 0..total_frames {
             let bucket = frame / bucket_size_frames;
             let mut frame_min = 1.0_f32;
