@@ -1,11 +1,8 @@
 use super::*;
-use rand::Rng;
-use rand::seq::IteratorRandom;
-#[cfg(test)]
-use rand::{SeedableRng, rngs::StdRng};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
+mod random_nav;
 mod transport;
 
 #[cfg(test)]
@@ -115,132 +112,32 @@ impl EguiController {
 
     /// Jump to a random visible sample in the browser and start playback.
     pub fn play_random_visible_sample(&mut self) {
-        let mut rng = rand::rng();
-        self.play_random_visible_sample_internal(&mut rng, SHOULD_PLAY_RANDOM_SAMPLE);
+        random_nav::play_random_visible_sample(self);
     }
 
     #[cfg(test)]
     pub(super) fn play_random_visible_sample_with_seed(&mut self, seed: u64) {
-        let mut rng = StdRng::seed_from_u64(seed);
-        self.play_random_visible_sample_internal(&mut rng, false);
+        random_nav::play_random_visible_sample_with_seed(self, seed);
     }
 
     /// Focus a random visible sample without starting playback (used for navigation flows).
     pub fn focus_random_visible_sample(&mut self) {
-        let mut rng = rand::rng();
-        self.play_random_visible_sample_internal(&mut rng, false);
+        random_nav::focus_random_visible_sample(self);
     }
+
     /// Play the previous entry from the random history stack.
     pub fn play_previous_random_sample(&mut self) {
-        if self.random_history.is_empty() {
-            self.set_status("No random history yet", StatusTone::Info);
-            return;
-        }
-        let current = self
-            .random_history_cursor
-            .unwrap_or_else(|| self.random_history.len().saturating_sub(1));
-        if current == 0 {
-            self.random_history_cursor = Some(0);
-            self.set_status("Reached start of random history", StatusTone::Info);
-            return;
-        }
-        let target = current - 1;
-        self.random_history_cursor = Some(target);
-        if let Some(entry) = self.random_history.get(target).cloned() {
-            self.play_random_history_entry(entry);
-        }
+        random_nav::play_previous_random_sample(self);
     }
 
     /// Toggle sticky random navigation for Up/Down in the browser.
     pub fn toggle_random_navigation_mode(&mut self) {
-        self.ui.browser.random_navigation_mode = !self.ui.browser.random_navigation_mode;
-        if self.ui.browser.random_navigation_mode {
-            self.set_status(
-                "Random navigation on: Up/Down jump to random samples",
-                StatusTone::Info,
-            );
-        } else {
-            self.set_status("Random navigation off", StatusTone::Info);
-        }
+        random_nav::toggle_random_navigation_mode(self);
     }
 
     /// Return whether sticky random navigation mode is enabled.
     pub fn random_navigation_mode_enabled(&self) -> bool {
-        self.ui.browser.random_navigation_mode
-    }
-
-    fn play_random_visible_sample_internal<R: Rng + ?Sized>(
-        &mut self,
-        rng: &mut R,
-        start_playback: bool,
-    ) {
-        let Some(source_id) = self.selected_source.clone() else {
-            self.set_status("Select a source first", StatusTone::Info);
-            return;
-        };
-        let Some((visible_row, entry_index)) = self
-            .visible_browser_indices()
-            .iter()
-            .copied()
-            .enumerate()
-            .choose(rng)
-        else {
-            self.set_status("No samples available to randomize", StatusTone::Info);
-            return;
-        };
-        let Some(path) = self
-            .wav_entries
-            .get(entry_index)
-            .map(|entry| entry.relative_path.clone())
-        else {
-            return;
-        };
-        self.push_random_history(source_id, path.clone());
-        self.focus_browser_row_only(visible_row);
-        if start_playback && let Err(err) = self.play_audio(self.ui.waveform.loop_enabled, None) {
-            self.set_status(err, StatusTone::Error);
-        }
-    }
-
-    fn push_random_history(&mut self, source_id: SourceId, relative_path: PathBuf) {
-        if let Some(cursor) = self.random_history_cursor
-            && cursor + 1 < self.random_history.len()
-        {
-            self.random_history.truncate(cursor + 1);
-        }
-        self.random_history.push_back(RandomHistoryEntry {
-            source_id,
-            relative_path,
-        });
-        if self.random_history.len() > RANDOM_HISTORY_LIMIT {
-            self.random_history.pop_front();
-            if let Some(cursor) = self.random_history_cursor {
-                self.random_history_cursor = Some(cursor.saturating_sub(1));
-            }
-        }
-        self.random_history_cursor = Some(self.random_history.len().saturating_sub(1));
-    }
-
-    fn play_random_history_entry(&mut self, entry: RandomHistoryEntry) {
-        if self.selected_source.as_ref() != Some(&entry.source_id) {
-            self.jobs.pending_playback = Some(PendingPlayback {
-                source_id: entry.source_id.clone(),
-                relative_path: entry.relative_path.clone(),
-                looped: self.ui.waveform.loop_enabled,
-                start_override: None,
-            });
-            self.jobs.pending_select_path = Some(entry.relative_path.clone());
-            self.select_source_internal(Some(entry.source_id), Some(entry.relative_path));
-            return;
-        }
-        if let Some(row) = self.visible_row_for_path(&entry.relative_path) {
-            self.focus_browser_row_only(row);
-        } else {
-            self.select_wav_by_path(&entry.relative_path);
-        }
-        if let Err(err) = self.play_audio(self.ui.waveform.loop_enabled, None) {
-            self.set_status(err, StatusTone::Error);
-        }
+        random_nav::random_navigation_mode_enabled(self)
     }
 
     /// Cycle the triage flag filter (-1 left, +1 right) to mirror old column navigation.
