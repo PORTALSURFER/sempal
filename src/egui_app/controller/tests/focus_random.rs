@@ -1,14 +1,14 @@
 use super::super::test_support::{dummy_controller, sample_entry, write_test_wav};
 use super::super::*;
-use crate::egui_app::controller::hotkeys;
 use super::common::prepare_browser_sample;
+use crate::egui_app::controller::hotkeys;
 use crate::egui_app::state::FocusContext;
 use crate::sample_sources::Collection;
 use crate::sample_sources::collections::CollectionMember;
 use egui::Key;
+use rand::SeedableRng;
 use rand::rngs::StdRng;
 use rand::seq::IteratorRandom;
-use rand::SeedableRng;
 use std::path::{Path, PathBuf};
 use tempfile::tempdir;
 
@@ -214,7 +214,9 @@ fn tag_hotkeys_apply_to_collection_focus() {
     controller.select_collection_sample(0);
     assert_eq!(controller.ui.focus.context, FocusContext::CollectionSample);
 
-    let keep = hotkeys::iter_actions().find(|a| a.id == "tag-keep").unwrap();
+    let keep = hotkeys::iter_actions()
+        .find(|a| a.id == "tag-keep")
+        .unwrap();
     controller.handle_hotkey(keep, FocusContext::CollectionSample);
     assert_eq!(
         controller.ui.collections.samples[0].tag,
@@ -232,7 +234,9 @@ fn tag_hotkeys_apply_to_collection_focus() {
         "neutral hotkey"
     );
 
-    let trash = hotkeys::iter_actions().find(|a| a.id == "tag-trash").unwrap();
+    let trash = hotkeys::iter_actions()
+        .find(|a| a.id == "tag-trash")
+        .unwrap();
     controller.handle_hotkey(trash, FocusContext::CollectionSample);
     assert_eq!(
         controller.ui.collections.samples[0].tag,
@@ -329,10 +333,20 @@ fn random_history_trims_to_limit() {
         controller.play_random_visible_sample_with_seed(seed);
     }
 
-    assert_eq!(controller.history.random_history.entries.len(), RANDOM_HISTORY_LIMIT);
+    assert_eq!(
+        controller.history.random_history.entries.len(),
+        RANDOM_HISTORY_LIMIT
+    );
     assert_eq!(
         controller.history.random_history.cursor,
-        Some(controller.history.random_history.entries.len().saturating_sub(1))
+        Some(
+            controller
+                .history
+                .random_history
+                .entries
+                .len()
+                .saturating_sub(1)
+        )
     );
 }
 

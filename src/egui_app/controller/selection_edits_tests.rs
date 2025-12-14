@@ -88,8 +88,14 @@ fn fade_factor_uses_soft_s_curve() {
     let left_to_right = fade_factor(10, 0.25, FadeDirection::LeftToRight);
     let right_to_left = fade_factor(10, 0.25, FadeDirection::RightToLeft);
     // For a softer curve, early fade is gentler than linear.
-    assert!(left_to_right > 0.8, "expected softer fade, got {left_to_right}");
-    assert!(right_to_left < 0.2, "expected softer fade, got {right_to_left}");
+    assert!(
+        left_to_right > 0.8,
+        "expected softer fade, got {left_to_right}"
+    );
+    assert!(
+        right_to_left < 0.2,
+        "expected softer fade, got {right_to_left}"
+    );
 }
 
 #[test]

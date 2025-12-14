@@ -27,17 +27,17 @@ mod progress;
 mod scans;
 mod selection_edits;
 mod selection_export;
-mod source_folders;
 mod source_cache_invalidator;
+mod source_folders;
 mod sources;
 mod tagging_service;
 mod trash;
 mod trash_move;
 mod undo;
 mod updates;
+mod wav_entries_loader;
 mod waveform_controller;
 mod wavs;
-mod wav_entries_loader;
 
 use crate::{
     audio::{AudioOutputConfig, AudioPlayer},

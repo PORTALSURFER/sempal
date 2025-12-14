@@ -82,4 +82,3 @@ fn copy_dir_all(src: &Path, dest: &Path) -> Result<(), UpdateError> {
     }
     Ok(())
 }
-

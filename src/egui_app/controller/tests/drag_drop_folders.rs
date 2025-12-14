@@ -50,7 +50,9 @@ fn selection_drop_adds_clip_to_collection() {
     ));
     controller.finish_active_drag();
 
-    let collection = controller.library.collections
+    let collection = controller
+        .library
+        .collections
         .iter()
         .find(|c| c.id == collection_id)
         .unwrap();
@@ -128,7 +130,9 @@ fn sample_drop_to_folder_moves_and_updates_state() {
             .iter()
             .any(|entry| entry.relative_path == PathBuf::from("dest").join("one.wav"))
     );
-    let collection = controller.library.collections
+    let collection = controller
+        .library
+        .collections
         .iter()
         .find(|c| c.id == collection_id)
         .unwrap();

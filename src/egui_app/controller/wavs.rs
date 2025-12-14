@@ -5,15 +5,15 @@ use crate::egui_app::view_model;
 use crate::waveform::DecodedWaveform;
 use std::path::{Path, PathBuf};
 
-mod browser_search;
+mod audio_loading;
 mod browser_actions;
 mod browser_lists;
-mod audio_loading;
+mod browser_search;
 mod missing_samples;
 mod selection_ops;
-mod waveform_view;
-mod waveform_rendering;
 mod waveform_loading;
+mod waveform_rendering;
+mod waveform_view;
 
 pub(super) use browser_search::BrowserSearchCache;
 pub(super) use waveform_rendering::WaveformRenderMeta;

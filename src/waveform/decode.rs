@@ -1,8 +1,8 @@
 use super::{DecodedWaveform, WaveformDecodeError, WaveformPeaks, WaveformRenderer};
 use hound::SampleFormat;
 use rodio::{Decoder, Source};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 static NEXT_CACHE_TOKEN: AtomicU64 = AtomicU64::new(1);
 
@@ -261,11 +261,7 @@ impl WaveformRenderer {
             let mut frame_min = 1.0_f32;
             let mut frame_max = -1.0_f32;
             for ch in 0..channels {
-                let sample = iter
-                    .next()
-                    .transpose()?
-                    .unwrap_or(0.0)
-                    .clamp(-1.0, 1.0);
+                let sample = iter.next().transpose()?.unwrap_or(0.0).clamp(-1.0, 1.0);
                 frame_min = frame_min.min(sample);
                 frame_max = frame_max.max(sample);
                 if ch == 0 {
@@ -327,12 +323,7 @@ impl WaveformRenderer {
             let mut frame_min = 1.0_f32;
             let mut frame_max = -1.0_f32;
             for ch in 0..channels {
-                let sample = iter
-                    .next()
-                    .transpose()?
-                    .unwrap_or(0)
-                    as f32
-                    / scale;
+                let sample = iter.next().transpose()?.unwrap_or(0) as f32 / scale;
                 let sample = sample.clamp(-1.0, 1.0);
                 frame_min = frame_min.min(sample);
                 frame_max = frame_max.max(sample);
@@ -379,8 +370,7 @@ mod tests {
         };
         let mut cursor = std::io::Cursor::new(Vec::new());
         {
-            let mut writer =
-                hound::WavWriter::new(&mut cursor, spec).expect("create wav writer");
+            let mut writer = hound::WavWriter::new(&mut cursor, spec).expect("create wav writer");
             for &sample in samples {
                 writer.write_sample(sample).expect("write sample");
             }
@@ -398,8 +388,7 @@ mod tests {
         };
         let mut cursor = std::io::Cursor::new(Vec::new());
         {
-            let mut writer =
-                hound::WavWriter::new(&mut cursor, spec).expect("create wav writer");
+            let mut writer = hound::WavWriter::new(&mut cursor, spec).expect("create wav writer");
             for &sample in samples {
                 writer.write_sample(sample).expect("write sample");
             }

@@ -133,8 +133,7 @@ impl OverwriteBackup {
         fs::create_dir_all(&dir).map_err(|err| format!("Failed to create undo folder: {err}"))?;
         let before = dir.join("before.wav");
         let after = dir.join("after.wav");
-        fs::copy(target, &before)
-            .map_err(|err| format!("Failed to snapshot audio file: {err}"))?;
+        fs::copy(target, &before).map_err(|err| format!("Failed to snapshot audio file: {err}"))?;
         Ok(Self { dir, before, after })
     }
 

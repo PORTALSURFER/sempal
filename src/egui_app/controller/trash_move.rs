@@ -1,12 +1,12 @@
 use super::*;
 use std::fs;
 use std::path::{Path, PathBuf};
+#[cfg(not(test))]
+use std::sync::mpsc::Sender;
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
 };
-#[cfg(not(test))]
-use std::sync::mpsc::Sender;
 
 pub(super) enum TrashMoveMessage {
     SetTotal(usize),
@@ -36,17 +36,11 @@ pub(super) fn run_trash_move_task(
     cancel: Arc<AtomicBool>,
     sender: Option<&Sender<TrashMoveMessage>>,
 ) -> TrashMoveFinished {
-    run_trash_move_task_with_progress(
-        sources,
-        collections,
-        trash_root,
-        cancel,
-        |message| {
-            if let Some(tx) = sender {
-                let _ = tx.send(message);
-            }
-        },
-    )
+    run_trash_move_task_with_progress(sources, collections, trash_root, cancel, |message| {
+        if let Some(tx) = sender {
+            let _ = tx.send(message);
+        }
+    })
 }
 
 pub(super) fn run_trash_move_task_with_progress<F>(

@@ -40,7 +40,10 @@ pub(super) fn load_selection_buffer(
     })
 }
 
-pub(super) fn selection_frame_bounds(total_frames: usize, bounds: SelectionRange) -> (usize, usize) {
+pub(super) fn selection_frame_bounds(
+    total_frames: usize,
+    bounds: SelectionRange,
+) -> (usize, usize) {
     let start_frame = ((bounds.start() * total_frames as f32).floor() as usize)
         .min(total_frames.saturating_sub(1));
     let mut end_frame = ((bounds.end() * total_frames as f32).ceil() as usize).min(total_frames);
@@ -67,7 +70,10 @@ pub(super) fn write_selection_wav(
         .map_err(|err| format!("Failed to finalize wav: {err}"))
 }
 
-pub(super) fn next_crop_relative_path(relative_path: &Path, root: &Path) -> Result<PathBuf, String> {
+pub(super) fn next_crop_relative_path(
+    relative_path: &Path,
+    root: &Path,
+) -> Result<PathBuf, String> {
     let parent = relative_path.parent().unwrap_or(Path::new(""));
     let stem = relative_path
         .file_stem()
@@ -101,4 +107,3 @@ fn strip_crop_suffix(stem: &str) -> &str {
         stem
     }
 }
-

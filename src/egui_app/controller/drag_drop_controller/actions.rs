@@ -252,7 +252,6 @@ impl DragDropActions for DragDropController<'_> {
             }
         }
     }
-
 }
 
 impl DragDropController<'_> {

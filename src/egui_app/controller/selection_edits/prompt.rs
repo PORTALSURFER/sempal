@@ -47,4 +47,3 @@ pub(super) fn prompt_for_edit(edit: DestructiveSelectionEdit) -> DestructiveEdit
         message: edit.warning().to_string(),
     }
 }
-

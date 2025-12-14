@@ -129,12 +129,7 @@ mod platform {
         let drop_effect = create_drop_effect(DROPEFFECT_COPY.0)?;
         let effect_format = preferred_drop_effect_format()?;
         // SAFETY: clipboard is open; ownership of the HGLOBAL transfers to the system on success.
-        unsafe {
-            SetClipboardData(
-                effect_format as u32,
-                Some(HANDLE(drop_effect.handle().0)),
-            )
-        }
+        unsafe { SetClipboardData(effect_format as u32, Some(HANDLE(drop_effect.handle().0))) }
             .map_err(|err| format!("SetClipboardData(Preferred DropEffect) failed: {err}"))?;
         let _ = drop_effect.release();
         // SAFETY: clipboard is open; ownership of the HGLOBAL transfers to the system on success.

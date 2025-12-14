@@ -1,5 +1,5 @@
-use super::buffer::SelectionEditBuffer;
 use super::FadeDirection;
+use super::buffer::SelectionEditBuffer;
 
 pub(super) fn crop_buffer(buffer: &mut SelectionEditBuffer) -> Result<(), String> {
     let cropped = slice_frames(
@@ -85,7 +85,11 @@ pub(super) fn apply_directional_fade(
     }
 }
 
-fn clamped_selection_span(total_frames: usize, start_frame: usize, end_frame: usize) -> (usize, usize) {
+fn clamped_selection_span(
+    total_frames: usize,
+    start_frame: usize,
+    end_frame: usize,
+) -> (usize, usize) {
     let clamped_start = start_frame.min(total_frames);
     let clamped_end = end_frame.min(total_frames);
     (clamped_start, clamped_end)
@@ -153,4 +157,3 @@ pub(super) fn apply_muted_selection(
         }
     }
 }
-
