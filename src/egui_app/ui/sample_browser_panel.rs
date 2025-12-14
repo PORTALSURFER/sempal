@@ -188,7 +188,9 @@ impl EguiApp {
                         self.browser_sample_menu(&response, row, &path, &display_label);
                     }
 
-                    if response.drag_started() {
+                    let should_start_drag =
+                        response.drag_started() || (!drag_active && response.dragged());
+                    if should_start_drag {
                         if let Some(pos) = response.interact_pointer_pos() {
                             if let Some(source) = self.controller.current_source() {
                                 let name = view_model::sample_display_label(&path);
