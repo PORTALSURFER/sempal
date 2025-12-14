@@ -1,4 +1,35 @@
 use super::*;
+use crate::egui_app::state::{FolderActionPrompt, InlineFolderCreation};
+use rfd::{MessageButtons, MessageDialog, MessageDialogResult, MessageLevel};
+use std::fs;
+use std::path::{Path, PathBuf};
+
+fn normalize_folder_name(name: &str) -> Result<String, String> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return Err("Folder name cannot be empty".into());
+    }
+    if trimmed == "." || trimmed == ".." {
+        return Err("Folder name is invalid".into());
+    }
+    if trimmed.contains(['/', '\\']) {
+        return Err("Folder name cannot contain path separators".into());
+    }
+    Ok(trimmed.to_string())
+}
+
+fn folder_with_name(target: &Path, name: &str) -> PathBuf {
+    target.parent().map_or_else(
+        || PathBuf::from(name),
+        |parent| {
+            if parent.as_os_str().is_empty() {
+                PathBuf::from(name)
+            } else {
+                parent.join(name)
+            }
+        },
+    )
+}
 
 impl EguiController {
     pub(crate) fn delete_focused_folder(&mut self) {
@@ -264,4 +295,3 @@ impl EguiController {
             .map(|row| row.path.clone())
     }
 }
-
