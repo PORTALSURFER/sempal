@@ -5,7 +5,7 @@ use std::fs;
 impl EguiController {
     /// Select the first available source or refresh the current one.
     pub fn select_first_source(&mut self) {
-        if self.selected_source.is_none() {
+        if self.selection_ctx.selected_source.is_none() {
             if let Some(first) = self.sources.first().cloned() {
                 self.select_source(Some(first.id));
             } else {
@@ -102,11 +102,12 @@ impl EguiController {
             }
         }
         if self
+            .selection_ctx
             .selected_source
             .as_ref()
             .is_some_and(|id| id == &removed.id)
         {
-            self.selected_source = None;
+            self.selection_ctx.selected_source = None;
             self.wav_selection.selected_wav = None;
             self.clear_waveform_view();
         }
@@ -129,6 +130,7 @@ impl EguiController {
             .collect();
         self.ui.sources.menu_row = None;
         self.ui.sources.selected = self
+            .selection_ctx
             .selected_source
             .as_ref()
             .and_then(|id| self.sources.iter().position(|s| &s.id == id));
@@ -136,7 +138,7 @@ impl EguiController {
     }
 
     pub(crate) fn current_source(&self) -> Option<SampleSource> {
-        let selected = self.selected_source.as_ref()?;
+        let selected = self.selection_ctx.selected_source.as_ref()?;
         self.sources.iter().find(|s| &s.id == selected).cloned()
     }
 
@@ -152,7 +154,7 @@ impl EguiController {
 
     pub(super) fn mark_source_missing(&mut self, source_id: &SourceId, reason: &str) {
         let inserted = self.missing.sources.insert(source_id.clone());
-        if inserted && self.selected_source.as_ref() == Some(source_id) {
+        if inserted && self.selection_ctx.selected_source.as_ref() == Some(source_id) {
             self.clear_waveform_view();
         }
         self.missing.wavs.entry(source_id.clone()).or_default();
@@ -180,7 +182,7 @@ impl EguiController {
         id: Option<SourceId>,
         pending_path: Option<PathBuf>,
     ) {
-        let same_source = self.selected_source == id;
+        let same_source = self.selection_ctx.selected_source == id;
         self.jobs.pending_select_path = pending_path.clone();
         if same_source {
             self.refresh_sources_ui();
@@ -200,9 +202,9 @@ impl EguiController {
         if let Some(ref source_id) = id
             && self.sources.iter().any(|s| &s.id == source_id)
         {
-            self.last_selected_browsable_source = Some(source_id.clone());
+            self.selection_ctx.last_selected_browsable_source = Some(source_id.clone());
         }
-        self.selected_source = id;
+        self.selection_ctx.selected_source = id;
         self.wav_selection.selected_wav = None;
         self.clear_waveform_view();
         self.refresh_sources_ui();
@@ -218,7 +220,7 @@ impl EguiController {
         self.ui.browser = SampleBrowserState::default();
         self.ui.sources.folders = FolderBrowserUiState::default();
         self.clear_waveform_view();
-        if let Some(selected) = self.selected_source.as_ref() {
+        if let Some(selected) = self.selection_ctx.selected_source.as_ref() {
             self.missing.wavs.remove(selected);
         } else {
             self.missing.wavs.clear();
@@ -293,9 +295,9 @@ impl EguiController {
         );
         invalidator.invalidate_db_cache(&source_id);
         invalidator.invalidate_wav_related(&source_id);
-        if self.selected_source.as_ref() == Some(&source_id) {
+        if self.selection_ctx.selected_source.as_ref() == Some(&source_id) {
             self.clear_wavs();
-            self.selected_source = Some(source_id.clone());
+            self.selection_ctx.selected_source = Some(source_id.clone());
         }
         self.persist_config("Failed to save config after remapping source")?;
         self.refresh_sources_ui();

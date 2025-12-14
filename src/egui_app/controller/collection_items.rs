@@ -71,7 +71,7 @@ impl EguiController {
         let result: Result<(), String> = (|| {
             let ctx = self.resolve_collection_sample(row)?;
             self.set_sample_tag_for_source(&ctx.source, &ctx.member.relative_path, tag, false)?;
-            if self.selected_source.as_ref() == Some(&ctx.source.id) {
+            if self.selection_ctx.selected_source.as_ref() == Some(&ctx.source.id) {
                 self.rebuild_browser_lists();
             }
             self.refresh_collections_ui();
@@ -131,7 +131,7 @@ impl EguiController {
                     missing: false,
                 },
             );
-            if self.selected_source.as_ref() == Some(&ctx.source.id) {
+            if self.selection_ctx.selected_source.as_ref() == Some(&ctx.source.id) {
                 self.rebuild_browser_lists();
             }
             self.refresh_waveform_after_change(&ctx, &ctx.member.relative_path);

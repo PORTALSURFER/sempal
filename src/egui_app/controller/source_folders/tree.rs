@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 impl EguiController {
     pub(in crate::egui_app::controller) fn refresh_folder_browser(&mut self) {
-        let Some(source_id) = self.selected_source.clone() else {
+        let Some(source_id) = self.selection_ctx.selected_source.clone() else {
             self.ui.sources.folders = FolderBrowserUiState::default();
             return;
         };
@@ -51,7 +51,7 @@ impl EguiController {
     }
 
     pub(super) fn current_folder_model_mut(&mut self) -> Option<&mut FolderBrowserModel> {
-        let id = self.selected_source.clone()?;
+        let id = self.selection_ctx.selected_source.clone()?;
         Some(self.folder_browsers.entry(id).or_default())
     }
 
@@ -70,7 +70,7 @@ impl EguiController {
             folder_rows = self.filter_folder_rows(folder_rows, &model.search_query);
         }
         let mut rows = Vec::new();
-        if self.selected_source.is_some() && !searching {
+        if self.selection_ctx.selected_source.is_some() && !searching {
             let has_children = !folder_rows.is_empty();
             rows.push(FolderRowView {
                 path: PathBuf::new(),

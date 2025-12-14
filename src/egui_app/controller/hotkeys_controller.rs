@@ -238,7 +238,7 @@ impl HotkeysController<'_> {
             missing: false,
         };
         self.update_cached_entry(&source, &relative_path, updated);
-        if self.selected_source.as_ref() == Some(&source.id) {
+        if self.selection_ctx.selected_source.as_ref() == Some(&source.id) {
             self.rebuild_browser_lists();
         }
         self.refresh_waveform_for_sample(&source, &relative_path);

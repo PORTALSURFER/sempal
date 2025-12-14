@@ -90,7 +90,7 @@ impl EguiController {
     }
 
     fn ensure_search_scores(&mut self, query: &str) {
-        let source_id = self.selected_source.clone();
+        let source_id = self.selection_ctx.selected_source.clone();
         if self.browser_search_cache.source_id != source_id
             || self.browser_search_cache.query != query
             || self.browser_search_cache.scores.len() != self.wav_entries.len()
@@ -103,7 +103,7 @@ impl EguiController {
                 .scores
                 .resize(self.wav_entries.len(), None);
 
-            let Some(source_id) = self.selected_source.clone() else {
+            let Some(source_id) = self.selection_ctx.selected_source.clone() else {
                 return;
             };
             let needs_labels = self
@@ -130,7 +130,7 @@ impl EguiController {
     }
 
     pub(super) fn label_for_ref(&mut self, index: usize) -> Option<&str> {
-        let source_id = self.selected_source.clone()?;
+        let source_id = self.selection_ctx.selected_source.clone()?;
         let needs_labels = self
             .label_cache
             .get(&source_id)

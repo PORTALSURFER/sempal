@@ -59,7 +59,7 @@ impl BrowserController<'_> {
             missing: false,
         };
         self.update_cached_entry(&ctx.source, &ctx.entry.relative_path, updated);
-        if self.selected_source.as_ref() == Some(&ctx.source.id) {
+        if self.selection_ctx.selected_source.as_ref() == Some(&ctx.source.id) {
             self.rebuild_browser_lists();
         }
         self.refresh_waveform_for_sample(&ctx.source, &ctx.entry.relative_path);

@@ -89,9 +89,7 @@ pub struct EguiController {
     audio_cache: AudioCache,
     wav_entries: Vec<WavEntry>,
     wav_lookup: HashMap<PathBuf, usize>,
-    selected_source: Option<SourceId>,
-    last_selected_browsable_source: Option<SourceId>,
-    selected_collection: Option<CollectionId>,
+    selection_ctx: SelectionContextState,
     wav_selection: WavSelectionState,
     suppress_autoplay_once: bool,
     pending_loop_disable_at: Option<Instant>,
@@ -157,9 +155,11 @@ impl EguiController {
             audio_cache: AudioCache::new(AUDIO_CACHE_CAPACITY, AUDIO_HISTORY_LIMIT),
             wav_entries: Vec::new(),
             wav_lookup: HashMap::new(),
-            selected_source: None,
-            last_selected_browsable_source: None,
-            selected_collection: None,
+            selection_ctx: SelectionContextState {
+                selected_source: None,
+                last_selected_browsable_source: None,
+                selected_collection: None,
+            },
             wav_selection: WavSelectionState {
                 selected_wav: None,
                 loaded_wav: None,
@@ -293,6 +293,12 @@ struct WavSelectionState {
     selected_wav: Option<PathBuf>,
     loaded_wav: Option<PathBuf>,
     loaded_audio: Option<LoadedAudio>,
+}
+
+struct SelectionContextState {
+    selected_source: Option<SourceId>,
+    last_selected_browsable_source: Option<SourceId>,
+    selected_collection: Option<CollectionId>,
 }
 
 struct WaveformState {

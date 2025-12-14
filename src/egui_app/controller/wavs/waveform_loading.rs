@@ -221,7 +221,7 @@ impl EguiController {
         let loaded_matches = self.wav_selection.loaded_audio.as_ref().is_some_and(|audio| {
             audio.source_id == source.id && audio.relative_path == relative_path
         });
-        let selected_matches = self.selected_source.as_ref() == Some(&source.id)
+        let selected_matches = self.selection_ctx.selected_source.as_ref() == Some(&source.id)
             && self.wav_selection.selected_wav.as_deref() == Some(relative_path);
         if selected_matches || loaded_matches {
             self.wav_selection.loaded_wav = None;

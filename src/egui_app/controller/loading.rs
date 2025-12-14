@@ -54,7 +54,7 @@ impl EguiController {
 
     pub(super) fn poll_wav_loader(&mut self) {
         while let Ok(message) = self.jobs.wav_job_rx.try_recv() {
-            if Some(&message.source_id) != self.selected_source.as_ref() {
+            if Some(&message.source_id) != self.selection_ctx.selected_source.as_ref() {
                 continue;
             }
             match message.result {

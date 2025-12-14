@@ -211,13 +211,14 @@ impl DragDropController<'_> {
             return;
         };
         if self
+            .selection_ctx
             .selected_source
             .as_ref()
             .is_some_and(|selected| selected != &source.id)
         {
             warn!(
                 "Folder move blocked: selected source {:?} differs from sample source {:?}",
-                self.selected_source, source.id
+                self.selection_ctx.selected_source, source.id
             );
             self.set_status(
                 "Switch to the sample's source before moving into its folders",
@@ -423,6 +424,7 @@ impl DragDropController<'_> {
             return;
         };
         if self
+            .selection_ctx
             .selected_source
             .as_ref()
             .is_some_and(|selected| selected != &source.id)
@@ -474,6 +476,7 @@ impl DragDropController<'_> {
         keep_source_focused: bool,
     ) {
         let folder_override = self
+            .selection_ctx
             .selected_source
             .as_ref()
             .is_some_and(|selected| selected == source_id)
@@ -551,7 +554,7 @@ impl DragDropController<'_> {
             &clip_name_hint,
         ) {
             Ok(entry) => {
-                self.selected_collection = Some(collection_id.clone());
+                self.selection_ctx.selected_collection = Some(collection_id.clone());
                 let clip_relative = entry.relative_path.clone();
                 if let Err(err) =
                     self.add_clip_to_collection(collection_id, clip_root, clip_relative)

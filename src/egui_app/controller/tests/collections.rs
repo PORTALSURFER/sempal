@@ -19,13 +19,13 @@ fn export_path_copies_and_refreshes_members() -> Result<(), String> {
     let mut controller = EguiController::new(renderer, None);
     let source = SampleSource::new(source_root.clone());
     controller.cache_db(&source).unwrap();
-    controller.selected_source = Some(source.id.clone());
+    controller.selection_ctx.selected_source = Some(source.id.clone());
     controller.sources.push(source.clone());
 
     let collection = Collection::new("Test");
     let collection_id = collection.id.clone();
     controller.collections.push(collection);
-    controller.selected_collection = Some(collection_id.clone());
+    controller.selection_ctx.selected_collection = Some(collection_id.clone());
     controller.collection_export_root = Some(export_root.clone());
     controller.ui.collection_export_root = Some(export_root.clone());
 
@@ -67,7 +67,7 @@ fn renaming_collection_updates_export_folder() -> Result<(), String> {
     let mut controller = EguiController::new(renderer, None);
     let source = SampleSource::new(source_root.clone());
     controller.cache_db(&source).unwrap();
-    controller.selected_source = Some(source.id.clone());
+    controller.selection_ctx.selected_source = Some(source.id.clone());
     controller.sources.push(source.clone());
 
     let mut collection = Collection::new("Old");
@@ -76,7 +76,7 @@ fn renaming_collection_updates_export_folder() -> Result<(), String> {
     std::fs::create_dir_all(export_root.join("Old")).unwrap();
     collection.add_member(source.id.clone(), PathBuf::from("one.wav"));
     let collection_id = collection.id.clone();
-    controller.selected_collection = Some(collection_id.clone());
+    controller.selection_ctx.selected_collection = Some(collection_id.clone());
     controller.collections.push(collection);
 
     controller.rename_collection(&collection_id, "New Name".into());
@@ -97,7 +97,7 @@ fn browser_rename_updates_collections_and_lookup() {
     let mut controller = EguiController::new(renderer, None);
     let source = SampleSource::new(root.clone());
     controller.sources.push(source.clone());
-    controller.selected_source = Some(source.id.clone());
+    controller.selection_ctx.selected_source = Some(source.id.clone());
 
     write_test_wav(&root.join("one.wav"), &[0.1, -0.2]);
     controller.wav_entries = vec![sample_entry("one.wav", SampleTag::Neutral)];
@@ -108,7 +108,7 @@ fn browser_rename_updates_collections_and_lookup() {
     let collection_id = collection.id.clone();
     collection.add_member(source.id.clone(), PathBuf::from("one.wav"));
     controller.collections.push(collection);
-    controller.selected_collection = Some(collection_id.clone());
+    controller.selection_ctx.selected_collection = Some(collection_id.clone());
 
     controller.rename_browser_sample(0, "renamed").unwrap();
 
@@ -136,7 +136,7 @@ fn browser_rename_updates_collections_and_lookup() {
 fn starting_browser_rename_queues_prompt_for_focused_row() {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source.clone());
-    controller.selected_source = Some(source.id.clone());
+    controller.selection_ctx.selected_source = Some(source.id.clone());
     controller.wav_entries = vec![sample_entry("one.wav", SampleTag::Neutral)];
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
@@ -179,7 +179,7 @@ fn selecting_browser_sample_clears_collection_selection() {
     });
     let collection_id = collection.id.clone();
     controller.collections.push(collection);
-    controller.selected_collection = Some(collection_id);
+    controller.selection_ctx.selected_collection = Some(collection_id);
 
     controller.select_collection_sample(0);
     assert_eq!(controller.ui.collections.selected_sample, Some(0));
@@ -206,7 +206,7 @@ fn selecting_collection_sample_does_not_switch_selected_source() {
     let source_b = SampleSource::new(root_b);
     controller.sources.push(source_a.clone());
     controller.sources.push(source_b.clone());
-    controller.selected_source = Some(source_a.id.clone());
+    controller.selection_ctx.selected_source = Some(source_a.id.clone());
 
     let mut collection = Collection::new("Test");
     collection.members.push(CollectionMember {
@@ -214,13 +214,13 @@ fn selecting_collection_sample_does_not_switch_selected_source() {
         relative_path: PathBuf::from("b.wav"),
         clip_root: None,
     });
-    controller.selected_collection = Some(collection.id.clone());
+    controller.selection_ctx.selected_collection = Some(collection.id.clone());
     controller.collections.push(collection);
     controller.refresh_collections_ui();
 
     controller.select_collection_sample(0);
 
-    assert_eq!(controller.selected_source.as_ref(), Some(&source_a.id));
+    assert_eq!(controller.selection_ctx.selected_source.as_ref(), Some(&source_a.id));
 }
 
 #[test]
@@ -299,12 +299,12 @@ fn browser_selection_restores_last_browsable_source_after_clip_preview() {
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
-    controller.last_selected_browsable_source = Some(source.id.clone());
-    controller.selected_source = Some(SourceId::from_string("collection-test"));
+    controller.selection_ctx.last_selected_browsable_source = Some(source.id.clone());
+    controller.selection_ctx.selected_source = Some(SourceId::from_string("collection-test"));
 
     controller.select_wav_by_path(Path::new("a.wav"));
 
-    assert_eq!(controller.selected_source.as_ref(), Some(&source.id));
+    assert_eq!(controller.selection_ctx.selected_source.as_ref(), Some(&source.id));
     assert_eq!(controller.ui.waveform.loading, Some(PathBuf::from("a.wav")));
 }
 
@@ -317,7 +317,7 @@ fn browser_rename_preserves_extension_and_stem_with_dots() {
     let mut controller = EguiController::new(renderer, None);
     let source = SampleSource::new(root.clone());
     controller.sources.push(source.clone());
-    controller.selected_source = Some(source.id.clone());
+    controller.selection_ctx.selected_source = Some(source.id.clone());
 
     let original = root.join("take.001.WAV");
     write_test_wav(&original, &[0.1, -0.2]);
@@ -338,7 +338,7 @@ fn browser_rename_preserves_extension_and_stem_with_dots() {
 fn cancelling_browser_rename_clears_prompt() {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source.clone());
-    controller.selected_source = Some(source.id.clone());
+    controller.selection_ctx.selected_source = Some(source.id.clone());
     controller.wav_entries = vec![sample_entry("one.wav", SampleTag::Neutral)];
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();

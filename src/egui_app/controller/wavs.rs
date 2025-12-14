@@ -75,15 +75,16 @@ impl EguiController {
         self.ui.collections.selected_sample = None;
         if self.current_source().is_none() {
             if let Some(source_id) = self
+                .selection_ctx
                 .last_selected_browsable_source
                 .clone()
                 .filter(|id| self.sources.iter().any(|s| &s.id == id))
             {
-                self.selected_source = Some(source_id);
+                self.selection_ctx.selected_source = Some(source_id);
                 self.refresh_sources_ui();
             } else if let Some(first) = self.sources.first().cloned() {
-                self.last_selected_browsable_source = Some(first.id.clone());
-                self.selected_source = Some(first.id);
+                self.selection_ctx.last_selected_browsable_source = Some(first.id.clone());
+                self.selection_ctx.selected_source = Some(first.id);
                 self.refresh_sources_ui();
             }
         }
@@ -297,7 +298,7 @@ impl EguiController {
     ) -> Result<(), String> {
         let db = self.database_for(source).map_err(|err| err.to_string())?;
         let mut tagging = tagging_service::TaggingService::new(
-            self.selected_source.as_ref(),
+            self.selection_ctx.selected_source.as_ref(),
             &mut self.wav_entries,
             &self.wav_lookup,
             &mut self.wav_cache.entries,
@@ -305,7 +306,7 @@ impl EguiController {
         );
         tagging.apply_sample_tag(source, path, target_tag, require_present)?;
         let _ = db.set_tag(path, target_tag);
-        if self.selected_source.as_ref() == Some(&source.id) {
+        if self.selection_ctx.selected_source.as_ref() == Some(&source.id) {
             self.rebuild_browser_lists();
         }
         Ok(())

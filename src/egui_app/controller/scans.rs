@@ -59,7 +59,7 @@ impl EguiController {
         {
             self.jobs.scan_in_progress = false;
             self.jobs.scan_rx = None;
-            if Some(&result.source_id) != self.selected_source.as_ref() {
+            if Some(&result.source_id) != self.selection_ctx.selected_source.as_ref() {
                 return;
             }
             let label = match result.mode {

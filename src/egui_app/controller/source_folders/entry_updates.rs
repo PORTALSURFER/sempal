@@ -97,7 +97,7 @@ impl EguiController {
             apply_entry_updates(cache, updates);
             self.rebuild_wav_cache_lookup(&source.id);
         }
-        if self.selected_source.as_ref() == Some(&source.id) {
+        if self.selection_ctx.selected_source.as_ref() == Some(&source.id) {
             apply_entry_updates(&mut self.wav_entries, updates);
             for (old_entry, new_entry) in updates {
                 self.update_selection_paths(
