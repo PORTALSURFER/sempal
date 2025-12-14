@@ -5,7 +5,9 @@
 
 use std::path::PathBuf;
 
-use sempal::updater::{RuntimeIdentity, UpdateChannel, UpdaterRunArgs, apply_update, APP_NAME, REPO_SLUG};
+use sempal::updater::{
+    APP_NAME, REPO_SLUG, RuntimeIdentity, UpdateChannel, UpdaterRunArgs, apply_update,
+};
 
 fn main() {
     if let Err(err) = try_main() {
@@ -73,7 +75,8 @@ fn parse_args(args: Vec<String>) -> Result<UpdaterRunArgs, String> {
         i += 1;
     }
 
-    let install_dir = install_dir.ok_or_else(|| format!("Missing --install-dir\n\n{}", help_text()))?;
+    let install_dir =
+        install_dir.ok_or_else(|| format!("Missing --install-dir\n\n{}", help_text()))?;
     Ok(UpdaterRunArgs {
         repo,
         identity: RuntimeIdentity {
@@ -89,7 +92,9 @@ fn parse_args(args: Vec<String>) -> Result<UpdaterRunArgs, String> {
 }
 
 fn next_value(args: &[String], i: &mut usize, name: &str) -> Result<String, String> {
-    let next = args.get(*i + 1).ok_or_else(|| format!("Missing value for {name}"))?;
+    let next = args
+        .get(*i + 1)
+        .ok_or_else(|| format!("Missing value for {name}"))?;
     *i += 1;
     Ok(next.clone())
 }
@@ -134,4 +139,3 @@ fn default_arch() -> Option<String> {
     #[allow(unreachable_code)]
     None
 }
-

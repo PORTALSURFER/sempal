@@ -134,13 +134,13 @@ impl EguiController {
                 .iter()
                 .any(|m| &m.source_id == source_id && m.relative_path == relative_path)
             {
-                    targets.push((
-                        collection.id.clone(),
-                        collection_export::resolved_export_dir(
-                            collection,
-                            self.settings.collection_export_root.as_deref(),
-                        ),
-                    ));
+                targets.push((
+                    collection.id.clone(),
+                    collection_export::resolved_export_dir(
+                        collection,
+                        self.settings.collection_export_root.as_deref(),
+                    ),
+                ));
             }
         }
         let member = CollectionMember {

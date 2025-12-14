@@ -6,8 +6,8 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use tracing::warn;
 use thiserror::Error;
+use tracing::warn;
 
 use super::db::SourceWriteBatch;
 use super::db::WavEntry;
@@ -380,7 +380,10 @@ mod tests {
         assert!(stats.total_files >= 1);
 
         let rows = db.list_files().unwrap();
-        assert!(rows.iter().any(|row| row.relative_path == PathBuf::from("one.wav")));
+        assert!(
+            rows.iter()
+                .any(|row| row.relative_path == PathBuf::from("one.wav"))
+        );
 
         let _ = killer.join();
     }

@@ -20,7 +20,8 @@ impl EguiController {
         let duration_seconds = decoded.duration_seconds;
         let sample_rate = decoded.sample_rate;
         let cache_key = CacheKey::new(&source.id, &pending.relative_path);
-        self.audio.cache
+        self.audio
+            .cache
             .insert(cache_key, metadata, decoded.clone(), bytes.clone());
         if let Err(err) = self.finish_waveform_load(
             &source,
@@ -48,10 +49,16 @@ impl EguiController {
             id: pending.source_id.clone(),
             root: pending.root.clone(),
         };
-        if self.runtime.jobs.pending_playback().as_ref().is_some_and(|pending_play| {
-            pending_play.source_id == pending.source_id
-                && pending_play.relative_path == pending.relative_path
-        }) {
+        if self
+            .runtime
+            .jobs
+            .pending_playback()
+            .as_ref()
+            .is_some_and(|pending_play| {
+                pending_play.source_id == pending.source_id
+                    && pending_play.relative_path == pending.relative_path
+            })
+        {
             self.runtime.jobs.set_pending_playback(None);
         }
         match error {
@@ -115,7 +122,10 @@ impl EguiController {
         self.ui.loaded_wav = None;
         self.stop_playback_if_active();
         self.clear_waveform_selection();
-        self.set_status(format!("Loading {}", relative_path.display()), StatusTone::Busy);
+        self.set_status(
+            format!("Loading {}", relative_path.display()),
+            StatusTone::Busy,
+        );
         if self.try_use_cached_audio(source, relative_path, intent)? {
             self.maybe_trigger_pending_playback();
             return Ok(());

@@ -36,7 +36,10 @@ impl EguiController {
             let result = wav_entries_loader::load_entries(&job);
             match result {
                 Ok(entries) => {
-                    self.cache.wav.entries.insert(source.id.clone(), entries.clone());
+                    self.cache
+                        .wav
+                        .entries
+                        .insert(source.id.clone(), entries.clone());
                     self.rebuild_wav_cache_lookup(&source.id);
                     self.apply_wav_entries(entries, false, Some(source.id.clone()), None);
                 }
@@ -96,15 +99,18 @@ impl EguiController {
         }
         if let Some(id) = source_id {
             let needs_labels = !from_cache
-                || self.ui_cache.browser
+                || self
+                    .ui_cache
+                    .browser
                     .labels
                     .get(&id)
                     .map(|cached| cached.len() != self.wav_entries.entries.len())
                     .unwrap_or(true);
             if needs_labels {
-                self.ui_cache.browser
-                    .labels
-                    .insert(id.clone(), self.build_label_cache(&self.wav_entries.entries));
+                self.ui_cache.browser.labels.insert(
+                    id.clone(),
+                    self.build_label_cache(&self.wav_entries.entries),
+                );
             }
             let missing: std::collections::HashSet<std::path::PathBuf> = self
                 .wav_entries
@@ -120,7 +126,10 @@ impl EguiController {
             .map(|d| format!(" in {} ms", d.as_millis()))
             .unwrap_or_default();
         self.set_status(
-            format!("{prefix} {} wav files{suffix}", self.wav_entries.entries.len()),
+            format!(
+                "{prefix} {} wav files{suffix}",
+                self.wav_entries.entries.len()
+            ),
             StatusTone::Info,
         );
     }

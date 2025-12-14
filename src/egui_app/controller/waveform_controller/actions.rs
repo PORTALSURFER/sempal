@@ -23,7 +23,8 @@ impl WaveformActions for WaveformController<'_> {
         if self.waveform_ready() {
             self.focus_waveform_context();
             self.ensure_playhead_visible_in_view();
-        } else if self.sample_view.wav.selected_wav.is_some() || self.ui.waveform.loading.is_some() {
+        } else if self.sample_view.wav.selected_wav.is_some() || self.ui.waveform.loading.is_some()
+        {
             self.focus_waveform_context();
         } else {
             self.set_status("Load a sample to focus the waveform", StatusTone::Info);
@@ -97,7 +98,12 @@ impl WaveformActions for WaveformController<'_> {
             return;
         }
         let step = self.waveform_step_size(fine).max(MIN_SELECTION_WIDTH);
-        let Some(selection) = self.selection_state.range.range().or(self.ui.waveform.selection) else {
+        let Some(selection) = self
+            .selection_state
+            .range
+            .range()
+            .or(self.ui.waveform.selection)
+        else {
             self.set_status("Create a selection first", StatusTone::Info);
             return;
         };

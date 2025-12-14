@@ -55,4 +55,3 @@ fn key_label(key: Key) -> &'static str {
         _ => "Key",
     }
 }
-

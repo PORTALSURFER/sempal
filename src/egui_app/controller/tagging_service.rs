@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-pub(in super) struct TaggingService<'a> {
+pub(super) struct TaggingService<'a> {
     selected_source: Option<&'a SourceId>,
     wav_entries: &'a mut [WavEntry],
     wav_lookup: &'a HashMap<PathBuf, usize>,
@@ -12,7 +12,7 @@ pub(in super) struct TaggingService<'a> {
 }
 
 impl<'a> TaggingService<'a> {
-    pub(in super) fn new(
+    pub(super) fn new(
         selected_source: Option<&'a SourceId>,
         wav_entries: &'a mut [WavEntry],
         wav_lookup: &'a HashMap<PathBuf, usize>,
@@ -26,7 +26,7 @@ impl<'a> TaggingService<'a> {
         }
     }
 
-    pub(in super) fn apply_sample_tag(
+    pub(super) fn apply_sample_tag(
         &mut self,
         source: &SampleSource,
         path: &Path,

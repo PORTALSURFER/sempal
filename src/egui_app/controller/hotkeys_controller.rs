@@ -1,8 +1,8 @@
 use super::*;
 use crate::egui_app::controller::hotkeys::{HotkeyAction, HotkeyCommand};
+use crate::egui_app::state::DestructiveSelectionEdit;
 use crate::egui_app::state::FocusContext;
 use crate::sample_sources::SampleTag;
-use crate::egui_app::state::DestructiveSelectionEdit;
 
 pub(crate) trait HotkeysActions {
     fn handle_hotkey(&mut self, action: HotkeyAction, focus: FocusContext);
@@ -61,8 +61,9 @@ impl HotkeysActions for HotkeysController<'_> {
             }
             HotkeyCommand::CropSelection => {
                 if matches!(focus, FocusContext::Waveform) {
-                    let _ = self
-                        .request_destructive_selection_edit(DestructiveSelectionEdit::CropSelection);
+                    let _ = self.request_destructive_selection_edit(
+                        DestructiveSelectionEdit::CropSelection,
+                    );
                 }
             }
             HotkeyCommand::CropSelectionNewSample => {
@@ -214,11 +215,15 @@ impl HotkeysController<'_> {
     }
 
     fn normalize_loaded_sample_like_browser(&mut self) -> Result<(), String> {
-        let audio = self.sample_view.wav
+        let audio = self
+            .sample_view
+            .wav
             .loaded_audio
             .as_ref()
             .ok_or_else(|| "Load a sample to normalize it".to_string())?;
-        let source = self.library.sources
+        let source = self
+            .library
+            .sources
             .iter()
             .find(|s| s.id == audio.source_id)
             .cloned()
@@ -241,7 +246,10 @@ impl HotkeysController<'_> {
         }
         self.refresh_waveform_for_sample(&source, &relative_path);
         self.reexport_collections_for_sample(&source.id, &relative_path);
-        self.set_status(format!("Normalized {}", relative_path.display()), StatusTone::Info);
+        self.set_status(
+            format!("Normalized {}", relative_path.display()),
+            StatusTone::Info,
+        );
         Ok(())
     }
 

@@ -1,7 +1,7 @@
+use super::super::*;
 use super::fs_ops::ensure_export_dir;
 use super::reconcile::reconcile_collection_export;
 use super::{export_dir_for, resolved_export_dir};
-use super::super::*;
 use std::path::PathBuf;
 
 impl EguiController {
@@ -95,7 +95,8 @@ impl EguiController {
             self.set_status("Collection not found", StatusTone::Error);
             return;
         };
-        if resolved_export_dir(collection, self.settings.collection_export_root.as_deref()).is_none()
+        if resolved_export_dir(collection, self.settings.collection_export_root.as_deref())
+            .is_none()
         {
             self.set_status("Set an export folder first", StatusTone::Warning);
             return;

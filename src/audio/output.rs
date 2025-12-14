@@ -130,13 +130,12 @@ pub fn supported_sample_rates(
     let (host, resolved_host, _) = resolve_host(Some(host_id))?;
     let (device, _, _) = resolve_device(&host, Some(device_name))?;
     let mut supported = Vec::new();
-    for range in device
-        .supported_output_configs()
-        .map_err(|source| AudioOutputError::SupportedOutputConfigs {
+    for range in device.supported_output_configs().map_err(|source| {
+        AudioOutputError::SupportedOutputConfigs {
             host_id: resolved_host.clone(),
             source,
-        })?
-    {
+        }
+    })? {
         supported.extend(sample_rates_in_range(
             range.min_sample_rate().0,
             range.max_sample_rate().0,
@@ -153,14 +152,14 @@ pub fn supported_sample_rates(
 }
 
 /// Open an audio stream honoring user preferences with safe fallbacks.
-pub fn open_output_stream(config: &AudioOutputConfig) -> Result<OpenStreamOutcome, AudioOutputError> {
+pub fn open_output_stream(
+    config: &AudioOutputConfig,
+) -> Result<OpenStreamOutcome, AudioOutputError> {
     let (host, host_id, host_fallback) = resolve_host(config.host.as_deref())?;
     let (device, device_name, device_fallback) = resolve_device(&host, config.device.as_deref())?;
 
-    let mut builder =
-        OutputStreamBuilder::from_device(device).map_err(|source| AudioOutputError::OpenStream {
-            source,
-        })?;
+    let mut builder = OutputStreamBuilder::from_device(device)
+        .map_err(|source| AudioOutputError::OpenStream { source })?;
     if let Some(rate) = config.sample_rate {
         builder = builder.with_sample_rate(rate);
     }
@@ -182,9 +181,8 @@ pub fn open_output_stream(config: &AudioOutputConfig) -> Result<OpenStreamOutcom
             resolved_host_id = default_host.id().name().to_string();
             resolved_device_name =
                 device_label(&fallback_device).unwrap_or_else(|| "Default device".to_string());
-            let fallback_builder = OutputStreamBuilder::from_device(fallback_device).map_err(
-                |source| AudioOutputError::OpenDefaultStream { source },
-            )?;
+            let fallback_builder = OutputStreamBuilder::from_device(fallback_device)
+                .map_err(|source| AudioOutputError::OpenDefaultStream { source })?;
             fallback_builder
                 .open_stream_or_fallback()
                 .map_err(|source| AudioOutputError::OpenDefaultStream { source })?

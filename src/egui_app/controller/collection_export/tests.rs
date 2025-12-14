@@ -1,5 +1,5 @@
-use super::resolved_export_dir;
 use super::super::*;
+use super::resolved_export_dir;
 use crate::app_dirs::ConfigBaseGuard;
 use crate::sample_sources::Collection;
 use std::path::{Path, PathBuf};
@@ -79,20 +79,22 @@ fn setting_export_root_syncs_direct_subfolders_to_collections() {
     assert!(controller.library.collections.iter().any(|c| c.name == "A"));
     assert!(controller.library.collections.iter().any(|c| c.name == "B"));
 
-    let expected_a =
-        crate::sample_sources::config::normalize_path(export_root.join("A").as_path());
-    let expected_b =
-        crate::sample_sources::config::normalize_path(export_root.join("B").as_path());
-    assert!(controller
-        .library
-        .collections
-        .iter()
-        .any(|c| c.name == "A" && c.export_path.as_ref() == Some(&expected_a)));
-    assert!(controller
-        .library
-        .collections
-        .iter()
-        .any(|c| c.name == "B" && c.export_path.as_ref() == Some(&expected_b)));
+    let expected_a = crate::sample_sources::config::normalize_path(export_root.join("A").as_path());
+    let expected_b = crate::sample_sources::config::normalize_path(export_root.join("B").as_path());
+    assert!(
+        controller
+            .library
+            .collections
+            .iter()
+            .any(|c| c.name == "A" && c.export_path.as_ref() == Some(&expected_a))
+    );
+    assert!(
+        controller
+            .library
+            .collections
+            .iter()
+            .any(|c| c.name == "B" && c.export_path.as_ref() == Some(&expected_b))
+    );
 }
 
 #[test]
@@ -104,7 +106,10 @@ fn sync_updates_existing_collection_export_path_by_name() {
 
     let renderer = crate::waveform::WaveformRenderer::new(4, 4);
     let mut controller = EguiController::new(renderer, None);
-    controller.library.collections.push(Collection::new("Existing"));
+    controller
+        .library
+        .collections
+        .push(Collection::new("Existing"));
 
     let created = controller
         .sync_collections_from_export_root_path(export_root.as_path())
@@ -114,5 +119,8 @@ fn sync_updates_existing_collection_export_path_by_name() {
 
     let expected =
         crate::sample_sources::config::normalize_path(export_root.join("Existing").as_path());
-    assert_eq!(controller.library.collections[0].export_path.as_ref(), Some(&expected));
+    assert_eq!(
+        controller.library.collections[0].export_path.as_ref(),
+        Some(&expected)
+    );
 }

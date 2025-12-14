@@ -77,6 +77,7 @@ fn load_audio(
             AudioLoadError::Failed(format!("Failed to read {}: {err}", full_path.display()))
         }
     })?;
+    let bytes = crate::wav_sanitize::sanitize_wav_bytes(bytes);
     let modified_ns = metadata
         .modified()
         .map_err(|err| {
