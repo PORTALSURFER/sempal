@@ -1,10 +1,9 @@
 use super::style;
 use super::*;
-use eframe::egui::{
-    self, RichText, StrokeKind, Ui,
-};
+use eframe::egui::{self, StrokeKind, Ui};
 
 mod base_render;
+mod controls;
 mod destructive_prompt;
 mod hover_overlay;
 mod interactions;
@@ -20,38 +19,7 @@ impl EguiApp {
         let cursor_color = palette.accent_mint;
         let start_marker_color = palette.accent_ice;
         let is_loading = self.controller.ui.waveform.loading.is_some();
-        let mut view_mode = self.controller.ui.waveform.channel_view;
-        ui.horizontal(|ui| {
-            let mono = ui.selectable_value(
-                &mut view_mode,
-                crate::waveform::WaveformChannelView::Mono,
-                "Mono envelope",
-            );
-            mono.on_hover_text("Show peak envelope across all channels");
-            let split = ui.selectable_value(
-                &mut view_mode,
-                crate::waveform::WaveformChannelView::SplitStereo,
-                "Split L/R",
-            );
-            split.on_hover_text("Render the first two channels separately");
-            ui.add_space(10.0);
-            let loop_enabled = self.controller.ui.waveform.loop_enabled;
-            let loop_label = if loop_enabled {
-                RichText::new("Loop: On").color(palette.accent_mint)
-            } else {
-                RichText::new("Loop: Off").color(palette.text_muted)
-            };
-            if ui
-                .add(egui::Button::new(loop_label))
-                .on_hover_text("Toggle loop playback for the current selection (or whole sample)")
-                .clicked()
-            {
-                self.controller.toggle_loop();
-            }
-        });
-        if view_mode != self.controller.ui.waveform.channel_view {
-            self.controller.set_waveform_channel_view(view_mode);
-        }
+        controls::render_waveform_controls(self, ui, &palette);
         let frame = style::section_frame();
         let frame_response = frame.show(ui, |ui| {
             let desired = egui::vec2(ui.available_width(), 260.0);
