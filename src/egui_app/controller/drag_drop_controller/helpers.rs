@@ -126,8 +126,7 @@ impl DragDropController<'_> {
         &mut self,
         bounds: SelectionRange,
     ) -> Result<(PathBuf, String), String> {
-        let audio = self
-            .wav_selection
+        let audio = self.sample_view.wav
             .loaded_audio
             .as_ref()
             .ok_or_else(|| "Load a sample before dragging a selection".to_string())?;

@@ -49,8 +49,8 @@ impl WaveformRenderMeta {
 
 impl EguiController {
     pub(in crate::egui_app::controller) fn min_view_width(&self) -> f32 {
-        if let Some(decoded) = self.waveform.decoded.as_ref() {
-            min_view_width_for_frames(decoded.frame_count(), self.waveform.size[0])
+        if let Some(decoded) = self.sample_view.waveform.decoded.as_ref() {
+            min_view_width_for_frames(decoded.frame_count(), self.sample_view.waveform.size[0])
         } else {
             MIN_VIEW_WIDTH_BASE
         }
@@ -69,8 +69,8 @@ impl EguiController {
     pub(in crate::egui_app::controller::wavs) fn apply_waveform_image(&mut self, decoded: DecodedWaveform) {
         // Force a rerender whenever decoded samples change, even if the view metadata is
         // identical to the previous render.
-        self.waveform.render_meta = None;
-        self.waveform.decoded = Some(decoded);
+        self.sample_view.waveform.render_meta = None;
+        self.sample_view.waveform.decoded = Some(decoded);
         self.refresh_waveform_image();
     }
 
@@ -78,18 +78,18 @@ impl EguiController {
     pub fn update_waveform_size(&mut self, width: u32, height: u32) {
         let width = width.max(1);
         let height = height.max(1);
-        if self.waveform.size == [width, height] {
+        if self.sample_view.waveform.size == [width, height] {
             return;
         }
-        self.waveform.size = [width, height];
+        self.sample_view.waveform.size = [width, height];
         self.refresh_waveform_image();
     }
 
     pub(crate) fn refresh_waveform_image(&mut self) {
-        let Some(decoded) = self.waveform.decoded.as_ref() else {
+        let Some(decoded) = self.sample_view.waveform.decoded.as_ref() else {
             return;
         };
-        let [width, height] = self.waveform.size;
+        let [width, height] = self.sample_view.waveform.size;
         let total_frames = decoded.frame_count();
         let min_view_width = min_view_width_for_frames(total_frames, width);
         let mut view = self.ui.waveform.view.clamp();
@@ -125,8 +125,7 @@ impl EguiController {
             channel_view: self.ui.waveform.channel_view,
             channels: decoded.channels,
         };
-        if self
-            .waveform
+        if self.sample_view.waveform
             .render_meta
             .as_ref()
             .is_some_and(|meta| meta.matches(&desired_meta))
@@ -147,7 +146,7 @@ impl EguiController {
             view_end: view.end,
         });
         self.ui.waveform.view = view;
-        self.waveform.render_meta = Some(desired_meta);
+        self.sample_view.waveform.render_meta = Some(desired_meta);
     }
 
     pub(in crate::egui_app::controller::wavs) fn read_waveform_bytes(

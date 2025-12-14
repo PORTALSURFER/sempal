@@ -14,7 +14,7 @@ fn cursor_step_size_tracks_view_zoom() {
     prepare_browser_sample(&mut controller, &source, "zoom.wav");
     controller.update_waveform_size(200, 10);
     controller.select_wav_by_path(Path::new("zoom.wav"));
-    controller.waveform.decoded = Some(DecodedWaveform {
+    controller.sample_view.waveform.decoded = Some(DecodedWaveform {
         cache_token: 1,
         samples: vec![0.0; 10_000],
         peaks: None,
@@ -39,12 +39,12 @@ fn cursor_step_size_tracks_view_zoom() {
 #[test]
 fn waveform_refresh_respects_view_slice_and_caps_width() {
     let (mut controller, _source) = dummy_controller();
-    controller.waveform.size = [100, 10];
+    controller.sample_view.waveform.size = [100, 10];
     controller.ui.waveform.view = WaveformView {
         start: 0.25,
         end: 0.5,
     };
-    controller.waveform.decoded = Some(DecodedWaveform {
+    controller.sample_view.waveform.decoded = Some(DecodedWaveform {
         cache_token: 1,
         samples: (0..1000).map(|i| i as f32).collect(),
         peaks: None,
@@ -52,7 +52,7 @@ fn waveform_refresh_respects_view_slice_and_caps_width() {
         sample_rate: 48_000,
         channels: 1,
     });
-    controller.waveform.render_meta = None;
+    controller.sample_view.waveform.render_meta = None;
     controller.refresh_waveform_image();
     let image = controller
         .ui
@@ -63,12 +63,12 @@ fn waveform_refresh_respects_view_slice_and_caps_width() {
     assert!((image.view_start - 0.25).abs() < 1e-6);
     assert!((image.view_end - 0.5).abs() < 1e-6);
     let expected_width =
-        (controller.waveform.size[0] as f32 * (1.0f32 / 0.25).min(64.0f32)).ceil() as usize;
+        (controller.sample_view.waveform.size[0] as f32 * (1.0f32 / 0.25).min(64.0f32)).ceil() as usize;
     let samples_in_view = (0.5 - 0.25) * 1000.0;
     let upper = (samples_in_view as usize)
         .min(crate::egui_app::controller::wavs::MAX_TEXTURE_WIDTH as usize)
         .max(1);
-    let lower = controller.waveform.size[0]
+    let lower = controller.sample_view.waveform.size[0]
         .min(crate::egui_app::controller::wavs::MAX_TEXTURE_WIDTH) as usize;
     let clamped = expected_width.min(upper).max(lower);
     assert_eq!(image.image.size[0], clamped);
@@ -118,7 +118,7 @@ fn waveform_rerenders_after_same_length_edit() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source.clone());
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
-    controller.waveform.size = [32, 8];
+    controller.sample_view.waveform.size = [32, 8];
     let path = source.root.join("edit.wav");
     write_test_wav(&path, &[0.1, 0.1, 0.1, 0.1]);
 
@@ -168,14 +168,14 @@ fn waveform_rerenders_after_same_length_edit() {
 
     for _ in 0..20 {
         controller.poll_audio_loader();
-        if controller.wav_selection.loaded_wav.as_deref() == Some(Path::new("b.wav")) {
+        if controller.sample_view.wav.loaded_wav.as_deref() == Some(Path::new("b.wav")) {
             break;
         }
         thread::sleep(Duration::from_millis(10));
     }
 
     assert_eq!(
-        controller.wav_selection.loaded_wav.as_deref(),
+        controller.sample_view.wav.loaded_wav.as_deref(),
         Some(Path::new("b.wav"))
     );
     assert_eq!(
@@ -232,17 +232,17 @@ fn loading_flag_clears_after_audio_load() {
 
     for _ in 0..50 {
         controller.poll_audio_loader();
-        if controller.wav_selection.loaded_wav.as_deref() == Some(rel.as_path()) {
+        if controller.sample_view.wav.loaded_wav.as_deref() == Some(rel.as_path()) {
             break;
         }
         thread::sleep(Duration::from_millis(10));
     }
 
     assert_eq!(
-        controller.wav_selection.loaded_wav.as_deref(),
+        controller.sample_view.wav.loaded_wav.as_deref(),
         Some(rel.as_path())
     );
     assert!(controller.runtime.jobs.pending_audio.is_none());
     assert!(controller.ui.waveform.loading.is_none());
-    assert!(controller.wav_selection.loaded_audio.is_some());
+    assert!(controller.sample_view.wav.loaded_audio.is_some());
 }

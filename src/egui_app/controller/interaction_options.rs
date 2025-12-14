@@ -75,7 +75,7 @@ impl EguiController {
         self.settings.controls.waveform_channel_view = view;
         self.ui.controls.waveform_channel_view = view;
         self.ui.waveform.channel_view = view;
-        self.waveform.render_meta = None;
+        self.sample_view.waveform.render_meta = None;
         self.refresh_waveform_image();
         self.persist_controls();
     }

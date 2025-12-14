@@ -303,8 +303,7 @@ impl EguiController {
         if selection.width() <= 0.0 {
             return Err("Selection is empty".into());
         }
-        let audio = self
-            .wav_selection
+        let audio = self.sample_view.wav
             .loaded_audio
             .as_ref()
             .ok_or_else(|| "Load a sample to edit it".to_string())?;

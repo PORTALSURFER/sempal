@@ -41,14 +41,14 @@ impl EguiController {
     }
 
     pub(in crate::egui_app::controller) fn selected_row_index(&self) -> Option<usize> {
-        self.wav_selection
+        self.sample_view.wav
             .selected_wav
             .as_ref()
             .and_then(|path| self.wav_entries.lookup.get(path).copied())
     }
 
     pub(in crate::egui_app::controller) fn loaded_row_index(&self) -> Option<usize> {
-        self.wav_selection
+        self.sample_view.wav
             .loaded_wav
             .as_ref()
             .and_then(|path| self.wav_entries.lookup.get(path).copied())
@@ -95,10 +95,10 @@ impl EguiController {
             .browser
             .selected_paths
             .retain(|path| self.wav_entries.lookup.contains_key(path));
-        if let Some(path) = self.wav_selection.selected_wav.clone()
+        if let Some(path) = self.sample_view.wav.selected_wav.clone()
             && !self.wav_entries.lookup.contains_key(&path)
         {
-            self.wav_selection.selected_wav = None;
+            self.sample_view.wav.selected_wav = None;
             self.ui.browser.selected = None;
             self.ui.browser.selected_visible = None;
             self.clear_waveform_view();

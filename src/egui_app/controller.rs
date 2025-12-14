@@ -78,13 +78,12 @@ pub struct EguiController {
     pub ui: UiState,
     renderer: WaveformRenderer,
     audio: ControllerAudioState,
-    waveform: WaveformState,
+    sample_view: ControllerSampleViewState,
     library: LibraryState,
     cache: LibraryCacheState,
     ui_cache: ControllerUiCacheState,
     wav_entries: WavEntriesState,
     selection_state: ControllerSelectionState,
-    wav_selection: WavSelectionState,
     settings: AppSettingsState,
     runtime: ControllerRuntimeState,
     history: ControllerHistoryState,
@@ -121,10 +120,17 @@ impl EguiController {
                 cache: AudioCache::new(AUDIO_CACHE_CAPACITY, AUDIO_HISTORY_LIMIT),
                 pending_loop_disable_at: None,
             },
-            waveform: WaveformState {
-                size: [waveform_width, waveform_height],
-                decoded: None,
-                render_meta: None,
+            sample_view: ControllerSampleViewState {
+                waveform: WaveformState {
+                    size: [waveform_width, waveform_height],
+                    decoded: None,
+                    render_meta: None,
+                },
+                wav: WavSelectionState {
+                    selected_wav: None,
+                    loaded_wav: None,
+                    loaded_audio: None,
+                },
             },
             library: LibraryState {
                 sources: Vec::new(),
@@ -162,11 +168,6 @@ impl EguiController {
                 },
                 range: SelectionState::new(),
                 suppress_autoplay_once: false,
-            },
-            wav_selection: WavSelectionState {
-                selected_wav: None,
-                loaded_wav: None,
-                loaded_audio: None,
             },
             settings: AppSettingsState {
                 feature_flags: crate::sample_sources::config::FeatureFlags::default(),
@@ -310,6 +311,11 @@ struct WavSelectionState {
     selected_wav: Option<PathBuf>,
     loaded_wav: Option<PathBuf>,
     loaded_audio: Option<LoadedAudio>,
+}
+
+struct ControllerSampleViewState {
+    waveform: WaveformState,
+    wav: WavSelectionState,
 }
 
 struct SelectionContextState {

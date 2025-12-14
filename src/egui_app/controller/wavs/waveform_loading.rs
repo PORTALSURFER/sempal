@@ -6,10 +6,10 @@ impl EguiController {
         source: &SampleSource,
         relative_path: &Path,
     ) -> Result<(), String> {
-        if self.wav_selection.selected_wav.as_deref() != Some(relative_path) {
-            self.wav_selection.selected_wav = Some(relative_path.to_path_buf());
+        if self.sample_view.wav.selected_wav.as_deref() != Some(relative_path) {
+            self.sample_view.wav.selected_wav = Some(relative_path.to_path_buf());
         }
-        if self.wav_selection.loaded_wav.as_deref() == Some(relative_path) {
+        if self.sample_view.wav.loaded_wav.as_deref() == Some(relative_path) {
             self.clear_waveform_selection();
             let message = self
                 .loaded_audio_for(source, relative_path)
@@ -90,11 +90,11 @@ impl EguiController {
         self.runtime.jobs.pending_audio = None;
         match intent {
             AudioLoadIntent::Selection => {
-                self.wav_selection.loaded_wav = Some(relative_path.to_path_buf());
+                self.sample_view.wav.loaded_wav = Some(relative_path.to_path_buf());
                 self.ui.loaded_wav = Some(relative_path.to_path_buf());
             }
             AudioLoadIntent::CollectionPreview => {
-                self.wav_selection.loaded_wav = None;
+                self.sample_view.wav.loaded_wav = None;
                 self.ui.loaded_wav = None;
             }
         }
@@ -133,7 +133,7 @@ impl EguiController {
         source: &SampleSource,
         relative_path: &Path,
     ) -> Option<&LoadedAudio> {
-        self.wav_selection
+        self.sample_view.wav
             .loaded_audio
             .as_ref()
             .filter(|audio| audio.source_id == source.id && audio.relative_path == relative_path)
@@ -182,7 +182,7 @@ impl EguiController {
         channels: u16,
         bytes: Vec<u8>,
     ) -> Result<(), String> {
-        self.wav_selection.loaded_audio = Some(LoadedAudio {
+        self.sample_view.wav.loaded_audio = Some(LoadedAudio {
             source_id: source.id.clone(),
             relative_path: relative_path.to_path_buf(),
             bytes: bytes.clone(),
@@ -203,8 +203,8 @@ impl EguiController {
     }
 
     pub(in crate::egui_app::controller) fn clear_loaded_audio_and_waveform_visuals(&mut self) {
-        self.wav_selection.loaded_audio = None;
-        self.waveform.decoded = None;
+        self.sample_view.wav.loaded_audio = None;
+        self.sample_view.waveform.decoded = None;
         self.ui.waveform.image = None;
         self.ui.waveform.playhead = PlayheadState::default();
         self.ui.waveform.selection = None;
@@ -218,13 +218,13 @@ impl EguiController {
         relative_path: &Path,
     ) {
         self.invalidate_cached_audio(&source.id, relative_path);
-        let loaded_matches = self.wav_selection.loaded_audio.as_ref().is_some_and(|audio| {
+        let loaded_matches = self.sample_view.wav.loaded_audio.as_ref().is_some_and(|audio| {
             audio.source_id == source.id && audio.relative_path == relative_path
         });
         let selected_matches = self.selection_state.ctx.selected_source.as_ref() == Some(&source.id)
-            && self.wav_selection.selected_wav.as_deref() == Some(relative_path);
+            && self.sample_view.wav.selected_wav.as_deref() == Some(relative_path);
         if selected_matches || loaded_matches {
-            self.wav_selection.loaded_wav = None;
+            self.sample_view.wav.loaded_wav = None;
             self.ui.loaded_wav = None;
             if let Err(err) = self.load_waveform_for_selection(source, relative_path) {
                 self.set_status(err, StatusTone::Warning);

@@ -45,7 +45,7 @@ fn focus_hotkey_does_not_autoplay_browser_sample() {
 
     assert_eq!(controller.ui.focus.context, FocusContext::SampleBrowser);
     assert_eq!(
-        controller.wav_selection.selected_wav.as_deref(),
+        controller.sample_view.wav.selected_wav.as_deref(),
         Some(Path::new("one.wav"))
     );
     assert!(controller.runtime.jobs.pending_playback.is_none());
@@ -317,8 +317,7 @@ fn browser_normalize_refreshes_exports() -> Result<(), String> {
     assert!(exported_path.is_file());
     assert!((max_sample_amplitude(&root.join("one.wav")) - 1.0).abs() < 1e-6);
     assert!((max_sample_amplitude(&exported_path) - 1.0).abs() < 1e-6);
-    let loaded = controller
-        .wav_selection
+    let loaded = controller.sample_view.wav
         .loaded_audio
         .as_ref()
         .expect("loaded audio");
@@ -397,7 +396,7 @@ fn deleting_browser_sample_moves_focus_forward() -> Result<(), String> {
     controller.delete_browser_sample(1)?;
 
     assert_eq!(
-        controller.wav_selection.selected_wav.as_deref(),
+        controller.sample_view.wav.selected_wav.as_deref(),
         Some(Path::new("c.wav"))
     );
     assert_eq!(controller.ui.browser.selected_visible, Some(1));
@@ -405,7 +404,7 @@ fn deleting_browser_sample_moves_focus_forward() -> Result<(), String> {
     controller.delete_browser_sample(1)?;
 
     assert_eq!(
-        controller.wav_selection.selected_wav.as_deref(),
+        controller.sample_view.wav.selected_wav.as_deref(),
         Some(Path::new("a.wav"))
     );
     assert_eq!(controller.ui.browser.selected_visible, Some(0));

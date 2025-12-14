@@ -189,7 +189,7 @@ fn selection_drop_to_browser_ignores_active_collection() {
             .any(|entry| entry.relative_path == PathBuf::from("clip_sel.wav"))
     );
     assert_eq!(
-        controller.wav_selection.selected_wav.as_deref(),
+        controller.sample_view.wav.selected_wav.as_deref(),
         Some(Path::new("clip_sel.wav"))
     );
     assert_eq!(controller.ui.focus.context, FocusContext::SampleBrowser);
@@ -219,7 +219,7 @@ fn selection_drop_to_browser_can_keep_source_focused() {
         .load_waveform_for_selection(&source, Path::new("clip.wav"))
         .unwrap();
     assert_eq!(
-        controller.wav_selection.selected_wav.as_deref(),
+        controller.sample_view.wav.selected_wav.as_deref(),
         Some(Path::new("clip.wav"))
     );
 
@@ -236,7 +236,7 @@ fn selection_drop_to_browser_can_keep_source_focused() {
     controller.finish_active_drag();
 
     assert_eq!(
-        controller.wav_selection.selected_wav.as_deref(),
+        controller.sample_view.wav.selected_wav.as_deref(),
         Some(Path::new("clip.wav"))
     );
     assert!(root.join("clip_sel.wav").is_file());
@@ -355,7 +355,7 @@ fn selection_drop_to_browser_respects_shift_pressed_mid_drag() {
             .any(|entry| entry.relative_path == PathBuf::from("clip_sel.wav"))
     );
     assert_eq!(
-        controller.wav_selection.selected_wav.as_deref(),
+        controller.sample_view.wav.selected_wav.as_deref(),
         Some(Path::new("clip.wav"))
     );
     assert_eq!(controller.ui.focus.context, FocusContext::Waveform);

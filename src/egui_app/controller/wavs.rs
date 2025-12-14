@@ -25,7 +25,7 @@ impl EguiController {
         self.ui.waveform.image = None;
         self.ui.waveform.notice = None;
         self.ui.waveform.loading = None;
-        self.waveform.decoded = None;
+        self.sample_view.waveform.decoded = None;
         self.ui.waveform.playhead = PlayheadState::default();
         self.ui.waveform.last_start_marker = None;
         self.ui.waveform.cursor = None;
@@ -33,10 +33,10 @@ impl EguiController {
         self.ui.waveform.selection_duration = None;
         self.ui.waveform.view = WaveformView::default();
         self.selection_state.range.clear();
-        self.wav_selection.loaded_audio = None;
-        self.wav_selection.loaded_wav = None;
+        self.sample_view.wav.loaded_audio = None;
+        self.sample_view.wav.loaded_wav = None;
         self.ui.loaded_wav = None;
-        self.waveform.render_meta = None;
+        self.sample_view.waveform.render_meta = None;
         if let Some(player) = self.audio.player.as_ref() {
             player.borrow_mut().stop();
         }
@@ -88,11 +88,11 @@ impl EguiController {
                 self.refresh_sources_ui();
             }
         }
-        let path_changed = self.wav_selection.selected_wav.as_deref() != Some(path);
+        let path_changed = self.sample_view.wav.selected_wav.as_deref() != Some(path);
         if path_changed {
             self.ui.waveform.last_start_marker = None;
         }
-        self.wav_selection.selected_wav = Some(path.to_path_buf());
+        self.sample_view.wav.selected_wav = Some(path.to_path_buf());
         let missing = self
             .wav_entries
             .lookup

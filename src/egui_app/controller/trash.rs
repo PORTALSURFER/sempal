@@ -233,7 +233,7 @@ impl EguiController {
         if let Some(source) = self.current_source()
             && result.affected_sources.iter().any(|id| id == &source.id)
         {
-            if let Some(loaded) = self.wav_selection.loaded_wav.as_ref() {
+            if let Some(loaded) = self.sample_view.wav.loaded_wav.as_ref() {
                 let absolute = source.root.join(loaded);
                 if !absolute.is_file() {
                     self.clear_waveform_view();

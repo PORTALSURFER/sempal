@@ -42,8 +42,8 @@ fn removing_selected_source_clears_waveform_view() {
 
     assert!(controller.ui.waveform.image.is_none());
     assert!(controller.ui.waveform.selection.is_none());
-    assert!(controller.wav_selection.loaded_audio.is_none());
-    assert!(controller.wav_selection.loaded_wav.is_none());
+    assert!(controller.sample_view.wav.loaded_audio.is_none());
+    assert!(controller.sample_view.wav.loaded_wav.is_none());
 }
 
 #[test]
@@ -71,7 +71,7 @@ fn switching_sources_resets_waveform_state() {
 
     assert!(controller.ui.waveform.image.is_none());
     assert!(controller.ui.waveform.notice.is_none());
-    assert!(controller.wav_selection.loaded_audio.is_none());
+    assert!(controller.sample_view.wav.loaded_audio.is_none());
 }
 
 #[test]
@@ -84,7 +84,7 @@ fn pruning_missing_selection_clears_waveform_view() {
     controller.wav_entries.entries = vec![sample_entry("gone.wav", SampleTag::Neutral)];
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
-    controller.wav_selection.selected_wav = Some(PathBuf::from("gone.wav"));
+    controller.sample_view.wav.selected_wav = Some(PathBuf::from("gone.wav"));
     controller
         .load_waveform_for_selection(&source, Path::new("gone.wav"))
         .unwrap();
@@ -95,8 +95,8 @@ fn pruning_missing_selection_clears_waveform_view() {
 
     assert!(controller.ui.waveform.image.is_none());
     assert!(controller.ui.waveform.selection.is_none());
-    assert!(controller.wav_selection.loaded_audio.is_none());
-    assert!(controller.wav_selection.loaded_wav.is_none());
+    assert!(controller.sample_view.wav.loaded_audio.is_none());
+    assert!(controller.sample_view.wav.loaded_wav.is_none());
 }
 
 #[test]

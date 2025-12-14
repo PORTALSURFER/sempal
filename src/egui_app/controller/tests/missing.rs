@@ -29,7 +29,7 @@ fn selecting_missing_sample_sets_waveform_notice() {
             .as_ref()
             .is_some_and(|msg| msg.contains("one.wav"))
     );
-    assert!(controller.wav_selection.loaded_audio.is_none());
+    assert!(controller.sample_view.wav.loaded_audio.is_none());
 }
 
 #[test]

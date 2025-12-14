@@ -382,17 +382,17 @@ impl EguiController {
         new_path: &Path,
     ) {
         if self.selection_state.ctx.selected_source.as_ref() == Some(&source.id) {
-            if self.wav_selection.selected_wav.as_deref() == Some(old_path) {
-                self.wav_selection.selected_wav = Some(new_path.to_path_buf());
+            if self.sample_view.wav.selected_wav.as_deref() == Some(old_path) {
+                self.sample_view.wav.selected_wav = Some(new_path.to_path_buf());
             }
-            if self.wav_selection.loaded_wav.as_deref() == Some(old_path) {
-                self.wav_selection.loaded_wav = Some(new_path.to_path_buf());
+            if self.sample_view.wav.loaded_wav.as_deref() == Some(old_path) {
+                self.sample_view.wav.loaded_wav = Some(new_path.to_path_buf());
                 self.ui.loaded_wav = Some(new_path.to_path_buf());
             } else if self.ui.loaded_wav.as_deref() == Some(old_path) {
                 self.ui.loaded_wav = Some(new_path.to_path_buf());
             }
         }
-        if let Some(audio) = self.wav_selection.loaded_audio.as_mut()
+        if let Some(audio) = self.sample_view.wav.loaded_audio.as_mut()
             && audio.source_id == source.id
             && audio.relative_path == old_path
         {
@@ -405,7 +405,7 @@ impl EguiController {
         ctx: &CollectionSampleContext,
         relative_path: &Path,
     ) {
-        let loaded_matches = self.wav_selection.loaded_audio.as_ref().is_some_and(|audio| {
+        let loaded_matches = self.sample_view.wav.loaded_audio.as_ref().is_some_and(|audio| {
             audio.source_id == ctx.source.id && audio.relative_path == relative_path
         });
         let selected_matches = self
