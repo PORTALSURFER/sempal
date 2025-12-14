@@ -1,8 +1,8 @@
 use super::super::test_support::{dummy_controller, sample_entry, write_test_wav};
 use super::super::*;
-use crate::waveform::DecodedWaveform;
 use super::common::prepare_browser_sample;
 use crate::egui_app::state::FocusContext;
+use crate::waveform::DecodedWaveform;
 use std::path::Path;
 use std::time::{Duration, Instant};
 

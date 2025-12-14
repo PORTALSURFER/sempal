@@ -271,7 +271,13 @@ fn t_hotkey_prompts_trim_selection_in_waveform_focus() {
 
     assert!(controller.ui.waveform.pending_destructive.is_some());
     assert_eq!(
-        controller.ui.waveform.pending_destructive.as_ref().unwrap().edit,
+        controller
+            .ui
+            .waveform
+            .pending_destructive
+            .as_ref()
+            .unwrap()
+            .edit,
         DestructiveSelectionEdit::TrimSelection
     );
 }
@@ -297,7 +303,13 @@ fn slash_hotkeys_prompt_fade_selection_in_waveform_focus() {
         .unwrap();
     controller.handle_hotkey(backslash, FocusContext::Waveform);
     assert_eq!(
-        controller.ui.waveform.pending_destructive.as_ref().unwrap().edit,
+        controller
+            .ui
+            .waveform
+            .pending_destructive
+            .as_ref()
+            .unwrap()
+            .edit,
         DestructiveSelectionEdit::FadeLeftToRight
     );
 
@@ -308,7 +320,13 @@ fn slash_hotkeys_prompt_fade_selection_in_waveform_focus() {
         .unwrap();
     controller.handle_hotkey(slash, FocusContext::Waveform);
     assert_eq!(
-        controller.ui.waveform.pending_destructive.as_ref().unwrap().edit,
+        controller
+            .ui
+            .waveform
+            .pending_destructive
+            .as_ref()
+            .unwrap()
+            .edit,
         DestructiveSelectionEdit::FadeRightToLeft
     );
 }
@@ -335,7 +353,13 @@ fn m_hotkey_prompts_mute_selection_in_waveform_focus() {
     controller.handle_hotkey(action, FocusContext::Waveform);
 
     assert_eq!(
-        controller.ui.waveform.pending_destructive.as_ref().unwrap().edit,
+        controller
+            .ui
+            .waveform
+            .pending_destructive
+            .as_ref()
+            .unwrap()
+            .edit,
         DestructiveSelectionEdit::MuteSelection
     );
 }
@@ -348,7 +372,10 @@ fn n_hotkey_prompts_normalize_selection_when_selection_present() {
     controller.cache_db(&source).unwrap();
     let wav_path = source.root.join("normalize_select_hotkey.wav");
     write_test_wav(&wav_path, &[0.0, 0.2, -0.6, 0.3]);
-    controller.wav_entries.entries = vec![sample_entry("normalize_select_hotkey.wav", SampleTag::Neutral)];
+    controller.wav_entries.entries = vec![sample_entry(
+        "normalize_select_hotkey.wav",
+        SampleTag::Neutral,
+    )];
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
     controller
@@ -362,7 +389,13 @@ fn n_hotkey_prompts_normalize_selection_when_selection_present() {
     controller.handle_hotkey(action, FocusContext::Waveform);
 
     assert_eq!(
-        controller.ui.waveform.pending_destructive.as_ref().unwrap().edit,
+        controller
+            .ui
+            .waveform
+            .pending_destructive
+            .as_ref()
+            .unwrap()
+            .edit,
         DestructiveSelectionEdit::NormalizeSelection
     );
 }
@@ -375,7 +408,10 @@ fn n_hotkey_normalizes_whole_loaded_sample_when_no_selection() {
     controller.cache_db(&source).unwrap();
     let wav_path = source.root.join("normalize_full_hotkey.wav");
     write_test_wav(&wav_path, &[0.1, -0.5, 0.25]);
-    controller.wav_entries.entries = vec![sample_entry("normalize_full_hotkey.wav", SampleTag::Neutral)];
+    controller.wav_entries.entries = vec![sample_entry(
+        "normalize_full_hotkey.wav",
+        SampleTag::Neutral,
+    )];
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
     controller
@@ -415,7 +451,13 @@ fn c_hotkey_prompts_crop_selection_in_waveform_focus() {
     controller.handle_hotkey(action, FocusContext::Waveform);
 
     assert_eq!(
-        controller.ui.waveform.pending_destructive.as_ref().unwrap().edit,
+        controller
+            .ui
+            .waveform
+            .pending_destructive
+            .as_ref()
+            .unwrap()
+            .edit,
         DestructiveSelectionEdit::CropSelection
     );
 }

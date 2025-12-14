@@ -24,7 +24,10 @@ impl EguiController {
             return;
         };
         if let Err(err) = crate::updater::open_release_page(&url) {
-            self.set_status(format!("Could not open update link: {err}"), StatusTone::Error);
+            self.set_status(
+                format!("Could not open update link: {err}"),
+                StatusTone::Error,
+            );
         }
     }
 

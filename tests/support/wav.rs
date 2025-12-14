@@ -16,4 +16,3 @@ pub fn write_test_wav(path: &Path, samples: &[f32]) {
     }
     writer.finalize().expect("finalize wav");
 }
-

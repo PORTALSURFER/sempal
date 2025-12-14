@@ -90,7 +90,11 @@ impl EguiController {
         Ok(())
     }
 
-    fn apply_folder_entry_updates(&mut self, source: &SampleSource, updates: &[(WavEntry, WavEntry)]) {
+    fn apply_folder_entry_updates(
+        &mut self,
+        source: &SampleSource,
+        updates: &[(WavEntry, WavEntry)],
+    ) {
         if updates.is_empty() {
             return;
         }

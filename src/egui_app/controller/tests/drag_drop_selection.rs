@@ -1,9 +1,9 @@
 use super::super::test_support::{sample_entry, write_test_wav};
 use super::super::*;
+use crate::app_dirs::ConfigBaseGuard;
 use crate::egui_app::controller::collection_export;
 use crate::egui_app::state::{DragPayload, DragSource, DragTarget, FocusContext};
 use crate::sample_sources::Collection;
-use crate::app_dirs::ConfigBaseGuard;
 use std::path::{Path, PathBuf};
 use tempfile::tempdir;
 
@@ -51,7 +51,9 @@ fn selection_drop_adds_clip_to_collection() {
     ));
     controller.finish_active_drag();
 
-    let collection = controller.library.collections
+    let collection = controller
+        .library
+        .collections
         .iter()
         .find(|c| c.id == collection_id)
         .unwrap();
@@ -81,7 +83,10 @@ fn selection_drop_adds_clip_to_collection() {
     // Selecting the new collection clip should queue audio successfully.
     let expected_path = member_path.clone();
     controller.select_collection_sample(0);
-    assert_eq!(controller.ui.waveform.loading.as_ref(), Some(&expected_path));
+    assert_eq!(
+        controller.ui.waveform.loading.as_ref(),
+        Some(&expected_path)
+    );
 }
 
 #[test]
@@ -127,7 +132,9 @@ fn selection_drop_uses_collection_export_dir_when_configured() {
     );
     controller.finish_active_drag();
 
-    let collection = controller.library.collections
+    let collection = controller
+        .library
+        .collections
         .iter()
         .find(|c| c.id == collection_id)
         .unwrap();
@@ -176,7 +183,9 @@ fn selection_drop_to_browser_ignores_active_collection() {
     );
     controller.finish_active_drag();
 
-    let collection = controller.library.collections
+    let collection = controller
+        .library
+        .collections
         .iter()
         .find(|c| c.id == collection_id)
         .unwrap();
@@ -439,7 +448,9 @@ fn selection_drop_without_hover_falls_back_to_active_collection() {
     // No hover flags set; should cancel instead of creating collection clips implicitly.
     controller.finish_active_drag();
 
-    let collection = controller.library.collections
+    let collection = controller
+        .library
+        .collections
         .iter()
         .find(|c| c.id == collection_id)
         .unwrap();
@@ -478,7 +489,9 @@ fn sample_drop_falls_back_to_active_collection() {
     );
     controller.finish_active_drag();
 
-    let collection = controller.library.collections
+    let collection = controller
+        .library
+        .collections
         .iter()
         .find(|c| c.id == collection_id)
         .unwrap();
@@ -559,7 +572,9 @@ fn sample_drop_without_selection_warns_even_with_collections() {
     );
     controller.finish_active_drag();
 
-    let stored = controller.library.collections
+    let stored = controller
+        .library
+        .collections
         .iter()
         .find(|c| c.id == collection_id)
         .unwrap();

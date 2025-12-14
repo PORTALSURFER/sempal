@@ -66,7 +66,10 @@ impl EguiController {
         view
     }
 
-    pub(in crate::egui_app::controller::wavs) fn apply_waveform_image(&mut self, decoded: DecodedWaveform) {
+    pub(in crate::egui_app::controller::wavs) fn apply_waveform_image(
+        &mut self,
+        decoded: DecodedWaveform,
+    ) {
         // Force a rerender whenever decoded samples change, even if the view metadata is
         // identical to the previous render.
         self.sample_view.waveform.render_meta = None;
@@ -125,23 +128,26 @@ impl EguiController {
             channel_view: self.ui.waveform.channel_view,
             channels: decoded.channels,
         };
-        if self.sample_view.waveform
+        if self
+            .sample_view
+            .waveform
             .render_meta
             .as_ref()
             .is_some_and(|meta| meta.matches(&desired_meta))
         {
             return;
         }
-        let color_image = self.sample_view
+        let color_image = self
+            .sample_view
             .renderer
             .render_color_image_for_view_with_size(
-            decoded,
-            view.start,
-            view.end,
-            self.ui.waveform.channel_view,
-            effective_width,
-            height,
-        );
+                decoded,
+                view.start,
+                view.end,
+                self.ui.waveform.channel_view,
+                effective_width,
+                height,
+            );
         self.ui.waveform.image = Some(WaveformImage {
             image: color_image,
             view_start: view.start,

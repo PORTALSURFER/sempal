@@ -16,4 +16,3 @@ mod trash;
 mod waveform;
 mod waveform_nav_cursor;
 mod waveform_nav_render;
-

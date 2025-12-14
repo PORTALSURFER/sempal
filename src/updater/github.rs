@@ -1,6 +1,6 @@
 use serde::Deserialize;
 
-use super::{UpdateError, UpdateChannel};
+use super::{UpdateChannel, UpdateError};
 
 #[derive(Debug, Clone, Deserialize)]
 pub(super) struct ReleaseAsset {
@@ -21,7 +21,9 @@ pub(super) struct Release {
 pub(super) fn fetch_release(repo: &str, channel: UpdateChannel) -> Result<Release, UpdateError> {
     let url = match channel {
         UpdateChannel::Stable => format!("https://api.github.com/repos/{repo}/releases/latest"),
-        UpdateChannel::Nightly => format!("https://api.github.com/repos/{repo}/releases/tags/nightly"),
+        UpdateChannel::Nightly => {
+            format!("https://api.github.com/repos/{repo}/releases/tags/nightly")
+        }
     };
     get_json(&url)
 }

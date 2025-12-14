@@ -1,6 +1,6 @@
-use super::fs_ops::collect_exported_files;
-use super::export_dir_for;
 use super::super::*;
+use super::export_dir_for;
+use super::fs_ops::collect_exported_files;
 use crate::sample_sources::collections::CollectionMember;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -17,8 +17,10 @@ pub(super) fn reconcile_collection_export(
     else {
         return Err("Collection not found".into());
     };
-    let collection_dir =
-        export_dir_for(collection, controller.settings.collection_export_root.as_deref())?;
+    let collection_dir = export_dir_for(
+        collection,
+        controller.settings.collection_export_root.as_deref(),
+    )?;
     if !collection_dir.exists() {
         return Err(format!(
             "Export folder missing: {}",
@@ -38,13 +40,7 @@ pub(super) fn reconcile_collection_export(
         .filter_map(|m| m.relative_path.file_name().map(PathBuf::from))
         .collect();
     let (seen, removed) = remove_missing_exports(controller, collection_id, &members, &files);
-    let added = add_new_exports(
-        controller,
-        collection_id,
-        &files,
-        &member_paths,
-        &seen,
-    )?;
+    let added = add_new_exports(controller, collection_id, &files, &member_paths, &seen)?;
     controller.persist_config("Failed to save collection")?;
     controller.refresh_collections_ui();
     Ok((added, removed))

@@ -31,14 +31,14 @@ impl WaveformZoomCache {
             return hit;
         }
 
-        let computed = match WaveformRenderer::sample_columns_for_width(samples, channels, width, view)
-        {
-            WaveformColumnView::Mono(cols) => CachedColumns::Mono(cols.into()),
-            WaveformColumnView::SplitStereo { left, right } => CachedColumns::SplitStereo {
-                left: left.into(),
-                right: right.into(),
-            },
-        };
+        let computed =
+            match WaveformRenderer::sample_columns_for_width(samples, channels, width, view) {
+                WaveformColumnView::Mono(cols) => CachedColumns::Mono(cols.into()),
+                WaveformColumnView::SplitStereo { left, right } => CachedColumns::SplitStereo {
+                    left: left.into(),
+                    right: right.into(),
+                },
+            };
         inner.insert(key, computed.clone());
         computed
     }

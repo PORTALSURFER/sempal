@@ -68,4 +68,3 @@ pub(super) fn file_metadata(path: &Path) -> Result<(u64, i64), String> {
         .as_nanos() as i64;
     Ok((metadata.len(), modified_ns))
 }
-

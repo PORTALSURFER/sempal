@@ -1,5 +1,5 @@
-use super::*;
 use super::helpers::TriageSampleContext;
+use super::*;
 use std::collections::HashSet;
 
 pub(crate) trait BrowserActions {
