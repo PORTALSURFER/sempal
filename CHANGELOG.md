@@ -1,4 +1,9 @@
-## [unreleased]
+## [nightly] - 2025-12-14
+
+### 🐛 Bug Fixes
+
+- *(zoom)* Make wheel zoom sensitivity intuitive (#49)
+## [0.347.0] - 2025-12-14
 
 ### 🚀 Features
 
@@ -81,6 +86,11 @@
 ### 📚 Documentation
 
 - Refresh usage guide for config paths, exports, and hotkeys
+- Add refactor strategy for small PR module splits
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* V0.347.0 (#40)
 ## [0.342.0] - 2025-12-13
 
 ### ⚙️ Miscellaneous Tasks
