@@ -81,7 +81,6 @@
 ### 📚 Documentation
 
 - Refresh usage guide for config paths, exports, and hotkeys
-- Add refactor strategy for small PR module splits
 ## [0.342.0] - 2025-12-13
 
 ### ⚙️ Miscellaneous Tasks
