@@ -43,7 +43,8 @@ impl EguiController {
             return Err("Audio unavailable".into());
         };
         let selection = self
-            .selection
+            .selection_state
+            .range
             .range()
             .filter(|range| range.width() >= MIN_SELECTION_WIDTH);
         let start = start_override

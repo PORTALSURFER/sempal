@@ -4,7 +4,7 @@ impl EguiController {
     pub(in crate::egui_app::controller) fn folder_selection_for_filter(
         &self,
     ) -> Option<&BTreeSet<PathBuf>> {
-        let id = self.selection_ctx.selected_source.as_ref()?;
+        let id = self.selection_state.ctx.selected_source.as_ref()?;
         self.folder_browsers.models.get(id).map(|model| &model.selected)
     }
 

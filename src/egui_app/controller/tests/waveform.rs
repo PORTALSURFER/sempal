@@ -103,7 +103,7 @@ fn pruning_missing_selection_clears_waveform_view() {
 fn cropping_selection_overwrites_file() {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source.clone());
-    controller.selection_ctx.selected_source = Some(source.id.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
     controller.cache_db(&source).unwrap();
     let wav_path = source.root.join("edit.wav");
     write_test_wav(&wav_path, &[0.1, 0.2, 0.3, 0.4]);
@@ -131,7 +131,7 @@ fn cropping_selection_overwrites_file() {
 fn trimming_selection_removes_span() {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source.clone());
-    controller.selection_ctx.selected_source = Some(source.id.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
     controller.cache_db(&source).unwrap();
     let wav_path = source.root.join("trim.wav");
     write_test_wav(&wav_path, &[0.0, 0.1, 0.2, 0.3]);
@@ -160,7 +160,7 @@ fn trimming_selection_removes_span() {
 fn destructive_edit_request_prompts_without_yolo_mode() {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source.clone());
-    controller.selection_ctx.selected_source = Some(source.id.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
     controller.cache_db(&source).unwrap();
     let wav_path = source.root.join("warn.wav");
     write_test_wav(&wav_path, &[0.0, 0.1, 0.2, 0.3]);
@@ -190,7 +190,7 @@ fn destructive_edit_request_prompts_without_yolo_mode() {
 fn yolo_mode_applies_destructive_edit_immediately() {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source.clone());
-    controller.selection_ctx.selected_source = Some(source.id.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
     controller.cache_db(&source).unwrap();
     let wav_path = source.root.join("yolo.wav");
     write_test_wav(&wav_path, &[0.1, 0.2, 0.3, 0.4]);
@@ -221,7 +221,7 @@ fn yolo_mode_applies_destructive_edit_immediately() {
 fn confirming_pending_destructive_edit_clears_prompt() {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source.clone());
-    controller.selection_ctx.selected_source = Some(source.id.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
     controller.cache_db(&source).unwrap();
     let wav_path = source.root.join("confirm.wav");
     write_test_wav(&wav_path, &[0.0, 0.1, 0.2, 0.3]);
@@ -252,7 +252,7 @@ fn confirming_pending_destructive_edit_clears_prompt() {
 fn t_hotkey_prompts_trim_selection_in_waveform_focus() {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source.clone());
-    controller.selection_ctx.selected_source = Some(source.id.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
     controller.cache_db(&source).unwrap();
     let wav_path = source.root.join("trim_hotkey.wav");
     write_test_wav(&wav_path, &[0.0, 0.1, 0.2, 0.3]);
@@ -280,7 +280,7 @@ fn t_hotkey_prompts_trim_selection_in_waveform_focus() {
 fn slash_hotkeys_prompt_fade_selection_in_waveform_focus() {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source.clone());
-    controller.selection_ctx.selected_source = Some(source.id.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
     controller.cache_db(&source).unwrap();
     let wav_path = source.root.join("fade_hotkey.wav");
     write_test_wav(&wav_path, &[0.0, 0.1, 0.2, 0.3]);
@@ -317,7 +317,7 @@ fn slash_hotkeys_prompt_fade_selection_in_waveform_focus() {
 fn m_hotkey_prompts_mute_selection_in_waveform_focus() {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source.clone());
-    controller.selection_ctx.selected_source = Some(source.id.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
     controller.cache_db(&source).unwrap();
     let wav_path = source.root.join("mute_hotkey.wav");
     write_test_wav(&wav_path, &[0.0, 0.1, 0.2, 0.3]);
@@ -344,7 +344,7 @@ fn m_hotkey_prompts_mute_selection_in_waveform_focus() {
 fn n_hotkey_prompts_normalize_selection_when_selection_present() {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source.clone());
-    controller.selection_ctx.selected_source = Some(source.id.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
     controller.cache_db(&source).unwrap();
     let wav_path = source.root.join("normalize_select_hotkey.wav");
     write_test_wav(&wav_path, &[0.0, 0.2, -0.6, 0.3]);
@@ -371,7 +371,7 @@ fn n_hotkey_prompts_normalize_selection_when_selection_present() {
 fn n_hotkey_normalizes_whole_loaded_sample_when_no_selection() {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source.clone());
-    controller.selection_ctx.selected_source = Some(source.id.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
     controller.cache_db(&source).unwrap();
     let wav_path = source.root.join("normalize_full_hotkey.wav");
     write_test_wav(&wav_path, &[0.1, -0.5, 0.25]);
@@ -397,7 +397,7 @@ fn n_hotkey_normalizes_whole_loaded_sample_when_no_selection() {
 fn c_hotkey_prompts_crop_selection_in_waveform_focus() {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source.clone());
-    controller.selection_ctx.selected_source = Some(source.id.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
     controller.cache_db(&source).unwrap();
     let wav_path = source.root.join("crop_hotkey.wav");
     write_test_wav(&wav_path, &[0.0, 0.1, 0.2, 0.3]);
@@ -424,7 +424,7 @@ fn c_hotkey_prompts_crop_selection_in_waveform_focus() {
 fn shift_c_hotkey_crops_selection_to_new_sample() {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source.clone());
-    controller.selection_ctx.selected_source = Some(source.id.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
     controller.cache_db(&source).unwrap();
     let wav_path = source.root.join("original.wav");
     write_test_wav(&wav_path, &[0.0, 0.1, 0.2, 0.3]);

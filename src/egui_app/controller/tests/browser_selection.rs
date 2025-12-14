@@ -55,9 +55,10 @@ fn escape_handler_clears_waveform_and_browser_state() {
     controller.rebuild_browser_lists();
 
     controller
-        .selection
+        .selection_state
+        .range
         .set_range(Some(SelectionRange::new(0.2, 0.8)));
-    controller.apply_selection(controller.selection.range());
+    controller.apply_selection(controller.selection_state.range.range());
     controller
         .ui
         .browser
@@ -67,7 +68,7 @@ fn escape_handler_clears_waveform_and_browser_state() {
 
     controller.handle_escape();
 
-    assert!(controller.selection.range().is_none());
+    assert!(controller.selection_state.range.range().is_none());
     assert!(controller.ui.waveform.selection.is_none());
     assert!(controller.ui.browser.selected_paths.is_empty());
     assert!(controller.ui.browser.selection_anchor_visible.is_none());
@@ -102,14 +103,15 @@ fn escape_stops_playback_before_clearing_selection() {
     controller.rebuild_browser_lists();
 
     controller
-        .selection
+        .selection_state
+        .range
         .set_range(Some(SelectionRange::new(0.25, 0.75)));
-    controller.apply_selection(controller.selection.range());
+    controller.apply_selection(controller.selection_state.range.range());
     controller.player = Some(std::rc::Rc::new(std::cell::RefCell::new(player)));
 
     controller.handle_escape();
 
-    assert!(controller.selection.range().is_some());
+    assert!(controller.selection_state.range.range().is_some());
     assert!(controller.ui.waveform.selection.is_some());
     assert!(!controller.is_playing());
 }

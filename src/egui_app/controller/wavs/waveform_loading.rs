@@ -112,7 +112,7 @@ impl EguiController {
         self.ui.waveform.playhead = PlayheadState::default();
         self.ui.waveform.selection = None;
         self.ui.waveform.selection_duration = None;
-        self.selection.clear();
+        self.selection_state.range.clear();
     }
 
     pub(super) fn loaded_status_text(
@@ -209,7 +209,7 @@ impl EguiController {
         self.ui.waveform.playhead = PlayheadState::default();
         self.ui.waveform.selection = None;
         self.ui.waveform.selection_duration = None;
-        self.selection.clear();
+        self.selection_state.range.clear();
     }
 
     pub(in crate::egui_app::controller) fn reload_waveform_for_selection_if_active(
@@ -221,7 +221,7 @@ impl EguiController {
         let loaded_matches = self.wav_selection.loaded_audio.as_ref().is_some_and(|audio| {
             audio.source_id == source.id && audio.relative_path == relative_path
         });
-        let selected_matches = self.selection_ctx.selected_source.as_ref() == Some(&source.id)
+        let selected_matches = self.selection_state.ctx.selected_source.as_ref() == Some(&source.id)
             && self.wav_selection.selected_wav.as_deref() == Some(relative_path);
         if selected_matches || loaded_matches {
             self.wav_selection.loaded_wav = None;

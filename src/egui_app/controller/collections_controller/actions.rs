@@ -55,10 +55,10 @@ impl CollectionsActions for CollectionsController<'_> {
     fn select_collection_by_index(&mut self, index: Option<usize>) {
         if let Some(idx) = index {
             if let Some(collection) = self.collections.get(idx).cloned() {
-                self.selection_ctx.selected_collection = Some(collection.id);
+                self.selection_state.ctx.selected_collection = Some(collection.id);
             }
         } else {
-            self.selection_ctx.selected_collection = None;
+            self.selection_state.ctx.selected_collection = None;
         }
         self.ui.collections.selected_sample = None;
         self.ui.collections.scroll_to_sample = None;
@@ -87,12 +87,12 @@ impl CollectionsActions for CollectionsController<'_> {
         let id = collection.id.clone();
         collection.members.clear();
         self.collections.push(collection);
-        self.selection_ctx.selected_collection = Some(id);
+        self.selection_state.ctx.selected_collection = Some(id);
         let _ = self.persist_config("Failed to save collection");
         self.refresh_collections_ui();
         self.set_status("Collection created", StatusTone::Info);
         if self.settings.collection_export_root.is_none() {
-            if let Some(current_id) = self.selection_ctx.selected_collection.clone() {
+            if let Some(current_id) = self.selection_state.ctx.selected_collection.clone() {
                 self.pick_collection_export_path(&current_id);
                 if self
                     .collections
@@ -114,8 +114,8 @@ impl CollectionsActions for CollectionsController<'_> {
                 return Err("Collection not found".into());
             };
             let removed = self.collections.remove(index);
-            if self.selection_ctx.selected_collection.as_ref() == Some(collection_id) {
-                self.selection_ctx.selected_collection = None;
+            if self.selection_state.ctx.selected_collection.as_ref() == Some(collection_id) {
+                self.selection_state.ctx.selected_collection = None;
                 self.ui.collections.selected_sample = None;
             }
             self.ensure_collection_selection();
@@ -248,7 +248,7 @@ impl CollectionsActions for CollectionsController<'_> {
 
 impl CollectionsController<'_> {
     fn apply_collection_sample_selection_ui(&mut self, collection_id: &CollectionId, index: usize) {
-        self.selection_ctx.selected_collection = Some(collection_id.clone());
+        self.selection_state.ctx.selected_collection = Some(collection_id.clone());
         self.ui.collections.selected_sample = Some(index);
         self.ui.collections.scroll_to_sample = Some(index);
         self.focus_collection_context();

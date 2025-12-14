@@ -58,7 +58,7 @@ fn selecting_collection_sample_updates_focus_context() {
         clip_root: None,
     });
     controller.collections.push(collection.clone());
-    controller.selection_ctx.selected_collection = Some(collection.id.clone());
+    controller.selection_state.ctx.selected_collection = Some(collection.id.clone());
     controller.refresh_collections_ui();
     controller.select_collection_sample(0);
     assert_eq!(controller.ui.focus.context, FocusContext::CollectionSample);
@@ -200,13 +200,13 @@ fn tag_hotkeys_apply_to_collection_focus() {
     let (mut controller, source) = dummy_controller();
     controller.cache_db(&source).unwrap();
     controller.sources.push(source.clone());
-    controller.selection_ctx.selected_source = Some(source.id.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
     write_test_wav(&source.root.join("col.wav"), &[0.1, 0.2]);
 
     let collection = Collection::new("Test");
     let collection_id = collection.id.clone();
     controller.collections.push(collection);
-    controller.selection_ctx.selected_collection = Some(collection_id.clone());
+    controller.selection_state.ctx.selected_collection = Some(collection_id.clone());
     controller
         .add_sample_to_collection(&collection_id, Path::new("col.wav"))
         .unwrap();

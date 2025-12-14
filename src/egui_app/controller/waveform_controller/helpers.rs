@@ -94,7 +94,7 @@ impl WaveformController<'_> {
         if self.ui.waveform.playhead.visible {
             return self.ui.waveform.playhead.position;
         }
-        if let Some(selection) = self.selection.range() {
+        if let Some(selection) = self.selection_state.range.range() {
             return (selection.start() + selection.end()) * 0.5;
         }
         let view = self.ui.waveform.view;
@@ -205,7 +205,7 @@ impl WaveformController<'_> {
             marker
         } else if self.ui.waveform.playhead.visible {
             self.ui.waveform.playhead.position
-        } else if let Some(selection) = self.selection.range() {
+        } else if let Some(selection) = self.selection_state.range.range() {
             (selection.start() + selection.end()) * 0.5
         } else {
             let view = self.ui.waveform.view;

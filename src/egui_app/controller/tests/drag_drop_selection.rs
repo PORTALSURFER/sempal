@@ -17,7 +17,7 @@ fn selection_drop_adds_clip_to_collection() {
     let mut controller = EguiController::new(renderer, None);
     let source = SampleSource::new(root.clone());
     controller.sources.push(source.clone());
-    controller.selection_ctx.selected_source = Some(source.id.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
 
     let orig = root.join("clip.wav");
     write_test_wav(&orig, &[0.1, 0.2, 0.3, 0.4]);
@@ -28,7 +28,7 @@ fn selection_drop_adds_clip_to_collection() {
     let collection = Collection::new("Crops");
     let collection_id = collection.id.clone();
     controller.collections.push(collection);
-    controller.selection_ctx.selected_collection = Some(collection_id.clone());
+    controller.selection_state.ctx.selected_collection = Some(collection_id.clone());
     controller.refresh_collections_ui();
 
     controller.ui.drag.payload = Some(DragPayload::Selection {
@@ -97,7 +97,7 @@ fn selection_drop_uses_collection_export_dir_when_configured() {
     let mut controller = EguiController::new(renderer, None);
     let source = SampleSource::new(root.clone());
     controller.sources.push(source.clone());
-    controller.selection_ctx.selected_source = Some(source.id.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
     controller.settings.collection_export_root = Some(export_root.clone());
     controller.ui.collection_export_root = Some(export_root.clone());
 
@@ -111,7 +111,7 @@ fn selection_drop_uses_collection_export_dir_when_configured() {
     let collection_id = collection.id.clone();
     let export_dir = export_root.join(collection_export::collection_folder_name(&collection));
     controller.collections.push(collection);
-    controller.selection_ctx.selected_collection = Some(collection_id.clone());
+    controller.selection_state.ctx.selected_collection = Some(collection_id.clone());
     controller.refresh_collections_ui();
 
     controller.ui.drag.payload = Some(DragPayload::Selection {
@@ -148,7 +148,7 @@ fn selection_drop_to_browser_ignores_active_collection() {
     let mut controller = EguiController::new(renderer, None);
     let source = SampleSource::new(root.clone());
     controller.sources.push(source.clone());
-    controller.selection_ctx.selected_source = Some(source.id.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
 
     let orig = root.join("clip.wav");
     write_test_wav(&orig, &[0.1, 0.2, 0.3, 0.4]);
@@ -163,7 +163,7 @@ fn selection_drop_to_browser_ignores_active_collection() {
     let collection = Collection::new("Active");
     let collection_id = collection.id.clone();
     controller.collections.push(collection);
-    controller.selection_ctx.selected_collection = Some(collection_id.clone());
+    controller.selection_state.ctx.selected_collection = Some(collection_id.clone());
     controller.refresh_collections_ui();
 
     controller.ui.drag.payload = Some(DragPayload::Selection {
@@ -211,7 +211,7 @@ fn selection_drop_to_browser_can_keep_source_focused() {
     let mut controller = EguiController::new(renderer, None);
     let source = SampleSource::new(root.clone());
     controller.sources.push(source.clone());
-    controller.selection_ctx.selected_source = Some(source.id.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
     controller.wav_entries.entries = vec![sample_entry("clip.wav", SampleTag::Neutral)];
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
@@ -255,7 +255,7 @@ fn selection_drop_to_browser_creates_clip_in_focused_folder() {
     let mut controller = EguiController::new(renderer, None);
     let source = SampleSource::new(root.clone());
     controller.sources.push(source.clone());
-    controller.selection_ctx.selected_source = Some(source.id.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
     controller.cache_db(&source).unwrap();
 
     let orig = root.join("clip.wav");
@@ -321,7 +321,7 @@ fn selection_drop_to_browser_respects_shift_pressed_mid_drag() {
     let mut controller = EguiController::new(renderer, None);
     let source = SampleSource::new(root.clone());
     controller.sources.push(source.clone());
-    controller.selection_ctx.selected_source = Some(source.id.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
     controller.cache_db(&source).unwrap();
 
     let orig = root.join("clip.wav");
@@ -373,7 +373,7 @@ fn selection_drop_to_folder_panel_creates_clip_in_folder() {
     let mut controller = EguiController::new(renderer, None);
     let source = SampleSource::new(root.clone());
     controller.sources.push(source.clone());
-    controller.selection_ctx.selected_source = Some(source.id.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
     controller.cache_db(&source).unwrap();
 
     let orig = root.join("clip.wav");
@@ -419,7 +419,7 @@ fn selection_drop_without_hover_falls_back_to_active_collection() {
     let mut controller = EguiController::new(renderer, None);
     let source = SampleSource::new(root.clone());
     controller.sources.push(source.clone());
-    controller.selection_ctx.selected_source = Some(source.id.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
 
     let orig = root.join("clip.wav");
     write_test_wav(&orig, &[0.1, 0.2, 0.3, 0.4]);
@@ -430,7 +430,7 @@ fn selection_drop_without_hover_falls_back_to_active_collection() {
     let collection = Collection::new("Active");
     let collection_id = collection.id.clone();
     controller.collections.push(collection);
-    controller.selection_ctx.selected_collection = Some(collection_id.clone());
+    controller.selection_state.ctx.selected_collection = Some(collection_id.clone());
     controller.refresh_collections_ui();
 
     controller.ui.drag.payload = Some(DragPayload::Selection {
@@ -459,7 +459,7 @@ fn sample_drop_falls_back_to_active_collection() {
     let mut controller = EguiController::new(renderer, None);
     let source = SampleSource::new(root.clone());
     controller.sources.push(source.clone());
-    controller.selection_ctx.selected_source = Some(source.id.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
     controller.cache_db(&source).unwrap();
     write_test_wav(&root.join("one.wav"), &[0.1, 0.2]);
     controller.wav_entries.entries = vec![sample_entry("one.wav", SampleTag::Neutral)];
@@ -469,7 +469,7 @@ fn sample_drop_falls_back_to_active_collection() {
     let collection = Collection::new("Active");
     let collection_id = collection.id.clone();
     controller.collections.push(collection);
-    controller.selection_ctx.selected_collection = Some(collection_id.clone());
+    controller.selection_state.ctx.selected_collection = Some(collection_id.clone());
     controller.refresh_collections_ui();
 
     controller.ui.drag.payload = Some(DragPayload::Sample {
@@ -503,7 +503,7 @@ fn sample_drop_without_active_collection_warns() {
     let mut controller = EguiController::new(renderer, None);
     let source = SampleSource::new(root.clone());
     controller.sources.push(source.clone());
-    controller.selection_ctx.selected_source = Some(source.id.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
     controller.cache_db(&source).unwrap();
     write_test_wav(&root.join("one.wav"), &[0.1, 0.2]);
     controller.wav_entries.entries = vec![sample_entry("one.wav", SampleTag::Neutral)];
@@ -539,7 +539,7 @@ fn sample_drop_without_selection_warns_even_with_collections() {
     let mut controller = EguiController::new(renderer, None);
     let source = SampleSource::new(root.clone());
     controller.sources.push(source.clone());
-    controller.selection_ctx.selected_source = Some(source.id.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
     controller.cache_db(&source).unwrap();
     write_test_wav(&root.join("one.wav"), &[0.1, 0.2]);
     controller.wav_entries.entries = vec![sample_entry("one.wav", SampleTag::Neutral)];

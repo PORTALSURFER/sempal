@@ -287,7 +287,7 @@ impl EguiController {
                 return Ok(entry.tag);
             }
         }
-        if self.selection_ctx.selected_source.as_ref() == Some(&source.id)
+        if self.selection_state.ctx.selected_source.as_ref() == Some(&source.id)
             && let Some(entry) = self
                 .wav_entries
                 .entries
@@ -348,7 +348,7 @@ impl EguiController {
             replace_entry(cache, old_path, &new_entry);
             self.rebuild_wav_cache_lookup(&source.id);
         }
-        if self.selection_ctx.selected_source.as_ref() == Some(&source.id) {
+        if self.selection_state.ctx.selected_source.as_ref() == Some(&source.id) {
             replace_entry(&mut self.wav_entries.entries, old_path, &new_entry);
             self.sync_browser_after_wav_entries_mutation(&source.id);
         }
@@ -366,7 +366,7 @@ impl EguiController {
             cache.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
             self.rebuild_wav_cache_lookup(&source.id);
         }
-        if self.selection_ctx.selected_source.as_ref() == Some(&source.id) {
+        if self.selection_state.ctx.selected_source.as_ref() == Some(&source.id) {
             self.wav_entries.entries.push(entry.clone());
             self.wav_entries
                 .entries
@@ -383,7 +383,7 @@ impl EguiController {
         old_path: &Path,
         new_path: &Path,
     ) {
-        if self.selection_ctx.selected_source.as_ref() == Some(&source.id) {
+        if self.selection_state.ctx.selected_source.as_ref() == Some(&source.id) {
             if self.wav_selection.selected_wav.as_deref() == Some(old_path) {
                 self.wav_selection.selected_wav = Some(new_path.to_path_buf());
             }
@@ -411,7 +411,7 @@ impl EguiController {
             audio.source_id == ctx.source.id && audio.relative_path == relative_path
         });
         let selected_matches = self
-            .selection_ctx
+            .selection_state.ctx
             .selected_collection
             .as_ref()
             .is_some_and(|id| id == &ctx.collection_id)

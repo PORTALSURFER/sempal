@@ -28,7 +28,7 @@ fn creating_folder_tracks_manual_entry() -> Result<(), String> {
 fn folder_browser_includes_root_entry() {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source.clone());
-    controller.selection_ctx.selected_source = Some(source.id.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
     controller.refresh_folder_browser();
 
     let rows = &controller.ui.sources.folders.rows;
@@ -42,7 +42,7 @@ fn folder_browser_includes_root_entry() {
 fn root_entry_stays_above_real_folders() {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source.clone());
-    controller.selection_ctx.selected_source = Some(source.id.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
     let folder = source.root.join("rooted");
     std::fs::create_dir_all(&folder).unwrap();
     write_test_wav(&folder.join("clip.wav"), &[0.2, -0.2]);
@@ -63,7 +63,7 @@ fn root_entry_stays_above_real_folders() {
 fn start_new_folder_at_root_sets_root_parent() {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source.clone());
-    controller.selection_ctx.selected_source = Some(source.id.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
     controller.refresh_folder_browser();
 
     controller.start_new_folder_at_root();
@@ -76,7 +76,7 @@ fn start_new_folder_at_root_sets_root_parent() {
 fn start_new_folder_uses_focused_parent() {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source.clone());
-    controller.selection_ctx.selected_source = Some(source.id.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
     let folder = source.root.join("clips");
     std::fs::create_dir_all(&folder).unwrap();
     write_test_wav(&folder.join("clip.wav"), &[0.2, -0.2]);
@@ -105,7 +105,7 @@ fn start_new_folder_uses_focused_parent() {
 fn start_new_folder_clears_search_query() {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source.clone());
-    controller.selection_ctx.selected_source = Some(source.id.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
     controller.refresh_folder_browser();
     controller.set_folder_search("kick".to_string());
     assert_eq!(controller.ui.sources.folders.search_query, "kick");
@@ -134,7 +134,7 @@ fn cancelling_new_folder_creation_clears_state() {
 fn selecting_root_clears_folder_selection() -> Result<(), String> {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source.clone());
-    controller.selection_ctx.selected_source = Some(source.id.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
     let folder = source.root.join("rooted");
     std::fs::create_dir_all(&folder).unwrap();
     write_test_wav(&folder.join("clip.wav"), &[0.2, -0.2]);
@@ -213,7 +213,7 @@ fn cancelling_folder_rename_clears_prompt() {
 fn deleting_folder_removes_wavs() -> Result<(), String> {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source.clone());
-    controller.selection_ctx.selected_source = Some(source.id.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
     let target = source.root.join("gone");
     std::fs::create_dir_all(&target).unwrap();
     write_test_wav(&target.join("sample.wav"), &[0.0, 0.2]);
@@ -252,7 +252,7 @@ fn deleting_folder_removes_wavs() -> Result<(), String> {
 fn deleting_folder_moves_focus_to_next_available() -> Result<(), String> {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source.clone());
-    controller.selection_ctx.selected_source = Some(source.id.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
     for folder in ["a", "b", "c"] {
         let path = source.root.join(folder);
         std::fs::create_dir_all(&path).unwrap();
@@ -298,7 +298,7 @@ fn deleting_folder_moves_focus_to_next_available() -> Result<(), String> {
 fn folder_focus_clears_when_context_changes() -> Result<(), String> {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source.clone());
-    controller.selection_ctx.selected_source = Some(source.id.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
     controller.wav_entries.entries = vec![sample_entry("one/sample.wav", SampleTag::Neutral)];
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
@@ -331,7 +331,7 @@ fn folder_focus_clears_when_context_changes() -> Result<(), String> {
 fn clearing_folder_selection_shows_all_samples() -> Result<(), String> {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source.clone());
-    controller.selection_ctx.selected_source = Some(source.id.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
     std::fs::create_dir_all(source.root.join("a")).unwrap();
     std::fs::create_dir_all(source.root.join("b")).unwrap();
     controller.wav_entries.entries = vec![

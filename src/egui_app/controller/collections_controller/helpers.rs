@@ -88,7 +88,7 @@ impl CollectionsController<'_> {
     }
 
     pub(super) fn refresh_collections_ui(&mut self) {
-        let selected_id = self.selection_ctx.selected_collection.clone();
+        let selected_id = self.selection_state.ctx.selected_collection.clone();
         let mut collection_missing: Vec<bool> = Vec::with_capacity(self.collections.len());
         for collection_index in 0..self.collections.len() {
             let mut missing = false;
@@ -131,7 +131,7 @@ impl CollectionsController<'_> {
             self.refresh_collections_ui();
             return;
         }
-        let selected_id = self.selection_ctx.selected_collection.clone();
+        let selected_id = self.selection_state.ctx.selected_collection.clone();
         for row in self.ui.collections.rows.iter_mut() {
             row.selected = selected_id.as_ref().is_some_and(|id| id == &row.id);
         }
@@ -142,7 +142,7 @@ impl CollectionsController<'_> {
 
     pub(super) fn refresh_collection_samples(&mut self) {
         let selected_index = self
-            .selection_ctx
+            .selection_state.ctx
             .selected_collection
             .as_ref()
             .and_then(|id| self.collections.iter().position(|c| &c.id == id));
@@ -245,11 +245,11 @@ impl CollectionsController<'_> {
     }
 
     pub(super) fn ensure_collection_selection(&mut self) {
-        if self.selection_ctx.selected_collection.is_some() {
+        if self.selection_state.ctx.selected_collection.is_some() {
             return;
         }
         if let Some(first) = self.collections.first().cloned() {
-            self.selection_ctx.selected_collection = Some(first.id);
+            self.selection_state.ctx.selected_collection = Some(first.id);
         }
     }
 
@@ -276,7 +276,7 @@ impl CollectionsController<'_> {
     }
 
     pub(super) fn current_collection(&self) -> Option<Collection> {
-        let selected = self.selection_ctx.selected_collection.as_ref()?;
+        let selected = self.selection_state.ctx.selected_collection.as_ref()?;
         self.collections.iter().find(|c| &c.id == selected).cloned()
     }
 

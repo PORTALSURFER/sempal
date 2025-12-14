@@ -86,12 +86,10 @@ pub struct EguiController {
     browser_cache: BrowserCacheState,
     audio_cache: AudioCache,
     wav_entries: WavEntriesState,
-    selection_ctx: SelectionContextState,
+    selection_state: ControllerSelectionState,
     wav_selection: WavSelectionState,
-    suppress_autoplay_once: bool,
     pending_loop_disable_at: Option<Instant>,
     settings: AppSettingsState,
-    selection: SelectionState,
     jobs: jobs::ControllerJobs,
     random_history: RandomHistoryState,
     folder_browsers: FolderBrowsersState,
@@ -154,17 +152,20 @@ impl EguiController {
                 entries: Vec::new(),
                 lookup: HashMap::new(),
             },
-            selection_ctx: SelectionContextState {
-                selected_source: None,
-                last_selected_browsable_source: None,
-                selected_collection: None,
+            selection_state: ControllerSelectionState {
+                ctx: SelectionContextState {
+                    selected_source: None,
+                    last_selected_browsable_source: None,
+                    selected_collection: None,
+                },
+                range: SelectionState::new(),
+                suppress_autoplay_once: false,
             },
             wav_selection: WavSelectionState {
                 selected_wav: None,
                 loaded_wav: None,
                 loaded_audio: None,
             },
-            suppress_autoplay_once: false,
             pending_loop_disable_at: None,
             settings: AppSettingsState {
                 feature_flags: crate::sample_sources::config::FeatureFlags::default(),
@@ -173,7 +174,6 @@ impl EguiController {
                 trash_folder: None,
                 collection_export_root: None,
             },
-            selection: SelectionState::new(),
             jobs,
             random_history: RandomHistoryState {
                 entries: VecDeque::new(),
@@ -324,6 +324,12 @@ struct BrowserCacheState {
 
 struct FolderBrowsersState {
     models: HashMap<SourceId, source_folders::FolderBrowserModel>,
+}
+
+struct ControllerSelectionState {
+    ctx: SelectionContextState,
+    range: SelectionState,
+    suppress_autoplay_once: bool,
 }
 
 struct WavEntriesState {

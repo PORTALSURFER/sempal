@@ -32,7 +32,7 @@ impl EguiController {
         self.ui.waveform.selection = None;
         self.ui.waveform.selection_duration = None;
         self.ui.waveform.view = WaveformView::default();
-        self.selection.clear();
+        self.selection_state.range.clear();
         self.wav_selection.loaded_audio = None;
         self.wav_selection.loaded_wav = None;
         self.ui.loaded_wav = None;
@@ -75,16 +75,16 @@ impl EguiController {
         self.ui.collections.selected_sample = None;
         if self.current_source().is_none() {
             if let Some(source_id) = self
-                .selection_ctx
+                .selection_state.ctx
                 .last_selected_browsable_source
                 .clone()
                 .filter(|id| self.sources.iter().any(|s| &s.id == id))
             {
-                self.selection_ctx.selected_source = Some(source_id);
+                self.selection_state.ctx.selected_source = Some(source_id);
                 self.refresh_sources_ui();
             } else if let Some(first) = self.sources.first().cloned() {
-                self.selection_ctx.last_selected_browsable_source = Some(first.id.clone());
-                self.selection_ctx.selected_source = Some(first.id);
+                self.selection_state.ctx.last_selected_browsable_source = Some(first.id.clone());
+                self.selection_state.ctx.selected_source = Some(first.id);
                 self.refresh_sources_ui();
             }
         }
@@ -106,15 +106,15 @@ impl EguiController {
                 format!("File missing: {}", path.display()),
                 StatusTone::Warning,
             );
-            self.suppress_autoplay_once = false;
+            self.selection_state.suppress_autoplay_once = false;
             if rebuild {
                 self.rebuild_browser_lists();
             }
             return;
         }
         if let Some(source) = self.current_source() {
-            let autoplay = self.settings.feature_flags.autoplay_selection && !self.suppress_autoplay_once;
-            self.suppress_autoplay_once = false;
+            let autoplay = self.settings.feature_flags.autoplay_selection && !self.selection_state.suppress_autoplay_once;
+            self.selection_state.suppress_autoplay_once = false;
             let pending_playback = if autoplay {
                 Some(PendingPlayback {
                     source_id: source.id.clone(),
@@ -134,7 +134,7 @@ impl EguiController {
                 self.set_status(err, StatusTone::Error);
             }
         } else {
-            self.suppress_autoplay_once = false;
+            self.selection_state.suppress_autoplay_once = false;
         }
         if rebuild {
             self.rebuild_browser_lists();
@@ -301,7 +301,7 @@ impl EguiController {
     ) -> Result<(), String> {
         let db = self.database_for(source).map_err(|err| err.to_string())?;
         let mut tagging = tagging_service::TaggingService::new(
-            self.selection_ctx.selected_source.as_ref(),
+            self.selection_state.ctx.selected_source.as_ref(),
             &mut self.wav_entries.entries,
             &self.wav_entries.lookup,
             &mut self.cache.wav.entries,
@@ -309,7 +309,7 @@ impl EguiController {
         );
         tagging.apply_sample_tag(source, path, target_tag, require_present)?;
         let _ = db.set_tag(path, target_tag);
-        if self.selection_ctx.selected_source.as_ref() == Some(&source.id) {
+        if self.selection_state.ctx.selected_source.as_ref() == Some(&source.id) {
             self.rebuild_browser_lists();
         }
         Ok(())

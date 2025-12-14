@@ -117,7 +117,7 @@ fn waveform_render_meta_allows_small_shifts_on_full_view() {
 fn waveform_rerenders_after_same_length_edit() {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source.clone());
-    controller.selection_ctx.selected_source = Some(source.id.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
     controller.waveform.size = [32, 8];
     let path = source.root.join("edit.wav");
     write_test_wav(&path, &[0.1, 0.1, 0.1, 0.1]);
@@ -153,7 +153,7 @@ fn waveform_rerenders_after_same_length_edit() {
         let (mut controller, source) = dummy_controller();
         controller.settings.feature_flags.autoplay_selection = false;
     controller.sources.push(source.clone());
-    controller.selection_ctx.selected_source = Some(source.id.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
     write_test_wav(&source.root.join("a.wav"), &[0.0, 0.1]);
     write_test_wav(&source.root.join("b.wav"), &[0.0, -0.1]);
     controller.wav_entries.entries = vec![
@@ -190,7 +190,7 @@ fn waveform_rerenders_after_same_length_edit() {
         let (mut controller, source) = dummy_controller();
         controller.settings.feature_flags.autoplay_selection = false;
     controller.sources.push(source.clone());
-    controller.selection_ctx.selected_source = Some(source.id.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
     write_test_wav(&source.root.join("wait.wav"), &[0.0, 0.2, -0.2]);
     controller.wav_entries.entries = vec![sample_entry("wait.wav", SampleTag::Neutral)];
     controller.rebuild_wav_lookup();
@@ -214,7 +214,7 @@ fn waveform_rerenders_after_same_length_edit() {
 fn loading_flag_clears_after_audio_load() {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source.clone());
-    controller.selection_ctx.selected_source = Some(source.id.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
     let rel = PathBuf::from("load.wav");
     write_test_wav(&source.root.join(&rel), &[0.0, 0.5, -0.5]);
     controller.wav_entries.entries = vec![sample_entry("load.wav", SampleTag::Neutral)];

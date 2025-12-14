@@ -77,7 +77,7 @@ impl EguiController {
             cache.retain(|entry| entry.relative_path != relative_path);
             self.rebuild_wav_cache_lookup(&source.id);
         }
-        if self.selection_ctx.selected_source.as_ref() == Some(&source.id) {
+        if self.selection_state.ctx.selected_source.as_ref() == Some(&source.id) {
             self.wav_entries
                 .entries
                 .retain(|entry| entry.relative_path != relative_path);
@@ -95,7 +95,7 @@ impl EguiController {
         relative_path: &Path,
     ) {
         self.invalidate_cached_audio(&source.id, relative_path);
-        if self.selection_ctx.selected_source.as_ref() == Some(&source.id) {
+        if self.selection_state.ctx.selected_source.as_ref() == Some(&source.id) {
             if self.wav_selection.selected_wav.as_deref() == Some(relative_path) {
                 self.wav_selection.selected_wav = None;
             }

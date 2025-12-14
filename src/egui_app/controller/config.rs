@@ -64,15 +64,15 @@ impl EguiController {
                 }
             }
         }
-        self.selection_ctx.selected_source = cfg
+        self.selection_state.ctx.selected_source = cfg
             .last_selected_source
             .filter(|id| self.sources.iter().any(|s| &s.id == id));
-        self.selection_ctx.last_selected_browsable_source =
-            self.selection_ctx.selected_source.clone();
+        self.selection_state.ctx.last_selected_browsable_source =
+            self.selection_state.ctx.selected_source.clone();
         self.ensure_collection_selection();
         self.refresh_sources_ui();
         self.refresh_collections_ui();
-        if self.selection_ctx.selected_source.is_some() {
+        if self.selection_state.ctx.selected_source.is_some() {
             let _ = self.refresh_wavs();
         }
         Ok(())
@@ -93,11 +93,11 @@ impl EguiController {
             trash_folder: self.settings.trash_folder.clone(),
             collection_export_root: self.settings.collection_export_root.clone(),
             last_selected_source: self
-                .selection_ctx
+                .selection_state.ctx
                 .selected_source
                 .clone()
                 .filter(|id| self.sources.iter().any(|s| &s.id == id))
-                .or_else(|| self.selection_ctx.last_selected_browsable_source.clone()),
+                .or_else(|| self.selection_state.ctx.last_selected_browsable_source.clone()),
             audio_output: self.settings.audio_output.clone(),
             volume: self.ui.volume,
             controls: self.settings.controls.clone(),

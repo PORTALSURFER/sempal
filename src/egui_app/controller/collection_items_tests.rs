@@ -7,13 +7,13 @@ fn setup_collection_with_sample(file_name: &str) -> (EguiController, SampleSourc
     let (mut controller, source) = dummy_controller();
     controller.cache_db(&source).unwrap();
     controller.sources.push(source.clone());
-    controller.selection_ctx.selected_source = Some(source.id.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
     let path = source.root.join(file_name);
     write_test_wav(&path, &[0.2, -0.4, 0.3, -0.1]);
 
     let collection = Collection::new("Test");
     let collection_id = collection.id.clone();
-    controller.selection_ctx.selected_collection = Some(collection_id.clone());
+    controller.selection_state.ctx.selected_collection = Some(collection_id.clone());
     controller.collections.push(collection);
     controller
         .add_sample_to_collection(&collection_id, Path::new(file_name))
@@ -149,7 +149,7 @@ fn collection_rename_moves_files_and_export() {
 #[test]
 fn collection_rename_preserves_extension_and_handles_dots() {
     let (mut controller, source, collection_id) = setup_collection_with_sample("loop.v1.WAV");
-    controller.selection_ctx.selected_collection = Some(collection_id.clone());
+    controller.selection_state.ctx.selected_collection = Some(collection_id.clone());
 
     controller.rename_collection_sample(0, "loop.v2").unwrap();
     assert!(source.root.join("loop.v2.WAV").is_file());
@@ -167,12 +167,12 @@ fn collection_normalize_overwrites_audio() {
     let (mut controller, source) = dummy_controller();
     controller.cache_db(&source).unwrap();
     controller.sources.push(source.clone());
-    controller.selection_ctx.selected_source = Some(source.id.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
     let wav_path = source.root.join("normalize.wav");
     write_test_wav(&wav_path, &[0.1, -0.25, 0.4, -0.2]);
     let collection = Collection::new("Test");
     let collection_id = collection.id.clone();
-    controller.selection_ctx.selected_collection = Some(collection_id.clone());
+    controller.selection_state.ctx.selected_collection = Some(collection_id.clone());
     controller.collections.push(collection);
     controller
         .add_sample_to_collection(&collection_id, Path::new("normalize.wav"))

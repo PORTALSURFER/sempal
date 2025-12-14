@@ -230,7 +230,7 @@ fn exporting_selection_updates_entries_and_db() {
     let mut controller = EguiController::new(renderer, None);
     let source = SampleSource::new(root.clone());
     controller.sources.push(source.clone());
-    controller.selection_ctx.selected_source = Some(source.id.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
 
     let orig = root.join("orig.wav");
     write_test_wav(&orig, &[0.0, 0.25, 0.5, 0.75]);
@@ -281,7 +281,7 @@ fn browser_normalize_refreshes_exports() -> Result<(), String> {
     let renderer = WaveformRenderer::new(16, 16);
     let mut controller = EguiController::new(renderer, None);
     let source = SampleSource::new(root.clone());
-    controller.selection_ctx.selected_source = Some(source.id.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
     controller.sources.push(source.clone());
 
     write_test_wav(&root.join("one.wav"), &[0.25, -0.5]);
@@ -341,7 +341,7 @@ fn browser_delete_prunes_collections_and_exports() -> Result<(), String> {
     let renderer = WaveformRenderer::new(10, 10);
     let mut controller = EguiController::new(renderer, None);
     let source = SampleSource::new(root.clone());
-    controller.selection_ctx.selected_source = Some(source.id.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
     controller.sources.push(source.clone());
 
     write_test_wav(&root.join("delete.wav"), &[0.1, 0.2]);
@@ -383,7 +383,7 @@ fn browser_delete_prunes_collections_and_exports() -> Result<(), String> {
 fn deleting_browser_sample_moves_focus_forward() -> Result<(), String> {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source.clone());
-    controller.selection_ctx.selected_source = Some(source.id.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
     for name in ["a.wav", "b.wav", "c.wav"] {
         write_test_wav(&source.root.join(name), &[0.1, -0.1]);
     }

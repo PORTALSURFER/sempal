@@ -73,7 +73,7 @@ impl EguiController {
 
     /// Currently selected collection id (if any).
     pub fn current_collection_id(&self) -> Option<CollectionId> {
-        self.selection_ctx.selected_collection.clone()
+        self.selection_state.ctx.selected_collection.clone()
     }
 
     pub(in crate::egui_app::controller) fn refresh_collections_ui(&mut self) {
@@ -94,7 +94,7 @@ impl EguiController {
     }
 
     pub(in crate::egui_app::controller) fn current_collection(&self) -> Option<Collection> {
-        let selected = self.selection_ctx.selected_collection.as_ref()?;
+        let selected = self.selection_state.ctx.selected_collection.as_ref()?;
         self.collections.iter().find(|c| &c.id == selected).cloned()
     }
 }

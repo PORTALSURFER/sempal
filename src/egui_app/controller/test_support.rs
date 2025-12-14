@@ -12,7 +12,7 @@ pub(super) fn dummy_controller() -> (EguiController, SampleSource) {
     std::mem::forget(dir);
     std::fs::create_dir_all(&root).unwrap();
     let source = SampleSource::new(root);
-    controller.selection_ctx.selected_source = Some(source.id.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
     (controller, source)
 }
 

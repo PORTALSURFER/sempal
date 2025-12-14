@@ -62,7 +62,7 @@ fn play_random_visible_sample_internal<R: Rng + ?Sized>(
     rng: &mut R,
     start_playback: bool,
 ) {
-    let Some(source_id) = controller.selection_ctx.selected_source.clone() else {
+    let Some(source_id) = controller.selection_state.ctx.selected_source.clone() else {
         controller.set_status("Select a source first", StatusTone::Info);
         return;
     };
@@ -111,7 +111,7 @@ fn push_random_history(controller: &mut EguiController, source_id: SourceId, rel
 }
 
 fn play_random_history_entry(controller: &mut EguiController, entry: RandomHistoryEntry) {
-    if controller.selection_ctx.selected_source.as_ref() != Some(&entry.source_id) {
+    if controller.selection_state.ctx.selected_source.as_ref() != Some(&entry.source_id) {
         controller.jobs.pending_playback = Some(PendingPlayback {
             source_id: entry.source_id.clone(),
             relative_path: entry.relative_path.clone(),

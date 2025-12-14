@@ -19,7 +19,7 @@ impl EguiController {
             return;
         };
         // Entering via the focus hotkey should not autoplay; suppress it for this selection.
-        self.suppress_autoplay_once = true;
+        self.selection_state.suppress_autoplay_once = true;
         self.focus_browser_row_only(target_row);
     }
 

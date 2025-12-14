@@ -9,7 +9,7 @@ use tempfile::tempdir;
 fn missing_source_is_marked_during_load() {
     let (mut controller, source) = dummy_controller();
     controller.sources.push(source.clone());
-    controller.selection_ctx.selected_source = Some(source.id.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
     std::fs::remove_dir_all(&source.root).unwrap();
     controller.queue_wav_load();
     controller.poll_wav_loader();
@@ -80,7 +80,7 @@ fn dropping_sample_adds_to_collection_and_db() {
     let renderer = WaveformRenderer::new(10, 10);
     let mut controller = EguiController::new(renderer, None);
     let source = SampleSource::new(root.clone());
-    controller.selection_ctx.selected_source = Some(source.id.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
     controller.sources.push(source.clone());
 
     let file_path = root.join("sample.wav");
@@ -89,7 +89,7 @@ fn dropping_sample_adds_to_collection_and_db() {
     let collection = Collection::new("Test");
     let collection_id = collection.id.clone();
     controller.collections.push(collection);
-    controller.selection_ctx.selected_collection = Some(collection_id.clone());
+    controller.selection_state.ctx.selected_collection = Some(collection_id.clone());
 
     controller.ui.drag.payload = Some(DragPayload::Sample {
         source_id: source.id.clone(),
@@ -129,7 +129,7 @@ fn deleting_collection_removes_and_selects_next() {
     let second_id = second.id.clone();
     controller.collections.push(first);
     controller.collections.push(second);
-    controller.selection_ctx.selected_collection = Some(first_id.clone());
+    controller.selection_state.ctx.selected_collection = Some(first_id.clone());
     controller.refresh_collections_ui();
 
     controller.delete_collection(&first_id).unwrap();
@@ -137,7 +137,7 @@ fn deleting_collection_removes_and_selects_next() {
     assert_eq!(controller.collections.len(), 1);
     assert_eq!(controller.collections[0].id, second_id.clone());
     assert_eq!(
-        controller.selection_ctx.selected_collection,
+        controller.selection_state.ctx.selected_collection,
         Some(second_id.clone())
     );
     assert!(controller.ui.collections.selected_sample.is_none());

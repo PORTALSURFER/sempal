@@ -87,7 +87,7 @@ impl WaveformActions for WaveformController<'_> {
         } else {
             SelectionRange::new(anchor, (anchor + step).clamp(0.0, 1.0))
         };
-        self.selection.set_range(Some(range));
+        self.selection_state.range.set_range(Some(range));
         self.apply_selection(Some(range));
         self.set_playhead_after_selection(anchor, resume_playback);
     }
@@ -97,7 +97,7 @@ impl WaveformActions for WaveformController<'_> {
             return;
         }
         let step = self.waveform_step_size(fine).max(MIN_SELECTION_WIDTH);
-        let Some(selection) = self.selection.range().or(self.ui.waveform.selection) else {
+        let Some(selection) = self.selection_state.range.range().or(self.ui.waveform.selection) else {
             self.set_status("Create a selection first", StatusTone::Info);
             return;
         };
@@ -111,7 +111,7 @@ impl WaveformActions for WaveformController<'_> {
         }
         let (clamped_start, clamped_end) = helpers::clamp_selection_bounds(start, end);
         let range = SelectionRange::new(clamped_start, clamped_end);
-        self.selection.set_range(Some(range));
+        self.selection_state.range.set_range(Some(range));
         self.apply_selection(Some(range));
     }
 
