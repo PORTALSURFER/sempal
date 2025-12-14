@@ -76,10 +76,15 @@ impl EguiController {
                         StatusTone::Info,
                     );
                     if let Some(source) = self.current_source() {
-                        self.wav_cache.remove(&source.id);
-                        self.wav_cache_lookup.remove(&source.id);
-                        self.label_cache.remove(&source.id);
-                        self.missing_wavs.remove(&source.id);
+                        let mut invalidator = source_cache_invalidator::SourceCacheInvalidator::new(
+                            &mut self.db_cache,
+                            &mut self.wav_cache,
+                            &mut self.wav_cache_lookup,
+                            &mut self.label_cache,
+                            &mut self.missing_wavs,
+                            &mut self.folder_browsers,
+                        );
+                        invalidator.invalidate_wav_related(&source.id);
                     }
                     self.queue_wav_load();
                 }
@@ -90,10 +95,15 @@ impl EguiController {
 
     fn prepare_for_scan(&mut self, source: &SampleSource, mode: ScanMode) {
         if matches!(mode, ScanMode::Hard) {
-            self.wav_cache.remove(&source.id);
-            self.wav_cache_lookup.remove(&source.id);
-            self.label_cache.remove(&source.id);
-            self.missing_wavs.remove(&source.id);
+            let mut invalidator = source_cache_invalidator::SourceCacheInvalidator::new(
+                &mut self.db_cache,
+                &mut self.wav_cache,
+                &mut self.wav_cache_lookup,
+                &mut self.label_cache,
+                &mut self.missing_wavs,
+                &mut self.folder_browsers,
+            );
+            invalidator.invalidate_wav_related(&source.id);
         }
     }
 }

@@ -288,11 +288,16 @@ impl EguiController {
         let source_id = existing.id.clone();
         self.sources[index].root = normalized.clone();
         self.missing_sources.remove(&source_id);
-        self.missing_wavs.remove(&source_id);
-        self.db_cache.remove(&source_id);
-        self.wav_cache.remove(&source_id);
-        self.wav_cache_lookup.remove(&source_id);
-        self.label_cache.remove(&source_id);
+        let mut invalidator = source_cache_invalidator::SourceCacheInvalidator::new(
+            &mut self.db_cache,
+            &mut self.wav_cache,
+            &mut self.wav_cache_lookup,
+            &mut self.label_cache,
+            &mut self.missing_wavs,
+            &mut self.folder_browsers,
+        );
+        invalidator.invalidate_db_cache(&source_id);
+        invalidator.invalidate_wav_related(&source_id);
         if self.selected_source.as_ref() == Some(&source_id) {
             self.clear_wavs();
             self.selected_source = Some(source_id.clone());
