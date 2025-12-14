@@ -1,3 +1,13 @@
+## [unreleased]
+
+### 🐛 Bug Fixes
+
+- *(browser)* Refocus sample after undo tag
+- *(ui)* Embed progress bar in status bar
+
+### ⚙️ Miscellaneous Tasks
+
+- *(changelog)* V0.358.0 (#56)
 ## [0.358.0] - 2025-12-14
 
 ### ⚙️ Miscellaneous Tasks
