@@ -12,6 +12,8 @@ use rodio::{Decoder, OutputStream, Sink, Source};
 pub struct AudioPlayer {
     stream: OutputStream,
     sink: Option<Sink>,
+    fade_out: Option<FadeOutHandle>,
+    sink_format: Option<(u32, u16)>,
     current_audio: Option<Arc<[u8]>>,
     track_duration: Option<f32>,
     started_at: Option<Instant>,
@@ -25,6 +27,7 @@ pub struct AudioPlayer {
 }
 
 const SEGMENT_FADE: Duration = Duration::from_millis(5);
+const RESTART_FADE: Duration = Duration::from_millis(2);
 
 impl AudioPlayer {
     /// Create a new audio player using the default output device.
@@ -38,6 +41,8 @@ impl AudioPlayer {
         Ok(Self {
             stream: outcome.stream,
             sink: None,
+            fade_out: None,
+            sink_format: None,
             current_audio: None,
             track_duration: None,
             started_at: None,
@@ -81,7 +86,7 @@ impl AudioPlayer {
 
     /// Stop any active playback.
     pub fn stop(&mut self) {
-        self.fade_out_current_sink();
+        self.fade_out_current_sink(SEGMENT_FADE);
         self.started_at = None;
         self.play_span = None;
         self.looping = false;
@@ -135,7 +140,7 @@ impl AudioPlayer {
             return Err("Load a .wav file first".into());
         }
 
-        self.fade_out_current_sink();
+        self.fade_out_current_sink(RESTART_FADE);
 
         let fade = fade_duration(duration);
         let source = Self::decoder_from_bytes(bytes)?;
@@ -150,7 +155,9 @@ impl AudioPlayer {
 
         let sink = Sink::connect_new(self.stream.mixer());
         sink.set_volume(self.volume);
-        sink.append(repeated);
+        let format = (repeated.sample_rate(), repeated.channels());
+        let handle = FadeOutHandle::new();
+        sink.append(FadeOutOnRequest::new(repeated, handle.clone()));
         sink.play();
 
         self.started_at = Some(Instant::now());
@@ -158,6 +165,8 @@ impl AudioPlayer {
         self.looping = true;
         self.loop_offset = Some(offset);
         self.sink = Some(sink);
+        self.fade_out = Some(handle);
+        self.sink_format = Some(format);
         #[cfg(test)]
         {
             self.elapsed_override = None;
@@ -251,7 +260,7 @@ impl AudioPlayer {
         let span_length = (bounded_end - bounded_start).max(0.001);
         let fade = fade_duration(span_length);
 
-        self.fade_out_current_sink();
+        self.fade_out_current_sink(RESTART_FADE);
 
         let mut source = Self::decoder_from_bytes(bytes)?;
         source
@@ -268,15 +277,19 @@ impl AudioPlayer {
         } else {
             Box::new(faded)
         };
+        let format = (final_source.sample_rate(), final_source.channels());
+        let handle = FadeOutHandle::new();
 
         let sink = Sink::connect_new(self.stream.mixer());
         sink.set_volume(self.volume);
-        sink.append(final_source);
+        sink.append(FadeOutOnRequest::new(final_source, handle.clone()));
         sink.play();
         self.started_at = Some(Instant::now());
         self.play_span = Some((bounded_start, bounded_start + span_length));
         self.looping = looped;
         self.sink = Some(sink);
+        self.fade_out = Some(handle);
+        self.sink_format = Some(format);
         #[cfg(test)]
         {
             self.elapsed_override = None;
@@ -356,30 +369,24 @@ impl AudioPlayer {
     }
 
     /// Mute and stop the current sink without blocking the UI thread.
-    fn fade_out_current_sink(&mut self) {
+    fn fade_out_current_sink(&mut self, fade: Duration) {
         let Some(sink) = self.sink.take() else {
             return;
         };
-        let start_volume = sink.volume();
-        if start_volume <= 0.0 {
+        let handle = self.fade_out.take();
+        let format = self.sink_format.take();
+
+        let Some(handle) = handle else {
             sink.stop();
             return;
-        }
-        let fade = SEGMENT_FADE;
-        if fade.is_zero() {
+        };
+        let Some((sample_rate, _channels)) = format else {
             sink.stop();
             return;
-        }
-        std::thread::spawn(move || {
-            let steps = 5u32;
-            let step_sleep = fade / steps;
-            for step in 0..steps {
-                let remaining = steps.saturating_sub(step + 1) as f32 / steps as f32;
-                sink.set_volume(start_volume * remaining.max(0.0));
-                std::thread::sleep(step_sleep);
-            }
-            sink.stop();
-        });
+        };
+        let fade_frames = fade_frames_for_duration(sample_rate, fade);
+        handle.request_fade_out_frames(fade_frames);
+        sink.detach();
     }
 
     /// Active output configuration after initialization.
@@ -395,11 +402,16 @@ impl AudioPlayer {
         let outcome = open_output_stream(&AudioOutputConfig::default()).ok()?;
         let sink = rodio::Sink::connect_new(outcome.stream.mixer());
         // Loop the tone so playback stays active long enough for UI/controller tests to observe it.
-        sink.append(SineWave::new(220.0).repeat_infinite());
+        let source = SineWave::new(220.0).repeat_infinite();
+        let format = (source.sample_rate(), source.channels());
+        let handle = FadeOutHandle::new();
+        sink.append(FadeOutOnRequest::new(source, handle.clone()));
         sink.play();
         Some(Self {
             stream: outcome.stream,
             sink: Some(sink),
+            fade_out: Some(handle),
+            sink_format: Some(format),
             current_audio: None,
             track_duration: Some(1.0),
             started_at: Some(Instant::now()),
@@ -420,6 +432,14 @@ fn fade_duration(span_seconds: f32) -> Duration {
     let max_fade = SEGMENT_FADE.as_secs_f32();
     let clamped = max_fade.min(span_seconds * 0.5);
     Duration::from_secs_f32(clamped.max(0.0))
+}
+
+fn fade_frames_for_duration(sample_rate: u32, fade: Duration) -> u32 {
+    if fade.is_zero() || sample_rate == 0 {
+        return 1;
+    }
+    let frames = (fade.as_secs_f64() * sample_rate as f64).ceil();
+    frames.clamp(1.0, u32::MAX as f64) as u32
 }
 
 #[cfg(test)]
@@ -552,6 +572,158 @@ where
     #[inline]
     fn total_duration(&self) -> Option<Duration> {
         self.inner.total_duration()
+    }
+}
+
+#[derive(Clone)]
+struct FadeOutHandle {
+    requested_frames: Arc<std::sync::atomic::AtomicU32>,
+}
+
+impl FadeOutHandle {
+    fn new() -> Self {
+        Self {
+            requested_frames: Arc::new(std::sync::atomic::AtomicU32::new(0)),
+        }
+    }
+
+    fn request_fade_out_frames(&self, frames: u32) {
+        self.requested_frames
+            .store(frames.max(1), std::sync::atomic::Ordering::Release);
+    }
+
+    fn take_requested_frames(&self) -> Option<u32> {
+        let frames = self
+            .requested_frames
+            .swap(0, std::sync::atomic::Ordering::AcqRel);
+        if frames == 0 { None } else { Some(frames) }
+    }
+}
+
+struct FadeOutOnRequest<S> {
+    inner: S,
+    handle: FadeOutHandle,
+    sample_rate: u32,
+    channels: u16,
+    samples_emitted: u64,
+    pending_frames: Option<u32>,
+    fade_start_frame: u64,
+    fade_total_frames: u32,
+    fading: bool,
+}
+
+impl<S> FadeOutOnRequest<S>
+where
+    S: Source<Item = f32>,
+{
+    fn new(inner: S, handle: FadeOutHandle) -> Self {
+        let sample_rate = inner.sample_rate();
+        let channels = inner.channels();
+        Self {
+            inner,
+            handle,
+            sample_rate,
+            channels,
+            samples_emitted: 0,
+            pending_frames: None,
+            fade_start_frame: 0,
+            fade_total_frames: 0,
+            fading: false,
+        }
+    }
+
+    fn current_frame(&self) -> u64 {
+        let channels = self.channels.max(1) as u64;
+        self.samples_emitted / channels
+    }
+
+    fn is_frame_boundary(&self) -> bool {
+        let channels = self.channels.max(1) as u64;
+        self.samples_emitted % channels == 0
+    }
+
+    fn start_fade_if_ready(&mut self) {
+        if self.fading {
+            return;
+        }
+        if self.pending_frames.is_none() {
+            self.pending_frames = self.handle.take_requested_frames();
+        }
+        if self.pending_frames.is_none() || !self.is_frame_boundary() {
+            return;
+        }
+        let Some(frames) = self.pending_frames.take() else {
+            return;
+        };
+        self.fading = true;
+        self.fade_start_frame = self.current_frame();
+        self.fade_total_frames = frames.max(1);
+    }
+
+    fn fade_factor(&self) -> f32 {
+        if !self.fading {
+            return 1.0;
+        }
+        let current_frame = self.current_frame();
+        let offset = current_frame.saturating_sub(self.fade_start_frame);
+        let total = self.fade_total_frames.max(1) as u64;
+        if offset >= total {
+            return 0.0;
+        }
+        if total <= 1 {
+            return 0.0;
+        }
+        let denom = (total - 1) as f32;
+        let progress = (offset as f32 / denom).clamp(0.0, 1.0);
+        (1.0 - progress).clamp(0.0, 1.0)
+    }
+}
+
+impl<S> Iterator for FadeOutOnRequest<S>
+where
+    S: Source<Item = f32>,
+{
+    type Item = f32;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.start_fade_if_ready();
+        if self.fading && self.is_frame_boundary() {
+            let current_frame = self.current_frame();
+            let offset = current_frame.saturating_sub(self.fade_start_frame);
+            if offset >= self.fade_total_frames as u64 {
+                return None;
+            }
+        }
+
+        let sample = self.inner.next()?;
+        let factor = self.fade_factor();
+        self.samples_emitted = self.samples_emitted.saturating_add(1);
+        Some(sample * factor)
+    }
+}
+
+impl<S> Source for FadeOutOnRequest<S>
+where
+    S: Source<Item = f32>,
+{
+    #[inline]
+    fn current_span_len(&self) -> Option<usize> {
+        self.inner.current_span_len()
+    }
+
+    #[inline]
+    fn channels(&self) -> u16 {
+        self.channels
+    }
+
+    #[inline]
+    fn sample_rate(&self) -> u32 {
+        self.sample_rate
+    }
+
+    #[inline]
+    fn total_duration(&self) -> Option<Duration> {
+        None
     }
 }
 
