@@ -1,4 +1,5 @@
 mod decode;
+mod error;
 mod render;
 mod sampling;
 mod zoom_cache;
@@ -7,6 +8,8 @@ use egui::Color32;
 use egui::ColorImage;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
+
+pub use error::{WaveformDecodeError, WaveformLoadError};
 
 /// Waveform pixels and audio payload loaded from disk.
 pub struct LoadedWaveform {
@@ -216,9 +219,11 @@ impl WaveformRenderer {
     }
 
     /// Load a wav file from disk and return its pixels, raw bytes, and duration.
-    pub fn load_waveform(&self, path: &Path) -> Result<LoadedWaveform, String> {
-        let bytes = std::fs::read(path)
-            .map_err(|error| format!("Failed to read {}: {error}", path.display()))?;
+    pub fn load_waveform(&self, path: &Path) -> Result<LoadedWaveform, WaveformLoadError> {
+        let bytes = std::fs::read(path).map_err(|source| WaveformLoadError::Read {
+            path: path.to_path_buf(),
+            source,
+        })?;
         let decoded = self.decode_from_bytes(&bytes)?;
         let image = self.render_color_image_for_mode(&decoded, WaveformChannelView::Mono);
         Ok(LoadedWaveform {
