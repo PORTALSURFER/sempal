@@ -48,6 +48,28 @@ pub(super) struct WavCacheState {
     pub(super) lookup: HashMap<SourceId, HashMap<PathBuf, usize>>,
 }
 
+impl WavCacheState {
+    pub(super) fn ensure_lookup(&mut self, source_id: &SourceId) {
+        if self.lookup.contains_key(source_id) {
+            return;
+        }
+        let Some(entries) = self.entries.get(source_id) else {
+            return;
+        };
+        let lookup = entries
+            .iter()
+            .enumerate()
+            .map(|(index, entry)| (entry.relative_path.clone(), index))
+            .collect();
+        self.lookup.insert(source_id.clone(), lookup);
+    }
+
+    pub(super) fn rebuild_lookup(&mut self, source_id: &SourceId) {
+        self.lookup.remove(source_id);
+        self.ensure_lookup(source_id);
+    }
+}
+
 pub(super) struct WavSelectionState {
     pub(super) selected_wav: Option<PathBuf>,
     pub(super) loaded_wav: Option<PathBuf>,
