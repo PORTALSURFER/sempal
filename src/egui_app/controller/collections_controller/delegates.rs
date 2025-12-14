@@ -95,6 +95,6 @@ impl EguiController {
 
     pub(in crate::egui_app::controller) fn current_collection(&self) -> Option<Collection> {
         let selected = self.selection_state.ctx.selected_collection.as_ref()?;
-        self.collections.iter().find(|c| &c.id == selected).cloned()
+        self.library.collections.iter().find(|c| &c.id == selected).cloned()
     }
 }

@@ -116,7 +116,7 @@ fn waveform_render_meta_allows_small_shifts_on_full_view() {
 #[test]
 fn waveform_rerenders_after_same_length_edit() {
     let (mut controller, source) = dummy_controller();
-    controller.sources.push(source.clone());
+    controller.library.sources.push(source.clone());
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
     controller.waveform.size = [32, 8];
     let path = source.root.join("edit.wav");
@@ -152,7 +152,7 @@ fn waveform_rerenders_after_same_length_edit() {
     fn stale_audio_results_are_ignored() {
         let (mut controller, source) = dummy_controller();
         controller.settings.feature_flags.autoplay_selection = false;
-    controller.sources.push(source.clone());
+    controller.library.sources.push(source.clone());
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
     write_test_wav(&source.root.join("a.wav"), &[0.0, 0.1]);
     write_test_wav(&source.root.join("b.wav"), &[0.0, -0.1]);
@@ -189,7 +189,7 @@ fn waveform_rerenders_after_same_length_edit() {
     fn play_request_is_deferred_until_audio_ready() {
         let (mut controller, source) = dummy_controller();
         controller.settings.feature_flags.autoplay_selection = false;
-    controller.sources.push(source.clone());
+    controller.library.sources.push(source.clone());
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
     write_test_wav(&source.root.join("wait.wav"), &[0.0, 0.2, -0.2]);
     controller.wav_entries.entries = vec![sample_entry("wait.wav", SampleTag::Neutral)];
@@ -214,7 +214,7 @@ fn waveform_rerenders_after_same_length_edit() {
 #[test]
 fn loading_flag_clears_after_audio_load() {
     let (mut controller, source) = dummy_controller();
-    controller.sources.push(source.clone());
+    controller.library.sources.push(source.clone());
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
     let rel = PathBuf::from("load.wav");
     write_test_wav(&source.root.join(&rel), &[0.0, 0.5, -0.5]);

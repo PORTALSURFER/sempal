@@ -78,11 +78,11 @@ impl EguiController {
                 .selection_state.ctx
                 .last_selected_browsable_source
                 .clone()
-                .filter(|id| self.sources.iter().any(|s| &s.id == id))
+                .filter(|id| self.library.sources.iter().any(|s| &s.id == id))
             {
                 self.selection_state.ctx.selected_source = Some(source_id);
                 self.refresh_sources_ui();
-            } else if let Some(first) = self.sources.first().cloned() {
+            } else if let Some(first) = self.library.sources.first().cloned() {
                 self.selection_state.ctx.last_selected_browsable_source = Some(first.id.clone());
                 self.selection_state.ctx.selected_source = Some(first.id);
                 self.refresh_sources_ui();

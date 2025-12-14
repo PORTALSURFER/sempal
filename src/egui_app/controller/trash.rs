@@ -65,8 +65,8 @@ impl EguiController {
 
         let cancel = Arc::new(AtomicBool::new(false));
 
-        let sources = self.sources.clone();
-        let collections = self.collections.clone();
+        let sources = self.library.sources.clone();
+        let collections = self.library.collections.clone();
 
         #[cfg(test)]
         {
@@ -213,7 +213,7 @@ impl EguiController {
 
     fn apply_trash_move_finished(&mut self, result: TrashMoveFinished) {
         if result.collections_changed {
-            self.collections = result.collections;
+            self.library.collections = result.collections;
             self.refresh_collections_ui();
             let _ = self.persist_config("Failed to save collections after trash move");
         }
@@ -223,7 +223,7 @@ impl EguiController {
             &mut self.cache.wav.entries,
             &mut self.cache.wav.lookup,
             &mut self.browser_cache.labels,
-            &mut self.missing.wavs,
+            &mut self.library.missing.wavs,
             &mut self.folder_browsers.models,
         );
         for source_id in &result.affected_sources {

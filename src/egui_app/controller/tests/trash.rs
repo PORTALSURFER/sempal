@@ -8,7 +8,7 @@ fn moving_trashed_samples_moves_and_prunes_state() -> Result<(), String> {
     let temp = tempdir().unwrap();
     let trash_root = temp.path().join("trash");
     let (mut controller, source) = dummy_controller();
-    controller.sources.push(source.clone());
+    controller.library.sources.push(source.clone());
     controller.settings.trash_folder = Some(trash_root.clone());
     controller.ui.trash_folder = Some(trash_root.clone());
 
@@ -60,7 +60,7 @@ fn moving_trashed_samples_can_cancel_midway() -> Result<(), String> {
     let temp = tempdir().unwrap();
     let trash_root = temp.path().join("trash");
     let (mut controller, source) = dummy_controller();
-    controller.sources.push(source.clone());
+    controller.library.sources.push(source.clone());
     controller.settings.trash_folder = Some(trash_root.clone());
     controller.ui.trash_folder = Some(trash_root.clone());
 

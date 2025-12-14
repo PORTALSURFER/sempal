@@ -54,7 +54,7 @@ impl CollectionsActions for CollectionsController<'_> {
 
     fn select_collection_by_index(&mut self, index: Option<usize>) {
         if let Some(idx) = index {
-            if let Some(collection) = self.collections.get(idx).cloned() {
+            if let Some(collection) = self.library.collections.get(idx).cloned() {
                 self.selection_state.ctx.selected_collection = Some(collection.id);
             }
         } else {
@@ -69,11 +69,11 @@ impl CollectionsActions for CollectionsController<'_> {
     }
 
     fn nudge_collection_row(&mut self, offset: isize) {
-        if self.collections.is_empty() {
+        if self.library.collections.is_empty() {
             return;
         }
         let current = self.ui.collections.selected.unwrap_or(0) as isize;
-        let target = (current + offset).clamp(0, self.collections.len() as isize - 1) as usize;
+        let target = (current + offset).clamp(0, self.library.collections.len() as isize - 1) as usize;
         self.select_collection_by_index(Some(target));
         self.focus_collections_list_context();
     }
@@ -86,7 +86,7 @@ impl CollectionsActions for CollectionsController<'_> {
         let mut collection = Collection::new(name);
         let id = collection.id.clone();
         collection.members.clear();
-        self.collections.push(collection);
+        self.library.collections.push(collection);
         self.selection_state.ctx.selected_collection = Some(id);
         let _ = self.persist_config("Failed to save collection");
         self.refresh_collections_ui();
@@ -94,8 +94,7 @@ impl CollectionsActions for CollectionsController<'_> {
         if self.settings.collection_export_root.is_none() {
             if let Some(current_id) = self.selection_state.ctx.selected_collection.clone() {
                 self.pick_collection_export_path(&current_id);
-                if self
-                    .collections
+                if self.library.collections
                     .iter()
                     .any(|c| c.id == current_id && c.export_path.is_none())
                 {
@@ -110,10 +109,10 @@ impl CollectionsActions for CollectionsController<'_> {
 
     fn delete_collection(&mut self, collection_id: &CollectionId) -> Result<(), String> {
         let result: Result<String, String> = (|| {
-            let Some(index) = self.collections.iter().position(|c| &c.id == collection_id) else {
+            let Some(index) = self.library.collections.iter().position(|c| &c.id == collection_id) else {
                 return Err("Collection not found".into());
             };
-            let removed = self.collections.remove(index);
+            let removed = self.library.collections.remove(index);
             if self.selection_state.ctx.selected_collection.as_ref() == Some(collection_id) {
                 self.selection_state.ctx.selected_collection = None;
                 self.ui.collections.selected_sample = None;
@@ -142,15 +141,15 @@ impl CollectionsActions for CollectionsController<'_> {
             self.set_status("Collection name cannot be empty", StatusTone::Error);
             return;
         }
-        let Some(index) = self.collections.iter().position(|c| &c.id == collection_id) else {
+        let Some(index) = self.library.collections.iter().position(|c| &c.id == collection_id) else {
             self.set_status("Collection not found", StatusTone::Error);
             return;
         };
-        let old_name = self.collections[index].name.clone();
+        let old_name = self.library.collections[index].name.clone();
         let new_folder_name = collection_export::collection_folder_name_from_str(trimmed);
         let mut clip_root_update: Option<(std::path::PathBuf, std::path::PathBuf)> = None;
         if let Some(old_folder) = collection_export::resolved_export_dir(
-            &self.collections[index],
+            &self.library.collections[index],
             self.settings.collection_export_root.as_deref(),
         ) {
             if let Some(parent) = old_folder.parent() {
@@ -178,16 +177,16 @@ impl CollectionsActions for CollectionsController<'_> {
                         );
                         return;
                     }
-                    if self.collections[index].export_path.is_some() {
-                        self.collections[index].export_path = Some(new_folder.clone());
+                    if self.library.collections[index].export_path.is_some() {
+                        self.library.collections[index].export_path = Some(new_folder.clone());
                     }
                     clip_root_update = Some((old_folder, new_folder));
                 }
             }
         }
-        self.collections[index].name = trimmed.to_string();
+        self.library.collections[index].name = trimmed.to_string();
         if let Some((old_root, new_root)) = clip_root_update.as_ref() {
-            for member in self.collections[index].members.iter_mut() {
+            for member in self.library.collections[index].members.iter_mut() {
                 if member.clip_root.as_ref() == Some(old_root) {
                     member.clip_root = Some(new_root.clone());
                 }

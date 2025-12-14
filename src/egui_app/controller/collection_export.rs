@@ -55,8 +55,7 @@ impl EguiController {
                 if let Err(err) = self.export_all_members(collection_id) {
                     self.set_status(err, StatusTone::Error);
                 } else {
-                    let display = self
-                        .collections
+                    let display = self.library.collections
                         .iter()
                         .find(|c| &c.id == collection_id)
                         .and_then(|c| {
@@ -83,7 +82,7 @@ impl EguiController {
 
     /// Reconcile a collection with the current contents of its export folder.
     pub fn refresh_collection_export(&mut self, collection_id: &CollectionId) {
-        let Some(collection) = self.collections.iter().find(|c| &c.id == collection_id) else {
+        let Some(collection) = self.library.collections.iter().find(|c| &c.id == collection_id) else {
             self.set_status("Collection not found", StatusTone::Error);
             return;
         };
@@ -104,7 +103,7 @@ impl EguiController {
 
     /// Open the collection's export folder in the system file explorer.
     pub fn open_collection_export_folder(&mut self, collection_id: &CollectionId) {
-        let Some(collection) = self.collections.iter().find(|c| &c.id == collection_id) else {
+        let Some(collection) = self.library.collections.iter().find(|c| &c.id == collection_id) else {
             self.set_status("Collection not found", StatusTone::Error);
             return;
         };
@@ -130,7 +129,7 @@ impl EguiController {
         collection_id: &CollectionId,
         member: &CollectionMember,
     ) -> Result<(), String> {
-        let Some(collection) = self.collections.iter().find(|c| &c.id == collection_id) else {
+        let Some(collection) = self.library.collections.iter().find(|c| &c.id == collection_id) else {
             return Err("Collection not found".into());
         };
         let collection_dir =
@@ -144,7 +143,7 @@ impl EguiController {
                 root: root.clone(),
             }
         } else {
-            self.sources
+            self.library.sources
                 .iter()
                 .find(|s| s.id == member.source_id)
                 .cloned()
@@ -159,7 +158,7 @@ impl EguiController {
         collection_id: &CollectionId,
         path: Option<PathBuf>,
     ) -> Result<(), String> {
-        let Some(collection) = self.collections.iter_mut().find(|c| &c.id == collection_id) else {
+        let Some(collection) = self.library.collections.iter_mut().find(|c| &c.id == collection_id) else {
             return Err("Collection not found".into());
         };
         if let Some(path) = path {
@@ -220,15 +219,13 @@ impl EguiController {
                 continue;
             }
             let normalized = crate::sample_sources::config::normalize_path(path.as_path());
-            if self
-                .collections
+            if self.library.collections
                 .iter()
                 .any(|c| c.export_path.as_ref() == Some(&normalized))
             {
                 continue;
             }
-            if let Some(existing) = self
-                .collections
+            if let Some(existing) = self.library.collections
                 .iter_mut()
                 .find(|c| c.export_path.is_none() && c.name == folder_name)
             {
@@ -238,7 +235,7 @@ impl EguiController {
             }
             let mut collection = Collection::new(folder_name);
             collection.export_path = Some(normalized);
-            self.collections.push(collection);
+            self.library.collections.push(collection);
             created += 1;
             changed = true;
         }
@@ -250,7 +247,7 @@ impl EguiController {
     }
 
     fn export_all_members(&mut self, collection_id: &CollectionId) -> Result<(), String> {
-        let Some(collection) = self.collections.iter().find(|c| &c.id == collection_id) else {
+        let Some(collection) = self.library.collections.iter().find(|c| &c.id == collection_id) else {
             return Err("Collection not found".into());
         };
         let members = collection.members.clone();
@@ -264,7 +261,7 @@ impl EguiController {
         &mut self,
         collection_id: &CollectionId,
     ) -> Result<(usize, usize), String> {
-        let Some(collection) = self.collections.iter().find(|c| &c.id == collection_id) else {
+        let Some(collection) = self.library.collections.iter().find(|c| &c.id == collection_id) else {
             return Err("Collection not found".into());
         };
         let collection_dir =
@@ -300,7 +297,7 @@ impl EguiController {
         source: &SampleSource,
         relative_path: &Path,
     ) -> bool {
-        let Some(collection) = self.collections.iter_mut().find(|c| &c.id == collection_id) else {
+        let Some(collection) = self.library.collections.iter_mut().find(|c| &c.id == collection_id) else {
             return false;
         };
         collection.add_member(source.id.clone(), relative_path.to_path_buf())
@@ -311,7 +308,7 @@ impl EguiController {
         collection_id: &CollectionId,
         member: &CollectionMember,
     ) -> bool {
-        let Some(collection) = self.collections.iter_mut().find(|c| &c.id == collection_id) else {
+        let Some(collection) = self.library.collections.iter_mut().find(|c| &c.id == collection_id) else {
             return false;
         };
         let export_dir =
@@ -324,14 +321,14 @@ impl EguiController {
     }
 
     fn resolve_source_for_relative_path(&self, relative_path: &Path) -> Option<SampleSource> {
-        self.sources.iter().find_map(|source| {
+        self.library.sources.iter().find_map(|source| {
             let candidate = source.root.join(relative_path);
             candidate.is_file().then(|| source.clone())
         })
     }
 
     pub(super) fn collection_members(&self, collection_id: &CollectionId) -> Vec<CollectionMember> {
-        self.collections
+        self.library.collections
             .iter()
             .find(|c| &c.id == collection_id)
             .map(|c| c.members.clone())
@@ -509,14 +506,13 @@ mod tests {
         let mut controller = EguiController::new(renderer, None);
         let collection = Collection::new("Original");
         let id = collection.id.clone();
-        controller.collections.push(collection);
+        controller.library.collections.push(collection);
         let temp = tempdir().unwrap();
         let manual_dir = temp.path().join("Manual Name");
         controller
             .set_collection_export_path(&id, Some(manual_dir.clone()))
             .unwrap();
-        let stored = controller
-            .collections
+        let stored = controller.library.collections
             .iter()
             .find(|c| c.id == id)
             .expect("collection present");
@@ -530,8 +526,8 @@ mod tests {
         let mut controller = EguiController::new(renderer, None);
         let mut collection = Collection::new("Manual");
         collection.export_path = Some(PathBuf::from("custom/manual"));
-        controller.collections.push(collection);
-        let dir = resolved_export_dir(&controller.collections[0], Some(Path::new("global/root")))
+        controller.library.collections.push(collection);
+        let dir = resolved_export_dir(&controller.library.collections[0], Some(Path::new("global/root")))
             .expect("dir");
         assert_eq!(dir, PathBuf::from("custom/manual"));
     }
@@ -542,9 +538,9 @@ mod tests {
         let mut controller = EguiController::new(renderer, None);
         controller.settings.collection_export_root = Some(PathBuf::from("global"));
         let collection = Collection::new("Global Collection");
-        controller.collections.push(collection);
+        controller.library.collections.push(collection);
         let dir = resolved_export_dir(
-            &controller.collections[0],
+            &controller.library.collections[0],
             controller.settings.collection_export_root.as_deref(),
         )
         .expect("dir");
@@ -569,20 +565,18 @@ mod tests {
             .set_collection_export_root(Some(normalized_root.clone()))
             .unwrap();
 
-        assert_eq!(controller.collections.len(), 2);
-        assert!(controller.collections.iter().any(|c| c.name == "A"));
-        assert!(controller.collections.iter().any(|c| c.name == "B"));
+        assert_eq!(controller.library.collections.len(), 2);
+        assert!(controller.library.collections.iter().any(|c| c.name == "A"));
+        assert!(controller.library.collections.iter().any(|c| c.name == "B"));
 
         let expected_a =
             crate::sample_sources::config::normalize_path(export_root.join("A").as_path());
         let expected_b =
             crate::sample_sources::config::normalize_path(export_root.join("B").as_path());
-        assert!(controller
-            .collections
+        assert!(controller.library.collections
             .iter()
             .any(|c| c.name == "A" && c.export_path.as_ref() == Some(&expected_a)));
-        assert!(controller
-            .collections
+        assert!(controller.library.collections
             .iter()
             .any(|c| c.name == "B" && c.export_path.as_ref() == Some(&expected_b)));
     }
@@ -596,16 +590,16 @@ mod tests {
 
         let renderer = crate::waveform::WaveformRenderer::new(4, 4);
         let mut controller = EguiController::new(renderer, None);
-        controller.collections.push(Collection::new("Existing"));
+        controller.library.collections.push(Collection::new("Existing"));
 
         let created = controller
             .sync_collections_from_export_root_path(export_root.as_path())
             .unwrap();
         assert_eq!(created, 0);
-        assert_eq!(controller.collections.len(), 1);
+        assert_eq!(controller.library.collections.len(), 1);
 
         let expected =
             crate::sample_sources::config::normalize_path(export_root.join("Existing").as_path());
-        assert_eq!(controller.collections[0].export_path.as_ref(), Some(&expected));
+        assert_eq!(controller.library.collections[0].export_path.as_ref(), Some(&expected));
     }
 }

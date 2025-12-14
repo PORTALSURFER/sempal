@@ -139,7 +139,7 @@ impl EguiController {
                 .filter(|entry| entry.missing)
                 .map(|entry| entry.relative_path.clone())
                 .collect();
-            self.missing.wavs.insert(id, missing);
+            self.library.missing.wavs.insert(id, missing);
         }
         let prefix = if from_cache { "Cached" } else { "Loaded" };
         let suffix = elapsed

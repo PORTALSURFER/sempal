@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 #[test]
 fn selecting_missing_sample_sets_waveform_notice() {
     let (mut controller, source) = dummy_controller();
-    controller.sources.push(source.clone());
+    controller.library.sources.push(source.clone());
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
     controller.wav_entries.entries = vec![WavEntry {
         relative_path: PathBuf::from("one.wav"),
@@ -35,7 +35,7 @@ fn selecting_missing_sample_sets_waveform_notice() {
 #[test]
 fn collection_views_flag_missing_members() {
     let (mut controller, source) = dummy_controller();
-    controller.sources.push(source.clone());
+    controller.library.sources.push(source.clone());
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
     controller.wav_entries.entries = vec![WavEntry {
         relative_path: PathBuf::from("one.wav"),
@@ -55,7 +55,7 @@ fn collection_views_flag_missing_members() {
         clip_root: None,
     });
     controller.selection_state.ctx.selected_collection = Some(collection.id.clone());
-    controller.collections.push(collection);
+    controller.library.collections.push(collection);
     controller.refresh_collections_ui();
 
     assert!(
@@ -79,7 +79,7 @@ fn collection_views_flag_missing_members() {
 #[test]
 fn read_failure_marks_sample_missing() {
     let (mut controller, source) = dummy_controller();
-    controller.sources.push(source.clone());
+    controller.library.sources.push(source.clone());
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
     let rel = PathBuf::from("gone.wav");
     controller.wav_entries.entries = vec![WavEntry {
@@ -99,8 +99,7 @@ fn read_failure_marks_sample_missing() {
     assert!(controller.sample_missing(&source.id, &rel));
     assert!(controller.wav_entries.entries[0].missing);
     assert!(
-        controller
-            .missing
+        controller.library.missing
             .wavs
             .get(&source.id)
             .is_some_and(|set| set.contains(&rel))

@@ -136,7 +136,7 @@ fn last_start_marker_clamps_and_resets() {
 #[test]
 fn selecting_new_sample_clears_last_start_marker() {
     let (mut controller, source) = dummy_controller();
-    controller.sources.push(source.clone());
+    controller.library.sources.push(source.clone());
     write_test_wav(&source.root.join("a.wav"), &[0.0, 0.1]);
     write_test_wav(&source.root.join("b.wav"), &[0.2, -0.2]);
     controller.wav_entries.entries = vec![

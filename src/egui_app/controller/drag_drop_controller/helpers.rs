@@ -29,8 +29,7 @@ impl DragDropController<'_> {
         &self,
         collection_id: &CollectionId,
     ) -> Result<PathBuf, String> {
-        let preferred = self
-            .collections
+        let preferred = self.library.collections
             .iter()
             .find(|c| &c.id == collection_id)
             .and_then(|collection| {
@@ -89,7 +88,7 @@ impl DragDropController<'_> {
         source_id: &SourceId,
         relative_path: &Path,
     ) -> PathBuf {
-        self.sources
+        self.library.sources
             .iter()
             .find(|s| &s.id == source_id)
             .map(|source| source.root.join(relative_path))
@@ -141,8 +140,7 @@ impl DragDropController<'_> {
             true,
             true,
         )?;
-        let source = self
-            .sources
+        let source = self.library.sources
             .iter()
             .find(|s| s.id == clip.source_id)
             .cloned()
@@ -163,7 +161,7 @@ impl DragDropController<'_> {
         triage_target: Option<TriageFlagColumn>,
     ) {
         if let Some(collection_id) = collection_target {
-            if let Some(source) = self.sources.iter().find(|s| s.id == source_id).cloned() {
+            if let Some(source) = self.library.sources.iter().find(|s| s.id == source_id).cloned() {
                 if let Err(err) = self.add_sample_to_collection_for_source(
                     &collection_id,
                     &source,
@@ -185,7 +183,7 @@ impl DragDropController<'_> {
                 TriageFlagColumn::Neutral => SampleTag::Neutral,
                 TriageFlagColumn::Keep => SampleTag::Keep,
             };
-            if let Some(source) = self.sources.iter().find(|s| s.id == source_id).cloned() {
+            if let Some(source) = self.library.sources.iter().find(|s| s.id == source_id).cloned() {
                 let _ = self.set_sample_tag_for_source(&source, &relative_path, target_tag, false);
             } else {
                 let _ = self.set_sample_tag(&relative_path, column);
@@ -205,7 +203,7 @@ impl DragDropController<'_> {
             relative_path.display(),
             target_folder.display()
         );
-        let Some(source) = self.sources.iter().find(|s| s.id == source_id).cloned() else {
+        let Some(source) = self.library.sources.iter().find(|s| s.id == source_id).cloned() else {
             warn!("Folder move: missing source {:?}", source_id);
             self.set_status("Source not available for move", StatusTone::Error);
             return;
@@ -419,7 +417,7 @@ impl DragDropController<'_> {
         folder: &Path,
         keep_source_focused: bool,
     ) {
-        let Some(source) = self.sources.iter().find(|s| &s.id == source_id).cloned() else {
+        let Some(source) = self.library.sources.iter().find(|s| &s.id == source_id).cloned() else {
             self.set_status("Source not available for selection export", StatusTone::Error);
             return;
         };
@@ -562,8 +560,7 @@ impl DragDropController<'_> {
                     self.set_status(err, StatusTone::Error);
                     return;
                 }
-                let name = self
-                    .collections
+                let name = self.library.collections
                     .iter()
                     .find(|c| c.id == *collection_id)
                     .map(|c| c.name.as_str())

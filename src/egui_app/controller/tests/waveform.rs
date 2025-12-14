@@ -11,7 +11,7 @@ use tempfile::tempdir;
 #[test]
 fn waveform_image_resizes_to_view() {
     let (mut controller, source) = dummy_controller();
-    controller.sources.push(source.clone());
+    controller.library.sources.push(source.clone());
     let wav_path = source.root.join("resize.wav");
     write_test_wav(&wav_path, &[0.0, 0.25, -0.5, 0.75]);
 
@@ -27,7 +27,7 @@ fn waveform_image_resizes_to_view() {
 #[test]
 fn removing_selected_source_clears_waveform_view() {
     let (mut controller, source) = dummy_controller();
-    controller.sources.push(source.clone());
+    controller.library.sources.push(source.clone());
     controller.cache_db(&source).unwrap();
     let wav_path = source.root.join("one.wav");
     write_test_wav(&wav_path, &[0.1, -0.1]);
@@ -49,7 +49,7 @@ fn removing_selected_source_clears_waveform_view() {
 #[test]
 fn switching_sources_resets_waveform_state() {
     let (mut controller, first) = dummy_controller();
-    controller.sources.push(first.clone());
+    controller.library.sources.push(first.clone());
     controller.cache_db(&first).unwrap();
     let wav_path = first.root.join("a.wav");
     write_test_wav(&wav_path, &[0.0, 0.1]);
@@ -65,7 +65,7 @@ fn switching_sources_resets_waveform_state() {
     std::fs::create_dir_all(&second_root).unwrap();
     mem::forget(second_dir);
     let second = SampleSource::new(second_root);
-    controller.sources.push(second.clone());
+    controller.library.sources.push(second.clone());
 
     controller.select_source(Some(second.id.clone()));
 
@@ -77,7 +77,7 @@ fn switching_sources_resets_waveform_state() {
 #[test]
 fn pruning_missing_selection_clears_waveform_view() {
     let (mut controller, source) = dummy_controller();
-    controller.sources.push(source.clone());
+    controller.library.sources.push(source.clone());
     controller.cache_db(&source).unwrap();
     let wav_path = source.root.join("gone.wav");
     write_test_wav(&wav_path, &[0.2, -0.2]);
@@ -102,7 +102,7 @@ fn pruning_missing_selection_clears_waveform_view() {
 #[test]
 fn cropping_selection_overwrites_file() {
     let (mut controller, source) = dummy_controller();
-    controller.sources.push(source.clone());
+    controller.library.sources.push(source.clone());
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
     controller.cache_db(&source).unwrap();
     let wav_path = source.root.join("edit.wav");
@@ -130,7 +130,7 @@ fn cropping_selection_overwrites_file() {
 #[test]
 fn trimming_selection_removes_span() {
     let (mut controller, source) = dummy_controller();
-    controller.sources.push(source.clone());
+    controller.library.sources.push(source.clone());
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
     controller.cache_db(&source).unwrap();
     let wav_path = source.root.join("trim.wav");
@@ -159,7 +159,7 @@ fn trimming_selection_removes_span() {
 #[test]
 fn destructive_edit_request_prompts_without_yolo_mode() {
     let (mut controller, source) = dummy_controller();
-    controller.sources.push(source.clone());
+    controller.library.sources.push(source.clone());
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
     controller.cache_db(&source).unwrap();
     let wav_path = source.root.join("warn.wav");
@@ -189,7 +189,7 @@ fn destructive_edit_request_prompts_without_yolo_mode() {
 #[test]
 fn yolo_mode_applies_destructive_edit_immediately() {
     let (mut controller, source) = dummy_controller();
-    controller.sources.push(source.clone());
+    controller.library.sources.push(source.clone());
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
     controller.cache_db(&source).unwrap();
     let wav_path = source.root.join("yolo.wav");
@@ -220,7 +220,7 @@ fn yolo_mode_applies_destructive_edit_immediately() {
 #[test]
 fn confirming_pending_destructive_edit_clears_prompt() {
     let (mut controller, source) = dummy_controller();
-    controller.sources.push(source.clone());
+    controller.library.sources.push(source.clone());
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
     controller.cache_db(&source).unwrap();
     let wav_path = source.root.join("confirm.wav");
@@ -251,7 +251,7 @@ fn confirming_pending_destructive_edit_clears_prompt() {
 #[test]
 fn t_hotkey_prompts_trim_selection_in_waveform_focus() {
     let (mut controller, source) = dummy_controller();
-    controller.sources.push(source.clone());
+    controller.library.sources.push(source.clone());
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
     controller.cache_db(&source).unwrap();
     let wav_path = source.root.join("trim_hotkey.wav");
@@ -279,7 +279,7 @@ fn t_hotkey_prompts_trim_selection_in_waveform_focus() {
 #[test]
 fn slash_hotkeys_prompt_fade_selection_in_waveform_focus() {
     let (mut controller, source) = dummy_controller();
-    controller.sources.push(source.clone());
+    controller.library.sources.push(source.clone());
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
     controller.cache_db(&source).unwrap();
     let wav_path = source.root.join("fade_hotkey.wav");
@@ -316,7 +316,7 @@ fn slash_hotkeys_prompt_fade_selection_in_waveform_focus() {
 #[test]
 fn m_hotkey_prompts_mute_selection_in_waveform_focus() {
     let (mut controller, source) = dummy_controller();
-    controller.sources.push(source.clone());
+    controller.library.sources.push(source.clone());
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
     controller.cache_db(&source).unwrap();
     let wav_path = source.root.join("mute_hotkey.wav");
@@ -343,7 +343,7 @@ fn m_hotkey_prompts_mute_selection_in_waveform_focus() {
 #[test]
 fn n_hotkey_prompts_normalize_selection_when_selection_present() {
     let (mut controller, source) = dummy_controller();
-    controller.sources.push(source.clone());
+    controller.library.sources.push(source.clone());
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
     controller.cache_db(&source).unwrap();
     let wav_path = source.root.join("normalize_select_hotkey.wav");
@@ -370,7 +370,7 @@ fn n_hotkey_prompts_normalize_selection_when_selection_present() {
 #[test]
 fn n_hotkey_normalizes_whole_loaded_sample_when_no_selection() {
     let (mut controller, source) = dummy_controller();
-    controller.sources.push(source.clone());
+    controller.library.sources.push(source.clone());
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
     controller.cache_db(&source).unwrap();
     let wav_path = source.root.join("normalize_full_hotkey.wav");
@@ -396,7 +396,7 @@ fn n_hotkey_normalizes_whole_loaded_sample_when_no_selection() {
 #[test]
 fn c_hotkey_prompts_crop_selection_in_waveform_focus() {
     let (mut controller, source) = dummy_controller();
-    controller.sources.push(source.clone());
+    controller.library.sources.push(source.clone());
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
     controller.cache_db(&source).unwrap();
     let wav_path = source.root.join("crop_hotkey.wav");
@@ -423,7 +423,7 @@ fn c_hotkey_prompts_crop_selection_in_waveform_focus() {
 #[test]
 fn shift_c_hotkey_crops_selection_to_new_sample() {
     let (mut controller, source) = dummy_controller();
-    controller.sources.push(source.clone());
+    controller.library.sources.push(source.clone());
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
     controller.cache_db(&source).unwrap();
     let wav_path = source.root.join("original.wav");

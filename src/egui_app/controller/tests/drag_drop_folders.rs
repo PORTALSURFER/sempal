@@ -15,7 +15,7 @@ fn selection_drop_adds_clip_to_collection() {
     let renderer = WaveformRenderer::new(12, 12);
     let mut controller = EguiController::new(renderer, None);
     let source = SampleSource::new(root.clone());
-    controller.sources.push(source.clone());
+    controller.library.sources.push(source.clone());
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
 
     let orig = root.join("clip.wav");
@@ -26,7 +26,7 @@ fn selection_drop_adds_clip_to_collection() {
 
     let collection = Collection::new("Crops");
     let collection_id = collection.id.clone();
-    controller.collections.push(collection);
+    controller.library.collections.push(collection);
     controller.selection_state.ctx.selected_collection = Some(collection_id.clone());
     controller.refresh_collections_ui();
 
@@ -50,8 +50,7 @@ fn selection_drop_adds_clip_to_collection() {
     ));
     controller.finish_active_drag();
 
-    let collection = controller
-        .collections
+    let collection = controller.library.collections
         .iter()
         .find(|c| c.id == collection_id)
         .unwrap();
@@ -88,7 +87,7 @@ fn sample_drop_to_folder_moves_and_updates_state() {
     let renderer = WaveformRenderer::new(12, 12);
     let mut controller = EguiController::new(renderer, None);
     let source = SampleSource::new(root.clone());
-    controller.sources.push(source.clone());
+    controller.library.sources.push(source.clone());
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
     controller.cache_db(&source).unwrap();
 
@@ -100,7 +99,7 @@ fn sample_drop_to_folder_moves_and_updates_state() {
     let mut collection = Collection::new("Dest");
     let collection_id = collection.id.clone();
     collection.add_member(source.id.clone(), PathBuf::from("one.wav"));
-    controller.collections.push(collection);
+    controller.library.collections.push(collection);
     controller.selection_state.ctx.selected_collection = Some(collection_id.clone());
     controller.refresh_collections_ui();
 
@@ -129,8 +128,7 @@ fn sample_drop_to_folder_moves_and_updates_state() {
             .iter()
             .any(|entry| entry.relative_path == PathBuf::from("dest").join("one.wav"))
     );
-    let collection = controller
-        .collections
+    let collection = controller.library.collections
         .iter()
         .find(|c| c.id == collection_id)
         .unwrap();
@@ -154,7 +152,7 @@ fn sample_drop_to_folder_rejects_conflicts() {
     let renderer = WaveformRenderer::new(12, 12);
     let mut controller = EguiController::new(renderer, None);
     let source = SampleSource::new(root.clone());
-    controller.sources.push(source.clone());
+    controller.library.sources.push(source.clone());
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
     controller.cache_db(&source).unwrap();
 

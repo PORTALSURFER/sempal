@@ -174,7 +174,7 @@ impl DragDropActions for DragDropController<'_> {
         let drop_in_collections_panel =
             matches!(active_target, DragTarget::CollectionsDropZone { .. })
                 || matches!(active_target, DragTarget::CollectionsRow(_))
-                || (self.collections.is_empty()
+                || (self.library.collections.is_empty()
                     && triage_target.is_none()
                     && folder_target.is_none());
 
@@ -198,7 +198,7 @@ impl DragDropActions for DragDropController<'_> {
             debug!(
                 "Blocked collection drop (no active collection): target={:?} collections_empty={} payload={:?}",
                 active_target,
-                self.collections.is_empty(),
+                self.library.collections.is_empty(),
                 payload,
             );
 

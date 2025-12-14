@@ -64,7 +64,7 @@ impl EguiController {
 
     /// Focus the sources list, selecting the current row or the first available source.
     pub(super) fn focus_sources_list(&mut self) {
-        if self.sources.is_empty() {
+        if self.library.sources.is_empty() {
             self.set_status("Add a source first", StatusTone::Info);
             return;
         }
@@ -73,7 +73,7 @@ impl EguiController {
             .sources
             .selected
             .unwrap_or(0)
-            .min(self.sources.len() - 1);
+            .min(self.library.sources.len() - 1);
         self.select_source_by_index(target);
         self.focus_sources_context();
     }
@@ -85,7 +85,7 @@ impl EguiController {
 
     /// Focus the collections list, selecting the active row or the first entry.
     pub(super) fn focus_collections_list(&mut self) {
-        if self.collections.is_empty() {
+        if self.library.collections.is_empty() {
             self.set_status("Create a collection to focus it", StatusTone::Info);
             return;
         }
@@ -94,7 +94,7 @@ impl EguiController {
             .collections
             .selected
             .unwrap_or(0)
-            .min(self.collections.len() - 1);
+            .min(self.library.collections.len() - 1);
         self.select_collection_by_index(Some(target));
         self.focus_collections_list_context();
     }

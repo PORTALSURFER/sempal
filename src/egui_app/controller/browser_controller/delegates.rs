@@ -128,7 +128,7 @@ impl EguiController {
         relative_path: &Path,
     ) {
         let mut targets = Vec::new();
-        for collection in self.collections.iter() {
+        for collection in self.library.collections.iter() {
             if collection
                 .members
                 .iter()
@@ -164,7 +164,7 @@ impl EguiController {
     ) -> bool {
         let mut changed = false;
         let mut exports: Vec<(CollectionId, Option<PathBuf>)> = Vec::new();
-        for collection in self.collections.iter_mut() {
+        for collection in self.library.collections.iter_mut() {
             let mut touched = false;
             for member in collection.members.iter_mut() {
                 if &member.source_id == source_id && member.relative_path == old_relative {
@@ -211,7 +211,7 @@ impl EguiController {
         relative_path: &Path,
     ) -> bool {
         let mut changed = false;
-        for collection in self.collections.iter_mut() {
+        for collection in self.library.collections.iter_mut() {
             let member = CollectionMember {
                 source_id: source_id.clone(),
                 relative_path: relative_path.to_path_buf(),

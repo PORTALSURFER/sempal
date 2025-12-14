@@ -35,7 +35,7 @@ impl CollectionsController<'_> {
                 root: root.clone(),
             });
         }
-        self.sources
+        self.library.sources
             .iter()
             .find(|s| s.id == member.source_id)
             .cloned()
@@ -71,7 +71,7 @@ impl CollectionsController<'_> {
             relative_path: clip_relative_path.clone(),
             clip_root: Some(clip_root),
         };
-        let mut collections = self.collections.clone();
+        let mut collections = self.library.collections.clone();
         let Some(collection) = collections.iter_mut().find(|c| &c.id == collection_id) else {
             return Err("Collection not found".into());
         };
@@ -79,7 +79,7 @@ impl CollectionsController<'_> {
         if !already_present {
             collection.members.push(new_member.clone());
         }
-        self.collections = collections;
+        self.library.collections = collections;
         if already_present {
             self.set_status("Already in collection", StatusTone::Info);
             return Ok(());
@@ -89,13 +89,13 @@ impl CollectionsController<'_> {
 
     pub(super) fn refresh_collections_ui(&mut self) {
         let selected_id = self.selection_state.ctx.selected_collection.clone();
-        let mut collection_missing: Vec<bool> = Vec::with_capacity(self.collections.len());
-        for collection_index in 0..self.collections.len() {
+        let mut collection_missing: Vec<bool> = Vec::with_capacity(self.library.collections.len());
+        for collection_index in 0..self.library.collections.len() {
             let mut missing = false;
-            let members_len = self.collections[collection_index].members.len();
+            let members_len = self.library.collections[collection_index].members.len();
             for member_index in 0..members_len {
                 let (source_id, relative_path, clip_root) = {
-                    let member = &self.collections[collection_index].members[member_index];
+                    let member = &self.library.collections[collection_index].members[member_index];
                     (
                         member.source_id.clone(),
                         member.relative_path.clone(),
@@ -115,14 +115,14 @@ impl CollectionsController<'_> {
             collection_missing.push(missing);
         }
         self.ui.collections.rows = view_model::collection_rows(
-            &self.collections,
+            &self.library.collections,
             selected_id.as_ref(),
             &collection_missing,
             self.settings.collection_export_root.as_deref(),
         );
         self.ui.collections.selected = selected_id
             .as_ref()
-            .and_then(|id| self.collections.iter().position(|c| &c.id == id));
+            .and_then(|id| self.library.collections.iter().position(|c| &c.id == id));
         self.refresh_collection_samples();
     }
 
@@ -137,7 +137,7 @@ impl CollectionsController<'_> {
         }
         self.ui.collections.selected = selected_id
             .as_ref()
-            .and_then(|id| self.collections.iter().position(|c| &c.id == id));
+            .and_then(|id| self.library.collections.iter().position(|c| &c.id == id));
     }
 
     pub(super) fn refresh_collection_samples(&mut self) {
@@ -145,7 +145,7 @@ impl CollectionsController<'_> {
             .selection_state.ctx
             .selected_collection
             .as_ref()
-            .and_then(|id| self.collections.iter().position(|c| &c.id == id));
+            .and_then(|id| self.library.collections.iter().position(|c| &c.id == id));
         let mut tag_error: Option<String> = None;
         let Some(selected_index) = selected_index else {
             self.ui.collections.samples.clear();
@@ -154,11 +154,11 @@ impl CollectionsController<'_> {
             return;
         };
 
-        let members_len = self.collections[selected_index].members.len();
+        let members_len = self.library.collections[selected_index].members.len();
         let mut samples = Vec::with_capacity(members_len);
         for member_index in 0..members_len {
             let (source_id, relative_path, clip_root) = {
-                let member = &self.collections[selected_index].members[member_index];
+                let member = &self.library.collections[selected_index].members[member_index];
                 (
                     member.source_id.clone(),
                     member.relative_path.clone(),
@@ -173,7 +173,7 @@ impl CollectionsController<'_> {
             let source_label = if clip_root.is_some() {
                 "Collection clip".to_string()
             } else {
-                source_label(&self.sources, &source_id)
+                source_label(&self.library.sources, &source_id)
             };
             let tag = if let Some(root) = clip_root.as_ref() {
                 let source = SampleSource {
@@ -190,8 +190,7 @@ impl CollectionsController<'_> {
                     }
                 }
             } else {
-                let source = self
-                    .sources
+                let source = self.library.sources
                     .iter()
                     .find(|s| s.id == source_id)
                     .cloned();
@@ -248,7 +247,7 @@ impl CollectionsController<'_> {
         if self.selection_state.ctx.selected_collection.is_some() {
             return;
         }
-        if let Some(first) = self.collections.first().cloned() {
+        if let Some(first) = self.library.collections.first().cloned() {
             self.selection_state.ctx.selected_collection = Some(first.id);
         }
     }
@@ -277,7 +276,7 @@ impl CollectionsController<'_> {
 
     pub(super) fn current_collection(&self) -> Option<Collection> {
         let selected = self.selection_state.ctx.selected_collection.as_ref()?;
-        self.collections.iter().find(|c| &c.id == selected).cloned()
+        self.library.collections.iter().find(|c| &c.id == selected).cloned()
     }
 
     pub(super) fn add_sample_to_collection_inner(
@@ -287,7 +286,7 @@ impl CollectionsController<'_> {
         relative_path: &Path,
     ) -> Result<(), String> {
         self.ensure_sample_db_entry(source, relative_path)?;
-        let mut collections = self.collections.clone();
+        let mut collections = self.library.collections.clone();
         let Some(collection) = collections.iter_mut().find(|c| &c.id == collection_id) else {
             return Err("Collection not found".into());
         };
@@ -300,7 +299,7 @@ impl CollectionsController<'_> {
             new_member.source_id.clone(),
             new_member.relative_path.clone(),
         );
-        self.collections = collections;
+        self.library.collections = collections;
         if !added {
             self.set_status("Already in collection", StatusTone::Info);
             return Ok(());
@@ -328,10 +327,10 @@ impl CollectionsController<'_> {
 
     pub(super) fn next_collection_name(&self) -> String {
         let base = "Collection";
-        let mut index = self.collections.len() + 1;
+        let mut index = self.library.collections.len() + 1;
         loop {
             let candidate = format!("{base} {index}");
-            if !self.collections.iter().any(|c| c.name == candidate) {
+            if !self.library.collections.iter().any(|c| c.name == candidate) {
                 return candidate;
             }
             index += 1;

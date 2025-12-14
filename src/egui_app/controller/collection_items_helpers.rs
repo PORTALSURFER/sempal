@@ -123,7 +123,7 @@ impl EguiController {
                 root: root.clone(),
             }
         } else {
-            self.sources
+            self.library.sources
                 .iter()
                 .find(|s| s.id == member.source_id)
                 .cloned()
@@ -139,8 +139,7 @@ impl EguiController {
     }
 
     pub(super) fn drop_collection_member(&mut self, ctx: &CollectionSampleContext) -> bool {
-        let Some(collection) = self
-            .collections
+        let Some(collection) = self.library.collections
             .iter_mut()
             .find(|c| c.id == ctx.collection_id)
         else {
@@ -304,7 +303,7 @@ impl EguiController {
             .map_err(|err| format!("Failed to read database: {err}"))?;
         self.cache.wav.entries.insert(source.id.clone(), entries.clone());
         self.rebuild_wav_cache_lookup(&source.id);
-        self.missing.wavs.insert(
+        self.library.missing.wavs.insert(
             source.id.clone(),
             entries
                 .iter()
@@ -324,8 +323,7 @@ impl EguiController {
         ctx: &CollectionSampleContext,
         new_relative: &Path,
     ) -> Result<(), String> {
-        let Some(collection) = self
-            .collections
+        let Some(collection) = self.library.collections
             .iter_mut()
             .find(|c| c.id == ctx.collection_id)
         else {
@@ -428,7 +426,7 @@ impl EguiController {
         ctx: &CollectionSampleContext,
         new_relative: &Path,
     ) {
-        if let Some(collection) = self.collections.iter().find(|c| c.id == ctx.collection_id) {
+        if let Some(collection) = self.library.collections.iter().find(|c| c.id == ctx.collection_id) {
             let export_dir = collection_export::resolved_export_dir(
                 collection,
                 self.settings.collection_export_root.as_deref(),

@@ -6,7 +6,7 @@ impl EguiController {
     /// Select the first available source or refresh the current one.
     pub fn select_first_source(&mut self) {
         if self.selection_state.ctx.selected_source.is_none() {
-            if let Some(first) = self.sources.first().cloned() {
+            if let Some(first) = self.library.sources.first().cloned() {
                 self.select_source(Some(first.id));
             } else {
                 self.clear_wavs();
@@ -18,17 +18,17 @@ impl EguiController {
 
     /// Change the selected source by index.
     pub fn select_source_by_index(&mut self, index: usize) {
-        let id = self.sources.get(index).map(|s| s.id.clone());
+        let id = self.library.sources.get(index).map(|s| s.id.clone());
         self.select_source(id);
     }
 
     /// Move source selection up or down by an offset.
     pub fn nudge_source_selection(&mut self, offset: isize) {
-        if self.sources.is_empty() {
+        if self.library.sources.is_empty() {
             return;
         }
         let current = self.ui.sources.selected.unwrap_or(0) as isize;
-        let target = (current + offset).clamp(0, self.sources.len() as isize - 1) as usize;
+        let target = (current + offset).clamp(0, self.library.sources.len() as isize - 1) as usize;
         self.select_source_by_index(target);
         self.focus_sources_context();
     }
@@ -61,7 +61,7 @@ impl EguiController {
         if !normalized.is_dir() {
             return Err("Please select a directory".into());
         }
-        if self.sources.iter().any(|s| s.root == normalized) {
+        if self.library.sources.iter().any(|s| s.root == normalized) {
             self.set_status("Source already added", StatusTone::Info);
             return Ok(());
         }
@@ -69,7 +69,7 @@ impl EguiController {
         SourceDatabase::open(&normalized)
             .map_err(|err| format!("Failed to create database: {err}"))?;
         let _ = self.cache_db(&source);
-        self.sources.push(source.clone());
+        self.library.sources.push(source.clone());
         self.select_source(Some(source.id.clone()));
         self.persist_config("Failed to save config after adding source")?;
         Ok(())
@@ -77,21 +77,21 @@ impl EguiController {
 
     /// Remove a configured source by index.
     pub fn remove_source(&mut self, index: usize) {
-        if index >= self.sources.len() {
+        if index >= self.library.sources.len() {
             return;
         }
-        let removed = self.sources.remove(index);
-        self.missing.sources.remove(&removed.id);
+        let removed = self.library.sources.remove(index);
+        self.library.missing.sources.remove(&removed.id);
         let mut invalidator = source_cache_invalidator::SourceCacheInvalidator::new(
             &mut self.cache.db,
             &mut self.cache.wav.entries,
             &mut self.cache.wav.lookup,
             &mut self.browser_cache.labels,
-            &mut self.missing.wavs,
+            &mut self.library.missing.wavs,
             &mut self.folder_browsers.models,
         );
         invalidator.invalidate_all(&removed.id);
-        for collection in self.collections.iter_mut() {
+        for collection in self.library.collections.iter_mut() {
             let export_dir = collection_export::resolved_export_dir(
                 collection,
                 self.settings.collection_export_root.as_deref(),
@@ -120,11 +120,10 @@ impl EguiController {
     }
 
     pub(super) fn refresh_sources_ui(&mut self) {
-        self.ui.sources.rows = self
-            .sources
+        self.ui.sources.rows = self.library.sources
             .iter()
             .map(|source| {
-                let missing = self.missing.sources.contains(&source.id);
+                let missing = self.library.missing.sources.contains(&source.id);
                 view_model::source_row(source, missing)
             })
             .collect();
@@ -133,33 +132,33 @@ impl EguiController {
             .selection_state.ctx
             .selected_source
             .as_ref()
-            .and_then(|id| self.sources.iter().position(|s| &s.id == id));
+            .and_then(|id| self.library.sources.iter().position(|s| &s.id == id));
         self.ui.sources.scroll_to = self.ui.sources.selected;
     }
 
     pub(crate) fn current_source(&self) -> Option<SampleSource> {
         let selected = self.selection_state.ctx.selected_source.as_ref()?;
-        self.sources.iter().find(|s| &s.id == selected).cloned()
+        self.library.sources.iter().find(|s| &s.id == selected).cloned()
     }
 
     pub(super) fn rebuild_missing_sources(&mut self) {
-        self.missing.sources.clear();
-        for source in &self.sources {
+        self.library.missing.sources.clear();
+        for source in &self.library.sources {
             if !source.root.is_dir() {
-                self.missing.sources.insert(source.id.clone());
-                self.missing.wavs.entry(source.id.clone()).or_default();
+                self.library.missing.sources.insert(source.id.clone());
+                self.library.missing.wavs.entry(source.id.clone()).or_default();
             }
         }
     }
 
     pub(super) fn mark_source_missing(&mut self, source_id: &SourceId, reason: &str) {
-        let inserted = self.missing.sources.insert(source_id.clone());
+        let inserted = self.library.missing.sources.insert(source_id.clone());
         if inserted && self.selection_state.ctx.selected_source.as_ref() == Some(source_id) {
             self.clear_waveform_view();
         }
-        self.missing.wavs.entry(source_id.clone()).or_default();
+        self.library.missing.wavs.entry(source_id.clone()).or_default();
         self.refresh_sources_ui();
-        if let Some(source) = self.sources.iter().find(|s| &s.id == source_id) {
+        if let Some(source) = self.library.sources.iter().find(|s| &s.id == source_id) {
             self.set_status(
                 format!("{reason}: {}", source.root.display()),
                 StatusTone::Warning,
@@ -170,8 +169,8 @@ impl EguiController {
     }
 
     pub(super) fn clear_source_missing(&mut self, source_id: &SourceId) {
-        let removed = self.missing.sources.remove(source_id);
-        self.missing.wavs.remove(source_id);
+        let removed = self.library.missing.sources.remove(source_id);
+        self.library.missing.wavs.remove(source_id);
         if removed {
             self.refresh_sources_ui();
         }
@@ -200,7 +199,7 @@ impl EguiController {
             self.ui.collections.selected_sample = None;
         }
         if let Some(ref source_id) = id
-            && self.sources.iter().any(|s| &s.id == source_id)
+            && self.library.sources.iter().any(|s| &s.id == source_id)
         {
             self.selection_state.ctx.last_selected_browsable_source = Some(source_id.clone());
         }
@@ -221,9 +220,9 @@ impl EguiController {
         self.ui.sources.folders = FolderBrowserUiState::default();
         self.clear_waveform_view();
         if let Some(selected) = self.selection_state.ctx.selected_source.as_ref() {
-            self.missing.wavs.remove(selected);
+            self.library.missing.wavs.remove(selected);
         } else {
-            self.missing.wavs.clear();
+            self.library.missing.wavs.clear();
         }
     }
 
@@ -258,15 +257,14 @@ impl EguiController {
 
     /// Remap a source to a new root path, preserving the source id and tags.
     pub fn remap_source_to(&mut self, index: usize, new_root: PathBuf) -> Result<(), String> {
-        let Some(existing) = self.sources.get(index) else {
+        let Some(existing) = self.library.sources.get(index) else {
             return Err("Source not found".into());
         };
         let normalized = crate::sample_sources::config::normalize_path(new_root.as_path());
         if !normalized.is_dir() {
             return Err("Please select a directory".into());
         }
-        if self
-            .sources
+        if self.library.sources
             .iter()
             .enumerate()
             .any(|(i, source)| i != index && source.root == normalized)
@@ -283,14 +281,14 @@ impl EguiController {
         SourceDatabase::open(&normalized)
             .map_err(|err| format!("Failed to prepare database: {err}"))?;
         let source_id = existing.id.clone();
-        self.sources[index].root = normalized.clone();
-        self.missing.sources.remove(&source_id);
+        self.library.sources[index].root = normalized.clone();
+        self.library.missing.sources.remove(&source_id);
         let mut invalidator = source_cache_invalidator::SourceCacheInvalidator::new(
             &mut self.cache.db,
             &mut self.cache.wav.entries,
             &mut self.cache.wav.lookup,
             &mut self.browser_cache.labels,
-            &mut self.missing.wavs,
+            &mut self.library.missing.wavs,
             &mut self.folder_browsers.models,
         );
         invalidator.invalidate_db_cache(&source_id);
@@ -308,7 +306,7 @@ impl EguiController {
 
     /// Open the source root in the OS file explorer.
     pub fn open_source_folder(&mut self, index: usize) {
-        let Some(source) = self.sources.get(index) else {
+        let Some(source) = self.library.sources.get(index) else {
             self.set_status("Source not found", StatusTone::Error);
             return;
         };

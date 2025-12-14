@@ -15,8 +15,7 @@ impl EguiController {
         register_in_source: bool,
     ) -> Result<WavEntry, String> {
         let audio = self.selection_audio(source_id, relative_path)?;
-        let source = self
-            .sources
+        let source = self.library.sources
             .iter()
             .find(|s| &s.id == source_id)
             .cloned()
@@ -45,8 +44,7 @@ impl EguiController {
         folder: &Path,
     ) -> Result<WavEntry, String> {
         let audio = self.selection_audio(source_id, relative_path)?;
-        let source = self
-            .sources
+        let source = self.library.sources
             .iter()
             .find(|s| &s.id == source_id)
             .cloned()
@@ -282,7 +280,7 @@ mod tests {
         let renderer = crate::waveform::WaveformRenderer::new(12, 12);
         let mut controller = EguiController::new(renderer, None);
         let source = SampleSource::new(source_root.clone());
-        controller.sources.push(source.clone());
+        controller.library.sources.push(source.clone());
 
         let orig = source_root.join("drums").join("clip.wav");
         write_test_wav(&orig, &[0.1, 0.2, 0.3, 0.4]);

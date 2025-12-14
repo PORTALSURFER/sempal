@@ -79,10 +79,8 @@ pub struct EguiController {
     renderer: WaveformRenderer,
     audio: ControllerAudioState,
     waveform: WaveformState,
-    sources: Vec<SampleSource>,
-    collections: Vec<Collection>,
+    library: LibraryState,
     cache: LibraryCacheState,
-    missing: MissingState,
     browser_cache: BrowserCacheState,
     wav_entries: WavEntriesState,
     selection_state: ControllerSelectionState,
@@ -129,18 +127,20 @@ impl EguiController {
                 decoded: None,
                 render_meta: None,
             },
-            sources: Vec::new(),
-            collections: Vec::new(),
+            library: LibraryState {
+                sources: Vec::new(),
+                collections: Vec::new(),
+                missing: MissingState {
+                    sources: HashSet::new(),
+                    wavs: HashMap::new(),
+                },
+            },
             cache: LibraryCacheState {
                 db: HashMap::new(),
                 wav: WavCacheState {
                     entries: HashMap::new(),
                     lookup: HashMap::new(),
                 },
-            },
-            missing: MissingState {
-                sources: HashSet::new(),
-                wavs: HashMap::new(),
             },
             browser_cache: BrowserCacheState {
                 labels: HashMap::new(),
@@ -292,6 +292,12 @@ struct RowFlags {
 struct MissingState {
     sources: HashSet<SourceId>,
     wavs: HashMap<SourceId, HashSet<PathBuf>>,
+}
+
+struct LibraryState {
+    sources: Vec<SampleSource>,
+    collections: Vec<Collection>,
+    missing: MissingState,
 }
 
 struct WavCacheState {

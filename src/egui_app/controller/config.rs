@@ -31,19 +31,19 @@ impl EguiController {
         self.apply_volume(cfg.volume);
         self.ui.trash_folder = cfg.trash_folder.clone();
         self.ui.collection_export_root = cfg.collection_export_root.clone();
-        self.sources = cfg.sources.clone();
+        self.library.sources = cfg.sources.clone();
         self.rebuild_missing_sources();
-        if !self.missing.sources.is_empty() {
-            let count = self.missing.sources.len();
+        if !self.library.missing.sources.is_empty() {
+            let count = self.library.missing.sources.len();
             let suffix = if count == 1 { "" } else { "s" };
             self.set_status(
                 format!("{count} source{suffix} unavailable"),
                 StatusTone::Warning,
             );
         }
-        self.collections = cfg.collections;
+        self.library.collections = cfg.collections;
         // Backfill clip roots for legacy collection-owned clips that were not persisted.
-        for collection in self.collections.iter_mut() {
+        for collection in self.library.collections.iter_mut() {
             let expected_source_prefix = format!("collection-{}", collection.id.as_str());
             let resolved_root = crate::egui_app::controller::collection_export::resolved_export_dir(
                 collection,
@@ -66,7 +66,7 @@ impl EguiController {
         }
         self.selection_state.ctx.selected_source = cfg
             .last_selected_source
-            .filter(|id| self.sources.iter().any(|s| &s.id == id));
+            .filter(|id| self.library.sources.iter().any(|s| &s.id == id));
         self.selection_state.ctx.last_selected_browsable_source =
             self.selection_state.ctx.selected_source.clone();
         self.ensure_collection_selection();
@@ -87,8 +87,8 @@ impl EguiController {
         &self,
     ) -> Result<(), crate::sample_sources::config::ConfigError> {
         crate::sample_sources::config::save(&crate::sample_sources::config::AppConfig {
-            sources: self.sources.clone(),
-            collections: self.collections.clone(),
+            sources: self.library.sources.clone(),
+            collections: self.library.collections.clone(),
             feature_flags: self.settings.feature_flags.clone(),
             trash_folder: self.settings.trash_folder.clone(),
             collection_export_root: self.settings.collection_export_root.clone(),
@@ -96,7 +96,7 @@ impl EguiController {
                 .selection_state.ctx
                 .selected_source
                 .clone()
-                .filter(|id| self.sources.iter().any(|s| &s.id == id))
+                .filter(|id| self.library.sources.iter().any(|s| &s.id == id))
                 .or_else(|| self.selection_state.ctx.last_selected_browsable_source.clone()),
             audio_output: self.settings.audio_output.clone(),
             volume: self.ui.volume,

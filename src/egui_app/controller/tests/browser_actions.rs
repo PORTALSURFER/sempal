@@ -13,7 +13,7 @@ use tempfile::tempdir;
 #[test]
 fn hotkey_tagging_applies_to_all_selected_rows() {
     let (mut controller, source) = dummy_controller();
-    controller.sources.push(source.clone());
+    controller.library.sources.push(source.clone());
     controller.cache_db(&source).unwrap();
     controller.wav_entries.entries = vec![
         sample_entry("one.wav", SampleTag::Neutral),
@@ -33,7 +33,7 @@ fn hotkey_tagging_applies_to_all_selected_rows() {
 #[test]
 fn focus_hotkey_does_not_autoplay_browser_sample() {
     let (mut controller, source) = dummy_controller();
-    controller.sources.push(source.clone());
+    controller.library.sources.push(source.clone());
     write_test_wav(&source.root.join("one.wav"), &[0.0, 0.1]);
     controller.wav_entries.entries = vec![sample_entry("one.wav", SampleTag::Neutral)];
     controller.rebuild_wav_lookup();
@@ -55,7 +55,7 @@ fn focus_hotkey_does_not_autoplay_browser_sample() {
 #[test]
 fn x_key_toggle_respects_focus() {
     let (mut controller, source) = dummy_controller();
-    controller.sources.push(source);
+    controller.library.sources.push(source);
     controller.wav_entries.entries = vec![
         sample_entry("one.wav", SampleTag::Neutral),
         sample_entry("two.wav", SampleTag::Neutral),
@@ -83,7 +83,7 @@ fn x_key_toggle_respects_focus() {
 #[test]
 fn action_rows_include_selection_and_primary() {
     let (mut controller, source) = dummy_controller();
-    controller.sources.push(source);
+    controller.library.sources.push(source);
     controller.wav_entries.entries = vec![
         sample_entry("one.wav", SampleTag::Neutral),
         sample_entry("two.wav", SampleTag::Neutral),
@@ -102,7 +102,7 @@ fn action_rows_include_selection_and_primary() {
 #[test]
 fn tag_actions_apply_to_all_selected_rows() {
     let (mut controller, source) = dummy_controller();
-    controller.sources.push(source.clone());
+    controller.library.sources.push(source.clone());
     controller.cache_db(&source).unwrap();
     controller.wav_entries.entries = vec![
         sample_entry("one.wav", SampleTag::Neutral),
@@ -126,7 +126,7 @@ fn tag_actions_apply_to_all_selected_rows() {
 #[test]
 fn delete_actions_apply_to_all_selected_rows() {
     let (mut controller, source) = dummy_controller();
-    controller.sources.push(source.clone());
+    controller.library.sources.push(source.clone());
     controller.cache_db(&source).unwrap();
     write_test_wav(&source.root.join("one.wav"), &[0.0, 0.1]);
     write_test_wav(&source.root.join("two.wav"), &[0.0, 0.1]);
@@ -155,7 +155,7 @@ fn delete_actions_apply_to_all_selected_rows() {
 #[test]
 fn normalize_actions_apply_to_all_selected_rows() {
     let (mut controller, source) = dummy_controller();
-    controller.sources.push(source.clone());
+    controller.library.sources.push(source.clone());
     controller.cache_db(&source).unwrap();
     write_test_wav(&source.root.join("one.wav"), &[0.0, 0.1]);
     write_test_wav(&source.root.join("two.wav"), &[0.0, 0.1]);
@@ -179,7 +179,7 @@ fn normalize_actions_apply_to_all_selected_rows() {
 #[test]
 fn selection_persists_when_nudging_focus() {
     let (mut controller, source) = dummy_controller();
-    controller.sources.push(source.clone());
+    controller.library.sources.push(source.clone());
     controller.cache_db(&source).unwrap();
     controller.wav_entries.entries = vec![
         sample_entry("one.wav", SampleTag::Neutral),
@@ -203,7 +203,7 @@ fn selection_persists_when_nudging_focus() {
 #[test]
 fn focused_row_actions_work_without_explicit_selection() {
     let (mut controller, source) = dummy_controller();
-    controller.sources.push(source.clone());
+    controller.library.sources.push(source.clone());
     controller.cache_db(&source).unwrap();
     controller.wav_entries.entries = vec![
         sample_entry("one.wav", SampleTag::Neutral),
@@ -229,7 +229,7 @@ fn exporting_selection_updates_entries_and_db() {
     let renderer = WaveformRenderer::new(12, 12);
     let mut controller = EguiController::new(renderer, None);
     let source = SampleSource::new(root.clone());
-    controller.sources.push(source.clone());
+    controller.library.sources.push(source.clone());
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
 
     let orig = root.join("orig.wav");
@@ -282,7 +282,7 @@ fn browser_normalize_refreshes_exports() -> Result<(), String> {
     let mut controller = EguiController::new(renderer, None);
     let source = SampleSource::new(root.clone());
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
-    controller.sources.push(source.clone());
+    controller.library.sources.push(source.clone());
 
     write_test_wav(&root.join("one.wav"), &[0.25, -0.5]);
     controller.wav_entries.entries = vec![sample_entry("one.wav", SampleTag::Neutral)];
@@ -298,7 +298,7 @@ fn browser_normalize_refreshes_exports() -> Result<(), String> {
     std::fs::create_dir_all(&manual_dir).unwrap();
     collection.export_path = Some(manual_dir.clone());
     collection.add_member(source.id.clone(), PathBuf::from("one.wav"));
-    controller.collections.push(collection);
+    controller.library.collections.push(collection);
 
     let member = CollectionMember {
         source_id: source.id.clone(),
@@ -308,8 +308,7 @@ fn browser_normalize_refreshes_exports() -> Result<(), String> {
     controller.export_member_if_needed(&collection_id, &member)?;
     controller.normalize_browser_sample(0)?;
 
-    let collection = controller
-        .collections
+    let collection = controller.library.collections
         .iter()
         .find(|c| c.id == collection_id)
         .unwrap();
@@ -342,7 +341,7 @@ fn browser_delete_prunes_collections_and_exports() -> Result<(), String> {
     let mut controller = EguiController::new(renderer, None);
     let source = SampleSource::new(root.clone());
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
-    controller.sources.push(source.clone());
+    controller.library.sources.push(source.clone());
 
     write_test_wav(&root.join("delete.wav"), &[0.1, 0.2]);
     controller.wav_entries.entries = vec![sample_entry("delete.wav", SampleTag::Neutral)];
@@ -355,7 +354,7 @@ fn browser_delete_prunes_collections_and_exports() -> Result<(), String> {
     std::fs::create_dir_all(&manual_dir).unwrap();
     collection.export_path = Some(manual_dir.clone());
     collection.add_member(source.id.clone(), PathBuf::from("delete.wav"));
-    controller.collections.push(collection);
+    controller.library.collections.push(collection);
 
     let member = CollectionMember {
         source_id: source.id.clone(),
@@ -369,8 +368,7 @@ fn browser_delete_prunes_collections_and_exports() -> Result<(), String> {
     controller.delete_browser_sample(0)?;
     assert!(!root.join("delete.wav").exists());
     assert!(!export_path.exists());
-    assert!(controller
-        .collections
+    assert!(controller.library.collections
         .iter()
         .find(|c| c.id == collection_id)
         .unwrap()
@@ -382,7 +380,7 @@ fn browser_delete_prunes_collections_and_exports() -> Result<(), String> {
 #[test]
 fn deleting_browser_sample_moves_focus_forward() -> Result<(), String> {
     let (mut controller, source) = dummy_controller();
-    controller.sources.push(source.clone());
+    controller.library.sources.push(source.clone());
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
     for name in ["a.wav", "b.wav", "c.wav"] {
         write_test_wav(&source.root.join(name), &[0.1, -0.1]);

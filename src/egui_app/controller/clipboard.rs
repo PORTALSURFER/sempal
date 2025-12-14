@@ -33,8 +33,7 @@ impl EguiController {
                 .samples
                 .get(idx)
                 .ok_or_else(|| "Collection sample not found".to_string())?;
-            let source = self
-                .sources
+            let source = self.library.sources
                 .iter()
                 .find(|s| s.id == sample.source_id)
                 .ok_or_else(|| "Source not available for this sample".to_string())?;

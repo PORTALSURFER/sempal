@@ -219,8 +219,7 @@ impl HotkeysController<'_> {
             .loaded_audio
             .as_ref()
             .ok_or_else(|| "Load a sample to normalize it".to_string())?;
-        let source = self
-            .sources
+        let source = self.library.sources
             .iter()
             .find(|s| s.id == audio.source_id)
             .cloned()

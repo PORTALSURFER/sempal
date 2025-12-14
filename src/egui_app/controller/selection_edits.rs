@@ -308,8 +308,7 @@ impl EguiController {
             .loaded_audio
             .as_ref()
             .ok_or_else(|| "Load a sample to edit it".to_string())?;
-        let source = self
-            .sources
+        let source = self.library.sources
             .iter()
             .find(|s| s.id == audio.source_id)
             .cloned()
@@ -379,8 +378,7 @@ impl EguiController {
         undo::UndoEntry::<EguiController>::new(
             label,
             move |controller: &mut EguiController| {
-                let source = controller
-                    .sources
+                let source = controller.library.sources
                     .iter()
                     .find(|s| s.id == undo_source_id)
                     .cloned()
@@ -394,8 +392,7 @@ impl EguiController {
                 Ok(())
             },
             move |controller: &mut EguiController| {
-                let source = controller
-                    .sources
+                let source = controller.library.sources
                     .iter()
                     .find(|s| s.id == redo_source_id)
                     .cloned()
@@ -436,8 +433,7 @@ impl EguiController {
         source_id: &SourceId,
         relative_path: &Path,
     ) -> Result<(), String> {
-        let source = self
-            .sources
+        let source = self.library.sources
             .iter()
             .find(|s| &s.id == source_id)
             .cloned()
