@@ -64,6 +64,54 @@ fn trail_samples_in_window(
     window
 }
 
+fn gradient_stops_from_trail_window(
+    window: &[crate::egui_app::state::PlayheadTrailSample],
+    rect: egui::Rect,
+    view: crate::egui_app::state::WaveformView,
+    to_screen_x: &impl Fn(f32, egui::Rect) -> f32,
+    alpha_for_time: impl Fn(f64) -> u8,
+) -> Vec<(f32, u8)> {
+    if window.len() < 2 {
+        return Vec::new();
+    }
+
+    const MAX_STOP_SPACING_PX: f32 = 1.0;
+    const MAX_STOPS_PER_WINDOW: usize = 4096;
+
+    let mut stops = Vec::new();
+    for segment in window.windows(2) {
+        let a = segment[0];
+        let b = segment[1];
+        let a_pos = a.position.clamp(view.start, view.end);
+        let b_pos = b.position.clamp(view.start, view.end);
+        let a_x = to_screen_x(a_pos, rect);
+        let b_x = to_screen_x(b_pos, rect);
+        let dx = (b_x - a_x).abs();
+        let steps = ((dx / MAX_STOP_SPACING_PX).ceil() as usize).max(1);
+
+        for step in 0..steps {
+            if stops.len() >= MAX_STOPS_PER_WINDOW {
+                break;
+            }
+            let t = step as f32 / steps as f32;
+            let time = a.time + (b.time - a.time) * t as f64;
+            let x = a_x + (b_x - a_x) * t;
+            stops.push((x, alpha_for_time(time)));
+        }
+        if stops.len() >= MAX_STOPS_PER_WINDOW {
+            break;
+        }
+    }
+
+    if stops.len() < MAX_STOPS_PER_WINDOW
+        && let Some(last) = window.last()
+    {
+        let pos = last.position.clamp(view.start, view.end);
+        stops.push((to_screen_x(pos, rect), alpha_for_time(last.time)));
+    }
+    stops
+}
+
 pub(super) fn render_overlays(
     app: &mut EguiApp,
     ui: &mut egui::Ui,
@@ -143,16 +191,13 @@ pub(super) fn render_overlays(
         if window.len() < 2 {
             continue;
         }
-        let mut stops: Vec<(f32, u8)> = Vec::with_capacity(window.len());
-        for sample in window {
-            let base_age = (last_time - sample.time).max(0.0);
+        let stops = gradient_stops_from_trail_window(&window, rect, view, to_screen_x, |time| {
+            let base_age = (last_time - time).max(0.0);
             let t = (1.0 - (base_age / TRAIL_DURATION_SECS)).clamp(0.0, 1.0) as f32;
-            let alpha = ((t * t) * 150.0 * fade_strength)
+            ((t * t) * 150.0 * fade_strength)
                 .round()
-                .clamp(0.0, 255.0) as u8;
-            let pos = sample.position.clamp(view.start, view.end);
-            stops.push((to_screen_x(pos, rect), alpha));
-        }
+                .clamp(0.0, 255.0) as u8
+        });
         paint_playhead_trail_mesh(ui, rect, &stops, highlight);
     }
 
@@ -205,19 +250,16 @@ pub(super) fn render_overlays(
             playhead.trail.pop_front();
         }
 
-        let cutoff = now - TRAIL_DURATION_SECS;
-        let window = trail_samples_in_window(&playhead.trail, cutoff);
-        if window.len() >= 2 {
-            let mut stops: Vec<(f32, u8)> = Vec::with_capacity(window.len());
-            for sample in window {
-                let age = (now - sample.time).max(0.0);
-                let t = (1.0 - (age / TRAIL_DURATION_SECS)).clamp(0.0, 1.0) as f32;
-                let alpha = ((t * t) * 170.0).round().clamp(0.0, 255.0) as u8;
-                let pos = sample.position.clamp(view.start, view.end);
-                stops.push((to_screen_x(pos, rect), alpha));
-            }
-            paint_playhead_trail_mesh(ui, rect, &stops, highlight);
-        }
+    let cutoff = now - TRAIL_DURATION_SECS;
+    let window = trail_samples_in_window(&playhead.trail, cutoff);
+    if window.len() >= 2 {
+        let stops = gradient_stops_from_trail_window(&window, rect, view, to_screen_x, |time| {
+            let age = (now - time).max(0.0);
+            let t = (1.0 - (age / TRAIL_DURATION_SECS)).clamp(0.0, 1.0) as f32;
+            ((t * t) * 170.0).round().clamp(0.0, 255.0) as u8
+        });
+        paint_playhead_trail_mesh(ui, rect, &stops, highlight);
+    }
 
         let x = to_screen_x(position, rect);
         ui.painter().line_segment(
@@ -242,8 +284,10 @@ pub(super) fn render_overlays(
 
 #[cfg(test)]
 mod tests {
-    use super::trail_samples_in_window;
+    use super::{gradient_stops_from_trail_window, trail_samples_in_window};
     use crate::egui_app::state::PlayheadTrailSample;
+    use crate::egui_app::state::WaveformView;
+    use eframe::egui;
     use std::collections::VecDeque;
 
     #[test]
@@ -262,5 +306,24 @@ mod tests {
         assert!((window[0].position - 0.2).abs() < 1e-6);
         assert!((window[0].time - 0.5).abs() < 1e-12);
         assert!((window[1].position - 0.3).abs() < 1e-6);
+    }
+
+    #[test]
+    fn gradient_stops_from_trail_window_densifies_large_gaps() {
+        let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(100.0, 10.0));
+        let view = WaveformView { start: 0.0, end: 1.0 };
+        let to_screen_x = |pos: f32, rect: egui::Rect| rect.left() + rect.width() * pos;
+        let window = vec![
+            PlayheadTrailSample {
+                position: 0.0,
+                time: 0.0,
+            },
+            PlayheadTrailSample {
+                position: 1.0,
+                time: 1.0,
+            },
+        ];
+        let stops = gradient_stops_from_trail_window(&window, rect, view, &to_screen_x, |_| 128);
+        assert!(stops.len() > 10);
     }
 }
