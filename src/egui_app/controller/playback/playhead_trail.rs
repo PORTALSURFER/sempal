@@ -56,7 +56,7 @@ pub(super) fn tick_playhead_trail(
         return;
     }
 
-    let position = position.clamp(0.0, 1.0);
+    let mut position = position.clamp(0.0, 1.0);
     let discontinuity = match playhead.trail.back() {
         Some(last) => {
             let delta = (position - last.position).abs();
@@ -70,6 +70,12 @@ pub(super) fn tick_playhead_trail(
         stash_active_trail(playhead);
         playhead.trail.push_back(PlayheadTrailSample { position, time: now });
         return;
+    }
+
+    if let Some(last) = playhead.trail.back() {
+        if position < last.position {
+            position = last.position;
+        }
     }
 
     let should_push = match playhead.trail.back() {
@@ -92,5 +98,27 @@ pub(super) fn tick_playhead_trail(
     }
     while playhead.trail.len() > MAX_TRAIL_SAMPLES {
         playhead.trail.pop_front();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::tick_playhead_trail;
+    use crate::egui_app::state::{PlayheadState, PlayheadTrailSample};
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn tick_playhead_trail_clamps_tiny_backwards_jitter() {
+        let mut playhead = PlayheadState::default();
+        playhead.trail.push_back(PlayheadTrailSample {
+            position: 0.5,
+            time: Instant::now() - Duration::from_secs(1),
+        });
+
+        tick_playhead_trail(&mut playhead, 0.4999, false, true);
+
+        assert!(playhead.trail.len() >= 1);
+        let last = playhead.trail.back().unwrap();
+        assert!((last.position - 0.5).abs() < 1e-6);
     }
 }

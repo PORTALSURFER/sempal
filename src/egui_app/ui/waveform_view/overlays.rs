@@ -46,10 +46,26 @@ fn playhead_trail_mesh(
 }
 
 fn paint_playhead_trail_mesh(ui: &mut egui::Ui, rect: egui::Rect, stops: &[(f32, u8)], color: Color32) {
-    let Some(mesh) = playhead_trail_mesh(rect, stops, color) else {
+    const MONOTONIC_EPS_PX: f32 = 0.25;
+
+    if stops.len() < 2 {
         return;
-    };
-    ui.painter().add(egui::Shape::mesh(mesh));
+    }
+
+    let mut start = 0usize;
+    while start + 1 < stops.len() {
+        let mut end = start + 1;
+        while end < stops.len() && stops[end].0 + MONOTONIC_EPS_PX >= stops[end - 1].0 {
+            end += 1;
+        }
+
+        let chunk = &stops[start..end];
+        if let Some(mesh) = playhead_trail_mesh(rect, chunk, color) {
+            ui.painter().add(egui::Shape::mesh(mesh));
+        }
+
+        start = end;
+    }
 }
 
 fn trail_samples_in_window(
