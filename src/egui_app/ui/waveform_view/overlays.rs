@@ -90,22 +90,55 @@ pub(super) fn render_overlays(
             playhead.trail.pop_front();
         }
 
-        let max_alpha: u8 = 160;
-        for sample in playhead.trail.iter() {
-            if sample.position < view.start || sample.position > view.end {
-                continue;
+        if let (Some(start), Some(end)) = (playhead.trail.front(), playhead.trail.back()) {
+            let start_pos = start.position.clamp(view.start, view.end);
+            let end_pos = end.position.clamp(view.start, view.end);
+            let start_x = to_screen_x(start_pos, rect);
+            let end_x = to_screen_x(end_pos, rect);
+            if (end_x - start_x).abs() >= 1.0 {
+                let left_x = start_x.min(end_x);
+                let right_x = start_x.max(end_x);
+                let y_top = rect.top();
+                let y_bottom = rect.bottom();
+
+                let mut mesh = egui::epaint::Mesh::default();
+                let uv = egui::pos2(0.0, 0.0);
+                let trail_alpha_start: u8 = 0;
+                let trail_alpha_end: u8 = 150;
+                let left_color = style::with_alpha(highlight, trail_alpha_start);
+                let right_color = style::with_alpha(highlight, trail_alpha_end);
+
+                let idx0 = mesh.vertices.len() as u32;
+                mesh.vertices.push(egui::epaint::Vertex {
+                    pos: egui::pos2(left_x, y_top),
+                    uv,
+                    color: left_color,
+                });
+                mesh.vertices.push(egui::epaint::Vertex {
+                    pos: egui::pos2(right_x, y_top),
+                    uv,
+                    color: right_color,
+                });
+                mesh.vertices.push(egui::epaint::Vertex {
+                    pos: egui::pos2(right_x, y_bottom),
+                    uv,
+                    color: right_color,
+                });
+                mesh.vertices.push(egui::epaint::Vertex {
+                    pos: egui::pos2(left_x, y_bottom),
+                    uv,
+                    color: left_color,
+                });
+                mesh.indices.extend_from_slice(&[
+                    idx0,
+                    idx0 + 1,
+                    idx0 + 2,
+                    idx0,
+                    idx0 + 2,
+                    idx0 + 3,
+                ]);
+                ui.painter().add(egui::Shape::mesh(mesh));
             }
-            let age = (now - sample.time).max(0.0);
-            let t = (1.0 - (age / TRAIL_DURATION_SECS)).clamp(0.0, 1.0) as f32;
-            let alpha = ((t * t) * max_alpha as f32).round() as u8;
-            if alpha < 4 {
-                continue;
-            }
-            let x = to_screen_x(sample.position, rect);
-            ui.painter().line_segment(
-                [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
-                Stroke::new(2.0, style::with_alpha(highlight, alpha)),
-            );
         }
 
         let x = to_screen_x(position, rect);
