@@ -67,6 +67,11 @@ pub(super) fn play_audio(
     controller.ui.waveform.playhead.active_span_end = Some(span_end.clamp(0.0, 1.0));
     controller.ui.waveform.playhead.visible = true;
     controller.ui.waveform.playhead.position = start;
+    super::playhead_trail::start_or_seek_trail(
+        &mut controller.ui.waveform.playhead,
+        start,
+        start_override.is_some(),
+    );
     if start_override.is_some() {
         controller.ui.waveform.playhead.recent_seek = Some(crate::egui_app::state::PlayheadSeek {
             position: start,
@@ -113,7 +118,7 @@ pub(super) fn tick_playhead(controller: &mut EguiController) {
     let progress = player_ref.progress();
     let is_looping = player_ref.is_looping();
     drop(player_ref);
-    update_playhead_from_progress(controller, progress, is_looping);
+    update_playhead_from_progress(controller, progress, is_looping, is_playing);
     if !is_playing && controller.sample_view.waveform.decoded.is_none() {
         hide_waveform_playhead(controller);
     }
@@ -123,11 +128,18 @@ pub(super) fn update_playhead_from_progress(
     controller: &mut EguiController,
     progress: Option<f32>,
     is_looping: bool,
+    is_playing: bool,
 ) {
     if let Some(progress) = progress {
         let playhead = &mut controller.ui.waveform.playhead;
         let progress = smooth_progress_after_seek(&mut playhead.recent_seek, progress);
         controller.ui.waveform.playhead.position = progress;
+        super::playhead_trail::tick_playhead_trail(
+            &mut controller.ui.waveform.playhead,
+            progress,
+            is_looping,
+            is_playing,
+        );
         if playhead_completed_span(controller, progress, is_looping) {
             hide_waveform_playhead(controller);
         } else {
@@ -181,6 +193,7 @@ fn smooth_progress_after_seek(
 }
 
 pub(super) fn hide_waveform_playhead(controller: &mut EguiController) {
+    super::playhead_trail::stash_active_trail(&mut controller.ui.waveform.playhead);
     controller.ui.waveform.playhead.visible = false;
     controller.ui.waveform.playhead.active_span_end = None;
     controller.ui.waveform.playhead.recent_seek = None;

@@ -141,7 +141,7 @@ pub struct PlayheadSeek {
 /// Cached samples for a playhead trail that is fading out.
 #[derive(Clone, Debug)]
 pub struct FadingPlayheadTrail {
-    pub started_at: f64,
+    pub started_at: Instant,
     pub samples: VecDeque<PlayheadTrailSample>,
 }
 
@@ -150,6 +150,6 @@ pub struct FadingPlayheadTrail {
 pub struct PlayheadTrailSample {
     /// Normalized playhead position (0.0-1.0).
     pub position: f32,
-    /// Timestamp from `egui::InputState::time` when captured.
-    pub time: f64,
+    /// Monotonic timestamp for trail aging.
+    pub time: Instant,
 }

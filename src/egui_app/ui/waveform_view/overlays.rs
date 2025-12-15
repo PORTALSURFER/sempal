@@ -1,6 +1,7 @@
 use super::style;
 use super::*;
 use eframe::egui::{self, Color32, Stroke};
+use std::time::{Duration, Instant};
 
 fn to_screen_x_unclamped(
     position: f32,
@@ -51,75 +52,18 @@ fn paint_playhead_trail_mesh(ui: &mut egui::Ui, rect: egui::Rect, stops: &[(f32,
     ui.painter().add(egui::Shape::mesh(mesh));
 }
 
-fn paint_playhead_trail_mesh_runs(
-    ui: &mut egui::Ui,
-    rect: egui::Rect,
-    stops: &[(f32, u8)],
-    color: Color32,
-) {
-    const DIRECTION_TOLERANCE_PX: f32 = 0.5;
-    const DUPLICATE_TOLERANCE_PX: f32 = 0.1;
-
-    let mut run: Vec<(f32, u8)> = Vec::new();
-    let mut direction: Option<i8> = None;
-
-    let flush = |ui: &mut egui::Ui, rect: egui::Rect, run: &[(f32, u8)], color: Color32| {
-        if run.len() >= 2 {
-            paint_playhead_trail_mesh(ui, rect, run, color);
-        }
-    };
-
-    for &(x, alpha) in stops {
-        if let Some((prev_x, prev_alpha)) = run.last().copied() {
-            if (x - prev_x).abs() <= DUPLICATE_TOLERANCE_PX && alpha == prev_alpha {
-                continue;
-            }
-
-            let dx = x - prev_x;
-            match direction {
-                None => {
-                    if dx.abs() > DIRECTION_TOLERANCE_PX {
-                        direction = Some(if dx.is_sign_negative() { -1 } else { 1 });
-                    }
-                }
-                Some(1) => {
-                    if dx < -DIRECTION_TOLERANCE_PX {
-                        flush(ui, rect, &run, color);
-                        run.clear();
-                        run.push((prev_x, prev_alpha));
-                        direction = Some(-1);
-                    }
-                }
-                Some(-1) => {
-                    if dx > DIRECTION_TOLERANCE_PX {
-                        flush(ui, rect, &run, color);
-                        run.clear();
-                        run.push((prev_x, prev_alpha));
-                        direction = Some(1);
-                    }
-                }
-                _ => {}
-            }
-        }
-        run.push((x, alpha));
-    }
-
-    flush(ui, rect, &run, color);
-}
-
 fn trail_samples_in_window(
     trail: &std::collections::VecDeque<crate::egui_app::state::PlayheadTrailSample>,
-    cutoff: f64,
+    cutoff: Instant,
 ) -> Vec<crate::egui_app::state::PlayheadTrailSample> {
     let mut window = Vec::new();
     let mut prev: Option<crate::egui_app::state::PlayheadTrailSample> = None;
     for sample in trail.iter().copied() {
         if sample.time >= cutoff {
-            if let Some(prev) = prev
-                && prev.time < cutoff
-            {
-                let span = (sample.time - prev.time).max(1e-6);
-                let t = ((cutoff - prev.time) / span).clamp(0.0, 1.0) as f32;
+            if let Some(prev) = prev && prev.time < cutoff {
+                let span = sample.time.duration_since(prev.time);
+                let elapsed = cutoff.duration_since(prev.time);
+                let t = (elapsed.as_secs_f32() / span.as_secs_f32().max(1e-6)).clamp(0.0, 1.0);
                 window.push(crate::egui_app::state::PlayheadTrailSample {
                     position: prev.position + (sample.position - prev.position) * t,
                     time: cutoff,
@@ -137,7 +81,7 @@ fn gradient_stops_from_trail_window(
     rect: egui::Rect,
     view: crate::egui_app::state::WaveformView,
     view_width: f32,
-    alpha_for_time: impl Fn(f64) -> u8,
+    alpha_for_time: impl Fn(Instant) -> u8,
 ) -> Vec<(f32, u8)> {
     if window.len() < 2 {
         return Vec::new();
@@ -150,19 +94,42 @@ fn gradient_stops_from_trail_window(
     let clip_left = rect.left() - CLIP_MARGIN_PX;
     let clip_right = rect.right() + CLIP_MARGIN_PX;
 
-    let mut stops = Vec::new();
-    for segment in window.windows(2) {
-        let a = segment[0];
-        let b = segment[1];
+    #[derive(Clone, Copy)]
+    struct Segment {
+        a_time: Instant,
+        a_x: f32,
+        delta_x: f32,
+        delta_t: Duration,
+        t0: f32,
+        t1: f32,
+        visible_len: f32,
+    }
+
+    let mut segments = Vec::<Segment>::new();
+    let mut total_len = 0.0f32;
+    for pair in window.windows(2) {
+        let a = pair[0];
+        let b = pair[1];
         let a_x = to_screen_x_unclamped(a.position, rect, view, view_width);
         let b_x = to_screen_x_unclamped(b.position, rect, view, view_width);
         let delta_x = b_x - a_x;
-        let delta_t = b.time - a.time;
+        let delta_t = if b.time >= a.time {
+            b.time.duration_since(a.time)
+        } else {
+            Duration::ZERO
+        };
 
         if delta_x.abs() < 1e-6 {
             if a_x >= clip_left && a_x <= clip_right {
-                stops.push((a_x, alpha_for_time(a.time)));
-                stops.push((b_x, alpha_for_time(b.time)));
+                segments.push(Segment {
+                    a_time: a.time,
+                    a_x,
+                    delta_x,
+                    delta_t,
+                    t0: 0.0,
+                    t1: 1.0,
+                    visible_len: 0.0,
+                });
             }
             continue;
         }
@@ -174,25 +141,56 @@ fn gradient_stops_from_trail_window(
         if t0 > t1 {
             continue;
         }
-
         let x0 = a_x + delta_x * t0;
         let x1 = a_x + delta_x * t1;
-        let dx = (x1 - x0).abs();
-        let steps = ((dx / MAX_STOP_SPACING_PX).ceil() as usize).max(1);
-        for step in 0..=steps {
+        let visible_len = (x1 - x0).abs().max(0.0);
+        total_len += visible_len;
+        segments.push(Segment {
+            a_time: a.time,
+            a_x,
+            delta_x,
+            delta_t,
+            t0,
+            t1,
+            visible_len,
+        });
+    }
+
+    if segments.is_empty() {
+        return Vec::new();
+    }
+
+    let budget_intervals = MAX_STOPS_PER_WINDOW.saturating_sub(1).max(1) as isize;
+    let spacing_px = (total_len / budget_intervals as f32).max(MAX_STOP_SPACING_PX);
+    let mut remaining_intervals = budget_intervals;
+
+    let mut stops = Vec::new();
+    for (index, segment) in segments.iter().enumerate() {
+        if remaining_intervals <= 0 {
+            break;
+        }
+        let segments_left = (segments.len() - index - 1) as isize;
+        let reserve = segments_left.max(0);
+        let available = (remaining_intervals - reserve).max(1);
+        let desired = ((segment.visible_len / spacing_px).ceil() as isize).max(1);
+        let intervals = desired.min(available);
+
+        for step in 0..=intervals {
             if stops.len() >= MAX_STOPS_PER_WINDOW {
                 break;
             }
-            let u = step as f32 / steps as f32;
-            let t = t0 + (t1 - t0) * u;
-            let time = a.time + delta_t * t as f64;
-            let x = a_x + delta_x * t;
+            if index > 0 && step == 0 {
+                continue;
+            }
+            let u = step as f32 / intervals as f32;
+            let t = segment.t0 + (segment.t1 - segment.t0) * u;
+            let x = segment.a_x + segment.delta_x * t;
+            let time = segment.a_time + segment.delta_t.mul_f32(t);
             stops.push((x, alpha_for_time(time)));
         }
-        if stops.len() >= MAX_STOPS_PER_WINDOW {
-            break;
-        }
+        remaining_intervals -= intervals;
     }
+
     stops
 }
 
@@ -251,118 +249,58 @@ pub(super) fn render_overlays(
     }
 
     let playhead = &mut app.controller.ui.waveform.playhead;
-    let now = ui.input(|i| i.time);
-    const TRAIL_DURATION_SECS: f64 = 1.25;
-    const TRAIL_FADE_SECS: f64 = 0.45;
-    const MAX_TRAIL_SAMPLES: usize = 384;
-    const POSITION_EPS: f32 = 0.0005;
-    const JUMP_THRESHOLD: f32 = 0.02;
-    const MIN_SAMPLE_DT: f64 = 1.0 / 120.0;
-    const MAX_FADING_TRAILS: usize = 2;
+    let now = Instant::now();
+    const TRAIL_DURATION: Duration = Duration::from_millis(1250);
+    const TRAIL_FADE: Duration = Duration::from_millis(450);
 
-    playhead
-        .fading_trails
-        .retain(|fading| (now - fading.started_at).max(0.0) < TRAIL_FADE_SECS);
     for fading in playhead.fading_trails.iter() {
-        let age = (now - fading.started_at).max(0.0);
-        let fade_t = (1.0 - (age / TRAIL_FADE_SECS)).clamp(0.0, 1.0) as f32;
+        let age = now.saturating_duration_since(fading.started_at);
+        if age >= TRAIL_FADE {
+            continue;
+        }
+        let fade_t = 1.0 - (age.as_secs_f32() / TRAIL_FADE.as_secs_f32()).clamp(0.0, 1.0);
         let fade_strength = fade_t * fade_t;
         let Some(last_time) = fading.samples.back().map(|sample| sample.time) else {
             continue;
         };
-        let cutoff = last_time - TRAIL_DURATION_SECS;
+        let cutoff = last_time
+            .checked_sub(TRAIL_DURATION)
+            .unwrap_or(last_time);
         let window = trail_samples_in_window(&fading.samples, cutoff);
         if window.len() < 2 {
             continue;
         }
         let stops = gradient_stops_from_trail_window(&window, rect, view, view_width, |time| {
-            let base_age = (last_time - time).max(0.0);
-            let t = (1.0 - (base_age / TRAIL_DURATION_SECS)).clamp(0.0, 1.0) as f32;
+            let base_age = last_time.saturating_duration_since(time);
+            let t =
+                1.0 - (base_age.as_secs_f32() / TRAIL_DURATION.as_secs_f32()).clamp(0.0, 1.0);
             ((t * t) * 150.0 * fade_strength)
                 .round()
                 .clamp(0.0, 255.0) as u8
         });
-        paint_playhead_trail_mesh_runs(ui, rect, &stops, highlight);
+        paint_playhead_trail_mesh(ui, rect, &stops, highlight);
+    }
+
+    if playhead.visible && playhead.trail.len() >= 2 {
+        let cutoff = now.checked_sub(TRAIL_DURATION).unwrap_or(now);
+        let window = trail_samples_in_window(&playhead.trail, cutoff);
+        if window.len() >= 2 {
+            let stops = gradient_stops_from_trail_window(&window, rect, view, view_width, |time| {
+                let age = now.saturating_duration_since(time);
+                let t = 1.0 - (age.as_secs_f32() / TRAIL_DURATION.as_secs_f32()).clamp(0.0, 1.0);
+                ((t * t) * 170.0).round().clamp(0.0, 255.0) as u8
+            });
+            paint_playhead_trail_mesh(ui, rect, &stops, highlight);
+        }
     }
 
     if playhead.visible {
         let position = playhead.position.clamp(0.0, 1.0);
-
-        let mut should_fade_and_clear = false;
-        if let Some(last) = playhead.trail.back() {
-            let delta = (position - last.position).abs();
-            if delta > JUMP_THRESHOLD || position + POSITION_EPS < last.position {
-                should_fade_and_clear = true;
-            }
-        };
-
-        if should_fade_and_clear && !playhead.trail.is_empty() {
-            let samples = std::mem::take(&mut playhead.trail);
-            playhead
-                .fading_trails
-                .push(crate::egui_app::state::FadingPlayheadTrail {
-                    started_at: now,
-                    samples,
-                });
-            while playhead.fading_trails.len() > MAX_FADING_TRAILS {
-                playhead.fading_trails.remove(0);
-            }
-        }
-
-        let should_push = match playhead.trail.back() {
-            Some(last) => {
-                (position - last.position).abs() > POSITION_EPS
-                    || (now - last.time) >= MIN_SAMPLE_DT
-            }
-            None => true,
-        };
-        if should_push {
-            playhead
-                .trail
-                .push_back(crate::egui_app::state::PlayheadTrailSample {
-                    position,
-                    time: now,
-                });
-        }
-        let prune_cutoff = now - (TRAIL_DURATION_SECS * 2.0);
-        while let Some(front) = playhead.trail.front()
-            && front.time < prune_cutoff
-        {
-            playhead.trail.pop_front();
-        }
-        while playhead.trail.len() > MAX_TRAIL_SAMPLES {
-            playhead.trail.pop_front();
-        }
-
-    let cutoff = now - TRAIL_DURATION_SECS;
-    let window = trail_samples_in_window(&playhead.trail, cutoff);
-    if window.len() >= 2 {
-        let stops = gradient_stops_from_trail_window(&window, rect, view, view_width, |time| {
-            let age = (now - time).max(0.0);
-            let t = (1.0 - (age / TRAIL_DURATION_SECS)).clamp(0.0, 1.0) as f32;
-            ((t * t) * 170.0).round().clamp(0.0, 255.0) as u8
-        });
-        paint_playhead_trail_mesh_runs(ui, rect, &stops, highlight);
-    }
-
         let x = to_screen_x(position, rect);
         ui.painter().line_segment(
             [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
             Stroke::new(2.0, highlight),
         );
-    } else {
-        if !playhead.trail.is_empty() {
-            let samples = std::mem::take(&mut playhead.trail);
-            playhead
-                .fading_trails
-                .push(crate::egui_app::state::FadingPlayheadTrail {
-                    started_at: now,
-                    samples,
-                });
-            while playhead.fading_trails.len() > MAX_FADING_TRAILS {
-                playhead.fading_trails.remove(0);
-            }
-        }
     }
 }
 
@@ -373,22 +311,24 @@ mod tests {
     use crate::egui_app::state::WaveformView;
     use eframe::egui;
     use std::collections::VecDeque;
+    use std::time::{Duration, Instant};
 
     #[test]
     fn trail_samples_in_window_includes_cutoff_interpolation() {
+        let base = Instant::now();
         let mut trail = VecDeque::new();
         trail.push_back(PlayheadTrailSample {
             position: 0.1,
-            time: 0.0,
+            time: base,
         });
         trail.push_back(PlayheadTrailSample {
             position: 0.3,
-            time: 1.0,
+            time: base + Duration::from_secs(1),
         });
-        let window = trail_samples_in_window(&trail, 0.5);
+        let window = trail_samples_in_window(&trail, base + Duration::from_millis(500));
         assert_eq!(window.len(), 2);
         assert!((window[0].position - 0.2).abs() < 1e-6);
-        assert!((window[0].time - 0.5).abs() < 1e-12);
+        assert_eq!(window[0].time, base + Duration::from_millis(500));
         assert!((window[1].position - 0.3).abs() < 1e-6);
     }
 
@@ -396,14 +336,15 @@ mod tests {
     fn gradient_stops_from_trail_window_densifies_large_gaps() {
         let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(100.0, 10.0));
         let view = WaveformView { start: 0.0, end: 1.0 };
+        let base = Instant::now();
         let window = vec![
             PlayheadTrailSample {
                 position: 0.0,
-                time: 0.0,
+                time: base,
             },
             PlayheadTrailSample {
                 position: 1.0,
-                time: 1.0,
+                time: base + Duration::from_secs(1),
             },
         ];
         let stops = gradient_stops_from_trail_window(&window, rect, view, 1.0, |_| 128);
