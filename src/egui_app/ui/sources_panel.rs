@@ -723,6 +723,10 @@ impl EguiApp {
             ui.label(RichText::new(row.name.clone()).color(palette.text_primary));
             ui.separator();
             let mut close_menu = false;
+            if ui.button("Open in Explorer").clicked() {
+                self.controller.open_folder_in_file_explorer(&row.path);
+                close_menu = true;
+            }
             if ui.button("New subfolder").clicked() {
                 self.controller.focus_folder_row(index);
                 self.controller.start_new_folder();
@@ -754,6 +758,11 @@ impl EguiApp {
             let palette = style::palette();
             ui.label(RichText::new(".").color(palette.text_primary));
             ui.separator();
+            if ui.button("Open in Explorer").clicked() {
+                self.controller.open_folder_in_file_explorer(Path::new(""));
+                ui.close();
+                return;
+            }
             if ui.button("New folder at root").clicked() {
                 self.controller.start_new_folder_at_root();
                 ui.close();
