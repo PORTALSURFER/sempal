@@ -6,22 +6,24 @@ const TRAIL_FADE: Duration = Duration::from_millis(450);
 const MAX_TRAIL_SAMPLES: usize = 384;
 const MAX_FADING_TRAILS: usize = 2;
 const POSITION_EPS: f32 = 0.0005;
-const JUMP_THRESHOLD: f32 = 0.02;
 const MIN_SAMPLE_DT: Duration = Duration::from_millis(8); // ~120Hz
+
+fn seed_trail(playhead: &mut PlayheadState, position: f32, now: Instant) {
+    let position = position.clamp(0.0, 1.0);
+    playhead.trail.clear();
+    playhead.trail.push_back(PlayheadTrailSample { position, time: now });
+    playhead.trail.push_back(PlayheadTrailSample {
+        position,
+        time: now + Duration::from_millis(1),
+    });
+}
 
 pub(super) fn start_or_seek_trail(playhead: &mut PlayheadState, position: f32, is_seek: bool) {
     let now = Instant::now();
     if is_seek {
         stash_active_trail(playhead);
     }
-    playhead.trail.clear();
-    let position = position.clamp(0.0, 1.0);
-    playhead.trail.push_back(PlayheadTrailSample { position, time: now });
-    // Seed a second sample so the gradient can render immediately even before the next tick.
-    playhead.trail.push_back(PlayheadTrailSample {
-        position,
-        time: now + Duration::from_millis(1),
-    });
+    seed_trail(playhead, position, now);
 }
 
 pub(super) fn stash_active_trail(playhead: &mut PlayheadState) {
@@ -41,7 +43,7 @@ pub(super) fn stash_active_trail(playhead: &mut PlayheadState) {
 pub(super) fn tick_playhead_trail(
     playhead: &mut PlayheadState,
     position: f32,
-    is_looping: bool,
+    _is_looping: bool,
     is_playing: bool,
 ) {
     let now = Instant::now();
@@ -59,16 +61,15 @@ pub(super) fn tick_playhead_trail(
     let mut position = position.clamp(0.0, 1.0);
     let discontinuity = match playhead.trail.back() {
         Some(last) => {
-            let delta = (position - last.position).abs();
             let backwards = position + POSITION_EPS < last.position;
-            backwards || (!is_looping && delta > JUMP_THRESHOLD)
+            backwards
         }
         None => false,
     };
 
     if discontinuity {
         stash_active_trail(playhead);
-        playhead.trail.push_back(PlayheadTrailSample { position, time: now });
+        seed_trail(playhead, position, now);
         return;
     }
 
@@ -120,5 +121,20 @@ mod tests {
         assert!(playhead.trail.len() >= 1);
         let last = playhead.trail.back().unwrap();
         assert!((last.position - 0.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn tick_playhead_trail_allows_large_forward_deltas_for_short_audio() {
+        let mut playhead = PlayheadState::default();
+        playhead.trail.push_back(PlayheadTrailSample {
+            position: 0.10,
+            time: Instant::now() - Duration::from_millis(50),
+        });
+
+        tick_playhead_trail(&mut playhead, 0.30, false, true);
+
+        assert!(playhead.fading_trails.is_empty());
+        assert!(playhead.trail.len() >= 2);
+        assert!((playhead.trail.back().unwrap().position - 0.30).abs() < 1e-6);
     }
 }
