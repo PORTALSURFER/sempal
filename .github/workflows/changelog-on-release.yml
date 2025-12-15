@@ -5,6 +5,9 @@ on:
     types: [published]
   workflow_dispatch: {}
 
+env:
+  BASE_BRANCH: ${{ github.event_name == 'release' && github.event.release.target_commitish || 'main' }}
+
 permissions:
   contents: write
   pull-requests: write
@@ -20,7 +23,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ env.BASE_BRANCH }}
           fetch-depth: 0
 
       - name: Install git-cliff
@@ -36,7 +39,7 @@ jobs:
         uses: peter-evans/create-pull-request@v7
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          base: main
+          base: ${{ env.BASE_BRANCH }}
           branch: chore/changelog-${{ github.event.release.tag_name || github.run_id }}
           delete-branch: true
           commit-message: "chore(changelog): update for ${{ github.event.release.tag_name || 'release' }}"
@@ -46,9 +49,11 @@ jobs:
 
             Trigger: ${{ github.event_name }}
             Tag: ${{ github.event.release.tag_name || 'n/a' }}
+            Base: ${{ env.BASE_BRANCH }}
 
       - name: Enable auto-merge
         if: ${{ steps.cpr.outputs.pull-request-number != '' }}
+        continue-on-error: true
         uses: peter-evans/enable-pull-request-automerge@v3
         with:
           token: ${{ secrets.GITHUB_TOKEN }}

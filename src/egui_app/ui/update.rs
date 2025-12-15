@@ -154,13 +154,13 @@ impl EguiApp {
             return;
         }
         let ctrl_or_command = input.ctrl_or_command();
-        if ctrl_or_command {
-            let handled = self.controller.play_from_cursor();
+        if input.shift {
+            let handled = self.controller.replay_from_last_start();
             if !handled {
                 self.controller.toggle_play_pause();
             }
-        } else if input.shift {
-            let handled = self.controller.replay_from_last_start();
+        } else if ctrl_or_command {
+            let handled = self.controller.play_from_cursor();
             if !handled {
                 self.controller.toggle_play_pause();
             }
@@ -432,4 +432,53 @@ fn consume_keypress(ctx: &egui::Context, input: &InputSnapshot, key: egui::Key) 
     modifiers.ctrl = input.ctrl;
     modifiers.command = input.command;
     ctx.input_mut(|state| state.consume_key(modifiers, key));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::InputSnapshot;
+    use crate::egui_app::controller::EguiController;
+    use crate::egui_app::ui::EguiApp;
+    use crate::egui_app::ui::hotkey_runtime::KeyFeedback;
+    use crate::waveform::WaveformRenderer;
+    use eframe::egui;
+
+    fn test_app() -> EguiApp {
+        let renderer = WaveformRenderer::new(8, 8);
+        let controller = EguiController::new(renderer, None);
+        EguiApp {
+            controller,
+            visuals_set: false,
+            waveform_tex: None,
+            last_viewport_log: None,
+            sources_panel_rect: None,
+            sources_panel_drop_hovered: false,
+            sources_panel_drop_armed: false,
+            selection_edge_offset: None,
+            selection_slide: None,
+            pending_chord: None,
+            key_feedback: KeyFeedback::default(),
+            requested_initial_focus: false,
+        }
+    }
+
+    #[test]
+    fn ctrl_shift_space_prefers_replay_from_last_start_over_cursor() {
+        let ctx = egui::Context::default();
+        let mut app = test_app();
+        app.controller.ui.waveform.last_start_marker = Some(0.8);
+        app.controller.ui.waveform.cursor = Some(0.2);
+
+        app.handle_space_shortcut(
+            &ctx,
+            &InputSnapshot {
+                space: true,
+                ctrl: true,
+                shift: true,
+                ..InputSnapshot::default()
+            },
+        );
+
+        assert_eq!(app.controller.ui.waveform.last_start_marker, Some(0.8));
+    }
 }

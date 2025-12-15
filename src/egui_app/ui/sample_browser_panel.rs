@@ -191,7 +191,7 @@ impl EguiApp {
                             trailing_space,
                         );
                     } else {
-                        self.browser_sample_menu(&response, row, &path, &display_label);
+                        self.browser_sample_menu(&response, row, &path, &display_label, missing);
                     }
 
                     let should_start_drag =
@@ -312,6 +312,7 @@ impl EguiApp {
         row: usize,
         path: &Path,
         label: &str,
+        missing: bool,
     ) {
         response.context_menu(|ui| {
             let palette = style::palette();
@@ -352,6 +353,37 @@ impl EguiApp {
                 && self.controller.delete_browser_samples(&action_rows).is_ok()
             {
                 close_menu = true;
+            }
+
+            if missing {
+                let dead_rows: Vec<usize> = action_rows
+                    .iter()
+                    .copied()
+                    .filter(|&visible_row| {
+                        self.controller
+                            .visible_browser_indices()
+                            .get(visible_row)
+                            .and_then(|&entry_idx| self.controller.wav_entry(entry_idx))
+                            .is_some_and(|entry| entry.missing)
+                    })
+                    .collect();
+                let label = if dead_rows.len() <= 1 {
+                    "Remove dead link"
+                } else {
+                    "Remove dead links"
+                };
+                let btn = egui::Button::new(RichText::new(label).color(style::destructive_text()));
+                let response = ui
+                    .add_enabled(!dead_rows.is_empty(), btn)
+                    .on_hover_text("Remove missing items from the library (does not delete files)");
+                if response.clicked()
+                    && self
+                        .controller
+                        .remove_dead_link_browser_samples(&dead_rows)
+                        .is_ok()
+                {
+                    close_menu = true;
+                }
             }
             if close_menu {
                 ui.close();
