@@ -132,6 +132,7 @@ pub(crate) enum HotkeyCommand {
     TagNeutralSelected,
     TagTrashSelected,
     TrimSelection,
+    ReverseSelection,
     FadeSelectionLeftToRight,
     FadeSelectionRightToLeft,
     MuteSelection,

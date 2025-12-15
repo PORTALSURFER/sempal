@@ -65,6 +65,14 @@ pub(super) fn render_waveform_base(
     if is_loading {
         let glow = style::with_alpha(palette.accent_copper, 28);
         ui.painter().rect_filled(rect.shrink(2.0), 4.0, glow);
+        let font = TextStyle::Heading.resolve(ui.style());
+        ui.painter().text(
+            rect.center(),
+            Align2::CENTER_CENTER,
+            "LOADING",
+            font,
+            style::with_alpha(style::high_contrast_text(), 180),
+        );
     }
 
     true
@@ -76,7 +84,7 @@ fn waveform_loading_fill(
     accent: egui::Color32,
 ) -> egui::Color32 {
     let time = ui.input(|i| i.time) as f32;
-    let pulse = ((time * 2.4).sin() * 0.5 + 0.5).clamp(0.0, 1.0);
+    let pulse = ((time * 6.0).sin() * 0.5 + 0.5).clamp(0.0, 1.0);
     let base_rgba: Rgba = base.into();
     let accent_rgba: Rgba = accent.into();
     let mixed = base_rgba * (1.0 - pulse * 0.12) + accent_rgba * (pulse * 0.08);

@@ -1,14 +1,25 @@
 use super::jobs::JobMessage;
 use super::trash_move::TrashMoveMessage;
 use super::*;
+use crate::egui_app::state::ProgressTaskKind;
 use std::sync::atomic::Ordering;
 
 impl EguiController {
     pub(in crate::egui_app::controller) fn poll_background_jobs(&mut self) {
-        if let Some(cancel) = self.runtime.jobs.trash_move_cancel().as_ref()
-            && self.ui.progress.cancel_requested
-        {
-            cancel.store(true, Ordering::Relaxed);
+        if self.ui.progress.cancel_requested {
+            match self.ui.progress.task {
+                Some(ProgressTaskKind::TrashMove) => {
+                    if let Some(cancel) = self.runtime.jobs.trash_move_cancel().as_ref() {
+                        cancel.store(true, Ordering::Relaxed);
+                    }
+                }
+                Some(ProgressTaskKind::Scan) => {
+                    if let Some(cancel) = self.runtime.jobs.scan_cancel().as_ref() {
+                        cancel.store(true, Ordering::Relaxed);
+                    }
+                }
+                _ => {}
+            }
         }
 
         loop {
@@ -45,6 +56,9 @@ impl EguiController {
                         Err(err) => self.handle_wav_load_error(&message.source_id, err),
                     }
                     self.runtime.jobs.clear_wav_load_pending();
+                    if self.ui.progress.task == Some(ProgressTaskKind::WavLoad) {
+                        self.clear_progress();
+                    }
                 }
                 JobMessage::AudioLoaded(message) => {
                     let Some(pending) = self.runtime.jobs.pending_audio() else {
@@ -63,41 +77,56 @@ impl EguiController {
                         Err(err) => self.handle_audio_load_error(pending, err),
                     }
                 }
-                JobMessage::ScanFinished(result) => {
-                    self.runtime.jobs.scan_in_progress = false;
-                    if Some(&result.source_id) != self.selection_state.ctx.selected_source.as_ref()
-                    {
-                        continue;
+                JobMessage::Scan(message) => match message {
+                    ScanJobMessage::Progress { completed, detail } => {
+                        if self.ui.progress.task == Some(ProgressTaskKind::Scan) {
+                            self.ui.progress.completed = completed;
+                            self.ui.progress.detail = detail;
+                        }
                     }
-                    let label = match result.mode {
-                        ScanMode::Quick => "Quick sync",
-                        ScanMode::Hard => "Hard sync",
-                    };
-                    match result.result {
-                        Ok(stats) => {
-                            self.set_status(
-                                format!(
-                                    "{label} complete: {} added, {} updated, {} missing",
-                                    stats.added, stats.updated, stats.missing
-                                ),
-                                StatusTone::Info,
-                            );
-                            if let Some(source) = self.current_source() {
-                                let mut invalidator =
-                                    source_cache_invalidator::SourceCacheInvalidator::new_from_state(
-                                        &mut self.cache,
-                                        &mut self.ui_cache,
-                                        &mut self.library.missing,
-                                    );
-                                invalidator.invalidate_wav_related(&source.id);
+                    ScanJobMessage::Finished(result) => {
+                        self.runtime.jobs.clear_scan();
+                        if self.ui.progress.task == Some(ProgressTaskKind::Scan) {
+                            self.clear_progress();
+                        }
+                        if Some(&result.source_id)
+                            != self.selection_state.ctx.selected_source.as_ref()
+                        {
+                            continue;
+                        }
+                        let label = match result.mode {
+                            ScanMode::Quick => "Quick sync",
+                            ScanMode::Hard => "Hard sync",
+                        };
+                        match result.result {
+                            Ok(stats) => {
+                                self.set_status(
+                                    format!(
+                                        "{label} complete: {} added, {} updated, {} missing",
+                                        stats.added, stats.updated, stats.missing
+                                    ),
+                                    StatusTone::Info,
+                                );
+                                if let Some(source) = self.current_source() {
+                                    let mut invalidator =
+                                        source_cache_invalidator::SourceCacheInvalidator::new_from_state(
+                                            &mut self.cache,
+                                            &mut self.ui_cache,
+                                            &mut self.library.missing,
+                                        );
+                                    invalidator.invalidate_wav_related(&source.id);
+                                }
+                                self.queue_wav_load();
                             }
-                            self.queue_wav_load();
-                        }
-                        Err(err) => {
-                            self.set_status(format!("{label} failed: {err}"), StatusTone::Error)
+                            Err(crate::sample_sources::scanner::ScanError::Canceled) => {
+                                self.set_status(format!("{label} canceled"), StatusTone::Warning)
+                            }
+                            Err(err) => {
+                                self.set_status(format!("{label} failed: {err}"), StatusTone::Error)
+                            }
                         }
                     }
-                }
+                },
                 JobMessage::TrashMove(message) => match message {
                     TrashMoveMessage::SetTotal(total) => {
                         self.ui.progress.total = total;

@@ -14,6 +14,7 @@ Audio sample triage and collection building tool built with Rust and egui.
 ## Downloads
 
 - Windows binaries are published on GitHub Releases (Windows only for now).
+- Publishing a release triggers a workflow that regenerates `CHANGELOG.md` via `git-cliff` and opens a PR (since `main` is protected).
 
 ## Build from source
 

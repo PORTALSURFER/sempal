@@ -1,14 +1,16 @@
 use super::*;
+use crate::egui_app::state::ProgressTaskKind;
 
 impl EguiController {
     /// Show status-bar progress without the modal overlay.
     pub(crate) fn show_status_progress(
         &mut self,
+        task: ProgressTaskKind,
         title: impl Into<String>,
         total: usize,
         cancelable: bool,
     ) {
-        self.ui.progress = ProgressOverlayState::new(title, total, cancelable);
+        self.ui.progress = ProgressOverlayState::new(task, title, total, cancelable);
         self.ui.progress.modal = false;
     }
 

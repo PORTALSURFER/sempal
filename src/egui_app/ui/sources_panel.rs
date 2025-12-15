@@ -6,6 +6,8 @@ use super::style;
 use super::*;
 use crate::egui_app::state::{DragPayload, DragSource, DragTarget, FocusContext};
 use eframe::egui::{self, Align, Align2, Layout, RichText, StrokeKind, TextStyle, Ui};
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
 
 impl EguiApp {
     pub(super) fn render_sources_panel(&mut self, ui: &mut Ui) {
@@ -204,6 +206,36 @@ impl EguiApp {
         folder_drop_active: bool,
         pointer_pos: Option<egui::Pos2>,
     ) {
+        fn sample_parent_folder(relative_path: &Path) -> PathBuf {
+            let parent = relative_path.parent().unwrap_or(Path::new(""));
+            if parent.as_os_str().is_empty() || parent == Path::new(".") {
+                PathBuf::new()
+            } else {
+                parent.to_path_buf()
+            }
+        }
+
+        fn paint_right_side_dot(ui: &mut Ui, rect: egui::Rect) {
+            let padding = ui.spacing().button_padding.x;
+            let radius = 3.0;
+            let center = egui::pos2(rect.right() - padding - radius, rect.center().y);
+            ui.painter()
+                .circle_filled(center, radius, style::high_contrast_text());
+        }
+
+        let mut sample_parent_folders = HashSet::<PathBuf>::new();
+        for path in self.controller.ui.browser.selected_paths.iter() {
+            sample_parent_folders.insert(sample_parent_folder(path));
+        }
+        if let Some(selected_row) = self.controller.ui.browser.selected_visible {
+            let visible_indices = self.controller.visible_browser_indices();
+            if let Some(entry_index) = visible_indices.get(selected_row).copied()
+                && let Some(entry) = self.controller.wav_entry(entry_index)
+            {
+                sample_parent_folders.insert(sample_parent_folder(&entry.relative_path));
+            }
+        }
+
         let palette = style::palette();
         ui.horizontal(|ui| {
             ui.label(RichText::new("Folders").color(palette.text_primary));
@@ -280,6 +312,9 @@ impl EguiApp {
                         marker: None,
                     },
                 );
+                if sample_parent_folders.contains(&root_row.path) {
+                    paint_right_side_dot(ui, response.rect);
+                }
                 if scroll_to == Some(0) {
                     ui.scroll_to_rect(response.rect, None);
                 }
@@ -414,6 +449,9 @@ impl EguiApp {
                             marker: None,
                         },
                     );
+                    if sample_parent_folders.contains(&row.path) {
+                        paint_right_side_dot(ui, response.rect);
+                    }
                     if Some(index) == scroll_to {
                         ui.scroll_to_rect(response.rect, None);
                     }
@@ -685,6 +723,10 @@ impl EguiApp {
             ui.label(RichText::new(row.name.clone()).color(palette.text_primary));
             ui.separator();
             let mut close_menu = false;
+            if ui.button("Open in Explorer").clicked() {
+                self.controller.open_folder_in_file_explorer(&row.path);
+                close_menu = true;
+            }
             if ui.button("New subfolder").clicked() {
                 self.controller.focus_folder_row(index);
                 self.controller.start_new_folder();
@@ -716,6 +758,11 @@ impl EguiApp {
             let palette = style::palette();
             ui.label(RichText::new(".").color(palette.text_primary));
             ui.separator();
+            if ui.button("Open in Explorer").clicked() {
+                self.controller.open_folder_in_file_explorer(Path::new(""));
+                ui.close();
+                return;
+            }
             if ui.button("New folder at root").clicked() {
                 self.controller.start_new_folder_at_root();
                 ui.close();

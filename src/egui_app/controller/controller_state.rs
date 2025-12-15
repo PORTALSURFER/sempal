@@ -204,6 +204,14 @@ pub(super) struct ScanResult {
     >,
 }
 
+pub(super) enum ScanJobMessage {
+    Progress {
+        completed: usize,
+        detail: Option<String>,
+    },
+    Finished(ScanResult),
+}
+
 #[derive(Clone)]
 pub(super) struct UpdateCheckResult {
     pub(super) result: Result<crate::updater::UpdateCheckOutcome, String>,

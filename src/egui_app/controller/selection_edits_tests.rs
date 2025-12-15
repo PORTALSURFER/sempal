@@ -70,6 +70,38 @@ fn crop_keeps_only_selection_frames() {
 }
 
 #[test]
+fn reverse_buffer_reverses_selection_frames_in_place() {
+    let mut buffer = SelectionEditBuffer {
+        samples: vec![0.0, 1.0, 2.0, 3.0, 4.0],
+        channels: 1,
+        sample_rate: 44_100,
+        spec_channels: 1,
+        start_frame: 1,
+        end_frame: 4,
+    };
+    reverse_buffer(&mut buffer).unwrap();
+    assert_eq!(buffer.samples, vec![0.0, 3.0, 2.0, 1.0, 4.0]);
+}
+
+#[test]
+fn reverse_buffer_reverses_interleaved_frames() {
+    let mut buffer = SelectionEditBuffer {
+        // frames: (0,10), (1,11), (2,12), (3,13)
+        samples: vec![0.0, 10.0, 1.0, 11.0, 2.0, 12.0, 3.0, 13.0],
+        channels: 2,
+        sample_rate: 44_100,
+        spec_channels: 2,
+        start_frame: 1,
+        end_frame: 4,
+    };
+    reverse_buffer(&mut buffer).unwrap();
+    assert_eq!(
+        buffer.samples,
+        vec![0.0, 10.0, 3.0, 13.0, 2.0, 12.0, 1.0, 11.0]
+    );
+}
+
+#[test]
 fn selection_frame_bounds_include_tail() {
     let bounds = SelectionRange::new(0.8, 1.0);
     let (start, end) = selection_frame_bounds(5, bounds);

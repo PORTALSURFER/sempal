@@ -29,6 +29,7 @@ impl Default for InteractionOptionsState {
 pub enum DestructiveSelectionEdit {
     CropSelection,
     TrimSelection,
+    ReverseSelection,
     FadeLeftToRight,
     FadeRightToLeft,
     MuteSelection,

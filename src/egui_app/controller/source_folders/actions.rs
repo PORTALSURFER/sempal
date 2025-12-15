@@ -32,6 +32,31 @@ fn folder_with_name(target: &Path, name: &str) -> PathBuf {
 }
 
 impl EguiController {
+    pub(crate) fn open_folder_in_file_explorer(&mut self, relative_folder: &Path) {
+        let Some(source) = self.current_source() else {
+            self.set_status("Select a source first", StatusTone::Info);
+            return;
+        };
+        let absolute = source.root.join(relative_folder);
+        if !absolute.exists() {
+            self.set_status(
+                format!("Folder missing: {}", absolute.display()),
+                StatusTone::Warning,
+            );
+            return;
+        }
+        if !absolute.is_dir() {
+            self.set_status(
+                format!("Not a folder: {}", absolute.display()),
+                StatusTone::Warning,
+            );
+            return;
+        }
+        if let Err(err) = super::super::os_explorer::open_folder_in_file_explorer(&absolute) {
+            self.set_status(err, StatusTone::Error);
+        }
+    }
+
     pub(crate) fn delete_focused_folder(&mut self) {
         let Some(target) = self.focused_folder_path() else {
             self.set_status("Focus a folder to delete it", StatusTone::Info);
