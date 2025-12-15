@@ -295,7 +295,7 @@ pub(super) fn render_overlays(
             let base_age = last_time.saturating_duration_since(time);
             let t =
                 1.0 - (base_age.as_secs_f32() / TRAIL_DURATION.as_secs_f32()).clamp(0.0, 1.0);
-            ((t * t) * 150.0 * fade_strength)
+            ((t * t) * 105.0 * fade_strength)
                 .round()
                 .clamp(0.0, 255.0) as u8
         });
@@ -309,7 +309,7 @@ pub(super) fn render_overlays(
             let stops = gradient_stops_from_trail_window(&window, rect, view, view_width, |time| {
                 let age = now.saturating_duration_since(time);
                 let t = 1.0 - (age.as_secs_f32() / TRAIL_DURATION.as_secs_f32()).clamp(0.0, 1.0);
-                ((t * t) * 170.0).round().clamp(0.0, 255.0) as u8
+                ((t * t) * 119.0).round().clamp(0.0, 255.0) as u8
             });
             paint_playhead_trail_mesh(ui, rect, &stops, highlight);
         }
