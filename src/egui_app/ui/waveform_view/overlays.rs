@@ -145,6 +145,10 @@ fn gradient_stops_from_trail_window(
 
     const MAX_STOP_SPACING_PX: f32 = 1.0;
     const MAX_STOPS_PER_WINDOW: usize = 4096;
+    const CLIP_MARGIN_PX: f32 = 2.0;
+
+    let clip_left = rect.left() - CLIP_MARGIN_PX;
+    let clip_right = rect.right() + CLIP_MARGIN_PX;
 
     let mut stops = Vec::new();
     for segment in window.windows(2) {
@@ -152,30 +156,42 @@ fn gradient_stops_from_trail_window(
         let b = segment[1];
         let a_x = to_screen_x_unclamped(a.position, rect, view, view_width);
         let b_x = to_screen_x_unclamped(b.position, rect, view, view_width);
-        let dx = (b_x - a_x).abs();
-        let steps = ((dx / MAX_STOP_SPACING_PX).ceil() as usize).max(1);
+        let delta_x = b_x - a_x;
+        let delta_t = b.time - a.time;
 
-        for step in 0..steps {
+        if delta_x.abs() < 1e-6 {
+            if a_x >= clip_left && a_x <= clip_right {
+                stops.push((a_x, alpha_for_time(a.time)));
+                stops.push((b_x, alpha_for_time(b.time)));
+            }
+            continue;
+        }
+
+        let t_left = (clip_left - a_x) / delta_x;
+        let t_right = (clip_right - a_x) / delta_x;
+        let t0 = t_left.min(t_right).max(0.0);
+        let t1 = t_left.max(t_right).min(1.0);
+        if t0 > t1 {
+            continue;
+        }
+
+        let x0 = a_x + delta_x * t0;
+        let x1 = a_x + delta_x * t1;
+        let dx = (x1 - x0).abs();
+        let steps = ((dx / MAX_STOP_SPACING_PX).ceil() as usize).max(1);
+        for step in 0..=steps {
             if stops.len() >= MAX_STOPS_PER_WINDOW {
                 break;
             }
-            let t = step as f32 / steps as f32;
-            let time = a.time + (b.time - a.time) * t as f64;
-            let x = a_x + (b_x - a_x) * t;
+            let u = step as f32 / steps as f32;
+            let t = t0 + (t1 - t0) * u;
+            let time = a.time + delta_t * t as f64;
+            let x = a_x + delta_x * t;
             stops.push((x, alpha_for_time(time)));
         }
         if stops.len() >= MAX_STOPS_PER_WINDOW {
             break;
         }
-    }
-
-    if stops.len() < MAX_STOPS_PER_WINDOW
-        && let Some(last) = window.last()
-    {
-        stops.push((
-            to_screen_x_unclamped(last.position, rect, view, view_width),
-            alpha_for_time(last.time),
-        ));
     }
     stops
 }
