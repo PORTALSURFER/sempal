@@ -1,5 +1,7 @@
 use super::*;
+use crate::egui_app::state::ProgressTaskKind;
 use crate::sample_sources::scanner::ScanMode;
+use std::sync::{Arc, atomic::AtomicBool};
 
 impl EguiController {
     /// Trigger a quick sync (incremental scan) of the selected source.
@@ -22,8 +24,6 @@ impl EguiController {
             return;
         };
         self.prepare_for_scan(&source, mode);
-        let (tx, rx) = std::sync::mpsc::channel();
-        self.runtime.jobs.begin_scan(rx);
         let status_label = match mode {
             ScanMode::Quick => "Quick sync",
             ScanMode::Hard => "Hard sync",
@@ -32,23 +32,39 @@ impl EguiController {
             format!("{status_label} on {}", source.root.display()),
             StatusTone::Busy,
         );
+        self.show_status_progress(ProgressTaskKind::Scan, status_label, 0, true);
+        self.update_progress_detail("Scanning wav files…");
+
+        let cancel = Arc::new(AtomicBool::new(false));
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.runtime.jobs.start_scan(rx, cancel.clone());
         let source_id = source.id.clone();
+        let root = source.root.clone();
         std::thread::spawn(move || {
             let result = (|| -> Result<
                 crate::sample_sources::scanner::ScanStats,
                 crate::sample_sources::scanner::ScanError,
             > {
-                let db = SourceDatabase::open(&source.root)?;
-                match mode {
-                    ScanMode::Quick => crate::sample_sources::scanner::scan_once(&db),
-                    ScanMode::Hard => crate::sample_sources::scanner::hard_rescan(&db),
-                }
+                let db = SourceDatabase::open(&root)?;
+                crate::sample_sources::scanner::scan_with_progress(
+                    &db,
+                    mode,
+                    Some(cancel.as_ref()),
+                    &mut |completed, path| {
+                        if completed % 128 == 0 {
+                            let _ = tx.send(ScanJobMessage::Progress {
+                                completed,
+                                detail: Some(path.display().to_string()),
+                            });
+                        }
+                    },
+                )
             })();
-            let _ = tx.send(ScanResult {
+            let _ = tx.send(ScanJobMessage::Finished(ScanResult {
                 source_id,
                 mode,
                 result,
-            });
+            }));
         });
     }
 
