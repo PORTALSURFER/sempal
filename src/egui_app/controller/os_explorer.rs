@@ -61,6 +61,47 @@ pub(super) fn reveal_in_file_explorer(path: &Path) -> Result<(), String> {
     }
 }
 
+pub(super) fn open_folder_in_file_explorer(path: &Path) -> Result<(), String> {
+    if !path.exists() {
+        return Err(format!("Folder not found: {}", path.display()));
+    }
+    if !path.is_dir() {
+        return Err(format!("Not a folder: {}", path.display()));
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let status = std::process::Command::new("explorer.exe")
+            .arg(windows_explorer_target(path))
+            .status()
+            .map_err(|err| format!("Failed to launch explorer: {err}"))?;
+        if status.success() {
+            return Ok(());
+        }
+        return Err(format!(
+            "Explorer exited unsuccessfully for {}",
+            path.display()
+        ));
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let status = std::process::Command::new("open")
+            .arg(path)
+            .status()
+            .map_err(|err| format!("Failed to launch Finder: {err}"))?;
+        if status.success() {
+            return Ok(());
+        }
+        return Err(format!(
+            "Finder exited unsuccessfully for {}",
+            path.display()
+        ));
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        open::that(path).map_err(|err| format!("Could not open folder {}: {err}", path.display()))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -79,5 +120,11 @@ mod tests {
         let path = Path::new("C:/samples/kick.wav");
         let args = windows_explorer_select_args(path);
         assert_eq!(args[1], OsStr::new("C:\\samples\\kick.wav"));
+    }
+
+    #[test]
+    fn windows_explorer_target_normalize_forward_slashes() {
+        let path = Path::new("C:/samples");
+        assert_eq!(windows_explorer_target(path), OsStr::new("C:\\samples"));
     }
 }
