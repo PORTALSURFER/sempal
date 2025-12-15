@@ -15,9 +15,12 @@ pub(super) fn start_or_seek_trail(playhead: &mut PlayheadState, position: f32, i
         stash_active_trail(playhead);
     }
     playhead.trail.clear();
+    let position = position.clamp(0.0, 1.0);
+    playhead.trail.push_back(PlayheadTrailSample { position, time: now });
+    // Seed a second sample so the gradient can render immediately even before the next tick.
     playhead.trail.push_back(PlayheadTrailSample {
-        position: position.clamp(0.0, 1.0),
-        time: now,
+        position,
+        time: now + Duration::from_millis(1),
     });
 }
 
@@ -91,4 +94,3 @@ pub(super) fn tick_playhead_trail(
         playhead.trail.pop_front();
     }
 }
-

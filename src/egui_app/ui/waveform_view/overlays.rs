@@ -61,9 +61,14 @@ fn trail_samples_in_window(
     for sample in trail.iter().copied() {
         if sample.time >= cutoff {
             if let Some(prev) = prev && prev.time < cutoff {
-                let span = sample.time.duration_since(prev.time);
-                let elapsed = cutoff.duration_since(prev.time);
-                let t = (elapsed.as_secs_f32() / span.as_secs_f32().max(1e-6)).clamp(0.0, 1.0);
+                let Some(span) = sample.time.checked_duration_since(prev.time) else {
+                    continue;
+                };
+                let Some(elapsed) = cutoff.checked_duration_since(prev.time) else {
+                    continue;
+                };
+                let span_s = span.as_secs_f32().max(1e-6);
+                let t = (elapsed.as_secs_f32() / span_s).clamp(0.0, 1.0);
                 window.push(crate::egui_app::state::PlayheadTrailSample {
                     position: prev.position + (sample.position - prev.position) * t,
                     time: cutoff,
