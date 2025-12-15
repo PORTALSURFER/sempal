@@ -4,6 +4,7 @@ use crate::waveform::WaveformChannelView;
 use egui;
 use std::collections::VecDeque;
 use std::path::PathBuf;
+use std::time::Instant;
 
 /// Cached waveform image and playback overlays.
 #[derive(Clone, Debug)]
@@ -107,6 +108,8 @@ pub struct PlayheadState {
     pub visible: bool,
     /// Normalized end of the currently playing span, when any.
     pub active_span_end: Option<f32>,
+    /// Recent user-triggered seek to avoid large visual jumps on the next progress tick.
+    pub recent_seek: Option<PlayheadSeek>,
     /// Recent playhead positions used to render a fading trail while playing.
     pub trail: VecDeque<PlayheadTrailSample>,
     /// Previous trails that are fading out after a discontinuity (seek/loop/stop).
@@ -119,10 +122,20 @@ impl Default for PlayheadState {
             position: 0.0,
             visible: false,
             active_span_end: None,
+            recent_seek: None,
             trail: VecDeque::new(),
             fading_trails: Vec::new(),
         }
     }
+}
+
+/// Recently requested seek position used to smooth initial progress updates.
+#[derive(Clone, Copy, Debug)]
+pub struct PlayheadSeek {
+    /// Normalized seek position (0.0-1.0).
+    pub position: f32,
+    /// Monotonic timestamp of when the seek was requested.
+    pub started_at: Instant,
 }
 
 /// Cached samples for a playhead trail that is fading out.

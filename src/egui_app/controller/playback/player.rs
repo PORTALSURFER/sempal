@@ -67,6 +67,12 @@ pub(super) fn play_audio(
     controller.ui.waveform.playhead.active_span_end = Some(span_end.clamp(0.0, 1.0));
     controller.ui.waveform.playhead.visible = true;
     controller.ui.waveform.playhead.position = start;
+    if start_override.is_some() {
+        controller.ui.waveform.playhead.recent_seek = Some(crate::egui_app::state::PlayheadSeek {
+            position: start,
+            started_at: Instant::now(),
+        });
+    }
     Ok(())
 }
 
@@ -119,6 +125,8 @@ pub(super) fn update_playhead_from_progress(
     is_looping: bool,
 ) {
     if let Some(progress) = progress {
+        let playhead = &mut controller.ui.waveform.playhead;
+        let progress = smooth_progress_after_seek(&mut playhead.recent_seek, progress);
         controller.ui.waveform.playhead.position = progress;
         if playhead_completed_span(controller, progress, is_looping) {
             hide_waveform_playhead(controller);
@@ -144,9 +152,38 @@ fn playhead_completed_span(controller: &EguiController, progress: f32, is_loopin
     progress + super::PLAYHEAD_COMPLETION_EPSILON >= target
 }
 
+fn smooth_progress_after_seek(
+    recent_seek: &mut Option<crate::egui_app::state::PlayheadSeek>,
+    progress: f32,
+) -> f32 {
+    const SEEK_SMOOTH_SECS: f32 = 0.08;
+    const SEEK_CLEAR_SECS: f32 = 0.20;
+    const EPS: f32 = 1e-6;
+
+    let progress = progress.clamp(0.0, 1.0);
+    let Some(seek) = *recent_seek else {
+        return progress;
+    };
+
+    let elapsed = seek.started_at.elapsed();
+    if elapsed.as_secs_f32() >= SEEK_CLEAR_SECS || progress + EPS < seek.position {
+        *recent_seek = None;
+        return progress;
+    }
+
+    if elapsed.as_secs_f32() >= SEEK_SMOOTH_SECS || progress <= seek.position + EPS {
+        return progress;
+    }
+
+    let t = (elapsed.as_secs_f32() / SEEK_SMOOTH_SECS).clamp(0.0, 1.0);
+    let eased = t * t * (3.0 - 2.0 * t);
+    seek.position + (progress - seek.position) * eased
+}
+
 pub(super) fn hide_waveform_playhead(controller: &mut EguiController) {
     controller.ui.waveform.playhead.visible = false;
     controller.ui.waveform.playhead.active_span_end = None;
+    controller.ui.waveform.playhead.recent_seek = None;
 }
 
 #[cfg(test)]
@@ -161,6 +198,35 @@ pub(super) fn playhead_completed_span_for_tests(
 #[cfg(test)]
 pub(super) fn hide_waveform_playhead_for_tests(controller: &mut EguiController) {
     hide_waveform_playhead(controller);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::smooth_progress_after_seek;
+    use crate::egui_app::state::PlayheadSeek;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn smooth_playhead_progress_after_seek_starts_at_seek_position() {
+        let mut seek = Some(PlayheadSeek {
+            position: 0.25,
+            started_at: Instant::now(),
+        });
+        let progress = smooth_progress_after_seek(&mut seek, 0.40);
+        assert!(progress >= 0.25);
+        assert!(progress <= 0.40);
+    }
+
+    #[test]
+    fn smooth_playhead_progress_after_seek_clears_after_timeout() {
+        let mut seek = Some(PlayheadSeek {
+            position: 0.25,
+            started_at: Instant::now() - Duration::from_millis(500),
+        });
+        let progress = smooth_progress_after_seek(&mut seek, 0.40);
+        assert_eq!(progress, 0.40);
+        assert!(seek.is_none());
+    }
 }
 
 pub(in crate::egui_app::controller) fn apply_selection(
