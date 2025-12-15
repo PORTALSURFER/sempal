@@ -1,5 +1,5 @@
 use super::{
-    AudioLoadJob, AudioLoadResult, PendingAudio, PendingPlayback, ScanResult, SourceId,
+    AudioLoadJob, AudioLoadResult, PendingAudio, PendingPlayback, ScanJobMessage, SourceId,
     UpdateCheckResult, WavLoadJob, WavLoadResult, trash_move,
 };
 use std::{
@@ -18,7 +18,7 @@ type TryRecvError = std::sync::mpsc::TryRecvError;
 pub(super) enum JobMessage {
     WavLoaded(WavLoadResult),
     AudioLoaded(AudioLoadResult),
-    ScanFinished(ScanResult),
+    Scan(ScanJobMessage),
     TrashMove(trash_move::TrashMoveMessage),
     UpdateChecked(UpdateCheckResult),
 }
@@ -34,6 +34,7 @@ pub(super) struct ControllerJobs {
     pub(super) pending_playback: Option<PendingPlayback>,
     pub(super) next_audio_request_id: u64,
     pub(super) scan_in_progress: bool,
+    pub(super) scan_cancel: Option<Arc<std::sync::atomic::AtomicBool>>,
     pub(super) trash_move_in_progress: bool,
     pub(super) trash_move_cancel: Option<Arc<std::sync::atomic::AtomicBool>>,
     pub(super) update_check_in_progress: bool,
@@ -58,6 +59,7 @@ impl ControllerJobs {
             pending_playback: None,
             next_audio_request_id: 1,
             scan_in_progress: false,
+            scan_cancel: None,
             trash_move_in_progress: false,
             trash_move_cancel: None,
             update_check_in_progress: false,
@@ -147,14 +149,28 @@ impl ControllerJobs {
         self.scan_in_progress
     }
 
-    pub(super) fn begin_scan(&mut self, rx: Receiver<ScanResult>) {
+    pub(super) fn start_scan(&mut self, rx: Receiver<ScanJobMessage>, cancel: Arc<AtomicBool>) {
         self.scan_in_progress = true;
+        self.scan_cancel = Some(cancel);
         let tx = self.message_tx.clone();
         thread::spawn(move || {
-            if let Ok(result) = rx.recv() {
-                let _ = tx.send(JobMessage::ScanFinished(result));
+            while let Ok(message) = rx.recv() {
+                let is_finished = matches!(message, ScanJobMessage::Finished(_));
+                let _ = tx.send(JobMessage::Scan(message));
+                if is_finished {
+                    break;
+                }
             }
         });
+    }
+
+    pub(super) fn scan_cancel(&self) -> Option<Arc<AtomicBool>> {
+        self.scan_cancel.clone()
+    }
+
+    pub(super) fn clear_scan(&mut self) {
+        self.scan_in_progress = false;
+        self.scan_cancel = None;
     }
 
     pub(super) fn trash_move_in_progress(&self) -> bool {

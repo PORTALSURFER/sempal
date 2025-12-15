@@ -2,6 +2,7 @@ use std::{
     collections::HashMap,
     fs,
     path::{Path, PathBuf},
+    sync::atomic::{AtomicBool, Ordering},
     thread,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -36,6 +37,8 @@ pub enum ScanMode {
 pub enum ScanError {
     #[error("Source root is not a directory: {0}")]
     InvalidRoot(PathBuf),
+    #[error("Scan canceled")]
+    Canceled,
     #[error("Failed to read {path}: {source}")]
     Io {
         path: PathBuf,
@@ -50,21 +53,44 @@ pub enum ScanError {
 /// Recursively scan the source root, syncing .wav files into the database.
 /// Returns counts of added/updated/removed wav rows.
 pub fn scan_once(db: &SourceDatabase) -> Result<ScanStats, ScanError> {
-    scan(db, ScanMode::Quick)
+    scan(db, ScanMode::Quick, None, None)
 }
 
 /// Rescan the entire source, pruning rows for files that no longer exist.
 pub fn hard_rescan(db: &SourceDatabase) -> Result<ScanStats, ScanError> {
-    scan(db, ScanMode::Hard)
+    scan(db, ScanMode::Hard, None, None)
 }
 
-fn scan(db: &SourceDatabase, mode: ScanMode) -> Result<ScanStats, ScanError> {
+pub fn scan_with_progress(
+    db: &SourceDatabase,
+    mode: ScanMode,
+    cancel: Option<&AtomicBool>,
+    on_progress: &mut impl FnMut(usize, &Path),
+) -> Result<ScanStats, ScanError> {
+    scan(db, mode, cancel, Some(on_progress))
+}
+
+fn scan(
+    db: &SourceDatabase,
+    mode: ScanMode,
+    cancel: Option<&AtomicBool>,
+    mut on_progress: Option<&mut dyn FnMut(usize, &Path)>,
+) -> Result<ScanStats, ScanError> {
     let root = ensure_root_dir(db)?;
     let mut stats = ScanStats::default();
     let mut existing = index_existing(db)?;
     let mut batch = db.write_batch()?;
-    visit_dir(&root, &mut |path| {
-        sync_file(&mut batch, &root, path, &mut existing, &mut stats)
+    visit_dir(&root, cancel, &mut |path| {
+        if let Some(cancel) = cancel
+            && cancel.load(Ordering::Relaxed)
+        {
+            return Err(ScanError::Canceled);
+        }
+        sync_file(&mut batch, &root, path, &mut existing, &mut stats)?;
+        if let Some(on_progress) = on_progress.as_mut() {
+            on_progress(stats.total_files, path);
+        }
+        Ok(())
     })?;
     mark_missing(&mut batch, existing, &mut stats, mode)?;
     batch.commit()?;
@@ -91,10 +117,16 @@ fn index_existing(db: &SourceDatabase) -> Result<HashMap<PathBuf, WavEntry>, Sca
 
 fn visit_dir(
     root: &Path,
+    cancel: Option<&AtomicBool>,
     visitor: &mut impl FnMut(&Path) -> Result<(), ScanError>,
 ) -> Result<(), ScanError> {
     let mut stack = vec![root.to_path_buf()];
     while let Some(dir) = stack.pop() {
+        if let Some(cancel) = cancel
+            && cancel.load(Ordering::Relaxed)
+        {
+            return Err(ScanError::Canceled);
+        }
         let entries = match fs::read_dir(&dir) {
             Ok(entries) => entries,
             Err(source) if dir != root => {
@@ -334,6 +366,23 @@ mod tests {
         let handle = scan_in_background(dir.path().to_path_buf());
         let stats = handle.join().unwrap().unwrap();
         assert_eq!(stats.added, 1);
+    }
+
+    #[test]
+    fn scan_with_progress_respects_cancel_flag() {
+        use std::sync::atomic::AtomicBool;
+
+        let dir = tempdir().unwrap();
+        std::fs::write(dir.path().join("one.wav"), b"one").unwrap();
+        let db = SourceDatabase::open(dir.path()).unwrap();
+
+        let cancel = AtomicBool::new(true);
+        let mut progress_called = false;
+        let result = scan_with_progress(&db, ScanMode::Quick, Some(&cancel), &mut |_, _| {
+            progress_called = true;
+        });
+        assert!(matches!(result, Err(ScanError::Canceled)));
+        assert!(!progress_called);
     }
 
     #[test]
