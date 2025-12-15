@@ -6,6 +6,7 @@ use super::trash_move::run_trash_move_task;
 #[cfg(test)]
 use super::trash_move::run_trash_move_task_with_progress;
 use super::*;
+use crate::egui_app::state::ProgressTaskKind;
 use crate::sample_sources::config::normalize_path;
 use rfd::{FileDialog, MessageButtons, MessageDialog, MessageDialogResult, MessageLevel};
 use std::fs;
@@ -61,7 +62,12 @@ impl EguiController {
             return;
         };
         self.set_status("Moving trashed samples...", StatusTone::Busy);
-        self.show_status_progress("Moving trashed samples", 0, true);
+        self.show_status_progress(
+            ProgressTaskKind::TrashMove,
+            "Moving trashed samples",
+            0,
+            true,
+        );
         self.update_progress_detail("Scanning for trashed samples...");
 
         let cancel = Arc::new(AtomicBool::new(false));

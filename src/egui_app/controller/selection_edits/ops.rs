@@ -47,6 +47,28 @@ pub(super) fn mute_buffer(buffer: &mut SelectionEditBuffer) -> Result<(), String
     Ok(())
 }
 
+pub(super) fn reverse_buffer(buffer: &mut SelectionEditBuffer) -> Result<(), String> {
+    let channels = buffer.channels.max(1);
+    let total_frames = buffer.samples.len() / channels;
+    let start = buffer.start_frame.min(total_frames);
+    let end = buffer.end_frame.min(total_frames);
+    if end <= start + 1 {
+        return Ok(());
+    }
+    let mut left = start;
+    let mut right = end - 1;
+    while left < right {
+        let left_offset = left * channels;
+        let right_offset = right * channels;
+        for ch in 0..channels {
+            buffer.samples.swap(left_offset + ch, right_offset + ch);
+        }
+        left += 1;
+        right = right.saturating_sub(1);
+    }
+    Ok(())
+}
+
 pub(super) fn slice_frames(
     samples: &[f32],
     channels: usize,

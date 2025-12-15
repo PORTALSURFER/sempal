@@ -1,9 +1,19 @@
 /// Modal progress indicator for slow tasks.
+/// Identifies the long-running task responsible for updating the progress overlay.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ProgressTaskKind {
+    TrashMove,
+    WavLoad,
+    Scan,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct ProgressOverlayState {
     pub visible: bool,
     /// When true, the modal overlay is rendered (otherwise progress is status-bar only).
     pub modal: bool,
+    /// The task currently driving the progress overlay (when visible).
+    pub task: Option<ProgressTaskKind>,
     pub title: String,
     pub detail: Option<String>,
     pub completed: usize,
@@ -14,10 +24,16 @@ pub struct ProgressOverlayState {
 
 impl ProgressOverlayState {
     /// Create and show a progress overlay with the provided title and total step count.
-    pub fn new(title: impl Into<String>, total: usize, cancelable: bool) -> Self {
+    pub fn new(
+        task: ProgressTaskKind,
+        title: impl Into<String>,
+        total: usize,
+        cancelable: bool,
+    ) -> Self {
         Self {
             visible: true,
             modal: true,
+            task: Some(task),
             title: title.into(),
             detail: None,
             completed: 0,
@@ -44,21 +60,22 @@ impl ProgressOverlayState {
 
 #[cfg(test)]
 mod tests {
-    use super::ProgressOverlayState;
+    use super::{ProgressOverlayState, ProgressTaskKind};
 
     #[test]
     fn progress_fraction_handles_zero_total() {
-        let progress = ProgressOverlayState::new("Task", 0, false);
+        let progress = ProgressOverlayState::new(ProgressTaskKind::TrashMove, "Task", 0, false);
         assert_eq!(progress.fraction(), 0.0);
     }
 
     #[test]
     fn progress_reset_clears_visibility() {
-        let mut progress = ProgressOverlayState::new("Task", 2, true);
+        let mut progress = ProgressOverlayState::new(ProgressTaskKind::TrashMove, "Task", 2, true);
         progress.completed = 3;
         assert!(progress.fraction() <= 1.0);
         progress.reset();
         assert!(!progress.visible);
+        assert_eq!(progress.task, None);
         assert_eq!(progress.completed, 0);
         assert_eq!(progress.total, 0);
     }
