@@ -109,6 +109,8 @@ pub struct PlayheadState {
     pub active_span_end: Option<f32>,
     /// Recent playhead positions used to render a fading trail while playing.
     pub trail: VecDeque<PlayheadTrailSample>,
+    /// Previous trail bounds that are fading out after a discontinuity (seek/loop/stop).
+    pub fading_trail: Option<FadingPlayheadTrail>,
 }
 
 impl Default for PlayheadState {
@@ -118,8 +120,17 @@ impl Default for PlayheadState {
             visible: false,
             active_span_end: None,
             trail: VecDeque::new(),
+            fading_trail: None,
         }
     }
+}
+
+/// Cached bounds for a playhead trail that is fading out.
+#[derive(Clone, Copy, Debug)]
+pub struct FadingPlayheadTrail {
+    pub start: f32,
+    pub end: f32,
+    pub started_at: f64,
 }
 
 /// Single playhead position sample used for rendering a fading trail.
