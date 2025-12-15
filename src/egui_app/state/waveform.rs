@@ -4,6 +4,7 @@ use crate::waveform::WaveformChannelView;
 use egui;
 use std::collections::VecDeque;
 use std::path::PathBuf;
+use std::time::Instant;
 
 /// Cached waveform image and playback overlays.
 #[derive(Clone, Debug)]
@@ -107,10 +108,12 @@ pub struct PlayheadState {
     pub visible: bool,
     /// Normalized end of the currently playing span, when any.
     pub active_span_end: Option<f32>,
+    /// Recent user-triggered seek to avoid large visual jumps on the next progress tick.
+    pub recent_seek: Option<PlayheadSeek>,
     /// Recent playhead positions used to render a fading trail while playing.
     pub trail: VecDeque<PlayheadTrailSample>,
-    /// Previous trail bounds that are fading out after a discontinuity (seek/loop/stop).
-    pub fading_trail: Option<FadingPlayheadTrail>,
+    /// Previous trails that are fading out after a discontinuity (seek/loop/stop).
+    pub fading_trails: Vec<FadingPlayheadTrail>,
 }
 
 impl Default for PlayheadState {
@@ -119,18 +122,27 @@ impl Default for PlayheadState {
             position: 0.0,
             visible: false,
             active_span_end: None,
+            recent_seek: None,
             trail: VecDeque::new(),
-            fading_trail: None,
+            fading_trails: Vec::new(),
         }
     }
 }
 
-/// Cached bounds for a playhead trail that is fading out.
+/// Recently requested seek position used to smooth initial progress updates.
 #[derive(Clone, Copy, Debug)]
+pub struct PlayheadSeek {
+    /// Normalized seek position (0.0-1.0).
+    pub position: f32,
+    /// Monotonic timestamp of when the seek was requested.
+    pub started_at: Instant,
+}
+
+/// Cached samples for a playhead trail that is fading out.
+#[derive(Clone, Debug)]
 pub struct FadingPlayheadTrail {
-    pub start: f32,
-    pub end: f32,
-    pub started_at: f64,
+    pub started_at: Instant,
+    pub samples: VecDeque<PlayheadTrailSample>,
 }
 
 /// Single playhead position sample used for rendering a fading trail.
@@ -138,6 +150,6 @@ pub struct FadingPlayheadTrail {
 pub struct PlayheadTrailSample {
     /// Normalized playhead position (0.0-1.0).
     pub position: f32,
-    /// Timestamp from `egui::InputState::time` when captured.
-    pub time: f64,
+    /// Monotonic timestamp for trail aging.
+    pub time: Instant,
 }

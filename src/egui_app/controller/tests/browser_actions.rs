@@ -397,6 +397,41 @@ fn browser_delete_prunes_collections_and_exports() -> Result<(), String> {
 }
 
 #[test]
+fn browser_remove_dead_links_prunes_missing_rows() -> Result<(), String> {
+    let (mut controller, source) = dummy_controller();
+    controller.library.sources.push(source.clone());
+
+    write_test_wav(&source.root.join("alive.wav"), &[0.0, 0.1, -0.1]);
+    let mut dead = sample_entry("gone.wav", SampleTag::Neutral);
+    dead.missing = true;
+    controller.wav_entries.entries = vec![sample_entry("alive.wav", SampleTag::Neutral), dead];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+
+    let missing_row = controller
+        .visible_browser_indices()
+        .iter()
+        .enumerate()
+        .find_map(|(row, &idx)| {
+            controller
+                .wav_entry(idx)
+                .filter(|entry| entry.relative_path == std::path::PathBuf::from("gone.wav"))
+                .map(|_| row)
+        })
+        .expect("missing row present");
+
+    controller.remove_dead_link_browser_samples(&[missing_row])?;
+
+    assert_eq!(controller.visible_browser_indices().len(), 1);
+    let remaining_idx = controller.visible_browser_indices()[0];
+    let remaining = controller.wav_entry(remaining_idx).expect("remaining entry");
+    assert_eq!(remaining.relative_path, std::path::PathBuf::from("alive.wav"));
+    assert!(!controller.sample_missing(&source.id, std::path::Path::new("alive.wav")));
+    assert!(!controller.wav_entries.lookup.contains_key(std::path::Path::new("gone.wav")));
+    Ok(())
+}
+
+#[test]
 fn deleting_browser_sample_moves_focus_forward() -> Result<(), String> {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source.clone());

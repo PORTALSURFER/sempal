@@ -272,8 +272,15 @@ pub(super) const HOTKEY_ACTIONS: &[HotkeyAction] = &[
     HotkeyAction {
         id: "reverse-selection",
         label: "Reverse selection",
-        gesture: HotkeyGesture::new(Key::R),
+        gesture: HotkeyGesture::with_shift(Key::R),
         scope: HotkeyScope::Focus(FocusContext::Waveform),
+        command: HotkeyCommand::ReverseSelection,
+    },
+    HotkeyAction {
+        id: "reverse-selection-browser",
+        label: "Reverse selection",
+        gesture: HotkeyGesture::with_shift(Key::R),
+        scope: HotkeyScope::Focus(FocusContext::SampleBrowser),
         command: HotkeyCommand::ReverseSelection,
     },
     HotkeyAction {

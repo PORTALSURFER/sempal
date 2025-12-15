@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 mod browser_nav;
 mod formatting;
+mod playhead_trail;
 mod player;
 mod random_nav;
 mod tagging;
@@ -99,7 +100,7 @@ impl EguiController {
         progress: Option<f32>,
         is_looping: bool,
     ) {
-        player::update_playhead_from_progress(self, progress, is_looping);
+        player::update_playhead_from_progress(self, progress, is_looping, false);
     }
 
     pub(super) fn hide_waveform_playhead(&mut self) {
