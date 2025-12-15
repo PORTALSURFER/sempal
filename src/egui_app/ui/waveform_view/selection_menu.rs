@@ -46,6 +46,13 @@ pub(super) fn render_selection_context_menu(app: &mut EguiApp, ui: &mut egui::Ui
     {
         request_edit(DestructiveSelectionEdit::TrimSelection);
     }
+    if ui
+        .button("Reverse selection")
+        .on_hover_text("Reverse the selection in time (overwrite)")
+        .clicked()
+    {
+        request_edit(DestructiveSelectionEdit::ReverseSelection);
+    }
     ui.separator();
     ui.horizontal(|ui| {
         let fade_lr_button =

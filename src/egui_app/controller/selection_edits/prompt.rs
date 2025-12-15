@@ -5,6 +5,7 @@ impl DestructiveSelectionEdit {
         match self {
             DestructiveSelectionEdit::CropSelection => "Crop selection",
             DestructiveSelectionEdit::TrimSelection => "Trim selection",
+            DestructiveSelectionEdit::ReverseSelection => "Reverse selection",
             DestructiveSelectionEdit::FadeLeftToRight => "Fade selection (left to right)",
             DestructiveSelectionEdit::FadeRightToLeft => "Fade selection (right to left)",
             DestructiveSelectionEdit::MuteSelection => "Mute selection",
@@ -20,6 +21,9 @@ impl DestructiveSelectionEdit {
             }
             DestructiveSelectionEdit::TrimSelection => {
                 "This will remove the selected region and close the gap in the source file."
+            }
+            DestructiveSelectionEdit::ReverseSelection => {
+                "This will overwrite the selection with the audio reversed in time."
             }
             DestructiveSelectionEdit::FadeLeftToRight => {
                 "This will overwrite the selection with a fade down to silence."
