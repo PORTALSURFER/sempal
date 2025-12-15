@@ -2,6 +2,7 @@ use super::controls::DestructiveEditPrompt;
 use crate::selection::SelectionRange;
 use crate::waveform::WaveformChannelView;
 use egui;
+use std::collections::VecDeque;
 use std::path::PathBuf;
 
 /// Cached waveform image and playback overlays.
@@ -106,6 +107,8 @@ pub struct PlayheadState {
     pub visible: bool,
     /// Normalized end of the currently playing span, when any.
     pub active_span_end: Option<f32>,
+    /// Recent playhead positions used to render a fading trail while playing.
+    pub trail: VecDeque<PlayheadTrailSample>,
 }
 
 impl Default for PlayheadState {
@@ -114,6 +117,16 @@ impl Default for PlayheadState {
             position: 0.0,
             visible: false,
             active_span_end: None,
+            trail: VecDeque::new(),
         }
     }
+}
+
+/// Single playhead position sample used for rendering a fading trail.
+#[derive(Clone, Copy, Debug)]
+pub struct PlayheadTrailSample {
+    /// Normalized playhead position (0.0-1.0).
+    pub position: f32,
+    /// Timestamp from `egui::InputState::time` when captured.
+    pub time: f64,
 }
