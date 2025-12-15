@@ -206,33 +206,24 @@ impl EguiApp {
         folder_drop_active: bool,
         pointer_pos: Option<egui::Pos2>,
     ) {
-        fn sample_parent_folder(relative_path: &Path) -> PathBuf {
-            let parent = relative_path.parent().unwrap_or(Path::new(""));
-            if parent.as_os_str().is_empty() || parent == Path::new(".") {
-                PathBuf::new()
-            } else {
-                parent.to_path_buf()
-            }
-        }
-
         fn paint_right_side_dot(ui: &mut Ui, rect: egui::Rect) {
             let padding = ui.spacing().button_padding.x;
             let radius = 3.0;
             let center = egui::pos2(rect.right() - padding - radius, rect.center().y);
             ui.painter()
-                .circle_filled(center, radius, style::high_contrast_text());
+                .circle_filled(center, radius, egui::Color32::WHITE);
         }
 
         let mut sample_parent_folders = HashSet::<PathBuf>::new();
         for path in self.controller.ui.browser.selected_paths.iter() {
-            sample_parent_folders.insert(sample_parent_folder(path));
+            sample_parent_folders.extend(sample_housing_folders(path));
         }
         if let Some(selected_row) = self.controller.ui.browser.selected_visible {
             let visible_indices = self.controller.visible_browser_indices();
             if let Some(entry_index) = visible_indices.get(selected_row).copied()
                 && let Some(entry) = self.controller.wav_entry(entry_index)
             {
-                sample_parent_folders.insert(sample_parent_folder(&entry.relative_path));
+                sample_parent_folders.extend(sample_housing_folders(&entry.relative_path));
             }
         }
 
@@ -788,4 +779,36 @@ fn folder_row_label(
     };
     let raw = format!("{indent}{icon} {}", row.name);
     clamp_label_for_width(&raw, row_width - padding)
+}
+
+fn sample_housing_folders(relative_path: &Path) -> Vec<PathBuf> {
+    let parent = relative_path.parent().unwrap_or(Path::new(""));
+    if parent.as_os_str().is_empty() || parent == Path::new(".") {
+        return vec![PathBuf::new()];
+    }
+
+    let mut folders = Vec::new();
+    let mut cursor = parent;
+    while !cursor.as_os_str().is_empty() && cursor != Path::new(".") {
+        folders.push(cursor.to_path_buf());
+        cursor = cursor.parent().unwrap_or(Path::new(""));
+    }
+    folders
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sample_housing_folders;
+    use std::path::{Path, PathBuf};
+
+    #[test]
+    fn sample_housing_folders_root_returns_empty_path() {
+        assert_eq!(sample_housing_folders(Path::new("kick.wav")), vec![PathBuf::new()]);
+    }
+
+    #[test]
+    fn sample_housing_folders_includes_ancestors() {
+        let folders = sample_housing_folders(Path::new("a/b/c.wav"));
+        assert_eq!(folders, vec![PathBuf::from("a/b"), PathBuf::from("a")]);
+    }
 }
