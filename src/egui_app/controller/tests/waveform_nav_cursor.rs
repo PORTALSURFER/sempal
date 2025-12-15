@@ -208,6 +208,8 @@ fn play_from_cursor_prefers_cursor_position() {
         channels: 1,
     });
     controller.ui.waveform.cursor = Some(0.33);
+    controller.ui.waveform.cursor_last_navigation_at = Some(Instant::now());
+    controller.ui.waveform.cursor_last_hover_at = None;
     controller.ui.waveform.last_start_marker = Some(0.1);
 
     let handled = controller.play_from_cursor();
@@ -221,6 +223,37 @@ fn play_from_cursor_prefers_cursor_position() {
         .expect("pending playback request");
     assert_eq!(pending.start_override, Some(0.33));
     assert_eq!(controller.ui.waveform.last_start_marker, Some(0.33));
+}
+
+#[test]
+fn play_from_cursor_ignores_hover_cursor_when_replaying() {
+    let (mut controller, source) = dummy_controller();
+    prepare_browser_sample(&mut controller, &source, "cursor.wav");
+    controller.select_wav_by_path(Path::new("cursor.wav"));
+    controller.sample_view.waveform.decoded = Some(DecodedWaveform {
+        cache_token: 1,
+        samples: vec![0.0; 10_000],
+        peaks: None,
+        duration_seconds: 1.0,
+        sample_rate: 48_000,
+        channels: 1,
+    });
+    controller.ui.waveform.cursor = Some(0.33);
+    controller.ui.waveform.cursor_last_navigation_at = Some(Instant::now() - Duration::from_secs(5));
+    controller.ui.waveform.cursor_last_hover_at = Some(Instant::now());
+    controller.ui.waveform.last_start_marker = Some(0.1);
+
+    let handled = controller.play_from_cursor();
+
+    assert!(handled);
+    let pending = controller
+        .runtime
+        .jobs
+        .pending_playback
+        .as_ref()
+        .expect("pending playback request");
+    assert_eq!(pending.start_override, Some(0.1));
+    assert_eq!(controller.ui.waveform.last_start_marker, Some(0.1));
 }
 
 #[test]

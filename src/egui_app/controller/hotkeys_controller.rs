@@ -173,7 +173,7 @@ impl HotkeysActions for HotkeysController<'_> {
                 }
             }
             HotkeyCommand::ReverseSelection => {
-                if matches!(focus, FocusContext::Waveform) {
+                if matches!(focus, FocusContext::Waveform | FocusContext::SampleBrowser) {
                     let _ = self.request_destructive_selection_edit(
                         DestructiveSelectionEdit::ReverseSelection,
                     );

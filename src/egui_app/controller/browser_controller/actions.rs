@@ -15,6 +15,7 @@ pub(crate) trait BrowserActions {
     fn rename_browser_sample(&mut self, row: usize, new_name: &str) -> Result<(), String>;
     fn delete_browser_sample(&mut self, row: usize) -> Result<(), String>;
     fn delete_browser_samples(&mut self, rows: &[usize]) -> Result<(), String>;
+    fn remove_dead_link_browser_samples(&mut self, rows: &[usize]) -> Result<(), String>;
 }
 
 impl BrowserActions for BrowserController<'_> {
@@ -100,6 +101,34 @@ impl BrowserActions for BrowserController<'_> {
         let (contexts, mut last_error) = self.resolve_unique_browser_contexts(rows);
         for ctx in contexts {
             if let Err(err) = self.try_delete_browser_sample_ctx(&ctx) {
+                last_error = Some(err);
+            }
+        }
+        if let Some(path) = next_focus
+            && self.wav_entries.lookup.contains_key(&path)
+        {
+            if let Some(row) = self.visible_row_for_path(&path) {
+                self.focus_browser_row_only(row);
+            } else {
+                self.select_wav_by_path_with_rebuild(&path, true);
+            }
+        }
+        if let Some(err) = last_error {
+            Err(err)
+        } else {
+            Ok(())
+        }
+    }
+
+    fn remove_dead_link_browser_samples(&mut self, rows: &[usize]) -> Result<(), String> {
+        let next_focus = self.next_browser_focus_after_delete(rows);
+        let (contexts, mut last_error) = self.resolve_unique_browser_contexts(rows);
+        for ctx in contexts {
+            let is_dead_link = ctx.entry.missing || !ctx.absolute_path.exists();
+            if !is_dead_link {
+                continue;
+            }
+            if let Err(err) = self.try_remove_dead_link_browser_sample_ctx(&ctx) {
                 last_error = Some(err);
             }
         }

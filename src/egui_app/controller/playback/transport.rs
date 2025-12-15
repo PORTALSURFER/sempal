@@ -119,7 +119,15 @@ pub(super) fn play_from_cursor(controller: &mut EguiController) -> bool {
     if !controller.waveform_ready() {
         return false;
     }
-    if let Some(cursor) = controller.ui.waveform.cursor {
+    let cursor_from_navigation = match (
+        controller.ui.waveform.cursor_last_hover_at,
+        controller.ui.waveform.cursor_last_navigation_at,
+    ) {
+        (_, None) => false,
+        (None, Some(_)) => true,
+        (Some(hover), Some(nav)) => nav >= hover,
+    };
+    if cursor_from_navigation && let Some(cursor) = controller.ui.waveform.cursor {
         seek_to(controller, cursor);
         return true;
     }
