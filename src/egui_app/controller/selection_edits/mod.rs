@@ -19,7 +19,7 @@ use buffer::{SelectionEditBuffer, SelectionTarget};
 use selection_normalize::normalize_selection;
 use selection_smooth::smooth_selection;
 
-use ops::{apply_directional_fade, crop_buffer, trim_buffer};
+use ops::{apply_directional_fade, crop_buffer, reverse_buffer, trim_buffer};
 
 #[cfg(test)]
 use buffer::selection_frame_bounds;
@@ -207,10 +207,20 @@ impl EguiController {
         result
     }
 
+    /// Reverse the selected span in time.
+    pub(crate) fn reverse_waveform_selection(&mut self) -> Result<(), String> {
+        let result = self.apply_selection_edit("Reversed selection", reverse_buffer);
+        if let Err(err) = &result {
+            self.set_status(err.clone(), StatusTone::Error);
+        }
+        result
+    }
+
     fn apply_selection_edit_kind(&mut self, edit: DestructiveSelectionEdit) -> Result<(), String> {
         match edit {
             DestructiveSelectionEdit::CropSelection => self.crop_waveform_selection(),
             DestructiveSelectionEdit::TrimSelection => self.trim_waveform_selection(),
+            DestructiveSelectionEdit::ReverseSelection => self.reverse_waveform_selection(),
             DestructiveSelectionEdit::FadeLeftToRight => {
                 self.fade_waveform_selection(FadeDirection::LeftToRight)
             }

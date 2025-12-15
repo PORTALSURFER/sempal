@@ -270,6 +270,13 @@ pub(super) const HOTKEY_ACTIONS: &[HotkeyAction] = &[
         command: HotkeyCommand::TrimSelection,
     },
     HotkeyAction {
+        id: "reverse-selection",
+        label: "Reverse selection",
+        gesture: HotkeyGesture::new(Key::R),
+        scope: HotkeyScope::Focus(FocusContext::Waveform),
+        command: HotkeyCommand::ReverseSelection,
+    },
+    HotkeyAction {
         id: "fade-selection-left-to-right",
         label: "Fade selection (left to right)",
         gesture: HotkeyGesture::new(Key::Backslash),
