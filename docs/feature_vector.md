@@ -1,14 +1,29 @@
 # Feature Vector (v1)
 
-Sempal stores per-sample analysis output in `library.db` table `analysis_features` as a JSON blob.
+Sempal stores per-sample analysis output in `library.db` table `features` as a compact little-endian `f32` blob.
 
 ## Versioning
 
-The top-level JSON object is `AnalysisFeaturesV1` and includes:
+The stored blob is versioned by `features.feat_version`.
+
+For `feat_version = 1`, the vector is a fixed-length array of `183` `f32` values, encoded as `vec_blob` where each float is written via `f32::to_le_bytes()`.
 
 - `version`: integer, currently `1`
 - `time_domain`: `TimeDomainFeatures`
 - `frequency_domain`: `FrequencyDomainFeatures`
+
+## Layout (v1)
+
+In order:
+
+1. Time-domain (9)
+   - duration_seconds, peak, rms, crest_factor, zero_crossing_rate, attack_seconds, decay_20db_seconds, decay_40db_seconds, onset_count
+2. Spectral stats (24)
+   - centroid/rolloff/flatness/bandwidth for: global, early, late; each as (mean, std)
+3. Band energy ratios (30)
+   - sub/low/mid/high/air for: global, early, late; each as (mean, std)
+4. MFCC(20) stats (120)
+   - global mean[20], global std[20], early mean[20], early std[20], late mean[20], late std[20]
 
 ## Frequency-domain configuration (v1)
 
@@ -47,4 +62,3 @@ For spectral metrics, band ratios, and MFCC:
 - `mean` and `std` over all frames
 - `mean_early` / `std_early` over the first 25% of frames
 - `mean_late` / `std_late` over the last 25% of frames
-

@@ -23,6 +23,16 @@ pub(super) fn open_library_db(db_path: &Path) -> Result<Connection, String> {
     Ok(conn)
 }
 
+pub(super) fn sample_content_hash(conn: &Connection, sample_id: &str) -> Result<Option<String>, String> {
+    conn.query_row(
+        "SELECT content_hash FROM samples WHERE sample_id = ?1",
+        params![sample_id],
+        |row| row.get(0),
+    )
+    .optional()
+    .map_err(|err| format!("Failed to lookup sample content hash: {err}"))
+}
+
 pub(super) fn reset_running_to_pending(conn: &Connection) -> Result<usize, String> {
     conn.execute(
         "UPDATE analysis_jobs SET status = 'pending' WHERE status = 'running'",
@@ -160,6 +170,9 @@ pub(super) fn invalidate_analysis_artifacts(
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|err| format!("Failed to start analysis invalidation transaction: {err}"))?;
     let mut stmt_features = tx
+        .prepare("DELETE FROM features WHERE sample_id = ?1")
+        .map_err(|err| format!("Failed to prepare analysis invalidation statement: {err}"))?;
+    let mut stmt_legacy_features = tx
         .prepare("DELETE FROM analysis_features WHERE sample_id = ?1")
         .map_err(|err| format!("Failed to prepare analysis invalidation statement: {err}"))?;
     let mut stmt_predictions = tx
@@ -169,11 +182,15 @@ pub(super) fn invalidate_analysis_artifacts(
         stmt_features
             .execute(params![sample_id])
             .map_err(|err| format!("Failed to invalidate analysis features: {err}"))?;
+        stmt_legacy_features
+            .execute(params![sample_id])
+            .map_err(|err| format!("Failed to invalidate analysis features: {err}"))?;
         stmt_predictions
             .execute(params![sample_id])
             .map_err(|err| format!("Failed to invalidate analysis predictions: {err}"))?;
     }
     drop(stmt_features);
+    drop(stmt_legacy_features);
     drop(stmt_predictions);
     tx.commit()
         .map_err(|err| format!("Failed to commit analysis invalidation transaction: {err}"))?;
@@ -318,16 +335,18 @@ pub(super) fn update_analysis_metadata(
 pub(super) fn upsert_analysis_features(
     conn: &Connection,
     sample_id: &str,
-    content_hash: &str,
-    features_json: &[u8],
+    vec_blob: &[u8],
+    feat_version: i64,
+    computed_at: i64,
 ) -> Result<(), String> {
     conn.execute(
-        "INSERT INTO analysis_features (sample_id, content_hash, features)
-         VALUES (?1, ?2, ?3)
+        "INSERT INTO features (sample_id, feat_version, vec_blob, computed_at)
+         VALUES (?1, ?2, ?3, ?4)
          ON CONFLICT(sample_id) DO UPDATE SET
-            content_hash = excluded.content_hash,
-            features = excluded.features",
-        params![sample_id, content_hash, features_json],
+            feat_version = excluded.feat_version,
+            vec_blob = excluded.vec_blob,
+            computed_at = excluded.computed_at",
+        params![sample_id, feat_version, vec_blob, computed_at],
     )
     .map_err(|err| format!("Failed to upsert analysis features: {err}"))?;
     Ok(())
@@ -360,11 +379,12 @@ mod tests {
                 duration_seconds REAL,
                 sr_used INTEGER
             );
-            CREATE TABLE analysis_features (
+            CREATE TABLE features (
                 sample_id TEXT PRIMARY KEY,
-                content_hash TEXT NOT NULL,
-                features BLOB
-            );
+                feat_version INTEGER NOT NULL,
+                vec_blob BLOB NOT NULL,
+                computed_at INTEGER NOT NULL
+            ) WITHOUT ROWID;
             CREATE TABLE sources (
                 id TEXT PRIMARY KEY,
                 root TEXT NOT NULL,
@@ -452,18 +472,19 @@ mod tests {
     }
 
     #[test]
-    fn upsert_time_domain_features_overwrites_existing() {
+    fn upsert_analysis_features_overwrites_existing() {
         let conn = conn_with_schema();
-        upsert_analysis_features(&conn, "s::a.wav", "h1", br#"{"peak":1}"#).unwrap();
-        upsert_analysis_features(&conn, "s::a.wav", "h2", br#"{"peak":2}"#).unwrap();
-        let (hash, json): (String, Vec<u8>) = conn
+        upsert_analysis_features(&conn, "s::a.wav", b"one", 1, 100).unwrap();
+        upsert_analysis_features(&conn, "s::a.wav", b"two", 1, 200).unwrap();
+        let (version, blob, computed_at): (i64, Vec<u8>, i64) = conn
             .query_row(
-                "SELECT content_hash, features FROM analysis_features WHERE sample_id = 's::a.wav'",
+                "SELECT feat_version, vec_blob, computed_at FROM features WHERE sample_id = 's::a.wav'",
                 [],
-                |row| Ok((row.get(0)?, row.get(1)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
             .unwrap();
-        assert_eq!(hash, "h2");
-        assert_eq!(json, br#"{"peak":2}"#);
+        assert_eq!(version, 1);
+        assert_eq!(blob, b"two");
+        assert_eq!(computed_at, 200);
     }
 }

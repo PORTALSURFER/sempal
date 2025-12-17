@@ -75,6 +75,7 @@ impl LibraryDatabase {
         db.migrate_collection_export_paths()?;
         db.migrate_analysis_jobs_content_hash()?;
         db.migrate_samples_analysis_metadata()?;
+        db.migrate_features_table()?;
         Ok(db)
     }
 
@@ -345,7 +346,13 @@ impl LibraryDatabase {
                     sample_id TEXT PRIMARY KEY,
                     content_hash TEXT NOT NULL,
                     predictions BLOB
-                );",
+                );
+                 CREATE TABLE IF NOT EXISTS features (
+                    sample_id TEXT PRIMARY KEY,
+                    feat_version INTEGER NOT NULL,
+                    vec_blob BLOB NOT NULL,
+                    computed_at INTEGER NOT NULL
+                ) WITHOUT ROWID;",
             )
             .map_err(map_sql_error)?;
         Ok(())
@@ -396,6 +403,32 @@ impl LibraryDatabase {
                 .map_err(map_sql_error)?;
         }
         tx.commit().map_err(map_sql_error)?;
+        Ok(())
+    }
+
+    fn migrate_features_table(&mut self) -> Result<(), LibraryError> {
+        let mut stmt = self
+            .connection
+            .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='features'")
+            .map_err(map_sql_error)?;
+        let exists: Option<String> = stmt
+            .query_row([], |row| row.get(0))
+            .optional()
+            .map_err(map_sql_error)?;
+        drop(stmt);
+        if exists.is_some() {
+            return Ok(());
+        }
+        self.connection
+            .execute_batch(
+                "CREATE TABLE IF NOT EXISTS features (
+                    sample_id TEXT PRIMARY KEY,
+                    feat_version INTEGER NOT NULL,
+                    vec_blob BLOB NOT NULL,
+                    computed_at INTEGER NOT NULL
+                ) WITHOUT ROWID;",
+            )
+            .map_err(map_sql_error)?;
         Ok(())
     }
 

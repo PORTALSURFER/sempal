@@ -222,9 +222,23 @@ fn run_job(conn: &rusqlite::Connection, job: &db::ClaimedJob) -> Result<(), Stri
         .content_hash
         .as_deref()
         .ok_or_else(|| format!("Missing content_hash for analysis job {}", job.sample_id))?;
-    let features_json = serde_json::to_vec(&features)
-        .map_err(|err| format!("Failed to encode analysis features: {err}"))?;
-    db::upsert_analysis_features(conn, &job.sample_id, content_hash, &features_json)?;
+    let current_hash = db::sample_content_hash(conn, &job.sample_id)?;
+    if current_hash.as_deref() != Some(content_hash) {
+        return Ok(());
+    }
+    let vector = crate::analysis::vector::to_f32_vector_v1(&features);
+    let blob = crate::analysis::vector::encode_f32_le_blob(&vector);
+    let computed_at = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_else(|_| Duration::from_secs(0))
+        .as_secs() as i64;
+    db::upsert_analysis_features(
+        conn,
+        &job.sample_id,
+        &blob,
+        crate::analysis::vector::FEATURE_VERSION_V1,
+        computed_at,
+    )?;
     Ok(())
 }
 
