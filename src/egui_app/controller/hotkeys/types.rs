@@ -139,6 +139,7 @@ pub(crate) enum HotkeyCommand {
     NormalizeWaveform,
     CropSelection,
     CropSelectionNewSample,
+    OpenFeedbackIssuePrompt,
 }
 
 /// Hotkey metadata surfaced to the UI.

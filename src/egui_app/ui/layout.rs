@@ -137,6 +137,7 @@ impl EguiApp {
     ) {
         self.render_drag_overlay(ctx);
         progress_overlay::render_progress_overlay(ctx, &mut self.controller.ui.progress);
+        self.render_feedback_issue_prompt(ctx);
         if self.controller.ui.hotkeys.overlay_visible {
             if input.escape {
                 self.controller.ui.hotkeys.overlay_visible = false;

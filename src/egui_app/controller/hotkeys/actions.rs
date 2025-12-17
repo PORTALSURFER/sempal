@@ -151,6 +151,13 @@ pub(super) const HOTKEY_ACTIONS: &[HotkeyAction] = &[
         command: HotkeyCommand::ToggleOverlay,
     },
     HotkeyAction {
+        id: "submit-github-issue",
+        label: "Submit GitHub issue",
+        gesture: HotkeyGesture::with_shift(Key::F1),
+        scope: HotkeyScope::Global,
+        command: HotkeyCommand::OpenFeedbackIssuePrompt,
+    },
+    HotkeyAction {
         id: "toggle-loop",
         label: "Toggle loop",
         gesture: HotkeyGesture::new(Key::L),

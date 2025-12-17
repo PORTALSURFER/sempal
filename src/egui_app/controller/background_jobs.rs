@@ -147,6 +147,34 @@ impl EguiController {
                         Err(err) => self.apply_update_check_error(err),
                     }
                 }
+                JobMessage::GitHubIssueCreated(message) => {
+                    self.runtime.jobs.clear_github_issue_create();
+                    self.ui.feedback_issue.submitting = false;
+                    match message.result {
+                        Ok(issue) => {
+                            self.ui.feedback_issue.open = false;
+                            self.ui.feedback_issue.last_error = None;
+                            self.ui.feedback_issue.draft.clear();
+                            self.set_status(
+                                format!("Created GitHub issue #{}", issue.number),
+                                crate::egui_app::ui::style::StatusTone::Info,
+                            );
+                            if let Err(err) = open::that(&issue.html_url) {
+                                self.set_status(
+                                    format!("Issue created (could not open browser): {err}"),
+                                    crate::egui_app::ui::style::StatusTone::Warning,
+                                );
+                            }
+                        }
+                        Err(err) => {
+                            self.ui.feedback_issue.last_error = Some(err.to_string());
+                            self.set_status(
+                                format!("Failed to create issue: {err}"),
+                                crate::egui_app::ui::style::StatusTone::Error,
+                            );
+                        }
+                    }
+                }
             }
         }
     }

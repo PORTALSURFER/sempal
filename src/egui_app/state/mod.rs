@@ -6,6 +6,7 @@ mod browser;
 mod collections;
 mod controls;
 mod drag;
+mod feedback_issue;
 mod focus;
 mod hotkeys;
 mod progress;
@@ -19,6 +20,7 @@ pub use browser::*;
 pub use collections::*;
 pub use controls::*;
 pub use drag::*;
+pub use feedback_issue::*;
 pub use focus::*;
 pub use hotkeys::*;
 pub use progress::*;
@@ -44,6 +46,8 @@ pub struct UiState {
     pub focus: UiFocusState,
     /// UI state for contextual hotkey affordances.
     pub hotkeys: HotkeyUiState,
+    /// Feedback prompt state for filing GitHub issues.
+    pub feedback_issue: FeedbackIssueUiState,
     /// Audio device/options UI state.
     pub audio: AudioOptionsState,
     /// Interaction and navigation tuning options.
@@ -71,6 +75,7 @@ impl Default for UiState {
             progress: ProgressOverlayState::default(),
             focus: UiFocusState::default(),
             hotkeys: HotkeyUiState::default(),
+            feedback_issue: FeedbackIssueUiState::default(),
             audio: AudioOptionsState::default(),
             controls: InteractionOptionsState::default(),
             volume: 1.0,

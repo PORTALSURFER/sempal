@@ -21,6 +21,20 @@ pub(super) enum JobMessage {
     Scan(ScanJobMessage),
     TrashMove(trash_move::TrashMoveMessage),
     UpdateChecked(UpdateCheckResult),
+    GitHubIssueCreated(GitHubIssueCreateResult),
+}
+
+#[derive(Debug)]
+pub(super) struct GitHubIssueJob {
+    pub(super) repo: String,
+    pub(super) token: String,
+    pub(super) kind: crate::github::issues::IssueKind,
+    pub(super) text: String,
+}
+
+#[derive(Debug)]
+pub(super) struct GitHubIssueCreateResult {
+    pub(super) result: Result<crate::github::issues::CreatedIssue, crate::github::issues::CreateIssueError>,
 }
 
 pub(super) struct ControllerJobs {
@@ -38,6 +52,7 @@ pub(super) struct ControllerJobs {
     pub(super) trash_move_in_progress: bool,
     pub(super) trash_move_cancel: Option<Arc<std::sync::atomic::AtomicBool>>,
     pub(super) update_check_in_progress: bool,
+    pub(super) github_issue_in_progress: bool,
 }
 
 impl ControllerJobs {
@@ -63,6 +78,7 @@ impl ControllerJobs {
             trash_move_in_progress: false,
             trash_move_cancel: None,
             update_check_in_progress: false,
+            github_issue_in_progress: false,
         };
         jobs.forward_wav_results(wav_job_rx);
         jobs.forward_audio_results(audio_job_rx);
@@ -224,5 +240,26 @@ impl ControllerJobs {
 
     pub(super) fn clear_update_check(&mut self) {
         self.update_check_in_progress = false;
+    }
+
+    pub(super) fn begin_github_issue_create(&mut self, job: GitHubIssueJob) {
+        if self.github_issue_in_progress {
+            return;
+        }
+        self.github_issue_in_progress = true;
+        let tx = self.message_tx.clone();
+        thread::spawn(move || {
+            let result = crate::github::issues::create_issue(
+                &job.repo,
+                &job.token,
+                job.kind,
+                &job.text,
+            );
+            let _ = tx.send(JobMessage::GitHubIssueCreated(GitHubIssueCreateResult { result }));
+        });
+    }
+
+    pub(super) fn clear_github_issue_create(&mut self) {
+        self.github_issue_in_progress = false;
     }
 }

@@ -9,6 +9,8 @@ pub mod egui_app;
 pub mod external_clipboard;
 /// Platform helpers for external drag-and-drop.
 pub mod external_drag;
+/// GitHub API helpers.
+pub mod github;
 /// Logging setup helpers.
 pub mod logging;
 /// Sample source management.
