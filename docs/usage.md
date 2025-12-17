@@ -83,7 +83,7 @@ description: How to set up Sempal, triage samples, edit waveforms, and manage co
 ## Drag, drop, and clipboard tips
 - Drop folders onto the Sources panel to add them.
 - Drag sample rows to collections or back into the browser (for retagging) without menus.
-- Drag selections or samples outside the window on Windows to start an external drag-out. Use **Ctrl/Cmd + C** to copy selections or rows as file drops.
+- Drag selections or samples outside the window on Windows to start an external drag-out. Use **Ctrl/Cmd + C** to copy the current waveform selection (exported as a new wav file) or selected rows as file drops.
 
 ## Hotkeys (focus-aware)
 - **Global:** `Space` play/pause; `Ctrl/Cmd + Space` play from cursor; `Shift + Space` replay from last start; `Esc` stop playback / clear selection; `Ctrl/Cmd + Z` or `U` undo; `Ctrl/Cmd + Y` or `Shift + U` redo; `L` toggle loop; `P` or `Shift + P` move trashed samples to the trash folder; `[` trash selected sample(s); `]` keep selected sample(s); `'` tag selected sample(s) as neutral; `Shift + R` play a random visible sample and auto-play; `Alt + R` toggle sticky random navigation; `Ctrl/Cmd + Shift + R` step backward through random history; `Ctrl/Cmd + /` toggle hotkey overlay; `Shift + F1` submit a GitHub issue (connect GitHub first); `F11` toggle maximized window; focus chords (press `G` then): `W` waveform, `S` sample browser, `C` collection items, `Shift + S` sources list, `Shift + C` collections list.
