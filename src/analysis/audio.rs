@@ -23,6 +23,7 @@ fn decode_for_analysis_with_rate(path: &Path, sample_rate: u32) -> Result<Analys
     let decoded = decode_to_interleaved_f32(path)?;
     let mono = downmix_to_mono(&decoded.samples, decoded.channels);
     let mut resampled = resample_linear(&mono, decoded.sample_rate, sample_rate);
+    resampled = trim_silence_with_hysteresis(&resampled, sample_rate);
     normalize_peak_in_place(&mut resampled);
     let duration_seconds = duration_seconds(resampled.len(), sample_rate);
     Ok(AnalysisAudio {
@@ -143,6 +144,76 @@ fn duration_seconds(sample_count: usize, sample_rate: u32) -> f32 {
     sample_count as f32 / sample_rate as f32
 }
 
+fn trim_silence_with_hysteresis(samples: &[f32], sample_rate: u32) -> Vec<f32> {
+    if samples.is_empty() || sample_rate == 0 {
+        return samples.to_vec();
+    }
+    let window_size = (sample_rate as f32 * 0.02).round().max(1.0) as usize; // 20ms
+    let hop = window_size;
+    if samples.len() <= window_size {
+        return samples.to_vec();
+    }
+
+    let threshold_on = db_to_linear(-45.0);
+    let threshold_off = db_to_linear(-55.0);
+    let pre_roll = (sample_rate as f32 * 0.01).round().max(0.0) as usize; // 10ms
+    let post_roll = (sample_rate as f32 * 0.005).round().max(0.0) as usize; // 5ms
+
+    let mut active_start: Option<usize> = None;
+    let mut active_end: Option<usize> = None;
+
+    let mut active = false;
+    let mut window_start = 0usize;
+    while window_start < samples.len() {
+        let window_end = (window_start + window_size).min(samples.len());
+        let rms = rms(&samples[window_start..window_end]);
+        if !active {
+            if rms >= threshold_on {
+                active = true;
+                active_start = Some(window_start);
+                active_end = Some(window_end);
+            }
+        } else {
+            if rms >= threshold_off {
+                active_end = Some(window_end);
+            } else {
+                active = false;
+            }
+        }
+        window_start = window_start.saturating_add(hop);
+    }
+
+    let Some(active_start) = active_start else {
+        return samples.to_vec();
+    };
+    let Some(active_end) = active_end else {
+        return samples.to_vec();
+    };
+
+    let trimmed_start = active_start.saturating_sub(pre_roll).min(samples.len());
+    let trimmed_end = (active_end + post_roll)
+        .max(trimmed_start.saturating_add(1))
+        .min(samples.len());
+    samples[trimmed_start..trimmed_end].to_vec()
+}
+
+fn rms(samples: &[f32]) -> f32 {
+    if samples.is_empty() {
+        return 0.0;
+    }
+    let mut sum = 0.0_f64;
+    for &sample in samples {
+        let sample = sanitize_sample(sample) as f64;
+        sum += sample * sample;
+    }
+    let mean = sum / samples.len() as f64;
+    (mean.max(0.0).sqrt() as f32).min(1.0)
+}
+
+fn db_to_linear(db: f32) -> f32 {
+    10.0_f32.powf(db / 20.0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -202,5 +273,65 @@ mod tests {
             .map(|v| v.abs())
             .fold(0.0, f32::max);
         assert!((peak - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn decode_for_analysis_trims_leading_and_trailing_silence() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("trim.wav");
+        let sample_rate = ANALYSIS_SAMPLE_RATE;
+        let spec = WavSpec {
+            channels: 1,
+            sample_rate,
+            bits_per_sample: 32,
+            sample_format: SampleFormat::Float,
+        };
+        let mut writer = WavWriter::create(&path, spec).unwrap();
+        let silence_frames = (0.1 * sample_rate as f32).round() as usize;
+        let tone_frames = (0.1 * sample_rate as f32).round() as usize;
+        let tail_silence_frames = (0.2 * sample_rate as f32).round() as usize;
+        for _ in 0..silence_frames {
+            writer.write_sample::<f32>(0.0).unwrap();
+        }
+        for _ in 0..tone_frames {
+            writer.write_sample::<f32>(0.25).unwrap();
+        }
+        for _ in 0..tail_silence_frames {
+            writer.write_sample::<f32>(0.0).unwrap();
+        }
+        writer.finalize().unwrap();
+
+        let decoded = decode_for_analysis(&path).unwrap();
+        assert!(decoded.duration_seconds < 0.25);
+        assert!(decoded.duration_seconds > 0.08);
+    }
+
+    #[test]
+    fn quiet_samples_are_not_trimmed_to_empty() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("quiet.wav");
+        let sample_rate = ANALYSIS_SAMPLE_RATE;
+        let spec = WavSpec {
+            channels: 1,
+            sample_rate,
+            bits_per_sample: 32,
+            sample_format: SampleFormat::Float,
+        };
+        let mut writer = WavWriter::create(&path, spec).unwrap();
+        let frames = (0.1 * sample_rate as f32).round() as usize;
+        for _ in 0..frames {
+            writer.write_sample::<f32>(0.001).unwrap();
+        }
+        writer.finalize().unwrap();
+
+        let decoded = decode_for_analysis(&path).unwrap();
+        assert!(!decoded.mono.is_empty());
+        let peak = decoded
+            .mono
+            .iter()
+            .copied()
+            .map(|v| v.abs())
+            .fold(0.0, f32::max);
+        assert!(peak > 0.5);
     }
 }
