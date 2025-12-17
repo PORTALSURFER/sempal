@@ -140,6 +140,17 @@ impl EguiApp {
                 self.controller.disconnect_github_issue_reporting();
             }
         });
+        match crate::issue_gateway::IssueTokenStore::new().and_then(|store| store.get()) {
+            Ok(Some(_)) => ui.label(
+                RichText::new("Status: connected")
+                    .color(style::status_badge_color(style::StatusTone::Info)),
+            ),
+            Ok(None) => ui.label(RichText::new("Status: not connected").color(palette.text_muted)),
+            Err(err) => ui.label(
+                RichText::new(format!("Status: token store error ({err})"))
+                    .color(style::status_badge_color(style::StatusTone::Warning)),
+            ),
+        };
 
         if let Some(err) = self.controller.ui.feedback_issue.last_error.as_ref() {
             ui.add_space(8.0);

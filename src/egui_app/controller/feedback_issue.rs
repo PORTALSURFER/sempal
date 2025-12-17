@@ -45,6 +45,22 @@ impl EguiController {
             self.ui.feedback_issue.last_error = Some(err.to_string());
             return;
         }
+        match store.get() {
+            Ok(Some(_)) => {}
+            Ok(None) => {
+                self.ui.feedback_issue.last_error =
+                    Some("Token saved, but could not be read back. Try again.".to_string());
+                self.ui.feedback_issue.token_modal_open = true;
+                self.ui.feedback_issue.focus_token_requested = true;
+                return;
+            }
+            Err(err) => {
+                self.ui.feedback_issue.last_error = Some(err.to_string());
+                self.ui.feedback_issue.token_modal_open = true;
+                self.ui.feedback_issue.focus_token_requested = true;
+                return;
+            }
+        }
         self.ui.feedback_issue.token_modal_open = false;
         self.ui.feedback_issue.token_input.clear();
         self.set_status("GitHub connected for issue reporting", StatusTone::Info);

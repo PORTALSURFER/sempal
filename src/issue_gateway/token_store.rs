@@ -31,10 +31,18 @@ impl IssueTokenStore {
     }
 
     pub fn get(&self) -> Result<Option<String>, IssueTokenStoreError> {
-        if let Some(token) = self.try_keyring_get()? {
-            return Ok(Some(token));
+        match self.try_keyring_get() {
+            Ok(Some(token)) => Ok(Some(token)),
+            Ok(None) => self.fallback_get(),
+            Err(err) => {
+                let fallback = self.fallback_get()?;
+                if let Some(token) = fallback {
+                    Ok(Some(token))
+                } else {
+                    Err(err)
+                }
+            }
         }
-        self.fallback_get()
     }
 
     pub fn set(&self, token: &str) -> Result<(), IssueTokenStoreError> {
@@ -43,8 +51,14 @@ impl IssueTokenStore {
             return Ok(());
         }
         if self.try_keyring_set(token).is_ok() {
-            let _ = self.fallback_delete();
-            return Ok(());
+            match self.try_keyring_get() {
+                Ok(Some(stored)) if stored == token => {
+                    let _ = self.fallback_delete();
+                    return Ok(());
+                }
+                Ok(_) => {}
+                Err(_) => {}
+            }
         }
         self.fallback_set(token)
     }
@@ -64,7 +78,7 @@ impl IssueTokenStore {
         match entry.get_password() {
             Ok(token) => Ok(Some(token)),
             Err(keyring::Error::NoEntry) => Ok(None),
-            Err(_) => Ok(None),
+            Err(err) => Err(IssueTokenStoreError::Unavailable(err.to_string())),
         }
     }
 
