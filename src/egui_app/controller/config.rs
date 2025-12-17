@@ -80,6 +80,9 @@ impl EguiController {
             let _ = self.refresh_wavs();
         }
         self.maybe_check_for_updates_on_startup();
+        self.runtime
+            .analysis
+            .start(self.runtime.jobs.message_sender());
         Ok(())
     }
 

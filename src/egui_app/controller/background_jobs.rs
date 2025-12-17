@@ -18,6 +18,10 @@ impl EguiController {
                         cancel.store(true, Ordering::Relaxed);
                     }
                 }
+                Some(ProgressTaskKind::Analysis) => {
+                    self.runtime.analysis.cancel();
+                    self.clear_progress();
+                }
                 _ => {}
             }
         }
@@ -117,6 +121,30 @@ impl EguiController {
                                     invalidator.invalidate_wav_related(&source.id);
                                 }
                                 self.queue_wav_load();
+                                if let Some(source) = self.current_source() {
+                                    let tx = self.runtime.jobs.message_sender();
+                                    std::thread::spawn(move || {
+                                        let result = super::analysis_jobs::enqueue_jobs_for_source(
+                                            &source.id,
+                                            &source.root,
+                                        );
+                                        match result {
+                                            Ok((inserted, progress)) => {
+                                                let _ = tx.send(JobMessage::Analysis(
+                                                    super::AnalysisJobMessage::EnqueueFinished {
+                                                        inserted,
+                                                        progress,
+                                                    },
+                                                ));
+                                            }
+                                            Err(err) => {
+                                                let _ = tx.send(JobMessage::Analysis(
+                                                    super::AnalysisJobMessage::EnqueueFailed(err),
+                                                ));
+                                            }
+                                        }
+                                    });
+                                }
                             }
                             Err(crate::sample_sources::scanner::ScanError::Canceled) => {
                                 self.set_status(format!("{label} canceled"), StatusTone::Warning)
@@ -138,6 +166,53 @@ impl EguiController {
                     TrashMoveMessage::Finished(result) => {
                         self.runtime.jobs.clear_trash_move();
                         self.apply_trash_move_finished(result);
+                    }
+                },
+                JobMessage::Analysis(message) => match message {
+                    super::AnalysisJobMessage::Progress(progress) => {
+                        if progress.total() == 0 {
+                            if self.ui.progress.task == Some(ProgressTaskKind::Analysis) {
+                                self.clear_progress();
+                            }
+                            continue;
+                        }
+                        if self.ui.progress.task.is_none()
+                            || self.ui.progress.task == Some(ProgressTaskKind::Analysis)
+                        {
+                            if !self.ui.progress.visible
+                                || self.ui.progress.task != Some(ProgressTaskKind::Analysis)
+                            {
+                                self.show_status_progress(
+                                    ProgressTaskKind::Analysis,
+                                    "Analyzing samples",
+                                    progress.total(),
+                                    true,
+                                );
+                            }
+                            self.ui.progress.total = progress.total();
+                            self.ui.progress.completed = progress.completed();
+                            if progress.failed > 0 {
+                                self.ui.progress.detail =
+                                    Some(format!("{} failed", progress.failed));
+                            } else {
+                                self.ui.progress.detail = None;
+                            }
+                        }
+                    }
+                    super::AnalysisJobMessage::EnqueueFinished { inserted, progress } => {
+                        self.runtime.analysis.resume();
+                        if inserted > 0 {
+                            self.set_status(
+                                format!("Queued {inserted} analysis jobs"),
+                                StatusTone::Info,
+                            );
+                        }
+                        let _ = self.runtime.jobs.message_sender().send(JobMessage::Analysis(
+                            super::AnalysisJobMessage::Progress(progress),
+                        ));
+                    }
+                    super::AnalysisJobMessage::EnqueueFailed(err) => {
+                        self.set_status(format!("Analysis enqueue failed: {err}"), StatusTone::Error);
                     }
                 },
                 JobMessage::UpdateChecked(message) => {

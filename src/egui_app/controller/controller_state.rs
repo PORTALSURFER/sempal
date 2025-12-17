@@ -130,6 +130,7 @@ pub(super) struct ControllerAudioState {
 
 pub(super) struct ControllerRuntimeState {
     pub(super) jobs: jobs::ControllerJobs,
+    pub(super) analysis: super::analysis_jobs::AnalysisWorkerPool,
     #[cfg(test)]
     pub(super) progress_cancel_after: Option<usize>,
 }

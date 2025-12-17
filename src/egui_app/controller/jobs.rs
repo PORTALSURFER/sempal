@@ -1,6 +1,6 @@
 use super::{
-    AudioLoadJob, AudioLoadResult, PendingAudio, PendingPlayback, ScanJobMessage, SourceId,
-    UpdateCheckResult, WavLoadJob, WavLoadResult, trash_move,
+    AnalysisJobMessage, AudioLoadJob, AudioLoadResult, PendingAudio, PendingPlayback, ScanJobMessage,
+    SourceId, UpdateCheckResult, WavLoadJob, WavLoadResult, trash_move,
 };
 use std::{
     path::PathBuf,
@@ -20,6 +20,7 @@ pub(super) enum JobMessage {
     AudioLoaded(AudioLoadResult),
     Scan(ScanJobMessage),
     TrashMove(trash_move::TrashMoveMessage),
+    Analysis(AnalysisJobMessage),
     UpdateChecked(UpdateCheckResult),
     IssueGatewayCreated(IssueGatewayCreateResult),
 }
@@ -88,6 +89,10 @@ impl ControllerJobs {
 
     pub(super) fn try_recv_message(&self) -> Result<JobMessage, TryRecvError> {
         self.message_rx.try_recv()
+    }
+
+    pub(super) fn message_sender(&self) -> Sender<JobMessage> {
+        self.message_tx.clone()
     }
 
     pub(super) fn forward_wav_results(&self, rx: Receiver<WavLoadResult>) {

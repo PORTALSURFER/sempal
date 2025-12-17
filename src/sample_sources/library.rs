@@ -314,6 +314,16 @@ impl LibraryDatabase {
                     sort_order INTEGER NOT NULL,
                     PRIMARY KEY (collection_id, source_id, relative_path),
                     FOREIGN KEY(collection_id) REFERENCES collections(id) ON DELETE CASCADE
+                );
+                 CREATE TABLE IF NOT EXISTS analysis_jobs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    sample_id TEXT NOT NULL,
+                    job_type TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    attempts INTEGER NOT NULL DEFAULT 0,
+                    created_at INTEGER NOT NULL,
+                    last_error TEXT,
+                    UNIQUE(sample_id, job_type)
                 );",
             )
             .map_err(map_sql_error)?;

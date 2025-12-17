@@ -5,6 +5,7 @@
 mod audio_cache;
 mod audio_loader;
 mod audio_options;
+mod analysis_jobs;
 mod background_jobs;
 mod browser_controller;
 mod clipboard;
@@ -57,6 +58,8 @@ use crate::{
 };
 use audio_cache::AudioCache;
 use audio_loader::{AudioLoadError, AudioLoadJob, AudioLoadOutcome, AudioLoadResult};
+pub(in crate::egui_app::controller) use analysis_jobs::AnalysisJobMessage;
+use analysis_jobs::AnalysisWorkerPool;
 pub(in crate::egui_app::controller) use controller_state::*;
 use egui::Color32;
 use open;
@@ -101,6 +104,7 @@ impl EguiController {
         let (audio_job_tx, audio_job_rx) = audio_loader::spawn_audio_loader(renderer.clone());
         let (waveform_width, waveform_height) = renderer.dimensions();
         let jobs = jobs::ControllerJobs::new(wav_job_tx, wav_job_rx, audio_job_tx, audio_job_rx);
+        let analysis = AnalysisWorkerPool::new();
         Self {
             ui: UiState::default(),
             audio: ControllerAudioState {
@@ -168,6 +172,7 @@ impl EguiController {
             },
             runtime: ControllerRuntimeState {
                 jobs,
+                analysis,
                 #[cfg(test)]
                 progress_cancel_after: None,
             },

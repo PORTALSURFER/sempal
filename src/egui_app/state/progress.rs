@@ -5,6 +5,7 @@ pub enum ProgressTaskKind {
     TrashMove,
     WavLoad,
     Scan,
+    Analysis,
 }
 
 #[derive(Clone, Debug, Default)]
