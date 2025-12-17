@@ -202,6 +202,10 @@ fn run_job(conn: &rusqlite::Connection, job: &db::ClaimedJob) -> Result<(), Stri
     };
     let absolute = root.join(&relative_path);
     let decoded = crate::analysis::audio::decode_for_analysis(&absolute)?;
+    let features = crate::analysis::time_domain::extract_time_domain_features(
+        &decoded.mono,
+        decoded.sample_rate_used,
+    );
     db::update_analysis_metadata(
         conn,
         &job.sample_id,
@@ -209,6 +213,13 @@ fn run_job(conn: &rusqlite::Connection, job: &db::ClaimedJob) -> Result<(), Stri
         decoded.duration_seconds,
         decoded.sample_rate_used,
     )?;
+    let content_hash = job
+        .content_hash
+        .as_deref()
+        .ok_or_else(|| format!("Missing content_hash for analysis job {}", job.sample_id))?;
+    let features_json = serde_json::to_vec(&features)
+        .map_err(|err| format!("Failed to encode analysis features: {err}"))?;
+    db::upsert_time_domain_features(conn, &job.sample_id, content_hash, &features_json)?;
     Ok(())
 }
 

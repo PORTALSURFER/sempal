@@ -315,6 +315,24 @@ pub(super) fn update_analysis_metadata(
     Ok(())
 }
 
+pub(super) fn upsert_time_domain_features(
+    conn: &Connection,
+    sample_id: &str,
+    content_hash: &str,
+    features_json: &[u8],
+) -> Result<(), String> {
+    conn.execute(
+        "INSERT INTO analysis_features (sample_id, content_hash, features)
+         VALUES (?1, ?2, ?3)
+         ON CONFLICT(sample_id) DO UPDATE SET
+            content_hash = excluded.content_hash,
+            features = excluded.features",
+        params![sample_id, content_hash, features_json],
+    )
+    .map_err(|err| format!("Failed to upsert analysis features: {err}"))?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -341,6 +359,11 @@ mod tests {
                 mtime_ns INTEGER NOT NULL,
                 duration_seconds REAL,
                 sr_used INTEGER
+            );
+            CREATE TABLE analysis_features (
+                sample_id TEXT PRIMARY KEY,
+                content_hash TEXT NOT NULL,
+                features BLOB
             );
             CREATE TABLE sources (
                 id TEXT PRIMARY KEY,
@@ -426,5 +449,21 @@ mod tests {
             .unwrap();
         assert_eq!(duration, Some(1.25));
         assert_eq!(sr, Some(22_050));
+    }
+
+    #[test]
+    fn upsert_time_domain_features_overwrites_existing() {
+        let conn = conn_with_schema();
+        upsert_time_domain_features(&conn, "s::a.wav", "h1", br#"{"peak":1}"#).unwrap();
+        upsert_time_domain_features(&conn, "s::a.wav", "h2", br#"{"peak":2}"#).unwrap();
+        let (hash, json): (String, Vec<u8>) = conn
+            .query_row(
+                "SELECT content_hash, features FROM analysis_features WHERE sample_id = 's::a.wav'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(hash, "h2");
+        assert_eq!(json, br#"{"peak":2}"#);
     }
 }
