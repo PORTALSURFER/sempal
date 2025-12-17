@@ -315,7 +315,7 @@ pub(super) fn update_analysis_metadata(
     Ok(())
 }
 
-pub(super) fn upsert_time_domain_features(
+pub(super) fn upsert_analysis_features(
     conn: &Connection,
     sample_id: &str,
     content_hash: &str,
@@ -454,8 +454,8 @@ mod tests {
     #[test]
     fn upsert_time_domain_features_overwrites_existing() {
         let conn = conn_with_schema();
-        upsert_time_domain_features(&conn, "s::a.wav", "h1", br#"{"peak":1}"#).unwrap();
-        upsert_time_domain_features(&conn, "s::a.wav", "h2", br#"{"peak":2}"#).unwrap();
+        upsert_analysis_features(&conn, "s::a.wav", "h1", br#"{"peak":1}"#).unwrap();
+        upsert_analysis_features(&conn, "s::a.wav", "h2", br#"{"peak":2}"#).unwrap();
         let (hash, json): (String, Vec<u8>) = conn
             .query_row(
                 "SELECT content_hash, features FROM analysis_features WHERE sample_id = 's::a.wav'",
