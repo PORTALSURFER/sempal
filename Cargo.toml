@@ -1,6 +1,6 @@
 [package]
 name = "sempal"
-version = "0.361.0"
+version = "0.362.0"
 edition = "2024"
 default-run = "sempal"
 
@@ -41,6 +41,8 @@ sha2 = "0.10.9"
 tempfile = "3.23.0"
 ureq = { version = "2.12.1", features = ["json", "tls"] }
 zip = { version = "2.2.1", default-features = false, features = ["deflate"] }
+keyring = "3.6.2"
+chacha20poly1305 = "0.10.1"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 cpal = { version = "0.16.0", features = ["asio"] }

@@ -21,6 +21,21 @@ pub(super) enum JobMessage {
     Scan(ScanJobMessage),
     TrashMove(trash_move::TrashMoveMessage),
     UpdateChecked(UpdateCheckResult),
+    IssueGatewayCreated(IssueGatewayCreateResult),
+}
+
+#[derive(Debug)]
+pub(super) struct IssueGatewayJob {
+    pub(super) token: String,
+    pub(super) request: crate::issue_gateway::api::CreateIssueRequest,
+}
+
+#[derive(Debug)]
+pub(super) struct IssueGatewayCreateResult {
+    pub(super) result: Result<
+        crate::issue_gateway::api::CreateIssueResponse,
+        crate::issue_gateway::api::CreateIssueError,
+    >,
 }
 
 pub(super) struct ControllerJobs {
@@ -38,6 +53,7 @@ pub(super) struct ControllerJobs {
     pub(super) trash_move_in_progress: bool,
     pub(super) trash_move_cancel: Option<Arc<std::sync::atomic::AtomicBool>>,
     pub(super) update_check_in_progress: bool,
+    pub(super) issue_gateway_in_progress: bool,
 }
 
 impl ControllerJobs {
@@ -63,6 +79,7 @@ impl ControllerJobs {
             trash_move_in_progress: false,
             trash_move_cancel: None,
             update_check_in_progress: false,
+            issue_gateway_in_progress: false,
         };
         jobs.forward_wav_results(wav_job_rx);
         jobs.forward_audio_results(audio_job_rx);
@@ -224,5 +241,21 @@ impl ControllerJobs {
 
     pub(super) fn clear_update_check(&mut self) {
         self.update_check_in_progress = false;
+    }
+
+    pub(super) fn begin_issue_gateway_create(&mut self, job: IssueGatewayJob) {
+        if self.issue_gateway_in_progress {
+            return;
+        }
+        self.issue_gateway_in_progress = true;
+        let tx = self.message_tx.clone();
+        thread::spawn(move || {
+            let result = crate::issue_gateway::api::create_issue(&job.token, &job.request);
+            let _ = tx.send(JobMessage::IssueGatewayCreated(IssueGatewayCreateResult { result }));
+        });
+    }
+
+    pub(super) fn clear_issue_gateway_create(&mut self) {
+        self.issue_gateway_in_progress = false;
     }
 }

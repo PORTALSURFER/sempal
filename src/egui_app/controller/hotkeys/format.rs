@@ -46,6 +46,7 @@ fn key_label(key: Key) -> &'static str {
         egui::Key::L => "L",
         egui::Key::P => "P",
         egui::Key::F => "F",
+        egui::Key::F1 => "F1",
         egui::Key::OpenBracket => "[",
         egui::Key::CloseBracket => "]",
         egui::Key::ArrowLeft => "Left",

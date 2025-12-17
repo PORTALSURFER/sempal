@@ -147,6 +147,46 @@ impl EguiController {
                         Err(err) => self.apply_update_check_error(err),
                     }
                 }
+                JobMessage::IssueGatewayCreated(message) => {
+                    self.runtime.jobs.clear_issue_gateway_create();
+                    self.ui.feedback_issue.submitting = false;
+                    match message.result {
+                        Ok(outcome) => {
+                            if outcome.ok {
+                                self.ui.feedback_issue.last_error = None;
+                                self.ui.feedback_issue.last_success_url = Some(outcome.issue_url.clone());
+                                self.set_status(
+                                    format!("Created GitHub issue #{}", outcome.number),
+                                    crate::egui_app::ui::style::StatusTone::Info,
+                                );
+                            } else {
+                                self.ui.feedback_issue.last_error =
+                                    Some("Issue creation failed.".to_string());
+                                self.set_status(
+                                    "Failed to create issue".to_string(),
+                                    crate::egui_app::ui::style::StatusTone::Error,
+                                );
+                            }
+                        }
+                        Err(err) => {
+                            if matches!(err, crate::issue_gateway::api::CreateIssueError::Unauthorized) {
+                                if let Ok(store) = crate::issue_gateway::IssueTokenStore::new() {
+                                    let _ = store.delete();
+                                }
+                                self.ui.feedback_issue.token_modal_open = true;
+                                self.ui.feedback_issue.focus_token_requested = true;
+                                self.ui.feedback_issue.last_error =
+                                    Some("GitHub connection expired. Reconnect and paste a new token.".to_string());
+                            } else {
+                                self.ui.feedback_issue.last_error = Some(err.to_string());
+                            }
+                            self.set_status(
+                                format!("Failed to create issue: {err}"),
+                                crate::egui_app::ui::style::StatusTone::Error,
+                            );
+                        }
+                    }
+                }
             }
         }
     }

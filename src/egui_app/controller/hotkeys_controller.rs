@@ -114,6 +114,10 @@ impl HotkeysActions for HotkeysController<'_> {
             HotkeyCommand::ToggleOverlay => {
                 self.ui.hotkeys.overlay_visible = !self.ui.hotkeys.overlay_visible;
             }
+            HotkeyCommand::OpenFeedbackIssuePrompt => {
+                self.ui.hotkeys.overlay_visible = false;
+                self.open_feedback_issue_prompt();
+            }
             HotkeyCommand::ToggleLoop => {
                 self.toggle_loop();
             }

@@ -16,6 +16,7 @@ mod config;
 mod controller_state;
 mod drag_drop_controller;
 mod focus;
+mod feedback_issue;
 pub(crate) mod hotkeys;
 mod hotkeys_controller;
 mod interaction_options;

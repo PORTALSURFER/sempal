@@ -53,7 +53,7 @@ impl EguiApp {
             };
             let press = key_event.press;
             self.key_feedback.last_key = Some(press);
-            if wants_text_input && !press.command {
+            if wants_text_input && !press.command && !press_text_variants(&press).is_empty() {
                 continue;
             }
             if key_event.repeat && self.pending_chord.is_some() {
