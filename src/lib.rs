@@ -19,6 +19,8 @@ pub mod logging;
 pub mod labeling;
 /// Training dataset export helpers.
 pub mod dataset;
+/// Machine learning helpers.
+pub mod ml;
 /// Sample source management.
 pub mod sample_sources;
 /// Selection math utilities.
