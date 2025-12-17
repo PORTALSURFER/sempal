@@ -16,6 +16,8 @@ impl EguiApp {
             return;
         }
 
+        self.render_feedback_issue_backdrop(ctx);
+
         if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             self.controller.close_feedback_issue_prompt();
             return;
@@ -50,6 +52,25 @@ impl EguiApp {
                 .controller
                 .submit_feedback_issue(crate::issue_gateway::api::IssueKind::Bug),
         }
+    }
+
+    fn render_feedback_issue_backdrop(&mut self, ctx: &egui::Context) {
+        let backdrop_id = egui::Id::new("feedback_issue_backdrop");
+        let rect = ctx.viewport_rect();
+        egui::Area::new(backdrop_id)
+            .order(egui::Order::Foreground)
+            .fixed_pos(rect.min)
+            .show(ctx, |ui| {
+                let response = ui.allocate_rect(rect, egui::Sense::click_and_drag());
+                ui.painter().rect_filled(
+                    rect,
+                    egui::CornerRadius::ZERO,
+                    egui::Color32::from_black_alpha(160),
+                );
+                if response.clicked() {
+                    ui.ctx().request_repaint();
+                }
+            });
     }
 
     fn render_feedback_issue_token_modal(&mut self, ctx: &egui::Context) {

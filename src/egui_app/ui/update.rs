@@ -37,12 +37,15 @@ impl eframe::App for EguiApp {
         let focus_flags = FocusFlags::from_context(focus_context);
         self.handle_focus_side_effects(&focus_flags);
         let input = InputSnapshot::capture(ctx);
-        self.handle_space_shortcut(ctx, &input);
-        self.handle_copy_shortcut(ctx);
-        self.handle_escape_shortcut(ctx, &input);
-        self.handle_window_shortcuts(ctx);
-        self.handle_arrow_keys(ctx, &focus_flags, &input);
-        self.process_hotkeys(ctx, focus_context);
+        let feedback_modal_open = self.controller.ui.feedback_issue.open;
+        if !feedback_modal_open {
+            self.handle_space_shortcut(ctx, &input);
+            self.handle_copy_shortcut(ctx);
+            self.handle_escape_shortcut(ctx, &input);
+            self.handle_window_shortcuts(ctx);
+            self.handle_arrow_keys(ctx, &focus_flags, &input);
+            self.process_hotkeys(ctx, focus_context);
+        }
         self.render_ui(ctx, &input, focus_context);
     }
 }
