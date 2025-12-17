@@ -201,10 +201,14 @@ fn run_job(conn: &rusqlite::Connection, job: &db::ClaimedJob) -> Result<(), Stri
         return Err(format!("Source not found for job sample_id={}", job.sample_id));
     };
     let absolute = root.join(&relative_path);
-    let reader = hound::WavReader::open(&absolute)
-        .map_err(|err| format!("Failed to open wav {}: {err}", absolute.display()))?;
-    let _spec = reader.spec();
-    let _samples = reader.len();
+    let decoded = crate::analysis::audio::decode_for_analysis(&absolute)?;
+    db::update_analysis_metadata(
+        conn,
+        &job.sample_id,
+        job.content_hash.as_deref(),
+        decoded.duration_seconds,
+        decoded.sample_rate_used,
+    )?;
     Ok(())
 }
 

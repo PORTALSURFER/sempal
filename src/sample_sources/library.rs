@@ -74,6 +74,7 @@ impl LibraryDatabase {
         db.migrate_collection_member_clip_roots()?;
         db.migrate_collection_export_paths()?;
         db.migrate_analysis_jobs_content_hash()?;
+        db.migrate_samples_analysis_metadata()?;
         Ok(db)
     }
 
@@ -331,7 +332,9 @@ impl LibraryDatabase {
                     sample_id TEXT PRIMARY KEY,
                     content_hash TEXT NOT NULL,
                     size INTEGER NOT NULL,
-                    mtime_ns INTEGER NOT NULL
+                    mtime_ns INTEGER NOT NULL,
+                    duration_seconds REAL,
+                    sr_used INTEGER
                 );
                  CREATE TABLE IF NOT EXISTS analysis_features (
                     sample_id TEXT PRIMARY KEY,
@@ -365,6 +368,33 @@ impl LibraryDatabase {
         let tx = self.connection.transaction().map_err(map_sql_error)?;
         tx.execute("ALTER TABLE analysis_jobs ADD COLUMN content_hash TEXT", [])
             .map_err(map_sql_error)?;
+        tx.commit().map_err(map_sql_error)?;
+        Ok(())
+    }
+
+    fn migrate_samples_analysis_metadata(&mut self) -> Result<(), LibraryError> {
+        let mut stmt = self
+            .connection
+            .prepare("PRAGMA table_info(samples)")
+            .map_err(map_sql_error)?;
+        let columns: std::collections::HashSet<String> = stmt
+            .query_map([], |row| row.get::<_, String>(1))
+            .map_err(map_sql_error)?
+            .filter_map(Result::ok)
+            .collect();
+        drop(stmt);
+        if columns.contains("duration_seconds") && columns.contains("sr_used") {
+            return Ok(());
+        }
+        let tx = self.connection.transaction().map_err(map_sql_error)?;
+        if !columns.contains("duration_seconds") {
+            tx.execute("ALTER TABLE samples ADD COLUMN duration_seconds REAL", [])
+                .map_err(map_sql_error)?;
+        }
+        if !columns.contains("sr_used") {
+            tx.execute("ALTER TABLE samples ADD COLUMN sr_used INTEGER", [])
+                .map_err(map_sql_error)?;
+        }
         tx.commit().map_err(map_sql_error)?;
         Ok(())
     }

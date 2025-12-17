@@ -8,6 +8,7 @@ pub(super) const DEFAULT_JOB_TYPE: &str = "wav_metadata_v1";
 pub(super) struct ClaimedJob {
     pub(super) id: i64,
     pub(super) sample_id: String,
+    pub(super) content_hash: Option<String>,
     pub(super) job_type: String,
 }
 
@@ -124,12 +125,14 @@ fn upsert_samples_tx(
 ) -> Result<usize, String> {
     let mut stmt = tx
         .prepare(
-            "INSERT INTO samples (sample_id, content_hash, size, mtime_ns)
-             VALUES (?1, ?2, ?3, ?4)
+            "INSERT INTO samples (sample_id, content_hash, size, mtime_ns, duration_seconds, sr_used)
+             VALUES (?1, ?2, ?3, ?4, NULL, NULL)
              ON CONFLICT(sample_id) DO UPDATE SET
                 content_hash = excluded.content_hash,
                 size = excluded.size,
-                mtime_ns = excluded.mtime_ns",
+                mtime_ns = excluded.mtime_ns,
+                duration_seconds = NULL,
+                sr_used = NULL",
         )
         .map_err(|err| format!("Failed to prepare samples upsert statement: {err}"))?;
     let mut changed = 0usize;
@@ -191,7 +194,7 @@ pub(super) fn claim_next_job(conn: &mut Connection) -> Result<Option<ClaimedJob>
         .map_err(|err| format!("Failed to start analysis claim transaction: {err}"))?;
     let job = tx
         .query_row(
-            "SELECT id, sample_id, job_type
+            "SELECT id, sample_id, content_hash, job_type
              FROM analysis_jobs
              WHERE status = 'pending'
              ORDER BY created_at ASC, id ASC
@@ -201,7 +204,8 @@ pub(super) fn claim_next_job(conn: &mut Connection) -> Result<Option<ClaimedJob>
                 Ok(ClaimedJob {
                     id: row.get(0)?,
                     sample_id: row.get(1)?,
-                    job_type: row.get(2)?,
+                    content_hash: row.get(2)?,
+                    job_type: row.get(3)?,
                 })
             },
         )
@@ -285,6 +289,32 @@ pub(super) fn build_sample_id(source_id: &str, relative_path: &Path) -> String {
     format!("{}::{}", source_id, relative_path.to_string_lossy())
 }
 
+pub(super) fn update_analysis_metadata(
+    conn: &Connection,
+    sample_id: &str,
+    content_hash: Option<&str>,
+    duration_seconds: f32,
+    sr_used: u32,
+) -> Result<(), String> {
+    let updated = conn
+        .execute(
+            "UPDATE samples
+             SET duration_seconds = ?3, sr_used = ?4
+             WHERE sample_id = ?1 AND content_hash = COALESCE(?2, content_hash)",
+            params![
+                sample_id,
+                content_hash,
+                duration_seconds as f64,
+                sr_used as i64
+            ],
+        )
+        .map_err(|err| format!("Failed to update analysis metadata: {err}"))?;
+    if updated == 0 {
+        return Err(format!("No sample row updated for sample_id={sample_id}"));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -303,6 +333,14 @@ mod tests {
                 created_at INTEGER NOT NULL,
                 last_error TEXT,
                 UNIQUE(sample_id, job_type)
+            );
+            CREATE TABLE samples (
+                sample_id TEXT PRIMARY KEY,
+                content_hash TEXT NOT NULL,
+                size INTEGER NOT NULL,
+                mtime_ns INTEGER NOT NULL,
+                duration_seconds REAL,
+                sr_used INTEGER
             );
             CREATE TABLE sources (
                 id TEXT PRIMARY KEY,
@@ -335,6 +373,7 @@ mod tests {
         enqueue_jobs(&mut conn, &jobs, DEFAULT_JOB_TYPE, 123).unwrap();
         let job = claim_next_job(&mut conn).unwrap().expect("job claimed");
         assert_eq!(job.sample_id, "s::a.wav");
+        assert_eq!(job.content_hash.as_deref(), Some("h1"));
         assert_eq!(job.job_type, DEFAULT_JOB_TYPE);
         let (status, attempts): (String, i64) = conn
             .query_row(
@@ -366,5 +405,26 @@ mod tests {
             )
             .unwrap();
         assert_eq!(status, "pending");
+    }
+
+    #[test]
+    fn update_analysis_metadata_updates_matching_hash() {
+        let conn = conn_with_schema();
+        conn.execute(
+            "INSERT INTO samples (sample_id, content_hash, size, mtime_ns)
+             VALUES ('s::a.wav', 'h1', 10, 5)",
+            [],
+        )
+        .unwrap();
+        update_analysis_metadata(&conn, "s::a.wav", Some("h1"), 1.25, 22_050).unwrap();
+        let (duration, sr): (Option<f64>, Option<i64>) = conn
+            .query_row(
+                "SELECT duration_seconds, sr_used FROM samples WHERE sample_id = 's::a.wav'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(duration, Some(1.25));
+        assert_eq!(sr, Some(22_050));
     }
 }
