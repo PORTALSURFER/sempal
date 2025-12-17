@@ -29,6 +29,7 @@ impl EguiApp {
         let mut action = FeedbackSubmitAction::None;
         egui::Window::new("Submit GitHub issue")
             .anchor(Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+            .order(egui::Order::Foreground)
             .collapsible(false)
             .resizable(false)
             .default_width(560.0)
@@ -55,18 +56,22 @@ impl EguiApp {
     }
 
     fn render_feedback_issue_backdrop(&mut self, ctx: &egui::Context) {
-        let backdrop_id = egui::Id::new("feedback_issue_backdrop");
         let rect = ctx.viewport_rect();
-        egui::Area::new(backdrop_id)
-            .order(egui::Order::Foreground)
+        let painter = ctx.layer_painter(egui::LayerId::new(
+            egui::Order::Background,
+            egui::Id::new("feedback_issue_backdrop_paint"),
+        ));
+        painter.rect_filled(
+            rect,
+            0.0,
+            egui::Color32::from_rgba_premultiplied(0, 0, 0, 160),
+        );
+
+        egui::Area::new(egui::Id::new("feedback_issue_backdrop_blocker"))
+            .order(egui::Order::Middle)
             .fixed_pos(rect.min)
             .show(ctx, |ui| {
                 let response = ui.allocate_rect(rect, egui::Sense::click_and_drag());
-                ui.painter().rect_filled(
-                    rect,
-                    egui::CornerRadius::ZERO,
-                    egui::Color32::from_black_alpha(160),
-                );
                 if response.clicked() {
                     ui.ctx().request_repaint();
                 }
@@ -80,6 +85,7 @@ impl EguiApp {
         let mut open = true;
         egui::Window::new("Paste GitHub token")
             .anchor(Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+            .order(egui::Order::Foreground)
             .collapsible(false)
             .resizable(false)
             .default_width(520.0)

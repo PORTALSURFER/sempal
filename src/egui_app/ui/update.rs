@@ -54,11 +54,12 @@ impl EguiApp {
     fn prepare_frame(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.apply_visuals(ctx);
         self.ensure_initial_focus(ctx);
+        let feedback_modal_open = self.controller.ui.feedback_issue.open;
         #[cfg(target_os = "windows")]
         self.controller
             .set_drag_hwnd(platform::hwnd_from_frame(_frame));
         #[cfg(target_os = "windows")]
-        {
+        if !feedback_modal_open {
             let pixels_per_point = ctx.pixels_per_point();
             self.controller.ui.drag.os_cursor_pos = platform::hwnd_from_frame(_frame)
                 .and_then(|hwnd| platform::cursor_pos_in_client_points(hwnd, pixels_per_point));
@@ -69,13 +70,19 @@ impl EguiApp {
                 .update_os_mouse_state(left_mouse_down);
         }
         self.controller.tick_playhead();
-        if let Some(pos) = ctx.input(|i| i.pointer.hover_pos().or_else(|| i.pointer.interact_pos()))
-        {
-            let shift_down = ctx.input(|i| i.modifiers.shift);
-            self.controller.refresh_drag_position(pos, shift_down);
+        if !feedback_modal_open {
+            if let Some(pos) = ctx.input(|i| i.pointer.hover_pos().or_else(|| i.pointer.interact_pos()))
+            {
+                let shift_down = ctx.input(|i| i.modifiers.shift);
+                self.controller.refresh_drag_position(pos, shift_down);
+            }
+        } else {
+            self.controller.ui.drag.position = None;
+            self.controller.ui.drag.label.clear();
+            self.controller.ui.drag.clear_all_targets();
         }
         #[cfg(target_os = "windows")]
-        {
+        if !feedback_modal_open {
             if self.controller.ui.drag.payload.is_some() {
                 ctx.request_repaint();
             }
