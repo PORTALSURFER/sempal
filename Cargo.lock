@@ -4008,6 +4008,7 @@ dependencies = [
  "open",
  "rand",
  "raw-window-handle",
+ "regex",
  "rfd",
  "rodio",
  "rusqlite",

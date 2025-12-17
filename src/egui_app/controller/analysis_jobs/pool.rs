@@ -273,6 +273,21 @@ pub(in crate::egui_app::controller) fn enqueue_jobs_for_source(
         .iter()
         .map(|sample| (sample.sample_id.clone(), sample.content_hash.clone()))
         .collect();
+    let weak_labels: Vec<super::weak_labels::SampleWeakLabels> = changed_samples
+        .iter()
+        .map(|sample| {
+            let sample_id = db::build_sample_id(source_id.as_str(), &sample.relative_path);
+            let labels = crate::labeling::weak::weak_labels_for_relative_path(&sample.relative_path)
+                .into_iter()
+                .map(|label| super::weak_labels::WeakLabelInsert {
+                    class_id: label.class_id.to_string(),
+                    confidence: label.confidence,
+                    rule_id: label.rule_id.to_string(),
+                })
+                .collect();
+            super::weak_labels::SampleWeakLabels { sample_id, labels }
+        })
+        .collect();
     let db_path = library_db_path()?;
     let mut conn = db::open_library_db(&db_path)?;
     db::upsert_samples(&mut conn, &sample_metadata)?;
@@ -281,6 +296,12 @@ pub(in crate::egui_app::controller) fn enqueue_jobs_for_source(
         .duration_since(UNIX_EPOCH)
         .unwrap_or_else(|_| Duration::from_secs(0))
         .as_secs() as i64;
+    super::weak_labels::replace_weak_labels_for_samples(
+        &mut conn,
+        &weak_labels,
+        crate::labeling::weak::WEAK_LABEL_RULESET_VERSION,
+        created_at,
+    )?;
     let inserted = db::enqueue_jobs(&mut conn, &jobs, db::DEFAULT_JOB_TYPE, created_at)?;
     let progress = db::current_progress(&conn)?;
     Ok((inserted, progress))

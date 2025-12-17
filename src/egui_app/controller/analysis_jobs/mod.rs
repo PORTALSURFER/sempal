@@ -3,6 +3,7 @@
 mod db;
 mod pool;
 mod types;
+mod weak_labels;
 
 pub(super) use pool::AnalysisWorkerPool;
 pub(super) use pool::enqueue_jobs_for_source;

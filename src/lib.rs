@@ -15,6 +15,8 @@ pub mod external_drag;
 pub mod issue_gateway;
 /// Logging setup helpers.
 pub mod logging;
+/// Automatic labeling helpers.
+pub mod labeling;
 /// Sample source management.
 pub mod sample_sources;
 /// Selection math utilities.

@@ -1,0 +1,92 @@
+use super::*;
+use rusqlite::OptionalExtension;
+use std::fs;
+use tempfile::tempdir;
+
+fn with_config_home<T>(dir: &Path, f: impl FnOnce() -> T) -> T {
+    let _guard = crate::app_dirs::ConfigBaseGuard::set(dir.to_path_buf());
+    f()
+}
+
+#[test]
+fn saves_and_loads_sources_and_collections() {
+    let temp = tempdir().unwrap();
+    with_config_home(temp.path(), || {
+        let state = LibraryState {
+            sources: vec![
+                SampleSource::new(PathBuf::from("one")),
+                SampleSource::new(PathBuf::from("two")),
+            ],
+            collections: vec![Collection {
+                id: CollectionId::new(),
+                name: "Test".into(),
+                members: vec![CollectionMember {
+                    source_id: SourceId::new(),
+                    relative_path: PathBuf::from("file.wav"),
+                    clip_root: None,
+                }],
+                export_path: None,
+            }],
+        };
+        save(&state).unwrap();
+        let loaded = load().unwrap();
+        assert_eq!(loaded.sources.len(), 2);
+        assert_eq!(loaded.collections.len(), 1);
+        assert_eq!(loaded.collections[0].members.len(), 1);
+    });
+}
+
+#[test]
+fn database_lives_under_app_root() {
+    let temp = tempdir().unwrap();
+    with_config_home(temp.path(), || {
+        let _ = load().unwrap();
+        let db_path = temp
+            .path()
+            .join(app_dirs::APP_DIR_NAME)
+            .join(LIBRARY_DB_FILE_NAME);
+        assert!(db_path.exists(), "expected database at {}", db_path.display());
+        let metadata = fs::metadata(db_path).unwrap();
+        assert!(metadata.is_file());
+    });
+}
+
+#[test]
+fn migrates_legacy_collection_export_paths() {
+    let temp = tempdir().unwrap();
+    with_config_home(temp.path(), || {
+        // Ensure schema exists.
+        let _ = load().unwrap();
+        let db_path = database_path().unwrap();
+        let conn = Connection::open(&db_path).unwrap();
+        conn.execute("DELETE FROM collection_members", []).unwrap();
+        conn.execute("DELETE FROM collections", []).unwrap();
+        conn.execute(
+            "DELETE FROM metadata WHERE key = ?1",
+            [COLLECTION_EXPORT_PATHS_VERSION_KEY],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO collections (id, name, export_path, sort_order) VALUES (?1, ?2, ?3, 0)",
+            params!["abc", "Demo/Name", "exports"],
+        )
+        .unwrap();
+        drop(conn);
+
+        let state = load().unwrap();
+        assert_eq!(state.collections.len(), 1);
+        let expected_path = PathBuf::from("exports").join("Demo_Name");
+        assert_eq!(state.collections[0].export_path, Some(expected_path));
+
+        let conn = Connection::open(database_path().unwrap()).unwrap();
+        let version: Option<String> = conn
+            .query_row(
+                "SELECT value FROM metadata WHERE key = ?1",
+                [COLLECTION_EXPORT_PATHS_VERSION_KEY],
+                |row| row.get(0),
+            )
+            .optional()
+            .unwrap();
+        assert_eq!(version.as_deref(), Some(COLLECTION_EXPORT_PATHS_VERSION_V2));
+    });
+}
