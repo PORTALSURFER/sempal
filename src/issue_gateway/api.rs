@@ -67,9 +67,8 @@ pub fn create_issue(token: &str, request: &CreateIssueRequest) -> Result<CreateI
         Err(ureq::Error::Transport(err)) => return Err(CreateIssueError::Transport(err.to_string())),
     };
 
-    response
-        .into_json::<CreateIssueResponse>()
-        .map_err(|err| CreateIssueError::Json(err.to_string()))
+    let body = response.into_string().unwrap_or_default();
+    parse_create_issue_response(&body)
 }
 
 fn map_status_error(code: u16, body: String) -> CreateIssueError {
@@ -82,6 +81,39 @@ fn map_status_error(code: u16, body: String) -> CreateIssueError {
     }
 }
 
+#[derive(Clone, Debug, Deserialize)]
+struct CreateIssueResponseWire {
+    #[serde(default)]
+    ok: bool,
+    issue_url: Option<String>,
+    number: Option<u64>,
+    error: Option<String>,
+    message: Option<String>,
+}
+
+fn parse_create_issue_response(body: &str) -> Result<CreateIssueResponse, CreateIssueError> {
+    let trimmed = body.trim();
+    if trimmed.is_empty() {
+        return Err(CreateIssueError::Json("Empty response body".to_string()));
+    }
+    let parsed: CreateIssueResponseWire =
+        serde_json::from_str(trimmed).map_err(|err| CreateIssueError::Json(format!("{err}: {trimmed}")))?;
+
+    let ok = parsed.ok;
+    if let (Some(issue_url), Some(number)) = (parsed.issue_url, parsed.number) {
+        return Ok(CreateIssueResponse {
+            ok: true,
+            issue_url,
+            number,
+        });
+    }
+    let message = parsed
+        .error
+        .or(parsed.message)
+        .unwrap_or_else(|| format!("Missing issue_url/number in response (ok={ok})"));
+    Err(CreateIssueError::Json(message))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -91,5 +123,18 @@ mod tests {
         assert_eq!(IssueKind::Bug.title_prefix(), "Bug: ");
         assert_eq!(IssueKind::FeatureRequest.title_prefix(), "FR: ");
     }
-}
 
+    #[test]
+    fn parses_success_without_ok_field() {
+        let body = r#"{ "issue_url": "https://github.com/PORTALSURFER/sempal/issues/123", "number": 123 }"#;
+        let parsed = parse_create_issue_response(body).unwrap();
+        assert!(parsed.ok);
+        assert_eq!(parsed.number, 123);
+    }
+
+    #[test]
+    fn reports_error_field() {
+        let err = parse_create_issue_response(r#"{ "error": "nope" }"#).unwrap_err();
+        assert!(err.to_string().contains("nope"));
+    }
+}
