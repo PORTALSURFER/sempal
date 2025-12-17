@@ -178,6 +178,9 @@ pub(super) fn invalidate_analysis_artifacts(
     let mut stmt_predictions = tx
         .prepare("DELETE FROM analysis_predictions WHERE sample_id = ?1")
         .map_err(|err| format!("Failed to prepare analysis invalidation statement: {err}"))?;
+    let mut stmt_model_predictions = tx
+        .prepare("DELETE FROM predictions WHERE sample_id = ?1")
+        .map_err(|err| format!("Failed to prepare analysis invalidation statement: {err}"))?;
     for sample_id in sample_ids {
         stmt_features
             .execute(params![sample_id])
@@ -188,10 +191,14 @@ pub(super) fn invalidate_analysis_artifacts(
         stmt_predictions
             .execute(params![sample_id])
             .map_err(|err| format!("Failed to invalidate analysis predictions: {err}"))?;
+        stmt_model_predictions
+            .execute(params![sample_id])
+            .map_err(|err| format!("Failed to invalidate predictions: {err}"))?;
     }
     drop(stmt_features);
     drop(stmt_legacy_features);
     drop(stmt_predictions);
+    drop(stmt_model_predictions);
     tx.commit()
         .map_err(|err| format!("Failed to commit analysis invalidation transaction: {err}"))?;
     Ok(())

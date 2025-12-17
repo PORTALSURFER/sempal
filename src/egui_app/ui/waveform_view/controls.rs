@@ -31,6 +31,16 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
         {
             app.controller.toggle_loop();
         }
+        if let Some(prediction) = app.controller.ui.waveform.predicted_category.as_ref() {
+            ui.add_space(10.0);
+            let label = RichText::new(format!(
+                "Category: {} ({:.0}%)",
+                prediction.class_id,
+                prediction.confidence * 100.0
+            ))
+            .color(palette.text_muted);
+            ui.label(label);
+        }
     });
     if view_mode != app.controller.ui.waveform.channel_view {
         app.controller.set_waveform_channel_view(view_mode);

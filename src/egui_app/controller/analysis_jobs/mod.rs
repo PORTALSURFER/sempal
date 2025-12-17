@@ -1,6 +1,7 @@
 //! Background analysis job queue backed by the global library database.
 
 mod db;
+mod inference;
 mod pool;
 mod types;
 mod weak_labels;

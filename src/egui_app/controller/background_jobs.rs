@@ -217,6 +217,28 @@ impl EguiController {
                     super::AnalysisJobMessage::EnqueueFailed(err) => {
                         self.set_status(format!("Analysis enqueue failed: {err}"), StatusTone::Error);
                     }
+                    super::AnalysisJobMessage::PredictionLoaded {
+                        sample_id,
+                        top_class,
+                        confidence,
+                    } => {
+                        let current_sample_id = self
+                            .current_source()
+                            .and_then(|source| {
+                                self.sample_view.wav.selected_wav.as_ref().map(|path| {
+                                    format!("{}::{}", source.id.as_str(), path.to_string_lossy())
+                                })
+                            });
+                        if current_sample_id.as_deref() != Some(sample_id.as_str()) {
+                            continue;
+                        }
+                        self.ui.waveform.predicted_category = top_class.zip(confidence).map(
+                            |(class_id, confidence)| crate::egui_app::state::PredictedCategory {
+                                class_id,
+                                confidence,
+                            },
+                        );
+                    }
                 },
                 JobMessage::UpdateChecked(message) => {
                     self.runtime.jobs.clear_update_check();

@@ -25,6 +25,7 @@ mod jobs;
 mod loading;
 mod os_explorer;
 mod playback;
+mod predictions;
 mod progress;
 mod scans;
 mod selection_edits;

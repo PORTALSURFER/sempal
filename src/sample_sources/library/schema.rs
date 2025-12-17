@@ -78,6 +78,30 @@ impl LibraryDatabase {
                     vec_blob BLOB NOT NULL,
                     computed_at INTEGER NOT NULL
                 ) WITHOUT ROWID;
+                 CREATE TABLE IF NOT EXISTS models (
+                    model_id TEXT PRIMARY KEY,
+                    kind TEXT NOT NULL,
+                    model_version INTEGER NOT NULL,
+                    feat_version INTEGER NOT NULL,
+                    feature_len_f32 INTEGER NOT NULL,
+                    classes_json TEXT NOT NULL,
+                    model_json TEXT NOT NULL,
+                    created_at INTEGER NOT NULL
+                ) WITHOUT ROWID;
+                 CREATE INDEX IF NOT EXISTS idx_models_created_at ON models (created_at);
+                 CREATE TABLE IF NOT EXISTS predictions (
+                    sample_id TEXT NOT NULL,
+                    model_id TEXT NOT NULL,
+                    content_hash TEXT NOT NULL,
+                    top_class TEXT NOT NULL,
+                    confidence REAL NOT NULL,
+                    topk_json TEXT NOT NULL,
+                    computed_at INTEGER NOT NULL,
+                    PRIMARY KEY (sample_id, model_id),
+                    FOREIGN KEY(model_id) REFERENCES models(model_id) ON DELETE CASCADE
+                ) WITHOUT ROWID;
+                 CREATE INDEX IF NOT EXISTS idx_predictions_model_id ON predictions (model_id);
+                 CREATE INDEX IF NOT EXISTS idx_predictions_top_class ON predictions (top_class);
                  CREATE TABLE IF NOT EXISTS labels_weak (
                     sample_id TEXT NOT NULL,
                     ruleset_version INTEGER NOT NULL,
@@ -88,6 +112,70 @@ impl LibraryDatabase {
                     PRIMARY KEY (sample_id, class_id)
                 ) WITHOUT ROWID;
                  CREATE INDEX IF NOT EXISTS idx_labels_weak_class_id ON labels_weak (class_id);",
+            )
+            .map_err(map_sql_error)?;
+        Ok(())
+    }
+
+    pub(super) fn migrate_models_table(&mut self) -> Result<(), LibraryError> {
+        let mut stmt = self
+            .connection
+            .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='models'")
+            .map_err(map_sql_error)?;
+        let exists: Option<String> = stmt
+            .query_row([], |row| row.get(0))
+            .optional()
+            .map_err(map_sql_error)?;
+        drop(stmt);
+        if exists.is_some() {
+            return Ok(());
+        }
+        self.connection
+            .execute_batch(
+                "CREATE TABLE IF NOT EXISTS models (
+                    model_id TEXT PRIMARY KEY,
+                    kind TEXT NOT NULL,
+                    model_version INTEGER NOT NULL,
+                    feat_version INTEGER NOT NULL,
+                    feature_len_f32 INTEGER NOT NULL,
+                    classes_json TEXT NOT NULL,
+                    model_json TEXT NOT NULL,
+                    created_at INTEGER NOT NULL
+                ) WITHOUT ROWID;
+                CREATE INDEX IF NOT EXISTS idx_models_created_at ON models (created_at);",
+            )
+            .map_err(map_sql_error)?;
+        Ok(())
+    }
+
+    pub(super) fn migrate_predictions_table(&mut self) -> Result<(), LibraryError> {
+        let mut stmt = self
+            .connection
+            .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='predictions'")
+            .map_err(map_sql_error)?;
+        let exists: Option<String> = stmt
+            .query_row([], |row| row.get(0))
+            .optional()
+            .map_err(map_sql_error)?;
+        drop(stmt);
+        if exists.is_some() {
+            return Ok(());
+        }
+        self.connection
+            .execute_batch(
+                "CREATE TABLE IF NOT EXISTS predictions (
+                    sample_id TEXT NOT NULL,
+                    model_id TEXT NOT NULL,
+                    content_hash TEXT NOT NULL,
+                    top_class TEXT NOT NULL,
+                    confidence REAL NOT NULL,
+                    topk_json TEXT NOT NULL,
+                    computed_at INTEGER NOT NULL,
+                    PRIMARY KEY (sample_id, model_id),
+                    FOREIGN KEY(model_id) REFERENCES models(model_id) ON DELETE CASCADE
+                ) WITHOUT ROWID;
+                CREATE INDEX IF NOT EXISTS idx_predictions_model_id ON predictions (model_id);
+                CREATE INDEX IF NOT EXISTS idx_predictions_top_class ON predictions (top_class);",
             )
             .map_err(map_sql_error)?;
         Ok(())
@@ -294,4 +382,3 @@ impl LibraryDatabase {
         Ok(())
     }
 }
-

@@ -6,6 +6,13 @@ use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::time::Instant;
 
+/// Model prediction for the currently selected sample (if available).
+#[derive(Clone, Debug)]
+pub struct PredictedCategory {
+    pub class_id: String,
+    pub confidence: f32,
+}
+
 /// Cached waveform image and playback overlays.
 #[derive(Clone, Debug)]
 pub struct WaveformState {
@@ -25,6 +32,8 @@ pub struct WaveformState {
     pub notice: Option<String>,
     /// Optional path for the sample currently loading to drive UI affordances.
     pub loading: Option<PathBuf>,
+    /// Cached category prediction for the currently selected sample.
+    pub predicted_category: Option<PredictedCategory>,
     /// Pending confirmation dialog for destructive edits.
     pub pending_destructive: Option<DestructiveEditPrompt>,
     /// Last moment the waveform cursor was moved via mouse hover.
@@ -52,6 +61,7 @@ impl Default for WaveformState {
             loop_enabled: false,
             notice: None,
             loading: None,
+            predicted_category: None,
             pending_destructive: None,
             cursor_last_hover_at: None,
             cursor_last_navigation_at: None,

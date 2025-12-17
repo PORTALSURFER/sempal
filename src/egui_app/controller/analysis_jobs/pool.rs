@@ -1,4 +1,5 @@
 use super::db;
+use super::inference;
 use super::types::{AnalysisJobMessage, AnalysisProgress};
 use std::path::PathBuf;
 use std::sync::{
@@ -153,6 +154,8 @@ fn spawn_worker(
             Err(_) => return,
         };
         let _ = db::reset_running_to_pending(&conn);
+        let mut model_cache: Option<inference::CachedModel> = None;
+        let _ = inference::refresh_latest_model(&conn, &mut model_cache);
 
         loop {
             if shutdown.load(Ordering::Relaxed) {
@@ -173,7 +176,7 @@ fn spawn_worker(
                 sleep(Duration::from_millis(25));
                 continue;
             };
-            let outcome = run_job(&conn, &job);
+            let outcome = run_job(&conn, &job, &mut model_cache);
             match outcome {
                 Ok(()) => {
                     let _ = db::mark_done(&conn, job.id);
@@ -192,7 +195,11 @@ fn spawn_worker(
 }
 
 #[cfg_attr(test, allow(dead_code))]
-fn run_job(conn: &rusqlite::Connection, job: &db::ClaimedJob) -> Result<(), String> {
+fn run_job(
+    conn: &rusqlite::Connection,
+    job: &db::ClaimedJob,
+    model_cache: &mut Option<inference::CachedModel>,
+) -> Result<(), String> {
     if job.job_type != db::DEFAULT_JOB_TYPE {
         return Err(format!("Unknown job type: {}", job.job_type));
     }
@@ -237,6 +244,14 @@ fn run_job(conn: &rusqlite::Connection, job: &db::ClaimedJob) -> Result<(), Stri
         &job.sample_id,
         &blob,
         crate::analysis::vector::FEATURE_VERSION_V1,
+        computed_at,
+    )?;
+    inference::infer_and_upsert_prediction(
+        conn,
+        model_cache,
+        &job.sample_id,
+        content_hash,
+        &vector,
         computed_at,
     )?;
     Ok(())

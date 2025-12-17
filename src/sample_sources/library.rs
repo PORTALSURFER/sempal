@@ -78,6 +78,8 @@ impl LibraryDatabase {
         db.migrate_analysis_jobs_content_hash()?;
         db.migrate_samples_analysis_metadata()?;
         db.migrate_features_table()?;
+        db.migrate_models_table()?;
+        db.migrate_predictions_table()?;
         db.migrate_labels_weak_table()?;
         Ok(db)
     }
