@@ -17,6 +17,8 @@ pub mod issue_gateway;
 pub mod logging;
 /// Automatic labeling helpers.
 pub mod labeling;
+/// Training dataset export helpers.
+pub mod dataset;
 /// Sample source management.
 pub mod sample_sources;
 /// Selection math utilities.

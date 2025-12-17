@@ -1,7 +1,9 @@
 use super::features::AnalysisFeaturesV1;
 
-pub(crate) const FEATURE_VERSION_V1: i64 = 1;
-pub(crate) const FEATURE_VECTOR_LEN_V1: usize = 183;
+/// Current persisted feature vector version.
+pub const FEATURE_VERSION_V1: i64 = 1;
+/// Number of `f32` values stored for `FEATURE_VERSION_V1`.
+pub const FEATURE_VECTOR_LEN_V1: usize = 183;
 
 pub(crate) fn to_f32_vector_v1(features: &AnalysisFeaturesV1) -> Vec<f32> {
     let mut out = Vec::with_capacity(FEATURE_VECTOR_LEN_V1);
@@ -153,4 +155,3 @@ mod tests {
         assert_eq!(&blob[4..8], &(-2.5_f32).to_le_bytes());
     }
 }
-
