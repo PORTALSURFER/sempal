@@ -215,25 +215,39 @@ fn library_db_path() -> Result<PathBuf, String> {
 
 pub(in crate::egui_app::controller) fn enqueue_jobs_for_source(
     source_id: &crate::sample_sources::SourceId,
-    source_root: &PathBuf,
+    changed_samples: &[crate::sample_sources::scanner::ChangedSample],
 ) -> Result<(usize, AnalysisProgress), String> {
-    let db = crate::sample_sources::SourceDatabase::open(source_root)
-        .map_err(|err| format!("Failed to open source DB for analysis enqueue: {err}"))?;
-    let entries = db
-        .list_files()
-        .map_err(|err| format!("Failed to list source files for analysis enqueue: {err}"))?;
-    let sample_ids: Vec<String> = entries
-        .into_iter()
-        .filter(|entry| !entry.missing)
-        .map(|entry| db::build_sample_id(source_id.as_str(), &entry.relative_path))
+    if changed_samples.is_empty() {
+        let db_path = library_db_path()?;
+        let conn = db::open_library_db(&db_path)?;
+        return Ok((0, db::current_progress(&conn)?));
+    }
+    let sample_metadata: Vec<db::SampleMetadata> = changed_samples
+        .iter()
+        .map(|sample| db::SampleMetadata {
+            sample_id: db::build_sample_id(source_id.as_str(), &sample.relative_path),
+            content_hash: sample.content_hash.clone(),
+            size: sample.file_size,
+            mtime_ns: sample.modified_ns,
+        })
+        .collect();
+    let sample_ids: Vec<String> = sample_metadata
+        .iter()
+        .map(|sample| sample.sample_id.clone())
+        .collect();
+    let jobs: Vec<(String, String)> = sample_metadata
+        .iter()
+        .map(|sample| (sample.sample_id.clone(), sample.content_hash.clone()))
         .collect();
     let db_path = library_db_path()?;
     let mut conn = db::open_library_db(&db_path)?;
+    db::upsert_samples(&mut conn, &sample_metadata)?;
+    db::invalidate_analysis_artifacts(&mut conn, &sample_ids)?;
     let created_at = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_else(|_| Duration::from_secs(0))
         .as_secs() as i64;
-    let inserted = db::enqueue_jobs(&mut conn, &sample_ids, db::DEFAULT_JOB_TYPE, created_at)?;
+    let inserted = db::enqueue_jobs(&mut conn, &jobs, db::DEFAULT_JOB_TYPE, created_at)?;
     let progress = db::current_progress(&conn)?;
     Ok((inserted, progress))
 }

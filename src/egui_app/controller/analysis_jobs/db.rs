@@ -58,17 +58,17 @@ pub(super) fn current_progress(conn: &Connection) -> Result<AnalysisProgress, St
 
 pub(super) fn enqueue_jobs(
     conn: &mut Connection,
-    sample_ids: &[String],
+    jobs: &[(String, String)],
     job_type: &str,
     created_at: i64,
 ) -> Result<usize, String> {
-    if sample_ids.is_empty() {
+    if jobs.is_empty() {
         return Ok(0);
     }
     let tx = conn
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|err| format!("Failed to start analysis enqueue transaction: {err}"))?;
-    let inserted = enqueue_jobs_tx(&tx, sample_ids, job_type, created_at)?;
+    let inserted = enqueue_jobs_tx(&tx, jobs, job_type, created_at)?;
     tx.commit()
         .map_err(|err| format!("Failed to commit analysis enqueue transaction: {err}"))?;
     Ok(inserted)
@@ -76,25 +76,113 @@ pub(super) fn enqueue_jobs(
 
 fn enqueue_jobs_tx(
     tx: &rusqlite::Transaction<'_>,
-    sample_ids: &[String],
+    jobs: &[(String, String)],
     job_type: &str,
     created_at: i64,
 ) -> Result<usize, String> {
     let mut stmt = tx
         .prepare(
-            "INSERT INTO analysis_jobs (sample_id, job_type, status, attempts, created_at)
-             VALUES (?1, ?2, 'pending', 0, ?3)
-             ON CONFLICT(sample_id, job_type) DO NOTHING",
+            "INSERT INTO analysis_jobs (sample_id, job_type, content_hash, status, attempts, created_at)
+             VALUES (?1, ?2, ?3, 'pending', 0, ?4)
+             ON CONFLICT(sample_id, job_type) DO UPDATE SET
+                content_hash = excluded.content_hash,
+                status = 'pending',
+                attempts = 0,
+                created_at = excluded.created_at,
+                last_error = NULL",
         )
         .map_err(|err| format!("Failed to prepare analysis enqueue statement: {err}"))?;
     let mut inserted = 0usize;
-    for sample_id in sample_ids {
+    for (sample_id, content_hash) in jobs {
         let changed = stmt
-            .execute(params![sample_id, job_type, created_at])
+            .execute(params![sample_id, job_type, content_hash, created_at])
             .map_err(|err| format!("Failed to enqueue analysis job: {err}"))?;
         inserted += changed;
     }
     Ok(inserted)
+}
+
+pub(super) fn upsert_samples(
+    conn: &mut Connection,
+    samples: &[SampleMetadata],
+) -> Result<usize, String> {
+    if samples.is_empty() {
+        return Ok(0);
+    }
+    let tx = conn
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|err| format!("Failed to start samples upsert transaction: {err}"))?;
+    let changed = upsert_samples_tx(&tx, samples)?;
+    tx.commit()
+        .map_err(|err| format!("Failed to commit samples upsert transaction: {err}"))?;
+    Ok(changed)
+}
+
+fn upsert_samples_tx(
+    tx: &rusqlite::Transaction<'_>,
+    samples: &[SampleMetadata],
+) -> Result<usize, String> {
+    let mut stmt = tx
+        .prepare(
+            "INSERT INTO samples (sample_id, content_hash, size, mtime_ns)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(sample_id) DO UPDATE SET
+                content_hash = excluded.content_hash,
+                size = excluded.size,
+                mtime_ns = excluded.mtime_ns",
+        )
+        .map_err(|err| format!("Failed to prepare samples upsert statement: {err}"))?;
+    let mut changed = 0usize;
+    for sample in samples {
+        changed += stmt
+            .execute(params![
+                &sample.sample_id,
+                &sample.content_hash,
+                sample.size as i64,
+                sample.mtime_ns
+            ])
+            .map_err(|err| format!("Failed to upsert sample metadata: {err}"))?;
+    }
+    Ok(changed)
+}
+
+pub(super) fn invalidate_analysis_artifacts(
+    conn: &mut Connection,
+    sample_ids: &[String],
+) -> Result<(), String> {
+    if sample_ids.is_empty() {
+        return Ok(());
+    }
+    let tx = conn
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|err| format!("Failed to start analysis invalidation transaction: {err}"))?;
+    let mut stmt_features = tx
+        .prepare("DELETE FROM analysis_features WHERE sample_id = ?1")
+        .map_err(|err| format!("Failed to prepare analysis invalidation statement: {err}"))?;
+    let mut stmt_predictions = tx
+        .prepare("DELETE FROM analysis_predictions WHERE sample_id = ?1")
+        .map_err(|err| format!("Failed to prepare analysis invalidation statement: {err}"))?;
+    for sample_id in sample_ids {
+        stmt_features
+            .execute(params![sample_id])
+            .map_err(|err| format!("Failed to invalidate analysis features: {err}"))?;
+        stmt_predictions
+            .execute(params![sample_id])
+            .map_err(|err| format!("Failed to invalidate analysis predictions: {err}"))?;
+    }
+    drop(stmt_features);
+    drop(stmt_predictions);
+    tx.commit()
+        .map_err(|err| format!("Failed to commit analysis invalidation transaction: {err}"))?;
+    Ok(())
+}
+
+#[derive(Clone, Debug)]
+pub(super) struct SampleMetadata {
+    pub(super) sample_id: String,
+    pub(super) content_hash: String,
+    pub(super) size: u64,
+    pub(super) mtime_ns: i64,
 }
 
 pub(super) fn claim_next_job(conn: &mut Connection) -> Result<Option<ClaimedJob>, String> {
@@ -209,6 +297,7 @@ mod tests {
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 sample_id TEXT NOT NULL,
                 job_type TEXT NOT NULL,
+                content_hash TEXT,
                 status TEXT NOT NULL,
                 attempts INTEGER NOT NULL DEFAULT 0,
                 created_at INTEGER NOT NULL,
@@ -228,9 +317,12 @@ mod tests {
     #[test]
     fn enqueue_jobs_dedupes_by_sample_and_type() {
         let mut conn = conn_with_schema();
-        let sample_ids = vec!["s::a.wav".to_string(), "s::a.wav".to_string()];
-        let inserted = enqueue_jobs(&mut conn, &sample_ids, DEFAULT_JOB_TYPE, 123).unwrap();
-        assert_eq!(inserted, 1);
+        let jobs = vec![
+            ("s::a.wav".to_string(), "h1".to_string()),
+            ("s::a.wav".to_string(), "h1".to_string()),
+        ];
+        let inserted = enqueue_jobs(&mut conn, &jobs, DEFAULT_JOB_TYPE, 123).unwrap();
+        assert_eq!(inserted, 2);
         let progress = current_progress(&conn).unwrap();
         assert_eq!(progress.pending, 1);
         assert_eq!(progress.total(), 1);
@@ -239,8 +331,8 @@ mod tests {
     #[test]
     fn claim_next_job_marks_running_and_increments_attempts() {
         let mut conn = conn_with_schema();
-        let sample_ids = vec!["s::a.wav".to_string()];
-        enqueue_jobs(&mut conn, &sample_ids, DEFAULT_JOB_TYPE, 123).unwrap();
+        let jobs = vec![("s::a.wav".to_string(), "h1".to_string())];
+        enqueue_jobs(&mut conn, &jobs, DEFAULT_JOB_TYPE, 123).unwrap();
         let job = claim_next_job(&mut conn).unwrap().expect("job claimed");
         assert_eq!(job.sample_id, "s::a.wav");
         assert_eq!(job.job_type, DEFAULT_JOB_TYPE);

@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     fs,
+    io::Read,
     path::{Path, PathBuf},
     sync::atomic::{AtomicBool, Ordering},
     thread,
@@ -21,6 +22,16 @@ pub struct ScanStats {
     pub updated: usize,
     pub missing: usize,
     pub total_files: usize,
+    pub content_changed: usize,
+    pub changed_samples: Vec<ChangedSample>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ChangedSample {
+    pub relative_path: PathBuf,
+    pub file_size: u64,
+    pub modified_ns: i64,
+    pub content_hash: String,
 }
 
 /// Scan strategy used when walking a source root.
@@ -201,7 +212,7 @@ fn sync_file(
     stats: &mut ScanStats,
 ) -> Result<(), ScanError> {
     let facts = read_facts(root, path)?;
-    apply_diff(batch, facts, existing, stats)?;
+    apply_diff(batch, facts, existing, stats, root)?;
     stats.total_files += 1;
     Ok(())
 }
@@ -268,6 +279,7 @@ fn apply_diff(
     facts: FileFacts,
     existing: &mut HashMap<PathBuf, WavEntry>,
     stats: &mut ScanStats,
+    root: &Path,
 ) -> Result<(), ScanError> {
     let path = facts.relative.clone();
     match existing.remove(&path) {
@@ -276,16 +288,57 @@ fn apply_diff(
                 batch.set_missing(&path, false)?;
             }
         }
-        Some(_) => {
-            batch.upsert_file(&path, facts.size, facts.modified_ns)?;
+        Some(entry) => {
+            let absolute = root.join(&path);
+            let hash = compute_content_hash(&absolute)?;
+            let previous_hash = entry.content_hash.as_deref();
+            batch.upsert_file_with_hash(&path, facts.size, facts.modified_ns, &hash)?;
+            if previous_hash != Some(hash.as_str()) {
+                stats.content_changed += 1;
+                stats.changed_samples.push(ChangedSample {
+                    relative_path: path.clone(),
+                    file_size: facts.size,
+                    modified_ns: facts.modified_ns,
+                    content_hash: hash,
+                });
+            }
             stats.updated += 1;
         }
         None => {
-            batch.upsert_file(&path, facts.size, facts.modified_ns)?;
+            let absolute = root.join(&path);
+            let hash = compute_content_hash(&absolute)?;
+            batch.upsert_file_with_hash(&path, facts.size, facts.modified_ns, &hash)?;
             stats.added += 1;
+            stats.content_changed += 1;
+            stats.changed_samples.push(ChangedSample {
+                relative_path: path.clone(),
+                file_size: facts.size,
+                modified_ns: facts.modified_ns,
+                content_hash: hash,
+            });
         }
     }
     Ok(())
+}
+
+fn compute_content_hash(path: &Path) -> Result<String, ScanError> {
+    let mut file = std::fs::File::open(path).map_err(|source| ScanError::Io {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    let mut hasher = blake3::Hasher::new();
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        let read = file.read(&mut buffer).map_err(|source| ScanError::Io {
+            path: path.to_path_buf(),
+            source,
+        })?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    Ok(hasher.finalize().to_hex().to_string())
 }
 
 fn to_nanos(time: &SystemTime, path: &Path) -> Result<i64, ScanError> {
@@ -306,6 +359,7 @@ fn is_wav(path: &Path) -> bool {
 mod tests {
     use super::*;
     use crate::sample_sources::SampleTag;
+    use std::time::Duration;
     use tempfile::tempdir;
 
     #[test]
@@ -317,6 +371,8 @@ mod tests {
         let db = SourceDatabase::open(dir.path()).unwrap();
         let first = scan_once(&db).unwrap();
         assert_eq!(first.added, 1);
+        assert_eq!(first.content_changed, 1);
+        assert_eq!(first.changed_samples.len(), 1);
         let initial = db.list_files().unwrap();
         assert_eq!(initial.len(), 1);
         assert_eq!(initial[0].tag, SampleTag::Neutral);
@@ -324,6 +380,8 @@ mod tests {
         std::fs::write(&file_path, b"longer-data").unwrap();
         let second = scan_once(&db).unwrap();
         assert_eq!(second.updated, 1);
+        assert_eq!(second.content_changed, 1);
+        assert_eq!(second.changed_samples.len(), 1);
 
         std::fs::remove_file(&file_path).unwrap();
         let third = scan_once(&db).unwrap();
@@ -338,8 +396,29 @@ mod tests {
         let fifth = scan_once(&db).unwrap();
         assert_eq!(fifth.added, 0);
         assert_eq!(fifth.updated, 1);
+        assert_eq!(fifth.content_changed, 1);
+        assert_eq!(fifth.changed_samples.len(), 1);
         let rows = db.list_files().unwrap();
         assert!(!rows[0].missing);
+    }
+
+    #[test]
+    fn scan_skips_analysis_when_hash_unchanged() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("one.wav");
+        std::fs::write(&file_path, b"one").unwrap();
+
+        let db = SourceDatabase::open(dir.path()).unwrap();
+        let first = scan_once(&db).unwrap();
+        assert_eq!(first.content_changed, 1);
+
+        std::thread::sleep(Duration::from_millis(2));
+        std::fs::write(&file_path, b"one").unwrap();
+
+        let second = scan_once(&db).unwrap();
+        assert_eq!(second.updated, 1);
+        assert_eq!(second.content_changed, 0);
+        assert!(second.changed_samples.is_empty());
     }
 
     #[test]

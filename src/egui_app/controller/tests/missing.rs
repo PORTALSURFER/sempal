@@ -13,6 +13,7 @@ fn selecting_missing_sample_sets_waveform_notice() {
         relative_path: PathBuf::from("one.wav"),
         file_size: 1,
         modified_ns: 1,
+        content_hash: None,
         tag: SampleTag::Neutral,
         missing: true,
     }];
@@ -41,6 +42,7 @@ fn collection_views_flag_missing_members() {
         relative_path: PathBuf::from("one.wav"),
         file_size: 1,
         modified_ns: 1,
+        content_hash: None,
         tag: SampleTag::Neutral,
         missing: true,
     }];
@@ -86,6 +88,7 @@ fn read_failure_marks_sample_missing() {
         relative_path: rel.clone(),
         file_size: 1,
         modified_ns: 1,
+        content_hash: None,
         tag: SampleTag::Neutral,
         missing: false,
     }];

@@ -152,6 +152,7 @@ impl EguiController {
             relative_path,
             file_size: metadata.len(),
             modified_ns,
+            content_hash: None,
             tag: target_tag.unwrap_or(SampleTag::Neutral),
             missing: false,
         };

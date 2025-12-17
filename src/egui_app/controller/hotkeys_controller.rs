@@ -248,6 +248,7 @@ impl HotkeysController<'_> {
             relative_path: relative_path.clone(),
             file_size,
             modified_ns,
+            content_hash: None,
             tag,
             missing: false,
         };

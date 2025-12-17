@@ -117,6 +117,7 @@ impl EguiController {
                 relative_path: new_relative.clone(),
                 file_size,
                 modified_ns,
+                content_hash: None,
                 tag,
                 missing: false,
             },
@@ -258,6 +259,7 @@ impl EguiController {
             relative_path: context.relative_path.clone(),
             file_size,
             modified_ns,
+            content_hash: None,
             tag,
             missing: false,
         };

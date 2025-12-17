@@ -104,6 +104,7 @@ impl EguiController {
                         };
                         match result.result {
                             Ok(stats) => {
+                                let changed_samples = stats.changed_samples.clone();
                                 self.set_status(
                                     format!(
                                         "{label} complete: {} added, {} updated, {} missing",
@@ -121,12 +122,14 @@ impl EguiController {
                                     invalidator.invalidate_wav_related(&source.id);
                                 }
                                 self.queue_wav_load();
-                                if let Some(source) = self.current_source() {
+                                if !changed_samples.is_empty()
+                                    && let Some(source) = self.current_source()
+                                {
                                     let tx = self.runtime.jobs.message_sender();
                                     std::thread::spawn(move || {
                                         let result = super::analysis_jobs::enqueue_jobs_for_source(
                                             &source.id,
-                                            &source.root,
+                                            &changed_samples,
                                         );
                                         match result {
                                             Ok((inserted, progress)) => {

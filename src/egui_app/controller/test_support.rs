@@ -21,6 +21,7 @@ pub(super) fn sample_entry(name: &str, tag: SampleTag) -> WavEntry {
         relative_path: PathBuf::from(name),
         file_size: 0,
         modified_ns: 0,
+        content_hash: None,
         tag,
         missing: false,
     }

@@ -73,6 +73,7 @@ impl LibraryDatabase {
         db.apply_schema()?;
         db.migrate_collection_member_clip_roots()?;
         db.migrate_collection_export_paths()?;
+        db.migrate_analysis_jobs_content_hash()?;
         Ok(db)
     }
 
@@ -319,14 +320,52 @@ impl LibraryDatabase {
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     sample_id TEXT NOT NULL,
                     job_type TEXT NOT NULL,
+                    content_hash TEXT,
                     status TEXT NOT NULL,
                     attempts INTEGER NOT NULL DEFAULT 0,
                     created_at INTEGER NOT NULL,
                     last_error TEXT,
                     UNIQUE(sample_id, job_type)
+                );
+                 CREATE TABLE IF NOT EXISTS samples (
+                    sample_id TEXT PRIMARY KEY,
+                    content_hash TEXT NOT NULL,
+                    size INTEGER NOT NULL,
+                    mtime_ns INTEGER NOT NULL
+                );
+                 CREATE TABLE IF NOT EXISTS analysis_features (
+                    sample_id TEXT PRIMARY KEY,
+                    content_hash TEXT NOT NULL,
+                    features BLOB
+                );
+                 CREATE TABLE IF NOT EXISTS analysis_predictions (
+                    sample_id TEXT PRIMARY KEY,
+                    content_hash TEXT NOT NULL,
+                    predictions BLOB
                 );",
             )
             .map_err(map_sql_error)?;
+        Ok(())
+    }
+
+    fn migrate_analysis_jobs_content_hash(&mut self) -> Result<(), LibraryError> {
+        let mut stmt = self
+            .connection
+            .prepare("PRAGMA table_info(analysis_jobs)")
+            .map_err(map_sql_error)?;
+        let columns: std::collections::HashSet<String> = stmt
+            .query_map([], |row| row.get::<_, String>(1))
+            .map_err(map_sql_error)?
+            .filter_map(Result::ok)
+            .collect();
+        drop(stmt);
+        if columns.contains("content_hash") {
+            return Ok(());
+        }
+        let tx = self.connection.transaction().map_err(map_sql_error)?;
+        tx.execute("ALTER TABLE analysis_jobs ADD COLUMN content_hash TEXT", [])
+            .map_err(map_sql_error)?;
+        tx.commit().map_err(map_sql_error)?;
         Ok(())
     }
 
