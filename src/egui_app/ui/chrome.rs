@@ -163,6 +163,13 @@ impl EguiApp {
                                     ui.close();
                                 }
                             });
+                            let mut training_open = self.controller.ui.training.panel_open;
+                            let training_btn =
+                                egui::Button::new("Training").selected(training_open);
+                            if ui.add(training_btn).clicked() {
+                                training_open = !training_open;
+                            }
+                            self.controller.ui.training.panel_open = training_open;
                             ui.add_space(10.0);
                             const APP_VERSION: &str = concat!("v", env!("CARGO_PKG_VERSION"));
                             match self.controller.ui.update.status {
@@ -284,6 +291,7 @@ impl EguiApp {
                 });
             });
         self.render_audio_settings_window(ctx);
+        self.render_training_window(ctx);
     }
 
     fn chord_status_label(&self) -> String {
@@ -369,30 +377,6 @@ impl EguiApp {
             .clamping(SliderClamping::Always);
         if ui.add(slider).changed() {
             self.controller.set_unknown_confidence_threshold(unknown);
-        }
-
-        ui.add_space(6.0);
-        ui.label(
-            RichText::new("Retrain: include weak labels above confidence:")
-                .color(palette.text_muted),
-        );
-        let mut min_conf = self.controller.retrain_min_confidence();
-        let slider = egui::Slider::new(&mut min_conf, 0.0..=1.0)
-            .text("Min conf")
-            .clamping(SliderClamping::Always);
-        if ui.add(slider).changed() {
-            self.controller.set_retrain_min_confidence(min_conf);
-        }
-
-        ui.add_space(6.0);
-        ui.label(
-            RichText::new("Retrain: pack depth (anti-leakage split):").color(palette.text_muted),
-        );
-        let mut pack_depth = self.controller.retrain_pack_depth() as i64;
-        let drag = egui::DragValue::new(&mut pack_depth).range(1..=8);
-        if ui.add(drag).changed() {
-            self.controller
-                .set_retrain_pack_depth(pack_depth.max(1) as usize);
         }
     }
 
@@ -490,6 +474,103 @@ impl EguiApp {
                 );
             });
         self.controller.ui.audio.panel_open = open;
+    }
+
+    fn render_training_window(&mut self, ctx: &egui::Context) {
+        if !self.controller.ui.training.panel_open {
+            return;
+        }
+        let palette = style::palette();
+        let mut open = true;
+        egui::Window::new("Training")
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(true)
+            .default_width(380.0)
+            .show(ctx, |ui| {
+                ui.set_min_width(340.0);
+
+                ui.label(RichText::new("Labels").strong().color(palette.text_primary));
+                let label_rules_path = crate::labeling::weak_config::label_rules_path()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_else(|| "—".to_string());
+                ui.label(RichText::new("label_rules.toml").color(palette.text_muted));
+                ui.label(RichText::new(label_rules_path).color(palette.text_muted).small());
+                ui.add_space(6.0);
+
+                let selected_source = self.controller.current_source().is_some();
+                if ui
+                    .add_enabled(
+                        selected_source,
+                        egui::Button::new("Recompute labels (selected source)"),
+                    )
+                    .on_hover_text("Re-run filename/folder heuristics for the selected source")
+                    .clicked()
+                {
+                    self.controller.recompute_weak_labels_for_selected_source();
+                }
+                if ui
+                    .add_enabled(
+                        self.controller.has_any_sources(),
+                        egui::Button::new("Recompute labels (all sources)"),
+                    )
+                    .on_hover_text("Re-run filename/folder heuristics for all sources")
+                    .clicked()
+                {
+                    self.controller.recompute_weak_labels_for_all_sources();
+                }
+
+                ui.separator();
+                ui.label(RichText::new("Features").strong().color(palette.text_primary));
+                if ui
+                    .add_enabled(
+                        selected_source,
+                        egui::Button::new("Compute missing features (selected source)"),
+                    )
+                    .on_hover_text(
+                        "Queue analysis jobs to compute missing features (needed for retrain)",
+                    )
+                    .clicked()
+                {
+                    self.controller.backfill_missing_features_for_selected_source();
+                }
+
+                ui.separator();
+                ui.label(RichText::new("Model training").strong().color(palette.text_primary));
+                ui.label(
+                    RichText::new("Include weak labels above confidence:")
+                        .color(palette.text_muted),
+                );
+                let mut min_conf = self.controller.retrain_min_confidence();
+                let slider = egui::Slider::new(&mut min_conf, 0.0..=1.0)
+                    .text("Min conf")
+                    .clamping(SliderClamping::Always);
+                if ui.add(slider).changed() {
+                    self.controller.set_retrain_min_confidence(min_conf);
+                }
+
+                ui.add_space(6.0);
+                ui.label(
+                    RichText::new("Pack depth (anti-leakage split):").color(palette.text_muted),
+                );
+                let mut pack_depth = self.controller.retrain_pack_depth() as i64;
+                let drag = egui::DragValue::new(&mut pack_depth).range(1..=8);
+                if ui.add(drag).changed() {
+                    self.controller
+                        .set_retrain_pack_depth(pack_depth.max(1) as usize);
+                }
+
+                ui.add_space(8.0);
+                let retrain_btn = egui::Button::new("Retrain model");
+                if ui
+                    .add_enabled(!self.controller.model_training_in_progress(), retrain_btn)
+                    .on_hover_text("Train a new model using user overrides + weak labels")
+                    .clicked()
+                {
+                    self.controller.retrain_model_from_app();
+                }
+            });
+        self.controller.ui.training.panel_open = open;
     }
 
     fn render_audio_host_combo(&mut self, ui: &mut egui::Ui) {

@@ -12,6 +12,7 @@ mod hotkeys;
 mod progress;
 mod sources;
 mod status;
+mod training;
 mod update;
 mod waveform;
 
@@ -26,6 +27,7 @@ pub use hotkeys::*;
 pub use progress::*;
 pub use sources::*;
 pub use status::*;
+pub use training::*;
 pub use update::*;
 pub use waveform::*;
 
@@ -50,6 +52,8 @@ pub struct UiState {
     pub feedback_issue: FeedbackIssueUiState,
     /// Audio device/options UI state.
     pub audio: AudioOptionsState,
+    /// Model training and weak labeling controls.
+    pub training: TrainingUiState,
     /// Interaction and navigation tuning options.
     pub controls: InteractionOptionsState,
     /// Master output volume (0.0-1.0).
@@ -77,6 +81,7 @@ impl Default for UiState {
             hotkeys: HotkeyUiState::default(),
             feedback_issue: FeedbackIssueUiState::default(),
             audio: AudioOptionsState::default(),
+            training: TrainingUiState::default(),
             controls: InteractionOptionsState::default(),
             volume: 1.0,
             update: UpdateUiState::default(),
