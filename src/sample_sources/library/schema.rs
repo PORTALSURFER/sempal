@@ -101,7 +101,10 @@ impl LibraryDatabase {
                     FOREIGN KEY(model_id) REFERENCES models(model_id) ON DELETE CASCADE
                 ) WITHOUT ROWID;
                  CREATE INDEX IF NOT EXISTS idx_predictions_model_id ON predictions (model_id);
+                 CREATE INDEX IF NOT EXISTS idx_predictions_model_sample_id ON predictions (model_id, sample_id);
                  CREATE INDEX IF NOT EXISTS idx_predictions_top_class ON predictions (top_class);
+                 CREATE INDEX IF NOT EXISTS idx_predictions_top_class_confidence ON predictions (top_class, confidence);
+                 CREATE INDEX IF NOT EXISTS idx_predictions_model_top_class_confidence ON predictions (model_id, top_class, confidence);
                  CREATE TABLE IF NOT EXISTS labels_weak (
                     sample_id TEXT NOT NULL,
                     ruleset_version INTEGER NOT NULL,
@@ -149,18 +152,6 @@ impl LibraryDatabase {
     }
 
     pub(super) fn migrate_predictions_table(&mut self) -> Result<(), LibraryError> {
-        let mut stmt = self
-            .connection
-            .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='predictions'")
-            .map_err(map_sql_error)?;
-        let exists: Option<String> = stmt
-            .query_row([], |row| row.get(0))
-            .optional()
-            .map_err(map_sql_error)?;
-        drop(stmt);
-        if exists.is_some() {
-            return Ok(());
-        }
         self.connection
             .execute_batch(
                 "CREATE TABLE IF NOT EXISTS predictions (
@@ -175,7 +166,10 @@ impl LibraryDatabase {
                     FOREIGN KEY(model_id) REFERENCES models(model_id) ON DELETE CASCADE
                 ) WITHOUT ROWID;
                 CREATE INDEX IF NOT EXISTS idx_predictions_model_id ON predictions (model_id);
-                CREATE INDEX IF NOT EXISTS idx_predictions_top_class ON predictions (top_class);",
+                CREATE INDEX IF NOT EXISTS idx_predictions_model_sample_id ON predictions (model_id, sample_id);
+                CREATE INDEX IF NOT EXISTS idx_predictions_top_class ON predictions (top_class);
+                CREATE INDEX IF NOT EXISTS idx_predictions_top_class_confidence ON predictions (top_class, confidence);
+                CREATE INDEX IF NOT EXISTS idx_predictions_model_top_class_confidence ON predictions (model_id, top_class, confidence);",
             )
             .map_err(map_sql_error)?;
         Ok(())

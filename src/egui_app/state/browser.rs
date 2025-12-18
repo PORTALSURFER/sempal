@@ -27,6 +27,10 @@ pub struct SampleBrowserState {
     pub search_focus_requested: bool,
     /// When enabled, Up/Down jump through random samples instead of list order.
     pub random_navigation_mode: bool,
+    /// Optional predicted category filter (top class) sourced from the latest model.
+    pub category_filter: Option<String>,
+    /// Minimum prediction confidence required when category filtering is active.
+    pub confidence_threshold: f32,
     /// Pending inline action for the sample browser rows.
     pub pending_action: Option<SampleBrowserActionPrompt>,
     /// Flag to request focus on the active inline rename editor.
@@ -51,6 +55,8 @@ impl Default for SampleBrowserState {
             search_query: String::new(),
             search_focus_requested: false,
             random_navigation_mode: false,
+            category_filter: None,
+            confidence_threshold: 0.0,
             pending_action: None,
             rename_focus_requested: false,
         }

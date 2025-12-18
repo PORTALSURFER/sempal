@@ -105,6 +105,19 @@ impl LibraryCacheState {
 pub(super) struct BrowserCacheState {
     pub(super) labels: HashMap<SourceId, Vec<String>>,
     pub(super) search: wavs::BrowserSearchCache,
+    pub(super) predictions: HashMap<SourceId, PredictionCache>,
+    pub(super) prediction_categories: Option<PredictionCategories>,
+    pub(super) prediction_categories_checked: bool,
+}
+
+pub(super) struct PredictionCache {
+    pub(super) model_id: Option<String>,
+    pub(super) rows: Vec<Option<crate::egui_app::state::PredictedCategory>>,
+}
+
+pub(super) struct PredictionCategories {
+    pub(super) model_id: String,
+    pub(super) classes: Vec<String>,
 }
 
 pub(super) struct FolderBrowsersState {

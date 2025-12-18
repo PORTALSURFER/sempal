@@ -145,6 +145,9 @@ impl EguiController {
                 browser: BrowserCacheState {
                     labels: HashMap::new(),
                     search: wavs::BrowserSearchCache::default(),
+                    predictions: HashMap::new(),
+                    prediction_categories: None,
+                    prediction_categories_checked: false,
                 },
                 folders: FolderBrowsersState {
                     models: HashMap::new(),

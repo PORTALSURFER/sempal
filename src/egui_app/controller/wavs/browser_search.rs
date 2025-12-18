@@ -27,15 +27,17 @@ impl EguiController {
         focused_index: Option<usize>,
         loaded_index: Option<usize>,
     ) -> (Vec<usize>, Option<usize>, Option<usize>) {
+        self.prepare_prediction_filter_cache();
         let Some(query) = self.active_search_query().map(str::to_string) else {
             let visible: Vec<usize> = self
                 .wav_entries
                 .entries
                 .iter()
                 .enumerate()
-                .filter(|(_, entry)| {
+                .filter(|(index, entry)| {
                     self.browser_filter_accepts(entry.tag)
                         && self.folder_filter_accepts(&entry.relative_path)
+                        && self.prediction_filter_accepts_for_index(*index)
                 })
                 .map(|(index, _)| index)
                 .collect();
@@ -56,6 +58,7 @@ impl EguiController {
         for (index, entry) in self.wav_entries.entries.iter().enumerate() {
             if !self.browser_filter_accepts(entry.tag)
                 || !self.folder_filter_accepts(&entry.relative_path)
+                || !self.prediction_filter_accepts_for_index(index)
             {
                 continue;
             }
@@ -95,6 +98,10 @@ impl EguiController {
             TriageFlagFilter::Trash => matches!(tag, SampleTag::Trash),
             TriageFlagFilter::Untagged => matches!(tag, SampleTag::Neutral),
         }
+    }
+
+    fn prediction_filter_accepts_for_index(&self, entry_index: usize) -> bool {
+        self.prediction_filter_accepts(entry_index)
     }
 
     fn active_search_query(&self) -> Option<&str> {

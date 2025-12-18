@@ -10,6 +10,7 @@ mod browser_actions;
 mod browser_lists;
 mod browser_search;
 mod missing_samples;
+mod prediction_filter;
 mod selection_ops;
 mod waveform_loading;
 mod waveform_rendering;
@@ -76,6 +77,16 @@ impl EguiController {
     /// Apply a fuzzy search query to the browser and refresh visible rows.
     pub fn set_browser_search(&mut self, query: impl Into<String>) {
         browser_search::set_browser_search(self, query);
+    }
+
+    /// Apply a predicted category filter and refresh visible rows.
+    pub fn set_category_filter(&mut self, category: Option<String>) {
+        prediction_filter::set_category_filter(self, category);
+    }
+
+    /// Apply a minimum confidence threshold for predicted category filtering and refresh visible rows.
+    pub fn set_confidence_threshold(&mut self, threshold: f32) {
+        prediction_filter::set_confidence_threshold(self, threshold);
     }
 
     /// Select a wav by absolute index into the full wav list.

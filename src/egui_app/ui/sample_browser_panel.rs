@@ -1,12 +1,12 @@
 use super::flat_items_list::{FlatItemsListConfig, render_flat_items_list};
 use super::helpers::{
-    InlineTextEditAction, NumberColumn, RowMarker, clamp_label_for_width, render_inline_text_edit,
+    NumberColumn, RowMarker, clamp_label_for_width,
     render_list_row,
 };
 use super::style;
 use super::*;
 use crate::egui_app::state::{
-    DragPayload, DragSource, DragTarget, FocusContext, SampleBrowserActionPrompt, TriageFlagFilter,
+    DragPayload, DragSource, DragTarget, FocusContext, SampleBrowserActionPrompt,
 };
 use crate::egui_app::ui::style::StatusTone;
 use crate::egui_app::view_model;
@@ -391,106 +391,4 @@ impl EguiApp {
         });
     }
 
-    fn render_browser_rename_editor(
-        &mut self,
-        ui: &mut Ui,
-        row_response: &egui::Response,
-        padding: f32,
-        number_width: f32,
-        number_gap: f32,
-        trailing_space: f32,
-    ) {
-        let Some(prompt) = self.controller.ui.browser.pending_action.as_mut() else {
-            return;
-        };
-        let name = match prompt {
-            SampleBrowserActionPrompt::Rename { name, .. } => name,
-        };
-        let mut edit_rect = row_response.rect;
-        edit_rect.min.x += number_width + number_gap + padding;
-        edit_rect.max.x -= padding + trailing_space;
-        edit_rect.min.y += 2.0;
-        edit_rect.max.y -= 2.0;
-        match render_inline_text_edit(
-            ui,
-            edit_rect,
-            name,
-            "Rename sample",
-            &mut self.controller.ui.browser.rename_focus_requested,
-        ) {
-            InlineTextEditAction::Submit => self.controller.apply_pending_browser_rename(),
-            InlineTextEditAction::Cancel => self.controller.cancel_browser_rename(),
-            InlineTextEditAction::None => {}
-        }
-    }
-
-    fn render_sample_browser_filter(&mut self, ui: &mut Ui) {
-        let palette = style::palette();
-        let visible_count = self.controller.visible_browser_indices().len();
-        ui.horizontal(|ui| {
-            ui.label(RichText::new("Filter").color(palette.text_primary));
-            for filter in [
-                TriageFlagFilter::All,
-                TriageFlagFilter::Keep,
-                TriageFlagFilter::Trash,
-                TriageFlagFilter::Untagged,
-            ] {
-                let selected = self.controller.ui.browser.filter == filter;
-                let label = match filter {
-                    TriageFlagFilter::All => "All",
-                    TriageFlagFilter::Keep => "Keep",
-                    TriageFlagFilter::Trash => "Trash",
-                    TriageFlagFilter::Untagged => "Untagged",
-                };
-                if ui.selectable_label(selected, label).clicked() {
-                    self.controller.set_browser_filter(filter);
-                }
-            }
-            ui.add_space(ui.spacing().item_spacing.x);
-            let mut query = self.controller.ui.browser.search_query.clone();
-            let response = ui.add(
-                egui::TextEdit::singleline(&mut query)
-                    .hint_text("Search samples (f)...")
-                    .desired_width(160.0),
-            );
-            if self.controller.ui.browser.search_focus_requested {
-                response.request_focus();
-                self.controller.ui.browser.search_focus_requested = false;
-            }
-            if response.changed() {
-                self.controller.set_browser_search(query);
-            }
-            ui.add_space(ui.spacing().item_spacing.x);
-            let random_mode_enabled = self.controller.random_navigation_mode_enabled();
-            let dice_label = RichText::new("🎲").color(if random_mode_enabled {
-                palette.text_primary
-            } else {
-                palette.text_muted
-            });
-            let dice_button = egui::Button::new(dice_label).selected(random_mode_enabled);
-            let dice_response = ui.add(dice_button).on_hover_text(
-                "Play a random visible sample (click)\nToggle sticky random navigation (Shift+click)",
-            );
-            if dice_response.clicked() {
-                let modifiers = ui.input(|i| i.modifiers);
-                if modifiers.shift {
-                    self.controller.toggle_random_navigation_mode();
-                } else {
-                    self.controller.play_random_visible_sample();
-                }
-            }
-            let count_label = format!(
-                "{} item{}",
-                visible_count,
-                if visible_count == 1 { "" } else { "s" }
-            );
-            ui.allocate_ui_with_layout(
-                egui::vec2(ui.available_width(), 0.0),
-                egui::Layout::right_to_left(egui::Align::Center),
-                |ui| {
-                    ui.label(RichText::new(count_label).color(palette.text_muted).small());
-                },
-            );
-        });
-    }
 }
