@@ -65,13 +65,24 @@ impl EguiController {
             self.set_status("Source already added", StatusTone::Info);
             return Ok(());
         }
-        let source = SampleSource::new(normalized.clone());
+        let source = match crate::sample_sources::library::lookup_source_id_for_root(&normalized) {
+            Ok(Some(id)) => SampleSource::new_with_id(id, normalized.clone()),
+            Ok(None) => SampleSource::new(normalized.clone()),
+            Err(err) => {
+                self.set_status(
+                    format!("Could not check library history (continuing): {err}"),
+                    StatusTone::Warning,
+                );
+                SampleSource::new(normalized.clone())
+            }
+        };
         SourceDatabase::open(&normalized)
             .map_err(|err| format!("Failed to create database: {err}"))?;
         let _ = self.cache_db(&source);
         self.library.sources.push(source.clone());
         self.select_source(Some(source.id.clone()));
         self.persist_config("Failed to save config after adding source")?;
+        self.request_quick_sync();
         Ok(())
     }
 

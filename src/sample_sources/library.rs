@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{LazyLock, Mutex};
 
 use rusqlite::{Connection, Transaction, params};
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 mod schema;
@@ -27,6 +28,7 @@ const COLLECTION_EXPORT_PATHS_VERSION_KEY: &str = "collections_export_paths_vers
 const COLLECTION_EXPORT_PATHS_VERSION_V2: &str = "2";
 const COLLECTION_MEMBER_CLIP_ROOT_VERSION_KEY: &str = "collection_members_clip_root_version";
 const COLLECTION_MEMBER_CLIP_ROOT_VERSION_V1: &str = "1";
+const KNOWN_SOURCES_KEY: &str = "known_sources_v1";
 
 static LIBRARY_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
@@ -45,6 +47,8 @@ pub enum LibraryError {
     /// Failed to open or query the database.
     #[error("Library database query failed: {0}")]
     Sql(#[from] rusqlite::Error),
+    #[error("Library metadata parse failed: {0}")]
+    Json(#[from] serde_json::Error),
 }
 
 /// Load all sources and collections from the global library database, creating it if missing.
@@ -59,6 +63,16 @@ pub fn save(state: &LibraryState) -> Result<(), LibraryError> {
     let _guard = LIBRARY_LOCK.lock().expect("library lock mutex poisoned");
     let mut db = LibraryDatabase::open()?;
     db.replace_state(state)
+}
+
+/// Attempt to reuse a historical source id for the given root folder.
+///
+/// This allows removing and re-adding a source without creating a new `source_id::...` namespace
+/// (and therefore avoids re-analysis when files are unchanged).
+pub fn lookup_source_id_for_root(root: &Path) -> Result<Option<SourceId>, LibraryError> {
+    let _guard = LIBRARY_LOCK.lock().expect("library lock mutex poisoned");
+    let db = LibraryDatabase::open()?;
+    db.lookup_known_source_id(root)
 }
 
 struct LibraryDatabase {
@@ -99,6 +113,7 @@ impl LibraryDatabase {
         Self::replace_sources(&tx, &state.sources)?;
         Self::replace_collections(&tx, &state.collections)?;
         tx.commit().map_err(map_sql_error)?;
+        self.remember_known_sources(&state.sources)?;
         Ok(())
     }
 
@@ -203,14 +218,46 @@ impl LibraryDatabase {
             .prepare("INSERT INTO sources (id, root, sort_order) VALUES (?1, ?2, ?3)")
             .map_err(map_sql_error)?;
         for (idx, source) in sources.iter().enumerate() {
-            stmt.execute(params![
-                source.id.as_str(),
-                source.root.to_string_lossy(),
-                idx as i64
-            ])
-            .map_err(map_sql_error)?;
+            stmt.execute(params![source.id.as_str(), source.root.to_string_lossy(), idx as i64])
+                .map_err(map_sql_error)?;
         }
         Ok(())
+    }
+
+    fn lookup_known_source_id(&self, root: &Path) -> Result<Option<SourceId>, LibraryError> {
+        let normalized = normalize_path(root);
+        let needle = normalized.to_string_lossy().to_string();
+        let mappings = self.load_known_sources()?;
+        Ok(mappings
+            .into_iter()
+            .find(|entry| entry.root == needle)
+            .map(|entry| SourceId::from_string(entry.source_id)))
+    }
+
+    fn remember_known_sources(&mut self, sources: &[SampleSource]) -> Result<(), LibraryError> {
+        let mut mappings = self.load_known_sources()?;
+        for source in sources {
+            let normalized = normalize_path(&source.root);
+            let root = normalized.to_string_lossy().to_string();
+            if let Some(existing) = mappings.iter_mut().find(|entry| entry.root == root) {
+                existing.source_id = source.id.as_str().to_string();
+            } else {
+                mappings.push(KnownSourceMapping {
+                    root,
+                    source_id: source.id.as_str().to_string(),
+                });
+            }
+        }
+        mappings.sort_by(|a, b| a.root.cmp(&b.root));
+        self.set_metadata(KNOWN_SOURCES_KEY, &serde_json::to_string(&mappings)?)?;
+        Ok(())
+    }
+
+    fn load_known_sources(&self) -> Result<Vec<KnownSourceMapping>, LibraryError> {
+        let Some(value) = self.get_metadata(KNOWN_SOURCES_KEY)? else {
+            return Ok(Vec::new());
+        };
+        serde_json::from_str::<Vec<KnownSourceMapping>>(&value).or_else(|_| Ok(Vec::new()))
     }
 
     fn replace_collections(
@@ -285,6 +332,12 @@ impl LibraryDatabase {
         }
         Ok(())
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct KnownSourceMapping {
+    root: String,
+    source_id: String,
 }
 
 fn database_path() -> Result<PathBuf, LibraryError> {

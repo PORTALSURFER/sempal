@@ -96,9 +96,15 @@ impl EguiController {
             .analysis
             .start(self.runtime.jobs.message_sender());
         {
+            let source_ids: Vec<String> = self
+                .library
+                .sources
+                .iter()
+                .map(|source| source.id.as_str().to_string())
+                .collect();
             let tx = self.runtime.jobs.message_sender();
             std::thread::spawn(move || {
-                let result = super::analysis_jobs::enqueue_inference_jobs_for_all_sources();
+                let result = super::analysis_jobs::enqueue_inference_jobs_for_sources(&source_ids);
                 match result {
                     Ok((inserted, progress)) => {
                         if inserted > 0 {

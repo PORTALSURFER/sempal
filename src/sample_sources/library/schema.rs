@@ -398,7 +398,7 @@ impl LibraryDatabase {
         tx.commit().map_err(map_sql_error)
     }
 
-    fn get_metadata(&self, key: &str) -> Result<Option<String>, LibraryError> {
+    pub(super) fn get_metadata(&self, key: &str) -> Result<Option<String>, LibraryError> {
         self.connection
             .query_row(
                 "SELECT value FROM metadata WHERE key = ?1",
@@ -409,7 +409,7 @@ impl LibraryDatabase {
             .map_err(map_sql_error)
     }
 
-    fn set_metadata(&self, key: &str, value: &str) -> Result<(), LibraryError> {
+    pub(super) fn set_metadata(&self, key: &str, value: &str) -> Result<(), LibraryError> {
         self.connection
             .execute(
                 "INSERT INTO metadata (key, value)

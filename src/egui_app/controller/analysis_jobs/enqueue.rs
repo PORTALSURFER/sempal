@@ -153,37 +153,6 @@ pub(in crate::egui_app::controller) fn enqueue_jobs_for_source_backfill(
     Ok((inserted, progress))
 }
 
-pub(in crate::egui_app::controller) fn enqueue_inference_jobs_for_all_sources(
-) -> Result<(usize, AnalysisProgress), String> {
-    let db_path = library_db_path()?;
-    let mut conn = db::open_library_db(&db_path)?;
-
-    let latest_model_id: Option<String> = conn
-        .query_row(
-            "SELECT model_id
-             FROM models
-             ORDER BY created_at DESC, model_id DESC
-             LIMIT 1",
-            [],
-            |row| row.get(0),
-        )
-        .optional()
-        .map_err(|err| format!("Failed to query latest model id: {err}"))?;
-    let Some(model_id) = latest_model_id else {
-        return Ok((0, db::current_progress(&conn)?));
-    };
-
-    let jobs = collect_inference_jobs(&conn, &model_id, None)?;
-
-    if jobs.is_empty() {
-        return Ok((0, db::current_progress(&conn)?));
-    }
-    let created_at = now_epoch_seconds();
-    let inserted = db::enqueue_jobs(&mut conn, &jobs, db::INFERENCE_JOB_TYPE, created_at)?;
-    let progress = db::current_progress(&conn)?;
-    Ok((inserted, progress))
-}
-
 pub(in crate::egui_app::controller) fn enqueue_inference_jobs_for_sources(
     source_ids: &[String],
 ) -> Result<(usize, AnalysisProgress), String> {

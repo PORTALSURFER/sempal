@@ -138,3 +138,27 @@ fn applies_workload_pragmas_and_indices() {
         assert_eq!(idx.as_deref(), Some("idx_analysis_jobs_status_created_id"));
     });
 }
+
+#[test]
+fn reuses_known_source_id_for_same_root() {
+    let temp = tempdir().unwrap();
+    with_config_home(temp.path(), || {
+        let root = normalize_path(Path::new("some/root"));
+        let id = SourceId::new();
+        save(&LibraryState {
+            sources: vec![SampleSource::new_with_id(id.clone(), root.clone())],
+            collections: vec![],
+        })
+        .unwrap();
+
+        // Simulate removal by saving with no sources; mapping should still be remembered.
+        save(&LibraryState {
+            sources: vec![],
+            collections: vec![],
+        })
+        .unwrap();
+
+        let reused = lookup_source_id_for_root(&root).unwrap().expect("expected mapping");
+        assert_eq!(reused.as_str(), id.as_str());
+    });
+}
