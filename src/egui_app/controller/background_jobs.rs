@@ -268,12 +268,17 @@ impl EguiController {
                             }
                             self.ui.progress.total = progress.total();
                             self.ui.progress.completed = progress.completed();
+                            let jobs_completed = progress.completed();
+                            let jobs_total = progress.total();
+                            let samples_completed = progress.samples_completed();
+                            let samples_total = progress.samples_total;
+                            let mut detail = format!(
+                                "Jobs {jobs_completed}/{jobs_total} • Samples {samples_completed}/{samples_total}"
+                            );
                             if progress.failed > 0 {
-                                self.ui.progress.detail =
-                                    Some(format!("{} failed", progress.failed));
-                            } else {
-                                self.ui.progress.detail = None;
+                                detail.push_str(&format!(" • {} failed", progress.failed));
                             }
+                            self.ui.progress.detail = Some(detail);
                         }
                     }
                     super::AnalysisJobMessage::EnqueueFinished { inserted, progress } => {

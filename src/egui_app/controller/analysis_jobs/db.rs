@@ -72,6 +72,23 @@ pub(super) fn current_progress(conn: &Connection) -> Result<AnalysisProgress, St
             _ => {}
         }
     }
+
+    progress.samples_total = conn
+        .query_row("SELECT COUNT(DISTINCT sample_id) FROM analysis_jobs", [], |row| {
+            row.get::<_, i64>(0)
+        })
+        .map_err(|err| format!("Failed to query analysis sample total: {err}"))?
+        .max(0) as usize;
+    progress.samples_pending_or_running = conn
+        .query_row(
+            "SELECT COUNT(DISTINCT sample_id)
+             FROM analysis_jobs
+             WHERE status IN ('pending','running')",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .map_err(|err| format!("Failed to query analysis sample pending/running: {err}"))?
+        .max(0) as usize;
     Ok(progress)
 }
 
