@@ -108,3 +108,33 @@ fn creates_labels_user_table() {
         assert_eq!(exists.as_deref(), Some("labels_user"));
     });
 }
+
+#[test]
+fn applies_workload_pragmas_and_indices() {
+    let temp = tempdir().unwrap();
+    with_config_home(temp.path(), || {
+        let _ = load().unwrap();
+        let conn = Connection::open(database_path().unwrap()).unwrap();
+
+        let journal_mode: String = conn.query_row("PRAGMA journal_mode", [], |row| row.get(0)).unwrap();
+        assert_eq!(journal_mode.to_ascii_lowercase(), "wal");
+
+        let synchronous: i64 = conn.query_row("PRAGMA synchronous", [], |row| row.get(0)).unwrap();
+        assert_eq!(synchronous, 2, "expected PRAGMA synchronous=NORMAL (2)");
+
+        let busy_timeout: i64 = conn
+            .query_row("PRAGMA busy_timeout", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(busy_timeout, 5000);
+
+        let idx: Option<String> = conn
+            .query_row(
+                "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_analysis_jobs_status_created_id'",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .unwrap();
+        assert_eq!(idx.as_deref(), Some("idx_analysis_jobs_status_created_id"));
+    });
+}

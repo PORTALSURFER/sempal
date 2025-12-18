@@ -68,7 +68,11 @@ fn open_db(path: &std::path::Path) -> Result<Connection, rusqlite::Error> {
     conn.execute_batch(
         "PRAGMA journal_mode=WAL;
          PRAGMA synchronous = NORMAL;
-         PRAGMA foreign_keys=ON;",
+         PRAGMA foreign_keys=ON;
+         PRAGMA busy_timeout=5000;
+         PRAGMA temp_store=MEMORY;
+         PRAGMA cache_size=-64000;
+         PRAGMA mmap_size=268435456;",
     )?;
     Ok(conn)
 }

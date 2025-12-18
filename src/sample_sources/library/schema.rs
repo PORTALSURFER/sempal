@@ -10,7 +10,11 @@ impl LibraryDatabase {
             .execute_batch(
                 "PRAGMA journal_mode=WAL;
                  PRAGMA synchronous = NORMAL;
-                 PRAGMA foreign_keys=ON;",
+                 PRAGMA foreign_keys=ON;
+                 PRAGMA busy_timeout=5000;
+                 PRAGMA temp_store=MEMORY;
+                 PRAGMA cache_size=-64000;
+                 PRAGMA mmap_size=268435456;",
             )
             .map_err(map_sql_error)?;
         Ok(())
@@ -53,7 +57,11 @@ impl LibraryDatabase {
                     created_at INTEGER NOT NULL,
                     last_error TEXT,
                     UNIQUE(sample_id, job_type)
-                );
+                 );
+                 CREATE INDEX IF NOT EXISTS idx_analysis_jobs_status_created_id
+                    ON analysis_jobs (status, created_at, id);
+                 CREATE INDEX IF NOT EXISTS idx_analysis_jobs_status_sample_id
+                    ON analysis_jobs (status, sample_id);
                  CREATE TABLE IF NOT EXISTS samples (
                     sample_id TEXT PRIMARY KEY,
                     content_hash TEXT NOT NULL,

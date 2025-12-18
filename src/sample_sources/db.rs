@@ -211,7 +211,11 @@ impl SourceDatabase {
             .execute_batch(
                 "PRAGMA journal_mode=WAL;
              PRAGMA synchronous = NORMAL;
-             PRAGMA foreign_keys=ON;",
+             PRAGMA foreign_keys=ON;
+             PRAGMA busy_timeout=5000;
+             PRAGMA temp_store=MEMORY;
+             PRAGMA cache_size=-32000;
+             PRAGMA mmap_size=134217728;",
             )
             .map_err(map_sql_error)?;
         Ok(())
@@ -234,6 +238,12 @@ impl SourceDatabase {
             )
             .map_err(map_sql_error)?;
         ensure_optional_columns(&self.connection)?;
+        self.connection
+            .execute_batch(
+                "CREATE INDEX IF NOT EXISTS idx_wav_files_missing
+                 ON wav_files(path) WHERE missing != 0;",
+            )
+            .map_err(map_sql_error)?;
         Ok(())
     }
 }
@@ -418,6 +428,7 @@ fn ensure_optional_columns(connection: &Connection) -> Result<(), SourceDbError>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rusqlite::OptionalExtension;
     use tempfile::tempdir;
 
     #[test]
@@ -510,5 +521,33 @@ mod tests {
         db.set_missing(Path::new("one.wav"), false).unwrap();
         let rows = db.list_files().unwrap();
         assert!(!rows[0].missing);
+    }
+
+    #[test]
+    fn applies_workload_pragmas_and_indices() {
+        let dir = tempdir().unwrap();
+        let _db = SourceDatabase::open(dir.path()).unwrap();
+        let conn = Connection::open(dir.path().join(DB_FILE_NAME)).unwrap();
+
+        let journal_mode: String = conn.query_row("PRAGMA journal_mode", [], |row| row.get(0)).unwrap();
+        assert_eq!(journal_mode.to_ascii_lowercase(), "wal");
+
+        let synchronous: i64 = conn.query_row("PRAGMA synchronous", [], |row| row.get(0)).unwrap();
+        assert_eq!(synchronous, 2, "expected PRAGMA synchronous=NORMAL (2)");
+
+        let busy_timeout: i64 = conn
+            .query_row("PRAGMA busy_timeout", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(busy_timeout, 5000);
+
+        let idx: Option<String> = conn
+            .query_row(
+                "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_wav_files_missing'",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .unwrap();
+        assert_eq!(idx.as_deref(), Some("idx_wav_files_missing"));
     }
 }
