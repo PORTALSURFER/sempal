@@ -168,6 +168,7 @@ impl EguiController {
             },
             settings: AppSettingsState {
                 feature_flags: crate::sample_sources::config::FeatureFlags::default(),
+                model: crate::sample_sources::config::ModelSettings::default(),
                 updates: crate::sample_sources::config::UpdateSettings::default(),
                 audio_output: AudioOutputConfig::default(),
                 controls: crate::sample_sources::config::InteractionOptions::default(),

@@ -19,6 +19,8 @@ pub struct AppConfig {
     pub collections: Vec<Collection>,
     pub feature_flags: FeatureFlags,
     #[serde(default)]
+    pub model: ModelSettings,
+    #[serde(default)]
     pub updates: UpdateSettings,
     pub trash_folder: Option<PathBuf>,
     /// Optional default root used when creating collection export folders.
@@ -37,6 +39,8 @@ pub struct AppConfig {
 struct AppSettings {
     #[serde(default)]
     pub feature_flags: FeatureFlags,
+    #[serde(default)]
+    pub model: ModelSettings,
     #[serde(default)]
     pub updates: UpdateSettings,
     #[serde(default)]
@@ -60,6 +64,22 @@ pub struct FeatureFlags {
     pub collections_enabled: bool,
     #[serde(default = "default_true")]
     pub autoplay_selection: bool,
+}
+
+/// Global model inference preferences.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelSettings {
+    /// Below this confidence, predictions are assigned to `UNKNOWN`.
+    #[serde(default = "default_unknown_confidence_threshold")]
+    pub unknown_confidence_threshold: f32,
+}
+
+impl Default for ModelSettings {
+    fn default() -> Self {
+        Self {
+            unknown_confidence_threshold: default_unknown_confidence_threshold(),
+        }
+    }
 }
 
 /// Persisted preferences for update checks.
@@ -216,6 +236,7 @@ pub fn load_or_default() -> Result<AppConfig, ConfigError> {
         sources: library.sources,
         collections: library.collections,
         feature_flags: settings.feature_flags,
+        model: settings.model,
         updates: settings.updates,
         trash_folder: settings.trash_folder,
         collection_export_root: settings.collection_export_root,
@@ -245,6 +266,7 @@ pub fn save_to_path(config: &AppConfig, path: &Path) -> Result<(), ConfigError> 
     save_settings_to_path(
         &AppSettings {
             feature_flags: config.feature_flags.clone(),
+            model: config.model.clone(),
             updates: config.updates.clone(),
             trash_folder: config.trash_folder.clone(),
             collection_export_root: config.collection_export_root.clone(),
@@ -294,6 +316,7 @@ fn migrate_legacy_config(legacy_path: &Path, new_path: &Path) -> Result<AppSetti
     })?;
     let settings = AppSettings {
         feature_flags: legacy.feature_flags,
+        model: ModelSettings::default(),
         updates: UpdateSettings::default(),
         trash_folder: legacy.trash_folder,
         collection_export_root: None,
@@ -358,6 +381,10 @@ fn default_audio_output() -> AudioOutputConfig {
     AudioOutputConfig::default()
 }
 
+fn default_unknown_confidence_threshold() -> f32 {
+    0.8
+}
+
 fn default_volume() -> f32 {
     1.0
 }
@@ -380,6 +407,7 @@ impl Default for AppConfig {
             sources: Vec::new(),
             collections: Vec::new(),
             feature_flags: FeatureFlags::default(),
+            model: ModelSettings::default(),
             updates: UpdateSettings::default(),
             trash_folder: None,
             collection_export_root: None,
@@ -395,6 +423,7 @@ impl Default for AppSettings {
     fn default() -> Self {
         Self {
             feature_flags: FeatureFlags::default(),
+            model: ModelSettings::default(),
             updates: UpdateSettings::default(),
             trash_folder: None,
             collection_export_root: None,
@@ -455,6 +484,7 @@ mod tests {
                 sources: vec![SampleSource::new(PathBuf::from("old_source"))],
                 collections: vec![Collection::new("Old Collection")],
                 feature_flags: FeatureFlags::default(),
+                model: ModelSettings::default(),
                 updates: UpdateSettings::default(),
                 trash_folder: Some(PathBuf::from("trash_here")),
                 collection_export_root: None,
@@ -546,6 +576,23 @@ mod tests {
             save_to_path(&cfg, &path).unwrap();
             let loaded = super::load_settings_from(&path).unwrap();
             assert_eq!(loaded.collection_export_root, Some(root));
+        });
+    }
+
+    #[test]
+    fn model_settings_round_trip() {
+        let dir = tempdir().unwrap();
+        with_config_home(dir.path(), || {
+            let path = dir.path().join("cfg.toml");
+            let cfg = AppConfig {
+                model: ModelSettings {
+                    unknown_confidence_threshold: 0.91,
+                },
+                ..AppConfig::default()
+            };
+            save_to_path(&cfg, &path).unwrap();
+            let loaded = super::load_settings_from(&path).unwrap();
+            assert!((loaded.model.unknown_confidence_threshold - 0.91).abs() < f32::EPSILON);
         });
     }
 }

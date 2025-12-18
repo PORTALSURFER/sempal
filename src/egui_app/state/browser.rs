@@ -31,6 +31,8 @@ pub struct SampleBrowserState {
     pub category_filter: Option<String>,
     /// Minimum prediction confidence required when category filtering is active.
     pub confidence_threshold: f32,
+    /// When false, exclude rows predicted as `UNKNOWN` unless explicitly filtering to it.
+    pub include_unknowns: bool,
     /// Pending inline action for the sample browser rows.
     pub pending_action: Option<SampleBrowserActionPrompt>,
     /// Flag to request focus on the active inline rename editor.
@@ -57,6 +59,7 @@ impl Default for SampleBrowserState {
             random_navigation_mode: false,
             category_filter: None,
             confidence_threshold: 0.0,
+            include_unknowns: true,
             pending_action: None,
             rename_focus_requested: false,
         }

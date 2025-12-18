@@ -86,6 +86,11 @@ impl EguiApp {
                     .controller
                     .wav_label(entry_index)
                     .unwrap_or_else(|| view_model::sample_display_label(&path));
+                if let Some(prediction) = self.controller.cached_prediction_for_entry(entry_index)
+                    && prediction.class_id == "UNKNOWN"
+                {
+                    label.push_str(" • UNKNOWN");
+                }
                 if is_loaded {
                     label.push_str(" • loaded");
                 }

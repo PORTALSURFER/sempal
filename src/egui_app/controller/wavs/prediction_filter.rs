@@ -6,7 +6,7 @@ impl EguiController {
     pub(super) fn prepare_prediction_filter_cache(&mut self) {
         let category = self.ui.browser.category_filter.as_deref();
         let threshold = self.ui.browser.confidence_threshold.clamp(0.0, 1.0);
-        if category.is_none() && threshold <= 0.0 {
+        if category.is_none() && threshold <= 0.0 && self.ui.browser.include_unknowns {
             return;
         }
         let Some(source_id) = self.selection_state.ctx.selected_source.clone() else {
@@ -21,10 +21,23 @@ impl EguiController {
         self.prediction_filter_accepts_cached(entry_index)
     }
 
+    pub fn cached_prediction_for_entry(
+        &self,
+        entry_index: usize,
+    ) -> Option<&PredictedCategory> {
+        let source_id = self.selection_state.ctx.selected_source.as_ref()?;
+        self.ui_cache
+            .browser
+            .predictions
+            .get(source_id)
+            .and_then(|cache| cache.rows.get(entry_index))
+            .and_then(|pred| pred.as_ref())
+    }
+
     fn prediction_filter_accepts_cached(&self, entry_index: usize) -> bool {
         let category = self.ui.browser.category_filter.as_deref();
         let threshold = self.ui.browser.confidence_threshold.clamp(0.0, 1.0);
-        if category.is_none() && threshold <= 0.0 {
+        if category.is_none() && threshold <= 0.0 && self.ui.browser.include_unknowns {
             return true;
         }
         let Some(source_id) = self.selection_state.ctx.selected_source.clone() else {
@@ -36,6 +49,12 @@ impl EguiController {
         let Some(prediction) = cache.rows.get(entry_index).and_then(|p| p.as_ref()) else {
             return false;
         };
+        if !self.ui.browser.include_unknowns
+            && category != Some("UNKNOWN")
+            && prediction.class_id == "UNKNOWN"
+        {
+            return false;
+        }
         if let Some(category) = category
             && prediction.class_id != category
         {
@@ -58,7 +77,13 @@ impl EguiController {
             .browser
             .prediction_categories
             .as_ref()
-            .map(|cats| cats.classes.clone())
+            .map(|cats| {
+                let mut classes = cats.classes.clone();
+                if !classes.iter().any(|c| c == "UNKNOWN") {
+                    classes.insert(0, "UNKNOWN".to_string());
+                }
+                classes
+            })
             .unwrap_or_default()
     }
 
@@ -203,6 +228,14 @@ pub(super) fn set_confidence_threshold(controller: &mut EguiController, threshol
         return;
     }
     controller.ui.browser.confidence_threshold = threshold;
+    controller.rebuild_browser_lists();
+}
+
+pub(super) fn set_include_unknowns(controller: &mut EguiController, include: bool) {
+    if controller.ui.browser.include_unknowns == include {
+        return;
+    }
+    controller.ui.browser.include_unknowns = include;
     controller.rebuild_browser_lists();
 }
 

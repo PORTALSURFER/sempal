@@ -33,12 +33,17 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
         }
         if let Some(prediction) = app.controller.ui.waveform.predicted_category.as_ref() {
             ui.add_space(10.0);
+            let color = if prediction.class_id == "UNKNOWN" {
+                palette.accent_copper
+            } else {
+                palette.text_muted
+            };
             let label = RichText::new(format!(
                 "Category: {} ({:.0}%)",
                 prediction.class_id,
                 prediction.confidence * 100.0
             ))
-            .color(palette.text_muted);
+            .color(color);
             ui.label(label);
         }
     });

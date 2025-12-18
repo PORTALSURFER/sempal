@@ -2,6 +2,8 @@ use rusqlite::{Connection, OptionalExtension, params};
 
 use super::types::TopKProbability;
 
+const UNKNOWN_CLASS_ID: &str = "UNKNOWN";
+
 #[derive(Debug, Clone)]
 pub(super) struct CachedModel {
     pub(super) model_id: String,
@@ -46,6 +48,7 @@ pub(super) fn infer_and_upsert_prediction(
     content_hash: &str,
     features: &[f32],
     computed_at: i64,
+    unknown_confidence_threshold: f32,
 ) -> Result<(), String> {
     refresh_latest_model(conn, cache)?;
     let Some(cached) = cache.as_ref() else {
@@ -65,6 +68,12 @@ pub(super) fn infer_and_upsert_prediction(
         return Ok(());
     }
     let (top_class, confidence, topk) = topk_from_proba(&cached.model.classes, &proba, 5);
+    let threshold = unknown_confidence_threshold.clamp(0.0, 1.0);
+    let top_class = if threshold > 0.0 && confidence < threshold {
+        UNKNOWN_CLASS_ID.to_string()
+    } else {
+        top_class
+    };
     let topk_json = serde_json::to_string(&topk).map_err(|err| err.to_string())?;
 
     conn.execute(
@@ -183,4 +192,3 @@ mod tests {
         assert_eq!(cache.unwrap().model_id, "m1");
     }
 }
-

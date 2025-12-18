@@ -89,6 +89,11 @@ impl EguiController {
         prediction_filter::set_confidence_threshold(self, threshold);
     }
 
+    /// Toggle whether to include `UNKNOWN` predicted samples in the list.
+    pub fn set_include_unknowns(&mut self, include: bool) {
+        prediction_filter::set_include_unknowns(self, include);
+    }
+
     /// Select a wav by absolute index into the full wav list.
     pub fn select_wav_by_index(&mut self, index: usize) {
         selection_ops::select_wav_by_index(self, index);

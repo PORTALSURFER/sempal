@@ -6,6 +6,7 @@ impl EguiController {
     pub fn load_configuration(&mut self) -> Result<(), crate::sample_sources::config::ConfigError> {
         let cfg = crate::sample_sources::config::load_or_default()?;
         self.settings.feature_flags = cfg.feature_flags;
+        self.settings.model = cfg.model;
         self.settings.updates = cfg.updates.clone();
         self.settings.trash_folder = cfg.trash_folder.clone();
         self.settings.collection_export_root = cfg.collection_export_root.clone();
@@ -82,6 +83,9 @@ impl EguiController {
         self.maybe_check_for_updates_on_startup();
         self.runtime
             .analysis
+            .set_unknown_confidence_threshold(self.settings.model.unknown_confidence_threshold);
+        self.runtime
+            .analysis
             .start(self.runtime.jobs.message_sender());
         Ok(())
     }
@@ -98,6 +102,7 @@ impl EguiController {
             sources: self.library.sources.clone(),
             collections: self.library.collections.clone(),
             feature_flags: self.settings.feature_flags.clone(),
+            model: self.settings.model.clone(),
             updates: self.settings.updates.clone(),
             trash_folder: self.settings.trash_folder.clone(),
             collection_export_root: self.settings.collection_export_root.clone(),

@@ -4,6 +4,7 @@ use super::types::{AnalysisJobMessage, AnalysisProgress};
 use std::path::PathBuf;
 use std::sync::{
     Arc,
+    atomic::AtomicU32,
     atomic::{AtomicBool, Ordering},
     mpsc::Sender,
 };
@@ -14,6 +15,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 pub(in crate::egui_app::controller) struct AnalysisWorkerPool {
     cancel: Arc<AtomicBool>,
     shutdown: Arc<AtomicBool>,
+    unknown_threshold_bits: Arc<AtomicU32>,
     threads: Vec<JoinHandle<()>>,
 }
 
@@ -22,8 +24,15 @@ impl AnalysisWorkerPool {
         Self {
             cancel: Arc::new(AtomicBool::new(false)),
             shutdown: Arc::new(AtomicBool::new(false)),
+            unknown_threshold_bits: Arc::new(AtomicU32::new(0.8f32.to_bits())),
             threads: Vec::new(),
         }
+    }
+
+    pub(in crate::egui_app::controller) fn set_unknown_confidence_threshold(&self, value: f32) {
+        let clamped = value.clamp(0.0, 1.0);
+        self.unknown_threshold_bits
+            .store(clamped.to_bits(), Ordering::Relaxed);
     }
 
     pub(in crate::egui_app::controller) fn start(
@@ -43,6 +52,7 @@ impl AnalysisWorkerPool {
                     message_tx.clone(),
                     self.cancel.clone(),
                     self.shutdown.clone(),
+                    self.unknown_threshold_bits.clone(),
                 ));
             }
             self.threads.push(spawn_progress_poller(
@@ -143,6 +153,7 @@ fn spawn_worker(
     tx: Sender<super::super::jobs::JobMessage>,
     cancel: Arc<AtomicBool>,
     shutdown: Arc<AtomicBool>,
+    unknown_threshold_bits: Arc<AtomicU32>,
 ) -> JoinHandle<()> {
     std::thread::spawn(move || {
         let db_path = match library_db_path() {
@@ -176,7 +187,8 @@ fn spawn_worker(
                 sleep(Duration::from_millis(25));
                 continue;
             };
-            let outcome = run_job(&conn, &job, &mut model_cache);
+            let unknown_threshold = f32::from_bits(unknown_threshold_bits.load(Ordering::Relaxed));
+            let outcome = run_job(&conn, &job, &mut model_cache, unknown_threshold);
             match outcome {
                 Ok(()) => {
                     let _ = db::mark_done(&conn, job.id);
@@ -199,6 +211,7 @@ fn run_job(
     conn: &rusqlite::Connection,
     job: &db::ClaimedJob,
     model_cache: &mut Option<inference::CachedModel>,
+    unknown_confidence_threshold: f32,
 ) -> Result<(), String> {
     if job.job_type != db::DEFAULT_JOB_TYPE {
         return Err(format!("Unknown job type: {}", job.job_type));
@@ -253,6 +266,7 @@ fn run_job(
         content_hash,
         &vector,
         computed_at,
+        unknown_confidence_threshold,
     )?;
     Ok(())
 }

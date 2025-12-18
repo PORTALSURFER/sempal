@@ -76,6 +76,15 @@ impl EguiApp {
                 if response.changed() {
                     self.controller.set_confidence_threshold(threshold);
                 }
+
+                ui.add_space(ui.spacing().item_spacing.x);
+                let mut include_unknowns = self.controller.ui.browser.include_unknowns;
+                let response = ui
+                    .checkbox(&mut include_unknowns, "Include UNKNOWN")
+                    .on_hover_text("Toggle whether low-confidence predictions (UNKNOWN) are shown");
+                if response.changed() {
+                    self.controller.set_include_unknowns(include_unknowns);
+                }
             }
 
             ui.add_space(ui.spacing().item_spacing.x);
