@@ -20,16 +20,30 @@ pub(crate) fn decode_for_analysis(path: &Path) -> Result<AnalysisAudio, String> 
 }
 
 pub(crate) fn probe_duration_seconds(path: &Path) -> Result<Option<f32>, String> {
+    if path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("wav"))
+    {
+        let reader = hound::WavReader::open(path)
+            .map_err(|err| format!("WAV probe failed for {}: {err}", path.display()))?;
+        let spec = reader.spec();
+        let sample_rate = spec.sample_rate.max(1) as f32;
+        let channels = spec.channels.max(1) as f32;
+        let samples = reader.duration() as f32;
+        return Ok(Some((samples / channels / sample_rate).max(0.0)));
+    }
+
     let file = File::open(path).map_err(|err| format!("Failed to open {}: {err}", path.display()))?;
-    let byte_len = file
-        .metadata()
-        .map(|meta| meta.len())
-        .unwrap_or(0) as u64;
-    let hint = path.extension().and_then(|ext| ext.to_str()).map(str::to_ascii_lowercase);
+    let byte_len = file.metadata().map(|meta| meta.len()).unwrap_or(0) as u64;
+    let hint = path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(str::to_ascii_lowercase);
     let mut builder = Decoder::builder()
         .with_data(BufReader::new(file))
         .with_byte_len(byte_len)
-        .with_seekable(true);
+        .with_seekable(false);
     if let Some(hint) = hint.as_deref() {
         builder = builder.with_hint(hint);
     }
@@ -256,6 +270,25 @@ mod tests {
         assert_eq!(out.len(), 4);
         assert!((out[0] - 0.0).abs() < 1e-6);
         assert!((out[out.len() - 1] - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn wav_probe_reads_duration_without_full_decode() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("probe.wav");
+        let spec = WavSpec {
+            channels: 1,
+            sample_rate: 48_000,
+            bits_per_sample: 16,
+            sample_format: SampleFormat::Int,
+        };
+        let mut writer = WavWriter::create(&path, spec).unwrap();
+        for _ in 0..48_000 {
+            writer.write_sample::<i16>(0).unwrap();
+        }
+        writer.finalize().unwrap();
+        let duration = probe_duration_seconds(&path).unwrap().unwrap();
+        assert!((duration - 1.0).abs() < 1e-3);
     }
 
     #[test]

@@ -2,6 +2,7 @@ use super::db;
 use super::inference;
 use super::types::{AnalysisJobMessage, AnalysisProgress};
 use std::path::PathBuf;
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::{
     Arc,
     atomic::AtomicU32,
@@ -200,13 +201,16 @@ fn spawn_worker(
             let unknown_threshold = f32::from_bits(unknown_threshold_bits.load(Ordering::Relaxed));
             let max_analysis_duration_seconds =
                 f32::from_bits(max_duration_bits.load(Ordering::Relaxed));
-            let outcome = run_job(
-                &conn,
-                &job,
-                &mut model_cache,
-                unknown_threshold,
-                max_analysis_duration_seconds,
-            );
+            let outcome = catch_unwind(AssertUnwindSafe(|| {
+                run_job(
+                    &conn,
+                    &job,
+                    &mut model_cache,
+                    unknown_threshold,
+                    max_analysis_duration_seconds,
+                )
+            }))
+            .unwrap_or_else(|_| Err("Analysis worker panicked".to_string()));
             match outcome {
                 Ok(()) => {
                     let _ = db::mark_done(&conn, job.id);
@@ -260,7 +264,7 @@ fn run_analysis_job(
     };
     let absolute = root.join(&relative_path);
     if max_analysis_duration_seconds.is_finite() && max_analysis_duration_seconds > 0.0 {
-        if let Some(duration_seconds) = crate::analysis::audio::probe_duration_seconds(&absolute)?
+        if let Ok(Some(duration_seconds)) = crate::analysis::audio::probe_duration_seconds(&absolute)
         {
             if duration_seconds > max_analysis_duration_seconds {
                 db::update_analysis_metadata(
