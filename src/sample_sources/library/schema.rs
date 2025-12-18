@@ -17,6 +17,9 @@ impl LibraryDatabase {
                  PRAGMA mmap_size=268435456;",
             )
             .map_err(map_sql_error)?;
+        if let Err(err) = crate::sqlite_ext::try_load_optional_extension(&self.connection) {
+            tracing::debug!("SQLite extension not loaded: {err}");
+        }
         Ok(())
     }
 

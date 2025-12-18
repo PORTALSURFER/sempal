@@ -74,5 +74,6 @@ fn open_db(path: &std::path::Path) -> Result<Connection, rusqlite::Error> {
          PRAGMA cache_size=-64000;
          PRAGMA mmap_size=268435456;",
     )?;
+    let _ = crate::sqlite_ext::try_load_optional_extension(&conn);
     Ok(conn)
 }

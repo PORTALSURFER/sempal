@@ -12,6 +12,7 @@ pub(super) struct BenchReport {
     pub(super) system: SystemInfo,
     pub(super) analysis: Option<super::analysis_throughput::AnalysisBenchResult>,
     pub(super) query: Option<super::query_latency::QueryBenchResult>,
+    pub(super) feature_blob_decode: Option<super::feature_blob_decode::FeatureBlobDecodeBenchResult>,
 }
 
 impl BenchReport {
@@ -28,6 +29,7 @@ impl BenchReport {
             system,
             analysis: None,
             query: None,
+            feature_blob_decode: None,
         }
     }
 }
@@ -50,4 +52,3 @@ impl SystemInfo {
         }
     }
 }
-

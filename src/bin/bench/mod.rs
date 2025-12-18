@@ -1,4 +1,5 @@
 mod analysis_throughput;
+mod feature_blob_decode;
 mod options;
 mod query_latency;
 mod report;
@@ -21,6 +22,7 @@ pub(super) fn run(args: Vec<String>) -> Result<(), String> {
     if report.params.query {
         report.query = Some(query_latency::run(&report.params)?);
     }
+    report.feature_blob_decode = Some(feature_blob_decode::run(&report.params)?);
     report.total_elapsed_ms = started_at.elapsed().as_millis() as u64;
 
     let json = serde_json::to_vec_pretty(&report)

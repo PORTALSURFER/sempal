@@ -68,6 +68,20 @@ pub(crate) fn encode_f32_le_blob(values: &[f32]) -> Vec<u8> {
     out
 }
 
+/// Decode a little-endian `f32` blob (as stored in SQLite) into a `Vec<f32>`.
+pub fn decode_f32_le_blob(blob: &[u8]) -> Result<Vec<f32>, String> {
+    if blob.len() % 4 != 0 {
+        return Err("Feature blob length is not a multiple of 4 bytes".to_string());
+    }
+    let mut out = Vec::with_capacity(blob.len() / 4);
+    for chunk in blob.chunks_exact(4) {
+        out.push(f32::from_le_bytes(
+            chunk.try_into().expect("chunk size verified"),
+        ));
+    }
+    Ok(out)
+}
+
 fn push_stats(out: &mut Vec<f32>, stats: &super::frequency_domain::Stats) {
     out.push(stats.mean);
     out.push(stats.std);
@@ -153,5 +167,19 @@ mod tests {
         assert_eq!(blob.len(), 8);
         assert_eq!(&blob[0..4], &1.0_f32.to_le_bytes());
         assert_eq!(&blob[4..8], &(-2.5_f32).to_le_bytes());
+    }
+
+    #[test]
+    fn decode_blob_round_trips() {
+        let values = [1.0_f32, -2.5_f32, 0.125_f32];
+        let blob = encode_f32_le_blob(&values);
+        let decoded = decode_f32_le_blob(&blob).unwrap();
+        assert_eq!(decoded, values);
+    }
+
+    #[test]
+    fn decode_blob_rejects_non_multiple_of_4() {
+        let err = decode_f32_le_blob(&[1, 2, 3]).unwrap_err();
+        assert!(err.to_ascii_lowercase().contains("multiple of 4"));
     }
 }

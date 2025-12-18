@@ -23,6 +23,8 @@ pub mod dataset;
 pub mod ml;
 /// Sample source management.
 pub mod sample_sources;
+/// Optional SQLite extension loader.
+pub mod sqlite_ext;
 /// Selection math utilities.
 pub mod selection;
 /// Update check + installer helper utilities.

@@ -8,6 +8,7 @@ pub(crate) mod time_domain;
 pub(crate) mod vector;
 
 pub use vector::{FEATURE_VECTOR_LEN_V1, FEATURE_VERSION_V1};
+pub use vector::decode_f32_le_blob;
 
 use std::path::Path;
 

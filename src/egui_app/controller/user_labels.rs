@@ -118,6 +118,9 @@ fn open_library_db(path: &Path) -> Result<Connection, String> {
          PRAGMA mmap_size=268435456;",
     )
     .map_err(|err| format!("Failed to set library DB pragmas: {err}"))?;
+    if let Err(err) = crate::sqlite_ext::try_load_optional_extension(&conn) {
+        tracing::debug!("SQLite extension not loaded: {err}");
+    }
     Ok(conn)
 }
 
