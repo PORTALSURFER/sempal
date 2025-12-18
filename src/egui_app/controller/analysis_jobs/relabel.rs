@@ -1,61 +1,74 @@
+use super::db;
 use super::open_library_db;
 use super::weak_labels::{SampleWeakLabels, WeakLabelInsert};
-use rusqlite::params;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+#[derive(Clone, Copy, Debug, Default)]
+pub(in crate::egui_app::controller) struct RelabelOutcome {
+    pub(in crate::egui_app::controller) processed: usize,
+    pub(in crate::egui_app::controller) skipped: usize,
+}
+
 pub(in crate::egui_app::controller) fn recompute_weak_labels_for_source(
-    source_id: &crate::sample_sources::SourceId,
-) -> Result<usize, String> {
-    recompute_weak_labels_for_sources(std::slice::from_ref(source_id))
+    source: &crate::sample_sources::SampleSource,
+) -> Result<RelabelOutcome, String> {
+    recompute_weak_labels_for_sources(std::slice::from_ref(source))
 }
 
 pub(in crate::egui_app::controller) fn recompute_weak_labels_for_sources(
-    source_ids: &[crate::sample_sources::SourceId],
-) -> Result<usize, String> {
+    sources: &[crate::sample_sources::SampleSource],
+) -> Result<RelabelOutcome, String> {
     let db_path = crate::app_dirs::app_root_dir()
         .map_err(|err| err.to_string())?
         .join(crate::sample_sources::library::LIBRARY_DB_FILE_NAME);
     let mut conn = open_library_db(&db_path)?;
 
-    let mut total_updated = 0usize;
-    for source_id in source_ids {
-        total_updated += recompute_weak_labels_for_source_with_conn(&mut conn, source_id)?;
+    let mut outcome = RelabelOutcome::default();
+    for source in sources {
+        let per_source = recompute_weak_labels_for_source_with_conn(&mut conn, source)?;
+        outcome.processed += per_source.processed;
+        outcome.skipped += per_source.skipped;
     }
-    Ok(total_updated)
+    Ok(outcome)
 }
 
 fn recompute_weak_labels_for_source_with_conn(
     conn: &mut rusqlite::Connection,
-    source_id: &crate::sample_sources::SourceId,
-) -> Result<usize, String> {
-    let prefix = format!("{}::", source_id.as_str());
-    let prefix_end = format!("{prefix}\u{10FFFF}");
+    source: &crate::sample_sources::SampleSource,
+) -> Result<RelabelOutcome, String> {
+    let source_db =
+        crate::sample_sources::SourceDatabase::open(&source.root).map_err(|err| err.to_string())?;
+    let mut entries = source_db.list_files().map_err(|err| err.to_string())?;
+    entries.retain(|entry| !entry.missing);
+    if entries.is_empty() {
+        return Ok(RelabelOutcome::default());
+    }
 
-    let sample_ids: Vec<String> = {
-        let mut stmt = conn
-            .prepare("SELECT sample_id FROM samples WHERE sample_id >= ?1 AND sample_id < ?2")
-            .map_err(|err| format!("Prepare sample_id query failed: {err}"))?;
-        let mut rows = stmt
-            .query(params![prefix, prefix_end])
-            .map_err(|err| format!("Query sample_ids failed: {err}"))?;
-        let mut sample_ids = Vec::new();
-        while let Some(row) = rows
-            .next()
-            .map_err(|err| format!("Query sample_ids failed: {err}"))?
-        {
-            let sample_id: String = row.get(0).map_err(|err| err.to_string())?;
-            sample_ids.push(sample_id);
-        }
-        sample_ids
-    };
-
-    let mut samples: Vec<SampleWeakLabels> = Vec::with_capacity(sample_ids.len());
-    for sample_id in sample_ids {
-        let Some((_, relative_path)) = sample_id.split_once("::") else {
-            continue;
+    let mut sample_metadata: Vec<db::SampleMetadata> = Vec::with_capacity(entries.len());
+    let mut weak_labels: Vec<SampleWeakLabels> = Vec::with_capacity(entries.len());
+    let mut skipped = 0usize;
+    for entry in entries {
+        let sample_id = db::build_sample_id(source.id.as_str(), &entry.relative_path);
+        let content_hash = match entry.content_hash {
+            Some(hash) if !hash.trim().is_empty() => hash,
+            _ => {
+                let absolute = source.root.join(&entry.relative_path);
+                let Ok(hash) = compute_content_hash(&absolute) else {
+                    skipped += 1;
+                    continue;
+                };
+                hash
+            }
         };
-        let relative_path = std::path::PathBuf::from(relative_path);
-        let labels = crate::labeling::weak::weak_labels_for_relative_path(&relative_path)
+
+        sample_metadata.push(db::SampleMetadata {
+            sample_id: sample_id.clone(),
+            content_hash: content_hash.clone(),
+            size: entry.file_size,
+            mtime_ns: entry.modified_ns,
+        });
+
+        let labels = crate::labeling::weak::weak_labels_for_relative_path(&entry.relative_path)
             .into_iter()
             .map(|label| WeakLabelInsert {
                 class_id: label.class_id.to_string(),
@@ -63,18 +76,23 @@ fn recompute_weak_labels_for_source_with_conn(
                 rule_id: label.rule_id.to_string(),
             })
             .collect();
-        samples.push(SampleWeakLabels { sample_id, labels });
+        weak_labels.push(SampleWeakLabels { sample_id, labels });
     }
+
+    db::upsert_samples(conn, &sample_metadata)?;
 
     let created_at = now_epoch_seconds();
     super::weak_labels::replace_weak_labels_for_samples(
         conn,
-        &samples,
+        &weak_labels,
         crate::labeling::weak::WEAK_LABEL_RULESET_VERSION,
         created_at,
     )?;
 
-    Ok(samples.len())
+    Ok(RelabelOutcome {
+        processed: weak_labels.len(),
+        skipped,
+    })
 }
 
 fn now_epoch_seconds() -> i64 {
@@ -82,4 +100,22 @@ fn now_epoch_seconds() -> i64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs() as i64
+}
+
+fn compute_content_hash(path: &std::path::Path) -> Result<String, String> {
+    use std::io::Read;
+    let mut file = std::fs::File::open(path)
+        .map_err(|err| format!("Open for hashing failed ({}): {err}", path.display()))?;
+    let mut hasher = blake3::Hasher::new();
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        let read = file
+            .read(&mut buffer)
+            .map_err(|err| format!("Read for hashing failed ({}): {err}", path.display()))?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    Ok(hasher.finalize().to_hex().to_string())
 }

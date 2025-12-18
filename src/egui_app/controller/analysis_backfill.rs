@@ -28,20 +28,21 @@ impl EguiController {
     }
 
     pub fn recompute_weak_labels_for_selected_source(&mut self) {
-        let Some(source_id) = self.selection_state.ctx.selected_source.clone() else {
+        let Some(source) = self.current_source() else {
             self.set_status("Select a source first", StatusTone::Warning);
             return;
         };
-        let source_id_str = source_id.to_string();
+        let source_id_str = source.id.to_string();
         let tx = self.runtime.jobs.message_sender();
         std::thread::spawn(move || {
-            let result = super::analysis_jobs::recompute_weak_labels_for_source(&source_id);
+            let result = super::analysis_jobs::recompute_weak_labels_for_source(&source);
             match result {
-                Ok(updated_samples) => {
+                Ok(outcome) => {
                     let _ = tx.send(super::jobs::JobMessage::Analysis(
                         super::analysis_jobs::AnalysisJobMessage::WeakLabelsRecomputed {
                             source_id: source_id_str,
-                            updated_samples,
+                            processed: outcome.processed,
+                            skipped: outcome.skipped,
                         },
                     ));
                 }
@@ -59,17 +60,18 @@ impl EguiController {
             self.set_status("No sources configured", StatusTone::Warning);
             return;
         }
-        let source_ids: Vec<_> = self.library.sources.iter().map(|s| s.id.clone()).collect();
-        let sources = source_ids.len();
+        let sources_list = self.library.sources.clone();
+        let sources = sources_list.len();
         let tx = self.runtime.jobs.message_sender();
         std::thread::spawn(move || {
-            let result = super::analysis_jobs::recompute_weak_labels_for_sources(&source_ids);
+            let result = super::analysis_jobs::recompute_weak_labels_for_sources(&sources_list);
             match result {
-                Ok(updated_samples) => {
+                Ok(outcome) => {
                     let _ = tx.send(super::jobs::JobMessage::Analysis(
                         super::analysis_jobs::AnalysisJobMessage::WeakLabelsRecomputedAll {
                             sources,
-                            updated_samples,
+                            processed: outcome.processed,
+                            skipped: outcome.skipped,
                         },
                     ));
                 }

@@ -311,24 +311,40 @@ impl EguiController {
                     }
                     super::AnalysisJobMessage::WeakLabelsRecomputed {
                         source_id,
-                        updated_samples,
+                        processed,
+                        skipped,
                     } => {
                         let source_id = crate::sample_sources::SourceId::from_string(source_id);
                         self.ui_cache.browser.features.remove(&source_id);
                         self.rebuild_browser_lists();
+                        let skipped_label = if skipped > 0 {
+                            format!(" (skipped {skipped})")
+                        } else {
+                            String::new()
+                        };
                         self.set_status(
-                            format!("Recomputed weak labels for {updated_samples} samples (selected source)"),
+                            format!(
+                                "Recomputed weak labels for {processed} files (selected source){skipped_label}"
+                            ),
                             StatusTone::Info,
                         );
                     }
                     super::AnalysisJobMessage::WeakLabelsRecomputedAll {
                         sources,
-                        updated_samples,
+                        processed,
+                        skipped,
                     } => {
                         self.ui_cache.browser.features.clear();
                         self.rebuild_browser_lists();
+                        let skipped_label = if skipped > 0 {
+                            format!(" (skipped {skipped})")
+                        } else {
+                            String::new()
+                        };
                         self.set_status(
-                            format!("Recomputed weak labels for {updated_samples} samples across {sources} sources"),
+                            format!(
+                                "Recomputed weak labels for {processed} files across {sources} sources{skipped_label}"
+                            ),
                             StatusTone::Info,
                         );
                     }

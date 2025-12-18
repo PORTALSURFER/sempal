@@ -166,8 +166,20 @@ fn upsert_samples_tx(
                 content_hash = excluded.content_hash,
                 size = excluded.size,
                 mtime_ns = excluded.mtime_ns,
-                duration_seconds = NULL,
-                sr_used = NULL",
+                duration_seconds = CASE
+                    WHEN samples.content_hash != excluded.content_hash
+                      OR samples.size != excluded.size
+                      OR samples.mtime_ns != excluded.mtime_ns
+                    THEN NULL
+                    ELSE samples.duration_seconds
+                END,
+                sr_used = CASE
+                    WHEN samples.content_hash != excluded.content_hash
+                      OR samples.size != excluded.size
+                      OR samples.mtime_ns != excluded.mtime_ns
+                    THEN NULL
+                    ELSE samples.sr_used
+                END",
         )
         .map_err(|err| format!("Failed to prepare samples upsert statement: {err}"))?;
     let mut changed = 0usize;
