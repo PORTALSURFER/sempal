@@ -6,14 +6,20 @@ use std::path::PathBuf;
 
 impl EguiController {
     pub(super) fn prepare_prediction_filter_cache(&mut self) {
+        let Some(source_id) = self.selection_state.ctx.selected_source.clone() else {
+            return;
+        };
+        if self.ui.browser.review_mode {
+            let _ = self.ensure_prediction_cache(&source_id);
+            let _ = self.ensure_prediction_categories();
+            self.ui_cache.browser.prediction_categories_checked = true;
+            return;
+        }
         let category = self.ui.browser.category_filter.as_deref();
         let threshold = self.ui.browser.confidence_threshold.clamp(0.0, 1.0);
         if category.is_none() && threshold <= 0.0 && self.ui.browser.include_unknowns {
             return;
         }
-        let Some(source_id) = self.selection_state.ctx.selected_source.clone() else {
-            return;
-        };
         let _ = self.ensure_prediction_cache(&source_id);
         let _ = self.ensure_prediction_categories();
         self.ui_cache.browser.prediction_categories_checked = true;
@@ -37,6 +43,9 @@ impl EguiController {
     }
 
     fn prediction_filter_accepts_cached(&self, entry_index: usize) -> bool {
+        if self.ui.browser.review_mode {
+            return self.review_filter_accepts_cached(entry_index);
+        }
         let category = self.ui.browser.category_filter.as_deref();
         let threshold = self.ui.browser.confidence_threshold.clamp(0.0, 1.0);
         if category.is_none() && threshold <= 0.0 && self.ui.browser.include_unknowns {
@@ -66,6 +75,30 @@ impl EguiController {
             return false;
         }
         true
+    }
+
+    fn review_filter_accepts_cached(&self, entry_index: usize) -> bool {
+        let category = self.ui.browser.category_filter.as_deref();
+        let max_confidence = self.ui.browser.review_max_confidence.clamp(0.0, 1.0);
+        let Some(source_id) = self.selection_state.ctx.selected_source.clone() else {
+            return true;
+        };
+        let Some(cache) = self.ui_cache.browser.predictions.get(&source_id) else {
+            return self.ui.browser.review_include_unpredicted;
+        };
+        let prediction = cache.rows.get(entry_index).and_then(|p| p.as_ref());
+        let Some(prediction) = prediction else {
+            return category.is_none() && self.ui.browser.review_include_unpredicted;
+        };
+        if let Some(category) = category
+            && prediction.class_id != category
+        {
+            return false;
+        }
+        if prediction.class_id == "UNKNOWN" {
+            return true;
+        }
+        prediction.confidence < max_confidence
     }
 
     pub fn prediction_categories(&mut self) -> Vec<String> {
@@ -243,6 +276,31 @@ pub(super) fn set_include_unknowns(controller: &mut EguiController, include: boo
         return;
     }
     controller.ui.browser.include_unknowns = include;
+    controller.rebuild_browser_lists();
+}
+
+pub(super) fn set_review_mode(controller: &mut EguiController, enabled: bool) {
+    if controller.ui.browser.review_mode == enabled {
+        return;
+    }
+    controller.ui.browser.review_mode = enabled;
+    controller.rebuild_browser_lists();
+}
+
+pub(super) fn set_review_max_confidence(controller: &mut EguiController, value: f32) {
+    let value = value.clamp(0.0, 1.0);
+    if (controller.ui.browser.review_max_confidence - value).abs() < f32::EPSILON {
+        return;
+    }
+    controller.ui.browser.review_max_confidence = value;
+    controller.rebuild_browser_lists();
+}
+
+pub(super) fn set_review_include_unpredicted(controller: &mut EguiController, include: bool) {
+    if controller.ui.browser.review_include_unpredicted == include {
+        return;
+    }
+    controller.ui.browser.review_include_unpredicted = include;
     controller.rebuild_browser_lists();
 }
 

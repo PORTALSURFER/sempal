@@ -22,6 +22,26 @@ impl EguiController {
         self.rebuild_browser_lists();
         Ok(())
     }
+
+    pub(crate) fn apply_review_category_hotkey_slot(&mut self, slot: usize) -> Result<(), String> {
+        if !self.ui.browser.review_mode {
+            return Err("Enable Review low conf to use category hotkeys".to_string());
+        }
+        let Some(visible_row) = self.focused_browser_row() else {
+            return Err("Focus a sample to label it".to_string());
+        };
+        let action_rows = self.action_rows_from_primary(visible_row);
+        let class_id = class_id_for_review_slot(self, slot)?;
+        self.set_user_category_override_for_visible_rows(&action_rows, class_id.as_deref())?;
+
+        let total = self.ui.browser.visible.len();
+        if total == 0 {
+            return Ok(());
+        }
+        let next_row = visible_row.min(total.saturating_sub(1));
+        self.focus_browser_row_only(next_row);
+        Ok(())
+    }
 }
 
 fn selected_source_id(controller: &EguiController) -> Result<SourceId, String> {
@@ -31,6 +51,24 @@ fn selected_source_id(controller: &EguiController) -> Result<SourceId, String> {
         .selected_source
         .clone()
         .ok_or_else(|| "No source selected".to_string())
+}
+
+fn class_id_for_review_slot(controller: &mut EguiController, slot: usize) -> Result<Option<String>, String> {
+    if slot == 0 {
+        return Ok(None);
+    }
+    let categories = controller.prediction_categories();
+    let mut categories: Vec<String> = categories
+        .into_iter()
+        .filter(|c| c != "UNKNOWN")
+        .collect();
+    categories.dedup();
+    let idx = slot.saturating_sub(1);
+    let class_id = categories
+        .get(idx)
+        .cloned()
+        .ok_or_else(|| "No category mapped to that key".to_string())?;
+    Ok(Some(class_id))
 }
 
 fn sample_ids_for_visible_rows(

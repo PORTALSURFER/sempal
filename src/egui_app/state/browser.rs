@@ -33,6 +33,12 @@ pub struct SampleBrowserState {
     pub confidence_threshold: f32,
     /// When false, exclude rows predicted as `UNKNOWN` unless explicitly filtering to it.
     pub include_unknowns: bool,
+    /// When enabled, show only low-confidence samples for fast review.
+    pub review_mode: bool,
+    /// Maximum confidence to include during review mode.
+    pub review_max_confidence: f32,
+    /// When true, include samples that have no prediction row yet.
+    pub review_include_unpredicted: bool,
     /// Pending inline action for the sample browser rows.
     pub pending_action: Option<SampleBrowserActionPrompt>,
     /// Flag to request focus on the active inline rename editor.
@@ -60,6 +66,9 @@ impl Default for SampleBrowserState {
             category_filter: None,
             confidence_threshold: 0.0,
             include_unknowns: true,
+            review_mode: false,
+            review_max_confidence: 0.55,
+            review_include_unpredicted: true,
             pending_action: None,
             rename_focus_requested: false,
         }

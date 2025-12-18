@@ -94,6 +94,21 @@ impl EguiController {
         prediction_filter::set_include_unknowns(self, include);
     }
 
+    /// Toggle low-confidence review mode, filtering visible rows to questionable predictions.
+    pub fn set_review_mode(&mut self, enabled: bool) {
+        prediction_filter::set_review_mode(self, enabled);
+    }
+
+    /// Set the max confidence threshold used by low-confidence review mode.
+    pub fn set_review_max_confidence(&mut self, value: f32) {
+        prediction_filter::set_review_max_confidence(self, value);
+    }
+
+    /// Toggle whether review mode includes samples without predictions.
+    pub fn set_review_include_unpredicted(&mut self, include: bool) {
+        prediction_filter::set_review_include_unpredicted(self, include);
+    }
+
     /// Select a wav by absolute index into the full wav list.
     pub fn select_wav_by_index(&mut self, index: usize) {
         selection_ops::select_wav_by_index(self, index);

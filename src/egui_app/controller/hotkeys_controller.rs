@@ -204,6 +204,56 @@ impl HotkeysActions for HotkeysController<'_> {
                     );
                 }
             }
+            HotkeyCommand::ReviewAssignCategory1 => {
+                if matches!(focus, FocusContext::SampleBrowser) {
+                    self.apply_review_category_hotkey(1);
+                }
+            }
+            HotkeyCommand::ReviewAssignCategory2 => {
+                if matches!(focus, FocusContext::SampleBrowser) {
+                    self.apply_review_category_hotkey(2);
+                }
+            }
+            HotkeyCommand::ReviewAssignCategory3 => {
+                if matches!(focus, FocusContext::SampleBrowser) {
+                    self.apply_review_category_hotkey(3);
+                }
+            }
+            HotkeyCommand::ReviewAssignCategory4 => {
+                if matches!(focus, FocusContext::SampleBrowser) {
+                    self.apply_review_category_hotkey(4);
+                }
+            }
+            HotkeyCommand::ReviewAssignCategory5 => {
+                if matches!(focus, FocusContext::SampleBrowser) {
+                    self.apply_review_category_hotkey(5);
+                }
+            }
+            HotkeyCommand::ReviewAssignCategory6 => {
+                if matches!(focus, FocusContext::SampleBrowser) {
+                    self.apply_review_category_hotkey(6);
+                }
+            }
+            HotkeyCommand::ReviewAssignCategory7 => {
+                if matches!(focus, FocusContext::SampleBrowser) {
+                    self.apply_review_category_hotkey(7);
+                }
+            }
+            HotkeyCommand::ReviewAssignCategory8 => {
+                if matches!(focus, FocusContext::SampleBrowser) {
+                    self.apply_review_category_hotkey(8);
+                }
+            }
+            HotkeyCommand::ReviewAssignCategory9 => {
+                if matches!(focus, FocusContext::SampleBrowser) {
+                    self.apply_review_category_hotkey(9);
+                }
+            }
+            HotkeyCommand::ReviewClearCategoryOverride => {
+                if matches!(focus, FocusContext::SampleBrowser) {
+                    self.apply_review_category_hotkey(0);
+                }
+            }
         }
     }
 }
@@ -326,6 +376,12 @@ impl HotkeysController<'_> {
             return;
         };
         if let Err(err) = self.add_sample_to_collection(&collection_id, path.as_path()) {
+            self.set_status(err, StatusTone::Error);
+        }
+    }
+
+    fn apply_review_category_hotkey(&mut self, slot: usize) {
+        if let Err(err) = self.apply_review_category_hotkey_slot(slot) {
             self.set_status(err, StatusTone::Error);
         }
     }

@@ -41,6 +41,10 @@ impl EguiController {
                 })
                 .map(|(index, _)| index)
                 .collect();
+            let mut visible = visible;
+            if self.ui.browser.review_mode {
+                visible.sort_by(|a, b| self.review_compare(*a, *b));
+            }
             let selected_visible =
                 focused_index.and_then(|idx| visible.iter().position(|i| *i == idx));
             let loaded_visible =
@@ -89,6 +93,24 @@ impl EguiController {
         let selected_visible = focused_index.and_then(|idx| visible.iter().position(|i| *i == idx));
         let loaded_visible = loaded_index.and_then(|idx| visible.iter().position(|i| *i == idx));
         (visible, selected_visible, loaded_visible)
+    }
+
+    fn review_compare(&self, a: usize, b: usize) -> std::cmp::Ordering {
+        let (a_bucket, a_conf) = self.review_bucket_and_confidence(a);
+        let (b_bucket, b_conf) = self.review_bucket_and_confidence(b);
+        a_bucket
+            .cmp(&b_bucket)
+            .then_with(|| a_conf.total_cmp(&b_conf))
+            .then_with(|| a.cmp(&b))
+    }
+
+    fn review_bucket_and_confidence(&self, entry_index: usize) -> (u8, f32) {
+        let prediction = self.cached_prediction_for_entry(entry_index);
+        match prediction {
+            None => (0, 0.0),
+            Some(pred) if pred.class_id == "UNKNOWN" => (1, pred.confidence),
+            Some(pred) => (2, pred.confidence),
+        }
     }
 
     fn browser_filter_accepts(&self, tag: SampleTag) -> bool {
