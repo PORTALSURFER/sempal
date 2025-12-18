@@ -94,7 +94,7 @@ impl EguiApp {
                     ui.add_space(ui.spacing().item_spacing.x);
                     let mut max_conf = self.controller.ui.browser.review_max_confidence;
                     let slider = egui::Slider::new(&mut max_conf, 0.0..=1.0)
-                        .show_value(false)
+                        .show_value(true)
                         .text("≤");
                     let response = ui.add(slider).on_hover_text("Maximum confidence to include");
                     if response.changed() {
@@ -130,7 +130,7 @@ impl EguiApp {
                 } else {
                     let mut threshold = self.controller.ui.browser.confidence_threshold;
                     let slider = egui::Slider::new(&mut threshold, 0.0..=1.0)
-                        .show_value(false)
+                        .show_value(true)
                         .text("Conf");
                     let response = ui.add(slider).on_hover_text("Minimum prediction confidence");
                     if response.changed() {

@@ -120,8 +120,8 @@ pub(super) fn begin_retrain_from_app(controller: &mut EguiController) {
         .begin_model_training(ModelTrainingJob {
             db_path,
             source_ids,
-            min_confidence: 0.75,
-            pack_depth: 1,
+            min_confidence: controller.retrain_min_confidence(),
+            pack_depth: controller.retrain_pack_depth(),
             train_options,
         });
 }

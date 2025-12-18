@@ -21,6 +21,8 @@ pub struct AppConfig {
     #[serde(default)]
     pub model: ModelSettings,
     #[serde(default)]
+    pub training: TrainingSettings,
+    #[serde(default)]
     pub analysis: AnalysisSettings,
     #[serde(default)]
     pub updates: UpdateSettings,
@@ -43,6 +45,8 @@ struct AppSettings {
     pub feature_flags: FeatureFlags,
     #[serde(default)]
     pub model: ModelSettings,
+    #[serde(default)]
+    pub training: TrainingSettings,
     #[serde(default)]
     pub analysis: AnalysisSettings,
     #[serde(default)]
@@ -82,6 +86,26 @@ impl Default for ModelSettings {
     fn default() -> Self {
         Self {
             unknown_confidence_threshold: default_unknown_confidence_threshold(),
+        }
+    }
+}
+
+/// Controls how in-app retraining selects weak labels from filenames/folders.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrainingSettings {
+    /// Minimum `labels_weak.confidence` to include when exporting a training dataset.
+    #[serde(default = "default_retrain_min_confidence")]
+    pub retrain_min_confidence: f32,
+    /// Folder depth used to derive `pack_id` and split datasets to prevent leakage.
+    #[serde(default = "default_retrain_pack_depth")]
+    pub retrain_pack_depth: usize,
+}
+
+impl Default for TrainingSettings {
+    fn default() -> Self {
+        Self {
+            retrain_min_confidence: default_retrain_min_confidence(),
+            retrain_pack_depth: default_retrain_pack_depth(),
         }
     }
 }
@@ -257,6 +281,7 @@ pub fn load_or_default() -> Result<AppConfig, ConfigError> {
         collections: library.collections,
         feature_flags: settings.feature_flags,
         model: settings.model,
+        training: settings.training,
         analysis: settings.analysis,
         updates: settings.updates,
         trash_folder: settings.trash_folder,
@@ -288,6 +313,7 @@ pub fn save_to_path(config: &AppConfig, path: &Path) -> Result<(), ConfigError> 
         &AppSettings {
             feature_flags: config.feature_flags.clone(),
             model: config.model.clone(),
+            training: config.training.clone(),
             analysis: config.analysis.clone(),
             updates: config.updates.clone(),
             trash_folder: config.trash_folder.clone(),
@@ -339,6 +365,7 @@ fn migrate_legacy_config(legacy_path: &Path, new_path: &Path) -> Result<AppSetti
     let settings = AppSettings {
         feature_flags: legacy.feature_flags,
         model: ModelSettings::default(),
+        training: TrainingSettings::default(),
         analysis: AnalysisSettings::default(),
         updates: UpdateSettings::default(),
         trash_folder: legacy.trash_folder,
@@ -408,6 +435,14 @@ fn default_unknown_confidence_threshold() -> f32 {
     0.8
 }
 
+fn default_retrain_min_confidence() -> f32 {
+    0.75
+}
+
+fn default_retrain_pack_depth() -> usize {
+    1
+}
+
 fn default_max_analysis_duration_seconds() -> f32 {
     30.0
 }
@@ -435,6 +470,7 @@ impl Default for AppConfig {
             collections: Vec::new(),
             feature_flags: FeatureFlags::default(),
             model: ModelSettings::default(),
+            training: TrainingSettings::default(),
             analysis: AnalysisSettings::default(),
             updates: UpdateSettings::default(),
             trash_folder: None,
@@ -452,6 +488,7 @@ impl Default for AppSettings {
         Self {
             feature_flags: FeatureFlags::default(),
             model: ModelSettings::default(),
+            training: TrainingSettings::default(),
             analysis: AnalysisSettings::default(),
             updates: UpdateSettings::default(),
             trash_folder: None,
@@ -514,6 +551,7 @@ mod tests {
                 collections: vec![Collection::new("Old Collection")],
                 feature_flags: FeatureFlags::default(),
                 model: ModelSettings::default(),
+                training: TrainingSettings::default(),
                 analysis: AnalysisSettings::default(),
                 updates: UpdateSettings::default(),
                 trash_folder: Some(PathBuf::from("trash_here")),
@@ -623,6 +661,25 @@ mod tests {
             save_to_path(&cfg, &path).unwrap();
             let loaded = super::load_settings_from(&path).unwrap();
             assert!((loaded.model.unknown_confidence_threshold - 0.91).abs() < f32::EPSILON);
+        });
+    }
+
+    #[test]
+    fn training_settings_round_trip() {
+        let dir = tempdir().unwrap();
+        with_config_home(dir.path(), || {
+            let path = dir.path().join("cfg.toml");
+            let cfg = AppConfig {
+                training: TrainingSettings {
+                    retrain_min_confidence: 0.42,
+                    retrain_pack_depth: 3,
+                },
+                ..AppConfig::default()
+            };
+            save_to_path(&cfg, &path).unwrap();
+            let loaded = super::load_settings_from(&path).unwrap();
+            assert!((loaded.training.retrain_min_confidence - 0.42).abs() < f32::EPSILON);
+            assert_eq!(loaded.training.retrain_pack_depth, 3);
         });
     }
 }

@@ -1,6 +1,6 @@
 use super::*;
 use crate::egui_app::controller::controller_state::{
-    AnalysisJobStatus, FeatureCache, FeatureStatus,
+    AnalysisJobStatus, FeatureCache, FeatureStatus, WeakLabelInfo,
 };
 use rusqlite::{OptionalExtension, params};
 use std::path::PathBuf;
@@ -62,14 +62,31 @@ impl EguiController {
 
         let mut stmt = conn
             .prepare(
-                "SELECT s.sample_id,
+                "WITH best_weak AS (
+                    SELECT l.sample_id, l.class_id, l.confidence, l.rule_id
+                    FROM labels_weak l
+                    WHERE l.ruleset_version = 1
+                      AND l.class_id = (
+                        SELECT l2.class_id
+                        FROM labels_weak l2
+                        WHERE l2.sample_id = l.sample_id
+                          AND l2.ruleset_version = 1
+                        ORDER BY l2.confidence DESC, l2.class_id ASC
+                        LIMIT 1
+                      )
+                )
+                 SELECT s.sample_id,
                         s.duration_seconds,
                         s.sr_used,
                         CASE WHEN f.sample_id IS NULL THEN 0 ELSE 1 END AS has_features_v1,
-                        j.status
+                        j.status,
+                        w.class_id,
+                        w.confidence,
+                        w.rule_id
                  FROM samples s
                  LEFT JOIN features f ON f.sample_id = s.sample_id AND f.feat_version = 1
                  LEFT JOIN analysis_jobs j ON j.sample_id = s.sample_id AND j.job_type = ?1
+                 LEFT JOIN best_weak w ON w.sample_id = s.sample_id
                  WHERE s.sample_id >= ?2 AND s.sample_id < ?3",
             )
             .map_err(|err| format!("Prepare feature cache query failed: {err}"))?;
@@ -85,6 +102,12 @@ impl EguiController {
             let sr_used: Option<i64> = row.get(2).map_err(|err| err.to_string())?;
             let has_features_v1: i64 = row.get(3).map_err(|err| err.to_string())?;
             let status: Option<String> = row.get(4).optional().map_err(|err| err.to_string())?;
+            let weak_class_id: Option<String> =
+                row.get(5).optional().map_err(|err| err.to_string())?;
+            let weak_confidence: Option<f64> =
+                row.get(6).optional().map_err(|err| err.to_string())?;
+            let weak_rule_id: Option<String> =
+                row.get(7).optional().map_err(|err| err.to_string())?;
 
             let Some(relative_path) = sample_id.split_once("::").map(|(_, p)| p) else {
                 continue;
@@ -94,11 +117,20 @@ impl EguiController {
                 continue;
             };
             let analysis_status = status.as_deref().and_then(parse_job_status);
+            let weak_label = match (weak_class_id, weak_confidence, weak_rule_id) {
+                (Some(class_id), Some(confidence), Some(rule_id)) => Some(WeakLabelInfo {
+                    class_id,
+                    confidence: confidence as f32,
+                    rule_id,
+                }),
+                _ => None,
+            };
             cache.rows[idx] = Some(FeatureStatus {
                 has_features_v1: has_features_v1 != 0,
                 duration_seconds: duration_seconds.map(|s| s as f32),
                 sr_used,
                 analysis_status,
+                weak_label,
             });
         }
 

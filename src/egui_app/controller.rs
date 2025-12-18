@@ -25,6 +25,7 @@ mod hotkeys_controller;
 mod interaction_options;
 mod jobs;
 mod loading;
+mod model_options;
 mod model_training;
 mod os_explorer;
 mod playback;
@@ -175,6 +176,7 @@ impl EguiController {
             settings: AppSettingsState {
                 feature_flags: crate::sample_sources::config::FeatureFlags::default(),
                 model: crate::sample_sources::config::ModelSettings::default(),
+                training: crate::sample_sources::config::TrainingSettings::default(),
                 analysis: crate::sample_sources::config::AnalysisSettings::default(),
                 updates: crate::sample_sources::config::UpdateSettings::default(),
                 audio_output: AudioOutputConfig::default(),

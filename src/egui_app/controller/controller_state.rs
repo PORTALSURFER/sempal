@@ -76,6 +76,7 @@ pub(super) struct SelectionContextState {
 pub(super) struct AppSettingsState {
     pub(super) feature_flags: crate::sample_sources::config::FeatureFlags,
     pub(super) model: crate::sample_sources::config::ModelSettings,
+    pub(super) training: crate::sample_sources::config::TrainingSettings,
     pub(super) analysis: crate::sample_sources::config::AnalysisSettings,
     pub(super) updates: crate::sample_sources::config::UpdateSettings,
     pub(super) audio_output: AudioOutputConfig,
@@ -135,6 +136,14 @@ pub(crate) struct FeatureStatus {
     pub(crate) duration_seconds: Option<f32>,
     pub(crate) sr_used: Option<i64>,
     pub(crate) analysis_status: Option<AnalysisJobStatus>,
+    pub(crate) weak_label: Option<WeakLabelInfo>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct WeakLabelInfo {
+    pub(crate) class_id: String,
+    pub(crate) confidence: f32,
+    pub(crate) rule_id: String,
 }
 
 pub(crate) struct FeatureCache {

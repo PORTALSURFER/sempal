@@ -177,10 +177,16 @@ impl EguiApp {
                             .controller
                             .cached_category_for_entry(entry_index)
                             .unwrap_or_else(|| ("—".to_string(), false));
+                        let pred_confidence = self
+                            .controller
+                            .cached_prediction_for_entry(entry_index)
+                            .map(|p| p.confidence);
                         let category_label = if category == "—" {
                             "—".to_string()
                         } else if is_override {
                             format!("{category} (user)")
+                        } else if let Some(conf) = pred_confidence {
+                            format!("{category} {:.2}", conf)
                         } else {
                             category.clone()
                         };
@@ -254,17 +260,30 @@ impl EguiApp {
                         let (label, hover, color) = match status {
                             Some(status) if status.has_features_v1 => (
                                 "v1".to_string(),
-                                format!(
-                                    "Features: v1{}\n{}",
-                                    status
-                                        .duration_seconds
-                                        .map(|s| format!("\nDuration: {:.2}s", s))
-                                        .unwrap_or_default(),
-                                    status
-                                        .sr_used
-                                        .map(|sr| format!("SR used: {sr}"))
-                                        .unwrap_or_else(|| "SR used: —".to_string())
-                                ),
+                                {
+                                    let mut lines = Vec::new();
+                                    lines.push("Features: v1".to_string());
+                                    lines.push(
+                                        status
+                                            .duration_seconds
+                                            .map(|s| format!("Duration: {:.2}s", s))
+                                            .unwrap_or_else(|| "Duration: —".to_string()),
+                                    );
+                                    lines.push(
+                                        status
+                                            .sr_used
+                                            .map(|sr| format!("SR used: {sr}"))
+                                            .unwrap_or_else(|| "SR used: —".to_string()),
+                                    );
+                                    if let Some(weak) = &status.weak_label {
+                                        lines.push(format!(
+                                            "Weak label: {} ({:.2})",
+                                            weak.class_id, weak.confidence
+                                        ));
+                                        lines.push(format!("Weak rule: {}", weak.rule_id));
+                                    }
+                                    lines.join("\n")
+                                },
                                 palette.text_muted,
                             ),
                             Some(status)
