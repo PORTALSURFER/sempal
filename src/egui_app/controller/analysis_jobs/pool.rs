@@ -213,9 +213,19 @@ fn run_job(
     model_cache: &mut Option<inference::CachedModel>,
     unknown_confidence_threshold: f32,
 ) -> Result<(), String> {
-    if job.job_type != db::DEFAULT_JOB_TYPE {
-        return Err(format!("Unknown job type: {}", job.job_type));
+    match job.job_type.as_str() {
+        db::DEFAULT_JOB_TYPE => run_analysis_job(conn, job, model_cache, unknown_confidence_threshold),
+        db::INFERENCE_JOB_TYPE => run_inference_job(conn, job, model_cache, unknown_confidence_threshold),
+        _ => Err(format!("Unknown job type: {}", job.job_type)),
     }
+}
+
+fn run_analysis_job(
+    conn: &rusqlite::Connection,
+    job: &db::ClaimedJob,
+    model_cache: &mut Option<inference::CachedModel>,
+    unknown_confidence_threshold: f32,
+) -> Result<(), String> {
     let (source_id, relative_path) = db::parse_sample_id(&job.sample_id)?;
     let Some(root) = db::source_root_for(conn, &source_id)? else {
         return Err(format!("Source not found for job sample_id={}", job.sample_id));
@@ -248,10 +258,7 @@ fn run_job(
     }
     let vector = crate::analysis::vector::to_f32_vector_v1(&features);
     let blob = crate::analysis::vector::encode_f32_le_blob(&vector);
-    let computed_at = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_else(|_| Duration::from_secs(0))
-        .as_secs() as i64;
+    let computed_at = now_epoch_seconds();
     db::upsert_analysis_features(
         conn,
         &job.sample_id,
@@ -269,6 +276,64 @@ fn run_job(
         unknown_confidence_threshold,
     )?;
     Ok(())
+}
+
+fn run_inference_job(
+    conn: &rusqlite::Connection,
+    job: &db::ClaimedJob,
+    model_cache: &mut Option<inference::CachedModel>,
+    unknown_confidence_threshold: f32,
+) -> Result<(), String> {
+    let content_hash = job
+        .content_hash
+        .as_deref()
+        .ok_or_else(|| format!("Missing content_hash for inference job {}", job.sample_id))?;
+    let current_hash = db::sample_content_hash(conn, &job.sample_id)?;
+    if current_hash.as_deref() != Some(content_hash) {
+        return Ok(());
+    }
+    let vec_blob = load_feature_blob(conn, &job.sample_id)?;
+    let features = decode_f32le_feature_row(&vec_blob)?;
+    let computed_at = now_epoch_seconds();
+    inference::infer_and_upsert_prediction(
+        conn,
+        model_cache,
+        &job.sample_id,
+        content_hash,
+        &features,
+        computed_at,
+        unknown_confidence_threshold,
+    )?;
+    Ok(())
+}
+
+fn load_feature_blob(conn: &rusqlite::Connection, sample_id: &str) -> Result<Vec<u8>, String> {
+    conn.query_row(
+        "SELECT vec_blob FROM features WHERE sample_id = ?1",
+        rusqlite::params![sample_id],
+        |row| row.get::<_, Vec<u8>>(0),
+    )
+    .map_err(|err| format!("Failed to load feature blob for {sample_id}: {err}"))
+}
+
+fn decode_f32le_feature_row(blob: &[u8]) -> Result<Vec<f32>, String> {
+    if blob.len() % 4 != 0 {
+        return Err("Feature blob length is not a multiple of 4 bytes".to_string());
+    }
+    let mut out = Vec::with_capacity(blob.len() / 4);
+    for chunk in blob.chunks_exact(4) {
+        out.push(f32::from_le_bytes(
+            chunk.try_into().expect("chunk size verified"),
+        ));
+    }
+    Ok(out)
+}
+
+fn now_epoch_seconds() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_else(|_| Duration::from_secs(0))
+        .as_secs() as i64
 }
 
 fn library_db_path() -> Result<PathBuf, String> {

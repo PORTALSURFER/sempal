@@ -11,5 +11,6 @@ mod weak_labels;
 pub(super) use pool::AnalysisWorkerPool;
 pub(super) use enqueue::enqueue_jobs_for_source;
 pub(super) use enqueue::enqueue_jobs_for_source_backfill;
+pub(super) use enqueue::enqueue_inference_jobs_for_all_sources;
 pub(super) use failures::failed_samples_for_source;
 pub(super) use types::AnalysisJobMessage;

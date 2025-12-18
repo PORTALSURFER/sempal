@@ -232,6 +232,16 @@ impl EguiController {
                                     .analysis_failures
                                     .insert(source_id, failures);
                             }
+                            if let Some(source_id) = self.selection_state.ctx.selected_source.clone()
+                            {
+                                self.ui_cache.browser.predictions.remove(&source_id);
+                                if self.ui.browser.category_filter.is_some()
+                                    || self.ui.browser.confidence_threshold > 0.0
+                                    || !self.ui.browser.include_unknowns
+                                {
+                                    self.rebuild_browser_lists();
+                                }
+                            }
                             if self.ui.progress.task == Some(ProgressTaskKind::Analysis) {
                                 self.clear_progress();
                             }

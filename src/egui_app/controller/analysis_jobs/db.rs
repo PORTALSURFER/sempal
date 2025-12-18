@@ -3,6 +3,7 @@ use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use std::path::{Path, PathBuf};
 
 pub(super) const DEFAULT_JOB_TYPE: &str = "wav_metadata_v1";
+pub(super) const INFERENCE_JOB_TYPE: &str = "inference_v1";
 
 #[derive(Clone, Debug)]
 pub(super) struct ClaimedJob {

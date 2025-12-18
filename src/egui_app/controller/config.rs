@@ -87,6 +87,29 @@ impl EguiController {
         self.runtime
             .analysis
             .start(self.runtime.jobs.message_sender());
+        {
+            let tx = self.runtime.jobs.message_sender();
+            std::thread::spawn(move || {
+                let result = super::analysis_jobs::enqueue_inference_jobs_for_all_sources();
+                match result {
+                    Ok((inserted, progress)) => {
+                        if inserted > 0 {
+                            let _ = tx.send(super::jobs::JobMessage::Analysis(
+                                super::analysis_jobs::AnalysisJobMessage::EnqueueFinished {
+                                    inserted,
+                                    progress,
+                                },
+                            ));
+                        }
+                    }
+                    Err(err) => {
+                        let _ = tx.send(super::jobs::JobMessage::Analysis(
+                            super::analysis_jobs::AnalysisJobMessage::EnqueueFailed(err),
+                        ));
+                    }
+                }
+            });
+        }
         Ok(())
     }
 

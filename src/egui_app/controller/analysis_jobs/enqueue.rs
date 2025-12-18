@@ -1,6 +1,6 @@
 use super::db;
 use super::types::AnalysisProgress;
-use rusqlite::params;
+use rusqlite::{OptionalExtension, params};
 use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -148,6 +148,59 @@ pub(in crate::egui_app::controller) fn enqueue_jobs_for_source_backfill(
         created_at,
     )?;
     let inserted = db::enqueue_jobs(&mut conn, &jobs, db::DEFAULT_JOB_TYPE, created_at)?;
+    let progress = db::current_progress(&conn)?;
+    Ok((inserted, progress))
+}
+
+pub(in crate::egui_app::controller) fn enqueue_inference_jobs_for_all_sources(
+) -> Result<(usize, AnalysisProgress), String> {
+    let db_path = library_db_path()?;
+    let mut conn = db::open_library_db(&db_path)?;
+
+    let latest_model_id: Option<String> = conn
+        .query_row(
+            "SELECT model_id
+             FROM models
+             ORDER BY created_at DESC, model_id DESC
+             LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|err| format!("Failed to query latest model id: {err}"))?;
+    let Some(model_id) = latest_model_id else {
+        return Ok((0, db::current_progress(&conn)?));
+    };
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT f.sample_id, s.content_hash
+             FROM features f
+             JOIN samples s ON s.sample_id = f.sample_id
+             LEFT JOIN predictions p
+               ON p.sample_id = f.sample_id AND p.model_id = ?1
+             WHERE f.feat_version = ?2
+               AND (p.sample_id IS NULL OR p.content_hash != s.content_hash)
+             ORDER BY f.sample_id ASC",
+        )
+        .map_err(|err| format!("Failed to prepare inference enqueue query: {err}"))?;
+    let mut jobs: Vec<(String, String)> = Vec::new();
+    let rows = stmt
+        .query_map(
+            params![model_id, crate::analysis::FEATURE_VERSION_V1],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+        )
+        .map_err(|err| format!("Failed to query inference rows: {err}"))?;
+    for row in rows {
+        jobs.push(row.map_err(|err| format!("Failed to decode inference row: {err}"))?);
+    }
+    drop(stmt);
+
+    if jobs.is_empty() {
+        return Ok((0, db::current_progress(&conn)?));
+    }
+    let created_at = now_epoch_seconds();
+    let inserted = db::enqueue_jobs(&mut conn, &jobs, db::INFERENCE_JOB_TYPE, created_at)?;
     let progress = db::current_progress(&conn)?;
     Ok((inserted, progress))
 }
