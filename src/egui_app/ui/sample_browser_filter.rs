@@ -60,6 +60,15 @@ impl EguiApp {
             }
 
             ui.add_space(ui.spacing().item_spacing.x);
+            let relabel_all_btn = egui::Button::new("Recompute labels (all)");
+            let relabel_all_btn = ui
+                .add_enabled(self.controller.has_any_sources(), relabel_all_btn)
+                .on_hover_text("Re-run filename/folder heuristics for all sources");
+            if relabel_all_btn.clicked() {
+                self.controller.recompute_weak_labels_for_all_sources();
+            }
+
+            ui.add_space(ui.spacing().item_spacing.x);
             let categories = self.controller.prediction_categories();
             if !categories.is_empty() {
                 let mut selected = self.controller.ui.browser.category_filter.clone();

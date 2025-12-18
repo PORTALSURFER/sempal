@@ -53,4 +53,36 @@ impl EguiController {
             }
         });
     }
+
+    pub fn recompute_weak_labels_for_all_sources(&mut self) {
+        if self.library.sources.is_empty() {
+            self.set_status("No sources configured", StatusTone::Warning);
+            return;
+        }
+        let source_ids: Vec<_> = self.library.sources.iter().map(|s| s.id.clone()).collect();
+        let sources = source_ids.len();
+        let tx = self.runtime.jobs.message_sender();
+        std::thread::spawn(move || {
+            let result = super::analysis_jobs::recompute_weak_labels_for_sources(&source_ids);
+            match result {
+                Ok(updated_samples) => {
+                    let _ = tx.send(super::jobs::JobMessage::Analysis(
+                        super::analysis_jobs::AnalysisJobMessage::WeakLabelsRecomputedAll {
+                            sources,
+                            updated_samples,
+                        },
+                    ));
+                }
+                Err(err) => {
+                    let _ = tx.send(super::jobs::JobMessage::Analysis(
+                        super::analysis_jobs::AnalysisJobMessage::WeakLabelsRecomputeFailed(err),
+                    ));
+                }
+            }
+        });
+    }
+
+    pub fn has_any_sources(&self) -> bool {
+        !self.library.sources.is_empty()
+    }
 }

@@ -63,6 +63,11 @@ pub(in crate::egui_app::controller) enum AnalysisJobMessage {
         source_id: String,
         updated_samples: usize,
     },
+    /// Weak labels were recomputed for all sources.
+    WeakLabelsRecomputedAll {
+        sources: usize,
+        updated_samples: usize,
+    },
     /// Weak-label recompute failed.
     WeakLabelsRecomputeFailed(String),
     /// Latest prediction loaded for a selected sample.

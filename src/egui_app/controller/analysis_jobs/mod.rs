@@ -17,4 +17,5 @@ pub(super) use enqueue::enqueue_jobs_for_source_missing_features;
 pub(super) use failures::failed_samples_for_source;
 pub(super) use pool::AnalysisWorkerPool;
 pub(in crate::egui_app::controller) use relabel::recompute_weak_labels_for_source;
+pub(in crate::egui_app::controller) use relabel::recompute_weak_labels_for_sources;
 pub(super) use types::AnalysisJobMessage;

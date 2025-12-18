@@ -6,11 +6,28 @@ use std::time::{SystemTime, UNIX_EPOCH};
 pub(in crate::egui_app::controller) fn recompute_weak_labels_for_source(
     source_id: &crate::sample_sources::SourceId,
 ) -> Result<usize, String> {
+    recompute_weak_labels_for_sources(std::slice::from_ref(source_id))
+}
+
+pub(in crate::egui_app::controller) fn recompute_weak_labels_for_sources(
+    source_ids: &[crate::sample_sources::SourceId],
+) -> Result<usize, String> {
     let db_path = crate::app_dirs::app_root_dir()
         .map_err(|err| err.to_string())?
         .join(crate::sample_sources::library::LIBRARY_DB_FILE_NAME);
     let mut conn = open_library_db(&db_path)?;
 
+    let mut total_updated = 0usize;
+    for source_id in source_ids {
+        total_updated += recompute_weak_labels_for_source_with_conn(&mut conn, source_id)?;
+    }
+    Ok(total_updated)
+}
+
+fn recompute_weak_labels_for_source_with_conn(
+    conn: &mut rusqlite::Connection,
+    source_id: &crate::sample_sources::SourceId,
+) -> Result<usize, String> {
     let prefix = format!("{}::", source_id.as_str());
     let prefix_end = format!("{prefix}\u{10FFFF}");
 
@@ -51,7 +68,7 @@ pub(in crate::egui_app::controller) fn recompute_weak_labels_for_source(
 
     let created_at = now_epoch_seconds();
     super::weak_labels::replace_weak_labels_for_samples(
-        &mut conn,
+        conn,
         &samples,
         crate::labeling::weak::WEAK_LABEL_RULESET_VERSION,
         created_at,

@@ -317,7 +317,18 @@ impl EguiController {
                         self.ui_cache.browser.features.remove(&source_id);
                         self.rebuild_browser_lists();
                         self.set_status(
-                            format!("Recomputed weak labels for {updated_samples} samples"),
+                            format!("Recomputed weak labels for {updated_samples} samples (selected source)"),
+                            StatusTone::Info,
+                        );
+                    }
+                    super::AnalysisJobMessage::WeakLabelsRecomputedAll {
+                        sources,
+                        updated_samples,
+                    } => {
+                        self.ui_cache.browser.features.clear();
+                        self.rebuild_browser_lists();
+                        self.set_status(
+                            format!("Recomputed weak labels for {updated_samples} samples across {sources} sources"),
                             StatusTone::Info,
                         );
                     }
