@@ -93,11 +93,8 @@ impl EguiController {
                         if self.ui.progress.task == Some(ProgressTaskKind::Scan) {
                             self.clear_progress();
                         }
-                        if Some(&result.source_id)
-                            != self.selection_state.ctx.selected_source.as_ref()
-                        {
-                            continue;
-                        }
+                        let is_selected_source =
+                            Some(&result.source_id) == self.selection_state.ctx.selected_source.as_ref();
                         let label = match result.mode {
                             ScanMode::Quick => "Quick sync",
                             ScanMode::Hard => "Hard sync",
@@ -105,30 +102,36 @@ impl EguiController {
                         match result.result {
                             Ok(stats) => {
                                 let changed_samples = stats.changed_samples.clone();
-                                self.set_status(
-                                    format!(
-                                        "{label} complete: {} added, {} updated, {} missing",
-                                        stats.added, stats.updated, stats.missing
-                                    ),
-                                    StatusTone::Info,
-                                );
-                                if let Some(source) = self.current_source() {
+                                if is_selected_source {
+                                    self.set_status(
+                                        format!(
+                                            "{label} complete: {} added, {} updated, {} missing",
+                                            stats.added, stats.updated, stats.missing
+                                        ),
+                                        StatusTone::Info,
+                                    );
+                                }
+
+                                {
                                     let mut invalidator =
                                         source_cache_invalidator::SourceCacheInvalidator::new_from_state(
                                             &mut self.cache,
                                             &mut self.ui_cache,
                                             &mut self.library.missing,
                                         );
-                                    invalidator.invalidate_wav_related(&source.id);
+                                    invalidator.invalidate_wav_related(&result.source_id);
                                 }
-                                self.queue_wav_load();
-                                if !changed_samples.is_empty()
-                                    && let Some(source) = self.current_source()
-                                {
+
+                                if is_selected_source {
+                                    self.queue_wav_load();
+                                }
+
+                                if !changed_samples.is_empty() {
                                     let tx = self.runtime.jobs.message_sender();
+                                    let source_id = result.source_id.clone();
                                     std::thread::spawn(move || {
                                         let result = super::analysis_jobs::enqueue_jobs_for_source(
-                                            &source.id,
+                                            &source_id,
                                             &changed_samples,
                                         );
                                         match result {
@@ -150,10 +153,20 @@ impl EguiController {
                                 }
                             }
                             Err(crate::sample_sources::scanner::ScanError::Canceled) => {
-                                self.set_status(format!("{label} canceled"), StatusTone::Warning)
+                                if is_selected_source {
+                                    self.set_status(
+                                        format!("{label} canceled"),
+                                        StatusTone::Warning,
+                                    );
+                                }
                             }
                             Err(err) => {
-                                self.set_status(format!("{label} failed: {err}"), StatusTone::Error)
+                                if is_selected_source {
+                                    self.set_status(
+                                        format!("{label} failed: {err}"),
+                                        StatusTone::Error,
+                                    );
+                                }
                             }
                         }
                     }
