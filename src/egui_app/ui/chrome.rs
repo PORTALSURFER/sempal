@@ -245,6 +245,11 @@ impl EguiApp {
                                         progress.completed.min(progress.total),
                                         progress.total
                                     ))
+                                } else if progress.task
+                                    == Some(crate::egui_app::state::ProgressTaskKind::Scan)
+                                    && progress.completed > 0
+                                {
+                                    bar.text(format!("{} files", progress.completed))
                                 } else {
                                     bar.text("Working…")
                                 };

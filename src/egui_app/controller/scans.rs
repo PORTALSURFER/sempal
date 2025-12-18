@@ -51,7 +51,7 @@ impl EguiController {
                     mode,
                     Some(cancel.as_ref()),
                     &mut |completed, path| {
-                        if completed % 128 == 0 {
+                        if completed == 1 || completed % 128 == 0 {
                             let _ = tx.send(ScanJobMessage::Progress {
                                 completed,
                                 detail: Some(path.display().to_string()),

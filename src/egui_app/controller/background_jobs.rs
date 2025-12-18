@@ -86,7 +86,12 @@ impl EguiController {
                     ScanJobMessage::Progress { completed, detail } => {
                         if self.ui.progress.task == Some(ProgressTaskKind::Scan) {
                             self.ui.progress.completed = completed;
-                            self.ui.progress.detail = detail;
+                            self.ui.progress.detail = Some(match detail {
+                                Some(detail) if !detail.is_empty() => {
+                                    format!("Scanned {completed} file(s)\n{detail}")
+                                }
+                                _ => format!("Scanned {completed} file(s)"),
+                            });
                         }
                     }
                     ScanJobMessage::Finished(result) => {
