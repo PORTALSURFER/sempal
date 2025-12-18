@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, OptionalExtension, params, params_from_iter};
+use rusqlite::types::Value;
 
 use crate::analysis::FEATURE_VERSION_V1;
 use super::{ExportDiagnosticsSample, ExportError};
@@ -169,7 +170,16 @@ pub fn load_export_rows(
     min_confidence: f32,
     ruleset_version: i64,
 ) -> Result<Vec<ExportRow>, ExportError> {
-    let mut stmt = conn.prepare(
+    load_export_rows_filtered(conn, min_confidence, ruleset_version, None)
+}
+
+pub fn load_export_rows_filtered(
+    conn: &Connection,
+    min_confidence: f32,
+    ruleset_version: i64,
+    source_id_prefixes: Option<&[String]>,
+) -> Result<Vec<ExportRow>, ExportError> {
+    let mut sql = String::from(
         "WITH best_weak AS (
             SELECT l.sample_id, l.class_id, l.confidence, l.rule_id, l.ruleset_version
             FROM labels_weak l
@@ -195,11 +205,33 @@ pub fn load_export_rows(
         LEFT JOIN labels_user u ON u.sample_id = f.sample_id
         LEFT JOIN best_weak w ON w.sample_id = f.sample_id
         WHERE f.feat_version = ?1
-          AND (u.class_id IS NOT NULL OR w.class_id IS NOT NULL)
-        ORDER BY f.sample_id ASC",
-    )?;
-    let rows = stmt
-        .query_map(params![FEATURE_VERSION_V1, ruleset_version, min_confidence], |row| {
+          AND (u.class_id IS NOT NULL OR w.class_id IS NOT NULL)",
+    );
+
+    let mut params_vec: Vec<Value> = vec![
+        Value::Integer(FEATURE_VERSION_V1),
+        Value::Integer(ruleset_version),
+        Value::Real(min_confidence as f64),
+    ];
+
+    if let Some(prefixes) = source_id_prefixes
+        && !prefixes.is_empty()
+    {
+        sql.push_str(" AND (");
+        for (idx, source_id) in prefixes.iter().enumerate() {
+            if idx > 0 {
+                sql.push_str(" OR ");
+            }
+            sql.push_str("f.sample_id LIKE ?");
+            sql.push_str(&(params_vec.len() + 1).to_string());
+            params_vec.push(Value::Text(format!("{source_id}::%")));
+        }
+        sql.push(')');
+    }
+    sql.push_str(" ORDER BY f.sample_id ASC");
+
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map(params_from_iter(params_vec), |row| {
             Ok(ExportRow {
                 sample_id: row.get(0)?,
                 vec_blob: row.get(1)?,

@@ -8,6 +8,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 #[derive(Clone, Debug)]
 pub(super) struct ModelTrainingJob {
     pub(super) db_path: PathBuf,
+    pub(super) source_ids: Vec<String>,
     pub(super) min_confidence: f32,
     pub(super) pack_depth: usize,
     pub(super) train_options: crate::ml::gbdt_stump::TrainOptions,
@@ -49,8 +50,8 @@ pub(super) fn run_model_training(
         test_fraction: 0.1,
         val_fraction: 0.1,
     };
-    let summary =
-        crate::dataset::export::export_training_dataset(&options).map_err(|err| err.to_string())?;
+    let summary = crate::dataset::export::export_training_dataset_for_sources(&options, &job.source_ids)
+        .map_err(|err| err.to_string())?;
     if summary.total_exported == 0 {
         return Err("No samples exported for training (need features and labels)".to_string());
     }
@@ -72,7 +73,7 @@ pub(super) fn run_model_training(
 
     send_progress(tx, 3, total_steps, "Enqueueing inference…")?;
     let (inference_jobs_enqueued, _progress) =
-        super::analysis_jobs::enqueue_inference_jobs_for_all_sources()?;
+        super::analysis_jobs::enqueue_inference_jobs_for_sources(&job.source_ids)?;
 
     Ok(ModelTrainingResult {
         model_id,
@@ -100,8 +101,15 @@ pub(super) fn begin_retrain_from_app(controller: &mut EguiController) {
         false,
     );
     let train_options = crate::ml::gbdt_stump::TrainOptions::default();
+    let source_ids: Vec<String> = controller
+        .library
+        .sources
+        .iter()
+        .map(|source| source.id.as_str().to_string())
+        .collect();
     controller.runtime.jobs.begin_model_training(ModelTrainingJob {
         db_path,
+        source_ids,
         min_confidence: 0.75,
         pack_depth: 1,
         train_options,
