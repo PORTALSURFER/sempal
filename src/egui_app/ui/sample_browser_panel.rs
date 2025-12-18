@@ -51,6 +51,7 @@ impl EguiApp {
             |ui, row, metrics| {
                 const CATEGORY_COL_WIDTH: f32 = 140.0;
                 const FEATURE_COL_WIDTH: f32 = 56.0;
+                const WEAK_LABEL_COL_WIDTH: f32 = 140.0;
                 let entry_index = {
                     let indices = self.controller.visible_browser_indices();
                     match indices.get(row) {
@@ -115,6 +116,7 @@ impl EguiApp {
                     - metrics.number_width
                     - metrics.number_gap
                     - FEATURE_COL_WIDTH
+                    - WEAK_LABEL_COL_WIDTH
                     - if categories.is_empty() {
                         0.0
                     } else {
@@ -255,6 +257,38 @@ impl EguiApp {
                     }
 
                     if !rename_match {
+                        let status = self.controller.cached_feature_status_for_entry(entry_index);
+                        let weak = status.and_then(|s| s.weak_label.as_ref());
+                        let label = weak
+                            .map(|w| format!("{} {:.2}", w.class_id, w.confidence))
+                            .unwrap_or_else(|| "—".to_string());
+                        let hover = weak
+                            .map(|w| format!("Weak label from filename/folders\nRule: {}", w.rule_id))
+                            .unwrap_or_else(|| "No weak label from filename/folders".to_string());
+
+                        let right = response.rect.right();
+                        let x2 = if categories.is_empty() {
+                            right - trailing_space
+                        } else {
+                            right - trailing_space - CATEGORY_COL_WIDTH
+                        };
+                        let x1 = (x2 - WEAK_LABEL_COL_WIDTH).max(response.rect.left());
+                        let rect = egui::Rect::from_min_max(
+                            egui::pos2(x1, response.rect.top()),
+                            egui::pos2(x2, response.rect.bottom()),
+                        );
+                        let inner = ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
+                            ui.with_layout(
+                                egui::Layout::centered_and_justified(egui::Direction::LeftToRight),
+                                |ui| {
+                                    ui.label(RichText::new(label).color(palette.text_muted));
+                                },
+                            );
+                        });
+                        let _ = inner.response.on_hover_text(hover);
+                    }
+
+                    if !rename_match {
                         let max_duration = self.controller.max_analysis_duration_seconds();
                         let status = self.controller.cached_feature_status_for_entry(entry_index);
                         let (label, hover, color) = match status {
@@ -327,9 +361,9 @@ impl EguiApp {
 
                         let right = response.rect.right();
                         let x2 = if categories.is_empty() {
-                            right - trailing_space
+                            right - trailing_space - WEAK_LABEL_COL_WIDTH
                         } else {
-                            right - trailing_space - CATEGORY_COL_WIDTH
+                            right - trailing_space - CATEGORY_COL_WIDTH - WEAK_LABEL_COL_WIDTH
                         };
                         let x1 = (x2 - FEATURE_COL_WIDTH).max(response.rect.left());
                         let rect = egui::Rect::from_min_max(
