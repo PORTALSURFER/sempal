@@ -58,6 +58,13 @@ pub(in crate::egui_app::controller) enum AnalysisJobMessage {
     EnqueueFinished { inserted: usize, progress: AnalysisProgress },
     /// An enqueue job failed.
     EnqueueFailed(String),
+    /// Weak labels were recomputed for a source.
+    WeakLabelsRecomputed {
+        source_id: String,
+        updated_samples: usize,
+    },
+    /// Weak-label recompute failed.
+    WeakLabelsRecomputeFailed(String),
     /// Latest prediction loaded for a selected sample.
     PredictionLoaded {
         sample_id: String,

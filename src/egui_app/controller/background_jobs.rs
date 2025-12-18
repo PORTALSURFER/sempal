@@ -309,6 +309,24 @@ impl EguiController {
                             StatusTone::Error,
                         );
                     }
+                    super::AnalysisJobMessage::WeakLabelsRecomputed {
+                        source_id,
+                        updated_samples,
+                    } => {
+                        let source_id = crate::sample_sources::SourceId::from_string(source_id);
+                        self.ui_cache.browser.features.remove(&source_id);
+                        self.rebuild_browser_lists();
+                        self.set_status(
+                            format!("Recomputed weak labels for {updated_samples} samples"),
+                            StatusTone::Info,
+                        );
+                    }
+                    super::AnalysisJobMessage::WeakLabelsRecomputeFailed(err) => {
+                        self.set_status(
+                            format!("Weak label recompute failed: {err}"),
+                            StatusTone::Error,
+                        );
+                    }
                     super::AnalysisJobMessage::PredictionLoaded {
                         sample_id,
                         top_class,

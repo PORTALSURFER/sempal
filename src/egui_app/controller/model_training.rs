@@ -393,6 +393,7 @@ fn training_diagnostics_for_sources(
     source_ids: &[String],
     min_confidence: f32,
 ) -> Result<TrainingDiagnostics, String> {
+    let ruleset_version = crate::labeling::weak::WEAK_LABEL_RULESET_VERSION;
     let (where_sql, params) = source_id_where_clause(source_ids);
     let mut params = params;
     params.push(rusqlite::types::Value::Real(min_confidence as f64));
@@ -431,9 +432,10 @@ fn training_diagnostics_for_sources(
          FROM features f
          JOIN labels_weak w ON w.sample_id = f.sample_id
          WHERE f.feat_version = 1
-           AND w.ruleset_version = 1
+           AND w.ruleset_version = {}
            AND w.confidence >= ?{}
            AND ({})",
+        ruleset_version,
         params.len(),
         where_sql
     );

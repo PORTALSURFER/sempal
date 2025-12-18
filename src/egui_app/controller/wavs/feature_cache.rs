@@ -6,6 +6,7 @@ use rusqlite::{OptionalExtension, params};
 use std::path::PathBuf;
 
 const ANALYSIS_JOB_TYPE: &str = "wav_metadata_v1";
+const WEAK_LABEL_RULESET_VERSION: i64 = crate::labeling::weak::WEAK_LABEL_RULESET_VERSION;
 
 impl EguiController {
     pub(crate) fn prepare_feature_cache_for_browser(&mut self) {
@@ -65,12 +66,12 @@ impl EguiController {
                 "WITH best_weak AS (
                     SELECT l.sample_id, l.class_id, l.confidence, l.rule_id
                     FROM labels_weak l
-                    WHERE l.ruleset_version = 1
+                    WHERE l.ruleset_version = ?1
                       AND l.class_id = (
                         SELECT l2.class_id
                         FROM labels_weak l2
                         WHERE l2.sample_id = l.sample_id
-                          AND l2.ruleset_version = 1
+                          AND l2.ruleset_version = ?1
                         ORDER BY l2.confidence DESC, l2.class_id ASC
                         LIMIT 1
                       )
@@ -85,13 +86,18 @@ impl EguiController {
                         w.rule_id
                  FROM samples s
                  LEFT JOIN features f ON f.sample_id = s.sample_id AND f.feat_version = 1
-                 LEFT JOIN analysis_jobs j ON j.sample_id = s.sample_id AND j.job_type = ?1
+                 LEFT JOIN analysis_jobs j ON j.sample_id = s.sample_id AND j.job_type = ?2
                  LEFT JOIN best_weak w ON w.sample_id = s.sample_id
-                 WHERE s.sample_id >= ?2 AND s.sample_id < ?3",
+                 WHERE s.sample_id >= ?3 AND s.sample_id < ?4",
             )
             .map_err(|err| format!("Prepare feature cache query failed: {err}"))?;
         let mut rows = stmt
-            .query(params![ANALYSIS_JOB_TYPE, prefix, prefix_end])
+            .query(params![
+                WEAK_LABEL_RULESET_VERSION,
+                ANALYSIS_JOB_TYPE,
+                prefix,
+                prefix_end
+            ])
             .map_err(|err| format!("Query feature cache failed: {err}"))?;
         while let Some(row) = rows
             .next()

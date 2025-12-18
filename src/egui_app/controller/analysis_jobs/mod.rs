@@ -5,6 +5,7 @@ mod enqueue;
 mod failures;
 mod inference;
 mod pool;
+mod relabel;
 mod types;
 mod weak_labels;
 
@@ -15,4 +16,5 @@ pub(super) use enqueue::enqueue_jobs_for_source_backfill;
 pub(super) use enqueue::enqueue_jobs_for_source_missing_features;
 pub(super) use failures::failed_samples_for_source;
 pub(super) use pool::AnalysisWorkerPool;
+pub(in crate::egui_app::controller) use relabel::recompute_weak_labels_for_source;
 pub(super) use types::AnalysisJobMessage;

@@ -39,7 +39,8 @@ fn run() -> Result<(), String> {
         }
         if let Some(n) = diag.labels_weak_ruleset_ge_conf {
             println!(
-                "labels_weak(ruleset=1, conf>={:.2}): {n}",
+                "labels_weak(ruleset={}, conf>={:.2}): {n}",
+                sempal::labeling::weak::WEAK_LABEL_RULESET_VERSION,
                 options.min_confidence
             );
         }

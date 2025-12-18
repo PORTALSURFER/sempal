@@ -249,15 +249,34 @@ fn normalize_for_matching(path: &Path) -> String {
 }
 
 fn normalize_str_for_matching(input: &str) -> String {
-    input
-        .replace('\\', "/")
-        .chars()
-        .map(|ch| match ch {
-            '_' | '-' | '.' => ' ',
-            other => other,
-        })
-        .collect::<String>()
-        .to_lowercase()
+    let mut out = String::with_capacity(input.len());
+    let mut prev: Option<char> = None;
+
+    for raw in input.chars() {
+        let ch = if raw == '\\' { '/' } else { raw };
+
+        if !ch.is_alphanumeric() {
+            if !out.ends_with(' ') {
+                out.push(' ');
+            }
+            prev = None;
+            continue;
+        }
+
+        if let Some(prev_ch) = prev {
+            let alpha_digit_boundary = (prev_ch.is_alphabetic() && ch.is_numeric())
+                || (prev_ch.is_numeric() && ch.is_alphabetic());
+            let camel_boundary = prev_ch.is_lowercase() && ch.is_uppercase();
+            if alpha_digit_boundary || camel_boundary {
+                out.push(' ');
+            }
+        }
+
+        out.push(ch);
+        prev = Some(ch);
+    }
+
+    out.to_lowercase()
 }
 
 #[cfg(test)]
@@ -289,5 +308,16 @@ mod tests {
     fn includes_ruleset_version_constant() {
         assert_eq!(WEAK_LABEL_RULESET_VERSION, 1);
     }
-}
 
+    #[test]
+    fn labels_kick_with_digits() {
+        let labels = weak_labels_for_relative_path(&PathBuf::from("Drums/Kicks/Kick10.aif"));
+        assert!(labels.iter().any(|label| label.class_id == "kick"));
+    }
+
+    #[test]
+    fn labels_kick_with_camelcase() {
+        let labels = weak_labels_for_relative_path(&PathBuf::from("Drums/Kicks/BangKick.wav"));
+        assert!(labels.iter().any(|label| label.class_id == "kick"));
+    }
+}
