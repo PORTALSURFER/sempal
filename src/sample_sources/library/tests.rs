@@ -90,3 +90,21 @@ fn migrates_legacy_collection_export_paths() {
         assert_eq!(version.as_deref(), Some(COLLECTION_EXPORT_PATHS_VERSION_V2));
     });
 }
+
+#[test]
+fn creates_labels_user_table() {
+    let temp = tempdir().unwrap();
+    with_config_home(temp.path(), || {
+        let _ = load().unwrap();
+        let conn = Connection::open(database_path().unwrap()).unwrap();
+        let exists: Option<String> = conn
+            .query_row(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='labels_user'",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .unwrap();
+        assert_eq!(exists.as_deref(), Some("labels_user"));
+    });
+}

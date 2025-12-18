@@ -343,6 +343,43 @@ impl EguiApp {
                 self.controller.reveal_browser_sample_in_file_explorer(path);
                 close_menu = true;
             }
+            let categories = self.controller.prediction_categories();
+            if !categories.is_empty() {
+                ui.separator();
+                ui.menu_button("Set category override", |ui| {
+                    if ui.button("Clear override").clicked() {
+                        if let Err(err) = self
+                            .controller
+                            .set_user_category_override_for_visible_rows(&action_rows, None)
+                        {
+                            self.controller.set_status(
+                                format!("Clear category override failed: {err}"),
+                                StatusTone::Error,
+                            );
+                        } else {
+                            close_menu = true;
+                            ui.close();
+                        }
+                    }
+                    ui.separator();
+                    for category in &categories {
+                        if ui.button(category).clicked() {
+                            if let Err(err) = self.controller.set_user_category_override_for_visible_rows(
+                                &action_rows,
+                                Some(category.as_str()),
+                            ) {
+                                self.controller.set_status(
+                                    format!("Set category override failed: {err}"),
+                                    StatusTone::Error,
+                                );
+                            } else {
+                                close_menu = true;
+                                ui.close();
+                            }
+                        }
+                    }
+                });
+            }
             ui.separator();
             self.sample_tag_menu(ui, &mut close_menu, |app, tag| {
                 app.controller

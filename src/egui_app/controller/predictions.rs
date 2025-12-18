@@ -21,23 +21,36 @@ impl EguiController {
                 Ok(conn) => conn,
                 Err(_) => return,
             };
-            let row: Option<(String, f64)> = conn
+            let user_label: Option<String> = conn
                 .query_row(
-                    "SELECT p.top_class, p.confidence
-                     FROM predictions p
-                     JOIN models m ON m.model_id = p.model_id
-                     WHERE p.sample_id = ?1
-                     ORDER BY m.created_at DESC, m.model_id DESC
-                     LIMIT 1",
+                    "SELECT class_id FROM labels_user WHERE sample_id = ?1",
                     params![sample_id],
-                    |row| Ok((row.get(0)?, row.get(1)?)),
+                    |row| row.get(0),
                 )
                 .optional()
                 .ok()
                 .flatten();
-            let (top_class, confidence) = match row {
-                Some((class_id, confidence)) => (Some(class_id), Some(confidence as f32)),
-                None => (None, None),
+            let (top_class, confidence) = if let Some(class_id) = user_label {
+                (Some(class_id), Some(1.0))
+            } else {
+                let row: Option<(String, f64)> = conn
+                    .query_row(
+                        "SELECT p.top_class, p.confidence
+                         FROM predictions p
+                         JOIN models m ON m.model_id = p.model_id
+                         WHERE p.sample_id = ?1
+                         ORDER BY m.created_at DESC, m.model_id DESC
+                         LIMIT 1",
+                        params![sample_id],
+                        |row| Ok((row.get(0)?, row.get(1)?)),
+                    )
+                    .optional()
+                    .ok()
+                    .flatten();
+                match row {
+                    Some((class_id, confidence)) => (Some(class_id), Some(confidence as f32)),
+                    None => (None, None),
+                }
             };
             let _ = tx.send(super::jobs::JobMessage::Analysis(
                 super::analysis_jobs::AnalysisJobMessage::PredictionLoaded {

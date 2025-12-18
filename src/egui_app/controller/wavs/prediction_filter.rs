@@ -1,6 +1,8 @@
 use super::*;
 use crate::egui_app::state::PredictedCategory;
 use rusqlite::{Connection, OptionalExtension, params};
+use std::collections::HashMap;
+use std::path::PathBuf;
 
 impl EguiController {
     pub(super) fn prepare_prediction_filter_cache(&mut self) {
@@ -177,6 +179,9 @@ impl EguiController {
 
         let prefix = format!("{}::", source_id.as_str());
         let prefix_end = format!("{prefix}\u{10FFFF}");
+
+        apply_user_labels(&conn, &prefix, &prefix_end, &self.wav_entries.lookup, cache)?;
+
         let mut stmt = conn
             .prepare(
                 "SELECT sample_id, top_class, confidence
@@ -204,10 +209,12 @@ impl EguiController {
             if idx >= cache.rows.len() {
                 continue;
             }
-            cache.rows[idx] = Some(PredictedCategory {
-                class_id: top_class,
-                confidence: confidence as f32,
-            });
+            if cache.rows[idx].is_none() {
+                cache.rows[idx] = Some(PredictedCategory {
+                    class_id: top_class,
+                    confidence: confidence as f32,
+                });
+            }
         }
 
         Ok(())
@@ -248,4 +255,45 @@ fn open_library_db(path: &Path) -> Result<Connection, String> {
     )
     .map_err(|err| format!("Failed to set library DB pragmas: {err}"))?;
     Ok(conn)
+}
+
+fn apply_user_labels(
+    conn: &Connection,
+    prefix: &str,
+    prefix_end: &str,
+    lookup: &HashMap<PathBuf, usize>,
+    cache: &mut super::super::controller_state::PredictionCache,
+) -> Result<(), String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT sample_id, class_id
+             FROM labels_user
+             WHERE sample_id >= ?1 AND sample_id < ?2",
+        )
+        .map_err(|err| format!("Failed to prepare user labels query: {err}"))?;
+    let mut rows = stmt
+        .query(params![prefix, prefix_end])
+        .map_err(|err| format!("Failed to query user labels: {err}"))?;
+    while let Some(row) = rows
+        .next()
+        .map_err(|err| format!("Failed to query user labels: {err}"))?
+    {
+        let sample_id: String = row.get(0).map_err(|err| err.to_string())?;
+        let class_id: String = row.get(1).map_err(|err| err.to_string())?;
+        let Some(relative_path) = sample_id.split_once("::").map(|(_, p)| p) else {
+            continue;
+        };
+        let path = PathBuf::from(relative_path);
+        let Some(&idx) = lookup.get(&path) else {
+            continue;
+        };
+        if idx >= cache.rows.len() {
+            continue;
+        }
+        cache.rows[idx] = Some(PredictedCategory {
+            class_id,
+            confidence: 1.0,
+        });
+    }
+    Ok(())
 }

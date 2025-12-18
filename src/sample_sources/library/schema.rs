@@ -114,7 +114,14 @@ impl LibraryDatabase {
                     created_at INTEGER NOT NULL,
                     PRIMARY KEY (sample_id, class_id)
                 ) WITHOUT ROWID;
-                 CREATE INDEX IF NOT EXISTS idx_labels_weak_class_id ON labels_weak (class_id);",
+                 CREATE INDEX IF NOT EXISTS idx_labels_weak_class_id ON labels_weak (class_id);
+                 CREATE TABLE IF NOT EXISTS labels_user (
+                    sample_id TEXT PRIMARY KEY,
+                    class_id TEXT NOT NULL,
+                    created_at INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL
+                 ) WITHOUT ROWID;
+                 CREATE INDEX IF NOT EXISTS idx_labels_user_class_id ON labels_user (class_id);",
             )
             .map_err(map_sql_error)?;
         Ok(())
@@ -274,6 +281,33 @@ impl LibraryDatabase {
                     PRIMARY KEY (sample_id, class_id)
                 ) WITHOUT ROWID;
                 CREATE INDEX IF NOT EXISTS idx_labels_weak_class_id ON labels_weak (class_id);",
+            )
+            .map_err(map_sql_error)?;
+        Ok(())
+    }
+
+    pub(super) fn migrate_labels_user_table(&mut self) -> Result<(), LibraryError> {
+        let mut stmt = self
+            .connection
+            .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='labels_user'")
+            .map_err(map_sql_error)?;
+        let exists: Option<String> = stmt
+            .query_row([], |row| row.get(0))
+            .optional()
+            .map_err(map_sql_error)?;
+        drop(stmt);
+        if exists.is_some() {
+            return Ok(());
+        }
+        self.connection
+            .execute_batch(
+                "CREATE TABLE IF NOT EXISTS labels_user (
+                    sample_id TEXT PRIMARY KEY,
+                    class_id TEXT NOT NULL,
+                    created_at INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL
+                ) WITHOUT ROWID;
+                CREATE INDEX IF NOT EXISTS idx_labels_user_class_id ON labels_user (class_id);",
             )
             .map_err(map_sql_error)?;
         Ok(())

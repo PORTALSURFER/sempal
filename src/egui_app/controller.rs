@@ -30,6 +30,7 @@ mod progress;
 mod scans;
 mod selection_edits;
 mod selection_export;
+mod user_labels;
 mod source_cache_invalidator;
 mod source_folders;
 mod sources;

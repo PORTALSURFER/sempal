@@ -81,6 +81,7 @@ impl LibraryDatabase {
         db.migrate_models_table()?;
         db.migrate_predictions_table()?;
         db.migrate_labels_weak_table()?;
+        db.migrate_labels_user_table()?;
         Ok(db)
     }
 
