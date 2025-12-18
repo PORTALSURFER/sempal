@@ -23,6 +23,7 @@ mod hotkeys_controller;
 mod interaction_options;
 mod jobs;
 mod loading;
+mod model_training;
 mod os_explorer;
 mod playback;
 mod predictions;

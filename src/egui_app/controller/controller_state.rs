@@ -115,6 +115,7 @@ pub(super) struct BrowserCacheState {
 pub(super) struct PredictionCache {
     pub(super) model_id: Option<String>,
     pub(super) rows: Vec<Option<crate::egui_app::state::PredictedCategory>>,
+    pub(super) user_overrides: Vec<bool>,
 }
 
 pub(super) struct PredictionCategories {

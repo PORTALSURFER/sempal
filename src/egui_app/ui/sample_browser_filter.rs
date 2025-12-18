@@ -137,6 +137,15 @@ impl EguiApp {
                         self.controller.set_include_unknowns(include_unknowns);
                     }
                 }
+
+                ui.add_space(ui.spacing().item_spacing.x);
+                let retrain_btn = egui::Button::new("Retrain model");
+                let retrain_btn = ui
+                    .add_enabled(!self.controller.model_training_in_progress(), retrain_btn)
+                    .on_hover_text("Train a new model using user overrides + weak labels");
+                if retrain_btn.clicked() {
+                    self.controller.retrain_model_from_app();
+                }
             }
 
             ui.add_space(ui.spacing().item_spacing.x);

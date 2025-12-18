@@ -13,7 +13,7 @@ pub(super) struct ClaimedJob {
     pub(super) job_type: String,
 }
 
-pub(super) fn open_library_db(db_path: &Path) -> Result<Connection, String> {
+pub(in crate::egui_app::controller) fn open_library_db(db_path: &Path) -> Result<Connection, String> {
     let conn = Connection::open(db_path).map_err(|err| format!("Open library DB failed: {err}"))?;
     conn.execute_batch(
         "PRAGMA journal_mode=WAL;

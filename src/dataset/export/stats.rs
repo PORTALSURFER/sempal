@@ -23,8 +23,10 @@ pub struct ExportDiagnostics {
     pub samples: Option<i64>,
     pub features_total: Option<i64>,
     pub features_v1: Option<i64>,
+    pub labels_user_total: Option<i64>,
     pub labels_weak_total: Option<i64>,
     pub labels_weak_ruleset_ge_conf: Option<i64>,
+    pub join_rows_user: Option<i64>,
     pub join_rows: Option<i64>,
     pub sample_splits: Vec<ExportDiagnosticsSample>,
 }
@@ -70,11 +72,26 @@ pub fn diagnose_export(
     let labels_weak_total = if has("labels_weak") {
         count_scalar(&conn, "SELECT COUNT(*) FROM labels_weak", params![])? 
     } else { None };
+    let labels_user_total = if has("labels_user") {
+        count_scalar(&conn, "SELECT COUNT(*) FROM labels_user", params![])? 
+    } else { None };
     let labels_weak_ruleset_ge_conf = if has("labels_weak") {
         count_scalar(
             &conn,
             "SELECT COUNT(*) FROM labels_weak WHERE ruleset_version = ?1 AND confidence >= ?2",
             params![1_i64, options.min_confidence],
+        )?
+    } else {
+        None
+    };
+    let join_rows_user = if has("features") && has("labels_user") {
+        count_scalar(
+            &conn,
+            "SELECT COUNT(*)
+             FROM features f
+             JOIN labels_user l ON l.sample_id = f.sample_id
+             WHERE f.feat_version = ?1",
+            params![FEATURE_VERSION_V1],
         )?
     } else {
         None
@@ -120,8 +137,10 @@ pub fn diagnose_export(
         samples,
         features_total,
         features_v1,
+        labels_user_total,
         labels_weak_total,
         labels_weak_ruleset_ge_conf,
+        join_rows_user,
         join_rows,
         sample_splits,
     })
@@ -151,27 +170,33 @@ pub fn load_export_rows(
     ruleset_version: i64,
 ) -> Result<Vec<ExportRow>, ExportError> {
     let mut stmt = conn.prepare(
-        "SELECT f.sample_id,
-                f.vec_blob,
-                l.class_id,
-                l.confidence,
-                l.rule_id,
-                l.ruleset_version
-         FROM features f
-         JOIN labels_weak l ON l.sample_id = f.sample_id
-         WHERE f.feat_version = ?1
-           AND l.ruleset_version = ?2
-           AND l.confidence >= ?3
-           AND l.class_id = (
-             SELECT l2.class_id
-             FROM labels_weak l2
-             WHERE l2.sample_id = f.sample_id
-               AND l2.ruleset_version = ?2
-               AND l2.confidence >= ?3
-             ORDER BY l2.confidence DESC, l2.class_id ASC
-             LIMIT 1
-           )
-         ORDER BY f.sample_id ASC",
+        "WITH best_weak AS (
+            SELECT l.sample_id, l.class_id, l.confidence, l.rule_id, l.ruleset_version
+            FROM labels_weak l
+            WHERE l.ruleset_version = ?2
+              AND l.confidence >= ?3
+              AND l.class_id = (
+                SELECT l2.class_id
+                FROM labels_weak l2
+                WHERE l2.sample_id = l.sample_id
+                  AND l2.ruleset_version = ?2
+                  AND l2.confidence >= ?3
+                ORDER BY l2.confidence DESC, l2.class_id ASC
+                LIMIT 1
+              )
+        )
+        SELECT f.sample_id,
+               f.vec_blob,
+               COALESCE(u.class_id, w.class_id) AS class_id,
+               CASE WHEN u.class_id IS NOT NULL THEN 1.0 ELSE w.confidence END AS confidence,
+               CASE WHEN u.class_id IS NOT NULL THEN 'user_override' ELSE w.rule_id END AS rule_id,
+               CASE WHEN u.class_id IS NOT NULL THEN 0 ELSE w.ruleset_version END AS ruleset_version
+        FROM features f
+        LEFT JOIN labels_user u ON u.sample_id = f.sample_id
+        LEFT JOIN best_weak w ON w.sample_id = f.sample_id
+        WHERE f.feat_version = ?1
+          AND (u.class_id IS NOT NULL OR w.class_id IS NOT NULL)
+        ORDER BY f.sample_id ASC",
     )?;
     let rows = stmt
         .query_map(params![FEATURE_VERSION_V1, ruleset_version, min_confidence], |row| {

@@ -22,6 +22,7 @@ impl EguiController {
                     self.runtime.analysis.cancel();
                     self.clear_progress();
                 }
+                Some(ProgressTaskKind::ModelTraining) => {}
                 _ => {}
             }
         }
@@ -306,6 +307,55 @@ impl EguiController {
                                 confidence,
                             },
                         );
+                    }
+                },
+                JobMessage::ModelTraining(message) => match message {
+                    super::model_training::ModelTrainingMessage::Progress {
+                        completed,
+                        total,
+                        detail,
+                    } => {
+                        if self.ui.progress.task.is_none()
+                            || self.ui.progress.task == Some(ProgressTaskKind::ModelTraining)
+                        {
+                            if !self.ui.progress.visible
+                                || self.ui.progress.task != Some(ProgressTaskKind::ModelTraining)
+                            {
+                                self.show_status_progress(
+                                    ProgressTaskKind::ModelTraining,
+                                    "Training model",
+                                    total,
+                                    false,
+                                );
+                            }
+                            self.ui.progress.completed = completed.min(total);
+                            self.ui.progress.total = total;
+                            self.ui.progress.detail = Some(detail);
+                        }
+                    }
+                    super::model_training::ModelTrainingMessage::Finished { result } => {
+                        self.runtime.jobs.clear_model_training();
+                        if self.ui.progress.task == Some(ProgressTaskKind::ModelTraining) {
+                            self.clear_progress();
+                        }
+                        match result {
+                            Ok(outcome) => {
+                                self.ui_cache.browser.predictions.clear();
+                                self.ui_cache.browser.prediction_categories = None;
+                                self.ui_cache.browser.prediction_categories_checked = false;
+                                self.rebuild_browser_lists();
+                                self.set_status(
+                                    format!(
+                                        "Trained model {} ({} samples); enqueued {} inference jobs",
+                                        outcome.model_id, outcome.exported_samples, outcome.inference_jobs_enqueued
+                                    ),
+                                    StatusTone::Info,
+                                );
+                            }
+                            Err(err) => {
+                                self.set_status(format!("Model training failed: {err}"), StatusTone::Error);
+                            }
+                        }
                     }
                 },
                 JobMessage::UpdateChecked(message) => {

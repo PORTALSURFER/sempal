@@ -16,6 +16,10 @@ use std::path::Path;
 impl EguiApp {
     pub(super) fn render_sample_browser(&mut self, ui: &mut Ui) {
         let palette = style::palette();
+        let categories = self.controller.prediction_categories();
+        if !categories.is_empty() {
+            self.controller.prepare_prediction_cache_for_browser();
+        }
         let selected_row = self.controller.ui.browser.selected_visible;
         let loaded_row = self.controller.ui.browser.loaded_visible;
         let drop_target = self.controller.triage_flag_drop_target();
@@ -47,6 +51,7 @@ impl EguiApp {
                 autoscroll_padding_rows: 1.0,
             },
             |ui, row, metrics| {
+                const CATEGORY_COL_WIDTH: f32 = 140.0;
                 let entry_index = {
                     let indices = self.controller.visible_browser_indices();
                     match indices.get(row) {
@@ -110,6 +115,7 @@ impl EguiApp {
                     - metrics.padding
                     - metrics.number_width
                     - metrics.number_gap
+                    - if categories.is_empty() { 0.0 } else { CATEGORY_COL_WIDTH }
                     - trailing_space;
                 let row_label = if rename_match {
                     String::new()
@@ -162,6 +168,81 @@ impl EguiApp {
                             marker: triage_marker,
                         },
                     );
+                    if !rename_match && !categories.is_empty() {
+                        let (category, is_override) = self
+                            .controller
+                            .cached_category_for_entry(entry_index)
+                            .unwrap_or_else(|| ("—".to_string(), false));
+                        let category_label = if category == "—" {
+                            "—".to_string()
+                        } else if is_override {
+                            format!("{category} (user)")
+                        } else {
+                            category.clone()
+                        };
+                        let right = response.rect.right();
+                        let x2 = right - trailing_space;
+                        let x1 = (x2 - CATEGORY_COL_WIDTH).max(response.rect.left());
+                        let rect = egui::Rect::from_min_max(
+                            egui::pos2(x1, response.rect.top()),
+                            egui::pos2(x2, response.rect.bottom()),
+                        );
+                        let mut selected = if category == "—" {
+                            None
+                        } else {
+                            Some(category)
+                        };
+                        let combo = egui::ComboBox::from_id_salt("category_override")
+                            .selected_text(category_label)
+                            .width(rect.width());
+                        let hover = if is_override {
+                            "User override (click to change)"
+                        } else {
+                            "Predicted category (click to override)"
+                        };
+                        let inner = ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
+                            combo.show_ui(ui, |ui| {
+                                if ui.selectable_label(false, "Clear override").clicked() {
+                                    let action_rows = self.controller.action_rows_from_primary(row);
+                                    if let Err(err) = self
+                                        .controller
+                                        .set_user_category_override_for_visible_rows(&action_rows, None)
+                                    {
+                                        self.controller.set_status(
+                                            format!("Clear category override failed: {err}"),
+                                            StatusTone::Error,
+                                        );
+                                    } else {
+                                        selected = None;
+                                        ui.close();
+                                    }
+                                }
+                                ui.separator();
+                                for category in &categories {
+                                    if category == "UNKNOWN" {
+                                        continue;
+                                    }
+                                    let is_selected = selected.as_deref() == Some(category.as_str());
+                                    if ui.selectable_label(is_selected, category).clicked() {
+                                        let action_rows = self.controller.action_rows_from_primary(row);
+                                        if let Err(err) = self.controller.set_user_category_override_for_visible_rows(
+                                            &action_rows,
+                                            Some(category.as_str()),
+                                        ) {
+                                            self.controller.set_status(
+                                                format!("Set category override failed: {err}"),
+                                                StatusTone::Error,
+                                            );
+                                        } else {
+                                            selected = Some(category.clone());
+                                            ui.close();
+                                        }
+                                    }
+                                }
+                            });
+                        });
+                        let _ = inner.response.on_hover_text(hover);
+                    }
                     let response = if let Some(reason) = analysis_failure.as_deref() {
                         let reason = reason.lines().next().unwrap_or(reason);
                         response.on_hover_text(format!("Analysis failed: {reason}"))

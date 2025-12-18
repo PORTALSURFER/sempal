@@ -34,11 +34,17 @@ fn run() -> Result<(), String> {
         if let Some(n) = diag.features_v1 {
             println!("features(feat_version=1): {n}");
         }
+        if let Some(n) = diag.labels_user_total {
+            println!("labels_user: {n}");
+        }
         if let Some(n) = diag.labels_weak_ruleset_ge_conf {
             println!(
                 "labels_weak(ruleset=1, conf>={:.2}): {n}",
                 options.min_confidence
             );
+        }
+        if let Some(n) = diag.join_rows_user {
+            println!("features⋈labels_user join rows: {n}");
         }
         if let Some(n) = diag.join_rows {
             println!("features⋈labels_weak join rows: {n}");

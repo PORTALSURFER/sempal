@@ -5,6 +5,15 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 impl EguiController {
+    pub fn prepare_prediction_cache_for_browser(&mut self) {
+        let Some(source_id) = self.selection_state.ctx.selected_source.clone() else {
+            return;
+        };
+        let _ = self.ensure_prediction_cache(&source_id);
+        let _ = self.ensure_prediction_categories();
+        self.ui_cache.browser.prediction_categories_checked = true;
+    }
+
     pub(super) fn prepare_prediction_filter_cache(&mut self) {
         let Some(source_id) = self.selection_state.ctx.selected_source.clone() else {
             return;
@@ -40,6 +49,14 @@ impl EguiController {
             .get(source_id)
             .and_then(|cache| cache.rows.get(entry_index))
             .and_then(|pred| pred.as_ref())
+    }
+
+    pub fn cached_category_for_entry(&self, entry_index: usize) -> Option<(String, bool)> {
+        let source_id = self.selection_state.ctx.selected_source.as_ref()?;
+        let cache = self.ui_cache.browser.predictions.get(source_id)?;
+        let pred = cache.rows.get(entry_index).and_then(|pred| pred.as_ref())?;
+        let is_override = cache.user_overrides.get(entry_index).copied().unwrap_or(false);
+        Some((pred.class_id.clone(), is_override))
     }
 
     fn prediction_filter_accepts_cached(&self, entry_index: usize) -> bool {
@@ -170,6 +187,7 @@ impl EguiController {
                 super::super::controller_state::PredictionCache {
                     model_id: None,
                     rows: vec![None; needs_len],
+                    user_overrides: vec![false; needs_len],
                 },
             );
         }
@@ -199,12 +217,14 @@ impl EguiController {
             .expect("cache inserted above");
         if cache.rows.len() != needs_len {
             cache.rows = vec![None; needs_len];
+            cache.user_overrides = vec![false; needs_len];
         }
         if cache.model_id == latest_model_id {
             return Ok(());
         }
         cache.model_id = latest_model_id.clone();
         cache.rows.fill(None);
+        cache.user_overrides.fill(false);
 
         let Some(model_id) = latest_model_id else {
             return Ok(());
@@ -247,6 +267,7 @@ impl EguiController {
                     class_id: top_class,
                     confidence: confidence as f32,
                 });
+                cache.user_overrides[idx] = false;
             }
         }
 
@@ -359,6 +380,7 @@ fn apply_user_labels(
             class_id,
             confidence: 1.0,
         });
+        cache.user_overrides[idx] = true;
     }
     Ok(())
 }
