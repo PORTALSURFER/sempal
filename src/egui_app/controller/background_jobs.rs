@@ -126,6 +126,13 @@ impl EguiController {
                                     self.queue_wav_load();
                                 }
 
+                                let source_for_jobs = self
+                                    .library
+                                    .sources
+                                    .iter()
+                                    .find(|source| source.id == result.source_id)
+                                    .cloned();
+
                                 if !changed_samples.is_empty() {
                                     let tx = self.runtime.jobs.message_sender();
                                     let source_id = result.source_id.clone();
@@ -134,6 +141,29 @@ impl EguiController {
                                             &source_id,
                                             &changed_samples,
                                         );
+                                        match result {
+                                            Ok((inserted, progress)) => {
+                                                let _ = tx.send(JobMessage::Analysis(
+                                                    super::AnalysisJobMessage::EnqueueFinished {
+                                                        inserted,
+                                                        progress,
+                                                    },
+                                                ));
+                                            }
+                                            Err(err) => {
+                                                let _ = tx.send(JobMessage::Analysis(
+                                                    super::AnalysisJobMessage::EnqueueFailed(err),
+                                                ));
+                                            }
+                                        }
+                                    });
+                                } else if let Some(source) = source_for_jobs {
+                                    let tx = self.runtime.jobs.message_sender();
+                                    std::thread::spawn(move || {
+                                        let result =
+                                            super::analysis_jobs::enqueue_jobs_for_source_backfill(
+                                                &source,
+                                            );
                                         match result {
                                             Ok((inserted, progress)) => {
                                                 let _ = tx.send(JobMessage::Analysis(

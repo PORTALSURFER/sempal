@@ -1,0 +1,228 @@
+use super::db;
+use super::types::AnalysisProgress;
+use rusqlite::params;
+use std::path::Path;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+pub(in crate::egui_app::controller) fn enqueue_jobs_for_source(
+    source_id: &crate::sample_sources::SourceId,
+    changed_samples: &[crate::sample_sources::scanner::ChangedSample],
+) -> Result<(usize, AnalysisProgress), String> {
+    if changed_samples.is_empty() {
+        let db_path = library_db_path()?;
+        let conn = db::open_library_db(&db_path)?;
+        return Ok((0, db::current_progress(&conn)?));
+    }
+    let sample_metadata: Vec<db::SampleMetadata> = changed_samples
+        .iter()
+        .map(|sample| db::SampleMetadata {
+            sample_id: db::build_sample_id(source_id.as_str(), &sample.relative_path),
+            content_hash: sample.content_hash.clone(),
+            size: sample.file_size,
+            mtime_ns: sample.modified_ns,
+        })
+        .collect();
+    let jobs: Vec<(String, String)> = sample_metadata
+        .iter()
+        .map(|sample| (sample.sample_id.clone(), sample.content_hash.clone()))
+        .collect();
+    let weak_labels: Vec<super::weak_labels::SampleWeakLabels> = changed_samples
+        .iter()
+        .map(|sample| {
+            let sample_id = db::build_sample_id(source_id.as_str(), &sample.relative_path);
+            let labels = crate::labeling::weak::weak_labels_for_relative_path(&sample.relative_path)
+                .into_iter()
+                .map(|label| super::weak_labels::WeakLabelInsert {
+                    class_id: label.class_id.to_string(),
+                    confidence: label.confidence,
+                    rule_id: label.rule_id.to_string(),
+                })
+                .collect();
+            super::weak_labels::SampleWeakLabels { sample_id, labels }
+        })
+        .collect();
+
+    let db_path = library_db_path()?;
+    let mut conn = db::open_library_db(&db_path)?;
+    db::upsert_samples(&mut conn, &sample_metadata)?;
+    let sample_ids: Vec<String> = sample_metadata
+        .iter()
+        .map(|sample| sample.sample_id.clone())
+        .collect();
+    db::invalidate_analysis_artifacts(&mut conn, &sample_ids)?;
+
+    let created_at = now_epoch_seconds();
+    super::weak_labels::replace_weak_labels_for_samples(
+        &mut conn,
+        &weak_labels,
+        crate::labeling::weak::WEAK_LABEL_RULESET_VERSION,
+        created_at,
+    )?;
+    let inserted = db::enqueue_jobs(&mut conn, &jobs, db::DEFAULT_JOB_TYPE, created_at)?;
+    let progress = db::current_progress(&conn)?;
+    Ok((inserted, progress))
+}
+
+pub(in crate::egui_app::controller) fn enqueue_jobs_for_source_backfill(
+    source: &crate::sample_sources::SampleSource,
+) -> Result<(usize, AnalysisProgress), String> {
+    let db_path = library_db_path()?;
+    let mut conn = db::open_library_db(&db_path)?;
+    let prefix = format!("{}::%", source.id.as_str());
+    let existing_jobs_total: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM analysis_jobs WHERE sample_id LIKE ?1",
+            params![&prefix],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+    if existing_jobs_total > 0 {
+        let active_jobs: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM analysis_jobs WHERE sample_id LIKE ?1 AND status IN ('pending','running')",
+                params![&prefix],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+        if active_jobs > 0 {
+            return Ok((0, db::current_progress(&conn)?));
+        }
+    }
+    let existing_features: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM features WHERE sample_id LIKE ?1",
+            params![&prefix],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+    if existing_features > 0 && existing_jobs_total > 0 {
+        return Ok((0, db::current_progress(&conn)?));
+    }
+
+    let source_db = crate::sample_sources::SourceDatabase::open(&source.root)
+        .map_err(|err| err.to_string())?;
+    let mut entries = source_db.list_files().map_err(|err| err.to_string())?;
+    entries.retain(|entry| !entry.missing);
+    if entries.is_empty() {
+        return Ok((0, db::current_progress(&conn)?));
+    }
+
+    let mut sample_metadata = Vec::with_capacity(entries.len());
+    let mut jobs = Vec::with_capacity(entries.len());
+    let mut weak_labels = Vec::with_capacity(entries.len());
+
+    for entry in entries {
+        let sample_id = db::build_sample_id(source.id.as_str(), &entry.relative_path);
+        let content_hash = match entry.content_hash {
+            Some(hash) if !hash.trim().is_empty() => hash,
+            _ => {
+                let absolute = source.root.join(&entry.relative_path);
+                compute_content_hash(&absolute)?
+            }
+        };
+        sample_metadata.push(db::SampleMetadata {
+            sample_id: sample_id.clone(),
+            content_hash: content_hash.clone(),
+            size: entry.file_size,
+            mtime_ns: entry.modified_ns,
+        });
+        jobs.push((sample_id.clone(), content_hash));
+        let labels = crate::labeling::weak::weak_labels_for_relative_path(&entry.relative_path)
+            .into_iter()
+            .map(|label| super::weak_labels::WeakLabelInsert {
+                class_id: label.class_id.to_string(),
+                confidence: label.confidence,
+                rule_id: label.rule_id.to_string(),
+            })
+            .collect();
+        weak_labels.push(super::weak_labels::SampleWeakLabels { sample_id, labels });
+    }
+
+    db::upsert_samples(&mut conn, &sample_metadata)?;
+
+    let created_at = now_epoch_seconds();
+    super::weak_labels::replace_weak_labels_for_samples(
+        &mut conn,
+        &weak_labels,
+        crate::labeling::weak::WEAK_LABEL_RULESET_VERSION,
+        created_at,
+    )?;
+    let inserted = db::enqueue_jobs(&mut conn, &jobs, db::DEFAULT_JOB_TYPE, created_at)?;
+    let progress = db::current_progress(&conn)?;
+    Ok((inserted, progress))
+}
+
+fn library_db_path() -> Result<std::path::PathBuf, String> {
+    let dir = crate::app_dirs::app_root_dir().map_err(|err| err.to_string())?;
+    Ok(dir.join(crate::sample_sources::library::LIBRARY_DB_FILE_NAME))
+}
+
+fn now_epoch_seconds() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_else(|_| Duration::from_secs(0))
+        .as_secs() as i64
+}
+
+fn compute_content_hash(path: &Path) -> Result<String, String> {
+    use std::io::Read;
+
+    let mut file =
+        std::fs::File::open(path).map_err(|err| format!("Failed to open {}: {err}", path.display()))?;
+    let mut hasher = blake3::Hasher::new();
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        let read = file
+            .read(&mut buffer)
+            .map_err(|err| format!("Failed to read {}: {err}", path.display()))?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    Ok(hasher.finalize().to_hex().to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app_dirs::ConfigBaseGuard;
+    use crate::sample_sources::SampleSource;
+    use tempfile::tempdir;
+
+    #[test]
+    fn backfill_enqueues_when_source_has_no_features() {
+        let config_dir = tempdir().unwrap();
+        let _guard = ConfigBaseGuard::set(config_dir.path().to_path_buf());
+
+        let source_root = tempdir().unwrap();
+        let source = SampleSource::new(source_root.path().to_path_buf());
+
+        // Register source root in library DB so workers can resolve paths later.
+        let _ = crate::sample_sources::library::save(&crate::sample_sources::library::LibraryState {
+            sources: vec![source.clone()],
+            collections: vec![],
+        })
+        .unwrap();
+
+        // Populate per-source DB with a fake entry (no audio file needed for enqueue).
+        let db = crate::sample_sources::SourceDatabase::open(&source.root).unwrap();
+        let mut batch = db.write_batch().unwrap();
+        batch
+            .upsert_file_with_hash(
+                Path::new("Pack/one.wav"),
+                10,
+                123,
+                "h1",
+            )
+            .unwrap();
+        batch.commit().unwrap();
+
+        let (inserted, progress) = enqueue_jobs_for_source_backfill(&source).unwrap();
+        assert!(inserted > 0);
+        assert!(progress.total() > 0);
+
+        let (second_inserted, _) = enqueue_jobs_for_source_backfill(&source).unwrap();
+        assert_eq!(second_inserted, 0);
+    }
+}
