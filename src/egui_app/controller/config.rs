@@ -7,6 +7,11 @@ impl EguiController {
         let cfg = crate::sample_sources::config::load_or_default()?;
         self.settings.feature_flags = cfg.feature_flags;
         self.settings.model = cfg.model;
+        self.settings.analysis = cfg.analysis;
+        self.settings.analysis.max_analysis_duration_seconds =
+            super::analysis_options::clamp_max_analysis_duration_seconds(
+                self.settings.analysis.max_analysis_duration_seconds,
+            );
         self.settings.updates = cfg.updates.clone();
         self.settings.trash_folder = cfg.trash_folder.clone();
         self.settings.collection_export_root = cfg.collection_export_root.clone();
@@ -86,6 +91,9 @@ impl EguiController {
             .set_unknown_confidence_threshold(self.settings.model.unknown_confidence_threshold);
         self.runtime
             .analysis
+            .set_max_analysis_duration_seconds(self.settings.analysis.max_analysis_duration_seconds);
+        self.runtime
+            .analysis
             .start(self.runtime.jobs.message_sender());
         {
             let tx = self.runtime.jobs.message_sender();
@@ -126,6 +134,7 @@ impl EguiController {
             collections: self.library.collections.clone(),
             feature_flags: self.settings.feature_flags.clone(),
             model: self.settings.model.clone(),
+            analysis: self.settings.analysis.clone(),
             updates: self.settings.updates.clone(),
             trash_folder: self.settings.trash_folder.clone(),
             collection_export_root: self.settings.collection_export_root.clone(),

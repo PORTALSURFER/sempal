@@ -21,6 +21,8 @@ pub struct AppConfig {
     #[serde(default)]
     pub model: ModelSettings,
     #[serde(default)]
+    pub analysis: AnalysisSettings,
+    #[serde(default)]
     pub updates: UpdateSettings,
     pub trash_folder: Option<PathBuf>,
     /// Optional default root used when creating collection export folders.
@@ -41,6 +43,8 @@ struct AppSettings {
     pub feature_flags: FeatureFlags,
     #[serde(default)]
     pub model: ModelSettings,
+    #[serde(default)]
+    pub analysis: AnalysisSettings,
     #[serde(default)]
     pub updates: UpdateSettings,
     #[serde(default)]
@@ -78,6 +82,22 @@ impl Default for ModelSettings {
     fn default() -> Self {
         Self {
             unknown_confidence_threshold: default_unknown_confidence_threshold(),
+        }
+    }
+}
+
+/// Global preferences for analysis and feature extraction.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AnalysisSettings {
+    /// Skip feature extraction and predictions for files longer than this many seconds.
+    #[serde(default = "default_max_analysis_duration_seconds")]
+    pub max_analysis_duration_seconds: f32,
+}
+
+impl Default for AnalysisSettings {
+    fn default() -> Self {
+        Self {
+            max_analysis_duration_seconds: default_max_analysis_duration_seconds(),
         }
     }
 }
@@ -237,6 +257,7 @@ pub fn load_or_default() -> Result<AppConfig, ConfigError> {
         collections: library.collections,
         feature_flags: settings.feature_flags,
         model: settings.model,
+        analysis: settings.analysis,
         updates: settings.updates,
         trash_folder: settings.trash_folder,
         collection_export_root: settings.collection_export_root,
@@ -267,6 +288,7 @@ pub fn save_to_path(config: &AppConfig, path: &Path) -> Result<(), ConfigError> 
         &AppSettings {
             feature_flags: config.feature_flags.clone(),
             model: config.model.clone(),
+            analysis: config.analysis.clone(),
             updates: config.updates.clone(),
             trash_folder: config.trash_folder.clone(),
             collection_export_root: config.collection_export_root.clone(),
@@ -317,6 +339,7 @@ fn migrate_legacy_config(legacy_path: &Path, new_path: &Path) -> Result<AppSetti
     let settings = AppSettings {
         feature_flags: legacy.feature_flags,
         model: ModelSettings::default(),
+        analysis: AnalysisSettings::default(),
         updates: UpdateSettings::default(),
         trash_folder: legacy.trash_folder,
         collection_export_root: None,
@@ -385,6 +408,10 @@ fn default_unknown_confidence_threshold() -> f32 {
     0.8
 }
 
+fn default_max_analysis_duration_seconds() -> f32 {
+    30.0
+}
+
 fn default_volume() -> f32 {
     1.0
 }
@@ -408,6 +435,7 @@ impl Default for AppConfig {
             collections: Vec::new(),
             feature_flags: FeatureFlags::default(),
             model: ModelSettings::default(),
+            analysis: AnalysisSettings::default(),
             updates: UpdateSettings::default(),
             trash_folder: None,
             collection_export_root: None,
@@ -424,6 +452,7 @@ impl Default for AppSettings {
         Self {
             feature_flags: FeatureFlags::default(),
             model: ModelSettings::default(),
+            analysis: AnalysisSettings::default(),
             updates: UpdateSettings::default(),
             trash_folder: None,
             collection_export_root: None,
@@ -485,6 +514,7 @@ mod tests {
                 collections: vec![Collection::new("Old Collection")],
                 feature_flags: FeatureFlags::default(),
                 model: ModelSettings::default(),
+                analysis: AnalysisSettings::default(),
                 updates: UpdateSettings::default(),
                 trash_folder: Some(PathBuf::from("trash_here")),
                 collection_export_root: None,

@@ -76,6 +76,7 @@ pub(super) struct SelectionContextState {
 pub(super) struct AppSettingsState {
     pub(super) feature_flags: crate::sample_sources::config::FeatureFlags,
     pub(super) model: crate::sample_sources::config::ModelSettings,
+    pub(super) analysis: crate::sample_sources::config::AnalysisSettings,
     pub(super) updates: crate::sample_sources::config::UpdateSettings,
     pub(super) audio_output: AudioOutputConfig,
     pub(super) controls: crate::sample_sources::config::InteractionOptions,

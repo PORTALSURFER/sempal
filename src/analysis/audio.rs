@@ -19,6 +19,26 @@ pub(crate) fn decode_for_analysis(path: &Path) -> Result<AnalysisAudio, String> 
     decode_for_analysis_with_rate(path, ANALYSIS_SAMPLE_RATE)
 }
 
+pub(crate) fn probe_duration_seconds(path: &Path) -> Result<Option<f32>, String> {
+    let file = File::open(path).map_err(|err| format!("Failed to open {}: {err}", path.display()))?;
+    let byte_len = file
+        .metadata()
+        .map(|meta| meta.len())
+        .unwrap_or(0) as u64;
+    let hint = path.extension().and_then(|ext| ext.to_str()).map(str::to_ascii_lowercase);
+    let mut builder = Decoder::builder()
+        .with_data(BufReader::new(file))
+        .with_byte_len(byte_len)
+        .with_seekable(true);
+    if let Some(hint) = hint.as_deref() {
+        builder = builder.with_hint(hint);
+    }
+    let decoder = builder
+        .build()
+        .map_err(|err| format!("Audio decode probe failed for {}: {err}", path.display()))?;
+    Ok(decoder.total_duration().map(|dur| dur.as_secs_f32()))
+}
+
 fn decode_for_analysis_with_rate(path: &Path, sample_rate: u32) -> Result<AnalysisAudio, String> {
     let decoded = decode_to_interleaved_f32(path)?;
     let mono = downmix_to_mono(&decoded.samples, decoded.channels);

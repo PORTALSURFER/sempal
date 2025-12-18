@@ -5,6 +5,7 @@
 mod audio_cache;
 mod audio_loader;
 mod audio_options;
+mod analysis_options;
 mod analysis_jobs;
 mod background_jobs;
 mod browser_controller;
@@ -172,6 +173,7 @@ impl EguiController {
             settings: AppSettingsState {
                 feature_flags: crate::sample_sources::config::FeatureFlags::default(),
                 model: crate::sample_sources::config::ModelSettings::default(),
+                analysis: crate::sample_sources::config::AnalysisSettings::default(),
                 updates: crate::sample_sources::config::UpdateSettings::default(),
                 audio_output: AudioOutputConfig::default(),
                 controls: crate::sample_sources::config::InteractionOptions::default(),

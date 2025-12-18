@@ -16,6 +16,7 @@ pub(in crate::egui_app::controller) struct AnalysisWorkerPool {
     cancel: Arc<AtomicBool>,
     shutdown: Arc<AtomicBool>,
     unknown_threshold_bits: Arc<AtomicU32>,
+    max_duration_bits: Arc<AtomicU32>,
     threads: Vec<JoinHandle<()>>,
 }
 
@@ -25,6 +26,7 @@ impl AnalysisWorkerPool {
             cancel: Arc::new(AtomicBool::new(false)),
             shutdown: Arc::new(AtomicBool::new(false)),
             unknown_threshold_bits: Arc::new(AtomicU32::new(0.8f32.to_bits())),
+            max_duration_bits: Arc::new(AtomicU32::new(30.0f32.to_bits())),
             threads: Vec::new(),
         }
     }
@@ -32,6 +34,12 @@ impl AnalysisWorkerPool {
     pub(in crate::egui_app::controller) fn set_unknown_confidence_threshold(&self, value: f32) {
         let clamped = value.clamp(0.0, 1.0);
         self.unknown_threshold_bits
+            .store(clamped.to_bits(), Ordering::Relaxed);
+    }
+
+    pub(in crate::egui_app::controller) fn set_max_analysis_duration_seconds(&self, value: f32) {
+        let clamped = value.clamp(1.0, 60.0 * 60.0);
+        self.max_duration_bits
             .store(clamped.to_bits(), Ordering::Relaxed);
     }
 
@@ -53,6 +61,7 @@ impl AnalysisWorkerPool {
                     self.cancel.clone(),
                     self.shutdown.clone(),
                     self.unknown_threshold_bits.clone(),
+                    self.max_duration_bits.clone(),
                 ));
             }
             self.threads.push(spawn_progress_poller(
@@ -154,6 +163,7 @@ fn spawn_worker(
     cancel: Arc<AtomicBool>,
     shutdown: Arc<AtomicBool>,
     unknown_threshold_bits: Arc<AtomicU32>,
+    max_duration_bits: Arc<AtomicU32>,
 ) -> JoinHandle<()> {
     std::thread::spawn(move || {
         let db_path = match library_db_path() {
@@ -188,7 +198,15 @@ fn spawn_worker(
                 continue;
             };
             let unknown_threshold = f32::from_bits(unknown_threshold_bits.load(Ordering::Relaxed));
-            let outcome = run_job(&conn, &job, &mut model_cache, unknown_threshold);
+            let max_analysis_duration_seconds =
+                f32::from_bits(max_duration_bits.load(Ordering::Relaxed));
+            let outcome = run_job(
+                &conn,
+                &job,
+                &mut model_cache,
+                unknown_threshold,
+                max_analysis_duration_seconds,
+            );
             match outcome {
                 Ok(()) => {
                     let _ = db::mark_done(&conn, job.id);
@@ -212,10 +230,19 @@ fn run_job(
     job: &db::ClaimedJob,
     model_cache: &mut Option<inference::CachedModel>,
     unknown_confidence_threshold: f32,
+    max_analysis_duration_seconds: f32,
 ) -> Result<(), String> {
     match job.job_type.as_str() {
-        db::DEFAULT_JOB_TYPE => run_analysis_job(conn, job, model_cache, unknown_confidence_threshold),
-        db::INFERENCE_JOB_TYPE => run_inference_job(conn, job, model_cache, unknown_confidence_threshold),
+        db::DEFAULT_JOB_TYPE => run_analysis_job(
+            conn,
+            job,
+            model_cache,
+            unknown_confidence_threshold,
+            max_analysis_duration_seconds,
+        ),
+        db::INFERENCE_JOB_TYPE => {
+            run_inference_job(conn, job, model_cache, unknown_confidence_threshold)
+        }
         _ => Err(format!("Unknown job type: {}", job.job_type)),
     }
 }
@@ -225,12 +252,28 @@ fn run_analysis_job(
     job: &db::ClaimedJob,
     model_cache: &mut Option<inference::CachedModel>,
     unknown_confidence_threshold: f32,
+    max_analysis_duration_seconds: f32,
 ) -> Result<(), String> {
     let (source_id, relative_path) = db::parse_sample_id(&job.sample_id)?;
     let Some(root) = db::source_root_for(conn, &source_id)? else {
         return Err(format!("Source not found for job sample_id={}", job.sample_id));
     };
     let absolute = root.join(&relative_path);
+    if max_analysis_duration_seconds.is_finite() && max_analysis_duration_seconds > 0.0 {
+        if let Some(duration_seconds) = crate::analysis::audio::probe_duration_seconds(&absolute)?
+        {
+            if duration_seconds > max_analysis_duration_seconds {
+                db::update_analysis_metadata(
+                    conn,
+                    &job.sample_id,
+                    job.content_hash.as_deref(),
+                    duration_seconds,
+                    crate::analysis::audio::ANALYSIS_SAMPLE_RATE,
+                )?;
+                return Ok(());
+            }
+        }
+    }
     let decoded = crate::analysis::audio::decode_for_analysis(&absolute)?;
     let time_domain = crate::analysis::time_domain::extract_time_domain_features(
         &decoded.mono,
