@@ -199,11 +199,15 @@ fn split_train_test(
     let class_map = loaded.class_index_map();
     let classes: Vec<String> = class_map.iter().map(|(name, _)| name.clone()).collect();
 
-    let mut train_x = Vec::new();
-    let mut train_y = Vec::new();
-    let mut test_x = Vec::new();
-    let mut test_y = Vec::new();
+    #[derive(Clone)]
+    struct LabeledRow {
+        sample_id: String,
+        class_idx: usize,
+        split: String,
+        row: Vec<f32>,
+    }
 
+    let mut rows = Vec::new();
     for sample in &loaded.samples {
         let Some(row) = loaded.feature_row(sample) else {
             continue;
@@ -211,21 +215,75 @@ fn split_train_test(
         let Some(&class_idx) = class_map.get(&sample.label.class_id) else {
             continue;
         };
-        match sample.split.as_str() {
+        rows.push(LabeledRow {
+            sample_id: sample.sample_id.clone(),
+            class_idx,
+            split: sample.split.clone(),
+            row: row.to_vec(),
+        });
+    }
+
+    if rows.len() < 2 {
+        return Err("Dataset needs at least 2 labeled samples".to_string());
+    }
+
+    let mut train_x = Vec::new();
+    let mut train_y = Vec::new();
+    let mut test_x = Vec::new();
+    let mut test_y = Vec::new();
+
+    for item in &rows {
+        match item.split.as_str() {
             "train" => {
-                train_x.push(row.to_vec());
-                train_y.push(class_idx);
+                train_x.push(item.row.clone());
+                train_y.push(item.class_idx);
             }
             "test" => {
-                test_x.push(row.to_vec());
-                test_y.push(class_idx);
+                test_x.push(item.row.clone());
+                test_y.push(item.class_idx);
             }
             _ => {}
         }
     }
 
     if train_x.is_empty() || test_x.is_empty() {
-        return Err("Dataset needs both train and test samples".to_string());
+        // Fallback when pack-based splitting yields no test set (e.g., all samples in one pack).
+        // Use a deterministic sample-level split keyed by sample_id to ensure both sets exist.
+        train_x.clear();
+        train_y.clear();
+        test_x.clear();
+        test_y.clear();
+
+        for item in &rows {
+            let u = split_u01(&item.sample_id);
+            if u < 0.1 {
+                test_x.push(item.row.clone());
+                test_y.push(item.class_idx);
+            } else {
+                train_x.push(item.row.clone());
+                train_y.push(item.class_idx);
+            }
+        }
+
+        if test_x.is_empty() {
+            if let Some(row) = train_x.pop()
+                && let Some(y) = train_y.pop()
+            {
+                test_x.push(row);
+                test_y.push(y);
+            }
+        } else if train_x.is_empty() {
+            if let Some(row) = test_x.pop()
+                && let Some(y) = test_y.pop()
+            {
+                train_x.push(row);
+                train_y.push(y);
+            }
+        }
+
+        if train_x.is_empty() || test_x.is_empty() {
+            return Err("Dataset needs both train and test samples".to_string());
+        }
     }
 
     Ok((
@@ -246,6 +304,13 @@ fn split_train_test(
     ))
 }
 
+fn split_u01(sample_id: &str) -> f64 {
+    let hash = blake3::hash(format!("sempal-train-test-v1|{sample_id}").as_bytes());
+    let bytes = hash.as_bytes();
+    let u = u64::from_le_bytes(bytes[0..8].try_into().expect("slice size verified"));
+    (u as f64) / (u64::MAX as f64)
+}
+
 fn evaluate_accuracy(
     model: &crate::ml::gbdt_stump::GbdtStumpModel,
     dataset: &crate::ml::gbdt_stump::TrainDataset,
@@ -256,4 +321,78 @@ fn evaluate_accuracy(
         cm.add(truth, predicted);
     }
     crate::ml::metrics::accuracy(&cm)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::split_train_test;
+    use crate::dataset::loader::{LoadedDataset, Manifest, ManifestFiles, SampleFeatures, SampleLabel, SampleRecord};
+
+    fn minimal_loaded_dataset(split_a: &str, split_b: &str) -> LoadedDataset {
+        let len = crate::analysis::FEATURE_VECTOR_LEN_V1;
+        LoadedDataset {
+            manifest: Manifest {
+                format_version: 1,
+                feat_version: crate::analysis::FEATURE_VERSION_V1,
+                feature_len_f32: len,
+                files: ManifestFiles {
+                    samples: "samples.jsonl".to_string(),
+                    features: "features.f32le".to_string(),
+                },
+            },
+            samples: vec![
+                SampleRecord {
+                    sample_id: "s::a.wav".to_string(),
+                    pack_id: "s/Pack".to_string(),
+                    split: split_a.to_string(),
+                    label: SampleLabel {
+                        class_id: "kick".to_string(),
+                        confidence: 1.0,
+                        rule_id: "x".to_string(),
+                        ruleset_version: 1,
+                    },
+                    features: SampleFeatures {
+                        feat_version: crate::analysis::FEATURE_VERSION_V1,
+                        offset_bytes: 0,
+                        len_f32: len,
+                        encoding: "f32le".to_string(),
+                    },
+                },
+                SampleRecord {
+                    sample_id: "s::b.wav".to_string(),
+                    pack_id: "s/Pack".to_string(),
+                    split: split_b.to_string(),
+                    label: SampleLabel {
+                        class_id: "snare".to_string(),
+                        confidence: 1.0,
+                        rule_id: "y".to_string(),
+                        ruleset_version: 1,
+                    },
+                    features: SampleFeatures {
+                        feat_version: crate::analysis::FEATURE_VERSION_V1,
+                        offset_bytes: (len * 4) as u64,
+                        len_f32: len,
+                        encoding: "f32le".to_string(),
+                    },
+                },
+            ],
+            features_f32: (0..(len * 2)).map(|idx| idx as f32).collect(),
+        }
+    }
+
+    #[test]
+    fn split_train_test_accepts_pack_split() {
+        let loaded = minimal_loaded_dataset("train", "test");
+        let (train, test) = split_train_test(&loaded).unwrap();
+        assert!(!train.x.is_empty());
+        assert!(!test.x.is_empty());
+    }
+
+    #[test]
+    fn split_train_test_falls_back_when_test_empty() {
+        let loaded = minimal_loaded_dataset("train", "train");
+        let (train, test) = split_train_test(&loaded).unwrap();
+        assert!(!train.x.is_empty());
+        assert!(!test.x.is_empty());
+    }
 }
