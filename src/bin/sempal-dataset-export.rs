@@ -13,6 +13,10 @@ fn run() -> Result<(), String> {
     let Some(options) = parse_args(std::env::args().skip(1).collect())? else {
         return Ok(());
     };
+    let db_path = options
+        .resolved_db_path()
+        .map_err(|err| err.to_string())?;
+    println!("Using DB: {}", db_path.display());
     let summary = sempal::dataset::export::export_training_dataset(&options)
         .map_err(|err| err.to_string())?;
     println!(
@@ -21,6 +25,29 @@ fn run() -> Result<(), String> {
         summary.total_packs,
         options.out_dir.display()
     );
+    if summary.total_exported == 0 {
+        let diag = sempal::dataset::export::diagnose_export(&options).map_err(|err| err.to_string())?;
+        println!("Diagnostic tables: {}", diag.tables.join(", "));
+        if let Some(n) = diag.samples {
+            println!("samples: {n}");
+        }
+        if let Some(n) = diag.features_v1 {
+            println!("features(feat_version=1): {n}");
+        }
+        if let Some(n) = diag.labels_weak_ruleset_ge_conf {
+            println!(
+                "labels_weak(ruleset=1, conf>={:.2}): {n}",
+                options.min_confidence
+            );
+        }
+        if let Some(n) = diag.join_rows {
+            println!("features⋈labels_weak join rows: {n}");
+        }
+        println!("Hints:");
+        println!("- Make sure the GUI app has scanned your sources and finished analysis.");
+        println!("- Try lowering --min-confidence (e.g. 0.70) to include more weak labels.");
+        println!("- If you're exporting from a different machine/profile, pass --db <path-to-library.db>.");
+    }
     Ok(())
 }
 
