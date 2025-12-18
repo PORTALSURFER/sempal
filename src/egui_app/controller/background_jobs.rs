@@ -99,8 +99,8 @@ impl EguiController {
                         if self.ui.progress.task == Some(ProgressTaskKind::Scan) {
                             self.clear_progress();
                         }
-                        let is_selected_source =
-                            Some(&result.source_id) == self.selection_state.ctx.selected_source.as_ref();
+                        let is_selected_source = Some(&result.source_id)
+                            == self.selection_state.ctx.selected_source.as_ref();
                         let label = match result.mode {
                             ScanMode::Quick => "Quick sync",
                             ScanMode::Hard => "Hard sync",
@@ -229,7 +229,8 @@ impl EguiController {
                             continue;
                         }
                         if progress.pending == 0 && progress.running == 0 {
-                            if let Some(source_id) = self.selection_state.ctx.selected_source.clone()
+                            if let Some(source_id) =
+                                self.selection_state.ctx.selected_source.clone()
                                 && let Ok(failures) =
                                     super::analysis_jobs::failed_samples_for_source(&source_id)
                             {
@@ -238,9 +239,11 @@ impl EguiController {
                                     .analysis_failures
                                     .insert(source_id, failures);
                             }
-                            if let Some(source_id) = self.selection_state.ctx.selected_source.clone()
+                            if let Some(source_id) =
+                                self.selection_state.ctx.selected_source.clone()
                             {
                                 self.ui_cache.browser.predictions.remove(&source_id);
+                                self.ui_cache.browser.features.remove(&source_id);
                                 if self.ui.browser.category_filter.is_some()
                                     || self.ui.browser.confidence_threshold > 0.0
                                     || !self.ui.browser.include_unknowns
@@ -289,34 +292,43 @@ impl EguiController {
                                 StatusTone::Info,
                             );
                         }
-                        let _ = self.runtime.jobs.message_sender().send(JobMessage::Analysis(
-                            super::AnalysisJobMessage::Progress(progress),
-                        ));
+                        if let Some(source_id) = self.selection_state.ctx.selected_source.clone() {
+                            self.ui_cache.browser.features.remove(&source_id);
+                        }
+                        let _ = self
+                            .runtime
+                            .jobs
+                            .message_sender()
+                            .send(JobMessage::Analysis(super::AnalysisJobMessage::Progress(
+                                progress,
+                            )));
                     }
                     super::AnalysisJobMessage::EnqueueFailed(err) => {
-                        self.set_status(format!("Analysis enqueue failed: {err}"), StatusTone::Error);
+                        self.set_status(
+                            format!("Analysis enqueue failed: {err}"),
+                            StatusTone::Error,
+                        );
                     }
                     super::AnalysisJobMessage::PredictionLoaded {
                         sample_id,
                         top_class,
                         confidence,
                     } => {
-                        let current_sample_id = self
-                            .current_source()
-                            .and_then(|source| {
-                                self.sample_view.wav.selected_wav.as_ref().map(|path| {
-                                    format!("{}::{}", source.id.as_str(), path.to_string_lossy())
-                                })
-                            });
+                        let current_sample_id = self.current_source().and_then(|source| {
+                            self.sample_view.wav.selected_wav.as_ref().map(|path| {
+                                format!("{}::{}", source.id.as_str(), path.to_string_lossy())
+                            })
+                        });
                         if current_sample_id.as_deref() != Some(sample_id.as_str()) {
                             continue;
                         }
-                        self.ui.waveform.predicted_category = top_class.zip(confidence).map(
-                            |(class_id, confidence)| crate::egui_app::state::PredictedCategory {
-                                class_id,
-                                confidence,
-                            },
-                        );
+                        self.ui.waveform.predicted_category =
+                            top_class.zip(confidence).map(|(class_id, confidence)| {
+                                crate::egui_app::state::PredictedCategory {
+                                    class_id,
+                                    confidence,
+                                }
+                            });
                     }
                 },
                 JobMessage::ModelTraining(message) => match message {
@@ -357,13 +369,18 @@ impl EguiController {
                                 self.set_status(
                                     format!(
                                         "Trained model {} ({} samples); enqueued {} inference jobs",
-                                        outcome.model_id, outcome.exported_samples, outcome.inference_jobs_enqueued
+                                        outcome.model_id,
+                                        outcome.exported_samples,
+                                        outcome.inference_jobs_enqueued
                                     ),
                                     StatusTone::Info,
                                 );
                             }
                             Err(err) => {
-                                self.set_status(format!("Model training failed: {err}"), StatusTone::Error);
+                                self.set_status(
+                                    format!("Model training failed: {err}"),
+                                    StatusTone::Error,
+                                );
                             }
                         }
                     }
@@ -382,7 +399,8 @@ impl EguiController {
                         Ok(outcome) => {
                             if outcome.ok {
                                 self.ui.feedback_issue.last_error = None;
-                                self.ui.feedback_issue.last_success_url = Some(outcome.issue_url.clone());
+                                self.ui.feedback_issue.last_success_url =
+                                    Some(outcome.issue_url.clone());
                                 self.set_status(
                                     format!("Created GitHub issue #{}", outcome.number),
                                     crate::egui_app::ui::style::StatusTone::Info,
@@ -397,14 +415,19 @@ impl EguiController {
                             }
                         }
                         Err(err) => {
-                            if matches!(err, crate::issue_gateway::api::CreateIssueError::Unauthorized) {
+                            if matches!(
+                                err,
+                                crate::issue_gateway::api::CreateIssueError::Unauthorized
+                            ) {
                                 if let Ok(store) = crate::issue_gateway::IssueTokenStore::new() {
                                     let _ = store.delete();
                                 }
                                 self.ui.feedback_issue.token_modal_open = true;
                                 self.ui.feedback_issue.focus_token_requested = true;
-                                self.ui.feedback_issue.last_error =
-                                    Some("GitHub connection expired. Reconnect and paste a new token.".to_string());
+                                self.ui.feedback_issue.last_error = Some(
+                                    "GitHub connection expired. Reconnect and paste a new token."
+                                        .to_string(),
+                                );
                             } else {
                                 self.ui.feedback_issue.last_error = Some(err.to_string());
                             }

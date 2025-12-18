@@ -1,8 +1,5 @@
 use super::flat_items_list::{FlatItemsListConfig, render_flat_items_list};
-use super::helpers::{
-    NumberColumn, RowMarker, clamp_label_for_width,
-    render_list_row,
-};
+use super::helpers::{NumberColumn, RowMarker, clamp_label_for_width, render_list_row};
 use super::style;
 use super::*;
 use crate::egui_app::state::{
@@ -20,6 +17,7 @@ impl EguiApp {
         if !categories.is_empty() {
             self.controller.prepare_prediction_cache_for_browser();
         }
+        self.controller.prepare_feature_cache_for_browser();
         let selected_row = self.controller.ui.browser.selected_visible;
         let loaded_row = self.controller.ui.browser.loaded_visible;
         let drop_target = self.controller.triage_flag_drop_target();
@@ -52,6 +50,7 @@ impl EguiApp {
             },
             |ui, row, metrics| {
                 const CATEGORY_COL_WIDTH: f32 = 140.0;
+                const FEATURE_COL_WIDTH: f32 = 56.0;
                 let entry_index = {
                     let indices = self.controller.visible_browser_indices();
                     match indices.get(row) {
@@ -115,7 +114,12 @@ impl EguiApp {
                     - metrics.padding
                     - metrics.number_width
                     - metrics.number_gap
-                    - if categories.is_empty() { 0.0 } else { CATEGORY_COL_WIDTH }
+                    - FEATURE_COL_WIDTH
+                    - if categories.is_empty() {
+                        0.0
+                    } else {
+                        CATEGORY_COL_WIDTH
+                    }
                     - trailing_space;
                 let row_label = if rename_match {
                     String::new()
@@ -240,6 +244,86 @@ impl EguiApp {
                                     }
                                 }
                             });
+                        });
+                        let _ = inner.response.on_hover_text(hover);
+                    }
+
+                    if !rename_match {
+                        let max_duration = self.controller.max_analysis_duration_seconds();
+                        let status = self.controller.cached_feature_status_for_entry(entry_index);
+                        let (label, hover, color) = match status {
+                            Some(status) if status.has_features_v1 => (
+                                "v1".to_string(),
+                                format!(
+                                    "Features: v1{}\n{}",
+                                    status
+                                        .duration_seconds
+                                        .map(|s| format!("\nDuration: {:.2}s", s))
+                                        .unwrap_or_default(),
+                                    status
+                                        .sr_used
+                                        .map(|sr| format!("SR used: {sr}"))
+                                        .unwrap_or_else(|| "SR used: —".to_string())
+                                ),
+                                palette.text_muted,
+                            ),
+                            Some(status)
+                                if status.analysis_status == Some(crate::egui_app::controller::controller_state::AnalysisJobStatus::Failed) =>
+                            (
+                                "fail".to_string(),
+                                "Analysis failed (see FAILED marker on name)".to_string(),
+                                style::destructive_text(),
+                            ),
+                            Some(status)
+                                if matches!(
+                                    status.analysis_status,
+                                    Some(crate::egui_app::controller::controller_state::AnalysisJobStatus::Pending)
+                                        | Some(crate::egui_app::controller::controller_state::AnalysisJobStatus::Running)
+                                ) =>
+                            (
+                                "…".to_string(),
+                                "Analysis in progress".to_string(),
+                                palette.text_muted,
+                            ),
+                            Some(status)
+                                if status
+                                    .duration_seconds
+                                    .is_some_and(|s| max_duration.is_finite() && s > max_duration)
+                                    && !status.has_features_v1 =>
+                            (
+                                "skip".to_string(),
+                                format!(
+                                    "Skipped feature extraction (duration > max = {:.0}s)",
+                                    max_duration
+                                ),
+                                palette.text_muted,
+                            ),
+                            Some(status) if status.duration_seconds.is_some() => (
+                                "meta".to_string(),
+                                "Metadata available (duration/SR), features not computed yet".to_string(),
+                                palette.text_muted,
+                            ),
+                            _ => ("—".to_string(), "No analysis metadata yet".to_string(), palette.text_muted),
+                        };
+
+                        let right = response.rect.right();
+                        let x2 = if categories.is_empty() {
+                            right - trailing_space
+                        } else {
+                            right - trailing_space - CATEGORY_COL_WIDTH
+                        };
+                        let x1 = (x2 - FEATURE_COL_WIDTH).max(response.rect.left());
+                        let rect = egui::Rect::from_min_max(
+                            egui::pos2(x1, response.rect.top()),
+                            egui::pos2(x2, response.rect.bottom()),
+                        );
+                        let inner = ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
+                            ui.with_layout(
+                                egui::Layout::centered_and_justified(egui::Direction::LeftToRight),
+                                |ui| {
+                                    ui.label(RichText::new(label).color(color).small());
+                                },
+                            );
                         });
                         let _ = inner.response.on_hover_text(hover);
                     }
@@ -445,10 +529,12 @@ impl EguiApp {
                     ui.separator();
                     for category in &categories {
                         if ui.button(category).clicked() {
-                            if let Err(err) = self.controller.set_user_category_override_for_visible_rows(
-                                &action_rows,
-                                Some(category.as_str()),
-                            ) {
+                            if let Err(err) =
+                                self.controller.set_user_category_override_for_visible_rows(
+                                    &action_rows,
+                                    Some(category.as_str()),
+                                )
+                            {
                                 self.controller.set_status(
                                     format!("Set category override failed: {err}"),
                                     StatusTone::Error,
@@ -528,5 +614,4 @@ impl EguiApp {
             }
         });
     }
-
 }

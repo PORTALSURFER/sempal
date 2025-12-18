@@ -1,6 +1,6 @@
 use super::{
     ControllerUiCacheState, LibraryCacheState, MissingState, SourceDatabase, SourceId,
-    controller_state::PredictionCache,
+    controller_state::{FeatureCache, PredictionCache},
 };
 use std::{
     collections::{HashMap, HashSet},
@@ -15,6 +15,7 @@ pub(super) struct SourceCacheInvalidator<'a> {
     label_cache: &'a mut HashMap<SourceId, Vec<String>>,
     analysis_failures_cache: &'a mut HashMap<SourceId, HashMap<PathBuf, String>>,
     prediction_cache: &'a mut HashMap<SourceId, PredictionCache>,
+    feature_cache: &'a mut HashMap<SourceId, FeatureCache>,
     missing_wavs: &'a mut HashMap<SourceId, HashSet<PathBuf>>,
     folder_browsers: &'a mut HashMap<SourceId, super::source_folders::FolderBrowserModel>,
 }
@@ -32,6 +33,7 @@ impl<'a> SourceCacheInvalidator<'a> {
             &mut ui_cache.browser.labels,
             &mut ui_cache.browser.analysis_failures,
             &mut ui_cache.browser.predictions,
+            &mut ui_cache.browser.features,
             &mut missing.wavs,
             &mut ui_cache.folders.models,
         )
@@ -44,6 +46,7 @@ impl<'a> SourceCacheInvalidator<'a> {
         label_cache: &'a mut HashMap<SourceId, Vec<String>>,
         analysis_failures_cache: &'a mut HashMap<SourceId, HashMap<PathBuf, String>>,
         prediction_cache: &'a mut HashMap<SourceId, PredictionCache>,
+        feature_cache: &'a mut HashMap<SourceId, FeatureCache>,
         missing_wavs: &'a mut HashMap<SourceId, HashSet<PathBuf>>,
         folder_browsers: &'a mut HashMap<SourceId, super::source_folders::FolderBrowserModel>,
     ) -> Self {
@@ -54,6 +57,7 @@ impl<'a> SourceCacheInvalidator<'a> {
             label_cache,
             analysis_failures_cache,
             prediction_cache,
+            feature_cache,
             missing_wavs,
             folder_browsers,
         }
@@ -65,6 +69,7 @@ impl<'a> SourceCacheInvalidator<'a> {
         self.label_cache.remove(source_id);
         self.analysis_failures_cache.remove(source_id);
         self.prediction_cache.remove(source_id);
+        self.feature_cache.remove(source_id);
         self.missing_wavs.remove(source_id);
     }
 

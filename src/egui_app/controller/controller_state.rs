@@ -109,6 +109,7 @@ pub(super) struct BrowserCacheState {
     pub(super) analysis_failures: HashMap<SourceId, HashMap<PathBuf, String>>,
     pub(super) search: wavs::BrowserSearchCache,
     pub(super) predictions: HashMap<SourceId, PredictionCache>,
+    pub(super) features: HashMap<SourceId, FeatureCache>,
     pub(super) prediction_categories: Option<PredictionCategories>,
     pub(super) prediction_categories_checked: bool,
 }
@@ -117,6 +118,27 @@ pub(super) struct PredictionCache {
     pub(super) model_id: Option<String>,
     pub(super) rows: Vec<Option<crate::egui_app::state::PredictedCategory>>,
     pub(super) user_overrides: Vec<bool>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum AnalysisJobStatus {
+    Pending,
+    Running,
+    Done,
+    Failed,
+    Canceled,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct FeatureStatus {
+    pub(crate) has_features_v1: bool,
+    pub(crate) duration_seconds: Option<f32>,
+    pub(crate) sr_used: Option<i64>,
+    pub(crate) analysis_status: Option<AnalysisJobStatus>,
+}
+
+pub(crate) struct FeatureCache {
+    pub(crate) rows: Vec<Option<FeatureStatus>>,
 }
 
 pub(super) struct PredictionCategories {

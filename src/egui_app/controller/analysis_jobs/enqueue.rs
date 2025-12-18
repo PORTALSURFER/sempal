@@ -1,7 +1,7 @@
 use super::db;
 use super::types::AnalysisProgress;
-use rusqlite::{OptionalExtension, params, params_from_iter};
 use rusqlite::types::Value;
+use rusqlite::{OptionalExtension, params, params_from_iter};
 use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -31,14 +31,15 @@ pub(in crate::egui_app::controller) fn enqueue_jobs_for_source(
         .iter()
         .map(|sample| {
             let sample_id = db::build_sample_id(source_id.as_str(), &sample.relative_path);
-            let labels = crate::labeling::weak::weak_labels_for_relative_path(&sample.relative_path)
-                .into_iter()
-                .map(|label| super::weak_labels::WeakLabelInsert {
-                    class_id: label.class_id.to_string(),
-                    confidence: label.confidence,
-                    rule_id: label.rule_id.to_string(),
-                })
-                .collect();
+            let labels =
+                crate::labeling::weak::weak_labels_for_relative_path(&sample.relative_path)
+                    .into_iter()
+                    .map(|label| super::weak_labels::WeakLabelInsert {
+                        class_id: label.class_id.to_string(),
+                        confidence: label.confidence,
+                        rule_id: label.rule_id.to_string(),
+                    })
+                    .collect();
             super::weak_labels::SampleWeakLabels { sample_id, labels }
         })
         .collect();
@@ -100,8 +101,8 @@ pub(in crate::egui_app::controller) fn enqueue_jobs_for_source_backfill(
         return Ok((0, db::current_progress(&conn)?));
     }
 
-    let source_db = crate::sample_sources::SourceDatabase::open(&source.root)
-        .map_err(|err| err.to_string())?;
+    let source_db =
+        crate::sample_sources::SourceDatabase::open(&source.root).map_err(|err| err.to_string())?;
     let mut entries = source_db.list_files().map_err(|err| err.to_string())?;
     entries.retain(|entry| !entry.missing);
     if entries.is_empty() {
@@ -141,6 +142,76 @@ pub(in crate::egui_app::controller) fn enqueue_jobs_for_source_backfill(
 
     db::upsert_samples(&mut conn, &sample_metadata)?;
 
+    let created_at = now_epoch_seconds();
+    super::weak_labels::replace_weak_labels_for_samples(
+        &mut conn,
+        &weak_labels,
+        crate::labeling::weak::WEAK_LABEL_RULESET_VERSION,
+        created_at,
+    )?;
+    let inserted = db::enqueue_jobs(&mut conn, &jobs, db::DEFAULT_JOB_TYPE, created_at)?;
+    let progress = db::current_progress(&conn)?;
+    Ok((inserted, progress))
+}
+
+pub(in crate::egui_app::controller) fn enqueue_jobs_for_source_missing_features(
+    source_id: &crate::sample_sources::SourceId,
+) -> Result<(usize, AnalysisProgress), String> {
+    let db_path = library_db_path()?;
+    let mut conn = db::open_library_db(&db_path)?;
+
+    let prefix = format!("{}::", source_id.as_str());
+    let prefix_end = format!("{prefix}\u{10FFFF}");
+
+    let (jobs, weak_labels) = {
+        let mut stmt = conn
+            .prepare(
+                "SELECT s.sample_id, s.content_hash
+                 FROM samples s
+                 LEFT JOIN features f ON f.sample_id = s.sample_id AND f.feat_version = 1
+                 LEFT JOIN analysis_jobs j ON j.sample_id = s.sample_id AND j.job_type = ?1
+                 WHERE s.sample_id >= ?2 AND s.sample_id < ?3
+                   AND f.sample_id IS NULL
+                   AND (j.status IS NULL OR j.status NOT IN ('pending','running'))",
+            )
+            .map_err(|err| format!("Prepare missing-features query failed: {err}"))?;
+        let mut rows = stmt
+            .query(params![db::DEFAULT_JOB_TYPE, prefix, prefix_end])
+            .map_err(|err| format!("Query missing-features failed: {err}"))?;
+
+        let mut jobs: Vec<(String, String)> = Vec::new();
+        let mut weak_labels: Vec<super::weak_labels::SampleWeakLabels> = Vec::new();
+        while let Some(row) = rows
+            .next()
+            .map_err(|err| format!("Query missing-features failed: {err}"))?
+        {
+            let sample_id: String = row.get(0).map_err(|err| err.to_string())?;
+            let content_hash: String = row.get(1).map_err(|err| err.to_string())?;
+            if content_hash.trim().is_empty() {
+                continue;
+            }
+            jobs.push((sample_id.clone(), content_hash));
+
+            let Some((_, relative_path)) = sample_id.split_once("::") else {
+                continue;
+            };
+            let relative_path = std::path::PathBuf::from(relative_path);
+            let labels = crate::labeling::weak::weak_labels_for_relative_path(&relative_path)
+                .into_iter()
+                .map(|label| super::weak_labels::WeakLabelInsert {
+                    class_id: label.class_id.to_string(),
+                    confidence: label.confidence,
+                    rule_id: label.rule_id.to_string(),
+                })
+                .collect();
+            weak_labels.push(super::weak_labels::SampleWeakLabels { sample_id, labels });
+        }
+        (jobs, weak_labels)
+    };
+
+    if jobs.is_empty() {
+        return Ok((0, db::current_progress(&conn)?));
+    }
     let created_at = now_epoch_seconds();
     super::weak_labels::replace_weak_labels_for_samples(
         &mut conn,
@@ -200,8 +271,8 @@ fn now_epoch_seconds() -> i64 {
 fn compute_content_hash(path: &Path) -> Result<String, String> {
     use std::io::Read;
 
-    let mut file =
-        std::fs::File::open(path).map_err(|err| format!("Failed to open {}: {err}", path.display()))?;
+    let mut file = std::fs::File::open(path)
+        .map_err(|err| format!("Failed to open {}: {err}", path.display()))?;
     let mut hasher = blake3::Hasher::new();
     let mut buffer = [0u8; 64 * 1024];
     loop {
@@ -283,22 +354,18 @@ mod tests {
         let source = SampleSource::new(source_root.path().to_path_buf());
 
         // Register source root in library DB so workers can resolve paths later.
-        let _ = crate::sample_sources::library::save(&crate::sample_sources::library::LibraryState {
-            sources: vec![source.clone()],
-            collections: vec![],
-        })
-        .unwrap();
+        let _ =
+            crate::sample_sources::library::save(&crate::sample_sources::library::LibraryState {
+                sources: vec![source.clone()],
+                collections: vec![],
+            })
+            .unwrap();
 
         // Populate per-source DB with a fake entry (no audio file needed for enqueue).
         let db = crate::sample_sources::SourceDatabase::open(&source.root).unwrap();
         let mut batch = db.write_batch().unwrap();
         batch
-            .upsert_file_with_hash(
-                Path::new("Pack/one.wav"),
-                10,
-                123,
-                "h1",
-            )
+            .upsert_file_with_hash(Path::new("Pack/one.wav"), 10, 123, "h1")
             .unwrap();
         batch.commit().unwrap();
 
@@ -308,5 +375,73 @@ mod tests {
 
         let (second_inserted, _) = enqueue_jobs_for_source_backfill(&source).unwrap();
         assert_eq!(second_inserted, 0);
+    }
+
+    #[test]
+    fn missing_features_only_enqueues_unanalyzed_samples() {
+        let config_dir = tempdir().unwrap();
+        let _guard = ConfigBaseGuard::set(config_dir.path().to_path_buf());
+
+        let source_root = tempdir().unwrap();
+        let source = SampleSource::new(source_root.path().to_path_buf());
+
+        let _ =
+            crate::sample_sources::library::save(&crate::sample_sources::library::LibraryState {
+                sources: vec![source.clone()],
+                collections: vec![],
+            })
+            .unwrap();
+
+        let db_path = crate::app_dirs::app_root_dir()
+            .unwrap()
+            .join(crate::sample_sources::library::LIBRARY_DB_FILE_NAME);
+        let conn = db::open_library_db(&db_path).unwrap();
+
+        let a = format!("{}::Pack/a.wav", source.id.as_str());
+        let b = format!("{}::Pack/b.wav", source.id.as_str());
+        let c = format!("{}::Pack/c.wav", source.id.as_str());
+        conn.execute(
+            "INSERT INTO samples (sample_id, content_hash, size, mtime_ns, duration_seconds, sr_used)
+             VALUES (?1, ?2, 1, 1, NULL, NULL)",
+            params![&a, "ha"],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO samples (sample_id, content_hash, size, mtime_ns, duration_seconds, sr_used)
+             VALUES (?1, ?2, 1, 1, NULL, NULL)",
+            params![&b, "hb"],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO samples (sample_id, content_hash, size, mtime_ns, duration_seconds, sr_used)
+             VALUES (?1, ?2, 1, 1, NULL, NULL)",
+            params![&c, "hc"],
+        )
+        .unwrap();
+
+        conn.execute(
+            "INSERT INTO features (sample_id, feat_version, vec_blob, computed_at)
+             VALUES (?1, 1, X'01020304', 1)",
+            params![&b],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO analysis_jobs (sample_id, job_type, content_hash, status, attempts, created_at)
+             VALUES (?1, ?2, ?3, 'pending', 0, 1)",
+            params![&c, db::DEFAULT_JOB_TYPE, "hc"],
+        )
+        .unwrap();
+
+        let (inserted, _progress) = enqueue_jobs_for_source_missing_features(&source.id).unwrap();
+        assert_eq!(inserted, 1);
+
+        let pending: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM analysis_jobs WHERE status='pending' AND job_type=?1",
+                params![db::DEFAULT_JOB_TYPE],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(pending, 2);
     }
 }

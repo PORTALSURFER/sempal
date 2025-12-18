@@ -42,6 +42,15 @@ impl EguiApp {
             }
 
             ui.add_space(ui.spacing().item_spacing.x);
+            let backfill_btn = egui::Button::new("Compute missing features");
+            let backfill_btn = ui
+                .add_enabled(self.controller.current_source().is_some(), backfill_btn)
+                .on_hover_text("Queue analysis jobs to compute missing features (needed for retrain)");
+            if backfill_btn.clicked() {
+                self.controller.backfill_missing_features_for_selected_source();
+            }
+
+            ui.add_space(ui.spacing().item_spacing.x);
             let categories = self.controller.prediction_categories();
             if !categories.is_empty() {
                 let mut selected = self.controller.ui.browser.category_filter.clone();

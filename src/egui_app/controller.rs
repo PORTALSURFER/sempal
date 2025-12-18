@@ -2,11 +2,12 @@
 //! This module now delegates responsibilities into focused submodules to
 //! keep files small and behaviour easy to reason about.
 
+mod analysis_backfill;
+mod analysis_jobs;
+mod analysis_options;
 mod audio_cache;
 mod audio_loader;
 mod audio_options;
-mod analysis_options;
-mod analysis_jobs;
 mod background_jobs;
 mod browser_controller;
 mod clipboard;
@@ -15,10 +16,10 @@ mod collection_items;
 mod collection_items_helpers;
 mod collections_controller;
 mod config;
-mod controller_state;
+pub(crate) mod controller_state;
 mod drag_drop_controller;
-mod focus;
 mod feedback_issue;
+mod focus;
 pub(crate) mod hotkeys;
 mod hotkeys_controller;
 mod interaction_options;
@@ -32,7 +33,6 @@ mod progress;
 mod scans;
 mod selection_edits;
 mod selection_export;
-mod user_labels;
 mod source_cache_invalidator;
 mod source_folders;
 mod sources;
@@ -41,6 +41,7 @@ mod trash;
 mod trash_move;
 mod undo;
 mod updates;
+mod user_labels;
 mod wav_entries_loader;
 mod waveform_controller;
 mod wavs;
@@ -60,10 +61,10 @@ use crate::{
     selection::{SelectionRange, SelectionState},
     waveform::{DecodedWaveform, WaveformRenderer},
 };
-use audio_cache::AudioCache;
-use audio_loader::{AudioLoadError, AudioLoadJob, AudioLoadOutcome, AudioLoadResult};
 pub(in crate::egui_app::controller) use analysis_jobs::AnalysisJobMessage;
 use analysis_jobs::AnalysisWorkerPool;
+use audio_cache::AudioCache;
+use audio_loader::{AudioLoadError, AudioLoadJob, AudioLoadOutcome, AudioLoadResult};
 pub(in crate::egui_app::controller) use controller_state::*;
 use egui::Color32;
 use open;
@@ -150,6 +151,7 @@ impl EguiController {
                     analysis_failures: HashMap::new(),
                     search: wavs::BrowserSearchCache::default(),
                     predictions: HashMap::new(),
+                    features: HashMap::new(),
                     prediction_categories: None,
                     prediction_categories_checked: false,
                 },
