@@ -3,4 +3,4 @@
 //! This module provides weak/heuristic labeling utilities used to bootstrap training labels.
 
 pub mod weak;
-
+pub mod weak_config;

@@ -206,6 +206,7 @@ fn rules() -> &'static [Rule] {
             r"(?i)\b(fx|sfx|effect|effects|impact|riser|rise|sweep|uplifter|downlifter)\b",
         );
 
+        add_user_rules(&mut rules);
         rules
     })
 }
@@ -242,6 +243,54 @@ pub fn weak_labels_for_relative_path(relative_path: &Path) -> Vec<WeakLabel> {
     let mut labels: Vec<WeakLabel> = best_by_class.into_values().collect();
     labels.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal));
     labels
+}
+
+fn add_user_rules(rules: &mut Vec<Rule>) {
+    let Some(cfg) = crate::labeling::weak_config::load_label_rules_from_app_dir() else {
+        return;
+    };
+
+    for (class_id, aliases) in cfg.categories {
+        let Some(regex) = regex_for_aliases(&aliases) else {
+            continue;
+        };
+
+        let class_id: &'static str = Box::leak(class_id.into_boxed_str());
+        rules.push(Rule {
+            id: Box::leak(format!("user.{class_id}.filename").into_boxed_str()),
+            class_id,
+            confidence: 0.93,
+            target: MatchTarget::FileStem,
+            regex: regex.clone(),
+        });
+        rules.push(Rule {
+            id: Box::leak(format!("user.{class_id}.path").into_boxed_str()),
+            class_id,
+            confidence: 0.80,
+            target: MatchTarget::FullPath,
+            regex,
+        });
+    }
+}
+
+fn regex_for_aliases(aliases: &[String]) -> Option<Regex> {
+    let mut parts: Vec<String> = aliases
+        .iter()
+        .map(|s| normalize_str_for_matching(s))
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    parts.sort();
+    parts.dedup();
+    if parts.is_empty() {
+        return None;
+    }
+    let alts = parts
+        .into_iter()
+        .map(|s| regex::escape(&s))
+        .collect::<Vec<_>>()
+        .join("|");
+    Regex::new(&format!(r"(?i)\b(?:{alts})\b")).ok()
 }
 
 fn normalize_for_matching(path: &Path) -> String {
@@ -319,5 +368,13 @@ mod tests {
     fn labels_kick_with_camelcase() {
         let labels = weak_labels_for_relative_path(&PathBuf::from("Drums/Kicks/BangKick.wav"));
         assert!(labels.iter().any(|label| label.class_id == "kick"));
+    }
+
+    #[test]
+    fn regex_for_aliases_matches_word_boundaries() {
+        let re = super::regex_for_aliases(&["hh".to_string()]).unwrap();
+        assert!(re.is_match("hh"));
+        assert!(re.is_match("kick hh"));
+        assert!(!re.is_match("shh"));
     }
 }
