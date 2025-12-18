@@ -109,6 +109,17 @@ impl EguiController {
         self.wav_entries.entries.get(index)
     }
 
+    pub fn analysis_failure_for_entry(&self, index: usize) -> Option<&str> {
+        let source_id = self.selection_state.ctx.selected_source.as_ref()?;
+        let entry = self.wav_entries.entries.get(index)?;
+        self.ui_cache
+            .browser
+            .analysis_failures
+            .get(source_id)
+            .and_then(|failures| failures.get(&entry.relative_path))
+            .map(|s| s.as_str())
+    }
+
     /// Retrieve a cached label for a wav entry by index.
     pub fn wav_label(&mut self, index: usize) -> Option<String> {
         self.label_for_ref(index).map(str::to_string)

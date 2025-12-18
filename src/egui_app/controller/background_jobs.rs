@@ -223,6 +223,15 @@ impl EguiController {
                             continue;
                         }
                         if progress.pending == 0 && progress.running == 0 {
+                            if let Some(source_id) = self.selection_state.ctx.selected_source.clone()
+                                && let Ok(failures) =
+                                    super::analysis_jobs::failed_samples_for_source(&source_id)
+                            {
+                                self.ui_cache
+                                    .browser
+                                    .analysis_failures
+                                    .insert(source_id, failures);
+                            }
                             if self.ui.progress.task == Some(ProgressTaskKind::Analysis) {
                                 self.clear_progress();
                             }

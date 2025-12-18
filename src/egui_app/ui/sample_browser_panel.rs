@@ -91,6 +91,13 @@ impl EguiApp {
                 {
                     label.push_str(" • UNKNOWN");
                 }
+                let analysis_failure = self
+                    .controller
+                    .analysis_failure_for_entry(entry_index)
+                    .map(str::to_string);
+                if analysis_failure.is_some() {
+                    label.push_str(" • FAILED");
+                }
                 if is_loaded {
                     label.push_str(" • loaded");
                 }
@@ -126,6 +133,8 @@ impl EguiApp {
                 let number_text = format!("{}", row + 1);
                 let text_color = if missing {
                     style::missing_text()
+                } else if analysis_failure.is_some() {
+                    style::destructive_text()
                 } else {
                     style::triage_label_color(tag)
                 };
@@ -153,6 +162,12 @@ impl EguiApp {
                             marker: triage_marker,
                         },
                     );
+                    let response = if let Some(reason) = analysis_failure.as_deref() {
+                        let reason = reason.lines().next().unwrap_or(reason);
+                        response.on_hover_text(format!("Analysis failed: {reason}"))
+                    } else {
+                        response
+                    };
 
                     if is_selected {
                         let marker_width = 4.0;

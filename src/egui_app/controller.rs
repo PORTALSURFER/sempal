@@ -144,6 +144,7 @@ impl EguiController {
             ui_cache: ControllerUiCacheState {
                 browser: BrowserCacheState {
                     labels: HashMap::new(),
+                    analysis_failures: HashMap::new(),
                     search: wavs::BrowserSearchCache::default(),
                     predictions: HashMap::new(),
                     prediction_categories: None,

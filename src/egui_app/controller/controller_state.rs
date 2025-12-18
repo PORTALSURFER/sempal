@@ -105,6 +105,7 @@ impl LibraryCacheState {
 
 pub(super) struct BrowserCacheState {
     pub(super) labels: HashMap<SourceId, Vec<String>>,
+    pub(super) analysis_failures: HashMap<SourceId, HashMap<PathBuf, String>>,
     pub(super) search: wavs::BrowserSearchCache,
     pub(super) predictions: HashMap<SourceId, PredictionCache>,
     pub(super) prediction_categories: Option<PredictionCategories>,
