@@ -192,6 +192,12 @@ impl EguiController {
                             }
                             continue;
                         }
+                        if progress.pending == 0 && progress.running == 0 {
+                            if self.ui.progress.task == Some(ProgressTaskKind::Analysis) {
+                                self.clear_progress();
+                            }
+                            continue;
+                        }
                         if self.ui.progress.task.is_none()
                             || self.ui.progress.task == Some(ProgressTaskKind::Analysis)
                         {

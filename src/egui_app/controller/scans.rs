@@ -33,7 +33,7 @@ impl EguiController {
             StatusTone::Busy,
         );
         self.show_status_progress(ProgressTaskKind::Scan, status_label, 0, true);
-        self.update_progress_detail("Scanning wav files…");
+        self.update_progress_detail("Scanning audio files…");
 
         let cancel = Arc::new(AtomicBool::new(false));
         let (tx, rx) = std::sync::mpsc::channel();

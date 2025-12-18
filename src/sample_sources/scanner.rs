@@ -61,8 +61,8 @@ pub enum ScanError {
     Time { path: PathBuf },
 }
 
-/// Recursively scan the source root, syncing .wav files into the database.
-/// Returns counts of added/updated/removed wav rows.
+/// Recursively scan the source root, syncing supported audio files into the database.
+/// Returns counts of added/updated/removed rows.
 pub fn scan_once(db: &SourceDatabase) -> Result<ScanStats, ScanError> {
     scan(db, ScanMode::Quick, None, None)
 }
@@ -187,7 +187,7 @@ fn visit_dir(
                 stack.push(path);
                 continue;
             }
-            if file_type.is_file() && is_wav(&path) {
+            if file_type.is_file() && is_supported_audio(&path) {
                 visitor(&path)?;
             }
         }
@@ -350,9 +350,14 @@ fn to_nanos(time: &SystemTime, path: &Path) -> Result<i64, ScanError> {
     Ok(duration.as_nanos().min(i64::MAX as u128) as i64)
 }
 
-fn is_wav(path: &Path) -> bool {
-    path.extension()
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("wav"))
+fn is_supported_audio(path: &Path) -> bool {
+    let Some(ext) = path.extension().and_then(|ext| ext.to_str()) else {
+        return false;
+    };
+    match ext.to_ascii_lowercase().as_str() {
+        "wav" | "aif" | "aiff" | "flac" | "mp3" => true,
+        _ => false,
+    }
 }
 
 #[cfg(test)]
