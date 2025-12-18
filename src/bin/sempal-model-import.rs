@@ -24,6 +24,7 @@ fn run() -> Result<(), String> {
     let db_path = match options.db_path {
         Some(path) => path,
         None => {
+            let _ = sempal::sample_sources::library::load().map_err(|err| err.to_string())?;
             let root = sempal::app_dirs::app_root_dir().map_err(|err| err.to_string())?;
             root.join(sempal::sample_sources::library::LIBRARY_DB_FILE_NAME)
         }
@@ -117,4 +118,3 @@ fn now_epoch_seconds() -> i64 {
         .unwrap_or_default()
         .as_secs() as i64
 }
-

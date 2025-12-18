@@ -64,6 +64,8 @@ pub enum ExportError {
     MissingDbPath,
     #[error("sqlite error: {0}")]
     Sqlite(#[from] rusqlite::Error),
+    #[error("failed to prepare library database: {0}")]
+    PrepareDb(String),
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
     #[error("invalid sample_id: {0}")]
@@ -114,6 +116,9 @@ pub fn export_training_dataset(options: &ExportOptions) -> Result<ExportSummary,
     let db_path = match options.db_path.clone() {
         Some(path) => path,
         None => {
+            // Ensure the library database schema is up to date before direct reads.
+            crate::sample_sources::library::load()
+                .map_err(|err| ExportError::PrepareDb(err.to_string()))?;
             let root = crate::app_dirs::app_root_dir().map_err(|_| ExportError::MissingDbPath)?;
             root.join(LIBRARY_DB_FILE_NAME)
         }
