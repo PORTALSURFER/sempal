@@ -110,7 +110,7 @@ fn worker_count() -> usize {
     std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(1)
-        .saturating_sub(1)
+        .saturating_sub(2)
         .max(1)
 }
 
