@@ -212,7 +212,7 @@ def main() -> int:
     parser.add_argument("--force", action="store_true", help="Overwrite existing model")
     parser.add_argument("--runtime-url", help="Override ONNX Runtime download URL")
     parser.add_argument("--runtime-file", type=Path, help="Use a local runtime archive/dll")
-    parser.add_argument("--ort-version", default="1.18.1", help="ONNX Runtime version to download")
+    parser.add_argument("--ort-version", default="1.22.0", help="ONNX Runtime version to download")
     args = parser.parse_args()
 
     app_root = args.app_root or resolve_app_root()
