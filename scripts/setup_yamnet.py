@@ -7,6 +7,9 @@ import shutil
 import site
 import subprocess
 import sys
+import tarfile
+import urllib.request
+import zipfile
 from pathlib import Path
 
 
@@ -103,11 +106,90 @@ def find_tflite_runtime() -> Path | None:
     return candidates[0]
 
 
+def runtime_filename() -> str:
+    system = platform.system().lower()
+    if system == "windows":
+        return "tensorflowlite_c.dll"
+    if system == "darwin":
+        return "libtensorflowlite_c.dylib"
+    return "libtensorflowlite_c.so"
+
+
+def runtime_urls(version: str) -> list[str]:
+    system = platform.system().lower()
+    arch = "x86_64"
+    if system == "windows":
+        base = f"https://storage.googleapis.com/tensorflow/libtensorflowlite_c/windows/{arch}"
+        names = [
+            f"tensorflowlite_c-{version}.zip",
+            f"tensorflowlite_c-{version[:4]}.zip",
+        ]
+    elif system == "darwin":
+        base = f"https://storage.googleapis.com/tensorflow/libtensorflowlite_c/darwin/{arch}"
+        names = [
+            f"libtensorflowlite_c-{version}.tar.gz",
+            f"libtensorflowlite_c-{version[:4]}.tar.gz",
+        ]
+    else:
+        base = f"https://storage.googleapis.com/tensorflow/libtensorflowlite_c/linux/{arch}"
+        names = [
+            f"libtensorflowlite_c-{version}.tar.gz",
+            f"libtensorflowlite_c-{version[:4]}.tar.gz",
+        ]
+    return [f"{base}/{name}" for name in names]
+
+
+def download_runtime(version: str, dest_dir: Path, override_url: str | None) -> Path | None:
+    urls = [override_url] if override_url else runtime_urls(version)
+    for url in urls:
+        if not url:
+            continue
+        try:
+            with urllib.request.urlopen(url, timeout=60) as resp:
+                data = resp.read()
+        except Exception:
+            continue
+        tmp = dest_dir / "tflite_runtime.tmp"
+        tmp.write_bytes(data)
+        extracted = extract_runtime(tmp, dest_dir)
+        tmp.unlink(missing_ok=True)
+        if extracted:
+            return extracted
+    return None
+
+
+def extract_runtime(archive_path: Path, dest_dir: Path) -> Path | None:
+    name = runtime_filename()
+    if zipfile.is_zipfile(archive_path):
+        with zipfile.ZipFile(archive_path, "r") as zf:
+            for member in zf.namelist():
+                if member.endswith(name):
+                    zf.extract(member, dest_dir)
+                    extracted = dest_dir / member
+                    target = dest_dir / name
+                    shutil.move(str(extracted), str(target))
+                    return target
+        return None
+    try:
+        with tarfile.open(archive_path, "r:*") as tf:
+            for member in tf.getmembers():
+                if member.name.endswith(name):
+                    tf.extract(member, dest_dir)
+                    extracted = dest_dir / member.name
+                    target = dest_dir / name
+                    shutil.move(str(extracted), str(target))
+                    return target
+    except tarfile.TarError:
+        return None
+    return None
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Generate yamnet.tflite for sempal.")
     parser.add_argument("--app-root", type=Path, help="Override app root directory")
     parser.add_argument("--no-install", action="store_true", help="Skip pip installs")
     parser.add_argument("--force", action="store_true", help="Overwrite existing model")
+    parser.add_argument("--runtime-url", help="Override TFLite runtime download URL")
     args = parser.parse_args()
 
     app_root = args.app_root or resolve_app_root()
@@ -129,12 +211,17 @@ def main() -> int:
     shutil.move(str(tmp_path), str(target))
     print(f"Wrote {target}")
 
+    import tensorflow as tf
+
     runtime = find_tflite_runtime()
     if runtime is None:
-        print("WARNING: Could not locate tensorflowlite_c runtime in site-packages.")
-        print("Please copy tensorflowlite_c.* into:", runtime_dir)
-        return 0
-    runtime_target = runtime_dir / runtime.name
+        version = getattr(tf, "__version__", "2.20.0")
+        runtime = download_runtime(version, runtime_dir, args.runtime_url)
+        if runtime is None:
+            print("WARNING: Could not locate or download tensorflowlite_c runtime.")
+            print("Please copy tensorflowlite_c.* into:", runtime_dir)
+            return 0
+    runtime_target = runtime_dir / runtime_filename()
     shutil.copy2(runtime, runtime_target)
     print(f"Copied TFLite runtime to {runtime_target}")
     return 0
