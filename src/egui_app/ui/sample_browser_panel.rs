@@ -13,7 +13,7 @@ use std::path::Path;
 impl EguiApp {
     pub(super) fn render_sample_browser(&mut self, ui: &mut Ui) {
         let palette = style::palette();
-        let categories = self.controller.prediction_categories();
+        let categories = self.controller.label_override_categories();
         if !categories.is_empty() {
             self.controller.prepare_prediction_cache_for_browser();
         }
@@ -265,6 +265,9 @@ impl EguiApp {
                         let hover = weak
                             .map(|w| format!("Weak label from filename/folders\nRule: {}", w.rule_id))
                             .unwrap_or_else(|| "No weak label from filename/folders".to_string());
+                        let color = weak
+                            .map(|w| confidence_heat_color(w.confidence, palette))
+                            .unwrap_or(palette.text_muted);
 
                         let right = response.rect.right();
                         let x2 = if categories.is_empty() {
@@ -281,7 +284,7 @@ impl EguiApp {
                             ui.with_layout(
                                 egui::Layout::centered_and_justified(egui::Direction::LeftToRight),
                                 |ui| {
-                                    ui.label(RichText::new(label).color(palette.text_muted));
+                                    ui.label(RichText::new(label).color(color));
                                 },
                             );
                         });
@@ -561,7 +564,7 @@ impl EguiApp {
                 self.controller.reveal_browser_sample_in_file_explorer(path);
                 close_menu = true;
             }
-            let categories = self.controller.prediction_categories();
+                        let categories = self.controller.label_override_categories();
             if !categories.is_empty() {
                 ui.separator();
                 ui.menu_button("Set category override", |ui| {
@@ -667,4 +670,19 @@ impl EguiApp {
             }
         });
     }
+}
+
+fn confidence_heat_color(confidence: f32, palette: style::Palette) -> egui::Color32 {
+    let t = confidence.clamp(0.0, 1.0);
+    lerp_color(palette.warning, palette.success, t)
+}
+
+fn lerp_color(a: egui::Color32, b: egui::Color32, t: f32) -> egui::Color32 {
+    let t = t.clamp(0.0, 1.0);
+    let lerp = |start: u8, end: u8| -> u8 {
+        let start = start as f32;
+        let end = end as f32;
+        (start + (end - start) * t).round().clamp(0.0, 255.0) as u8
+    };
+    egui::Color32::from_rgb(lerp(a.r(), b.r()), lerp(a.g(), b.g()), lerp(a.b(), b.b()))
 }

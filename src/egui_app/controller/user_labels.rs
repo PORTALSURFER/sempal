@@ -57,7 +57,7 @@ fn class_id_for_review_slot(controller: &mut EguiController, slot: usize) -> Res
     if slot == 0 {
         return Ok(None);
     }
-    let categories = controller.prediction_categories();
+    let categories = controller.label_override_categories();
     let mut categories: Vec<String> = categories
         .into_iter()
         .filter(|c| c != "UNKNOWN")

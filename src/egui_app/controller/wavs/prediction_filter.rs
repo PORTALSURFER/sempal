@@ -139,6 +139,14 @@ impl EguiController {
             .unwrap_or_default()
     }
 
+    pub fn label_override_categories(&mut self) -> Vec<String> {
+        let mut categories = self.prediction_categories();
+        if categories.is_empty() {
+            categories = label_rules_categories();
+        }
+        categories
+    }
+
     fn ensure_prediction_categories(&mut self) -> Result<(), String> {
         let db_path = crate::app_dirs::app_root_dir()
             .map_err(|err| err.to_string())?
@@ -272,6 +280,12 @@ impl EguiController {
 
         Ok(())
     }
+}
+
+fn label_rules_categories() -> Vec<String> {
+    crate::labeling::weak_config::load_label_rules_from_app_dir()
+        .map(|cfg| cfg.categories.keys().cloned().collect())
+        .unwrap_or_default()
 }
 
 pub(super) fn set_category_filter(controller: &mut EguiController, category: Option<String>) {
