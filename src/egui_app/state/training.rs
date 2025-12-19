@@ -8,6 +8,8 @@ pub struct TrainingSummary {
     pub user_labeled: i64,
     pub weak_labeled: i64,
     pub exportable: i64,
+    pub predictions_total: Option<i64>,
+    pub predictions_unknown: Option<i64>,
     pub min_confidence: f32,
 }
 

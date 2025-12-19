@@ -563,6 +563,19 @@ impl EguiApp {
                         summary.min_confidence, summary.weak_labeled
                     ));
                     ui.label(format!("Exportable rows: {}", summary.exportable));
+                    if let (Some(total), Some(unknown)) =
+                        (summary.predictions_total, summary.predictions_unknown)
+                    {
+                        let unknown_pct = if total > 0 {
+                            (unknown as f32 / total as f32) * 100.0
+                        } else {
+                            0.0
+                        };
+                        ui.label(format!(
+                            "Predictions: {} (UNKNOWN: {} / {:.1}%)",
+                            total, unknown, unknown_pct
+                        ));
+                    }
                 }
 
                 ui.separator();

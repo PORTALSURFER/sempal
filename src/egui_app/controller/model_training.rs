@@ -203,6 +203,17 @@ impl EguiController {
                 return;
             }
         };
+        let prediction_stats = match training_prediction_stats(&conn, &source_ids) {
+            Ok(stats) => stats,
+            Err(err) => {
+                self.ui.training.summary = None;
+                self.ui.training.summary_error = Some(err);
+                return;
+            }
+        };
+        let (predictions_total, predictions_unknown) = prediction_stats
+            .map(|stats| (Some(stats.total), Some(stats.unknown)))
+            .unwrap_or((None, None));
 
         self.ui.training.summary = Some(crate::egui_app::state::TrainingSummary {
             updated_at: now_epoch_seconds(),
@@ -212,6 +223,8 @@ impl EguiController {
             user_labeled: diagnostics.user_join,
             weak_labeled: diagnostics.weak_join,
             exportable,
+            predictions_total,
+            predictions_unknown,
             min_confidence,
         });
         self.ui.training.summary_error = None;
@@ -479,6 +492,11 @@ struct TrainingDiagnostics {
     weak_join: i64,
 }
 
+struct TrainingPredictionStats {
+    total: i64,
+    unknown: i64,
+}
+
 fn training_diagnostics_for_sources(
     conn: &rusqlite::Connection,
     source_ids: &[String],
@@ -625,6 +643,49 @@ fn training_exportable_count(
         row.get(0)
     })
     .map_err(|err| err.to_string())
+}
+
+fn training_prediction_stats(
+    conn: &rusqlite::Connection,
+    source_ids: &[String],
+) -> Result<Option<TrainingPredictionStats>, String> {
+    if source_ids.is_empty() {
+        return Ok(None);
+    }
+    let latest_model_id: Option<String> = conn
+        .query_row(
+            "SELECT model_id
+             FROM models
+             ORDER BY created_at DESC, model_id DESC
+             LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|err| err.to_string())?;
+    let Some(model_id) = latest_model_id else {
+        return Ok(None);
+    };
+    let mut params = vec![rusqlite::types::Value::Text(model_id)];
+    let mut parts = Vec::new();
+    for source_id in source_ids {
+        params.push(rusqlite::types::Value::Text(format!("{source_id}::%")));
+        parts.push(format!("p.sample_id LIKE ?{}", params.len()));
+    }
+    let where_sql = parts.join(" OR ");
+    let sql = format!(
+        "SELECT COUNT(*),
+                COALESCE(SUM(CASE WHEN top_class = 'UNKNOWN' THEN 1 ELSE 0 END), 0)
+         FROM predictions p
+         WHERE p.model_id = ?1
+           AND ({where_sql})"
+    );
+    let (total, unknown): (i64, i64) = conn
+        .query_row(&sql, rusqlite::params_from_iter(params), |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })
+        .map_err(|err| err.to_string())?;
+    Ok(Some(TrainingPredictionStats { total, unknown }))
 }
 
 fn split_u01(sample_id: &str) -> f64 {
