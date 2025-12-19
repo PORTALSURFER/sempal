@@ -108,7 +108,8 @@ pub(crate) fn infer_embedding(
 fn extract_embedding(outputs: &TVec<TValue>) -> Result<Vec<f32>, String> {
     for output in outputs {
         let tensor = output
-            .to_tensor()
+            .clone()
+            .into_tensor()
             .map_err(|err| format!("Failed to read YAMNet output tensor: {err}"))?;
         let shape = tensor.shape();
         if !shape.iter().any(|dim| *dim == EMBEDDING_DIM) {
