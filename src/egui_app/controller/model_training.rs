@@ -257,10 +257,51 @@ impl EguiController {
             self.set_status("No sources loaded", StatusTone::Info);
             return;
         }
+        let db_path = match crate::app_dirs::app_root_dir() {
+            Ok(root) => root.join(crate::sample_sources::library::LIBRARY_DB_FILE_NAME),
+            Err(err) => {
+                self.set_status(
+                    format!("Resolve library DB failed: {err}"),
+                    StatusTone::Error,
+                );
+                return;
+            }
+        };
+        let conn = match super::analysis_jobs::open_library_db(&db_path) {
+            Ok(conn) => conn,
+            Err(err) => {
+                self.set_status(err, StatusTone::Error);
+                return;
+            }
+        };
+        let latest_model_id: Option<String> = conn
+            .query_row(
+                "SELECT model_id
+                 FROM models
+                 ORDER BY created_at DESC, model_id DESC
+                 LIMIT 1",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|err| err.to_string())
+            .ok()
+            .flatten();
+        let Some(model_id) = latest_model_id else {
+            self.set_status("No model available for inference", StatusTone::Info);
+            return;
+        };
+        let deleted = match delete_predictions_for_sources(&conn, &model_id, &source_ids) {
+            Ok(count) => count,
+            Err(err) => {
+                self.set_status(format!("Failed to clear predictions: {err}"), StatusTone::Error);
+                return;
+            }
+        };
         match super::analysis_jobs::enqueue_inference_jobs_for_sources(&source_ids) {
             Ok((count, _progress)) => {
                 self.set_status(
-                    format!("Queued {count} inference jobs"),
+                    format!("Cleared {deleted} predictions; queued {count} inference jobs"),
                     StatusTone::Info,
                 );
             }
@@ -740,6 +781,31 @@ fn training_prediction_stats(
         avg_confidence: avg_conf.map(|v| v as f32),
         max_confidence: max_conf.map(|v| v as f32),
     }))
+}
+
+fn delete_predictions_for_sources(
+    conn: &rusqlite::Connection,
+    model_id: &str,
+    source_ids: &[String],
+) -> Result<usize, String> {
+    if source_ids.is_empty() {
+        return Ok(0);
+    }
+    let mut params: Vec<rusqlite::types::Value> =
+        vec![rusqlite::types::Value::Text(model_id.to_string())];
+    let mut parts = Vec::new();
+    for source_id in source_ids {
+        params.push(rusqlite::types::Value::Text(format!("{source_id}::%")));
+        parts.push(format!("sample_id LIKE ?{}", params.len()));
+    }
+    let where_sql = parts.join(" OR ");
+    let sql = format!(
+        "DELETE FROM predictions
+         WHERE model_id = ?1
+           AND ({where_sql})"
+    );
+    conn.execute(&sql, rusqlite::params_from_iter(params))
+        .map_err(|err| err.to_string())
 }
 
 fn split_u01(sample_id: &str) -> f64 {

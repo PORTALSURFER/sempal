@@ -646,8 +646,8 @@ impl EguiApp {
                     self.controller.retrain_model_from_app();
                 }
                 if ui
-                    .button("Re-run inference (loaded sources)")
-                    .on_hover_text("Recompute predictions for the currently loaded sources")
+                    .button("Re-run inference (loaded sources, force)")
+                    .on_hover_text("Clear old predictions and recompute for loaded sources")
                     .clicked()
                 {
                     self.controller.rerun_inference_for_loaded_sources();
