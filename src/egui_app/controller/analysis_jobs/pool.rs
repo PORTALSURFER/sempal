@@ -246,7 +246,7 @@ fn run_job(
     max_analysis_duration_seconds: f32,
 ) -> Result<(), String> {
     match job.job_type.as_str() {
-        db::DEFAULT_JOB_TYPE => run_analysis_job(
+        db::ANALYZE_SAMPLE_JOB_TYPE => run_analysis_job(
             conn,
             job,
             model_cache,
@@ -255,6 +255,10 @@ fn run_job(
         ),
         db::INFERENCE_JOB_TYPE => {
             run_inference_job(conn, job, model_cache, unknown_confidence_threshold)
+        }
+        db::REBUILD_INDEX_JOB_TYPE => Err("Rebuild index job not implemented yet".to_string()),
+        db::RETRAIN_CLASSIFIER_JOB_TYPE => {
+            Err("Retrain classifier job not implemented yet".to_string())
         }
         _ => Err(format!("Unknown job type: {}", job.job_type)),
     }

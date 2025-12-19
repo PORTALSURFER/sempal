@@ -2,8 +2,12 @@ use super::types::AnalysisProgress;
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use std::path::{Path, PathBuf};
 
-pub(super) const DEFAULT_JOB_TYPE: &str = "wav_metadata_v1";
+pub(super) const ANALYZE_SAMPLE_JOB_TYPE: &str = "wav_metadata_v1";
 pub(super) const INFERENCE_JOB_TYPE: &str = "inference_v1";
+pub(super) const REBUILD_INDEX_JOB_TYPE: &str = "rebuild_index_v1";
+pub(super) const RETRAIN_CLASSIFIER_JOB_TYPE: &str = "retrain_classifier_v1";
+pub(super) const DEFAULT_JOB_TYPE: &str = ANALYZE_SAMPLE_JOB_TYPE;
+pub(super) const ANALYSIS_VERSION_V1: &str = "analysis_v1";
 
 #[derive(Clone, Debug)]
 pub(super) struct ClaimedJob {
@@ -173,8 +177,8 @@ fn upsert_samples_tx(
 ) -> Result<usize, String> {
     let mut stmt = tx
         .prepare(
-            "INSERT INTO samples (sample_id, content_hash, size, mtime_ns, duration_seconds, sr_used)
-             VALUES (?1, ?2, ?3, ?4, NULL, NULL)
+            "INSERT INTO samples (sample_id, content_hash, size, mtime_ns, duration_seconds, sr_used, analysis_version)
+             VALUES (?1, ?2, ?3, ?4, NULL, NULL, NULL)
              ON CONFLICT(sample_id) DO UPDATE SET
                 content_hash = excluded.content_hash,
                 size = excluded.size,
@@ -192,6 +196,13 @@ fn upsert_samples_tx(
                       OR samples.mtime_ns != excluded.mtime_ns
                     THEN NULL
                     ELSE samples.sr_used
+                END,
+                analysis_version = CASE
+                    WHEN samples.content_hash != excluded.content_hash
+                      OR samples.size != excluded.size
+                      OR samples.mtime_ns != excluded.mtime_ns
+                    THEN NULL
+                    ELSE samples.analysis_version
                 END",
         )
         .map_err(|err| format!("Failed to prepare samples upsert statement: {err}"))?;
@@ -374,13 +385,14 @@ pub(super) fn update_analysis_metadata(
     let updated = conn
         .execute(
             "UPDATE samples
-             SET duration_seconds = ?3, sr_used = ?4
+             SET duration_seconds = ?3, sr_used = ?4, analysis_version = ?5
              WHERE sample_id = ?1 AND content_hash = COALESCE(?2, content_hash)",
             params![
                 sample_id,
                 content_hash,
                 duration_seconds as f64,
-                sr_used as i64
+                sr_used as i64,
+                ANALYSIS_VERSION_V1
             ],
         )
         .map_err(|err| format!("Failed to update analysis metadata: {err}"))?;
@@ -435,7 +447,8 @@ mod tests {
                 size INTEGER NOT NULL,
                 mtime_ns INTEGER NOT NULL,
                 duration_seconds REAL,
-                sr_used INTEGER
+                sr_used INTEGER,
+                analysis_version TEXT
             );
             CREATE TABLE features (
                 sample_id TEXT PRIMARY KEY,

@@ -96,6 +96,9 @@ impl LibraryDatabase {
         db.migrate_predictions_table()?;
         db.migrate_labels_weak_table()?;
         db.migrate_labels_user_table()?;
+        db.migrate_embeddings_table()?;
+        db.migrate_labels_table()?;
+        db.migrate_ann_index_meta_table()?;
         Ok(db)
     }
 

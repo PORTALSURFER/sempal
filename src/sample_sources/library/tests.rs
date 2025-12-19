@@ -110,6 +110,26 @@ fn creates_labels_user_table() {
 }
 
 #[test]
+fn creates_embedding_tables() {
+    let temp = tempdir().unwrap();
+    with_config_home(temp.path(), || {
+        let _ = load().unwrap();
+        let conn = Connection::open(database_path().unwrap()).unwrap();
+        for table in ["embeddings", "labels", "ann_index_meta"] {
+            let exists: Option<String> = conn
+                .query_row(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name = ?1",
+                    [table],
+                    |row| row.get(0),
+                )
+                .optional()
+                .unwrap();
+            assert_eq!(exists.as_deref(), Some(table));
+        }
+    });
+}
+
+#[test]
 fn applies_workload_pragmas_and_indices() {
     let temp = tempdir().unwrap();
     with_config_home(temp.path(), || {

@@ -71,7 +71,8 @@ impl LibraryDatabase {
                     size INTEGER NOT NULL,
                     mtime_ns INTEGER NOT NULL,
                     duration_seconds REAL,
-                    sr_used INTEGER
+                    sr_used INTEGER,
+                    analysis_version TEXT
                 );
                  CREATE TABLE IF NOT EXISTS analysis_features (
                     sample_id TEXT PRIMARY KEY,
@@ -132,7 +133,32 @@ impl LibraryDatabase {
                     created_at INTEGER NOT NULL,
                     updated_at INTEGER NOT NULL
                  ) WITHOUT ROWID;
-                 CREATE INDEX IF NOT EXISTS idx_labels_user_class_id ON labels_user (class_id);",
+                 CREATE INDEX IF NOT EXISTS idx_labels_user_class_id ON labels_user (class_id);
+                 CREATE TABLE IF NOT EXISTS embeddings (
+                    sample_id TEXT PRIMARY KEY,
+                    model_id TEXT NOT NULL,
+                    dim INTEGER NOT NULL,
+                    dtype INTEGER NOT NULL,
+                    vec_blob BLOB NOT NULL,
+                    created_at INTEGER NOT NULL
+                 ) WITHOUT ROWID;
+                 CREATE INDEX IF NOT EXISTS idx_embeddings_model_id ON embeddings (model_id);
+                 CREATE TABLE IF NOT EXISTS labels (
+                    sample_id TEXT NOT NULL,
+                    source INTEGER NOT NULL,
+                    category TEXT NOT NULL,
+                    weight REAL NOT NULL DEFAULT 1.0,
+                    updated_at INTEGER NOT NULL,
+                    PRIMARY KEY (sample_id, source, category)
+                 ) WITHOUT ROWID;
+                 CREATE INDEX IF NOT EXISTS idx_labels_category ON labels (category);
+                 CREATE TABLE IF NOT EXISTS ann_index_meta (
+                    model_id TEXT PRIMARY KEY,
+                    index_path TEXT NOT NULL,
+                    count INTEGER NOT NULL,
+                    params_json TEXT NOT NULL,
+                    updated_at INTEGER NOT NULL
+                 ) WITHOUT ROWID;",
             )
             .map_err(map_sql_error)?;
         Ok(())
@@ -225,7 +251,10 @@ impl LibraryDatabase {
             .filter_map(Result::ok)
             .collect();
         drop(stmt);
-        if columns.contains("duration_seconds") && columns.contains("sr_used") {
+        if columns.contains("duration_seconds")
+            && columns.contains("sr_used")
+            && columns.contains("analysis_version")
+        {
             return Ok(());
         }
         let tx = self.connection.transaction().map_err(map_sql_error)?;
@@ -235,6 +264,10 @@ impl LibraryDatabase {
         }
         if !columns.contains("sr_used") {
             tx.execute("ALTER TABLE samples ADD COLUMN sr_used INTEGER", [])
+                .map_err(map_sql_error)?;
+        }
+        if !columns.contains("analysis_version") {
+            tx.execute("ALTER TABLE samples ADD COLUMN analysis_version TEXT", [])
                 .map_err(map_sql_error)?;
         }
         tx.commit().map_err(map_sql_error)?;
@@ -319,6 +352,91 @@ impl LibraryDatabase {
                     updated_at INTEGER NOT NULL
                 ) WITHOUT ROWID;
                 CREATE INDEX IF NOT EXISTS idx_labels_user_class_id ON labels_user (class_id);",
+            )
+            .map_err(map_sql_error)?;
+        Ok(())
+    }
+
+    pub(super) fn migrate_embeddings_table(&mut self) -> Result<(), LibraryError> {
+        let mut stmt = self
+            .connection
+            .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='embeddings'")
+            .map_err(map_sql_error)?;
+        let exists: Option<String> = stmt
+            .query_row([], |row| row.get(0))
+            .optional()
+            .map_err(map_sql_error)?;
+        drop(stmt);
+        if exists.is_some() {
+            return Ok(());
+        }
+        self.connection
+            .execute_batch(
+                "CREATE TABLE IF NOT EXISTS embeddings (
+                    sample_id TEXT PRIMARY KEY,
+                    model_id TEXT NOT NULL,
+                    dim INTEGER NOT NULL,
+                    dtype INTEGER NOT NULL,
+                    vec_blob BLOB NOT NULL,
+                    created_at INTEGER NOT NULL
+                ) WITHOUT ROWID;
+                CREATE INDEX IF NOT EXISTS idx_embeddings_model_id ON embeddings (model_id);",
+            )
+            .map_err(map_sql_error)?;
+        Ok(())
+    }
+
+    pub(super) fn migrate_labels_table(&mut self) -> Result<(), LibraryError> {
+        let mut stmt = self
+            .connection
+            .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='labels'")
+            .map_err(map_sql_error)?;
+        let exists: Option<String> = stmt
+            .query_row([], |row| row.get(0))
+            .optional()
+            .map_err(map_sql_error)?;
+        drop(stmt);
+        if exists.is_some() {
+            return Ok(());
+        }
+        self.connection
+            .execute_batch(
+                "CREATE TABLE IF NOT EXISTS labels (
+                    sample_id TEXT NOT NULL,
+                    source INTEGER NOT NULL,
+                    category TEXT NOT NULL,
+                    weight REAL NOT NULL DEFAULT 1.0,
+                    updated_at INTEGER NOT NULL,
+                    PRIMARY KEY (sample_id, source, category)
+                ) WITHOUT ROWID;
+                CREATE INDEX IF NOT EXISTS idx_labels_category ON labels (category);",
+            )
+            .map_err(map_sql_error)?;
+        Ok(())
+    }
+
+    pub(super) fn migrate_ann_index_meta_table(&mut self) -> Result<(), LibraryError> {
+        let mut stmt = self
+            .connection
+            .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='ann_index_meta'")
+            .map_err(map_sql_error)?;
+        let exists: Option<String> = stmt
+            .query_row([], |row| row.get(0))
+            .optional()
+            .map_err(map_sql_error)?;
+        drop(stmt);
+        if exists.is_some() {
+            return Ok(());
+        }
+        self.connection
+            .execute_batch(
+                "CREATE TABLE IF NOT EXISTS ann_index_meta (
+                    model_id TEXT PRIMARY KEY,
+                    index_path TEXT NOT NULL,
+                    count INTEGER NOT NULL,
+                    params_json TEXT NOT NULL,
+                    updated_at INTEGER NOT NULL
+                ) WITHOUT ROWID;",
             )
             .map_err(map_sql_error)?;
         Ok(())
