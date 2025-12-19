@@ -22,6 +22,18 @@ impl EguiController {
         }
     }
 
+    pub fn copy_status_log_to_clipboard(&mut self) {
+        let text = self.ui.status.log_text();
+        if text.is_empty() {
+            self.set_status("Status log is empty", StatusTone::Info);
+            return;
+        }
+        match crate::external_clipboard::copy_text(&text) {
+            Ok(()) => self.set_status("Copied status log to clipboard", StatusTone::Info),
+            Err(err) => self.set_status(err, StatusTone::Error),
+        }
+    }
+
     fn clipboard_paths_for_copy(&mut self) -> Result<Vec<PathBuf>, String> {
         let waveform_copy = self.waveform_selection_clipboard_path()?;
         if let Some(path) = waveform_copy {

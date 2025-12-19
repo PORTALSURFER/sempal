@@ -85,6 +85,7 @@ const AUDIO_CACHE_CAPACITY: usize = 12;
 const AUDIO_HISTORY_LIMIT: usize = 8;
 const RANDOM_HISTORY_LIMIT: usize = 20;
 const UNDO_LIMIT: usize = 20;
+const STATUS_LOG_LIMIT: usize = 200;
 
 /// Maintains app state and bridges core logic to the egui UI.
 pub struct EguiController {
@@ -209,9 +210,19 @@ impl EguiController {
 
     pub(crate) fn set_status(&mut self, text: impl Into<String>, tone: StatusTone) {
         let (label, color) = status_badge(tone);
-        self.ui.status.text = text.into();
+        let text = text.into();
+        self.ui.status.text = text.clone();
         self.ui.status.badge_label = label;
         self.ui.status.badge_color = color;
+        let entry = format!("[{}] {}", self.ui.status.badge_label, text);
+        if self.ui.status.log.last().is_some_and(|last| last == &entry) {
+            return;
+        }
+        self.ui.status.log.push(entry);
+        if self.ui.status.log.len() > STATUS_LOG_LIMIT {
+            let overflow = self.ui.status.log.len() - STATUS_LOG_LIMIT;
+            self.ui.status.log.drain(0..overflow);
+        }
     }
 
     #[allow(dead_code)]

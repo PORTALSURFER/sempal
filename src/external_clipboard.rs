@@ -13,12 +13,24 @@ pub fn copy_file_paths(paths: &[PathBuf]) -> Result<(), String> {
     platform::copy_file_paths(paths)
 }
 
+/// Copy plain text to the system clipboard.
+pub fn copy_text(text: &str) -> Result<(), String> {
+    if text.is_empty() {
+        return Err("No text to copy".into());
+    }
+    platform::copy_text(text)
+}
+
 #[cfg(not(target_os = "windows"))]
 mod platform {
     use super::*;
 
     pub fn copy_file_paths(_paths: &[PathBuf]) -> Result<(), String> {
         Err("Clipboard file copy is only implemented on Windows in this build".into())
+    }
+
+    pub fn copy_text(_text: &str) -> Result<(), String> {
+        Err("Clipboard text copy is only implemented on Windows in this build".into())
     }
 }
 
@@ -31,6 +43,7 @@ mod platform {
     use windows::Win32::Foundation::{GlobalFree, HANDLE, HGLOBAL};
     use windows::Win32::System::DataExchange::{
         CloseClipboard, EmptyClipboard, OpenClipboard, RegisterClipboardFormatW, SetClipboardData,
+        CF_UNICODETEXT,
     };
     use windows::Win32::System::Memory::{
         GMEM_MOVEABLE, GMEM_ZEROINIT, GlobalAlloc, GlobalLock, GlobalUnlock,
@@ -136,6 +149,23 @@ mod platform {
         unsafe { SetClipboardData(CF_HDROP.0 as u32, Some(HANDLE(hdrop.handle().0))) }
             .map_err(|err| format!("SetClipboardData failed: {err}"))?;
         let _ = hdrop.release();
+        Ok(())
+    }
+
+    pub fn copy_text(text: &str) -> Result<(), String> {
+        let _clipboard = Clipboard::new()?;
+        let mut wide: Vec<u16> = text.encode_utf16().collect();
+        wide.push(0);
+        let bytes = wide.len() * std::mem::size_of::<u16>();
+        let owned = OwnedHGlobal::new(bytes)?;
+        let lock = unsafe { GlobalLockGuard::new(owned.handle) }?;
+        unsafe {
+            copy_nonoverlapping(wide.as_ptr() as *const u8, lock.ptr(), bytes);
+        }
+        // SAFETY: clipboard is open; ownership of the HGLOBAL transfers to the system on success.
+        unsafe { SetClipboardData(CF_UNICODETEXT.0 as u32, Some(HANDLE(owned.handle().0))) }
+            .map_err(|err| format!("SetClipboardData(text) failed: {err}"))?;
+        let _ = owned.release();
         Ok(())
     }
 

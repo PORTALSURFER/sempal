@@ -118,6 +118,9 @@ impl HotkeysActions for HotkeysController<'_> {
                 self.ui.hotkeys.overlay_visible = false;
                 self.open_feedback_issue_prompt();
             }
+            HotkeyCommand::CopyStatusLog => {
+                self.copy_status_log_to_clipboard();
+            }
             HotkeyCommand::ToggleLoop => {
                 self.toggle_loop();
             }

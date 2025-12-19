@@ -151,6 +151,21 @@ pub(super) const HOTKEY_ACTIONS: &[HotkeyAction] = &[
         command: HotkeyCommand::ToggleOverlay,
     },
     HotkeyAction {
+        id: "copy-status-log",
+        label: "Copy status log",
+        gesture: HotkeyGesture {
+            first: KeyPress {
+                key: Key::L,
+                command: true,
+                shift: true,
+                alt: false,
+            },
+            chord: None,
+        },
+        scope: HotkeyScope::Global,
+        command: HotkeyCommand::CopyStatusLog,
+    },
+    HotkeyAction {
         id: "submit-github-issue",
         label: "Submit GitHub issue",
         gesture: HotkeyGesture::with_shift(Key::F1),
