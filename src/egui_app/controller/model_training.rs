@@ -175,13 +175,14 @@ pub(super) fn begin_retrain_from_app(controller: &mut EguiController) {
         .iter()
         .map(|source| source.id.as_str().to_string())
         .collect();
+    let model_kind = controller.training_model_kind();
     if let Ok(conn) = super::analysis_jobs::open_library_db(&db_path) {
         if let Ok(diag) = training_diagnostics_for_sources(
             &conn,
             &source_ids,
             controller.retrain_min_confidence(),
             controller.retrain_use_user_labels(),
-            controller.training_model_kind(),
+            &model_kind,
         ) {
             if diag.samples_total > 100
                 && diag.features_v1 < (diag.samples_total / 4).max(50)
@@ -217,7 +218,7 @@ pub(super) fn begin_retrain_from_app(controller: &mut EguiController) {
             min_confidence: controller.retrain_min_confidence(),
             pack_depth: controller.retrain_pack_depth(),
             use_user_labels: controller.retrain_use_user_labels(),
-            model_kind: controller.training_model_kind(),
+            model_kind,
             train_options,
             mlp_options,
             logreg_options,
@@ -255,12 +256,13 @@ impl EguiController {
             }
         };
         let min_confidence = self.retrain_min_confidence();
+        let model_kind = self.training_model_kind();
         let diagnostics = match training_diagnostics_for_sources(
             &conn,
             &source_ids,
             min_confidence,
             self.retrain_use_user_labels(),
-            self.training_model_kind(),
+            &model_kind,
         ) {
             Ok(diag) => diag,
             Err(err) => {
@@ -274,7 +276,7 @@ impl EguiController {
             &source_ids,
             min_confidence,
             self.retrain_use_user_labels(),
-            self.training_model_kind(),
+            model_kind,
         ) {
             Ok(count) => count,
             Err(err) => {
@@ -776,8 +778,13 @@ fn training_diagnostics_hint(
     model_kind: crate::sample_sources::config::TrainingModelKind,
 ) -> Result<String, String> {
     let conn = super::analysis_jobs::open_library_db(db_path)?;
-    let diag =
-        training_diagnostics_for_sources(&conn, source_ids, min_confidence, include_user_labels, model_kind)?;
+    let diag = training_diagnostics_for_sources(
+        &conn,
+        source_ids,
+        min_confidence,
+        include_user_labels,
+        &model_kind,
+    )?;
     let vector_label = match model_kind {
         crate::sample_sources::config::TrainingModelKind::LogRegV1 => "Embeddings",
         _ => "Features(v1)",
@@ -819,7 +826,7 @@ fn training_diagnostics_for_sources(
     source_ids: &[String],
     min_confidence: f32,
     include_user_labels: bool,
-    model_kind: crate::sample_sources::config::TrainingModelKind,
+    model_kind: &crate::sample_sources::config::TrainingModelKind,
 ) -> Result<TrainingDiagnostics, String> {
     let ruleset_version = crate::labeling::weak::WEAK_LABEL_RULESET_VERSION;
     let (where_sql_samples, params_samples) = source_id_where_clause("s", source_ids);
