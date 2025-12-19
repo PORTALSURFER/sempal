@@ -1,0 +1,52 @@
+Goal: Add GPU-friendly embedding-based auto-tagging, similarity search, and retraining loop.
+
+Phase 1 - Plumbing
+- Add SQLite migrations for samples, embeddings, predictions, labels, ann_index_meta, and jobs.
+- Implement job types: ANALYZE_SAMPLE, REBUILD_INDEX, RETRAIN_CLASSIFIER (optional).
+- Ensure scan/import enqueues ANALYZE_SAMPLE and respects analysis_version invalidation.
+- Track job status, retries, and last_error; persist across restarts.
+
+Phase 2 - Audio Preprocessing
+- Decode supported formats (wav/aiff/flac/mp3/ogg) with existing pipeline.
+- Downmix to mono and resample to 16 kHz float32 [-1, 1].
+- Add windowing: full analysis <= 6s; for longer, pick energy windows (start/mid/end or RMS top-K).
+- Add silence trim and min-length padding for very short samples.
+
+Phase 3 - Embeddings (YAMNet)
+- Choose runtime: TFLite (preferred) or ONNX Runtime; no Python in app.
+- Run YAMNet inference to get frame embeddings; pool to 1024-D vector.
+- Store embedding blob with model_id and dtype; normalize vectors for cosine similarity.
+- Record analysis_version (hash of model + preprocessing params).
+
+Phase 4 - Classifier Head
+- Implement logistic regression head (softmax) with W [C x 1024] and b [C].
+- Load classifier artifact from bundled model; version in settings.
+- Store auto_category, confidence, and optional top-K in predictions.
+- Apply UNKNOWN thresholding and expose confidence bands in UI.
+
+Phase 5 - Similar Sounds
+- Integrate HNSW (hnsw_rs) with cosine/dot metric.
+- Persist index to app data and track meta in ann_index_meta.
+- Update index as embeddings arrive; rebuild if incompatible version.
+- Add "Find Similar" UI to query top-N neighbors.
+
+Phase 6 - Labels and Correction Loop
+- Store user overrides in labels; allow opt-in or always-on.
+- Add UI for manual tagging and review workflow.
+- Add retrain trigger that exports embeddings + labels and runs trainer.
+
+Phase 7 - Training Tooling (Dev)
+- Build export tool: join embeddings + labels, stratified train/val/test split.
+- Train multinomial logistic regression with class balancing.
+- Export artifact: model_id, embedding_model_id, classes, W, b, temperature.
+- Emit evaluation: confusion matrix, per-class PR/F1, top-K accuracy.
+
+Phase 8 - Performance and UX
+- Run analysis/inference on background workers; bound CPU usage.
+- Keep UI responsive with worker limits and progress reporting.
+- Expose model stats and data coverage in training UI.
+
+Open Questions
+- Choose embedding runtime (TFLite vs ONNX Runtime).
+- Multi-class vs multi-label primary output.
+- Index deletion strategy (lazy delete vs rebuild).
