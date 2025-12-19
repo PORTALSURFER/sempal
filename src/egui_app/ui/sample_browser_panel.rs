@@ -261,7 +261,7 @@ impl EguiApp {
                         let weak = status.and_then(|s| s.weak_label.as_ref());
                         let label = weak
                             .map(|w| format!("{} {:.2}", w.class_id, w.confidence))
-                            .unwrap_or_else(|| "dummy".to_string());
+                            .unwrap_or_else(|| "—".to_string());
                         let hover = weak
                             .map(|w| format!("Weak label from filename/folders\nRule: {}", w.rule_id))
                             .unwrap_or_else(|| "No weak label from filename/folders".to_string());

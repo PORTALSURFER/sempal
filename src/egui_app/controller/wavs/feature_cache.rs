@@ -191,5 +191,8 @@ fn parse_job_status(status: &str) -> Option<AnalysisJobStatus> {
 }
 
 fn normalize_relative_key(relative_path: &str) -> String {
-    relative_path.replace('\\', "/")
+    relative_path
+        .replace('\\', "/")
+        .trim_start_matches("./")
+        .to_ascii_lowercase()
 }
