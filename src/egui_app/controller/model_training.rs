@@ -106,14 +106,40 @@ pub(super) fn begin_retrain_from_app(controller: &mut EguiController) {
             return;
         }
     };
-    controller.show_status_progress(ProgressTaskKind::ModelTraining, "Training model", 4, false);
-    let train_options = crate::ml::gbdt_stump::TrainOptions::default();
     let source_ids: Vec<String> = controller
         .library
         .sources
         .iter()
         .map(|source| source.id.as_str().to_string())
         .collect();
+    if let Ok(conn) = super::analysis_jobs::open_library_db(&db_path) {
+        if let Ok(diag) =
+            training_diagnostics_for_sources(&conn, &source_ids, controller.retrain_min_confidence())
+        {
+            if diag.samples_total > 100
+                && diag.features_v1 < (diag.samples_total / 4).max(50)
+            {
+                let mut inserted = 0usize;
+                for source_id in &source_ids {
+                    let source_id = crate::sample_sources::SourceId::from_string(source_id);
+                    if let Ok((count, _)) =
+                        super::analysis_jobs::enqueue_jobs_for_source_missing_features(&source_id)
+                    {
+                        inserted += count;
+                    }
+                }
+                controller.set_status(
+                    format!(
+                        "Queued {inserted} feature jobs; retrain once analysis completes"
+                    ),
+                    StatusTone::Info,
+                );
+                return;
+            }
+        }
+    }
+    controller.show_status_progress(ProgressTaskKind::ModelTraining, "Training model", 4, false);
+    let train_options = crate::ml::gbdt_stump::TrainOptions::default();
     controller
         .runtime
         .jobs
@@ -377,12 +403,13 @@ fn training_diagnostics_hint(
     let conn = super::analysis_jobs::open_library_db(db_path)?;
     let diag = training_diagnostics_for_sources(&conn, source_ids, min_confidence)?;
     Ok(format!(
-        "Features(v1): {}. User-labeled: {}. Name-labeled(conf>={:.2}): {}. Tip: assign categories to a few samples (dropdown) or lower the weak-label threshold.",
-        diag.features_v1, diag.user_join, min_confidence, diag.weak_join
+        "Samples: {}. Features(v1): {}. User-labeled: {}. Name-labeled(conf>={:.2}): {}. Tip: assign categories to a few samples (dropdown) or lower the weak-label threshold.",
+        diag.samples_total, diag.features_v1, diag.user_join, min_confidence, diag.weak_join
     ))
 }
 
 struct TrainingDiagnostics {
+    samples_total: i64,
     features_v1: i64,
     user_join: i64,
     weak_join: i64,
@@ -397,6 +424,20 @@ fn training_diagnostics_for_sources(
     let (where_sql, params) = source_id_where_clause(source_ids);
     let mut params = params;
     params.push(rusqlite::types::Value::Real(min_confidence as f64));
+
+    let samples_sql = format!(
+        "SELECT COUNT(*)
+         FROM samples s
+         WHERE ({})",
+        where_sql
+    );
+    let samples_total: i64 = conn
+        .query_row(
+            &samples_sql,
+            rusqlite::params_from_iter(params.iter().cloned().take(params.len() - 1)),
+            |row| row.get(0),
+        )
+        .map_err(|err| err.to_string())?;
 
     let features_sql = format!(
         "SELECT COUNT(*)
@@ -446,6 +487,7 @@ fn training_diagnostics_for_sources(
         .map_err(|err| err.to_string())?;
 
     Ok(TrainingDiagnostics {
+        samples_total,
         features_v1,
         user_join,
         weak_join,
