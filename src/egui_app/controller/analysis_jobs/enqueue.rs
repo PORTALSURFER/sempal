@@ -125,7 +125,7 @@ pub(in crate::egui_app::controller) fn enqueue_jobs_for_source_backfill(
                 .optional()
                 .map_err(|err| format!("Feature lookup failed: {err}"))?;
             let analysis_version: Option<String> = version_stmt
-                .query_row(params![&sample_id], |row| row.get(0))
+                .query_row(params![&sample_id], |row| row.get::<_, Option<String>>(0))
                 .optional()
                 .map_err(|err| format!("Analysis version lookup failed: {err}"))?;
             let has_current_analysis = matches!(
@@ -239,7 +239,7 @@ pub(in crate::egui_app::controller) fn enqueue_jobs_for_source_missing_features(
                 .optional()
                 .map_err(|err| format!("Feature lookup failed: {err}"))?;
             let analysis_version: Option<String> = version_stmt
-                .query_row(params![&sample_id], |row| row.get(0))
+                .query_row(params![&sample_id], |row| row.get::<_, Option<String>>(0))
                 .optional()
                 .map_err(|err| format!("Analysis version lookup failed: {err}"))?;
             let has_current_analysis = matches!(
