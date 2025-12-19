@@ -139,6 +139,34 @@ impl EguiController {
             });
         }
 
+        for (idx, entry) in self.wav_entries.entries.iter().enumerate() {
+            let row = cache.rows.get_mut(idx).and_then(|slot| slot.as_mut());
+            let status = match row {
+                Some(status) => status,
+                None => {
+                    cache.rows[idx] = Some(FeatureStatus {
+                        has_features_v1: false,
+                        duration_seconds: None,
+                        sr_used: None,
+                        analysis_status: None,
+                        weak_label: None,
+                    });
+                    cache.rows[idx].as_mut().expect("just inserted")
+                }
+            };
+            if status.weak_label.is_some() {
+                continue;
+            }
+            let labels = crate::labeling::weak::weak_labels_for_relative_path(&entry.relative_path);
+            if let Some(best) = labels.first() {
+                status.weak_label = Some(WeakLabelInfo {
+                    class_id: best.class_id.to_string(),
+                    confidence: best.confidence,
+                    rule_id: best.rule_id.to_string(),
+                });
+            }
+        }
+
         Ok(())
     }
 }
