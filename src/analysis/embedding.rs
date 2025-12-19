@@ -23,18 +23,24 @@ impl YamnetModel {
                 path.to_string_lossy()
             ));
         }
+        validate_tflite_header(&path)?;
         let model = tract_tflite::tflite()
             .model_for_path(&path)
-            .map_err(|err| format!("Failed to load YAMNet model: {err}"))?
+            .map_err(|err| {
+                format!(
+                    "Failed to load YAMNet model at {}: {err:?}",
+                    path.to_string_lossy()
+                )
+            })?
             .with_input_fact(
                 0,
                 TypedFact::dt_shape(f32::datum_type(), tvec!(1, YAMNET_INPUT_SAMPLES)),
             )
-            .map_err(|err| format!("Failed to set YAMNet input shape: {err}"))?
+            .map_err(|err| format!("Failed to set YAMNet input shape: {err:?}"))?
             .into_optimized()
-            .map_err(|err| format!("Failed to optimize YAMNet model: {err}"))?
+            .map_err(|err| format!("Failed to optimize YAMNet model: {err:?}"))?
             .into_runnable()
-            .map_err(|err| format!("Failed to make YAMNet runnable: {err}"))?;
+            .map_err(|err| format!("Failed to make YAMNet runnable: {err:?}"))?;
         Ok(Self { model })
     }
 }
@@ -167,4 +173,22 @@ pub(crate) fn embedding_model_path() -> &'static PathBuf {
             .unwrap_or_else(|_| PathBuf::from("yamnet.tflite"))
     });
     &PATH
+}
+
+fn validate_tflite_header(path: &PathBuf) -> Result<(), String> {
+    use std::io::Read;
+
+    let mut file = std::fs::File::open(path)
+        .map_err(|err| format!("Failed to open YAMNet model: {err}"))?;
+    let mut header = [0u8; 8];
+    let read = file
+        .read(&mut header)
+        .map_err(|err| format!("Failed to read YAMNet model header: {err}"))?;
+    if read < 8 || &header[4..8] != b"TFL3" {
+        return Err(format!(
+            "Invalid YAMNet model file at {} (expected a .tflite with TFL3 header)",
+            path.to_string_lossy()
+        ));
+    }
+    Ok(())
 }
