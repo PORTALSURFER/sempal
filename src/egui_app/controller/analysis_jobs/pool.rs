@@ -111,6 +111,7 @@ fn worker_count() -> usize {
 fn reset_running_jobs() -> Result<(), String> {
     let db_path = library_db_path()?;
     let conn = db::open_library_db(&db_path)?;
+    let _ = db::prune_jobs_for_missing_sources(&conn)?;
     let _ = db::reset_running_to_pending(&conn)?;
     Ok(())
 }
@@ -175,6 +176,7 @@ fn spawn_worker(
             Ok(conn) => conn,
             Err(_) => return,
         };
+        let _ = db::prune_jobs_for_missing_sources(&conn);
         let _ = db::reset_running_to_pending(&conn);
         let mut model_cache: Option<inference::CachedModel> = None;
         let _ = inference::refresh_latest_model(&conn, &mut model_cache);

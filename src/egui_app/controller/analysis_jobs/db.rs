@@ -49,6 +49,19 @@ pub(super) fn reset_running_to_pending(conn: &Connection) -> Result<usize, Strin
     .map_err(|err| format!("Failed to reset running analysis jobs: {err}"))
 }
 
+pub(super) fn prune_jobs_for_missing_sources(conn: &Connection) -> Result<usize, String> {
+    conn.execute(
+        "DELETE FROM analysis_jobs
+         WHERE NOT EXISTS (
+            SELECT 1
+            FROM sources s
+            WHERE analysis_jobs.sample_id LIKE s.id || '::%'
+         )",
+        [],
+    )
+    .map_err(|err| format!("Failed to prune analysis jobs for missing sources: {err}"))
+}
+
 pub(super) fn current_progress(conn: &Connection) -> Result<AnalysisProgress, String> {
     let mut stmt = conn
         .prepare("SELECT status, COUNT(*) FROM analysis_jobs GROUP BY status")
