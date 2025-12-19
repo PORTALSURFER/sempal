@@ -4,6 +4,7 @@ import importlib
 import os
 import platform
 import shutil
+import time
 import site
 import subprocess
 import sys
@@ -245,7 +246,19 @@ def main() -> int:
             print("Please copy onnxruntime.* into:", runtime_dir)
             return 0
     runtime_target = runtime_dir / runtime_filename()
-    shutil.copy2(runtime, runtime_target)
+    copy_error = None
+    for _ in range(5):
+        try:
+            shutil.copy2(runtime, runtime_target)
+            copy_error = None
+            break
+        except PermissionError as err:
+            copy_error = err
+            time.sleep(0.5)
+    if copy_error:
+        raise RuntimeError(
+            f"Failed to copy ONNX Runtime to {runtime_target}: {copy_error}"
+        )
     print(f"Copied ONNX Runtime to {runtime_target}")
     return 0
 
