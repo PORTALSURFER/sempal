@@ -546,6 +546,10 @@ impl EguiApp {
                     )));
                 }
                 if let Some(summary) = &self.controller.ui.training.summary {
+                    let vector_label = match self.controller.training_model_kind() {
+                        crate::sample_sources::config::TrainingModelKind::LogRegV1 => "Embeddings",
+                        _ => "Features v1",
+                    };
                     let features_pct = if summary.samples_total > 0 {
                         (summary.features_v1 as f32 / summary.samples_total as f32) * 100.0
                     } else {
@@ -554,8 +558,9 @@ impl EguiApp {
                     ui.label(format!("Sources: {}", summary.sources));
                     ui.label(format!("Samples: {}", summary.samples_total));
                     ui.label(format!(
-                        "Features v1: {} ({:.1}%)",
-                        summary.features_v1, features_pct
+                        "{vector_label}: {} ({:.1}%)",
+                        summary.features_v1,
+                        features_pct
                     ));
                     ui.label(format!("User labels: {}", summary.user_labeled));
                     ui.label(format!(
@@ -625,6 +630,14 @@ impl EguiApp {
                     self.controller.set_retrain_min_confidence(min_conf);
                 }
 
+                let mut include_user_labels = self.controller.retrain_use_user_labels();
+                let checkbox = ui
+                    .checkbox(&mut include_user_labels, "Include user overrides")
+                    .on_hover_text("Use manual category overrides when exporting training data");
+                if checkbox.changed() {
+                    self.controller.set_retrain_use_user_labels(include_user_labels);
+                }
+
                 ui.add_space(6.0);
                 ui.label(
                     RichText::new("Pack depth (anti-leakage split):").color(palette.text_muted),
@@ -647,8 +660,21 @@ impl EguiApp {
                         crate::sample_sources::config::TrainingModelKind::MlpV1 => {
                             "MLP (better accuracy)"
                         }
+                        crate::sample_sources::config::TrainingModelKind::LogRegV1 => {
+                            "LogReg (embeddings)"
+                        }
                     })
                     .show_ui(ui, |ui| {
+                        if ui
+                            .selectable_value(
+                                &mut model_kind,
+                                crate::sample_sources::config::TrainingModelKind::LogRegV1,
+                                "LogReg (embeddings)",
+                            )
+                            .clicked()
+                        {
+                            self.controller.set_training_model_kind(model_kind.clone());
+                        }
                         if ui
                             .selectable_value(
                                 &mut model_kind,

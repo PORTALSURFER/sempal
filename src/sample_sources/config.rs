@@ -103,6 +103,9 @@ pub struct TrainingSettings {
     /// Folder depth used to derive `pack_id` and split datasets to prevent leakage.
     #[serde(default = "default_retrain_pack_depth")]
     pub retrain_pack_depth: usize,
+    /// Include user override labels when exporting training data.
+    #[serde(default = "default_use_user_labels")]
+    pub use_user_labels: bool,
     /// Model type used for in-app retraining.
     #[serde(default = "default_training_model_kind")]
     pub model_kind: TrainingModelKind,
@@ -113,6 +116,7 @@ impl Default for TrainingSettings {
         Self {
             retrain_min_confidence: default_retrain_min_confidence(),
             retrain_pack_depth: default_retrain_pack_depth(),
+            use_user_labels: default_use_user_labels(),
             model_kind: default_training_model_kind(),
         }
     }
@@ -123,6 +127,7 @@ impl Default for TrainingSettings {
 pub enum TrainingModelKind {
     GbdtStumpV1,
     MlpV1,
+    LogRegV1,
 }
 
 /// Global preferences for analysis and feature extraction.
@@ -462,8 +467,12 @@ fn default_retrain_pack_depth() -> usize {
     1
 }
 
+fn default_use_user_labels() -> bool {
+    true
+}
+
 fn default_training_model_kind() -> TrainingModelKind {
-    TrainingModelKind::MlpV1
+    TrainingModelKind::LogRegV1
 }
 
 fn default_max_analysis_duration_seconds() -> f32 {
@@ -698,6 +707,7 @@ mod tests {
                 training: TrainingSettings {
                     retrain_min_confidence: 0.42,
                     retrain_pack_depth: 3,
+                    use_user_labels: false,
                     model_kind: TrainingModelKind::GbdtStumpV1,
                 },
                 ..AppConfig::default()
@@ -706,6 +716,7 @@ mod tests {
             let loaded = super::load_settings_from(&path).unwrap();
             assert!((loaded.training.retrain_min_confidence - 0.42).abs() < f32::EPSILON);
             assert_eq!(loaded.training.retrain_pack_depth, 3);
+            assert_eq!(loaded.training.use_user_labels, false);
             assert_eq!(loaded.training.model_kind, TrainingModelKind::GbdtStumpV1);
         });
     }

@@ -59,6 +59,20 @@ impl EguiController {
         }
     }
 
+    pub fn retrain_use_user_labels(&self) -> bool {
+        self.settings.training.use_user_labels
+    }
+
+    pub fn set_retrain_use_user_labels(&mut self, value: bool) {
+        if self.settings.training.use_user_labels == value {
+            return;
+        }
+        self.settings.training.use_user_labels = value;
+        if let Err(err) = self.persist_config("Failed to save options") {
+            self.set_status(err, StatusTone::Warning);
+        }
+    }
+
     pub fn training_model_kind(&self) -> crate::sample_sources::config::TrainingModelKind {
         self.settings.training.model_kind.clone()
     }

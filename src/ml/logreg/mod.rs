@@ -5,6 +5,9 @@ use serde::{Deserialize, Serialize};
 use crate::analysis::embedding::{EMBEDDING_DIM, EMBEDDING_MODEL_ID};
 use crate::ml::gbdt_stump::softmax;
 
+mod train;
+pub use train::{TrainDataset, TrainOptions, train_logreg};
+
 /// Default bundled classifier model id.
 pub const DEFAULT_CLASSIFIER_MODEL_ID: &str = "yamnet_logreg_v1";
 

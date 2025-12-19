@@ -111,7 +111,9 @@ pub fn diagnose_export(
     };
 
     let mut sample_splits = Vec::new();
-    if let Ok(rows) = load_export_rows(&conn, options.min_confidence, 1) {
+    if let Ok(rows) =
+        load_export_rows(&conn, options.min_confidence, 1, options.use_user_labels)
+    {
         for row in rows.into_iter().take(10) {
             if let Some(pack_id) = super::pack_id_for_sample_id(&row.sample_id, options.pack_depth)
             {
@@ -169,8 +171,15 @@ pub fn load_export_rows(
     conn: &Connection,
     min_confidence: f32,
     ruleset_version: i64,
+    include_user_labels: bool,
 ) -> Result<Vec<ExportRow>, ExportError> {
-    load_export_rows_filtered(conn, min_confidence, ruleset_version, None)
+    load_export_rows_filtered(
+        conn,
+        min_confidence,
+        ruleset_version,
+        None,
+        include_user_labels,
+    )
 }
 
 pub fn load_export_rows_filtered(
@@ -178,6 +187,7 @@ pub fn load_export_rows_filtered(
     min_confidence: f32,
     ruleset_version: i64,
     source_id_prefixes: Option<&[String]>,
+    include_user_labels: bool,
 ) -> Result<Vec<ExportRow>, ExportError> {
     let mut sql = String::from(
         "WITH best_weak AS (
@@ -196,17 +206,31 @@ pub fn load_export_rows_filtered(
               )
         )
         SELECT f.sample_id,
-               f.vec_blob,
-               COALESCE(u.class_id, w.class_id) AS class_id,
-               CASE WHEN u.class_id IS NOT NULL THEN 1.0 ELSE w.confidence END AS confidence,
-               CASE WHEN u.class_id IS NOT NULL THEN 'user_override' ELSE w.rule_id END AS rule_id,
-               CASE WHEN u.class_id IS NOT NULL THEN 0 ELSE w.ruleset_version END AS ruleset_version
-        FROM features f
-        LEFT JOIN labels_user u ON u.sample_id = f.sample_id
-        LEFT JOIN best_weak w ON w.sample_id = f.sample_id
-        WHERE f.feat_version = ?1
-          AND (u.class_id IS NOT NULL OR w.class_id IS NOT NULL)",
+               f.vec_blob,",
     );
+    if include_user_labels {
+        sql.push_str(
+            " COALESCE(u.class_id, w.class_id) AS class_id,
+              CASE WHEN u.class_id IS NOT NULL THEN 1.0 ELSE w.confidence END AS confidence,
+              CASE WHEN u.class_id IS NOT NULL THEN 'user_override' ELSE w.rule_id END AS rule_id,
+              CASE WHEN u.class_id IS NOT NULL THEN 0 ELSE w.ruleset_version END AS ruleset_version
+             FROM features f
+             LEFT JOIN labels_user u ON u.sample_id = f.sample_id
+             LEFT JOIN best_weak w ON w.sample_id = f.sample_id
+             WHERE f.feat_version = ?1
+               AND (u.class_id IS NOT NULL OR w.class_id IS NOT NULL)",
+        );
+    } else {
+        sql.push_str(
+            " w.class_id AS class_id,
+              w.confidence AS confidence,
+              w.rule_id AS rule_id,
+              w.ruleset_version AS ruleset_version
+             FROM features f
+             JOIN best_weak w ON w.sample_id = f.sample_id
+             WHERE f.feat_version = ?1",
+        );
+    }
 
     let mut params_vec: Vec<Value> = vec![
         Value::Integer(FEATURE_VERSION_V1),
@@ -232,6 +256,95 @@ pub fn load_export_rows_filtered(
 
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map(params_from_iter(params_vec), |row| {
+            Ok(ExportRow {
+                sample_id: row.get(0)?,
+                vec_blob: row.get(1)?,
+                class_id: row.get(2)?,
+                confidence: row.get::<_, f64>(3)? as f32,
+                rule_id: row.get(4)?,
+                ruleset_version: row.get(5)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+pub fn load_embedding_export_rows_filtered(
+    conn: &Connection,
+    min_confidence: f32,
+    ruleset_version: i64,
+    source_id_prefixes: Option<&[String]>,
+    include_user_labels: bool,
+    embedding_model_id: &str,
+) -> Result<Vec<ExportRow>, ExportError> {
+    let mut sql = String::from(
+        "WITH best_weak AS (
+            SELECT l.sample_id, l.class_id, l.confidence, l.rule_id, l.ruleset_version
+            FROM labels_weak l
+            WHERE l.ruleset_version = ?2
+              AND l.confidence >= ?3
+              AND l.class_id = (
+                SELECT l2.class_id
+                FROM labels_weak l2
+                WHERE l2.sample_id = l.sample_id
+                  AND l2.ruleset_version = ?2
+                  AND l2.confidence >= ?3
+                ORDER BY l2.confidence DESC, l2.class_id ASC
+                LIMIT 1
+              )
+        )
+        SELECT e.sample_id,
+               e.vec_blob,",
+    );
+    if include_user_labels {
+        sql.push_str(
+            " COALESCE(u.class_id, w.class_id) AS class_id,
+              CASE WHEN u.class_id IS NOT NULL THEN 1.0 ELSE w.confidence END AS confidence,
+              CASE WHEN u.class_id IS NOT NULL THEN 'user_override' ELSE w.rule_id END AS rule_id,
+              CASE WHEN u.class_id IS NOT NULL THEN 0 ELSE w.ruleset_version END AS ruleset_version
+             FROM embeddings e
+             LEFT JOIN labels_user u ON u.sample_id = e.sample_id
+             LEFT JOIN best_weak w ON w.sample_id = e.sample_id
+             WHERE e.model_id = ?1
+               AND (u.class_id IS NOT NULL OR w.class_id IS NOT NULL)",
+        );
+    } else {
+        sql.push_str(
+            " w.class_id AS class_id,
+              w.confidence AS confidence,
+              w.rule_id AS rule_id,
+              w.ruleset_version AS ruleset_version
+             FROM embeddings e
+             JOIN best_weak w ON w.sample_id = e.sample_id
+             WHERE e.model_id = ?1",
+        );
+    }
+
+    let mut params_vec: Vec<Value> = vec![
+        Value::Text(embedding_model_id.to_string()),
+        Value::Integer(ruleset_version),
+        Value::Real(min_confidence as f64),
+    ];
+
+    if let Some(prefixes) = source_id_prefixes
+        && !prefixes.is_empty()
+    {
+        sql.push_str(" AND (");
+        for (idx, source_id) in prefixes.iter().enumerate() {
+            if idx > 0 {
+                sql.push_str(" OR ");
+            }
+            sql.push_str("e.sample_id LIKE ?");
+            sql.push_str(&(params_vec.len() + 1).to_string());
+            params_vec.push(Value::Text(format!("{source_id}::%")));
+        }
+        sql.push(')');
+    }
+    sql.push_str(" ORDER BY e.sample_id ASC");
+
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt
+        .query_map(params_from_iter(params_vec), |row| {
             Ok(ExportRow {
                 sample_id: row.get(0)?,
                 vec_blob: row.get(1)?,

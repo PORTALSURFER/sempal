@@ -11,9 +11,11 @@ pub(super) struct ModelTrainingJob {
     pub(super) source_ids: Vec<String>,
     pub(super) min_confidence: f32,
     pub(super) pack_depth: usize,
+    pub(super) use_user_labels: bool,
     pub(super) model_kind: crate::sample_sources::config::TrainingModelKind,
     pub(super) train_options: crate::ml::gbdt_stump::TrainOptions,
     pub(super) mlp_options: crate::ml::mlp::TrainOptions,
+    pub(super) logreg_options: crate::ml::logreg::TrainOptions,
 }
 
 #[derive(Clone, Debug)]
@@ -53,17 +55,25 @@ pub(super) fn run_model_training(
         db_path: Some(job.db_path.clone()),
         min_confidence: job.min_confidence,
         pack_depth: job.pack_depth,
+        use_user_labels: job.use_user_labels,
         seed: "sempal-dataset-v1".to_string(),
         test_fraction: 0.1,
         val_fraction: 0.1,
     };
 
-    let (summary, used_min_confidence) = export_with_confidence_fallback(&mut options, &job, tx)?;
+    let (summary, used_min_confidence) =
+        export_with_confidence_fallback(&mut options, &job, tx)?;
     if summary.total_exported < 2 {
         return Err(format!(
             "Not enough labeled samples to train (need >=2, got {}). {}",
             summary.total_exported,
-            training_diagnostics_hint(&job.db_path, &job.source_ids, used_min_confidence)?
+            training_diagnostics_hint(
+                &job.db_path,
+                &job.source_ids,
+                used_min_confidence,
+                job.use_user_labels,
+                job.model_kind.clone()
+            )?
         ));
     }
 
@@ -75,30 +85,55 @@ pub(super) fn run_model_training(
     )?;
     let loaded =
         crate::dataset::loader::load_dataset(&options.out_dir).map_err(|err| err.to_string())?;
-    let (train, test) = split_train_test(&loaded)?;
-    let (model_json, classes_json, kind) = match job.model_kind {
+    let (model_json, classes_json, kind, feat_version, feature_len_f32) = match job.model_kind {
         crate::sample_sources::config::TrainingModelKind::GbdtStumpV1 => {
+            let (train, test) = split_train_test(&loaded)?;
             let model = crate::ml::gbdt_stump::train_gbdt_stump(&train, &job.train_options)?;
             let _ = evaluate_accuracy(&model, &test);
             (
                 serde_json::to_string(&model).map_err(|err| err.to_string())?,
                 serde_json::to_string(&model.classes).map_err(|err| err.to_string())?,
                 "gbdt_stump_v1",
+                crate::analysis::FEATURE_VERSION_V1,
+                crate::analysis::FEATURE_VECTOR_LEN_V1 as i64,
             )
         }
         crate::sample_sources::config::TrainingModelKind::MlpV1 => {
+            let (train, test) = split_train_test(&loaded)?;
             let model = crate::ml::mlp::train_mlp(&train, &job.mlp_options)?;
             let _ = evaluate_mlp_accuracy(&model, &test);
             (
                 serde_json::to_string(&model).map_err(|err| err.to_string())?,
                 serde_json::to_string(&model.classes).map_err(|err| err.to_string())?,
                 "mlp_v1",
+                crate::analysis::FEATURE_VERSION_V1,
+                crate::analysis::FEATURE_VECTOR_LEN_V1 as i64,
+            )
+        }
+        crate::sample_sources::config::TrainingModelKind::LogRegV1 => {
+            let (train_logreg, test_logreg) = split_logreg_train_test(&loaded)?;
+            let model =
+                crate::ml::logreg::train_logreg(&train_logreg, &job.logreg_options)?;
+            let _ = evaluate_logreg_accuracy(&model, &test_logreg);
+            (
+                serde_json::to_string(&model).map_err(|err| err.to_string())?,
+                serde_json::to_string(&model.classes).map_err(|err| err.to_string())?,
+                "logreg_v1",
+                0,
+                crate::analysis::embedding::EMBEDDING_DIM as i64,
             )
         }
     };
 
     send_progress(tx, 2, total_steps, "Importing model…")?;
-    let model_id = import_model_json_into_db(&job.db_path, kind, &model_json, &classes_json)?;
+    let model_id = import_model_json_into_db(
+        &job.db_path,
+        kind,
+        &model_json,
+        &classes_json,
+        feat_version,
+        feature_len_f32,
+    )?;
 
     send_progress(tx, 3, total_steps, "Enqueueing inference…")?;
     let (mut inference_jobs_enqueued, _progress) =
@@ -141,9 +176,13 @@ pub(super) fn begin_retrain_from_app(controller: &mut EguiController) {
         .map(|source| source.id.as_str().to_string())
         .collect();
     if let Ok(conn) = super::analysis_jobs::open_library_db(&db_path) {
-        if let Ok(diag) =
-            training_diagnostics_for_sources(&conn, &source_ids, controller.retrain_min_confidence())
-        {
+        if let Ok(diag) = training_diagnostics_for_sources(
+            &conn,
+            &source_ids,
+            controller.retrain_min_confidence(),
+            controller.retrain_use_user_labels(),
+            controller.training_model_kind(),
+        ) {
             if diag.samples_total > 100
                 && diag.features_v1 < (diag.samples_total / 4).max(50)
             {
@@ -168,6 +207,7 @@ pub(super) fn begin_retrain_from_app(controller: &mut EguiController) {
     controller.show_status_progress(ProgressTaskKind::ModelTraining, "Training model", 4, false);
     let train_options = crate::ml::gbdt_stump::TrainOptions::default();
     let mlp_options = crate::ml::mlp::TrainOptions::default();
+    let logreg_options = crate::ml::logreg::TrainOptions::default();
     controller
         .runtime
         .jobs
@@ -176,9 +216,11 @@ pub(super) fn begin_retrain_from_app(controller: &mut EguiController) {
             source_ids,
             min_confidence: controller.retrain_min_confidence(),
             pack_depth: controller.retrain_pack_depth(),
+            use_user_labels: controller.retrain_use_user_labels(),
             model_kind: controller.training_model_kind(),
             train_options,
             mlp_options,
+            logreg_options,
         });
 }
 
@@ -213,7 +255,13 @@ impl EguiController {
             }
         };
         let min_confidence = self.retrain_min_confidence();
-        let diagnostics = match training_diagnostics_for_sources(&conn, &source_ids, min_confidence) {
+        let diagnostics = match training_diagnostics_for_sources(
+            &conn,
+            &source_ids,
+            min_confidence,
+            self.retrain_use_user_labels(),
+            self.training_model_kind(),
+        ) {
             Ok(diag) => diag,
             Err(err) => {
                 self.ui.training.summary = None;
@@ -221,7 +269,13 @@ impl EguiController {
                 return;
             }
         };
-        let exportable = match training_exportable_count(&conn, &source_ids, min_confidence) {
+        let exportable = match training_exportable_count(
+            &conn,
+            &source_ids,
+            min_confidence,
+            self.retrain_use_user_labels(),
+            self.training_model_kind(),
+        ) {
             Ok(count) => count,
             Err(err) => {
                 self.ui.training.summary = None;
@@ -367,6 +421,8 @@ fn import_model_json_into_db(
     kind: &str,
     model_json: &str,
     classes_json: &str,
+    feat_version: i64,
+    feature_len_f32: i64,
 ) -> Result<String, String> {
     let created_at = now_epoch_seconds();
     let model_id = uuid::Uuid::new_v4().to_string();
@@ -380,8 +436,8 @@ fn import_model_json_into_db(
             model_id,
             kind,
             1,
-            crate::analysis::FEATURE_VERSION_V1,
-            crate::analysis::FEATURE_VECTOR_LEN_V1 as i64,
+            feat_version,
+            feature_len_f32,
             classes_json,
             model_json,
             created_at
@@ -533,6 +589,128 @@ fn split_train_test(
     ))
 }
 
+fn split_logreg_train_test(
+    loaded: &crate::dataset::loader::LoadedDataset,
+) -> Result<
+    (
+        crate::ml::logreg::TrainDataset,
+        crate::ml::logreg::TrainDataset,
+    ),
+    String,
+> {
+    if loaded.manifest.feature_len_f32 != crate::analysis::embedding::EMBEDDING_DIM {
+        return Err(format!(
+            "Unsupported embedding_len {} (expected {})",
+            loaded.manifest.feature_len_f32,
+            crate::analysis::embedding::EMBEDDING_DIM
+        ));
+    }
+
+    let class_map = loaded.class_index_map();
+    let classes: Vec<String> = class_map.iter().map(|(name, _)| name.clone()).collect();
+
+    #[derive(Clone)]
+    struct LabeledRow {
+        sample_id: String,
+        class_idx: usize,
+        split: String,
+        row: Vec<f32>,
+    }
+
+    let mut rows = Vec::new();
+    for sample in &loaded.samples {
+        let Some(row) = loaded.feature_row(sample) else {
+            continue;
+        };
+        let Some(&class_idx) = class_map.get(&sample.label.class_id) else {
+            continue;
+        };
+        rows.push(LabeledRow {
+            sample_id: sample.sample_id.clone(),
+            class_idx,
+            split: sample.split.clone(),
+            row: row.to_vec(),
+        });
+    }
+
+    if rows.len() < 2 {
+        return Err(format!(
+            "Dataset needs at least 2 labeled samples (got {})",
+            rows.len()
+        ));
+    }
+
+    let mut train_x = Vec::new();
+    let mut train_y = Vec::new();
+    let mut test_x = Vec::new();
+    let mut test_y = Vec::new();
+
+    for item in &rows {
+        match item.split.as_str() {
+            "train" => {
+                train_x.push(item.row.clone());
+                train_y.push(item.class_idx);
+            }
+            "test" => {
+                test_x.push(item.row.clone());
+                test_y.push(item.class_idx);
+            }
+            _ => {}
+        }
+    }
+
+    if train_x.is_empty() || test_x.is_empty() {
+        train_x.clear();
+        train_y.clear();
+        test_x.clear();
+        test_y.clear();
+
+        for item in &rows {
+            let u = split_u01(&item.sample_id);
+            if u < 0.1 {
+                test_x.push(item.row.clone());
+                test_y.push(item.class_idx);
+            } else {
+                train_x.push(item.row.clone());
+                train_y.push(item.class_idx);
+            }
+        }
+
+        if test_x.is_empty() {
+            if let Some(row) = train_x.pop()
+                && let Some(y) = train_y.pop()
+            {
+                test_x.push(row);
+                test_y.push(y);
+            }
+        } else if train_x.is_empty() {
+            if let Some(row) = test_x.pop()
+                && let Some(y) = test_y.pop()
+            {
+                train_x.push(row);
+                train_y.push(y);
+            }
+        }
+
+        if train_x.is_empty() || test_x.is_empty() {
+            return Err("Dataset needs both train and test samples".to_string());
+        }
+    }
+
+    Ok((
+        crate::ml::logreg::TrainDataset {
+            classes: classes.clone(),
+            x: train_x,
+            y: train_y,
+        },
+        crate::ml::logreg::TrainDataset {
+            classes,
+            x: test_x,
+            y: test_y,
+        },
+    ))
+}
+
 fn export_with_confidence_fallback(
     options: &mut crate::dataset::export::ExportOptions,
     job: &ModelTrainingJob,
@@ -552,9 +730,20 @@ fn export_with_confidence_fallback(
                 format!("Exporting dataset (min_conf={:.2})…", conf),
             )?;
         }
-        let summary =
-            crate::dataset::export::export_training_dataset_for_sources(options, &job.source_ids)
-                .map_err(|err| err.to_string())?;
+        let summary = match job.model_kind {
+            crate::sample_sources::config::TrainingModelKind::LogRegV1 => {
+                crate::dataset::export::export_embedding_dataset_for_sources(
+                    options,
+                    &job.source_ids,
+                )
+                .map_err(|err| err.to_string())?
+            }
+            _ => crate::dataset::export::export_training_dataset_for_sources(
+                options,
+                &job.source_ids,
+            )
+            .map_err(|err| err.to_string())?,
+        };
         last_conf = conf;
         last_summary = Some(summary.clone());
         if summary.total_exported >= 2 {
@@ -583,12 +772,30 @@ fn training_diagnostics_hint(
     db_path: &PathBuf,
     source_ids: &[String],
     min_confidence: f32,
+    include_user_labels: bool,
+    model_kind: crate::sample_sources::config::TrainingModelKind,
 ) -> Result<String, String> {
     let conn = super::analysis_jobs::open_library_db(db_path)?;
-    let diag = training_diagnostics_for_sources(&conn, source_ids, min_confidence)?;
+    let diag =
+        training_diagnostics_for_sources(&conn, source_ids, min_confidence, include_user_labels, model_kind)?;
+    let vector_label = match model_kind {
+        crate::sample_sources::config::TrainingModelKind::LogRegV1 => "Embeddings",
+        _ => "Features(v1)",
+    };
+    let user_hint = if include_user_labels {
+        "User-labeled"
+    } else {
+        "User-labeled (ignored)"
+    };
     Ok(format!(
-        "Samples: {}. Features(v1): {}. User-labeled: {}. Name-labeled(conf>={:.2}): {}. Tip: assign categories to a few samples (dropdown) or lower the weak-label threshold.",
-        diag.samples_total, diag.features_v1, diag.user_join, min_confidence, diag.weak_join
+        "Samples: {}. {}: {}. {}: {}. Name-labeled(conf>={:.2}): {}. Tip: assign categories to a few samples (dropdown) or lower the weak-label threshold.",
+        diag.samples_total,
+        vector_label,
+        diag.features_v1,
+        user_hint,
+        diag.user_join,
+        min_confidence,
+        diag.weak_join
     ))
 }
 
@@ -611,12 +818,19 @@ fn training_diagnostics_for_sources(
     conn: &rusqlite::Connection,
     source_ids: &[String],
     min_confidence: f32,
+    include_user_labels: bool,
+    model_kind: crate::sample_sources::config::TrainingModelKind,
 ) -> Result<TrainingDiagnostics, String> {
     let ruleset_version = crate::labeling::weak::WEAK_LABEL_RULESET_VERSION;
     let (where_sql_samples, params_samples) = source_id_where_clause("s", source_ids);
-    let (where_sql_features, params_features) = source_id_where_clause("f", source_ids);
-    let mut params = params_features;
-    params.push(rusqlite::types::Value::Real(min_confidence as f64));
+    let (where_sql_vectors, params_vectors) = if matches!(
+        model_kind,
+        crate::sample_sources::config::TrainingModelKind::LogRegV1
+    ) {
+        source_id_where_clause("e", source_ids)
+    } else {
+        source_id_where_clause("f", source_ids)
+    };
 
     let samples_sql = format!(
         "SELECT COUNT(*)
@@ -632,52 +846,109 @@ fn training_diagnostics_for_sources(
         )
         .map_err(|err| err.to_string())?;
 
-    let features_sql = format!(
-        "SELECT COUNT(*)
-         FROM features f
-         WHERE f.feat_version = 1 AND ({})",
-        where_sql_features
-    );
-    let features_v1: i64 = conn
-        .query_row(
-            &features_sql,
-            rusqlite::params_from_iter(params.iter().cloned().take(params.len() - 1)),
-            |row| row.get(0),
-        )
-        .map_err(|err| err.to_string())?;
+    let features_v1 = if matches!(
+        model_kind,
+        crate::sample_sources::config::TrainingModelKind::LogRegV1
+    ) {
+        let sql = format!(
+            "SELECT COUNT(*)
+             FROM embeddings e
+             WHERE e.model_id = ?1 AND ({})",
+            where_sql_vectors
+        );
+        let mut params_vec = vec![rusqlite::types::Value::Text(
+            crate::analysis::embedding::EMBEDDING_MODEL_ID.to_string(),
+        )];
+        params_vec.extend(params_vectors.iter().cloned());
+        conn.query_row(&sql, rusqlite::params_from_iter(params_vec), |row| row.get(0))
+            .map_err(|err| err.to_string())?
+    } else {
+        let sql = format!(
+            "SELECT COUNT(*)
+             FROM features f
+             WHERE f.feat_version = 1 AND ({})",
+            where_sql_vectors
+        );
+        conn.query_row(&sql, rusqlite::params_from_iter(params_vectors.clone()), |row| row.get(0))
+            .map_err(|err| err.to_string())?
+    };
 
-    let user_sql = format!(
-        "SELECT COUNT(*)
-         FROM features f
-         JOIN labels_user u ON u.sample_id = f.sample_id
-         WHERE f.feat_version = 1 AND ({})",
-        where_sql_features
-    );
-    let user_join: i64 = conn
-        .query_row(
-            &user_sql,
-            rusqlite::params_from_iter(params.iter().cloned().take(params.len() - 1)),
-            |row| row.get(0),
-        )
-        .map_err(|err| err.to_string())?;
+    let user_join = if include_user_labels {
+        if matches!(
+            model_kind,
+            crate::sample_sources::config::TrainingModelKind::LogRegV1
+        ) {
+            let sql = format!(
+                "SELECT COUNT(*)
+                 FROM embeddings e
+                 JOIN labels_user u ON u.sample_id = e.sample_id
+                 WHERE e.model_id = ?1 AND ({})",
+                where_sql_vectors
+            );
+            let mut params_vec = vec![rusqlite::types::Value::Text(
+                crate::analysis::embedding::EMBEDDING_MODEL_ID.to_string(),
+            )];
+            params_vec.extend(params_vectors.iter().cloned());
+            conn.query_row(&sql, rusqlite::params_from_iter(params_vec), |row| row.get(0))
+                .map_err(|err| err.to_string())?
+        } else {
+            let sql = format!(
+                "SELECT COUNT(*)
+                 FROM features f
+                 JOIN labels_user u ON u.sample_id = f.sample_id
+                 WHERE f.feat_version = 1 AND ({})",
+                where_sql_vectors
+            );
+            conn.query_row(&sql, rusqlite::params_from_iter(params_vectors.clone()), |row| {
+                row.get(0)
+            })
+            .map_err(|err| err.to_string())?
+        }
+    } else {
+        0
+    };
 
-    let weak_sql = format!(
-        "SELECT COUNT(*)
-         FROM features f
-         JOIN labels_weak w ON w.sample_id = f.sample_id
-         WHERE f.feat_version = 1
-           AND w.ruleset_version = {}
-           AND w.confidence >= ?{}
-           AND ({})",
-        ruleset_version,
-        params.len(),
-        where_sql_features
-    );
-    let weak_join: i64 = conn
-        .query_row(&weak_sql, rusqlite::params_from_iter(params), |row| {
-            row.get(0)
-        })
-        .map_err(|err| err.to_string())?;
+    let weak_join = if matches!(
+        model_kind,
+        crate::sample_sources::config::TrainingModelKind::LogRegV1
+    ) {
+        let sql = format!(
+            "SELECT COUNT(*)
+             FROM embeddings e
+             JOIN labels_weak w ON w.sample_id = e.sample_id
+             WHERE e.model_id = ?1
+               AND w.ruleset_version = ?2
+               AND w.confidence >= ?3
+               AND ({})",
+            where_sql_vectors
+        );
+        let mut params_vec = vec![
+            rusqlite::types::Value::Text(crate::analysis::embedding::EMBEDDING_MODEL_ID.to_string()),
+            rusqlite::types::Value::Integer(ruleset_version),
+            rusqlite::types::Value::Real(min_confidence as f64),
+        ];
+        params_vec.extend(params_vectors.iter().cloned());
+        conn.query_row(&sql, rusqlite::params_from_iter(params_vec), |row| row.get(0))
+            .map_err(|err| err.to_string())?
+    } else {
+        let sql = format!(
+            "SELECT COUNT(*)
+             FROM features f
+             JOIN labels_weak w ON w.sample_id = f.sample_id
+             WHERE f.feat_version = 1
+               AND w.ruleset_version = ?1
+               AND w.confidence >= ?2
+               AND ({})",
+            where_sql_vectors
+        );
+        let mut params_vec = vec![
+            rusqlite::types::Value::Integer(ruleset_version),
+            rusqlite::types::Value::Real(min_confidence as f64),
+        ];
+        params_vec.extend(params_vectors.iter().cloned());
+        conn.query_row(&sql, rusqlite::params_from_iter(params_vec), |row| row.get(0))
+            .map_err(|err| err.to_string())?
+    };
 
     Ok(TrainingDiagnostics {
         samples_total,
@@ -707,23 +978,50 @@ fn training_exportable_count(
     conn: &rusqlite::Connection,
     source_ids: &[String],
     min_confidence: f32,
+    include_user_labels: bool,
+    model_kind: crate::sample_sources::config::TrainingModelKind,
 ) -> Result<i64, String> {
     if source_ids.is_empty() {
         return Ok(0);
     }
     let ruleset_version = crate::labeling::weak::WEAK_LABEL_RULESET_VERSION;
+    let (table, extra_where, model_param) = if matches!(
+        model_kind,
+        crate::sample_sources::config::TrainingModelKind::LogRegV1
+    ) {
+        (
+            "embeddings",
+            "t.model_id = ?3",
+            Some(crate::analysis::embedding::EMBEDDING_MODEL_ID),
+        )
+    } else {
+        ("features", "t.feat_version = ?3", None)
+    };
     let mut params: Vec<rusqlite::types::Value> = vec![
         rusqlite::types::Value::Integer(ruleset_version),
         rusqlite::types::Value::Real(min_confidence as f64),
-        rusqlite::types::Value::Integer(crate::analysis::FEATURE_VERSION_V1),
     ];
+    if let Some(model_id) = model_param {
+        params.push(rusqlite::types::Value::Text(model_id.to_string()));
+    } else {
+        params.push(rusqlite::types::Value::Integer(crate::analysis::FEATURE_VERSION_V1));
+    }
     let mut where_parts = Vec::new();
     for source_id in source_ids {
-        where_parts.push(format!("f.sample_id LIKE ?{}", params.len() + 1));
+        where_parts.push(format!("t.sample_id LIKE ?{}", params.len() + 1));
         params.push(rusqlite::types::Value::Text(format!("{source_id}::%")));
     }
     let where_sql = where_parts.join(" OR ");
-
+    let join_user = if include_user_labels {
+        "LEFT JOIN labels_user u ON u.sample_id = t.sample_id"
+    } else {
+        ""
+    };
+    let user_filter = if include_user_labels {
+        "(u.class_id IS NOT NULL OR w.class_id IS NOT NULL)"
+    } else {
+        "w.class_id IS NOT NULL"
+    };
     let sql = format!(
         "WITH best_weak AS (
             SELECT l.sample_id, l.class_id, l.confidence
@@ -741,18 +1039,15 @@ fn training_exportable_count(
               )
         )
         SELECT COUNT(*)
-        FROM features f
-        LEFT JOIN labels_user u ON u.sample_id = f.sample_id
-        LEFT JOIN best_weak w ON w.sample_id = f.sample_id
-        WHERE f.feat_version = ?3
-          AND (u.class_id IS NOT NULL OR w.class_id IS NOT NULL)
+        FROM {table} t
+        {join_user}
+        LEFT JOIN best_weak w ON w.sample_id = t.sample_id
+        WHERE {extra_where}
+          AND {user_filter}
           AND ({where_sql})"
     );
-
-    conn.query_row(&sql, rusqlite::params_from_iter(params), |row| {
-        row.get(0)
-    })
-    .map_err(|err| err.to_string())
+    conn.query_row(&sql, rusqlite::params_from_iter(params), |row| row.get(0))
+        .map_err(|err| err.to_string())
 }
 
 fn training_prediction_stats(
@@ -860,6 +1155,18 @@ fn evaluate_accuracy(
 fn evaluate_mlp_accuracy(
     model: &crate::ml::mlp::MlpModel,
     dataset: &crate::ml::gbdt_stump::TrainDataset,
+) -> f32 {
+    let mut cm = crate::ml::metrics::ConfusionMatrix::new(model.classes.len());
+    for (row, &truth) in dataset.x.iter().zip(dataset.y.iter()) {
+        let predicted = model.predict_class_index(row);
+        cm.add(truth, predicted);
+    }
+    crate::ml::metrics::accuracy(&cm)
+}
+
+fn evaluate_logreg_accuracy(
+    model: &crate::ml::logreg::LogRegModel,
+    dataset: &crate::ml::logreg::TrainDataset,
 ) -> f32 {
     let mut cm = crate::ml::metrics::ConfusionMatrix::new(model.classes.len());
     for (row, &truth) in dataset.x.iter().zip(dataset.y.iter()) {

@@ -31,6 +31,8 @@ pub struct ExportOptions {
     pub min_confidence: f32,
     /// Number of relative-path folder components used to compute pack_id.
     pub pack_depth: usize,
+    /// Include user override labels when exporting.
+    pub use_user_labels: bool,
     /// Seed used for deterministic pack split assignment.
     pub seed: String,
     /// Fraction of packs assigned to `test`.
@@ -46,6 +48,7 @@ impl Default for ExportOptions {
             db_path: None,
             min_confidence: 0.85,
             pack_depth: 1,
+            use_user_labels: true,
             seed: "sempal-dataset-v1".to_string(),
             test_fraction: 0.1,
             val_fraction: 0.1,
@@ -99,86 +102,19 @@ pub fn export_training_dataset(options: &ExportOptions) -> Result<ExportSummary,
 
     let db_path = options.resolved_db_path()?;
     let conn = stats::open_db(&db_path)?;
-    let rows = stats::load_export_rows(&conn, options.min_confidence, DEFAULT_RULESET_VERSION)?;
-
-    std::fs::create_dir_all(&options.out_dir)?;
-
-    let mut packs = BTreeSet::new();
-    let mut exported: Vec<ExportedSample> = Vec::with_capacity(rows.len());
-    for row in rows {
-        let Some(pack_id) = pack_id_for_sample_id(&row.sample_id, options.pack_depth) else {
-            continue;
-        };
-        let split = split_for_pack_id(&pack_id, &options.seed, options.test_fraction, options.val_fraction)?;
-        packs.insert(pack_id.clone());
-        exported.push(ExportedSample {
-            sample_id: row.sample_id,
-            pack_id,
-            split,
-            label: ExportedLabel {
-                class_id: row.class_id,
-                confidence: row.confidence,
-                rule_id: row.rule_id,
-                ruleset_version: row.ruleset_version,
-            },
-            vec_blob: row.vec_blob,
-        });
-    }
-
-    exported.sort_by(|a, b| a.pack_id.cmp(&b.pack_id).then_with(|| a.sample_id.cmp(&b.sample_id)));
-
-    let features_path = options.out_dir.join(FEATURES_FILE_NAME);
-    let samples_path = options.out_dir.join(SAMPLES_FILE_NAME);
-    let manifest_path = options.out_dir.join(MANIFEST_FILE_NAME);
-
-    let mut features_writer = BufWriter::new(File::create(&features_path)?);
-    let mut samples_writer = BufWriter::new(File::create(&samples_path)?);
-
-    let mut offset_bytes: u64 = 0;
-    let mut written = 0usize;
-    for sample in exported {
-        if sample.vec_blob.len() != FEATURE_VECTOR_LEN_V1 * 4 {
-            continue;
-        }
-        features_writer.write_all(&sample.vec_blob)?;
-        let record = DatasetSampleRecord {
-            sample_id: sample.sample_id,
-            pack_id: sample.pack_id,
-            split: sample.split,
-            label: sample.label,
-            features: DatasetFeaturesRef {
-                feat_version: FEATURE_VERSION_V1,
-                offset_bytes,
-                len_f32: FEATURE_VECTOR_LEN_V1,
-                encoding: "f32le".to_string(),
-            },
-        };
-        serde_json::to_writer(&mut samples_writer, &record)?;
-        samples_writer.write_all(b"\n")?;
-        offset_bytes += (FEATURE_VECTOR_LEN_V1 * 4) as u64;
-        written += 1;
-    }
-    features_writer.flush()?;
-    samples_writer.flush()?;
-
-    let manifest = DatasetManifest {
-        format_version: DATASET_FORMAT_VERSION,
-        feature_encoding: "f32le".to_string(),
-        feat_version: FEATURE_VERSION_V1,
-        feature_len_f32: FEATURE_VECTOR_LEN_V1,
-        files: DatasetManifestFiles {
-            samples: SAMPLES_FILE_NAME.to_string(),
-            features: FEATURES_FILE_NAME.to_string(),
-        },
-    };
-    let manifest_bytes = serde_json::to_vec_pretty(&manifest)?;
-    std::fs::write(&manifest_path, manifest_bytes)?;
-
-    Ok(ExportSummary {
-        total_exported: written,
-        total_packs: packs.len(),
-        db_path,
-    })
+    let rows = stats::load_export_rows(
+        &conn,
+        options.min_confidence,
+        DEFAULT_RULESET_VERSION,
+        options.use_user_labels,
+    )?;
+    export_rows_to_dir(
+        rows,
+        options,
+        &db_path,
+        FEATURE_VECTOR_LEN_V1,
+        FEATURE_VERSION_V1,
+    )
 }
 
 /// Export a dataset directory suitable for training (`manifest.json`, `samples.jsonl`, `features.f32le`)
@@ -196,8 +132,63 @@ pub fn export_training_dataset_for_sources(
         options.min_confidence,
         DEFAULT_RULESET_VERSION,
         Some(source_ids),
+        options.use_user_labels,
     )?;
+    export_rows_to_dir(
+        rows,
+        options,
+        &db_path,
+        FEATURE_VECTOR_LEN_V1,
+        FEATURE_VERSION_V1,
+    )
+}
 
+/// Export a dataset directory using embedding vectors instead of feature vectors.
+pub fn export_embedding_dataset_for_sources(
+    options: &ExportOptions,
+    source_ids: &[String],
+) -> Result<ExportSummary, ExportError> {
+    validate_options(options)?;
+
+    let db_path = options.resolved_db_path()?;
+    let conn = stats::open_db(&db_path)?;
+    let rows = stats::load_embedding_export_rows_filtered(
+        &conn,
+        options.min_confidence,
+        DEFAULT_RULESET_VERSION,
+        Some(source_ids),
+        options.use_user_labels,
+        crate::analysis::embedding::EMBEDDING_MODEL_ID,
+    )?;
+    export_rows_to_dir(
+        rows,
+        options,
+        &db_path,
+        crate::analysis::embedding::EMBEDDING_DIM,
+        0,
+    )
+}
+
+fn validate_options(options: &ExportOptions) -> Result<(), ExportError> {
+    if options.pack_depth == 0 {
+        return Err(ExportError::InvalidPackDepth);
+    }
+    if !(0.0..=1.0).contains(&options.min_confidence) {
+        return Err(ExportError::InvalidMinConfidence(options.min_confidence));
+    }
+    if options.test_fraction + options.val_fraction > 1.0 + f64::EPSILON {
+        return Err(ExportError::InvalidSplitFractions);
+    }
+    Ok(())
+}
+
+fn export_rows_to_dir(
+    rows: Vec<stats::ExportRow>,
+    options: &ExportOptions,
+    db_path: &PathBuf,
+    vector_len_f32: usize,
+    feat_version: i64,
+) -> Result<ExportSummary, ExportError> {
     std::fs::create_dir_all(&options.out_dir)?;
 
     let mut packs = BTreeSet::new();
@@ -239,7 +230,7 @@ pub fn export_training_dataset_for_sources(
     let mut offset_bytes: u64 = 0;
     let mut written = 0usize;
     for sample in exported {
-        if sample.vec_blob.len() != FEATURE_VECTOR_LEN_V1 * 4 {
+        if sample.vec_blob.len() != vector_len_f32 * 4 {
             continue;
         }
         features_writer.write_all(&sample.vec_blob)?;
@@ -249,15 +240,15 @@ pub fn export_training_dataset_for_sources(
             split: sample.split,
             label: sample.label,
             features: DatasetFeaturesRef {
-                feat_version: FEATURE_VERSION_V1,
+                feat_version,
                 offset_bytes,
-                len_f32: FEATURE_VECTOR_LEN_V1,
+                len_f32: vector_len_f32,
                 encoding: "f32le".to_string(),
             },
         };
         serde_json::to_writer(&mut samples_writer, &record)?;
         samples_writer.write_all(b"\n")?;
-        offset_bytes += (FEATURE_VECTOR_LEN_V1 * 4) as u64;
+        offset_bytes += (vector_len_f32 * 4) as u64;
         written += 1;
     }
     features_writer.flush()?;
@@ -266,8 +257,8 @@ pub fn export_training_dataset_for_sources(
     let manifest = DatasetManifest {
         format_version: DATASET_FORMAT_VERSION,
         feature_encoding: "f32le".to_string(),
-        feat_version: FEATURE_VERSION_V1,
-        feature_len_f32: FEATURE_VECTOR_LEN_V1,
+        feat_version,
+        feature_len_f32: vector_len_f32,
         files: DatasetManifestFiles {
             samples: SAMPLES_FILE_NAME.to_string(),
             features: FEATURES_FILE_NAME.to_string(),
@@ -279,21 +270,8 @@ pub fn export_training_dataset_for_sources(
     Ok(ExportSummary {
         total_exported: written,
         total_packs: packs.len(),
-        db_path,
+        db_path: db_path.clone(),
     })
-}
-
-fn validate_options(options: &ExportOptions) -> Result<(), ExportError> {
-    if options.pack_depth == 0 {
-        return Err(ExportError::InvalidPackDepth);
-    }
-    if !(0.0..=1.0).contains(&options.min_confidence) {
-        return Err(ExportError::InvalidMinConfidence(options.min_confidence));
-    }
-    if options.test_fraction + options.val_fraction > 1.0 + f64::EPSILON {
-        return Err(ExportError::InvalidSplitFractions);
-    }
-    Ok(())
 }
 
 #[derive(Debug, Clone)]
