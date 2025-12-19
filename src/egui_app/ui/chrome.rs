@@ -625,11 +625,11 @@ impl EguiApp {
                     self.controller.retrain_model_from_app();
                 }
                 if ui
-                    .button("Re-run inference (all features)")
-                    .on_hover_text("Recompute predictions using the latest model and threshold")
+                    .button("Re-run inference (loaded sources)")
+                    .on_hover_text("Recompute predictions for the currently loaded sources")
                     .clicked()
                 {
-                    self.controller.rerun_inference_for_all_features();
+                    self.controller.rerun_inference_for_loaded_sources();
                 }
             });
         self.controller.ui.training.panel_open = open;

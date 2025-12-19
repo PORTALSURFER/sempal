@@ -234,8 +234,18 @@ impl EguiController {
         begin_retrain_from_app(self);
     }
 
-    pub fn rerun_inference_for_all_features(&mut self) {
-        match super::analysis_jobs::enqueue_inference_jobs_for_all_features() {
+    pub fn rerun_inference_for_loaded_sources(&mut self) {
+        let source_ids: Vec<String> = self
+            .library
+            .sources
+            .iter()
+            .map(|source| source.id.as_str().to_string())
+            .collect();
+        if source_ids.is_empty() {
+            self.set_status("No sources loaded", StatusTone::Info);
+            return;
+        }
+        match super::analysis_jobs::enqueue_inference_jobs_for_sources(&source_ids) {
             Ok((count, _progress)) => {
                 self.set_status(
                     format!("Queued {count} inference jobs"),
