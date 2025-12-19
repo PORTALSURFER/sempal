@@ -538,9 +538,15 @@ mod tests {
             .upsert_file_with_hash(Path::new("Pack/c.wav"), 1, 1, "hc")
             .unwrap();
         batch.commit().unwrap();
-        source_db.set_missing(Path::new("Pack/a.wav"), false).unwrap();
-        source_db.set_missing(Path::new("Pack/b.wav"), false).unwrap();
-        source_db.set_missing(Path::new("Pack/c.wav"), false).unwrap();
+        drop(source_db);
+        let source_db = crate::sample_sources::SourceDatabase::open(&source.root).unwrap();
+        let entries = source_db.list_files().unwrap();
+        assert_eq!(entries.len(), 3);
+        for entry in &entries {
+            if entry.missing {
+                source_db.set_missing(&entry.relative_path, false).unwrap();
+            }
+        }
         drop(source_db);
 
         // Populate per-source DB with a fake entry (no audio file needed for enqueue).
