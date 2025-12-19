@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::sync::LazyLock;
 
-use ndarray::Array2;
+use ndarray::Array1;
 use ort::{Environment, Session, SessionBuilder, Value};
 
 use crate::analysis::audio;
@@ -87,7 +87,7 @@ pub(crate) fn infer_embedding(
         let mut input = vec![0.0_f32; YAMNET_INPUT_SAMPLES];
         let copy_len = frame.len().min(YAMNET_INPUT_SAMPLES);
         input[..copy_len].copy_from_slice(&frame[..copy_len]);
-        let array = Array2::from_shape_vec((1, YAMNET_INPUT_SAMPLES), input)
+        let array = Array1::from_vec(input)
             .map_err(|err| format!("Failed to build ONNX input array: {err}"))?;
         let input_value = Value::from_array(array)
             .map_err(|err| format!("Failed to create ONNX input tensor: {err}"))?;

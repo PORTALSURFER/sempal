@@ -78,11 +78,11 @@ def build_onnx() -> bytes:
     import tf2onnx
 
     model = hub.load("https://tfhub.dev/google/yamnet/1")
-    input_spec = (tf.TensorSpec([1, 15600], tf.float32, name="input"),)
+    input_spec = (tf.TensorSpec([15600], tf.float32, name="waveform"),)
 
     @tf.function(input_signature=input_spec)
-    def serving_fn(x):
-        return model(x)
+    def serving_fn(waveform):
+        return model(waveform)
 
     onnx_model, _ = tf2onnx.convert.from_function(
         serving_fn, input_signature=input_spec, opset=13, output_path=None
