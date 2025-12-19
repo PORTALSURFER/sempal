@@ -77,7 +77,7 @@ impl EguiApp {
                     .iter()
                     .any(|p| p == &path);
                 let is_loaded = loaded_row == Some(row);
-                let row_width = ui.available_width();
+                let row_width = metrics.row_width;
                 let triage_marker = style::triage_marker_color(tag).map(|color| RowMarker {
                     width: style::triage_marker_width(),
                     color,
