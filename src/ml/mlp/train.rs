@@ -52,10 +52,10 @@ pub fn train_mlp(dataset: &TrainDataset, options: &TrainOptions) -> Result<MlpMo
     let mut bias2 = vec![0.0f32; n_classes];
 
     for w in &mut weights1 {
-        *w = (rng.gen::<f32>() - 0.5) * 0.1;
+        *w = (rng.random::<f32>() - 0.5) * 0.1;
     }
     for w in &mut weights2 {
-        *w = (rng.gen::<f32>() - 0.5) * 0.1;
+        *w = (rng.random::<f32>() - 0.5) * 0.1;
     }
 
     let mut indices: Vec<usize> = (0..n).collect();
