@@ -33,6 +33,7 @@ def try_import_tf() -> bool:
     try:
         importlib.import_module("tensorflow")
         importlib.import_module("tensorflow_hub")
+        importlib.import_module("tf2onnx")
         return True
     except Exception:
         return False
@@ -43,16 +44,16 @@ def ensure_tf(no_install: bool) -> None:
         return
     if no_install:
         raise RuntimeError(
-            "tensorflow and tensorflow_hub are required. Install them first or omit --no-install."
+            "tensorflow, tensorflow_hub, and tf2onnx are required. Install them first or omit --no-install."
         )
-    print("Installing tensorflow + tensorflow_hub (this may take a while)...")
+    print("Installing tensorflow + tensorflow_hub + tf2onnx (this may take a while)...")
     subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade", "pip"])
 
     def install(use_user: bool) -> bool:
         cmd = [sys.executable, "-m", "pip", "install"]
         if use_user:
             cmd.append("--user")
-        cmd.extend(["tensorflow", "tensorflow_hub"])
+        cmd.extend(["tensorflow", "tensorflow_hub", "tf2onnx", "onnx"])
         subprocess.check_call(cmd)
         if use_user:
             import site
@@ -71,26 +72,27 @@ def ensure_tf(no_install: bool) -> None:
     )
 
 
-def build_tflite() -> bytes:
+def build_onnx() -> bytes:
     import tensorflow as tf
     import tensorflow_hub as hub
+    import tf2onnx
 
     model = hub.load("https://tfhub.dev/google/yamnet/1")
     concrete = model.signatures["serving_default"]
-    converter = tf.lite.TFLiteConverter.from_concrete_functions([concrete])
-    converter.optimizations = [tf.lite.Optimize.DEFAULT]
-    return converter.convert()
+    input_spec = (tf.TensorSpec([1, 15600], tf.float32, name="input"),)
+    onnx_model, _ = tf2onnx.convert.from_function(
+        concrete, input_signature=input_spec, opset=13, output_path=None
+    )
+    return onnx_model.SerializeToString()
 
 
-def verify_tflite(path: Path) -> None:
+def verify_onnx(path: Path) -> None:
     data = path.read_bytes()
-    if len(data) < 8 or data[4:8] != b"TFL3":
-        raise RuntimeError(f"{path} is not a valid .tflite file (missing TFL3 header)")
     if len(data) < 1024 * 100:
         raise RuntimeError(f"{path} is unexpectedly small ({len(data)} bytes)")
 
 
-def find_tflite_runtime() -> Path | None:
+def find_ort_runtime() -> Path | None:
     candidates = []
     for base in site.getsitepackages() + [site.getusersitepackages()]:
         if not base:
@@ -98,8 +100,9 @@ def find_tflite_runtime() -> Path | None:
         base_path = Path(base)
         if not base_path.exists():
             continue
-        candidates.extend(base_path.rglob("*tensorflowlite_c.*"))
-        candidates.extend(base_path.rglob("libtensorflowlite_c.*"))
+        candidates.extend(base_path.rglob("onnxruntime*.dll"))
+        candidates.extend(base_path.rglob("libonnxruntime*.so"))
+        candidates.extend(base_path.rglob("libonnxruntime*.dylib"))
     if not candidates:
         return None
     candidates.sort(key=lambda p: len(str(p)))
@@ -109,34 +112,23 @@ def find_tflite_runtime() -> Path | None:
 def runtime_filename() -> str:
     system = platform.system().lower()
     if system == "windows":
-        return "tensorflowlite_c.dll"
+        return "onnxruntime.dll"
     if system == "darwin":
-        return "libtensorflowlite_c.dylib"
-    return "libtensorflowlite_c.so"
+        return "libonnxruntime.dylib"
+    return "libonnxruntime.so"
 
 
 def runtime_urls(version: str) -> list[str]:
     system = platform.system().lower()
-    arch = "x86_64"
+    arch = "x64"
+    base = f"https://github.com/microsoft/onnxruntime/releases/download/v{version}"
     if system == "windows":
-        base = f"https://storage.googleapis.com/tensorflow/libtensorflowlite_c/windows/{arch}"
-        names = [
-            f"tensorflowlite_c-{version}.zip",
-            f"tensorflowlite_c-{version[:4]}.zip",
-        ]
+        name = f"onnxruntime-win-{arch}-{version}.zip"
     elif system == "darwin":
-        base = f"https://storage.googleapis.com/tensorflow/libtensorflowlite_c/darwin/{arch}"
-        names = [
-            f"libtensorflowlite_c-{version}.tar.gz",
-            f"libtensorflowlite_c-{version[:4]}.tar.gz",
-        ]
+        name = f"onnxruntime-osx-universal2-{version}.tgz"
     else:
-        base = f"https://storage.googleapis.com/tensorflow/libtensorflowlite_c/linux/{arch}"
-        names = [
-            f"libtensorflowlite_c-{version}.tar.gz",
-            f"libtensorflowlite_c-{version[:4]}.tar.gz",
-        ]
-    return [f"{base}/{name}" for name in names]
+        name = f"onnxruntime-linux-{arch}-{version}.tgz"
+    return [f"{base}/{name}"]
 
 
 def download_runtime(version: str, dest_dir: Path, override_url: str | None) -> Path | None:
@@ -151,7 +143,7 @@ def download_runtime(version: str, dest_dir: Path, override_url: str | None) -> 
         except Exception as err:
             last_error = err
             continue
-        tmp = dest_dir / "tflite_runtime.tmp"
+        tmp = dest_dir / "onnxruntime.tmp"
         tmp.write_bytes(data)
         extracted = extract_runtime(tmp, dest_dir)
         tmp.unlink(missing_ok=True)
@@ -197,19 +189,20 @@ def extract_runtime(archive_path: Path, dest_dir: Path) -> Path | None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Generate yamnet.tflite for sempal.")
+    parser = argparse.ArgumentParser(description="Generate yamnet.onnx for sempal.")
     parser.add_argument("--app-root", type=Path, help="Override app root directory")
     parser.add_argument("--no-install", action="store_true", help="Skip pip installs")
     parser.add_argument("--force", action="store_true", help="Overwrite existing model")
-    parser.add_argument("--runtime-url", help="Override TFLite runtime download URL")
+    parser.add_argument("--runtime-url", help="Override ONNX Runtime download URL")
     parser.add_argument("--runtime-file", type=Path, help="Use a local runtime archive/dll")
+    parser.add_argument("--ort-version", default="1.18.1", help="ONNX Runtime version to download")
     args = parser.parse_args()
 
     app_root = args.app_root or resolve_app_root()
     models_dir = app_root / "models"
     models_dir.mkdir(parents=True, exist_ok=True)
-    target = models_dir / "yamnet.tflite"
-    runtime_dir = models_dir / "tflite"
+    target = models_dir / "yamnet.onnx"
+    runtime_dir = models_dir / "onnxruntime"
     runtime_dir.mkdir(parents=True, exist_ok=True)
 
     if target.exists() and not args.force:
@@ -217,30 +210,27 @@ def main() -> int:
         return 0
 
     ensure_tf(args.no_install)
-    tflite_data = build_tflite()
-    tmp_path = models_dir / "yamnet.tflite.tmp"
-    tmp_path.write_bytes(tflite_data)
-    verify_tflite(tmp_path)
+    onnx_data = build_onnx()
+    tmp_path = models_dir / "yamnet.onnx.tmp"
+    tmp_path.write_bytes(onnx_data)
+    verify_onnx(tmp_path)
     shutil.move(str(tmp_path), str(target))
     print(f"Wrote {target}")
-
-    import tensorflow as tf
 
     runtime = None
     if args.runtime_file:
         runtime = extract_runtime(args.runtime_file, runtime_dir)
     if runtime is None:
-        runtime = find_tflite_runtime()
+        runtime = find_ort_runtime()
     if runtime is None:
-        version = getattr(tf, "__version__", "2.20.0")
-        runtime = download_runtime(version, runtime_dir, args.runtime_url)
+        runtime = download_runtime(args.ort_version, runtime_dir, args.runtime_url)
         if runtime is None:
-            print("WARNING: Could not locate or download tensorflowlite_c runtime.")
-            print("Please copy tensorflowlite_c.* into:", runtime_dir)
+            print("WARNING: Could not locate or download ONNX Runtime.")
+            print("Please copy onnxruntime.* into:", runtime_dir)
             return 0
     runtime_target = runtime_dir / runtime_filename()
     shutil.copy2(runtime, runtime_target)
-    print(f"Copied TFLite runtime to {runtime_target}")
+    print(f"Copied ONNX Runtime to {runtime_target}")
     return 0
 
 

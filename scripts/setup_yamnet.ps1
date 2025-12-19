@@ -3,7 +3,8 @@ param(
     [switch]$NoInstall,
     [switch]$Force,
     [string]$RuntimeUrl,
-    [string]$RuntimeFile
+    [string]$RuntimeFile,
+    [string]$OrtVersion
 )
 
 $ErrorActionPreference = "Stop"
@@ -26,5 +27,6 @@ if ($NoInstall) { $argsList += "--no-install" }
 if ($Force) { $argsList += "--force" }
 if ($RuntimeUrl) { $argsList += @("--runtime-url", $RuntimeUrl) }
 if ($RuntimeFile) { $argsList += @("--runtime-file", $RuntimeFile) }
+if ($OrtVersion) { $argsList += @("--ort-version", $OrtVersion) }
 
 & $python @argsList
