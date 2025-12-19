@@ -78,10 +78,14 @@ def build_onnx() -> bytes:
     import tf2onnx
 
     model = hub.load("https://tfhub.dev/google/yamnet/1")
-    concrete = model.signatures["serving_default"]
     input_spec = (tf.TensorSpec([1, 15600], tf.float32, name="input"),)
+
+    @tf.function(input_signature=input_spec)
+    def serving_fn(x):
+        return model(x)
+
     onnx_model, _ = tf2onnx.convert.from_function(
-        concrete, input_signature=input_spec, opset=13, output_path=None
+        serving_fn, input_signature=input_spec, opset=13, output_path=None
     )
     return onnx_model.SerializeToString()
 
