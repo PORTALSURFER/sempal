@@ -246,6 +246,9 @@ def main() -> int:
             print("Please copy onnxruntime.* into:", runtime_dir)
             return 0
     runtime_target = runtime_dir / runtime_filename()
+    if runtime_target.exists():
+        print(f"ONNX Runtime already present at {runtime_target}")
+        return 0
     copy_error = None
     for _ in range(5):
         try:
@@ -256,9 +259,9 @@ def main() -> int:
             copy_error = err
             time.sleep(0.5)
     if copy_error:
-        raise RuntimeError(
-            f"Failed to copy ONNX Runtime to {runtime_target}: {copy_error}"
-        )
+        print(f"WARNING: Failed to copy ONNX Runtime to {runtime_target}: {copy_error}")
+        print("Close any running app using onnxruntime.dll and rerun the script.")
+        return 0
     print(f"Copied ONNX Runtime to {runtime_target}")
     return 0
 
