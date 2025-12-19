@@ -377,6 +377,7 @@ fn run_analysis_job(
     if current_hash.as_deref() != Some(content_hash) {
         return Ok(());
     }
+    crate::analysis::ann_index::upsert_embedding(conn, &job.sample_id, &embedding)?;
     let vector = crate::analysis::vector::to_f32_vector_v1(&features);
     let blob = crate::analysis::vector::encode_f32_le_blob(&vector);
     let computed_at = now_epoch_seconds();

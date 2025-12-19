@@ -42,6 +42,29 @@ impl EguiApp {
             }
 
             ui.add_space(ui.spacing().item_spacing.x);
+            let selected_row = self.controller.ui.browser.selected_visible;
+            let find_similar_btn = egui::Button::new("Find similar")
+                .selected(self.controller.ui.browser.similar_query.is_some());
+            let find_similar_resp = ui.add_enabled(selected_row.is_some(), find_similar_btn);
+            if find_similar_resp.clicked()
+                && let Some(row) = selected_row
+            {
+                if let Err(err) = self.controller.find_similar_for_visible_row(row) {
+                    self.controller
+                        .set_status(format!("Find similar failed: {err}"), style::StatusTone::Error);
+                }
+            }
+            ui.add_space(ui.spacing().item_spacing.x);
+            if let Some(similar) = self.controller.ui.browser.similar_query.as_ref() {
+                ui.label(
+                    RichText::new(format!("Similar to {}", similar.label))
+                        .color(palette.text_muted),
+                );
+                if ui.button("Clear similar").clicked() {
+                    self.controller.clear_similar_filter();
+                }
+                ui.add_space(ui.spacing().item_spacing.x);
+            }
             let categories = self.controller.prediction_categories();
             if !categories.is_empty() {
                 let mut selected = self.controller.ui.browser.category_filter.clone();

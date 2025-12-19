@@ -13,6 +13,7 @@ mod feature_cache;
 mod missing_samples;
 mod prediction_filter;
 mod selection_ops;
+mod similar;
 mod waveform_loading;
 mod waveform_rendering;
 mod waveform_view;
@@ -108,6 +109,16 @@ impl EguiController {
     /// Toggle whether review mode includes samples without predictions.
     pub fn set_review_include_unpredicted(&mut self, include: bool) {
         prediction_filter::set_review_include_unpredicted(self, include);
+    }
+
+    /// Filter the browser to show similar samples for the chosen visible row.
+    pub fn find_similar_for_visible_row(&mut self, row: usize) -> Result<(), String> {
+        similar::find_similar_for_visible_row(self, row)
+    }
+
+    /// Clear any active similar-sounds filter.
+    pub fn clear_similar_filter(&mut self) {
+        similar::clear_similar_filter(self);
     }
 
     /// Select a wav by absolute index into the full wav list.

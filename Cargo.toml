@@ -47,6 +47,7 @@ keyring = "3.6.2"
 chacha20poly1305 = "0.10.1"
 ndarray = "0.16.1"
 ort = { version = "2.0.0-rc.4", features = ["load-dynamic", "ndarray"] }
+hnsw_rs = "0.3.3"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 cpal = { version = "0.16.0", features = ["asio"] }

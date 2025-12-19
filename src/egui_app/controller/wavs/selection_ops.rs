@@ -149,6 +149,7 @@ pub(super) fn sync_browser_after_wav_entries_mutation(
     source_id: &SourceId,
 ) {
     rebuild_wav_lookup(controller);
+    controller.ui.browser.similar_query = None;
     controller.ui_cache.browser.search.invalidate();
     controller.rebuild_browser_lists();
     controller.ui_cache.browser.labels.insert(
@@ -162,6 +163,7 @@ pub(super) fn sync_browser_after_wav_entries_mutation_keep_search_cache(
     source_id: &SourceId,
 ) {
     rebuild_wav_lookup(controller);
+    controller.ui.browser.similar_query = None;
     controller.rebuild_browser_lists();
     controller.ui_cache.browser.labels.insert(
         source_id.clone(),

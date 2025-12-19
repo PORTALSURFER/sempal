@@ -28,6 +28,27 @@ impl EguiController {
         loaded_index: Option<usize>,
     ) -> (Vec<usize>, Option<usize>, Option<usize>) {
         self.prepare_prediction_filter_cache();
+        if let Some(similar) = self.ui.browser.similar_query.as_ref() {
+            let visible: Vec<usize> = similar
+                .indices
+                .iter()
+                .copied()
+                .filter(|index| {
+                    if let Some(entry) = self.wav_entries.entries.get(*index) {
+                        self.browser_filter_accepts(entry.tag)
+                            && self.folder_filter_accepts(&entry.relative_path)
+                            && self.prediction_filter_accepts_for_index(*index)
+                    } else {
+                        false
+                    }
+                })
+                .collect();
+            let selected_visible =
+                focused_index.and_then(|idx| visible.iter().position(|i| *i == idx));
+            let loaded_visible =
+                loaded_index.and_then(|idx| visible.iter().position(|i| *i == idx));
+            return (visible, selected_visible, loaded_visible);
+        }
         let Some(query) = self.active_search_query().map(str::to_string) else {
             let visible: Vec<usize> = self
                 .wav_entries
@@ -227,5 +248,6 @@ pub(super) fn set_browser_search(controller: &mut EguiController, query: impl In
         return;
     }
     controller.ui.browser.search_query = query;
+    controller.ui.browser.similar_query = None;
     controller.rebuild_browser_lists();
 }

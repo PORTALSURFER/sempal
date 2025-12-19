@@ -39,6 +39,8 @@ pub struct SampleBrowserState {
     pub review_max_confidence: f32,
     /// When true, include samples that have no prediction row yet.
     pub review_include_unpredicted: bool,
+    /// Optional similar-sounds filter scoped to the current source.
+    pub similar_query: Option<SimilarQuery>,
     /// Pending inline action for the sample browser rows.
     pub pending_action: Option<SampleBrowserActionPrompt>,
     /// Flag to request focus on the active inline rename editor.
@@ -69,10 +71,19 @@ impl Default for SampleBrowserState {
             review_mode: false,
             review_max_confidence: 0.55,
             review_include_unpredicted: true,
+            similar_query: None,
             pending_action: None,
             rename_focus_requested: false,
         }
     }
+}
+
+/// Holds the current similar-sounds query context.
+#[derive(Clone, Debug)]
+pub struct SimilarQuery {
+    pub sample_id: String,
+    pub label: String,
+    pub indices: Vec<usize>,
 }
 
 /// Identifies a row inside one of the triage flag columns.

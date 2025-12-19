@@ -586,6 +586,15 @@ impl EguiApp {
                 self.controller.reveal_browser_sample_in_file_explorer(path);
                 close_menu = true;
             }
+            if ui.button("Find similar").clicked() {
+                if let Err(err) = self.controller.find_similar_for_visible_row(row) {
+                    self.controller
+                        .set_status(format!("Find similar failed: {err}"), StatusTone::Error);
+                } else {
+                    close_menu = true;
+                    ui.close();
+                }
+            }
                         let categories = self.controller.label_override_categories();
             if !categories.is_empty() {
                 ui.separator();
