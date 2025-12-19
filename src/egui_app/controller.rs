@@ -74,9 +74,10 @@ use std::{
     cell::RefCell,
     collections::{HashMap, HashSet, VecDeque},
     fs,
+    io::Write,
     path::{Path, PathBuf},
     rc::Rc,
-    time::{Duration, SystemTime},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 /// Minimum selection width used to decide when to play a looped region.
@@ -223,6 +224,7 @@ impl EguiController {
             let overflow = self.ui.status.log.len() - STATUS_LOG_LIMIT;
             self.ui.status.log.drain(0..overflow);
         }
+        append_status_log_line(self.ui.status.log.last().expect("just pushed"));
     }
 
     #[allow(dead_code)]
@@ -286,6 +288,22 @@ impl EguiController {
     pub(crate) fn hotkeys_ctrl(&mut self) -> hotkeys_controller::HotkeysController<'_> {
         hotkeys_controller::HotkeysController::new(self)
     }
+}
+
+fn append_status_log_line(entry: &str) {
+    let Ok(dir) = crate::app_dirs::logs_dir() else {
+        return;
+    };
+    let path = dir.join("status.log");
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let line = format!("{timestamp} {entry}\n");
+    let Ok(mut file) = fs::OpenOptions::new().create(true).append(true).open(&path) else {
+        return;
+    };
+    let _ = file.write_all(line.as_bytes());
 }
 
 /// UI status tone for badge coloring.
