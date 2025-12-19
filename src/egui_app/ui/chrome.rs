@@ -636,6 +636,41 @@ impl EguiApp {
                         .set_retrain_pack_depth(pack_depth.max(1) as usize);
                 }
 
+                ui.add_space(6.0);
+                ui.label(RichText::new("Model type:").color(palette.text_muted));
+                let mut model_kind = self.controller.training_model_kind();
+                egui::ComboBox::from_id_salt("training_model_kind")
+                    .selected_text(match model_kind {
+                        crate::sample_sources::config::TrainingModelKind::GbdtStumpV1 => {
+                            "GBDT (fast baseline)"
+                        }
+                        crate::sample_sources::config::TrainingModelKind::MlpV1 => {
+                            "MLP (better accuracy)"
+                        }
+                    })
+                    .show_ui(ui, |ui| {
+                        if ui
+                            .selectable_value(
+                                &mut model_kind,
+                                crate::sample_sources::config::TrainingModelKind::MlpV1,
+                                "MLP (better accuracy)",
+                            )
+                            .clicked()
+                        {
+                            self.controller.set_training_model_kind(model_kind.clone());
+                        }
+                        if ui
+                            .selectable_value(
+                                &mut model_kind,
+                                crate::sample_sources::config::TrainingModelKind::GbdtStumpV1,
+                                "GBDT (fast baseline)",
+                            )
+                            .clicked()
+                        {
+                            self.controller.set_training_model_kind(model_kind.clone());
+                        }
+                    });
+
                 ui.add_space(8.0);
                 let retrain_btn = egui::Button::new("Retrain model");
                 if ui

@@ -11,7 +11,9 @@ pub(super) struct ModelTrainingJob {
     pub(super) source_ids: Vec<String>,
     pub(super) min_confidence: f32,
     pub(super) pack_depth: usize,
+    pub(super) model_kind: crate::sample_sources::config::TrainingModelKind,
     pub(super) train_options: crate::ml::gbdt_stump::TrainOptions,
+    pub(super) mlp_options: crate::ml::mlp::TrainOptions,
 }
 
 #[derive(Clone, Debug)]
@@ -74,11 +76,29 @@ pub(super) fn run_model_training(
     let loaded =
         crate::dataset::loader::load_dataset(&options.out_dir).map_err(|err| err.to_string())?;
     let (train, test) = split_train_test(&loaded)?;
-    let model = crate::ml::gbdt_stump::train_gbdt_stump(&train, &job.train_options)?;
-    let _ = evaluate_accuracy(&model, &test);
+    let (model_json, classes_json, kind) = match job.model_kind {
+        crate::sample_sources::config::TrainingModelKind::GbdtStumpV1 => {
+            let model = crate::ml::gbdt_stump::train_gbdt_stump(&train, &job.train_options)?;
+            let _ = evaluate_accuracy(&model, &test);
+            (
+                serde_json::to_string(&model).map_err(|err| err.to_string())?,
+                serde_json::to_string(&model.classes).map_err(|err| err.to_string())?,
+                "gbdt_stump_v1",
+            )
+        }
+        crate::sample_sources::config::TrainingModelKind::MlpV1 => {
+            let model = crate::ml::mlp::train_mlp(&train, &job.mlp_options)?;
+            let _ = evaluate_mlp_accuracy(&model, &test);
+            (
+                serde_json::to_string(&model).map_err(|err| err.to_string())?,
+                serde_json::to_string(&model.classes).map_err(|err| err.to_string())?,
+                "mlp_v1",
+            )
+        }
+    };
 
     send_progress(tx, 2, total_steps, "Importing model…")?;
-    let model_id = import_model_into_db(&job.db_path, &model)?;
+    let model_id = import_model_json_into_db(&job.db_path, kind, &model_json, &classes_json)?;
 
     send_progress(tx, 3, total_steps, "Enqueueing inference…")?;
     let (mut inference_jobs_enqueued, _progress) =
@@ -144,6 +164,7 @@ pub(super) fn begin_retrain_from_app(controller: &mut EguiController) {
     }
     controller.show_status_progress(ProgressTaskKind::ModelTraining, "Training model", 4, false);
     let train_options = crate::ml::gbdt_stump::TrainOptions::default();
+    let mlp_options = crate::ml::mlp::TrainOptions::default();
     controller
         .runtime
         .jobs
@@ -152,7 +173,9 @@ pub(super) fn begin_retrain_from_app(controller: &mut EguiController) {
             source_ids,
             min_confidence: controller.retrain_min_confidence(),
             pack_depth: controller.retrain_pack_depth(),
+            model_kind: controller.training_model_kind(),
             train_options,
+            mlp_options,
         });
 }
 
@@ -332,12 +355,12 @@ fn send_progress(
     .map_err(|_| "Model training channel dropped".to_string())
 }
 
-fn import_model_into_db(
+fn import_model_json_into_db(
     db_path: &PathBuf,
-    model: &crate::ml::gbdt_stump::GbdtStumpModel,
+    kind: &str,
+    model_json: &str,
+    classes_json: &str,
 ) -> Result<String, String> {
-    let model_json = serde_json::to_string(model).map_err(|err| err.to_string())?;
-    let classes_json = serde_json::to_string(&model.classes).map_err(|err| err.to_string())?;
     let created_at = now_epoch_seconds();
     let model_id = uuid::Uuid::new_v4().to_string();
     let conn = super::analysis_jobs::open_library_db(db_path)?;
@@ -348,10 +371,10 @@ fn import_model_into_db(
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
         params![
             model_id,
-            "gbdt_stump_v1",
-            model.model_version,
-            model.feat_version,
-            model.feature_len_f32 as i64,
+            kind,
+            1,
+            crate::analysis::FEATURE_VERSION_V1,
+            crate::analysis::FEATURE_VECTOR_LEN_V1 as i64,
             classes_json,
             model_json,
             created_at
@@ -817,6 +840,18 @@ fn split_u01(sample_id: &str) -> f64 {
 
 fn evaluate_accuracy(
     model: &crate::ml::gbdt_stump::GbdtStumpModel,
+    dataset: &crate::ml::gbdt_stump::TrainDataset,
+) -> f32 {
+    let mut cm = crate::ml::metrics::ConfusionMatrix::new(model.classes.len());
+    for (row, &truth) in dataset.x.iter().zip(dataset.y.iter()) {
+        let predicted = model.predict_class_index(row);
+        cm.add(truth, predicted);
+    }
+    crate::ml::metrics::accuracy(&cm)
+}
+
+fn evaluate_mlp_accuracy(
+    model: &crate::ml::mlp::MlpModel,
     dataset: &crate::ml::gbdt_stump::TrainDataset,
 ) -> f32 {
     let mut cm = crate::ml::metrics::ConfusionMatrix::new(model.classes.len());

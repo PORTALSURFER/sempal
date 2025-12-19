@@ -2,30 +2,36 @@ use rusqlite::{Connection, OptionalExtension, params};
 
 use super::types::TopKProbability;
 
+#[derive(Debug, Clone)]
+pub(super) enum CachedModelKind {
+    Gbdt(crate::ml::gbdt_stump::GbdtStumpModel),
+    Mlp(crate::ml::mlp::MlpModel),
+}
 
 #[derive(Debug, Clone)]
 pub(super) struct CachedModel {
     pub(super) model_id: String,
-    pub(super) model: crate::ml::gbdt_stump::GbdtStumpModel,
+    pub(super) kind: String,
+    pub(super) model: CachedModelKind,
 }
 
 pub(super) fn refresh_latest_model(
     conn: &Connection,
     cache: &mut Option<CachedModel>,
 ) -> Result<(), String> {
-    let row: Option<(String, String)> = conn
+    let row: Option<(String, String, String)> = conn
         .query_row(
-            "SELECT model_id, model_json
+            "SELECT model_id, kind, model_json
              FROM models
              ORDER BY created_at DESC, model_id DESC
              LIMIT 1",
             [],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .optional()
         .map_err(|err| format!("Failed to query latest model: {err}"))?;
 
-    let Some((model_id, model_json)) = row else {
+    let Some((model_id, kind, model_json)) = row else {
         *cache = None;
         return Ok(());
     };
@@ -33,10 +39,30 @@ pub(super) fn refresh_latest_model(
         return Ok(());
     }
 
-    let model: crate::ml::gbdt_stump::GbdtStumpModel = serde_json::from_str(&model_json)
-        .map_err(|err| format!("Failed to parse model_json: {err}"))?;
-    model.validate()?;
-    *cache = Some(CachedModel { model_id, model });
+    let model = match kind.as_str() {
+        "gbdt_stump_v1" | "gbdt" => {
+            let model: crate::ml::gbdt_stump::GbdtStumpModel =
+                serde_json::from_str(&model_json)
+                    .map_err(|err| format!("Failed to parse model_json: {err}"))?;
+            model.validate()?;
+            CachedModelKind::Gbdt(model)
+        }
+        "mlp_v1" => {
+            let model: crate::ml::mlp::MlpModel = serde_json::from_str(&model_json)
+                .map_err(|err| format!("Failed to parse model_json: {err}"))?;
+            model.validate()?;
+            CachedModelKind::Mlp(model)
+        }
+        _ => {
+            *cache = None;
+            return Ok(());
+        }
+    };
+    *cache = Some(CachedModel {
+        model_id,
+        kind,
+        model,
+    });
     Ok(())
 }
 
@@ -53,20 +79,36 @@ pub(super) fn infer_and_upsert_prediction(
     let Some(cached) = cache.as_ref() else {
         return Ok(());
     };
-    if cached.model.feat_version != crate::analysis::FEATURE_VERSION_V1
-        || cached.model.feature_len_f32 != crate::analysis::FEATURE_VECTOR_LEN_V1
-    {
+    let (classes, proba) = match &cached.model {
+        CachedModelKind::Gbdt(model) => {
+            if model.feat_version != crate::analysis::FEATURE_VERSION_V1
+                || model.feature_len_f32 != crate::analysis::FEATURE_VECTOR_LEN_V1
+            {
+                return Ok(());
+            }
+            if features.len() != model.feature_len_f32 {
+                return Ok(());
+            }
+            let proba = model.predict_proba(features);
+            (model.classes.clone(), proba)
+        }
+        CachedModelKind::Mlp(model) => {
+            if model.feat_version != crate::analysis::FEATURE_VERSION_V1
+                || model.feature_len_f32 != crate::analysis::FEATURE_VECTOR_LEN_V1
+            {
+                return Ok(());
+            }
+            if features.len() != model.feature_len_f32 {
+                return Ok(());
+            }
+            let proba = model.predict_proba(features);
+            (model.classes.clone(), proba)
+        }
+    };
+    if proba.is_empty() || proba.len() != classes.len() {
         return Ok(());
     }
-    if features.len() != cached.model.feature_len_f32 {
-        return Ok(());
-    }
-
-    let proba = cached.model.predict_proba(features);
-    if proba.is_empty() || proba.len() != cached.model.classes.len() {
-        return Ok(());
-    }
-    let (top_class, confidence, topk) = topk_from_proba(&cached.model.classes, &proba, 5);
+    let (top_class, confidence, topk) = topk_from_proba(&classes, &proba, 5);
     let topk_json = serde_json::to_string(&topk).map_err(|err| err.to_string())?;
 
     conn.execute(
@@ -170,7 +212,7 @@ mod tests {
         let model_json = serde_json::to_string(&model).unwrap();
         conn.execute(
             "INSERT INTO models (model_id, kind, model_version, feat_version, feature_len_f32, classes_json, model_json, created_at)
-             VALUES ('m1','gbdt',1,?1,?2,'[]',?3,10)",
+             VALUES ('m1','gbdt_stump_v1',1,?1,?2,'[]',?3,10)",
             params![
                 crate::analysis::FEATURE_VERSION_V1,
                 crate::analysis::FEATURE_VECTOR_LEN_V1 as i64,

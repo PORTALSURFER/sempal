@@ -49,4 +49,21 @@ impl EguiController {
             self.set_status(err, StatusTone::Warning);
         }
     }
+
+    pub fn training_model_kind(&self) -> crate::sample_sources::config::TrainingModelKind {
+        self.settings.training.model_kind.clone()
+    }
+
+    pub fn set_training_model_kind(
+        &mut self,
+        value: crate::sample_sources::config::TrainingModelKind,
+    ) {
+        if self.settings.training.model_kind == value {
+            return;
+        }
+        self.settings.training.model_kind = value;
+        if let Err(err) = self.persist_config("Failed to save options") {
+            self.set_status(err, StatusTone::Warning);
+        }
+    }
 }

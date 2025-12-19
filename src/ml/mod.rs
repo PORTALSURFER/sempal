@@ -4,4 +4,5 @@
 //! load/predict in Rust.
 
 pub mod gbdt_stump;
+pub mod mlp;
 pub mod metrics;
