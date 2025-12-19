@@ -5,6 +5,15 @@ impl EguiController {
         self.settings.model.unknown_confidence_threshold
     }
 
+    pub fn classifier_model_id(&self) -> Option<String> {
+        let value = self.settings.model.classifier_model_id.trim();
+        if value.is_empty() {
+            None
+        } else {
+            Some(value.to_string())
+        }
+    }
+
     pub fn set_unknown_confidence_threshold(&mut self, value: f32) {
         let clamped = value.clamp(0.0, 1.0);
         if (self.settings.model.unknown_confidence_threshold - clamped).abs() < f32::EPSILON {

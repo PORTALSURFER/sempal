@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::{
     Arc,
+    Mutex,
     atomic::AtomicU32,
     atomic::{AtomicBool, Ordering},
     mpsc::Sender,
@@ -18,6 +19,7 @@ pub(in crate::egui_app::controller) struct AnalysisWorkerPool {
     shutdown: Arc<AtomicBool>,
     unknown_threshold_bits: Arc<AtomicU32>,
     max_duration_bits: Arc<AtomicU32>,
+    preferred_model_id: Arc<Mutex<Option<String>>>,
     threads: Vec<JoinHandle<()>>,
 }
 
@@ -28,6 +30,7 @@ impl AnalysisWorkerPool {
             shutdown: Arc::new(AtomicBool::new(false)),
             unknown_threshold_bits: Arc::new(AtomicU32::new(0.8f32.to_bits())),
             max_duration_bits: Arc::new(AtomicU32::new(30.0f32.to_bits())),
+            preferred_model_id: Arc::new(Mutex::new(None)),
             threads: Vec::new(),
         }
     }
@@ -42,6 +45,15 @@ impl AnalysisWorkerPool {
         let clamped = value.clamp(1.0, 60.0 * 60.0);
         self.max_duration_bits
             .store(clamped.to_bits(), Ordering::Relaxed);
+    }
+
+    pub(in crate::egui_app::controller) fn set_classifier_model_id(
+        &self,
+        value: Option<String>,
+    ) {
+        if let Ok(mut guard) = self.preferred_model_id.lock() {
+            *guard = value;
+        }
     }
 
     pub(in crate::egui_app::controller) fn start(
@@ -63,6 +75,7 @@ impl AnalysisWorkerPool {
                     self.shutdown.clone(),
                     self.unknown_threshold_bits.clone(),
                     self.max_duration_bits.clone(),
+                    self.preferred_model_id.clone(),
                 ));
             }
             self.threads.push(spawn_progress_poller(
@@ -173,6 +186,7 @@ fn spawn_worker(
     shutdown: Arc<AtomicBool>,
     unknown_threshold_bits: Arc<AtomicU32>,
     max_duration_bits: Arc<AtomicU32>,
+    preferred_model_id: Arc<Mutex<Option<String>>>,
 ) -> JoinHandle<()> {
     std::thread::spawn(move || {
         let db_path = match library_db_path() {
@@ -186,7 +200,7 @@ fn spawn_worker(
         let _ = db::prune_jobs_for_missing_sources(&conn);
         let _ = db::reset_running_to_pending(&conn);
         let mut model_cache: Option<inference::CachedModel> = None;
-        let _ = inference::refresh_latest_model(&conn, &mut model_cache);
+        let _ = inference::refresh_latest_model(&conn, &mut model_cache, None);
         let mut embedding_cache: Option<crate::analysis::embedding::YamnetModel> = None;
 
         loop {
@@ -211,6 +225,10 @@ fn spawn_worker(
             let unknown_threshold = f32::from_bits(unknown_threshold_bits.load(Ordering::Relaxed));
             let max_analysis_duration_seconds =
                 f32::from_bits(max_duration_bits.load(Ordering::Relaxed));
+            let preferred_model_id = preferred_model_id
+                .lock()
+                .ok()
+                .and_then(|value| value.as_ref().cloned());
             let outcome = catch_unwind(AssertUnwindSafe(|| {
                 run_job(
                     &conn,
@@ -219,6 +237,7 @@ fn spawn_worker(
                     &mut embedding_cache,
                     unknown_threshold,
                     max_analysis_duration_seconds,
+                    preferred_model_id,
                 )
             }))
             .unwrap_or_else(|payload| Err(panic_to_string(payload)));
@@ -259,6 +278,7 @@ fn run_job(
     embedding_cache: &mut Option<crate::analysis::embedding::YamnetModel>,
     unknown_confidence_threshold: f32,
     max_analysis_duration_seconds: f32,
+    preferred_model_id: Option<String>,
 ) -> Result<(), String> {
     match job.job_type.as_str() {
         db::ANALYZE_SAMPLE_JOB_TYPE => run_analysis_job(
@@ -268,9 +288,16 @@ fn run_job(
             embedding_cache,
             unknown_confidence_threshold,
             max_analysis_duration_seconds,
+            preferred_model_id.as_deref(),
         ),
         db::INFERENCE_JOB_TYPE => {
-            run_inference_job(conn, job, model_cache, unknown_confidence_threshold)
+            run_inference_job(
+                conn,
+                job,
+                model_cache,
+                unknown_confidence_threshold,
+                preferred_model_id.as_deref(),
+            )
         }
         db::REBUILD_INDEX_JOB_TYPE => Err("Rebuild index job not implemented yet".to_string()),
         db::RETRAIN_CLASSIFIER_JOB_TYPE => {
@@ -287,6 +314,7 @@ fn run_analysis_job(
     embedding_cache: &mut Option<crate::analysis::embedding::YamnetModel>,
     unknown_confidence_threshold: f32,
     max_analysis_duration_seconds: f32,
+    preferred_model_id: Option<&str>,
 ) -> Result<(), String> {
     let (source_id, relative_path) = db::parse_sample_id(&job.sample_id)?;
     let Some(root) = db::source_root_for(conn, &source_id)? else {
@@ -362,9 +390,13 @@ fn run_analysis_job(
     inference::infer_and_upsert_prediction(
         conn,
         model_cache,
+        preferred_model_id,
         &job.sample_id,
         content_hash,
-        &vector,
+        inference::InferenceInputs {
+            features: Some(&vector),
+            embedding: Some(&embedding),
+        },
         computed_at,
         unknown_confidence_threshold,
     )?;
@@ -376,6 +408,7 @@ fn run_inference_job(
     job: &db::ClaimedJob,
     model_cache: &mut Option<inference::CachedModel>,
     unknown_confidence_threshold: f32,
+    preferred_model_id: Option<&str>,
 ) -> Result<(), String> {
     let content_hash = job
         .content_hash
@@ -385,33 +418,37 @@ fn run_inference_job(
     if current_hash.as_deref() != Some(content_hash) {
         return Ok(());
     }
-    let vec_blob = load_feature_blob(conn, &job.sample_id)?;
-    let features = decode_f32le_feature_row(&vec_blob)?;
+    let embedding = load_embedding_vec(conn, &job.sample_id)?;
     let computed_at = now_epoch_seconds();
     inference::infer_and_upsert_prediction(
         conn,
         model_cache,
+        preferred_model_id,
         &job.sample_id,
         content_hash,
-        &features,
+        inference::InferenceInputs {
+            features: None,
+            embedding: Some(&embedding),
+        },
         computed_at,
         unknown_confidence_threshold,
     )?;
     Ok(())
 }
 
-fn load_feature_blob(conn: &rusqlite::Connection, sample_id: &str) -> Result<Vec<u8>, String> {
+fn load_embedding_vec(conn: &rusqlite::Connection, sample_id: &str) -> Result<Vec<f32>, String> {
     conn.query_row(
-        "SELECT vec_blob FROM features WHERE sample_id = ?1",
+        "SELECT vec_blob FROM embeddings WHERE sample_id = ?1",
         rusqlite::params![sample_id],
         |row| row.get::<_, Vec<u8>>(0),
     )
-    .map_err(|err| format!("Failed to load feature blob for {sample_id}: {err}"))
+    .map_err(|err| format!("Failed to load embedding blob for {sample_id}: {err}"))
+    .and_then(decode_f32le_blob)
 }
 
-fn decode_f32le_feature_row(blob: &[u8]) -> Result<Vec<f32>, String> {
+fn decode_f32le_blob(blob: Vec<u8>) -> Result<Vec<f32>, String> {
     if blob.len() % 4 != 0 {
-        return Err("Feature blob length is not a multiple of 4 bytes".to_string());
+        return Err("Blob length is not a multiple of 4 bytes".to_string());
     }
     let mut out = Vec::with_capacity(blob.len() / 4);
     for chunk in blob.chunks_exact(4) {

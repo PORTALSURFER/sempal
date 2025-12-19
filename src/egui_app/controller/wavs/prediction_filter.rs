@@ -152,17 +152,21 @@ impl EguiController {
             .map_err(|err| err.to_string())?
             .join(crate::sample_sources::library::LIBRARY_DB_FILE_NAME);
         let conn = open_library_db(&db_path)?;
+        let model_id = select_active_model_id(&conn, self.classifier_model_id())?;
+        let Some(model_id) = model_id else {
+            self.ui_cache.browser.prediction_categories = None;
+            return Ok(());
+        };
         let latest: Option<(String, String)> = conn
             .query_row(
                 "SELECT model_id, classes_json
                  FROM models
-                 ORDER BY created_at DESC, model_id DESC
-                 LIMIT 1",
-                [],
+                 WHERE model_id = ?1",
+                params![&model_id],
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .optional()
-            .map_err(|err| format!("Failed to query latest model: {err}"))?;
+            .map_err(|err| format!("Failed to query model classes: {err}"))?;
         let Some((model_id, classes_json)) = latest else {
             self.ui_cache.browser.prediction_categories = None;
             return Ok(());
@@ -204,18 +208,7 @@ impl EguiController {
             .map_err(|err| err.to_string())?
             .join(crate::sample_sources::library::LIBRARY_DB_FILE_NAME);
         let conn = open_library_db(&db_path)?;
-
-        let latest_model_id: Option<String> = conn
-            .query_row(
-                "SELECT model_id
-                 FROM models
-                 ORDER BY created_at DESC, model_id DESC
-                 LIMIT 1",
-                [],
-                |row| row.get(0),
-            )
-            .optional()
-            .map_err(|err| format!("Failed to query latest model id: {err}"))?;
+        let latest_model_id = select_active_model_id(&conn, self.classifier_model_id())?;
 
         let unknown_threshold = self.unknown_confidence_threshold().clamp(0.0, 1.0);
         let cache = self
@@ -286,6 +279,37 @@ impl EguiController {
 
         Ok(())
     }
+}
+
+fn select_active_model_id(
+    conn: &Connection,
+    preferred: Option<String>,
+) -> Result<Option<String>, String> {
+    if let Some(model_id) = preferred {
+        let exists: Option<String> = conn
+            .query_row(
+                "SELECT model_id FROM models WHERE model_id = ?1",
+                params![&model_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|err| format!("Failed to query preferred model id: {err}"))?;
+        if exists.is_some() {
+            return Ok(Some(model_id));
+        }
+    }
+    let latest: Option<String> = conn
+        .query_row(
+            "SELECT model_id
+             FROM models
+             ORDER BY created_at DESC, model_id DESC
+             LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|err| format!("Failed to query latest model id: {err}"))?;
+    Ok(latest)
 }
 
 fn label_rules_categories() -> Vec<String> {

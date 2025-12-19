@@ -80,12 +80,16 @@ pub struct ModelSettings {
     /// Below this confidence, predictions are assigned to `UNKNOWN`.
     #[serde(default = "default_unknown_confidence_threshold")]
     pub unknown_confidence_threshold: f32,
+    /// Preferred classifier model id to use for predictions.
+    #[serde(default = "default_classifier_model_id")]
+    pub classifier_model_id: String,
 }
 
 impl Default for ModelSettings {
     fn default() -> Self {
         Self {
             unknown_confidence_threshold: default_unknown_confidence_threshold(),
+            classifier_model_id: default_classifier_model_id(),
         }
     }
 }
@@ -444,6 +448,10 @@ fn default_audio_output() -> AudioOutputConfig {
 
 fn default_unknown_confidence_threshold() -> f32 {
     0.8
+}
+
+fn default_classifier_model_id() -> String {
+    crate::ml::logreg::DEFAULT_CLASSIFIER_MODEL_ID.to_string()
 }
 
 fn default_retrain_min_confidence() -> f32 {

@@ -102,10 +102,13 @@ pub(super) fn run_model_training(
 
     send_progress(tx, 3, total_steps, "Enqueueing inference…")?;
     let (mut inference_jobs_enqueued, _progress) =
-        super::analysis_jobs::enqueue_inference_jobs_for_sources(&job.source_ids)?;
+        super::analysis_jobs::enqueue_inference_jobs_for_sources(
+            &job.source_ids,
+            Some(&model_id),
+        )?;
     if inference_jobs_enqueued < summary.total_exported {
         let (extra, _progress) =
-            super::analysis_jobs::enqueue_inference_jobs_for_all_features()?;
+            super::analysis_jobs::enqueue_inference_jobs_for_all_features(Some(&model_id))?;
         inference_jobs_enqueued = inference_jobs_enqueued.saturating_add(extra);
     }
 
@@ -321,7 +324,11 @@ impl EguiController {
                 return;
             }
         };
-        match super::analysis_jobs::enqueue_inference_jobs_for_sources(&source_ids) {
+        let preferred_model_id = controller.classifier_model_id();
+        match super::analysis_jobs::enqueue_inference_jobs_for_sources(
+            &source_ids,
+            preferred_model_id.as_deref(),
+        ) {
             Ok((count, _progress)) => {
                 self.set_status(
                     format!("Cleared {deleted} predictions; queued {count} inference jobs"),

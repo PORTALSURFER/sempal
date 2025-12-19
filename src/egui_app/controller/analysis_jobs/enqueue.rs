@@ -311,22 +311,14 @@ pub(in crate::egui_app::controller) fn enqueue_jobs_for_source_missing_features(
 
 pub(in crate::egui_app::controller) fn enqueue_inference_jobs_for_sources(
     source_ids: &[String],
+    preferred_model_id: Option<&str>,
 ) -> Result<(usize, AnalysisProgress), String> {
     let db_path = library_db_path()?;
     let mut conn = db::open_library_db(&db_path)?;
+    super::inference::ensure_bundled_model(&conn)?;
 
-    let latest_model_id: Option<String> = conn
-        .query_row(
-            "SELECT model_id
-             FROM models
-             ORDER BY created_at DESC, model_id DESC
-             LIMIT 1",
-            [],
-            |row| row.get(0),
-        )
-        .optional()
-        .map_err(|err| format!("Failed to query latest model id: {err}"))?;
-    let Some(model_id) = latest_model_id else {
+    let model_id = resolve_model_id(&conn, preferred_model_id)?;
+    let Some(model_id) = model_id else {
         return Ok((0, db::current_progress(&conn)?));
     };
 
@@ -342,22 +334,14 @@ pub(in crate::egui_app::controller) fn enqueue_inference_jobs_for_sources(
 }
 
 pub(in crate::egui_app::controller) fn enqueue_inference_jobs_for_all_features(
+    preferred_model_id: Option<&str>,
 ) -> Result<(usize, AnalysisProgress), String> {
     let db_path = library_db_path()?;
     let mut conn = db::open_library_db(&db_path)?;
+    super::inference::ensure_bundled_model(&conn)?;
 
-    let latest_model_id: Option<String> = conn
-        .query_row(
-            "SELECT model_id
-             FROM models
-             ORDER BY created_at DESC, model_id DESC
-             LIMIT 1",
-            [],
-            |row| row.get(0),
-        )
-        .optional()
-        .map_err(|err| format!("Failed to query latest model id: {err}"))?;
-    let Some(model_id) = latest_model_id else {
+    let model_id = resolve_model_id(&conn, preferred_model_id)?;
+    let Some(model_id) = model_id else {
         return Ok((0, db::current_progress(&conn)?));
     };
 
@@ -370,6 +354,37 @@ pub(in crate::egui_app::controller) fn enqueue_inference_jobs_for_all_features(
     let inserted = db::enqueue_jobs(&mut conn, &jobs, db::INFERENCE_JOB_TYPE, created_at)?;
     let progress = db::current_progress(&conn)?;
     Ok((inserted, progress))
+}
+
+fn resolve_model_id(
+    conn: &rusqlite::Connection,
+    preferred_model_id: Option<&str>,
+) -> Result<Option<String>, String> {
+    if let Some(model_id) = preferred_model_id {
+        let exists: Option<String> = conn
+            .query_row(
+                "SELECT model_id FROM models WHERE model_id = ?1",
+                params![model_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|err| format!("Failed to query preferred model id: {err}"))?;
+        if exists.is_some() {
+            return Ok(Some(model_id.to_string()));
+        }
+    }
+    let latest_model_id: Option<String> = conn
+        .query_row(
+            "SELECT model_id
+             FROM models
+             ORDER BY created_at DESC, model_id DESC
+             LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|err| format!("Failed to query latest model id: {err}"))?;
+    Ok(latest_model_id)
 }
 
 fn library_db_path() -> Result<std::path::PathBuf, String> {
@@ -408,20 +423,50 @@ fn collect_inference_jobs(
     model_id: &str,
     source_ids: Option<&[String]>,
 ) -> Result<Vec<(String, String)>, String> {
-    let mut sql = String::from(
-        "SELECT f.sample_id, s.content_hash
-         FROM features f
-         JOIN samples s ON s.sample_id = f.sample_id
-         LEFT JOIN predictions p
-           ON p.sample_id = f.sample_id AND p.model_id = ?1
-         WHERE f.feat_version = ?2
-           AND (p.sample_id IS NULL OR p.content_hash != s.content_hash)",
-    );
+    let kind: Option<String> = conn
+        .query_row(
+            "SELECT kind FROM models WHERE model_id = ?1",
+            params![model_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|err| format!("Failed to query model kind: {err}"))?;
 
-    let mut params_vec: Vec<Value> = vec![
-        Value::Text(model_id.to_string()),
-        Value::Integer(crate::analysis::FEATURE_VERSION_V1),
-    ];
+    let (mut sql, mut params_vec, sample_alias) = if matches!(kind.as_deref(), Some("logreg_v1")) {
+        (
+            String::from(
+                "SELECT e.sample_id, s.content_hash
+                 FROM embeddings e
+                 JOIN samples s ON s.sample_id = e.sample_id
+                 LEFT JOIN predictions p
+                   ON p.sample_id = e.sample_id AND p.model_id = ?1
+                 WHERE e.model_id = ?2
+                   AND (p.sample_id IS NULL OR p.content_hash != s.content_hash)",
+            ),
+            vec![
+                Value::Text(model_id.to_string()),
+                Value::Text(crate::analysis::embedding::EMBEDDING_MODEL_ID.to_string()),
+            ],
+            "e",
+        )
+    } else {
+        (
+            String::from(
+                "SELECT f.sample_id, s.content_hash
+                 FROM features f
+                 JOIN samples s ON s.sample_id = f.sample_id
+                 LEFT JOIN predictions p
+                   ON p.sample_id = f.sample_id AND p.model_id = ?1
+                 WHERE f.feat_version = ?2
+                   AND (p.sample_id IS NULL OR p.content_hash != s.content_hash)",
+            ),
+            vec![
+                Value::Text(model_id.to_string()),
+                Value::Integer(crate::analysis::FEATURE_VERSION_V1),
+            ],
+            "f",
+        )
+    };
 
     if let Some(source_ids) = source_ids
         && !source_ids.is_empty()
@@ -431,7 +476,8 @@ fn collect_inference_jobs(
             if idx > 0 {
                 sql.push_str(" OR ");
             }
-            sql.push_str("f.sample_id LIKE ?");
+            sql.push_str(sample_alias);
+            sql.push_str(".sample_id LIKE ?");
             sql.push_str(&(params_vec.len() + 1).to_string());
             params_vec.push(Value::Text(format!("{source_id}::%")));
         }

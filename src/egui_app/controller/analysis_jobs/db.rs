@@ -269,6 +269,9 @@ pub(super) fn invalidate_analysis_artifacts(
     let mut stmt_features = tx
         .prepare("DELETE FROM features WHERE sample_id = ?1")
         .map_err(|err| format!("Failed to prepare analysis invalidation statement: {err}"))?;
+    let mut stmt_embeddings = tx
+        .prepare("DELETE FROM embeddings WHERE sample_id = ?1")
+        .map_err(|err| format!("Failed to prepare analysis invalidation statement: {err}"))?;
     let mut stmt_legacy_features = tx
         .prepare("DELETE FROM analysis_features WHERE sample_id = ?1")
         .map_err(|err| format!("Failed to prepare analysis invalidation statement: {err}"))?;
@@ -282,6 +285,9 @@ pub(super) fn invalidate_analysis_artifacts(
         stmt_features
             .execute(params![sample_id])
             .map_err(|err| format!("Failed to invalidate analysis features: {err}"))?;
+        stmt_embeddings
+            .execute(params![sample_id])
+            .map_err(|err| format!("Failed to invalidate embeddings: {err}"))?;
         stmt_legacy_features
             .execute(params![sample_id])
             .map_err(|err| format!("Failed to invalidate analysis features: {err}"))?;
@@ -293,6 +299,7 @@ pub(super) fn invalidate_analysis_artifacts(
             .map_err(|err| format!("Failed to invalidate predictions: {err}"))?;
     }
     drop(stmt_features);
+    drop(stmt_embeddings);
     drop(stmt_legacy_features);
     drop(stmt_predictions);
     drop(stmt_model_predictions);

@@ -1,11 +1,13 @@
 use rusqlite::{Connection, OptionalExtension, params};
 
 use super::types::TopKProbability;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone)]
 pub(super) enum CachedModelKind {
     Gbdt(crate::ml::gbdt_stump::GbdtStumpModel),
     Mlp(crate::ml::mlp::MlpModel),
+    LogReg(crate::ml::logreg::LogRegModel),
 }
 
 #[derive(Debug, Clone)]
@@ -15,12 +17,34 @@ pub(super) struct CachedModel {
     pub(super) model: CachedModelKind,
 }
 
+pub(super) struct InferenceInputs<'a> {
+    pub(super) features: Option<&'a [f32]>,
+    pub(super) embedding: Option<&'a [f32]>,
+}
+
 pub(super) fn refresh_latest_model(
     conn: &Connection,
     cache: &mut Option<CachedModel>,
+    preferred_model_id: Option<&str>,
 ) -> Result<(), String> {
-    let row: Option<(String, String, String)> = conn
-        .query_row(
+    ensure_bundled_model(conn)?;
+    let row: Option<(String, String, String)> = if let Some(model_id) = preferred_model_id {
+        conn.query_row(
+            "SELECT model_id, kind, model_json
+             FROM models
+             WHERE model_id = ?1",
+            params![model_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()
+        .map_err(|err| format!("Failed to query preferred model: {err}"))?
+    } else {
+        None
+    };
+    let row = if row.is_some() {
+        row
+    } else {
+        conn.query_row(
             "SELECT model_id, kind, model_json
              FROM models
              ORDER BY created_at DESC, model_id DESC
@@ -29,7 +53,8 @@ pub(super) fn refresh_latest_model(
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .optional()
-        .map_err(|err| format!("Failed to query latest model: {err}"))?;
+        .map_err(|err| format!("Failed to query latest model: {err}"))?
+    };
 
     let Some((model_id, kind, model_json)) = row else {
         *cache = None;
@@ -53,6 +78,13 @@ pub(super) fn refresh_latest_model(
             model.validate()?;
             CachedModelKind::Mlp(model)
         }
+        "logreg_v1" => {
+            let model: crate::ml::logreg::LogRegModel =
+                serde_json::from_str(&model_json)
+                    .map_err(|err| format!("Failed to parse model_json: {err}"))?;
+            model.validate()?;
+            CachedModelKind::LogReg(model)
+        }
         _ => {
             *cache = None;
             return Ok(());
@@ -69,13 +101,14 @@ pub(super) fn refresh_latest_model(
 pub(super) fn infer_and_upsert_prediction(
     conn: &Connection,
     cache: &mut Option<CachedModel>,
+    preferred_model_id: Option<&str>,
     sample_id: &str,
     content_hash: &str,
-    features: &[f32],
+    inputs: InferenceInputs<'_>,
     computed_at: i64,
-    _unknown_confidence_threshold: f32,
+    unknown_confidence_threshold: f32,
 ) -> Result<(), String> {
-    refresh_latest_model(conn, cache)?;
+    refresh_latest_model(conn, cache, preferred_model_id)?;
     let Some(cached) = cache.as_ref() else {
         return Ok(());
     };
@@ -86,6 +119,9 @@ pub(super) fn infer_and_upsert_prediction(
             {
                 return Ok(());
             }
+            let Some(features) = inputs.features else {
+                return Ok(());
+            };
             if features.len() != model.feature_len_f32 {
                 return Ok(());
             }
@@ -98,17 +134,33 @@ pub(super) fn infer_and_upsert_prediction(
             {
                 return Ok(());
             }
+            let Some(features) = inputs.features else {
+                return Ok(());
+            };
             if features.len() != model.feature_len_f32 {
                 return Ok(());
             }
             let proba = model.predict_proba(features);
             (model.classes.clone(), proba)
         }
+        CachedModelKind::LogReg(model) => {
+            let Some(embedding) = inputs.embedding else {
+                return Ok(());
+            };
+            if embedding.len() != model.embedding_dim {
+                return Ok(());
+            }
+            let proba = model.predict_proba(embedding);
+            (model.classes.clone(), proba)
+        }
     };
     if proba.is_empty() || proba.len() != classes.len() {
         return Ok(());
     }
-    let (top_class, confidence, topk) = topk_from_proba(&classes, &proba, 5);
+    let (mut top_class, confidence, topk) = topk_from_proba(&classes, &proba, 5);
+    if confidence < unknown_confidence_threshold {
+        top_class = "UNKNOWN".to_string();
+    }
     let topk_json = serde_json::to_string(&topk).map_err(|err| err.to_string())?;
 
     conn.execute(
@@ -132,6 +184,44 @@ pub(super) fn infer_and_upsert_prediction(
     )
     .map_err(|err| format!("Failed to upsert prediction: {err}"))?;
 
+    Ok(())
+}
+
+pub(super) fn ensure_bundled_model(conn: &Connection) -> Result<(), String> {
+    let bundled_id = crate::ml::logreg::DEFAULT_CLASSIFIER_MODEL_ID;
+    let exists: Option<String> = conn
+        .query_row(
+            "SELECT model_id FROM models WHERE model_id = ?1",
+            params![bundled_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|err| format!("Failed to query bundled model: {err}"))?;
+    if exists.is_some() {
+        return Ok(());
+    }
+    let model = crate::ml::logreg::LogRegModel::bundled();
+    let model_json = serde_json::to_string(&model).map_err(|err| err.to_string())?;
+    let classes_json = serde_json::to_string(&model.classes).map_err(|err| err.to_string())?;
+    let created_at = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_else(|_| Duration::from_secs(0))
+        .as_secs() as i64;
+    conn.execute(
+        "INSERT INTO models (model_id, kind, model_version, feat_version, feature_len_f32, classes_json, model_json, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        params![
+            bundled_id,
+            "logreg_v1",
+            model.model_version,
+            0i64,
+            model.embedding_dim as i64,
+            classes_json,
+            model_json,
+            created_at
+        ],
+    )
+    .map_err(|err| format!("Failed to insert bundled model: {err}"))?;
     Ok(())
 }
 
@@ -222,7 +312,7 @@ mod tests {
         .unwrap();
 
         let mut cache = None;
-        refresh_latest_model(&conn, &mut cache).unwrap();
+        refresh_latest_model(&conn, &mut cache, Some("m1")).unwrap();
         assert!(cache.is_some());
         assert_eq!(cache.unwrap().model_id, "m1");
     }

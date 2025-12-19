@@ -183,12 +183,20 @@ impl EguiApp {
                             .controller
                             .cached_prediction_for_entry(entry_index)
                             .map(|p| p.confidence);
+                        let (band_label, band_color) = pred_confidence
+                            .map(|conf| {
+                                (
+                                    confidence_band_label(conf),
+                                    confidence_heat_color(conf, palette),
+                                )
+                            })
+                            .unwrap_or(("—", palette.text_muted));
                         let category_label = if category == "—" {
                             "—".to_string()
                         } else if is_override {
                             format!("{category} (user)")
                         } else if let Some(conf) = pred_confidence {
-                            format!("{category} {:.2}", conf)
+                            format!("{category} {:.2} {band_label}", conf)
                         } else {
                             category.clone()
                         };
@@ -205,12 +213,26 @@ impl EguiApp {
                             Some(category)
                         };
                         let combo = egui::ComboBox::from_id_salt("category_override")
-                            .selected_text(category_label)
+                            .selected_text(
+                                RichText::new(category_label).color(if is_override {
+                                    palette.text
+                                } else if pred_confidence.is_some() {
+                                    band_color
+                                } else {
+                                    palette.text_muted
+                                }),
+                            )
                             .width(rect.width());
                         let hover = if is_override {
-                            "User override (click to change)"
+                            "User override (click to change)".to_string()
+                        } else if let Some(conf) = pred_confidence {
+                            format!(
+                                "Predicted category (click to override)\nConfidence: {:.2} ({})",
+                                conf,
+                                band_label
+                            )
                         } else {
-                            "Predicted category (click to override)"
+                            "Predicted category (click to override)".to_string()
                         };
                         let inner = ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
                             combo.show_ui(ui, |ui| {
@@ -675,6 +697,16 @@ impl EguiApp {
 fn confidence_heat_color(confidence: f32, palette: style::Palette) -> egui::Color32 {
     let t = confidence.clamp(0.0, 1.0);
     lerp_color(palette.warning, palette.success, t)
+}
+
+fn confidence_band_label(confidence: f32) -> &'static str {
+    if confidence >= 0.75 {
+        "high"
+    } else if confidence >= 0.45 {
+        "med"
+    } else {
+        "low"
+    }
 }
 
 fn lerp_color(a: egui::Color32, b: egui::Color32, t: f32) -> egui::Color32 {

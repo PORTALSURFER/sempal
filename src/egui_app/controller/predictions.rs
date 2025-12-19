@@ -11,6 +11,7 @@ impl EguiController {
             return;
         };
         let sample_id = format!("{}::{}", source.id.as_str(), relative_path.to_string_lossy());
+        let preferred_model_id = self.classifier_model_id();
         let tx = self.runtime.jobs.message_sender();
         std::thread::spawn(move || {
             let db_path = match crate::app_dirs::app_root_dir() {
@@ -33,20 +34,25 @@ impl EguiController {
             let (top_class, confidence) = if let Some(class_id) = user_label {
                 (Some(class_id), Some(1.0))
             } else {
-                let row: Option<(String, f64)> = conn
-                    .query_row(
+                let active_model_id = resolve_active_model_id(&conn, preferred_model_id);
+                let row: Option<(String, f64)> = if let Some(model_id) = active_model_id.as_deref() {
+                    conn.query_row(
                         "SELECT p.top_class, p.confidence
                          FROM predictions p
                          JOIN models m ON m.model_id = p.model_id
                          WHERE p.sample_id = ?1
+                           AND p.model_id = ?2
                          ORDER BY m.created_at DESC, m.model_id DESC
                          LIMIT 1",
-                        params![sample_id],
+                        params![sample_id, model_id],
                         |row| Ok((row.get(0)?, row.get(1)?)),
                     )
                     .optional()
                     .ok()
-                    .flatten();
+                    .flatten()
+                } else {
+                    None
+                };
                 match row {
                     Some((class_id, confidence)) => (Some(class_id), Some(confidence as f32)),
                     None => (None, None),
@@ -61,6 +67,34 @@ impl EguiController {
             ));
         });
     }
+}
+
+fn resolve_active_model_id(conn: &Connection, preferred: Option<String>) -> Option<String> {
+    if let Some(model_id) = preferred {
+        let exists: Option<String> = conn
+            .query_row(
+                "SELECT model_id FROM models WHERE model_id = ?1",
+                params![&model_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .ok()
+            .flatten();
+        if exists.is_some() {
+            return Some(model_id);
+        }
+    }
+    conn.query_row(
+        "SELECT model_id
+         FROM models
+         ORDER BY created_at DESC, model_id DESC
+         LIMIT 1",
+        [],
+        |row| row.get(0),
+    )
+    .optional()
+    .ok()
+    .flatten()
 }
 
 fn open_db(path: &std::path::Path) -> Result<Connection, rusqlite::Error> {

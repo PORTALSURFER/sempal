@@ -101,6 +101,14 @@ impl EguiController {
         self.runtime
             .analysis
             .set_unknown_confidence_threshold(self.settings.model.unknown_confidence_threshold);
+        let model_id = self.settings.model.classifier_model_id.trim();
+        self.runtime.analysis.set_classifier_model_id(
+            if model_id.is_empty() {
+                None
+            } else {
+                Some(model_id.to_string())
+            },
+        );
         self.runtime.analysis.set_max_analysis_duration_seconds(
             self.settings.analysis.max_analysis_duration_seconds,
         );
@@ -114,9 +122,13 @@ impl EguiController {
                 .iter()
                 .map(|source| source.id.as_str().to_string())
                 .collect();
+            let preferred_model_id = self.classifier_model_id();
             let tx = self.runtime.jobs.message_sender();
             std::thread::spawn(move || {
-                let result = super::analysis_jobs::enqueue_inference_jobs_for_sources(&source_ids);
+                let result = super::analysis_jobs::enqueue_inference_jobs_for_sources(
+                    &source_ids,
+                    preferred_model_id.as_deref(),
+                );
                 match result {
                     Ok((inserted, progress)) => {
                         if inserted > 0 {

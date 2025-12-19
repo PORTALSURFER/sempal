@@ -36,12 +36,14 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
             let color = if prediction.class_id == "UNKNOWN" {
                 palette.accent_copper
             } else {
-                palette.text_muted
+                confidence_heat_color(prediction.confidence, palette)
             };
+            let band = confidence_band_label(prediction.confidence);
             let label = RichText::new(format!(
-                "Category: {} ({:.0}%)",
+                "Category: {} ({:.0}% {})",
                 prediction.class_id,
-                prediction.confidence * 100.0
+                prediction.confidence * 100.0,
+                band
             ))
             .color(color);
             ui.label(label);
@@ -50,4 +52,29 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
     if view_mode != app.controller.ui.waveform.channel_view {
         app.controller.set_waveform_channel_view(view_mode);
     }
+}
+
+fn confidence_band_label(confidence: f32) -> &'static str {
+    if confidence >= 0.75 {
+        "high"
+    } else if confidence >= 0.45 {
+        "med"
+    } else {
+        "low"
+    }
+}
+
+fn confidence_heat_color(confidence: f32, palette: &style::Palette) -> egui::Color32 {
+    let t = confidence.clamp(0.0, 1.0);
+    lerp_color(palette.warning, palette.success, t)
+}
+
+fn lerp_color(a: egui::Color32, b: egui::Color32, t: f32) -> egui::Color32 {
+    let t = t.clamp(0.0, 1.0);
+    let lerp = |start: u8, end: u8| -> u8 {
+        let start = start as f32;
+        let end = end as f32;
+        (start + (end - start) * t).round().clamp(0.0, 255.0) as u8
+    };
+    egui::Color32::from_rgb(lerp(a.r(), b.r()), lerp(a.g(), b.g()), lerp(a.b(), b.b()))
 }
