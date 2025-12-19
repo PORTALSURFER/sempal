@@ -234,7 +234,7 @@ impl EguiApp {
                         } else {
                             "Predicted category (click to override)".to_string()
                         };
-                        let inner = ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
+                        let inner = ui.allocate_ui_at_rect(rect, |ui| {
                             combo.show_ui(ui, |ui| {
                                 if ui.selectable_label(false, "Clear override").clicked() {
                                     let action_rows = self.controller.action_rows_from_primary(row);
