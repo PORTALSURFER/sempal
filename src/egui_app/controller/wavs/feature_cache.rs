@@ -2,7 +2,7 @@ use super::*;
 use crate::egui_app::controller::controller_state::{
     AnalysisJobStatus, FeatureCache, FeatureStatus, WeakLabelInfo,
 };
-use rusqlite::{OptionalExtension, params};
+use rusqlite::params;
 use std::collections::HashMap;
 
 const ANALYSIS_JOB_TYPE: &str = "wav_metadata_v1";
