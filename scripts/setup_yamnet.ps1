@@ -2,7 +2,8 @@ param(
     [string]$AppRoot,
     [switch]$NoInstall,
     [switch]$Force,
-    [string]$RuntimeUrl
+    [string]$RuntimeUrl,
+    [string]$RuntimeFile
 )
 
 $ErrorActionPreference = "Stop"
@@ -24,5 +25,6 @@ if ($AppRoot) { $argsList += @("--app-root", $AppRoot) }
 if ($NoInstall) { $argsList += "--no-install" }
 if ($Force) { $argsList += "--force" }
 if ($RuntimeUrl) { $argsList += @("--runtime-url", $RuntimeUrl) }
+if ($RuntimeFile) { $argsList += @("--runtime-file", $RuntimeFile) }
 
 & $python @argsList

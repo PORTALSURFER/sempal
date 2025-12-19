@@ -141,13 +141,15 @@ def runtime_urls(version: str) -> list[str]:
 
 def download_runtime(version: str, dest_dir: Path, override_url: str | None) -> Path | None:
     urls = [override_url] if override_url else runtime_urls(version)
+    last_error = None
     for url in urls:
         if not url:
             continue
         try:
             with urllib.request.urlopen(url, timeout=60) as resp:
                 data = resp.read()
-        except Exception:
+        except Exception as err:
+            last_error = err
             continue
         tmp = dest_dir / "tflite_runtime.tmp"
         tmp.write_bytes(data)
@@ -155,11 +157,21 @@ def download_runtime(version: str, dest_dir: Path, override_url: str | None) -> 
         tmp.unlink(missing_ok=True)
         if extracted:
             return extracted
+    if last_error:
+        print(f"Runtime download failed: {last_error}")
+        print("Tried URLs:")
+        for url in urls:
+            if url:
+                print(f"  - {url}")
     return None
 
 
 def extract_runtime(archive_path: Path, dest_dir: Path) -> Path | None:
     name = runtime_filename()
+    if archive_path.name.endswith((".dll", ".so", ".dylib")):
+        target = dest_dir / name
+        shutil.copy2(archive_path, target)
+        return target
     if zipfile.is_zipfile(archive_path):
         with zipfile.ZipFile(archive_path, "r") as zf:
             for member in zf.namelist():
@@ -190,6 +202,7 @@ def main() -> int:
     parser.add_argument("--no-install", action="store_true", help="Skip pip installs")
     parser.add_argument("--force", action="store_true", help="Overwrite existing model")
     parser.add_argument("--runtime-url", help="Override TFLite runtime download URL")
+    parser.add_argument("--runtime-file", type=Path, help="Use a local runtime archive/dll")
     args = parser.parse_args()
 
     app_root = args.app_root or resolve_app_root()
@@ -213,7 +226,11 @@ def main() -> int:
 
     import tensorflow as tf
 
-    runtime = find_tflite_runtime()
+    runtime = None
+    if args.runtime_file:
+        runtime = extract_runtime(args.runtime_file, runtime_dir)
+    if runtime is None:
+        runtime = find_tflite_runtime()
     if runtime is None:
         version = getattr(tf, "__version__", "2.20.0")
         runtime = download_runtime(version, runtime_dir, args.runtime_url)
