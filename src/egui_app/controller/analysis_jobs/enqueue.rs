@@ -523,6 +523,10 @@ mod tests {
             })
             .unwrap();
         let source_db = crate::sample_sources::SourceDatabase::open(&source.root).unwrap();
+        std::fs::create_dir_all(source.root.join("Pack")).unwrap();
+        std::fs::write(source.root.join("Pack/a.wav"), b"test").unwrap();
+        std::fs::write(source.root.join("Pack/b.wav"), b"test").unwrap();
+        std::fs::write(source.root.join("Pack/c.wav"), b"test").unwrap();
         let mut batch = source_db.write_batch().unwrap();
         batch
             .upsert_file_with_hash(Path::new("Pack/a.wav"), 1, 1, "ha")
