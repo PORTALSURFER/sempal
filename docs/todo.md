@@ -24,11 +24,11 @@
 <!-- - Store auto_category, confidence, and optional top-K in predictions. -->
 <!-- - Apply UNKNOWN thresholding and expose confidence bands in UI. -->
 
-Phase 5 - Similar Sounds
-- Integrate HNSW (hnsw_rs) with cosine/dot metric.
-- Persist index to app data and track meta in ann_index_meta.
-- Update index as embeddings arrive; rebuild if incompatible version.
-- Add "Find Similar" UI to query top-N neighbors.
+<!-- Phase 5 - Similar Sounds -->
+<!-- - Integrate HNSW (hnsw_rs) with cosine/dot metric. -->
+<!-- - Persist index to app data and track meta in ann_index_meta. -->
+<!-- - Update index as embeddings arrive; rebuild if incompatible version. -->
+<!-- - Add "Find Similar" UI to query top-N neighbors. -->
 
 Phase 6 - Labels and Correction Loop
 - Store user overrides in labels; allow opt-in or always-on.
