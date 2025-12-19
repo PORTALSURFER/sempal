@@ -6,7 +6,6 @@ use rusqlite::{OptionalExtension, params};
 use std::collections::HashMap;
 
 const ANALYSIS_JOB_TYPE: &str = "wav_metadata_v1";
-const WEAK_LABEL_RULESET_VERSION: i64 = crate::labeling::weak::WEAK_LABEL_RULESET_VERSION;
 
 impl EguiController {
     pub(crate) fn prepare_feature_cache_for_browser(&mut self) {
@@ -90,8 +89,11 @@ impl EguiController {
                 let status: Option<String> =
                     row.get(4).optional().map_err(|err| err.to_string())?;
                 let analysis_status = status.as_deref().and_then(parse_job_status);
+                let Some(relative_path) = sample_id.split_once("::").map(|(_, p)| p) else {
+                    continue;
+                };
                 sample_map.insert(
-                    normalize_sample_id_key(&sample_id),
+                    normalize_relative_key(relative_path),
                     FeatureStatus {
                         has_features_v1: has_features_v1 != 0,
                         duration_seconds: duration_seconds.map(|s| s as f32),
@@ -103,46 +105,55 @@ impl EguiController {
             }
         }
 
-        let mut weak_map: HashMap<String, WeakLabelInfo> = HashMap::new();
+        let mut weak_map: HashMap<String, (i64, WeakLabelInfo)> = HashMap::new();
         {
             let mut stmt = conn
                 .prepare(
-                    "SELECT sample_id, class_id, confidence, rule_id
+                    "SELECT sample_id, ruleset_version, class_id, confidence, rule_id
                      FROM labels_weak
-                     WHERE ruleset_version = ?1
-                       AND sample_id >= ?2
-                       AND sample_id < ?3",
+                     WHERE sample_id >= ?1
+                       AND sample_id < ?2",
                 )
                 .map_err(|err| format!("Prepare weak label cache query failed: {err}"))?;
             let mut rows = stmt
-                .query(params![WEAK_LABEL_RULESET_VERSION, prefix, prefix_end])
+                .query(params![prefix, prefix_end])
                 .map_err(|err| format!("Query weak label cache failed: {err}"))?;
             while let Some(row) = rows
                 .next()
                 .map_err(|err| format!("Query weak label cache failed: {err}"))?
             {
                 let sample_id: String = row.get(0).map_err(|err| err.to_string())?;
-                let class_id: String = row.get(1).map_err(|err| err.to_string())?;
-                let confidence: f64 = row.get(2).map_err(|err| err.to_string())?;
-                let rule_id: String = row.get(3).map_err(|err| err.to_string())?;
-                let key = normalize_sample_id_key(&sample_id);
+                let ruleset_version: i64 = row.get(1).map_err(|err| err.to_string())?;
+                let class_id: String = row.get(2).map_err(|err| err.to_string())?;
+                let confidence: f64 = row.get(3).map_err(|err| err.to_string())?;
+                let rule_id: String = row.get(4).map_err(|err| err.to_string())?;
+                let Some(relative_path) = sample_id.split_once("::").map(|(_, p)| p) else {
+                    continue;
+                };
+                let key = normalize_relative_key(relative_path);
                 let candidate = WeakLabelInfo {
                     class_id,
                     confidence: confidence as f32,
                     rule_id,
                 };
                 match weak_map.get(&key) {
-                    Some(existing) if existing.confidence >= candidate.confidence => {}
-                    _ => {
-                        weak_map.insert(key, candidate);
+                    Some((existing_version, existing)) => {
+                        if ruleset_version > *existing_version
+                            || (ruleset_version == *existing_version
+                                && candidate.confidence > existing.confidence)
+                        {
+                            weak_map.insert(key, (ruleset_version, candidate));
+                        }
+                    }
+                    None => {
+                        weak_map.insert(key, (ruleset_version, candidate));
                     }
                 }
             }
         }
 
         for (idx, entry) in self.wav_entries.entries.iter().enumerate() {
-            let sample_id = build_sample_id(source_id.as_str(), &entry.relative_path);
-            let key = normalize_sample_id_key(&sample_id);
+            let key = normalize_relative_key(&entry.relative_path.to_string_lossy());
             let mut status = sample_map.remove(&key).unwrap_or(FeatureStatus {
                 has_features_v1: false,
                 duration_seconds: None,
@@ -150,7 +161,7 @@ impl EguiController {
                 analysis_status: None,
                 weak_label: None,
             });
-            if let Some(weak) = weak_map.get(&key) {
+            if let Some((_, weak)) = weak_map.get(&key) {
                 status.weak_label = Some(weak.clone());
             }
             cache.rows[idx] = Some(status);
@@ -171,11 +182,6 @@ fn parse_job_status(status: &str) -> Option<AnalysisJobStatus> {
     }
 }
 
-fn normalize_sample_id_key(sample_id: &str) -> String {
-    sample_id.replace('\\', "/")
-}
-
-fn build_sample_id(source_id: &str, relative_path: &std::path::Path) -> String {
-    let rel = relative_path.to_string_lossy().replace('\\', "/");
-    format!("{source_id}::{rel}")
+fn normalize_relative_key(relative_path: &str) -> String {
+    relative_path.replace('\\', "/")
 }
