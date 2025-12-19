@@ -11,7 +11,7 @@ pub(crate) const EMBEDDING_DTYPE_F32: i64 = 0;
 const YAMNET_INPUT_SAMPLES: usize = 15_600;
 
 pub(crate) struct YamnetModel {
-    model: SimplePlan<TypedModel>,
+    model: SimplePlan<TypedFact, Box<dyn TypedOp>, TypedModel>,
 }
 
 impl YamnetModel {
@@ -28,7 +28,7 @@ impl YamnetModel {
             .map_err(|err| format!("Failed to load YAMNet model: {err}"))?
             .with_input_fact(
                 0,
-                InferenceFact::dt_shape(f32::datum_type(), tvec!(1, YAMNET_INPUT_SAMPLES)),
+                TypedFact::dt_shape(f32::datum_type(), tvec!(1, YAMNET_INPUT_SAMPLES)),
             )
             .map_err(|err| format!("Failed to set YAMNet input shape: {err}"))?
             .into_optimized()
