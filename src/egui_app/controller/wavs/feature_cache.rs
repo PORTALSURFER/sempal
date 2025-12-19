@@ -12,7 +12,13 @@ impl EguiController {
         let Some(source_id) = self.selection_state.ctx.selected_source.clone() else {
             return;
         };
-        let _ = self.ensure_feature_cache(&source_id);
+        if let Err(err) = self.ensure_feature_cache(&source_id) {
+            self.ui_cache.browser.features.remove(&source_id);
+            self.set_status(
+                format!("Failed to load analysis metadata: {err}"),
+                crate::egui_app::ui::style::StatusTone::Error,
+            );
+        }
     }
 
     pub(crate) fn cached_feature_status_for_entry(
@@ -31,7 +37,9 @@ impl EguiController {
     fn ensure_feature_cache(&mut self, source_id: &SourceId) -> Result<(), String> {
         let needs_len = self.wav_entries.entries.len();
         let existing = self.ui_cache.browser.features.get(source_id);
-        if existing.is_some_and(|cache| cache.rows.len() == needs_len) {
+        if existing.is_some_and(|cache| {
+            cache.rows.len() == needs_len && cache.rows.iter().all(|row| row.is_some())
+        }) {
             return Ok(());
         }
         self.ui_cache.browser.features.insert(
