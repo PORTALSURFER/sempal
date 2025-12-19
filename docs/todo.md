@@ -6,23 +6,23 @@
 <!-- - Ensure scan/import enqueues ANALYZE_SAMPLE and respects analysis_version invalidation. -->
 <!-- - Track job status, retries, and last_error; persist across restarts. -->
 
-Phase 2 - Audio Preprocessing
-- Decode supported formats (wav/aiff/flac/mp3/ogg) with existing pipeline.
-- Downmix to mono and resample to 16 kHz float32 [-1, 1].
-- Add windowing: full analysis <= 6s; for longer, pick energy windows (start/mid/end or RMS top-K).
-- Add silence trim and min-length padding for very short samples.
+<!-- Phase 2 - Audio Preprocessing -->
+<!-- - Decode supported formats (wav/aiff/flac/mp3/ogg) with existing pipeline. -->
+<!-- - Downmix to mono and resample to 16 kHz float32 [-1, 1]. -->
+<!-- - Add windowing: full analysis <= 6s; for longer, pick energy windows (start/mid/end or RMS top-K). -->
+<!-- - Add silence trim and min-length padding for very short samples. -->
 
-Phase 3 - Embeddings (YAMNet)
-- Choose runtime: TFLite (preferred) or ONNX Runtime; no Python in app.
-- Run YAMNet inference to get frame embeddings; pool to 1024-D vector.
-- Store embedding blob with model_id and dtype; normalize vectors for cosine similarity.
-- Record analysis_version (hash of model + preprocessing params).
+<!-- Phase 3 - Embeddings (YAMNet) -->
+<!-- - Choose runtime: TFLite (preferred) or ONNX Runtime; no Python in app. -->
+<!-- - Run YAMNet inference to get frame embeddings; pool to 1024-D vector. -->
+<!-- - Store embedding blob with model_id and dtype; normalize vectors for cosine similarity. -->
+<!-- - Record analysis_version (hash of model + preprocessing params). -->
 
-Phase 4 - Classifier Head
-- Implement logistic regression head (softmax) with W [C x 1024] and b [C].
-- Load classifier artifact from bundled model; version in settings.
-- Store auto_category, confidence, and optional top-K in predictions.
-- Apply UNKNOWN thresholding and expose confidence bands in UI.
+<!-- Phase 4 - Classifier Head -->
+<!-- - Implement logistic regression head (softmax) with W [C x 1024] and b [C]. -->
+<!-- - Load classifier artifact from bundled model; version in settings. -->
+<!-- - Store auto_category, confidence, and optional top-K in predictions. -->
+<!-- - Apply UNKNOWN thresholding and expose confidence bands in UI. -->
 
 Phase 5 - Similar Sounds
 - Integrate HNSW (hnsw_rs) with cosine/dot metric.
