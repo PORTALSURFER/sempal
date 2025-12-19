@@ -2,7 +2,7 @@ use super::*;
 use crate::egui_app::state::PredictedCategory;
 use rusqlite::{Connection, OptionalExtension, params};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 impl EguiController {
     pub fn prepare_prediction_cache_for_browser(&mut self) {
@@ -255,8 +255,7 @@ impl EguiController {
             let Some(relative_path) = sample_id.split_once("::").map(|(_, p)| p) else {
                 continue;
             };
-            let path = PathBuf::from(relative_path);
-            let Some(&idx) = self.wav_entries.lookup.get(&path) else {
+            let Some(&idx) = lookup_entry_index(&self.wav_entries.lookup, relative_path) else {
                 continue;
             };
             if idx >= cache.rows.len() {
@@ -369,8 +368,7 @@ fn apply_user_labels(
         let Some(relative_path) = sample_id.split_once("::").map(|(_, p)| p) else {
             continue;
         };
-        let path = PathBuf::from(relative_path);
-        let Some(&idx) = lookup.get(&path) else {
+        let Some(&idx) = lookup_entry_index(lookup, relative_path) else {
             continue;
         };
         if idx >= cache.rows.len() {
@@ -383,4 +381,27 @@ fn apply_user_labels(
         cache.user_overrides[idx] = true;
     }
     Ok(())
+}
+
+fn lookup_entry_index<'a>(
+    lookup: &'a HashMap<PathBuf, usize>,
+    relative_path: &str,
+) -> Option<&'a usize> {
+    let path = Path::new(relative_path);
+    if let Some(idx) = lookup.get(path) {
+        return Some(idx);
+    }
+    if relative_path.contains('\\') {
+        let normalized = relative_path.replace('\\', "/");
+        if let Some(idx) = lookup.get(Path::new(&normalized)) {
+            return Some(idx);
+        }
+    }
+    if relative_path.contains('/') {
+        let normalized = relative_path.replace('/', "\\");
+        if let Some(idx) = lookup.get(Path::new(&normalized)) {
+            return Some(idx);
+        }
+    }
+    None
 }

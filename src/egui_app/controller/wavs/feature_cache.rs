@@ -3,7 +3,7 @@ use crate::egui_app::controller::controller_state::{
     AnalysisJobStatus, FeatureCache, FeatureStatus, WeakLabelInfo,
 };
 use rusqlite::{OptionalExtension, params};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 const ANALYSIS_JOB_TYPE: &str = "wav_metadata_v1";
 const WEAK_LABEL_RULESET_VERSION: i64 = crate::labeling::weak::WEAK_LABEL_RULESET_VERSION;
@@ -118,8 +118,7 @@ impl EguiController {
             let Some(relative_path) = sample_id.split_once("::").map(|(_, p)| p) else {
                 continue;
             };
-            let path = PathBuf::from(normalize_sample_id_path(relative_path));
-            let Some(&idx) = self.wav_entries.lookup.get(&path) else {
+            let Some(&idx) = lookup_entry_index(&self.wav_entries.lookup, relative_path) else {
                 continue;
             };
             let analysis_status = status.as_deref().and_then(parse_job_status);
@@ -144,8 +143,27 @@ impl EguiController {
     }
 }
 
-fn normalize_sample_id_path(relative_path: &str) -> String {
-    relative_path.replace('\\', "/")
+fn lookup_entry_index<'a>(
+    lookup: &'a std::collections::HashMap<PathBuf, usize>,
+    relative_path: &str,
+) -> Option<&'a usize> {
+    let path = Path::new(relative_path);
+    if let Some(idx) = lookup.get(path) {
+        return Some(idx);
+    }
+    if relative_path.contains('\\') {
+        let normalized = relative_path.replace('\\', "/");
+        if let Some(idx) = lookup.get(Path::new(&normalized)) {
+            return Some(idx);
+        }
+    }
+    if relative_path.contains('/') {
+        let normalized = relative_path.replace('/', "\\");
+        if let Some(idx) = lookup.get(Path::new(&normalized)) {
+            return Some(idx);
+        }
+    }
+    None
 }
 
 fn parse_job_status(status: &str) -> Option<AnalysisJobStatus> {
