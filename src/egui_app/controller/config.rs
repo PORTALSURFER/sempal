@@ -52,6 +52,17 @@ impl EguiController {
             );
         }
         self.library.collections = cfg.collections;
+        if let Ok(root) = crate::app_dirs::app_root_dir() {
+            let db_path = root.join(crate::sample_sources::library::LIBRARY_DB_FILE_NAME);
+            if let Ok(mut conn) = super::analysis_jobs::open_library_db(&db_path) {
+                if let Err(err) = super::analysis_jobs::purge_orphaned_samples(&mut conn) {
+                    self.set_status(
+                        format!("Failed to purge orphaned sample data: {err}"),
+                        StatusTone::Warning,
+                    );
+                }
+            }
+        }
         // Backfill clip roots for legacy collection-owned clips that were not persisted.
         for collection in self.library.collections.iter_mut() {
             let expected_source_prefix = format!("collection-{}", collection.id.as_str());
