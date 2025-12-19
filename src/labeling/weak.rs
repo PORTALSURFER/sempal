@@ -300,8 +300,9 @@ fn normalize_for_matching(path: &Path) -> String {
 fn normalize_str_for_matching(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
     let mut prev: Option<char> = None;
+    let mut iter = input.chars().peekable();
 
-    for raw in input.chars() {
+    while let Some(raw) = iter.next() {
         let ch = if raw == '\\' { '/' } else { raw };
 
         if !ch.is_alphanumeric() {
@@ -316,7 +317,10 @@ fn normalize_str_for_matching(input: &str) -> String {
             let alpha_digit_boundary = (prev_ch.is_alphabetic() && ch.is_numeric())
                 || (prev_ch.is_numeric() && ch.is_alphabetic());
             let camel_boundary = prev_ch.is_lowercase() && ch.is_uppercase();
-            if alpha_digit_boundary || camel_boundary {
+            let title_boundary = prev_ch.is_uppercase()
+                && ch.is_uppercase()
+                && iter.peek().is_some_and(|next| next.is_lowercase());
+            if alpha_digit_boundary || camel_boundary || title_boundary {
                 out.push(' ');
             }
         }
@@ -367,6 +371,12 @@ mod tests {
     #[test]
     fn labels_kick_with_camelcase() {
         let labels = weak_labels_for_relative_path(&PathBuf::from("Drums/Kicks/BangKick.wav"));
+        assert!(labels.iter().any(|label| label.class_id == "kick"));
+    }
+
+    #[test]
+    fn labels_bass_drum_with_prefix() {
+        let labels = weak_labels_for_relative_path(&PathBuf::from("Drums/Kicks/EBassDrum.wav"));
         assert!(labels.iter().any(|label| label.class_id == "kick"));
     }
 
