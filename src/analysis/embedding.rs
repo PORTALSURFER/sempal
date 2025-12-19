@@ -2,10 +2,10 @@ use std::path::PathBuf;
 use std::sync::LazyLock;
 
 use ndarray::Array1;
-use ort::environment::Environment;
 use ort::session::Session;
 use ort::session::builder::SessionBuilder;
-use ort::value::Value;
+use ort::session::output::SessionOutputs;
+use ort::value::Tensor;
 
 use crate::analysis::audio;
 
@@ -15,7 +15,6 @@ pub(crate) const EMBEDDING_DTYPE_F32: i64 = 0;
 const YAMNET_INPUT_SAMPLES: usize = 15_600;
 
 pub(crate) struct YamnetModel {
-    _env: Environment,
     session: Session,
 }
 
@@ -36,21 +35,21 @@ impl YamnetModel {
             ));
         }
         std::env::set_var("ORT_DYLIB_PATH", &runtime_path);
-        let env = Environment::builder()
+        ort::environment::init_from(runtime_path.to_string_lossy().to_string())
             .with_name("sempal_yamnet")
-            .build()
-            .map_err(|err| format!("Failed to create ONNX environment: {err}"))?;
-        let session = SessionBuilder::new(&env)
+            .commit()
+            .map_err(|err| format!("Failed to initialize ONNX environment: {err}"))?;
+        let session = SessionBuilder::new()
             .map_err(|err| format!("Failed to create ONNX session builder: {err}"))?
             .with_intra_threads(
                 std::thread::available_parallelism()
                     .map(|n| n.get().saturating_sub(1).max(1))
-                    .unwrap_or(1) as i32,
+                    .unwrap_or(1),
             )
             .map_err(|err| format!("Failed to set ONNX threads: {err}"))?
-            .with_model_from_file(&model_path)
+            .commit_from_file(&model_path)
             .map_err(|err| format!("Failed to load ONNX model: {err}"))?;
-        Ok(Self { _env: env, session })
+        Ok(Self { session })
     }
 }
 
@@ -91,11 +90,11 @@ pub(crate) fn infer_embedding(
         let copy_len = frame.len().min(YAMNET_INPUT_SAMPLES);
         input[..copy_len].copy_from_slice(&frame[..copy_len]);
         let array = Array1::from_vec(input);
-        let input_value = Value::from_array(array)
+        let input_value = Tensor::from_array(array)
             .map_err(|err| format!("Failed to create ONNX input tensor: {err}"))?;
         let outputs = model
             .session
-            .run(vec![input_value])
+            .run(ort::inputs![input_value])
             .map_err(|err| format!("ONNX inference failed: {err}"))?;
         let embedding = extract_embedding(&outputs)?;
         if embedding.len() != EMBEDDING_DIM {
@@ -163,10 +162,10 @@ pub(crate) fn embedding_model_path() -> &'static PathBuf {
     &PATH
 }
 
-fn extract_embedding(outputs: &[Value]) -> Result<Vec<f32>, String> {
-    for value in outputs {
+fn extract_embedding(outputs: &SessionOutputs) -> Result<Vec<f32>, String> {
+    for value in outputs.values() {
         let array = value
-            .try_extract::<ndarray::Array<f32, ndarray::IxDyn>>()
+            .try_extract_array::<f32>()
             .map_err(|err| format!("Failed to read ONNX output tensor: {err}"))?;
         let shape = array.shape();
         if shape.is_empty() || *shape.last().unwrap_or(&0) != EMBEDDING_DIM {
