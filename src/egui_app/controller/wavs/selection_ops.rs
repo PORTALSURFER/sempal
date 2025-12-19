@@ -121,10 +121,26 @@ pub(super) fn selected_tag(controller: &EguiController) -> Option<SampleTag> {
 pub(super) fn rebuild_wav_lookup(controller: &mut EguiController) {
     controller.wav_entries.lookup.clear();
     for (index, entry) in controller.wav_entries.entries.iter().enumerate() {
-        controller
-            .wav_entries
-            .lookup
-            .insert(entry.relative_path.clone(), index);
+        let path = entry.relative_path.clone();
+        controller.wav_entries.lookup.insert(path.clone(), index);
+
+        let path_str = path.to_string_lossy();
+        if path_str.contains('\\') {
+            let normalized = path_str.replace('\\', "/");
+            controller
+                .wav_entries
+                .lookup
+                .entry(PathBuf::from(normalized))
+                .or_insert(index);
+        }
+        if path_str.contains('/') {
+            let normalized = path_str.replace('/', "\\");
+            controller
+                .wav_entries
+                .lookup
+                .entry(PathBuf::from(normalized))
+                .or_insert(index);
+        }
     }
 }
 
