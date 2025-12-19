@@ -79,7 +79,7 @@ pub(crate) fn infer_embedding(
             .map_err(|err| format!("Failed to build YAMNet input tensor: {err}"))?;
         let outputs = model
             .model
-            .run(tvec!(tensor))
+            .run(tvec!(tensor.into()))
             .map_err(|err| format!("YAMNet inference failed: {err}"))?;
         let embedding = extract_embedding(&outputs)?;
         if embedding.len() != EMBEDDING_DIM {
@@ -105,13 +105,16 @@ pub(crate) fn infer_embedding(
     Ok(pooled)
 }
 
-fn extract_embedding(outputs: &TVec<Tensor>) -> Result<Vec<f32>, String> {
+fn extract_embedding(outputs: &TVec<TValue>) -> Result<Vec<f32>, String> {
     for output in outputs {
-        let shape = output.shape();
+        let tensor = output
+            .to_tensor()
+            .map_err(|err| format!("Failed to read YAMNet output tensor: {err}"))?;
+        let shape = tensor.shape();
         if !shape.iter().any(|dim| *dim == EMBEDDING_DIM) {
             continue;
         }
-        let view = output
+        let view = tensor
             .to_array_view::<f32>()
             .map_err(|err| format!("Failed to read YAMNet output tensor: {err}"))?;
         let slice = view
