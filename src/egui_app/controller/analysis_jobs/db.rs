@@ -347,7 +347,8 @@ pub(super) fn parse_sample_id(sample_id: &str) -> Result<(String, PathBuf), Stri
 }
 
 pub(super) fn build_sample_id(source_id: &str, relative_path: &Path) -> String {
-    format!("{}::{}", source_id, relative_path.to_string_lossy())
+    let rel = relative_path.to_string_lossy().replace('\\', "/");
+    format!("{}::{}", source_id, rel)
 }
 
 pub(super) fn update_analysis_metadata(

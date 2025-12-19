@@ -118,7 +118,7 @@ impl EguiController {
             let Some(relative_path) = sample_id.split_once("::").map(|(_, p)| p) else {
                 continue;
             };
-            let path = PathBuf::from(relative_path);
+            let path = PathBuf::from(normalize_sample_id_path(relative_path));
             let Some(&idx) = self.wav_entries.lookup.get(&path) else {
                 continue;
             };
@@ -142,6 +142,10 @@ impl EguiController {
 
         Ok(())
     }
+}
+
+fn normalize_sample_id_path(relative_path: &str) -> String {
+    relative_path.replace('\\', "/")
 }
 
 fn parse_job_status(status: &str) -> Option<AnalysisJobStatus> {
