@@ -34,7 +34,9 @@ impl YamnetModel {
                 runtime_path.to_string_lossy()
             ));
         }
-        std::env::set_var("ORT_DYLIB_PATH", &runtime_path);
+        unsafe {
+            std::env::set_var("ORT_DYLIB_PATH", &runtime_path);
+        }
         ort::environment::init_from(runtime_path.to_string_lossy().to_string())
             .with_name("sempal_yamnet")
             .commit()
