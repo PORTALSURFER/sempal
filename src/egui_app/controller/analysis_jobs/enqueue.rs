@@ -128,8 +128,10 @@ pub(in crate::egui_app::controller) fn enqueue_jobs_for_source_backfill(
                 .query_row(params![&sample_id], |row| row.get(0))
                 .optional()
                 .map_err(|err| format!("Analysis version lookup failed: {err}"))?;
-            let has_current_analysis =
-                matches!(analysis_version.as_deref(), Some(db::ANALYSIS_VERSION_V1));
+            let has_current_analysis = matches!(
+                analysis_version.as_deref(),
+                Some(version) if version == crate::analysis::version::analysis_version()
+            );
             if has_features.is_some() && has_current_analysis {
                 continue;
             }
@@ -240,8 +242,10 @@ pub(in crate::egui_app::controller) fn enqueue_jobs_for_source_missing_features(
                 .query_row(params![&sample_id], |row| row.get(0))
                 .optional()
                 .map_err(|err| format!("Analysis version lookup failed: {err}"))?;
-            let has_current_analysis =
-                matches!(analysis_version.as_deref(), Some(db::ANALYSIS_VERSION_V1));
+            let has_current_analysis = matches!(
+                analysis_version.as_deref(),
+                Some(version) if version == crate::analysis::version::analysis_version()
+            );
             if has_features.is_some() && has_current_analysis {
                 continue;
             }
@@ -519,7 +523,7 @@ mod tests {
         conn.execute(
             "INSERT INTO samples (sample_id, content_hash, size, mtime_ns, duration_seconds, sr_used, analysis_version)
              VALUES (?1, ?2, 1, 1, NULL, NULL, ?3)",
-            params![&b, "hb", db::ANALYSIS_VERSION_V1],
+            params![&b, "hb", crate::analysis::version::analysis_version()],
         )
         .unwrap();
         conn.execute(

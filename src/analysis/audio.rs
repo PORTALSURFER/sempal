@@ -5,10 +5,14 @@ use std::path::Path;
 
 /// Fixed sample rate used during analysis.
 pub(crate) const ANALYSIS_SAMPLE_RATE: u32 = 16_000;
-const MAX_ANALYSIS_SECONDS: f32 = 6.0;
-const WINDOW_SECONDS: f32 = 2.0;
-const WINDOW_HOP_SECONDS: f32 = 1.0;
-const MIN_ANALYSIS_SECONDS: f32 = 0.1;
+pub(crate) const MAX_ANALYSIS_SECONDS: f32 = 6.0;
+pub(crate) const WINDOW_SECONDS: f32 = 2.0;
+pub(crate) const WINDOW_HOP_SECONDS: f32 = 1.0;
+pub(crate) const MIN_ANALYSIS_SECONDS: f32 = 0.1;
+pub(crate) const SILENCE_THRESHOLD_ON_DB: f32 = -45.0;
+pub(crate) const SILENCE_THRESHOLD_OFF_DB: f32 = -55.0;
+pub(crate) const SILENCE_PRE_ROLL_SECONDS: f32 = 0.01;
+pub(crate) const SILENCE_POST_ROLL_SECONDS: f32 = 0.005;
 
 /// Decoded mono audio ready for analysis.
 #[derive(Debug)]
@@ -194,10 +198,14 @@ fn trim_silence_with_hysteresis(samples: &[f32], sample_rate: u32) -> Vec<f32> {
         return samples.to_vec();
     }
 
-    let threshold_on = db_to_linear(-45.0);
-    let threshold_off = db_to_linear(-55.0);
-    let pre_roll = (sample_rate as f32 * 0.01).round().max(0.0) as usize; // 10ms
-    let post_roll = (sample_rate as f32 * 0.005).round().max(0.0) as usize; // 5ms
+    let threshold_on = db_to_linear(SILENCE_THRESHOLD_ON_DB);
+    let threshold_off = db_to_linear(SILENCE_THRESHOLD_OFF_DB);
+    let pre_roll = (sample_rate as f32 * SILENCE_PRE_ROLL_SECONDS)
+        .round()
+        .max(0.0) as usize; // 10ms
+    let post_roll = (sample_rate as f32 * SILENCE_POST_ROLL_SECONDS)
+        .round()
+        .max(0.0) as usize; // 5ms
 
     let mut active_start: Option<usize> = None;
     let mut active_end: Option<usize> = None;

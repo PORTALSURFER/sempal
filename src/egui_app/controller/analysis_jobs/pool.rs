@@ -187,6 +187,7 @@ fn spawn_worker(
         let _ = db::reset_running_to_pending(&conn);
         let mut model_cache: Option<inference::CachedModel> = None;
         let _ = inference::refresh_latest_model(&conn, &mut model_cache);
+        let mut embedding_cache: Option<crate::analysis::embedding::YamnetModel> = None;
 
         loop {
             if shutdown.load(Ordering::Relaxed) {
@@ -215,6 +216,7 @@ fn spawn_worker(
                     &conn,
                     &job,
                     &mut model_cache,
+                    &mut embedding_cache,
                     unknown_threshold,
                     max_analysis_duration_seconds,
                 )
@@ -242,6 +244,7 @@ fn run_job(
     conn: &rusqlite::Connection,
     job: &db::ClaimedJob,
     model_cache: &mut Option<inference::CachedModel>,
+    embedding_cache: &mut Option<crate::analysis::embedding::YamnetModel>,
     unknown_confidence_threshold: f32,
     max_analysis_duration_seconds: f32,
 ) -> Result<(), String> {
@@ -250,6 +253,7 @@ fn run_job(
             conn,
             job,
             model_cache,
+            embedding_cache,
             unknown_confidence_threshold,
             max_analysis_duration_seconds,
         ),
@@ -268,6 +272,7 @@ fn run_analysis_job(
     conn: &rusqlite::Connection,
     job: &db::ClaimedJob,
     model_cache: &mut Option<inference::CachedModel>,
+    embedding_cache: &mut Option<crate::analysis::embedding::YamnetModel>,
     unknown_confidence_threshold: f32,
     max_analysis_duration_seconds: f32,
 ) -> Result<(), String> {
@@ -292,6 +297,22 @@ fn run_analysis_job(
         }
     }
     let decoded = crate::analysis::audio::decode_for_analysis(&absolute)?;
+    let embedding = crate::analysis::embedding::infer_embedding(
+        embedding_cache,
+        &decoded.mono,
+        decoded.sample_rate_used,
+    )?;
+    let embedding_blob = crate::analysis::vector::encode_f32_le_blob(&embedding);
+    let embedding_timestamp = now_epoch_seconds();
+    db::upsert_embedding(
+        conn,
+        &job.sample_id,
+        crate::analysis::embedding::EMBEDDING_MODEL_ID,
+        crate::analysis::embedding::EMBEDDING_DIM as i64,
+        crate::analysis::embedding::EMBEDDING_DTYPE_F32,
+        &embedding_blob,
+        embedding_timestamp,
+    )?;
     let time_domain = crate::analysis::time_domain::extract_time_domain_features(
         &decoded.mono,
         decoded.sample_rate_used,

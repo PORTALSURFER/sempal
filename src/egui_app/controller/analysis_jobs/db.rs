@@ -7,7 +7,6 @@ pub(super) const INFERENCE_JOB_TYPE: &str = "inference_v1";
 pub(super) const REBUILD_INDEX_JOB_TYPE: &str = "rebuild_index_v1";
 pub(super) const RETRAIN_CLASSIFIER_JOB_TYPE: &str = "retrain_classifier_v1";
 pub(super) const DEFAULT_JOB_TYPE: &str = ANALYZE_SAMPLE_JOB_TYPE;
-pub(super) const ANALYSIS_VERSION_V1: &str = "analysis_v1";
 
 #[derive(Clone, Debug)]
 pub(super) struct ClaimedJob {
@@ -392,7 +391,7 @@ pub(super) fn update_analysis_metadata(
                 content_hash,
                 duration_seconds as f64,
                 sr_used as i64,
-                ANALYSIS_VERSION_V1
+                crate::analysis::version::analysis_version()
             ],
         )
         .map_err(|err| format!("Failed to update analysis metadata: {err}"))?;
@@ -419,6 +418,30 @@ pub(super) fn upsert_analysis_features(
         params![sample_id, feat_version, vec_blob, computed_at],
     )
     .map_err(|err| format!("Failed to upsert analysis features: {err}"))?;
+    Ok(())
+}
+
+pub(super) fn upsert_embedding(
+    conn: &Connection,
+    sample_id: &str,
+    model_id: &str,
+    dim: i64,
+    dtype: i64,
+    vec_blob: &[u8],
+    created_at: i64,
+) -> Result<(), String> {
+    conn.execute(
+        "INSERT INTO embeddings (sample_id, model_id, dim, dtype, vec_blob, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+         ON CONFLICT(sample_id) DO UPDATE SET
+            model_id = excluded.model_id,
+            dim = excluded.dim,
+            dtype = excluded.dtype,
+            vec_blob = excluded.vec_blob,
+            created_at = excluded.created_at",
+        params![sample_id, model_id, dim, dtype, vec_blob, created_at],
+    )
+    .map_err(|err| format!("Failed to upsert embedding: {err}"))?;
     Ok(())
 }
 
