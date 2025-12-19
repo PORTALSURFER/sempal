@@ -120,10 +120,9 @@ pub(super) fn begin_retrain_from_app(controller: &mut EguiController) {
                 && diag.features_v1 < (diag.samples_total / 4).max(50)
             {
                 let mut inserted = 0usize;
-                for source_id in &source_ids {
-                    let source_id = crate::sample_sources::SourceId::from_string(source_id);
+                for source in controller.library.sources.iter() {
                     if let Ok((count, _)) =
-                        super::analysis_jobs::enqueue_jobs_for_source_missing_features(&source_id)
+                        super::analysis_jobs::enqueue_jobs_for_source_missing_features(source)
                     {
                         inserted += count;
                     }

@@ -155,63 +155,84 @@ pub(in crate::egui_app::controller) fn enqueue_jobs_for_source_backfill(
 }
 
 pub(in crate::egui_app::controller) fn enqueue_jobs_for_source_missing_features(
-    source_id: &crate::sample_sources::SourceId,
+    source: &crate::sample_sources::SampleSource,
 ) -> Result<(usize, AnalysisProgress), String> {
     let db_path = library_db_path()?;
     let mut conn = db::open_library_db(&db_path)?;
 
-    let prefix = format!("{}::", source_id.as_str());
-    let prefix_end = format!("{prefix}\u{10FFFF}");
+    let source_db =
+        crate::sample_sources::SourceDatabase::open(&source.root).map_err(|err| err.to_string())?;
+    let mut entries = source_db.list_files().map_err(|err| err.to_string())?;
+    entries.retain(|entry| !entry.missing);
+    if entries.is_empty() {
+        return Ok((0, db::current_progress(&conn)?));
+    }
 
-    let (jobs, weak_labels) = {
-        let mut stmt = conn
-            .prepare(
-                "SELECT s.sample_id, s.content_hash
-                 FROM samples s
-                 LEFT JOIN features f ON f.sample_id = s.sample_id AND f.feat_version = 1
-                 LEFT JOIN analysis_jobs j ON j.sample_id = s.sample_id AND j.job_type = ?1
-                 WHERE s.sample_id >= ?2 AND s.sample_id < ?3
-                   AND f.sample_id IS NULL
-                   AND (j.status IS NULL OR j.status NOT IN ('pending','running'))",
-            )
-            .map_err(|err| format!("Prepare missing-features query failed: {err}"))?;
-        let mut rows = stmt
-            .query(params![db::DEFAULT_JOB_TYPE, prefix, prefix_end])
-            .map_err(|err| format!("Query missing-features failed: {err}"))?;
+    let mut features_stmt = conn
+        .prepare(
+            "SELECT 1 FROM features WHERE sample_id = ?1 AND feat_version = 1 LIMIT 1",
+        )
+        .map_err(|err| format!("Prepare feature lookup failed: {err}"))?;
+    let mut job_stmt = conn
+        .prepare(
+            "SELECT status FROM analysis_jobs WHERE sample_id = ?1 AND job_type = ?2 LIMIT 1",
+        )
+        .map_err(|err| format!("Prepare job lookup failed: {err}"))?;
 
-        let mut jobs: Vec<(String, String)> = Vec::new();
-        let mut weak_labels: Vec<super::weak_labels::SampleWeakLabels> = Vec::new();
-        while let Some(row) = rows
-            .next()
-            .map_err(|err| format!("Query missing-features failed: {err}"))?
-        {
-            let sample_id: String = row.get(0).map_err(|err| err.to_string())?;
-            let content_hash: String = row.get(1).map_err(|err| err.to_string())?;
-            if content_hash.trim().is_empty() {
-                continue;
-            }
-            jobs.push((sample_id.clone(), content_hash));
+    let mut sample_metadata = Vec::new();
+    let mut jobs = Vec::new();
+    let mut weak_labels = Vec::new();
 
-            let Some((_, relative_path)) = sample_id.split_once("::") else {
-                continue;
-            };
-            let relative_path = std::path::PathBuf::from(relative_path);
-            let labels = crate::labeling::weak::weak_labels_for_relative_path(&relative_path)
-                .into_iter()
-                .map(|label| super::weak_labels::WeakLabelInsert {
-                    class_id: label.class_id.to_string(),
-                    confidence: label.confidence,
-                    rule_id: label.rule_id.to_string(),
-                })
-                .collect();
-            weak_labels.push(super::weak_labels::SampleWeakLabels { sample_id, labels });
+    for entry in entries {
+        let sample_id = db::build_sample_id(source.id.as_str(), &entry.relative_path);
+        let has_features: Option<i64> = features_stmt
+            .query_row(params![&sample_id], |row| row.get(0))
+            .optional()
+            .map_err(|err| format!("Feature lookup failed: {err}"))?;
+        if has_features.is_some() {
+            continue;
         }
-        (jobs, weak_labels)
-    };
+        let status: Option<String> = job_stmt
+            .query_row(params![&sample_id, db::DEFAULT_JOB_TYPE], |row| row.get(0))
+            .optional()
+            .map_err(|err| format!("Job lookup failed: {err}"))?;
+        if matches!(status.as_deref(), Some("pending") | Some("running")) {
+            continue;
+        }
+
+        let content_hash = match entry.content_hash {
+            Some(hash) if !hash.trim().is_empty() => hash,
+            _ => {
+                let absolute = source.root.join(&entry.relative_path);
+                compute_content_hash(&absolute)?
+            }
+        };
+        if content_hash.trim().is_empty() {
+            continue;
+        }
+
+        sample_metadata.push(db::SampleMetadata {
+            sample_id: sample_id.clone(),
+            content_hash: content_hash.clone(),
+            size: entry.file_size,
+            mtime_ns: entry.modified_ns,
+        });
+        jobs.push((sample_id.clone(), content_hash));
+        let labels = crate::labeling::weak::weak_labels_for_relative_path(&entry.relative_path)
+            .into_iter()
+            .map(|label| super::weak_labels::WeakLabelInsert {
+                class_id: label.class_id.to_string(),
+                confidence: label.confidence,
+                rule_id: label.rule_id.to_string(),
+            })
+            .collect();
+        weak_labels.push(super::weak_labels::SampleWeakLabels { sample_id, labels });
+    }
 
     if jobs.is_empty() {
         return Ok((0, db::current_progress(&conn)?));
     }
+    db::upsert_samples(&mut conn, &sample_metadata)?;
     let created_at = now_epoch_seconds();
     super::weak_labels::replace_weak_labels_for_samples(
         &mut conn,
@@ -432,7 +453,7 @@ mod tests {
         )
         .unwrap();
 
-        let (inserted, _progress) = enqueue_jobs_for_source_missing_features(&source.id).unwrap();
+        let (inserted, _progress) = enqueue_jobs_for_source_missing_features(&source).unwrap();
         assert_eq!(inserted, 1);
 
         let pending: i64 = conn
