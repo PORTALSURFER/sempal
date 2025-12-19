@@ -127,7 +127,8 @@ pub(in crate::egui_app::controller) fn enqueue_jobs_for_source_backfill(
             let analysis_version: Option<String> = version_stmt
                 .query_row(params![&sample_id], |row| row.get::<_, Option<String>>(0))
                 .optional()
-                .map_err(|err| format!("Analysis version lookup failed: {err}"))?;
+                .map_err(|err| format!("Analysis version lookup failed: {err}"))?
+                .flatten();
             let has_current_analysis = matches!(
                 analysis_version.as_deref(),
                 Some(version) if version == crate::analysis::version::analysis_version()
@@ -241,7 +242,8 @@ pub(in crate::egui_app::controller) fn enqueue_jobs_for_source_missing_features(
             let analysis_version: Option<String> = version_stmt
                 .query_row(params![&sample_id], |row| row.get::<_, Option<String>>(0))
                 .optional()
-                .map_err(|err| format!("Analysis version lookup failed: {err}"))?;
+                .map_err(|err| format!("Analysis version lookup failed: {err}"))?
+                .flatten();
             let has_current_analysis = matches!(
                 analysis_version.as_deref(),
                 Some(version) if version == crate::analysis::version::analysis_version()
