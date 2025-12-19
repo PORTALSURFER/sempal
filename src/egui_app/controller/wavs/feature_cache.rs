@@ -94,8 +94,7 @@ impl EguiController {
                 let duration_seconds: Option<f64> = row.get(1).map_err(|err| err.to_string())?;
                 let sr_used: Option<i64> = row.get(2).map_err(|err| err.to_string())?;
                 let has_features_v1: i64 = row.get(3).map_err(|err| err.to_string())?;
-                let status: Option<String> =
-                    row.get(4).optional().map_err(|err| err.to_string())?;
+                let status: Option<String> = row.get(4).map_err(|err| err.to_string())?;
                 let analysis_status = status.as_deref().and_then(parse_job_status);
                 let Some(relative_path) = sample_id.split_once("::").map(|(_, p)| p) else {
                     continue;
