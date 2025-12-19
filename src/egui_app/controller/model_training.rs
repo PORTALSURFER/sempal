@@ -1,6 +1,6 @@
 use super::*;
 use crate::egui_app::state::ProgressTaskKind;
-use rusqlite::params;
+use rusqlite::{params, OptionalExtension};
 use std::path::PathBuf;
 use std::sync::mpsc::Sender;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
