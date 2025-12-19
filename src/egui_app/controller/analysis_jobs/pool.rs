@@ -221,7 +221,7 @@ fn spawn_worker(
                     max_analysis_duration_seconds,
                 )
             }))
-            .unwrap_or_else(|_| Err("Analysis worker panicked".to_string()));
+            .unwrap_or_else(|payload| Err(panic_to_string(payload)));
             match outcome {
                 Ok(()) => {
                     let _ = db::mark_done(&conn, job.id);
@@ -237,6 +237,18 @@ fn spawn_worker(
             }
         }
     })
+}
+
+fn panic_to_string(payload: Box<dyn std::any::Any + Send>) -> String {
+    let message = if let Some(message) = payload.downcast_ref::<&str>() {
+        (*message).to_string()
+    } else if let Some(message) = payload.downcast_ref::<String>() {
+        message.clone()
+    } else {
+        "Unknown panic payload".to_string()
+    };
+    let backtrace = std::backtrace::Backtrace::capture();
+    format!("Analysis worker panicked: {message}\n{backtrace}")
 }
 
 #[cfg_attr(test, allow(dead_code))]
