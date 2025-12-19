@@ -100,6 +100,13 @@ impl Drop for AnalysisWorkerPool {
 
 #[cfg_attr(test, allow(dead_code))]
 fn worker_count() -> usize {
+    if let Ok(value) = std::env::var("SEMPAL_ANALYSIS_WORKERS") {
+        if let Ok(parsed) = value.trim().parse::<usize>() {
+            if parsed >= 1 {
+                return parsed;
+            }
+        }
+    }
     std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(1)
