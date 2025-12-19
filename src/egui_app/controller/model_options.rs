@@ -14,6 +14,7 @@ impl EguiController {
         self.runtime
             .analysis
             .set_unknown_confidence_threshold(clamped);
+        self.ui_cache.browser.predictions.clear();
         if let Err(err) = self.persist_config("Failed to save options") {
             self.set_status(err, StatusTone::Warning);
         }

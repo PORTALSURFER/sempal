@@ -253,6 +253,7 @@ impl EguiController {
         let mut rows = stmt
             .query(params![model_id, prefix, prefix_end])
             .map_err(|err| format!("Failed to query predictions: {err}"))?;
+        let unknown_threshold = self.unknown_confidence_threshold().clamp(0.0, 1.0);
         while let Some(row) = rows
             .next()
             .map_err(|err| format!("Failed to query predictions: {err}"))?
@@ -260,6 +261,11 @@ impl EguiController {
             let sample_id: String = row.get(0).map_err(|err| err.to_string())?;
             let top_class: String = row.get(1).map_err(|err| err.to_string())?;
             let confidence: f64 = row.get(2).map_err(|err| err.to_string())?;
+            let class_id = if confidence < unknown_threshold as f64 {
+                "UNKNOWN".to_string()
+            } else {
+                top_class
+            };
             let Some(relative_path) = sample_id.split_once("::").map(|(_, p)| p) else {
                 continue;
             };
@@ -271,7 +277,7 @@ impl EguiController {
             }
             if cache.rows[idx].is_none() {
                 cache.rows[idx] = Some(PredictedCategory {
-                    class_id: top_class,
+                    class_id,
                     confidence: confidence as f32,
                 });
                 cache.user_overrides[idx] = false;
