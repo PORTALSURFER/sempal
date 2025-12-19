@@ -92,8 +92,7 @@ pub(in crate::egui_app::controller) fn enqueue_jobs_for_source_backfill(
     }
     let source_db =
         crate::sample_sources::SourceDatabase::open(&source.root).map_err(|err| err.to_string())?;
-    let mut entries = source_db.list_files().map_err(|err| err.to_string())?;
-    entries.retain(|entry| !entry.missing);
+    let entries = source_db.list_files().map_err(|err| err.to_string())?;
     if entries.is_empty() {
         return Ok((0, db::current_progress(&conn)?));
     }
@@ -234,6 +233,9 @@ pub(in crate::egui_app::controller) fn enqueue_jobs_for_source_missing_features(
                     let _ = source_db.set_missing(&entry.relative_path, true);
                 }
                 continue;
+            }
+            if entry.missing {
+                let _ = source_db.set_missing(&entry.relative_path, false);
             }
             let has_features: Option<i64> = features_stmt
                 .query_row(params![&sample_id], |row| row.get(0))
