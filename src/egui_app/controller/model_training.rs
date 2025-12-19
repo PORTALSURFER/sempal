@@ -211,9 +211,18 @@ impl EguiController {
                 return;
             }
         };
-        let (predictions_total, predictions_unknown) = prediction_stats
-            .map(|stats| (Some(stats.total), Some(stats.unknown)))
-            .unwrap_or((None, None));
+        let (predictions_total, predictions_unknown, predictions_min_conf, predictions_avg_conf, predictions_max_conf) =
+            prediction_stats
+                .map(|stats| {
+                    (
+                        Some(stats.total),
+                        Some(stats.unknown),
+                        stats.min_confidence,
+                        stats.avg_confidence,
+                        stats.max_confidence,
+                    )
+                })
+                .unwrap_or((None, None, None, None, None));
 
         self.ui.training.summary = Some(crate::egui_app::state::TrainingSummary {
             updated_at: now_epoch_seconds(),
@@ -225,6 +234,9 @@ impl EguiController {
             exportable,
             predictions_total,
             predictions_unknown,
+            predictions_min_conf,
+            predictions_avg_conf,
+            predictions_max_conf,
             min_confidence,
         });
         self.ui.training.summary_error = None;
@@ -519,6 +531,9 @@ struct TrainingDiagnostics {
 struct TrainingPredictionStats {
     total: i64,
     unknown: i64,
+    min_confidence: Option<f32>,
+    avg_confidence: Option<f32>,
+    max_confidence: Option<f32>,
 }
 
 fn training_diagnostics_for_sources(
@@ -699,17 +714,32 @@ fn training_prediction_stats(
     let where_sql = parts.join(" OR ");
     let sql = format!(
         "SELECT COUNT(*),
-                COALESCE(SUM(CASE WHEN top_class = 'UNKNOWN' THEN 1 ELSE 0 END), 0)
+                COALESCE(SUM(CASE WHEN top_class = 'UNKNOWN' THEN 1 ELSE 0 END), 0),
+                MIN(confidence),
+                AVG(confidence),
+                MAX(confidence)
          FROM predictions p
          WHERE p.model_id = ?1
            AND ({where_sql})"
     );
-    let (total, unknown): (i64, i64) = conn
+    let (total, unknown, min_conf, avg_conf, max_conf): (
+        i64,
+        i64,
+        Option<f64>,
+        Option<f64>,
+        Option<f64>,
+    ) = conn
         .query_row(&sql, rusqlite::params_from_iter(params), |row| {
-            Ok((row.get(0)?, row.get(1)?))
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?))
         })
         .map_err(|err| err.to_string())?;
-    Ok(Some(TrainingPredictionStats { total, unknown }))
+    Ok(Some(TrainingPredictionStats {
+        total,
+        unknown,
+        min_confidence: min_conf.map(|v| v as f32),
+        avg_confidence: avg_conf.map(|v| v as f32),
+        max_confidence: max_conf.map(|v| v as f32),
+    }))
 }
 
 fn split_u01(sample_id: &str) -> f64 {

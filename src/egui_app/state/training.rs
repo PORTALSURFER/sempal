@@ -10,6 +10,9 @@ pub struct TrainingSummary {
     pub exportable: i64,
     pub predictions_total: Option<i64>,
     pub predictions_unknown: Option<i64>,
+    pub predictions_min_conf: Option<f32>,
+    pub predictions_avg_conf: Option<f32>,
+    pub predictions_max_conf: Option<f32>,
     pub min_confidence: f32,
 }
 

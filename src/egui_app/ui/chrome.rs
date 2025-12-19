@@ -575,6 +575,27 @@ impl EguiApp {
                             "Predictions: {} (UNKNOWN: {} / {:.1}%)",
                             total, unknown, unknown_pct
                         ));
+                        if summary.predictions_min_conf.is_some()
+                            || summary.predictions_avg_conf.is_some()
+                            || summary.predictions_max_conf.is_some()
+                        {
+                            let min_conf = summary
+                                .predictions_min_conf
+                                .map(|v| format!("{:.2}", v))
+                                .unwrap_or_else(|| "—".to_string());
+                            let avg_conf = summary
+                                .predictions_avg_conf
+                                .map(|v| format!("{:.2}", v))
+                                .unwrap_or_else(|| "—".to_string());
+                            let max_conf = summary
+                                .predictions_max_conf
+                                .map(|v| format!("{:.2}", v))
+                                .unwrap_or_else(|| "—".to_string());
+                            ui.label(format!(
+                                "Prediction confidence (min/avg/max): {}/{}/{}",
+                                min_conf, avg_conf, max_conf
+                            ));
+                        }
                         if total > 0 && unknown >= total {
                             ui.label(
                                 RichText::new(
