@@ -48,7 +48,6 @@ mod platform {
         GMEM_MOVEABLE, GMEM_ZEROINIT, GlobalAlloc, GlobalLock, GlobalUnlock,
     };
     use windows::Win32::System::Ole::{CF_HDROP, DROPEFFECT_COPY};
-    use windows::Win32::UI::WindowsAndMessaging::CF_UNICODETEXT;
     use windows::Win32::UI::Shell::DROPFILES;
     use windows::core::w;
 
@@ -153,6 +152,7 @@ mod platform {
     }
 
     pub fn copy_text(text: &str) -> Result<(), String> {
+        const CF_UNICODETEXT: u32 = 13;
         let _clipboard = Clipboard::new()?;
         let mut wide: Vec<u16> = text.encode_utf16().collect();
         wide.push(0);
@@ -163,7 +163,7 @@ mod platform {
             copy_nonoverlapping(wide.as_ptr() as *const u8, lock.ptr() as *mut u8, bytes);
         }
         // SAFETY: clipboard is open; ownership of the HGLOBAL transfers to the system on success.
-        unsafe { SetClipboardData(CF_UNICODETEXT.0 as u32, Some(HANDLE(owned.handle().0))) }
+        unsafe { SetClipboardData(CF_UNICODETEXT, Some(HANDLE(owned.handle().0))) }
             .map_err(|err| format!("SetClipboardData(text) failed: {err}"))?;
         let _ = owned.release();
         Ok(())
