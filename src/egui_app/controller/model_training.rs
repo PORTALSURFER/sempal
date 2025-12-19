@@ -81,8 +81,13 @@ pub(super) fn run_model_training(
     let model_id = import_model_into_db(&job.db_path, &model)?;
 
     send_progress(tx, 3, total_steps, "Enqueueing inference…")?;
-    let (inference_jobs_enqueued, _progress) =
+    let (mut inference_jobs_enqueued, _progress) =
         super::analysis_jobs::enqueue_inference_jobs_for_sources(&job.source_ids)?;
+    if inference_jobs_enqueued < summary.total_exported {
+        let (extra, _progress) =
+            super::analysis_jobs::enqueue_inference_jobs_for_all_features()?;
+        inference_jobs_enqueued = inference_jobs_enqueued.saturating_add(extra);
+    }
 
     Ok(ModelTrainingResult {
         model_id,
@@ -152,6 +157,66 @@ pub(super) fn begin_retrain_from_app(controller: &mut EguiController) {
 }
 
 impl EguiController {
+    pub fn refresh_training_summary(&mut self) {
+        let db_path = match crate::app_dirs::app_root_dir() {
+            Ok(root) => root.join(crate::sample_sources::library::LIBRARY_DB_FILE_NAME),
+            Err(err) => {
+                self.ui.training.summary = None;
+                self.ui.training.summary_error = Some(format!("Resolve library DB failed: {err}"));
+                return;
+            }
+        };
+        let source_ids: Vec<String> = self
+            .library
+            .sources
+            .iter()
+            .map(|source| source.id.as_str().to_string())
+            .collect();
+        if source_ids.is_empty() {
+            self.ui.training.summary = None;
+            self.ui.training.summary_error = Some("No sources loaded".to_string());
+            return;
+        }
+
+        let conn = match super::analysis_jobs::open_library_db(&db_path) {
+            Ok(conn) => conn,
+            Err(err) => {
+                self.ui.training.summary = None;
+                self.ui.training.summary_error = Some(err);
+                return;
+            }
+        };
+        let min_confidence = self.retrain_min_confidence();
+        let diagnostics = match training_diagnostics_for_sources(&conn, &source_ids, min_confidence) {
+            Ok(diag) => diag,
+            Err(err) => {
+                self.ui.training.summary = None;
+                self.ui.training.summary_error = Some(err);
+                return;
+            }
+        };
+        let exportable = match training_exportable_count(&conn, &source_ids, min_confidence) {
+            Ok(count) => count,
+            Err(err) => {
+                self.ui.training.summary = None;
+                self.ui.training.summary_error = Some(err);
+                return;
+            }
+        };
+
+        self.ui.training.summary = Some(crate::egui_app::state::TrainingSummary {
+            updated_at: now_epoch_seconds(),
+            sources: source_ids.len(),
+            samples_total: diagnostics.samples_total,
+            features_v1: diagnostics.features_v1,
+            user_labeled: diagnostics.user_join,
+            weak_labeled: diagnostics.weak_join,
+            exportable,
+            min_confidence,
+        });
+        self.ui.training.summary_error = None;
+    }
+
     pub fn retrain_model_from_app(&mut self) {
         begin_retrain_from_app(self);
     }
@@ -420,20 +485,21 @@ fn training_diagnostics_for_sources(
     min_confidence: f32,
 ) -> Result<TrainingDiagnostics, String> {
     let ruleset_version = crate::labeling::weak::WEAK_LABEL_RULESET_VERSION;
-    let (where_sql, params) = source_id_where_clause(source_ids);
-    let mut params = params;
+    let (where_sql_samples, params_samples) = source_id_where_clause("s", source_ids);
+    let (where_sql_features, params_features) = source_id_where_clause("f", source_ids);
+    let mut params = params_features;
     params.push(rusqlite::types::Value::Real(min_confidence as f64));
 
     let samples_sql = format!(
         "SELECT COUNT(*)
          FROM samples s
          WHERE ({})",
-        where_sql
+        where_sql_samples
     );
     let samples_total: i64 = conn
         .query_row(
             &samples_sql,
-            rusqlite::params_from_iter(params.iter().cloned().take(params.len() - 1)),
+            rusqlite::params_from_iter(params_samples),
             |row| row.get(0),
         )
         .map_err(|err| err.to_string())?;
@@ -442,7 +508,7 @@ fn training_diagnostics_for_sources(
         "SELECT COUNT(*)
          FROM features f
          WHERE f.feat_version = 1 AND ({})",
-        where_sql
+        where_sql_features
     );
     let features_v1: i64 = conn
         .query_row(
@@ -457,7 +523,7 @@ fn training_diagnostics_for_sources(
          FROM features f
          JOIN labels_user u ON u.sample_id = f.sample_id
          WHERE f.feat_version = 1 AND ({})",
-        where_sql
+        where_sql_features
     );
     let user_join: i64 = conn
         .query_row(
@@ -477,7 +543,7 @@ fn training_diagnostics_for_sources(
            AND ({})",
         ruleset_version,
         params.len(),
-        where_sql
+        where_sql_features
     );
     let weak_join: i64 = conn
         .query_row(&weak_sql, rusqlite::params_from_iter(params), |row| {
@@ -493,7 +559,10 @@ fn training_diagnostics_for_sources(
     })
 }
 
-fn source_id_where_clause(source_ids: &[String]) -> (String, Vec<rusqlite::types::Value>) {
+fn source_id_where_clause(
+    alias: &str,
+    source_ids: &[String],
+) -> (String, Vec<rusqlite::types::Value>) {
     if source_ids.is_empty() {
         return ("1=0".to_string(), Vec::new());
     }
@@ -501,9 +570,61 @@ fn source_id_where_clause(source_ids: &[String]) -> (String, Vec<rusqlite::types
     let mut parts = Vec::new();
     for source_id in source_ids {
         params.push(rusqlite::types::Value::Text(format!("{source_id}::%")));
-        parts.push(format!("f.sample_id LIKE ?{}", params.len()));
+        parts.push(format!("{alias}.sample_id LIKE ?{}", params.len()));
     }
     (parts.join(" OR "), params)
+}
+
+fn training_exportable_count(
+    conn: &rusqlite::Connection,
+    source_ids: &[String],
+    min_confidence: f32,
+) -> Result<i64, String> {
+    if source_ids.is_empty() {
+        return Ok(0);
+    }
+    let ruleset_version = crate::labeling::weak::WEAK_LABEL_RULESET_VERSION;
+    let mut params: Vec<rusqlite::types::Value> = vec![
+        rusqlite::types::Value::Integer(ruleset_version),
+        rusqlite::types::Value::Real(min_confidence as f64),
+        rusqlite::types::Value::Integer(crate::analysis::FEATURE_VERSION_V1),
+    ];
+    let mut where_parts = Vec::new();
+    for source_id in source_ids {
+        where_parts.push(format!("f.sample_id LIKE ?{}", params.len() + 1));
+        params.push(rusqlite::types::Value::Text(format!("{source_id}::%")));
+    }
+    let where_sql = where_parts.join(" OR ");
+
+    let sql = format!(
+        "WITH best_weak AS (
+            SELECT l.sample_id, l.class_id, l.confidence
+            FROM labels_weak l
+            WHERE l.ruleset_version = ?1
+              AND l.confidence >= ?2
+              AND l.class_id = (
+                SELECT l2.class_id
+                FROM labels_weak l2
+                WHERE l2.sample_id = l.sample_id
+                  AND l2.ruleset_version = ?1
+                  AND l2.confidence >= ?2
+                ORDER BY l2.confidence DESC, l2.class_id ASC
+                LIMIT 1
+              )
+        )
+        SELECT COUNT(*)
+        FROM features f
+        LEFT JOIN labels_user u ON u.sample_id = f.sample_id
+        LEFT JOIN best_weak w ON w.sample_id = f.sample_id
+        WHERE f.feat_version = ?3
+          AND (u.class_id IS NOT NULL OR w.class_id IS NOT NULL)
+          AND ({where_sql})"
+    );
+
+    conn.query_row(&sql, rusqlite::params_from_iter(params), |row| {
+        row.get(0)
+    })
+    .map_err(|err| err.to_string())
 }
 
 fn split_u01(sample_id: &str) -> f64 {

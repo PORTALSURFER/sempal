@@ -10,7 +10,9 @@ mod types;
 mod weak_labels;
 
 pub(in crate::egui_app::controller) use db::open_library_db;
-pub(in crate::egui_app::controller) use enqueue::enqueue_inference_jobs_for_sources;
+pub(in crate::egui_app::controller) use enqueue::{
+    enqueue_inference_jobs_for_all_features, enqueue_inference_jobs_for_sources,
+};
 pub(super) use enqueue::enqueue_jobs_for_source;
 pub(super) use enqueue::enqueue_jobs_for_source_backfill;
 pub(super) use enqueue::enqueue_jobs_for_source_missing_features;

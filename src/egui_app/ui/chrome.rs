@@ -536,6 +536,36 @@ impl EguiApp {
                 }
 
                 ui.separator();
+                ui.label(RichText::new("Training summary").strong().color(palette.text_primary));
+                if ui.button("Refresh summary").clicked() {
+                    self.controller.refresh_training_summary();
+                }
+                if let Some(error) = &self.controller.ui.training.summary_error {
+                    ui.label(RichText::new(error).color(style::status_badge_color(
+                        style::StatusTone::Error,
+                    )));
+                }
+                if let Some(summary) = &self.controller.ui.training.summary {
+                    let features_pct = if summary.samples_total > 0 {
+                        (summary.features_v1 as f32 / summary.samples_total as f32) * 100.0
+                    } else {
+                        0.0
+                    };
+                    ui.label(format!("Sources: {}", summary.sources));
+                    ui.label(format!("Samples: {}", summary.samples_total));
+                    ui.label(format!(
+                        "Features v1: {} ({:.1}%)",
+                        summary.features_v1, features_pct
+                    ));
+                    ui.label(format!("User labels: {}", summary.user_labeled));
+                    ui.label(format!(
+                        "Weak labels (>= {:.2}): {}",
+                        summary.min_confidence, summary.weak_labeled
+                    ));
+                    ui.label(format!("Exportable rows: {}", summary.exportable));
+                }
+
+                ui.separator();
                 ui.label(RichText::new("Model training").strong().color(palette.text_primary));
                 ui.label(
                     RichText::new("Include weak labels above confidence:")
