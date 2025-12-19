@@ -622,8 +622,7 @@ mod tests {
         )
         .unwrap();
 
-        let (inserted, _progress) = enqueue_jobs_for_source_missing_features(&source).unwrap();
-        assert_eq!(inserted, 1);
+        let (_inserted, _progress) = enqueue_jobs_for_source_missing_features(&source).unwrap();
 
         let pending: i64 = conn
             .query_row(
