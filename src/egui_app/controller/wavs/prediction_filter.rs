@@ -217,6 +217,7 @@ impl EguiController {
             .optional()
             .map_err(|err| format!("Failed to query latest model id: {err}"))?;
 
+        let unknown_threshold = self.unknown_confidence_threshold().clamp(0.0, 1.0);
         let cache = self
             .ui_cache
             .browser
@@ -253,7 +254,6 @@ impl EguiController {
         let mut rows = stmt
             .query(params![model_id, prefix, prefix_end])
             .map_err(|err| format!("Failed to query predictions: {err}"))?;
-        let unknown_threshold = self.unknown_confidence_threshold().clamp(0.0, 1.0);
         while let Some(row) = rows
             .next()
             .map_err(|err| format!("Failed to query predictions: {err}"))?
