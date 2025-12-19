@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import importlib
 import os
 import platform
 import shutil
@@ -24,30 +25,46 @@ def resolve_app_root() -> Path:
     return Path(base) / ".sempal"
 
 
-def ensure_tf(no_install: bool) -> None:
+def try_import_tf() -> bool:
     try:
-        import tensorflow  # noqa: F401
-        import tensorflow_hub  # noqa: F401
+        importlib.import_module("tensorflow")
+        importlib.import_module("tensorflow_hub")
+        return True
     except Exception:
-        if no_install:
-            raise RuntimeError(
-                "tensorflow and tensorflow_hub are required. Install them first or omit --no-install."
-            )
-        print("Installing tensorflow + tensorflow_hub (this may take a while)...")
-        subprocess.check_call(
-            [sys.executable, "-m", "pip", "install", "--upgrade", "pip"]
+        return False
+
+
+def ensure_tf(no_install: bool) -> None:
+    if try_import_tf():
+        return
+    if no_install:
+        raise RuntimeError(
+            "tensorflow and tensorflow_hub are required. Install them first or omit --no-install."
         )
-        subprocess.check_call(
-            [
-                sys.executable,
-                "-m",
-                "pip",
-                "install",
-                "--user",
-                "tensorflow",
-                "tensorflow_hub",
-            ]
-        )
+    print("Installing tensorflow + tensorflow_hub (this may take a while)...")
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade", "pip"])
+
+    def install(use_user: bool) -> bool:
+        cmd = [sys.executable, "-m", "pip", "install"]
+        if use_user:
+            cmd.append("--user")
+        cmd.extend(["tensorflow", "tensorflow_hub"])
+        subprocess.check_call(cmd)
+        if use_user:
+            import site
+
+            site.addsitedir(site.getusersitepackages())
+        return try_import_tf()
+
+    if install(True):
+        return
+    if install(False):
+        return
+
+    raise RuntimeError(
+        "TensorFlow install completed but import still failed. "
+        f"Try: {sys.executable} -m pip install tensorflow tensorflow_hub"
+    )
 
 
 def build_tflite() -> bytes:
