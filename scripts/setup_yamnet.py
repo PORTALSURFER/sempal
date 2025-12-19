@@ -4,6 +4,7 @@ import importlib
 import os
 import platform
 import shutil
+import site
 import subprocess
 import sys
 from pathlib import Path
@@ -86,6 +87,22 @@ def verify_tflite(path: Path) -> None:
         raise RuntimeError(f"{path} is unexpectedly small ({len(data)} bytes)")
 
 
+def find_tflite_runtime() -> Path | None:
+    candidates = []
+    for base in site.getsitepackages() + [site.getusersitepackages()]:
+        if not base:
+            continue
+        base_path = Path(base)
+        if not base_path.exists():
+            continue
+        candidates.extend(base_path.rglob("*tensorflowlite_c.*"))
+        candidates.extend(base_path.rglob("libtensorflowlite_c.*"))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda p: len(str(p)))
+    return candidates[0]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Generate yamnet.tflite for sempal.")
     parser.add_argument("--app-root", type=Path, help="Override app root directory")
@@ -97,6 +114,8 @@ def main() -> int:
     models_dir = app_root / "models"
     models_dir.mkdir(parents=True, exist_ok=True)
     target = models_dir / "yamnet.tflite"
+    runtime_dir = models_dir / "tflite"
+    runtime_dir.mkdir(parents=True, exist_ok=True)
 
     if target.exists() and not args.force:
         print(f"Model already exists at {target}. Use --force to overwrite.")
@@ -109,6 +128,15 @@ def main() -> int:
     verify_tflite(tmp_path)
     shutil.move(str(tmp_path), str(target))
     print(f"Wrote {target}")
+
+    runtime = find_tflite_runtime()
+    if runtime is None:
+        print("WARNING: Could not locate tensorflowlite_c runtime in site-packages.")
+        print("Please copy tensorflowlite_c.* into:", runtime_dir)
+        return 0
+    runtime_target = runtime_dir / runtime.name
+    shutil.copy2(runtime, runtime_target)
+    print(f"Copied TFLite runtime to {runtime_target}")
     return 0
 
 

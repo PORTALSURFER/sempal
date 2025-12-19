@@ -1,9 +1,8 @@
 use std::path::PathBuf;
 use std::sync::LazyLock;
 
-use tract_tflite::prelude::*;
-
 use crate::analysis::audio;
+use crate::analysis::tflite_runtime::TfliteRuntime;
 
 pub(crate) const EMBEDDING_MODEL_ID: &str = "yamnet_v1";
 pub(crate) const EMBEDDING_DIM: usize = 1024;
@@ -11,37 +10,30 @@ pub(crate) const EMBEDDING_DTYPE_F32: i64 = 0;
 const YAMNET_INPUT_SAMPLES: usize = 15_600;
 
 pub(crate) struct YamnetModel {
-    model: SimplePlan<TypedFact, Box<dyn TypedOp>, TypedModel>,
+    runtime: TfliteRuntime,
 }
 
 impl YamnetModel {
     pub(crate) fn load() -> Result<Self, String> {
-        let path = yamnet_model_path()?;
-        if !path.exists() {
+        let model_path = yamnet_model_path()?;
+        if !model_path.exists() {
             return Err(format!(
                 "YAMNet model not found at {}",
-                path.to_string_lossy()
+                model_path.to_string_lossy()
             ));
         }
-        validate_tflite_header(&path)?;
-        let model = tract_tflite::tflite()
-            .model_for_path(&path)
-            .map_err(|err| {
-                format!(
-                    "Failed to load YAMNet model at {}: {err:?}",
-                    path.to_string_lossy()
-                )
-            })?
-            .with_input_fact(
-                0,
-                TypedFact::dt_shape(f32::datum_type(), tvec!(1, YAMNET_INPUT_SAMPLES)),
-            )
-            .map_err(|err| format!("Failed to set YAMNet input shape: {err:?}"))?
-            .into_optimized()
-            .map_err(|err| format!("Failed to optimize YAMNet model: {err:?}"))?
-            .into_runnable()
-            .map_err(|err| format!("Failed to make YAMNet runnable: {err:?}"))?;
-        Ok(Self { model })
+        let runtime_path = tflite_runtime_path()?;
+        if !runtime_path.exists() {
+            return Err(format!(
+                "TFLite runtime not found at {}",
+                runtime_path.to_string_lossy()
+            ));
+        }
+        let threads = std::thread::available_parallelism()
+            .map(|n| n.get().saturating_sub(1).max(1))
+            .unwrap_or(1) as i32;
+        let runtime = TfliteRuntime::load(&model_path, &runtime_path, threads)?;
+        Ok(Self { runtime })
     }
 }
 
@@ -81,13 +73,7 @@ pub(crate) fn infer_embedding(
         let mut input = vec![0.0_f32; YAMNET_INPUT_SAMPLES];
         let copy_len = frame.len().min(YAMNET_INPUT_SAMPLES);
         input[..copy_len].copy_from_slice(&frame[..copy_len]);
-        let tensor = Tensor::from_shape(&[1, YAMNET_INPUT_SAMPLES], &input)
-            .map_err(|err| format!("Failed to build YAMNet input tensor: {err}"))?;
-        let outputs = model
-            .model
-            .run(tvec!(tensor.into()))
-            .map_err(|err| format!("YAMNet inference failed: {err}"))?;
-        let embedding = extract_embedding(&outputs)?;
+        let embedding = model.runtime.run(&input)?;
         if embedding.len() != EMBEDDING_DIM {
             return Err(format!(
                 "YAMNet embedding length mismatch: expected {}, got {}",
@@ -111,42 +97,6 @@ pub(crate) fn infer_embedding(
     Ok(pooled)
 }
 
-fn extract_embedding(outputs: &TVec<TValue>) -> Result<Vec<f32>, String> {
-    for output in outputs {
-        let tensor = output.clone().into_tensor();
-        let shape = tensor.shape();
-        if !shape.iter().any(|dim| *dim == EMBEDDING_DIM) {
-            continue;
-        }
-        let view = tensor
-            .to_array_view::<f32>()
-            .map_err(|err| format!("Failed to read YAMNet output tensor: {err}"))?;
-        let slice = view
-            .as_slice()
-            .ok_or_else(|| "YAMNet output tensor is not contiguous".to_string())?;
-        if slice.len() < EMBEDDING_DIM {
-            continue;
-        }
-        let frames = slice.len() / EMBEDDING_DIM;
-        if frames == 0 {
-            continue;
-        }
-        let mut pooled = vec![0.0_f32; EMBEDDING_DIM];
-        for frame in 0..frames {
-            let base = frame * EMBEDDING_DIM;
-            let chunk = &slice[base..base + EMBEDDING_DIM];
-            for (idx, value) in chunk.iter().enumerate() {
-                pooled[idx] += *value;
-            }
-        }
-        for value in &mut pooled {
-            *value /= frames as f32;
-        }
-        return Ok(pooled);
-    }
-    Err("YAMNet output did not include 1024-D embedding".into())
-}
-
 fn normalize_l2_in_place(values: &mut [f32]) {
     let mut norm = 0.0_f32;
     for value in values.iter() {
@@ -165,7 +115,21 @@ fn yamnet_model_path() -> Result<PathBuf, String> {
     Ok(root.join("models").join("yamnet.tflite"))
 }
 
-#[allow(dead_code)]
+fn tflite_runtime_path() -> Result<PathBuf, String> {
+    let root = crate::app_dirs::app_root_dir().map_err(|err| err.to_string())?;
+    Ok(root.join("models").join("tflite").join(tflite_runtime_filename()))
+}
+
+fn tflite_runtime_filename() -> &'static str {
+    if cfg!(target_os = "windows") {
+        "tensorflowlite_c.dll"
+    } else if cfg!(target_os = "macos") {
+        "libtensorflowlite_c.dylib"
+    } else {
+        "libtensorflowlite_c.so"
+    }
+}
+
 pub(crate) fn embedding_model_path() -> &'static PathBuf {
     static PATH: LazyLock<PathBuf> = LazyLock::new(|| {
         crate::app_dirs::app_root_dir()
@@ -173,22 +137,4 @@ pub(crate) fn embedding_model_path() -> &'static PathBuf {
             .unwrap_or_else(|_| PathBuf::from("yamnet.tflite"))
     });
     &PATH
-}
-
-fn validate_tflite_header(path: &PathBuf) -> Result<(), String> {
-    use std::io::Read;
-
-    let mut file = std::fs::File::open(path)
-        .map_err(|err| format!("Failed to open YAMNet model: {err}"))?;
-    let mut header = [0u8; 8];
-    let read = file
-        .read(&mut header)
-        .map_err(|err| format!("Failed to read YAMNet model header: {err}"))?;
-    if read < 8 || &header[4..8] != b"TFL3" {
-        return Err(format!(
-            "Invalid YAMNet model file at {} (expected a .tflite with TFL3 header)",
-            path.to_string_lossy()
-        ));
-    }
-    Ok(())
 }
