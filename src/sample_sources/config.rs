@@ -83,6 +83,9 @@ pub struct ModelSettings {
     /// Preferred classifier model id to use for predictions.
     #[serde(default = "default_classifier_model_id")]
     pub classifier_model_id: String,
+    /// Prefer user overrides when displaying categories.
+    #[serde(default = "default_use_user_overrides")]
+    pub use_user_overrides: bool,
 }
 
 impl Default for ModelSettings {
@@ -90,6 +93,7 @@ impl Default for ModelSettings {
         Self {
             unknown_confidence_threshold: default_unknown_confidence_threshold(),
             classifier_model_id: default_classifier_model_id(),
+            use_user_overrides: default_use_user_overrides(),
         }
     }
 }
@@ -459,6 +463,10 @@ fn default_classifier_model_id() -> String {
     crate::ml::logreg::DEFAULT_CLASSIFIER_MODEL_ID.to_string()
 }
 
+fn default_use_user_overrides() -> bool {
+    true
+}
+
 fn default_retrain_min_confidence() -> f32 {
     0.75
 }
@@ -688,6 +696,7 @@ mod tests {
                 model: ModelSettings {
                     unknown_confidence_threshold: 0.91,
                     classifier_model_id: "test_model".to_string(),
+                    use_user_overrides: false,
                 },
                 ..AppConfig::default()
             };
@@ -695,6 +704,7 @@ mod tests {
             let loaded = super::load_settings_from(&path).unwrap();
             assert!((loaded.model.unknown_confidence_threshold - 0.91).abs() < f32::EPSILON);
             assert_eq!(loaded.model.classifier_model_id, "test_model");
+            assert_eq!(loaded.model.use_user_overrides, false);
         });
     }
 

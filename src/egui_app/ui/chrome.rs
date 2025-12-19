@@ -378,6 +378,14 @@ impl EguiApp {
         if ui.add(slider).changed() {
             self.controller.set_unknown_confidence_threshold(unknown);
         }
+        let mut use_overrides = self.controller.use_user_overrides_in_browser();
+        if ui
+            .checkbox(&mut use_overrides, "Prefer user overrides")
+            .on_hover_text("Show manual category overrides instead of predictions")
+            .clicked()
+        {
+            self.controller.set_use_user_overrides_in_browser(use_overrides);
+        }
     }
 
     fn render_audio_settings_window(&mut self, ctx: &egui::Context) {

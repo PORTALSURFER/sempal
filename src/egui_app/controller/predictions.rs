@@ -12,6 +12,7 @@ impl EguiController {
         };
         let sample_id = format!("{}::{}", source.id.as_str(), relative_path.to_string_lossy());
         let preferred_model_id = self.classifier_model_id();
+        let use_overrides = self.use_user_overrides_in_browser();
         let tx = self.runtime.jobs.message_sender();
         std::thread::spawn(move || {
             let db_path = match crate::app_dirs::app_root_dir() {
@@ -22,15 +23,18 @@ impl EguiController {
                 Ok(conn) => conn,
                 Err(_) => return,
             };
-            let user_label: Option<String> = conn
-                .query_row(
+            let user_label: Option<String> = if use_overrides {
+                conn.query_row(
                     "SELECT class_id FROM labels_user WHERE sample_id = ?1",
                     params![sample_id],
                     |row| row.get(0),
                 )
                 .optional()
                 .ok()
-                .flatten();
+                .flatten()
+            } else {
+                None
+            };
             let (top_class, confidence) = if let Some(class_id) = user_label {
                 (Some(class_id), Some(1.0))
             } else {

@@ -235,7 +235,9 @@ impl EguiController {
         let prefix = format!("{}::", source_id.as_str());
         let prefix_end = format!("{prefix}\u{10FFFF}");
 
-        apply_user_labels(&conn, &prefix, &prefix_end, &self.wav_entries.lookup, cache)?;
+        if self.use_user_overrides_in_browser() {
+            apply_user_labels(&conn, &prefix, &prefix_end, &self.wav_entries.lookup, cache)?;
+        }
 
         let mut stmt = conn
             .prepare(

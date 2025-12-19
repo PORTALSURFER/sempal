@@ -14,6 +14,10 @@ impl EguiController {
         }
     }
 
+    pub fn use_user_overrides_in_browser(&self) -> bool {
+        self.settings.model.use_user_overrides
+    }
+
     pub fn set_unknown_confidence_threshold(&mut self, value: f32) {
         let clamped = value.clamp(0.0, 1.0);
         if (self.settings.model.unknown_confidence_threshold - clamped).abs() < f32::EPSILON {
@@ -24,6 +28,18 @@ impl EguiController {
             .analysis
             .set_unknown_confidence_threshold(clamped);
         self.ui_cache.browser.predictions.clear();
+        if let Err(err) = self.persist_config("Failed to save options") {
+            self.set_status(err, StatusTone::Warning);
+        }
+    }
+
+    pub fn set_use_user_overrides_in_browser(&mut self, value: bool) {
+        if self.settings.model.use_user_overrides == value {
+            return;
+        }
+        self.settings.model.use_user_overrides = value;
+        self.ui_cache.browser.predictions.clear();
+        self.queue_prediction_load_for_selection();
         if let Err(err) = self.persist_config("Failed to save options") {
             self.set_status(err, StatusTone::Warning);
         }
