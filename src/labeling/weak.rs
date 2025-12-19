@@ -199,11 +199,18 @@ fn rules() -> &'static [Rule] {
             r"(?i)\b(vocal|vox)\b",
         );
         push(
+            "content.fx.filename",
+            "fx",
+            0.8,
+            MatchTarget::FileStem,
+            r"(?i)\b(efx|fx|sfx|effect|effects|impact|riser|rise|sweep|uplifter|downlifter)\b",
+        );
+        push(
             "content.fx.path",
             "fx",
             0.65,
             MatchTarget::FullPath,
-            r"(?i)\b(fx|sfx|effect|effects|impact|riser|rise|sweep|uplifter|downlifter)\b",
+            r"(?i)\b(efx|fx|sfx|effect|effects|impact|riser|rise|sweep|uplifter|downlifter)\b",
         );
 
         add_user_rules(&mut rules);
@@ -241,6 +248,9 @@ pub fn weak_labels_for_relative_path(relative_path: &Path) -> Vec<WeakLabel> {
         }
     }
     let mut labels: Vec<WeakLabel> = best_by_class.into_values().collect();
+    if full_path.contains("bass drum") && labels.iter().any(|label| label.class_id == "kick") {
+        labels.retain(|label| label.class_id != "bass");
+    }
     labels.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal));
     labels
 }
@@ -378,6 +388,19 @@ mod tests {
     fn labels_bass_drum_with_prefix() {
         let labels = weak_labels_for_relative_path(&PathBuf::from("Drums/Kicks/EBassDrum.wav"));
         assert!(labels.iter().any(|label| label.class_id == "kick"));
+    }
+
+    #[test]
+    fn bass_drum_does_not_label_bass() {
+        let labels = weak_labels_for_relative_path(&PathBuf::from("Drums/Kicks/BassDrum01.wav"));
+        assert!(labels.iter().any(|label| label.class_id == "kick"));
+        assert!(!labels.iter().any(|label| label.class_id == "bass"));
+    }
+
+    #[test]
+    fn labels_efx_as_fx() {
+        let labels = weak_labels_for_relative_path(&PathBuf::from("FX/Noise/EfxRise01.wav"));
+        assert!(labels.iter().any(|label| label.class_id == "fx"));
     }
 
     #[test]
