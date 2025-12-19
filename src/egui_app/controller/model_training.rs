@@ -324,7 +324,7 @@ impl EguiController {
                 return;
             }
         };
-        let preferred_model_id = controller.classifier_model_id();
+        let preferred_model_id = self.classifier_model_id();
         match super::analysis_jobs::enqueue_inference_jobs_for_sources(
             &source_ids,
             preferred_model_id.as_deref(),

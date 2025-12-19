@@ -678,12 +678,14 @@ mod tests {
             let cfg = AppConfig {
                 model: ModelSettings {
                     unknown_confidence_threshold: 0.91,
+                    classifier_model_id: "test_model".to_string(),
                 },
                 ..AppConfig::default()
             };
             save_to_path(&cfg, &path).unwrap();
             let loaded = super::load_settings_from(&path).unwrap();
             assert!((loaded.model.unknown_confidence_threshold - 0.91).abs() < f32::EPSILON);
+            assert_eq!(loaded.model.classifier_model_id, "test_model");
         });
     }
 

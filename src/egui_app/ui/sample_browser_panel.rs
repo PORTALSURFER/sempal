@@ -215,7 +215,7 @@ impl EguiApp {
                         let combo = egui::ComboBox::from_id_salt("category_override")
                             .selected_text(
                                 RichText::new(category_label).color(if is_override {
-                                    palette.text
+                                    palette.text_primary
                                 } else if pred_confidence.is_some() {
                                     band_color
                                 } else {
