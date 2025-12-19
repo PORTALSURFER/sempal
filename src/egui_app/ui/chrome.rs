@@ -575,7 +575,19 @@ impl EguiApp {
                             "Predictions: {} (UNKNOWN: {} / {:.1}%)",
                             total, unknown, unknown_pct
                         ));
+                        if total > 0 && unknown >= total {
+                            ui.label(
+                                RichText::new(
+                                    "All predictions are UNKNOWN. Lower the threshold or re-run inference.",
+                                )
+                                .color(style::status_badge_color(style::StatusTone::Warning)),
+                            );
+                        }
                     }
+                    ui.label(format!(
+                        "Unknown threshold: {:.2}",
+                        self.controller.unknown_confidence_threshold()
+                    ));
                 }
 
                 ui.separator();
@@ -611,6 +623,13 @@ impl EguiApp {
                     .clicked()
                 {
                     self.controller.retrain_model_from_app();
+                }
+                if ui
+                    .button("Re-run inference (all features)")
+                    .on_hover_text("Recompute predictions using the latest model and threshold")
+                    .clicked()
+                {
+                    self.controller.rerun_inference_for_all_features();
                 }
             });
         self.controller.ui.training.panel_open = open;

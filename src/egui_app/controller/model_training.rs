@@ -234,6 +234,20 @@ impl EguiController {
         begin_retrain_from_app(self);
     }
 
+    pub fn rerun_inference_for_all_features(&mut self) {
+        match super::analysis_jobs::enqueue_inference_jobs_for_all_features() {
+            Ok((count, _progress)) => {
+                self.set_status(
+                    format!("Queued {count} inference jobs"),
+                    StatusTone::Info,
+                );
+            }
+            Err(err) => {
+                self.set_status(format!("Failed to queue inference: {err}"), StatusTone::Error);
+            }
+        }
+    }
+
     pub fn model_training_in_progress(&self) -> bool {
         self.runtime.jobs.model_training_in_progress()
     }
