@@ -26,7 +26,6 @@ struct AnnIndexParams {
     max_layer: usize,
 }
 
-#[derive(Debug)]
 struct AnnIndexState {
     hnsw: Hnsw<'static, f32, DistCosine>,
     id_map: Vec<String>,
@@ -140,14 +139,10 @@ fn load_embedding(conn: &Connection, sample_id: &str) -> Result<Vec<f32>, String
 
 fn load_or_build_index(conn: &Connection) -> Result<AnnIndexState, String> {
     let params = default_params();
-    if let Some(meta) = read_meta(conn, &params.model_id)? {
-        if meta.params == params && meta.index_path.exists() && meta.id_map_path.exists() {
-            if let Ok(state) = load_index(&meta) {
-                return Ok(state);
-            }
-        }
-    }
-    let mut state = build_index_from_db(conn, params)?;
+    let index_path = read_meta(conn, &params.model_id)?
+        .map(|meta| meta.index_path)
+        .unwrap_or(default_index_path()?);
+    let mut state = build_index_from_db(conn, params, index_path)?;
     flush_index(conn, &mut state)?;
     Ok(state)
 }
@@ -167,7 +162,6 @@ fn default_params() -> AnnIndexParams {
 
 struct AnnIndexMetaRow {
     index_path: PathBuf,
-    id_map_path: PathBuf,
     params: AnnIndexParams,
     count: usize,
 }
@@ -192,10 +186,8 @@ fn read_meta(conn: &Connection, model_id: &str) -> Result<Option<AnnIndexMetaRow
     let params: AnnIndexParams =
         serde_json::from_str(&params_json).map_err(|err| format!("{err}"))?;
     let index_path = PathBuf::from(path);
-    let id_map_path = id_map_path_for(&index_path);
     Ok(Some(AnnIndexMetaRow {
         index_path,
-        id_map_path,
         params,
         count: count.max(0) as usize,
     }))
@@ -210,37 +202,10 @@ fn id_map_path_for(index_path: &Path) -> PathBuf {
     parent.join(format!("{basename}.{ANN_ID_MAP_SUFFIX}"))
 }
 
-fn load_index(meta: &AnnIndexMetaRow) -> Result<AnnIndexState, String> {
-    let index_path = meta.index_path.clone();
-    let id_map_path = meta.id_map_path.clone();
-    let dir = index_path
-        .parent()
-        .ok_or_else(|| "Index path missing parent".to_string())?;
-    let basename = index_path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .ok_or_else(|| "Index path missing basename".to_string())?;
-    let mut reloader = HnswIo::new(dir, basename);
-    let hnsw: Hnsw<f32, DistCosine> = reloader
-        .load_hnsw_with_dist(DistCosine {})
-        .map_err(|err| format!("Failed to load ANN index: {err}"))?;
-    let id_map = load_id_map(&id_map_path)?;
-    let id_lookup = build_id_lookup(&id_map);
-    Ok(AnnIndexState {
-        hnsw,
-        id_map,
-        id_lookup,
-        params: meta.params.clone(),
-        index_path,
-        id_map_path,
-        last_flush: Instant::now(),
-        dirty_inserts: 0,
-    })
-}
-
 fn build_index_from_db(
     conn: &Connection,
     params: AnnIndexParams,
+    index_path: PathBuf,
 ) -> Result<AnnIndexState, String> {
     let count: i64 = conn
         .query_row(
@@ -280,7 +245,6 @@ fn build_index_from_db(
         id_map.push(sample_id);
         hnsw.insert((embedding.as_slice(), id));
     }
-    let index_path = default_index_path()?;
     let id_map_path = id_map_path_for(&index_path);
     let id_lookup = build_id_lookup(&id_map);
     Ok(AnnIndexState {
@@ -356,11 +320,6 @@ fn upsert_meta(conn: &Connection, state: &AnnIndexState) -> Result<(), String> {
     )
     .map_err(|err| format!("Failed to update ann_index_meta: {err}"))?;
     Ok(())
-}
-
-fn load_id_map(path: &Path) -> Result<Vec<String>, String> {
-    let data = std::fs::read(path).map_err(|err| format!("Failed to read id map: {err}"))?;
-    serde_json::from_slice(&data).map_err(|err| format!("Failed to parse id map: {err}"))
 }
 
 fn save_id_map(path: &Path, id_map: &[String]) -> Result<(), String> {

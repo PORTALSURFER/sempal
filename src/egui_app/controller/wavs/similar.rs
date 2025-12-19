@@ -25,22 +25,22 @@ pub(super) fn find_similar_for_visible_row(
         .entries
         .get(entry_index)
         .ok_or_else(|| "Sample entry missing".to_string())?;
-    let sample_id = super::super::analysis_jobs::db::build_sample_id(
+    let sample_id = super::super::analysis_jobs::build_sample_id(
         source_id.as_str(),
         &entry.relative_path,
     );
     let db_path = crate::app_dirs::app_root_dir()
         .map_err(|err| err.to_string())?
         .join(crate::sample_sources::library::LIBRARY_DB_FILE_NAME);
-    let conn = super::super::analysis_jobs::db::open_library_db(&db_path)?;
+    let conn = super::super::analysis_jobs::open_library_db(&db_path)?;
     let neighbours =
         crate::analysis::ann_index::find_similar(&conn, &sample_id, DEFAULT_SIMILAR_COUNT)?;
 
     let mut indices = Vec::new();
     for neighbour in neighbours {
         let (candidate_source, relative_path) =
-            super::super::analysis_jobs::db::parse_sample_id(&neighbour.sample_id)?;
-        if candidate_source != source_id {
+            super::super::analysis_jobs::parse_sample_id(&neighbour.sample_id)?;
+        if candidate_source.as_str() != source_id.as_str() {
             continue;
         }
         if let Some(index) = controller.wav_entries.lookup.get(&relative_path) {
