@@ -522,6 +522,18 @@ mod tests {
                 collections: vec![],
             })
             .unwrap();
+        let source_db = crate::sample_sources::SourceDatabase::open(&source.root).unwrap();
+        let mut batch = source_db.write_batch().unwrap();
+        batch
+            .upsert_file_with_hash(Path::new("Pack/a.wav"), 1, 1, "ha")
+            .unwrap();
+        batch
+            .upsert_file_with_hash(Path::new("Pack/b.wav"), 1, 1, "hb")
+            .unwrap();
+        batch
+            .upsert_file_with_hash(Path::new("Pack/c.wav"), 1, 1, "hc")
+            .unwrap();
+        batch.commit().unwrap();
 
         // Populate per-source DB with a fake entry (no audio file needed for enqueue).
         let db = crate::sample_sources::SourceDatabase::open(&source.root).unwrap();
