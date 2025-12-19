@@ -43,12 +43,12 @@ mod platform {
     use windows::Win32::Foundation::{GlobalFree, HANDLE, HGLOBAL};
     use windows::Win32::System::DataExchange::{
         CloseClipboard, EmptyClipboard, OpenClipboard, RegisterClipboardFormatW, SetClipboardData,
-        CF_UNICODETEXT,
     };
     use windows::Win32::System::Memory::{
         GMEM_MOVEABLE, GMEM_ZEROINIT, GlobalAlloc, GlobalLock, GlobalUnlock,
     };
     use windows::Win32::System::Ole::{CF_HDROP, DROPEFFECT_COPY};
+    use windows::Win32::UI::WindowsAndMessaging::CF_UNICODETEXT;
     use windows::Win32::UI::Shell::DROPFILES;
     use windows::core::w;
 
@@ -160,7 +160,7 @@ mod platform {
         let owned = OwnedHGlobal::new(bytes)?;
         let lock = unsafe { GlobalLockGuard::new(owned.handle) }?;
         unsafe {
-            copy_nonoverlapping(wide.as_ptr() as *const u8, lock.ptr(), bytes);
+            copy_nonoverlapping(wide.as_ptr() as *const u8, lock.ptr() as *mut u8, bytes);
         }
         // SAFETY: clipboard is open; ownership of the HGLOBAL transfers to the system on success.
         unsafe { SetClipboardData(CF_UNICODETEXT.0 as u32, Some(HANDLE(owned.handle().0))) }
