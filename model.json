@@ -1,0 +1,6232 @@
+{
+  "model_version": 1,
+  "feat_version": 1,
+  "feature_len_f32": 183,
+  "classes": [
+    "clap",
+    "crash",
+    "hihat_closed",
+    "hihat_open",
+    "kick",
+    "ride",
+    "rimshot",
+    "shaker",
+    "snare",
+    "tom"
+  ],
+  "learning_rate": 0.1,
+  "init_raw": [
+    -4.406719,
+    -3.713572,
+    -6.9716687,
+    -5.5853744,
+    -1.271225,
+    -3.9271462,
+    -3.7936149,
+    -4.5737734,
+    -0.6782493,
+    -2.1353867
+  ],
+  "stumps": [
+    [
+      {
+        "feature_index": 106,
+        "threshold": -24.577873,
+        "left_value": 0.7378049,
+        "right_value": -0.005578854
+      },
+      {
+        "feature_index": 39,
+        "threshold": 0.71905917,
+        "left_value": -0.013700234,
+        "right_value": 0.38101518
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.00093807274,
+        "right_value": 0.99906194
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0027980937,
+        "right_value": 0.16291434
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.42422736,
+        "right_value": -0.25786272
+      },
+      {
+        "feature_index": 3,
+        "threshold": 17.40948,
+        "left_value": -0.009263549,
+        "right_value": 0.81363344
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.17136353,
+        "right_value": -0.017348874
+      },
+      {
+        "feature_index": 104,
+        "threshold": -86.505745,
+        "left_value": 0.8646811,
+        "right_value": -0.006538157
+      },
+      {
+        "feature_index": 4,
+        "threshold": 1572.6221,
+        "left_value": -0.45558766,
+        "right_value": 0.32395428
+      },
+      {
+        "feature_index": 55,
+        "threshold": 0.8041857,
+        "left_value": -0.056017376,
+        "right_value": 0.6465074
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -24.577873,
+        "left_value": 0.73700607,
+        "right_value": -0.0055679576
+      },
+      {
+        "feature_index": 39,
+        "threshold": 0.71905917,
+        "left_value": -0.013665163,
+        "right_value": 0.3803198
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.0009376203,
+        "right_value": 0.9989725
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0027961205,
+        "right_value": 0.16288744
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.40964603,
+        "right_value": -0.24916592
+      },
+      {
+        "feature_index": 2,
+        "threshold": 0.06565013,
+        "left_value": 0.74818635,
+        "right_value": -0.009229351
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.17108954,
+        "right_value": -0.017310949
+      },
+      {
+        "feature_index": 104,
+        "threshold": -86.505745,
+        "left_value": 0.8638599,
+        "right_value": -0.006528041
+      },
+      {
+        "feature_index": 4,
+        "threshold": 1572.6221,
+        "left_value": -0.4388572,
+        "right_value": 0.31213105
+      },
+      {
+        "feature_index": 55,
+        "threshold": 0.8041857,
+        "left_value": -0.055262994,
+        "right_value": 0.6381002
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -24.577873,
+        "left_value": 0.7361601,
+        "right_value": -0.0055475137
+      },
+      {
+        "feature_index": 39,
+        "threshold": 0.71905917,
+        "left_value": -0.013610912,
+        "right_value": 0.37961328
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.0009364225,
+        "right_value": 0.99887484
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0027911167,
+        "right_value": 0.16286139
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.3952989,
+        "right_value": -0.24089879
+      },
+      {
+        "feature_index": 3,
+        "threshold": 17.40948,
+        "left_value": -0.009201428,
+        "right_value": 0.810802
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.17081922,
+        "right_value": -0.017254768
+      },
+      {
+        "feature_index": 104,
+        "threshold": -86.505745,
+        "left_value": 0.86297804,
+        "right_value": -0.0065096943
+      },
+      {
+        "feature_index": 4,
+        "threshold": 1572.6221,
+        "left_value": -0.42262575,
+        "right_value": 0.30077836
+      },
+      {
+        "feature_index": 55,
+        "threshold": 0.8041857,
+        "left_value": -0.054446552,
+        "right_value": 0.629515
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -24.577873,
+        "left_value": 0.7352643,
+        "right_value": -0.0055185873
+      },
+      {
+        "feature_index": 39,
+        "threshold": 0.71905917,
+        "left_value": -0.01353925,
+        "right_value": 0.37889498
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.0009345756,
+        "right_value": 0.9987682
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.002783481,
+        "right_value": 0.16283602
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.38124308,
+        "right_value": -0.23304822
+      },
+      {
+        "feature_index": 2,
+        "threshold": 0.06565013,
+        "left_value": 0.7452592,
+        "right_value": -0.00913647
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.17055148,
+        "right_value": -0.017181892
+      },
+      {
+        "feature_index": 104,
+        "threshold": -86.505745,
+        "left_value": 0.86203116,
+        "right_value": -0.0064842217
+      },
+      {
+        "feature_index": 4,
+        "threshold": 1572.6221,
+        "left_value": -0.40693307,
+        "right_value": 0.28989017
+      },
+      {
+        "feature_index": 55,
+        "threshold": 0.8041857,
+        "left_value": -0.05357736,
+        "right_value": 0.62077194
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -24.577873,
+        "left_value": 0.7343152,
+        "right_value": -0.0054819738
+      },
+      {
+        "feature_index": 39,
+        "threshold": 0.71905917,
+        "left_value": -0.013451806,
+        "right_value": 0.37816325
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.0009321285,
+        "right_value": 0.99865174
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.002773432,
+        "right_value": 0.1628111
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.3675175,
+        "right_value": -0.22558466
+      },
+      {
+        "feature_index": 3,
+        "threshold": 17.40948,
+        "left_value": -0.009084654,
+        "right_value": 0.8076098
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.17028578,
+        "right_value": -0.017094214
+      },
+      {
+        "feature_index": 104,
+        "threshold": -86.505745,
+        "left_value": 0.8610141,
+        "right_value": -0.0064521823
+      },
+      {
+        "feature_index": 4,
+        "threshold": 1572.6221,
+        "left_value": -0.39179066,
+        "right_value": 0.27944613
+      },
+      {
+        "feature_index": 55,
+        "threshold": 0.8041857,
+        "left_value": -0.052663993,
+        "right_value": 0.6118885
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -24.577873,
+        "left_value": 0.73330986,
+        "right_value": -0.005438561
+      },
+      {
+        "feature_index": 39,
+        "threshold": 0.71905917,
+        "left_value": -0.013351031,
+        "right_value": 0.37741727
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.00092915486,
+        "right_value": 0.99852437
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0027612732,
+        "right_value": 0.16278654
+      },
+      {
+        "feature_index": 43,
+        "threshold": 0.05907391,
+        "left_value": -0.1894995,
+        "right_value": 0.5320626
+      },
+      {
+        "feature_index": 3,
+        "threshold": 17.40948,
+        "left_value": -0.009008366,
+        "right_value": 0.8057787
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.17002112,
+        "right_value": -0.01699323
+      },
+      {
+        "feature_index": 104,
+        "threshold": -86.505745,
+        "left_value": 0.85992175,
+        "right_value": -0.006414389
+      },
+      {
+        "feature_index": 4,
+        "threshold": 1572.6221,
+        "left_value": -0.37721878,
+        "right_value": 0.26944643
+      },
+      {
+        "feature_index": 55,
+        "threshold": 0.8041857,
+        "left_value": -0.051714715,
+        "right_value": 0.6028854
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -24.577873,
+        "left_value": 0.73225605,
+        "right_value": -0.0053935223
+      },
+      {
+        "feature_index": 39,
+        "threshold": 0.71905917,
+        "left_value": -0.013247777,
+        "right_value": 0.376675
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.00092606235,
+        "right_value": 0.99841356
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.002748586,
+        "right_value": 0.16276485
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.34365177,
+        "right_value": -0.2129932
+      },
+      {
+        "feature_index": 3,
+        "threshold": 17.40948,
+        "left_value": -0.008929462,
+        "right_value": 0.80384785
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.1697965,
+        "right_value": -0.016893163
+      },
+      {
+        "feature_index": 104,
+        "threshold": -86.505745,
+        "left_value": 0.85875916,
+        "right_value": -0.0063753705
+      },
+      {
+        "feature_index": 4,
+        "threshold": 1572.6221,
+        "left_value": -0.36410213,
+        "right_value": 0.26046267
+      },
+      {
+        "feature_index": 55,
+        "threshold": 0.8041857,
+        "left_value": -0.050644863,
+        "right_value": 0.591426
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -24.577873,
+        "left_value": 0.73112714,
+        "right_value": -0.0053393366
+      },
+      {
+        "feature_index": 39,
+        "threshold": 0.71905917,
+        "left_value": -0.013125245,
+        "right_value": 0.375897
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.00092225004,
+        "right_value": 0.9982631
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0027330467,
+        "right_value": 0.16274056
+      },
+      {
+        "feature_index": 43,
+        "threshold": 0.05907391,
+        "left_value": -0.18132272,
+        "right_value": 0.5038078
+      },
+      {
+        "feature_index": 3,
+        "threshold": 17.40948,
+        "left_value": -0.00883596,
+        "right_value": 0.80177253
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.16953231,
+        "right_value": -0.01677169
+      },
+      {
+        "feature_index": 104,
+        "threshold": -86.505745,
+        "left_value": 0.85749936,
+        "right_value": -0.006328523
+      },
+      {
+        "feature_index": 4,
+        "threshold": 1572.6221,
+        "left_value": -0.35061887,
+        "right_value": 0.25124678
+      },
+      {
+        "feature_index": 55,
+        "threshold": 0.8351159,
+        "left_value": -0.045921993,
+        "right_value": 0.61707824
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -24.577873,
+        "left_value": 0.7299423,
+        "right_value": -0.0052848198
+      },
+      {
+        "feature_index": 39,
+        "threshold": 0.71905917,
+        "left_value": -0.013002885,
+        "right_value": 0.37511906
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.0009184044,
+        "right_value": 0.9981301
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0027173557,
+        "right_value": 0.16271858
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.32109067,
+        "right_value": -0.2015055
+      },
+      {
+        "feature_index": 2,
+        "threshold": 0.06565013,
+        "left_value": 0.7362727,
+        "right_value": -0.008728257
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.1693068,
+        "right_value": -0.016653284
+      },
+      {
+        "feature_index": 104,
+        "threshold": -86.505745,
+        "left_value": 0.856157,
+        "right_value": -0.0062813656
+      },
+      {
+        "feature_index": 4,
+        "threshold": 1572.6221,
+        "left_value": -0.33846152,
+        "right_value": 0.24298035
+      },
+      {
+        "feature_index": 55,
+        "threshold": 0.8351159,
+        "left_value": -0.044883486,
+        "right_value": 0.6044803
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -24.577873,
+        "left_value": 0.72867477,
+        "right_value": -0.0052226624
+      },
+      {
+        "feature_index": 39,
+        "threshold": 0.71905917,
+        "left_value": -0.0128644835,
+        "right_value": 0.37430593
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.00091397687,
+        "right_value": 0.99795204
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0026992576,
+        "right_value": 0.16269428
+      },
+      {
+        "feature_index": 43,
+        "threshold": 0.05907391,
+        "left_value": -0.17375325,
+        "right_value": 0.47672457
+      },
+      {
+        "feature_index": 2,
+        "threshold": 0.06565013,
+        "left_value": 0.73417336,
+        "right_value": -0.00862212
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.16904207,
+        "right_value": -0.01651669
+      },
+      {
+        "feature_index": 104,
+        "threshold": -86.505745,
+        "left_value": 0.8547051,
+        "right_value": -0.0062278053
+      },
+      {
+        "feature_index": 4,
+        "threshold": 1572.6221,
+        "left_value": -0.3260938,
+        "right_value": 0.23451929
+      },
+      {
+        "feature_index": 55,
+        "threshold": 0.8351159,
+        "left_value": -0.043902025,
+        "right_value": 0.5942585
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -24.577873,
+        "left_value": 0.72734123,
+        "right_value": -0.0051606754
+      },
+      {
+        "feature_index": 39,
+        "threshold": 0.71905917,
+        "left_value": -0.012727523,
+        "right_value": 0.37348756
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.0009095588,
+        "right_value": 0.9977922
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0026812234,
+        "right_value": 0.1626716
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.29995537,
+        "right_value": -0.19101404
+      },
+      {
+        "feature_index": 2,
+        "threshold": 0.06565013,
+        "left_value": 0.7319838,
+        "right_value": -0.008516506
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.16881287,
+        "right_value": -0.016383832
+      },
+      {
+        "feature_index": 104,
+        "threshold": -86.505745,
+        "left_value": 0.85315585,
+        "right_value": -0.0061744046
+      },
+      {
+        "feature_index": 4,
+        "threshold": 1572.6221,
+        "left_value": -0.31485033,
+        "right_value": 0.22689675
+      },
+      {
+        "feature_index": 55,
+        "threshold": 0.8351159,
+        "left_value": -0.04284711,
+        "right_value": 0.5812152
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -24.577873,
+        "left_value": 0.7259178,
+        "right_value": -0.0050925994
+      },
+      {
+        "feature_index": 39,
+        "threshold": 0.71905917,
+        "left_value": -0.012577755,
+        "right_value": 0.37263465
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.0009046334,
+        "right_value": 0.99758106
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.002661205,
+        "right_value": 0.16264684
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.28901482,
+        "right_value": -0.18562314
+      },
+      {
+        "feature_index": 3,
+        "threshold": 17.40948,
+        "left_value": -0.008420502,
+        "right_value": 0.79284114
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.1685444,
+        "right_value": -0.016236262
+      },
+      {
+        "feature_index": 104,
+        "threshold": -86.505745,
+        "left_value": 0.85148305,
+        "right_value": -0.0061158077
+      },
+      {
+        "feature_index": 4,
+        "threshold": 1572.6221,
+        "left_value": -0.30352032,
+        "right_value": 0.21911405
+      },
+      {
+        "feature_index": 55,
+        "threshold": 0.8351159,
+        "left_value": -0.041856445,
+        "right_value": 0.57077724
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -24.577873,
+        "left_value": 0.72441024,
+        "right_value": -0.005022284
+      },
+      {
+        "feature_index": 39,
+        "threshold": 0.71905917,
+        "left_value": -0.012423827,
+        "right_value": 0.3717614
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.0008995421,
+        "right_value": 0.99734986
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.002640486,
+        "right_value": 0.16262186
+      },
+      {
+        "feature_index": 43,
+        "threshold": 0.05907391,
+        "left_value": -0.16434339,
+        "right_value": 0.44132027
+      },
+      {
+        "feature_index": 3,
+        "threshold": 17.40948,
+        "left_value": -0.008301562,
+        "right_value": 0.7900667
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.16827367,
+        "right_value": -0.016084341
+      },
+      {
+        "feature_index": 104,
+        "threshold": -86.505745,
+        "left_value": 0.8496877,
+        "right_value": -0.0060553774
+      },
+      {
+        "feature_index": 47,
+        "threshold": 0.12500206,
+        "left_value": -0.32794067,
+        "right_value": 0.18938926
+      },
+      {
+        "feature_index": 35,
+        "threshold": 0.8705978,
+        "left_value": -0.03999634,
+        "right_value": 0.6191489
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -24.577873,
+        "left_value": 0.72278404,
+        "right_value": -0.0049579223
+      },
+      {
+        "feature_index": 39,
+        "threshold": 0.71905917,
+        "left_value": -0.012266158,
+        "right_value": 0.37010777
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.0008948982,
+        "right_value": 0.9970449
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0026202928,
+        "right_value": 0.16250396
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.2710741,
+        "right_value": -0.17693357
+      },
+      {
+        "feature_index": 2,
+        "threshold": 0.06565013,
+        "left_value": 0.72355616,
+        "right_value": -0.008169793
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.16803432,
+        "right_value": -0.015947806
+      },
+      {
+        "feature_index": 104,
+        "threshold": -86.505745,
+        "left_value": 0.8468565,
+        "right_value": -0.0059978073
+      },
+      {
+        "feature_index": 4,
+        "threshold": 1572.6221,
+        "left_value": -0.28539035,
+        "right_value": 0.20677367
+      },
+      {
+        "feature_index": 55,
+        "threshold": 0.8041857,
+        "left_value": -0.043579444,
+        "right_value": 0.5215174
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -24.577873,
+        "left_value": 0.72109145,
+        "right_value": -0.00488424
+      },
+      {
+        "feature_index": 39,
+        "threshold": 0.71905917,
+        "left_value": -0.012106027,
+        "right_value": 0.36916623
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.00088952604,
+        "right_value": 0.99676025
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0025984226,
+        "right_value": 0.1624769
+      },
+      {
+        "feature_index": 43,
+        "threshold": 0.05907391,
+        "left_value": -0.15785846,
+        "right_value": 0.41774878
+      },
+      {
+        "feature_index": 3,
+        "threshold": 17.40948,
+        "left_value": -0.00806701,
+        "right_value": 0.78332967
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.16775905,
+        "right_value": -0.015789922
+      },
+      {
+        "feature_index": 104,
+        "threshold": -86.505745,
+        "left_value": 0.844718,
+        "right_value": -0.005934527
+      },
+      {
+        "feature_index": 103,
+        "threshold": 104.46399,
+        "left_value": -0.26604834,
+        "right_value": 0.2263859
+      },
+      {
+        "feature_index": 35,
+        "threshold": 0.8705978,
+        "left_value": -0.038186625,
+        "right_value": 0.5955009
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -24.577873,
+        "left_value": 0.7192487,
+        "right_value": -0.0048140264
+      },
+      {
+        "feature_index": 39,
+        "threshold": 0.71905917,
+        "left_value": -0.011946207,
+        "right_value": 0.36784533
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.00088443223,
+        "right_value": 0.9965025
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.002577099,
+        "right_value": 0.16240723
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.2540242,
+        "right_value": -0.16868424
+      },
+      {
+        "feature_index": 2,
+        "threshold": 0.06565013,
+        "left_value": 0.7163975,
+        "right_value": -0.007923203
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.16738074,
+        "right_value": -0.015631946
+      },
+      {
+        "feature_index": 104,
+        "threshold": -86.505745,
+        "left_value": 0.84149694,
+        "right_value": -0.00587231
+      },
+      {
+        "feature_index": 47,
+        "threshold": 0.12500206,
+        "left_value": -0.30167076,
+        "right_value": 0.17517158
+      },
+      {
+        "feature_index": 35,
+        "threshold": 0.77731943,
+        "left_value": -0.048971485,
+        "right_value": 0.40465707
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -24.577873,
+        "left_value": 0.71730876,
+        "right_value": -0.0047443816
+      },
+      {
+        "feature_index": 39,
+        "threshold": 0.71905917,
+        "left_value": -0.011779722,
+        "right_value": 0.36604562
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.000879331,
+        "right_value": 0.9960505
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0025552632,
+        "right_value": 0.16228648
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.24590679,
+        "right_value": -0.1647499
+      },
+      {
+        "feature_index": 3,
+        "threshold": 17.40948,
+        "left_value": -0.007825875,
+        "right_value": 0.7742291
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.16709672,
+        "right_value": -0.015483144
+      },
+      {
+        "feature_index": 104,
+        "threshold": -86.505745,
+        "left_value": 0.8378712,
+        "right_value": -0.00581052
+      },
+      {
+        "feature_index": 103,
+        "threshold": 104.46399,
+        "left_value": -0.25156066,
+        "right_value": 0.21462974
+      },
+      {
+        "feature_index": 55,
+        "threshold": 0.8351159,
+        "left_value": -0.037350424,
+        "right_value": 0.5202881
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -24.577873,
+        "left_value": 0.7152384,
+        "right_value": -0.0046711373
+      },
+      {
+        "feature_index": 39,
+        "threshold": 0.71905917,
+        "left_value": -0.0116146235,
+        "right_value": 0.3646224
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.000873978,
+        "right_value": 0.99567467
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.00253294,
+        "right_value": 0.16221344
+      },
+      {
+        "feature_index": 43,
+        "threshold": 0.05907391,
+        "left_value": -0.14986196,
+        "right_value": 0.38789448
+      },
+      {
+        "feature_index": 2,
+        "threshold": 0.06565013,
+        "left_value": 0.7072087,
+        "right_value": -0.0076760133
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.16667837,
+        "right_value": -0.015317656
+      },
+      {
+        "feature_index": 104,
+        "threshold": -86.505745,
+        "left_value": 0.8340187,
+        "right_value": -0.005745849
+      },
+      {
+        "feature_index": 47,
+        "threshold": 0.12500206,
+        "left_value": -0.28552285,
+        "right_value": 0.1661452
+      },
+      {
+        "feature_index": 35,
+        "threshold": 0.77731943,
+        "left_value": -0.04712065,
+        "right_value": 0.39319247
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -24.577873,
+        "left_value": 0.71307534,
+        "right_value": -0.0046012253
+      },
+      {
+        "feature_index": 39,
+        "threshold": 0.71905917,
+        "left_value": -0.011449132,
+        "right_value": 0.36272544
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.0008688561,
+        "right_value": 0.99518585
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0025110035,
+        "right_value": 0.1620918
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.23159091,
+        "right_value": -0.15780531
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.013175992,
+        "right_value": 0.4480766
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.1664223,
+        "right_value": -0.015171489
+      },
+      {
+        "feature_index": 104,
+        "threshold": -86.505745,
+        "left_value": 0.8297242,
+        "right_value": -0.0056839106
+      },
+      {
+        "feature_index": 103,
+        "threshold": 104.46399,
+        "left_value": -0.23813768,
+        "right_value": 0.20365849
+      },
+      {
+        "feature_index": 35,
+        "threshold": 0.77731943,
+        "left_value": -0.0460376,
+        "right_value": 0.3849468
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -24.577873,
+        "left_value": 0.7107494,
+        "right_value": -0.0045287358
+      },
+      {
+        "feature_index": 49,
+        "threshold": 0.69441235,
+        "left_value": -0.014265872,
+        "right_value": 0.2997665
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.0008635379,
+        "right_value": 0.9947248
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0024888488,
+        "right_value": 0.16201577
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.22397017,
+        "right_value": -0.1540999
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.01303789,
+        "right_value": 0.4460847
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.16599561,
+        "right_value": -0.015008613
+      },
+      {
+        "feature_index": 104,
+        "threshold": -86.505745,
+        "left_value": 0.8251641,
+        "right_value": -0.0056201206
+      },
+      {
+        "feature_index": 47,
+        "threshold": 0.12500206,
+        "left_value": -0.270317,
+        "right_value": 0.15759255
+      },
+      {
+        "feature_index": 55,
+        "threshold": 0.8351159,
+        "left_value": -0.034920182,
+        "right_value": 0.49358872
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -24.577873,
+        "left_value": 0.7083204,
+        "right_value": -0.0044578197
+      },
+      {
+        "feature_index": 49,
+        "threshold": 0.69441235,
+        "left_value": -0.014095219,
+        "right_value": 0.2985648
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.0008583114,
+        "right_value": 0.99405915
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0024665669,
+        "right_value": 0.16189124
+      },
+      {
+        "feature_index": 43,
+        "threshold": 0.05907391,
+        "left_value": -0.14250259,
+        "right_value": 0.3610126
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.012905587,
+        "right_value": 0.44424087
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.16570218,
+        "right_value": -0.01485884
+      },
+      {
+        "feature_index": 104,
+        "threshold": -86.505745,
+        "left_value": 0.8201067,
+        "right_value": -0.0055574565
+      },
+      {
+        "feature_index": 47,
+        "threshold": 0.12500206,
+        "left_value": -0.26234907,
+        "right_value": 0.15304232
+      },
+      {
+        "feature_index": 35,
+        "threshold": 0.77731943,
+        "left_value": -0.044268098,
+        "right_value": 0.3737102
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -24.577873,
+        "left_value": 0.70575595,
+        "right_value": -0.0043873796
+      },
+      {
+        "feature_index": 39,
+        "threshold": 0.71905917,
+        "left_value": -0.010972786,
+        "right_value": 0.35820687
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.0008531211,
+        "right_value": 0.9933977
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.002444461,
+        "right_value": 0.16176553
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.21178249,
+        "right_value": -0.14809108
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.012775189,
+        "right_value": 0.44235522
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.16543554,
+        "right_value": -0.01471243
+      },
+      {
+        "feature_index": 104,
+        "threshold": -86.505745,
+        "left_value": 0.8146386,
+        "right_value": -0.0054953415
+      },
+      {
+        "feature_index": 103,
+        "threshold": 104.46399,
+        "left_value": -0.2210975,
+        "right_value": 0.1893842
+      },
+      {
+        "feature_index": 35,
+        "threshold": 0.77731943,
+        "left_value": -0.04323756,
+        "right_value": 0.36559618
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -24.577873,
+        "left_value": 0.70302147,
+        "right_value": -0.004315512
+      },
+      {
+        "feature_index": 49,
+        "threshold": 0.69441235,
+        "left_value": -0.013779058,
+        "right_value": 0.29649234
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.0008478307,
+        "right_value": 0.992762
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0024224843,
+        "right_value": 0.16168606
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.20502716,
+        "right_value": -0.14476609
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.012639356,
+        "right_value": 0.4401407
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.16500156,
+        "right_value": -0.014552546
+      },
+      {
+        "feature_index": 104,
+        "threshold": -86.505745,
+        "left_value": 0.80885303,
+        "right_value": -0.0054322
+      },
+      {
+        "feature_index": 47,
+        "threshold": 0.12500206,
+        "left_value": -0.24894959,
+        "right_value": 0.14537236
+      },
+      {
+        "feature_index": 55,
+        "threshold": 0.8351159,
+        "left_value": -0.032639094,
+        "right_value": 0.4677286
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -24.577873,
+        "left_value": 0.70016533,
+        "right_value": -0.004245684
+      },
+      {
+        "feature_index": 49,
+        "threshold": 0.69441235,
+        "left_value": -0.01361254,
+        "right_value": 0.29520804
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.00084265607,
+        "right_value": 0.9918654
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0024005082,
+        "right_value": 0.1615586
+      },
+      {
+        "feature_index": 43,
+        "threshold": 0.05907391,
+        "left_value": -0.1357214,
+        "right_value": 0.33684906
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.012510128,
+        "right_value": 0.43808353
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.16469821,
+        "right_value": -0.014405963
+      },
+      {
+        "feature_index": 104,
+        "threshold": -86.505745,
+        "left_value": 0.80249953,
+        "right_value": -0.005370745
+      },
+      {
+        "feature_index": 103,
+        "threshold": 104.46399,
+        "left_value": -0.21011633,
+        "right_value": 0.18003817
+      },
+      {
+        "feature_index": 119,
+        "threshold": -8.07606,
+        "left_value": 0.4934217,
+        "right_value": -0.028669277
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -24.577873,
+        "left_value": 0.6971377,
+        "right_value": -0.0041783415
+      },
+      {
+        "feature_index": 49,
+        "threshold": 0.69441235,
+        "left_value": -0.013457791,
+        "right_value": 0.29419586
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.0008376967,
+        "right_value": 0.9911876
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.002379903,
+        "right_value": 0.161478
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.1933678,
+        "right_value": -0.13917731
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.012383321,
+        "right_value": 0.4357439
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.16429687,
+        "right_value": -0.014258418
+      },
+      {
+        "feature_index": 104,
+        "threshold": -86.505745,
+        "left_value": 0.7958255,
+        "right_value": -0.005311641
+      },
+      {
+        "feature_index": 47,
+        "threshold": 0.12500206,
+        "left_value": -0.2369286,
+        "right_value": 0.13844429
+      },
+      {
+        "feature_index": 119,
+        "threshold": -8.07606,
+        "left_value": 0.48489007,
+        "right_value": -0.027886374
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -24.577873,
+        "left_value": 0.6939712,
+        "right_value": -0.0041147475
+      },
+      {
+        "feature_index": 49,
+        "threshold": 0.69441235,
+        "left_value": -0.013305456,
+        "right_value": 0.29286277
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.00083299656,
+        "right_value": 0.99010825
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0023598906,
+        "right_value": 0.1613493
+      },
+      {
+        "feature_index": 33,
+        "threshold": 0.11703361,
+        "left_value": -0.15218551,
+        "right_value": 0.28110194
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.012265209,
+        "right_value": 0.43353945
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.16399138,
+        "right_value": -0.014124849
+      },
+      {
+        "feature_index": 104,
+        "threshold": -86.505745,
+        "left_value": 0.78852534,
+        "right_value": -0.0052555567
+      },
+      {
+        "feature_index": 4,
+        "threshold": 1572.6221,
+        "left_value": -0.20852505,
+        "right_value": 0.15237637
+      },
+      {
+        "feature_index": 35,
+        "threshold": 0.77731943,
+        "left_value": -0.04031839,
+        "right_value": 0.35021424
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -24.577873,
+        "left_value": 0.6906891,
+        "right_value": -0.004040271
+      },
+      {
+        "feature_index": 49,
+        "threshold": 0.69441235,
+        "left_value": -0.013141265,
+        "right_value": 0.29204133
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.0008274621,
+        "right_value": 0.9892553
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0023374334,
+        "right_value": 0.16130646
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.18241702,
+        "right_value": -0.13386871
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.012133976,
+        "right_value": 0.43182522
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.1636984,
+        "right_value": -0.013971151
+      },
+      {
+        "feature_index": 104,
+        "threshold": -86.505745,
+        "left_value": 0.78276634,
+        "right_value": -0.005192074
+      },
+      {
+        "feature_index": 103,
+        "threshold": 104.46399,
+        "left_value": -0.19597392,
+        "right_value": 0.16792002
+      },
+      {
+        "feature_index": 119,
+        "threshold": -8.07606,
+        "left_value": 0.4742036,
+        "right_value": -0.026855486
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -24.577873,
+        "left_value": 0.68716806,
+        "right_value": -0.003976023
+      },
+      {
+        "feature_index": 39,
+        "threshold": 0.71905917,
+        "left_value": -0.010100511,
+        "right_value": 0.35014686
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.00082270324,
+        "right_value": 0.9882211
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0023177466,
+        "right_value": 0.16122404
+      },
+      {
+        "feature_index": 33,
+        "threshold": 0.11703361,
+        "left_value": -0.14733353,
+        "right_value": 0.26810136
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.012012933,
+        "right_value": 0.42923936
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.16325682,
+        "right_value": -0.013829099
+      },
+      {
+        "feature_index": 104,
+        "threshold": -86.505745,
+        "left_value": 0.7747437,
+        "right_value": -0.005135808
+      },
+      {
+        "feature_index": 47,
+        "threshold": 0.12500206,
+        "left_value": -0.22194885,
+        "right_value": 0.12956204
+      },
+      {
+        "feature_index": 35,
+        "threshold": 0.77731943,
+        "left_value": -0.038742144,
+        "right_value": 0.34032428
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -24.577873,
+        "left_value": 0.6834805,
+        "right_value": -0.0039070747
+      },
+      {
+        "feature_index": 49,
+        "threshold": 0.69441235,
+        "left_value": -0.0128508415,
+        "right_value": 0.28969416
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.00081757153,
+        "right_value": 0.9869315
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0022960412,
+        "right_value": 0.16109294
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.17259412,
+        "right_value": -0.12903158
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.011887856,
+        "right_value": 0.42685682
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.16295785,
+        "right_value": -0.013686987
+      },
+      {
+        "feature_index": 104,
+        "threshold": -86.505745,
+        "left_value": 0.76621526,
+        "right_value": -0.0050756237
+      },
+      {
+        "feature_index": 103,
+        "threshold": 104.46399,
+        "left_value": -0.18713765,
+        "right_value": 0.16031784
+      },
+      {
+        "feature_index": 119,
+        "threshold": -8.07606,
+        "left_value": 0.46379507,
+        "right_value": -0.02589063
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -24.577873,
+        "left_value": 0.6796049,
+        "right_value": -0.0038443739
+      },
+      {
+        "feature_index": 49,
+        "threshold": 0.69441235,
+        "left_value": -0.012707631,
+        "right_value": 0.28856668
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.0008129173,
+        "right_value": 0.9856745
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0022767812,
+        "right_value": 0.16100915
+      },
+      {
+        "feature_index": 43,
+        "threshold": 0.05907391,
+        "left_value": -0.124090634,
+        "right_value": 0.2938753
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.011770055,
+        "right_value": 0.42411083
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.16250928,
+        "right_value": -0.013548666
+      },
+      {
+        "feature_index": 104,
+        "threshold": -86.505745,
+        "left_value": 0.7571936,
+        "right_value": -0.005020796
+      },
+      {
+        "feature_index": 47,
+        "threshold": 0.21874563,
+        "left_value": -0.17949678,
+        "right_value": 0.15095526
+      },
+      {
+        "feature_index": 119,
+        "threshold": -8.07606,
+        "left_value": 0.45717883,
+        "right_value": -0.025124215
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -24.577873,
+        "left_value": 0.6755247,
+        "right_value": -0.0037831538
+      },
+      {
+        "feature_index": 49,
+        "threshold": 0.69441235,
+        "left_value": -0.012553973,
+        "right_value": 0.2868024
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.0008083744,
+        "right_value": 0.9841674
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0022575287,
+        "right_value": 0.16087744
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.1630285,
+        "right_value": -0.12447127
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.01165602,
+        "right_value": 0.4212795
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.16220723,
+        "right_value": -0.01342255
+      },
+      {
+        "feature_index": 104,
+        "threshold": -86.505745,
+        "left_value": 0.74770033,
+        "right_value": -0.0049673785
+      },
+      {
+        "feature_index": 103,
+        "threshold": 122.01178,
+        "left_value": -0.15361279,
+        "right_value": 0.16627155
+      },
+      {
+        "feature_index": 35,
+        "threshold": 0.77731943,
+        "left_value": -0.036732282,
+        "right_value": 0.32783476
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -24.577873,
+        "left_value": 0.67092586,
+        "right_value": -0.0037202518
+      },
+      {
+        "feature_index": 49,
+        "threshold": 0.69441235,
+        "left_value": -0.012410675,
+        "right_value": 0.2855695
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.0008037128,
+        "right_value": 0.9826586
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0022381677,
+        "right_value": 0.16078001
+      },
+      {
+        "feature_index": 33,
+        "threshold": 0.11703361,
+        "left_value": -0.13881026,
+        "right_value": 0.24619319
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.011539373,
+        "right_value": 0.41836035
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.16170284,
+        "right_value": -0.013282394
+      },
+      {
+        "feature_index": 104,
+        "threshold": -86.505745,
+        "left_value": 0.7378397,
+        "right_value": -0.004912885
+      },
+      {
+        "feature_index": 47,
+        "threshold": 0.12500206,
+        "left_value": -0.20351394,
+        "right_value": 0.11881088
+      },
+      {
+        "feature_index": 119,
+        "threshold": -8.07606,
+        "left_value": 0.44662264,
+        "right_value": -0.024246901
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -24.577873,
+        "left_value": 0.66648513,
+        "right_value": -0.0036578483
+      },
+      {
+        "feature_index": 49,
+        "threshold": 0.69441235,
+        "left_value": -0.012264904,
+        "right_value": 0.28405753
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.00079905574,
+        "right_value": 0.9807997
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0022184895,
+        "right_value": 0.1606468
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.15482278,
+        "right_value": -0.12029722
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.01142611,
+        "right_value": 0.4156677
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.16139783,
+        "right_value": -0.013154442
+      },
+      {
+        "feature_index": 104,
+        "threshold": -86.505745,
+        "left_value": 0.7273598,
+        "right_value": -0.004858596
+      },
+      {
+        "feature_index": 103,
+        "threshold": 122.01178,
+        "left_value": -0.14700463,
+        "right_value": 0.1591441
+      },
+      {
+        "feature_index": 119,
+        "threshold": -8.07606,
+        "left_value": 0.43853745,
+        "right_value": -0.02360092
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -24.577873,
+        "left_value": 0.66146487,
+        "right_value": -0.003600698
+      },
+      {
+        "feature_index": 39,
+        "threshold": 0.71905917,
+        "left_value": -0.009313415,
+        "right_value": 0.33983937
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.0007948248,
+        "right_value": 0.9789785
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0022009143,
+        "right_value": 0.16054899
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.1501282,
+        "right_value": -0.11804992
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.01131959,
+        "right_value": 0.41259995
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.16089551,
+        "right_value": -0.013026863
+      },
+      {
+        "feature_index": 104,
+        "threshold": -86.505745,
+        "left_value": 0.7165817,
+        "right_value": -0.0048091295
+      },
+      {
+        "feature_index": 47,
+        "threshold": 0.21874563,
+        "left_value": -0.16596483,
+        "right_value": 0.13964856
+      },
+      {
+        "feature_index": 35,
+        "threshold": 0.77731943,
+        "left_value": -0.03496682,
+        "right_value": 0.3176089
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -24.577873,
+        "left_value": 0.65657556,
+        "right_value": -0.003540296
+      },
+      {
+        "feature_index": 49,
+        "threshold": 0.69441235,
+        "left_value": -0.012002718,
+        "right_value": 0.28102618
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.00079029845,
+        "right_value": 0.9765719
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0021818823,
+        "right_value": 0.16041477
+      },
+      {
+        "feature_index": 33,
+        "threshold": 0.11703361,
+        "left_value": -0.13335997,
+        "right_value": 0.23219538
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.011207945,
+        "right_value": 0.4094125
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.16054209,
+        "right_value": -0.0129011795
+      },
+      {
+        "feature_index": 104,
+        "threshold": -86.505745,
+        "left_value": 0.70516753,
+        "right_value": -0.0047566458
+      },
+      {
+        "feature_index": 103,
+        "threshold": 122.01178,
+        "left_value": -0.14089255,
+        "right_value": 0.15249667
+      },
+      {
+        "feature_index": 81,
+        "threshold": -5.790346,
+        "left_value": 0.41511434,
+        "right_value": -0.027082656
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -24.577873,
+        "left_value": 0.6510956,
+        "right_value": -0.0034806202
+      },
+      {
+        "feature_index": 49,
+        "threshold": 0.69441235,
+        "left_value": -0.011868003,
+        "right_value": 0.27971998
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.0007858638,
+        "right_value": 0.97459173
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0021634996,
+        "right_value": 0.16031586
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.14289244,
+        "right_value": -0.114253454
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.011098572,
+        "right_value": 0.4062311
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.16005714,
+        "right_value": -0.01277077
+      },
+      {
+        "feature_index": 104,
+        "threshold": -86.505745,
+        "left_value": 0.6937624,
+        "right_value": -0.004705288
+      },
+      {
+        "feature_index": 47,
+        "threshold": 0.21874563,
+        "left_value": -0.15927622,
+        "right_value": 0.13415274
+      },
+      {
+        "feature_index": 119,
+        "threshold": -8.07606,
+        "left_value": 0.42408228,
+        "right_value": -0.022305591
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -24.577873,
+        "left_value": 0.6457998,
+        "right_value": -0.0034258298
+      },
+      {
+        "feature_index": 49,
+        "threshold": 0.69441235,
+        "left_value": -0.011731694,
+        "right_value": 0.2777681
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.00078176043,
+        "right_value": 0.9717257
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.002146211,
+        "right_value": 0.1601808
+      },
+      {
+        "feature_index": 43,
+        "threshold": 0.05907391,
+        "left_value": -0.113190226,
+        "right_value": 0.25585955
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.010996805,
+        "right_value": 0.4028844
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.15970571,
+        "right_value": -0.012656924
+      },
+      {
+        "feature_index": 104,
+        "threshold": -86.505745,
+        "left_value": 0.6815566,
+        "right_value": -0.0046577193
+      },
+      {
+        "feature_index": 9,
+        "threshold": 824.5024,
+        "left_value": -0.13785169,
+        "right_value": 0.12316264
+      },
+      {
+        "feature_index": 35,
+        "threshold": 0.77731943,
+        "left_value": -0.03328148,
+        "right_value": 0.30723152
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -24.577873,
+        "left_value": 0.6404577,
+        "right_value": -0.0033640072
+      },
+      {
+        "feature_index": 39,
+        "threshold": 0.71905917,
+        "left_value": -0.008828556,
+        "right_value": 0.33217442
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.00077712175,
+        "right_value": 0.96933186
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.002127537,
+        "right_value": 0.16013105
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.13605615,
+        "right_value": -0.11057918
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.0108880475,
+        "right_value": 0.40040287
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.15937458,
+        "right_value": -0.012530766
+      },
+      {
+        "feature_index": 104,
+        "threshold": -86.505745,
+        "left_value": 0.6714844,
+        "right_value": -0.0046051955
+      },
+      {
+        "feature_index": 47,
+        "threshold": 0.12500206,
+        "left_value": -0.18107526,
+        "right_value": 0.10582565
+      },
+      {
+        "feature_index": 81,
+        "threshold": -5.790346,
+        "left_value": 0.3996696,
+        "right_value": -0.025735162
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -24.577873,
+        "left_value": 0.6348217,
+        "right_value": -0.0033086366
+      },
+      {
+        "feature_index": 49,
+        "threshold": 0.69441235,
+        "left_value": -0.0114849685,
+        "right_value": 0.27516502
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.0007729609,
+        "right_value": 0.9658725
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.002110098,
+        "right_value": 0.15999946
+      },
+      {
+        "feature_index": 33,
+        "threshold": 0.08777537,
+        "left_value": -0.13565426,
+        "right_value": 0.20188837
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.0107878605,
+        "right_value": 0.39730278
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.15903226,
+        "right_value": -0.012416953
+      },
+      {
+        "feature_index": 104,
+        "threshold": -86.505745,
+        "left_value": 0.6583565,
+        "right_value": -0.0045571653
+      },
+      {
+        "feature_index": 103,
+        "threshold": 122.01178,
+        "left_value": -0.13076639,
+        "right_value": 0.1415803
+      },
+      {
+        "feature_index": 119,
+        "threshold": -8.07606,
+        "left_value": 0.41035143,
+        "right_value": -0.021070797
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -24.577873,
+        "left_value": 0.62853277,
+        "right_value": -0.0032517936
+      },
+      {
+        "feature_index": 49,
+        "threshold": 0.69441235,
+        "left_value": -0.011357051,
+        "right_value": 0.27374458
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.00076871674,
+        "right_value": 0.96301395
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0020925237,
+        "right_value": 0.15989663
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.12923172,
+        "right_value": -0.10712955
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.010684305,
+        "right_value": 0.393818
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.15853521,
+        "right_value": -0.012293328
+      },
+      {
+        "feature_index": 104,
+        "threshold": -86.505745,
+        "left_value": 0.64577,
+        "right_value": -0.0045084413
+      },
+      {
+        "feature_index": 47,
+        "threshold": 0.21874563,
+        "left_value": -0.14811309,
+        "right_value": 0.12483408
+      },
+      {
+        "feature_index": 35,
+        "threshold": 0.77731943,
+        "left_value": -0.03161983,
+        "right_value": 0.295245
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -24.577873,
+        "left_value": 0.6224361,
+        "right_value": -0.0031960984
+      },
+      {
+        "feature_index": 49,
+        "threshold": 0.69441235,
+        "left_value": -0.01122095,
+        "right_value": 0.27167067
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.00076452125,
+        "right_value": 0.9589722
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.002074936,
+        "right_value": 0.1597592
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.12629864,
+        "right_value": -0.10533882
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.010582297,
+        "right_value": 0.3901945
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.15816441,
+        "right_value": -0.012178319
+      },
+      {
+        "feature_index": 104,
+        "threshold": -86.505745,
+        "left_value": 0.63232875,
+        "right_value": -0.0044603785
+      },
+      {
+        "feature_index": 63,
+        "threshold": -97.99841,
+        "left_value": -0.16713229,
+        "right_value": 0.105395794
+      },
+      {
+        "feature_index": 81,
+        "threshold": -5.790346,
+        "left_value": 0.38659486,
+        "right_value": -0.024416676
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -24.577873,
+        "left_value": 0.6159479,
+        "right_value": -0.0031411934
+      },
+      {
+        "feature_index": 49,
+        "threshold": 0.69441235,
+        "left_value": -0.011100396,
+        "right_value": 0.2704537
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.00076038647,
+        "right_value": 0.95448667
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.002058172,
+        "right_value": 0.15968074
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.12264771,
+        "right_value": -0.103463046
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.010484831,
+        "right_value": 0.38727075
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.1577564,
+        "right_value": -0.012063502
+      },
+      {
+        "feature_index": 104,
+        "threshold": -86.505745,
+        "left_value": 0.6191878,
+        "right_value": -0.004413253
+      },
+      {
+        "feature_index": 47,
+        "threshold": 0.12500206,
+        "left_value": -0.168371,
+        "right_value": 0.09835862
+      },
+      {
+        "feature_index": 119,
+        "threshold": -8.07606,
+        "left_value": 0.39635065,
+        "right_value": -0.019903192
+      }
+    ],
+    [
+      {
+        "feature_index": 66,
+        "threshold": -26.651686,
+        "left_value": 0.549282,
+        "right_value": -0.0015926403
+      },
+      {
+        "feature_index": 49,
+        "threshold": 0.69441235,
+        "left_value": -0.010980473,
+        "right_value": 0.26866686
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.00075648836,
+        "right_value": 0.9495605
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0020418658,
+        "right_value": 0.15954506
+      },
+      {
+        "feature_index": 33,
+        "threshold": 0.08777537,
+        "left_value": -0.12955953,
+        "right_value": 0.18889633
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.010391629,
+        "right_value": 0.38389465
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.15740085,
+        "right_value": -0.011957635
+      },
+      {
+        "feature_index": 104,
+        "threshold": -86.505745,
+        "left_value": 0.605108,
+        "right_value": -0.004368601
+      },
+      {
+        "feature_index": 103,
+        "threshold": 122.01178,
+        "left_value": -0.12158924,
+        "right_value": 0.13160853
+      },
+      {
+        "feature_index": 35,
+        "threshold": 0.77731943,
+        "left_value": -0.030186113,
+        "right_value": 0.28768617
+      }
+    ],
+    [
+      {
+        "feature_index": 66,
+        "threshold": -26.651686,
+        "left_value": 0.5440622,
+        "right_value": -0.0015357162
+      },
+      {
+        "feature_index": 39,
+        "threshold": 0.71905917,
+        "left_value": -0.008168627,
+        "right_value": 0.32024485
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.00075212837,
+        "right_value": 0.94544476
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.002023916,
+        "right_value": 0.15943949
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.11722275,
+        "right_value": -0.100393616
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.010287408,
+        "right_value": 0.3801057
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.15687324,
+        "right_value": -0.011832285
+      },
+      {
+        "feature_index": 104,
+        "threshold": -86.505745,
+        "left_value": 0.59176093,
+        "right_value": -0.0043191165
+      },
+      {
+        "feature_index": 9,
+        "threshold": 824.5024,
+        "left_value": -0.12123612,
+        "right_value": 0.108382225
+      },
+      {
+        "feature_index": 81,
+        "threshold": -5.790346,
+        "left_value": 0.37365934,
+        "right_value": -0.023158139
+      }
+    ],
+    [
+      {
+        "feature_index": 66,
+        "threshold": -26.651686,
+        "left_value": 0.5389837,
+        "right_value": -0.0014835095
+      },
+      {
+        "feature_index": 49,
+        "threshold": 0.69441235,
+        "left_value": -0.010758831,
+        "right_value": 0.26609057
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.00074834726,
+        "right_value": 0.9405316
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0020088016,
+        "right_value": 0.15938744
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.113901965,
+        "right_value": -0.098697275
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.010198789,
+        "right_value": 0.37721238
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.1564918,
+        "right_value": -0.011728879
+      },
+      {
+        "feature_index": 104,
+        "threshold": -86.505745,
+        "left_value": 0.58049774,
+        "right_value": -0.0042765876
+      },
+      {
+        "feature_index": 47,
+        "threshold": 0.21874563,
+        "left_value": -0.13650726,
+        "right_value": 0.11494942
+      },
+      {
+        "feature_index": 119,
+        "threshold": -8.07606,
+        "left_value": 0.38269675,
+        "right_value": -0.018822232
+      }
+    ],
+    [
+      {
+        "feature_index": 66,
+        "threshold": -26.651686,
+        "left_value": 0.5338934,
+        "right_value": -0.0014349897
+      },
+      {
+        "feature_index": 49,
+        "threshold": 0.69441235,
+        "left_value": -0.010640681,
+        "right_value": 0.26390237
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.00074471615,
+        "right_value": 0.93440187
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0019935914,
+        "right_value": 0.15924846
+      },
+      {
+        "feature_index": 33,
+        "threshold": 0.08777537,
+        "left_value": -0.12512912,
+        "right_value": 0.1797914
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.010110513,
+        "right_value": 0.37326154
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.15610811,
+        "right_value": -0.011629651
+      },
+      {
+        "feature_index": 104,
+        "threshold": -86.505745,
+        "left_value": 0.56642133,
+        "right_value": -0.00423516
+      },
+      {
+        "feature_index": 103,
+        "threshold": 122.01178,
+        "left_value": -0.115045026,
+        "right_value": 0.12470332
+      },
+      {
+        "feature_index": 35,
+        "threshold": 0.77731943,
+        "left_value": -0.02880909,
+        "right_value": 0.2781098
+      }
+    ],
+    [
+      {
+        "feature_index": 66,
+        "threshold": -26.651686,
+        "left_value": 0.5282747,
+        "right_value": -0.0013799783
+      },
+      {
+        "feature_index": 59,
+        "threshold": 0.75505215,
+        "left_value": -0.0067570936,
+        "right_value": 0.30867416
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.0007405009,
+        "right_value": 0.9292013
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.001976274,
+        "right_value": 0.15914127
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.10906464,
+        "right_value": -0.09587907
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.0100104995,
+        "right_value": 0.36930284
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.15557034,
+        "right_value": -0.011509334
+      },
+      {
+        "feature_index": 104,
+        "threshold": -86.505745,
+        "left_value": 0.552957,
+        "right_value": -0.004187504
+      },
+      {
+        "feature_index": 47,
+        "threshold": 0.34373707,
+        "left_value": -0.11263304,
+        "right_value": 0.12980296
+      },
+      {
+        "feature_index": 81,
+        "threshold": -5.790346,
+        "left_value": 0.3607541,
+        "right_value": -0.02200783
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -24.577873,
+        "left_value": 0.59041584,
+        "right_value": -0.0028434712
+      },
+      {
+        "feature_index": 59,
+        "threshold": 0.75505215,
+        "left_value": -0.006663274,
+        "right_value": 0.30611378
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.00073707773,
+        "right_value": 0.9221823
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0019618901,
+        "right_value": 0.1589939
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.10641911,
+        "right_value": -0.0944089
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.009926604,
+        "right_value": 0.36524323
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.15511914,
+        "right_value": -0.0114132
+      },
+      {
+        "feature_index": 104,
+        "threshold": -86.505745,
+        "left_value": 0.5391591,
+        "right_value": -0.004148554
+      },
+      {
+        "feature_index": 15,
+        "threshold": 1073.7277,
+        "left_value": -0.12816735,
+        "right_value": 0.11144659
+      },
+      {
+        "feature_index": 119,
+        "threshold": -8.07606,
+        "left_value": 0.36973906,
+        "right_value": -0.017857976
+      }
+    ],
+    [
+      {
+        "feature_index": 66,
+        "threshold": -26.651686,
+        "left_value": 0.5148232,
+        "right_value": -0.0013016395
+      },
+      {
+        "feature_index": 49,
+        "threshold": 0.69441235,
+        "left_value": -0.010341556,
+        "right_value": 0.26015905
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.0007333615,
+        "right_value": 0.91557455
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0019470733,
+        "right_value": 0.15894085
+      },
+      {
+        "feature_index": 43,
+        "threshold": 0.05907391,
+        "left_value": -0.098911084,
+        "right_value": 0.21000186
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.009840688,
+        "right_value": 0.36215955
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.15463391,
+        "right_value": -0.011308725
+      },
+      {
+        "feature_index": 104,
+        "threshold": -86.505745,
+        "left_value": 0.5281571,
+        "right_value": -0.0041069556
+      },
+      {
+        "feature_index": 47,
+        "threshold": 0.12500206,
+        "left_value": -0.15053378,
+        "right_value": 0.088129506
+      },
+      {
+        "feature_index": 35,
+        "threshold": 0.77731943,
+        "left_value": -0.027513426,
+        "right_value": 0.26877
+      }
+    ],
+    [
+      {
+        "feature_index": 66,
+        "threshold": -26.651686,
+        "left_value": 0.5090308,
+        "right_value": -0.0012460587
+      },
+      {
+        "feature_index": 59,
+        "threshold": 0.75505215,
+        "left_value": -0.006481006,
+        "right_value": 0.30263543
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.00072926603,
+        "right_value": 0.90796524
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0019300353,
+        "right_value": 0.15879878
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.101949885,
+        "right_value": -0.09164143
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.009745829,
+        "right_value": 0.3584169
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.15426396,
+        "right_value": -0.011200325
+      },
+      {
+        "feature_index": 104,
+        "threshold": -86.505745,
+        "left_value": 0.51390976,
+        "right_value": -0.004060738
+      },
+      {
+        "feature_index": 63,
+        "threshold": -97.99841,
+        "left_value": -0.14421584,
+        "right_value": 0.09098925
+      },
+      {
+        "feature_index": 78,
+        "threshold": -5.494463,
+        "left_value": 0.33548808,
+        "right_value": -0.02244378
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -24.577873,
+        "left_value": 0.57524085,
+        "right_value": -0.0026980038
+      },
+      {
+        "feature_index": 49,
+        "threshold": 0.69441235,
+        "left_value": -0.0101371715,
+        "right_value": 0.25749567
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.0007256715,
+        "right_value": 0.8991138
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0019155197,
+        "right_value": 0.15871517
+      },
+      {
+        "feature_index": 33,
+        "threshold": 0.08777537,
+        "left_value": -0.11805435,
+        "right_value": 0.16624902
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.009661996,
+        "right_value": 0.35497686
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.15381183,
+        "right_value": -0.011101407
+      },
+      {
+        "feature_index": 104,
+        "threshold": -86.505745,
+        "left_value": 0.5006958,
+        "right_value": -0.0040202024
+      },
+      {
+        "feature_index": 47,
+        "threshold": 0.34373707,
+        "left_value": -0.106106736,
+        "right_value": 0.122056834
+      },
+      {
+        "feature_index": 55,
+        "threshold": 0.8351159,
+        "left_value": -0.01954069,
+        "right_value": 0.33769616
+      }
+    ],
+    [
+      {
+        "feature_index": 66,
+        "threshold": -26.651686,
+        "left_value": 0.4944354,
+        "right_value": -0.0011629817
+      },
+      {
+        "feature_index": 59,
+        "threshold": 0.75505215,
+        "left_value": -0.0063109337,
+        "right_value": 0.298802
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.00072173873,
+        "right_value": 0.89051276
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0018990824,
+        "right_value": 0.15855736
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.097765744,
+        "right_value": -0.08911546
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.0095694475,
+        "right_value": 0.35080358
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.15337323,
+        "right_value": -0.0109949885
+      },
+      {
+        "feature_index": 104,
+        "threshold": -63.00833,
+        "left_value": 0.26842025,
+        "right_value": -0.0067390306
+      },
+      {
+        "feature_index": 15,
+        "threshold": 1073.7277,
+        "left_value": -0.120605685,
+        "right_value": 0.10487613
+      },
+      {
+        "feature_index": 119,
+        "threshold": -8.07606,
+        "left_value": 0.35295326,
+        "right_value": -0.016774219
+      }
+    ],
+    [
+      {
+        "feature_index": 66,
+        "threshold": -26.651686,
+        "left_value": 0.48801854,
+        "right_value": -0.0011150236
+      },
+      {
+        "feature_index": 49,
+        "threshold": 0.69441235,
+        "left_value": -0.009936746,
+        "right_value": 0.25449234
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.00071829534,
+        "right_value": 0.88185024
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0018852628,
+        "right_value": 0.15848985
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.09510258,
+        "right_value": -0.087700896
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.009489778,
+        "right_value": 0.34752116
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.15286072,
+        "right_value": -0.010897916
+      },
+      {
+        "feature_index": 104,
+        "threshold": -63.00833,
+        "left_value": 0.2665967,
+        "right_value": -0.006698689
+      },
+      {
+        "feature_index": 47,
+        "threshold": 0.12500206,
+        "left_value": -0.14118554,
+        "right_value": 0.08263092
+      },
+      {
+        "feature_index": 78,
+        "threshold": -5.494463,
+        "left_value": 0.32407817,
+        "right_value": -0.021348074
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -24.577873,
+        "left_value": 0.5584531,
+        "right_value": -0.0025621334
+      },
+      {
+        "feature_index": 49,
+        "threshold": 0.63654464,
+        "left_value": -0.013434377,
+        "right_value": 0.20343176
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.00071499706,
+        "right_value": 0.8711717
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0018714714,
+        "right_value": 0.15833463
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.09282586,
+        "right_value": -0.08639193
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.009412381,
+        "right_value": 0.34361228
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.1524591,
+        "right_value": -0.010809644
+      },
+      {
+        "feature_index": 104,
+        "threshold": -63.00833,
+        "left_value": 0.26365387,
+        "right_value": -0.006657376
+      },
+      {
+        "feature_index": 103,
+        "threshold": 122.01178,
+        "left_value": -0.10139379,
+        "right_value": 0.10994331
+      },
+      {
+        "feature_index": 35,
+        "threshold": 0.77731943,
+        "left_value": -0.025502095,
+        "right_value": 0.25405404
+      }
+    ],
+    [
+      {
+        "feature_index": 66,
+        "threshold": -26.651686,
+        "left_value": 0.47449353,
+        "right_value": -0.0010458315
+      },
+      {
+        "feature_index": 59,
+        "threshold": 0.75505215,
+        "left_value": -0.0060952394,
+        "right_value": 0.2937286
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.00071163947,
+        "right_value": 0.8614856
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0018576402,
+        "right_value": 0.15821327
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.09096379,
+        "right_value": -0.08512453
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.009332579,
+        "right_value": 0.3393665
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.15188047,
+        "right_value": -0.010713169
+      },
+      {
+        "feature_index": 104,
+        "threshold": -63.00833,
+        "left_value": 0.26092538,
+        "right_value": -0.0066161854
+      },
+      {
+        "feature_index": 47,
+        "threshold": 0.34373707,
+        "left_value": -0.10002357,
+        "right_value": 0.11516185
+      },
+      {
+        "feature_index": 81,
+        "threshold": -5.790346,
+        "left_value": 0.333033,
+        "right_value": -0.019486893
+      }
+    ],
+    [
+      {
+        "feature_index": 66,
+        "threshold": -26.651686,
+        "left_value": 0.46661237,
+        "right_value": -0.0010046334
+      },
+      {
+        "feature_index": 49,
+        "threshold": 0.63654464,
+        "left_value": -0.013240347,
+        "right_value": 0.2012021
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.0007086295,
+        "right_value": 0.8498459
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0018449487,
+        "right_value": 0.15804641
+      },
+      {
+        "feature_index": 33,
+        "threshold": 0.08777537,
+        "left_value": -0.11235456,
+        "right_value": 0.15564954
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.009259665,
+        "right_value": 0.33499193
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.15140215,
+        "right_value": -0.010629651
+      },
+      {
+        "feature_index": 104,
+        "threshold": -63.00833,
+        "left_value": 0.2582045,
+        "right_value": -0.006578759
+      },
+      {
+        "feature_index": 13,
+        "threshold": 0.047264446,
+        "left_value": -0.099652186,
+        "right_value": 0.10044077
+      },
+      {
+        "feature_index": 78,
+        "threshold": -5.494463,
+        "left_value": 0.31515577,
+        "right_value": -0.020390831
+      }
+    ],
+    [
+      {
+        "feature_index": 66,
+        "threshold": -26.651686,
+        "left_value": 0.45989397,
+        "right_value": -0.0009571082
+      },
+      {
+        "feature_index": 49,
+        "threshold": 0.63654464,
+        "left_value": -0.013136335,
+        "right_value": 0.2003359
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.0007051303,
+        "right_value": 0.8384739
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0018308987,
+        "right_value": 0.15796727
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.08701041,
+        "right_value": -0.082933664
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.009179698,
+        "right_value": 0.33146796
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.15084293,
+        "right_value": -0.01053135
+      },
+      {
+        "feature_index": 104,
+        "threshold": -63.00833,
+        "left_value": 0.25643235,
+        "right_value": -0.006538048
+      },
+      {
+        "feature_index": 47,
+        "threshold": 0.12500206,
+        "left_value": -0.13337864,
+        "right_value": 0.07821908
+      },
+      {
+        "feature_index": 35,
+        "threshold": 0.77731943,
+        "left_value": -0.024445986,
+        "right_value": 0.24575342
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -24.577873,
+        "left_value": 0.53616405,
+        "right_value": -0.002395658
+      },
+      {
+        "feature_index": 49,
+        "threshold": 0.63654464,
+        "left_value": -0.013028571,
+        "right_value": 0.19904399
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.0007017735,
+        "right_value": 0.82536185
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0018169134,
+        "right_value": 0.15780681
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.08550104,
+        "right_value": -0.08175126
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.009101996,
+        "right_value": 0.327458
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.1504125,
+        "right_value": -0.010442005
+      },
+      {
+        "feature_index": 104,
+        "threshold": -63.00833,
+        "left_value": 0.25356817,
+        "right_value": -0.0064965417
+      },
+      {
+        "feature_index": 103,
+        "threshold": 122.01178,
+        "left_value": -0.09528768,
+        "right_value": 0.10347339
+      },
+      {
+        "feature_index": 119,
+        "threshold": -8.07606,
+        "left_value": 0.33163416,
+        "right_value": -0.015125651
+      }
+    ],
+    [
+      {
+        "feature_index": 66,
+        "threshold": -26.651686,
+        "left_value": 0.44569898,
+        "right_value": -0.0008922774
+      },
+      {
+        "feature_index": 59,
+        "threshold": 0.75505215,
+        "left_value": -0.005839235,
+        "right_value": 0.28655156
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.0006988434,
+        "right_value": 0.81363744
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0018048453,
+        "right_value": 0.15768062
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.08341657,
+        "right_value": -0.08058516
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.009032048,
+        "right_value": 0.323141
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.14983106,
+        "right_value": -0.010357699
+      },
+      {
+        "feature_index": 104,
+        "threshold": -63.00833,
+        "left_value": 0.25091925,
+        "right_value": -0.0064604357
+      },
+      {
+        "feature_index": 15,
+        "threshold": 1073.7277,
+        "left_value": -0.109331705,
+        "right_value": 0.095166765
+      },
+      {
+        "feature_index": 35,
+        "threshold": 0.77731943,
+        "left_value": -0.023738226,
+        "right_value": 0.24066482
+      }
+    ],
+    [
+      {
+        "feature_index": 66,
+        "threshold": -26.651686,
+        "left_value": 0.4388455,
+        "right_value": -0.000845749
+      },
+      {
+        "feature_index": 49,
+        "threshold": 0.63654464,
+        "left_value": -0.012856496,
+        "right_value": 0.19742623
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.00069549517,
+        "right_value": 0.8014344
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0017914297,
+        "right_value": 0.1576028
+      },
+      {
+        "feature_index": 43,
+        "threshold": 0.029536959,
+        "left_value": -0.09808317,
+        "right_value": 0.1679023
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.008955839,
+        "right_value": 0.31969005
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.14928032,
+        "right_value": -0.0102647105
+      },
+      {
+        "feature_index": 104,
+        "threshold": -63.00833,
+        "left_value": 0.24913508,
+        "right_value": -0.0064215716
+      },
+      {
+        "feature_index": 149,
+        "threshold": -2.8781853,
+        "left_value": 0.12014076,
+        "right_value": -0.083239734
+      },
+      {
+        "feature_index": 78,
+        "threshold": -5.494463,
+        "left_value": 0.3033422,
+        "right_value": -0.019407665
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -24.577873,
+        "left_value": 0.51779795,
+        "right_value": -0.0022775868
+      },
+      {
+        "feature_index": 49,
+        "threshold": 0.63654464,
+        "left_value": -0.01276087,
+        "right_value": 0.19643462
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.00069239846,
+        "right_value": 0.78832924
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0017784862,
+        "right_value": 0.15743949
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.08021619,
+        "right_value": -0.07852972
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.008884715,
+        "right_value": 0.3161615
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.14869034,
+        "right_value": -0.010177001
+      },
+      {
+        "feature_index": 104,
+        "threshold": -63.00833,
+        "left_value": 0.24655402,
+        "right_value": -0.0063843504
+      },
+      {
+        "feature_index": 47,
+        "threshold": 0.24999349,
+        "left_value": -0.10129115,
+        "right_value": 0.09414197
+      },
+      {
+        "feature_index": 15,
+        "threshold": 956.10266,
+        "left_value": 0.09877003,
+        "right_value": -0.06883085
+      }
+    ],
+    [
+      {
+        "feature_index": 66,
+        "threshold": -26.651686,
+        "left_value": 0.42333493,
+        "right_value": -0.00078410504
+      },
+      {
+        "feature_index": 49,
+        "threshold": 0.63654464,
+        "left_value": -0.012659889,
+        "right_value": 0.19484541
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.0006895276,
+        "right_value": 0.77339524
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.001766326,
+        "right_value": 0.15725058
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.078918114,
+        "right_value": -0.077469796
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.008816423,
+        "right_value": 0.31167635
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.1482745,
+        "right_value": -0.01010136
+      },
+      {
+        "feature_index": 104,
+        "threshold": -63.00833,
+        "left_value": 0.24383713,
+        "right_value": -0.0063486383
+      },
+      {
+        "feature_index": 47,
+        "threshold": 0.12500206,
+        "left_value": -0.12475846,
+        "right_value": 0.07307493
+      },
+      {
+        "feature_index": 81,
+        "threshold": -5.790346,
+        "left_value": 0.3114113,
+        "right_value": -0.017692557
+      }
+    ],
+    [
+      {
+        "feature_index": 66,
+        "threshold": -26.651686,
+        "left_value": 0.41679692,
+        "right_value": -0.0007434578
+      },
+      {
+        "feature_index": 49,
+        "threshold": 0.63654464,
+        "left_value": -0.0125652375,
+        "right_value": 0.19354442
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.000686579,
+        "right_value": 0.75785816
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0017540299,
+        "right_value": 0.15708388
+      },
+      {
+        "feature_index": 43,
+        "threshold": 0.029536959,
+        "left_value": -0.095153004,
+        "right_value": 0.16159369
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.008748218,
+        "right_value": 0.30767515
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.14784072,
+        "right_value": -0.010023468
+      },
+      {
+        "feature_index": 104,
+        "threshold": -63.00833,
+        "left_value": 0.2410929,
+        "right_value": -0.00631215
+      },
+      {
+        "feature_index": 13,
+        "threshold": 0.047264446,
+        "left_value": -0.09049591,
+        "right_value": 0.09121362
+      },
+      {
+        "feature_index": 123,
+        "threshold": 58.319714,
+        "left_value": -0.034698818,
+        "right_value": 0.16929887
+      }
+    ],
+    [
+      {
+        "feature_index": 66,
+        "threshold": -26.651686,
+        "left_value": 0.40994146,
+        "right_value": -0.00070064707
+      },
+      {
+        "feature_index": 59,
+        "threshold": 0.75505215,
+        "left_value": -0.005550215,
+        "right_value": 0.2780693
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.00068342185,
+        "right_value": 0.7435242
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0017413638,
+        "right_value": 0.15699416
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.07590438,
+        "right_value": -0.07549751
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.008676529,
+        "right_value": 0.30406123
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.14724813,
+        "right_value": -0.009935359
+      },
+      {
+        "feature_index": 104,
+        "threshold": -63.00833,
+        "left_value": 0.23922604,
+        "right_value": -0.0062754727
+      },
+      {
+        "feature_index": 149,
+        "threshold": -2.8781853,
+        "left_value": 0.11426769,
+        "right_value": -0.07925722
+      },
+      {
+        "feature_index": 15,
+        "threshold": 956.10266,
+        "left_value": 0.0972225,
+        "right_value": -0.06730912
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -24.577873,
+        "left_value": 0.49541312,
+        "right_value": -0.0021332172
+      },
+      {
+        "feature_index": 49,
+        "threshold": 0.63654464,
+        "left_value": -0.01240729,
+        "right_value": 0.1918688
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.00068080693,
+        "right_value": 0.727682
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0017303886,
+        "right_value": 0.15682061
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.07470153,
+        "right_value": -0.07456014
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.008615478,
+        "right_value": 0.30039644
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.1466221,
+        "right_value": -0.009859679
+      },
+      {
+        "feature_index": 104,
+        "threshold": -63.00833,
+        "left_value": 0.23669702,
+        "right_value": -0.0062436396
+      },
+      {
+        "feature_index": 63,
+        "threshold": -97.99841,
+        "left_value": -0.11783115,
+        "right_value": 0.07423737
+      },
+      {
+        "feature_index": 39,
+        "threshold": 0.057527587,
+        "left_value": 0.09713823,
+        "right_value": -0.06552583
+      }
+    ],
+    [
+      {
+        "feature_index": 66,
+        "threshold": -26.651686,
+        "left_value": 0.39345133,
+        "right_value": -0.00064245675
+      },
+      {
+        "feature_index": 49,
+        "threshold": 0.63654464,
+        "left_value": -0.012317663,
+        "right_value": 0.19090483
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.00067782647,
+        "right_value": 0.7111405
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0017183083,
+        "right_value": 0.15670335
+      },
+      {
+        "feature_index": 43,
+        "threshold": 0.029536959,
+        "left_value": -0.09256968,
+        "right_value": 0.15663828
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.008547461,
+        "right_value": 0.29674605
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.14612034,
+        "right_value": -0.0097798
+      },
+      {
+        "feature_index": 104,
+        "threshold": -63.00833,
+        "left_value": 0.23426467,
+        "right_value": -0.0062083513
+      },
+      {
+        "feature_index": 47,
+        "threshold": 0.12500206,
+        "left_value": -0.11894608,
+        "right_value": 0.06927402
+      },
+      {
+        "feature_index": 78,
+        "threshold": -5.494463,
+        "left_value": 0.29130784,
+        "right_value": -0.018133607
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -24.577873,
+        "left_value": 0.48270014,
+        "right_value": -0.0020557116
+      },
+      {
+        "feature_index": 107,
+        "threshold": -16.853834,
+        "left_value": 0.16924688,
+        "right_value": -0.012538861
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.00067466556,
+        "right_value": 0.69584835
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0017051458,
+        "right_value": 0.15652634
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.07207973,
+        "right_value": -0.07267677
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.008475795,
+        "right_value": 0.29274613
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.14569317,
+        "right_value": -0.009698041
+      },
+      {
+        "feature_index": 104,
+        "threshold": -63.00833,
+        "left_value": 0.23158939,
+        "right_value": -0.006169828
+      },
+      {
+        "feature_index": 149,
+        "threshold": -2.8781853,
+        "left_value": 0.10967787,
+        "right_value": -0.076369144
+      },
+      {
+        "feature_index": 123,
+        "threshold": 58.319714,
+        "left_value": -0.033398464,
+        "right_value": 0.16455442
+      }
+    ],
+    [
+      {
+        "feature_index": 66,
+        "threshold": -26.651686,
+        "left_value": 0.377527,
+        "right_value": -0.00058409665
+      },
+      {
+        "feature_index": 107,
+        "threshold": -16.853834,
+        "left_value": 0.16874038,
+        "right_value": -0.0124537535
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.0006722298,
+        "right_value": 0.67949164
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0016949145,
+        "right_value": 0.15634847
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.07080511,
+        "right_value": -0.07179839
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.008418988,
+        "right_value": 0.28916344
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.14505266,
+        "right_value": -0.009627449
+      },
+      {
+        "feature_index": 104,
+        "threshold": -63.00833,
+        "left_value": 0.2291012,
+        "right_value": -0.006140018
+      },
+      {
+        "feature_index": 47,
+        "threshold": 0.24999349,
+        "left_value": -0.09286769,
+        "right_value": 0.085677706
+      },
+      {
+        "feature_index": 39,
+        "threshold": 0.057527587,
+        "left_value": 0.09564015,
+        "right_value": -0.06411372
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -24.577873,
+        "left_value": 0.46933675,
+        "right_value": -0.0019922857
+      },
+      {
+        "feature_index": 107,
+        "threshold": -16.853834,
+        "left_value": 0.16795327,
+        "right_value": -0.012378967
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.00066965475,
+        "right_value": 0.6627941
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0016840232,
+        "right_value": 0.15614425
+      },
+      {
+        "feature_index": 33,
+        "threshold": 0.08777537,
+        "left_value": -0.09993635,
+        "right_value": 0.13507411
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.008357896,
+        "right_value": 0.28454173
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.14458528,
+        "right_value": -0.009559319
+      },
+      {
+        "feature_index": 104,
+        "threshold": -63.00833,
+        "left_value": 0.22648309,
+        "right_value": -0.0061079934
+      },
+      {
+        "feature_index": 13,
+        "threshold": 0.047264446,
+        "left_value": -0.08403843,
+        "right_value": 0.0840921
+      },
+      {
+        "feature_index": 119,
+        "threshold": -8.07606,
+        "left_value": 0.3064522,
+        "right_value": -0.013123824
+      }
+    ],
+    [
+      {
+        "feature_index": 66,
+        "threshold": -26.651686,
+        "left_value": 0.36327708,
+        "right_value": -0.0005260797
+      },
+      {
+        "feature_index": 49,
+        "threshold": 0.63654464,
+        "left_value": -0.012021324,
+        "right_value": 0.18826331
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.0006666495,
+        "right_value": 0.64764756
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0016719679,
+        "right_value": 0.15604328
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.06843717,
+        "right_value": -0.07015887
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.008290102,
+        "right_value": 0.28096688
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.14398465,
+        "right_value": -0.009476739
+      },
+      {
+        "feature_index": 104,
+        "threshold": -63.00833,
+        "left_value": 0.22479923,
+        "right_value": -0.00607315
+      },
+      {
+        "feature_index": 103,
+        "threshold": 122.01178,
+        "left_value": -0.08124083,
+        "right_value": 0.087853275
+      },
+      {
+        "feature_index": 15,
+        "threshold": 956.10266,
+        "left_value": 0.09391883,
+        "right_value": -0.06437126
+      }
+    ],
+    [
+      {
+        "feature_index": 66,
+        "threshold": -26.651686,
+        "left_value": 0.35683116,
+        "right_value": -0.00049259135
+      },
+      {
+        "feature_index": 107,
+        "threshold": -16.853834,
+        "left_value": 0.16693588,
+        "right_value": -0.012242065
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.0006640831,
+        "right_value": 0.63320255
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0016614184,
+        "right_value": 0.15589136
+      },
+      {
+        "feature_index": 43,
+        "threshold": 0.029536959,
+        "left_value": -0.08846192,
+        "right_value": 0.14827383
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.008229936,
+        "right_value": 0.2765451
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.14335182,
+        "right_value": -0.009404228
+      },
+      {
+        "feature_index": 104,
+        "threshold": -63.00833,
+        "left_value": 0.22236797,
+        "right_value": -0.0060418653
+      },
+      {
+        "feature_index": 149,
+        "threshold": -2.8781853,
+        "left_value": 0.104661815,
+        "right_value": -0.07292156
+      },
+      {
+        "feature_index": 123,
+        "threshold": 58.319714,
+        "left_value": -0.03229693,
+        "right_value": 0.16042084
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -11.225147,
+        "left_value": 0.15818116,
+        "right_value": -0.0075031137
+      },
+      {
+        "feature_index": 49,
+        "threshold": 0.63654464,
+        "left_value": -0.011879224,
+        "right_value": 0.18684621
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.0006613936,
+        "right_value": 0.61839086
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0016501719,
+        "right_value": 0.15570323
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.066463776,
+        "right_value": -0.0685828
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.008168596,
+        "right_value": 0.2729573
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.14270337,
+        "right_value": -0.009328592
+      },
+      {
+        "feature_index": 104,
+        "threshold": -63.00833,
+        "left_value": 0.2199505,
+        "right_value": -0.0060095075
+      },
+      {
+        "feature_index": 47,
+        "threshold": 0.24999349,
+        "left_value": -0.0887028,
+        "right_value": 0.081834935
+      },
+      {
+        "feature_index": 15,
+        "threshold": 956.10266,
+        "left_value": 0.09250836,
+        "right_value": -0.063301966
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -11.225147,
+        "left_value": 0.15783407,
+        "right_value": -0.007465823
+      },
+      {
+        "feature_index": 107,
+        "threshold": -16.853834,
+        "left_value": 0.1657579,
+        "right_value": -0.012140971
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.0006589024,
+        "right_value": 0.60192657
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0016396451,
+        "right_value": 0.15549052
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.06557868,
+        "right_value": -0.06773246
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.008110174,
+        "right_value": 0.26851547
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.14223088,
+        "right_value": -0.009263383
+      },
+      {
+        "feature_index": 104,
+        "threshold": -63.00833,
+        "left_value": 0.2175164,
+        "right_value": -0.005978856
+      },
+      {
+        "feature_index": 9,
+        "threshold": 824.5024,
+        "left_value": -0.08052734,
+        "right_value": 0.07159207
+      },
+      {
+        "feature_index": 81,
+        "threshold": -5.790346,
+        "left_value": 0.29093787,
+        "right_value": -0.015868016
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -11.225147,
+        "left_value": 0.15749362,
+        "right_value": -0.0074298102
+      },
+      {
+        "feature_index": 107,
+        "threshold": -16.853834,
+        "left_value": 0.16524735,
+        "right_value": -0.012047761
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.000656472,
+        "right_value": 0.58781445
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0016299261,
+        "right_value": 0.15538317
+      },
+      {
+        "feature_index": 43,
+        "threshold": 0.029536959,
+        "left_value": -0.08615091,
+        "right_value": 0.14372209
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.008054594,
+        "right_value": 0.26511002
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.14172034,
+        "right_value": -0.009198713
+      },
+      {
+        "feature_index": 104,
+        "threshold": -63.00833,
+        "left_value": 0.215835,
+        "right_value": -0.005950409
+      },
+      {
+        "feature_index": 47,
+        "threshold": 0.12500206,
+        "left_value": -0.108397186,
+        "right_value": 0.0630378
+      },
+      {
+        "feature_index": 123,
+        "threshold": 58.319714,
+        "left_value": -0.031508695,
+        "right_value": 0.15722588
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -11.225147,
+        "left_value": 0.15712427,
+        "right_value": -0.0073872916
+      },
+      {
+        "feature_index": 107,
+        "threshold": -16.853834,
+        "left_value": 0.1645015,
+        "right_value": -0.011957297
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.00065360405,
+        "right_value": 0.57303435
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0016179685,
+        "right_value": 0.15518662
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.063323095,
+        "right_value": -0.066166095
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.007989805,
+        "right_value": 0.26117724
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.14124143,
+        "right_value": -0.0091245705
+      },
+      {
+        "feature_index": 104,
+        "threshold": -63.00833,
+        "left_value": 0.2132795,
+        "right_value": -0.0059154234
+      },
+      {
+        "feature_index": 149,
+        "threshold": -2.8781853,
+        "left_value": 0.09994434,
+        "right_value": -0.06989005
+      },
+      {
+        "feature_index": 39,
+        "threshold": 0.057527587,
+        "left_value": 0.09165281,
+        "right_value": -0.06100208
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -11.225147,
+        "left_value": 0.15656598,
+        "right_value": -0.0073526376
+      },
+      {
+        "feature_index": 49,
+        "threshold": 0.63654464,
+        "left_value": -0.011620575,
+        "right_value": 0.18418084
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.0006513856,
+        "right_value": 0.5574087
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0016086696,
+        "right_value": 0.15498741
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.062486,
+        "right_value": -0.06542763
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.007938398,
+        "right_value": 0.25762847
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.14055663,
+        "right_value": -0.009060608
+      },
+      {
+        "feature_index": 104,
+        "threshold": -63.00833,
+        "left_value": 0.21095671,
+        "right_value": -0.005888346
+      },
+      {
+        "feature_index": 57,
+        "threshold": 0.4669287,
+        "left_value": -0.06386365,
+        "right_value": 0.10631491
+      },
+      {
+        "feature_index": 78,
+        "threshold": -5.494463,
+        "left_value": 0.27301303,
+        "right_value": -0.016538363
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -11.225147,
+        "left_value": 0.1560523,
+        "right_value": -0.0073197894
+      },
+      {
+        "feature_index": 107,
+        "threshold": -16.853834,
+        "left_value": 0.16335987,
+        "right_value": -0.011875727
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.0006492189,
+        "right_value": 0.5422399
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0015995388,
+        "right_value": 0.15477864
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.06126746,
+        "right_value": -0.06470105
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.007887076,
+        "right_value": 0.25342423
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.14003229,
+        "right_value": -0.009002696
+      },
+      {
+        "feature_index": 104,
+        "threshold": -63.00833,
+        "left_value": 0.20878439,
+        "right_value": -0.005861771
+      },
+      {
+        "feature_index": 13,
+        "threshold": 0.047264446,
+        "left_value": -0.0763549,
+        "right_value": 0.076471336
+      },
+      {
+        "feature_index": 15,
+        "threshold": 956.10266,
+        "left_value": 0.09023027,
+        "right_value": -0.061367717
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -11.225147,
+        "left_value": 0.15563978,
+        "right_value": -0.0072845453
+      },
+      {
+        "feature_index": 107,
+        "threshold": -16.853834,
+        "left_value": 0.1627665,
+        "right_value": -0.011786943
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.00064689294,
+        "right_value": 0.52711236
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0015902321,
+        "right_value": 0.1546603
+      },
+      {
+        "feature_index": 43,
+        "threshold": 0.029536959,
+        "left_value": -0.08344964,
+        "right_value": 0.13880341
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.0078337835,
+        "right_value": 0.249869
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.13937002,
+        "right_value": -0.008937297
+      },
+      {
+        "feature_index": 104,
+        "threshold": -63.00833,
+        "left_value": 0.20707415,
+        "right_value": -0.005834411
+      },
+      {
+        "feature_index": 47,
+        "threshold": 0.12500206,
+        "left_value": -0.10380309,
+        "right_value": 0.060237795
+      },
+      {
+        "feature_index": 39,
+        "threshold": 0.057527587,
+        "left_value": 0.09000858,
+        "right_value": -0.05970808
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -11.225147,
+        "left_value": 0.15526122,
+        "right_value": -0.007243202
+      },
+      {
+        "feature_index": 107,
+        "threshold": -16.853834,
+        "left_value": 0.16199711,
+        "right_value": -0.01169981
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.0006440886,
+        "right_value": 0.5134729
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.001578571,
+        "right_value": 0.15445034
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.059821047,
+        "right_value": -0.06325874
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.0077708317,
+        "right_value": 0.24601075
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.13888413,
+        "right_value": -0.008865524
+      },
+      {
+        "feature_index": 104,
+        "threshold": -63.00833,
+        "left_value": 0.20459719,
+        "right_value": -0.005800341
+      },
+      {
+        "feature_index": 72,
+        "threshold": 1.4597569,
+        "left_value": 0.06865235,
+        "right_value": -0.0970834
+      },
+      {
+        "feature_index": 115,
+        "threshold": -14.17992,
+        "left_value": 0.67731047,
+        "right_value": -0.001671057
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -11.225147,
+        "left_value": 0.15480281,
+        "right_value": -0.0072118267
+      },
+      {
+        "feature_index": 49,
+        "threshold": 0.63654464,
+        "left_value": -0.011383356,
+        "right_value": 0.18123677
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.00064209505,
+        "right_value": 0.4988672
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0015703829,
+        "right_value": 0.15427989
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.058579408,
+        "right_value": -0.062558345
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.0077237412,
+        "right_value": 0.24213274
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.13823423,
+        "right_value": -0.008809062
+      },
+      {
+        "feature_index": 10,
+        "threshold": 2371.3381,
+        "left_value": -0.0035187742,
+        "right_value": 0.39620775
+      },
+      {
+        "feature_index": 149,
+        "threshold": -2.8781853,
+        "left_value": 0.094788685,
+        "right_value": -0.06645815
+      },
+      {
+        "feature_index": 123,
+        "threshold": 58.319714,
+        "left_value": -0.030218737,
+        "right_value": 0.15254524
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -11.225147,
+        "left_value": 0.1542365,
+        "right_value": -0.007179602
+      },
+      {
+        "feature_index": 107,
+        "threshold": -16.853834,
+        "left_value": 0.16077158,
+        "right_value": -0.011612899
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.0006400475,
+        "right_value": 0.48497385
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0015617122,
+        "right_value": 0.15405375
+      },
+      {
+        "feature_index": 43,
+        "threshold": 0.029536959,
+        "left_value": -0.08136957,
+        "right_value": 0.13483536
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.0076764063,
+        "right_value": 0.23879744
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.13752592,
+        "right_value": -0.008750041
+      },
+      {
+        "feature_index": 104,
+        "threshold": -63.00833,
+        "left_value": 0.20133515,
+        "right_value": -0.005752756
+      },
+      {
+        "feature_index": 85,
+        "threshold": 8.04176,
+        "left_value": 0.06480342,
+        "right_value": -0.085360214
+      },
+      {
+        "feature_index": 81,
+        "threshold": -5.790346,
+        "left_value": 0.27816907,
+        "right_value": -0.014749487
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -11.225147,
+        "left_value": 0.15368876,
+        "right_value": -0.007143301
+      },
+      {
+        "feature_index": 108,
+        "threshold": -11.544884,
+        "left_value": 0.1685972,
+        "right_value": -0.011789647
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.0006377268,
+        "right_value": 0.47468174
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0015522647,
+        "right_value": 0.15389358
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.05688149,
+        "right_value": -0.061329797
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.007622855,
+        "right_value": 0.23489855
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.1368033,
+        "right_value": -0.008684365
+      },
+      {
+        "feature_index": 10,
+        "threshold": 2371.3381,
+        "left_value": -0.0035035873,
+        "right_value": 0.39089274
+      },
+      {
+        "feature_index": 11,
+        "threshold": 704.93536,
+        "left_value": -0.093529835,
+        "right_value": 0.06689856
+      },
+      {
+        "feature_index": 39,
+        "threshold": 0.057527587,
+        "left_value": 0.088477135,
+        "right_value": -0.058458015
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -11.225147,
+        "left_value": 0.1533311,
+        "right_value": -0.0071066236
+      },
+      {
+        "feature_index": 49,
+        "threshold": 0.63654464,
+        "left_value": -0.011215543,
+        "right_value": 0.17961325
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.0006352283,
+        "right_value": 0.46312952
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0015421793,
+        "right_value": 0.15374477
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.055953685,
+        "right_value": -0.0605382
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.0075668893,
+        "right_value": 0.23166014
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.13629103,
+        "right_value": -0.008620105
+      },
+      {
+        "feature_index": 104,
+        "threshold": -63.00833,
+        "left_value": 0.19887392,
+        "right_value": -0.005698073
+      },
+      {
+        "feature_index": 47,
+        "threshold": 0.34373707,
+        "left_value": -0.07298713,
+        "right_value": 0.08312213
+      },
+      {
+        "feature_index": 47,
+        "threshold": 0.9374463,
+        "left_value": -0.007496006,
+        "right_value": 0.32805014
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -11.225147,
+        "left_value": 0.15279946,
+        "right_value": -0.0070765903
+      },
+      {
+        "feature_index": 108,
+        "threshold": -11.544884,
+        "left_value": 0.16743143,
+        "right_value": -0.011710187
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.0006332376,
+        "right_value": 0.4502011
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0015337896,
+        "right_value": 0.1535147
+      },
+      {
+        "feature_index": 33,
+        "threshold": 0.08777537,
+        "left_value": -0.08916266,
+        "right_value": 0.1184029
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.007520112,
+        "right_value": 0.2276033
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.1357504,
+        "right_value": -0.00856752
+      },
+      {
+        "feature_index": 10,
+        "threshold": 2371.3381,
+        "left_value": -0.0034825061,
+        "right_value": 0.3859883
+      },
+      {
+        "feature_index": 149,
+        "threshold": -2.8781853,
+        "left_value": 0.091242075,
+        "right_value": -0.06384225
+      },
+      {
+        "feature_index": 123,
+        "threshold": 58.319714,
+        "left_value": -0.029424531,
+        "right_value": 0.14955638
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -11.225147,
+        "left_value": 0.15223147,
+        "right_value": -0.0070395903
+      },
+      {
+        "feature_index": 107,
+        "threshold": -16.853834,
+        "left_value": 0.15885982,
+        "right_value": -0.011408528
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.00063081074,
+        "right_value": 0.43906122
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0015236136,
+        "right_value": 0.15327366
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.054063074,
+        "right_value": -0.059350677
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.0074656187,
+        "right_value": 0.22436117
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.13504437,
+        "right_value": -0.008500567
+      },
+      {
+        "feature_index": 10,
+        "threshold": 2371.3381,
+        "left_value": -0.0034581902,
+        "right_value": 0.38279566
+      },
+      {
+        "feature_index": 85,
+        "threshold": 8.04176,
+        "left_value": 0.06227,
+        "right_value": -0.08177249
+      },
+      {
+        "feature_index": 115,
+        "threshold": -14.17992,
+        "left_value": 0.6592981,
+        "right_value": -0.0013394295
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -11.225147,
+        "left_value": 0.15168327,
+        "right_value": -0.0070125624
+      },
+      {
+        "feature_index": 108,
+        "threshold": -11.544884,
+        "left_value": 0.16646487,
+        "right_value": -0.011592526
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.0006291716,
+        "right_value": 0.42861694
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0015168489,
+        "right_value": 0.15308756
+      },
+      {
+        "feature_index": 110,
+        "threshold": 5.9281445,
+        "left_value": -0.074898474,
+        "right_value": 0.14203201
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.0074260207,
+        "right_value": 0.22049685
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.13427162,
+        "right_value": -0.008451125
+      },
+      {
+        "feature_index": 104,
+        "threshold": -63.00833,
+        "left_value": 0.19502859,
+        "right_value": -0.005628669
+      },
+      {
+        "feature_index": 47,
+        "threshold": 0.12500206,
+        "left_value": -0.096038304,
+        "right_value": 0.055832144
+      },
+      {
+        "feature_index": 15,
+        "threshold": 956.10266,
+        "left_value": 0.08656986,
+        "right_value": -0.058184296
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -11.225147,
+        "left_value": 0.15129088,
+        "right_value": -0.00697532
+      },
+      {
+        "feature_index": 107,
+        "threshold": -16.853834,
+        "left_value": 0.15766422,
+        "right_value": -0.011286017
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.00062663824,
+        "right_value": 0.41623753
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0015063401,
+        "right_value": 0.15285696
+      },
+      {
+        "feature_index": 43,
+        "threshold": 0.029536959,
+        "left_value": -0.07767562,
+        "right_value": 0.12748744
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.0073694214,
+        "right_value": 0.21694133
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.1337503,
+        "right_value": -0.008386573
+      },
+      {
+        "feature_index": 10,
+        "threshold": 2371.3381,
+        "left_value": -0.0034473515,
+        "right_value": 0.37749377
+      },
+      {
+        "feature_index": 11,
+        "threshold": 704.93536,
+        "left_value": -0.089198224,
+        "right_value": 0.063587286
+      },
+      {
+        "feature_index": 47,
+        "threshold": 0.9374463,
+        "left_value": -0.0070733633,
+        "right_value": 0.32178542
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -11.225147,
+        "left_value": 0.15094486,
+        "right_value": -0.00693809
+      },
+      {
+        "feature_index": 108,
+        "threshold": -11.544884,
+        "left_value": 0.16536206,
+        "right_value": -0.011448015
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.0006240677,
+        "right_value": 0.4078647
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0014959846,
+        "right_value": 0.15269901
+      },
+      {
+        "feature_index": 69,
+        "threshold": 5.6043625,
+        "left_value": -0.081075706,
+        "right_value": 0.12065361
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.0073125437,
+        "right_value": 0.21392857
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.13327882,
+        "right_value": -0.008322477
+      },
+      {
+        "feature_index": 104,
+        "threshold": -63.00833,
+        "left_value": 0.19227888,
+        "right_value": -0.0055703535
+      },
+      {
+        "feature_index": 57,
+        "threshold": 0.4669287,
+        "left_value": -0.056885146,
+        "right_value": 0.09457286
+      },
+      {
+        "feature_index": 123,
+        "threshold": 58.319714,
+        "left_value": -0.02868098,
+        "right_value": 0.14687462
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -11.225147,
+        "left_value": 0.15042374,
+        "right_value": -0.006903556
+      },
+      {
+        "feature_index": 107,
+        "threshold": -16.853834,
+        "left_value": 0.1565821,
+        "right_value": -0.011151685
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.0006217304,
+        "right_value": 0.3981477
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0014862159,
+        "right_value": 0.15245324
+      },
+      {
+        "feature_index": 43,
+        "threshold": 0.029536959,
+        "left_value": -0.076218516,
+        "right_value": 0.12394782
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.007258965,
+        "right_value": 0.20995033
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.13272557,
+        "right_value": -0.008262201
+      },
+      {
+        "feature_index": 10,
+        "threshold": 2371.3381,
+        "left_value": -0.003419816,
+        "right_value": 0.37308338
+      },
+      {
+        "feature_index": 85,
+        "threshold": 8.04176,
+        "left_value": 0.059697445,
+        "right_value": -0.07862133
+      },
+      {
+        "feature_index": 39,
+        "threshold": 0.057527587,
+        "left_value": 0.08599126,
+        "right_value": -0.05609915
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -11.225147,
+        "left_value": 0.1498666,
+        "right_value": -0.0068701073
+      },
+      {
+        "feature_index": 108,
+        "threshold": -11.544884,
+        "left_value": 0.16411644,
+        "right_value": -0.011329823
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.00061958685,
+        "right_value": 0.3901627
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0014774094,
+        "right_value": 0.1522474
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.05021972,
+        "right_value": -0.05646761
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.0072097154,
+        "right_value": 0.2062164
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.13196711,
+        "right_value": -0.008202063
+      },
+      {
+        "feature_index": 40,
+        "threshold": 0.3589205,
+        "left_value": -0.0018717776,
+        "right_value": 0.98690563
+      },
+      {
+        "feature_index": 11,
+        "threshold": 704.93536,
+        "left_value": -0.0863614,
+        "right_value": 0.06161272
+      },
+      {
+        "feature_index": 47,
+        "threshold": 0.9374463,
+        "left_value": -0.0068651363,
+        "right_value": 0.31586474
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -11.225147,
+        "left_value": 0.14951494,
+        "right_value": -0.0068391636
+      },
+      {
+        "feature_index": 49,
+        "threshold": 0.63654464,
+        "left_value": -0.010802681,
+        "right_value": 0.17507248
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.0006174848,
+        "right_value": 0.3812387
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0014689688,
+        "right_value": 0.15208559
+      },
+      {
+        "feature_index": 110,
+        "threshold": 5.9281445,
+        "left_value": -0.0720446,
+        "right_value": 0.13535231
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.0071625076,
+        "right_value": 0.20331441
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.13146888,
+        "right_value": -0.008149042
+      },
+      {
+        "feature_index": 104,
+        "threshold": -63.00833,
+        "left_value": 0.18986812,
+        "right_value": -0.005497418
+      },
+      {
+        "feature_index": 47,
+        "threshold": 0.12500206,
+        "left_value": -0.09143532,
+        "right_value": 0.052899882
+      },
+      {
+        "feature_index": 123,
+        "threshold": 58.319714,
+        "left_value": -0.028050223,
+        "right_value": 0.14439552
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -11.225147,
+        "left_value": 0.14911503,
+        "right_value": -0.0068041864
+      },
+      {
+        "feature_index": 107,
+        "threshold": -16.853834,
+        "left_value": 0.15496342,
+        "right_value": -0.011007528
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.0006151055,
+        "right_value": 0.3705839
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.001459107,
+        "right_value": 0.15184467
+      },
+      {
+        "feature_index": 43,
+        "threshold": 0.029536959,
+        "left_value": -0.074320786,
+        "right_value": 0.12041679
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.0071096555,
+        "right_value": 0.20008436
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.13092077,
+        "right_value": -0.008088445
+      },
+      {
+        "feature_index": 40,
+        "threshold": 0.3589205,
+        "left_value": -0.0018622399,
+        "right_value": 0.9855304
+      },
+      {
+        "feature_index": 149,
+        "threshold": -2.8781853,
+        "left_value": 0.08471241,
+        "right_value": -0.059556864
+      },
+      {
+        "feature_index": 15,
+        "threshold": 956.10266,
+        "left_value": 0.08414483,
+        "right_value": -0.056057632
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -11.225147,
+        "left_value": 0.14854148,
+        "right_value": -0.0067718336
+      },
+      {
+        "feature_index": 108,
+        "threshold": -11.544884,
+        "left_value": 0.1626,
+        "right_value": -0.011197964
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.0006129819,
+        "right_value": 0.36199963
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0014501889,
+        "right_value": 0.15157707
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.048099987,
+        "right_value": -0.05476647
+      },
+      {
+        "feature_index": 17,
+        "threshold": 7100.203,
+        "left_value": -0.0043148384,
+        "right_value": 0.37645647
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.1302086,
+        "right_value": -0.0080305
+      },
+      {
+        "feature_index": 40,
+        "threshold": 0.3589205,
+        "left_value": -0.0018452738,
+        "right_value": 0.983969
+      },
+      {
+        "feature_index": 85,
+        "threshold": 8.04176,
+        "left_value": 0.05721883,
+        "right_value": -0.07558854
+      },
+      {
+        "feature_index": 100,
+        "threshold": 4.2739353,
+        "left_value": -0.011489053,
+        "right_value": 0.28701463
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -11.225147,
+        "left_value": 0.14795467,
+        "right_value": -0.0067476514
+      },
+      {
+        "feature_index": 107,
+        "threshold": -16.853834,
+        "left_value": 0.15391685,
+        "right_value": -0.010904176
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.000611522,
+        "right_value": 0.35393786
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.001444243,
+        "right_value": 0.15138268
+      },
+      {
+        "feature_index": 69,
+        "threshold": 5.6043625,
+        "left_value": -0.07762121,
+        "right_value": 0.114797935
+      },
+      {
+        "feature_index": 17,
+        "threshold": 7100.203,
+        "left_value": -0.004280234,
+        "right_value": 0.37175444
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.12940155,
+        "right_value": -0.0079865465
+      },
+      {
+        "feature_index": 40,
+        "threshold": 0.3589205,
+        "left_value": -0.0018258371,
+        "right_value": 0.9822397
+      },
+      {
+        "feature_index": 47,
+        "threshold": 0.24999349,
+        "left_value": -0.07140974,
+        "right_value": 0.0653213
+      },
+      {
+        "feature_index": 47,
+        "threshold": 0.96869415,
+        "left_value": -0.006509789,
+        "right_value": 0.40392238
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -11.225147,
+        "left_value": 0.1475544,
+        "right_value": -0.006716108
+      },
+      {
+        "feature_index": 108,
+        "threshold": -11.544884,
+        "left_value": 0.16131254,
+        "right_value": -0.01111448
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.00060937833,
+        "right_value": 0.34582883
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0014352244,
+        "right_value": 0.15110141
+      },
+      {
+        "feature_index": 43,
+        "threshold": 0.029536959,
+        "left_value": -0.07269053,
+        "right_value": 0.11683251
+      },
+      {
+        "feature_index": 49,
+        "threshold": 0.8969493,
+        "left_value": -0.00283574,
+        "right_value": 0.5503016
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.1288988,
+        "right_value": -0.007933024
+      },
+      {
+        "feature_index": 40,
+        "threshold": 0.3589205,
+        "left_value": -0.0018037325,
+        "right_value": 0.9803864
+      },
+      {
+        "feature_index": 149,
+        "threshold": -2.8781853,
+        "left_value": 0.08222681,
+        "right_value": -0.057803996
+      },
+      {
+        "feature_index": 19,
+        "threshold": 680.98755,
+        "left_value": 0.08909077,
+        "right_value": -0.052547656
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -11.225147,
+        "left_value": 0.14693725,
+        "right_value": -0.0066864816
+      },
+      {
+        "feature_index": 108,
+        "threshold": -11.544884,
+        "left_value": 0.16071068,
+        "right_value": -0.0110530555
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.0006074724,
+        "right_value": 0.33808857
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0014271621,
+        "right_value": 0.1508166
+      },
+      {
+        "feature_index": 110,
+        "threshold": 5.9281445,
+        "left_value": -0.069349,
+        "right_value": 0.12951295
+      },
+      {
+        "feature_index": 3,
+        "threshold": 11.508158,
+        "left_value": -0.0069508897,
+        "right_value": 0.19396159
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.12816294,
+        "right_value": -0.00788035
+      },
+      {
+        "feature_index": 40,
+        "threshold": 0.3589205,
+        "left_value": -0.0017903495,
+        "right_value": 0.97829694
+      },
+      {
+        "feature_index": 88,
+        "threshold": 4.2540407,
+        "left_value": 0.06149623,
+        "right_value": -0.07578926
+      },
+      {
+        "feature_index": 123,
+        "threshold": 58.319714,
+        "left_value": -0.027296955,
+        "right_value": 0.14112416
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -11.225147,
+        "left_value": 0.14626548,
+        "right_value": -0.006659897
+      },
+      {
+        "feature_index": 107,
+        "threshold": -16.853834,
+        "left_value": 0.15207663,
+        "right_value": -0.010761286
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.00060574315,
+        "right_value": 0.32915407
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0014200709,
+        "right_value": 0.15059118
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.04549051,
+        "right_value": -0.05288543
+      },
+      {
+        "feature_index": 49,
+        "threshold": 0.8969493,
+        "left_value": -0.0028396433,
+        "right_value": 0.54260176
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.12738268,
+        "right_value": -0.007831194
+      },
+      {
+        "feature_index": 40,
+        "threshold": 0.3589205,
+        "left_value": -0.00176857,
+        "right_value": 0.97617656
+      },
+      {
+        "feature_index": 84,
+        "threshold": 11.040588,
+        "left_value": 0.05675778,
+        "right_value": -0.06569256
+      },
+      {
+        "feature_index": 115,
+        "threshold": -14.17992,
+        "left_value": 0.6234462,
+        "right_value": -0.000869332
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -11.225147,
+        "left_value": 0.14578642,
+        "right_value": -0.0066407984
+      },
+      {
+        "feature_index": 108,
+        "threshold": -11.544884,
+        "left_value": 0.15935075,
+        "right_value": -0.010971269
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.0006046026,
+        "right_value": 0.32081395
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.001415285,
+        "right_value": 0.15035012
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.04474106,
+        "right_value": -0.052450363
+      },
+      {
+        "feature_index": 17,
+        "threshold": 7100.203,
+        "left_value": -0.00425626,
+        "right_value": 0.365536
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.1266782,
+        "right_value": -0.0077977707
+      },
+      {
+        "feature_index": 40,
+        "threshold": 0.3589205,
+        "left_value": -0.00175988,
+        "right_value": 0.9736689
+      },
+      {
+        "feature_index": 72,
+        "threshold": 1.4597569,
+        "left_value": 0.057989366,
+        "right_value": -0.082151525
+      },
+      {
+        "feature_index": 19,
+        "threshold": 680.98755,
+        "left_value": 0.08781407,
+        "right_value": -0.05188576
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -11.225147,
+        "left_value": 0.1452625,
+        "right_value": -0.006614458
+      },
+      {
+        "feature_index": 49,
+        "threshold": 0.63654464,
+        "left_value": -0.0104759885,
+        "right_value": 0.16956945
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.0006029221,
+        "right_value": 0.31249392
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0014083693,
+        "right_value": 0.15011506
+      },
+      {
+        "feature_index": 33,
+        "threshold": 0.08777537,
+        "left_value": -0.07992141,
+        "right_value": 0.104129754
+      },
+      {
+        "feature_index": 49,
+        "threshold": 0.8969493,
+        "left_value": -0.0028132393,
+        "right_value": 0.53631985
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.12593773,
+        "right_value": -0.007750917
+      },
+      {
+        "feature_index": 104,
+        "threshold": -63.00833,
+        "left_value": 0.18709736,
+        "right_value": -0.005346032
+      },
+      {
+        "feature_index": 57,
+        "threshold": 0.4669287,
+        "left_value": -0.051902097,
+        "right_value": 0.08581986
+      },
+      {
+        "feature_index": 119,
+        "threshold": -8.07606,
+        "left_value": 0.26166633,
+        "right_value": -0.010170444
+      }
+    ],
+    [
+      {
+        "feature_index": 106,
+        "threshold": -11.225147,
+        "left_value": 0.14470692,
+        "right_value": -0.0065838667
+      },
+      {
+        "feature_index": 108,
+        "threshold": -11.544884,
+        "left_value": 0.15782864,
+        "right_value": -0.010918009
+      },
+      {
+        "feature_index": 16,
+        "threshold": 1303.8081,
+        "left_value": -0.00060085556,
+        "right_value": 0.30592853
+      },
+      {
+        "feature_index": 9,
+        "threshold": 6677.2197,
+        "left_value": -0.0013997282,
+        "right_value": 0.14982694
+      },
+      {
+        "feature_index": 19,
+        "threshold": 351.26038,
+        "left_value": 0.04383941,
+        "right_value": -0.05162824
+      },
+      {
+        "feature_index": 49,
+        "threshold": 0.8969493,
+        "left_value": -0.0027747331,
+        "right_value": 0.5303388
+      },
+      {
+        "feature_index": 105,
+        "threshold": -18.115627,
+        "left_value": 0.12538016,
+        "right_value": -0.0076987706
+      },
+      {
+        "feature_index": 40,
+        "threshold": 0.3589205,
+        "left_value": -0.0017637352,
+        "right_value": 0.9711144
+      },
+      {
+        "feature_index": 88,
+        "threshold": 4.2540407,
+        "left_value": 0.05977675,
+        "right_value": -0.07337907
+      },
+      {
+        "feature_index": 19,
+        "threshold": 680.98755,
+        "left_value": 0.086841755,
+        "right_value": -0.05134297
+      }
+    ]
+  ]
+}

@@ -1,10 +1,10 @@
-Goal: Add GPU-friendly embedding-based auto-tagging, similarity search, and retraining loop.
+<!-- Goal: Add GPU-friendly embedding-based auto-tagging, similarity search, and retraining loop. -->
 
-Phase 1 - Plumbing
-- Add SQLite migrations for samples, embeddings, predictions, labels, ann_index_meta, and jobs.
-- Implement job types: ANALYZE_SAMPLE, REBUILD_INDEX, RETRAIN_CLASSIFIER (optional).
-- Ensure scan/import enqueues ANALYZE_SAMPLE and respects analysis_version invalidation.
-- Track job status, retries, and last_error; persist across restarts.
+<!-- Phase 1 - Plumbing -->
+<!-- - Add SQLite migrations for samples, embeddings, predictions, labels, ann_index_meta, and jobs. -->
+<!-- - Implement job types: ANALYZE_SAMPLE, REBUILD_INDEX, RETRAIN_CLASSIFIER (optional). -->
+<!-- - Ensure scan/import enqueues ANALYZE_SAMPLE and respects analysis_version invalidation. -->
+<!-- - Track job status, retries, and last_error; persist across restarts. -->
 
 Phase 2 - Audio Preprocessing
 - Decode supported formats (wav/aiff/flac/mp3/ogg) with existing pipeline.
