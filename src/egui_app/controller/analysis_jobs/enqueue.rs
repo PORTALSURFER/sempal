@@ -485,7 +485,9 @@ fn collect_inference_jobs(
         }
         sql.push(')');
     }
-    sql.push_str(" ORDER BY f.sample_id ASC");
+    sql.push_str(" ORDER BY ");
+    sql.push_str(sample_alias);
+    sql.push_str(".sample_id ASC");
 
     let mut stmt = conn
         .prepare(&sql)
