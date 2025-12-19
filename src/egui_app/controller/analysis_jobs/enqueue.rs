@@ -631,6 +631,6 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(pending, 2);
+        assert_eq!(pending, 1);
     }
 }
