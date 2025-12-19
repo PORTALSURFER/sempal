@@ -4,7 +4,11 @@ use std::io::BufReader;
 use std::path::Path;
 
 /// Fixed sample rate used during analysis.
-pub(crate) const ANALYSIS_SAMPLE_RATE: u32 = 22_050;
+pub(crate) const ANALYSIS_SAMPLE_RATE: u32 = 16_000;
+const MAX_ANALYSIS_SECONDS: f32 = 6.0;
+const WINDOW_SECONDS: f32 = 2.0;
+const WINDOW_HOP_SECONDS: f32 = 1.0;
+const MIN_ANALYSIS_SECONDS: f32 = 0.1;
 
 /// Decoded mono audio ready for analysis.
 #[derive(Debug)]
@@ -58,6 +62,8 @@ fn decode_for_analysis_with_rate(path: &Path, sample_rate: u32) -> Result<Analys
     let mono = downmix_to_mono(&decoded.samples, decoded.channels);
     let mut resampled = resample_linear(&mono, decoded.sample_rate, sample_rate);
     resampled = trim_silence_with_hysteresis(&resampled, sample_rate);
+    resampled = apply_energy_windowing(&resampled, sample_rate);
+    pad_to_min_duration(&mut resampled, sample_rate);
     normalize_peak_in_place(&mut resampled);
     let duration_seconds = duration_seconds(resampled.len(), sample_rate);
     Ok(AnalysisAudio {
@@ -231,6 +237,95 @@ fn trim_silence_with_hysteresis(samples: &[f32], sample_rate: u32) -> Vec<f32> {
     samples[trimmed_start..trimmed_end].to_vec()
 }
 
+fn apply_energy_windowing(samples: &[f32], sample_rate: u32) -> Vec<f32> {
+    if samples.is_empty() || sample_rate == 0 {
+        return samples.to_vec();
+    }
+    let max_len = (MAX_ANALYSIS_SECONDS * sample_rate as f32).round() as usize;
+    if samples.len() <= max_len || max_len == 0 {
+        return samples.to_vec();
+    }
+
+    let window_len = (WINDOW_SECONDS * sample_rate as f32).round() as usize;
+    let hop_len = (WINDOW_HOP_SECONDS * sample_rate as f32).round() as usize;
+    if window_len == 0 || hop_len == 0 || window_len > samples.len() {
+        return samples.to_vec();
+    }
+
+    let mut windows: Vec<(f32, usize)> = Vec::new();
+    let mut start = 0usize;
+    while start + window_len <= samples.len() {
+        let end = start + window_len;
+        let energy = rms(&samples[start..end]);
+        windows.push((energy, start));
+        start = start.saturating_add(hop_len);
+    }
+    windows.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+
+    let target_windows = (MAX_ANALYSIS_SECONDS / WINDOW_SECONDS).floor().max(1.0) as usize;
+    let mut selected: Vec<usize> = Vec::new();
+    for (_, start) in windows {
+        if selected.len() >= target_windows {
+            break;
+        }
+        let overlaps = selected.iter().any(|&s| {
+            let a0 = s;
+            let a1 = s.saturating_add(window_len);
+            let b0 = start;
+            let b1 = start.saturating_add(window_len);
+            a0 < b1 && b0 < a1
+        });
+        if !overlaps {
+            selected.push(start);
+        }
+    }
+
+    if selected.len() < target_windows {
+        let candidates = [
+            0usize,
+            samples.len().saturating_sub(window_len) / 2,
+            samples.len().saturating_sub(window_len),
+        ];
+        for &start in &candidates {
+            if selected.len() >= target_windows {
+                break;
+            }
+            let overlaps = selected.iter().any(|&s| {
+                let a0 = s;
+                let a1 = s.saturating_add(window_len);
+                let b0 = start;
+                let b1 = start.saturating_add(window_len);
+                a0 < b1 && b0 < a1
+            });
+            if !overlaps {
+                selected.push(start);
+            }
+        }
+    }
+
+    if selected.is_empty() {
+        return samples.to_vec();
+    }
+
+    selected.sort_unstable();
+    let mut out = Vec::with_capacity(window_len * selected.len());
+    for start in selected {
+        let end = start.saturating_add(window_len).min(samples.len());
+        out.extend_from_slice(&samples[start..end]);
+    }
+    out
+}
+
+fn pad_to_min_duration(samples: &mut Vec<f32>, sample_rate: u32) {
+    if sample_rate == 0 {
+        return;
+    }
+    let min_len = (MIN_ANALYSIS_SECONDS * sample_rate as f32).round() as usize;
+    if samples.len() < min_len {
+        samples.resize(min_len, 0.0);
+    }
+}
+
 fn rms(samples: &[f32]) -> f32 {
     if samples.is_empty() {
         return 0.0;
@@ -386,5 +481,38 @@ mod tests {
             .map(|v| v.abs())
             .fold(0.0, f32::max);
         assert!(peak > 0.5);
+    }
+
+    #[test]
+    fn energy_windowing_limits_long_samples() {
+        let sample_rate = ANALYSIS_SAMPLE_RATE;
+        let total_len = (sample_rate as usize) * 10;
+        let mut samples = vec![0.0_f32; total_len];
+        let window_len = (WINDOW_SECONDS * sample_rate as f32).round() as usize;
+        let max_len = (MAX_ANALYSIS_SECONDS * sample_rate as f32).round() as usize;
+        for i in 0..window_len.min(samples.len()) {
+            samples[i] = 0.2;
+        }
+        let mid_start = samples.len() / 2;
+        for i in mid_start..(mid_start + window_len).min(samples.len()) {
+            samples[i] = 0.6;
+        }
+        let tail_start = samples.len().saturating_sub(window_len);
+        for i in tail_start..samples.len() {
+            samples[i] = 0.4;
+        }
+
+        let windowed = apply_energy_windowing(&samples, sample_rate);
+        assert_eq!(windowed.len(), max_len);
+        assert!(windowed.iter().copied().any(|v| v.abs() > 0.5));
+    }
+
+    #[test]
+    fn pad_to_min_duration_extends_short_samples() {
+        let sample_rate = ANALYSIS_SAMPLE_RATE;
+        let mut samples = vec![0.1_f32; 10];
+        pad_to_min_duration(&mut samples, sample_rate);
+        let min_len = (MIN_ANALYSIS_SECONDS * sample_rate as f32).round() as usize;
+        assert_eq!(samples.len(), min_len);
     }
 }

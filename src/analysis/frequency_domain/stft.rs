@@ -270,12 +270,19 @@ fn freq_to_bin(freq_hz: f32, sample_rate: u32, fft_len: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::analysis::audio::ANALYSIS_SAMPLE_RATE;
     use crate::analysis::frequency_domain::{STFT_FRAME_SIZE, STFT_HOP_SIZE};
 
     #[test]
     fn compute_frames_returns_at_least_one_frame() {
-        let mel = MelBank::new(22_050, STFT_FRAME_SIZE, 40, 20, 20.0, 16_000.0);
-        let frames = compute_frames(&[], 22_050, STFT_FRAME_SIZE, STFT_HOP_SIZE, &mel);
+        let mel = MelBank::new(ANALYSIS_SAMPLE_RATE, STFT_FRAME_SIZE, 40, 20, 20.0, 16_000.0);
+        let frames = compute_frames(
+            &[],
+            ANALYSIS_SAMPLE_RATE,
+            STFT_FRAME_SIZE,
+            STFT_HOP_SIZE,
+            &mel,
+        );
         assert_eq!(frames.spectral.len(), 1);
         assert_eq!(frames.bands.len(), 1);
         assert_eq!(frames.mfcc.len(), 1);

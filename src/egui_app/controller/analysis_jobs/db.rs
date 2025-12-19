@@ -530,7 +530,14 @@ mod tests {
             [],
         )
         .unwrap();
-        update_analysis_metadata(&conn, "s::a.wav", Some("h1"), 1.25, 22_050).unwrap();
+        update_analysis_metadata(
+            &conn,
+            "s::a.wav",
+            Some("h1"),
+            1.25,
+            crate::analysis::audio::ANALYSIS_SAMPLE_RATE,
+        )
+        .unwrap();
         let (duration, sr): (Option<f64>, Option<i64>) = conn
             .query_row(
                 "SELECT duration_seconds, sr_used FROM samples WHERE sample_id = 's::a.wav'",
@@ -539,7 +546,7 @@ mod tests {
             )
             .unwrap();
         assert_eq!(duration, Some(1.25));
-        assert_eq!(sr, Some(22_050));
+        assert_eq!(sr, Some(crate::analysis::audio::ANALYSIS_SAMPLE_RATE as i64));
     }
 
     #[test]

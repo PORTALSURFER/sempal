@@ -94,10 +94,11 @@ pub(crate) fn extract_frequency_domain_features(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::analysis::audio::ANALYSIS_SAMPLE_RATE;
 
     #[test]
     fn sine_wave_centroid_tracks_frequency() {
-        let sr = 22_050;
+        let sr = ANALYSIS_SAMPLE_RATE;
         let freq = 440.0_f32;
         let len = sr as usize / 2;
         let samples: Vec<f32> = (0..len)
@@ -111,7 +112,7 @@ mod tests {
 
     #[test]
     fn mfcc_is_deterministic_for_same_input() {
-        let sr = 22_050;
+        let sr = ANALYSIS_SAMPLE_RATE;
         let samples = vec![0.1_f32; sr as usize / 5];
         let a = extract_frequency_domain_features(&samples, sr);
         let b = extract_frequency_domain_features(&samples, sr);

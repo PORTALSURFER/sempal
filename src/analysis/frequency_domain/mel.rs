@@ -130,10 +130,11 @@ fn dct_ii(values: &[f32], count: usize) -> Vec<f32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::analysis::audio::ANALYSIS_SAMPLE_RATE;
 
     #[test]
     fn mfcc_from_power_returns_expected_length() {
-        let bank = MelBank::new(22_050, 1024, 40, 20, 20.0, 16_000.0);
+        let bank = MelBank::new(ANALYSIS_SAMPLE_RATE, 1024, 40, 20, 20.0, 16_000.0);
         let power = vec![0.0_f32; 1024 / 2 + 1];
         let mfcc = bank.mfcc_from_power(&power);
         assert_eq!(mfcc.len(), 20);

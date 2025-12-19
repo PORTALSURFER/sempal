@@ -96,6 +96,7 @@ mod tests {
     use super::*;
     use crate::analysis::frequency_domain::{FrequencyDomainFeatures, Mfcc20Stats, Stats};
     use crate::analysis::time_domain::TimeDomainFeatures;
+    use crate::analysis::audio::ANALYSIS_SAMPLE_RATE;
 
     #[test]
     fn vector_v1_has_stable_length() {
@@ -112,7 +113,7 @@ mod tests {
         };
         let s = Stats { mean: 0.0, std: 0.0 };
         let frequency_domain = FrequencyDomainFeatures {
-            sample_rate: 22_050,
+            sample_rate: ANALYSIS_SAMPLE_RATE,
             frame_size: 1024,
             hop_size: 512,
             spectral: crate::analysis::frequency_domain::SpectralAggregates {

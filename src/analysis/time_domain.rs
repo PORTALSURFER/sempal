@@ -207,10 +207,11 @@ fn db_to_linear(db: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::analysis::audio::ANALYSIS_SAMPLE_RATE;
 
     #[test]
     fn constant_signal_has_expected_features() {
-        let sr = 22_050;
+        let sr = ANALYSIS_SAMPLE_RATE;
         let samples = vec![1.0_f32; sr as usize / 10];
         let feats = extract_time_domain_features(&samples, sr);
         assert!((feats.peak - 1.0).abs() < 1e-6);
@@ -222,7 +223,7 @@ mod tests {
 
     #[test]
     fn alternating_signal_has_high_zero_crossing_rate() {
-        let sr = 22_050;
+        let sr = ANALYSIS_SAMPLE_RATE;
         let mut samples = Vec::with_capacity(sr as usize / 10);
         for i in 0..samples.capacity() {
             samples.push(if i % 2 == 0 { 1.0 } else { -1.0 });
@@ -233,7 +234,7 @@ mod tests {
 
     #[test]
     fn multiple_pulses_count_as_multiple_onsets() {
-        let sr = 22_050;
+        let sr = ANALYSIS_SAMPLE_RATE;
         let win = (sr as f32 * 0.01).round() as usize;
         let mut samples = vec![0.0_f32; win * 30];
         for pulse in [2usize, 10usize, 20usize] {
@@ -246,4 +247,3 @@ mod tests {
         assert_eq!(feats.onset_count, 3);
     }
 }
-
