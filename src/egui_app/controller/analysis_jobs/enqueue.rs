@@ -186,6 +186,13 @@ pub(in crate::egui_app::controller) fn enqueue_jobs_for_source_missing_features(
 
         for entry in entries {
             let sample_id = db::build_sample_id(source.id.as_str(), &entry.relative_path);
+            let absolute = source.root.join(&entry.relative_path);
+            if !absolute.exists() {
+                if !entry.missing {
+                    let _ = source_db.set_missing(&entry.relative_path, true);
+                }
+                continue;
+            }
             let has_features: Option<i64> = features_stmt
                 .query_row(params![&sample_id], |row| row.get(0))
                 .optional()
@@ -203,10 +210,7 @@ pub(in crate::egui_app::controller) fn enqueue_jobs_for_source_missing_features(
 
             let content_hash = match entry.content_hash {
                 Some(hash) if !hash.trim().is_empty() => hash,
-                _ => {
-                    let absolute = source.root.join(&entry.relative_path);
-                    compute_content_hash(&absolute)?
-                }
+                _ => compute_content_hash(&absolute)?,
             };
             if content_hash.trim().is_empty() {
                 continue;
