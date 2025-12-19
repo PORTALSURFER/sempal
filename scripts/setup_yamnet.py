@@ -76,6 +76,7 @@ def build_onnx() -> bytes:
     import tensorflow as tf
     import tensorflow_hub as hub
     import tf2onnx
+    import onnx
 
     model = hub.load("https://tfhub.dev/google/yamnet/1")
     input_spec = (tf.TensorSpec([15600], tf.float32, name="waveform"),)
@@ -84,9 +85,20 @@ def build_onnx() -> bytes:
     def serving_fn(waveform):
         return model(waveform)
 
-    onnx_model, _ = tf2onnx.convert.from_function(
-        serving_fn, input_signature=input_spec, opset=13, output_path=None
-    )
+    original_make_attribute = onnx.helper.make_attribute
+
+    def make_attribute_compat(key, value, *args, **kwargs):
+        if key == "explicit_paddings" and isinstance(value, (list, tuple)) and len(value) == 0:
+            value = [0, 0, 0, 0, 0, 0, 0, 0]
+        return original_make_attribute(key, value, *args, **kwargs)
+
+    onnx.helper.make_attribute = make_attribute_compat
+    try:
+        onnx_model, _ = tf2onnx.convert.from_function(
+            serving_fn, input_signature=input_spec, opset=13, output_path=None
+        )
+    finally:
+        onnx.helper.make_attribute = original_make_attribute
     return onnx_model.SerializeToString()
 
 
