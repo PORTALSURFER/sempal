@@ -400,7 +400,9 @@ pub(super) fn source_root_for(conn: &Connection, source_id: &str) -> Result<Opti
 }
 
 #[cfg_attr(test, allow(dead_code))]
-pub(super) fn parse_sample_id(sample_id: &str) -> Result<(String, PathBuf), String> {
+pub(in crate::egui_app::controller) fn parse_sample_id(
+    sample_id: &str,
+) -> Result<(String, PathBuf), String> {
     let (source, path) = sample_id
         .split_once("::")
         .ok_or_else(|| format!("Invalid sample_id: {sample_id}"))?;
@@ -413,7 +415,10 @@ pub(super) fn parse_sample_id(sample_id: &str) -> Result<(String, PathBuf), Stri
     Ok((source.to_string(), PathBuf::from(path)))
 }
 
-pub(super) fn build_sample_id(source_id: &str, relative_path: &Path) -> String {
+pub(in crate::egui_app::controller) fn build_sample_id(
+    source_id: &str,
+    relative_path: &Path,
+) -> String {
     let rel = relative_path.to_string_lossy().replace('\\', "/");
     format!("{}::{}", source_id, rel)
 }
