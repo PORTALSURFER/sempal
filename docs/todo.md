@@ -46,7 +46,8 @@ Phase 8 - Performance and UX
 - Keep UI responsive with worker limits and progress reporting.
 - Expose model stats and data coverage in training UI.
 
-Open Questions
-- Choose embedding runtime (TFLite vs ONNX Runtime).
-- Multi-class vs multi-label primary output.
-- Index deletion strategy (lazy delete vs rebuild).
+Open Questions and Recommendations
+- Embedding runtime: prefer TFLite for a single YAMNet-like embedder; use ONNX Runtime only if we expect frequent model swaps or already ship ORT.
+- Output type: multi-class softmax as the primary category; add multi-label tags later as a secondary system.
+- UNKNOWN behavior: if max probability < threshold, show "Uncertain" and avoid auto-committing a category.
+- Index deletion: lazy-delete vectors, filter by DB at query time, rebuild when tombstones exceed ~8-10% or on analysis_version change.
