@@ -151,6 +151,7 @@ pub fn train_logreg(
     }
 
     let model = LogRegModel {
+        model_id: None,
         model_version: 1,
         embedding_model_id: EMBEDDING_MODEL_ID.to_string(),
         embedding_dim: dim,
