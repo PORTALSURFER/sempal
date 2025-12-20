@@ -14,6 +14,16 @@ use sempal::egui_app::ui::style;
 use winreg::enums::{HKEY_CURRENT_USER, KEY_WRITE};
 #[cfg(target_os = "windows")]
 use winreg::RegKey;
+#[cfg(target_os = "windows")]
+use windows::{
+    core::{HSTRING, PCWSTR},
+    Win32::{
+        System::Com::{
+            CLSCTX_INPROC_SERVER, CoCreateInstance, CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED,
+        },
+        UI::Shell::{IPersistFile, IShellLinkW, ShellLink},
+    },
+};
 
 const APP_NAME: &str = "SemPal";
 const APP_PUBLISHER: &str = "SemPal";
@@ -58,10 +68,15 @@ fn run_uninstall() -> Result<(), String> {
 fn schedule_delete_after_exit(install_location: &str) -> Result<(), String> {
     let temp_dir = env::temp_dir();
     let script_path = temp_dir.join("sempal_uninstall.cmd");
+    let start_menu_dir = start_menu_dir()
+        .ok_or_else(|| "Failed to resolve Start Menu path".to_string())?
+        .display()
+        .to_string();
     let script = format!(
         "@echo off\r\n\
         ping 127.0.0.1 -n 3 > nul\r\n\
         rmdir /s /q \"{install_location}\"\r\n\
+        rmdir /s /q \"{start_menu_dir}\"\r\n\
         del \"%~f0\"\r\n"
     );
     fs::write(&script_path, script)
@@ -327,6 +342,7 @@ fn run_install(bundle_dir: &Path, install_dir: &Path, sender: mpsc::Sender<Insta
 
     ensure_app_data_models(bundle_dir)?;
     register_uninstall_entry(install_dir)?;
+    create_start_menu_shortcut(install_dir)?;
 
     sender
         .send(InstallerEvent::Finished)
@@ -412,4 +428,62 @@ fn register_uninstall_entry(install_dir: &Path) -> Result<(), String> {
     }
     #[allow(unreachable_code)]
     Err("Uninstall registry entry is only supported on Windows.".to_string())
+}
+
+fn create_start_menu_shortcut(install_dir: &Path) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        let start_menu = start_menu_dir().ok_or_else(|| "APPDATA not set".to_string())?;
+        fs::create_dir_all(&start_menu)
+            .map_err(|err| format!("Failed to create Start Menu folder: {err}"))?;
+
+        let shortcut_path = start_menu.join("SemPal.lnk");
+        let target_path = install_dir.join("sempal.exe");
+        let icon_path = install_dir.join("sempal.ico");
+
+        struct ComGuard;
+        impl Drop for ComGuard {
+            fn drop(&mut self) {
+                unsafe { CoUninitialize() };
+            }
+        }
+
+        unsafe {
+            CoInitializeEx(None, COINIT_APARTMENTTHREADED)
+                .map_err(|err| format!("Failed to init COM: {err}"))?;
+            let _guard = ComGuard;
+            let link: IShellLinkW = CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER)
+                .map_err(|err| format!("Failed to create IShellLink: {err}"))?;
+
+            let target = HSTRING::from(target_path.display().to_string());
+            link.SetPath(PCWSTR::from_raw(target.as_ptr()))
+                .map_err(|err| format!("Failed to set shortcut target: {err}"))?;
+
+            let icon = HSTRING::from(icon_path.display().to_string());
+            let _ = link.SetIconLocation(PCWSTR::from_raw(icon.as_ptr()), 0);
+
+            let persist: IPersistFile = link
+                .cast()
+                .map_err(|err| format!("Failed to cast IPersistFile: {err}"))?;
+            let shortcut = HSTRING::from(shortcut_path.display().to_string());
+            persist
+                .Save(PCWSTR::from_raw(shortcut.as_ptr()), true)
+                .map_err(|err| format!("Failed to save shortcut: {err}"))?;
+
+        }
+        return Ok(());
+    }
+    #[allow(unreachable_code)]
+    Err("Start Menu shortcut is only supported on Windows.".to_string())
+}
+
+fn start_menu_dir() -> Option<PathBuf> {
+    env::var("APPDATA").ok().map(|root| {
+        PathBuf::from(root)
+            .join("Microsoft")
+            .join("Windows")
+            .join("Start Menu")
+            .join("Programs")
+            .join(APP_NAME)
+    })
 }
