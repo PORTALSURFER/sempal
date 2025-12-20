@@ -769,7 +769,7 @@ struct EmbeddingVariant {
 }
 
 fn build_embedding_variants(
-    decoded: &crate::analysis::audio::DecodedAudio,
+    decoded: &crate::analysis::audio::AnalysisAudio,
     cache: &mut Option<crate::analysis::embedding::YamnetModel>,
     augmentation: &crate::sample_sources::config::TrainingAugmentation,
     rng: &mut rand::rngs::StdRng,

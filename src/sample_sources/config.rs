@@ -803,6 +803,9 @@ mod tests {
                     retrain_pack_depth: 3,
                     use_user_labels: false,
                     model_kind: TrainingModelKind::GbdtStumpV1,
+                    min_class_samples: default_training_min_class_samples(),
+                    use_hybrid_features: false,
+                    augmentation: TrainingAugmentation::default(),
                     training_dataset_root: Some(PathBuf::from("training")),
                 },
                 ..AppConfig::default()

@@ -36,7 +36,7 @@ pub fn augment_waveform(
 
     if options.noise_std > 0.0 {
         for v in &mut out {
-            let noise = rng.gen_range(-1.0_f32..=1.0_f32) * options.noise_std;
+            let noise = rng.random_range(-1.0_f32..=1.0_f32) * options.noise_std;
             *v += noise;
         }
     }
@@ -62,7 +62,7 @@ fn jitter_range(rng: &mut StdRng, range: f32) -> f32 {
     if range <= 0.0 {
         0.0
     } else {
-        rng.gen_range(-range..=range)
+        rng.random_range(-range..=range)
     }
 }
 
