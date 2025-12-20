@@ -24,7 +24,7 @@ impl Default for TrainOptions {
             l2: 1e-4,
             batch_size: 128,
             seed: 42,
-            balance_classes: false,
+            balance_classes: true,
         }
     }
 }
