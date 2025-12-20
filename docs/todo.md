@@ -57,6 +57,15 @@ Phase 9 - Installer & Packaging (Windows)
 - Verify installed app finds bundled models + runtimes and can retrain.
 - Document build steps and required assets in release checklist.
 
+Phase 10 - Quality Improvements
+- Curated dataset hygiene pass (remove ambiguous samples, ensure consistent labels, minimum per-class counts).
+- Add augmentation for training (gain jitter, light noise, pitch shift ±1–2 semitones, time-stretch 0.95–1.05).
+- Switch default embedding classifier to MLP (2–3 layers) with dropout + label smoothing.
+- Add per-class confidence thresholds and/or top-2 margin UNKNOWN rule.
+- Add per-class metrics dashboard with support counts, PR/F1, and confidence histograms.
+- Combine embeddings with lightweight DSP feature vector for hybrid model experiments.
+- Evaluate alternative embeddings (OpenL3 or small drum-tuned CNN) and compare accuracy/speed.
+
 Open Questions and Recommendations
 - Embedding runtime: prefer TFLite for a single YAMNet-like embedder; use ONNX Runtime only if we expect frequent model swaps or already ship ORT.
 - Output type: multi-class softmax as the primary category; add multi-label tags later as a secondary system.
