@@ -114,6 +114,9 @@ impl EguiController {
         );
         self.runtime
             .analysis
+            .set_worker_count(self.settings.analysis.analysis_worker_count);
+        self.runtime
+            .analysis
             .start(self.runtime.jobs.message_sender());
         {
             let source_ids: Vec<String> = self

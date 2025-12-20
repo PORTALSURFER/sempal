@@ -140,12 +140,16 @@ pub struct AnalysisSettings {
     /// Skip feature extraction and predictions for files longer than this many seconds.
     #[serde(default = "default_max_analysis_duration_seconds")]
     pub max_analysis_duration_seconds: f32,
+    /// Analysis worker count override (0 = auto).
+    #[serde(default = "default_analysis_worker_count")]
+    pub analysis_worker_count: u32,
 }
 
 impl Default for AnalysisSettings {
     fn default() -> Self {
         Self {
             max_analysis_duration_seconds: default_max_analysis_duration_seconds(),
+            analysis_worker_count: default_analysis_worker_count(),
         }
     }
 }
@@ -485,6 +489,10 @@ fn default_training_model_kind() -> TrainingModelKind {
 
 fn default_max_analysis_duration_seconds() -> f32 {
     30.0
+}
+
+fn default_analysis_worker_count() -> u32 {
+    0
 }
 
 fn default_volume() -> f32 {

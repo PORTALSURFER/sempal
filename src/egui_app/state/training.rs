@@ -14,6 +14,9 @@ pub struct TrainingSummary {
     pub predictions_avg_conf: Option<f32>,
     pub predictions_max_conf: Option<f32>,
     pub min_confidence: f32,
+    pub active_model_id: Option<String>,
+    pub active_model_kind: Option<String>,
+    pub active_model_classes: Option<usize>,
 }
 
 /// UI state for the model training workflow.

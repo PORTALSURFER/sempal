@@ -272,6 +272,8 @@ impl EguiController {
                 return;
             }
         };
+        let (active_model_id, active_model_kind, active_model_classes) =
+            resolve_active_model_info(&conn, self.classifier_model_id());
         let exportable = match training_exportable_count(
             &conn,
             &source_ids,
@@ -321,6 +323,9 @@ impl EguiController {
             predictions_avg_conf,
             predictions_max_conf,
             min_confidence,
+            active_model_id,
+            active_model_kind,
+            active_model_classes,
         });
         self.ui.training.summary_error = None;
     }
@@ -1056,6 +1061,39 @@ fn training_exportable_count(
     );
     conn.query_row(&sql, rusqlite::params_from_iter(params), |row| row.get(0))
         .map_err(|err| err.to_string())
+}
+
+fn resolve_active_model_info(
+    conn: &rusqlite::Connection,
+    preferred_model_id: Option<String>,
+) -> (Option<String>, Option<String>, Option<usize>) {
+    let select_sql = "SELECT model_id, kind, classes_json FROM models WHERE model_id = ?1";
+    let fallback_sql =
+        "SELECT model_id, kind, classes_json FROM models ORDER BY created_at DESC, model_id DESC LIMIT 1";
+    let row: Option<(String, String, String)> = if let Some(model_id) = preferred_model_id {
+        conn.query_row(select_sql, params![model_id], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+        })
+        .optional()
+        .ok()
+        .flatten()
+    } else {
+        None
+    };
+    let row = row.or_else(|| {
+        conn.query_row(fallback_sql, [], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+        })
+        .optional()
+        .ok()
+        .flatten()
+    });
+    let Some((model_id, kind, classes_json)) = row else {
+        return (None, None, None);
+    };
+    let classes: Option<Vec<String>> = serde_json::from_str(&classes_json).ok();
+    let class_count = classes.as_ref().map(|v| v.len());
+    (Some(model_id), Some(kind), class_count)
 }
 
 fn training_prediction_stats(

@@ -365,6 +365,20 @@ impl EguiApp {
         if response.changed() {
             self.controller.set_max_analysis_duration_seconds(seconds);
         }
+
+        ui.add_space(ui.spacing().item_spacing.y);
+        ui.label(
+            RichText::new("Analysis workers (0 = auto):").color(palette.text_muted),
+        );
+        let mut workers = self.controller.analysis_worker_count() as i64;
+        let drag = egui::DragValue::new(&mut workers).range(0..=64);
+        let response = ui
+            .add(drag)
+            .on_hover_text("Limit background CPU usage (change takes effect on next start)");
+        if response.changed() {
+            self.controller
+                .set_analysis_worker_count(workers.max(0) as u32);
+        }
     }
 
     fn render_model_options_menu(&mut self, ui: &mut egui::Ui) {
@@ -570,6 +584,22 @@ impl EguiApp {
                         summary.features_v1,
                         features_pct
                     ));
+                    if let Some(model_id) = summary.active_model_id.as_deref() {
+                        let kind = summary
+                            .active_model_kind
+                            .as_deref()
+                            .unwrap_or("unknown");
+                        let classes = summary
+                            .active_model_classes
+                            .map(|v| v.to_string())
+                            .unwrap_or_else(|| "—".to_string());
+                        ui.label(format!(
+                            "Active model: {} ({kind}, {classes} classes)",
+                            model_id
+                        ));
+                    } else {
+                        ui.label("Active model: —");
+                    }
                     ui.label(format!("User labels: {}", summary.user_labeled));
                     ui.label(format!(
                         "Weak labels (>= {:.2}): {}",

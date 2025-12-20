@@ -19,6 +19,7 @@ pub(in crate::egui_app::controller) struct AnalysisWorkerPool {
     shutdown: Arc<AtomicBool>,
     unknown_threshold_bits: Arc<AtomicU32>,
     max_duration_bits: Arc<AtomicU32>,
+    worker_count_override: Arc<AtomicU32>,
     preferred_model_id: Arc<Mutex<Option<String>>>,
     threads: Vec<JoinHandle<()>>,
 }
@@ -30,6 +31,7 @@ impl AnalysisWorkerPool {
             shutdown: Arc::new(AtomicBool::new(false)),
             unknown_threshold_bits: Arc::new(AtomicU32::new(0.8f32.to_bits())),
             max_duration_bits: Arc::new(AtomicU32::new(30.0f32.to_bits())),
+            worker_count_override: Arc::new(AtomicU32::new(0)),
             preferred_model_id: Arc::new(Mutex::new(None)),
             threads: Vec::new(),
         }
@@ -45,6 +47,11 @@ impl AnalysisWorkerPool {
         let clamped = value.clamp(1.0, 60.0 * 60.0);
         self.max_duration_bits
             .store(clamped.to_bits(), Ordering::Relaxed);
+    }
+
+    pub(in crate::egui_app::controller) fn set_worker_count(&self, value: u32) {
+        self.worker_count_override
+            .store(value, Ordering::Relaxed);
     }
 
     pub(in crate::egui_app::controller) fn set_classifier_model_id(
@@ -66,7 +73,8 @@ impl AnalysisWorkerPool {
         }
         #[cfg(not(test))]
         {
-            let worker_count = worker_count();
+            let worker_count =
+                worker_count_with_override(self.worker_count_override.load(Ordering::Relaxed));
             for worker_index in 0..worker_count {
                 self.threads.push(spawn_worker(
                     worker_index,
@@ -112,7 +120,10 @@ impl Drop for AnalysisWorkerPool {
 }
 
 #[cfg_attr(test, allow(dead_code))]
-fn worker_count() -> usize {
+fn worker_count_with_override(override_count: u32) -> usize {
+    if override_count >= 1 {
+        return override_count as usize;
+    }
     if let Ok(value) = std::env::var("SEMPAL_ANALYSIS_WORKERS") {
         if let Ok(parsed) = value.trim().parse::<usize>() {
             if parsed >= 1 {
