@@ -211,6 +211,7 @@ impl EguiController {
         let latest_model_id = select_active_model_id(&conn, self.classifier_model_id())?;
 
         let unknown_threshold = self.unknown_confidence_threshold().clamp(0.0, 1.0);
+        let use_overrides = self.use_user_overrides_in_browser();
         let cache = self
             .ui_cache
             .browser
@@ -235,7 +236,7 @@ impl EguiController {
         let prefix = format!("{}::", source_id.as_str());
         let prefix_end = format!("{prefix}\u{10FFFF}");
 
-        if self.use_user_overrides_in_browser() {
+        if use_overrides {
             apply_user_labels(&conn, &prefix, &prefix_end, &self.wav_entries.lookup, cache)?;
         }
 
