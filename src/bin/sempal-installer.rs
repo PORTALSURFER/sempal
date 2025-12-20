@@ -31,7 +31,7 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "SemPal Installer",
         native_options,
-        Box::new(|cc| Box::new(InstallerApp::new(cc))),
+        Box::new(|cc| Ok(Box::new(InstallerApp::new(cc)))),
     )
 }
 
@@ -120,7 +120,7 @@ struct InstallerApp {
 
 impl InstallerApp {
     fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        let mut visuals = (*cc.egui_ctx.style().visuals).clone();
+        let mut visuals = cc.egui_ctx.style().visuals.clone();
         style::apply_visuals(&mut visuals);
         cc.egui_ctx.set_visuals(visuals);
 
@@ -350,8 +350,9 @@ fn visit_bundle(root: &Path, dir: &Path, files: &mut Vec<(PathBuf, PathBuf)>) ->
         } else {
             let relative = path
                 .strip_prefix(root)
-                .map_err(|err| format!("Failed to build relative path: {err}"))?;
-            files.push((path, relative.to_path_buf()));
+                .map_err(|err| format!("Failed to build relative path: {err}"))?
+                .to_path_buf();
+            files.push((path, relative));
         }
     }
     Ok(())
@@ -389,7 +390,7 @@ fn register_uninstall_entry(install_dir: &Path) -> Result<(), String> {
         let uninstall = format!("\"{}\" --uninstall", exe_path.display());
         key.set_value("DisplayName", &APP_NAME)
             .map_err(|err| format!("Failed to set DisplayName: {err}"))?;
-        key.set_value("DisplayVersion", env!("CARGO_PKG_VERSION"))
+        key.set_value("DisplayVersion", &env!("CARGO_PKG_VERSION"))
             .map_err(|err| format!("Failed to set DisplayVersion: {err}"))?;
         key.set_value("Publisher", &APP_PUBLISHER)
             .map_err(|err| format!("Failed to set Publisher: {err}"))?;
