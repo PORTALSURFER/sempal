@@ -49,3 +49,13 @@ cargo run --bin sempal-model-import -- --model ./model.json --kind gbdt
 - Use `--db <path-to-library.db>` with the export tools if your library is not in the default app data location.
 - Adjust `--min-confidence` to include more weak labels (e.g. `0.70`) if export yields too few rows.
 - For stratified splits, use `sempal-embedding-export` (the feature exporter keeps pack-level splits).
+
+## What a good training set looks like
+
+A strong dataset is balanced and diverse across categories and sources:
+
+- Aim for ~300+ labeled samples per category (more is better).
+- Avoid a single pack dominating a class; mix multiple packs/sources.
+- Include variety: velocity layers, mic positions, and processing styles.
+- Minimize label noise (fix obvious mislabels with user overrides before export).
+- Keep a healthy test set (10–20%) so accuracy reflects real performance.
