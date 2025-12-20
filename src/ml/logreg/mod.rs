@@ -134,6 +134,74 @@ impl LogRegModel {
         }
         best
     }
+
+    /// Calibrate softmax temperature against a labeled dataset.
+    pub fn calibrate_temperature(
+        &mut self,
+        dataset: &TrainDataset,
+        min: f32,
+        max: f32,
+        steps: usize,
+    ) -> Result<(), String> {
+        if dataset.x.is_empty() || dataset.y.is_empty() {
+            return Err("Empty calibration dataset".to_string());
+        }
+        if dataset.x.len() != dataset.y.len() {
+            return Err("Calibration inputs/labels mismatch".to_string());
+        }
+        if steps < 2 || !min.is_finite() || !max.is_finite() || min <= 0.0 || max <= 0.0 {
+            return Err("Invalid temperature search range".to_string());
+        }
+        let classes = self.classes.len();
+        if classes == 0 {
+            return Err("No classes defined".to_string());
+        }
+        if self.weights.len() != classes * self.embedding_dim {
+            return Err("weights length mismatch".to_string());
+        }
+
+        let mut logits = Vec::with_capacity(dataset.x.len());
+        for x in &dataset.x {
+            if x.len() != self.embedding_dim {
+                return Err("Calibration embedding length mismatch".to_string());
+            }
+            let mut row = vec![0.0f32; classes];
+            for c in 0..classes {
+                let mut sum = self.bias[c];
+                let base = c * self.embedding_dim;
+                for i in 0..self.embedding_dim {
+                    sum += self.weights[base + i] * x[i];
+                }
+                row[c] = sum;
+            }
+            logits.push(row);
+        }
+
+        let mut best_temp = self.temperature.max(1e-6);
+        let mut best_loss = f32::INFINITY;
+        for step in 0..steps {
+            let t = min + (max - min) * (step as f32) / ((steps - 1) as f32);
+            let mut loss = 0.0f32;
+            for (row, &label) in logits.iter().zip(dataset.y.iter()) {
+                if label >= classes {
+                    continue;
+                }
+                let mut scaled = row.clone();
+                for value in &mut scaled {
+                    *value /= t;
+                }
+                let probs = softmax(&scaled);
+                let p = probs[label].max(1e-9);
+                loss -= p.ln();
+            }
+            if loss < best_loss {
+                best_loss = loss;
+                best_temp = t;
+            }
+        }
+        self.temperature = best_temp;
+        Ok(())
+    }
 }
 
 #[cfg(test)]

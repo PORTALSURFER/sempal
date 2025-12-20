@@ -120,8 +120,11 @@ pub(super) fn run_model_training(
         }
         crate::sample_sources::config::TrainingModelKind::LogRegV1 => {
             let (train_logreg, test_logreg) = split_logreg_train_test(&loaded)?;
-            let model =
+            let mut model =
                 crate::ml::logreg::train_logreg(&train_logreg, &job.logreg_options)?;
+            if let Err(err) = model.calibrate_temperature(&test_logreg, 0.3, 3.0, 28) {
+                warn!("LogReg temperature calibration failed: {err}");
+            }
             let _ = evaluate_logreg_accuracy(&model, &test_logreg);
             (
                 serde_json::to_string(&model).map_err(|err| err.to_string())?,
@@ -181,6 +184,9 @@ fn run_training_from_dataset_root(
             let (train, test) = build_logreg_dataset_from_samples(&samples, &split_map)?;
             let mut model = crate::ml::logreg::train_logreg(&train, &job.logreg_options)?;
             model.model_id = Some(uuid::Uuid::new_v4().to_string());
+            if let Err(err) = model.calibrate_temperature(&test, 0.3, 3.0, 28) {
+                warn!("LogReg temperature calibration failed: {err}");
+            }
             let _ = evaluate_logreg_accuracy(&model, &test);
             (
                 serde_json::to_string(&model).map_err(|err| err.to_string())?,
