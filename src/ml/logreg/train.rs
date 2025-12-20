@@ -13,6 +13,7 @@ pub struct TrainOptions {
     pub l2: f32,
     pub batch_size: usize,
     pub seed: u64,
+    pub balance_classes: bool,
 }
 
 impl Default for TrainOptions {
@@ -23,6 +24,7 @@ impl Default for TrainOptions {
             l2: 1e-4,
             batch_size: 128,
             seed: 42,
+            balance_classes: false,
         }
     }
 }
@@ -74,16 +76,42 @@ pub fn train_logreg(
     let lr = options.learning_rate;
     let l2 = options.l2.max(0.0);
 
+    let class_weights = if options.balance_classes {
+        let mut counts = vec![0f32; classes];
+        for &y in &dataset.y {
+            if y < classes {
+                counts[y] += 1.0;
+            }
+        }
+        let total: f32 = counts.iter().sum();
+        counts
+            .into_iter()
+            .map(|count| {
+                if count == 0.0 {
+                    0.0
+                } else {
+                    total / (classes as f32 * count)
+                }
+            })
+            .collect()
+    } else {
+        vec![1.0; classes]
+    };
+
     for _epoch in 0..options.epochs {
         indices.shuffle(&mut rng);
         for chunk in indices.chunks(batch_size) {
             let mut grad_w = vec![0.0f32; weights.len()];
             let mut grad_b = vec![0.0f32; bias.len()];
-            let mut batch_count = 0usize;
+            let mut batch_weight = 0.0f32;
             for &idx in chunk {
                 let x = &dataset.x[idx];
                 let y = dataset.y[idx];
                 if y >= classes {
+                    continue;
+                }
+                let weight = class_weights[y];
+                if weight == 0.0 {
                     continue;
                 }
                 let mut logits = vec![0.0f32; classes];
@@ -100,16 +128,16 @@ pub fn train_logreg(
                     let diff = probs[c] - if c == y { 1.0 } else { 0.0 };
                     let base = c * dim;
                     for i in 0..dim {
-                        grad_w[base + i] += diff * x[i];
+                        grad_w[base + i] += diff * x[i] * weight;
                     }
-                    grad_b[c] += diff;
+                    grad_b[c] += diff * weight;
                 }
-                batch_count += 1;
+                batch_weight += weight;
             }
-            if batch_count == 0 {
+            if batch_weight == 0.0 {
                 continue;
             }
-            let inv = 1.0 / batch_count as f32;
+            let inv = 1.0 / batch_weight;
             for c in 0..classes {
                 let base = c * dim;
                 for i in 0..dim {

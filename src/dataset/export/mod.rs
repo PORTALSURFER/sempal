@@ -39,6 +39,8 @@ pub struct ExportOptions {
     pub test_fraction: f64,
     /// Fraction of packs assigned to `val`.
     pub val_fraction: f64,
+    /// Split strategy for train/val/test.
+    pub split_mode: SplitMode,
 }
 
 impl Default for ExportOptions {
@@ -52,8 +54,17 @@ impl Default for ExportOptions {
             seed: "sempal-dataset-v1".to_string(),
             test_fraction: 0.1,
             val_fraction: 0.1,
+            split_mode: SplitMode::Pack,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SplitMode {
+    /// Keep all samples from a pack together.
+    Pack,
+    /// Stratify by class label across train/val/test.
+    Stratified,
 }
 
 impl ExportOptions {
@@ -114,6 +125,29 @@ pub fn export_training_dataset(options: &ExportOptions) -> Result<ExportSummary,
         &db_path,
         FEATURE_VECTOR_LEN_V1,
         FEATURE_VERSION_V1,
+    )
+}
+
+/// Export a dataset directory using embedding vectors instead of feature vectors.
+pub fn export_embedding_dataset(options: &ExportOptions) -> Result<ExportSummary, ExportError> {
+    validate_options(options)?;
+
+    let db_path = options.resolved_db_path()?;
+    let conn = stats::open_db(&db_path)?;
+    let rows = stats::load_embedding_export_rows_filtered(
+        &conn,
+        options.min_confidence,
+        DEFAULT_RULESET_VERSION,
+        None,
+        options.use_user_labels,
+        crate::analysis::embedding::EMBEDDING_MODEL_ID,
+    )?;
+    export_rows_to_dir(
+        rows,
+        options,
+        &db_path,
+        crate::analysis::embedding::EMBEDDING_DIM,
+        0,
     )
 }
 
@@ -192,17 +226,33 @@ fn export_rows_to_dir(
     std::fs::create_dir_all(&options.out_dir)?;
 
     let mut packs = BTreeSet::new();
+    let stratified_splits = if options.split_mode == SplitMode::Stratified {
+        Some(assign_stratified_splits(
+            &rows,
+            &options.seed,
+            options.test_fraction,
+            options.val_fraction,
+        )?)
+    } else {
+        None
+    };
     let mut exported: Vec<ExportedSample> = Vec::with_capacity(rows.len());
     for row in rows {
         let Some(pack_id) = pack_id_for_sample_id(&row.sample_id, options.pack_depth) else {
             continue;
         };
-        let split = split_for_pack_id(
-            &pack_id,
-            &options.seed,
-            options.test_fraction,
-            options.val_fraction,
-        )?;
+        let split = if let Some(map) = stratified_splits.as_ref() {
+            map.get(&row.sample_id)
+                .cloned()
+                .unwrap_or_else(|| "train".to_string())
+        } else {
+            split_for_pack_id(
+                &pack_id,
+                &options.seed,
+                options.test_fraction,
+                options.val_fraction,
+            )?
+        };
         packs.insert(pack_id.clone());
         exported.push(ExportedSample {
             sample_id: row.sample_id,
@@ -365,6 +415,62 @@ fn split_for_pack_id(
         "train"
     };
     Ok(split.to_string())
+}
+
+fn assign_stratified_splits(
+    rows: &[stats::ExportRow],
+    seed: &str,
+    test_fraction: f64,
+    val_fraction: f64,
+) -> Result<std::collections::HashMap<String, String>, ExportError> {
+    if test_fraction + val_fraction > 1.0 + f64::EPSILON {
+        return Err(ExportError::InvalidSplitFractions);
+    }
+    let mut by_class: BTreeMap<String, Vec<(u128, String)>> = BTreeMap::new();
+    for row in rows {
+        let hash = blake3::hash(format!("{seed}|{}|{}", row.class_id, row.sample_id).as_bytes());
+        let key = u128::from_le_bytes(hash.as_bytes()[0..16].try_into().expect("slice size"));
+        by_class
+            .entry(row.class_id.clone())
+            .or_default()
+            .push((key, row.sample_id.clone()));
+    }
+
+    let mut splits = std::collections::HashMap::new();
+    for (_class_id, mut entries) in by_class {
+        entries.sort_by(|a, b| a.0.cmp(&b.0));
+        let n = entries.len();
+        if n == 0 {
+            continue;
+        }
+        let mut test_n = ((n as f64) * test_fraction).round() as usize;
+        let mut val_n = ((n as f64) * val_fraction).round() as usize;
+        if n == 1 {
+            test_n = 0;
+            val_n = 0;
+        } else {
+            while test_n + val_n >= n {
+                if val_n > 0 {
+                    val_n -= 1;
+                } else if test_n > 0 {
+                    test_n -= 1;
+                } else {
+                    break;
+                }
+            }
+        }
+        for (idx, (_hash, sample_id)) in entries.into_iter().enumerate() {
+            let split = if idx < test_n {
+                "test"
+            } else if idx < test_n + val_n {
+                "val"
+            } else {
+                "train"
+            };
+            splits.insert(sample_id, split.to_string());
+        }
+    }
+    Ok(splits)
 }
 
 pub fn pack_split_counts(samples: &[ExportDiagnosticsSample]) -> BTreeMap<String, usize> {

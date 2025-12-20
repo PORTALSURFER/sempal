@@ -59,6 +59,7 @@ pub(super) fn run_model_training(
         seed: "sempal-dataset-v1".to_string(),
         test_fraction: 0.1,
         val_fraction: 0.1,
+        split_mode: crate::dataset::export::SplitMode::Pack,
     };
 
     let (summary, used_min_confidence) =

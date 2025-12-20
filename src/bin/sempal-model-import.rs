@@ -20,6 +20,19 @@ fn run() -> Result<(), String> {
         .kind
         .as_str()
     {
+        "logreg" | "logreg_v1" => {
+            let model: sempal::ml::logreg::LogRegModel =
+                serde_json::from_str(&model_json).map_err(|err| err.to_string())?;
+            let classes_json =
+                serde_json::to_string(&model.classes).map_err(|err| err.to_string())?;
+            (
+                "logreg_v1",
+                model.model_version,
+                0,
+                model.embedding_dim,
+                classes_json,
+            )
+        }
         "mlp" | "mlp_v1" => {
             let model: sempal::ml::mlp::MlpModel =
                 serde_json::from_str(&model_json).map_err(|err| err.to_string())?;
@@ -135,7 +148,7 @@ fn help_text() -> String {
         "Imports a model JSON file (e.g. produced by sempal-train-baseline) into the library database.",
         "",
         "Usage:",
-        "  sempal-model-import --model <model.json> [--db <library.db>] [--kind gbdt|mlp]",
+        "  sempal-model-import --model <model.json> [--db <library.db>] [--kind gbdt|mlp|logreg]",
     ]
     .join("\n")
 }

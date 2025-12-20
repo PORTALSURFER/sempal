@@ -36,6 +36,8 @@ pub const DEFAULT_CLASSIFIER_CLASSES: &[&str] = &[
 /// Versioned logistic regression model for embedding vectors.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LogRegModel {
+    #[serde(default)]
+    pub model_id: Option<String>,
     pub model_version: i64,
     pub embedding_model_id: String,
     pub embedding_dim: usize,
@@ -56,6 +58,7 @@ impl LogRegModel {
         let weights = vec![0.0; dim * classes.len()];
         let bias = vec![0.0; classes.len()];
         Self {
+            model_id: None,
             model_version: 1,
             embedding_model_id: EMBEDDING_MODEL_ID.to_string(),
             embedding_dim: dim,
