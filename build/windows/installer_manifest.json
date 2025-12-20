@@ -1,0 +1,12 @@
+{
+  "app_id": "sempal",
+  "display_name": "SemPal",
+  "version": "0.363.0",
+  "payload_dir": "bundle",
+  "entries": [
+    "sempal.exe",
+    "sempal.ico",
+    "models/yamnet.onnx",
+    "models/onnxruntime/onnxruntime.dll"
+  ]
+}
