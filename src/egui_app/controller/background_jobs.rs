@@ -411,6 +411,13 @@ impl EguiController {
                                 self.ui_cache.browser.prediction_categories = None;
                                 self.ui_cache.browser.prediction_categories_checked = false;
                                 self.rebuild_browser_lists();
+                                self.settings.model.classifier_model_id = outcome.model_id.clone();
+                                self.runtime
+                                    .analysis
+                                    .set_classifier_model_id(Some(outcome.model_id.clone()));
+                                if let Err(err) = self.persist_config("Save config failed") {
+                                    self.set_status(err, StatusTone::Warning);
+                                }
                                 self.set_status(
                                     format!(
                                         "Trained model {} ({} samples); enqueued {} inference jobs",
