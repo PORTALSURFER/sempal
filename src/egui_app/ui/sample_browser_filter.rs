@@ -140,6 +140,39 @@ impl EguiApp {
                         }
                         hint.push_str("  0=clear");
                         ui.label(RichText::new(hint).color(palette.text_muted).small());
+
+                        ui.add_space(ui.spacing().item_spacing.y);
+                        ui.label(
+                            RichText::new("Review actions")
+                                .color(palette.text_primary)
+                                .strong(),
+                        );
+                        ui.horizontal_wrapped(|ui| {
+                            for (idx, category) in hotkey_categories.iter().enumerate() {
+                                let label = format!("{} {category}", idx + 1);
+                                if ui.button(label).clicked() {
+                                    if let Err(err) = self
+                                        .controller
+                                        .apply_review_category_hotkey_slot(idx + 1)
+                                    {
+                                        self.controller.set_status(
+                                            format!("Review label failed: {err}"),
+                                            StatusTone::Warning,
+                                        );
+                                    }
+                                }
+                            }
+                            if ui.button("0 Clear").clicked() {
+                                if let Err(err) =
+                                    self.controller.apply_review_category_hotkey_slot(0)
+                                {
+                                    self.controller.set_status(
+                                        format!("Clear review label failed: {err}"),
+                                        StatusTone::Warning,
+                                    );
+                                }
+                            }
+                        });
                     }
                 } else {
                     let mut threshold = self.controller.ui.browser.confidence_threshold;
