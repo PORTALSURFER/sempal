@@ -47,6 +47,16 @@ Phase 8 - Performance and UX
 - Keep UI responsive with worker limits and progress reporting.
 - Expose model stats and data coverage in training UI.
 
+Phase 9 - Installer & Packaging (Windows)
+- Choose installer tech (e.g., NSIS/Inno Setup/Wix) and lock down requirements.
+- Add bundling pipeline for release artifacts (exe, models, ONNX runtime, icons).
+- Build an egui-based installer app with SemPal styling (install path picker, license, progress).
+- Wire installer to copy binaries/resources and create app data folders if missing.
+- Register uninstall entry in Windows (Add/Remove Programs).
+- Add code-signing hooks (optional, but prepare for it).
+- Verify installed app finds bundled models + runtimes and can retrain.
+- Document build steps and required assets in release checklist.
+
 Open Questions and Recommendations
 - Embedding runtime: prefer TFLite for a single YAMNet-like embedder; use ONNX Runtime only if we expect frequent model swaps or already ship ORT.
 - Output type: multi-class softmax as the primary category; add multi-label tags later as a secondary system.
