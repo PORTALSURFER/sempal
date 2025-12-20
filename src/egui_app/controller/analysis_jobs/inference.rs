@@ -1,4 +1,5 @@
 use rusqlite::{Connection, OptionalExtension, params};
+use std::borrow::Cow;
 
 use super::types::TopKProbability;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -129,7 +130,7 @@ pub(super) fn infer_and_upsert_prediction(
             (model.classes.clone(), proba)
         }
         CachedModelKind::Mlp(model) => {
-            let input = match model.input_kind {
+            let input: Cow<'_, [f32]> = match model.input_kind {
                 crate::ml::mlp::MlpInputKind::FeaturesV1 => {
                     let Some(features) = inputs.features else {
                         return Ok(());
@@ -137,7 +138,7 @@ pub(super) fn infer_and_upsert_prediction(
                     if features.len() != model.feature_len_f32 {
                         return Ok(());
                     }
-                    features.to_vec()
+                    Cow::Borrowed(features)
                 }
                 crate::ml::mlp::MlpInputKind::EmbeddingV1 => {
                     let Some(embedding) = inputs.embedding else {
@@ -146,7 +147,7 @@ pub(super) fn infer_and_upsert_prediction(
                     if embedding.len() != model.feature_len_f32 {
                         return Ok(());
                     }
-                    embedding.to_vec()
+                    Cow::Borrowed(embedding)
                 }
                 crate::ml::mlp::MlpInputKind::HybridV1 => {
                     let Some(embedding) = inputs.embedding else {
@@ -165,10 +166,10 @@ pub(super) fn infer_and_upsert_prediction(
                     if combined.len() != model.feature_len_f32 {
                         return Ok(());
                     }
-                    combined
+                    Cow::Owned(combined)
                 }
             };
-            let proba = model.predict_proba(&input);
+            let proba = model.predict_proba(input.as_ref());
             (model.classes.clone(), proba)
         }
         CachedModelKind::LogReg(model) => {

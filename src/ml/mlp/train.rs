@@ -74,17 +74,27 @@ pub fn train_mlp(dataset: &TrainDataset, options: &TrainOptions) -> Result<MlpMo
     let mut logits = vec![0.0f32; n_classes];
     let mut probs = vec![0.0f32; n_classes];
 
-    let class_weights = if options.balance_classes {
-        let mut counts = vec![0f32; n_classes];
-        for &y in &dataset.y {
-            if y < n_classes {
-                counts[y] += 1.0;
-            }
+    let mut class_counts = vec![0f32; n_classes];
+    for &y in &dataset.y {
+        if y < n_classes {
+            class_counts[y] += 1.0;
         }
-        let total: f32 = counts.iter().sum();
-        counts
-            .into_iter()
-            .map(|count| {
+    }
+    let total: f32 = class_counts.iter().sum();
+    // Initialize output bias to log-priors for faster convergence on imbalanced data.
+    for (idx, &count) in class_counts.iter().enumerate() {
+        let prior = if total > 0.0 {
+            count / total
+        } else {
+            1.0 / n_classes as f32
+        };
+        bias2[idx] = prior.max(1e-6).ln();
+    }
+
+    let class_weights = if options.balance_classes {
+        class_counts
+            .iter()
+            .map(|&count| {
                 if count == 0.0 {
                     0.0
                 } else {
@@ -96,18 +106,23 @@ pub fn train_mlp(dataset: &TrainDataset, options: &TrainOptions) -> Result<MlpMo
         vec![1.0; n_classes]
     };
 
+    let mut d_w1 = vec![0.0f32; weights1.len()];
+    let mut d_b1 = vec![0.0f32; bias1.len()];
+    let mut d_w2 = vec![0.0f32; weights2.len()];
+    let mut d_b2 = vec![0.0f32; bias2.len()];
+    let mut d_hidden = vec![0.0f32; hidden];
+    let mut x_norm = vec![0.0f32; d];
     for _epoch in 0..options.epochs {
         indices.shuffle(&mut rng);
         for batch in indices.chunks(batch_size) {
-            let mut d_w1 = vec![0.0f32; weights1.len()];
-            let mut d_b1 = vec![0.0f32; bias1.len()];
-            let mut d_w2 = vec![0.0f32; weights2.len()];
-            let mut d_b2 = vec![0.0f32; bias2.len()];
+            d_w1.fill(0.0);
+            d_b1.fill(0.0);
+            d_w2.fill(0.0);
+            d_b2.fill(0.0);
             let mut batch_weight = 0.0f32;
 
             for &idx in batch {
                 let x = &dataset.x[idx];
-                let mut x_norm = vec![0.0f32; d];
                 for i in 0..d {
                     let denom = std[i].max(1e-6);
                     x_norm[i] = (x[i] - mean[i]) / denom;
@@ -150,7 +165,7 @@ pub fn train_mlp(dataset: &TrainDataset, options: &TrainOptions) -> Result<MlpMo
                 if weight == 0.0 {
                     continue;
                 }
-                let mut d_hidden = vec![0.0f32; hidden];
+                d_hidden.fill(0.0);
                 for c in 0..n_classes {
                     let target = if label_smoothing > 0.0 {
                         if c == y {

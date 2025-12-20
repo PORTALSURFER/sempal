@@ -3,7 +3,6 @@ use rand::rngs::StdRng;
 
 use super::{LogRegModel};
 use crate::analysis::embedding::{EMBEDDING_DIM, EMBEDDING_MODEL_ID};
-use crate::ml::gbdt_stump::softmax;
 
 /// Training options for the embedding logistic regression head.
 #[derive(Debug, Clone)]
@@ -76,17 +75,27 @@ pub fn train_logreg(
     let lr = options.learning_rate;
     let l2 = options.l2.max(0.0);
 
-    let class_weights = if options.balance_classes {
-        let mut counts = vec![0f32; classes];
-        for &y in &dataset.y {
-            if y < classes {
-                counts[y] += 1.0;
-            }
+    let mut class_counts = vec![0f32; classes];
+    for &y in &dataset.y {
+        if y < classes {
+            class_counts[y] += 1.0;
         }
-        let total: f32 = counts.iter().sum();
-        counts
-            .into_iter()
-            .map(|count| {
+    }
+    let total: f32 = class_counts.iter().sum();
+    // Initialize biases to log-priors for faster convergence on imbalanced data.
+    for (idx, &count) in class_counts.iter().enumerate() {
+        let prior = if total > 0.0 {
+            count / total
+        } else {
+            1.0 / classes as f32
+        };
+        bias[idx] = prior.max(1e-6).ln();
+    }
+
+    let class_weights = if options.balance_classes {
+        class_counts
+            .iter()
+            .map(|&count| {
                 if count == 0.0 {
                     0.0
                 } else {
@@ -98,11 +107,15 @@ pub fn train_logreg(
         vec![1.0; classes]
     };
 
+    let mut grad_w = vec![0.0f32; weights.len()];
+    let mut grad_b = vec![0.0f32; bias.len()];
+    let mut logits = vec![0.0f32; classes];
+    let mut probs = vec![0.0f32; classes];
     for _epoch in 0..options.epochs {
         indices.shuffle(&mut rng);
         for chunk in indices.chunks(batch_size) {
-            let mut grad_w = vec![0.0f32; weights.len()];
-            let mut grad_b = vec![0.0f32; bias.len()];
+            grad_w.fill(0.0);
+            grad_b.fill(0.0);
             let mut batch_weight = 0.0f32;
             for &idx in chunk {
                 let x = &dataset.x[idx];
@@ -114,7 +127,6 @@ pub fn train_logreg(
                 if weight == 0.0 {
                     continue;
                 }
-                let mut logits = vec![0.0f32; classes];
                 for c in 0..classes {
                     let base = c * dim;
                     let mut sum = bias[c];
@@ -123,7 +135,7 @@ pub fn train_logreg(
                     }
                     logits[c] = sum;
                 }
-                let probs = softmax(&logits);
+                softmax_inplace(&logits, &mut probs);
                 for c in 0..classes {
                     let diff = probs[c] - if c == y { 1.0 } else { 0.0 };
                     let base = c * dim;
@@ -165,4 +177,30 @@ pub fn train_logreg(
     };
     model.validate()?;
     Ok(model)
+}
+
+fn softmax_inplace(raw: &[f32], out: &mut [f32]) {
+    if raw.is_empty() || out.is_empty() {
+        return;
+    }
+    let max = raw
+        .iter()
+        .copied()
+        .fold(f32::NEG_INFINITY, |a, b| a.max(b));
+    let mut sum = 0.0f32;
+    for (i, &v) in raw.iter().enumerate() {
+        let e = (v - max).exp();
+        out[i] = e;
+        sum += e;
+    }
+    if sum == 0.0 {
+        let uniform = 1.0 / (raw.len() as f32);
+        for v in out.iter_mut() {
+            *v = uniform;
+        }
+        return;
+    }
+    for v in out.iter_mut() {
+        *v /= sum;
+    }
 }
