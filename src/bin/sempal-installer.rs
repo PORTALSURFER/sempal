@@ -280,6 +280,11 @@ impl eframe::App for InstallerApp {
 }
 
 fn default_install_dir() -> PathBuf {
+    if let Ok(local_app_data) = env::var("LOCALAPPDATA") {
+        return PathBuf::from(local_app_data)
+            .join("Programs")
+            .join(APP_NAME);
+    }
     if let Ok(program_files) = env::var("ProgramFiles") {
         return PathBuf::from(program_files).join(APP_NAME);
     }
