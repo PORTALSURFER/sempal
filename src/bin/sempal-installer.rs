@@ -16,12 +16,13 @@ use winreg::enums::{HKEY_CURRENT_USER, KEY_WRITE};
 use winreg::RegKey;
 #[cfg(target_os = "windows")]
 use windows::{
-    core::{HSTRING, PCWSTR},
+    core::{HSTRING, Interface, PCWSTR},
     Win32::{
         System::Com::{
-            CLSCTX_INPROC_SERVER, CoCreateInstance, CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED,
+            CLSCTX_INPROC_SERVER, CoCreateInstance, CoInitializeEx, CoUninitialize,
+            COINIT_APARTMENTTHREADED, IPersistFile,
         },
-        UI::Shell::{IPersistFile, IShellLinkW, ShellLink},
+        UI::Shell::{IShellLinkW, ShellLink},
     },
 };
 
@@ -450,6 +451,7 @@ fn create_start_menu_shortcut(install_dir: &Path) -> Result<(), String> {
 
         unsafe {
             CoInitializeEx(None, COINIT_APARTMENTTHREADED)
+                .ok()
                 .map_err(|err| format!("Failed to init COM: {err}"))?;
             let _guard = ComGuard;
             let link: IShellLinkW = CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER)
