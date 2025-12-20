@@ -97,17 +97,32 @@ fn decode_to_interleaved_f32(path: &Path) -> Result<DecodedInterleaved, String> 
     if let Some(hint) = hint.as_deref() {
         builder = builder.with_hint(hint);
     }
-    let decoder = builder
-        .build()
-        .map_err(|err| format!("Audio decode failed for {}: {err}", path.display()))?;
-    let sample_rate = decoder.sample_rate().max(1);
-    let channels = decoder.channels().max(1);
-    let samples: Vec<f32> = decoder.collect();
-    Ok(DecodedInterleaved {
-        samples,
-        sample_rate,
-        channels,
-    })
+    let decoder = builder.build();
+    match decoder {
+        Ok(decoder) => {
+            let sample_rate = decoder.sample_rate().max(1);
+            let channels = decoder.channels().max(1);
+            let samples: Vec<f32> = decoder.collect();
+            Ok(DecodedInterleaved {
+                samples,
+                sample_rate,
+                channels,
+            })
+        }
+        Err(err) => {
+            match crate::analysis::audio_decode::decode_with_symphonia(path) {
+                Ok((samples, sample_rate, channels)) => Ok(DecodedInterleaved {
+                    samples,
+                    sample_rate: sample_rate.max(1),
+                    channels: channels.max(1),
+                }),
+                Err(fallback_err) => Err(format!(
+                    "Audio decode failed for {}: {err}. Symphonia fallback failed: {fallback_err}",
+                    path.display()
+                )),
+            }
+        }
+    }
 }
 
 fn downmix_to_mono(samples: &[f32], channels: u16) -> Vec<f32> {

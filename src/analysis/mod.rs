@@ -1,6 +1,7 @@
 //! Background analysis helpers (decoding, normalization, feature extraction).
 
 pub(crate) mod audio;
+pub(crate) mod audio_decode;
 pub(crate) mod ann_index;
 pub mod embedding;
 pub(crate) mod features;
