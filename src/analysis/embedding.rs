@@ -9,9 +9,9 @@ use ort::value::Tensor;
 
 use crate::analysis::audio;
 
-pub(crate) const EMBEDDING_MODEL_ID: &str = "yamnet_onnx_v1";
-pub(crate) const EMBEDDING_DIM: usize = 1024;
-pub(crate) const EMBEDDING_DTYPE_F32: i64 = 0;
+pub const EMBEDDING_MODEL_ID: &str = "yamnet_onnx_v1";
+pub const EMBEDDING_DIM: usize = 1024;
+pub const EMBEDDING_DTYPE_F32: i64 = 0;
 const YAMNET_INPUT_SAMPLES: usize = 15_600;
 
 pub(crate) struct YamnetModel {

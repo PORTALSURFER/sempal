@@ -2,7 +2,7 @@
 
 pub(crate) mod audio;
 pub(crate) mod ann_index;
-pub(crate) mod embedding;
+pub mod embedding;
 pub(crate) mod features;
 pub(crate) mod fft;
 pub(crate) mod frequency_domain;
