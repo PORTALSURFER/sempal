@@ -1,8 +1,8 @@
 {
   "format_version": 1,
   "feature_encoding": "f32le",
-  "feat_version": 1,
-  "feature_len_f32": 183,
+  "feat_version": 0,
+  "feature_len_f32": 1024,
   "files": {
     "samples": "samples.jsonl",
     "features": "features.f32le"
