@@ -1,5 +1,6 @@
 //! Evaluation metrics for classification models.
 
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone)]
@@ -42,6 +43,23 @@ pub struct PerClassStats {
     pub recall: f32,
     /// Total number of true examples for the class.
     pub support: u32,
+}
+
+/// Serialized metrics snapshot for UI dashboards.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelMetrics {
+    pub per_class: Vec<PerClassMetric>,
+    pub hist_bins: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PerClassMetric {
+    pub class_id: String,
+    pub support: u32,
+    pub precision: f32,
+    pub recall: f32,
+    pub f1: f32,
+    pub confidence_hist: Vec<u32>,
 }
 
 /// Compute per-class precision and recall from a confusion matrix.

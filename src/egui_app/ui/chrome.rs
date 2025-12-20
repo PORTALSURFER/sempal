@@ -590,7 +590,8 @@ impl EguiApp {
                 }
                 if let Some(summary) = &self.controller.ui.training.summary {
                     let vector_label = match self.controller.training_model_kind() {
-                        crate::sample_sources::config::TrainingModelKind::LogRegV1 => "Embeddings",
+                        crate::sample_sources::config::TrainingModelKind::LogRegV1
+                        | crate::sample_sources::config::TrainingModelKind::MlpV1 => "Embeddings",
                         _ => "Features v1",
                     };
                     let features_pct = if summary.samples_total > 0 {
@@ -673,6 +674,29 @@ impl EguiApp {
                         "Unknown threshold: {:.2}",
                         self.controller.unknown_confidence_threshold()
                     ));
+
+                    if let Some(metrics) = &summary.model_metrics {
+                        ui.add_space(6.0);
+                        ui.label(RichText::new("Per-class metrics").strong().color(palette.text_primary));
+                        for item in &metrics.per_class {
+                            let hist = if item.confidence_hist.is_empty() {
+                                "—".to_string()
+                            } else {
+                                let mut parts = Vec::new();
+                                for (idx, count) in item.confidence_hist.iter().enumerate() {
+                                    let lo = idx as f32 / metrics.hist_bins as f32;
+                                    let hi = (idx + 1) as f32 / metrics.hist_bins as f32;
+                                    parts.push(format!("{:.1}-{:.1}:{count}", lo, hi));
+                                }
+                                parts.join(" ")
+                            };
+                            ui.label(format!(
+                                "{}  sup:{}  P:{:.2} R:{:.2} F1:{:.2}",
+                                item.class_id, item.support, item.precision, item.recall, item.f1
+                            ));
+                            ui.label(RichText::new(format!("conf: {hist}")).color(palette.text_muted).small());
+                        }
+                    }
                 }
 
                 ui.separator();
@@ -717,7 +741,7 @@ impl EguiApp {
                             "GBDT (fast baseline)"
                         }
                         crate::sample_sources::config::TrainingModelKind::MlpV1 => {
-                            "MLP (better accuracy)"
+                            "MLP (embeddings)"
                         }
                         crate::sample_sources::config::TrainingModelKind::LogRegV1 => {
                             "LogReg (embeddings)"
@@ -738,7 +762,7 @@ impl EguiApp {
                             .selectable_value(
                                 &mut model_kind,
                                 crate::sample_sources::config::TrainingModelKind::MlpV1,
-                                "MLP (better accuracy)",
+                                "MLP (embeddings)",
                             )
                             .clicked()
                         {
@@ -755,6 +779,104 @@ impl EguiApp {
                             self.controller.set_training_model_kind(model_kind.clone());
                         }
                     });
+
+                ui.add_space(6.0);
+                ui.label(RichText::new("Quality controls:").color(palette.text_muted));
+                let mut min_class = self.controller.training_min_class_samples() as i64;
+                let min_drag = egui::DragValue::new(&mut min_class).range(1..=10_000);
+                if ui
+                    .add(min_drag)
+                    .on_hover_text("Minimum samples per class in curated datasets")
+                    .changed()
+                {
+                    self.controller
+                        .set_training_min_class_samples(min_class.max(1) as usize);
+                }
+
+                let mut use_hybrid = self.controller.training_use_hybrid_features();
+                if ui
+                    .checkbox(&mut use_hybrid, "Use hybrid DSP features")
+                    .on_hover_text("Concatenate time-domain features with embeddings")
+                    .changed()
+                {
+                    self.controller.set_training_use_hybrid_features(use_hybrid);
+                }
+
+                ui.add_space(6.0);
+                ui.label(RichText::new("Augmentation:").color(palette.text_muted));
+                let mut augmentation = self.controller.training_augmentation();
+                if ui
+                    .checkbox(&mut augmentation.enabled, "Enable augmentation")
+                    .changed()
+                {
+                    self.controller.set_training_augmentation(augmentation.clone());
+                }
+                if augmentation.enabled {
+                    let mut copies = augmentation.copies_per_sample as i64;
+                    if ui
+                        .add(
+                            egui::DragValue::new(&mut copies)
+                                .range(0..=8)
+                                .prefix("Copies: "),
+                        )
+                        .changed()
+                    {
+                        augmentation.copies_per_sample = copies.max(0) as usize;
+                        self.controller.set_training_augmentation(augmentation.clone());
+                    }
+                    let mut gain = augmentation.gain_jitter_db;
+                    if ui
+                        .add(
+                            egui::DragValue::new(&mut gain)
+                                .range(0.0..=12.0)
+                                .prefix("Gain ±")
+                                .suffix(" dB"),
+                        )
+                        .changed()
+                    {
+                        augmentation.gain_jitter_db = gain.max(0.0);
+                        self.controller.set_training_augmentation(augmentation.clone());
+                    }
+                    let mut noise = augmentation.noise_std;
+                    if ui
+                        .add(
+                            egui::DragValue::new(&mut noise)
+                                .range(0.0..=0.02)
+                                .prefix("Noise ")
+                                .suffix(" σ"),
+                        )
+                        .changed()
+                    {
+                        augmentation.noise_std = noise.max(0.0);
+                        self.controller.set_training_augmentation(augmentation.clone());
+                    }
+                    let mut pitch = augmentation.pitch_semitones;
+                    if ui
+                        .add(
+                            egui::DragValue::new(&mut pitch)
+                                .range(0.0..=4.0)
+                                .prefix("Pitch ±")
+                                .suffix(" st"),
+                        )
+                        .changed()
+                    {
+                        augmentation.pitch_semitones = pitch.max(0.0);
+                        self.controller.set_training_augmentation(augmentation.clone());
+                    }
+                    let mut stretch = augmentation.time_stretch_pct;
+                    if ui
+                        .add(
+                            egui::DragValue::new(&mut stretch)
+                                .range(0.0..=0.2)
+                                .prefix("Stretch ±")
+                                .suffix("%"),
+                        )
+                        .changed()
+                    {
+                        augmentation.time_stretch_pct = stretch.max(0.0);
+                        self.controller.set_training_augmentation(augmentation.clone());
+                    }
+                }
 
                 ui.add_space(8.0);
                 let retrain_btn = egui::Button::new("Retrain model");

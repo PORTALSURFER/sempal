@@ -2,6 +2,7 @@
 
 pub(crate) mod audio;
 pub(crate) mod audio_decode;
+pub(crate) mod augment;
 pub(crate) mod ann_index;
 pub mod embedding;
 pub(crate) mod features;
@@ -16,6 +17,9 @@ pub use vector::decode_f32_le_blob;
 
 use std::path::Path;
 
+/// Lightweight DSP vector length (time-domain features only).
+pub const LIGHT_DSP_VECTOR_LEN: usize = 9;
+
 /// Decode an audio file and compute the V1 feature vector used by the analyzer.
 pub fn compute_feature_vector_v1_for_path(path: &Path) -> Result<Vec<f32>, String> {
     let decoded = audio::decode_for_analysis(path)?;
@@ -24,6 +28,14 @@ pub fn compute_feature_vector_v1_for_path(path: &Path) -> Result<Vec<f32>, Strin
         frequency_domain::extract_frequency_domain_features(&decoded.mono, decoded.sample_rate_used);
     let features = features::AnalysisFeaturesV1::new(time_domain, frequency_domain);
     Ok(vector::to_f32_vector_v1(&features))
+}
+
+/// Extract the lightweight DSP vector from a full V1 feature vector.
+pub fn light_dsp_from_features_v1(features: &[f32]) -> Option<Vec<f32>> {
+    if features.len() < LIGHT_DSP_VECTOR_LEN {
+        return None;
+    }
+    Some(features[..LIGHT_DSP_VECTOR_LEN].to_vec())
 }
 
 #[cfg(test)]

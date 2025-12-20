@@ -17,6 +17,7 @@ pub struct TrainingSummary {
     pub active_model_id: Option<String>,
     pub active_model_kind: Option<String>,
     pub active_model_classes: Option<usize>,
+    pub model_metrics: Option<crate::ml::metrics::ModelMetrics>,
 }
 
 /// UI state for the model training workflow.

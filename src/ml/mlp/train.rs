@@ -2,7 +2,7 @@ use rand::{Rng, SeedableRng, seq::SliceRandom};
 use rand::rngs::StdRng;
 
 use crate::ml::gbdt_stump::TrainDataset;
-use super::MlpModel;
+use super::{MlpInputKind, MlpModel};
 
 #[derive(Debug, Clone)]
 pub struct TrainOptions {
@@ -11,6 +11,10 @@ pub struct TrainOptions {
     pub batch_size: usize,
     pub learning_rate: f32,
     pub l2_penalty: f32,
+    pub dropout: f32,
+    pub label_smoothing: f32,
+    pub balance_classes: bool,
+    pub input_kind: MlpInputKind,
     pub seed: u64,
 }
 
@@ -22,6 +26,10 @@ impl Default for TrainOptions {
             batch_size: 128,
             learning_rate: 0.01,
             l2_penalty: 1e-4,
+            dropout: 0.15,
+            label_smoothing: 0.05,
+            balance_classes: true,
+            input_kind: MlpInputKind::FeaturesV1,
             seed: 42,
         }
     }
@@ -42,6 +50,8 @@ pub fn train_mlp(dataset: &TrainDataset, options: &TrainOptions) -> Result<MlpMo
     let d = dataset.feature_len_f32;
     let hidden = options.hidden_size.max(1);
     let batch_size = options.batch_size.max(1);
+    let dropout = options.dropout.clamp(0.0, 0.9);
+    let label_smoothing = options.label_smoothing.clamp(0.0, 0.2);
 
     let (mean, std) = feature_mean_std(&dataset.x, d);
     let mut rng = StdRng::seed_from_u64(options.seed);
@@ -64,6 +74,28 @@ pub fn train_mlp(dataset: &TrainDataset, options: &TrainOptions) -> Result<MlpMo
     let mut logits = vec![0.0f32; n_classes];
     let mut probs = vec![0.0f32; n_classes];
 
+    let class_weights = if options.balance_classes {
+        let mut counts = vec![0f32; n_classes];
+        for &y in &dataset.y {
+            if y < n_classes {
+                counts[y] += 1.0;
+            }
+        }
+        let total: f32 = counts.iter().sum();
+        counts
+            .into_iter()
+            .map(|count| {
+                if count == 0.0 {
+                    0.0
+                } else {
+                    total / (n_classes as f32 * count)
+                }
+            })
+            .collect()
+    } else {
+        vec![1.0; n_classes]
+    };
+
     for _epoch in 0..options.epochs {
         indices.shuffle(&mut rng);
         for batch in indices.chunks(batch_size) {
@@ -71,6 +103,7 @@ pub fn train_mlp(dataset: &TrainDataset, options: &TrainOptions) -> Result<MlpMo
             let mut d_b1 = vec![0.0f32; bias1.len()];
             let mut d_w2 = vec![0.0f32; weights2.len()];
             let mut d_b2 = vec![0.0f32; bias2.len()];
+            let mut batch_weight = 0.0f32;
 
             for &idx in batch {
                 let x = &dataset.x[idx];
@@ -87,7 +120,16 @@ pub fn train_mlp(dataset: &TrainDataset, options: &TrainOptions) -> Result<MlpMo
                         sum += weights1[base + i] * x_norm[i];
                     }
                     hidden_pre[h] = sum;
-                    hidden_act[h] = sum.max(0.0);
+                    let mut act = sum.max(0.0);
+                    if dropout > 0.0 {
+                        let keep = rng.random::<f32>() > dropout;
+                        if keep {
+                            act /= 1.0 - dropout;
+                        } else {
+                            act = 0.0;
+                        }
+                    }
+                    hidden_act[h] = act;
                 }
 
                 for c in 0..n_classes {
@@ -101,15 +143,32 @@ pub fn train_mlp(dataset: &TrainDataset, options: &TrainOptions) -> Result<MlpMo
                 softmax_inplace(&logits, &mut probs);
 
                 let y = dataset.y[idx];
+                if y >= n_classes {
+                    continue;
+                }
+                let weight = class_weights[y];
+                if weight == 0.0 {
+                    continue;
+                }
                 let mut d_hidden = vec![0.0f32; hidden];
                 for c in 0..n_classes {
-                    let target = if c == y { 1.0 } else { 0.0 };
+                    let target = if label_smoothing > 0.0 {
+                        if c == y {
+                            1.0 - label_smoothing
+                        } else {
+                            label_smoothing / (n_classes as f32 - 1.0)
+                        }
+                    } else if c == y {
+                        1.0
+                    } else {
+                        0.0
+                    };
                     let dz2 = probs[c] - target;
-                    d_b2[c] += dz2;
+                    d_b2[c] += dz2 * weight;
                     let base = c * hidden;
                     for h in 0..hidden {
-                        d_w2[base + h] += dz2 * hidden_act[h];
-                        d_hidden[h] += dz2 * weights2[base + h];
+                        d_w2[base + h] += dz2 * hidden_act[h] * weight;
+                        d_hidden[h] += dz2 * weights2[base + h] * weight;
                     }
                 }
                 for h in 0..hidden {
@@ -122,9 +181,13 @@ pub fn train_mlp(dataset: &TrainDataset, options: &TrainOptions) -> Result<MlpMo
                         d_w1[base + i] += d_hidden[h] * x_norm[i];
                     }
                 }
+                batch_weight += weight;
             }
 
-            let scale = options.learning_rate / (batch.len() as f32);
+            if batch_weight == 0.0 {
+                continue;
+            }
+            let scale = options.learning_rate / batch_weight;
             let l2 = options.l2_penalty;
             for i in 0..weights1.len() {
                 weights1[i] -= scale * (d_w1[i] + l2 * weights1[i]);
@@ -143,6 +206,7 @@ pub fn train_mlp(dataset: &TrainDataset, options: &TrainOptions) -> Result<MlpMo
 
     Ok(MlpModel {
         model_version: 1,
+        input_kind: options.input_kind,
         feat_version: dataset.feat_version,
         feature_len_f32: dataset.feature_len_f32,
         classes: dataset.classes.clone(),
@@ -153,6 +217,9 @@ pub fn train_mlp(dataset: &TrainDataset, options: &TrainOptions) -> Result<MlpMo
         bias2,
         feature_mean: mean,
         feature_std: std,
+        class_thresholds: None,
+        top2_margin: None,
+        metrics: None,
     })
 }
 

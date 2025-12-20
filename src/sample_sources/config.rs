@@ -113,6 +113,15 @@ pub struct TrainingSettings {
     /// Model type used for in-app retraining.
     #[serde(default = "default_training_model_kind")]
     pub model_kind: TrainingModelKind,
+    /// Minimum samples required per class in curated datasets.
+    #[serde(default = "default_training_min_class_samples")]
+    pub min_class_samples: usize,
+    /// Use hybrid embeddings + lightweight DSP features when training.
+    #[serde(default)]
+    pub use_hybrid_features: bool,
+    /// Training-time audio augmentation controls.
+    #[serde(default)]
+    pub augmentation: TrainingAugmentation,
     /// Optional folder used for curated training data.
     #[serde(default)]
     pub training_dataset_root: Option<PathBuf>,
@@ -125,7 +134,46 @@ impl Default for TrainingSettings {
             retrain_pack_depth: default_retrain_pack_depth(),
             use_user_labels: default_use_user_labels(),
             model_kind: default_training_model_kind(),
+            min_class_samples: default_training_min_class_samples(),
+            use_hybrid_features: false,
+            augmentation: TrainingAugmentation::default(),
             training_dataset_root: None,
+        }
+    }
+}
+
+/// Training-time audio augmentation knobs for curated datasets.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrainingAugmentation {
+    /// Enable augmentation during training dataset ingestion.
+    #[serde(default)]
+    pub enabled: bool,
+    /// Extra augmented copies per sample.
+    #[serde(default = "default_augmentation_copies")]
+    pub copies_per_sample: usize,
+    /// Gain jitter range in dB (+/-).
+    #[serde(default = "default_augmentation_gain_db")]
+    pub gain_jitter_db: f32,
+    /// Added noise standard deviation.
+    #[serde(default = "default_augmentation_noise_std")]
+    pub noise_std: f32,
+    /// Pitch shift range in semitones (+/-).
+    #[serde(default = "default_augmentation_pitch_semitones")]
+    pub pitch_semitones: f32,
+    /// Time-stretch range in percent (+/-).
+    #[serde(default = "default_augmentation_time_stretch_pct")]
+    pub time_stretch_pct: f32,
+}
+
+impl Default for TrainingAugmentation {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            copies_per_sample: default_augmentation_copies(),
+            gain_jitter_db: default_augmentation_gain_db(),
+            noise_std: default_augmentation_noise_std(),
+            pitch_semitones: default_augmentation_pitch_semitones(),
+            time_stretch_pct: default_augmentation_time_stretch_pct(),
         }
     }
 }
@@ -488,7 +536,31 @@ fn default_use_user_labels() -> bool {
 }
 
 fn default_training_model_kind() -> TrainingModelKind {
-    TrainingModelKind::LogRegV1
+    TrainingModelKind::MlpV1
+}
+
+fn default_training_min_class_samples() -> usize {
+    30
+}
+
+fn default_augmentation_copies() -> usize {
+    1
+}
+
+fn default_augmentation_gain_db() -> f32 {
+    2.0
+}
+
+fn default_augmentation_noise_std() -> f32 {
+    0.002
+}
+
+fn default_augmentation_pitch_semitones() -> f32 {
+    1.5
+}
+
+fn default_augmentation_time_stretch_pct() -> f32 {
+    0.05
 }
 
 fn default_max_analysis_duration_seconds() -> f32 {

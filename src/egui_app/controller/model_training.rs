@@ -16,6 +16,9 @@ pub(super) struct ModelTrainingJob {
     pub(super) pack_depth: usize,
     pub(super) use_user_labels: bool,
     pub(super) model_kind: crate::sample_sources::config::TrainingModelKind,
+    pub(super) min_class_samples: usize,
+    pub(super) use_hybrid_features: bool,
+    pub(super) augmentation: crate::sample_sources::config::TrainingAugmentation,
     pub(super) training_dataset_root: Option<PathBuf>,
     pub(super) train_options: crate::ml::gbdt_stump::TrainOptions,
     pub(super) mlp_options: crate::ml::mlp::TrainOptions,
@@ -107,15 +110,28 @@ pub(super) fn run_model_training(
             )
         }
         crate::sample_sources::config::TrainingModelKind::MlpV1 => {
-            let (train, test) = split_train_test(&loaded)?;
-            let model = crate::ml::mlp::train_mlp(&train, &job.mlp_options)?;
+            if job.use_hybrid_features {
+                return Err(
+                    "Hybrid training is only supported with a curated training dataset folder"
+                        .to_string(),
+                );
+            }
+            let (train, test) =
+                split_mlp_embedding_train_test(&loaded, crate::analysis::embedding::EMBEDDING_DIM)?;
+            let mut options = job.mlp_options.clone();
+            options.input_kind = crate::ml::mlp::MlpInputKind::EmbeddingV1;
+            let mut model = crate::ml::mlp::train_mlp(&train, &options)?;
+            let metrics = build_mlp_metrics(&model, &test);
+            model.metrics = Some(metrics.metrics);
+            model.class_thresholds = metrics.class_thresholds;
+            model.top2_margin = metrics.top2_margin;
             let _ = evaluate_mlp_accuracy(&model, &test);
             (
                 serde_json::to_string(&model).map_err(|err| err.to_string())?,
                 serde_json::to_string(&model.classes).map_err(|err| err.to_string())?,
                 "mlp_v1",
-                crate::analysis::FEATURE_VERSION_V1,
-                crate::analysis::FEATURE_VECTOR_LEN_V1 as i64,
+                model.feat_version,
+                model.feature_len_f32 as i64,
             )
         }
         crate::sample_sources::config::TrainingModelKind::LogRegV1 => {
@@ -125,6 +141,10 @@ pub(super) fn run_model_training(
             if let Err(err) = model.calibrate_temperature(&test_logreg, 0.3, 3.0, 28) {
                 warn!("LogReg temperature calibration failed: {err}");
             }
+            let metrics = build_logreg_metrics(&model, &test_logreg);
+            model.metrics = Some(metrics.metrics);
+            model.class_thresholds = metrics.class_thresholds;
+            model.top2_margin = metrics.top2_margin;
             let _ = evaluate_logreg_accuracy(&model, &test_logreg);
             (
                 serde_json::to_string(&model).map_err(|err| err.to_string())?,
@@ -176,17 +196,31 @@ fn run_training_from_dataset_root(
     if samples.is_empty() {
         return Err("Training dataset folder is empty".to_string());
     }
+    let samples = filter_training_samples(samples, job.min_class_samples);
+    if samples.is_empty() {
+        return Err("Training dataset has no classes after hygiene filter".to_string());
+    }
     let split_map = stratified_split_map(&samples, "sempal-training-dataset-v1", 0.1, 0.1)?;
 
     send_progress(tx, 1, total_steps, "Building training vectors…")?;
     let (model_json, classes_json, kind, feat_version, feature_len_f32) = match job.model_kind {
         crate::sample_sources::config::TrainingModelKind::LogRegV1 => {
-            let (train, test) = build_logreg_dataset_from_samples(&samples, &split_map)?;
+            let (train, test) = build_logreg_dataset_from_samples(
+                &samples,
+                &split_map,
+                job.min_class_samples,
+                &job.augmentation,
+                job.logreg_options.seed,
+            )?;
             let mut model = crate::ml::logreg::train_logreg(&train, &job.logreg_options)?;
             model.model_id = Some(uuid::Uuid::new_v4().to_string());
             if let Err(err) = model.calibrate_temperature(&test, 0.3, 3.0, 28) {
                 warn!("LogReg temperature calibration failed: {err}");
             }
+            let metrics = build_logreg_metrics(&model, &test);
+            model.metrics = Some(metrics.metrics);
+            model.class_thresholds = metrics.class_thresholds;
+            model.top2_margin = metrics.top2_margin;
             let _ = evaluate_logreg_accuracy(&model, &test);
             (
                 serde_json::to_string(&model).map_err(|err| err.to_string())?,
@@ -197,15 +231,32 @@ fn run_training_from_dataset_root(
             )
         }
         crate::sample_sources::config::TrainingModelKind::MlpV1 => {
-            let (train, test) = build_feature_dataset_from_samples(&samples, &split_map)?;
-            let model = crate::ml::mlp::train_mlp(&train, &job.mlp_options)?;
+            let (train, test) = build_mlp_dataset_from_samples(
+                &samples,
+                &split_map,
+                job.use_hybrid_features,
+                job.min_class_samples,
+                &job.augmentation,
+                job.mlp_options.seed,
+            )?;
+            let mut options = job.mlp_options.clone();
+            options.input_kind = if job.use_hybrid_features {
+                crate::ml::mlp::MlpInputKind::HybridV1
+            } else {
+                crate::ml::mlp::MlpInputKind::EmbeddingV1
+            };
+            let mut model = crate::ml::mlp::train_mlp(&train, &options)?;
+            let metrics = build_mlp_metrics(&model, &test);
+            model.metrics = Some(metrics.metrics);
+            model.class_thresholds = metrics.class_thresholds;
+            model.top2_margin = metrics.top2_margin;
             let _ = evaluate_mlp_accuracy(&model, &test);
             (
                 serde_json::to_string(&model).map_err(|err| err.to_string())?,
                 serde_json::to_string(&model.classes).map_err(|err| err.to_string())?,
                 "mlp_v1",
-                crate::analysis::FEATURE_VERSION_V1,
-                crate::analysis::FEATURE_VECTOR_LEN_V1 as i64,
+                model.feat_version,
+                model.feature_len_f32 as i64,
             )
         }
         crate::sample_sources::config::TrainingModelKind::GbdtStumpV1 => {
@@ -288,6 +339,31 @@ fn collect_training_samples(root: &PathBuf) -> Result<Vec<TrainingSample>, Strin
     Ok(samples)
 }
 
+fn filter_training_samples(
+    samples: Vec<TrainingSample>,
+    min_class_samples: usize,
+) -> Vec<TrainingSample> {
+    let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+    for sample in &samples {
+        *counts.entry(sample.class_id.clone()).or_default() += 1;
+    }
+    let min_required = min_class_samples.max(1);
+    samples
+        .into_iter()
+        .filter(|sample| {
+            let class_id = sample.class_id.trim().to_ascii_lowercase();
+            if matches!(class_id.as_str(), "unknown" | "misc" | "other") {
+                return false;
+            }
+            counts
+                .get(&sample.class_id)
+                .copied()
+                .unwrap_or(0)
+                >= min_required
+        })
+        .collect()
+}
+
 fn collect_files_recursive(root: &PathBuf, out: &mut Vec<PathBuf>) -> Result<(), String> {
     let entries = fs::read_dir(root).map_err(|err| format!("Read dir {}: {err}", root.display()))?;
     for entry in entries {
@@ -362,7 +438,123 @@ fn stratified_split_map(
 fn build_logreg_dataset_from_samples(
     samples: &[TrainingSample],
     split_map: &HashMap<PathBuf, String>,
+    min_class_samples: usize,
+    augmentation: &crate::sample_sources::config::TrainingAugmentation,
+    seed: u64,
 ) -> Result<(crate::ml::logreg::TrainDataset, crate::ml::logreg::TrainDataset), String> {
+    let mut class_set = BTreeMap::new();
+    for sample in samples {
+        class_set.entry(sample.class_id.clone()).or_insert(());
+    }
+    let classes: Vec<String> = class_set.keys().cloned().collect();
+    let class_map: HashMap<String, usize> = classes
+        .iter()
+        .cloned()
+        .enumerate()
+        .map(|(idx, class_id)| (class_id, idx))
+        .collect();
+
+    let mut train_x = Vec::new();
+    let mut train_y = Vec::new();
+    let mut test_x = Vec::new();
+    let mut test_y = Vec::new();
+    let mut embedding_cache: Option<crate::analysis::embedding::YamnetModel> = None;
+    let mut augment_rng = crate::analysis::augment::AugmentOptions {
+        enabled: augmentation.enabled,
+        copies_per_sample: augmentation.copies_per_sample,
+        gain_jitter_db: augmentation.gain_jitter_db,
+        noise_std: augmentation.noise_std,
+        pitch_semitones: augmentation.pitch_semitones,
+        time_stretch_pct: augmentation.time_stretch_pct,
+        seed,
+    }
+    .rng();
+    let mut skipped = 0usize;
+    let mut skipped_errors = Vec::new();
+
+    for sample in samples {
+        let decoded = match crate::analysis::audio::decode_for_analysis(&sample.path) {
+            Ok(decoded) => decoded,
+            Err(err) => {
+                skipped += 1;
+                if skipped_errors.len() < 3 {
+                    skipped_errors.push(err);
+                }
+                continue;
+            }
+        };
+        let embeddings = match build_embedding_variants(
+            &decoded,
+            &mut embedding_cache,
+            augmentation,
+            &mut augment_rng,
+        ) {
+            Ok(values) => values,
+            Err(err) => {
+                skipped += 1;
+                if skipped_errors.len() < 3 {
+                    skipped_errors.push(err);
+                }
+                continue;
+            }
+        };
+        let Some(&class_idx) = class_map.get(&sample.class_id) else {
+            continue;
+        };
+        let split = split_map
+            .get(&sample.path)
+            .map(|s| s.as_str())
+            .unwrap_or("train");
+        for embedding in embeddings {
+            if split == "test" {
+                test_x.push(embedding.embedding);
+                test_y.push(class_idx);
+            } else {
+                train_x.push(embedding.embedding);
+                train_y.push(class_idx);
+            }
+        }
+    }
+
+    if skipped > 0 {
+        warn!(
+            "Skipped {skipped} training samples during embedding; first errors: {:?}",
+            skipped_errors
+        );
+    }
+    if train_x.is_empty() || test_x.is_empty() {
+        let hint = if skipped_errors.is_empty() {
+            String::new()
+        } else {
+            format!(" First errors: {:?}", skipped_errors)
+        };
+        return Err(format!(
+            "Training dataset needs both train and test samples. Skipped {skipped}. Min/class={min_class_samples}.{hint}"
+        ));
+    }
+
+    Ok((
+        crate::ml::logreg::TrainDataset {
+            classes: classes.clone(),
+            x: train_x,
+            y: train_y,
+        },
+        crate::ml::logreg::TrainDataset {
+            classes,
+            x: test_x,
+            y: test_y,
+        },
+    ))
+}
+
+fn build_mlp_dataset_from_samples(
+    samples: &[TrainingSample],
+    split_map: &HashMap<PathBuf, String>,
+    use_hybrid: bool,
+    min_class_samples: usize,
+    augmentation: &crate::sample_sources::config::TrainingAugmentation,
+    seed: u64,
+) -> Result<(crate::ml::gbdt_stump::TrainDataset, crate::ml::gbdt_stump::TrainDataset), String> {
     let mut class_set = BTreeMap::new();
     for sample in samples {
         class_set.entry(sample.class_id.clone()).or_insert(());
@@ -382,6 +574,16 @@ fn build_logreg_dataset_from_samples(
     let mut embedding_cache: Option<crate::analysis::embedding::YamnetModel> = None;
     let mut skipped = 0usize;
     let mut skipped_errors = Vec::new();
+    let mut augment_rng = crate::analysis::augment::AugmentOptions {
+        enabled: augmentation.enabled,
+        copies_per_sample: augmentation.copies_per_sample,
+        gain_jitter_db: augmentation.gain_jitter_db,
+        noise_std: augmentation.noise_std,
+        pitch_semitones: augmentation.pitch_semitones,
+        time_stretch_pct: augmentation.time_stretch_pct,
+        seed,
+    }
+    .rng();
 
     for sample in samples {
         let decoded = match crate::analysis::audio::decode_for_analysis(&sample.path) {
@@ -394,12 +596,13 @@ fn build_logreg_dataset_from_samples(
                 continue;
             }
         };
-        let embedding = match crate::analysis::embedding::infer_embedding(
+        let embeddings = match build_embedding_variants(
+            &decoded,
             &mut embedding_cache,
-            &decoded.mono,
-            decoded.sample_rate_used,
+            augmentation,
+            &mut augment_rng,
         ) {
-            Ok(embedding) => embedding,
+            Ok(values) => values,
             Err(err) => {
                 skipped += 1;
                 if skipped_errors.len() < 3 {
@@ -415,12 +618,21 @@ fn build_logreg_dataset_from_samples(
             .get(&sample.path)
             .map(|s| s.as_str())
             .unwrap_or("train");
-        if split == "test" {
-            test_x.push(embedding);
-            test_y.push(class_idx);
-        } else {
-            train_x.push(embedding);
-            train_y.push(class_idx);
+        for embedding in embeddings {
+            let row = if use_hybrid {
+                let mut combined = embedding.embedding;
+                combined.extend_from_slice(&embedding.light_features);
+                combined
+            } else {
+                embedding.embedding
+            };
+            if split == "test" {
+                test_x.push(row);
+                test_y.push(class_idx);
+            } else {
+                train_x.push(row);
+                train_y.push(class_idx);
+            }
         }
     }
 
@@ -437,17 +649,27 @@ fn build_logreg_dataset_from_samples(
             format!(" First errors: {:?}", skipped_errors)
         };
         return Err(format!(
-            "Training dataset needs both train and test samples. Skipped {skipped}.{hint}"
+            "Training dataset needs both train and test samples. Skipped {skipped}. Min/class={min_class_samples}.{hint}"
         ));
     }
 
+    let feature_len_f32 = if use_hybrid {
+        crate::analysis::embedding::EMBEDDING_DIM + crate::analysis::LIGHT_DSP_VECTOR_LEN
+    } else {
+        crate::analysis::embedding::EMBEDDING_DIM
+    };
+
     Ok((
-        crate::ml::logreg::TrainDataset {
+        crate::ml::gbdt_stump::TrainDataset {
+            feature_len_f32,
+            feat_version: 0,
             classes: classes.clone(),
             x: train_x,
             y: train_y,
         },
-        crate::ml::logreg::TrainDataset {
+        crate::ml::gbdt_stump::TrainDataset {
+            feature_len_f32,
+            feat_version: 0,
             classes,
             x: test_x,
             y: test_y,
@@ -540,6 +762,77 @@ fn build_feature_dataset_from_samples(
     ))
 }
 
+#[derive(Debug, Clone)]
+struct EmbeddingVariant {
+    embedding: Vec<f32>,
+    light_features: Vec<f32>,
+}
+
+fn build_embedding_variants(
+    decoded: &crate::analysis::audio::DecodedAudio,
+    cache: &mut Option<crate::analysis::embedding::YamnetModel>,
+    augmentation: &crate::sample_sources::config::TrainingAugmentation,
+    rng: &mut rand::rngs::StdRng,
+) -> Result<Vec<EmbeddingVariant>, String> {
+    let mut variants = Vec::new();
+    let base = crate::analysis::embedding::infer_embedding(
+        cache,
+        &decoded.mono,
+        decoded.sample_rate_used,
+    )?;
+    let base_light = time_domain_vector(&decoded.mono, decoded.sample_rate_used);
+    variants.push(EmbeddingVariant {
+        embedding: base,
+        light_features: base_light,
+    });
+
+    if augmentation.enabled && augmentation.copies_per_sample > 0 {
+        let options = crate::analysis::augment::AugmentOptions {
+            enabled: true,
+            copies_per_sample: augmentation.copies_per_sample,
+            gain_jitter_db: augmentation.gain_jitter_db,
+            noise_std: augmentation.noise_std,
+            pitch_semitones: augmentation.pitch_semitones,
+            time_stretch_pct: augmentation.time_stretch_pct,
+            seed: 0,
+        };
+        for _ in 0..augmentation.copies_per_sample {
+            let augmented = crate::analysis::augment::augment_waveform(
+                &decoded.mono,
+                rng,
+                &options,
+            );
+            let embedding = crate::analysis::embedding::infer_embedding(
+                cache,
+                &augmented,
+                decoded.sample_rate_used,
+            )?;
+            let light = time_domain_vector(&augmented, decoded.sample_rate_used);
+            variants.push(EmbeddingVariant {
+                embedding,
+                light_features: light,
+            });
+        }
+    }
+
+    Ok(variants)
+}
+
+fn time_domain_vector(samples: &[f32], sample_rate: u32) -> Vec<f32> {
+    let feats = crate::analysis::time_domain::extract_time_domain_features(samples, sample_rate);
+    vec![
+        feats.duration_seconds,
+        feats.peak,
+        feats.rms,
+        feats.crest_factor,
+        feats.zero_crossing_rate,
+        feats.attack_seconds,
+        feats.decay_20db_seconds,
+        feats.decay_40db_seconds,
+        feats.onset_count as f32,
+    ]
+}
+
 pub(super) fn begin_retrain_from_app(controller: &mut EguiController) {
     if controller.runtime.jobs.model_training_in_progress() {
         controller.set_status("Model training already running", StatusTone::Info);
@@ -605,6 +898,9 @@ pub(super) fn begin_retrain_from_app(controller: &mut EguiController) {
             pack_depth: controller.retrain_pack_depth(),
             use_user_labels: controller.retrain_use_user_labels(),
             model_kind,
+            min_class_samples: controller.training_min_class_samples(),
+            use_hybrid_features: controller.training_use_hybrid_features(),
+            augmentation: controller.training_augmentation(),
             training_dataset_root: controller.training_dataset_root(),
             train_options,
             mlp_options,
@@ -660,6 +956,9 @@ impl EguiController {
         };
         let (active_model_id, active_model_kind, active_model_classes) =
             resolve_active_model_info(&conn, self.classifier_model_id());
+        let model_metrics = active_model_id
+            .as_deref()
+            .and_then(|id| load_model_metrics(&conn, id));
         let exportable = match training_exportable_count(
             &conn,
             &source_ids,
@@ -712,6 +1011,7 @@ impl EguiController {
             active_model_id,
             active_model_kind,
             active_model_classes,
+            model_metrics,
         });
         self.ui.training.summary_error = None;
     }
@@ -1105,6 +1405,91 @@ fn split_logreg_train_test(
     ))
 }
 
+fn split_mlp_embedding_train_test(
+    loaded: &crate::dataset::loader::LoadedDataset,
+    expected_len: usize,
+) -> Result<
+    (
+        crate::ml::gbdt_stump::TrainDataset,
+        crate::ml::gbdt_stump::TrainDataset,
+    ),
+    String,
+> {
+    if loaded.manifest.feature_len_f32 != expected_len {
+        return Err(format!(
+            "Unsupported embedding_len {} (expected {})",
+            loaded.manifest.feature_len_f32, expected_len
+        ));
+    }
+
+    let class_map = loaded.class_index_map();
+    let classes: Vec<String> = class_map.iter().map(|(name, _)| name.clone()).collect();
+
+    #[derive(Clone)]
+    struct LabeledRow {
+        class_idx: usize,
+        split: String,
+        row: Vec<f32>,
+    }
+
+    let mut rows = Vec::new();
+    for sample in &loaded.samples {
+        let Some(row) = loaded.feature_row(sample) else {
+            continue;
+        };
+        let Some(&class_idx) = class_map.get(&sample.label.class_id) else {
+            continue;
+        };
+        rows.push(LabeledRow {
+            class_idx,
+            split: sample.split.clone(),
+            row: row.to_vec(),
+        });
+    }
+
+    if rows.len() < 2 {
+        return Err(format!(
+            "Dataset needs at least 2 labeled samples (got {})",
+            rows.len()
+        ));
+    }
+
+    let mut train_x = Vec::new();
+    let mut train_y = Vec::new();
+    let mut test_x = Vec::new();
+    let mut test_y = Vec::new();
+    for row in rows {
+        if row.split == "test" {
+            test_x.push(row.row);
+            test_y.push(row.class_idx);
+        } else {
+            train_x.push(row.row);
+            train_y.push(row.class_idx);
+        }
+    }
+
+    if test_x.is_empty() || train_x.is_empty() {
+        return Err("Dataset needs both train and test samples".to_string());
+    }
+
+    Ok((
+        crate::ml::gbdt_stump::TrainDataset {
+            feature_len_f32: expected_len,
+            feat_version: 0,
+            classes: classes.clone(),
+            x: train_x,
+            y: train_y,
+        },
+        crate::ml::gbdt_stump::TrainDataset {
+            feature_len_f32: expected_len,
+            feat_version: 0,
+            classes,
+            x: test_x,
+            y: test_y,
+        },
+    ))
+}
+
 fn export_with_confidence_fallback(
     options: &mut crate::dataset::export::ExportOptions,
     job: &ModelTrainingJob,
@@ -1125,7 +1510,8 @@ fn export_with_confidence_fallback(
             )?;
         }
         let summary = match job.model_kind {
-            crate::sample_sources::config::TrainingModelKind::LogRegV1 => {
+            crate::sample_sources::config::TrainingModelKind::LogRegV1
+            | crate::sample_sources::config::TrainingModelKind::MlpV1 => {
                 crate::dataset::export::export_embedding_dataset_for_sources(
                     options,
                     &job.source_ids,
@@ -1178,7 +1564,8 @@ fn training_diagnostics_hint(
         &model_kind,
     )?;
     let vector_label = match model_kind {
-        crate::sample_sources::config::TrainingModelKind::LogRegV1 => "Embeddings",
+        crate::sample_sources::config::TrainingModelKind::LogRegV1
+        | crate::sample_sources::config::TrainingModelKind::MlpV1 => "Embeddings",
         _ => "Features(v1)",
     };
     let user_hint = if include_user_labels {
@@ -1225,6 +1612,7 @@ fn training_diagnostics_for_sources(
     let (where_sql_vectors, params_vectors) = if matches!(
         model_kind,
         crate::sample_sources::config::TrainingModelKind::LogRegV1
+            | crate::sample_sources::config::TrainingModelKind::MlpV1
     ) {
         source_id_where_clause("e", source_ids)
     } else {
@@ -1248,6 +1636,7 @@ fn training_diagnostics_for_sources(
     let features_v1 = if matches!(
         model_kind,
         crate::sample_sources::config::TrainingModelKind::LogRegV1
+            | crate::sample_sources::config::TrainingModelKind::MlpV1
     ) {
         let sql = format!(
             "SELECT COUNT(*)
@@ -1276,6 +1665,7 @@ fn training_diagnostics_for_sources(
         if matches!(
             model_kind,
             crate::sample_sources::config::TrainingModelKind::LogRegV1
+                | crate::sample_sources::config::TrainingModelKind::MlpV1
         ) {
             let sql = format!(
                 "SELECT COUNT(*)
@@ -1310,6 +1700,7 @@ fn training_diagnostics_for_sources(
     let weak_join = if matches!(
         model_kind,
         crate::sample_sources::config::TrainingModelKind::LogRegV1
+            | crate::sample_sources::config::TrainingModelKind::MlpV1
     ) {
         let sql = format!(
             "SELECT COUNT(*)
@@ -1387,6 +1778,7 @@ fn training_exportable_count(
     let (table, extra_where, model_param) = if matches!(
         model_kind,
         crate::sample_sources::config::TrainingModelKind::LogRegV1
+            | crate::sample_sources::config::TrainingModelKind::MlpV1
     ) {
         (
             "embeddings",
@@ -1480,6 +1872,31 @@ fn resolve_active_model_info(
     let classes: Option<Vec<String>> = serde_json::from_str(&classes_json).ok();
     let class_count = classes.as_ref().map(|v| v.len());
     (Some(model_id), Some(kind), class_count)
+}
+
+fn load_model_metrics(
+    conn: &rusqlite::Connection,
+    model_id: &str,
+) -> Option<crate::ml::metrics::ModelMetrics> {
+    let row: Option<(String, String)> = conn
+        .query_row(
+            "SELECT kind, model_json FROM models WHERE model_id = ?1",
+            params![model_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .ok()
+        .flatten();
+    let (kind, model_json) = row?;
+    match kind.as_str() {
+        "logreg_v1" => serde_json::from_str::<crate::ml::logreg::LogRegModel>(&model_json)
+            .ok()
+            .and_then(|m| m.metrics),
+        "mlp_v1" => serde_json::from_str::<crate::ml::mlp::MlpModel>(&model_json)
+            .ok()
+            .and_then(|m| m.metrics),
+        _ => None,
+    }
 }
 
 fn training_prediction_stats(
@@ -1606,6 +2023,139 @@ fn evaluate_logreg_accuracy(
         cm.add(truth, predicted);
     }
     crate::ml::metrics::accuracy(&cm)
+}
+
+struct MetricsBundle {
+    metrics: crate::ml::metrics::ModelMetrics,
+    class_thresholds: Option<Vec<f32>>,
+    top2_margin: Option<f32>,
+}
+
+fn build_logreg_metrics(
+    model: &crate::ml::logreg::LogRegModel,
+    dataset: &crate::ml::logreg::TrainDataset,
+) -> MetricsBundle {
+    let mut probs = Vec::with_capacity(dataset.x.len());
+    for row in &dataset.x {
+        probs.push(model.predict_proba(row));
+    }
+    compute_metrics(
+        &model.classes,
+        &probs,
+        &dataset.y,
+    )
+}
+
+fn build_mlp_metrics(
+    model: &crate::ml::mlp::MlpModel,
+    dataset: &crate::ml::gbdt_stump::TrainDataset,
+) -> MetricsBundle {
+    let mut probs = Vec::with_capacity(dataset.x.len());
+    for row in &dataset.x {
+        probs.push(model.predict_proba(row));
+    }
+    compute_metrics(
+        &model.classes,
+        &probs,
+        &dataset.y,
+    )
+}
+
+fn compute_metrics(
+    classes: &[String],
+    probs: &[Vec<f32>],
+    labels: &[usize],
+) -> MetricsBundle {
+    let hist_bins = 10usize;
+    let mut cm = crate::ml::metrics::ConfusionMatrix::new(classes.len());
+    let mut hists = vec![vec![0u32; hist_bins]; classes.len()];
+    let mut correct_conf: Vec<Vec<f32>> = vec![Vec::new(); classes.len()];
+    let mut margins: Vec<f32> = Vec::new();
+
+    for (row, &truth) in probs.iter().zip(labels.iter()) {
+        if row.is_empty() {
+            continue;
+        }
+        let mut indices: Vec<usize> = (0..row.len()).collect();
+        indices.sort_by(|&a, &b| {
+            row[b]
+                .partial_cmp(&row[a])
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        let top_idx = indices.first().copied().unwrap_or(0);
+        let top_conf = row.get(top_idx).copied().unwrap_or(0.0);
+        let top2_conf = indices
+            .get(1)
+            .and_then(|idx| row.get(*idx))
+            .copied()
+            .unwrap_or(0.0);
+        cm.add(truth, top_idx);
+        let bin = ((top_conf.clamp(0.0, 0.9999)) * hist_bins as f32) as usize;
+        if let Some(hist) = hists.get_mut(top_idx) {
+            if bin < hist_bins {
+                hist[bin] = hist[bin].saturating_add(1);
+            }
+        }
+        if top_idx == truth {
+            if let Some(list) = correct_conf.get_mut(truth) {
+                list.push(top_conf);
+            }
+            margins.push(top_conf - top2_conf);
+        }
+    }
+
+    let stats = crate::ml::metrics::precision_recall_by_class(&cm);
+    let mut per_class = Vec::with_capacity(classes.len());
+    for (idx, class_id) in classes.iter().enumerate() {
+        let precision = stats.get(idx).map(|s| s.precision).unwrap_or(0.0);
+        let recall = stats.get(idx).map(|s| s.recall).unwrap_or(0.0);
+        let support = stats.get(idx).map(|s| s.support).unwrap_or(0);
+        let f1 = if precision + recall > 0.0 {
+            2.0 * precision * recall / (precision + recall)
+        } else {
+            0.0
+        };
+        per_class.push(crate::ml::metrics::PerClassMetric {
+            class_id: class_id.clone(),
+            support,
+            precision,
+            recall,
+            f1,
+            confidence_hist: hists.get(idx).cloned().unwrap_or_default(),
+        });
+    }
+
+    let class_thresholds = Some(
+        correct_conf
+            .into_iter()
+            .map(|mut values| {
+                if values.is_empty() {
+                    return 0.0;
+                }
+                values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                let idx = ((values.len() as f32) * 0.1).floor() as usize;
+                let val = values[idx.min(values.len().saturating_sub(1))];
+                val.clamp(0.05, 0.9)
+            })
+            .collect::<Vec<f32>>(),
+    );
+
+    let top2_margin = if margins.is_empty() {
+        Some(0.05)
+    } else {
+        margins.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let idx = ((margins.len() as f32) * 0.1).floor() as usize;
+        Some(margins[idx.min(margins.len().saturating_sub(1))].clamp(0.02, 0.2))
+    };
+
+    MetricsBundle {
+        metrics: crate::ml::metrics::ModelMetrics {
+            per_class,
+            hist_bins,
+        },
+        class_thresholds,
+        top2_margin,
+    }
 }
 
 #[cfg(test)]

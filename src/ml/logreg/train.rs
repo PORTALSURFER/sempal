@@ -159,6 +159,9 @@ pub fn train_logreg(
         weights,
         bias,
         temperature: 1.0,
+        class_thresholds: None,
+        top2_margin: None,
+        metrics: None,
     };
     model.validate()?;
     Ok(model)

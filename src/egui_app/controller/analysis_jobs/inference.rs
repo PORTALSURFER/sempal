@@ -129,18 +129,46 @@ pub(super) fn infer_and_upsert_prediction(
             (model.classes.clone(), proba)
         }
         CachedModelKind::Mlp(model) => {
-            if model.feat_version != crate::analysis::FEATURE_VERSION_V1
-                || model.feature_len_f32 != crate::analysis::FEATURE_VECTOR_LEN_V1
-            {
-                return Ok(());
-            }
-            let Some(features) = inputs.features else {
-                return Ok(());
+            let input = match model.input_kind {
+                crate::ml::mlp::MlpInputKind::FeaturesV1 => {
+                    let Some(features) = inputs.features else {
+                        return Ok(());
+                    };
+                    if features.len() != model.feature_len_f32 {
+                        return Ok(());
+                    }
+                    features.to_vec()
+                }
+                crate::ml::mlp::MlpInputKind::EmbeddingV1 => {
+                    let Some(embedding) = inputs.embedding else {
+                        return Ok(());
+                    };
+                    if embedding.len() != model.feature_len_f32 {
+                        return Ok(());
+                    }
+                    embedding.to_vec()
+                }
+                crate::ml::mlp::MlpInputKind::HybridV1 => {
+                    let Some(embedding) = inputs.embedding else {
+                        return Ok(());
+                    };
+                    let Some(features) = inputs.features else {
+                        return Ok(());
+                    };
+                    let Some(light) = crate::analysis::light_dsp_from_features_v1(features) else {
+                        return Ok(());
+                    };
+                    let mut combined =
+                        Vec::with_capacity(embedding.len() + light.len());
+                    combined.extend_from_slice(embedding);
+                    combined.extend_from_slice(&light);
+                    if combined.len() != model.feature_len_f32 {
+                        return Ok(());
+                    }
+                    combined
+                }
             };
-            if features.len() != model.feature_len_f32 {
-                return Ok(());
-            }
-            let proba = model.predict_proba(features);
+            let proba = model.predict_proba(&input);
             (model.classes.clone(), proba)
         }
         CachedModelKind::LogReg(model) => {
@@ -157,8 +185,41 @@ pub(super) fn infer_and_upsert_prediction(
     if proba.is_empty() || proba.len() != classes.len() {
         return Ok(());
     }
-    let (mut top_class, confidence, topk) = topk_from_proba(&classes, &proba, 5);
-    if confidence < unknown_confidence_threshold {
+    let (top_idx, confidence, top2, topk) = topk_from_proba(&classes, &proba, 5);
+    let mut top_class = classes.get(top_idx).cloned().unwrap_or_default();
+    let mut is_unknown = confidence < unknown_confidence_threshold;
+    match &cached.model {
+        CachedModelKind::Mlp(model) => {
+            if let Some(thresholds) = &model.class_thresholds {
+                if let Some(threshold) = thresholds.get(top_idx) {
+                    if confidence < *threshold {
+                        is_unknown = true;
+                    }
+                }
+            }
+            if let Some(margin) = model.top2_margin {
+                if (confidence - top2) < margin {
+                    is_unknown = true;
+                }
+            }
+        }
+        CachedModelKind::LogReg(model) => {
+            if let Some(thresholds) = &model.class_thresholds {
+                if let Some(threshold) = thresholds.get(top_idx) {
+                    if confidence < *threshold {
+                        is_unknown = true;
+                    }
+                }
+            }
+            if let Some(margin) = model.top2_margin {
+                if (confidence - top2) < margin {
+                    is_unknown = true;
+                }
+            }
+        }
+        _ => {}
+    }
+    if is_unknown {
         top_class = "UNKNOWN".to_string();
     }
     let topk_json = serde_json::to_string(&topk).map_err(|err| err.to_string())?;
@@ -229,7 +290,7 @@ fn topk_from_proba(
     classes: &[String],
     proba: &[f32],
     k: usize,
-) -> (String, f32, Vec<TopKProbability>) {
+) -> (usize, f32, f32, Vec<TopKProbability>) {
     let mut indices: Vec<usize> = (0..proba.len()).collect();
     indices.sort_by(|&a, &b| {
         proba[b]
@@ -244,14 +305,14 @@ fn topk_from_proba(
             probability: proba[idx],
         });
     }
-    let top = topk
-        .first()
-        .cloned()
-        .unwrap_or(TopKProbability {
-            class_id: String::new(),
-            probability: 0.0,
-        });
-    (top.class_id, top.probability, topk)
+    let top_idx = indices.first().copied().unwrap_or(0);
+    let top_prob = proba.get(top_idx).copied().unwrap_or(0.0);
+    let top2_prob = indices
+        .get(1)
+        .and_then(|idx| proba.get(*idx))
+        .copied()
+        .unwrap_or(0.0);
+    (top_idx, top_prob, top2_prob, topk)
 }
 
 #[cfg(test)]

@@ -119,4 +119,61 @@ impl EguiController {
             self.set_status(err, StatusTone::Warning);
         }
     }
+
+    pub fn training_min_class_samples(&self) -> usize {
+        self.settings.training.min_class_samples
+    }
+
+    pub fn set_training_min_class_samples(&mut self, value: usize) {
+        let clamped = value.clamp(1, 10_000);
+        if self.settings.training.min_class_samples == clamped {
+            return;
+        }
+        self.settings.training.min_class_samples = clamped;
+        if let Err(err) = self.persist_config("Failed to save options") {
+            self.set_status(err, StatusTone::Warning);
+        }
+    }
+
+    pub fn training_use_hybrid_features(&self) -> bool {
+        self.settings.training.use_hybrid_features
+    }
+
+    pub fn set_training_use_hybrid_features(&mut self, value: bool) {
+        if self.settings.training.use_hybrid_features == value {
+            return;
+        }
+        self.settings.training.use_hybrid_features = value;
+        if let Err(err) = self.persist_config("Failed to save options") {
+            self.set_status(err, StatusTone::Warning);
+        }
+    }
+
+    pub fn training_augmentation(&self) -> crate::sample_sources::config::TrainingAugmentation {
+        self.settings.training.augmentation.clone()
+    }
+
+    pub fn set_training_augmentation(
+        &mut self,
+        value: crate::sample_sources::config::TrainingAugmentation,
+    ) {
+        if self.settings.training.augmentation.enabled == value.enabled
+            && self.settings.training.augmentation.copies_per_sample == value.copies_per_sample
+            && (self.settings.training.augmentation.gain_jitter_db - value.gain_jitter_db).abs()
+                < f32::EPSILON
+            && (self.settings.training.augmentation.noise_std - value.noise_std).abs()
+                < f32::EPSILON
+            && (self.settings.training.augmentation.pitch_semitones - value.pitch_semitones).abs()
+                < f32::EPSILON
+            && (self.settings.training.augmentation.time_stretch_pct - value.time_stretch_pct)
+                .abs()
+                < f32::EPSILON
+        {
+            return;
+        }
+        self.settings.training.augmentation = value;
+        if let Err(err) = self.persist_config("Failed to save options") {
+            self.set_status(err, StatusTone::Warning);
+        }
+    }
 }

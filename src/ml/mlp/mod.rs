@@ -3,5 +3,5 @@
 mod model;
 mod train;
 
-pub use model::MlpModel;
+pub use model::{MlpInputKind, MlpModel};
 pub use train::{TrainOptions, train_mlp};

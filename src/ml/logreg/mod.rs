@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::analysis::embedding::{EMBEDDING_DIM, EMBEDDING_MODEL_ID};
 use crate::ml::gbdt_stump::softmax;
+use crate::ml::metrics::ModelMetrics;
 
 mod train;
 pub use train::{TrainDataset, TrainOptions, train_logreg};
@@ -45,6 +46,12 @@ pub struct LogRegModel {
     pub weights: Vec<f32>,
     pub bias: Vec<f32>,
     pub temperature: f32,
+    #[serde(default)]
+    pub class_thresholds: Option<Vec<f32>>,
+    #[serde(default)]
+    pub top2_margin: Option<f32>,
+    #[serde(default)]
+    pub metrics: Option<ModelMetrics>,
 }
 
 impl LogRegModel {
@@ -66,6 +73,9 @@ impl LogRegModel {
             weights,
             bias,
             temperature: 1.0,
+            class_thresholds: None,
+            top2_margin: None,
+            metrics: None,
         }
     }
 
@@ -95,6 +105,11 @@ impl LogRegModel {
         }
         if !self.temperature.is_finite() || self.temperature <= 0.0 {
             return Err("temperature must be > 0".to_string());
+        }
+        if let Some(thresholds) = &self.class_thresholds {
+            if thresholds.len() != classes {
+                return Err("class_thresholds length mismatch".to_string());
+            }
         }
         Ok(())
     }

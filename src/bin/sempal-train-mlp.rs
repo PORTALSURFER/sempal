@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use sempal::analysis::{FEATURE_VECTOR_LEN_V1, FEATURE_VERSION_V1};
 use sempal::dataset::loader::{LoadedDataset, load_dataset};
 use sempal::ml::gbdt_stump::TrainDataset;
-use sempal::ml::mlp::{TrainOptions, train_mlp};
+use sempal::ml::mlp::{MlpInputKind, TrainOptions, train_mlp};
 use sempal::ml::metrics::{ConfusionMatrix, accuracy, precision_recall_by_class};
 
 fn main() {
@@ -26,6 +26,10 @@ fn run() -> Result<(), String> {
         batch_size: options.batch_size,
         learning_rate: options.learning_rate,
         l2_penalty: options.l2_penalty,
+        dropout: 0.15,
+        label_smoothing: 0.05,
+        balance_classes: true,
+        input_kind: MlpInputKind::FeaturesV1,
         seed: options.seed,
     };
     let model = train_mlp(&train, &train_options)?;

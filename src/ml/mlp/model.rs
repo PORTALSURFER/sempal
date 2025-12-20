@@ -1,11 +1,15 @@
 use serde::{Deserialize, Serialize};
 
-use crate::analysis::{FEATURE_VECTOR_LEN_V1, FEATURE_VERSION_V1};
+use crate::analysis::embedding::EMBEDDING_DIM;
+use crate::analysis::{FEATURE_VECTOR_LEN_V1, FEATURE_VERSION_V1, LIGHT_DSP_VECTOR_LEN};
+use crate::ml::metrics::ModelMetrics;
 use crate::ml::gbdt_stump::softmax;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MlpModel {
     pub model_version: i64,
+    #[serde(default = "default_input_kind")]
+    pub input_kind: MlpInputKind,
     pub feat_version: i64,
     pub feature_len_f32: usize,
     pub classes: Vec<String>,
@@ -16,21 +20,60 @@ pub struct MlpModel {
     pub bias2: Vec<f32>,
     pub feature_mean: Vec<f32>,
     pub feature_std: Vec<f32>,
+    #[serde(default)]
+    pub class_thresholds: Option<Vec<f32>>,
+    #[serde(default)]
+    pub top2_margin: Option<f32>,
+    #[serde(default)]
+    pub metrics: Option<ModelMetrics>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum MlpInputKind {
+    FeaturesV1,
+    EmbeddingV1,
+    HybridV1,
+}
+
+fn default_input_kind() -> MlpInputKind {
+    MlpInputKind::FeaturesV1
 }
 
 impl MlpModel {
     pub fn validate(&self) -> Result<(), String> {
-        if self.feat_version != FEATURE_VERSION_V1 {
-            return Err(format!(
-                "Unsupported feat_version {} (expected {})",
-                self.feat_version, FEATURE_VERSION_V1
-            ));
-        }
-        if self.feature_len_f32 != FEATURE_VECTOR_LEN_V1 {
-            return Err(format!(
-                "Unsupported feature_len_f32 {} (expected {})",
-                self.feature_len_f32, FEATURE_VECTOR_LEN_V1
-            ));
+        match self.input_kind {
+            MlpInputKind::FeaturesV1 => {
+                if self.feat_version != FEATURE_VERSION_V1 {
+                    return Err(format!(
+                        "Unsupported feat_version {} (expected {})",
+                        self.feat_version, FEATURE_VERSION_V1
+                    ));
+                }
+                if self.feature_len_f32 != FEATURE_VECTOR_LEN_V1 {
+                    return Err(format!(
+                        "Unsupported feature_len_f32 {} (expected {})",
+                        self.feature_len_f32, FEATURE_VECTOR_LEN_V1
+                    ));
+                }
+            }
+            MlpInputKind::EmbeddingV1 => {
+                if self.feature_len_f32 != EMBEDDING_DIM {
+                    return Err(format!(
+                        "Unsupported embedding_len {} (expected {})",
+                        self.feature_len_f32, EMBEDDING_DIM
+                    ));
+                }
+            }
+            MlpInputKind::HybridV1 => {
+                let expected = EMBEDDING_DIM + LIGHT_DSP_VECTOR_LEN;
+                if self.feature_len_f32 != expected {
+                    return Err(format!(
+                        "Unsupported hybrid_len {} (expected {})",
+                        self.feature_len_f32, expected
+                    ));
+                }
+            }
         }
         let input = self.feature_len_f32;
         let hidden = self.hidden_size;
@@ -52,6 +95,11 @@ impl MlpModel {
         }
         if self.feature_std.len() != input {
             return Err("feature_std length mismatch".to_string());
+        }
+        if let Some(thresholds) = &self.class_thresholds {
+            if thresholds.len() != classes {
+                return Err("class_thresholds length mismatch".to_string());
+            }
         }
         Ok(())
     }
@@ -118,6 +166,7 @@ mod tests {
     fn softmax_output_sums_to_one() {
         let model = MlpModel {
             model_version: 1,
+            input_kind: MlpInputKind::FeaturesV1,
             feat_version: FEATURE_VERSION_V1,
             feature_len_f32: FEATURE_VECTOR_LEN_V1,
             classes: vec!["kick".into(), "snare".into()],
@@ -128,6 +177,9 @@ mod tests {
             bias2: vec![0.0; 2],
             feature_mean: vec![0.0; FEATURE_VECTOR_LEN_V1],
             feature_std: vec![1.0; FEATURE_VECTOR_LEN_V1],
+            class_thresholds: None,
+            top2_margin: None,
+            metrics: None,
         };
         let out = model.predict_proba(&vec![0.0; FEATURE_VECTOR_LEN_V1]);
         let sum: f32 = out.iter().sum();
