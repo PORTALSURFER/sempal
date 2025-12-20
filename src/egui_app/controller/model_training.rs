@@ -6,6 +6,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::mpsc::Sender;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use tracing::warn;
 
 #[derive(Clone, Debug)]
 pub(super) struct ModelTrainingJob {
@@ -373,14 +374,34 @@ fn build_logreg_dataset_from_samples(
     let mut test_x = Vec::new();
     let mut test_y = Vec::new();
     let mut embedding_cache: Option<crate::analysis::embedding::YamnetModel> = None;
+    let mut skipped = 0usize;
+    let mut skipped_errors = Vec::new();
 
     for sample in samples {
-        let decoded = crate::analysis::audio::decode_for_analysis(&sample.path)?;
-        let embedding = crate::analysis::embedding::infer_embedding(
+        let decoded = match crate::analysis::audio::decode_for_analysis(&sample.path) {
+            Ok(decoded) => decoded,
+            Err(err) => {
+                skipped += 1;
+                if skipped_errors.len() < 3 {
+                    skipped_errors.push(err);
+                }
+                continue;
+            }
+        };
+        let embedding = match crate::analysis::embedding::infer_embedding(
             &mut embedding_cache,
             &decoded.mono,
             decoded.sample_rate_used,
-        )?;
+        ) {
+            Ok(embedding) => embedding,
+            Err(err) => {
+                skipped += 1;
+                if skipped_errors.len() < 3 {
+                    skipped_errors.push(err);
+                }
+                continue;
+            }
+        };
         let Some(&class_idx) = class_map.get(&sample.class_id) else {
             continue;
         };
@@ -397,8 +418,21 @@ fn build_logreg_dataset_from_samples(
         }
     }
 
+    if skipped > 0 {
+        warn!(
+            "Skipped {skipped} training samples during embedding; first errors: {:?}",
+            skipped_errors
+        );
+    }
     if train_x.is_empty() || test_x.is_empty() {
-        return Err("Training dataset needs both train and test samples".to_string());
+        let hint = if skipped_errors.is_empty() {
+            String::new()
+        } else {
+            format!(" First errors: {:?}", skipped_errors)
+        };
+        return Err(format!(
+            "Training dataset needs both train and test samples. Skipped {skipped}.{hint}"
+        ));
     }
 
     Ok((
@@ -435,9 +469,20 @@ fn build_feature_dataset_from_samples(
     let mut train_y = Vec::new();
     let mut test_x = Vec::new();
     let mut test_y = Vec::new();
+    let mut skipped = 0usize;
+    let mut skipped_errors = Vec::new();
 
     for sample in samples {
-        let vector = crate::analysis::compute_feature_vector_v1_for_path(&sample.path)?;
+        let vector = match crate::analysis::compute_feature_vector_v1_for_path(&sample.path) {
+            Ok(vector) => vector,
+            Err(err) => {
+                skipped += 1;
+                if skipped_errors.len() < 3 {
+                    skipped_errors.push(err);
+                }
+                continue;
+            }
+        };
         let Some(&class_idx) = class_map.get(&sample.class_id) else {
             continue;
         };
@@ -454,8 +499,21 @@ fn build_feature_dataset_from_samples(
         }
     }
 
+    if skipped > 0 {
+        warn!(
+            "Skipped {skipped} training samples during feature extraction; first errors: {:?}",
+            skipped_errors
+        );
+    }
     if train_x.is_empty() || test_x.is_empty() {
-        return Err("Training dataset needs both train and test samples".to_string());
+        let hint = if skipped_errors.is_empty() {
+            String::new()
+        } else {
+            format!(" First errors: {:?}", skipped_errors)
+        };
+        return Err(format!(
+            "Training dataset needs both train and test samples. Skipped {skipped}.{hint}"
+        ));
     }
 
     Ok((
