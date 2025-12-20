@@ -113,6 +113,9 @@ pub struct TrainingSettings {
     /// Model type used for in-app retraining.
     #[serde(default = "default_training_model_kind")]
     pub model_kind: TrainingModelKind,
+    /// Optional folder used for curated training data.
+    #[serde(default)]
+    pub training_dataset_root: Option<PathBuf>,
 }
 
 impl Default for TrainingSettings {
@@ -122,6 +125,7 @@ impl Default for TrainingSettings {
             retrain_pack_depth: default_retrain_pack_depth(),
             use_user_labels: default_use_user_labels(),
             model_kind: default_training_model_kind(),
+            training_dataset_root: None,
         }
     }
 }
@@ -727,6 +731,7 @@ mod tests {
                     retrain_pack_depth: 3,
                     use_user_labels: false,
                     model_kind: TrainingModelKind::GbdtStumpV1,
+                    training_dataset_root: Some(PathBuf::from("training")),
                 },
                 ..AppConfig::default()
             };
@@ -736,6 +741,10 @@ mod tests {
             assert_eq!(loaded.training.retrain_pack_depth, 3);
             assert_eq!(loaded.training.use_user_labels, false);
             assert_eq!(loaded.training.model_kind, TrainingModelKind::GbdtStumpV1);
+            assert_eq!(
+                loaded.training.training_dataset_root,
+                Some(PathBuf::from("training"))
+            );
         });
     }
 }

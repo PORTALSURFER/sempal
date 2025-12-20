@@ -26,6 +26,7 @@ mod interaction_options;
 mod jobs;
 mod loading;
 mod model_options;
+mod training_dataset;
 mod model_training;
 mod os_explorer;
 mod playback;

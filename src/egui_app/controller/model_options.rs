@@ -89,6 +89,20 @@ impl EguiController {
         }
     }
 
+    pub fn training_dataset_root(&self) -> Option<PathBuf> {
+        self.settings.training.training_dataset_root.clone()
+    }
+
+    pub fn set_training_dataset_root(&mut self, root: Option<PathBuf>) {
+        if self.settings.training.training_dataset_root == root {
+            return;
+        }
+        self.settings.training.training_dataset_root = root;
+        if let Err(err) = self.persist_config("Failed to save options") {
+            self.set_status(err, StatusTone::Warning);
+        }
+    }
+
     pub fn training_model_kind(&self) -> crate::sample_sources::config::TrainingModelKind {
         self.settings.training.model_kind.clone()
     }

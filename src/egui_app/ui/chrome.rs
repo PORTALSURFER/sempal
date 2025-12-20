@@ -520,6 +520,27 @@ impl EguiApp {
                 ui.label(RichText::new(label_rules_path).color(palette.text_muted).small());
                 ui.add_space(6.0);
 
+                ui.label(
+                    RichText::new("Training dataset").strong().color(palette.text_primary),
+                );
+                let dataset_label = self
+                    .controller
+                    .training_dataset_root()
+                    .map(|path| path.display().to_string())
+                    .unwrap_or_else(|| "None (use library labels)".to_string());
+                ui.label(RichText::new(dataset_label).color(palette.text_muted).small());
+                ui.horizontal(|ui| {
+                    if ui.button("Choose dataset folder…").clicked() {
+                        self.controller.pick_training_dataset_root();
+                    }
+                    if ui.button("Open folder").clicked() {
+                        self.controller.open_training_dataset_root();
+                    }
+                    if ui.button("Clear").clicked() {
+                        self.controller.clear_training_dataset_root();
+                    }
+                });
+
                 let selected_source = self.controller.current_source().is_some();
                 if ui
                     .add_enabled(

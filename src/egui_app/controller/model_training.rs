@@ -1,6 +1,8 @@
 use super::*;
 use crate::egui_app::state::ProgressTaskKind;
 use rusqlite::{params, OptionalExtension};
+use std::collections::{BTreeMap, HashMap};
+use std::fs;
 use std::path::PathBuf;
 use std::sync::mpsc::Sender;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -13,6 +15,7 @@ pub(super) struct ModelTrainingJob {
     pub(super) pack_depth: usize,
     pub(super) use_user_labels: bool,
     pub(super) model_kind: crate::sample_sources::config::TrainingModelKind,
+    pub(super) training_dataset_root: Option<PathBuf>,
     pub(super) train_options: crate::ml::gbdt_stump::TrainOptions,
     pub(super) mlp_options: crate::ml::mlp::TrainOptions,
     pub(super) logreg_options: crate::ml::logreg::TrainOptions,
@@ -42,6 +45,9 @@ pub(super) fn run_model_training(
     tx: &Sender<super::jobs::JobMessage>,
 ) -> Result<ModelTrainingResult, String> {
     let total_steps = 4usize;
+    if let Some(root) = job.training_dataset_root.clone() {
+        return run_training_from_dataset_root(job, tx, root);
+    }
     send_progress(
         tx,
         0,
@@ -155,6 +161,321 @@ pub(super) fn run_model_training(
     })
 }
 
+fn run_training_from_dataset_root(
+    job: ModelTrainingJob,
+    tx: &Sender<super::jobs::JobMessage>,
+    root: PathBuf,
+) -> Result<ModelTrainingResult, String> {
+    let total_steps = 4usize;
+    send_progress(tx, 0, total_steps, "Scanning training dataset…")?;
+    let samples = collect_training_samples(&root)?;
+    if samples.is_empty() {
+        return Err("Training dataset folder is empty".to_string());
+    }
+    let split_map = stratified_split_map(&samples, "sempal-training-dataset-v1", 0.1, 0.1)?;
+
+    send_progress(tx, 1, total_steps, "Building training vectors…")?;
+    let (model_json, classes_json, kind, feat_version, feature_len_f32) = match job.model_kind {
+        crate::sample_sources::config::TrainingModelKind::LogRegV1 => {
+            let (train, test) = build_logreg_dataset_from_samples(&samples, &split_map)?;
+            let mut model = crate::ml::logreg::train_logreg(&train, &job.logreg_options)?;
+            model.model_id = Some(uuid::Uuid::new_v4().to_string());
+            let _ = evaluate_logreg_accuracy(&model, &test);
+            (
+                serde_json::to_string(&model).map_err(|err| err.to_string())?,
+                serde_json::to_string(&model.classes).map_err(|err| err.to_string())?,
+                "logreg_v1",
+                0,
+                crate::analysis::embedding::EMBEDDING_DIM as i64,
+            )
+        }
+        crate::sample_sources::config::TrainingModelKind::MlpV1 => {
+            let (train, test) = build_feature_dataset_from_samples(&samples, &split_map)?;
+            let model = crate::ml::mlp::train_mlp(&train, &job.mlp_options)?;
+            let _ = evaluate_mlp_accuracy(&model, &test);
+            (
+                serde_json::to_string(&model).map_err(|err| err.to_string())?,
+                serde_json::to_string(&model.classes).map_err(|err| err.to_string())?,
+                "mlp_v1",
+                crate::analysis::FEATURE_VERSION_V1,
+                crate::analysis::FEATURE_VECTOR_LEN_V1 as i64,
+            )
+        }
+        crate::sample_sources::config::TrainingModelKind::GbdtStumpV1 => {
+            let (train, test) = build_feature_dataset_from_samples(&samples, &split_map)?;
+            let model = crate::ml::gbdt_stump::train_gbdt_stump(&train, &job.train_options)?;
+            let _ = evaluate_accuracy(&model, &test);
+            (
+                serde_json::to_string(&model).map_err(|err| err.to_string())?,
+                serde_json::to_string(&model.classes).map_err(|err| err.to_string())?,
+                "gbdt_stump_v1",
+                crate::analysis::FEATURE_VERSION_V1,
+                crate::analysis::FEATURE_VECTOR_LEN_V1 as i64,
+            )
+        }
+    };
+
+    send_progress(tx, 2, total_steps, "Importing model…")?;
+    let model_id = import_model_json_into_db(
+        &job.db_path,
+        kind,
+        &model_json,
+        &classes_json,
+        feat_version,
+        feature_len_f32,
+    )?;
+
+    send_progress(tx, 3, total_steps, "Enqueueing inference…")?;
+    let (mut inference_jobs_enqueued, _progress) =
+        super::analysis_jobs::enqueue_inference_jobs_for_sources(
+            &job.source_ids,
+            Some(&model_id),
+        )?;
+    if inference_jobs_enqueued == 0 {
+        let (count, _progress) = super::analysis_jobs::enqueue_inference_jobs_for_sources(
+            &job.source_ids,
+            None,
+        )?;
+        inference_jobs_enqueued = count;
+    }
+
+    Ok(ModelTrainingResult {
+        model_id,
+        exported_samples: samples.len(),
+        inference_jobs_enqueued,
+    })
+}
+
+#[derive(Clone, Debug)]
+struct TrainingSample {
+    class_id: String,
+    path: PathBuf,
+}
+
+fn collect_training_samples(root: &PathBuf) -> Result<Vec<TrainingSample>, String> {
+    let mut samples = Vec::new();
+    let entries = fs::read_dir(root).map_err(|err| format!("Read training dataset root: {err}"))?;
+    for entry in entries {
+        let entry = entry.map_err(|err| format!("Read training dataset entry: {err}"))?;
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let class_id = entry
+            .file_name()
+            .to_string_lossy()
+            .trim()
+            .to_string();
+        if class_id.is_empty() {
+            continue;
+        }
+        let mut files = Vec::new();
+        collect_files_recursive(&path, &mut files)?;
+        for file in files {
+            samples.push(TrainingSample {
+                class_id: class_id.clone(),
+                path: file,
+            });
+        }
+    }
+    Ok(samples)
+}
+
+fn collect_files_recursive(root: &PathBuf, out: &mut Vec<PathBuf>) -> Result<(), String> {
+    let entries = fs::read_dir(root).map_err(|err| format!("Read dir {}: {err}", root.display()))?;
+    for entry in entries {
+        let entry = entry.map_err(|err| format!("Read dir entry: {err}"))?;
+        let path = entry.path();
+        if path.is_dir() {
+            collect_files_recursive(&path, out)?;
+        } else if path.is_file() {
+            out.push(path);
+        }
+    }
+    Ok(())
+}
+
+fn stratified_split_map(
+    samples: &[TrainingSample],
+    seed: &str,
+    test_fraction: f64,
+    val_fraction: f64,
+) -> Result<HashMap<PathBuf, String>, String> {
+    if test_fraction + val_fraction > 1.0 + f64::EPSILON {
+        return Err("Invalid split fractions".to_string());
+    }
+    let mut by_class: BTreeMap<String, Vec<(u128, PathBuf)>> = BTreeMap::new();
+    for sample in samples {
+        let hash = blake3::hash(
+            format!("{seed}|{}|{}", sample.class_id, sample.path.display()).as_bytes(),
+        );
+        let key = u128::from_le_bytes(hash.as_bytes()[0..16].try_into().expect("slice size"));
+        by_class
+            .entry(sample.class_id.clone())
+            .or_default()
+            .push((key, sample.path.clone()));
+    }
+    let mut splits = HashMap::new();
+    for (_class_id, mut entries) in by_class {
+        entries.sort_by(|a, b| a.0.cmp(&b.0));
+        let n = entries.len();
+        if n == 0 {
+            continue;
+        }
+        let mut test_n = ((n as f64) * test_fraction).round() as usize;
+        let mut val_n = ((n as f64) * val_fraction).round() as usize;
+        if n == 1 {
+            test_n = 0;
+            val_n = 0;
+        } else {
+            while test_n + val_n >= n {
+                if val_n > 0 {
+                    val_n -= 1;
+                } else if test_n > 0 {
+                    test_n -= 1;
+                } else {
+                    break;
+                }
+            }
+        }
+        for (idx, (_hash, path)) in entries.into_iter().enumerate() {
+            let split = if idx < test_n {
+                "test"
+            } else if idx < test_n + val_n {
+                "val"
+            } else {
+                "train"
+            };
+            splits.insert(path, split.to_string());
+        }
+    }
+    Ok(splits)
+}
+
+fn build_logreg_dataset_from_samples(
+    samples: &[TrainingSample],
+    split_map: &HashMap<PathBuf, String>,
+) -> Result<(crate::ml::logreg::TrainDataset, crate::ml::logreg::TrainDataset), String> {
+    let mut class_set = BTreeMap::new();
+    for sample in samples {
+        class_set.entry(sample.class_id.clone()).or_insert(());
+    }
+    let classes: Vec<String> = class_set.keys().cloned().collect();
+    let class_map: HashMap<String, usize> = classes
+        .iter()
+        .cloned()
+        .enumerate()
+        .map(|(idx, class_id)| (class_id, idx))
+        .collect();
+
+    let mut train_x = Vec::new();
+    let mut train_y = Vec::new();
+    let mut test_x = Vec::new();
+    let mut test_y = Vec::new();
+    let mut embedding_cache: Option<crate::analysis::embedding::YamnetModel> = None;
+
+    for sample in samples {
+        let decoded = crate::analysis::audio::decode_for_analysis(&sample.path)?;
+        let embedding = crate::analysis::embedding::infer_embedding(
+            &mut embedding_cache,
+            &decoded.mono,
+            decoded.sample_rate_used,
+        )?;
+        let Some(&class_idx) = class_map.get(&sample.class_id) else {
+            continue;
+        };
+        let split = split_map
+            .get(&sample.path)
+            .map(|s| s.as_str())
+            .unwrap_or("train");
+        if split == "test" {
+            test_x.push(embedding);
+            test_y.push(class_idx);
+        } else {
+            train_x.push(embedding);
+            train_y.push(class_idx);
+        }
+    }
+
+    if train_x.is_empty() || test_x.is_empty() {
+        return Err("Training dataset needs both train and test samples".to_string());
+    }
+
+    Ok((
+        crate::ml::logreg::TrainDataset {
+            classes: classes.clone(),
+            x: train_x,
+            y: train_y,
+        },
+        crate::ml::logreg::TrainDataset {
+            classes,
+            x: test_x,
+            y: test_y,
+        },
+    ))
+}
+
+fn build_feature_dataset_from_samples(
+    samples: &[TrainingSample],
+    split_map: &HashMap<PathBuf, String>,
+) -> Result<(crate::ml::gbdt_stump::TrainDataset, crate::ml::gbdt_stump::TrainDataset), String> {
+    let mut class_set = BTreeMap::new();
+    for sample in samples {
+        class_set.entry(sample.class_id.clone()).or_insert(());
+    }
+    let classes: Vec<String> = class_set.keys().cloned().collect();
+    let class_map: HashMap<String, usize> = classes
+        .iter()
+        .cloned()
+        .enumerate()
+        .map(|(idx, class_id)| (class_id, idx))
+        .collect();
+
+    let mut train_x = Vec::new();
+    let mut train_y = Vec::new();
+    let mut test_x = Vec::new();
+    let mut test_y = Vec::new();
+
+    for sample in samples {
+        let vector = crate::analysis::compute_feature_vector_v1_for_path(&sample.path)?;
+        let Some(&class_idx) = class_map.get(&sample.class_id) else {
+            continue;
+        };
+        let split = split_map
+            .get(&sample.path)
+            .map(|s| s.as_str())
+            .unwrap_or("train");
+        if split == "test" {
+            test_x.push(vector);
+            test_y.push(class_idx);
+        } else {
+            train_x.push(vector);
+            train_y.push(class_idx);
+        }
+    }
+
+    if train_x.is_empty() || test_x.is_empty() {
+        return Err("Training dataset needs both train and test samples".to_string());
+    }
+
+    Ok((
+        crate::ml::gbdt_stump::TrainDataset {
+            feature_len_f32: crate::analysis::FEATURE_VECTOR_LEN_V1,
+            feat_version: crate::analysis::FEATURE_VERSION_V1,
+            classes: classes.clone(),
+            x: train_x,
+            y: train_y,
+        },
+        crate::ml::gbdt_stump::TrainDataset {
+            feature_len_f32: crate::analysis::FEATURE_VECTOR_LEN_V1,
+            feat_version: crate::analysis::FEATURE_VERSION_V1,
+            classes,
+            x: test_x,
+            y: test_y,
+        },
+    ))
+}
+
 pub(super) fn begin_retrain_from_app(controller: &mut EguiController) {
     if controller.runtime.jobs.model_training_in_progress() {
         controller.set_status("Model training already running", StatusTone::Info);
@@ -220,6 +541,7 @@ pub(super) fn begin_retrain_from_app(controller: &mut EguiController) {
             pack_depth: controller.retrain_pack_depth(),
             use_user_labels: controller.retrain_use_user_labels(),
             model_kind,
+            training_dataset_root: controller.training_dataset_root(),
             train_options,
             mlp_options,
             logreg_options,
