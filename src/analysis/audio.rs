@@ -142,10 +142,20 @@ fn normalize_peak_in_place(samples: &mut [f32]) {
 }
 
 fn sanitize_sample(sample: f32) -> f32 {
-    if sample.is_finite() {
-        sample.clamp(-1.0, 1.0)
-    } else {
+    if !sample.is_finite() {
+        return 0.0;
+    }
+    let clamped = sample.clamp(-1.0, 1.0);
+    if clamped != 0.0 && clamped.abs() < f32::MIN_POSITIVE {
         0.0
+    } else {
+        clamped
+    }
+}
+
+pub(crate) fn sanitize_samples_in_place(samples: &mut [f32]) {
+    for sample in samples.iter_mut() {
+        *sample = sanitize_sample(*sample);
     }
 }
 
@@ -341,6 +351,15 @@ mod tests {
         assert_eq!(out.len(), 4);
         assert!((out[0] - 0.0).abs() < 1e-6);
         assert!((out[out.len() - 1] - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn sanitize_samples_removes_nan_and_denormals() {
+        let mut out = vec![0.0_f32, f32::NAN, f32::MIN_POSITIVE / 2.0];
+        sanitize_samples_in_place(&mut out);
+        assert_eq!(out.len(), 3);
+        assert!(out.iter().all(|v| v.is_finite()));
+        assert!(out.iter().all(|v| v.abs() == 0.0 || v.abs() >= f32::MIN_POSITIVE));
     }
 
     #[test]

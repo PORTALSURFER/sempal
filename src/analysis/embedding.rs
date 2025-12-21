@@ -71,12 +71,12 @@ pub(crate) fn infer_embedding(
     }
     let model = cache.as_mut().expect("CLAP model loaded");
 
-    let resampled = if sample_rate != CLAP_SAMPLE_RATE {
+    let mut resampled = if sample_rate != CLAP_SAMPLE_RATE {
         audio::resample_linear(samples, sample_rate, CLAP_SAMPLE_RATE)
     } else {
         samples.to_vec()
     };
-
+    audio::sanitize_samples_in_place(&mut resampled);
     let input = repeat_pad(&resampled, CLAP_INPUT_SAMPLES);
     let array = Array3::from_shape_vec((1, 1, CLAP_INPUT_SAMPLES), input)
         .map_err(|err| format!("Failed to build CLAP input: {err}"))?;
