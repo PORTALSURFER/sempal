@@ -32,13 +32,14 @@ pub fn build_logreg_dataset_from_samples(
     ),
     String,
 > {
+    let mut progress = None;
     build_logreg_dataset_from_samples_impl(
         samples,
         split_map,
         min_class_samples,
         augmentation,
         seed,
-        None,
+        &mut progress,
     )
 }
 
@@ -201,6 +202,7 @@ pub fn build_mlp_dataset_from_samples(
     ),
     String,
 > {
+    let mut progress = None;
     build_mlp_dataset_from_samples_impl(
         samples,
         split_map,
@@ -208,7 +210,7 @@ pub fn build_mlp_dataset_from_samples(
         min_class_samples,
         augmentation,
         seed,
-        None,
+        &mut progress,
     )
 }
 

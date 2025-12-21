@@ -18,7 +18,8 @@ pub fn build_feature_dataset_from_samples(
     ),
     String,
 > {
-    build_feature_dataset_from_samples_impl(samples, split_map, None)
+    let mut progress = None;
+    build_feature_dataset_from_samples_impl(samples, split_map, &mut progress)
 }
 
 /// Build GBDT datasets with progress updates during feature extraction.
