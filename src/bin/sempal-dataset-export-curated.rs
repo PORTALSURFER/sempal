@@ -41,7 +41,7 @@ fn run() -> Result<(), String> {
             }
         }
     };
-    let mut progress = Some(&mut progress_cb);
+    let mut progress: Option<&mut dyn FnMut(TrainingProgress)> = Some(&mut progress_cb);
     let summary = export_curated_embedding_dataset_with_progress(&options, &mut progress)?;
     println!(
         "Exported {} rows from {} samples across {} classes",
