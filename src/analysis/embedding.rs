@@ -217,3 +217,62 @@ fn extract_embedding(outputs: &SessionOutputs) -> Result<Vec<f32>, String> {
     }
     Err("No embedding output found in ONNX outputs".to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde::Deserialize;
+
+    #[derive(Deserialize)]
+    struct GoldenEmbedding {
+        sample_rate: u32,
+        tone_hz: f32,
+        tone_amp: f32,
+        tone_seconds: f32,
+        target_seconds: f32,
+        embedding: Vec<f32>,
+    }
+
+    #[test]
+    fn golden_embedding_matches_python() {
+        let path = match std::env::var("SEMPAL_CLAP_EMBED_GOLDEN_PATH") {
+            Ok(path) if !path.trim().is_empty() => path,
+            _ => return,
+        };
+        if !clap_model_path().map(|p| p.exists()).unwrap_or(false) {
+            return;
+        }
+        if !onnx_runtime_path().map(|p| p.exists()).unwrap_or(false) {
+            return;
+        }
+        let payload = std::fs::read_to_string(path).expect("read golden json");
+        let golden: GoldenEmbedding = serde_json::from_str(&payload).expect("parse golden json");
+        assert_eq!(golden.embedding.len(), EMBEDDING_DIM);
+
+        let tone_len = (golden.sample_rate as f32 * golden.tone_seconds).round() as usize;
+        let mut tone = Vec::with_capacity(tone_len);
+        for i in 0..tone_len {
+            let t = i as f32 / golden.sample_rate.max(1) as f32;
+            let sample =
+                (2.0 * std::f32::consts::PI * golden.tone_hz * t).sin() * golden.tone_amp;
+            tone.push(sample);
+        }
+        let target_len = (golden.sample_rate as f32 * golden.target_seconds).round() as usize;
+        let mut padded = Vec::new();
+        repeat_pad_into(&mut padded, &tone, target_len);
+
+        let embedding =
+            infer_embedding(&padded, golden.sample_rate).expect("rust embedding");
+        assert_eq!(embedding.len(), golden.embedding.len());
+
+        let mut max_diff = 0.0_f32;
+        for (&a, &b) in embedding.iter().zip(golden.embedding.iter()) {
+            max_diff = max_diff.max((a - b).abs());
+        }
+        const MAX_DIFF: f32 = 1e-3;
+        assert!(
+            max_diff <= MAX_DIFF,
+            "max diff {max_diff} exceeds {MAX_DIFF}"
+        );
+    }
+}
