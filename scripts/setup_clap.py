@@ -43,6 +43,7 @@ def try_import_clap() -> tuple[bool, str | None]:
         importlib.import_module("torch")
         importlib.import_module("laion_clap")
         importlib.import_module("onnx")
+        importlib.import_module("onnxscript")
         return True, None
     except Exception as err:
         return False, str(err)
