@@ -28,12 +28,9 @@ fn run() -> Result<(), String> {
     }
     let manifest_path = options.dataset_dir.join("manifest.json");
     let (train, val, test, input_kind) = if manifest_path.is_file() {
-        if options.use_hybrid {
-            return Err("Hybrid training is only supported with a curated folder dataset".to_string());
-        }
         let loaded = load_dataset(&options.dataset_dir).map_err(|err| err.to_string())?;
-        let (train, val, test) = split_train_val_test(&loaded)?;
-        (train, val, test, MlpInputKind::EmbeddingV1)
+        let (train, val, test, input_kind) = split_train_val_test(&loaded, options.use_hybrid)?;
+        (train, val, test, input_kind)
     } else {
         println!("Scanning curated dataset...");
         let samples = curated::collect_training_samples(&options.dataset_dir)?;
@@ -259,7 +256,7 @@ fn help_text() -> String {
         "  --l2 <f>              L2 penalty (default 1e-4)",
         "  --seed <n>            RNG seed (default 42)",
         "  --min-class-samples <n> Minimum samples per class for curated folders (default: 30).",
-        "  --hybrid             Use embeddings + light DSP features (curated folders only).",
+        "  --hybrid             Use embeddings + light DSP features (requires hybrid export).",
         "  --augment            Enable default augmentation for curated folders.",
     ]
     .join("\n")
@@ -267,13 +264,34 @@ fn help_text() -> String {
 
 fn split_train_val_test(
     loaded: &LoadedDataset,
-) -> Result<(TrainDataset, TrainDataset, TrainDataset), String> {
-    if loaded.manifest.feature_len_f32 != EMBEDDING_DIM {
+    use_hybrid: bool,
+) -> Result<(TrainDataset, TrainDataset, TrainDataset, MlpInputKind), String> {
+    let manifest_len = loaded.manifest.feature_len_f32;
+    let hybrid_len = EMBEDDING_DIM + sempal::analysis::LIGHT_DSP_VECTOR_LEN;
+    if manifest_len != EMBEDDING_DIM && manifest_len != hybrid_len {
         return Err(format!(
-            "Unsupported embedding_len {} (expected {})",
-            loaded.manifest.feature_len_f32, EMBEDDING_DIM
+            "Unsupported embedding_len {} (expected {} or {})",
+            manifest_len, EMBEDDING_DIM, hybrid_len
         ));
     }
+    if use_hybrid && manifest_len != hybrid_len {
+        return Err(format!(
+            "Dataset feature_len {} does not match hybrid length {}",
+            manifest_len, hybrid_len
+        ));
+    }
+    if !use_hybrid && manifest_len != EMBEDDING_DIM {
+        return Err(format!(
+            "Dataset feature_len {} requires --hybrid",
+            manifest_len
+        ));
+    }
+    let expected_len = manifest_len;
+    let input_kind = if use_hybrid {
+        MlpInputKind::HybridV1
+    } else {
+        MlpInputKind::EmbeddingV1
+    };
 
     let class_map = loaded.class_index_map();
     let classes: Vec<String> = class_map.iter().map(|(name, _)| name.clone()).collect();
@@ -328,26 +346,27 @@ fn split_train_val_test(
 
     Ok((
         TrainDataset {
-            feature_len_f32: EMBEDDING_DIM,
+            feature_len_f32: expected_len,
             feat_version: 0,
             classes: classes.clone(),
             x: train_x,
             y: train_y,
         },
         TrainDataset {
-            feature_len_f32: EMBEDDING_DIM,
+            feature_len_f32: expected_len,
             feat_version: 0,
             classes: classes.clone(),
             x: val_x,
             y: val_y,
         },
         TrainDataset {
-            feature_len_f32: EMBEDDING_DIM,
+            feature_len_f32: expected_len,
             feat_version: 0,
             classes,
             x: test_x,
             y: test_y,
         },
+        input_kind,
     ))
 }
 

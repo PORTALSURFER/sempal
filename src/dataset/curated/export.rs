@@ -31,6 +31,7 @@ pub struct CuratedExportOptions {
     pub test_fraction: f64,
     pub val_fraction: f64,
     pub pack_depth: usize,
+    pub use_hybrid: bool,
 }
 
 impl Default for CuratedExportOptions {
@@ -44,6 +45,7 @@ impl Default for CuratedExportOptions {
             test_fraction: 0.1,
             val_fraction: 0.1,
             pack_depth: 1,
+            use_hybrid: false,
         }
     }
 }
@@ -87,7 +89,7 @@ pub fn export_curated_embedding_dataset_with_progress(
         progress,
     )?;
     writers.finish()?;
-    write_manifest(&options.out_dir)?;
+    write_manifest(&options.out_dir, feature_len(options.use_hybrid))?;
     state.warn_if_skipped();
 
     Ok(build_summary(state, samples.len(), total_classes))
@@ -175,6 +177,7 @@ fn export_sample(
         &sample.class_id,
         &rel,
         &pack_id,
+        options.use_hybrid,
         embeddings,
     )?;
     progress_tick(progress, "embedding", state.processed, state.total, state.skipped);
@@ -216,18 +219,28 @@ fn write_embeddings(
     class_id: &str,
     rel: &str,
     pack_id: &str,
+    use_hybrid: bool,
     embeddings: Vec<super::embeddings::EmbeddingVariant>,
 ) -> Result<(), String> {
     for (idx, variant) in embeddings.into_iter().enumerate() {
+        let feature_len = feature_len(use_hybrid);
+        let row = if use_hybrid {
+            let mut combined = variant.embedding;
+            combined.extend_from_slice(&variant.light_features);
+            combined
+        } else {
+            variant.embedding
+        };
         let record = DatasetSampleRecord::new(
             sample_id_for_variant(rel, idx),
             pack_id.to_string(),
             split.to_string(),
             class_id.to_string(),
             state.offset_bytes,
+            feature_len,
         );
-        writers.write_record(&record, &variant.embedding)?;
-        state.offset_bytes += (EMBEDDING_DIM * 4) as u64;
+        writers.write_record(&record, feature_len, &row)?;
+        state.offset_bytes += (feature_len * 4) as u64;
         state.total_exported += 1;
         *state.class_counts.entry(class_id.to_string()).or_insert(0) += 1;
     }
@@ -269,12 +282,12 @@ fn sample_id_for_variant(rel: &str, variant_idx: usize) -> String {
     }
 }
 
-fn write_manifest(out_dir: &Path) -> Result<(), String> {
+fn write_manifest(out_dir: &Path, feature_len: usize) -> Result<(), String> {
     let manifest = DatasetManifest {
         format_version: DATASET_FORMAT_VERSION,
         feature_encoding: "f32le".to_string(),
         feat_version: 0,
-        feature_len_f32: EMBEDDING_DIM,
+        feature_len_f32: feature_len,
         files: DatasetManifestFiles {
             samples: SAMPLES_FILE_NAME.to_string(),
             features: FEATURES_FILE_NAME.to_string(),
@@ -296,6 +309,14 @@ fn build_summary(
         total_classes,
         skipped: state.skipped,
         class_counts: state.class_counts,
+    }
+}
+
+fn feature_len(use_hybrid: bool) -> usize {
+    if use_hybrid {
+        EMBEDDING_DIM + crate::analysis::LIGHT_DSP_VECTOR_LEN
+    } else {
+        EMBEDDING_DIM
     }
 }
 
@@ -361,9 +382,14 @@ impl DatasetWriters {
         })
     }
 
-    fn write_record(&mut self, record: &DatasetSampleRecord, embedding: &[f32]) -> Result<(), String> {
-        if embedding.len() != EMBEDDING_DIM {
-            return Err("Unexpected embedding length".to_string());
+    fn write_record(
+        &mut self,
+        record: &DatasetSampleRecord,
+        feature_len: usize,
+        embedding: &[f32],
+    ) -> Result<(), String> {
+        if embedding.len() != feature_len {
+            return Err("Unexpected feature length".to_string());
         }
         for value in embedding {
             self.features
@@ -431,6 +457,7 @@ impl DatasetSampleRecord {
         split: String,
         class_id: String,
         offset_bytes: u64,
+        feature_len: usize,
     ) -> Self {
         Self {
             sample_id,
@@ -445,7 +472,7 @@ impl DatasetSampleRecord {
             features: DatasetFeaturesRef {
                 feat_version: 0,
                 offset_bytes,
-                len_f32: EMBEDDING_DIM,
+                len_f32: feature_len,
                 encoding: "f32le".to_string(),
             },
         }

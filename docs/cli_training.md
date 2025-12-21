@@ -93,6 +93,7 @@ cargo run --bin sempal-train-logreg -- --dataset ./dataset --out ./model.json
 
 Notes:
 - The curated export uses stratified splits across classes.
+- Add `--hybrid` to export embeddings plus light DSP features for MLP hybrid mode.
 - Add `--augment` to bake augmentation copies into the export.
 
 ## Feature pipeline (legacy baseline)

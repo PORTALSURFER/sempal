@@ -115,6 +115,9 @@ fn parse_args(args: Vec<String>) -> Result<CuratedExportOptions, String> {
                     .parse::<usize>()
                     .map_err(|_| format!("Invalid --pack-depth value: {value}"))?;
             }
+            "--hybrid" => {
+                options.use_hybrid = true;
+            }
             "--augment" => {
                 options.augmentation.enabled = true;
             }
@@ -150,6 +153,7 @@ fn help_text() -> String {
         "  --test-fraction <f64>    Test fraction (default: 0.1).",
         "  --val-fraction <f64>     Val fraction (default: 0.1).",
         "  --pack-depth <usize>     Pack folder depth in pack_id (default: 1).",
+        "  --hybrid                Export embeddings + light DSP features.",
         "  --augment                Enable training-time augmentation copies.",
     ]
     .join("\n")
