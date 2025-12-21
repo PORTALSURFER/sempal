@@ -12,8 +12,8 @@
   },
   "mel": {
     "n_mels": 64,
-    "fmin": "match_hf_clap_feature_extractor",
-    "fmax": "match_hf_clap_feature_extractor"
+    "fmin": 0.0,
+    "fmax": 16000.0
   },
   "log_scaling": "match_hf_clap_feature_extractor"
 }

@@ -2,6 +2,9 @@ use crate::analysis::fft::{Complex32, fft_radix2_inplace, hann_window};
 
 pub(crate) const CLAP_STFT_N_FFT: usize = 1024;
 pub(crate) const CLAP_STFT_HOP: usize = 480;
+pub(crate) const CLAP_MEL_BANDS: usize = 64;
+pub(crate) const CLAP_MEL_FMIN_HZ: f32 = 0.0;
+pub(crate) const CLAP_MEL_FMAX_HZ: f32 = 16_000.0;
 
 /// Compute power spectra (0..=Nyquist) with Hann windowing for CLAP preprocessing.
 pub(crate) fn stft_power_frames(
@@ -25,6 +28,28 @@ pub(crate) fn stft_power_frames(
         frames.push(vec![0.0_f32; n_fft / 2 + 1]);
     }
     Ok(frames)
+}
+
+pub(crate) struct ClapMelBank {
+    filters: Vec<Vec<(usize, f32)>>,
+}
+
+impl ClapMelBank {
+    pub(crate) fn new(sample_rate: u32, fft_len: usize) -> Self {
+        let bins = mel_bins(
+            sample_rate,
+            fft_len,
+            CLAP_MEL_BANDS,
+            CLAP_MEL_FMIN_HZ,
+            CLAP_MEL_FMAX_HZ,
+        );
+        let filters = build_filters(&bins, CLAP_MEL_BANDS);
+        Self { filters }
+    }
+
+    pub(crate) fn mel_from_power(&self, power: &[f32]) -> Vec<f32> {
+        apply_filters(&self.filters, power)
+    }
 }
 
 fn fill_windowed(target: &mut [Complex32], samples: &[f32], start: usize, window: &[f32]) {
@@ -57,6 +82,91 @@ fn power_spectrum(fft: &[Complex32]) -> Vec<f32> {
     power
 }
 
+fn mel_bins(
+    sample_rate: u32,
+    fft_len: usize,
+    mel_bands: usize,
+    f_min: f32,
+    f_max: f32,
+) -> Vec<usize> {
+    let sr = sample_rate.max(1) as f32;
+    let nyquist = sr * 0.5;
+    let f_max = f_max.min(nyquist).max(f_min);
+    let mel_min = hz_to_mel(f_min);
+    let mel_max = hz_to_mel(f_max);
+    let mut hz_points = Vec::with_capacity(mel_bands + 2);
+    for i in 0..(mel_bands + 2) {
+        let t = i as f32 / (mel_bands + 1) as f32;
+        hz_points.push(mel_to_hz(mel_min + (mel_max - mel_min) * t));
+    }
+    hz_points
+        .into_iter()
+        .map(|hz| freq_to_bin(hz, sample_rate, fft_len))
+        .collect()
+}
+
+fn build_filters(bins: &[usize], mel_bands: usize) -> Vec<Vec<(usize, f32)>> {
+    let mut filters = Vec::with_capacity(mel_bands);
+    for m in 0..mel_bands {
+        let left = bins[m];
+        let center = bins[m + 1];
+        let right = bins[m + 2].max(center + 1);
+        filters.push(build_tri_filter(left, center, right));
+    }
+    filters
+}
+
+fn apply_filters(filters: &[Vec<(usize, f32)>], power: &[f32]) -> Vec<f32> {
+    let mut out = Vec::with_capacity(filters.len());
+    for filter in filters {
+        let mut sum = 0.0_f64;
+        for &(bin, weight) in filter {
+            let p = power.get(bin).copied().unwrap_or(0.0).max(0.0) as f64;
+            sum += p * weight as f64;
+        }
+        out.push(sum as f32);
+    }
+    out
+}
+
+fn build_tri_filter(left: usize, center: usize, right: usize) -> Vec<(usize, f32)> {
+    let mut weights = Vec::new();
+    if right <= left {
+        return weights;
+    }
+    for bin in left..=right {
+        let w = if bin < center {
+            if center == left {
+                0.0
+            } else {
+                (bin as f32 - left as f32) / (center as f32 - left as f32)
+            }
+        } else if right == center {
+            0.0
+        } else {
+            (right as f32 - bin as f32) / (right as f32 - center as f32)
+        };
+        if w > 0.0 {
+            weights.push((bin, w));
+        }
+    }
+    weights
+}
+
+fn freq_to_bin(freq_hz: f32, sample_rate: u32, fft_len: usize) -> usize {
+    let nyquist = sample_rate.max(1) as f32 * 0.5;
+    let freq = freq_hz.clamp(0.0, nyquist);
+    (((freq * fft_len as f32) / sample_rate.max(1) as f32).floor() as usize).min(fft_len / 2)
+}
+
+fn hz_to_mel(hz: f32) -> f32 {
+    2595.0_f32 * (1.0 + hz / 700.0).log10()
+}
+
+fn mel_to_hz(mel: f32) -> f32 {
+    700.0_f32 * (10.0_f32.powf(mel / 2595.0) - 1.0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -75,5 +185,13 @@ mod tests {
         let frames = stft_power_frames(&samples, CLAP_STFT_N_FFT, CLAP_STFT_HOP).unwrap();
         assert_eq!(frames.len(), 3);
         assert!(frames.iter().all(|f| f.iter().all(|v| v.is_finite())));
+    }
+
+    #[test]
+    fn clap_mel_bank_outputs_expected_length() {
+        let bank = ClapMelBank::new(48_000, CLAP_STFT_N_FFT);
+        let power = vec![0.0_f32; CLAP_STFT_N_FFT / 2 + 1];
+        let mel = bank.mel_from_power(&power);
+        assert_eq!(mel.len(), CLAP_MEL_BANDS);
     }
 }
