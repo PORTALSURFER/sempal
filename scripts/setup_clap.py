@@ -30,18 +30,19 @@ def resolve_app_root() -> Path:
     return Path(base) / ".sempal"
 
 
-def try_import_clap() -> bool:
+def try_import_clap() -> tuple[bool, str | None]:
     try:
         importlib.import_module("torch")
         importlib.import_module("laion_clap")
         importlib.import_module("onnx")
-        return True
-    except Exception:
-        return False
+        return True, None
+    except Exception as err:
+        return False, str(err)
 
 
 def ensure_clap(no_install: bool) -> None:
-    if try_import_clap():
+    ok, err = try_import_clap()
+    if ok:
         return
     if no_install:
         raise RuntimeError(
@@ -58,7 +59,8 @@ def ensure_clap(no_install: bool) -> None:
         subprocess.check_call(cmd)
         if use_user:
             site.addsitedir(site.getusersitepackages())
-        return try_import_clap()
+        ok, _err = try_import_clap()
+        return ok
 
     if install(True):
         return
@@ -80,11 +82,13 @@ def ensure_clap(no_install: bool) -> None:
             "onnx",
         ]
     )
-    if try_import_clap():
+    ok, err = try_import_clap()
+    if ok:
         return
 
     raise RuntimeError(
         "CLAP install completed but import still failed. "
+        f"Import error: {err}. "
         f"Try: {sys.executable} -m pip install torch torchaudio laion-clap onnx"
     )
 
