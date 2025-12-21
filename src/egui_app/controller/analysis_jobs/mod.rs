@@ -17,6 +17,7 @@ pub(in crate::egui_app::controller) use enqueue::{
 };
 pub(super) use enqueue::enqueue_jobs_for_source;
 pub(super) use enqueue::enqueue_jobs_for_source_backfill;
+pub(super) use enqueue::enqueue_jobs_for_embedding_backfill;
 pub(super) use enqueue::enqueue_jobs_for_source_missing_features;
 pub(super) use failures::failed_samples_for_source;
 pub(super) use pool::AnalysisWorkerPool;

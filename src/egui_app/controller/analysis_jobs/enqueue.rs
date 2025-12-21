@@ -2,6 +2,7 @@ use super::db;
 use super::types::AnalysisProgress;
 use rusqlite::types::Value;
 use rusqlite::{OptionalExtension, params, params_from_iter};
+use serde_json;
 use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -307,6 +308,67 @@ pub(in crate::egui_app::controller) fn enqueue_jobs_for_source_missing_features(
         created_at,
     )?;
     let inserted = db::enqueue_jobs(&mut conn, &jobs, db::ANALYZE_SAMPLE_JOB_TYPE, created_at)?;
+    let progress = db::current_progress(&conn)?;
+    Ok((inserted, progress))
+}
+
+pub(in crate::egui_app::controller) fn enqueue_jobs_for_embedding_backfill(
+    source: &crate::sample_sources::SampleSource,
+) -> Result<(usize, AnalysisProgress), String> {
+    const BATCH_SIZE: usize = 32;
+
+    let db_path = library_db_path()?;
+    let mut conn = db::open_library_db(&db_path)?;
+
+    let active_jobs: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM analysis_jobs
+             WHERE job_type = ?1 AND sample_id LIKE ?2 AND status IN ('pending','running')",
+            params![db::EMBEDDING_BACKFILL_JOB_TYPE, format!("embed_backfill::{}::%", source.id)],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+    if active_jobs > 0 {
+        return Ok((0, db::current_progress(&conn)?));
+    }
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT s.sample_id
+             FROM samples s
+             LEFT JOIN embeddings e ON e.sample_id = s.sample_id
+             WHERE s.sample_id LIKE ?1
+               AND (e.sample_id IS NULL OR e.model_id != ?2)
+             ORDER BY s.sample_id ASC",
+        )
+        .map_err(|err| format!("Prepare embedding backfill query failed: {err}"))?;
+    let mut sample_ids = Vec::new();
+    let rows = stmt
+        .query_map(
+            params![
+                format!("{}::%", source.id.as_str()),
+                crate::analysis::embedding::EMBEDDING_MODEL_ID
+            ],
+            |row| row.get::<_, String>(0),
+        )
+        .map_err(|err| format!("Failed to query embedding backfill rows: {err}"))?;
+    for row in rows {
+        sample_ids.push(row.map_err(|err| format!("Failed to decode sample_id: {err}"))?);
+    }
+
+    if sample_ids.is_empty() {
+        return Ok((0, db::current_progress(&conn)?));
+    }
+
+    let created_at = now_epoch_seconds();
+    let mut jobs = Vec::new();
+    for (idx, chunk) in sample_ids.chunks(BATCH_SIZE).enumerate() {
+        let job_id = format!("embed_backfill::{}::{}", source.id.as_str(), idx);
+        let payload =
+            serde_json::to_string(chunk).map_err(|err| format!("Encode backfill payload: {err}"))?;
+        jobs.push((job_id, payload));
+    }
+    let inserted = db::enqueue_jobs(&mut conn, &jobs, db::EMBEDDING_BACKFILL_JOB_TYPE, created_at)?;
     let progress = db::current_progress(&conn)?;
     Ok((inserted, progress))
 }
@@ -634,5 +696,64 @@ mod tests {
             )
             .unwrap();
         assert_eq!(pending, 1);
+    }
+
+    #[test]
+    fn embedding_backfill_enqueues_missing_or_mismatched() {
+        let config_dir = tempdir().unwrap();
+        let _guard = ConfigBaseGuard::set(config_dir.path().to_path_buf());
+
+        let source_root = tempdir().unwrap();
+        let source = SampleSource::new(source_root.path().to_path_buf());
+        let _ =
+            crate::sample_sources::library::save(&crate::sample_sources::library::LibraryState {
+                sources: vec![source.clone()],
+                collections: vec![],
+            })
+            .unwrap();
+
+        let db_path = crate::app_dirs::app_root_dir()
+            .unwrap()
+            .join(crate::sample_sources::library::LIBRARY_DB_FILE_NAME);
+        let conn = db::open_library_db(&db_path).unwrap();
+
+        let a = format!("{}::Pack/a.wav", source.id.as_str());
+        let b = format!("{}::Pack/b.wav", source.id.as_str());
+        let c = format!("{}::Pack/c.wav", source.id.as_str());
+        for (sample_id, hash) in [(&a, "ha"), (&b, "hb"), (&c, "hc")] {
+            conn.execute(
+                "INSERT INTO samples (sample_id, content_hash, size, mtime_ns, duration_seconds, sr_used, analysis_version)
+                 VALUES (?1, ?2, 1, 1, NULL, NULL, NULL)",
+                params![sample_id, hash],
+            )
+            .unwrap();
+        }
+        conn.execute(
+            "INSERT INTO embeddings (sample_id, model_id, dim, dtype, l2_normed, vec)
+             VALUES (?1, ?2, ?3, ?4, 1, X'01020304')",
+            params![
+                &b,
+                crate::analysis::embedding::EMBEDDING_MODEL_ID,
+                crate::analysis::embedding::EMBEDDING_DIM as i64,
+                crate::analysis::embedding::EMBEDDING_DTYPE_F32
+            ],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO embeddings (sample_id, model_id, dim, dtype, l2_normed, vec)
+             VALUES (?1, 'old_model', ?2, ?3, 1, X'01020304')",
+            params![
+                &c,
+                crate::analysis::embedding::EMBEDDING_DIM as i64,
+                crate::analysis::embedding::EMBEDDING_DTYPE_F32
+            ],
+        )
+        .unwrap();
+
+        let (inserted, _progress) = enqueue_jobs_for_embedding_backfill(&source).unwrap();
+        assert!(inserted > 0);
+
+        let (second_inserted, _progress) = enqueue_jobs_for_embedding_backfill(&source).unwrap();
+        assert_eq!(second_inserted, 0);
     }
 }

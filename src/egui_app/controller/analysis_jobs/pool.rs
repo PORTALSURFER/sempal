@@ -1,7 +1,9 @@
 use super::db;
 use super::inference;
 use super::types::{AnalysisJobMessage, AnalysisProgress};
+use log::warn;
 use rusqlite::OptionalExtension;
+use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::{
@@ -9,7 +11,7 @@ use std::sync::{
     Mutex,
     atomic::AtomicU32,
     atomic::{AtomicBool, Ordering},
-    mpsc::Sender,
+    mpsc::{Sender, channel},
 };
 use std::thread::{JoinHandle, sleep};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -298,6 +300,7 @@ fn run_job(
             max_analysis_duration_seconds,
             preferred_model_id.as_deref(),
         ),
+        db::EMBEDDING_BACKFILL_JOB_TYPE => run_embedding_backfill_job(conn, job),
         db::INFERENCE_JOB_TYPE => {
             run_inference_job(
                 conn,
@@ -313,6 +316,194 @@ fn run_job(
         }
         _ => Err(format!("Unknown job type: {}", job.job_type)),
     }
+}
+
+struct EmbeddingWork {
+    sample_id: String,
+    absolute_path: PathBuf,
+}
+
+struct EmbeddingResult {
+    sample_id: String,
+    embedding: Vec<f32>,
+}
+
+fn run_embedding_backfill_job(conn: &rusqlite::Connection, job: &db::ClaimedJob) -> Result<(), String> {
+    let payload = job
+        .content_hash
+        .as_deref()
+        .ok_or_else(|| "Embedding backfill payload missing".to_string())?;
+    let sample_ids: Vec<String> = serde_json::from_str(payload)
+        .map_err(|err| format!("Invalid embedding backfill payload: {err}"))?;
+    if sample_ids.is_empty() {
+        return Ok(());
+    }
+
+    let mut roots: HashMap<String, PathBuf> = HashMap::new();
+    let mut items = Vec::new();
+    for sample_id in sample_ids {
+        if load_embedding_vec_optional(
+            conn,
+            &sample_id,
+            crate::analysis::embedding::EMBEDDING_MODEL_ID,
+            crate::analysis::embedding::EMBEDDING_DIM,
+        )?
+        .is_some()
+        {
+            continue;
+        }
+        let (source_id, relative_path) = match db::parse_sample_id(&sample_id) {
+            Ok(parsed) => parsed,
+            Err(err) => {
+                warn!("Skipping embed backfill sample_id={sample_id}: {err}");
+                continue;
+            }
+        };
+        let root = if let Some(root) = roots.get(&source_id) {
+            root.clone()
+        } else {
+            let Some(root) = db::source_root_for(conn, &source_id)? else {
+                warn!("Missing source root for embed backfill source_id={source_id}");
+                continue;
+            };
+            roots.insert(source_id.clone(), root.clone());
+            root
+        };
+        let absolute_path = root.join(&relative_path);
+        if !absolute_path.exists() {
+            warn!("Missing file for embed backfill: {}", absolute_path.display());
+            continue;
+        }
+        items.push(EmbeddingWork {
+            sample_id,
+            absolute_path,
+        });
+    }
+
+    if items.is_empty() {
+        return Ok(());
+    }
+
+    let worker_count = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1)
+        .min(items.len())
+        .max(1);
+    let queue = Arc::new(Mutex::new(VecDeque::from(items)));
+    let (tx, rx) = channel();
+
+    std::thread::scope(|scope| {
+        for _ in 0..worker_count {
+            let queue = Arc::clone(&queue);
+            let tx = tx.clone();
+            scope.spawn(move || loop {
+                let work = {
+                    let mut guard = match queue.lock() {
+                        Ok(guard) => guard,
+                        Err(_) => return,
+                    };
+                    guard.pop_front()
+                };
+                let Some(work) = work else {
+                    break;
+                };
+                let decoded = match crate::analysis::audio::decode_for_analysis(&work.absolute_path) {
+                    Ok(decoded) => decoded,
+                    Err(err) => {
+                        let _ = tx.send(Err(format!(
+                            "Decode failed for {}: {err}",
+                            work.absolute_path.display()
+                        )));
+                        continue;
+                    }
+                };
+                let embedding = match crate::analysis::embedding::infer_embedding(
+                    &decoded.mono,
+                    decoded.sample_rate_used,
+                ) {
+                    Ok(embedding) => embedding,
+                    Err(err) => {
+                        let _ = tx.send(Err(format!(
+                            "Embed failed for {}: {err}",
+                            work.absolute_path.display()
+                        )));
+                        continue;
+                    }
+                };
+                let _ = tx.send(Ok(EmbeddingResult {
+                    sample_id: work.sample_id,
+                    embedding,
+                }));
+            });
+        }
+        drop(tx);
+    });
+
+    let mut results = Vec::new();
+    let mut errors = Vec::new();
+    while let Ok(result) = rx.recv() {
+        match result {
+            Ok(result) => results.push(result),
+            Err(err) => {
+                if errors.len() < 3 {
+                    errors.push(err);
+                }
+            }
+        }
+    }
+
+    if results.is_empty() {
+        if !errors.is_empty() {
+            return Err(format!("Embedding backfill failed: {:?}", errors));
+        }
+        return Ok(());
+    }
+
+    const INSERT_BATCH: usize = 32;
+    for chunk in results.chunks(INSERT_BATCH) {
+        conn.execute_batch("BEGIN IMMEDIATE")
+            .map_err(|err| format!("Begin embedding backfill tx failed: {err}"))?;
+        for result in chunk {
+            let embedding_blob = crate::analysis::vector::encode_f32_le_blob(&result.embedding);
+            let insert = conn.execute(
+                "INSERT INTO embeddings (sample_id, model_id, dim, dtype, l2_normed, vec)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                 ON CONFLICT(sample_id) DO UPDATE SET
+                    model_id = excluded.model_id,
+                    dim = excluded.dim,
+                    dtype = excluded.dtype,
+                    l2_normed = excluded.l2_normed,
+                    vec = excluded.vec",
+                rusqlite::params![
+                    result.sample_id,
+                    crate::analysis::embedding::EMBEDDING_MODEL_ID,
+                    crate::analysis::embedding::EMBEDDING_DIM as i64,
+                    crate::analysis::embedding::EMBEDDING_DTYPE_F32,
+                    true,
+                    embedding_blob
+                ],
+            );
+            if let Err(err) = insert {
+                let _ = conn.execute_batch("ROLLBACK");
+                return Err(format!("Embedding backfill insert failed: {err}"));
+            }
+        }
+        conn.execute_batch("COMMIT")
+            .map_err(|err| format!("Commit embedding backfill tx failed: {err}"))?;
+        for result in chunk {
+            if let Err(err) =
+                crate::analysis::ann_index::upsert_embedding(conn, &result.sample_id, &result.embedding)
+            {
+                warn!("ANN index update failed for {}: {err}", result.sample_id);
+            }
+        }
+    }
+
+    if !errors.is_empty() {
+        warn!("Embedding backfill had errors: {:?}", errors);
+    }
+
+    Ok(())
 }
 
 fn run_analysis_job(
