@@ -75,6 +75,7 @@ cargo run --bin sempal-train-baseline -- --dataset ./curated --out ./model.json
 Notes:
 - Use `--min-class-samples` to control class filtering (default: 30).
 - Add `--augment` to enable default training-time augmentation.
+- Add `--preprocess` to trim silence and normalize before embedding.
 - Curated embedding training still requires the CLAP model under the app models directory.
 
 ## Curated export pipeline (fast retrains)
@@ -95,6 +96,7 @@ Notes:
 - The curated export uses stratified splits across classes.
 - Add `--hybrid` to export embeddings plus light DSP features for MLP hybrid mode.
 - Add `--augment` to bake augmentation copies into the export.
+- Add `--preprocess` to trim silence and normalize before embedding.
 
 ## Feature pipeline (legacy baseline)
 

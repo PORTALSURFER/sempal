@@ -118,6 +118,9 @@ fn parse_args(args: Vec<String>) -> Result<CuratedExportOptions, String> {
             "--hybrid" => {
                 options.use_hybrid = true;
             }
+            "--preprocess" => {
+                options.augmentation.preprocess = true;
+            }
             "--augment" => {
                 options.augmentation.enabled = true;
             }
@@ -154,6 +157,7 @@ fn help_text() -> String {
         "  --val-fraction <f64>     Val fraction (default: 0.1).",
         "  --pack-depth <usize>     Pack folder depth in pack_id (default: 1).",
         "  --hybrid                Export embeddings + light DSP features.",
+        "  --preprocess            Trim silence and normalize before embedding.",
         "  --augment                Enable training-time augmentation copies.",
     ]
     .join("\n")

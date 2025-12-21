@@ -163,6 +163,9 @@ pub struct TrainingAugmentation {
     /// Time-stretch range in percent (+/-).
     #[serde(default = "default_augmentation_time_stretch_pct")]
     pub time_stretch_pct: f32,
+    /// Apply extra trim/normalize preprocessing before embedding.
+    #[serde(default)]
+    pub preprocess: bool,
 }
 
 impl Default for TrainingAugmentation {
@@ -174,6 +177,7 @@ impl Default for TrainingAugmentation {
             noise_std: default_augmentation_noise_std(),
             pitch_semitones: default_augmentation_pitch_semitones(),
             time_stretch_pct: default_augmentation_time_stretch_pct(),
+            preprocess: false,
         }
     }
 }

@@ -31,9 +31,17 @@ pub(super) fn build_embedding_variants(
     rng: &mut rand::rngs::StdRng,
 ) -> Result<Vec<EmbeddingVariant>, String> {
     let mut variants = Vec::new();
+    let base_samples = if augmentation.preprocess {
+        crate::analysis::audio::preprocess_mono_for_embedding(
+            &decoded.mono,
+            decoded.sample_rate_used,
+        )
+    } else {
+        decoded.mono.clone()
+    };
     let base =
-        crate::analysis::embedding::infer_embedding(&decoded.mono, decoded.sample_rate_used)?;
-    let base_light = time_domain_vector(&decoded.mono, decoded.sample_rate_used);
+        crate::analysis::embedding::infer_embedding(&base_samples, decoded.sample_rate_used)?;
+    let base_light = time_domain_vector(&base_samples, decoded.sample_rate_used);
     variants.push(EmbeddingVariant {
         embedding: base,
         light_features: base_light,
@@ -55,11 +63,19 @@ pub(super) fn build_embedding_variants(
                 rng,
                 &options,
             );
+            let processed = if augmentation.preprocess {
+                crate::analysis::audio::preprocess_mono_for_embedding(
+                    &augmented,
+                    decoded.sample_rate_used,
+                )
+            } else {
+                augmented
+            };
             let embedding = crate::analysis::embedding::infer_embedding(
-                &augmented,
+                &processed,
                 decoded.sample_rate_used,
             )?;
-            let light = time_domain_vector(&augmented, decoded.sample_rate_used);
+            let light = time_domain_vector(&processed, decoded.sample_rate_used);
             variants.push(EmbeddingVariant {
                 embedding,
                 light_features: light,

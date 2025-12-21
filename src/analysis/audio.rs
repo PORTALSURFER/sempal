@@ -27,6 +27,12 @@ pub(crate) fn decode_for_analysis(path: &Path) -> Result<AnalysisAudio, String> 
     decode_for_analysis_with_rate(path, ANALYSIS_SAMPLE_RATE)
 }
 
+pub(crate) fn preprocess_mono_for_embedding(samples: &[f32], sample_rate: u32) -> Vec<f32> {
+    let mut trimmed = trim_silence_with_hysteresis(samples, sample_rate);
+    normalize_peak_in_place(&mut trimmed);
+    trimmed
+}
+
 pub(crate) fn probe_duration_seconds(path: &Path) -> Result<Option<f32>, String> {
     if path
         .extension()

@@ -229,6 +229,9 @@ fn parse_args(args: Vec<String>) -> Result<CliOptions, String> {
             "--augment" => {
                 augmentation.enabled = true;
             }
+            "--preprocess" => {
+                augmentation.preprocess = true;
+            }
             unknown => return Err(format!("Unknown argument: {unknown}\n\n{}", help_text())),
         }
         idx += 1;
@@ -270,6 +273,7 @@ fn help_text() -> String {
         "  --temperature <f32>    Softmax temperature (default: 1.0).",
         "  --min-class-samples <n> Minimum samples per class for curated folders (default: 30).",
         "  --augment             Enable default augmentation for curated folders.",
+        "  --preprocess          Trim silence and normalize before embedding.",
         "  --no-balance           Disable class-balanced loss weights.",
     ]
     .join("\n")
