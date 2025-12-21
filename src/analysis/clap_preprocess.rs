@@ -52,6 +52,24 @@ impl ClapMelBank {
     }
 }
 
+/// Compute log-mel frames using CLAP defaults (natural log with epsilon).
+pub(crate) fn log_mel_frames(
+    samples: &[f32],
+    sample_rate: u32,
+) -> Result<Vec<Vec<f32>>, String> {
+    let frames = stft_power_frames(samples, CLAP_STFT_N_FFT, CLAP_STFT_HOP)?;
+    let mel_bank = ClapMelBank::new(sample_rate, CLAP_STFT_N_FFT);
+    let mut out = Vec::with_capacity(frames.len());
+    for power in frames {
+        let mut mel = mel_bank.mel_from_power(&power);
+        for value in &mut mel {
+            *value = log_mel(*value);
+        }
+        out.push(mel);
+    }
+    Ok(out)
+}
+
 fn fill_windowed(target: &mut [Complex32], samples: &[f32], start: usize, window: &[f32]) {
     for (i, cell) in target.iter_mut().enumerate() {
         let src = samples.get(start + i).copied().unwrap_or(0.0);
@@ -80,6 +98,17 @@ fn power_spectrum(fft: &[Complex32]) -> Vec<f32> {
         power.push((c.re * c.re + c.im * c.im).max(0.0));
     }
     power
+}
+
+fn log_mel(value: f32) -> f32 {
+    const EPS: f32 = 1e-10;
+    let v = value.max(EPS);
+    let out = v.ln();
+    if out.is_finite() {
+        out
+    } else {
+        0.0
+    }
 }
 
 fn mel_bins(
@@ -193,5 +222,13 @@ mod tests {
         let power = vec![0.0_f32; CLAP_STFT_N_FFT / 2 + 1];
         let mel = bank.mel_from_power(&power);
         assert_eq!(mel.len(), CLAP_MEL_BANDS);
+    }
+
+    #[test]
+    fn log_mel_frames_are_finite() {
+        let samples = vec![0.0_f32; CLAP_STFT_N_FFT];
+        let frames = log_mel_frames(&samples, 48_000).unwrap();
+        assert!(!frames.is_empty());
+        assert!(frames.iter().all(|f| f.iter().all(|v| v.is_finite())));
     }
 }
