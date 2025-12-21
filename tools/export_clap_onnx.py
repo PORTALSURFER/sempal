@@ -29,6 +29,8 @@ def export_clap_audio_encoder(
             self.inner = inner
 
         def forward(self, audio):
+            if audio.dim() == 3 and audio.size(1) == 1:
+                audio = audio[:, 0, :]
             return self.inner.get_audio_embedding_from_data(audio, use_tensor=True)
 
     wrapper = ClapAudioWrapper(model).to(device)
