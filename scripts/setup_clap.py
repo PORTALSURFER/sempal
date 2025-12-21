@@ -137,10 +137,7 @@ def build_onnx(target: Path, checkpoint: Path | None, channels: int, samples: in
 
     wrapper = ClapAudioWrapper(model).to(device)
     dummy = torch.randn(1, channels, samples, device=device)
-    torch.onnx.export(
-        wrapper,
-        dummy,
-        target,
+    export_kwargs = dict(
         input_names=["audio"],
         output_names=["embedding"],
         dynamic_axes={
@@ -149,6 +146,16 @@ def build_onnx(target: Path, checkpoint: Path | None, channels: int, samples: in
         },
         opset_version=opset,
     )
+    try:
+        torch.onnx.export(
+            wrapper,
+            dummy,
+            target,
+            **export_kwargs,
+            dynamo=False,
+        )
+    except TypeError:
+        torch.onnx.export(wrapper, dummy, target, **export_kwargs)
 
 
 def download_checkpoint(urls: list[str], dest: Path) -> Path:
