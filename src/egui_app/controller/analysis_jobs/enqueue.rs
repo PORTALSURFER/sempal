@@ -149,10 +149,7 @@ pub(in crate::egui_app::controller) fn enqueue_jobs_for_source_backfill(
 
             let content_hash = match entry.content_hash {
                 Some(hash) if !hash.trim().is_empty() => hash,
-                _ => {
-                    let absolute = source.root.join(&entry.relative_path);
-                    compute_content_hash(&absolute)?
-                }
+                _ => fast_content_hash(entry.file_size, entry.modified_ns),
             };
             sample_metadata.push(db::SampleMetadata {
                 sample_id: sample_id.clone(),
@@ -267,7 +264,7 @@ pub(in crate::egui_app::controller) fn enqueue_jobs_for_source_missing_features(
 
             let content_hash = match entry.content_hash {
                 Some(hash) if !hash.trim().is_empty() => hash,
-                _ => compute_content_hash(&absolute)?,
+                _ => fast_content_hash(entry.file_size, entry.modified_ns),
             };
             if content_hash.trim().is_empty() {
                 continue;
@@ -483,6 +480,10 @@ fn compute_content_hash(path: &Path) -> Result<String, String> {
         hasher.update(&buffer[..read]);
     }
     Ok(hasher.finalize().to_hex().to_string())
+}
+
+fn fast_content_hash(size: u64, modified_ns: u64) -> String {
+    format!("fast-{}-{}", size, modified_ns)
 }
 
 fn collect_inference_jobs(
