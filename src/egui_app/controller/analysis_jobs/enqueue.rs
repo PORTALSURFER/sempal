@@ -482,7 +482,7 @@ fn compute_content_hash(path: &Path) -> Result<String, String> {
     Ok(hasher.finalize().to_hex().to_string())
 }
 
-fn fast_content_hash(size: u64, modified_ns: u64) -> String {
+fn fast_content_hash(size: u64, modified_ns: i64) -> String {
     format!("fast-{}-{}", size, modified_ns)
 }
 
