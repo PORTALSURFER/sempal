@@ -500,7 +500,10 @@ fn collect_inference_jobs(
         .optional()
         .map_err(|err| format!("Failed to query model kind: {err}"))?;
 
-    let (mut sql, mut params_vec, sample_alias) = if matches!(kind.as_deref(), Some("logreg_v1")) {
+    let (mut sql, mut params_vec, sample_alias) = if matches!(
+        kind.as_deref(),
+        Some("logreg_v1") | Some("mlp_v1")
+    ) {
         (
             String::from(
                 "SELECT e.sample_id, s.content_hash

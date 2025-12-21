@@ -636,6 +636,8 @@ fn run_inference_job(
         &job.sample_id,
         crate::analysis::embedding::EMBEDDING_MODEL_ID,
     )?;
+    let features =
+        load_features_vec_optional(conn, &job.sample_id, crate::analysis::FEATURE_VERSION_V1)?;
     let computed_at = now_epoch_seconds();
     inference::infer_and_upsert_prediction(
         conn,
@@ -645,7 +647,7 @@ fn run_inference_job(
         &job.sample_id,
         content_hash,
         inference::InferenceInputs {
-            features: None,
+            features: features.as_deref(),
             embedding: Some(&embedding),
         },
         computed_at,
@@ -689,6 +691,26 @@ fn load_embedding_vec_optional(
     if vec.len() != expected_dim {
         return Ok(None);
     }
+    Ok(Some(vec))
+}
+
+fn load_features_vec_optional(
+    conn: &rusqlite::Connection,
+    sample_id: &str,
+    feat_version: i64,
+) -> Result<Option<Vec<f32>>, String> {
+    let row: Option<Vec<u8>> = conn
+        .query_row(
+            "SELECT vec_blob FROM features WHERE sample_id = ?1 AND feat_version = ?2",
+            rusqlite::params![sample_id, feat_version],
+            |row| row.get::<_, Vec<u8>>(0),
+        )
+        .optional()
+        .map_err(|err| format!("Failed to load feature blob for {sample_id}: {err}"))?;
+    let Some(blob) = row else {
+        return Ok(None);
+    };
+    let vec = decode_f32le_blob(blob)?;
     Ok(Some(vec))
 }
 
