@@ -12,13 +12,13 @@ pub struct TrainingProgress {
 }
 
 pub(super) fn progress_tick(
-    progress: Option<&mut dyn FnMut(TrainingProgress)>,
+    progress: &mut Option<&mut dyn FnMut(TrainingProgress)>,
     stage: &'static str,
     processed: usize,
     total: usize,
     skipped: usize,
 ) {
-    if let Some(callback) = progress {
+    if let Some(callback) = progress.as_deref_mut() {
         callback(TrainingProgress {
             stage,
             processed,

@@ -33,7 +33,7 @@ pub fn build_feature_dataset_from_samples_with_progress(
     ),
     String,
 > {
-    build_feature_dataset_from_samples_impl(samples, split_map, progress.as_deref_mut())
+    build_feature_dataset_from_samples_impl(samples, split_map, &mut progress)
 }
 
 fn build_feature_dataset_from_samples_impl(
@@ -67,12 +67,12 @@ fn build_feature_dataset_from_samples_impl(
                 if skipped_errors.len() < 3 {
                     skipped_errors.push(err);
                 }
-                progress_tick(progress.as_deref_mut(), "features", processed, total, skipped);
+                progress_tick(&mut progress, "features", processed, total, skipped);
                 continue;
             }
         };
         let Some(&class_idx) = class_map.get(&sample.class_id) else {
-            progress_tick(progress.as_deref_mut(), "features", processed, total, skipped);
+            progress_tick(&mut progress, "features", processed, total, skipped);
             continue;
         };
         let split = split_map
@@ -86,7 +86,7 @@ fn build_feature_dataset_from_samples_impl(
             train_x.push(vector);
             train_y.push(class_idx);
         }
-        progress_tick(progress.as_deref_mut(), "features", processed, total, skipped);
+        progress_tick(&mut progress, "features", processed, total, skipped);
     }
 
     if skipped > 0 {
