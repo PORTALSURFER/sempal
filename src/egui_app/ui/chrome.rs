@@ -589,23 +589,8 @@ impl EguiApp {
                     )));
                 }
                 if let Some(summary) = &self.controller.ui.training.summary {
-                    let vector_label = match self.controller.training_model_kind() {
-                        crate::sample_sources::config::TrainingModelKind::LogRegV1
-                        | crate::sample_sources::config::TrainingModelKind::MlpV1 => "Embeddings",
-                        _ => "Features v1",
-                    };
-                    let features_pct = if summary.samples_total > 0 {
-                        (summary.features_v1 as f32 / summary.samples_total as f32) * 100.0
-                    } else {
-                        0.0
-                    };
                     ui.label(format!("Sources: {}", summary.sources));
                     ui.label(format!("Samples: {}", summary.samples_total));
-                    ui.label(format!(
-                        "{vector_label}: {} ({:.1}%)",
-                        summary.features_v1,
-                        features_pct
-                    ));
                     if let Some(model_id) = summary.active_model_id.as_deref() {
                         let kind = summary
                             .active_model_kind
@@ -623,10 +608,6 @@ impl EguiApp {
                         ui.label("Active model: —");
                     }
                     ui.label(format!("User labels: {}", summary.user_labeled));
-                    ui.label(format!(
-                        "Weak labels (>= {:.2}): {}",
-                        summary.min_confidence, summary.weak_labeled
-                    ));
                     ui.label(format!("Exportable rows: {}", summary.exportable));
                     if let (Some(total), Some(unknown)) =
                         (summary.predictions_total, summary.predictions_unknown)
