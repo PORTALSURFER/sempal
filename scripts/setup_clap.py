@@ -109,7 +109,10 @@ def build_onnx(target: Path, checkpoint: Path | None, channels: int, samples: in
     device = "cpu"
     model = CLAP_Module(enable_fusion=False)
     if checkpoint:
-        state = torch.load(checkpoint, map_location=device)
+        try:
+            state = torch.load(checkpoint, map_location=device, weights_only=False)
+        except TypeError:
+            state = torch.load(checkpoint, map_location=device)
         if isinstance(state, dict) and "state_dict" in state:
             state = state["state_dict"]
         model.load_state_dict(state, strict=False)
