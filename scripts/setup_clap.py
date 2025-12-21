@@ -14,9 +14,11 @@ import zipfile
 from pathlib import Path
 
 
-DEFAULT_CHECKPOINT_URL = (
-    "https://huggingface.co/lukewys/laion_clap/resolve/main/630k-audioset-fused.pt"
-)
+DEFAULT_CHECKPOINT_URLS = [
+    "https://huggingface.co/lukewys/laion_clap/resolve/main/630k-audioset-fusion-best.pt",
+    "https://huggingface.co/lukewys/laion_clap/resolve/main/630k-audioset-fusion.pt",
+    "https://huggingface.co/lukewys/laion_clap/resolve/main/630k-audioset-fused.pt",
+]
 DEFAULT_CHECKPOINT_NAME = "clap_htsat_fused.pt"
 
 
@@ -141,26 +143,37 @@ def build_onnx(target: Path, checkpoint: Path | None, channels: int, samples: in
     )
 
 
-def download_checkpoint(url: str, dest: Path) -> Path:
+def download_checkpoint(urls: list[str], dest: Path) -> Path:
     if dest.exists():
         print(f"Using cached checkpoint at {dest}")
         return dest
     dest.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = dest.with_suffix(".tmp")
-    print(f"Downloading CLAP checkpoint from {url}...")
-    try:
-        with urllib.request.urlopen(url, timeout=60) as resp, tmp_path.open("wb") as out:
-            while True:
-                chunk = resp.read(1024 * 1024)
-                if not chunk:
-                    break
-                out.write(chunk)
-    except Exception:
-        tmp_path.unlink(missing_ok=True)
-        raise
-    tmp_path.replace(dest)
-    print(f"Saved checkpoint to {dest}")
-    return dest
+    errors: list[str] = []
+    for url in urls:
+        if not url:
+            continue
+        tmp_path = dest.with_suffix(".tmp")
+        print(f"Downloading CLAP checkpoint from {url}...")
+        try:
+            with urllib.request.urlopen(url, timeout=60) as resp, tmp_path.open("wb") as out:
+                while True:
+                    chunk = resp.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    out.write(chunk)
+        except Exception as err:
+            tmp_path.unlink(missing_ok=True)
+            errors.append(f"{url}: {err}")
+            continue
+        tmp_path.replace(dest)
+        print(f"Saved checkpoint to {dest}")
+        return dest
+    details = "\n".join(f"- {entry}" for entry in errors)
+    raise RuntimeError(
+        "Failed to download CLAP checkpoint. Tried:\n"
+        f"{details}\n"
+        "Pass --checkpoint or --checkpoint-url to override."
+    )
 
 
 def verify_onnx(path: Path) -> None:
@@ -276,7 +289,7 @@ def main() -> int:
     parser.add_argument("--checkpoint", type=Path, help="Path to a CLAP checkpoint (.pt)")
     parser.add_argument(
         "--checkpoint-url",
-        default=DEFAULT_CHECKPOINT_URL,
+        default=None,
         help="Checkpoint URL to download when --checkpoint is not provided.",
     )
     parser.add_argument(
@@ -304,9 +317,8 @@ def main() -> int:
     ensure_clap(args.no_install)
     checkpoint = args.checkpoint
     if checkpoint is None and not args.no_checkpoint_download:
-        checkpoint = download_checkpoint(
-            args.checkpoint_url, models_dir / DEFAULT_CHECKPOINT_NAME
-        )
+        urls = [args.checkpoint_url] if args.checkpoint_url else DEFAULT_CHECKPOINT_URLS
+        checkpoint = download_checkpoint(urls, models_dir / DEFAULT_CHECKPOINT_NAME)
     input_samples = int(args.sample_rate * args.seconds)
     tmp_path = models_dir / "clap_audio.onnx.tmp"
     build_onnx(tmp_path, checkpoint, args.channels, input_samples, args.opset)
