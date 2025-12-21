@@ -1,6 +1,6 @@
 //! Developer utility to train and export a logistic regression embedding classifier.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use sempal::analysis::embedding::EMBEDDING_DIM;
 use sempal::dataset::curated;
@@ -18,7 +18,14 @@ fn main() {
 
 fn run() -> Result<(), String> {
     let options = parse_args(std::env::args().skip(1).collect())?;
-    let (train, val, test) = if is_dataset_export_dir(&options.dataset_dir) {
+    if !options.dataset_dir.is_dir() {
+        return Err(format!(
+            "Dataset path is not a directory: {}",
+            options.dataset_dir.display()
+        ));
+    }
+    let manifest_path = options.dataset_dir.join("manifest.json");
+    let (train, val, test) = if manifest_path.is_file() {
         let loaded = load_dataset(&options.dataset_dir).map_err(|err| err.to_string())?;
         split_train_val_test(&loaded)?
     } else {
@@ -242,10 +249,6 @@ fn help_text() -> String {
         "  --no-balance           Disable class-balanced loss weights.",
     ]
     .join("\n")
-}
-
-fn is_dataset_export_dir(path: &Path) -> bool {
-    path.join("manifest.json").is_file()
 }
 
 fn split_train_val_test(
