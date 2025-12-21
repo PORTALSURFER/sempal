@@ -1643,6 +1643,7 @@ fn export_with_confidence_fallback(
             total_exported: 0,
             total_packs: 0,
             db_path: job.db_path.clone(),
+            class_counts: std::collections::BTreeMap::new(),
         }),
         last_conf,
     ))

@@ -83,6 +83,7 @@ pub struct ExportSummary {
     pub total_exported: usize,
     pub total_packs: usize,
     pub db_path: PathBuf,
+    pub class_counts: BTreeMap<String, usize>,
 }
 
 #[derive(Debug, Error)]
@@ -279,10 +280,12 @@ fn export_rows_to_dir(
 
     let mut offset_bytes: u64 = 0;
     let mut written = 0usize;
+    let mut class_counts: BTreeMap<String, usize> = BTreeMap::new();
     for sample in exported {
         if sample.vec_blob.len() != vector_len_f32 * 4 {
             continue;
         }
+        let class_id = sample.label.class_id.clone();
         features_writer.write_all(&sample.vec_blob)?;
         let record = DatasetSampleRecord {
             sample_id: sample.sample_id,
@@ -300,6 +303,7 @@ fn export_rows_to_dir(
         samples_writer.write_all(b"\n")?;
         offset_bytes += (vector_len_f32 * 4) as u64;
         written += 1;
+        *class_counts.entry(class_id).or_insert(0) += 1;
     }
     features_writer.flush()?;
     samples_writer.flush()?;
@@ -321,6 +325,7 @@ fn export_rows_to_dir(
         total_exported: written,
         total_packs: packs.len(),
         db_path: db_path.clone(),
+        class_counts,
     })
 }
 

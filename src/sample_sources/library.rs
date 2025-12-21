@@ -1,5 +1,6 @@
 //! Global SQLite storage for sources and collections that should not live in the config file.
 
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{LazyLock, Mutex};
 
@@ -49,6 +50,8 @@ pub enum LibraryError {
     Sql(#[from] rusqlite::Error),
     #[error("Library metadata parse failed: {0}")]
     Json(#[from] serde_json::Error),
+    #[error("Class mapping mismatch: {0}")]
+    ClassMapping(String),
 }
 
 /// Load all sources and collections from the global library database, creating it if missing.
@@ -63,6 +66,13 @@ pub fn save(state: &LibraryState) -> Result<(), LibraryError> {
     let _guard = LIBRARY_LOCK.lock().expect("library lock mutex poisoned");
     let mut db = LibraryDatabase::open()?;
     db.replace_state(state)
+}
+
+/// Open a connection to the library DB with schema + migrations applied.
+pub fn open_connection() -> Result<Connection, LibraryError> {
+    let _guard = LIBRARY_LOCK.lock().expect("library lock mutex poisoned");
+    let db = LibraryDatabase::open()?;
+    Ok(db.into_connection())
 }
 
 /// Attempt to reuse a historical source id for the given root folder.
@@ -99,9 +109,14 @@ impl LibraryDatabase {
         db.migrate_embeddings_table()?;
         db.migrate_labels_table()?;
         db.migrate_classes_table()?;
+        db.sync_classes_table()?;
         db.migrate_classifier_models_table()?;
         db.migrate_ann_index_meta_table()?;
         Ok(db)
+    }
+
+    fn into_connection(self) -> Connection {
+        self.connection
     }
 
     fn load_state(&self) -> Result<LibraryState, LibraryError> {
@@ -119,6 +134,110 @@ impl LibraryDatabase {
         Self::replace_collections(&tx, &state.collections)?;
         tx.commit().map_err(map_sql_error)?;
         self.remember_known_sources(&state.sources)?;
+        Ok(())
+    }
+
+    fn sync_classes_table(&mut self) -> Result<(), LibraryError> {
+        #[derive(Deserialize)]
+        struct ClassesManifest {
+            version: String,
+            classes: Vec<ClassDef>,
+        }
+
+        #[derive(Deserialize)]
+        struct ClassDef {
+            id: String,
+            name: String,
+            description: String,
+            examples: Vec<String>,
+        }
+
+        let manifest: ClassesManifest =
+            serde_json::from_str(include_str!("../../assets/ml/classes_v1.json"))?;
+        if manifest.version.trim().is_empty() || manifest.classes.is_empty() {
+            return Err(LibraryError::ClassMapping("classes_v1.json invalid".to_string()));
+        }
+        let mut seen = HashSet::new();
+        for class in &manifest.classes {
+            if class.id.trim().is_empty() {
+                return Err(LibraryError::ClassMapping("class_id is empty".to_string()));
+            }
+            if !seen.insert(class.id.as_str()) {
+                return Err(LibraryError::ClassMapping(format!(
+                    "duplicate class_id {}",
+                    class.id
+                )));
+            }
+        }
+
+        let mut stmt = self
+            .connection
+            .prepare(
+                "SELECT class_id, name, description, examples_json
+                 FROM classes
+                 ORDER BY class_id ASC",
+            )
+            .map_err(map_sql_error)?;
+        let mut rows = stmt.query([]).map_err(map_sql_error)?;
+        let mut existing: HashMap<String, (String, String, Vec<String>)> = HashMap::new();
+        while let Some(row) = rows.next().map_err(map_sql_error)? {
+            let class_id: String = row.get(0)?;
+            let name: String = row.get(1)?;
+            let description: String = row.get(2)?;
+            let examples_json: String = row.get(3)?;
+            let examples: Vec<String> = serde_json::from_str(&examples_json)?;
+            existing.insert(class_id, (name, description, examples));
+        }
+        drop(stmt);
+
+        if existing.is_empty() {
+            let tx = self.connection.transaction().map_err(map_sql_error)?;
+            let mut insert = tx
+                .prepare(
+                    "INSERT INTO classes (class_id, name, description, examples_json)
+                     VALUES (?1, ?2, ?3, ?4)",
+                )
+                .map_err(map_sql_error)?;
+            for class in &manifest.classes {
+                let examples_json = serde_json::to_string(&class.examples)?;
+                insert.execute(params![
+                    class.id,
+                    class.name,
+                    class.description,
+                    examples_json
+                ])?;
+            }
+            tx.commit().map_err(map_sql_error)?;
+            return Ok(());
+        }
+
+        let expected_ids: Vec<String> = manifest.classes.iter().map(|c| c.id.clone()).collect();
+        let mut missing = Vec::new();
+        let mut mismatched = Vec::new();
+        for class in &manifest.classes {
+            match existing.get(&class.id) {
+                Some((name, description, examples)) => {
+                    if name != &class.name
+                        || description != &class.description
+                        || examples != &class.examples
+                    {
+                        mismatched.push(class.id.clone());
+                    }
+                }
+                None => missing.push(class.id.clone()),
+            }
+        }
+        let extra: Vec<String> = existing
+            .keys()
+            .filter(|id| !expected_ids.contains(id))
+            .cloned()
+            .collect();
+        if !missing.is_empty() || !extra.is_empty() || !mismatched.is_empty() {
+            return Err(LibraryError::ClassMapping(format!(
+                "classes table mismatch (missing={:?}, extra={:?}, changed={:?})",
+                missing, extra, mismatched
+            )));
+        }
         Ok(())
     }
 

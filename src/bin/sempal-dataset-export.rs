@@ -25,6 +25,12 @@ fn run() -> Result<(), String> {
         summary.total_packs,
         options.out_dir.display()
     );
+    if !summary.class_counts.is_empty() {
+        println!("Per-class counts:");
+        for (class_id, count) in &summary.class_counts {
+            println!("  {class_id}: {count}");
+        }
+    }
     if summary.total_exported == 0 {
         let diag = sempal::dataset::export::diagnose_export(&options).map_err(|err| err.to_string())?;
         println!("Diagnostic tables: {}", diag.tables.join(", "));
