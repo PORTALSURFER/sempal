@@ -481,7 +481,6 @@ fn build_logreg_dataset_from_samples(
     let mut train_rows = Vec::new();
     let mut val_rows = Vec::new();
     let mut test_rows = Vec::new();
-    let mut embedding_cache: Option<crate::analysis::embedding::ClapModel> = None;
     let mut augment_rng = crate::analysis::augment::AugmentOptions {
         enabled: augmentation.enabled,
         copies_per_sample: augmentation.copies_per_sample,
@@ -508,7 +507,6 @@ fn build_logreg_dataset_from_samples(
         };
         let embeddings = match build_embedding_variants(
             &decoded,
-            &mut embedding_cache,
             augmentation,
             &mut augment_rng,
         ) {
@@ -632,7 +630,6 @@ fn build_mlp_dataset_from_samples(
     let mut train_rows = Vec::new();
     let mut val_rows = Vec::new();
     let mut test_rows = Vec::new();
-    let mut embedding_cache: Option<crate::analysis::embedding::ClapModel> = None;
     let mut skipped = 0usize;
     let mut skipped_errors = Vec::new();
     let mut augment_rng = crate::analysis::augment::AugmentOptions {
@@ -659,7 +656,6 @@ fn build_mlp_dataset_from_samples(
         };
         let embeddings = match build_embedding_variants(
             &decoded,
-            &mut embedding_cache,
             augmentation,
             &mut augment_rng,
         ) {
@@ -875,16 +871,12 @@ struct EmbeddingVariant {
 
 fn build_embedding_variants(
     decoded: &crate::analysis::audio::AnalysisAudio,
-    cache: &mut Option<crate::analysis::embedding::ClapModel>,
     augmentation: &crate::sample_sources::config::TrainingAugmentation,
     rng: &mut rand::rngs::StdRng,
 ) -> Result<Vec<EmbeddingVariant>, String> {
     let mut variants = Vec::new();
-    let base = crate::analysis::embedding::infer_embedding(
-        cache,
-        &decoded.mono,
-        decoded.sample_rate_used,
-    )?;
+    let base =
+        crate::analysis::embedding::infer_embedding(&decoded.mono, decoded.sample_rate_used)?;
     let base_light = time_domain_vector(&decoded.mono, decoded.sample_rate_used);
     variants.push(EmbeddingVariant {
         embedding: base,
@@ -908,7 +900,6 @@ fn build_embedding_variants(
                 &options,
             );
             let embedding = crate::analysis::embedding::infer_embedding(
-                cache,
                 &augmented,
                 decoded.sample_rate_used,
             )?;

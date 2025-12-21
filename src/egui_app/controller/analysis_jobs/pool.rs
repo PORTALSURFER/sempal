@@ -213,7 +213,6 @@ fn spawn_worker(
         let _ = db::reset_running_to_pending(&conn);
         let mut model_cache: Option<inference::CachedModel> = None;
         let _ = inference::refresh_latest_model(&conn, &mut model_cache, None);
-        let mut embedding_cache: Option<crate::analysis::embedding::ClapModel> = None;
 
         loop {
             if shutdown.load(Ordering::Relaxed) {
@@ -246,7 +245,6 @@ fn spawn_worker(
                     &conn,
                     &job,
                     &mut model_cache,
-                    &mut embedding_cache,
                     unknown_threshold,
                     max_analysis_duration_seconds,
                     preferred_model_id,
@@ -287,7 +285,6 @@ fn run_job(
     conn: &rusqlite::Connection,
     job: &db::ClaimedJob,
     model_cache: &mut Option<inference::CachedModel>,
-    embedding_cache: &mut Option<crate::analysis::embedding::ClapModel>,
     unknown_confidence_threshold: f32,
     max_analysis_duration_seconds: f32,
     preferred_model_id: Option<String>,
@@ -297,7 +294,6 @@ fn run_job(
             conn,
             job,
             model_cache,
-            embedding_cache,
             unknown_confidence_threshold,
             max_analysis_duration_seconds,
             preferred_model_id.as_deref(),
@@ -323,7 +319,6 @@ fn run_analysis_job(
     conn: &rusqlite::Connection,
     job: &db::ClaimedJob,
     model_cache: &mut Option<inference::CachedModel>,
-    embedding_cache: &mut Option<crate::analysis::embedding::ClapModel>,
     unknown_confidence_threshold: f32,
     max_analysis_duration_seconds: f32,
     preferred_model_id: Option<&str>,
@@ -357,11 +352,8 @@ fn run_analysis_job(
     )? {
         cached
     } else {
-        let embedding = crate::analysis::embedding::infer_embedding(
-            embedding_cache,
-            &decoded.mono,
-            decoded.sample_rate_used,
-        )?;
+        let embedding =
+            crate::analysis::embedding::infer_embedding(&decoded.mono, decoded.sample_rate_used)?;
         let embedding_blob = crate::analysis::vector::encode_f32_le_blob(&embedding);
         db::upsert_embedding(
             conn,

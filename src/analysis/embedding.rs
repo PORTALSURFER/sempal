@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use std::sync::LazyLock;
+use std::sync::{LazyLock, Mutex};
 
 use ndarray::Array3;
 use ort::session::Session;
@@ -20,6 +20,8 @@ const CLAP_INPUT_SAMPLES: usize = (CLAP_SAMPLE_RATE as f32 * CLAP_INPUT_SECONDS)
 pub(crate) struct ClapModel {
     session: Session,
 }
+
+static GLOBAL_CLAP_MODEL: LazyLock<Mutex<Option<ClapModel>>> = LazyLock::new(|| Mutex::new(None));
 
 impl ClapModel {
     pub(crate) fn load() -> Result<Self, String> {
@@ -58,19 +60,25 @@ impl ClapModel {
     }
 }
 
-pub(crate) fn infer_embedding(
-    cache: &mut Option<ClapModel>,
-    samples: &[f32],
-    sample_rate: u32,
-) -> Result<Vec<f32>, String> {
+pub(crate) fn infer_embedding(samples: &[f32], sample_rate: u32) -> Result<Vec<f32>, String> {
     if samples.is_empty() {
         return Err("CLAP inference requires non-empty samples".into());
     }
-    if cache.is_none() {
-        *cache = Some(ClapModel::load()?);
+    let mut guard = GLOBAL_CLAP_MODEL
+        .lock()
+        .map_err(|_| "CLAP model lock poisoned".to_string())?;
+    if guard.is_none() {
+        *guard = Some(ClapModel::load()?);
     }
-    let model = cache.as_mut().expect("CLAP model loaded");
+    let model = guard.as_mut().expect("CLAP model loaded");
+    infer_embedding_with_model(model, samples, sample_rate)
+}
 
+fn infer_embedding_with_model(
+    model: &mut ClapModel,
+    samples: &[f32],
+    sample_rate: u32,
+) -> Result<Vec<f32>, String> {
     let mut resampled = if sample_rate != CLAP_SAMPLE_RATE {
         audio::resample_linear(samples, sample_rate, CLAP_SAMPLE_RATE)
     } else {
