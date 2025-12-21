@@ -1859,7 +1859,7 @@ fn source_id_where_clause(
     let mut parts = Vec::new();
     for source_id in source_ids {
         params.push(rusqlite::types::Value::Text(format!("{source_id}::%")));
-        parts.push(format!("{alias}.sample_id LIKE ?{}", params.len()));
+        parts.push(format!("{alias}.sample_id LIKE ?"));
     }
     (parts.join(" OR "), params)
 }
