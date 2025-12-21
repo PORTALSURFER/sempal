@@ -77,6 +77,24 @@ Notes:
 - Add `--augment` to enable default training-time augmentation.
 - Curated embedding training still requires the CLAP model under the app models directory.
 
+## Curated export pipeline (fast retrains)
+
+If you want faster retrains from a curated folder, export an embedding dataset once:
+
+```bash
+cargo run --bin sempal-dataset-export-curated -- --dataset ./curated --out ./dataset
+```
+
+Then train from the exported dataset (no re-embedding step):
+
+```bash
+cargo run --bin sempal-train-logreg -- --dataset ./dataset --out ./model.json
+```
+
+Notes:
+- The curated export uses stratified splits across classes.
+- Add `--augment` to bake augmentation copies into the export.
+
 ## Feature pipeline (legacy baseline)
 
 1. Export features + labels:
