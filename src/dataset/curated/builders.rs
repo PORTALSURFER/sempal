@@ -74,7 +74,7 @@ fn build_logreg_dataset_from_samples_impl(
     min_class_samples: usize,
     augmentation: &TrainingAugmentation,
     seed: u64,
-    mut progress: Option<&mut dyn FnMut(super::TrainingProgress)>,
+    progress: &mut Option<&mut dyn FnMut(super::TrainingProgress)>,
 ) -> Result<
     (
         crate::ml::logreg::TrainDataset,
@@ -103,7 +103,7 @@ fn build_logreg_dataset_from_samples_impl(
                 if skipped_errors.len() < 3 {
                     skipped_errors.push(err);
                 }
-                progress_tick(&mut progress, "embedding", processed, total, skipped);
+                progress_tick(progress, "embedding", processed, total, skipped);
                 continue;
             }
         };
@@ -115,12 +115,12 @@ fn build_logreg_dataset_from_samples_impl(
                 if skipped_errors.len() < 3 {
                     skipped_errors.push(err);
                 }
-                progress_tick(&mut progress, "embedding", processed, total, skipped);
+                progress_tick(progress, "embedding", processed, total, skipped);
                 continue;
             }
         };
         let Some(&class_idx) = class_map.get(&sample.class_id) else {
-            progress_tick(&mut progress, "embedding", processed, total, skipped);
+            progress_tick(progress, "embedding", processed, total, skipped);
             continue;
         };
         let split = split_map
@@ -139,7 +139,7 @@ fn build_logreg_dataset_from_samples_impl(
                 _ => train_rows.push(row),
             }
         }
-        progress_tick(&mut progress, "embedding", processed, total, skipped);
+        progress_tick(progress, "embedding", processed, total, skipped);
     }
 
     if skipped > 0 {
@@ -247,7 +247,7 @@ fn build_mlp_dataset_from_samples_impl(
     min_class_samples: usize,
     augmentation: &TrainingAugmentation,
     seed: u64,
-    mut progress: Option<&mut dyn FnMut(super::TrainingProgress)>,
+    progress: &mut Option<&mut dyn FnMut(super::TrainingProgress)>,
 ) -> Result<
     (
         crate::ml::gbdt_stump::TrainDataset,
@@ -276,7 +276,7 @@ fn build_mlp_dataset_from_samples_impl(
                 if skipped_errors.len() < 3 {
                     skipped_errors.push(err);
                 }
-                progress_tick(&mut progress, "embedding", processed, total, skipped);
+                progress_tick(progress, "embedding", processed, total, skipped);
                 continue;
             }
         };
@@ -288,12 +288,12 @@ fn build_mlp_dataset_from_samples_impl(
                 if skipped_errors.len() < 3 {
                     skipped_errors.push(err);
                 }
-                progress_tick(&mut progress, "embedding", processed, total, skipped);
+                progress_tick(progress, "embedding", processed, total, skipped);
                 continue;
             }
         };
         let Some(&class_idx) = class_map.get(&sample.class_id) else {
-            progress_tick(&mut progress, "embedding", processed, total, skipped);
+            progress_tick(progress, "embedding", processed, total, skipped);
             continue;
         };
         let split = split_map
@@ -319,7 +319,7 @@ fn build_mlp_dataset_from_samples_impl(
                 _ => train_rows.push(labeled),
             }
         }
-        progress_tick(&mut progress, "embedding", processed, total, skipped);
+        progress_tick(progress, "embedding", processed, total, skipped);
     }
 
     if skipped > 0 {
