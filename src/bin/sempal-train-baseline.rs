@@ -1,8 +1,9 @@
 //! Developer utility to train and export a baseline classifier.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use sempal::analysis::{FEATURE_VECTOR_LEN_V1, FEATURE_VERSION_V1};
+use sempal::dataset::curated;
 use sempal::dataset::loader::{LoadedDataset, load_dataset};
 use sempal::ml::gbdt_stump::{TrainDataset, TrainOptions, train_gbdt_stump};
 use sempal::ml::metrics::{ConfusionMatrix, accuracy, precision_recall_by_class};
@@ -16,8 +17,22 @@ fn main() {
 
 fn run() -> Result<(), String> {
     let options = parse_args(std::env::args().skip(1).collect())?;
-    let loaded = load_dataset(&options.dataset_dir).map_err(|err| err.to_string())?;
-    let (train, test) = split_train_test(&loaded)?;
+    let (train, test) = if is_dataset_export_dir(&options.dataset_dir) {
+        let loaded = load_dataset(&options.dataset_dir).map_err(|err| err.to_string())?;
+        split_train_test(&loaded)?
+    } else {
+        let samples = curated::collect_training_samples(&options.dataset_dir)?;
+        if samples.is_empty() {
+            return Err("Training dataset folder is empty".to_string());
+        }
+        let samples = curated::filter_training_samples(samples, options.min_class_samples);
+        if samples.is_empty() {
+            return Err("Training dataset has no classes after hygiene filter".to_string());
+        }
+        let split_map =
+            curated::stratified_split_map(&samples, "sempal-training-dataset-v1", 0.1, 0.1)?;
+        curated::build_feature_dataset_from_samples(&samples, &split_map)?
+    };
 
     let train_options = TrainOptions {
         rounds: options.rounds,
@@ -58,6 +73,7 @@ struct CliOptions {
     rounds: usize,
     learning_rate: f32,
     bins: usize,
+    min_class_samples: usize,
 }
 
 fn parse_args(args: Vec<String>) -> Result<CliOptions, String> {
@@ -66,6 +82,7 @@ fn parse_args(args: Vec<String>) -> Result<CliOptions, String> {
     let mut rounds = 100usize;
     let mut learning_rate = 0.1f32;
     let mut bins = 32usize;
+    let mut min_class_samples = 30usize;
 
     let mut idx = 0usize;
     while idx < args.len() {
@@ -104,6 +121,15 @@ fn parse_args(args: Vec<String>) -> Result<CliOptions, String> {
                     .parse::<usize>()
                     .map_err(|_| format!("Invalid --bins value: {value}"))?;
             }
+            "--min-class-samples" => {
+                idx += 1;
+                let value = args
+                    .get(idx)
+                    .ok_or_else(|| "--min-class-samples requires a value".to_string())?;
+                min_class_samples = value
+                    .parse::<usize>()
+                    .map_err(|_| format!("Invalid --min-class-samples value: {value}"))?;
+            }
             unknown => return Err(format!("Unknown argument: {unknown}\n\n{}", help_text())),
         }
         idx += 1;
@@ -116,6 +142,7 @@ fn parse_args(args: Vec<String>) -> Result<CliOptions, String> {
         rounds,
         learning_rate,
         bins,
+        min_class_samples,
     })
 }
 
@@ -129,13 +156,18 @@ fn help_text() -> String {
         "  sempal-train-baseline --dataset <dir> [--out model.json] [options]",
         "",
         "Options:",
-        "  --dataset <dir>        Dataset directory created by sempal-dataset-export (required).",
+        "  --dataset <dir>        Dataset export (manifest.json) or curated class-folder root (required).",
         "  --out <file>           Output model path (default: model.json).",
         "  --rounds <n>           Boosting rounds (default: 100).",
         "  --learning-rate <f32>  Learning rate (default: 0.1).",
         "  --bins <n>             Feature bin count for split search (default: 32).",
+        "  --min-class-samples <n> Minimum samples per class for curated folders (default: 30).",
     ]
     .join("\n")
+}
+
+fn is_dataset_export_dir(path: &Path) -> bool {
+    path.join("manifest.json").is_file()
 }
 
 fn split_train_test(loaded: &LoadedDataset) -> Result<(TrainDataset, TrainDataset), String> {

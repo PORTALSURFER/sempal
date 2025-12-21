@@ -1,12 +1,14 @@
 //! Developer utility to train and export an MLP classifier on embeddings.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use sempal::analysis::embedding::EMBEDDING_DIM;
+use sempal::dataset::curated;
 use sempal::dataset::loader::{LoadedDataset, load_dataset};
 use sempal::ml::gbdt_stump::TrainDataset;
 use sempal::ml::mlp::{MlpInputKind, TrainOptions, train_mlp};
 use sempal::ml::metrics::{ConfusionMatrix, accuracy, precision_recall_by_class};
+use sempal::sample_sources::config::TrainingAugmentation;
 
 fn main() {
     if let Err(err) = run() {
@@ -17,8 +19,39 @@ fn main() {
 
 fn run() -> Result<(), String> {
     let options = parse_args(std::env::args().skip(1).collect())?;
-    let loaded = load_dataset(&options.dataset_dir).map_err(|err| err.to_string())?;
-    let (train, val, test) = split_train_val_test(&loaded)?;
+    let (train, val, test, input_kind) = if is_dataset_export_dir(&options.dataset_dir) {
+        if options.use_hybrid {
+            return Err("Hybrid training is only supported with a curated folder dataset".to_string());
+        }
+        let loaded = load_dataset(&options.dataset_dir).map_err(|err| err.to_string())?;
+        let (train, val, test) = split_train_val_test(&loaded)?;
+        (train, val, test, MlpInputKind::EmbeddingV1)
+    } else {
+        let samples = curated::collect_training_samples(&options.dataset_dir)?;
+        if samples.is_empty() {
+            return Err("Training dataset folder is empty".to_string());
+        }
+        let samples = curated::filter_training_samples(samples, options.min_class_samples);
+        if samples.is_empty() {
+            return Err("Training dataset has no classes after hygiene filter".to_string());
+        }
+        let split_map =
+            curated::stratified_split_map(&samples, "sempal-training-dataset-v1", 0.1, 0.1)?;
+        let (train, val, test) = curated::build_mlp_dataset_from_samples(
+            &samples,
+            &split_map,
+            options.use_hybrid,
+            options.min_class_samples,
+            &options.augmentation,
+            options.seed,
+        )?;
+        let input_kind = if options.use_hybrid {
+            MlpInputKind::HybridV1
+        } else {
+            MlpInputKind::EmbeddingV1
+        };
+        (train, val, test, input_kind)
+    };
 
     let mut train_options = TrainOptions::default();
     train_options.hidden_size = options.hidden_size;
@@ -27,7 +60,7 @@ fn run() -> Result<(), String> {
     train_options.learning_rate = options.learning_rate;
     train_options.l2_penalty = options.l2_penalty;
     train_options.seed = options.seed;
-    train_options.input_kind = MlpInputKind::EmbeddingV1;
+    train_options.input_kind = input_kind;
     let model = train_mlp(&train, &train_options, Some(&val))?;
     save_model(&options.model_out, &model)?;
 
@@ -65,6 +98,9 @@ struct CliOptions {
     learning_rate: f32,
     l2_penalty: f32,
     seed: u64,
+    min_class_samples: usize,
+    use_hybrid: bool,
+    augmentation: TrainingAugmentation,
 }
 
 fn parse_args(args: Vec<String>) -> Result<CliOptions, String> {
@@ -76,6 +112,9 @@ fn parse_args(args: Vec<String>) -> Result<CliOptions, String> {
     let mut learning_rate = 0.01f32;
     let mut l2_penalty = 1e-4f32;
     let mut seed = 42u64;
+    let mut min_class_samples = 30usize;
+    let mut use_hybrid = false;
+    let mut augmentation = TrainingAugmentation::default();
 
     let mut idx = 0usize;
     while idx < args.len() {
@@ -135,6 +174,21 @@ fn parse_args(args: Vec<String>) -> Result<CliOptions, String> {
                     .parse::<u64>()
                     .map_err(|_| format!("Invalid --seed value: {value}"))?;
             }
+            "--min-class-samples" => {
+                idx += 1;
+                let value = args
+                    .get(idx)
+                    .ok_or_else(|| "--min-class-samples requires a value".to_string())?;
+                min_class_samples = value
+                    .parse::<usize>()
+                    .map_err(|_| format!("Invalid --min-class-samples value: {value}"))?;
+            }
+            "--hybrid" => {
+                use_hybrid = true;
+            }
+            "--augment" => {
+                augmentation.enabled = true;
+            }
             unknown => return Err(format!("Unknown argument: {unknown}\n\n{}", help_text())),
         }
         idx += 1;
@@ -150,6 +204,9 @@ fn parse_args(args: Vec<String>) -> Result<CliOptions, String> {
         learning_rate,
         l2_penalty,
         seed,
+        min_class_samples,
+        use_hybrid,
+        augmentation,
     })
 }
 
@@ -163,15 +220,22 @@ fn help_text() -> String {
         "  sempal-train-mlp --dataset <dataset_dir> [--out model.json]",
         "",
         "Options:",
-        "  --dataset <dir>    Dataset directory from sempal-embedding-export (required).",
-        "  --hidden <n>         Hidden layer size (default 128)",
-        "  --epochs <n>         Training epochs (default 20)",
-        "  --batch <n>          Batch size (default 128)",
-        "  --learning-rate <f>  Learning rate (default 0.01)",
-        "  --l2 <f>             L2 penalty (default 1e-4)",
-        "  --seed <n>           RNG seed (default 42)",
+        "  --dataset <dir>       Dataset export (manifest.json) or curated class-folder root (required).",
+        "  --hidden <n>          Hidden layer size (default 128)",
+        "  --epochs <n>          Training epochs (default 20)",
+        "  --batch <n>           Batch size (default 128)",
+        "  --learning-rate <f>   Learning rate (default 0.01)",
+        "  --l2 <f>              L2 penalty (default 1e-4)",
+        "  --seed <n>            RNG seed (default 42)",
+        "  --min-class-samples <n> Minimum samples per class for curated folders (default: 30).",
+        "  --hybrid             Use embeddings + light DSP features (curated folders only).",
+        "  --augment            Enable default augmentation for curated folders.",
     ]
     .join("\n")
+}
+
+fn is_dataset_export_dir(path: &Path) -> bool {
+    path.join("manifest.json").is_file()
 }
 
 fn split_train_val_test(

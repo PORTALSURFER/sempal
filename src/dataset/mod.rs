@@ -2,3 +2,4 @@
 
 pub mod export;
 pub mod loader;
+pub mod curated;

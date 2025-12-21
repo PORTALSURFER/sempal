@@ -1,11 +1,13 @@
 //! Developer utility to train and export a logistic regression embedding classifier.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use sempal::analysis::embedding::EMBEDDING_DIM;
+use sempal::dataset::curated;
 use sempal::dataset::loader::{LoadedDataset, load_dataset};
 use sempal::ml::logreg::{LogRegModel, TrainDataset, TrainOptions, default_head_id, train_logreg};
 use sempal::ml::metrics::{ConfusionMatrix, accuracy, precision_recall_by_class};
+use sempal::sample_sources::config::TrainingAugmentation;
 
 fn main() {
     if let Err(err) = run() {
@@ -16,8 +18,28 @@ fn main() {
 
 fn run() -> Result<(), String> {
     let options = parse_args(std::env::args().skip(1).collect())?;
-    let loaded = load_dataset(&options.dataset_dir).map_err(|err| err.to_string())?;
-    let (train, val, test) = split_train_val_test(&loaded)?;
+    let (train, val, test) = if is_dataset_export_dir(&options.dataset_dir) {
+        let loaded = load_dataset(&options.dataset_dir).map_err(|err| err.to_string())?;
+        split_train_val_test(&loaded)?
+    } else {
+        let samples = curated::collect_training_samples(&options.dataset_dir)?;
+        if samples.is_empty() {
+            return Err("Training dataset folder is empty".to_string());
+        }
+        let samples = curated::filter_training_samples(samples, options.min_class_samples);
+        if samples.is_empty() {
+            return Err("Training dataset has no classes after hygiene filter".to_string());
+        }
+        let split_map =
+            curated::stratified_split_map(&samples, "sempal-training-dataset-v1", 0.1, 0.1)?;
+        curated::build_logreg_dataset_from_samples(
+            &samples,
+            &split_map,
+            options.min_class_samples,
+            &options.augmentation,
+            options.seed,
+        )?
+    };
 
     let mut train_options = TrainOptions::default();
     train_options.epochs = options.epochs;
@@ -74,6 +96,8 @@ struct CliOptions {
     seed: u64,
     balance_classes: bool,
     temperature: f32,
+    min_class_samples: usize,
+    augmentation: TrainingAugmentation,
 }
 
 #[derive(Clone)]
@@ -94,6 +118,8 @@ fn parse_args(args: Vec<String>) -> Result<CliOptions, String> {
     let mut seed = 42u64;
     let mut balance_classes = true;
     let mut temperature = 1.0f32;
+    let mut min_class_samples = 30usize;
+    let mut augmentation = TrainingAugmentation::default();
 
     let mut idx = 0usize;
     while idx < args.len() {
@@ -160,6 +186,18 @@ fn parse_args(args: Vec<String>) -> Result<CliOptions, String> {
                     .parse::<f32>()
                     .map_err(|_| format!("Invalid --temperature value: {value}"))?;
             }
+            "--min-class-samples" => {
+                idx += 1;
+                let value = args
+                    .get(idx)
+                    .ok_or_else(|| "--min-class-samples requires a value".to_string())?;
+                min_class_samples = value
+                    .parse::<usize>()
+                    .map_err(|_| format!("Invalid --min-class-samples value: {value}"))?;
+            }
+            "--augment" => {
+                augmentation.enabled = true;
+            }
             unknown => return Err(format!("Unknown argument: {unknown}\n\n{}", help_text())),
         }
         idx += 1;
@@ -176,6 +214,8 @@ fn parse_args(args: Vec<String>) -> Result<CliOptions, String> {
         seed,
         balance_classes,
         temperature,
+        min_class_samples,
+        augmentation,
     })
 }
 
@@ -189,7 +229,7 @@ fn help_text() -> String {
         "  sempal-train-logreg --dataset <dir> [--out model.json] [options]",
         "",
         "Options:",
-        "  --dataset <dir>        Dataset directory created by sempal-embedding-export (required).",
+        "  --dataset <dir>        Dataset export (manifest.json) or curated class-folder root (required).",
         "  --out <file>           Output model path (default: model.json).",
         "  --epochs <n>           Epoch count (default: 30).",
         "  --learning-rate <f32>  Learning rate (default: 0.1).",
@@ -197,9 +237,15 @@ fn help_text() -> String {
         "  --batch-size <n>       Batch size (default: 256).",
         "  --seed <u64>           RNG seed (default: 42).",
         "  --temperature <f32>    Softmax temperature (default: 1.0).",
+        "  --min-class-samples <n> Minimum samples per class for curated folders (default: 30).",
+        "  --augment             Enable default augmentation for curated folders.",
         "  --no-balance           Disable class-balanced loss weights.",
     ]
     .join("\n")
+}
+
+fn is_dataset_export_dir(path: &Path) -> bool {
+    path.join("manifest.json").is_file()
 }
 
 fn split_train_val_test(

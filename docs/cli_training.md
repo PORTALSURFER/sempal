@@ -40,6 +40,43 @@ Notes:
 - The embedding backend uses the CLAP audio ONNX model (`clap_audio.onnx`).
 - Ensure the model is installed under the app models directory before exporting embeddings.
 
+## Curated folder pipeline (app-style)
+
+If you already have a curated dataset organized by class folders, you can train directly
+without exporting JSONL datasets. The CLI tools accept either an export directory
+(`manifest.json`) or a curated folder root:
+
+```
+./curated
+  /kick
+    kick_001.wav
+  /snare
+    snare_001.wav
+```
+
+Train LogReg on a curated folder:
+
+```bash
+cargo run --bin sempal-train-logreg -- --dataset ./curated --out ./model.json
+```
+
+Train MLP on a curated folder (optional hybrid features):
+
+```bash
+cargo run --bin sempal-train-mlp -- --dataset ./curated --hybrid --out ./model.json
+```
+
+Train baseline GBDT on a curated folder:
+
+```bash
+cargo run --bin sempal-train-baseline -- --dataset ./curated --out ./model.json
+```
+
+Notes:
+- Use `--min-class-samples` to control class filtering (default: 30).
+- Add `--augment` to enable default training-time augmentation.
+- Curated embedding training still requires the CLAP model under the app models directory.
+
 ## Feature pipeline (legacy baseline)
 
 1. Export features + labels:
