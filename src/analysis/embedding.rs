@@ -9,9 +9,10 @@ use ort::value::Tensor;
 
 use crate::analysis::audio;
 
-pub const EMBEDDING_MODEL_ID: &str = "clap_audio_onnx_v1";
+pub const EMBEDDING_MODEL_ID: &str =
+    "clap_htsat_fused__sr48k__nfft1024__hop480__mel64__chunk10__repeatpad_v1";
 pub const EMBEDDING_DIM: usize = 512;
-pub const EMBEDDING_DTYPE_F32: i64 = 0;
+pub const EMBEDDING_DTYPE_F32: &str = "f32";
 const CLAP_SAMPLE_RATE: u32 = 48_000;
 const CLAP_INPUT_SECONDS: f32 = 10.0;
 const CLAP_INPUT_SAMPLES: usize = (CLAP_SAMPLE_RATE as f32 * CLAP_INPUT_SECONDS) as usize;
@@ -76,9 +77,7 @@ pub(crate) fn infer_embedding(
         samples.to_vec()
     };
 
-    let mut input = vec![0.0_f32; CLAP_INPUT_SAMPLES];
-    let copy_len = resampled.len().min(CLAP_INPUT_SAMPLES);
-    input[..copy_len].copy_from_slice(&resampled[..copy_len]);
+    let input = repeat_pad(&resampled, CLAP_INPUT_SAMPLES);
     let array = Array3::from_shape_vec((1, 1, CLAP_INPUT_SAMPLES), input)
         .map_err(|err| format!("Failed to build CLAP input: {err}"))?;
     let input_value = Tensor::from_array(array)
@@ -97,6 +96,22 @@ pub(crate) fn infer_embedding(
     }
     normalize_l2_in_place(&mut embedding);
     Ok(embedding)
+}
+
+fn repeat_pad(samples: &[f32], target_len: usize) -> Vec<f32> {
+    if samples.is_empty() || target_len == 0 {
+        return Vec::new();
+    }
+    if samples.len() >= target_len {
+        return samples[..target_len].to_vec();
+    }
+    let mut out = Vec::with_capacity(target_len);
+    while out.len() < target_len {
+        let remaining = target_len - out.len();
+        let take = remaining.min(samples.len());
+        out.extend_from_slice(&samples[..take]);
+    }
+    out
 }
 
 fn normalize_l2_in_place(values: &mut [f32]) {

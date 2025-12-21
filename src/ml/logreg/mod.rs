@@ -1,6 +1,8 @@
 //! Logistic regression classifier for embedding vectors.
 
 use serde::{Deserialize, Serialize};
+use time::OffsetDateTime;
+use time::macros::format_description;
 
 use crate::analysis::embedding::{EMBEDDING_DIM, EMBEDDING_MODEL_ID};
 use crate::ml::gbdt_stump::softmax;
@@ -217,6 +219,15 @@ impl LogRegModel {
         self.temperature = best_temp;
         Ok(())
     }
+}
+
+/// Build a training head id in the `softmax_lr__<date>__<git-sha>` format.
+pub fn default_head_id() -> String {
+    let date = OffsetDateTime::now_utc()
+        .format(&format_description!("[year][month][day]"))
+        .unwrap_or_else(|_| "00000000".to_string());
+    let sha = std::env::var("SEMPAL_GIT_SHA").unwrap_or_else(|_| "unknown".to_string());
+    format!("softmax_lr__{date}__{sha}")
 }
 
 #[cfg(test)]

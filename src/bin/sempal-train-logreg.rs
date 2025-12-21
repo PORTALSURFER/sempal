@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use sempal::analysis::embedding::EMBEDDING_DIM;
 use sempal::dataset::loader::{LoadedDataset, load_dataset};
-use sempal::ml::logreg::{LogRegModel, TrainDataset, TrainOptions, train_logreg};
+use sempal::ml::logreg::{LogRegModel, TrainDataset, TrainOptions, default_head_id, train_logreg};
 use sempal::ml::metrics::{ConfusionMatrix, accuracy, precision_recall_by_class};
 
 fn main() {
@@ -31,7 +31,7 @@ fn run() -> Result<(), String> {
     }
 
     let mut model = train_logreg(&train, &train_options, Some(&val))?;
-    model.model_id = Some(uuid::Uuid::new_v4().to_string());
+    model.model_id = Some(default_head_id());
     model.temperature = options.temperature;
     save_model(&options.model_out, &model)?;
 

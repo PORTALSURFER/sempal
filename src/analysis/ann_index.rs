@@ -129,7 +129,7 @@ pub fn find_similar(
 fn load_embedding(conn: &Connection, sample_id: &str) -> Result<Vec<f32>, String> {
     let blob: Vec<u8> = conn
         .query_row(
-            "SELECT vec_blob FROM embeddings WHERE sample_id = ?1 AND model_id = ?2",
+            "SELECT vec FROM embeddings WHERE sample_id = ?1 AND model_id = ?2",
             params![sample_id, embedding::EMBEDDING_MODEL_ID],
             |row| row.get(0),
         )
@@ -225,7 +225,7 @@ fn build_index_from_db(
     let mut id_map = Vec::with_capacity(count.max(0) as usize);
     let mut stmt = conn
         .prepare(
-            "SELECT sample_id, vec_blob
+            "SELECT sample_id, vec
              FROM embeddings
              WHERE model_id = ?1
              ORDER BY sample_id ASC",

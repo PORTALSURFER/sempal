@@ -294,7 +294,7 @@ pub fn load_embedding_export_rows_filtered(
               )
         )
         SELECT e.sample_id,
-               e.vec_blob,",
+               e.vec,",
     );
     if include_user_labels {
         sql.push_str(

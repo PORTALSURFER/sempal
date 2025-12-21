@@ -1,0 +1,7 @@
+{
+  "model": "laion/clap-htsat-fused",
+  "input_names": ["audio"],
+  "input_shapes": [[1, 1, 480000]],
+  "opset": 17,
+  "embedding_dim": 512
+}

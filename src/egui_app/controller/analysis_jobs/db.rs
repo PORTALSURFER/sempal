@@ -475,20 +475,20 @@ pub(super) fn upsert_embedding(
     sample_id: &str,
     model_id: &str,
     dim: i64,
-    dtype: i64,
+    dtype: &str,
+    l2_normed: bool,
     vec_blob: &[u8],
-    created_at: i64,
 ) -> Result<(), String> {
     conn.execute(
-        "INSERT INTO embeddings (sample_id, model_id, dim, dtype, vec_blob, created_at)
+        "INSERT INTO embeddings (sample_id, model_id, dim, dtype, l2_normed, vec)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6)
          ON CONFLICT(sample_id) DO UPDATE SET
             model_id = excluded.model_id,
             dim = excluded.dim,
             dtype = excluded.dtype,
-            vec_blob = excluded.vec_blob,
-            created_at = excluded.created_at",
-        params![sample_id, model_id, dim, dtype, vec_blob, created_at],
+            l2_normed = excluded.l2_normed,
+            vec = excluded.vec",
+        params![sample_id, model_id, dim, dtype, l2_normed, vec_blob],
     )
     .map_err(|err| format!("Failed to upsert embedding: {err}"))?;
     Ok(())

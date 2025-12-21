@@ -138,11 +138,27 @@ impl LibraryDatabase {
                     sample_id TEXT PRIMARY KEY,
                     model_id TEXT NOT NULL,
                     dim INTEGER NOT NULL,
-                    dtype INTEGER NOT NULL,
-                    vec_blob BLOB NOT NULL,
-                    created_at INTEGER NOT NULL
+                    dtype TEXT NOT NULL,
+                    l2_normed INTEGER NOT NULL,
+                    vec BLOB NOT NULL
                  ) WITHOUT ROWID;
                  CREATE INDEX IF NOT EXISTS idx_embeddings_model_id ON embeddings (model_id);
+                 CREATE TABLE IF NOT EXISTS classes (
+                    class_id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    description TEXT NOT NULL,
+                    examples_json TEXT NOT NULL
+                 ) WITHOUT ROWID;
+                 CREATE TABLE IF NOT EXISTS classifier_models (
+                    head_id TEXT PRIMARY KEY,
+                    model_id TEXT NOT NULL,
+                    dim INTEGER NOT NULL,
+                    num_classes INTEGER NOT NULL,
+                    norm TEXT NOT NULL,
+                    temperature REAL NOT NULL,
+                    weights BLOB NOT NULL,
+                    bias BLOB NOT NULL
+                 ) WITHOUT ROWID;
                  CREATE TABLE IF NOT EXISTS labels (
                     sample_id TEXT NOT NULL,
                     source INTEGER NOT NULL,
@@ -367,20 +383,60 @@ impl LibraryDatabase {
             .optional()
             .map_err(map_sql_error)?;
         drop(stmt);
-        if exists.is_some() {
+        if exists.is_none() {
+            self.connection
+                .execute_batch(
+                    "CREATE TABLE IF NOT EXISTS embeddings (
+                        sample_id TEXT PRIMARY KEY,
+                        model_id TEXT NOT NULL,
+                        dim INTEGER NOT NULL,
+                        dtype TEXT NOT NULL,
+                        l2_normed INTEGER NOT NULL,
+                        vec BLOB NOT NULL
+                    ) WITHOUT ROWID;
+                    CREATE INDEX IF NOT EXISTS idx_embeddings_model_id ON embeddings (model_id);",
+                )
+                .map_err(map_sql_error)?;
             return Ok(());
         }
+
+        let mut stmt = self
+            .connection
+            .prepare("PRAGMA table_info(embeddings)")
+            .map_err(map_sql_error)?;
+        let columns = stmt
+            .query_map([], |row| row.get::<_, String>(1))
+            .map_err(map_sql_error)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(map_sql_error)?;
+        drop(stmt);
+
+        let has_vec = columns.iter().any(|c| c == "vec");
+        let has_l2 = columns.iter().any(|c| c == "l2_normed");
+        let has_dtype = columns.iter().any(|c| c == "dtype");
+        let has_vec_blob = columns.iter().any(|c| c == "vec_blob");
+        if has_vec && has_l2 && has_dtype && !has_vec_blob {
+            return Ok(());
+        }
+
         self.connection
             .execute_batch(
-                "CREATE TABLE IF NOT EXISTS embeddings (
+                "BEGIN;
+                 CREATE TABLE IF NOT EXISTS embeddings_new (
                     sample_id TEXT PRIMARY KEY,
                     model_id TEXT NOT NULL,
                     dim INTEGER NOT NULL,
-                    dtype INTEGER NOT NULL,
-                    vec_blob BLOB NOT NULL,
-                    created_at INTEGER NOT NULL
-                ) WITHOUT ROWID;
-                CREATE INDEX IF NOT EXISTS idx_embeddings_model_id ON embeddings (model_id);",
+                    dtype TEXT NOT NULL,
+                    l2_normed INTEGER NOT NULL,
+                    vec BLOB NOT NULL
+                 ) WITHOUT ROWID;
+                 INSERT INTO embeddings_new (sample_id, model_id, dim, dtype, l2_normed, vec)
+                    SELECT sample_id, model_id, dim, 'f32', 1, vec_blob
+                    FROM embeddings;
+                 DROP TABLE embeddings;
+                 ALTER TABLE embeddings_new RENAME TO embeddings;
+                 CREATE INDEX IF NOT EXISTS idx_embeddings_model_id ON embeddings (model_id);
+                 COMMIT;",
             )
             .map_err(map_sql_error)?;
         Ok(())
@@ -410,6 +466,64 @@ impl LibraryDatabase {
                     PRIMARY KEY (sample_id, source, category)
                 ) WITHOUT ROWID;
                 CREATE INDEX IF NOT EXISTS idx_labels_category ON labels (category);",
+            )
+            .map_err(map_sql_error)?;
+        Ok(())
+    }
+
+    pub(super) fn migrate_classes_table(&mut self) -> Result<(), LibraryError> {
+        let mut stmt = self
+            .connection
+            .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='classes'")
+            .map_err(map_sql_error)?;
+        let exists: Option<String> = stmt
+            .query_row([], |row| row.get(0))
+            .optional()
+            .map_err(map_sql_error)?;
+        drop(stmt);
+        if exists.is_some() {
+            return Ok(());
+        }
+        self.connection
+            .execute_batch(
+                "CREATE TABLE IF NOT EXISTS classes (
+                    class_id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    description TEXT NOT NULL,
+                    examples_json TEXT NOT NULL
+                ) WITHOUT ROWID;",
+            )
+            .map_err(map_sql_error)?;
+        Ok(())
+    }
+
+    pub(super) fn migrate_classifier_models_table(&mut self) -> Result<(), LibraryError> {
+        let mut stmt = self
+            .connection
+            .prepare(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='classifier_models'",
+            )
+            .map_err(map_sql_error)?;
+        let exists: Option<String> = stmt
+            .query_row([], |row| row.get(0))
+            .optional()
+            .map_err(map_sql_error)?;
+        drop(stmt);
+        if exists.is_some() {
+            return Ok(());
+        }
+        self.connection
+            .execute_batch(
+                "CREATE TABLE IF NOT EXISTS classifier_models (
+                    head_id TEXT PRIMARY KEY,
+                    model_id TEXT NOT NULL,
+                    dim INTEGER NOT NULL,
+                    num_classes INTEGER NOT NULL,
+                    norm TEXT NOT NULL,
+                    temperature REAL NOT NULL,
+                    weights BLOB NOT NULL,
+                    bias BLOB NOT NULL
+                ) WITHOUT ROWID;",
             )
             .map_err(map_sql_error)?;
         Ok(())

@@ -138,6 +138,7 @@ pub(super) fn run_model_training(
             let (train_logreg, val_logreg, test_logreg) = split_logreg_train_val_test(&loaded)?;
             let mut model =
                 crate::ml::logreg::train_logreg(&train_logreg, &job.logreg_options, Some(&val_logreg))?;
+            model.model_id = Some(crate::ml::logreg::default_head_id());
             if let Err(err) = model.calibrate_temperature(&val_logreg, 0.3, 3.0, 28) {
                 warn!("LogReg temperature calibration failed: {err}");
             }
@@ -214,7 +215,7 @@ fn run_training_from_dataset_root(
             )?;
             let mut model =
                 crate::ml::logreg::train_logreg(&train, &job.logreg_options, Some(&val))?;
-            model.model_id = Some(uuid::Uuid::new_v4().to_string());
+            model.model_id = Some(crate::ml::logreg::default_head_id());
             if let Err(err) = model.calibrate_temperature(&val, 0.3, 3.0, 28) {
                 warn!("LogReg temperature calibration failed: {err}");
             }

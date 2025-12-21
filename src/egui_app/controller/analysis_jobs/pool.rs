@@ -363,15 +363,14 @@ fn run_analysis_job(
             decoded.sample_rate_used,
         )?;
         let embedding_blob = crate::analysis::vector::encode_f32_le_blob(&embedding);
-        let embedding_timestamp = now_epoch_seconds();
         db::upsert_embedding(
             conn,
             &job.sample_id,
             crate::analysis::embedding::EMBEDDING_MODEL_ID,
             crate::analysis::embedding::EMBEDDING_DIM as i64,
             crate::analysis::embedding::EMBEDDING_DTYPE_F32,
+            true,
             &embedding_blob,
-            embedding_timestamp,
         )?;
         embedding
     };
@@ -469,7 +468,7 @@ fn load_embedding_vec(
     model_id: &str,
 ) -> Result<Vec<f32>, String> {
     conn.query_row(
-        "SELECT vec_blob FROM embeddings WHERE sample_id = ?1 AND model_id = ?2",
+        "SELECT vec FROM embeddings WHERE sample_id = ?1 AND model_id = ?2",
         rusqlite::params![sample_id, model_id],
         |row| row.get::<_, Vec<u8>>(0),
     )
@@ -485,7 +484,7 @@ fn load_embedding_vec_optional(
 ) -> Result<Option<Vec<f32>>, String> {
     let row: Option<Vec<u8>> = conn
         .query_row(
-            "SELECT vec_blob FROM embeddings WHERE sample_id = ?1 AND model_id = ?2",
+            "SELECT vec FROM embeddings WHERE sample_id = ?1 AND model_id = ?2",
             rusqlite::params![sample_id, model_id],
             |row| row.get::<_, Vec<u8>>(0),
         )
