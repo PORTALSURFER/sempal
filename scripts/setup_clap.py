@@ -65,6 +65,24 @@ def ensure_clap(no_install: bool) -> None:
     if install(False):
         return
 
+    print("Retrying with --force-reinstall (this may take a while)...")
+    subprocess.check_call(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "--force-reinstall",
+            "--no-cache-dir",
+            "torch",
+            "torchaudio",
+            "laion-clap",
+            "onnx",
+        ]
+    )
+    if try_import_clap():
+        return
+
     raise RuntimeError(
         "CLAP install completed but import still failed. "
         f"Try: {sys.executable} -m pip install torch torchaudio laion-clap onnx"
