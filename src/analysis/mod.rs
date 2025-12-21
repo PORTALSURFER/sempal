@@ -4,6 +4,7 @@ pub(crate) mod audio;
 pub(crate) mod audio_decode;
 pub(crate) mod augment;
 pub(crate) mod ann_index;
+pub(crate) mod clap_preprocess;
 pub mod embedding;
 pub(crate) mod features;
 pub(crate) mod fft;
