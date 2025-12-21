@@ -18,6 +18,18 @@ pub(super) struct CachedModel {
     pub(super) model: CachedModelKind,
 }
 
+#[derive(Debug, Clone)]
+pub(super) struct CachedHead {
+    pub(super) head_id: String,
+    pub(super) model_id: String,
+    pub(super) dim: usize,
+    pub(super) num_classes: usize,
+    pub(super) temperature: f32,
+    pub(super) weights: Vec<f32>,
+    pub(super) bias: Vec<f32>,
+    pub(super) classes: Vec<String>,
+}
+
 pub(super) struct InferenceInputs<'a> {
     pub(super) features: Option<&'a [f32]>,
     pub(super) embedding: Option<&'a [f32]>,
@@ -102,6 +114,7 @@ pub(super) fn refresh_latest_model(
 pub(super) fn infer_and_upsert_prediction(
     conn: &Connection,
     cache: &mut Option<CachedModel>,
+    head_cache: &mut Option<CachedHead>,
     preferred_model_id: Option<&str>,
     sample_id: &str,
     content_hash: &str,
@@ -109,10 +122,53 @@ pub(super) fn infer_and_upsert_prediction(
     computed_at: i64,
     unknown_confidence_threshold: f32,
 ) -> Result<(), String> {
+    infer_and_upsert_head_prediction(
+        conn,
+        head_cache,
+        sample_id,
+        inputs.embedding,
+        unknown_confidence_threshold,
+    )?;
     refresh_latest_model(conn, cache, preferred_model_id)?;
     let Some(cached) = cache.as_ref() else {
         return Ok(());
     };
+    let user_label: Option<String> = conn
+        .query_row(
+            "SELECT class_id FROM labels_user WHERE sample_id = ?1",
+            params![sample_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|err| format!("Failed to query labels_user: {err}"))?;
+    if let Some(class_id) = user_label {
+        let topk = vec![TopKProbability {
+            class_id: class_id.clone(),
+            probability: 1.0,
+        }];
+        let topk_json = serde_json::to_string(&topk).map_err(|err| err.to_string())?;
+        conn.execute(
+            "INSERT INTO predictions (sample_id, model_id, content_hash, top_class, confidence, topk_json, computed_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+             ON CONFLICT(sample_id, model_id) DO UPDATE SET
+                content_hash = excluded.content_hash,
+                top_class = excluded.top_class,
+                confidence = excluded.confidence,
+                topk_json = excluded.topk_json,
+                computed_at = excluded.computed_at",
+            params![
+                sample_id,
+                cached.model_id,
+                content_hash,
+                class_id,
+                1.0_f64,
+                topk_json,
+                computed_at
+            ],
+        )
+        .map_err(|err| format!("Failed to upsert prediction: {err}"))?;
+        return Ok(());
+    }
     let (classes, proba) = match &cached.model {
         CachedModelKind::Gbdt(model) => {
             if model.feat_version != crate::analysis::FEATURE_VERSION_V1
@@ -314,6 +370,195 @@ fn topk_from_proba(
         .copied()
         .unwrap_or(0.0);
     (top_idx, top_prob, top2_prob, topk)
+}
+
+fn infer_and_upsert_head_prediction(
+    conn: &Connection,
+    cache: &mut Option<CachedHead>,
+    sample_id: &str,
+    embedding: Option<&[f32]>,
+    unknown_margin_threshold: f32,
+) -> Result<(), String> {
+    let user_label: Option<String> = conn
+        .query_row(
+            "SELECT class_id FROM labels_user WHERE sample_id = ?1",
+            params![sample_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|err| format!("Failed to query labels_user: {err}"))?;
+    if let Some(class_id) = user_label {
+        return upsert_head_prediction(conn, sample_id, cache, class_id, 1.0);
+    }
+
+    refresh_latest_head(conn, cache)?;
+    let Some(head) = cache.as_ref() else {
+        return Ok(());
+    };
+    let Some(embedding) = embedding else {
+        return Ok(());
+    };
+    if embedding.len() != head.dim {
+        return Ok(());
+    }
+    let (logits, proba) = head_logits_and_proba(head, embedding)?;
+    if logits.is_empty() || proba.is_empty() {
+        return Ok(());
+    }
+    let (top_idx, confidence, top2, _topk) =
+        topk_from_proba(&head.classes, &proba, 5);
+    let margin = confidence - top2;
+    let class_id = if margin < unknown_margin_threshold {
+        "UNKNOWN".to_string()
+    } else {
+        head.classes.get(top_idx).cloned().unwrap_or_default()
+    };
+    upsert_head_prediction(conn, sample_id, cache, class_id, confidence as f64)?;
+    Ok(())
+}
+
+fn upsert_head_prediction(
+    conn: &Connection,
+    sample_id: &str,
+    cache: &mut Option<CachedHead>,
+    class_id: String,
+    score: f64,
+) -> Result<(), String> {
+    refresh_latest_head(conn, cache)?;
+    let Some(head) = cache.as_ref() else {
+        return Ok(());
+    };
+    conn.execute(
+        "INSERT INTO predictions_head (sample_id, head_id, class_id, score)
+         VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT(sample_id, head_id) DO UPDATE SET
+            class_id = excluded.class_id,
+            score = excluded.score",
+        params![sample_id, head.head_id, class_id, score],
+    )
+    .map_err(|err| format!("Failed to upsert head prediction: {err}"))?;
+    Ok(())
+}
+
+fn refresh_latest_head(conn: &Connection, cache: &mut Option<CachedHead>) -> Result<(), String> {
+    let row: Option<(String, String, i64, i64, String, f32, Vec<u8>, Vec<u8>)> = conn
+        .query_row(
+            "SELECT head_id, model_id, dim, num_classes, norm, temperature, weights, bias
+             FROM classifier_models
+             WHERE model_id = ?1
+             ORDER BY head_id DESC
+             LIMIT 1",
+            params![crate::analysis::embedding::EMBEDDING_MODEL_ID],
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                    row.get(5)?,
+                    row.get(6)?,
+                    row.get(7)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(|err| format!("Failed to query classifier_models: {err}"))?;
+    let Some((head_id, model_id, dim, num_classes, norm, temperature, weights_blob, bias_blob)) = row
+    else {
+        *cache = None;
+        return Ok(());
+    };
+    if cache
+        .as_ref()
+        .is_some_and(|cached| cached.head_id == head_id)
+    {
+        return Ok(());
+    }
+
+    let classes = load_classes_v1()?;
+    if classes.len() != num_classes as usize {
+        return Err(format!(
+            "Head class count mismatch: expected {}, got {}",
+            classes.len(),
+            num_classes
+        ));
+    }
+    let dim = dim as usize;
+    if dim != crate::analysis::embedding::EMBEDDING_DIM {
+        return Err(format!(
+            "Head dim mismatch: expected {}, got {}",
+            crate::analysis::embedding::EMBEDDING_DIM,
+            dim
+        ));
+    }
+    if !temperature.is_finite() || temperature <= 0.0 {
+        return Err("Head temperature must be > 0".to_string());
+    }
+    if norm != "l2" {
+        return Err(format!("Unsupported head norm: {}", norm));
+    }
+    let weights = crate::analysis::decode_f32_le_blob(&weights_blob)?;
+    let bias = crate::analysis::decode_f32_le_blob(&bias_blob)?;
+    if weights.len() != classes.len() * dim {
+        return Err("Head weights length mismatch".to_string());
+    }
+    if bias.len() != classes.len() {
+        return Err("Head bias length mismatch".to_string());
+    }
+    *cache = Some(CachedHead {
+        head_id,
+        model_id,
+        dim,
+        num_classes: classes.len(),
+        temperature,
+        weights,
+        bias,
+        classes,
+    });
+    Ok(())
+}
+
+fn head_logits_and_proba(
+    head: &CachedHead,
+    embedding: &[f32],
+) -> Result<(Vec<f32>, Vec<f32>), String> {
+    let mut logits = vec![0.0_f32; head.num_classes];
+    for class_idx in 0..head.num_classes {
+        let base = class_idx * head.dim;
+        let mut sum = head.bias.get(class_idx).copied().unwrap_or(0.0);
+        let weights = &head.weights[base..base + head.dim];
+        for (w, x) in weights.iter().zip(embedding.iter()) {
+            sum += w * x;
+        }
+        logits[class_idx] = sum / head.temperature;
+    }
+    let proba = crate::ml::gbdt_stump::softmax(&logits);
+    Ok((logits, proba))
+}
+
+fn load_classes_v1() -> Result<Vec<String>, String> {
+    #[derive(serde::Deserialize)]
+    struct ClassesManifest {
+        classes: Vec<ClassDef>,
+    }
+    #[derive(serde::Deserialize)]
+    struct ClassDef {
+        id: String,
+    }
+    let manifest: ClassesManifest = serde_json::from_str(include_str!(
+        "../../../../assets/ml/classes_v1.json"
+    ))
+    .map_err(|err| format!("Failed to parse classes_v1.json: {err}"))?;
+    let classes: Vec<String> = manifest
+        .classes
+        .into_iter()
+        .map(|c| c.id)
+        .collect();
+    if classes.is_empty() {
+        return Err("classes_v1.json has no classes".to_string());
+    }
+    Ok(classes)
 }
 
 #[cfg(test)]

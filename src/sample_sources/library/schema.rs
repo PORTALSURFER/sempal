@@ -235,6 +235,23 @@ impl LibraryDatabase {
         Ok(())
     }
 
+    pub(super) fn migrate_predictions_head_table(&mut self) -> Result<(), LibraryError> {
+        self.connection
+            .execute_batch(
+                "CREATE TABLE IF NOT EXISTS predictions_head (
+                    sample_id TEXT NOT NULL,
+                    head_id TEXT NOT NULL,
+                    class_id TEXT NOT NULL,
+                    score REAL NOT NULL,
+                    PRIMARY KEY (sample_id, head_id)
+                ) WITHOUT ROWID;
+                CREATE INDEX IF NOT EXISTS idx_predictions_head_id ON predictions_head (head_id);
+                CREATE INDEX IF NOT EXISTS idx_predictions_head_class_id ON predictions_head (class_id);",
+            )
+            .map_err(map_sql_error)?;
+        Ok(())
+    }
+
     pub(super) fn migrate_analysis_jobs_content_hash(&mut self) -> Result<(), LibraryError> {
         let mut stmt = self
             .connection

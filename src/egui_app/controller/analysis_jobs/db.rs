@@ -80,6 +80,7 @@ pub(in crate::egui_app::controller) fn purge_orphaned_samples(
         "features",
         "embeddings",
         "predictions",
+        "predictions_head",
         "labels_user",
         "labels_weak",
         "labels",
@@ -282,6 +283,9 @@ pub(super) fn invalidate_analysis_artifacts(
     let mut stmt_model_predictions = tx
         .prepare("DELETE FROM predictions WHERE sample_id = ?1")
         .map_err(|err| format!("Failed to prepare analysis invalidation statement: {err}"))?;
+    let mut stmt_head_predictions = tx
+        .prepare("DELETE FROM predictions_head WHERE sample_id = ?1")
+        .map_err(|err| format!("Failed to prepare analysis invalidation statement: {err}"))?;
     for sample_id in sample_ids {
         stmt_features
             .execute(params![sample_id])
@@ -298,12 +302,16 @@ pub(super) fn invalidate_analysis_artifacts(
         stmt_model_predictions
             .execute(params![sample_id])
             .map_err(|err| format!("Failed to invalidate predictions: {err}"))?;
+        stmt_head_predictions
+            .execute(params![sample_id])
+            .map_err(|err| format!("Failed to invalidate head predictions: {err}"))?;
     }
     drop(stmt_features);
     drop(stmt_embeddings);
     drop(stmt_legacy_features);
     drop(stmt_predictions);
     drop(stmt_model_predictions);
+    drop(stmt_head_predictions);
     tx.commit()
         .map_err(|err| format!("Failed to commit analysis invalidation transaction: {err}"))?;
     Ok(())

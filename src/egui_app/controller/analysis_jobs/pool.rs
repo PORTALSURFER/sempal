@@ -214,6 +214,7 @@ fn spawn_worker(
         let _ = db::prune_jobs_for_missing_sources(&conn);
         let _ = db::reset_running_to_pending(&conn);
         let mut model_cache: Option<inference::CachedModel> = None;
+        let mut head_cache: Option<inference::CachedHead> = None;
         let _ = inference::refresh_latest_model(&conn, &mut model_cache, None);
 
         loop {
@@ -247,6 +248,7 @@ fn spawn_worker(
                     &conn,
                     &job,
                     &mut model_cache,
+                    &mut head_cache,
                     unknown_threshold,
                     max_analysis_duration_seconds,
                     preferred_model_id,
@@ -287,6 +289,7 @@ fn run_job(
     conn: &rusqlite::Connection,
     job: &db::ClaimedJob,
     model_cache: &mut Option<inference::CachedModel>,
+    head_cache: &mut Option<inference::CachedHead>,
     unknown_confidence_threshold: f32,
     max_analysis_duration_seconds: f32,
     preferred_model_id: Option<String>,
@@ -296,6 +299,7 @@ fn run_job(
             conn,
             job,
             model_cache,
+            head_cache,
             unknown_confidence_threshold,
             max_analysis_duration_seconds,
             preferred_model_id.as_deref(),
@@ -306,6 +310,7 @@ fn run_job(
                 conn,
                 job,
                 model_cache,
+                head_cache,
                 unknown_confidence_threshold,
                 preferred_model_id.as_deref(),
             )
@@ -510,6 +515,7 @@ fn run_analysis_job(
     conn: &rusqlite::Connection,
     job: &db::ClaimedJob,
     model_cache: &mut Option<inference::CachedModel>,
+    head_cache: &mut Option<inference::CachedHead>,
     unknown_confidence_threshold: f32,
     max_analysis_duration_seconds: f32,
     preferred_model_id: Option<&str>,
@@ -595,6 +601,7 @@ fn run_analysis_job(
     inference::infer_and_upsert_prediction(
         conn,
         model_cache,
+        head_cache,
         preferred_model_id,
         &job.sample_id,
         content_hash,
@@ -612,6 +619,7 @@ fn run_inference_job(
     conn: &rusqlite::Connection,
     job: &db::ClaimedJob,
     model_cache: &mut Option<inference::CachedModel>,
+    head_cache: &mut Option<inference::CachedHead>,
     unknown_confidence_threshold: f32,
     preferred_model_id: Option<&str>,
 ) -> Result<(), String> {
@@ -632,6 +640,7 @@ fn run_inference_job(
     inference::infer_and_upsert_prediction(
         conn,
         model_cache,
+        head_cache,
         preferred_model_id,
         &job.sample_id,
         content_hash,

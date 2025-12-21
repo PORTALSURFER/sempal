@@ -104,6 +104,7 @@ impl LibraryDatabase {
         db.migrate_features_table()?;
         db.migrate_models_table()?;
         db.migrate_predictions_table()?;
+        db.migrate_predictions_head_table()?;
         db.migrate_labels_weak_table()?;
         db.migrate_labels_user_table()?;
         db.migrate_embeddings_table()?;
