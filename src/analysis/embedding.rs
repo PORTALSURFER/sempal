@@ -1,11 +1,10 @@
 use std::path::PathBuf;
 use std::sync::{LazyLock, Mutex};
 
-use ndarray::Array3;
 use ort::session::Session;
 use ort::session::builder::SessionBuilder;
 use ort::session::output::SessionOutputs;
-use ort::value::Tensor;
+use ort::value::TensorRef;
 
 use crate::analysis::audio;
 
@@ -19,6 +18,7 @@ const CLAP_INPUT_SAMPLES: usize = (CLAP_SAMPLE_RATE as f32 * CLAP_INPUT_SECONDS)
 
 pub(crate) struct ClapModel {
     session: Session,
+    input_scratch: Vec<f32>,
 }
 
 static GLOBAL_CLAP_MODEL: LazyLock<Mutex<Option<ClapModel>>> = LazyLock::new(|| Mutex::new(None));
@@ -56,7 +56,10 @@ impl ClapModel {
             .map_err(|err| format!("Failed to set ONNX threads: {err}"))?
             .commit_from_file(&model_path)
             .map_err(|err| format!("Failed to load ONNX model: {err}"))?;
-        Ok(Self { session })
+        Ok(Self {
+            session,
+            input_scratch: vec![0.0_f32; CLAP_INPUT_SAMPLES],
+        })
     }
 }
 
@@ -85,11 +88,12 @@ fn infer_embedding_with_model(
         samples.to_vec()
     };
     audio::sanitize_samples_in_place(&mut resampled);
-    let input = repeat_pad(&resampled, CLAP_INPUT_SAMPLES);
-    let array = Array3::from_shape_vec((1, 1, CLAP_INPUT_SAMPLES), input)
-        .map_err(|err| format!("Failed to build CLAP input: {err}"))?;
-    let input_value = Tensor::from_array(array)
-        .map_err(|err| format!("Failed to create ONNX input tensor: {err}"))?;
+    repeat_pad_into(&mut model.input_scratch, &resampled, CLAP_INPUT_SAMPLES);
+    let input_value = TensorRef::from_array_view((
+        [1usize, 1, CLAP_INPUT_SAMPLES],
+        model.input_scratch.as_slice(),
+    ))
+    .map_err(|err| format!("Failed to create ONNX input tensor: {err}"))?;
     let outputs = model
         .session
         .run(ort::inputs![input_value])
@@ -106,20 +110,23 @@ fn infer_embedding_with_model(
     Ok(embedding)
 }
 
-fn repeat_pad(samples: &[f32], target_len: usize) -> Vec<f32> {
+fn repeat_pad_into(out: &mut Vec<f32>, samples: &[f32], target_len: usize) {
+    out.clear();
+    out.resize(target_len, 0.0);
     if samples.is_empty() || target_len == 0 {
-        return Vec::new();
+        return;
     }
     if samples.len() >= target_len {
-        return samples[..target_len].to_vec();
+        out[..target_len].copy_from_slice(&samples[..target_len]);
+        return;
     }
-    let mut out = Vec::with_capacity(target_len);
-    while out.len() < target_len {
-        let remaining = target_len - out.len();
+    let mut offset = 0usize;
+    while offset < target_len {
+        let remaining = target_len - offset;
         let take = remaining.min(samples.len());
-        out.extend_from_slice(&samples[..take]);
+        out[offset..offset + take].copy_from_slice(&samples[..take]);
+        offset += take;
     }
-    out
 }
 
 fn normalize_l2_in_place(values: &mut [f32]) {
