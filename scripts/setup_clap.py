@@ -56,14 +56,17 @@ def ensure_clap(no_install: bool) -> None:
         raise RuntimeError(
             "torch, laion_clap, and onnx are required. Install them first or omit --no-install."
         )
-    print("Installing torch + torchaudio + torchvision + laion-clap + onnx (this may take a while)...")
+    print(
+        "Installing torch + torchaudio + torchvision + laion-clap + onnx + onnxscript "
+        "(this may take a while)..."
+    )
     subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade", "pip"])
 
     def install(use_user: bool) -> bool:
         cmd = [sys.executable, "-m", "pip", "install"]
         if use_user:
             cmd.append("--user")
-        cmd.extend(["torch", "torchaudio", "torchvision", "laion-clap", "onnx"])
+        cmd.extend(["torch", "torchaudio", "torchvision", "laion-clap", "onnx", "onnxscript"])
         subprocess.check_call(cmd)
         if use_user:
             site.addsitedir(site.getusersitepackages())
@@ -89,6 +92,7 @@ def ensure_clap(no_install: bool) -> None:
             "torchvision",
             "laion-clap",
             "onnx",
+            "onnxscript",
         ]
     )
     ok, err = try_import_clap()
@@ -98,7 +102,7 @@ def ensure_clap(no_install: bool) -> None:
     raise RuntimeError(
         "CLAP install completed but import still failed. "
         f"Import error: {err}. "
-        f"Try: {sys.executable} -m pip install torch torchaudio torchvision laion-clap onnx"
+        f"Try: {sys.executable} -m pip install torch torchaudio torchvision laion-clap onnx onnxscript"
     )
 
 
