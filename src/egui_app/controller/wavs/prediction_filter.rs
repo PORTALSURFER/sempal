@@ -1,5 +1,5 @@
 use super::*;
-use crate::egui_app::controller::analysis_jobs::types::TopKProbability;
+use crate::egui_app::controller::analysis_jobs::TopKProbability;
 use crate::egui_app::state::PredictedCategory;
 use rusqlite::{Connection, OptionalExtension, params};
 use std::collections::HashMap;

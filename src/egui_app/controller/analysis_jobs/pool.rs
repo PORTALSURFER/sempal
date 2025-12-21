@@ -1,7 +1,7 @@
 use super::db;
 use super::inference;
 use super::types::{AnalysisJobMessage, AnalysisProgress};
-use log::warn;
+use tracing::warn;
 use rusqlite::OptionalExtension;
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;

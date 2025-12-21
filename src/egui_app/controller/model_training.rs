@@ -1493,14 +1493,6 @@ fn split_mlp_embedding_train_val_test(
     let class_map = loaded.class_index_map();
     let classes: Vec<String> = class_map.iter().map(|(name, _)| name.clone()).collect();
 
-    #[derive(Clone)]
-    struct LabeledRow {
-        sample_id: String,
-        class_idx: usize,
-        split: String,
-        row: Vec<f32>,
-    }
-
     let mut rows = Vec::new();
     for sample in &loaded.samples {
         let Some(row) = loaded.feature_row(sample) else {
@@ -1509,7 +1501,7 @@ fn split_mlp_embedding_train_val_test(
         let Some(&class_idx) = class_map.get(&sample.label.class_id) else {
             continue;
         };
-        rows.push(LabeledRow {
+        rows.push(DatasetRow {
             sample_id: sample.sample_id.clone(),
             class_idx,
             split: sample.split.clone(),

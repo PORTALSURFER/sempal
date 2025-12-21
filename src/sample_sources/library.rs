@@ -172,25 +172,27 @@ impl LibraryDatabase {
             }
         }
 
-        let mut stmt = self
-            .connection
-            .prepare(
-                "SELECT class_id, name, description, examples_json
-                 FROM classes
-                 ORDER BY class_id ASC",
-            )
-            .map_err(map_sql_error)?;
-        let mut rows = stmt.query([]).map_err(map_sql_error)?;
-        let mut existing: HashMap<String, (String, String, Vec<String>)> = HashMap::new();
-        while let Some(row) = rows.next().map_err(map_sql_error)? {
-            let class_id: String = row.get(0)?;
-            let name: String = row.get(1)?;
-            let description: String = row.get(2)?;
-            let examples_json: String = row.get(3)?;
-            let examples: Vec<String> = serde_json::from_str(&examples_json)?;
-            existing.insert(class_id, (name, description, examples));
-        }
-        drop(stmt);
+        let existing: HashMap<String, (String, String, Vec<String>)> = {
+            let mut stmt = self
+                .connection
+                .prepare(
+                    "SELECT class_id, name, description, examples_json
+                     FROM classes
+                     ORDER BY class_id ASC",
+                )
+                .map_err(map_sql_error)?;
+            let mut rows = stmt.query([]).map_err(map_sql_error)?;
+            let mut existing = HashMap::new();
+            while let Some(row) = rows.next().map_err(map_sql_error)? {
+                let class_id: String = row.get(0)?;
+                let name: String = row.get(1)?;
+                let description: String = row.get(2)?;
+                let examples_json: String = row.get(3)?;
+                let examples: Vec<String> = serde_json::from_str(&examples_json)?;
+                existing.insert(class_id, (name, description, examples));
+            }
+            existing
+        };
 
         if existing.is_empty() {
             let tx = self.connection.transaction().map_err(map_sql_error)?;
@@ -209,6 +211,7 @@ impl LibraryDatabase {
                     examples_json
                 ])?;
             }
+            drop(insert);
             tx.commit().map_err(map_sql_error)?;
             return Ok(());
         }

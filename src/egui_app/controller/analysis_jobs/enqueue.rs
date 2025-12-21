@@ -332,29 +332,32 @@ pub(in crate::egui_app::controller) fn enqueue_jobs_for_embedding_backfill(
         return Ok((0, db::current_progress(&conn)?));
     }
 
-    let mut stmt = conn
-        .prepare(
-            "SELECT s.sample_id
-             FROM samples s
-             LEFT JOIN embeddings e ON e.sample_id = s.sample_id
-             WHERE s.sample_id LIKE ?1
-               AND (e.sample_id IS NULL OR e.model_id != ?2)
-             ORDER BY s.sample_id ASC",
-        )
-        .map_err(|err| format!("Prepare embedding backfill query failed: {err}"))?;
-    let mut sample_ids = Vec::new();
-    let rows = stmt
-        .query_map(
-            params![
-                format!("{}::%", source.id.as_str()),
-                crate::analysis::embedding::EMBEDDING_MODEL_ID
-            ],
-            |row| row.get::<_, String>(0),
-        )
-        .map_err(|err| format!("Failed to query embedding backfill rows: {err}"))?;
-    for row in rows {
-        sample_ids.push(row.map_err(|err| format!("Failed to decode sample_id: {err}"))?);
-    }
+    let sample_ids = {
+        let mut stmt = conn
+            .prepare(
+                "SELECT s.sample_id
+                 FROM samples s
+                 LEFT JOIN embeddings e ON e.sample_id = s.sample_id
+                 WHERE s.sample_id LIKE ?1
+                   AND (e.sample_id IS NULL OR e.model_id != ?2)
+                 ORDER BY s.sample_id ASC",
+            )
+            .map_err(|err| format!("Prepare embedding backfill query failed: {err}"))?;
+        let mut sample_ids = Vec::new();
+        let rows = stmt
+            .query_map(
+                params![
+                    format!("{}::%", source.id.as_str()),
+                    crate::analysis::embedding::EMBEDDING_MODEL_ID
+                ],
+                |row| row.get::<_, String>(0),
+            )
+            .map_err(|err| format!("Failed to query embedding backfill rows: {err}"))?;
+        for row in rows {
+            sample_ids.push(row.map_err(|err| format!("Failed to decode sample_id: {err}"))?);
+        }
+        sample_ids
+    };
 
     if sample_ids.is_empty() {
         return Ok((0, db::current_progress(&conn)?));

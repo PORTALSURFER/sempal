@@ -2,7 +2,7 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
 
-use rodio::Decoder;
+use rodio::{Decoder, Source};
 use symphonia::core::{
     audio::SampleBuffer,
     codecs::DecoderOptions,

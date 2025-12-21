@@ -6,6 +6,8 @@ param(
     [string]$RuntimeFile,
     [string]$OrtVersion,
     [string]$Checkpoint,
+    [string]$CheckpointUrl,
+    [switch]$NoCheckpointDownload,
     [int]$SampleRate,
     [double]$Seconds,
     [int]$Channels,
@@ -34,6 +36,8 @@ if ($RuntimeUrl) { $argsList += @("--runtime-url", $RuntimeUrl) }
 if ($RuntimeFile) { $argsList += @("--runtime-file", $RuntimeFile) }
 if ($OrtVersion) { $argsList += @("--ort-version", $OrtVersion) }
 if ($Checkpoint) { $argsList += @("--checkpoint", $Checkpoint) }
+if ($CheckpointUrl) { $argsList += @("--checkpoint-url", $CheckpointUrl) }
+if ($NoCheckpointDownload) { $argsList += "--no-checkpoint-download" }
 if ($SampleRate) { $argsList += @("--sample-rate", $SampleRate) }
 if ($Seconds) { $argsList += @("--seconds", $Seconds) }
 if ($Channels) { $argsList += @("--channels", $Channels) }
