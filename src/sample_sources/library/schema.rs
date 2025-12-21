@@ -159,6 +159,17 @@ impl LibraryDatabase {
                     weights BLOB NOT NULL,
                     bias BLOB NOT NULL
                  ) WITHOUT ROWID;
+                 CREATE TABLE IF NOT EXISTS classifier_metrics (
+                    head_id TEXT NOT NULL,
+                    split TEXT NOT NULL,
+                    accuracy REAL NOT NULL,
+                    coverage REAL,
+                    precision REAL,
+                    threshold REAL,
+                    created_at INTEGER NOT NULL,
+                    PRIMARY KEY (head_id, split, threshold)
+                 ) WITHOUT ROWID;
+                 CREATE INDEX IF NOT EXISTS idx_classifier_metrics_head_id ON classifier_metrics (head_id);
                  CREATE TABLE IF NOT EXISTS labels (
                     sample_id TEXT NOT NULL,
                     source INTEGER NOT NULL,
@@ -541,6 +552,39 @@ impl LibraryDatabase {
                     weights BLOB NOT NULL,
                     bias BLOB NOT NULL
                 ) WITHOUT ROWID;",
+            )
+            .map_err(map_sql_error)?;
+        Ok(())
+    }
+
+    pub(super) fn migrate_classifier_metrics_table(&mut self) -> Result<(), LibraryError> {
+        let mut stmt = self
+            .connection
+            .prepare(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='classifier_metrics'",
+            )
+            .map_err(map_sql_error)?;
+        let exists: Option<String> = stmt
+            .query_row([], |row| row.get(0))
+            .optional()
+            .map_err(map_sql_error)?;
+        drop(stmt);
+        if exists.is_some() {
+            return Ok(());
+        }
+        self.connection
+            .execute_batch(
+                "CREATE TABLE IF NOT EXISTS classifier_metrics (
+                    head_id TEXT NOT NULL,
+                    split TEXT NOT NULL,
+                    accuracy REAL NOT NULL,
+                    coverage REAL,
+                    precision REAL,
+                    threshold REAL,
+                    created_at INTEGER NOT NULL,
+                    PRIMARY KEY (head_id, split, threshold)
+                ) WITHOUT ROWID;
+                CREATE INDEX IF NOT EXISTS idx_classifier_metrics_head_id ON classifier_metrics (head_id);",
             )
             .map_err(map_sql_error)?;
         Ok(())

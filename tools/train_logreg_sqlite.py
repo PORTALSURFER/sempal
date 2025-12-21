@@ -81,9 +81,9 @@ def main() -> int:
         max_iter=args.max_iter,
     )
 
-    print_metrics("train", model, train["X"], train["y"], class_ids)
-    print_metrics("val", model, val["X"], val["y"], class_ids)
-    print_metrics("test", model, test["X"], test["y"], class_ids)
+    train_acc = print_metrics("train", model, train["X"], train["y"], class_ids)
+    val_acc = print_metrics("val", model, val["X"], val["y"], class_ids)
+    test_acc = print_metrics("test", model, test["X"], test["y"], class_ids)
 
     temperature = 1.0
     if not args.no_temp_scaling:
@@ -99,6 +99,12 @@ def main() -> int:
         model,
         temperature,
     )
+    created_at = int(dt.datetime.utcnow().timestamp())
+    store_metrics(conn, head_id, "train", train_acc, None, None, None, created_at)
+    store_metrics(conn, head_id, "val", val_acc, None, None, None, created_at)
+    store_metrics(conn, head_id, "test", test_acc, None, None, None, created_at)
+    log_gating_metrics(conn, head_id, "val", model, val["X"], val["y"], created_at)
+    log_gating_metrics(conn, head_id, "test", model, test["X"], test["y"], created_at)
     print(f"Saved classifier head: {head_id}")
     return 0
 
@@ -271,6 +277,59 @@ def print_metrics(name: str, model, X, y, class_ids: list[str]):
     print(f"{name} per-class recall:")
     for idx, cid in enumerate(class_ids):
         print(f"  {cid}: {recall[idx]:.4f}")
+    return float(acc)
+
+
+def log_gating_metrics(conn, head_id, split, model, X, y, created_at: int):
+    try:
+        import numpy as np
+    except Exception as err:
+        raise RuntimeError("numpy is required (pip install numpy)") from err
+
+    probs = model.predict_proba(X)
+    if probs.ndim == 1:
+        probs = np.stack([1.0 - probs, probs], axis=1)
+    sorted_probs = np.sort(probs, axis=1)[:, ::-1]
+    top1 = sorted_probs[:, 0]
+    top2 = sorted_probs[:, 1] if sorted_probs.shape[1] > 1 else np.zeros_like(top1)
+    margins = top1 - top2
+    preds = probs.argmax(axis=1)
+    correct = preds == y
+    thresholds = [0.02, 0.05, 0.1, 0.15, 0.2]
+    print(f"{split} gating metrics:")
+    for t in thresholds:
+        covered = margins >= t
+        coverage = float(covered.mean())
+        precision = float(correct[covered].mean()) if covered.any() else None
+        store_metrics(conn, head_id, split, None, coverage, precision, t, created_at)
+        if precision is None:
+            print(f"  margin>={t:.2f}: coverage={coverage:.3f}, precision=NA")
+        else:
+            print(f"  margin>={t:.2f}: coverage={coverage:.3f}, precision={precision:.3f}")
+
+
+def store_metrics(
+    conn,
+    head_id: str,
+    split: str,
+    accuracy,
+    coverage,
+    precision,
+    threshold,
+    created_at: int,
+):
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO classifier_metrics (head_id, split, accuracy, coverage, precision, threshold, created_at)\n"
+        "VALUES (?, ?, ?, ?, ?, ?, ?)\n"
+        "ON CONFLICT(head_id, split, threshold) DO UPDATE SET\n"
+        "  accuracy = excluded.accuracy,\n"
+        "  coverage = excluded.coverage,\n"
+        "  precision = excluded.precision,\n"
+        "  created_at = excluded.created_at",
+        (head_id, split, accuracy, coverage, precision, threshold, created_at),
+    )
+    conn.commit()
 
 
 def fit_temperature(model, X_val, y_val) -> float:

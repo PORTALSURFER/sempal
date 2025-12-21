@@ -112,6 +112,7 @@ impl LibraryDatabase {
         db.migrate_classes_table()?;
         db.sync_classes_table()?;
         db.migrate_classifier_models_table()?;
+        db.migrate_classifier_metrics_table()?;
         db.migrate_ann_index_meta_table()?;
         Ok(db)
     }

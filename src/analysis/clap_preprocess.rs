@@ -50,6 +50,10 @@ impl ClapMelBank {
     pub(crate) fn mel_from_power(&self, power: &[f32]) -> Vec<f32> {
         apply_filters(&self.filters, power)
     }
+
+    pub(crate) fn mel_from_power_into(&self, power: &[f32], out: &mut [f32]) {
+        apply_filters_into(&self.filters, power, out);
+    }
 }
 
 /// Compute log-mel frames using CLAP defaults (natural log with epsilon).
@@ -66,6 +70,37 @@ pub(crate) fn log_mel_frames(
             *value = log_mel(*value);
         }
         out.push(mel);
+    }
+    Ok(out)
+}
+
+pub(crate) struct ClapPreprocessScratch {
+    mel: Vec<f32>,
+}
+
+impl ClapPreprocessScratch {
+    pub(crate) fn new() -> Self {
+        Self {
+            mel: vec![0.0_f32; CLAP_MEL_BANDS],
+        }
+    }
+}
+
+/// Compute log-mel frames using reusable scratch buffers.
+pub(crate) fn log_mel_frames_with_scratch(
+    samples: &[f32],
+    sample_rate: u32,
+    scratch: &mut ClapPreprocessScratch,
+) -> Result<Vec<Vec<f32>>, String> {
+    let frames = stft_power_frames(samples, CLAP_STFT_N_FFT, CLAP_STFT_HOP)?;
+    let mel_bank = ClapMelBank::new(sample_rate, CLAP_STFT_N_FFT);
+    let mut out = Vec::with_capacity(frames.len());
+    for power in frames {
+        mel_bank.mel_from_power_into(&power, &mut scratch.mel);
+        for value in &mut scratch.mel {
+            *value = log_mel(*value);
+        }
+        out.push(scratch.mel.clone());
     }
     Ok(out)
 }
@@ -158,6 +193,18 @@ fn apply_filters(filters: &[Vec<(usize, f32)>], power: &[f32]) -> Vec<f32> {
     out
 }
 
+fn apply_filters_into(filters: &[Vec<(usize, f32)>], power: &[f32], out: &mut [f32]) {
+    for (idx, filter) in filters.iter().enumerate() {
+        let mut sum = 0.0_f64;
+        for &(bin, weight) in filter {
+            let p = power.get(bin).copied().unwrap_or(0.0).max(0.0) as f64;
+            sum += p * weight as f64;
+        }
+        if let Some(slot) = out.get_mut(idx) {
+            *slot = sum as f32;
+        }
+    }
+}
 fn build_tri_filter(left: usize, center: usize, right: usize) -> Vec<(usize, f32)> {
     let mut weights = Vec::new();
     if right <= left {

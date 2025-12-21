@@ -12,6 +12,11 @@
 - Launch SemPal and run analysis on a sample pack; ensure embeddings and predictions are created.
 - Trigger retraining to confirm the model loads and writes back to the library DB.
 
+## ML Release Criteria
+- Accuracy target met for the latest head_id (see classifier_metrics table).
+- Gating precision/coverage curve matches expected ranges (no regression in margins).
+- Golden tests pass (mel, embedding, inference) with no drift.
+
 ## Uninstall Verification
 - Check SemPal appears in Add/Remove Programs.
 - Run uninstall from Add/Remove Programs or `sempal-installer.exe --uninstall`.

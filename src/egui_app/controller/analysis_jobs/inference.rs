@@ -565,6 +565,7 @@ fn load_classes_v1() -> Result<Vec<String>, String> {
 mod tests {
     use super::*;
     use rusqlite::Connection;
+    use serde::Deserialize;
 
     fn conn_with_schema() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
@@ -622,5 +623,52 @@ mod tests {
         refresh_latest_model(&conn, &mut cache, Some("m1")).unwrap();
         assert!(cache.is_some());
         assert_eq!(cache.unwrap().model_id, "m1");
+    }
+
+    #[derive(Deserialize)]
+    struct GoldenInference {
+        dim: usize,
+        num_classes: usize,
+        temperature: f32,
+        embedding: Vec<f32>,
+        weights: Vec<f32>,
+        bias: Vec<f32>,
+        probs: Vec<f32>,
+    }
+
+    #[test]
+    fn golden_inference_matches_python() {
+        let path = match std::env::var("SEMPAL_GOLDEN_INFER_PATH") {
+            Ok(path) if !path.trim().is_empty() => path,
+            _ => return,
+        };
+        let payload = std::fs::read_to_string(path).expect("read golden json");
+        let golden: GoldenInference =
+            serde_json::from_str(&payload).expect("parse golden json");
+        assert_eq!(golden.embedding.len(), golden.dim);
+        assert_eq!(golden.weights.len(), golden.dim * golden.num_classes);
+        assert_eq!(golden.bias.len(), golden.num_classes);
+        assert_eq!(golden.probs.len(), golden.num_classes);
+
+        let mut logits = vec![0.0_f32; golden.num_classes];
+        for class_idx in 0..golden.num_classes {
+            let base = class_idx * golden.dim;
+            let mut sum = golden.bias[class_idx];
+            let weights = &golden.weights[base..base + golden.dim];
+            for (w, x) in weights.iter().zip(golden.embedding.iter()) {
+                sum += w * x;
+            }
+            logits[class_idx] = sum / golden.temperature;
+        }
+        let probs = crate::ml::gbdt_stump::softmax(&logits);
+        let mut max_diff = 0.0_f32;
+        for (a, b) in probs.iter().zip(golden.probs.iter()) {
+            max_diff = max_diff.max((a - b).abs());
+        }
+        const MAX_DIFF: f32 = 1e-5;
+        assert!(
+            max_diff <= MAX_DIFF,
+            "max diff {max_diff} exceeds {MAX_DIFF}"
+        );
     }
 }
