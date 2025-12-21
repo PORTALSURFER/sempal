@@ -107,6 +107,10 @@ fn infer_embedding_with_model(
         ));
     }
     normalize_l2_in_place(&mut embedding);
+    let norm = l2_norm(&embedding);
+    if !norm.is_finite() || (norm - 1.0).abs() > 1e-3 {
+        return Err(format!("CLAP embedding L2 norm out of range: {norm:.6}"));
+    }
     Ok(embedding)
 }
 
@@ -140,6 +144,14 @@ fn normalize_l2_in_place(values: &mut [f32]) {
             *value /= norm;
         }
     }
+}
+
+fn l2_norm(values: &[f32]) -> f32 {
+    let mut sum = 0.0_f32;
+    for value in values {
+        sum += value * value;
+    }
+    sum.sqrt()
 }
 
 fn clap_model_path() -> Result<PathBuf, String> {
