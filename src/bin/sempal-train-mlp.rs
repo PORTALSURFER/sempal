@@ -50,6 +50,7 @@ fn run() -> Result<(), String> {
         let split_map =
             curated::stratified_split_map(&samples, "sempal-training-dataset-v1", 0.1, 0.1)?;
         println!("Embedding samples...");
+        let cache_dir = options.dataset_dir.join(".sempal_cache");
         let mut last_print = 0usize;
         let mut progress = |update: curated::TrainingProgress| {
             if update.processed == update.total || update.processed.saturating_sub(last_print) >= 25 {
@@ -72,6 +73,7 @@ fn run() -> Result<(), String> {
             &options.augmentation,
             options.seed,
             Some(&mut progress),
+            Some(cache_dir.as_path()),
         )?;
         let input_kind = if options.use_hybrid {
             MlpInputKind::HybridV1

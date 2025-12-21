@@ -77,6 +77,7 @@ Notes:
 - Add `--augment` to enable default training-time augmentation.
 - Add `--preprocess` to trim silence and normalize before embedding.
 - Curated embedding training still requires the CLAP model under the app models directory.
+- Curated training caches embeddings under `.sempal_cache` inside the dataset folder.
 
 ## Curated export pipeline (fast retrains)
 
@@ -97,6 +98,7 @@ Notes:
 - Add `--hybrid` to export embeddings plus light DSP features for MLP hybrid mode.
 - Add `--augment` to bake augmentation copies into the export.
 - Add `--preprocess` to trim silence and normalize before embedding.
+- Curated export caches embeddings under `.sempal_cache` inside the output folder.
 
 ## Feature pipeline (legacy baseline)
 

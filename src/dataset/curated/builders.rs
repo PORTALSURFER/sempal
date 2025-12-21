@@ -24,6 +24,7 @@ pub fn build_logreg_dataset_from_samples(
     min_class_samples: usize,
     augmentation: &TrainingAugmentation,
     seed: u64,
+    cache_dir: Option<&std::path::Path>,
 ) -> Result<
     (
         crate::ml::logreg::TrainDataset,
@@ -40,6 +41,7 @@ pub fn build_logreg_dataset_from_samples(
         augmentation,
         seed,
         &mut progress,
+        cache_dir,
     )
 }
 
@@ -51,6 +53,7 @@ pub fn build_logreg_dataset_from_samples_with_progress(
     augmentation: &TrainingAugmentation,
     seed: u64,
     mut progress: Option<&mut dyn FnMut(super::TrainingProgress)>,
+    cache_dir: Option<&std::path::Path>,
 ) -> Result<
     (
         crate::ml::logreg::TrainDataset,
@@ -66,6 +69,7 @@ pub fn build_logreg_dataset_from_samples_with_progress(
         augmentation,
         seed,
         &mut progress,
+        cache_dir,
     )
 }
 
@@ -76,6 +80,7 @@ fn build_logreg_dataset_from_samples_impl(
     augmentation: &TrainingAugmentation,
     seed: u64,
     progress: &mut Option<&mut dyn FnMut(super::TrainingProgress)>,
+    cache_dir: Option<&std::path::Path>,
 ) -> Result<
     (
         crate::ml::logreg::TrainDataset,
@@ -108,7 +113,13 @@ fn build_logreg_dataset_from_samples_impl(
                 continue;
             }
         };
-        let embeddings = match build_embedding_variants(&decoded, augmentation, &mut augment_rng)
+        let embeddings = match build_embedding_variants(
+            &sample.path,
+            &decoded,
+            augmentation,
+            &mut augment_rng,
+            cache_dir,
+        )
         {
             Ok(values) => values,
             Err(err) => {
@@ -194,6 +205,7 @@ pub fn build_mlp_dataset_from_samples(
     min_class_samples: usize,
     augmentation: &TrainingAugmentation,
     seed: u64,
+    cache_dir: Option<&std::path::Path>,
 ) -> Result<
     (
         crate::ml::gbdt_stump::TrainDataset,
@@ -211,6 +223,7 @@ pub fn build_mlp_dataset_from_samples(
         augmentation,
         seed,
         &mut progress,
+        cache_dir,
     )
 }
 
@@ -223,6 +236,7 @@ pub fn build_mlp_dataset_from_samples_with_progress(
     augmentation: &TrainingAugmentation,
     seed: u64,
     mut progress: Option<&mut dyn FnMut(super::TrainingProgress)>,
+    cache_dir: Option<&std::path::Path>,
 ) -> Result<
     (
         crate::ml::gbdt_stump::TrainDataset,
@@ -239,6 +253,7 @@ pub fn build_mlp_dataset_from_samples_with_progress(
         augmentation,
         seed,
         &mut progress,
+        cache_dir,
     )
 }
 
@@ -250,6 +265,7 @@ fn build_mlp_dataset_from_samples_impl(
     augmentation: &TrainingAugmentation,
     seed: u64,
     progress: &mut Option<&mut dyn FnMut(super::TrainingProgress)>,
+    cache_dir: Option<&std::path::Path>,
 ) -> Result<
     (
         crate::ml::gbdt_stump::TrainDataset,
@@ -282,7 +298,13 @@ fn build_mlp_dataset_from_samples_impl(
                 continue;
             }
         };
-        let embeddings = match build_embedding_variants(&decoded, augmentation, &mut augment_rng)
+        let embeddings = match build_embedding_variants(
+            &sample.path,
+            &decoded,
+            augmentation,
+            &mut augment_rng,
+            cache_dir,
+        )
         {
             Ok(values) => values,
             Err(err) => {

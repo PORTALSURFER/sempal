@@ -212,6 +212,7 @@ fn run_training_from_dataset_root(
                 job.min_class_samples,
                 &job.augmentation,
                 job.logreg_options.seed,
+                None,
             )?;
             let mut model =
                 crate::ml::logreg::train_logreg(&train, &job.logreg_options, Some(&val))?;
@@ -240,6 +241,7 @@ fn run_training_from_dataset_root(
                 job.min_class_samples,
                 &job.augmentation,
                 job.mlp_options.seed,
+                None,
             )?;
             let mut options = job.mlp_options.clone();
             options.input_kind = if job.use_hybrid_features {

@@ -80,12 +80,14 @@ pub fn export_curated_embedding_dataset_with_progress(
 
     let mut writers = DatasetWriters::new(&options.out_dir)?;
     let mut state = ExportState::new(options, samples.len());
+    let cache_dir = options.out_dir.join(".sempal_cache");
     export_all_samples(
         options,
         &samples,
         &split_map,
         &mut writers,
         &mut state,
+        Some(cache_dir.as_path()),
         progress,
     )?;
     writers.finish()?;
@@ -137,6 +139,7 @@ fn export_all_samples(
     split_map: &std::collections::HashMap<PathBuf, String>,
     writers: &mut DatasetWriters,
     state: &mut ExportState,
+    cache_dir: Option<&Path>,
     progress: &mut Option<&mut dyn FnMut(TrainingProgress)>,
 ) -> Result<(), String> {
     for sample in samples {
@@ -146,6 +149,7 @@ fn export_all_samples(
             split_map,
             writers,
             state,
+            cache_dir,
             progress,
         )?;
     }
@@ -158,10 +162,11 @@ fn export_sample(
     split_map: &std::collections::HashMap<PathBuf, String>,
     writers: &mut DatasetWriters,
     state: &mut ExportState,
+    cache_dir: Option<&Path>,
     progress: &mut Option<&mut dyn FnMut(TrainingProgress)>,
 ) -> Result<(), String> {
     state.processed += 1;
-    let Some(embeddings) = decode_embeddings(options, sample, state, progress)? else {
+    let Some(embeddings) = decode_embeddings(options, sample, state, cache_dir, progress)? else {
         return Ok(());
     };
     let split = split_map
@@ -188,13 +193,20 @@ fn decode_embeddings(
     options: &CuratedExportOptions,
     sample: &super::TrainingSample,
     state: &mut ExportState,
+    cache_dir: Option<&Path>,
     progress: &mut Option<&mut dyn FnMut(TrainingProgress)>,
 ) -> Result<Option<Vec<super::embeddings::EmbeddingVariant>>, String> {
     let decoded = match crate::analysis::audio::decode_for_analysis(&sample.path) {
         Ok(decoded) => decoded,
         Err(err) => return Ok(skip_sample(state, progress, err)),
     };
-    let embeddings = match build_embedding_variants(&decoded, &options.augmentation, &mut state.rng)
+    let embeddings = match build_embedding_variants(
+        &sample.path,
+        &decoded,
+        &options.augmentation,
+        &mut state.rng,
+        cache_dir,
+    )
     {
         Ok(values) => values,
         Err(err) => return Ok(skip_sample(state, progress, err)),
