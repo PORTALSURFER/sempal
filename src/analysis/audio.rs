@@ -62,7 +62,7 @@ pub(crate) fn probe_duration_seconds(path: &Path) -> Result<Option<f32>, String>
 }
 
 fn decode_for_analysis_with_rate(path: &Path, sample_rate: u32) -> Result<AnalysisAudio, String> {
-    let decoded = decode_to_interleaved_f32(path)?;
+    let decoded = crate::analysis::audio_decode::decode_audio(path)?;
     let mono = downmix_to_mono(&decoded.samples, decoded.channels);
     let mut resampled = resample_linear(&mono, decoded.sample_rate, sample_rate);
     resampled = trim_silence_with_hysteresis(&resampled, sample_rate);
@@ -75,54 +75,6 @@ fn decode_for_analysis_with_rate(path: &Path, sample_rate: u32) -> Result<Analys
         duration_seconds,
         sample_rate_used: sample_rate,
     })
-}
-
-struct DecodedInterleaved {
-    samples: Vec<f32>,
-    sample_rate: u32,
-    channels: u16,
-}
-
-fn decode_to_interleaved_f32(path: &Path) -> Result<DecodedInterleaved, String> {
-    let file = File::open(path).map_err(|err| format!("Failed to open {}: {err}", path.display()))?;
-    let byte_len = file
-        .metadata()
-        .map(|meta| meta.len())
-        .unwrap_or(0) as u64;
-    let hint = path.extension().and_then(|ext| ext.to_str()).map(str::to_ascii_lowercase);
-    let mut builder = Decoder::builder()
-        .with_data(BufReader::new(file))
-        .with_byte_len(byte_len)
-        .with_seekable(false);
-    if let Some(hint) = hint.as_deref() {
-        builder = builder.with_hint(hint);
-    }
-    let decoder = builder.build();
-    match decoder {
-        Ok(decoder) => {
-            let sample_rate = decoder.sample_rate().max(1);
-            let channels = decoder.channels().max(1);
-            let samples: Vec<f32> = decoder.collect();
-            Ok(DecodedInterleaved {
-                samples,
-                sample_rate,
-                channels,
-            })
-        }
-        Err(err) => {
-            match crate::analysis::audio_decode::decode_with_symphonia(path) {
-                Ok((samples, sample_rate, channels)) => Ok(DecodedInterleaved {
-                    samples,
-                    sample_rate: sample_rate.max(1),
-                    channels: channels.max(1),
-                }),
-                Err(fallback_err) => Err(format!(
-                    "Audio decode failed for {}: {err}. Symphonia fallback failed: {fallback_err}",
-                    path.display()
-                )),
-            }
-        }
-    }
 }
 
 fn downmix_to_mono(samples: &[f32], channels: u16) -> Vec<f32> {
