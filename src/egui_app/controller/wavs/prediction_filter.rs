@@ -1,4 +1,5 @@
 use super::*;
+use crate::egui_app::controller::analysis_jobs::types::TopKProbability;
 use crate::egui_app::state::PredictedCategory;
 use rusqlite::{Connection, OptionalExtension, params};
 use std::collections::HashMap;
@@ -242,7 +243,7 @@ impl EguiController {
 
         let mut stmt = conn
             .prepare(
-                "SELECT sample_id, top_class, confidence
+                "SELECT sample_id, top_class, confidence, topk_json
                  FROM predictions
                  WHERE model_id = ?1 AND sample_id >= ?2 AND sample_id < ?3",
             )
@@ -257,11 +258,13 @@ impl EguiController {
             let sample_id: String = row.get(0).map_err(|err| err.to_string())?;
             let top_class: String = row.get(1).map_err(|err| err.to_string())?;
             let confidence: f64 = row.get(2).map_err(|err| err.to_string())?;
+            let topk_json: String = row.get(3).map_err(|err| err.to_string())?;
             let class_id = if confidence < unknown_threshold as f64 {
                 "UNKNOWN".to_string()
             } else {
                 top_class
             };
+            let margin = parse_margin_from_topk(&topk_json);
             let Some(relative_path) = sample_id.split_once("::").map(|(_, p)| p) else {
                 continue;
             };
@@ -275,6 +278,7 @@ impl EguiController {
                 cache.rows[idx] = Some(PredictedCategory {
                     class_id,
                     confidence: confidence as f32,
+                    margin,
                 });
                 cache.user_overrides[idx] = false;
             }
@@ -424,10 +428,23 @@ fn apply_user_labels(
         cache.rows[idx] = Some(PredictedCategory {
             class_id,
             confidence: 1.0,
+            margin: None,
         });
         cache.user_overrides[idx] = true;
     }
     Ok(())
+}
+
+fn parse_margin_from_topk(topk_json: &str) -> Option<f32> {
+    let parsed: Vec<TopKProbability> = serde_json::from_str(topk_json).ok()?;
+    let mut probs: Vec<f32> = parsed.iter().map(|p| p.probability).collect();
+    if probs.is_empty() {
+        return None;
+    }
+    probs.sort_by(|a, b| b.total_cmp(a));
+    let top1 = probs.get(0).copied().unwrap_or(0.0);
+    let top2 = probs.get(1).copied().unwrap_or(0.0);
+    Some(top1 - top2)
 }
 
 fn lookup_entry_index<'a>(

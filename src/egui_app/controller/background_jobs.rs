@@ -372,6 +372,7 @@ impl EguiController {
                                 crate::egui_app::state::PredictedCategory {
                                     class_id,
                                     confidence,
+                                    margin: None,
                                 }
                             });
                     }

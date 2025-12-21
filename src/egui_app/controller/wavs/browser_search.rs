@@ -129,8 +129,8 @@ impl EguiController {
         let prediction = self.cached_prediction_for_entry(entry_index);
         match prediction {
             None => (0, 0.0),
-            Some(pred) if pred.class_id == "UNKNOWN" => (1, pred.confidence),
-            Some(pred) => (2, pred.confidence),
+            Some(pred) if pred.class_id == "UNKNOWN" => (1, pred.margin.unwrap_or(pred.confidence)),
+            Some(pred) => (2, pred.margin.unwrap_or(pred.confidence)),
         }
     }
 

@@ -11,6 +11,7 @@ use std::time::Instant;
 pub struct PredictedCategory {
     pub class_id: String,
     pub confidence: f32,
+    pub margin: Option<f32>,
 }
 
 /// Cached waveform image and playback overlays.
