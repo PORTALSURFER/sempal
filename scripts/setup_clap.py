@@ -14,6 +14,12 @@ import zipfile
 from pathlib import Path
 
 
+DEFAULT_CHECKPOINT_URL = (
+    "https://huggingface.co/lukewys/laion_clap/resolve/main/630k-audioset-fused.pt"
+)
+DEFAULT_CHECKPOINT_NAME = "clap_htsat_fused.pt"
+
+
 def resolve_app_root() -> Path:
     override = os.environ.get("SEMPAL_CONFIG_HOME")
     if override:
@@ -48,14 +54,14 @@ def ensure_clap(no_install: bool) -> None:
         raise RuntimeError(
             "torch, laion_clap, and onnx are required. Install them first or omit --no-install."
         )
-    print("Installing torch + laion-clap + onnx (this may take a while)...")
+    print("Installing torch + torchaudio + torchvision + laion-clap + onnx (this may take a while)...")
     subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade", "pip"])
 
     def install(use_user: bool) -> bool:
         cmd = [sys.executable, "-m", "pip", "install"]
         if use_user:
             cmd.append("--user")
-        cmd.extend(["torch", "torchaudio", "laion-clap", "onnx"])
+        cmd.extend(["torch", "torchaudio", "torchvision", "laion-clap", "onnx"])
         subprocess.check_call(cmd)
         if use_user:
             site.addsitedir(site.getusersitepackages())
@@ -78,6 +84,7 @@ def ensure_clap(no_install: bool) -> None:
             "--no-cache-dir",
             "torch",
             "torchaudio",
+            "torchvision",
             "laion-clap",
             "onnx",
         ]
@@ -89,7 +96,7 @@ def ensure_clap(no_install: bool) -> None:
     raise RuntimeError(
         "CLAP install completed but import still failed. "
         f"Import error: {err}. "
-        f"Try: {sys.executable} -m pip install torch torchaudio laion-clap onnx"
+        f"Try: {sys.executable} -m pip install torch torchaudio torchvision laion-clap onnx"
     )
 
 
@@ -132,6 +139,28 @@ def build_onnx(target: Path, checkpoint: Path | None, channels: int, samples: in
         },
         opset_version=opset,
     )
+
+
+def download_checkpoint(url: str, dest: Path) -> Path:
+    if dest.exists():
+        print(f"Using cached checkpoint at {dest}")
+        return dest
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = dest.with_suffix(".tmp")
+    print(f"Downloading CLAP checkpoint from {url}...")
+    try:
+        with urllib.request.urlopen(url, timeout=60) as resp, tmp_path.open("wb") as out:
+            while True:
+                chunk = resp.read(1024 * 1024)
+                if not chunk:
+                    break
+                out.write(chunk)
+    except Exception:
+        tmp_path.unlink(missing_ok=True)
+        raise
+    tmp_path.replace(dest)
+    print(f"Saved checkpoint to {dest}")
+    return dest
 
 
 def verify_onnx(path: Path) -> None:
@@ -245,6 +274,16 @@ def main() -> int:
     parser.add_argument("--runtime-file", type=Path, help="Use a local runtime archive/dll")
     parser.add_argument("--ort-version", default="1.22.0", help="ONNX Runtime version to download")
     parser.add_argument("--checkpoint", type=Path, help="Path to a CLAP checkpoint (.pt)")
+    parser.add_argument(
+        "--checkpoint-url",
+        default=DEFAULT_CHECKPOINT_URL,
+        help="Checkpoint URL to download when --checkpoint is not provided.",
+    )
+    parser.add_argument(
+        "--no-checkpoint-download",
+        action="store_true",
+        help="Skip downloading a checkpoint and rely on laion-clap defaults.",
+    )
     parser.add_argument("--sample-rate", type=int, default=48000, help="Input sample rate")
     parser.add_argument("--seconds", type=float, default=10.0, help="Input duration in seconds")
     parser.add_argument("--channels", type=int, default=1, help="Input channel count")
@@ -263,9 +302,14 @@ def main() -> int:
         return 0
 
     ensure_clap(args.no_install)
+    checkpoint = args.checkpoint
+    if checkpoint is None and not args.no_checkpoint_download:
+        checkpoint = download_checkpoint(
+            args.checkpoint_url, models_dir / DEFAULT_CHECKPOINT_NAME
+        )
     input_samples = int(args.sample_rate * args.seconds)
     tmp_path = models_dir / "clap_audio.onnx.tmp"
-    build_onnx(tmp_path, args.checkpoint, args.channels, input_samples, args.opset)
+    build_onnx(tmp_path, checkpoint, args.channels, input_samples, args.opset)
     verify_onnx(tmp_path)
     shutil.move(str(tmp_path), str(target))
     print(f"Wrote {target}")
