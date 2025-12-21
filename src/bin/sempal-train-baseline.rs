@@ -1,5 +1,6 @@
 //! Developer utility to train and export a baseline classifier.
 
+use std::io::Write;
 use std::path::PathBuf;
 
 use sempal::analysis::{FEATURE_VECTOR_LEN_V1, FEATURE_VERSION_V1};
@@ -28,6 +29,7 @@ fn run() -> Result<(), String> {
         let loaded = load_dataset(&options.dataset_dir).map_err(|err| err.to_string())?;
         split_train_test(&loaded)?
     } else {
+        println!("Scanning curated dataset...");
         let samples = curated::collect_training_samples(&options.dataset_dir)?;
         if samples.is_empty() {
             return Err("Training dataset folder is empty".to_string());
@@ -36,9 +38,34 @@ fn run() -> Result<(), String> {
         if samples.is_empty() {
             return Err("Training dataset has no classes after hygiene filter".to_string());
         }
+        let class_count = samples
+            .iter()
+            .map(|sample| sample.class_id.as_str())
+            .collect::<std::collections::BTreeSet<_>>()
+            .len();
+        println!("Found {} samples across {} classes", samples.len(), class_count);
         let split_map =
             curated::stratified_split_map(&samples, "sempal-training-dataset-v1", 0.1, 0.1)?;
-        curated::build_feature_dataset_from_samples(&samples, &split_map)?
+        println!("Extracting features...");
+        let mut last_print = 0usize;
+        let mut progress = |update: curated::TrainingProgress| {
+            if update.processed == update.total || update.processed.saturating_sub(last_print) >= 25 {
+                last_print = update.processed;
+                print!(
+                    "\rFeatures {}/{} (skipped {})",
+                    update.processed, update.total, update.skipped
+                );
+                let _ = std::io::stdout().flush();
+                if update.processed == update.total {
+                    println!();
+                }
+            }
+        };
+        curated::build_feature_dataset_from_samples_with_progress(
+            &samples,
+            &split_map,
+            Some(&mut progress),
+        )?
     };
 
     let train_options = TrainOptions {

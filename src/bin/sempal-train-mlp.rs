@@ -1,5 +1,6 @@
 //! Developer utility to train and export an MLP classifier on embeddings.
 
+use std::io::Write;
 use std::path::PathBuf;
 
 use sempal::analysis::embedding::EMBEDDING_DIM;
@@ -34,6 +35,7 @@ fn run() -> Result<(), String> {
         let (train, val, test) = split_train_val_test(&loaded)?;
         (train, val, test, MlpInputKind::EmbeddingV1)
     } else {
+        println!("Scanning curated dataset...");
         let samples = curated::collect_training_samples(&options.dataset_dir)?;
         if samples.is_empty() {
             return Err("Training dataset folder is empty".to_string());
@@ -42,15 +44,37 @@ fn run() -> Result<(), String> {
         if samples.is_empty() {
             return Err("Training dataset has no classes after hygiene filter".to_string());
         }
+        let class_count = samples
+            .iter()
+            .map(|sample| sample.class_id.as_str())
+            .collect::<std::collections::BTreeSet<_>>()
+            .len();
+        println!("Found {} samples across {} classes", samples.len(), class_count);
         let split_map =
             curated::stratified_split_map(&samples, "sempal-training-dataset-v1", 0.1, 0.1)?;
-        let (train, val, test) = curated::build_mlp_dataset_from_samples(
+        println!("Embedding samples...");
+        let mut last_print = 0usize;
+        let mut progress = |update: curated::TrainingProgress| {
+            if update.processed == update.total || update.processed.saturating_sub(last_print) >= 25 {
+                last_print = update.processed;
+                print!(
+                    "\rEmbedding {}/{} (skipped {})",
+                    update.processed, update.total, update.skipped
+                );
+                let _ = std::io::stdout().flush();
+                if update.processed == update.total {
+                    println!();
+                }
+            }
+        };
+        let (train, val, test) = curated::build_mlp_dataset_from_samples_with_progress(
             &samples,
             &split_map,
             options.use_hybrid,
             options.min_class_samples,
             &options.augmentation,
             options.seed,
+            Some(&mut progress),
         )?;
         let input_kind = if options.use_hybrid {
             MlpInputKind::HybridV1

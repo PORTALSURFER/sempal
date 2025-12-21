@@ -4,12 +4,42 @@ use std::path::PathBuf;
 use tracing::warn;
 
 use super::classes::{class_index_map, collect_class_ids};
+use super::progress::progress_tick;
 use super::samples::TrainingSample;
 
 /// Build GBDT datasets from curated samples and a split map.
 pub fn build_feature_dataset_from_samples(
     samples: &[TrainingSample],
     split_map: &HashMap<PathBuf, String>,
+) -> Result<
+    (
+        crate::ml::gbdt_stump::TrainDataset,
+        crate::ml::gbdt_stump::TrainDataset,
+    ),
+    String,
+> {
+    build_feature_dataset_from_samples_impl(samples, split_map, None)
+}
+
+/// Build GBDT datasets with progress updates during feature extraction.
+pub fn build_feature_dataset_from_samples_with_progress(
+    samples: &[TrainingSample],
+    split_map: &HashMap<PathBuf, String>,
+    mut progress: Option<&mut dyn FnMut(super::TrainingProgress)>,
+) -> Result<
+    (
+        crate::ml::gbdt_stump::TrainDataset,
+        crate::ml::gbdt_stump::TrainDataset,
+    ),
+    String,
+> {
+    build_feature_dataset_from_samples_impl(samples, split_map, progress.as_deref_mut())
+}
+
+fn build_feature_dataset_from_samples_impl(
+    samples: &[TrainingSample],
+    split_map: &HashMap<PathBuf, String>,
+    mut progress: Option<&mut dyn FnMut(super::TrainingProgress)>,
 ) -> Result<
     (
         crate::ml::gbdt_stump::TrainDataset,
@@ -26,7 +56,10 @@ pub fn build_feature_dataset_from_samples(
     let mut skipped = 0usize;
     let mut skipped_errors = Vec::new();
 
+    let total = samples.len();
+    let mut processed = 0usize;
     for sample in samples {
+        processed += 1;
         let vector = match crate::analysis::compute_feature_vector_v1_for_path(&sample.path) {
             Ok(vector) => vector,
             Err(err) => {
@@ -34,10 +67,12 @@ pub fn build_feature_dataset_from_samples(
                 if skipped_errors.len() < 3 {
                     skipped_errors.push(err);
                 }
+                progress_tick(progress.as_deref_mut(), "features", processed, total, skipped);
                 continue;
             }
         };
         let Some(&class_idx) = class_map.get(&sample.class_id) else {
+            progress_tick(progress.as_deref_mut(), "features", processed, total, skipped);
             continue;
         };
         let split = split_map
@@ -51,6 +86,7 @@ pub fn build_feature_dataset_from_samples(
             train_x.push(vector);
             train_y.push(class_idx);
         }
+        progress_tick(progress.as_deref_mut(), "features", processed, total, skipped);
     }
 
     if skipped > 0 {

@@ -7,6 +7,7 @@ use crate::sample_sources::config::TrainingAugmentation;
 
 use super::classes::{class_index_map, collect_class_ids};
 use super::embeddings::{augment_rng, build_embedding_variants};
+use super::progress::progress_tick;
 use super::samples::TrainingSample;
 
 #[derive(Clone)]
@@ -31,6 +32,57 @@ pub fn build_logreg_dataset_from_samples(
     ),
     String,
 > {
+    build_logreg_dataset_from_samples_impl(
+        samples,
+        split_map,
+        min_class_samples,
+        augmentation,
+        seed,
+        None,
+    )
+}
+
+/// Build logreg datasets with progress updates during embedding.
+pub fn build_logreg_dataset_from_samples_with_progress(
+    samples: &[TrainingSample],
+    split_map: &HashMap<PathBuf, String>,
+    min_class_samples: usize,
+    augmentation: &TrainingAugmentation,
+    seed: u64,
+    mut progress: Option<&mut dyn FnMut(super::TrainingProgress)>,
+) -> Result<
+    (
+        crate::ml::logreg::TrainDataset,
+        crate::ml::logreg::TrainDataset,
+        crate::ml::logreg::TrainDataset,
+    ),
+    String,
+> {
+    build_logreg_dataset_from_samples_impl(
+        samples,
+        split_map,
+        min_class_samples,
+        augmentation,
+        seed,
+        progress.as_deref_mut(),
+    )
+}
+
+fn build_logreg_dataset_from_samples_impl(
+    samples: &[TrainingSample],
+    split_map: &HashMap<PathBuf, String>,
+    min_class_samples: usize,
+    augmentation: &TrainingAugmentation,
+    seed: u64,
+    mut progress: Option<&mut dyn FnMut(super::TrainingProgress)>,
+) -> Result<
+    (
+        crate::ml::logreg::TrainDataset,
+        crate::ml::logreg::TrainDataset,
+        crate::ml::logreg::TrainDataset,
+    ),
+    String,
+> {
     let classes = collect_class_ids(samples);
     let class_map = class_index_map(&classes);
     let mut train_rows = Vec::new();
@@ -40,7 +92,10 @@ pub fn build_logreg_dataset_from_samples(
     let mut skipped = 0usize;
     let mut skipped_errors = Vec::new();
 
+    let total = samples.len();
+    let mut processed = 0usize;
     for sample in samples {
+        processed += 1;
         let decoded = match crate::analysis::audio::decode_for_analysis(&sample.path) {
             Ok(decoded) => decoded,
             Err(err) => {
@@ -48,6 +103,7 @@ pub fn build_logreg_dataset_from_samples(
                 if skipped_errors.len() < 3 {
                     skipped_errors.push(err);
                 }
+                progress_tick(progress.as_deref_mut(), "embedding", processed, total, skipped);
                 continue;
             }
         };
@@ -59,10 +115,12 @@ pub fn build_logreg_dataset_from_samples(
                 if skipped_errors.len() < 3 {
                     skipped_errors.push(err);
                 }
+                progress_tick(progress.as_deref_mut(), "embedding", processed, total, skipped);
                 continue;
             }
         };
         let Some(&class_idx) = class_map.get(&sample.class_id) else {
+            progress_tick(progress.as_deref_mut(), "embedding", processed, total, skipped);
             continue;
         };
         let split = split_map
@@ -81,6 +139,7 @@ pub fn build_logreg_dataset_from_samples(
                 _ => train_rows.push(row),
             }
         }
+        progress_tick(progress.as_deref_mut(), "embedding", processed, total, skipped);
     }
 
     if skipped > 0 {
@@ -142,6 +201,61 @@ pub fn build_mlp_dataset_from_samples(
     ),
     String,
 > {
+    build_mlp_dataset_from_samples_impl(
+        samples,
+        split_map,
+        use_hybrid,
+        min_class_samples,
+        augmentation,
+        seed,
+        None,
+    )
+}
+
+/// Build MLP datasets with progress updates during embedding.
+pub fn build_mlp_dataset_from_samples_with_progress(
+    samples: &[TrainingSample],
+    split_map: &HashMap<PathBuf, String>,
+    use_hybrid: bool,
+    min_class_samples: usize,
+    augmentation: &TrainingAugmentation,
+    seed: u64,
+    mut progress: Option<&mut dyn FnMut(super::TrainingProgress)>,
+) -> Result<
+    (
+        crate::ml::gbdt_stump::TrainDataset,
+        crate::ml::gbdt_stump::TrainDataset,
+        crate::ml::gbdt_stump::TrainDataset,
+    ),
+    String,
+> {
+    build_mlp_dataset_from_samples_impl(
+        samples,
+        split_map,
+        use_hybrid,
+        min_class_samples,
+        augmentation,
+        seed,
+        progress.as_deref_mut(),
+    )
+}
+
+fn build_mlp_dataset_from_samples_impl(
+    samples: &[TrainingSample],
+    split_map: &HashMap<PathBuf, String>,
+    use_hybrid: bool,
+    min_class_samples: usize,
+    augmentation: &TrainingAugmentation,
+    seed: u64,
+    mut progress: Option<&mut dyn FnMut(super::TrainingProgress)>,
+) -> Result<
+    (
+        crate::ml::gbdt_stump::TrainDataset,
+        crate::ml::gbdt_stump::TrainDataset,
+        crate::ml::gbdt_stump::TrainDataset,
+    ),
+    String,
+> {
     let classes = collect_class_ids(samples);
     let class_map = class_index_map(&classes);
     let mut train_rows = Vec::new();
@@ -151,7 +265,10 @@ pub fn build_mlp_dataset_from_samples(
     let mut skipped_errors = Vec::new();
     let mut augment_rng = augment_rng(augmentation, seed);
 
+    let total = samples.len();
+    let mut processed = 0usize;
     for sample in samples {
+        processed += 1;
         let decoded = match crate::analysis::audio::decode_for_analysis(&sample.path) {
             Ok(decoded) => decoded,
             Err(err) => {
@@ -159,6 +276,7 @@ pub fn build_mlp_dataset_from_samples(
                 if skipped_errors.len() < 3 {
                     skipped_errors.push(err);
                 }
+                progress_tick(progress.as_deref_mut(), "embedding", processed, total, skipped);
                 continue;
             }
         };
@@ -170,10 +288,12 @@ pub fn build_mlp_dataset_from_samples(
                 if skipped_errors.len() < 3 {
                     skipped_errors.push(err);
                 }
+                progress_tick(progress.as_deref_mut(), "embedding", processed, total, skipped);
                 continue;
             }
         };
         let Some(&class_idx) = class_map.get(&sample.class_id) else {
+            progress_tick(progress.as_deref_mut(), "embedding", processed, total, skipped);
             continue;
         };
         let split = split_map
@@ -199,6 +319,7 @@ pub fn build_mlp_dataset_from_samples(
                 _ => train_rows.push(labeled),
             }
         }
+        progress_tick(progress.as_deref_mut(), "embedding", processed, total, skipped);
     }
 
     if skipped > 0 {
