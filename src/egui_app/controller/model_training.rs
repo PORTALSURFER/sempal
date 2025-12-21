@@ -555,10 +555,9 @@ impl EguiController {
                 return;
             }
         };
-        let preferred_model_id = self.classifier_model_id();
         match super::analysis_jobs::enqueue_inference_jobs_for_sources(
             &source_ids,
-            preferred_model_id.as_deref(),
+            Some(model_id.as_str()),
         ) {
             Ok((count, _progress)) => {
                 self.set_status(
