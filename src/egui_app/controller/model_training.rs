@@ -116,11 +116,11 @@ pub(super) fn run_model_training(
                         .to_string(),
                 );
             }
-            let (train, test) =
-                split_mlp_embedding_train_test(&loaded, crate::analysis::embedding::EMBEDDING_DIM)?;
+            let (train, val, test) =
+                split_mlp_embedding_train_val_test(&loaded, crate::analysis::embedding::EMBEDDING_DIM)?;
             let mut options = job.mlp_options.clone();
             options.input_kind = crate::ml::mlp::MlpInputKind::EmbeddingV1;
-            let mut model = crate::ml::mlp::train_mlp(&train, &options)?;
+            let mut model = crate::ml::mlp::train_mlp(&train, &options, Some(&val))?;
             let metrics = build_mlp_metrics(&model, &test);
             model.metrics = Some(metrics.metrics);
             model.class_thresholds = metrics.class_thresholds;
@@ -135,10 +135,10 @@ pub(super) fn run_model_training(
             )
         }
         crate::sample_sources::config::TrainingModelKind::LogRegV1 => {
-            let (train_logreg, test_logreg) = split_logreg_train_test(&loaded)?;
+            let (train_logreg, val_logreg, test_logreg) = split_logreg_train_val_test(&loaded)?;
             let mut model =
-                crate::ml::logreg::train_logreg(&train_logreg, &job.logreg_options)?;
-            if let Err(err) = model.calibrate_temperature(&test_logreg, 0.3, 3.0, 28) {
+                crate::ml::logreg::train_logreg(&train_logreg, &job.logreg_options, Some(&val_logreg))?;
+            if let Err(err) = model.calibrate_temperature(&val_logreg, 0.3, 3.0, 28) {
                 warn!("LogReg temperature calibration failed: {err}");
             }
             let metrics = build_logreg_metrics(&model, &test_logreg);
@@ -205,16 +205,17 @@ fn run_training_from_dataset_root(
     send_progress(tx, 1, total_steps, "Building training vectors…")?;
     let (model_json, classes_json, kind, feat_version, feature_len_f32) = match job.model_kind {
         crate::sample_sources::config::TrainingModelKind::LogRegV1 => {
-            let (train, test) = build_logreg_dataset_from_samples(
+            let (train, val, test) = build_logreg_dataset_from_samples(
                 &samples,
                 &split_map,
                 job.min_class_samples,
                 &job.augmentation,
                 job.logreg_options.seed,
             )?;
-            let mut model = crate::ml::logreg::train_logreg(&train, &job.logreg_options)?;
+            let mut model =
+                crate::ml::logreg::train_logreg(&train, &job.logreg_options, Some(&val))?;
             model.model_id = Some(uuid::Uuid::new_v4().to_string());
-            if let Err(err) = model.calibrate_temperature(&test, 0.3, 3.0, 28) {
+            if let Err(err) = model.calibrate_temperature(&val, 0.3, 3.0, 28) {
                 warn!("LogReg temperature calibration failed: {err}");
             }
             let metrics = build_logreg_metrics(&model, &test);
@@ -231,7 +232,7 @@ fn run_training_from_dataset_root(
             )
         }
         crate::sample_sources::config::TrainingModelKind::MlpV1 => {
-            let (train, test) = build_mlp_dataset_from_samples(
+            let (train, val, test) = build_mlp_dataset_from_samples(
                 &samples,
                 &split_map,
                 job.use_hybrid_features,
@@ -245,7 +246,7 @@ fn run_training_from_dataset_root(
             } else {
                 crate::ml::mlp::MlpInputKind::EmbeddingV1
             };
-            let mut model = crate::ml::mlp::train_mlp(&train, &options)?;
+            let mut model = crate::ml::mlp::train_mlp(&train, &options, Some(&val))?;
             let metrics = build_mlp_metrics(&model, &test);
             model.metrics = Some(metrics.metrics);
             model.class_thresholds = metrics.class_thresholds;
@@ -308,6 +309,21 @@ fn run_training_from_dataset_root(
 struct TrainingSample {
     class_id: String,
     path: PathBuf,
+}
+
+#[derive(Clone)]
+struct TrainingRow {
+    path: PathBuf,
+    class_idx: usize,
+    row: Vec<f32>,
+}
+
+#[derive(Clone)]
+struct DatasetRow {
+    sample_id: String,
+    class_idx: usize,
+    split: String,
+    row: Vec<f32>,
 }
 
 fn collect_training_samples(root: &PathBuf) -> Result<Vec<TrainingSample>, String> {
@@ -441,7 +457,14 @@ fn build_logreg_dataset_from_samples(
     min_class_samples: usize,
     augmentation: &crate::sample_sources::config::TrainingAugmentation,
     seed: u64,
-) -> Result<(crate::ml::logreg::TrainDataset, crate::ml::logreg::TrainDataset), String> {
+) -> Result<
+    (
+        crate::ml::logreg::TrainDataset,
+        crate::ml::logreg::TrainDataset,
+        crate::ml::logreg::TrainDataset,
+    ),
+    String,
+> {
     let mut class_set = BTreeMap::new();
     for sample in samples {
         class_set.entry(sample.class_id.clone()).or_insert(());
@@ -454,11 +477,10 @@ fn build_logreg_dataset_from_samples(
         .map(|(idx, class_id)| (class_id, idx))
         .collect();
 
-    let mut train_x = Vec::new();
-    let mut train_y = Vec::new();
-    let mut test_x = Vec::new();
-    let mut test_y = Vec::new();
-    let mut embedding_cache: Option<crate::analysis::embedding::YamnetModel> = None;
+    let mut train_rows = Vec::new();
+    let mut val_rows = Vec::new();
+    let mut test_rows = Vec::new();
+    let mut embedding_cache: Option<crate::analysis::embedding::ClapModel> = None;
     let mut augment_rng = crate::analysis::augment::AugmentOptions {
         enabled: augmentation.enabled,
         copies_per_sample: augmentation.copies_per_sample,
@@ -506,12 +528,17 @@ fn build_logreg_dataset_from_samples(
             .map(|s| s.as_str())
             .unwrap_or("train");
         for embedding in embeddings {
+            let row = TrainingRow {
+                path: sample.path.clone(),
+                class_idx,
+                row: embedding.embedding,
+            };
             if split == "test" {
-                test_x.push(embedding.embedding);
-                test_y.push(class_idx);
+                test_rows.push(row);
+            } else if split == "val" {
+                val_rows.push(row);
             } else {
-                train_x.push(embedding.embedding);
-                train_y.push(class_idx);
+                train_rows.push(row);
             }
         }
     }
@@ -522,22 +549,49 @@ fn build_logreg_dataset_from_samples(
             skipped_errors
         );
     }
-    if train_x.is_empty() || test_x.is_empty() {
+    if val_rows.is_empty() {
+        let mut keep_train = Vec::new();
+        for row in train_rows {
+            let key = row.path.to_string_lossy();
+            if split_u01(&key) < 0.1 {
+                val_rows.push(row);
+            } else {
+                keep_train.push(row);
+            }
+        }
+        train_rows = keep_train;
+        if val_rows.is_empty() {
+            if let Some(row) = train_rows.pop() {
+                val_rows.push(row);
+            }
+        }
+    }
+
+    if train_rows.is_empty() || test_rows.is_empty() || val_rows.is_empty() {
         let hint = if skipped_errors.is_empty() {
             String::new()
         } else {
             format!(" First errors: {:?}", skipped_errors)
         };
         return Err(format!(
-            "Training dataset needs both train and test samples. Skipped {skipped}. Min/class={min_class_samples}.{hint}"
+            "Training dataset needs train/val/test samples. Skipped {skipped}. Min/class={min_class_samples}.{hint}"
         ));
     }
+
+    let (train_x, train_y) = split_rows(train_rows);
+    let (val_x, val_y) = split_rows(val_rows);
+    let (test_x, test_y) = split_rows(test_rows);
 
     Ok((
         crate::ml::logreg::TrainDataset {
             classes: classes.clone(),
             x: train_x,
             y: train_y,
+        },
+        crate::ml::logreg::TrainDataset {
+            classes: classes.clone(),
+            x: val_x,
+            y: val_y,
         },
         crate::ml::logreg::TrainDataset {
             classes,
@@ -554,7 +608,14 @@ fn build_mlp_dataset_from_samples(
     min_class_samples: usize,
     augmentation: &crate::sample_sources::config::TrainingAugmentation,
     seed: u64,
-) -> Result<(crate::ml::gbdt_stump::TrainDataset, crate::ml::gbdt_stump::TrainDataset), String> {
+) -> Result<
+    (
+        crate::ml::gbdt_stump::TrainDataset,
+        crate::ml::gbdt_stump::TrainDataset,
+        crate::ml::gbdt_stump::TrainDataset,
+    ),
+    String,
+> {
     let mut class_set = BTreeMap::new();
     for sample in samples {
         class_set.entry(sample.class_id.clone()).or_insert(());
@@ -567,11 +628,10 @@ fn build_mlp_dataset_from_samples(
         .map(|(idx, class_id)| (class_id, idx))
         .collect();
 
-    let mut train_x = Vec::new();
-    let mut train_y = Vec::new();
-    let mut test_x = Vec::new();
-    let mut test_y = Vec::new();
-    let mut embedding_cache: Option<crate::analysis::embedding::YamnetModel> = None;
+    let mut train_rows = Vec::new();
+    let mut val_rows = Vec::new();
+    let mut test_rows = Vec::new();
+    let mut embedding_cache: Option<crate::analysis::embedding::ClapModel> = None;
     let mut skipped = 0usize;
     let mut skipped_errors = Vec::new();
     let mut augment_rng = crate::analysis::augment::AugmentOptions {
@@ -626,12 +686,17 @@ fn build_mlp_dataset_from_samples(
             } else {
                 embedding.embedding
             };
+            let labeled = TrainingRow {
+                path: sample.path.clone(),
+                class_idx,
+                row,
+            };
             if split == "test" {
-                test_x.push(row);
-                test_y.push(class_idx);
+                test_rows.push(labeled);
+            } else if split == "val" {
+                val_rows.push(labeled);
             } else {
-                train_x.push(row);
-                train_y.push(class_idx);
+                train_rows.push(labeled);
             }
         }
     }
@@ -642,14 +707,32 @@ fn build_mlp_dataset_from_samples(
             skipped_errors
         );
     }
-    if train_x.is_empty() || test_x.is_empty() {
+    if val_rows.is_empty() {
+        let mut keep_train = Vec::new();
+        for row in train_rows {
+            let key = row.path.to_string_lossy();
+            if split_u01(&key) < 0.1 {
+                val_rows.push(row);
+            } else {
+                keep_train.push(row);
+            }
+        }
+        train_rows = keep_train;
+        if val_rows.is_empty() {
+            if let Some(row) = train_rows.pop() {
+                val_rows.push(row);
+            }
+        }
+    }
+
+    if train_rows.is_empty() || test_rows.is_empty() || val_rows.is_empty() {
         let hint = if skipped_errors.is_empty() {
             String::new()
         } else {
             format!(" First errors: {:?}", skipped_errors)
         };
         return Err(format!(
-            "Training dataset needs both train and test samples. Skipped {skipped}. Min/class={min_class_samples}.{hint}"
+            "Training dataset needs train/val/test samples. Skipped {skipped}. Min/class={min_class_samples}.{hint}"
         ));
     }
 
@@ -658,6 +741,10 @@ fn build_mlp_dataset_from_samples(
     } else {
         crate::analysis::embedding::EMBEDDING_DIM
     };
+
+    let (train_x, train_y) = split_rows(train_rows);
+    let (val_x, val_y) = split_rows(val_rows);
+    let (test_x, test_y) = split_rows(test_rows);
 
     Ok((
         crate::ml::gbdt_stump::TrainDataset {
@@ -670,11 +757,28 @@ fn build_mlp_dataset_from_samples(
         crate::ml::gbdt_stump::TrainDataset {
             feature_len_f32,
             feat_version: 0,
+            classes: classes.clone(),
+            x: val_x,
+            y: val_y,
+        },
+        crate::ml::gbdt_stump::TrainDataset {
+            feature_len_f32,
+            feat_version: 0,
             classes,
             x: test_x,
             y: test_y,
         },
     ))
+}
+
+fn split_rows(rows: Vec<TrainingRow>) -> (Vec<Vec<f32>>, Vec<usize>) {
+    let mut x = Vec::with_capacity(rows.len());
+    let mut y = Vec::with_capacity(rows.len());
+    for row in rows {
+        x.push(row.row);
+        y.push(row.class_idx);
+    }
+    (x, y)
 }
 
 fn build_feature_dataset_from_samples(
@@ -770,7 +874,7 @@ struct EmbeddingVariant {
 
 fn build_embedding_variants(
     decoded: &crate::analysis::audio::AnalysisAudio,
-    cache: &mut Option<crate::analysis::embedding::YamnetModel>,
+    cache: &mut Option<crate::analysis::embedding::ClapModel>,
     augmentation: &crate::sample_sources::config::TrainingAugmentation,
     rng: &mut rand::rngs::StdRng,
 ) -> Result<Vec<EmbeddingVariant>, String> {
@@ -1175,14 +1279,6 @@ fn split_train_test(
     let class_map = loaded.class_index_map();
     let classes: Vec<String> = class_map.iter().map(|(name, _)| name.clone()).collect();
 
-    #[derive(Clone)]
-    struct LabeledRow {
-        sample_id: String,
-        class_idx: usize,
-        split: String,
-        row: Vec<f32>,
-    }
-
     let mut rows = Vec::new();
     for sample in &loaded.samples {
         let Some(row) = loaded.feature_row(sample) else {
@@ -1191,7 +1287,7 @@ fn split_train_test(
         let Some(&class_idx) = class_map.get(&sample.label.class_id) else {
             continue;
         };
-        rows.push(LabeledRow {
+        rows.push(DatasetRow {
             sample_id: sample.sample_id.clone(),
             class_idx,
             split: sample.split.clone(),
@@ -1283,10 +1379,11 @@ fn split_train_test(
     ))
 }
 
-fn split_logreg_train_test(
+fn split_logreg_train_val_test(
     loaded: &crate::dataset::loader::LoadedDataset,
 ) -> Result<
     (
+        crate::ml::logreg::TrainDataset,
         crate::ml::logreg::TrainDataset,
         crate::ml::logreg::TrainDataset,
     ),
@@ -1297,6 +1394,107 @@ fn split_logreg_train_test(
             "Unsupported embedding_len {} (expected {})",
             loaded.manifest.feature_len_f32,
             crate::analysis::embedding::EMBEDDING_DIM
+        ));
+    }
+
+    let class_map = loaded.class_index_map();
+    let classes: Vec<String> = class_map.iter().map(|(name, _)| name.clone()).collect();
+
+    let mut rows = Vec::new();
+    for sample in &loaded.samples {
+        let Some(row) = loaded.feature_row(sample) else {
+            continue;
+        };
+        let Some(&class_idx) = class_map.get(&sample.label.class_id) else {
+            continue;
+        };
+        rows.push(DatasetRow {
+            sample_id: sample.sample_id.clone(),
+            class_idx,
+            split: sample.split.clone(),
+            row: row.to_vec(),
+        });
+    }
+
+    if rows.len() < 2 {
+        return Err(format!(
+            "Dataset needs at least 2 labeled samples (got {})",
+            rows.len()
+        ));
+    }
+
+    let mut train_rows = Vec::new();
+    let mut val_rows = Vec::new();
+    let mut test_rows = Vec::new();
+
+    for item in rows {
+        match item.split.as_str() {
+            "train" => train_rows.push(item),
+            "val" => val_rows.push(item),
+            "test" => test_rows.push(item),
+            _ => {}
+        }
+    }
+
+    if val_rows.is_empty() {
+        let mut keep_train = Vec::new();
+        for row in train_rows {
+            if split_u01(&row.sample_id) < 0.1 {
+                val_rows.push(row);
+            } else {
+                keep_train.push(row);
+            }
+        }
+        train_rows = keep_train;
+        if val_rows.is_empty() {
+            if let Some(row) = train_rows.pop() {
+                val_rows.push(row);
+            }
+        }
+    }
+
+    if train_rows.is_empty() || test_rows.is_empty() || val_rows.is_empty() {
+        return Err("Dataset needs train/val/test samples".to_string());
+    }
+
+    let (train_x, train_y) = unzip_rows(train_rows);
+    let (val_x, val_y) = unzip_rows(val_rows);
+    let (test_x, test_y) = unzip_rows(test_rows);
+
+    Ok((
+        crate::ml::logreg::TrainDataset {
+            classes: classes.clone(),
+            x: train_x,
+            y: train_y,
+        },
+        crate::ml::logreg::TrainDataset {
+            classes: classes.clone(),
+            x: val_x,
+            y: val_y,
+        },
+        crate::ml::logreg::TrainDataset {
+            classes,
+            x: test_x,
+            y: test_y,
+        },
+    ))
+}
+
+fn split_mlp_embedding_train_val_test(
+    loaded: &crate::dataset::loader::LoadedDataset,
+    expected_len: usize,
+) -> Result<
+    (
+        crate::ml::gbdt_stump::TrainDataset,
+        crate::ml::gbdt_stump::TrainDataset,
+        crate::ml::gbdt_stump::TrainDataset,
+    ),
+    String,
+> {
+    if loaded.manifest.feature_len_f32 != expected_len {
+        return Err(format!(
+            "Unsupported embedding_len {} (expected {})",
+            loaded.manifest.feature_len_f32, expected_len
         ));
     }
 
@@ -1334,70 +1532,62 @@ fn split_logreg_train_test(
         ));
     }
 
-    let mut train_x = Vec::new();
-    let mut train_y = Vec::new();
-    let mut test_x = Vec::new();
-    let mut test_y = Vec::new();
-
-    for item in &rows {
-        match item.split.as_str() {
-            "train" => {
-                train_x.push(item.row.clone());
-                train_y.push(item.class_idx);
-            }
-            "test" => {
-                test_x.push(item.row.clone());
-                test_y.push(item.class_idx);
-            }
-            _ => {}
+    let mut train_rows = Vec::new();
+    let mut val_rows = Vec::new();
+    let mut test_rows = Vec::new();
+    for row in rows {
+        if row.split == "test" {
+            test_rows.push(row);
+        } else if row.split == "val" {
+            val_rows.push(row);
+        } else {
+            train_rows.push(row);
         }
     }
 
-    if train_x.is_empty() || test_x.is_empty() {
-        train_x.clear();
-        train_y.clear();
-        test_x.clear();
-        test_y.clear();
-
-        for item in &rows {
-            let u = split_u01(&item.sample_id);
-            if u < 0.1 {
-                test_x.push(item.row.clone());
-                test_y.push(item.class_idx);
+    if val_rows.is_empty() {
+        let mut keep_train = Vec::new();
+        for row in train_rows {
+            if split_u01(&row.sample_id) < 0.1 {
+                val_rows.push(row);
             } else {
-                train_x.push(item.row.clone());
-                train_y.push(item.class_idx);
+                keep_train.push(row);
             }
         }
-
-        if test_x.is_empty() {
-            if let Some(row) = train_x.pop()
-                && let Some(y) = train_y.pop()
-            {
-                test_x.push(row);
-                test_y.push(y);
+        train_rows = keep_train;
+        if val_rows.is_empty() {
+            if let Some(row) = train_rows.pop() {
+                val_rows.push(row);
             }
-        } else if train_x.is_empty() {
-            if let Some(row) = test_x.pop()
-                && let Some(y) = test_y.pop()
-            {
-                train_x.push(row);
-                train_y.push(y);
-            }
-        }
-
-        if train_x.is_empty() || test_x.is_empty() {
-            return Err("Dataset needs both train and test samples".to_string());
         }
     }
+
+    if test_rows.is_empty() || train_rows.is_empty() || val_rows.is_empty() {
+        return Err("Dataset needs train/val/test samples".to_string());
+    }
+
+    let (train_x, train_y) = unzip_rows(train_rows);
+    let (val_x, val_y) = unzip_rows(val_rows);
+    let (test_x, test_y) = unzip_rows(test_rows);
 
     Ok((
-        crate::ml::logreg::TrainDataset {
+        crate::ml::gbdt_stump::TrainDataset {
+            feature_len_f32: expected_len,
+            feat_version: 0,
             classes: classes.clone(),
             x: train_x,
             y: train_y,
         },
-        crate::ml::logreg::TrainDataset {
+        crate::ml::gbdt_stump::TrainDataset {
+            feature_len_f32: expected_len,
+            feat_version: 0,
+            classes: classes.clone(),
+            x: val_x,
+            y: val_y,
+        },
+        crate::ml::gbdt_stump::TrainDataset {
+            feature_len_f32: expected_len,
+            feat_version: 0,
             classes,
             x: test_x,
             y: test_y,
@@ -1405,89 +1595,14 @@ fn split_logreg_train_test(
     ))
 }
 
-fn split_mlp_embedding_train_test(
-    loaded: &crate::dataset::loader::LoadedDataset,
-    expected_len: usize,
-) -> Result<
-    (
-        crate::ml::gbdt_stump::TrainDataset,
-        crate::ml::gbdt_stump::TrainDataset,
-    ),
-    String,
-> {
-    if loaded.manifest.feature_len_f32 != expected_len {
-        return Err(format!(
-            "Unsupported embedding_len {} (expected {})",
-            loaded.manifest.feature_len_f32, expected_len
-        ));
-    }
-
-    let class_map = loaded.class_index_map();
-    let classes: Vec<String> = class_map.iter().map(|(name, _)| name.clone()).collect();
-
-    #[derive(Clone)]
-    struct LabeledRow {
-        class_idx: usize,
-        split: String,
-        row: Vec<f32>,
-    }
-
-    let mut rows = Vec::new();
-    for sample in &loaded.samples {
-        let Some(row) = loaded.feature_row(sample) else {
-            continue;
-        };
-        let Some(&class_idx) = class_map.get(&sample.label.class_id) else {
-            continue;
-        };
-        rows.push(LabeledRow {
-            class_idx,
-            split: sample.split.clone(),
-            row: row.to_vec(),
-        });
-    }
-
-    if rows.len() < 2 {
-        return Err(format!(
-            "Dataset needs at least 2 labeled samples (got {})",
-            rows.len()
-        ));
-    }
-
-    let mut train_x = Vec::new();
-    let mut train_y = Vec::new();
-    let mut test_x = Vec::new();
-    let mut test_y = Vec::new();
+fn unzip_rows(rows: Vec<DatasetRow>) -> (Vec<Vec<f32>>, Vec<usize>) {
+    let mut x = Vec::with_capacity(rows.len());
+    let mut y = Vec::with_capacity(rows.len());
     for row in rows {
-        if row.split == "test" {
-            test_x.push(row.row);
-            test_y.push(row.class_idx);
-        } else {
-            train_x.push(row.row);
-            train_y.push(row.class_idx);
-        }
+        x.push(row.row);
+        y.push(row.class_idx);
     }
-
-    if test_x.is_empty() || train_x.is_empty() {
-        return Err("Dataset needs both train and test samples".to_string());
-    }
-
-    Ok((
-        crate::ml::gbdt_stump::TrainDataset {
-            feature_len_f32: expected_len,
-            feat_version: 0,
-            classes: classes.clone(),
-            x: train_x,
-            y: train_y,
-        },
-        crate::ml::gbdt_stump::TrainDataset {
-            feature_len_f32: expected_len,
-            feat_version: 0,
-            classes,
-            x: test_x,
-            y: test_y,
-        },
-    ))
+    (x, y)
 }
 
 fn export_with_confidence_fallback(

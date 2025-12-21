@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::sync::LazyLock;
 
-use ndarray::Array1;
+use ndarray::Array3;
 use ort::session::Session;
 use ort::session::builder::SessionBuilder;
 use ort::session::output::SessionOutputs;
@@ -9,21 +9,23 @@ use ort::value::Tensor;
 
 use crate::analysis::audio;
 
-pub const EMBEDDING_MODEL_ID: &str = "yamnet_onnx_v1";
-pub const EMBEDDING_DIM: usize = 1024;
+pub const EMBEDDING_MODEL_ID: &str = "clap_audio_onnx_v1";
+pub const EMBEDDING_DIM: usize = 512;
 pub const EMBEDDING_DTYPE_F32: i64 = 0;
-const YAMNET_INPUT_SAMPLES: usize = 15_600;
+const CLAP_SAMPLE_RATE: u32 = 48_000;
+const CLAP_INPUT_SECONDS: f32 = 10.0;
+const CLAP_INPUT_SAMPLES: usize = (CLAP_SAMPLE_RATE as f32 * CLAP_INPUT_SECONDS) as usize;
 
-pub(crate) struct YamnetModel {
+pub(crate) struct ClapModel {
     session: Session,
 }
 
-impl YamnetModel {
+impl ClapModel {
     pub(crate) fn load() -> Result<Self, String> {
-        let model_path = yamnet_model_path()?;
+        let model_path = clap_model_path()?;
         if !model_path.exists() {
             return Err(format!(
-                "YAMNet ONNX model not found at {}",
+                "CLAP ONNX model not found at {}",
                 model_path.to_string_lossy()
             ));
         }
@@ -38,7 +40,7 @@ impl YamnetModel {
             std::env::set_var("ORT_DYLIB_PATH", &runtime_path);
         }
         ort::environment::init_from(runtime_path.to_string_lossy().to_string())
-            .with_name("sempal_yamnet")
+            .with_name("sempal_clap")
             .commit()
             .map_err(|err| format!("Failed to initialize ONNX environment: {err}"))?;
         let session = SessionBuilder::new()
@@ -56,70 +58,45 @@ impl YamnetModel {
 }
 
 pub(crate) fn infer_embedding(
-    cache: &mut Option<YamnetModel>,
+    cache: &mut Option<ClapModel>,
     samples: &[f32],
     sample_rate: u32,
 ) -> Result<Vec<f32>, String> {
-    if sample_rate != audio::ANALYSIS_SAMPLE_RATE {
-        return Err(format!(
-            "YAMNet expects {} Hz input, got {} Hz",
-            audio::ANALYSIS_SAMPLE_RATE, sample_rate
-        ));
-    }
     if samples.is_empty() {
-        return Err("YAMNet inference requires non-empty samples".into());
+        return Err("CLAP inference requires non-empty samples".into());
     }
     if cache.is_none() {
-        *cache = Some(YamnetModel::load()?);
+        *cache = Some(ClapModel::load()?);
     }
-    let model = cache.as_mut().expect("YAMNet model loaded");
+    let model = cache.as_mut().expect("CLAP model loaded");
 
-    let mut frames = Vec::new();
-    let mut start = 0usize;
-    while start < samples.len() {
-        let end = start.saturating_add(YAMNET_INPUT_SAMPLES).min(samples.len());
-        frames.push(&samples[start..end]);
-        start = end;
-    }
-    if frames.is_empty() {
-        return Err("YAMNet input produced no frames".into());
-    }
+    let resampled = if sample_rate != CLAP_SAMPLE_RATE {
+        audio::resample_linear(samples, sample_rate, CLAP_SAMPLE_RATE)
+    } else {
+        samples.to_vec()
+    };
 
-    let mut pooled = vec![0.0_f32; EMBEDDING_DIM];
-    let mut pooled_count = 0usize;
-    for frame in frames {
-        let mut input = vec![0.0_f32; YAMNET_INPUT_SAMPLES];
-        let copy_len = frame.len().min(YAMNET_INPUT_SAMPLES);
-        input[..copy_len].copy_from_slice(&frame[..copy_len]);
-        let array = Array1::from_vec(input);
-        let input_value = Tensor::from_array(array)
-            .map_err(|err| format!("Failed to create ONNX input tensor: {err}"))?;
-        let outputs = model
-            .session
-            .run(ort::inputs![input_value])
-            .map_err(|err| format!("ONNX inference failed: {err}"))?;
-        let embedding = extract_embedding(&outputs)?;
-        if embedding.len() != EMBEDDING_DIM {
-            return Err(format!(
-                "YAMNet embedding length mismatch: expected {}, got {}",
-                EMBEDDING_DIM,
-                embedding.len()
-            ));
-        }
-        for (idx, value) in embedding.iter().enumerate() {
-            pooled[idx] += *value;
-        }
-        pooled_count += 1;
+    let mut input = vec![0.0_f32; CLAP_INPUT_SAMPLES];
+    let copy_len = resampled.len().min(CLAP_INPUT_SAMPLES);
+    input[..copy_len].copy_from_slice(&resampled[..copy_len]);
+    let array = Array3::from_shape_vec((1, 1, CLAP_INPUT_SAMPLES), input)
+        .map_err(|err| format!("Failed to build CLAP input: {err}"))?;
+    let input_value = Tensor::from_array(array)
+        .map_err(|err| format!("Failed to create ONNX input tensor: {err}"))?;
+    let outputs = model
+        .session
+        .run(ort::inputs![input_value])
+        .map_err(|err| format!("ONNX inference failed: {err}"))?;
+    let mut embedding = extract_embedding(&outputs)?;
+    if embedding.len() != EMBEDDING_DIM {
+        return Err(format!(
+            "CLAP embedding length mismatch: expected {}, got {}",
+            EMBEDDING_DIM,
+            embedding.len()
+        ));
     }
-
-    if pooled_count == 0 {
-        return Err("YAMNet pooling produced zero frames".into());
-    }
-    for value in &mut pooled {
-        *value /= pooled_count as f32;
-    }
-    normalize_l2_in_place(&mut pooled);
-    Ok(pooled)
+    normalize_l2_in_place(&mut embedding);
+    Ok(embedding)
 }
 
 fn normalize_l2_in_place(values: &mut [f32]) {
@@ -135,9 +112,9 @@ fn normalize_l2_in_place(values: &mut [f32]) {
     }
 }
 
-fn yamnet_model_path() -> Result<PathBuf, String> {
+fn clap_model_path() -> Result<PathBuf, String> {
     let root = crate::app_dirs::app_root_dir().map_err(|err| err.to_string())?;
-    Ok(root.join("models").join("yamnet.onnx"))
+    Ok(root.join("models").join("clap_audio.onnx"))
 }
 
 fn onnx_runtime_path() -> Result<PathBuf, String> {
@@ -158,8 +135,8 @@ fn onnx_runtime_filename() -> &'static str {
 pub(crate) fn embedding_model_path() -> &'static PathBuf {
     static PATH: LazyLock<PathBuf> = LazyLock::new(|| {
         crate::app_dirs::app_root_dir()
-            .map(|root| root.join("models").join("yamnet.onnx"))
-            .unwrap_or_else(|_| PathBuf::from("yamnet.onnx"))
+            .map(|root| root.join("models").join("clap_audio.onnx"))
+            .unwrap_or_else(|_| PathBuf::from("clap_audio.onnx"))
     });
     &PATH
 }

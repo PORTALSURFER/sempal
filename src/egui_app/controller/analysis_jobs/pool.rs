@@ -1,6 +1,7 @@
 use super::db;
 use super::inference;
 use super::types::{AnalysisJobMessage, AnalysisProgress};
+use rusqlite::OptionalExtension;
 use std::path::PathBuf;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::{
@@ -212,7 +213,7 @@ fn spawn_worker(
         let _ = db::reset_running_to_pending(&conn);
         let mut model_cache: Option<inference::CachedModel> = None;
         let _ = inference::refresh_latest_model(&conn, &mut model_cache, None);
-        let mut embedding_cache: Option<crate::analysis::embedding::YamnetModel> = None;
+        let mut embedding_cache: Option<crate::analysis::embedding::ClapModel> = None;
 
         loop {
             if shutdown.load(Ordering::Relaxed) {
@@ -286,7 +287,7 @@ fn run_job(
     conn: &rusqlite::Connection,
     job: &db::ClaimedJob,
     model_cache: &mut Option<inference::CachedModel>,
-    embedding_cache: &mut Option<crate::analysis::embedding::YamnetModel>,
+    embedding_cache: &mut Option<crate::analysis::embedding::ClapModel>,
     unknown_confidence_threshold: f32,
     max_analysis_duration_seconds: f32,
     preferred_model_id: Option<String>,
@@ -322,7 +323,7 @@ fn run_analysis_job(
     conn: &rusqlite::Connection,
     job: &db::ClaimedJob,
     model_cache: &mut Option<inference::CachedModel>,
-    embedding_cache: &mut Option<crate::analysis::embedding::YamnetModel>,
+    embedding_cache: &mut Option<crate::analysis::embedding::ClapModel>,
     unknown_confidence_threshold: f32,
     max_analysis_duration_seconds: f32,
     preferred_model_id: Option<&str>,
@@ -348,22 +349,32 @@ fn run_analysis_job(
         }
     }
     let decoded = crate::analysis::audio::decode_for_analysis(&absolute)?;
-    let embedding = crate::analysis::embedding::infer_embedding(
-        embedding_cache,
-        &decoded.mono,
-        decoded.sample_rate_used,
-    )?;
-    let embedding_blob = crate::analysis::vector::encode_f32_le_blob(&embedding);
-    let embedding_timestamp = now_epoch_seconds();
-    db::upsert_embedding(
+    let embedding = if let Some(cached) = load_embedding_vec_optional(
         conn,
         &job.sample_id,
         crate::analysis::embedding::EMBEDDING_MODEL_ID,
-        crate::analysis::embedding::EMBEDDING_DIM as i64,
-        crate::analysis::embedding::EMBEDDING_DTYPE_F32,
-        &embedding_blob,
-        embedding_timestamp,
-    )?;
+        crate::analysis::embedding::EMBEDDING_DIM,
+    )? {
+        cached
+    } else {
+        let embedding = crate::analysis::embedding::infer_embedding(
+            embedding_cache,
+            &decoded.mono,
+            decoded.sample_rate_used,
+        )?;
+        let embedding_blob = crate::analysis::vector::encode_f32_le_blob(&embedding);
+        let embedding_timestamp = now_epoch_seconds();
+        db::upsert_embedding(
+            conn,
+            &job.sample_id,
+            crate::analysis::embedding::EMBEDDING_MODEL_ID,
+            crate::analysis::embedding::EMBEDDING_DIM as i64,
+            crate::analysis::embedding::EMBEDDING_DTYPE_F32,
+            &embedding_blob,
+            embedding_timestamp,
+        )?;
+        embedding
+    };
     let time_domain = crate::analysis::time_domain::extract_time_domain_features(
         &decoded.mono,
         decoded.sample_rate_used,
@@ -430,7 +441,11 @@ fn run_inference_job(
     if current_hash.as_deref() != Some(content_hash) {
         return Ok(());
     }
-    let embedding = load_embedding_vec(conn, &job.sample_id)?;
+    let embedding = load_embedding_vec(
+        conn,
+        &job.sample_id,
+        crate::analysis::embedding::EMBEDDING_MODEL_ID,
+    )?;
     let computed_at = now_epoch_seconds();
     inference::infer_and_upsert_prediction(
         conn,
@@ -448,14 +463,42 @@ fn run_inference_job(
     Ok(())
 }
 
-fn load_embedding_vec(conn: &rusqlite::Connection, sample_id: &str) -> Result<Vec<f32>, String> {
+fn load_embedding_vec(
+    conn: &rusqlite::Connection,
+    sample_id: &str,
+    model_id: &str,
+) -> Result<Vec<f32>, String> {
     conn.query_row(
-        "SELECT vec_blob FROM embeddings WHERE sample_id = ?1",
-        rusqlite::params![sample_id],
+        "SELECT vec_blob FROM embeddings WHERE sample_id = ?1 AND model_id = ?2",
+        rusqlite::params![sample_id, model_id],
         |row| row.get::<_, Vec<u8>>(0),
     )
     .map_err(|err| format!("Failed to load embedding blob for {sample_id}: {err}"))
     .and_then(decode_f32le_blob)
+}
+
+fn load_embedding_vec_optional(
+    conn: &rusqlite::Connection,
+    sample_id: &str,
+    model_id: &str,
+    expected_dim: usize,
+) -> Result<Option<Vec<f32>>, String> {
+    let row: Option<Vec<u8>> = conn
+        .query_row(
+            "SELECT vec_blob FROM embeddings WHERE sample_id = ?1 AND model_id = ?2",
+            rusqlite::params![sample_id, model_id],
+            |row| row.get::<_, Vec<u8>>(0),
+        )
+        .optional()
+        .map_err(|err| format!("Failed to load embedding blob for {sample_id}: {err}"))?;
+    let Some(blob) = row else {
+        return Ok(None);
+    };
+    let vec = decode_f32le_blob(blob)?;
+    if vec.len() != expected_dim {
+        return Ok(None);
+    }
+    Ok(Some(vec))
 }
 
 fn decode_f32le_blob(blob: Vec<u8>) -> Result<Vec<f32>, String> {

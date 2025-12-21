@@ -10,7 +10,7 @@ mod train;
 pub use train::{TrainDataset, TrainOptions, train_logreg};
 
 /// Default bundled classifier model id.
-pub const DEFAULT_CLASSIFIER_MODEL_ID: &str = "yamnet_logreg_v1";
+pub const DEFAULT_CLASSIFIER_MODEL_ID: &str = "clap_logreg_v1";
 
 /// Default class list used by the bundled classifier.
 pub const DEFAULT_CLASSIFIER_CLASSES: &[&str] = &[

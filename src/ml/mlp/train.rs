@@ -16,6 +16,14 @@ pub struct TrainOptions {
     pub balance_classes: bool,
     pub input_kind: MlpInputKind,
     pub seed: u64,
+    /// Target validation accuracy to stop training early.
+    pub early_stop_target: Option<f32>,
+    /// Number of evaluations without improvement before stopping.
+    pub early_stop_patience: usize,
+    /// Minimum accuracy delta that counts as an improvement.
+    pub early_stop_min_delta: f32,
+    /// Evaluate validation accuracy every N epochs.
+    pub eval_every: usize,
 }
 
 impl Default for TrainOptions {
@@ -29,13 +37,21 @@ impl Default for TrainOptions {
             dropout: 0.15,
             label_smoothing: 0.05,
             balance_classes: true,
-            input_kind: MlpInputKind::FeaturesV1,
+            input_kind: MlpInputKind::EmbeddingV1,
             seed: 42,
+            early_stop_target: Some(0.98),
+            early_stop_patience: 8,
+            early_stop_min_delta: 0.001,
+            eval_every: 1,
         }
     }
 }
 
-pub fn train_mlp(dataset: &TrainDataset, options: &TrainOptions) -> Result<MlpModel, String> {
+pub fn train_mlp(
+    dataset: &TrainDataset,
+    options: &TrainOptions,
+    validation: Option<&TrainDataset>,
+) -> Result<MlpModel, String> {
     if dataset.x.len() != dataset.y.len() {
         return Err("Mismatched X/Y lengths".to_string());
     }
@@ -112,7 +128,16 @@ pub fn train_mlp(dataset: &TrainDataset, options: &TrainOptions) -> Result<MlpMo
     let mut d_b2 = vec![0.0f32; bias2.len()];
     let mut d_hidden = vec![0.0f32; hidden];
     let mut x_norm = vec![0.0f32; d];
-    for _epoch in 0..options.epochs {
+    let eval_every = options.eval_every.max(1);
+    let mut best_acc = f32::NEG_INFINITY;
+    let mut best_weights1 = None;
+    let mut best_bias1 = None;
+    let mut best_weights2 = None;
+    let mut best_bias2 = None;
+    let mut epochs_since_improve = 0usize;
+    let early_stop_enabled = validation.is_some()
+        && (options.early_stop_target.is_some() || options.early_stop_patience > 0);
+    for epoch in 0..options.epochs {
         indices.shuffle(&mut rng);
         for batch in indices.chunks(batch_size) {
             d_w1.fill(0.0);
@@ -217,6 +242,49 @@ pub fn train_mlp(dataset: &TrainDataset, options: &TrainOptions) -> Result<MlpMo
                 bias2[i] -= scale * d_b2[i];
             }
         }
+
+        if early_stop_enabled && (epoch + 1) % eval_every == 0 {
+            let val = validation.expect("validation present");
+            let acc = mlp_accuracy(
+                &weights1,
+                &bias1,
+                &weights2,
+                &bias2,
+                &mean,
+                &std,
+                d,
+                hidden,
+                val,
+            );
+            if acc > best_acc + options.early_stop_min_delta {
+                best_acc = acc;
+                best_weights1 = Some(weights1.clone());
+                best_bias1 = Some(bias1.clone());
+                best_weights2 = Some(weights2.clone());
+                best_bias2 = Some(bias2.clone());
+                epochs_since_improve = 0;
+            } else {
+                epochs_since_improve = epochs_since_improve.saturating_add(1);
+            }
+
+            if let Some(target) = options.early_stop_target {
+                if acc >= target.clamp(0.0, 1.0) {
+                    break;
+                }
+            }
+            if options.early_stop_patience > 0 && epochs_since_improve >= options.early_stop_patience {
+                break;
+            }
+        }
+    }
+
+    if let (Some(w1), Some(b1), Some(w2), Some(b2)) =
+        (best_weights1, best_bias1, best_weights2, best_bias2)
+    {
+        weights1 = w1;
+        bias1 = b1;
+        weights2 = w2;
+        bias2 = b2;
     }
 
     Ok(MlpModel {
@@ -286,5 +354,62 @@ fn softmax_inplace(raw: &[f32], out: &mut [f32]) {
     }
     for v in out.iter_mut() {
         *v /= sum;
+    }
+}
+
+fn mlp_accuracy(
+    weights1: &[f32],
+    bias1: &[f32],
+    weights2: &[f32],
+    bias2: &[f32],
+    mean: &[f32],
+    std: &[f32],
+    input: usize,
+    hidden: usize,
+    dataset: &TrainDataset,
+) -> f32 {
+    let classes = bias2.len().max(1);
+    let mut correct = 0usize;
+    let mut total = 0usize;
+    let mut normalized = vec![0.0f32; input];
+    let mut hidden_act = vec![0.0f32; hidden];
+    for (x, &y) in dataset.x.iter().zip(dataset.y.iter()) {
+        if x.len() != input || y >= classes {
+            continue;
+        }
+        for i in 0..input {
+            let denom = std[i].max(1e-6);
+            normalized[i] = (x[i] - mean[i]) / denom;
+        }
+        for h in 0..hidden {
+            let mut sum = bias1[h];
+            let base = h * input;
+            for i in 0..input {
+                sum += weights1[base + i] * normalized[i];
+            }
+            hidden_act[h] = sum.max(0.0);
+        }
+        let mut best_idx = 0usize;
+        let mut best_val = f32::NEG_INFINITY;
+        for c in 0..classes {
+            let mut sum = bias2[c];
+            let base = c * hidden;
+            for h in 0..hidden {
+                sum += weights2[base + h] * hidden_act[h];
+            }
+            if sum > best_val {
+                best_val = sum;
+                best_idx = c;
+            }
+        }
+        if best_idx == y {
+            correct += 1;
+        }
+        total += 1;
+    }
+    if total == 0 {
+        0.0
+    } else {
+        correct as f32 / total as f32
     }
 }

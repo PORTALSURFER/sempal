@@ -9,7 +9,7 @@ use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
 const ANN_DIR: &str = "ann";
-const ANN_BASENAME: &str = "yamnet_hnsw";
+const ANN_BASENAME: &str = "clap_hnsw";
 const ANN_ID_MAP_SUFFIX: &str = "idmap.json";
 const ANN_FLUSH_INTERVAL: Duration = Duration::from_secs(30);
 const ANN_FLUSH_MIN_INSERTS: usize = 64;

@@ -13,6 +13,14 @@ pub struct TrainOptions {
     pub batch_size: usize,
     pub seed: u64,
     pub balance_classes: bool,
+    /// Target validation accuracy to stop training early.
+    pub early_stop_target: Option<f32>,
+    /// Number of evaluations without improvement before stopping.
+    pub early_stop_patience: usize,
+    /// Minimum accuracy delta that counts as an improvement.
+    pub early_stop_min_delta: f32,
+    /// Evaluate validation accuracy every N epochs.
+    pub eval_every: usize,
 }
 
 impl Default for TrainOptions {
@@ -24,6 +32,10 @@ impl Default for TrainOptions {
             batch_size: 128,
             seed: 42,
             balance_classes: true,
+            early_stop_target: Some(0.98),
+            early_stop_patience: 8,
+            early_stop_min_delta: 0.001,
+            eval_every: 1,
         }
     }
 }
@@ -39,6 +51,7 @@ pub struct TrainDataset {
 pub fn train_logreg(
     dataset: &TrainDataset,
     options: &TrainOptions,
+    validation: Option<&TrainDataset>,
 ) -> Result<LogRegModel, String> {
     if dataset.x.is_empty() || dataset.y.is_empty() {
         return Err("Empty training set".to_string());
@@ -111,7 +124,14 @@ pub fn train_logreg(
     let mut grad_b = vec![0.0f32; bias.len()];
     let mut logits = vec![0.0f32; classes];
     let mut probs = vec![0.0f32; classes];
-    for _epoch in 0..options.epochs {
+    let eval_every = options.eval_every.max(1);
+    let mut best_acc = f32::NEG_INFINITY;
+    let mut best_weights = None;
+    let mut best_bias = None;
+    let mut epochs_since_improve = 0usize;
+    let early_stop_enabled = validation.is_some()
+        && (options.early_stop_target.is_some() || options.early_stop_patience > 0);
+    for epoch in 0..options.epochs {
         indices.shuffle(&mut rng);
         for chunk in indices.chunks(batch_size) {
             grad_w.fill(0.0);
@@ -160,6 +180,33 @@ pub fn train_logreg(
                 bias[c] -= lr * grad_b[c] * inv;
             }
         }
+
+        if early_stop_enabled && (epoch + 1) % eval_every == 0 {
+            let val = validation.expect("validation present");
+            let acc = logreg_accuracy(&weights, &bias, dim, val);
+            if acc > best_acc + options.early_stop_min_delta {
+                best_acc = acc;
+                best_weights = Some(weights.clone());
+                best_bias = Some(bias.clone());
+                epochs_since_improve = 0;
+            } else {
+                epochs_since_improve = epochs_since_improve.saturating_add(1);
+            }
+
+            if let Some(target) = options.early_stop_target {
+                if acc >= target.clamp(0.0, 1.0) {
+                    break;
+                }
+            }
+            if options.early_stop_patience > 0 && epochs_since_improve >= options.early_stop_patience {
+                break;
+            }
+        }
+    }
+
+    if let (Some(best_weights), Some(best_bias)) = (best_weights, best_bias) {
+        weights = best_weights;
+        bias = best_bias;
     }
 
     let model = LogRegModel {
@@ -202,5 +249,43 @@ fn softmax_inplace(raw: &[f32], out: &mut [f32]) {
     }
     for v in out.iter_mut() {
         *v /= sum;
+    }
+}
+
+fn logreg_accuracy(
+    weights: &[f32],
+    bias: &[f32],
+    dim: usize,
+    dataset: &TrainDataset,
+) -> f32 {
+    let classes = bias.len().max(1);
+    let mut correct = 0usize;
+    let mut total = 0usize;
+    for (x, &y) in dataset.x.iter().zip(dataset.y.iter()) {
+        if x.len() != dim || y >= classes {
+            continue;
+        }
+        let mut best_idx = 0usize;
+        let mut best_val = f32::NEG_INFINITY;
+        for c in 0..classes {
+            let base = c * dim;
+            let mut sum = bias[c];
+            for i in 0..dim {
+                sum += weights[base + i] * x[i];
+            }
+            if sum > best_val {
+                best_val = sum;
+                best_idx = c;
+            }
+        }
+        if best_idx == y {
+            correct += 1;
+        }
+        total += 1;
+    }
+    if total == 0 {
+        0.0
+    } else {
+        correct as f32 / total as f32
     }
 }

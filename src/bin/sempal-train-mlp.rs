@@ -1,8 +1,8 @@
-//! Developer utility to train and export an MLP classifier.
+//! Developer utility to train and export an MLP classifier on embeddings.
 
 use std::path::PathBuf;
 
-use sempal::analysis::{FEATURE_VECTOR_LEN_V1, FEATURE_VERSION_V1};
+use sempal::analysis::embedding::EMBEDDING_DIM;
 use sempal::dataset::loader::{LoadedDataset, load_dataset};
 use sempal::ml::gbdt_stump::TrainDataset;
 use sempal::ml::mlp::{MlpInputKind, TrainOptions, train_mlp};
@@ -18,21 +18,17 @@ fn main() {
 fn run() -> Result<(), String> {
     let options = parse_args(std::env::args().skip(1).collect())?;
     let loaded = load_dataset(&options.dataset_dir).map_err(|err| err.to_string())?;
-    let (train, test) = split_train_test(&loaded)?;
+    let (train, val, test) = split_train_val_test(&loaded)?;
 
-    let train_options = TrainOptions {
-        hidden_size: options.hidden_size,
-        epochs: options.epochs,
-        batch_size: options.batch_size,
-        learning_rate: options.learning_rate,
-        l2_penalty: options.l2_penalty,
-        dropout: 0.15,
-        label_smoothing: 0.05,
-        balance_classes: true,
-        input_kind: MlpInputKind::FeaturesV1,
-        seed: options.seed,
-    };
-    let model = train_mlp(&train, &train_options)?;
+    let mut train_options = TrainOptions::default();
+    train_options.hidden_size = options.hidden_size;
+    train_options.epochs = options.epochs;
+    train_options.batch_size = options.batch_size;
+    train_options.learning_rate = options.learning_rate;
+    train_options.l2_penalty = options.l2_penalty;
+    train_options.seed = options.seed;
+    train_options.input_kind = MlpInputKind::EmbeddingV1;
+    let model = train_mlp(&train, &train_options, Some(&val))?;
     save_model(&options.model_out, &model)?;
 
     let (acc, cm, per_class) = evaluate(&model, &test);
@@ -161,12 +157,13 @@ fn help_text() -> String {
     [
         "sempal-train-mlp",
         "",
-        "Trains an MLP classifier on a dataset export and writes model.json.",
+        "Trains an MLP classifier on an embedding dataset and writes model.json.",
         "",
         "Usage:",
         "  sempal-train-mlp --dataset <dataset_dir> [--out model.json]",
         "",
         "Options:",
+        "  --dataset <dir>    Dataset directory from sempal-embedding-export (required).",
         "  --hidden <n>         Hidden layer size (default 128)",
         "  --epochs <n>         Training epochs (default 20)",
         "  --batch <n>          Batch size (default 128)",
@@ -177,29 +174,22 @@ fn help_text() -> String {
     .join("\n")
 }
 
-fn split_train_test(
+fn split_train_val_test(
     loaded: &LoadedDataset,
-) -> Result<(TrainDataset, TrainDataset), String> {
-    if loaded.manifest.feat_version != FEATURE_VERSION_V1 {
+) -> Result<(TrainDataset, TrainDataset, TrainDataset), String> {
+    if loaded.manifest.feature_len_f32 != EMBEDDING_DIM {
         return Err(format!(
-            "Unsupported feat_version {} (expected {})",
-            loaded.manifest.feat_version, FEATURE_VERSION_V1
-        ));
-    }
-    if loaded.manifest.feature_len_f32 != FEATURE_VECTOR_LEN_V1 {
-        return Err(format!(
-            "Unsupported feature_len_f32 {} (expected {})",
-            loaded.manifest.feature_len_f32, FEATURE_VECTOR_LEN_V1
+            "Unsupported embedding_len {} (expected {})",
+            loaded.manifest.feature_len_f32, EMBEDDING_DIM
         ));
     }
 
     let class_map = loaded.class_index_map();
     let classes: Vec<String> = class_map.iter().map(|(name, _)| name.clone()).collect();
 
-    let mut train_x = Vec::new();
-    let mut train_y = Vec::new();
-    let mut test_x = Vec::new();
-    let mut test_y = Vec::new();
+    let mut train_rows = Vec::new();
+    let mut val_rows = Vec::new();
+    let mut test_rows = Vec::new();
 
     for sample in &loaded.samples {
         let Some(row) = loaded.feature_row(sample) else {
@@ -208,38 +198,91 @@ fn split_train_test(
         let Some(&class_idx) = class_map.get(&sample.label.class_id) else {
             continue;
         };
-        match sample.split.as_str() {
-            "train" | "val" => {
-                train_x.push(row.to_vec());
-                train_y.push(class_idx);
-            }
-            "test" => {
-                test_x.push(row.to_vec());
-                test_y.push(class_idx);
-            }
+        let labeled = LabeledRow {
+            sample_id: sample.sample_id.clone(),
+            class_idx,
+            split: sample.split.clone(),
+            row: row.to_vec(),
+        };
+        match labeled.split.as_str() {
+            "train" => train_rows.push(labeled),
+            "val" => val_rows.push(labeled),
+            "test" => test_rows.push(labeled),
             _ => {}
         }
     }
-    if train_x.is_empty() || test_x.is_empty() {
-        return Err("Dataset needs both train and test samples".to_string());
+    if val_rows.is_empty() {
+        let mut keep_train = Vec::new();
+        for row in train_rows {
+            if split_u01(&row.sample_id) < 0.1 {
+                val_rows.push(row);
+            } else {
+                keep_train.push(row);
+            }
+        }
+        train_rows = keep_train;
+        if val_rows.is_empty() {
+            if let Some(row) = train_rows.pop() {
+                val_rows.push(row);
+            }
+        }
     }
+    if train_rows.is_empty() || test_rows.is_empty() || val_rows.is_empty() {
+        return Err("Dataset needs train/val/test samples".to_string());
+    }
+
+    let (train_x, train_y) = unzip_rows(train_rows);
+    let (val_x, val_y) = unzip_rows(val_rows);
+    let (test_x, test_y) = unzip_rows(test_rows);
 
     Ok((
         TrainDataset {
-            feature_len_f32: FEATURE_VECTOR_LEN_V1,
-            feat_version: FEATURE_VERSION_V1,
+            feature_len_f32: EMBEDDING_DIM,
+            feat_version: 0,
             classes: classes.clone(),
             x: train_x,
             y: train_y,
         },
         TrainDataset {
-            feature_len_f32: FEATURE_VECTOR_LEN_V1,
-            feat_version: FEATURE_VERSION_V1,
+            feature_len_f32: EMBEDDING_DIM,
+            feat_version: 0,
+            classes: classes.clone(),
+            x: val_x,
+            y: val_y,
+        },
+        TrainDataset {
+            feature_len_f32: EMBEDDING_DIM,
+            feat_version: 0,
             classes,
             x: test_x,
             y: test_y,
         },
     ))
+}
+
+#[derive(Clone)]
+struct LabeledRow {
+    sample_id: String,
+    class_idx: usize,
+    split: String,
+    row: Vec<f32>,
+}
+
+fn split_u01(value: &str) -> f32 {
+    let hash = blake3::hash(value.as_bytes());
+    let bytes = hash.as_bytes();
+    let raw = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+    raw as f32 / u32::MAX as f32
+}
+
+fn unzip_rows(rows: Vec<LabeledRow>) -> (Vec<Vec<f32>>, Vec<usize>) {
+    let mut x = Vec::with_capacity(rows.len());
+    let mut y = Vec::with_capacity(rows.len());
+    for row in rows {
+        x.push(row.row);
+        y.push(row.class_idx);
+    }
+    (x, y)
 }
 
 fn evaluate(

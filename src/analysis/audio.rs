@@ -145,7 +145,8 @@ fn downmix_to_mono(samples: &[f32], channels: u16) -> Vec<f32> {
     mono
 }
 
-fn resample_linear(samples: &[f32], input_rate: u32, output_rate: u32) -> Vec<f32> {
+/// Resample mono samples using linear interpolation.
+pub(crate) fn resample_linear(samples: &[f32], input_rate: u32, output_rate: u32) -> Vec<f32> {
     let input_rate = input_rate.max(1);
     let output_rate = output_rate.max(1);
     if samples.is_empty() || input_rate == output_rate {

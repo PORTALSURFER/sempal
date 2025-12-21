@@ -24,6 +24,22 @@ cargo run --bin sempal-model-import -- --model ./model.json --kind logreg
 
 After importing, the app will enqueue inference on next startup or when you click “Re-run inference”.
 
+Optional: Train an embedding MLP classifier:
+
+```bash
+cargo run --bin sempal-train-mlp -- --dataset ./dataset --out ./model.json
+```
+
+Then import with:
+
+```bash
+cargo run --bin sempal-model-import -- --model ./model.json --kind mlp
+```
+
+Notes:
+- The embedding backend uses the CLAP audio ONNX model (`clap_audio.onnx`).
+- Ensure the model is installed under the app models directory before exporting embeddings.
+
 ## Feature pipeline (legacy baseline)
 
 1. Export features + labels:
