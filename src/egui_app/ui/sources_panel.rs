@@ -136,7 +136,7 @@ impl EguiApp {
             }
             if ui
                 .button("Prepare similarity search")
-                .on_hover_text("Scan, embed, build ANN, UMAP, and cluster for this source")
+                .on_hover_text("Scan, embed, build ANN, t-SNE, and cluster for this source")
                 .clicked()
             {
                 self.controller.select_source_by_index(index);

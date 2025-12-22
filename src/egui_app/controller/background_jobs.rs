@@ -357,13 +357,13 @@ impl EguiController {
                             self.ui.map.bounds = None;
                             self.ui.map.last_query = None;
                             self.set_status(
-                                format!("UMAP layout {} built", message.umap_version),
+                                format!("t-SNE layout {} built", message.umap_version),
                                 StatusTone::Info,
                             );
                         }
                         Err(err) => {
                             self.set_status(
-                                format!("UMAP build failed: {err}"),
+                                format!("t-SNE build failed: {err}"),
                                 StatusTone::Error,
                             );
                         }

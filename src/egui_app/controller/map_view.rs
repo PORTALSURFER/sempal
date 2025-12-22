@@ -23,14 +23,14 @@ impl EguiController {
 
     pub fn build_umap_layout(&mut self, model_id: &str, umap_version: &str) {
         if self.runtime.jobs.umap_build_in_progress() {
-            self.set_status("UMAP build already running", StatusTone::Info);
+            self.set_status("t-SNE build already running", StatusTone::Info);
             return;
         }
         self.runtime.jobs.begin_umap_build(super::jobs::UmapBuildJob {
             model_id: model_id.to_string(),
             umap_version: umap_version.to_string(),
         });
-        self.set_status("Building UMAP layout…", StatusTone::Info);
+        self.set_status("Building t-SNE layout…", StatusTone::Info);
     }
 
     pub fn umap_bounds(
@@ -101,7 +101,7 @@ fn load_umap_bounds(
             },
         )
         .optional()
-        .map_err(|err| format!("Query UMAP bounds failed: {err}"))?
+        .map_err(|err| format!("Query t-SNE bounds failed: {err}"))?
     } else {
         conn.query_row(
             "SELECT MIN(x), MAX(x), MIN(y), MAX(y)
@@ -117,7 +117,7 @@ fn load_umap_bounds(
             },
         )
         .optional()
-        .map_err(|err| format!("Query UMAP bounds failed: {err}"))?
+        .map_err(|err| format!("Query t-SNE bounds failed: {err}"))?
     };
     let Some((min_x, max_x, min_y, max_y)) = row else {
         return Ok(None);

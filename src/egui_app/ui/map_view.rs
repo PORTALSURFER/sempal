@@ -112,8 +112,8 @@ impl EguiApp {
         let render_started = Instant::now();
         let model_id = crate::analysis::embedding::EMBEDDING_MODEL_ID;
         let umap_version = self.controller.ui.map.umap_version.clone();
-        let cluster_method_str = "embedding";
-        let cluster_umap_version = "";
+        let cluster_method_str = "umap";
+        let cluster_umap_version = umap_version.as_str();
 
         let source_id = self
             .controller
@@ -136,7 +136,7 @@ impl EguiApp {
                 }
                 Err(err) => {
                     self.controller
-                        .set_status(format!("UMAP bounds failed: {err}"), style::StatusTone::Error);
+                        .set_status(format!("t-SNE bounds failed: {err}"), style::StatusTone::Error);
                 }
             }
         }
@@ -199,7 +199,7 @@ impl EguiApp {
                 }
                 Err(err) => {
                     self.controller.set_status(
-                        format!("UMAP query failed: {err}"),
+                        format!("t-SNE query failed: {err}"),
                         style::StatusTone::Error,
                     );
                 }

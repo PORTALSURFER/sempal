@@ -1,16 +1,21 @@
 use crate::analysis::decode_f32_le_blob;
-use hnsw_rs::prelude::*;
+use linfa::dataset::DatasetBase;
+use linfa::traits::{Fit, Transformer};
+use linfa_reduction::Pca;
+use linfa_tsne::TSneParams;
 use ndarray::Array2;
-use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
+use rand::rngs::SmallRng;
+use rand::SeedableRng;
 use rusqlite::{Connection, params};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-const DEFAULT_NEIGHBORS: usize = 8;
-const DEFAULT_MIN_DIST: f32 = 0.0;
+const DEFAULT_PERPLEXITY: f64 = 35.0;
+const DEFAULT_APPROX_THRESHOLD: f64 = 0.5;
+const DEFAULT_MAX_ITER: usize = 1500;
 const DEFAULT_N_COMPONENTS: usize = 2;
+const DEFAULT_PCA_COMPONENTS: usize = 50;
 
 #[derive(Debug, Serialize)]
 pub struct UmapReport {
@@ -35,37 +40,13 @@ pub fn build_umap_layout(
     if vectors.is_empty() {
         return Err(format!("No embeddings found for model_id {model_id}"));
     }
-    let layout = compute_umap(&vectors, seed, None)?;
+    let layout = compute_tsne(&vectors, seed)?;
     if layout.len() != sample_ids.len() {
-        return Err("UMAP output length mismatch".to_string());
+        return Err("t-SNE output length mismatch".to_string());
     }
     let inserted = write_layout(conn, &sample_ids, &layout, model_id, umap_version)?;
     if inserted != sample_ids.len() {
-        return Err("UMAP insert count mismatch".to_string());
-    }
-    validate_layout(&layout, min_coverage)
-}
-
-pub fn build_umap_layout_with_cluster_lock(
-    conn: &mut Connection,
-    model_id: &str,
-    umap_version: &str,
-    seed: u64,
-    min_coverage: f32,
-    cluster_method: &str,
-) -> Result<UmapReport, String> {
-    let (sample_ids, vectors, _dim) = load_embeddings(conn, model_id)?;
-    if vectors.is_empty() {
-        return Err(format!("No embeddings found for model_id {model_id}"));
-    }
-    let cluster_labels = load_cluster_labels(conn, model_id, cluster_method, &sample_ids)?;
-    let layout = compute_umap(&vectors, seed, Some(&cluster_labels))?;
-    if layout.len() != sample_ids.len() {
-        return Err("UMAP output length mismatch".to_string());
-    }
-    let inserted = write_layout(conn, &sample_ids, &layout, model_id, umap_version)?;
-    if inserted != sample_ids.len() {
-        return Err("UMAP insert count mismatch".to_string());
+        return Err("t-SNE insert count mismatch".to_string());
     }
     validate_layout(&layout, min_coverage)
 }
@@ -134,147 +115,42 @@ fn load_embeddings(
     Ok((sample_ids, vectors, dim))
 }
 
-fn compute_umap(
-    vectors: &[Vec<f32>],
-    seed: u64,
-    cluster_labels: Option<&[Option<i32>]>,
-) -> Result<Vec<[f32; 2]>, String> {
-    let mut data = Vec::new();
-    for vec in vectors {
-        data.extend_from_slice(vec);
-    }
+fn compute_tsne(vectors: &[Vec<f32>], seed: u64) -> Result<Vec<[f32; 2]>, String> {
     let n_samples = vectors.len();
     let dim = vectors.first().map(|v| v.len()).unwrap_or(0);
     if n_samples < 2 {
-        return Err("Need at least 2 embeddings to build UMAP".to_string());
+        return Err("Need at least 2 embeddings to build t-SNE".to_string());
     }
-    let n_neighbors = DEFAULT_NEIGHBORS.min(n_samples.saturating_sub(1)).max(1);
-    let matrix = Array2::from_shape_vec((n_samples, dim), data)
+    let mut data = Vec::with_capacity(n_samples * dim);
+    for vec in vectors {
+        for value in vec {
+            data.push(*value as f64);
+        }
+    }
+    let mut matrix = Array2::from_shape_vec((n_samples, dim), data)
         .map_err(|err| format!("Build embedding matrix failed: {err}"))?;
-    let (knn_indices, knn_dists) =
-        build_knn_graph(&matrix, n_neighbors, n_neighbors * 2, cluster_labels)?;
-    let init = random_init(n_samples, DEFAULT_N_COMPONENTS, seed);
-
-    let mut config = umap_rs::UmapConfig::default();
-    config.n_components = DEFAULT_N_COMPONENTS;
-    config.graph.n_neighbors = n_neighbors;
-    config.manifold.min_dist = DEFAULT_MIN_DIST;
-    let umap = umap_rs::Umap::new(config.clone());
-    let fitted = umap.fit(
-        matrix.view(),
-        knn_indices.view(),
-        knn_dists.view(),
-        init.view(),
-    );
-    let coords = fitted.embedding();
-    if coords.ncols() != 2 {
-        return Err(format!(
-            "UMAP returned {} columns, expected 2",
-            coords.ncols()
-        ));
+    if dim > DEFAULT_PCA_COMPONENTS {
+        let dataset = DatasetBase::from(matrix);
+        let pca = Pca::params(DEFAULT_PCA_COMPONENTS)
+            .fit(&dataset)
+            .map_err(|err| format!("PCA fit failed: {err}"))?;
+        let reduced = pca
+            .transform(dataset)
+            .map_err(|err| format!("PCA transform failed: {err}"))?;
+        matrix = reduced.records;
     }
+    let rng = SmallRng::seed_from_u64(seed);
+    let embedding = TSneParams::embedding_size_with_rng(DEFAULT_N_COMPONENTS, rng)
+        .perplexity(DEFAULT_PERPLEXITY)
+        .approx_threshold(DEFAULT_APPROX_THRESHOLD)
+        .max_iter(DEFAULT_MAX_ITER)
+        .transform(matrix)
+        .map_err(|err| format!("t-SNE failed: {err}"))?;
     let mut out = Vec::with_capacity(n_samples);
-    for row in coords.rows() {
-        out.push([row[0], row[1]]);
+    for row in embedding.rows() {
+        out.push([row[0] as f32, row[1] as f32]);
     }
     Ok(out)
-}
-
-fn build_knn_graph(
-    matrix: &Array2<f32>,
-    n_neighbors: usize,
-    ef_search: usize,
-    cluster_labels: Option<&[Option<i32>]>,
-) -> Result<(Array2<u32>, Array2<f32>), String> {
-    let n_samples = matrix.nrows();
-    let max_elements = n_samples.max(1024);
-    let hnsw = Hnsw::new(16, max_elements, 16, 200, DistCosine {});
-    for (idx, row) in matrix.rows().into_iter().enumerate() {
-        hnsw.insert((row.as_slice().ok_or_else(|| "Embedding not contiguous".to_string())?, idx));
-    }
-
-    let mut knn_indices = Array2::<u32>::zeros((n_samples, n_neighbors));
-    let mut knn_dists = Array2::<f32>::zeros((n_samples, n_neighbors));
-    for (row_idx, row) in matrix.rows().into_iter().enumerate() {
-        let neighbours = hnsw.search(
-            row.as_slice().ok_or_else(|| "Embedding not contiguous".to_string())?,
-            n_neighbors + 1,
-            ef_search.max(n_neighbors + 1),
-        );
-        let mut filled = 0usize;
-        for neighbour in &neighbours {
-            if neighbour.d_id == row_idx {
-                continue;
-            }
-            if let Some(labels) = cluster_labels {
-                let a = labels.get(row_idx).copied().flatten().unwrap_or(-1);
-                let b = labels.get(neighbour.d_id).copied().flatten().unwrap_or(-1);
-                if a >= 0 && b >= 0 && a != b {
-                    continue;
-                }
-            }
-            if filled >= n_neighbors {
-                break;
-            }
-            knn_indices[(row_idx, filled)] = neighbour.d_id as u32;
-            knn_dists[(row_idx, filled)] = neighbour.distance;
-            filled += 1;
-        }
-        if filled < n_neighbors {
-            for neighbour in neighbours {
-                if neighbour.d_id == row_idx {
-                    continue;
-                }
-                if filled >= n_neighbors {
-                    break;
-                }
-                knn_indices[(row_idx, filled)] = neighbour.d_id as u32;
-                knn_dists[(row_idx, filled)] = neighbour.distance;
-                filled += 1;
-            }
-        }
-        if filled < n_neighbors {
-            return Err("ANN search returned insufficient neighbors".to_string());
-        }
-    }
-    Ok((knn_indices, knn_dists))
-}
-
-fn load_cluster_labels(
-    conn: &Connection,
-    model_id: &str,
-    method: &str,
-    sample_ids: &[String],
-) -> Result<Vec<Option<i32>>, String> {
-    let mut stmt = conn
-        .prepare(
-            "SELECT sample_id, cluster_id
-             FROM hdbscan_clusters
-             WHERE model_id = ?1 AND method = ?2 AND umap_version = ''",
-        )
-        .map_err(|err| format!("Prepare cluster label query failed: {err}"))?;
-    let rows = stmt
-        .query_map(params![model_id, method], |row| {
-            let sample_id: String = row.get(0)?;
-            let cluster_id: i64 = row.get(1)?;
-            Ok((sample_id, cluster_id as i32))
-        })
-        .map_err(|err| format!("Query cluster labels failed: {err}"))?;
-    let mut by_id = std::collections::HashMap::new();
-    for row in rows {
-        let (sample_id, cluster_id) =
-            row.map_err(|err| format!("Read cluster label failed: {err}"))?;
-        by_id.insert(sample_id, cluster_id);
-    }
-    Ok(sample_ids
-        .iter()
-        .map(|sample_id| by_id.get(sample_id).copied())
-        .collect())
-}
-
-fn random_init(n_samples: usize, n_components: usize, seed: u64) -> Array2<f32> {
-    let mut rng = StdRng::seed_from_u64(seed);
-    Array2::from_shape_fn((n_samples, n_components), |_| rng.random::<f32>() * 10.0)
 }
 
 fn validate_layout(layout: &[[f32; 2]], min_coverage: f32) -> Result<UmapReport, String> {
@@ -303,13 +179,13 @@ fn validate_layout(layout: &[[f32; 2]], min_coverage: f32) -> Result<UmapReport,
     };
     if coverage_ratio < min_coverage {
         return Err(format!(
-            "UMAP coverage {:.2}% below threshold {:.2}%",
+            "t-SNE coverage {:.2}% below threshold {:.2}%",
             coverage_ratio * 100.0,
             min_coverage * 100.0
         ));
     }
     if valid == 0 {
-        return Err("UMAP produced no valid coordinates".to_string());
+        return Err("t-SNE produced no valid coordinates".to_string());
     }
     Ok(UmapReport {
         total,

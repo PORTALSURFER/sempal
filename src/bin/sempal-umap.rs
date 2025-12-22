@@ -1,4 +1,4 @@
-//! Developer utility to build a UMAP layout from stored embeddings.
+//! Developer utility to build a t-SNE layout from stored embeddings.
 
 use rusqlite::Connection;
 use std::path::PathBuf;
@@ -25,7 +25,7 @@ fn run() -> Result<(), String> {
         options.min_coverage,
     )?;
     println!(
-        "Built UMAP layout for {} samples (coverage {:.2}%)",
+        "Built t-SNE layout for {} samples (coverage {:.2}%)",
         report.total,
         report.coverage_ratio * 100.0
     );
@@ -33,7 +33,7 @@ fn run() -> Result<(), String> {
         sempal::analysis::umap::default_report_path(&db_path, &options.umap_version);
     sempal::analysis::umap::write_report(&report_path, &report)?;
     println!(
-        "UMAP coverage {:.2}% (report: {})",
+        "t-SNE coverage {:.2}% (report: {})",
         report.coverage_ratio * 100.0,
         report_path.display()
     );
@@ -121,7 +121,7 @@ fn help_text() -> String {
     [
         "sempal-umap",
         "",
-        "Build a UMAP layout for stored embeddings.",
+        "Build a t-SNE layout for stored embeddings.",
         "",
         "Usage:",
         "  sempal-umap --model-id <id> --umap-version <version> [--db <path>] [--seed <u64>]",

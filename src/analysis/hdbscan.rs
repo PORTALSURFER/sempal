@@ -1,4 +1,4 @@
-//! HDBSCAN clustering helpers for embeddings and UMAP layouts.
+//! HDBSCAN clustering helpers for embeddings and 2D layouts.
 
 use hdbscan::{Hdbscan, HdbscanHyperParams};
 use rusqlite::{Connection, Transaction, params};
@@ -61,7 +61,7 @@ fn load_cluster_data(
     match method {
         HdbscanMethod::Embedding => load_embeddings(conn, model_id),
         HdbscanMethod::Umap => {
-            let version = umap_version.ok_or_else(|| "UMAP version required".to_string())?;
+            let version = umap_version.ok_or_else(|| "Layout version required".to_string())?;
             load_umap_points(conn, model_id, version)
         }
     }
@@ -169,7 +169,7 @@ fn load_umap_points(
              WHERE model_id = ?1 AND umap_version = ?2
              ORDER BY sample_id ASC",
         )
-        .map_err(|err| format!("Prepare UMAP query failed: {err}"))?;
+        .map_err(|err| format!("Prepare layout query failed: {err}"))?;
     let rows = stmt
         .query_map(params![model_id, umap_version], |row| {
             let sample_id: String = row.get(0)?;
@@ -177,7 +177,7 @@ fn load_umap_points(
             let y: f64 = row.get(2)?;
             Ok((sample_id, x as f32, y as f32))
         })
-        .map_err(|err| format!("Query UMAP layout failed: {err}"))?;
+        .map_err(|err| format!("Query layout failed: {err}"))?;
     decode_umap_rows(rows)
 }
 
@@ -188,7 +188,7 @@ where
     let mut sample_ids = Vec::new();
     let mut data = Vec::new();
     for row in rows {
-        let (sample_id, x, y) = row.map_err(|err| format!("Read UMAP row failed: {err}"))?;
+        let (sample_id, x, y) = row.map_err(|err| format!("Read layout row failed: {err}"))?;
         sample_ids.push(sample_id);
         data.push(vec![x, y]);
     }

@@ -18,7 +18,7 @@ pub(crate) fn render_empty_state(
                         .strong(),
                 );
                 ui.label(
-                    RichText::new("UMAP projects embeddings into 2D for this map.")
+                    RichText::new("t-SNE projects embeddings into 2D for this map.")
                         .color(palette.text_muted),
                 );
                 ui.label(

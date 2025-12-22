@@ -18,7 +18,7 @@ impl EguiController {
             return;
         }
         if self.runtime.jobs.umap_build_in_progress() {
-            self.set_status("UMAP build already in progress", StatusTone::Info);
+            self.set_status("t-SNE build already in progress", StatusTone::Info);
             return;
         }
         let Some(source) = self.current_source() else {
@@ -169,8 +169,8 @@ fn run_similarity_finalize(umap_version: &str) -> Result<jobs::SimilarityPrepOut
     let cluster_stats = crate::analysis::hdbscan::build_hdbscan_clusters(
         &mut conn,
         crate::analysis::embedding::EMBEDDING_MODEL_ID,
-        HdbscanMethod::Embedding,
-        None,
+        HdbscanMethod::Umap,
+        Some(umap_version),
         HdbscanConfig {
             min_cluster_size: DEFAULT_CLUSTER_MIN_SIZE,
             min_samples: None,
@@ -178,13 +178,12 @@ fn run_similarity_finalize(umap_version: &str) -> Result<jobs::SimilarityPrepOut
         },
     )?;
     crate::analysis::rebuild_ann_index(&conn)?;
-    crate::analysis::umap::build_umap_layout_with_cluster_lock(
+    crate::analysis::umap::build_umap_layout(
         &mut conn,
         crate::analysis::embedding::EMBEDDING_MODEL_ID,
         umap_version,
         0,
         0.95,
-        "embedding",
     )?;
     Ok(jobs::SimilarityPrepOutcome {
         cluster_stats,
