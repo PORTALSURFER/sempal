@@ -90,7 +90,6 @@ impl EguiController {
             Ok(outcome) => {
                 self.ui.map.bounds = None;
                 self.ui.map.last_query = None;
-                self.ui.map.cluster_method = crate::egui_app::state::MapClusterMethod::Embedding;
                 self.set_status(
                     format!(
                         "Similarity ready: {} clusters (noise {:.1}%)",
@@ -179,7 +178,6 @@ fn run_similarity_finalize(umap_version: &str) -> Result<jobs::SimilarityPrepOut
         &mut conn,
         crate::analysis::embedding::EMBEDDING_MODEL_ID,
         HdbscanMethod::Embedding,
-        None,
         HdbscanConfig {
             min_cluster_size: DEFAULT_CLUSTER_MIN_SIZE,
             min_samples: None,

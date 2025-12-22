@@ -1,4 +1,4 @@
-//! HDBSCAN clustering helpers for embeddings and UMAP layouts.
+//! HDBSCAN clustering helpers for embeddings.
 
 use hdbscan::{Hdbscan, HdbscanHyperParams};
 use rusqlite::{Connection, Transaction, params};
@@ -8,14 +8,12 @@ use std::time::{SystemTime, UNIX_EPOCH};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HdbscanMethod {
     Embedding,
-    Umap,
 }
 
 impl HdbscanMethod {
     pub fn as_str(self) -> &'static str {
         match self {
             HdbscanMethod::Embedding => "embedding",
-            HdbscanMethod::Umap => "umap",
         }
     }
 }
@@ -40,15 +38,13 @@ pub fn build_hdbscan_clusters(
     conn: &mut Connection,
     model_id: &str,
     method: HdbscanMethod,
-    umap_version: Option<&str>,
     config: HdbscanConfig,
 ) -> Result<HdbscanStats, String> {
-    let (sample_ids, data) = load_cluster_data(conn, model_id, method, umap_version)?;
+    let (sample_ids, data) = load_cluster_data(conn, model_id, method)?;
     ensure_non_empty(&data)?;
     let labels = run_hdbscan(&data, config)?;
     let stats = summarize_labels(&labels);
-    let version = umap_version.unwrap_or("");
-    write_clusters(conn, &sample_ids, &labels, model_id, method.as_str(), version)?;
+    write_clusters(conn, &sample_ids, &labels, model_id, method.as_str(), "")?;
     Ok(stats)
 }
 
@@ -56,14 +52,9 @@ fn load_cluster_data(
     conn: &Connection,
     model_id: &str,
     method: HdbscanMethod,
-    umap_version: Option<&str>,
 ) -> Result<(Vec<String>, Vec<Vec<f32>>), String> {
     match method {
         HdbscanMethod::Embedding => load_embeddings(conn, model_id),
-        HdbscanMethod::Umap => {
-            let version = umap_version.ok_or_else(|| "UMAP version required".to_string())?;
-            load_umap_points(conn, model_id, version)
-        }
     }
 }
 
@@ -155,44 +146,6 @@ fn validate_embedding_dim(
         }
     }
     Ok(())
-}
-
-fn load_umap_points(
-    conn: &Connection,
-    model_id: &str,
-    umap_version: &str,
-) -> Result<(Vec<String>, Vec<Vec<f32>>), String> {
-    let mut stmt = conn
-        .prepare(
-            "SELECT sample_id, x, y
-             FROM layout_umap
-             WHERE model_id = ?1 AND umap_version = ?2
-             ORDER BY sample_id ASC",
-        )
-        .map_err(|err| format!("Prepare UMAP query failed: {err}"))?;
-    let rows = stmt
-        .query_map(params![model_id, umap_version], |row| {
-            let sample_id: String = row.get(0)?;
-            let x: f64 = row.get(1)?;
-            let y: f64 = row.get(2)?;
-            Ok((sample_id, x as f32, y as f32))
-        })
-        .map_err(|err| format!("Query UMAP layout failed: {err}"))?;
-    decode_umap_rows(rows)
-}
-
-fn decode_umap_rows<I>(rows: I) -> Result<(Vec<String>, Vec<Vec<f32>>), String>
-where
-    I: Iterator<Item = Result<(String, f32, f32), rusqlite::Error>>,
-{
-    let mut sample_ids = Vec::new();
-    let mut data = Vec::new();
-    for row in rows {
-        let (sample_id, x, y) = row.map_err(|err| format!("Read UMAP row failed: {err}"))?;
-        sample_ids.push(sample_id);
-        data.push(vec![x, y]);
-    }
-    Ok((sample_ids, data))
 }
 
 fn summarize_labels(labels: &[i32]) -> HdbscanStats {

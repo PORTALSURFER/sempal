@@ -45,25 +45,6 @@ impl EguiApp {
                 .checkbox(&mut self.controller.ui.map.cluster_overlay, "Clusters")
                 .changed();
             if self.controller.ui.map.cluster_overlay {
-                let mut method = self.controller.ui.map.cluster_method;
-                egui::ComboBox::from_id_source("cluster_method")
-                    .selected_text(method.label())
-                    .show_ui(ui, |ui| {
-                        ui.selectable_value(
-                            &mut method,
-                            crate::egui_app::state::MapClusterMethod::Umap,
-                            "UMAP",
-                        );
-                        ui.selectable_value(
-                            &mut method,
-                            crate::egui_app::state::MapClusterMethod::Embedding,
-                            "Embedding",
-                        );
-                    });
-                if method != self.controller.ui.map.cluster_method {
-                    self.controller.ui.map.cluster_method = method;
-                    refresh = true;
-                }
                 ui.checkbox(&mut self.controller.ui.map.cluster_hide_noise, "Hide noise");
                 ui.checkbox(&mut self.controller.ui.map.similarity_blend, "Similarity blend");
                 if self.controller.ui.map.similarity_blend {
@@ -131,13 +112,8 @@ impl EguiApp {
         let render_started = Instant::now();
         let model_id = crate::analysis::embedding::EMBEDDING_MODEL_ID;
         let umap_version = self.controller.ui.map.umap_version.clone();
-        let cluster_method = self.controller.ui.map.cluster_method;
-        let cluster_method_str = cluster_method.as_str();
-        let cluster_umap_version = if cluster_method == crate::egui_app::state::MapClusterMethod::Umap {
-            umap_version.as_str()
-        } else {
-            ""
-        };
+        let cluster_method_str = "embedding";
+        let cluster_umap_version = "";
 
         let source_id = self
             .controller

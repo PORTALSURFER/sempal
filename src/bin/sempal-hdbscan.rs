@@ -1,4 +1,4 @@
-//! Developer utility to build HDBSCAN clusters from embeddings or UMAP coordinates.
+//! Developer utility to build HDBSCAN clusters from embeddings.
 
 use hdbscan::{Hdbscan, HdbscanHyperParams};
 use rusqlite::{Connection, params};
@@ -19,25 +19,15 @@ fn run() -> Result<(), String> {
     };
     let db_path = resolve_db_path(options.db_path.as_ref())?;
     let conn = Connection::open(&db_path).map_err(|err| format!("Open DB failed: {err}"))?;
-    let (sample_ids, data) = match options.method {
-        ClusterMethod::Embedding => load_embeddings(&conn, &options.model_id)?,
-        ClusterMethod::Umap => {
-            let version = options
-                .umap_version
-                .as_ref()
-                .ok_or_else(|| "--umap-version is required when method=umap".to_string())?;
-            load_umap_points(&conn, &options.model_id, version)?
-        }
-    };
+    let (sample_ids, data) = load_embeddings(&conn, &options.model_id)?;
 
     if data.is_empty() {
         return Err("No data points found for clustering".to_string());
     }
 
     println!(
-        "Loaded {} samples for HDBSCAN (method={})",
-        data.len(),
-        options.method.as_str()
+        "Loaded {} samples for HDBSCAN (method=embedding)",
+        data.len()
     );
 
     let mut builder = HdbscanHyperParams::builder().min_cluster_size(options.min_cluster_size);
@@ -70,48 +60,25 @@ fn run() -> Result<(), String> {
         .handle_ratio(stats.noise_ratio, options.min_noise_ratio, options.max_noise_ratio)?;
 
     let mut conn = conn;
-    let umap_version = options
-        .umap_version
-        .as_ref()
-        .map(String::as_str)
-        .unwrap_or("");
     let inserted = write_clusters(
         &mut conn,
         &sample_ids,
         &labels,
         &options.model_id,
-        options.method.as_str(),
-        umap_version,
+        "embedding",
+        "",
     )?;
     println!(
-        "Wrote {} cluster assignments for method={}",
-        inserted,
-        options.method.as_str()
+        "Wrote {} cluster assignments for method=embedding",
+        inserted
     );
     Ok(())
-}
-
-#[derive(Debug, Clone, Copy)]
-enum ClusterMethod {
-    Embedding,
-    Umap,
-}
-
-impl ClusterMethod {
-    fn as_str(&self) -> &'static str {
-        match self {
-            ClusterMethod::Embedding => "embedding",
-            ClusterMethod::Umap => "umap",
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
 struct Options {
     db_path: Option<PathBuf>,
     model_id: String,
-    method: ClusterMethod,
-    umap_version: Option<String>,
     min_cluster_size: usize,
     min_samples: Option<usize>,
     allow_single_cluster: bool,
@@ -124,8 +91,6 @@ fn parse_args(args: Vec<String>) -> Result<Option<Options>, String> {
     let mut options = Options {
         db_path: None,
         model_id: String::new(),
-        method: ClusterMethod::Embedding,
-        umap_version: None,
         min_cluster_size: 5,
         min_samples: None,
         allow_single_cluster: false,
@@ -151,27 +116,6 @@ fn parse_args(args: Vec<String>) -> Result<Option<Options>, String> {
                 let value =
                     args.get(idx).ok_or_else(|| "--model-id requires a value".to_string())?;
                 options.model_id = value.to_string();
-            }
-            "--method" => {
-                idx += 1;
-                let value = args
-                    .get(idx)
-                    .ok_or_else(|| "--method requires a value".to_string())?;
-                options.method = match value.as_str() {
-                    "embedding" => ClusterMethod::Embedding,
-                    "umap" => ClusterMethod::Umap,
-                    _ => {
-                        return Err(format!(
-                            "Invalid --method {value}. Use embedding or umap."
-                        ))
-                    }
-                };
-            }
-            "--umap-version" => {
-                idx += 1;
-                let value =
-                    args.get(idx).ok_or_else(|| "--umap-version requires a value".to_string())?;
-                options.umap_version = Some(value.to_string());
             }
             "--min-cluster-size" => {
                 idx += 1;
@@ -253,16 +197,14 @@ fn help_text() -> String {
     [
         "sempal-hdbscan",
         "",
-        "Build HDBSCAN clusters for embeddings or UMAP coordinates.",
+        "Build HDBSCAN clusters for embeddings.",
         "",
         "Usage:",
-        "  sempal-hdbscan --model-id <id> --method <embedding|umap> [options]",
+        "  sempal-hdbscan --model-id <id> [options]",
         "",
         "Options:",
         "  --db <path>              Path to library.db (defaults to app data location).",
         "  --model-id <id>          Embedding model id to read (required).",
-        "  --method <embedding|umap> Source for clustering (required).",
-        "  --umap-version <v>       UMAP layout version (required for method=umap).",
         "  --min-cluster-size <n>   Minimum cluster size (default: 5).",
         "  --min-samples <n>        Min samples for core distance (default: min_cluster_size).",
         "  --allow-single-cluster   Allow a single giant cluster.",
@@ -325,37 +267,6 @@ fn load_embeddings(
         }
         sample_ids.push(sample_id);
         data.push(vec);
-    }
-    Ok((sample_ids, data))
-}
-
-fn load_umap_points(
-    conn: &Connection,
-    model_id: &str,
-    umap_version: &str,
-) -> Result<(Vec<String>, Vec<Vec<f32>>), String> {
-    let mut stmt = conn
-        .prepare(
-            "SELECT sample_id, x, y
-             FROM layout_umap
-             WHERE model_id = ?1 AND umap_version = ?2
-             ORDER BY sample_id ASC",
-        )
-        .map_err(|err| format!("Prepare UMAP query failed: {err}"))?;
-    let rows = stmt
-        .query_map(params![model_id, umap_version], |row| {
-            let sample_id: String = row.get(0)?;
-            let x: f64 = row.get(1)?;
-            let y: f64 = row.get(2)?;
-            Ok((sample_id, x as f32, y as f32))
-        })
-        .map_err(|err| format!("Query UMAP layout failed: {err}"))?;
-    let mut sample_ids = Vec::new();
-    let mut data = Vec::new();
-    for row in rows {
-        let (sample_id, x, y) = row.map_err(|err| format!("Read UMAP row failed: {err}"))?;
-        sample_ids.push(sample_id);
-        data.push(vec![x, y]);
     }
     Ok((sample_ids, data))
 }

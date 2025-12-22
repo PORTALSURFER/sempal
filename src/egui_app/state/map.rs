@@ -14,7 +14,6 @@ pub struct MapUiState {
     pub umap_version: String,
     pub cluster_overlay: bool,
     pub cluster_hide_noise: bool,
-    pub cluster_method: MapClusterMethod,
     pub cluster_filter_input: String,
     pub cluster_filter: Option<i32>,
     pub similarity_blend: bool,
@@ -40,7 +39,6 @@ impl Default for MapUiState {
             umap_version: "v1".to_string(),
             cluster_overlay: false,
             cluster_hide_noise: false,
-            cluster_method: MapClusterMethod::Umap,
             cluster_filter_input: String::new(),
             cluster_filter: None,
             similarity_blend: false,
@@ -81,26 +79,4 @@ pub struct MapPoint {
 pub enum MapRenderMode {
     Heatmap,
     Points,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum MapClusterMethod {
-    Embedding,
-    Umap,
-}
-
-impl MapClusterMethod {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            MapClusterMethod::Embedding => "embedding",
-            MapClusterMethod::Umap => "umap",
-        }
-    }
-
-    pub fn label(self) -> &'static str {
-        match self {
-            MapClusterMethod::Embedding => "Embedding",
-            MapClusterMethod::Umap => "UMAP",
-        }
-    }
 }
