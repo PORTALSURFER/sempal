@@ -41,6 +41,7 @@ mod sources;
 mod tagging_service;
 mod trash;
 mod trash_move;
+mod tf_labels;
 mod undo;
 mod updates;
 mod user_labels;
