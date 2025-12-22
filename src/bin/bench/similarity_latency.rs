@@ -1,8 +1,8 @@
 use super::options::BenchOptions;
 use super::stats;
-use crate::analysis::{ann_index, embedding};
-use crate::analysis::vector::encode_f32_le_blob;
-use crate::app_dirs::ConfigBaseGuard;
+use sempal::analysis::{ann_index, embedding};
+use sempal::analysis::vector::encode_f32_le_blob;
+use sempal::app_dirs::ConfigBaseGuard;
 use rand::{Rng, SeedableRng};
 use rand::rngs::StdRng;
 use rusqlite::{Connection, params};
