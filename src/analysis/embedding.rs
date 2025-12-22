@@ -235,10 +235,10 @@ mod tests {
 
     #[test]
     fn golden_embedding_matches_python() {
-        let path = match std::env::var("SEMPAL_CLAP_EMBED_GOLDEN_PATH") {
-            Ok(path) if !path.trim().is_empty() => path,
-            _ => return,
-        };
+        let path = std::env::var("SEMPAL_CLAP_EMBED_GOLDEN_PATH")
+            .ok()
+            .filter(|path| !path.trim().is_empty())
+            .unwrap_or_else(|| "tests/golden_embedding.json".to_string());
         if !clap_model_path().map(|p| p.exists()).unwrap_or(false) {
             return;
         }
