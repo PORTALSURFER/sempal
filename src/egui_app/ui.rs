@@ -18,6 +18,7 @@ mod sample_browser_rename;
 mod sample_menus;
 mod sources_panel;
 pub mod style;
+mod tf_labels;
 mod update;
 mod waveform_view;
 

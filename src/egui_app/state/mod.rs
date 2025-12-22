@@ -12,6 +12,7 @@ mod hotkeys;
 mod progress;
 mod sources;
 mod status;
+mod tf_labels;
 mod training;
 mod update;
 mod waveform;
@@ -27,6 +28,7 @@ pub use hotkeys::*;
 pub use progress::*;
 pub use sources::*;
 pub use status::*;
+pub use tf_labels::*;
 pub use training::*;
 pub use update::*;
 pub use waveform::*;
@@ -54,6 +56,8 @@ pub struct UiState {
     pub audio: AudioOptionsState,
     /// Model training and weak labeling controls.
     pub training: TrainingUiState,
+    /// Training-free label UI state.
+    pub tf_labels: TfLabelsUiState,
     /// Interaction and navigation tuning options.
     pub controls: InteractionOptionsState,
     /// Master output volume (0.0-1.0).
@@ -82,6 +86,7 @@ impl Default for UiState {
             feedback_issue: FeedbackIssueUiState::default(),
             audio: AudioOptionsState::default(),
             training: TrainingUiState::default(),
+            tf_labels: TfLabelsUiState::default(),
             controls: InteractionOptionsState::default(),
             volume: 1.0,
             update: UpdateUiState::default(),

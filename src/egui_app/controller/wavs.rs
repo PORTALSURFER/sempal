@@ -126,6 +126,32 @@ impl EguiController {
         similar::clear_similar_filter(self);
     }
 
+    /// Build a library sample_id for the visible browser row.
+    pub fn sample_id_for_visible_row(&self, row: usize) -> Result<String, String> {
+        let source_id = self
+            .selection_state
+            .ctx
+            .selected_source
+            .clone()
+            .ok_or_else(|| "No active source selected".to_string())?;
+        let entry_index = self
+            .ui
+            .browser
+            .visible
+            .get(row)
+            .copied()
+            .ok_or_else(|| "Selected row is out of range".to_string())?;
+        let entry = self
+            .wav_entries
+            .entries
+            .get(entry_index)
+            .ok_or_else(|| "Sample entry missing".to_string())?;
+        Ok(super::analysis_jobs::build_sample_id(
+            source_id.as_str(),
+            &entry.relative_path,
+        ))
+    }
+
     /// Select a wav by absolute index into the full wav list.
     pub fn select_wav_by_index(&mut self, index: usize) {
         selection_ops::select_wav_by_index(self, index);

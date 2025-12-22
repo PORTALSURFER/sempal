@@ -36,7 +36,9 @@ impl EguiController {
         gap: f32,
         topk: i64,
     ) -> Result<TfLabel, String> {
+        validate_tf_label_fields(name, threshold, gap, topk)?;
         let mut conn = open_library_db()?;
+        let name = name.trim();
         create_tf_label_with_conn(&mut conn, name, threshold, gap, topk)
     }
 
@@ -49,7 +51,9 @@ impl EguiController {
         gap: f32,
         topk: i64,
     ) -> Result<(), String> {
+        validate_tf_label_fields(name, threshold, gap, topk)?;
         let mut conn = open_library_db()?;
+        let name = name.trim();
         update_tf_label_with_conn(&mut conn, label_id, name, threshold, gap, topk)
     }
 
@@ -72,12 +76,14 @@ impl EguiController {
         sample_id: &str,
         weight: f32,
     ) -> Result<TfAnchor, String> {
+        validate_tf_anchor_fields(weight)?;
         let mut conn = open_library_db()?;
         upsert_tf_anchor_with_conn(&mut conn, label_id, sample_id, weight)
     }
 
     /// Update an anchor weight.
     pub fn update_tf_anchor(&mut self, anchor_id: &str, weight: f32) -> Result<(), String> {
+        validate_tf_anchor_fields(weight)?;
         let mut conn = open_library_db()?;
         update_tf_anchor_with_conn(&mut conn, anchor_id, weight)
     }
@@ -284,4 +290,32 @@ fn now_epoch_seconds() -> i64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_else(|_| Duration::from_secs(0))
         .as_secs() as i64
+}
+
+fn validate_tf_label_fields(
+    name: &str,
+    threshold: f32,
+    gap: f32,
+    topk: i64,
+) -> Result<(), String> {
+    if name.trim().is_empty() {
+        return Err("Label name cannot be empty".to_string());
+    }
+    if !(0.0..=1.0).contains(&threshold) {
+        return Err("Label threshold must be between 0.0 and 1.0".to_string());
+    }
+    if gap < 0.0 || gap > 2.0 {
+        return Err("Label gap must be between 0.0 and 2.0".to_string());
+    }
+    if topk < 1 {
+        return Err("Label topk must be at least 1".to_string());
+    }
+    Ok(())
+}
+
+fn validate_tf_anchor_fields(weight: f32) -> Result<(), String> {
+    if weight <= 0.0 {
+        return Err("Anchor weight must be greater than 0.0".to_string());
+    }
+    Ok(())
 }

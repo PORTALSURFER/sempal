@@ -58,6 +58,31 @@ fn tf_labels_crud_and_anchor_updates() {
     assert!(labels.is_empty());
 }
 
+#[test]
+fn tf_label_validation_rejects_invalid_fields() {
+    let config_dir = tempdir().unwrap();
+    let _guard = ConfigBaseGuard::set(config_dir.path().to_path_buf());
+    let (mut controller, _source) = dummy_controller();
+
+    let err = controller.create_tf_label("", 0.75, 0.1, 3).unwrap_err();
+    assert!(err.contains("Label name"));
+
+    let err = controller.create_tf_label("Clap", -0.1, 0.1, 3).unwrap_err();
+    assert!(err.contains("threshold"));
+
+    let err = controller.create_tf_label("Clap", 0.75, -0.1, 3).unwrap_err();
+    assert!(err.contains("gap"));
+
+    let err = controller.create_tf_label("Clap", 0.75, 0.1, 0).unwrap_err();
+    assert!(err.contains("topk"));
+
+    let label = controller
+        .create_tf_label("Valid", 0.75, 0.1, 3)
+        .unwrap();
+    let err = controller.add_tf_anchor(&label.label_id, "sample::a.wav", 0.0).unwrap_err();
+    assert!(err.contains("weight"));
+}
+
 fn insert_sample(sample_id: &str) {
     let conn = crate::sample_sources::library::open_connection().unwrap();
     conn.execute(

@@ -595,7 +595,69 @@ impl EguiApp {
                     ui.close();
                 }
             }
-                        let categories = self.controller.label_override_categories();
+            ui.separator();
+            ui.label(RichText::new("Training-free labels").color(palette.text_primary));
+            if ui.button("Manage TF labels").clicked() {
+                self.open_tf_label_editor();
+                close_menu = true;
+                ui.close();
+            }
+            if ui.button("Create label from sample").clicked() {
+                match self.controller.sample_id_for_visible_row(row) {
+                    Ok(sample_id) => {
+                        let default_name = view_model::sample_display_label(path);
+                        self.open_tf_label_create_prompt(default_name, Some(sample_id));
+                        close_menu = true;
+                        ui.close();
+                    }
+                    Err(err) => {
+                        self.controller.set_status(err, StatusTone::Error);
+                    }
+                }
+            }
+            let labels = match self.controller.list_tf_labels() {
+                Ok(labels) => labels,
+                Err(err) => {
+                    self.controller.set_status(
+                        format!("Load TF labels failed: {err}"),
+                        StatusTone::Error,
+                    );
+                    Vec::new()
+                }
+            };
+            ui.menu_button("Add as anchor to...", |ui| {
+                if labels.is_empty() {
+                    ui.label(RichText::new("No labels yet").color(palette.text_muted));
+                }
+                for label in &labels {
+                    if ui.button(&label.name).clicked() {
+                        match self.controller.sample_id_for_visible_row(row) {
+                            Ok(sample_id) => {
+                                if let Err(err) = self
+                                    .controller
+                                    .add_tf_anchor(&label.label_id, &sample_id, 1.0)
+                                {
+                                    self.controller.set_status(
+                                        format!("Add anchor failed: {err}"),
+                                        StatusTone::Error,
+                                    );
+                                } else {
+                                    self.controller.set_status(
+                                        format!("Added anchor to {}", label.name),
+                                        StatusTone::Info,
+                                    );
+                                    close_menu = true;
+                                    ui.close();
+                                }
+                            }
+                            Err(err) => {
+                                self.controller.set_status(err, StatusTone::Error);
+                            }
+                        }
+                    }
+                }
+            });
+            let categories = self.controller.label_override_categories();
             if !categories.is_empty() {
                 ui.separator();
                 ui.menu_button("Set category override", |ui| {
