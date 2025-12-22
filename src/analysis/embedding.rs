@@ -15,6 +15,9 @@ pub const EMBEDDING_DTYPE_F32: &str = "f32";
 const CLAP_SAMPLE_RATE: u32 = 48_000;
 const CLAP_INPUT_SECONDS: f32 = 10.0;
 const CLAP_INPUT_SAMPLES: usize = (CLAP_SAMPLE_RATE as f32 * CLAP_INPUT_SECONDS) as usize;
+const QUERY_WINDOW_SECONDS: f32 = 2.0;
+const QUERY_HOP_SECONDS: f32 = 1.0;
+const QUERY_MAX_WINDOWS: usize = 24;
 
 pub(crate) struct ClapModel {
     session: Session,
@@ -86,6 +89,37 @@ pub(crate) fn infer_embedding(samples: &[f32], sample_rate: u32) -> Result<Vec<f
     infer_embedding_with_model(model, samples, sample_rate)
 }
 
+pub(crate) fn infer_embedding_query(samples: &[f32], sample_rate: u32) -> Result<Vec<f32>, String> {
+    if samples.is_empty() {
+        return Err("CLAP inference requires non-empty samples".into());
+    }
+    let ranges = query_window_ranges(samples.len(), sample_rate);
+    if ranges.len() <= 1 {
+        return infer_embedding(samples, sample_rate);
+    }
+    let mut guard = GLOBAL_CLAP_MODEL
+        .lock()
+        .map_err(|_| "CLAP model lock poisoned".to_string())?;
+    if guard.is_none() {
+        *guard = Some(ClapModel::load()?);
+    }
+    let model = guard.as_mut().expect("CLAP model loaded");
+    let count = ranges.len().max(1) as f32;
+    let mut sum = vec![0.0_f32; EMBEDDING_DIM];
+    for (start, end) in ranges {
+        let embedding = infer_embedding_with_model(model, &samples[start..end], sample_rate)?;
+        for (acc, value) in sum.iter_mut().zip(embedding.iter()) {
+            *acc += value;
+        }
+    }
+    let scale = 1.0 / count;
+    for value in &mut sum {
+        *value *= scale;
+    }
+    normalize_l2_in_place(&mut sum);
+    Ok(sum)
+}
+
 pub fn tf_label_defaults_for_model(model_id: &str) -> TfLabelDefaults {
     match model_id {
         EMBEDDING_MODEL_ID => TfLabelDefaults {
@@ -142,6 +176,30 @@ fn infer_embedding_with_model(
         return Err(format!("CLAP embedding L2 norm out of range: {norm:.6}"));
     }
     Ok(embedding)
+}
+
+fn query_window_ranges(sample_len: usize, sample_rate: u32) -> Vec<(usize, usize)> {
+    let window_len = (QUERY_WINDOW_SECONDS * sample_rate as f32).round() as usize;
+    let hop_len = (QUERY_HOP_SECONDS * sample_rate as f32).round() as usize;
+    if window_len == 0 || sample_len == 0 {
+        return Vec::new();
+    }
+    if sample_len <= window_len {
+        return vec![(0, sample_len)];
+    }
+    let hop_len = hop_len.max(1);
+    let mut ranges = Vec::new();
+    let max_start = sample_len.saturating_sub(window_len);
+    let mut start = 0;
+    while start <= max_start {
+        ranges.push((start, start + window_len));
+        start += hop_len;
+    }
+    if ranges.len() > QUERY_MAX_WINDOWS {
+        let stride = (ranges.len() as f32 / QUERY_MAX_WINDOWS as f32).ceil() as usize;
+        ranges = ranges.into_iter().step_by(stride).take(QUERY_MAX_WINDOWS).collect();
+    }
+    ranges
 }
 
 fn repeat_pad_into(out: &mut Vec<f32>, samples: &[f32], target_len: usize) {

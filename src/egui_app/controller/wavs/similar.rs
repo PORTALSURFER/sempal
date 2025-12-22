@@ -83,7 +83,7 @@ pub(super) fn find_similar_for_audio_path(
         decoded.sample_rate_used,
     );
     let embedding =
-        crate::analysis::embedding::infer_embedding(&processed, decoded.sample_rate_used)?;
+        crate::analysis::embedding::infer_embedding_query(&processed, decoded.sample_rate_used)?;
     let db_path = crate::app_dirs::app_root_dir()
         .map_err(|err| err.to_string())?
         .join(crate::sample_sources::library::LIBRARY_DB_FILE_NAME);
