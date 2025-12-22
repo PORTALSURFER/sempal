@@ -32,6 +32,7 @@ mod os_explorer;
 mod playback;
 mod predictions;
 mod progress;
+mod map_view;
 mod scans;
 mod selection_edits;
 mod selection_export;

@@ -10,6 +10,7 @@ mod hotkey_overlay;
 mod hotkey_runtime;
 mod input;
 mod layout;
+mod map_view;
 mod platform;
 mod progress_overlay;
 mod sample_browser_filter;
