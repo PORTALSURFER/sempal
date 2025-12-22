@@ -33,7 +33,7 @@ impl EguiApp {
     }
 
     fn render_tf_label_create_prompt(&mut self, ctx: &egui::Context) {
-        let Some(prompt) = self.controller.ui.tf_labels.create_prompt.as_mut() else {
+        let Some(mut prompt) = self.controller.ui.tf_labels.create_prompt.take() else {
             return;
         };
         let palette = style::palette();
@@ -101,8 +101,9 @@ impl EguiApp {
                 });
             });
         if close {
-            self.controller.ui.tf_labels.create_prompt = None;
+            return;
         }
+        self.controller.ui.tf_labels.create_prompt = Some(prompt);
     }
 
     fn render_tf_label_editor(&mut self, ctx: &egui::Context) {
