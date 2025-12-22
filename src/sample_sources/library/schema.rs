@@ -170,6 +170,20 @@ impl LibraryDatabase {
                     ON layout_umap (model_id, umap_version);
                  CREATE INDEX IF NOT EXISTS idx_layout_umap_xy
                     ON layout_umap (x, y);
+                 CREATE TABLE IF NOT EXISTS hdbscan_clusters (
+                    sample_id TEXT NOT NULL,
+                    model_id TEXT NOT NULL,
+                    method TEXT NOT NULL,
+                    umap_version TEXT NOT NULL,
+                    cluster_id INTEGER NOT NULL,
+                    created_at INTEGER NOT NULL,
+                    PRIMARY KEY (sample_id, model_id, method, umap_version),
+                    FOREIGN KEY(sample_id) REFERENCES samples(sample_id) ON DELETE CASCADE
+                 ) WITHOUT ROWID;
+                 CREATE INDEX IF NOT EXISTS idx_hdbscan_clusters_set
+                    ON hdbscan_clusters (model_id, method, umap_version);
+                 CREATE INDEX IF NOT EXISTS idx_hdbscan_clusters_cluster_id
+                    ON hdbscan_clusters (cluster_id);
                  CREATE TABLE IF NOT EXISTS embeddings (
                     sample_id TEXT PRIMARY KEY,
                     model_id TEXT NOT NULL,
@@ -521,6 +535,40 @@ impl LibraryDatabase {
                     ON layout_umap (model_id, umap_version);
                 CREATE INDEX IF NOT EXISTS idx_layout_umap_xy
                     ON layout_umap (x, y);",
+            )
+            .map_err(map_sql_error)?;
+        Ok(())
+    }
+
+    pub(super) fn migrate_hdbscan_clusters_table(&mut self) -> Result<(), LibraryError> {
+        let mut stmt = self
+            .connection
+            .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='hdbscan_clusters'")
+            .map_err(map_sql_error)?;
+        let exists: Option<String> = stmt
+            .query_row([], |row| row.get(0))
+            .optional()
+            .map_err(map_sql_error)?;
+        drop(stmt);
+        if exists.is_some() {
+            return Ok(());
+        }
+        self.connection
+            .execute_batch(
+                "CREATE TABLE IF NOT EXISTS hdbscan_clusters (
+                    sample_id TEXT NOT NULL,
+                    model_id TEXT NOT NULL,
+                    method TEXT NOT NULL,
+                    umap_version TEXT NOT NULL,
+                    cluster_id INTEGER NOT NULL,
+                    created_at INTEGER NOT NULL,
+                    PRIMARY KEY (sample_id, model_id, method, umap_version),
+                    FOREIGN KEY(sample_id) REFERENCES samples(sample_id) ON DELETE CASCADE
+                ) WITHOUT ROWID;
+                CREATE INDEX IF NOT EXISTS idx_hdbscan_clusters_set
+                    ON hdbscan_clusters (model_id, method, umap_version);
+                CREATE INDEX IF NOT EXISTS idx_hdbscan_clusters_cluster_id
+                    ON hdbscan_clusters (cluster_id);",
             )
             .map_err(map_sql_error)?;
         Ok(())
