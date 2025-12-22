@@ -9,7 +9,7 @@ use ort::value::TensorRef;
 use crate::analysis::audio;
 
 pub const EMBEDDING_MODEL_ID: &str =
-    "clap_htsat_fused__sr48k__nfft1024__hop480__mel64__chunk10__repeatpad_v1";
+    "clap_htsat_fused__sr48k__nfft1024__hop480__mel64__chunk10__repeatpad_v2";
 pub const EMBEDDING_DIM: usize = 512;
 pub const EMBEDDING_DTYPE_F32: &str = "f32";
 const CLAP_SAMPLE_RATE: u32 = 48_000;
