@@ -12,6 +12,33 @@ For `feat_version = 1`, the vector is a fixed-length array of `183` `f32` values
 - `time_domain`: `TimeDomainFeatures`
 - `frequency_domain`: `FrequencyDomainFeatures`
 
+## Embedding Contract (CLAP)
+
+Sempal stores CLAP embeddings in the `embeddings` table. The following contract is
+authoritative for all embedding inference in the app and dataset tooling.
+
+### Input preprocessing
+
+- Input is mono `f32` samples in `[-1.0, 1.0]`.
+- Mono mixdown is required for multi-channel audio.
+- Preprocess using `preprocess_mono_for_embedding`:
+  - Trim silence with hysteresis.
+  - Normalize peak to `1.0` (if non-zero).
+  - Sanitize non-finite values (clamp and zero subnormals).
+
+### Model input
+
+- Target sample rate: `48_000Hz` (resample if needed).
+- Window length: `10s` (`480_000` samples).
+- If shorter than 10s, repeat-pad to length; if longer, truncate to 10s.
+
+### Output embedding
+
+- Model ID: `clap_htsat_fused__sr48k__nfft1024__hop480__mel64__chunk10__repeatpad_v1`
+- Dimension: `512` `f32` values.
+- L2-normalized with `||v|| ~= 1.0` (tolerance `1e-3`).
+- Stored with `embeddings.model_id`, `dim`, `dtype`, and `l2_normed = true`.
+
 ## Layout (v1)
 
 In order:

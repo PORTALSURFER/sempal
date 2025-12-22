@@ -422,8 +422,12 @@ fn run_embedding_backfill_job(conn: &rusqlite::Connection, job: &db::ClaimedJob)
                         continue;
                     }
                 };
-                let embedding = match crate::analysis::embedding::infer_embedding(
+                let processed = crate::analysis::audio::preprocess_mono_for_embedding(
                     &decoded.mono,
+                    decoded.sample_rate_used,
+                );
+                let embedding = match crate::analysis::embedding::infer_embedding(
+                    &processed,
                     decoded.sample_rate_used,
                 ) {
                     Ok(embedding) => embedding,
@@ -549,8 +553,12 @@ fn run_analysis_job(
     )? {
         cached
     } else {
+        let processed = crate::analysis::audio::preprocess_mono_for_embedding(
+            &decoded.mono,
+            decoded.sample_rate_used,
+        );
         let embedding =
-            crate::analysis::embedding::infer_embedding(&decoded.mono, decoded.sample_rate_used)?;
+            crate::analysis::embedding::infer_embedding(&processed, decoded.sample_rate_used)?;
         let embedding_blob = crate::analysis::vector::encode_f32_le_blob(&embedding);
         db::upsert_embedding(
             conn,
