@@ -9,8 +9,38 @@ pub struct TfLabel {
     pub label_id: String,
     pub name: String,
     pub threshold: f32,
+    pub threshold_mode: TfLabelThresholdMode,
+    pub adaptive_threshold: Option<f32>,
+    pub adaptive_percentile: Option<f32>,
+    pub adaptive_mean: Option<f32>,
+    pub adaptive_std: Option<f32>,
     pub gap: f32,
     pub topk: i64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TfLabelThresholdMode {
+    Manual,
+    Percentile,
+    ZScore,
+}
+
+impl TfLabelThresholdMode {
+    fn from_db(value: &str) -> Self {
+        match value {
+            "percentile" => TfLabelThresholdMode::Percentile,
+            "zscore" => TfLabelThresholdMode::ZScore,
+            _ => TfLabelThresholdMode::Manual,
+        }
+    }
+
+    fn as_db(self) -> &'static str {
+        match self {
+            TfLabelThresholdMode::Manual => "manual",
+            TfLabelThresholdMode::Percentile => "percentile",
+            TfLabelThresholdMode::ZScore => "zscore",
+        }
+    }
 }
 
 /// Anchor assignment for a label and sample.
@@ -85,6 +115,48 @@ impl EguiController {
         update_tf_label_with_conn(&mut conn, label_id, name, threshold, gap, topk)
     }
 
+    pub fn update_tf_label_adaptive_settings(
+        &mut self,
+        label_id: &str,
+        mode: TfLabelThresholdMode,
+        adaptive_threshold: Option<f32>,
+        adaptive_percentile: Option<f32>,
+        adaptive_mean: Option<f32>,
+        adaptive_std: Option<f32>,
+    ) -> Result<(), String> {
+        let mut conn = open_library_db()?;
+        update_tf_label_adaptive_with_conn(
+            &mut conn,
+            label_id,
+            mode,
+            adaptive_threshold,
+            adaptive_percentile,
+            adaptive_mean,
+            adaptive_std,
+        )
+    }
+
+    pub fn update_tf_label_adaptive_settings(
+        &mut self,
+        label_id: &str,
+        mode: TfLabelThresholdMode,
+        adaptive_threshold: Option<f32>,
+        adaptive_percentile: Option<f32>,
+        adaptive_mean: Option<f32>,
+        adaptive_std: Option<f32>,
+    ) -> Result<(), String> {
+        let mut conn = open_library_db()?;
+        update_tf_label_adaptive_with_conn(
+            &mut conn,
+            label_id,
+            mode,
+            adaptive_threshold,
+            adaptive_percentile,
+            adaptive_mean,
+            adaptive_std,
+        )
+    }
+
     /// Remove a training-free label (anchors cascade).
     pub fn delete_tf_label(&mut self, label_id: &str) -> Result<(), String> {
         let mut conn = open_library_db()?;
@@ -140,7 +212,7 @@ impl EguiController {
             .map(|label| crate::analysis::anchor_match::LabelSpec {
                 label_id: label.label_id.clone(),
                 name: label.name.clone(),
-                threshold: label.threshold,
+                threshold: effective_label_threshold(label),
                 gap: label.gap,
                 topk: label.topk.max(1) as usize,
             })
@@ -221,7 +293,7 @@ impl EguiController {
         let label_spec = crate::analysis::anchor_match::LabelSpec {
             label_id: label.label_id.clone(),
             name: label.name.clone(),
-            threshold: label.threshold,
+            threshold: effective_label_threshold(&label),
             gap: label.gap,
             topk: label.topk.max(1) as usize,
         };
@@ -242,8 +314,8 @@ impl EguiController {
             aggregation,
         )?;
         let defaults = crate::analysis::embedding::tf_label_defaults();
-        let low = (label_spec.threshold * defaults.low_threshold_ratio)
-            .clamp(0.0, label_spec.threshold);
+        let low =
+            (label_spec.threshold * defaults.low_threshold_ratio).clamp(0.0, label_spec.threshold);
         let thresholds = crate::analysis::anchor_scoring::ConfidenceThresholds {
             high: label_spec.threshold,
             low,
@@ -288,12 +360,63 @@ impl EguiController {
         }
         Ok(stats)
     }
+
+    pub fn compute_tf_label_adaptive_percentile(
+        &mut self,
+        label_id: &str,
+        percentile: f32,
+        candidate_k: usize,
+        top_k: usize,
+    ) -> Result<f32, String> {
+        if !(0.0..=1.0).contains(&percentile) {
+            return Err("Percentile must be between 0.0 and 1.0".to_string());
+        }
+        let matches = self.tf_label_candidate_matches_for_label(label_id, candidate_k, top_k)?;
+        let mut scores: Vec<f32> = matches.into_iter().map(|entry| entry.score).collect();
+        if scores.is_empty() {
+            return Err("No candidate scores available".to_string());
+        }
+        let threshold = percentile_from_scores(&mut scores, percentile);
+        self.update_tf_label_adaptive_settings(
+            label_id,
+            TfLabelThresholdMode::Percentile,
+            Some(threshold),
+            Some(percentile),
+            None,
+            None,
+        )?;
+        Ok(threshold)
+    }
+
+    pub fn compute_tf_label_adaptive_zscore_stats(
+        &mut self,
+        label_id: &str,
+        candidate_k: usize,
+        top_k: usize,
+    ) -> Result<(f32, f32), String> {
+        let matches = self.tf_label_candidate_matches_for_label(label_id, candidate_k, top_k)?;
+        let scores: Vec<f32> = matches.into_iter().map(|entry| entry.score).collect();
+        if scores.is_empty() {
+            return Err("No candidate scores available".to_string());
+        }
+        let (mean, std) = mean_std(&scores);
+        self.update_tf_label_adaptive_settings(
+            label_id,
+            TfLabelThresholdMode::ZScore,
+            None,
+            None,
+            Some(mean),
+            Some(std),
+        )?;
+        Ok((mean, std))
+    }
 }
 
 fn list_tf_labels_with_conn(conn: &Connection) -> Result<Vec<TfLabel>, String> {
     let mut stmt = conn
         .prepare(
-            "SELECT label_id, name, threshold, gap, topk
+            "SELECT label_id, name, threshold, threshold_mode, adaptive_threshold,
+                    adaptive_percentile, adaptive_mean, adaptive_std, gap, topk
              FROM tf_labels
              ORDER BY name ASC",
         )
@@ -318,15 +441,42 @@ fn create_tf_label_with_conn(
     let label_id = Uuid::new_v4().to_string();
     let now = now_epoch_seconds();
     conn.execute(
-        "INSERT INTO tf_labels (label_id, name, threshold, gap, topk, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)",
-        params![label_id, name, threshold, gap, topk, now],
+        "INSERT INTO tf_labels (
+            label_id,
+            name,
+            threshold,
+            threshold_mode,
+            adaptive_threshold,
+            adaptive_percentile,
+            adaptive_mean,
+            adaptive_std,
+            adaptive_updated_at,
+            gap,
+            topk,
+            created_at,
+            updated_at
+         )
+         VALUES (?1, ?2, ?3, ?4, NULL, NULL, NULL, NULL, NULL, ?5, ?6, ?7, ?7)",
+        params![
+            label_id,
+            name,
+            threshold,
+            TfLabelThresholdMode::Manual.as_db(),
+            gap,
+            topk,
+            now
+        ],
     )
     .map_err(|err| format!("Insert tf_label failed: {err}"))?;
     Ok(TfLabel {
         label_id,
         name: name.to_string(),
         threshold,
+        threshold_mode: TfLabelThresholdMode::Manual,
+        adaptive_threshold: None,
+        adaptive_percentile: None,
+        adaptive_mean: None,
+        adaptive_std: None,
         gap,
         topk,
     })
@@ -349,6 +499,44 @@ fn update_tf_label_with_conn(
             params![label_id, name, threshold, gap, topk, now],
         )
         .map_err(|err| format!("Update tf_label failed: {err}"))?;
+    if updated == 0 {
+        return Err("No tf_label updated".to_string());
+    }
+    Ok(())
+}
+
+fn update_tf_label_adaptive_with_conn(
+    conn: &mut Connection,
+    label_id: &str,
+    mode: TfLabelThresholdMode,
+    adaptive_threshold: Option<f32>,
+    adaptive_percentile: Option<f32>,
+    adaptive_mean: Option<f32>,
+    adaptive_std: Option<f32>,
+) -> Result<(), String> {
+    let now = now_epoch_seconds();
+    let updated = conn
+        .execute(
+            "UPDATE tf_labels
+             SET threshold_mode = ?2,
+                 adaptive_threshold = ?3,
+                 adaptive_percentile = ?4,
+                 adaptive_mean = ?5,
+                 adaptive_std = ?6,
+                 adaptive_updated_at = ?7,
+                 updated_at = ?7
+             WHERE label_id = ?1",
+            params![
+                label_id,
+                mode.as_db(),
+                adaptive_threshold,
+                adaptive_percentile,
+                adaptive_mean,
+                adaptive_std,
+                now
+            ],
+        )
+        .map_err(|err| format!("Update adaptive thresholds failed: {err}"))?;
     if updated == 0 {
         return Err("No tf_label updated".to_string());
     }
@@ -461,8 +649,13 @@ fn row_to_tf_label(row: &rusqlite::Row<'_>) -> rusqlite::Result<TfLabel> {
         label_id: row.get(0)?,
         name: row.get(1)?,
         threshold: row.get(2)?,
-        gap: row.get(3)?,
-        topk: row.get(4)?,
+        threshold_mode: TfLabelThresholdMode::from_db(&row.get::<_, String>(3)?),
+        adaptive_threshold: row.get(4)?,
+        adaptive_percentile: row.get(5)?,
+        adaptive_mean: row.get(6)?,
+        adaptive_std: row.get(7)?,
+        gap: row.get(8)?,
+        topk: row.get(9)?,
     })
 }
 
@@ -500,12 +693,49 @@ fn load_tf_embedding(conn: &Connection, sample_id: &str) -> Result<Vec<f32>, Str
 
 fn load_tf_label_by_id(conn: &Connection, label_id: &str) -> Result<Option<TfLabel>, String> {
     conn.query_row(
-        "SELECT label_id, name, threshold, gap, topk FROM tf_labels WHERE label_id = ?1",
+        "SELECT label_id, name, threshold, threshold_mode, adaptive_threshold,
+                adaptive_percentile, adaptive_mean, adaptive_std, gap, topk
+         FROM tf_labels
+         WHERE label_id = ?1",
         params![label_id],
         row_to_tf_label,
     )
     .optional()
     .map_err(|err| format!("Query tf_label failed: {err}"))
+}
+
+fn effective_label_threshold(label: &TfLabel) -> f32 {
+    match label.threshold_mode {
+        TfLabelThresholdMode::Manual => label.threshold,
+        TfLabelThresholdMode::Percentile => label.adaptive_threshold.unwrap_or(label.threshold),
+        TfLabelThresholdMode::ZScore => {
+            if let (Some(mean), Some(std)) = (label.adaptive_mean, label.adaptive_std) {
+                if std.is_finite() && std > 0.0 {
+                    return (mean + label.threshold * std).clamp(0.0, 1.0);
+                }
+            }
+            label.threshold
+        }
+    }
+}
+
+fn percentile_from_scores(scores: &mut [f32], percentile: f32) -> f32 {
+    scores.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let len = scores.len().max(1);
+    let idx = ((len - 1) as f32 * percentile.clamp(0.0, 1.0)).round() as usize;
+    scores[idx.min(len - 1)].clamp(0.0, 1.0)
+}
+
+fn mean_std(scores: &[f32]) -> (f32, f32) {
+    let len = scores.len().max(1) as f32;
+    let mean = scores.iter().copied().sum::<f32>() / len;
+    let mut var = 0.0_f32;
+    for &score in scores {
+        let diff = score - mean;
+        var += diff * diff;
+    }
+    let std = (var / len).sqrt();
+    (mean, std)
 }
 
 fn load_tf_anchor_embeddings(

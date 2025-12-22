@@ -15,6 +15,11 @@ fn tf_labels_crud_and_anchor_updates() {
     let labels = controller.list_tf_labels().unwrap();
     assert_eq!(labels.len(), 1);
     assert_eq!(labels[0].name, "Clap");
+    assert_eq!(
+        labels[0].threshold_mode,
+        crate::egui_app::controller::TfLabelThresholdMode::Manual
+    );
+    assert!(labels[0].adaptive_threshold.is_none());
 
     controller
         .update_tf_label(&label.label_id, "Clap Tight", 0.8, 0.2, 2)

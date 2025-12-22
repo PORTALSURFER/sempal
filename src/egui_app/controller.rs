@@ -70,7 +70,7 @@ use analysis_jobs::AnalysisWorkerPool;
 use audio_cache::AudioCache;
 use audio_loader::{AudioLoadError, AudioLoadJob, AudioLoadOutcome, AudioLoadResult};
 pub(in crate::egui_app::controller) use controller_state::*;
-pub use tf_labels::{TfLabel, TfLabelCoverageStats};
+pub use tf_labels::{TfLabel, TfLabelCoverageStats, TfLabelThresholdMode};
 use egui::Color32;
 use open;
 use rfd::FileDialog;

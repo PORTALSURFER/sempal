@@ -238,6 +238,128 @@ impl EguiApp {
                         }
                     });
 
+                    ui.add_space(6.0);
+                    ui.label("Adaptive threshold");
+                    let mode_id =
+                        ui.make_persistent_id(format!("tf_label_mode:{}", label.label_id));
+                    let mut mode = ui.ctx().data_mut(|data| {
+                        let value = data.get_temp_mut_or_default::<Option<crate::egui_app::controller::TfLabelThresholdMode>>(
+                            mode_id,
+                        );
+                        if value.is_none() {
+                            *value = Some(label.threshold_mode);
+                        }
+                        value.unwrap_or(label.threshold_mode)
+                    });
+                    egui::ComboBox::from_id_source(mode_id.with("combo"))
+                        .selected_text(match mode {
+                            crate::egui_app::controller::TfLabelThresholdMode::Manual => "Manual",
+                            crate::egui_app::controller::TfLabelThresholdMode::Percentile => {
+                                "Percentile"
+                            }
+                            crate::egui_app::controller::TfLabelThresholdMode::ZScore => "Z-score",
+                        })
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(
+                                &mut mode,
+                                crate::egui_app::controller::TfLabelThresholdMode::Manual,
+                                "Manual",
+                            );
+                            ui.selectable_value(
+                                &mut mode,
+                                crate::egui_app::controller::TfLabelThresholdMode::Percentile,
+                                "Percentile",
+                            );
+                            ui.selectable_value(
+                                &mut mode,
+                                crate::egui_app::controller::TfLabelThresholdMode::ZScore,
+                                "Z-score",
+                            );
+                        });
+                    ui.ctx().data_mut(|data| data.insert_temp(mode_id, Some(mode)));
+
+                    let percentile_id =
+                        ui.make_persistent_id(format!("tf_label_percentile:{}", label.label_id));
+                    let mut percentile = ui.ctx().data_mut(|data| {
+                        let value = data.get_temp_mut_or_default::<Option<f32>>(percentile_id);
+                        if value.is_none() {
+                            *value = Some(label.adaptive_percentile.unwrap_or(0.9) * 100.0);
+                        }
+                        value.unwrap_or(90.0)
+                    });
+                    if mode
+                        == crate::egui_app::controller::TfLabelThresholdMode::Percentile
+                    {
+                        ui.horizontal(|ui| {
+                            ui.label("Percentile");
+                            ui.add(egui::DragValue::new(&mut percentile).speed(1.0));
+                        });
+                        ui.ctx()
+                            .data_mut(|data| data.insert_temp(percentile_id, Some(percentile)));
+                        if let Some(threshold) = label.adaptive_threshold {
+                            ui.label(format!("Adaptive threshold: {:.3}", threshold));
+                        }
+                    } else if mode
+                        == crate::egui_app::controller::TfLabelThresholdMode::ZScore
+                    {
+                        ui.label("Uses Threshold field as z-score cutoff.");
+                        if let (Some(mean), Some(std)) = (label.adaptive_mean, label.adaptive_std) {
+                            ui.label(format!("Mean {:.3}, std {:.3}", mean, std));
+                        }
+                    }
+
+                    ui.horizontal(|ui| {
+                        if ui.button("Apply adaptive").clicked() {
+                            let result = match mode {
+                                crate::egui_app::controller::TfLabelThresholdMode::Manual => {
+                                    self.controller.update_tf_label_adaptive_settings(
+                                        &label.label_id,
+                                        mode,
+                                        None,
+                                        None,
+                                        None,
+                                        None,
+                                    )
+                                }
+                                crate::egui_app::controller::TfLabelThresholdMode::Percentile => {
+                                    let percentile = (percentile / 100.0).clamp(0.0, 1.0);
+                                    self.controller
+                                        .compute_tf_label_adaptive_percentile(
+                                            &label.label_id,
+                                            percentile,
+                                            500,
+                                            40,
+                                        )
+                                        .map(|_| ())
+                                }
+                                crate::egui_app::controller::TfLabelThresholdMode::ZScore => {
+                                    self.controller
+                                        .compute_tf_label_adaptive_zscore_stats(
+                                            &label.label_id,
+                                            500,
+                                            40,
+                                        )
+                                        .map(|_| ())
+                                }
+                            };
+                            match result {
+                                Ok(()) => {
+                                    self.controller.clear_tf_label_score_cache();
+                                    self.controller.set_status(
+                                        "Updated adaptive threshold".to_string(),
+                                        style::StatusTone::Info,
+                                    );
+                                }
+                                Err(err) => {
+                                    self.controller.set_status(
+                                        format!("Adaptive threshold failed: {err}"),
+                                        style::StatusTone::Error,
+                                    );
+                                }
+                            }
+                        }
+                    });
+
                     let anchors = match self.controller.list_tf_anchors(&label.label_id) {
                         Ok(anchors) => anchors,
                         Err(err) => {

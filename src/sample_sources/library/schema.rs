@@ -138,6 +138,12 @@ impl LibraryDatabase {
                     label_id TEXT PRIMARY KEY,
                     name TEXT NOT NULL,
                     threshold REAL NOT NULL,
+                    threshold_mode TEXT NOT NULL DEFAULT 'manual',
+                    adaptive_threshold REAL,
+                    adaptive_percentile REAL,
+                    adaptive_mean REAL,
+                    adaptive_std REAL,
+                    adaptive_updated_at INTEGER,
                     gap REAL NOT NULL,
                     topk INTEGER NOT NULL,
                     created_at INTEGER NOT NULL,
@@ -455,6 +461,70 @@ impl LibraryDatabase {
             .map_err(map_sql_error)?;
         drop(stmt);
         if exists.is_some() {
+            let mut stmt = self
+                .connection
+                .prepare("PRAGMA table_info(tf_labels)")
+                .map_err(map_sql_error)?;
+            let columns = stmt
+                .query_map([], |row| row.get::<_, String>(1))
+                .map_err(map_sql_error)?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(map_sql_error)?;
+            drop(stmt);
+            let has_threshold_mode = columns.iter().any(|c| c == "threshold_mode");
+            let has_adaptive_threshold = columns.iter().any(|c| c == "adaptive_threshold");
+            let has_adaptive_percentile = columns.iter().any(|c| c == "adaptive_percentile");
+            let has_adaptive_mean = columns.iter().any(|c| c == "adaptive_mean");
+            let has_adaptive_std = columns.iter().any(|c| c == "adaptive_std");
+            let has_adaptive_updated_at = columns.iter().any(|c| c == "adaptive_updated_at");
+            if !has_threshold_mode {
+                self.connection
+                    .execute(
+                        "ALTER TABLE tf_labels ADD COLUMN threshold_mode TEXT NOT NULL DEFAULT 'manual'",
+                        [],
+                    )
+                    .map_err(map_sql_error)?;
+            }
+            if !has_adaptive_threshold {
+                self.connection
+                    .execute(
+                        "ALTER TABLE tf_labels ADD COLUMN adaptive_threshold REAL",
+                        [],
+                    )
+                    .map_err(map_sql_error)?;
+            }
+            if !has_adaptive_percentile {
+                self.connection
+                    .execute(
+                        "ALTER TABLE tf_labels ADD COLUMN adaptive_percentile REAL",
+                        [],
+                    )
+                    .map_err(map_sql_error)?;
+            }
+            if !has_adaptive_mean {
+                self.connection
+                    .execute(
+                        "ALTER TABLE tf_labels ADD COLUMN adaptive_mean REAL",
+                        [],
+                    )
+                    .map_err(map_sql_error)?;
+            }
+            if !has_adaptive_std {
+                self.connection
+                    .execute(
+                        "ALTER TABLE tf_labels ADD COLUMN adaptive_std REAL",
+                        [],
+                    )
+                    .map_err(map_sql_error)?;
+            }
+            if !has_adaptive_updated_at {
+                self.connection
+                    .execute(
+                        "ALTER TABLE tf_labels ADD COLUMN adaptive_updated_at INTEGER",
+                        [],
+                    )
+                    .map_err(map_sql_error)?;
+            }
             return Ok(());
         }
         self.connection
@@ -463,6 +533,12 @@ impl LibraryDatabase {
                     label_id TEXT PRIMARY KEY,
                     name TEXT NOT NULL,
                     threshold REAL NOT NULL,
+                    threshold_mode TEXT NOT NULL DEFAULT 'manual',
+                    adaptive_threshold REAL,
+                    adaptive_percentile REAL,
+                    adaptive_mean REAL,
+                    adaptive_std REAL,
+                    adaptive_updated_at INTEGER,
                     gap REAL NOT NULL,
                     topk INTEGER NOT NULL,
                     created_at INTEGER NOT NULL,
