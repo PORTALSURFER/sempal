@@ -1,5 +1,6 @@
 use super::style;
 use super::*;
+use crate::egui_app::view_model;
 use eframe::egui;
 
 const MAP_POINT_LIMIT: usize = 50_000;
@@ -111,15 +112,105 @@ impl EguiApp {
             }
         }
 
-        let points = self.controller.ui.map.cached_points.clone();
+        let points = &self.controller.ui.map.cached_points;
         let painter = ui.painter_at(rect);
+        let hovered = find_hover_point(points, rect, center, scale, self.controller.ui.map.pan, pointer);
+        self.controller.ui.map.hovered_sample_id = hovered.as_ref().map(|(point, _)| point.sample_id.clone());
+
+        if let Some((point, pos)) = hovered.as_ref() {
+            painter.circle_stroke(*pos, 4.0, egui::Stroke::new(1.5, palette.accent));
+            egui::show_tooltip_at_pointer(
+                ui.ctx(),
+                ui.layer_id(),
+                egui::Id::new("map_hover_tooltip"),
+                |ui| {
+                    ui.label(sample_label_from_id(&point.sample_id));
+                    ui.label("Click to audition");
+                },
+            );
+        }
+
+        if response.clicked() {
+            if let Some((point, _)) = hovered.as_ref() {
+                self.controller.ui.map.selected_sample_id = Some(point.sample_id.clone());
+                if let Err(err) = self.controller.preview_sample_by_id(&point.sample_id) {
+                    self.controller
+                        .set_status(format!("Preview failed: {err}"), style::StatusTone::Error);
+                } else if let Err(err) = self.controller.play_audio(false, None) {
+                    self.controller
+                        .set_status(format!("Playback failed: {err}"), style::StatusTone::Error);
+                }
+            }
+        }
+
+        response.context_menu(|ui| {
+            let Some((point, _)) = hovered.as_ref() else {
+                ui.label("Hover a point to see map actions.");
+                return;
+            };
+            ui.label(sample_label_from_id(&point.sample_id));
+            if ui.button("Preview").clicked() {
+                if let Err(err) = self.controller.preview_sample_by_id(&point.sample_id) {
+                    self.controller
+                        .set_status(format!("Preview failed: {err}"), style::StatusTone::Error);
+                } else if let Err(err) = self.controller.play_audio(false, None) {
+                    self.controller
+                        .set_status(format!("Playback failed: {err}"), style::StatusTone::Error);
+                }
+                ui.close();
+            }
+            let labels = match self.controller.list_tf_labels() {
+                Ok(labels) => labels,
+                Err(err) => {
+                    self.controller.set_status(
+                        format!("Load labels failed: {err}"),
+                        style::StatusTone::Error,
+                    );
+                    Vec::new()
+                }
+            };
+            ui.menu_button("Add as anchor to...", |ui| {
+                if labels.is_empty() {
+                    ui.label("No labels yet");
+                }
+                for label in &labels {
+                    if ui.button(&label.name).clicked() {
+                        if let Err(err) = self.controller.add_tf_anchor(
+                            &label.label_id,
+                            &point.sample_id,
+                            1.0,
+                        ) {
+                            self.controller.set_status(
+                                format!("Add anchor failed: {err}"),
+                                style::StatusTone::Error,
+                            );
+                        } else {
+                            self.controller.set_status(
+                                format!("Added anchor to {}", label.name),
+                                style::StatusTone::Info,
+                            );
+                            self.controller.clear_tf_label_score_cache();
+                            ui.close();
+                        }
+                    }
+                }
+            });
+        });
+
         if points.len() > 8000 || self.controller.ui.map.zoom < 0.6 {
-            render_heatmap(&painter, rect, &points, center, scale, self.controller.ui.map.pan);
+            render_heatmap(&painter, rect, points, center, scale, self.controller.ui.map.pan);
         } else {
             for point in points {
                 let pos = map_to_screen(point.x, point.y, rect, center, scale, self.controller.ui.map.pan);
                 if rect.contains(pos) {
-                    painter.circle_filled(pos, 2.0, palette.accent);
+                    let radius = if self.controller.ui.map.selected_sample_id.as_deref()
+                        == Some(point.sample_id.as_str())
+                    {
+                        3.5
+                    } else {
+                        2.0
+                    };
+                    painter.circle_filled(pos, radius, palette.accent);
                 }
             }
         }
@@ -231,4 +322,41 @@ fn render_heatmap(
             painter.rect_filled(egui::Rect::from_min_max(min, max), 0.0, color);
         }
     }
+}
+
+fn find_hover_point(
+    points: &[crate::egui_app::state::MapPoint],
+    rect: egui::Rect,
+    center: egui::Pos2,
+    scale: f32,
+    pan: egui::Vec2,
+    pointer: Option<egui::Pos2>,
+) -> Option<(crate::egui_app::state::MapPoint, egui::Pos2)> {
+    let pointer = pointer?;
+    if !rect.contains(pointer) {
+        return None;
+    }
+    let mut best: Option<(crate::egui_app::state::MapPoint, egui::Pos2, f32)> = None;
+    for point in points {
+        let pos = map_to_screen(point.x, point.y, rect, center, scale, pan);
+        let dist_sq = pos.distance_sq(pointer);
+        if dist_sq > 36.0 {
+            continue;
+        }
+        match best {
+            Some((_, _, best_sq)) if dist_sq >= best_sq => {}
+            _ => {
+                best = Some((point.clone(), pos, dist_sq));
+            }
+        }
+    }
+    best.map(|(point, pos, _)| (point, pos))
+}
+
+fn sample_label_from_id(sample_id: &str) -> String {
+    if let Some((_, rel)) = sample_id.split_once("::") {
+        let path = std::path::Path::new(rel);
+        return view_model::sample_display_label(path);
+    }
+    sample_id.to_string()
 }

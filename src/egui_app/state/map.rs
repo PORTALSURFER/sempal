@@ -9,6 +9,8 @@ pub struct MapUiState {
     pub bounds: Option<MapBounds>,
     pub last_query: Option<MapQueryBounds>,
     pub cached_points: Vec<MapPoint>,
+    pub hovered_sample_id: Option<String>,
+    pub selected_sample_id: Option<String>,
     pub umap_version: String,
 }
 
@@ -22,6 +24,8 @@ impl Default for MapUiState {
             bounds: None,
             last_query: None,
             cached_points: Vec::new(),
+            hovered_sample_id: None,
+            selected_sample_id: None,
             umap_version: "v1".to_string(),
         }
     }
