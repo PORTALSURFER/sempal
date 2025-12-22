@@ -21,6 +21,7 @@ pub fn match_label_candidates_with_ann(
     anchors: &[AnchorEmbedding],
     candidate_k: usize,
     top_k: usize,
+    aggregation: AnchorAggregation,
 ) -> Result<Vec<LabelCandidateScore>, String> {
     if anchors.is_empty() || candidate_k == 0 || top_k == 0 {
         return Ok(Vec::new());
@@ -30,7 +31,7 @@ pub fn match_label_candidates_with_ann(
         return Ok(Vec::new());
     }
     let embeddings = load_embeddings_for_candidates(conn, &candidate_ids)?;
-    let scores = score_label_candidates(label, anchors, &embeddings);
+    let scores = score_label_candidates(label, anchors, &embeddings, aggregation);
     Ok(scores.into_iter().take(top_k).collect())
 }
 
@@ -81,9 +82,9 @@ fn score_label_candidates(
     label: &LabelSpec,
     anchors: &[AnchorEmbedding],
     candidates: &HashMap<String, Vec<f32>>,
+    aggregation: AnchorAggregation,
 ) -> Vec<LabelCandidateScore> {
     let mut results = Vec::new();
-    let aggregation = AnchorAggregation::MeanTopK(label.topk.max(1));
     for (sample_id, embedding) in candidates {
         let mut similarities = Vec::with_capacity(anchors.len());
         for anchor in anchors {
@@ -139,7 +140,12 @@ mod tests {
         let mut candidates = HashMap::new();
         candidates.insert("a".to_string(), vec![0.9, 0.1]);
         candidates.insert("b".to_string(), vec![0.2, 0.8]);
-        let scores = score_label_candidates(&label, &anchors, &candidates);
+        let scores = score_label_candidates(
+            &label,
+            &anchors,
+            &candidates,
+            AnchorAggregation::MeanTopK(label.topk),
+        );
         assert_eq!(scores.len(), 2);
         assert_eq!(scores[0].sample_id, "b");
         assert!(scores[0].score > scores[1].score);
