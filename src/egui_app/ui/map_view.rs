@@ -6,6 +6,7 @@ use super::style;
 use super::*;
 use crate::egui_app::view_model;
 use eframe::egui;
+use std::time::Instant;
 
 const MAP_POINT_LIMIT: usize = 50_000;
 const MAP_HEATMAP_BINS: usize = 64;
@@ -74,23 +75,25 @@ impl EguiApp {
                 }
             }
         });
+        ui.horizontal(|ui| {
+            let mode = match self.controller.ui.map.last_render_mode {
+                crate::egui_app::state::MapRenderMode::Heatmap => "heatmap",
+                crate::egui_app::state::MapRenderMode::Points => "points",
+            };
+            ui.label(format!(
+                "Frame {:.2} ms | draw {} | points {} | {}",
+                self.controller.ui.map.last_render_ms,
+                self.controller.ui.map.last_draw_calls,
+                self.controller.ui.map.last_points_rendered,
+                mode
+            ));
+        });
         if self.controller.ui.map.cluster_overlay {
-            if let Some(stats) =
-                map_clusters::compute_cluster_stats(&self.controller.ui.map.cached_points)
-            {
+            if let Some(stats) = map_clusters::compute_cluster_stats(&self.controller.ui.map.cached_points) {
                 ui.horizontal(|ui| {
-                    ui.label(format!(
-                        "Clusters: {}",
-                        stats.cluster_count
-                    ));
-                    ui.label(format!(
-                        "Noise: {:.1}%",
-                        stats.noise_ratio * 100.0
-                    ));
-                    ui.label(format!(
-                        "Size min/max: {}/{}",
-                        stats.min_cluster_size, stats.max_cluster_size
-                    ));
+                    ui.label(format!("Clusters: {}", stats.cluster_count));
+                    ui.label(format!("Noise: {:.1}%", stats.noise_ratio * 100.0));
+                    ui.label(format!("Size min/max: {}/{}", stats.min_cluster_size, stats.max_cluster_size));
                 });
             }
         }
@@ -101,6 +104,7 @@ impl EguiApp {
         let palette = style::palette();
         let available = ui.available_size();
         let (rect, response) = ui.allocate_exact_size(available, egui::Sense::drag());
+        let render_started = Instant::now();
         let model_id = crate::analysis::embedding::EMBEDDING_MODEL_ID;
         let umap_version = self.controller.ui.map.umap_version.clone();
         let cluster_method = self.controller.ui.map.cluster_method;
@@ -318,8 +322,10 @@ impl EguiApp {
             });
         });
 
+        let mut draw_calls = 0usize;
+        let mut points_rendered = 0usize;
         if points.len() > 8000 || self.controller.ui.map.zoom < 0.6 {
-            map_render::render_heatmap(
+            draw_calls = map_render::render_heatmap(
                 &painter,
                 rect,
                 &points,
@@ -328,6 +334,8 @@ impl EguiApp {
                 self.controller.ui.map.pan,
                 MAP_HEATMAP_BINS,
             );
+            points_rendered = points.len();
+            self.controller.ui.map.last_render_mode = crate::egui_app::state::MapRenderMode::Heatmap;
         } else {
             for point in points {
                 let pos = map_render::map_to_screen(
@@ -339,6 +347,7 @@ impl EguiApp {
                     self.controller.ui.map.pan,
                 );
                 if rect.contains(pos) {
+                    points_rendered += 1;
                     let radius = if self.controller.ui.map.selected_sample_id.as_deref()
                         == Some(point.sample_id.as_str())
                     {
@@ -355,9 +364,14 @@ impl EguiApp {
                         palette.accent_mint
                     };
                     painter.circle_filled(pos, radius, color);
+                    draw_calls += 1;
                 }
             }
+            self.controller.ui.map.last_render_mode = crate::egui_app::state::MapRenderMode::Points;
         }
+        self.controller.ui.map.last_render_ms = render_started.elapsed().as_secs_f32() * 1000.0;
+        self.controller.ui.map.last_draw_calls = draw_calls;
+        self.controller.ui.map.last_points_rendered = points_rendered;
     }
 }
 

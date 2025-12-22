@@ -17,6 +17,10 @@ pub struct MapUiState {
     pub cluster_method: MapClusterMethod,
     pub cluster_filter_input: String,
     pub cluster_filter: Option<i32>,
+    pub last_render_ms: f32,
+    pub last_draw_calls: usize,
+    pub last_points_rendered: usize,
+    pub last_render_mode: MapRenderMode,
 }
 
 impl Default for MapUiState {
@@ -37,6 +41,10 @@ impl Default for MapUiState {
             cluster_method: MapClusterMethod::Umap,
             cluster_filter_input: String::new(),
             cluster_filter: None,
+            last_render_ms: 0.0,
+            last_draw_calls: 0,
+            last_points_rendered: 0,
+            last_render_mode: MapRenderMode::Points,
         }
     }
 }
@@ -63,6 +71,12 @@ pub struct MapPoint {
     pub x: f32,
     pub y: f32,
     pub cluster_id: Option<i32>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MapRenderMode {
+    Heatmap,
+    Points,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

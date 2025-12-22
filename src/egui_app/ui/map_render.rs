@@ -21,8 +21,9 @@ pub(crate) fn render_heatmap(
     scale: f32,
     pan: egui::Vec2,
     bins: usize,
-) {
+) -> usize {
     let mut counts = vec![0u32; bins * bins];
+    let mut drawn = 0usize;
     let width = rect.width().max(1.0);
     let height = rect.height().max(1.0);
     for point in points {
@@ -47,6 +48,7 @@ pub(crate) fn render_heatmap(
             if count <= 0.0 {
                 continue;
             }
+            drawn += 1;
             let intensity = (count / max_count).clamp(0.0, 1.0);
             let alpha = (intensity * 200.0) as u8;
             let color = egui::Color32::from_rgba_premultiplied(80, 180, 255, alpha);
@@ -60,4 +62,5 @@ pub(crate) fn render_heatmap(
             painter.rect_filled(egui::Rect::from_min_max(min, max), 0.0, color);
         }
     }
+    drawn
 }

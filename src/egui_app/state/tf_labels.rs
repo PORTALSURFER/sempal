@@ -13,6 +13,7 @@ pub struct TfLabelsUiState {
     pub last_candidate_results: Vec<TfLabelCandidateCache>,
     pub auto_tag_prompt: Option<TfAutoTagPrompt>,
     pub calibration: Option<TfLabelCalibrationState>,
+    pub coverage_stats: HashMap<String, crate::egui_app::controller::TfLabelCoverageStats>,
 }
 
 impl Default for TfLabelsUiState {
@@ -28,6 +29,7 @@ impl Default for TfLabelsUiState {
             last_candidate_results: Vec::new(),
             auto_tag_prompt: None,
             calibration: None,
+            coverage_stats: HashMap::new(),
         }
     }
 }

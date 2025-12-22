@@ -25,6 +25,7 @@ mod sources_panel;
 pub mod style;
 mod tf_label_calibration;
 mod tf_label_editor;
+mod tf_label_matches;
 mod tf_label_prompts;
 mod tf_label_scores;
 mod tf_labels;

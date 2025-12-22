@@ -41,6 +41,14 @@ pub struct TfLabelCandidateMatch {
     pub bucket: crate::analysis::anchor_scoring::ConfidenceBucket,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct TfLabelCoverageStats {
+    pub total: usize,
+    pub high: usize,
+    pub medium: usize,
+    pub low: usize,
+}
+
 impl EguiController {
     /// List all training-free labels.
     pub fn list_tf_labels(&mut self) -> Result<Vec<TfLabel>, String> {
@@ -176,6 +184,7 @@ impl EguiController {
         self.ui.tf_labels.last_candidate_label_id = None;
         self.ui.tf_labels.last_candidate_results.clear();
         self.ui.tf_labels.auto_tag_prompt = None;
+        self.ui.tf_labels.coverage_stats.clear();
     }
 
     pub fn preview_sample_by_id(&mut self, sample_id: &str) -> Result<(), String> {
@@ -255,6 +264,29 @@ impl EguiController {
                 }
             })
             .collect())
+    }
+
+    pub fn tf_label_coverage_stats_for_label(
+        &mut self,
+        label_id: &str,
+        candidate_k: usize,
+        top_k: usize,
+    ) -> Result<TfLabelCoverageStats, String> {
+        let matches = self.tf_label_candidate_matches_for_label(label_id, candidate_k, top_k)?;
+        let mut stats = TfLabelCoverageStats {
+            total: matches.len(),
+            high: 0,
+            medium: 0,
+            low: 0,
+        };
+        for entry in matches {
+            match entry.bucket {
+                crate::analysis::anchor_scoring::ConfidenceBucket::High => stats.high += 1,
+                crate::analysis::anchor_scoring::ConfidenceBucket::Medium => stats.medium += 1,
+                crate::analysis::anchor_scoring::ConfidenceBucket::Low => stats.low += 1,
+            }
+        }
+        Ok(stats)
     }
 }
 

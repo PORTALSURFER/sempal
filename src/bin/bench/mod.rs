@@ -3,6 +3,7 @@ mod feature_blob_decode;
 mod options;
 mod query_latency;
 mod report;
+mod similarity_latency;
 mod stats;
 
 use report::{BenchReport, SystemInfo};
@@ -21,6 +22,9 @@ pub(super) fn run(args: Vec<String>) -> Result<(), String> {
     }
     if report.params.query {
         report.query = Some(query_latency::run(&report.params)?);
+    }
+    if report.params.similarity {
+        report.similarity = Some(similarity_latency::run(&report.params)?);
     }
     report.feature_blob_decode = Some(feature_blob_decode::run(&report.params)?);
     report.total_elapsed_ms = started_at.elapsed().as_millis() as u64;

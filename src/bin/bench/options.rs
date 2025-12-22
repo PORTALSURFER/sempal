@@ -6,6 +6,7 @@ pub(super) struct BenchOptions {
     pub(super) out: PathBuf,
     pub(super) analysis: bool,
     pub(super) query: bool,
+    pub(super) similarity: bool,
     pub(super) seed: u64,
     pub(super) warmup_iters: usize,
     pub(super) measure_iters: usize,
@@ -13,13 +14,14 @@ pub(super) struct BenchOptions {
     pub(super) analysis_duration_ms: u32,
     pub(super) analysis_sample_rate: u32,
     pub(super) query_rows: usize,
+    pub(super) similarity_rows: usize,
 }
 
 pub(super) fn parse_args(args: Vec<String>) -> Result<Option<BenchOptions>, String> {
     let mut options = default_options();
     apply_args(&mut options, &args)?;
-    if !options.analysis && !options.query {
-        return Err("Nothing to benchmark: enable --analysis and/or --query".to_string());
+    if !options.analysis && !options.query && !options.similarity {
+        return Err("Nothing to benchmark: enable --analysis, --query, or --similarity".to_string());
     }
     Ok(Some(options))
 }
@@ -39,6 +41,7 @@ fn default_options() -> BenchOptions {
         out: PathBuf::from("bench.json"),
         analysis: true,
         query: true,
+        similarity: true,
         seed: 1,
         warmup_iters: 5,
         measure_iters: 30,
@@ -46,6 +49,7 @@ fn default_options() -> BenchOptions {
         analysis_duration_ms: 500,
         analysis_sample_rate: 44_100,
         query_rows: 50_000,
+        similarity_rows: 20_000,
     }
 }
 
@@ -81,6 +85,8 @@ fn apply_toggle(options: &mut BenchOptions, flag: &str) -> bool {
         "--no-analysis" => options.analysis = false,
         "--query" => options.query = true,
         "--no-query" => options.query = false,
+        "--similarity" => options.similarity = true,
+        "--no-similarity" => options.similarity = false,
         _ => return false,
     }
     true
@@ -107,6 +113,9 @@ fn apply_value(
             options.analysis_sample_rate = parse_u32(args, idx, "--analysis-sample-rate")?;
         }
         "--query-rows" => options.query_rows = parse_usize(args, idx, "--query-rows")?,
+        "--similarity-rows" => {
+            options.similarity_rows = parse_usize(args, idx, "--similarity-rows")?;
+        }
         _ => return Ok(false),
     }
     Ok(true)
@@ -145,6 +154,7 @@ Options:\n\
   --out <path>                Output JSON path (default: bench.json)\n\
   --analysis / --no-analysis   Enable/disable analysis throughput bench (default: enabled)\n\
   --query / --no-query         Enable/disable SQLite query latency bench (default: enabled)\n\
+  --similarity / --no-similarity Enable/disable ANN similarity bench (default: enabled)\n\
   --seed <u64>                 RNG seed for analysis fixtures (default: 1)\n\
   --warmup-iters <n>           Warmup iterations for each query (default: 5)\n\
   --measure-iters <n>          Measured iterations for each query (default: 30)\n\
@@ -152,5 +162,6 @@ Options:\n\
   --analysis-duration-ms <ms>  Synthetic wav duration (default: 500)\n\
   --analysis-sample-rate <hz>  Synthetic wav sample rate (default: 44100)\n\
   --query-rows <n>             Seed rows for query benchmarks (default: 50000)\n\
+  --similarity-rows <n>        Seed rows for similarity benchmark (default: 20000)\n\
   -h, --help                   Show this help\n"
 }

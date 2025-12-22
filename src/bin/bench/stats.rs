@@ -23,6 +23,15 @@ pub(super) fn bench_sql_query(
     Ok(summarize(options.warmup_iters, options.measure_iters, samples_us))
 }
 
+pub(super) fn bench_action(
+    options: &BenchOptions,
+    mut f: impl FnMut() -> Result<(), String>,
+) -> Result<LatencySummary, String> {
+    run_warmup_action(options.warmup_iters, &mut f)?;
+    let samples_us = run_measure_action(options.measure_iters, &mut f)?;
+    Ok(summarize(options.warmup_iters, options.measure_iters, samples_us))
+}
+
 fn run_warmup(warmup_iters: usize, f: &mut impl FnMut() -> Result<(), SqlError>) -> Result<(), String> {
     for _ in 0..warmup_iters.max(1) {
         f().map_err(|err| format!("Warmup query failed: {err}"))?;
@@ -38,6 +47,30 @@ fn run_measure(
     for _ in 0..measure_iters.max(1) {
         let started = Instant::now();
         f().map_err(|err| format!("Measured query failed: {err}"))?;
+        samples_us.push(started.elapsed().as_micros() as u64);
+    }
+    samples_us.sort_unstable();
+    Ok(samples_us)
+}
+
+fn run_warmup_action(
+    warmup_iters: usize,
+    f: &mut impl FnMut() -> Result<(), String>,
+) -> Result<(), String> {
+    for _ in 0..warmup_iters.max(1) {
+        f().map_err(|err| format!("Warmup action failed: {err}"))?;
+    }
+    Ok(())
+}
+
+fn run_measure_action(
+    measure_iters: usize,
+    f: &mut impl FnMut() -> Result<(), String>,
+) -> Result<Vec<u64>, String> {
+    let mut samples_us = Vec::with_capacity(measure_iters.max(1));
+    for _ in 0..measure_iters.max(1) {
+        let started = Instant::now();
+        f().map_err(|err| format!("Measured action failed: {err}"))?;
         samples_us.push(started.elapsed().as_micros() as u64);
     }
     samples_us.sort_unstable();
@@ -72,4 +105,3 @@ fn percentile(sorted: &[u64], p: f64) -> u64 {
     let idx = ((sorted.len() - 1) as f64 * p.clamp(0.0, 1.0)).round() as usize;
     sorted[idx.min(sorted.len() - 1)]
 }
-
