@@ -13,6 +13,10 @@ impl EguiController {
             super::analysis_options::clamp_max_analysis_duration_seconds(
                 self.settings.analysis.max_analysis_duration_seconds,
             );
+        self.ui.tf_labels.aggregation_mode = self.settings.analysis.tf_label_aggregation;
+        self.ui.tf_labels.last_score_mode = self.ui.tf_labels.aggregation_mode;
+        self.ui.tf_labels.last_score_sample_id = None;
+        self.ui.tf_labels.last_scores.clear();
         self.settings.updates = cfg.updates.clone();
         self.settings.trash_folder = cfg.trash_folder.clone();
         self.settings.collection_export_root = cfg.collection_export_root.clone();

@@ -199,6 +199,9 @@ pub struct AnalysisSettings {
     /// Analysis worker count override (0 = auto).
     #[serde(default = "default_analysis_worker_count")]
     pub analysis_worker_count: u32,
+    /// Aggregation strategy for training-free label scoring.
+    #[serde(default)]
+    pub tf_label_aggregation: TfLabelAggregationMode,
 }
 
 impl Default for AnalysisSettings {
@@ -206,7 +209,21 @@ impl Default for AnalysisSettings {
         Self {
             max_analysis_duration_seconds: default_max_analysis_duration_seconds(),
             analysis_worker_count: default_analysis_worker_count(),
+            tf_label_aggregation: TfLabelAggregationMode::default(),
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TfLabelAggregationMode {
+    MeanTopK,
+    Max,
+}
+
+impl Default for TfLabelAggregationMode {
+    fn default() -> Self {
+        Self::MeanTopK
     }
 }
 

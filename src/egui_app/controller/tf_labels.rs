@@ -111,7 +111,7 @@ impl EguiController {
     pub fn tf_label_matches_for_sample(
         &mut self,
         sample_id: &str,
-        mode: crate::egui_app::state::TfLabelAggregationMode,
+        mode: crate::sample_sources::config::TfLabelAggregationMode,
     ) -> Result<Vec<TfLabelMatch>, String> {
         let conn = open_library_db()?;
         let embedding = load_tf_embedding(&conn, sample_id)?;
@@ -136,10 +136,10 @@ impl EguiController {
             &anchors,
             &embedding,
             |label| match mode {
-                crate::egui_app::state::TfLabelAggregationMode::MeanTopK => {
+                crate::sample_sources::config::TfLabelAggregationMode::MeanTopK => {
                     crate::analysis::anchor_scoring::AnchorAggregation::MeanTopK(label.topk)
                 }
-                crate::egui_app::state::TfLabelAggregationMode::Max => {
+                crate::sample_sources::config::TfLabelAggregationMode::Max => {
                     crate::analysis::anchor_scoring::AnchorAggregation::Max
                 }
             },

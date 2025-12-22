@@ -3,9 +3,9 @@
 pub struct TfLabelsUiState {
     pub editor_open: bool,
     pub create_prompt: Option<TfLabelCreatePrompt>,
-    pub aggregation_mode: TfLabelAggregationMode,
+    pub aggregation_mode: crate::sample_sources::config::TfLabelAggregationMode,
     pub last_score_sample_id: Option<String>,
-    pub last_score_mode: TfLabelAggregationMode,
+    pub last_score_mode: crate::sample_sources::config::TfLabelAggregationMode,
     pub last_scores: Vec<TfLabelScoreCache>,
 }
 
@@ -14,9 +14,9 @@ impl Default for TfLabelsUiState {
         Self {
             editor_open: false,
             create_prompt: None,
-            aggregation_mode: TfLabelAggregationMode::MeanTopK,
+            aggregation_mode: crate::sample_sources::config::TfLabelAggregationMode::MeanTopK,
             last_score_sample_id: None,
-            last_score_mode: TfLabelAggregationMode::MeanTopK,
+            last_score_mode: crate::sample_sources::config::TfLabelAggregationMode::MeanTopK,
             last_scores: Vec::new(),
         }
     }
@@ -30,12 +30,6 @@ pub struct TfLabelCreatePrompt {
     pub gap: f32,
     pub topk: i64,
     pub anchor_sample_id: Option<String>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum TfLabelAggregationMode {
-    MeanTopK,
-    Max,
 }
 
 #[derive(Clone, Debug, PartialEq)]

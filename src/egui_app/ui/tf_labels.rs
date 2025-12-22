@@ -1,6 +1,7 @@
 use super::style;
 use super::*;
-use crate::egui_app::state::{TfLabelAggregationMode, TfLabelCreatePrompt, TfLabelScoreCache};
+use crate::egui_app::state::{TfLabelCreatePrompt, TfLabelScoreCache};
+use crate::sample_sources::config::TfLabelAggregationMode;
 use eframe::egui::{self, RichText};
 
 impl EguiApp {
@@ -145,6 +146,8 @@ impl EguiApp {
                     }
                     if mode != self.controller.ui.tf_labels.aggregation_mode {
                         self.controller.ui.tf_labels.aggregation_mode = mode;
+                        self.controller.settings.analysis.tf_label_aggregation = mode;
+                        let _ = self.controller.persist_config("Failed to save TF label settings");
                         self.controller.clear_tf_label_score_cache();
                     }
                 });
@@ -360,7 +363,14 @@ impl EguiApp {
             .and_then(|index| self.controller.wav_entry(index))
             .map(|entry| view_model::sample_display_label(&entry.relative_path))
             .unwrap_or_else(|| "Selected sample".to_string());
-        ui.label(RichText::new(format!("Scores for {}", sample_label)).color(palette.text_primary));
+        ui.horizontal(|ui| {
+            ui.label(
+                RichText::new(format!("Scores for {}", sample_label)).color(palette.text_primary),
+            );
+            if ui.button("Refresh scores").clicked() {
+                self.controller.clear_tf_label_score_cache();
+            }
+        });
         let mode = self.controller.ui.tf_labels.aggregation_mode;
         let cache_hit = self.controller.ui.tf_labels.last_score_sample_id.as_deref() == Some(&sample_id)
             && self.controller.ui.tf_labels.last_score_mode == mode;
