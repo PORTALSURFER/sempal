@@ -193,15 +193,7 @@ impl LibraryDatabase {
                     PRIMARY KEY (head_id, split, threshold)
                  ) WITHOUT ROWID;
                  CREATE INDEX IF NOT EXISTS idx_classifier_metrics_head_id ON classifier_metrics (head_id);
-                 CREATE TABLE IF NOT EXISTS labels (
-                    sample_id TEXT NOT NULL,
-                    source INTEGER NOT NULL,
-                    category TEXT NOT NULL,
-                    weight REAL NOT NULL DEFAULT 1.0,
-                    updated_at INTEGER NOT NULL,
-                    PRIMARY KEY (sample_id, source, category)
-                 ) WITHOUT ROWID;
-                 CREATE INDEX IF NOT EXISTS idx_labels_category ON labels (category);
+                 -- Deprecated: legacy labels table (training pipeline). Do not create for new DBs.
                  CREATE TABLE IF NOT EXISTS ann_index_meta (
                     model_id TEXT PRIMARY KEY,
                     index_path TEXT NOT NULL,
@@ -557,31 +549,7 @@ impl LibraryDatabase {
     }
 
     pub(super) fn migrate_labels_table(&mut self) -> Result<(), LibraryError> {
-        let mut stmt = self
-            .connection
-            .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='labels'")
-            .map_err(map_sql_error)?;
-        let exists: Option<String> = stmt
-            .query_row([], |row| row.get(0))
-            .optional()
-            .map_err(map_sql_error)?;
-        drop(stmt);
-        if exists.is_some() {
-            return Ok(());
-        }
-        self.connection
-            .execute_batch(
-                "CREATE TABLE IF NOT EXISTS labels (
-                    sample_id TEXT NOT NULL,
-                    source INTEGER NOT NULL,
-                    category TEXT NOT NULL,
-                    weight REAL NOT NULL DEFAULT 1.0,
-                    updated_at INTEGER NOT NULL,
-                    PRIMARY KEY (sample_id, source, category)
-                ) WITHOUT ROWID;
-                CREATE INDEX IF NOT EXISTS idx_labels_category ON labels (category);",
-            )
-            .map_err(map_sql_error)?;
+        // Deprecated legacy table: keep existing data, but do not create new tables.
         Ok(())
     }
 
