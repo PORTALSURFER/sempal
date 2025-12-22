@@ -204,7 +204,7 @@ impl EguiApp {
         });
 
         if points.len() > 8000 || self.controller.ui.map.zoom < 0.6 {
-            render_heatmap(&painter, rect, points, center, scale, self.controller.ui.map.pan);
+            render_heatmap(&painter, rect, &points, center, scale, self.controller.ui.map.pan);
         } else {
             for point in points {
                 let pos = map_to_screen(point.x, point.y, rect, center, scale, self.controller.ui.map.pan);
