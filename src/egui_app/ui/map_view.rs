@@ -1,4 +1,5 @@
 use super::map_clusters;
+use super::map_empty;
 use super::map_interactions;
 use super::map_math;
 use super::map_render;
@@ -135,13 +136,10 @@ impl EguiApp {
         }
 
         let Some(bounds) = self.controller.ui.map.bounds else {
-            ui.painter().text(
-                rect.center(),
-                egui::Align2::CENTER_CENTER,
-                "No layout data. Run sempal-umap first.",
-                egui::TextStyle::Body.resolve(ui.style()),
-                palette.text_muted,
-            );
+            if map_empty::render_empty_state(ui, rect, &palette) {
+                self.controller
+                    .build_umap_layout(model_id, &umap_version);
+            }
             return;
         };
 

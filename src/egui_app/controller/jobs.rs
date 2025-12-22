@@ -22,6 +22,7 @@ pub(super) enum JobMessage {
     TrashMove(trash_move::TrashMoveMessage),
     Analysis(AnalysisJobMessage),
     ModelTraining(model_training::ModelTrainingMessage),
+    UmapBuilt(UmapBuildResult),
     UpdateChecked(UpdateCheckResult),
     IssueGatewayCreated(IssueGatewayCreateResult),
 }
@@ -40,6 +41,18 @@ pub(super) struct IssueGatewayCreateResult {
     >,
 }
 
+#[derive(Debug, Clone)]
+pub(super) struct UmapBuildJob {
+    pub(super) model_id: String,
+    pub(super) umap_version: String,
+}
+
+#[derive(Debug)]
+pub(super) struct UmapBuildResult {
+    pub(super) umap_version: String,
+    pub(super) result: Result<(), String>,
+}
+
 pub(super) struct ControllerJobs {
     pub(super) wav_job_tx: Sender<WavLoadJob>,
     pub(super) audio_job_tx: Sender<AudioLoadJob>,
@@ -55,6 +68,7 @@ pub(super) struct ControllerJobs {
     pub(super) trash_move_in_progress: bool,
     pub(super) trash_move_cancel: Option<Arc<std::sync::atomic::AtomicBool>>,
     pub(super) model_training_in_progress: bool,
+    pub(super) umap_build_in_progress: bool,
     pub(super) update_check_in_progress: bool,
     pub(super) issue_gateway_in_progress: bool,
 }
@@ -82,6 +96,7 @@ impl ControllerJobs {
             trash_move_in_progress: false,
             trash_move_cancel: None,
             model_training_in_progress: false,
+            umap_build_in_progress: false,
             update_check_in_progress: false,
             issue_gateway_in_progress: false,
         };
@@ -239,6 +254,10 @@ impl ControllerJobs {
         self.model_training_in_progress
     }
 
+    pub(super) fn umap_build_in_progress(&self) -> bool {
+        self.umap_build_in_progress
+    }
+
     pub(super) fn begin_model_training(
         &mut self,
         job: model_training::ModelTrainingJob,
@@ -258,6 +277,25 @@ impl ControllerJobs {
 
     pub(super) fn clear_model_training(&mut self) {
         self.model_training_in_progress = false;
+    }
+
+    pub(super) fn begin_umap_build(&mut self, job: UmapBuildJob) {
+        if self.umap_build_in_progress {
+            return;
+        }
+        self.umap_build_in_progress = true;
+        let tx = self.message_tx.clone();
+        thread::spawn(move || {
+            let result = super::map_view::run_umap_build(&job.model_id, &job.umap_version);
+            let _ = tx.send(JobMessage::UmapBuilt(UmapBuildResult {
+                umap_version: job.umap_version,
+                result,
+            }));
+        });
+    }
+
+    pub(super) fn clear_umap_build(&mut self) {
+        self.umap_build_in_progress = false;
     }
 
     pub(super) fn begin_update_check(&mut self, request: crate::updater::UpdateCheckRequest) {

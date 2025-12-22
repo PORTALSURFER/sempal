@@ -11,6 +11,7 @@ mod hotkey_runtime;
 mod input;
 mod layout;
 mod map_clusters;
+mod map_empty;
 mod map_interactions;
 mod map_math;
 mod map_render;

@@ -484,6 +484,25 @@ impl EguiController {
                         }
                     }
                 },
+                JobMessage::UmapBuilt(message) => {
+                    self.runtime.jobs.clear_umap_build();
+                    match message.result {
+                        Ok(()) => {
+                            self.ui.map.bounds = None;
+                            self.ui.map.last_query = None;
+                            self.set_status(
+                                format!("UMAP layout {} built", message.umap_version),
+                                StatusTone::Info,
+                            );
+                        }
+                        Err(err) => {
+                            self.set_status(
+                                format!("UMAP build failed: {err}"),
+                                StatusTone::Error,
+                            );
+                        }
+                    }
+                }
                 JobMessage::UpdateChecked(message) => {
                     self.runtime.jobs.clear_update_check();
                     match message.result {
