@@ -6,6 +6,7 @@ pub(crate) mod augment;
 pub(crate) mod ann_index;
 pub(crate) mod anchor_match;
 pub(crate) mod anchor_scoring;
+pub(crate) mod label_match_ann;
 pub(crate) mod clap_preprocess;
 pub mod embedding;
 pub(crate) mod features;
