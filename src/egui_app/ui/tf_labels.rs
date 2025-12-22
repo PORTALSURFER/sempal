@@ -1,8 +1,6 @@
 use super::style;
 use super::*;
-use crate::egui_app::state::{
-    TfLabelCandidateCache, TfLabelCreatePrompt, TfLabelScoreCache,
-};
+use crate::egui_app::state::{TfAutoTagPrompt, TfLabelCandidateCache, TfLabelCreatePrompt, TfLabelScoreCache};
 use crate::egui_app::view_model;
 use crate::sample_sources::config::TfLabelAggregationMode;
 use eframe::egui::{self, RichText};
@@ -10,6 +8,7 @@ use eframe::egui::{self, RichText};
 impl EguiApp {
     pub(super) fn render_tf_label_windows(&mut self, ctx: &egui::Context) {
         self.render_tf_label_create_prompt(ctx);
+        self.render_tf_label_auto_tag_prompt(ctx);
         self.render_tf_label_editor(ctx);
     }
 
@@ -178,6 +177,7 @@ impl EguiApp {
                                         .map(|entry| TfLabelCandidateCache {
                                             sample_id: entry.sample_id,
                                             score: entry.score,
+                                            bucket: entry.bucket,
                                         })
                                         .collect();
                                     self.controller.set_status(
@@ -401,17 +401,153 @@ impl EguiApp {
                                 .show(ui, |ui| {
                                     ui.label(RichText::new("Sample").color(palette.text_muted));
                                     ui.label(RichText::new("Score").color(palette.text_muted));
+                                    ui.label(RichText::new("Bucket").color(palette.text_muted));
+                                    ui.label(RichText::new("Actions").color(palette.text_muted));
                                     ui.end_row();
-                                    for candidate in candidates.iter().take(20) {
+                                    let mut remove_indices = Vec::new();
+                                    for (idx, candidate) in candidates.iter().take(20).enumerate() {
+                                        let bucket_label = match candidate.bucket {
+                                            crate::analysis::anchor_scoring::ConfidenceBucket::High => {
+                                                RichText::new("High").color(palette.success)
+                                            }
+                                            crate::analysis::anchor_scoring::ConfidenceBucket::Medium => {
+                                                RichText::new("Medium").color(palette.warning)
+                                            }
+                                            crate::analysis::anchor_scoring::ConfidenceBucket::Low => {
+                                                RichText::new("Low").color(palette.text_muted)
+                                            }
+                                        };
                                         ui.label(&candidate.sample_id);
                                         ui.label(format!("{:.3}", candidate.score));
+                                        ui.label(bucket_label);
+                                        ui.horizontal(|ui| {
+                                            if ui.button("Preview").clicked() {
+                                                if let Err(err) = self
+                                                    .controller
+                                                    .preview_sample_by_id(&candidate.sample_id)
+                                                {
+                                                    self.controller.set_status(
+                                                        format!("Preview failed: {err}"),
+                                                        style::StatusTone::Error,
+                                                    );
+                                                }
+                                            }
+                                            if ui.button("Accept").clicked() {
+                                                if let Err(err) = self.controller.add_tf_anchor(
+                                                    &label.label_id,
+                                                    &candidate.sample_id,
+                                                    1.0,
+                                                ) {
+                                                    self.controller.set_status(
+                                                        format!("Add anchor failed: {err}"),
+                                                        style::StatusTone::Error,
+                                                    );
+                                                } else {
+                                                    self.controller.set_status(
+                                                        "Anchor added".to_string(),
+                                                        style::StatusTone::Info,
+                                                    );
+                                                    remove_indices.push(idx);
+                                                }
+                                            }
+                                            if ui.button("Reject").clicked() {
+                                                remove_indices.push(idx);
+                                            }
+                                        });
                                         ui.end_row();
                                     }
+                                    if !remove_indices.is_empty() {
+                                        let mut updated = candidates.clone();
+                                        for idx in remove_indices.into_iter().rev() {
+                                            if idx < updated.len() {
+                                                updated.remove(idx);
+                                            }
+                                        }
+                                        self.controller.ui.tf_labels.last_candidate_results = updated;
+                                    }
                                 });
+                            ui.horizontal(|ui| {
+                                let high_count = candidates
+                                    .iter()
+                                    .filter(|candidate| {
+                                        candidate.bucket
+                                            == crate::analysis::anchor_scoring::ConfidenceBucket::High
+                                    })
+                                    .count();
+                                if ui
+                                    .add_enabled(high_count > 0, egui::Button::new("Auto-tag high confidence"))
+                                    .on_hover_text("Adds high-confidence matches as anchors")
+                                    .clicked()
+                                {
+                                    self.controller.ui.tf_labels.auto_tag_prompt = Some(
+                                        TfAutoTagPrompt {
+                                            label_id: label.label_id.clone(),
+                                            label_name: label.name.clone(),
+                                        },
+                                    );
+                                }
+                            });
                         }
                     }
                 }
             });
+    }
+
+    fn render_tf_label_auto_tag_prompt(&mut self, ctx: &egui::Context) {
+        let Some(prompt) = self.controller.ui.tf_labels.auto_tag_prompt.clone() else {
+            return;
+        };
+        let palette = style::palette();
+        let candidates = self.controller.ui.tf_labels.last_candidate_results.clone();
+        let high_matches: Vec<_> = candidates
+            .iter()
+            .filter(|candidate| {
+                candidate.bucket == crate::analysis::anchor_scoring::ConfidenceBucket::High
+            })
+            .collect();
+        let mut close = false;
+        egui::Window::new("Auto-tag high confidence")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .show(ctx, |ui| {
+                ui.label(
+                    RichText::new(format!("Label: {}", prompt.label_name))
+                        .color(palette.text_primary)
+                        .strong(),
+                );
+                ui.label(
+                    RichText::new(format!("Add {} anchors from high-confidence matches?", high_matches.len()))
+                        .color(palette.text_primary),
+                );
+                ui.add_space(ui.spacing().item_spacing.y);
+                ui.horizontal(|ui| {
+                    if ui.button("Confirm").clicked() {
+                        let mut added = 0usize;
+                        for candidate in &high_matches {
+                            if self
+                                .controller
+                                .add_tf_anchor(&prompt.label_id, &candidate.sample_id, 1.0)
+                                .is_ok()
+                            {
+                                added += 1;
+                            }
+                        }
+                        self.controller.set_status(
+                            format!("Added {added} anchors"),
+                            style::StatusTone::Info,
+                        );
+                        self.controller.clear_tf_label_score_cache();
+                        close = true;
+                    }
+                    if ui.button("Cancel").clicked() {
+                        close = true;
+                    }
+                });
+            });
+        if close {
+            self.controller.ui.tf_labels.auto_tag_prompt = None;
+        }
     }
 
     fn render_tf_label_match_panel(&mut self, ui: &mut egui::Ui) {

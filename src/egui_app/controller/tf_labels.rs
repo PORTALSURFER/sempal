@@ -38,6 +38,7 @@ pub struct TfLabelMatch {
 pub struct TfLabelCandidateMatch {
     pub sample_id: String,
     pub score: f32,
+    pub bucket: crate::analysis::anchor_scoring::ConfidenceBucket,
 }
 
 impl EguiController {
@@ -174,6 +175,15 @@ impl EguiController {
         self.ui.tf_labels.last_scores.clear();
         self.ui.tf_labels.last_candidate_label_id = None;
         self.ui.tf_labels.last_candidate_results.clear();
+        self.ui.tf_labels.auto_tag_prompt = None;
+    }
+
+    pub fn preview_sample_by_id(&mut self, sample_id: &str) -> Result<(), String> {
+        let (source_id, relative_path) =
+            crate::egui_app::controller::analysis_jobs::parse_sample_id(sample_id)?;
+        let source_id = SourceId::from_string(source_id);
+        self.select_source_internal(Some(source_id), Some(relative_path));
+        Ok(())
     }
 
     pub fn set_tf_label_aggregation_mode(
@@ -222,11 +232,27 @@ impl EguiController {
             top_k,
             aggregation,
         )?;
+        let defaults = crate::analysis::embedding::tf_label_defaults();
+        let low = (label_spec.threshold * defaults.low_threshold_ratio)
+            .clamp(0.0, label_spec.threshold);
+        let thresholds = crate::analysis::anchor_scoring::ConfidenceThresholds {
+            high: label_spec.threshold,
+            low,
+            gap: label_spec.gap,
+        };
         Ok(candidates
             .into_iter()
-            .map(|entry| TfLabelCandidateMatch {
-                sample_id: entry.sample_id,
-                score: entry.score,
+            .map(|entry| {
+                let bucket = crate::analysis::anchor_scoring::classify_confidence(
+                    entry.score,
+                    None,
+                    thresholds,
+                );
+                TfLabelCandidateMatch {
+                    sample_id: entry.sample_id,
+                    score: entry.score,
+                    bucket,
+                }
             })
             .collect())
     }

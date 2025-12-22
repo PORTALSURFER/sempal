@@ -9,6 +9,7 @@ pub struct TfLabelsUiState {
     pub last_scores: Vec<TfLabelScoreCache>,
     pub last_candidate_label_id: Option<String>,
     pub last_candidate_results: Vec<TfLabelCandidateCache>,
+    pub auto_tag_prompt: Option<TfAutoTagPrompt>,
 }
 
 impl Default for TfLabelsUiState {
@@ -22,6 +23,7 @@ impl Default for TfLabelsUiState {
             last_scores: Vec::new(),
             last_candidate_label_id: None,
             last_candidate_results: Vec::new(),
+            auto_tag_prompt: None,
         }
     }
 }
@@ -50,4 +52,11 @@ pub struct TfLabelScoreCache {
 pub struct TfLabelCandidateCache {
     pub sample_id: String,
     pub score: f32,
+    pub bucket: crate::analysis::anchor_scoring::ConfidenceBucket,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct TfAutoTagPrompt {
+    pub label_id: String,
+    pub label_name: String,
 }
