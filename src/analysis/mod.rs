@@ -4,6 +4,7 @@ pub(crate) mod audio;
 pub(crate) mod audio_decode;
 pub(crate) mod augment;
 pub(crate) mod ann_index;
+pub(crate) mod anchor_match;
 pub(crate) mod anchor_scoring;
 pub(crate) mod clap_preprocess;
 pub mod embedding;

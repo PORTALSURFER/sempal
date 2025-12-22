@@ -1,5 +1,6 @@
 use super::*;
 use rusqlite::{Connection, OptionalExtension, params};
+use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
 /// Anchor-based label metadata stored in the library database.
@@ -19,6 +20,18 @@ pub struct TfAnchor {
     pub label_id: String,
     pub sample_id: String,
     pub weight: f32,
+}
+
+/// Score output for a label match against a sample embedding.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TfLabelMatch {
+    pub label_id: String,
+    pub name: String,
+    pub score: f32,
+    pub bucket: crate::analysis::anchor_scoring::ConfidenceBucket,
+    pub gap: f32,
+    pub second_best: Option<f32>,
+    pub anchor_count: usize,
 }
 
 impl EguiController {
@@ -92,6 +105,54 @@ impl EguiController {
     pub fn delete_tf_anchor(&mut self, anchor_id: &str) -> Result<(), String> {
         let mut conn = open_library_db()?;
         delete_tf_anchor_with_conn(&mut conn, anchor_id)
+    }
+
+    /// Score the training-free labels for a given sample_id.
+    pub fn tf_label_matches_for_sample(
+        &mut self,
+        sample_id: &str,
+    ) -> Result<Vec<TfLabelMatch>, String> {
+        let conn = open_library_db()?;
+        let embedding = load_tf_embedding(&conn, sample_id)?;
+        let labels = list_tf_labels_with_conn(&conn)?;
+        if labels.is_empty() {
+            return Ok(Vec::new());
+        }
+        let (anchors, anchor_counts) = load_tf_anchor_embeddings(&conn)?;
+        let label_specs: Vec<crate::analysis::anchor_match::LabelSpec> = labels
+            .iter()
+            .map(|label| crate::analysis::anchor_match::LabelSpec {
+                label_id: label.label_id.clone(),
+                name: label.name.clone(),
+                threshold: label.threshold,
+                gap: label.gap,
+                topk: label.topk.max(1) as usize,
+            })
+            .collect();
+        let defaults = crate::analysis::embedding::tf_label_defaults();
+        let scores = crate::analysis::anchor_match::score_labels_for_embedding(
+            &label_specs,
+            &anchors,
+            &embedding,
+            |label| crate::analysis::anchor_scoring::AnchorAggregation::MeanTopK(label.topk),
+            defaults.low_threshold_ratio,
+        );
+        let matches = scores
+            .into_iter()
+            .map(|score| TfLabelMatch {
+                anchor_count: anchor_counts
+                    .get(&score.label_id)
+                    .copied()
+                    .unwrap_or(0),
+                label_id: score.label_id,
+                name: score.name,
+                score: score.score,
+                bucket: score.bucket,
+                gap: score.gap,
+                second_best: score.second_best,
+            })
+            .collect();
+        Ok(matches)
     }
 }
 
@@ -290,6 +351,96 @@ fn now_epoch_seconds() -> i64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_else(|_| Duration::from_secs(0))
         .as_secs() as i64
+}
+
+fn load_tf_embedding(conn: &Connection, sample_id: &str) -> Result<Vec<f32>, String> {
+    let blob: Vec<u8> = conn
+        .query_row(
+            "SELECT vec FROM embeddings WHERE sample_id = ?1 AND model_id = ?2",
+            params![sample_id, crate::analysis::embedding::EMBEDDING_MODEL_ID],
+            |row| row.get(0),
+        )
+        .map_err(|err| format!("Failed to load embedding for {sample_id}: {err}"))?;
+    crate::analysis::decode_f32_le_blob(&blob)
+}
+
+fn load_tf_anchor_embeddings(
+    conn: &Connection,
+) -> Result<
+    (
+        HashMap<String, Vec<crate::analysis::anchor_match::AnchorEmbedding>>,
+        HashMap<String, usize>,
+    ),
+    String,
+> {
+    let mut stmt = conn
+        .prepare("SELECT label_id, sample_id, weight FROM tf_anchors")
+        .map_err(|err| format!("Prepare tf_anchors query failed: {err}"))?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, f32>(2)?,
+            ))
+        })
+        .map_err(|err| format!("Query tf_anchors failed: {err}"))?;
+
+    let mut anchors_by_label: HashMap<String, Vec<(String, f32)>> = HashMap::new();
+    let mut anchor_counts: HashMap<String, usize> = HashMap::new();
+    let mut sample_ids = HashSet::new();
+    for row in rows {
+        let (label_id, sample_id, weight) =
+            row.map_err(|err| format!("Read tf_anchors row failed: {err}"))?;
+        anchors_by_label
+            .entry(label_id.clone())
+            .or_default()
+            .push((sample_id.clone(), weight));
+        *anchor_counts.entry(label_id).or_insert(0) += 1;
+        sample_ids.insert(sample_id);
+    }
+
+    if sample_ids.is_empty() {
+        return Ok((HashMap::new(), anchor_counts));
+    }
+
+    let mut embedding_stmt = conn
+        .prepare("SELECT vec FROM embeddings WHERE sample_id = ?1 AND model_id = ?2")
+        .map_err(|err| format!("Prepare embedding lookup failed: {err}"))?;
+    let mut embeddings: HashMap<String, Vec<f32>> = HashMap::new();
+    for sample_id in sample_ids {
+        let blob: Option<Vec<u8>> = embedding_stmt
+            .query_row(
+                params![sample_id, crate::analysis::embedding::EMBEDDING_MODEL_ID],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|err| format!("Load embedding failed: {err}"))?;
+        if let Some(blob) = blob {
+            if let Ok(vec) = crate::analysis::decode_f32_le_blob(&blob) {
+                embeddings.insert(sample_id, vec);
+            }
+        }
+    }
+
+    let mut anchors: HashMap<String, Vec<crate::analysis::anchor_match::AnchorEmbedding>> =
+        HashMap::new();
+    for (label_id, items) in anchors_by_label {
+        let mut vec = Vec::new();
+        for (sample_id, weight) in items {
+            if let Some(embedding) = embeddings.get(&sample_id) {
+                vec.push(crate::analysis::anchor_match::AnchorEmbedding {
+                    weight,
+                    embedding: embedding.clone(),
+                });
+            }
+        }
+        if !vec.is_empty() {
+            anchors.insert(label_id, vec);
+        }
+    }
+
+    Ok((anchors, anchor_counts))
 }
 
 fn validate_tf_label_fields(
