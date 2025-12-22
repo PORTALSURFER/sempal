@@ -29,7 +29,7 @@ struct AnnIndexParams {
 
 struct AnnIndexState {
     hnsw: Hnsw<'static, f32, DistCosine>,
-    hnsw_io: Option<HnswIo>,
+    hnsw_io: Option<&'static mut HnswIo>,
     id_map: Vec<String>,
     id_lookup: HashMap<String, usize>,
     params: AnnIndexParams,
@@ -289,7 +289,9 @@ fn load_index_from_disk(meta: &AnnIndexMetaRow) -> Result<Option<AnnIndexState>,
     let dir = index_path
         .parent()
         .ok_or_else(|| "Index path missing parent".to_string())?;
-    let mut hnsw_io = HnswIo::new(dir, basename);
+    // Leak the reloader to satisfy Hnsw's lifetime requirements for reloaded data.
+    let hnsw_io = Box::new(HnswIo::new(dir, basename));
+    let hnsw_io = Box::leak(hnsw_io);
     let hnsw: Hnsw<f32, DistCosine> = hnsw_io
         .load_hnsw::<f32, DistCosine>()
         .map_err(|err| format!("Failed to reload ANN index: {err}"))?;
