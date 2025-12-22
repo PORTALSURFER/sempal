@@ -58,11 +58,16 @@ fn run() -> Result<(), String> {
 
     let stats = summarize_labels(&labels);
     println!(
-        "Clusters: {} (noise: {} / {:.2}%)",
+        "Clusters: {} (noise: {} / {:.2}%, size min/max: {}/{})",
         stats.cluster_count,
         stats.noise_count,
-        stats.noise_ratio * 100.0
+        stats.noise_ratio * 100.0,
+        stats.min_cluster_size,
+        stats.max_cluster_size
     );
+    options
+        .noise_policy
+        .handle_ratio(stats.noise_ratio, options.min_noise_ratio, options.max_noise_ratio)?;
 
     let mut conn = conn;
     let umap_version = options
@@ -110,6 +115,9 @@ struct Options {
     min_cluster_size: usize,
     min_samples: Option<usize>,
     allow_single_cluster: bool,
+    min_noise_ratio: f32,
+    max_noise_ratio: f32,
+    noise_policy: NoisePolicy,
 }
 
 fn parse_args(args: Vec<String>) -> Result<Option<Options>, String> {
@@ -121,6 +129,9 @@ fn parse_args(args: Vec<String>) -> Result<Option<Options>, String> {
         min_cluster_size: 5,
         min_samples: None,
         allow_single_cluster: false,
+        min_noise_ratio: 0.0,
+        max_noise_ratio: 0.95,
+        noise_policy: NoisePolicy::Warn,
     };
 
     let mut idx = 0usize;
@@ -184,6 +195,37 @@ fn parse_args(args: Vec<String>) -> Result<Option<Options>, String> {
             "--allow-single-cluster" => {
                 options.allow_single_cluster = true;
             }
+            "--min-noise" => {
+                idx += 1;
+                let value =
+                    args.get(idx).ok_or_else(|| "--min-noise requires a value".to_string())?;
+                options.min_noise_ratio = value
+                    .parse::<f32>()
+                    .map_err(|_| format!("Invalid --min-noise value: {value}"))?;
+            }
+            "--max-noise" => {
+                idx += 1;
+                let value =
+                    args.get(idx).ok_or_else(|| "--max-noise requires a value".to_string())?;
+                options.max_noise_ratio = value
+                    .parse::<f32>()
+                    .map_err(|_| format!("Invalid --max-noise value: {value}"))?;
+            }
+            "--noise-policy" => {
+                idx += 1;
+                let value = args
+                    .get(idx)
+                    .ok_or_else(|| "--noise-policy requires a value".to_string())?;
+                options.noise_policy = match value.as_str() {
+                    "warn" => NoisePolicy::Warn,
+                    "error" => NoisePolicy::Error,
+                    _ => {
+                        return Err(format!(
+                            "Invalid --noise-policy {value}. Use warn or error."
+                        ))
+                    }
+                };
+            }
             unknown => {
                 return Err(format!("Unknown argument: {unknown}\n\n{}", help_text()));
             }
@@ -193,6 +235,15 @@ fn parse_args(args: Vec<String>) -> Result<Option<Options>, String> {
 
     if options.model_id.trim().is_empty() {
         return Err("--model-id is required".to_string());
+    }
+    if !(0.0..=1.0).contains(&options.min_noise_ratio) {
+        return Err("--min-noise must be between 0.0 and 1.0".to_string());
+    }
+    if !(0.0..=1.0).contains(&options.max_noise_ratio) {
+        return Err("--max-noise must be between 0.0 and 1.0".to_string());
+    }
+    if options.min_noise_ratio > options.max_noise_ratio {
+        return Err("--min-noise must be <= --max-noise".to_string());
     }
 
     Ok(Some(options))
@@ -215,6 +266,9 @@ fn help_text() -> String {
         "  --min-cluster-size <n>   Minimum cluster size (default: 5).",
         "  --min-samples <n>        Min samples for core distance (default: min_cluster_size).",
         "  --allow-single-cluster   Allow a single giant cluster.",
+        "  --min-noise <f>          Warn/error if noise ratio below (default: 0.0).",
+        "  --max-noise <f>          Warn/error if noise ratio above (default: 0.95).",
+        "  --noise-policy <mode>    warn or error (default: warn).",
     ]
     .join("\n")
 }
@@ -310,6 +364,8 @@ struct LabelStats {
     cluster_count: usize,
     noise_count: usize,
     noise_ratio: f32,
+    min_cluster_size: usize,
+    max_cluster_size: usize,
 }
 
 fn summarize_labels(labels: &[i32]) -> LabelStats {
@@ -323,10 +379,50 @@ fn summarize_labels(labels: &[i32]) -> LabelStats {
         }
     }
     let total = labels.len().max(1) as f32;
+    let (min_cluster_size, max_cluster_size) = if cluster_counts.is_empty() {
+        (0, 0)
+    } else {
+        let mut min_size = usize::MAX;
+        let mut max_size = 0usize;
+        for size in cluster_counts.values() {
+            min_size = min_size.min(*size);
+            max_size = max_size.max(*size);
+        }
+        (min_size, max_size)
+    };
     LabelStats {
         cluster_count: cluster_counts.len(),
         noise_count: noise,
         noise_ratio: noise as f32 / total,
+        min_cluster_size,
+        max_cluster_size,
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum NoisePolicy {
+    Warn,
+    Error,
+}
+
+impl NoisePolicy {
+    fn handle_ratio(&self, ratio: f32, min: f32, max: f32) -> Result<(), String> {
+        if ratio < min || ratio > max {
+            let message = format!(
+                "Noise ratio {:.2}% outside [{:.2}%, {:.2}%]",
+                ratio * 100.0,
+                min * 100.0,
+                max * 100.0
+            );
+            return match self {
+                NoisePolicy::Warn => {
+                    eprintln!("Warning: {message}");
+                    Ok(())
+                }
+                NoisePolicy::Error => Err(message),
+            };
+        }
+        Ok(())
     }
 }
 
