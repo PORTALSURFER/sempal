@@ -40,7 +40,7 @@ pub(super) fn run(options: &BenchOptions) -> Result<SimilarityBenchResult, Strin
     )
     .map_err(|err| format!("Create schema failed: {err}"))?;
 
-    seed_embeddings(&conn, options.similarity_rows, options.seed)?;
+    seed_embeddings(&mut conn, options.similarity_rows, options.seed)?;
     ann_index::rebuild_index(&conn)?;
     let target_id = "sample-000000";
     let similarity_query = stats::bench_action(options, || {
@@ -54,7 +54,7 @@ pub(super) fn run(options: &BenchOptions) -> Result<SimilarityBenchResult, Strin
     })
 }
 
-fn seed_embeddings(conn: &Connection, rows: usize, seed: u64) -> Result<(), String> {
+fn seed_embeddings(conn: &mut Connection, rows: usize, seed: u64) -> Result<(), String> {
     let mut rng = StdRng::seed_from_u64(seed);
     let dim = embedding::EMBEDDING_DIM;
     let tx = conn
