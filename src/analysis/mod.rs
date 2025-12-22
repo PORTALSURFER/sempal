@@ -12,7 +12,7 @@ pub mod embedding;
 pub(crate) mod features;
 pub(crate) mod fft;
 pub(crate) mod frequency_domain;
-pub(crate) mod umap;
+pub mod umap;
 pub(crate) mod time_domain;
 pub(crate) mod vector;
 pub(crate) mod version;
