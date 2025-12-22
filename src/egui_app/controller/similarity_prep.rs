@@ -177,7 +177,8 @@ fn run_similarity_finalize(umap_version: &str) -> Result<jobs::SimilarityPrepOut
     let cluster_stats = crate::analysis::hdbscan::build_hdbscan_clusters(
         &mut conn,
         crate::analysis::embedding::EMBEDDING_MODEL_ID,
-        HdbscanMethod::Embedding,
+        HdbscanMethod::Umap,
+        Some(umap_version),
         HdbscanConfig {
             min_cluster_size: DEFAULT_CLUSTER_MIN_SIZE,
             min_samples: None,
