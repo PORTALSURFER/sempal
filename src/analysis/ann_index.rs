@@ -29,7 +29,6 @@ struct AnnIndexParams {
 
 struct AnnIndexState {
     hnsw: Hnsw<'static, f32, DistCosine>,
-    hnsw_io: Option<&'static mut HnswIo>,
     id_map: Vec<String>,
     id_lookup: HashMap<String, usize>,
     params: AnnIndexParams,
@@ -259,7 +258,6 @@ fn build_index_from_db(
     let id_lookup = build_id_lookup(&id_map);
     Ok(AnnIndexState {
         hnsw,
-        hnsw_io: None,
         id_map,
         id_lookup,
         params,
@@ -300,7 +298,6 @@ fn load_index_from_disk(meta: &AnnIndexMetaRow) -> Result<Option<AnnIndexState>,
     }
     Ok(Some(AnnIndexState {
         hnsw,
-        hnsw_io: Some(hnsw_io),
         id_map,
         id_lookup,
         params: meta.params.clone(),
