@@ -17,6 +17,7 @@ pub use vector::{FEATURE_VECTOR_LEN_V1, FEATURE_VERSION_V1};
 pub use vector::decode_f32_le_blob;
 
 use std::path::Path;
+use rusqlite::Connection;
 
 /// Lightweight DSP vector length (time-domain features only).
 pub const LIGHT_DSP_VECTOR_LEN: usize = 9;
@@ -37,6 +38,11 @@ pub fn light_dsp_from_features_v1(features: &[f32]) -> Option<Vec<f32>> {
         return None;
     }
     Some(features[..LIGHT_DSP_VECTOR_LEN].to_vec())
+}
+
+/// Rebuild the ANN index from embeddings in the library database.
+pub fn rebuild_ann_index(conn: &Connection) -> Result<(), String> {
+    ann_index::rebuild_index(conn)
 }
 
 #[cfg(test)]

@@ -1,6 +1,7 @@
 use crate::analysis::{decode_f32_le_blob, embedding, version};
 use crate::app_dirs;
 use hnsw_rs::prelude::*;
+use hnsw_rs::hnswio::HnswIo;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -28,6 +29,7 @@ struct AnnIndexParams {
 
 struct AnnIndexState {
     hnsw: Hnsw<'static, f32, DistCosine>,
+    hnsw_io: Option<HnswIo>,
     id_map: Vec<String>,
     id_lookup: HashMap<String, usize>,
     params: AnnIndexParams,
@@ -139,7 +141,15 @@ fn load_embedding(conn: &Connection, sample_id: &str) -> Result<Vec<f32>, String
 
 fn load_or_build_index(conn: &Connection) -> Result<AnnIndexState, String> {
     let params = default_params();
-    let index_path = read_meta(conn, &params.model_id)?
+    let meta = read_meta(conn, &params.model_id)?;
+    if let Some(meta_row) = meta.as_ref() {
+        if meta_row.params == params {
+            if let Some(state) = load_index_from_disk(meta_row)? {
+                return Ok(state);
+            }
+        }
+    }
+    let index_path = meta
         .map(|meta| meta.index_path)
         .unwrap_or(default_index_path()?);
     let mut state = build_index_from_db(conn, params, index_path)?;
@@ -249,6 +259,7 @@ fn build_index_from_db(
     let id_lookup = build_id_lookup(&id_map);
     Ok(AnnIndexState {
         hnsw,
+        hnsw_io: None,
         id_map,
         id_lookup,
         params,
@@ -257,6 +268,45 @@ fn build_index_from_db(
         last_flush: Instant::now(),
         dirty_inserts: 0,
     })
+}
+
+fn load_index_from_disk(meta: &AnnIndexMetaRow) -> Result<Option<AnnIndexState>, String> {
+    let index_path = meta.index_path.clone();
+    let (graph_path, data_path) = hnsw_dump_paths(&index_path)?;
+    if !graph_path.is_file() || !data_path.is_file() {
+        return Ok(None);
+    }
+    let id_map_path = id_map_path_for(&index_path);
+    if !id_map_path.is_file() {
+        return Ok(None);
+    }
+    let id_map = load_id_map(&id_map_path)?;
+    let id_lookup = build_id_lookup(&id_map);
+    let basename = index_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| "Index path missing basename".to_string())?;
+    let dir = index_path
+        .parent()
+        .ok_or_else(|| "Index path missing parent".to_string())?;
+    let mut hnsw_io = HnswIo::new(dir, basename);
+    let hnsw: Hnsw<f32, DistCosine> = hnsw_io
+        .load_hnsw::<f32, DistCosine>()
+        .map_err(|err| format!("Failed to reload ANN index: {err}"))?;
+    if hnsw.get_nb_point() != id_map.len() {
+        return Ok(None);
+    }
+    Ok(Some(AnnIndexState {
+        hnsw,
+        hnsw_io: Some(hnsw_io),
+        id_map,
+        id_lookup,
+        params: meta.params.clone(),
+        index_path,
+        id_map_path,
+        last_flush: Instant::now(),
+        dirty_inserts: 0,
+    }))
 }
 
 fn build_id_lookup(id_map: &[String]) -> HashMap<String, usize> {
@@ -333,11 +383,43 @@ fn save_id_map(path: &Path, id_map: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+fn load_id_map(path: &Path) -> Result<Vec<String>, String> {
+    let bytes = std::fs::read(path).map_err(|err| format!("Failed to read id map: {err}"))?;
+    serde_json::from_slice(&bytes).map_err(|err| format!("Failed to decode id map: {err}"))
+}
+
 fn default_index_path() -> Result<PathBuf, String> {
     let root = app_dirs::app_root_dir().map_err(|err| err.to_string())?;
     let dir = root.join(ANN_DIR);
     std::fs::create_dir_all(&dir).map_err(|err| format!("Failed to create ANN dir: {err}"))?;
     Ok(dir.join(ANN_BASENAME))
+}
+
+fn hnsw_dump_paths(index_path: &Path) -> Result<(PathBuf, PathBuf), String> {
+    let basename = index_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| "Index path missing basename".to_string())?;
+    let dir = index_path
+        .parent()
+        .ok_or_else(|| "Index path missing parent".to_string())?;
+    let graph = dir.join(format!("{basename}.hnsw.graph"));
+    let data = dir.join(format!("{basename}.hnsw.data"));
+    Ok((graph, data))
+}
+
+pub fn rebuild_index(conn: &Connection) -> Result<(), String> {
+    let params = default_params();
+    let index_path = read_meta(conn, &params.model_id)?
+        .map(|meta| meta.index_path)
+        .unwrap_or(default_index_path()?);
+    let mut state = build_index_from_db(conn, params, index_path)?;
+    flush_index(conn, &mut state)?;
+    let mut guard = ANN_INDEX
+        .lock()
+        .map_err(|_| "ANN index lock poisoned".to_string())?;
+    *guard = Some(state);
+    Ok(())
 }
 
 fn chrono_now_epoch_seconds() -> i64 {
