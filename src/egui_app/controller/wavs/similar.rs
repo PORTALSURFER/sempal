@@ -1,5 +1,5 @@
 use super::*;
-use rusqlite::OptionalExtension;
+use rusqlite::{OptionalExtension, params};
 use crate::egui_app::view_model;
 
 const DEFAULT_SIMILAR_COUNT: usize = 40;
