@@ -229,8 +229,10 @@ impl EguiApp {
             self.controller.ui.map.cluster_hide_noise,
             self.controller.ui.map.cluster_filter,
         );
-        let blend_enabled =
-            self.controller.ui.map.cluster_overlay && self.controller.ui.map.similarity_blend;
+        let cluster_overlay = self.controller.ui.map.cluster_overlay;
+        let similarity_blend = self.controller.ui.map.similarity_blend;
+        let blend_threshold = self.controller.ui.map.similarity_blend_threshold;
+        let blend_enabled = cluster_overlay && similarity_blend;
         let centroids = if blend_enabled {
             Some(map_clusters::cluster_centroids(&points))
         } else {
@@ -239,7 +241,7 @@ impl EguiApp {
         let map_diagonal =
             ((bounds.max_x - bounds.min_x).powi(2) + (bounds.max_y - bounds.min_y).powi(2)).sqrt();
         let point_color = |point: &crate::egui_app::state::MapPoint, alpha: u8| {
-            if self.controller.ui.map.cluster_overlay {
+            if cluster_overlay {
                 if let Some(centroids) = centroids.as_ref() {
                     map_clusters::blended_cluster_color(
                         point,
@@ -247,7 +249,7 @@ impl EguiApp {
                         &palette,
                         alpha,
                         map_diagonal,
-                        self.controller.ui.map.similarity_blend_threshold,
+                        blend_threshold,
                     )
                 } else {
                     point
