@@ -108,7 +108,7 @@ impl EguiApp {
     fn render_map_canvas(&mut self, ui: &mut egui::Ui) {
         let palette = style::palette();
         let available = ui.available_size();
-        let (rect, response) = ui.allocate_exact_size(available, egui::Sense::drag());
+        let (rect, response) = ui.allocate_exact_size(available, egui::Sense::click_and_drag());
         let render_started = Instant::now();
         let model_id = crate::analysis::embedding::EMBEDDING_MODEL_ID;
         let umap_version = self.controller.ui.map.umap_version.clone();
