@@ -166,9 +166,7 @@ pub(crate) fn filter_points(
                 return point.cluster_id == Some(target);
             }
             if overlay && hide_noise {
-                if let Some(cluster_id) = point.cluster_id {
-                    return cluster_id >= 0;
-                }
+                return point.cluster_id.is_some_and(|cluster_id| cluster_id >= 0);
             }
             true
         })

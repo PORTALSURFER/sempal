@@ -38,7 +38,7 @@ impl Default for MapUiState {
             selected_sample_id: None,
             umap_version: "v1".to_string(),
             cluster_overlay: false,
-            cluster_hide_noise: false,
+            cluster_hide_noise: true,
             cluster_filter_input: String::new(),
             cluster_filter: None,
             similarity_blend: false,
