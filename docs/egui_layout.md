@@ -22,3 +22,53 @@
 - Status & keyboard:
   - Preserve existing shortcuts (Space for play/loop toggle, Ctrl+Space for loop stop/start, arrows for selection navigation/tag stepping, Shift+drag for selection create/clear).
   - Status badge/text rendered in a compact footer with color-coded badge circle.
+
+# Anchor label UX flow (training-free)
+
+## Entry points
+- Browser row context menu:
+  - "Create label from sample" opens label creation dialog with the sample pre-attached as the first anchor.
+  - "Add as anchor to..." lists existing labels and attaches the focused sample.
+  - "Manage TF labels" opens the label editor panel.
+- Sample browser filter bar:
+  - "TF labels" opens the label editor panel.
+- Map point (future):
+  - Right-click point: "Add as anchor to..." and "Create label from selection" (if lasso exists).
+
+## Flow: create label
+1. User selects a sample and picks "Create label from sample."
+2. Dialog collects label name, threshold, gap, topK; seed with model defaults.
+3. On confirm:
+   - Create label row.
+   - Add anchor (the selected sample).
+4. UI shows success toast + updates label list.
+
+## Flow: add anchors
+1. User selects one or more samples.
+2. Context menu -> "Add as anchor to..." -> choose label.
+3. Anchors added/updated (weight default 1.0).
+4. UI refreshes anchor list for that label.
+
+## Flow: review matches
+1. User opens "Training-free labels" panel.
+2. Select a label -> "Find matches" (ANN-backed).
+3. Display ranked matches with scores, bucket coloring, and anchor count.
+4. Allow refresh to re-run scoring (for updated anchors).
+
+## Flow: auto-tag (optional)
+1. After review, user clicks "Auto-tag high confidence."
+2. System assigns label to samples with:
+   - score >= threshold AND gap >= gap
+   - bucket == High
+3. Show summary: tagged count, skipped count, conflicts.
+
+## UI states
+- Empty:
+  - No labels: show "No training-free labels yet" call-to-action.
+  - Label has no anchors: show "Add anchors to enable matching."
+- Loading:
+  - Show inline spinner and "Searching matches..." when ANN query runs.
+- Results:
+  - Top matches list with score and bucket; highlight anchors.
+- Error:
+  - Non-blocking status toast with error details.
