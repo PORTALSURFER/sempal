@@ -1,7 +1,7 @@
 //! HDBSCAN clustering helpers for embeddings and UMAP layouts.
 
 use hdbscan::{Hdbscan, HdbscanHyperParams};
-use rusqlite::{Connection, Statement, Transaction, params};
+use rusqlite::{Connection, Transaction, params};
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -239,17 +239,20 @@ fn write_clusters(
 ) -> Result<(), String> {
     let now = now_epoch_seconds()?;
     let tx = start_cluster_tx(conn)?;
-    let mut stmt = prepare_cluster_insert(&tx)?;
-    insert_cluster_rows(
-        &mut stmt,
-        sample_ids,
-        labels,
-        model_id,
-        method,
-        umap_version,
-        now,
-    )?;
-    finalize_cluster_tx(tx, stmt)?;
+    {
+        let mut stmt = prepare_cluster_insert(&tx)?;
+        insert_cluster_rows(
+            &mut stmt,
+            sample_ids,
+            labels,
+            model_id,
+            method,
+            umap_version,
+            now,
+        )?;
+    }
+    tx.commit()
+        .map_err(|err| format!("Commit clusters failed: {err}"))?;
     Ok(())
 }
 
@@ -258,7 +261,9 @@ fn start_cluster_tx(conn: &mut Connection) -> Result<Transaction<'_>, String> {
         .map_err(|err| format!("Start transaction failed: {err}"))
 }
 
-fn prepare_cluster_insert<'a>(tx: &'a Transaction<'a>) -> Result<Statement<'a>, String> {
+fn prepare_cluster_insert<'a>(
+    tx: &'a Transaction<'a>,
+) -> Result<rusqlite::Statement<'a>, String> {
     tx.prepare(
         "INSERT INTO hdbscan_clusters (
             sample_id,
@@ -277,7 +282,7 @@ fn prepare_cluster_insert<'a>(tx: &'a Transaction<'a>) -> Result<Statement<'a>, 
 }
 
 fn insert_cluster_rows(
-    stmt: &mut Statement<'_>,
+    stmt: &mut rusqlite::Statement<'_>,
     sample_ids: &[String],
     labels: &[i32],
     model_id: &str,
@@ -300,12 +305,6 @@ fn insert_cluster_rows(
         .map_err(|err| format!("Insert cluster failed: {err}"))?;
     }
     Ok(())
-}
-
-fn finalize_cluster_tx(tx: Transaction<'_>, stmt: Statement<'_>) -> Result<(), String> {
-    drop(stmt);
-    tx.commit()
-        .map_err(|err| format!("Commit clusters failed: {err}"))
 }
 
 fn now_epoch_seconds() -> Result<i64, String> {
