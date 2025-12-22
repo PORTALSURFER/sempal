@@ -1,6 +1,6 @@
 use super::{
     AnalysisJobMessage, AudioLoadJob, AudioLoadResult, PendingAudio, PendingPlayback, ScanJobMessage,
-    SourceId, UpdateCheckResult, WavLoadJob, WavLoadResult, model_training, trash_move,
+    SourceId, UpdateCheckResult, WavLoadJob, WavLoadResult, trash_move,
 };
 use std::{
     path::PathBuf,
@@ -21,7 +21,6 @@ pub(super) enum JobMessage {
     Scan(ScanJobMessage),
     TrashMove(trash_move::TrashMoveMessage),
     Analysis(AnalysisJobMessage),
-    ModelTraining(model_training::ModelTrainingMessage),
     UmapBuilt(UmapBuildResult),
     SimilarityPrepared(SimilarityPrepResult),
     UpdateChecked(UpdateCheckResult),
@@ -80,7 +79,6 @@ pub(super) struct ControllerJobs {
     pub(super) scan_cancel: Option<Arc<std::sync::atomic::AtomicBool>>,
     pub(super) trash_move_in_progress: bool,
     pub(super) trash_move_cancel: Option<Arc<std::sync::atomic::AtomicBool>>,
-    pub(super) model_training_in_progress: bool,
     pub(super) umap_build_in_progress: bool,
     pub(super) update_check_in_progress: bool,
     pub(super) issue_gateway_in_progress: bool,
@@ -108,7 +106,6 @@ impl ControllerJobs {
             scan_cancel: None,
             trash_move_in_progress: false,
             trash_move_cancel: None,
-            model_training_in_progress: false,
             umap_build_in_progress: false,
             update_check_in_progress: false,
             issue_gateway_in_progress: false,
@@ -263,33 +260,8 @@ impl ControllerJobs {
         self.update_check_in_progress
     }
 
-    pub(super) fn model_training_in_progress(&self) -> bool {
-        self.model_training_in_progress
-    }
-
     pub(super) fn umap_build_in_progress(&self) -> bool {
         self.umap_build_in_progress
-    }
-
-    pub(super) fn begin_model_training(
-        &mut self,
-        job: model_training::ModelTrainingJob,
-    ) {
-        if self.model_training_in_progress {
-            return;
-        }
-        self.model_training_in_progress = true;
-        let tx = self.message_tx.clone();
-        thread::spawn(move || {
-            let result = model_training::run_model_training(job, &tx);
-            let _ = tx.send(JobMessage::ModelTraining(model_training::ModelTrainingMessage::Finished {
-                result,
-            }));
-        });
-    }
-
-    pub(super) fn clear_model_training(&mut self) {
-        self.model_training_in_progress = false;
     }
 
     pub(super) fn begin_umap_build(&mut self, job: UmapBuildJob) {

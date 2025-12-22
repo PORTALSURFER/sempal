@@ -145,8 +145,6 @@ impl EguiApp {
                                 ui.separator();
                                 self.render_analysis_options_menu(ui);
                                 ui.separator();
-                                self.render_model_options_menu(ui);
-                                ui.separator();
                                 if ui.button("Move trashed samples to folder").clicked() {
                                     self.controller.move_all_trashed_to_folder();
                                     close_menu = true;
@@ -373,26 +371,6 @@ impl EguiApp {
         }
     }
 
-    fn render_model_options_menu(&mut self, ui: &mut egui::Ui) {
-        let palette = style::palette();
-        ui.label(RichText::new("Model").strong().color(palette.text_primary));
-        ui.label(RichText::new("Assign UNKNOWN below confidence:").color(palette.text_muted));
-        let mut unknown = self.controller.unknown_confidence_threshold();
-        let slider = egui::Slider::new(&mut unknown, 0.0..=1.0)
-            .text("Unknown")
-            .clamping(SliderClamping::Always);
-        if ui.add(slider).changed() {
-            self.controller.set_unknown_confidence_threshold(unknown);
-        }
-        if ui
-            .button("Re-run inference (loaded sources)")
-            .on_hover_text("Clear old predictions and recompute for loaded sources")
-            .clicked()
-        {
-            self.controller.rerun_inference_for_loaded_sources();
-        }
-    }
-
     fn render_audio_settings_window(&mut self, ctx: &egui::Context) {
         if !self.controller.ui.audio.panel_open {
             return;
@@ -432,8 +410,6 @@ impl EguiApp {
                             .color(style::status_badge_color(style::StatusTone::Warning)),
                     );
                 }
-                ui.separator();
-                self.render_model_options_menu(ui);
                 ui.separator();
                 ui.label(
                     RichText::new("Waveform & Zoom")

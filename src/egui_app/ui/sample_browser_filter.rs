@@ -67,9 +67,6 @@ impl EguiApp {
                     }
                 }
             }
-            if ui.button("TF labels").clicked() {
-                self.open_tf_label_editor();
-            }
             ui.add_space(ui.spacing().item_spacing.x);
             if let Some(similar) = self.controller.ui.browser.similar_query.as_ref() {
                 ui.label(

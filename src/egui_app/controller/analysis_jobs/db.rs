@@ -3,9 +3,7 @@ use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use std::path::{Path, PathBuf};
 
 pub(super) const ANALYZE_SAMPLE_JOB_TYPE: &str = "wav_metadata_v1";
-pub(super) const INFERENCE_JOB_TYPE: &str = "inference_v1";
 pub(super) const REBUILD_INDEX_JOB_TYPE: &str = "rebuild_index_v1";
-pub(super) const RETRAIN_CLASSIFIER_JOB_TYPE: &str = "retrain_classifier_v1";
 pub(super) const EMBEDDING_BACKFILL_JOB_TYPE: &str = "embedding_backfill_v1";
 pub(super) const DEFAULT_JOB_TYPE: &str = ANALYZE_SAMPLE_JOB_TYPE;
 
@@ -76,13 +74,8 @@ pub(in crate::egui_app::controller) fn purge_orphaned_samples(
     for table in [
         "analysis_jobs",
         "analysis_features",
-        "analysis_predictions",
         "features",
         "embeddings",
-        "predictions",
-        "predictions_head",
-        "labels_user",
-        "labels",
         "samples",
     ] {
         let sql = format!(
@@ -276,15 +269,6 @@ pub(super) fn invalidate_analysis_artifacts(
     let mut stmt_legacy_features = tx
         .prepare("DELETE FROM analysis_features WHERE sample_id = ?1")
         .map_err(|err| format!("Failed to prepare analysis invalidation statement: {err}"))?;
-    let mut stmt_predictions = tx
-        .prepare("DELETE FROM analysis_predictions WHERE sample_id = ?1")
-        .map_err(|err| format!("Failed to prepare analysis invalidation statement: {err}"))?;
-    let mut stmt_model_predictions = tx
-        .prepare("DELETE FROM predictions WHERE sample_id = ?1")
-        .map_err(|err| format!("Failed to prepare analysis invalidation statement: {err}"))?;
-    let mut stmt_head_predictions = tx
-        .prepare("DELETE FROM predictions_head WHERE sample_id = ?1")
-        .map_err(|err| format!("Failed to prepare analysis invalidation statement: {err}"))?;
     for sample_id in sample_ids {
         stmt_features
             .execute(params![sample_id])
@@ -295,22 +279,10 @@ pub(super) fn invalidate_analysis_artifacts(
         stmt_legacy_features
             .execute(params![sample_id])
             .map_err(|err| format!("Failed to invalidate analysis features: {err}"))?;
-        stmt_predictions
-            .execute(params![sample_id])
-            .map_err(|err| format!("Failed to invalidate analysis predictions: {err}"))?;
-        stmt_model_predictions
-            .execute(params![sample_id])
-            .map_err(|err| format!("Failed to invalidate predictions: {err}"))?;
-        stmt_head_predictions
-            .execute(params![sample_id])
-            .map_err(|err| format!("Failed to invalidate head predictions: {err}"))?;
     }
     drop(stmt_features);
     drop(stmt_embeddings);
     drop(stmt_legacy_features);
-    drop(stmt_predictions);
-    drop(stmt_model_predictions);
-    drop(stmt_head_predictions);
     tx.commit()
         .map_err(|err| format!("Failed to commit analysis invalidation transaction: {err}"))?;
     Ok(())

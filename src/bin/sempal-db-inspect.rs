@@ -1,6 +1,6 @@
 //! Developer utility to inspect a library database and explain row counts.
 
-use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
+use rusqlite::{Connection, OpenFlags, params};
 use std::path::PathBuf;
 
 fn main() {
@@ -31,8 +31,6 @@ fn run() -> Result<(), String> {
     print_count(&conn, "samples")?;
     print_count(&conn, "features")?;
     print_count_where(&conn, "features(feat_version=1)", "features", "feat_version = 1")?;
-    print_count(&conn, "labels_user")?;
-    print_count(&conn, "predictions")?;
     print_count(&conn, "analysis_jobs")?;
     print_count_where(
         &conn,
@@ -63,21 +61,6 @@ fn run() -> Result<(), String> {
     for row in rows {
         let (source_id, n) = row.map_err(|err| err.to_string())?;
         println!("- {source_id}: {n}");
-    }
-
-    println!();
-    println!("Active model:");
-    let active: Option<(String, i64)> = conn
-        .query_row(
-            "SELECT model_id, created_at FROM models ORDER BY created_at DESC, model_id DESC LIMIT 1",
-            [],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
-        .optional()
-        .map_err(|err| err.to_string())?;
-    match active {
-        Some((model_id, created_at)) => println!("- model_id={model_id} created_at={created_at}"),
-        None => println!("- (none)"),
     }
 
     Ok(())

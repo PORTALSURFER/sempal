@@ -9,13 +9,11 @@
 - Install into a clean directory (e.g. `C:\Program Files\SemPal`).
 - Confirm `%APPDATA%\.sempal\models\clap_audio.onnx` exists after install.
 - Confirm `%APPDATA%\.sempal\models\onnxruntime\onnxruntime.dll` exists after install.
-- Launch SemPal and run analysis on a sample pack; ensure embeddings and predictions are created.
-- Trigger retraining to confirm the model loads and writes back to the library DB.
+- Launch SemPal and run analysis on a sample pack; ensure embeddings are created.
 
 ## ML Release Criteria
-- Accuracy target met for the latest head_id (see classifier_metrics table).
 - Gating precision/coverage curve matches expected ranges (no regression in margins).
-- Golden tests pass (mel, embedding, inference) with no drift.
+- Golden tests pass (mel, embedding) with no drift.
 
 ## Uninstall Verification
 - Check SemPal appears in Add/Remove Programs.

@@ -37,9 +37,6 @@ pub(super) fn select_wav_by_path_with_rebuild(
         controller.ui.waveform.last_start_marker = None;
     }
     controller.sample_view.wav.selected_wav = Some(path.to_path_buf());
-    if path_changed {
-        controller.queue_prediction_load_for_selection();
-    }
     let missing = controller
         .wav_entries
         .lookup

@@ -24,15 +24,6 @@ pub(crate) struct ClapModel {
     input_scratch: Vec<f32>,
 }
 
-/// Defaults for training-free label thresholds tied to the embedding model.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct TfLabelDefaults {
-    pub threshold: f32,
-    pub gap: f32,
-    pub topk: i64,
-    pub low_threshold_ratio: f32,
-}
-
 static GLOBAL_CLAP_MODEL: LazyLock<Mutex<Option<ClapModel>>> = LazyLock::new(|| Mutex::new(None));
 
 impl ClapModel {
@@ -118,27 +109,6 @@ pub(crate) fn infer_embedding_query(samples: &[f32], sample_rate: u32) -> Result
     }
     normalize_l2_in_place(&mut sum);
     Ok(sum)
-}
-
-pub fn tf_label_defaults_for_model(model_id: &str) -> TfLabelDefaults {
-    match model_id {
-        EMBEDDING_MODEL_ID => TfLabelDefaults {
-            threshold: 0.75,
-            gap: 0.1,
-            topk: 3,
-            low_threshold_ratio: 0.85,
-        },
-        _ => TfLabelDefaults {
-            threshold: 0.7,
-            gap: 0.1,
-            topk: 3,
-            low_threshold_ratio: 0.85,
-        },
-    }
-}
-
-pub fn tf_label_defaults() -> TfLabelDefaults {
-    tf_label_defaults_for_model(EMBEDDING_MODEL_ID)
 }
 
 fn infer_embedding_with_model(

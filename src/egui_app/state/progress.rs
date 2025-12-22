@@ -6,7 +6,6 @@ pub enum ProgressTaskKind {
     WavLoad,
     Scan,
     Analysis,
-    ModelTraining,
 }
 
 #[derive(Clone, Debug, Default)]

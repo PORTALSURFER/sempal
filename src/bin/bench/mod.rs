@@ -1,7 +1,6 @@
 mod analysis_throughput;
 mod feature_blob_decode;
 mod options;
-mod query_latency;
 mod report;
 mod similarity_latency;
 mod stats;
@@ -19,9 +18,6 @@ pub(super) fn run(args: Vec<String>) -> Result<(), String> {
     let mut report = BenchReport::new(options, SystemInfo::from_system(&system));
     if report.params.analysis {
         report.analysis = Some(analysis_throughput::run(&report.params)?);
-    }
-    if report.params.query {
-        report.query = Some(query_latency::run(&report.params)?);
     }
     if report.params.similarity {
         report.similarity = Some(similarity_latency::run(&report.params)?);

@@ -12,7 +12,7 @@ pub(super) struct FeatureBlobDecodeBenchResult {
 }
 
 pub(super) fn run(options: &BenchOptions) -> Result<FeatureBlobDecodeBenchResult, String> {
-    let blobs = options.query_rows.max(1);
+    let blobs = options.similarity_rows.max(1);
     let feature_len_f32 = sempal::analysis::FEATURE_VECTOR_LEN_V1;
     let bytes_per_blob = feature_len_f32.saturating_mul(4);
 
@@ -67,4 +67,3 @@ fn fill_deterministic_bytes(buf: &mut [u8], seed: u64) {
         *byte = (out & 0xFF) as u8;
     }
 }
-

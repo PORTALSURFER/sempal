@@ -27,7 +27,6 @@ impl EguiController {
         focused_index: Option<usize>,
         loaded_index: Option<usize>,
     ) -> (Vec<usize>, Option<usize>, Option<usize>) {
-        self.prepare_prediction_filter_cache();
         if let Some(similar) = self.ui.browser.similar_query.as_ref() {
             let visible: Vec<usize> = similar
                 .indices
@@ -37,7 +36,6 @@ impl EguiController {
                     if let Some(entry) = self.wav_entries.entries.get(*index) {
                         self.browser_filter_accepts(entry.tag)
                             && self.folder_filter_accepts(&entry.relative_path)
-                            && self.prediction_filter_accepts_for_index(*index)
                     } else {
                         false
                     }
@@ -58,14 +56,10 @@ impl EguiController {
                 .filter(|(index, entry)| {
                     self.browser_filter_accepts(entry.tag)
                         && self.folder_filter_accepts(&entry.relative_path)
-                        && self.prediction_filter_accepts_for_index(*index)
                 })
                 .map(|(index, _)| index)
                 .collect();
             let mut visible = visible;
-            if self.ui.browser.review_mode {
-                visible.sort_by(|a, b| self.review_compare(*a, *b));
-            }
             let selected_visible =
                 focused_index.and_then(|idx| visible.iter().position(|i| *i == idx));
             let loaded_visible =
@@ -83,7 +77,6 @@ impl EguiController {
         for (index, entry) in self.wav_entries.entries.iter().enumerate() {
             if !self.browser_filter_accepts(entry.tag)
                 || !self.folder_filter_accepts(&entry.relative_path)
-                || !self.prediction_filter_accepts_for_index(index)
             {
                 continue;
             }
@@ -116,24 +109,6 @@ impl EguiController {
         (visible, selected_visible, loaded_visible)
     }
 
-    fn review_compare(&self, a: usize, b: usize) -> std::cmp::Ordering {
-        let (a_bucket, a_conf) = self.review_bucket_and_confidence(a);
-        let (b_bucket, b_conf) = self.review_bucket_and_confidence(b);
-        a_bucket
-            .cmp(&b_bucket)
-            .then_with(|| a_conf.total_cmp(&b_conf))
-            .then_with(|| a.cmp(&b))
-    }
-
-    fn review_bucket_and_confidence(&self, entry_index: usize) -> (u8, f32) {
-        let prediction = self.cached_prediction_for_entry(entry_index);
-        match prediction {
-            None => (0, 0.0),
-            Some(pred) if pred.class_id == "UNKNOWN" => (1, pred.margin.unwrap_or(pred.confidence)),
-            Some(pred) => (2, pred.margin.unwrap_or(pred.confidence)),
-        }
-    }
-
     fn browser_filter_accepts(&self, tag: SampleTag) -> bool {
         match self.ui.browser.filter {
             TriageFlagFilter::All => true,
@@ -141,10 +116,6 @@ impl EguiController {
             TriageFlagFilter::Trash => matches!(tag, SampleTag::Trash),
             TriageFlagFilter::Untagged => matches!(tag, SampleTag::Neutral),
         }
-    }
-
-    fn prediction_filter_accepts_for_index(&self, entry_index: usize) -> bool {
-        self.prediction_filter_accepts(entry_index)
     }
 
     fn active_search_query(&self) -> Option<&str> {

@@ -107,11 +107,6 @@ impl EguiApp {
                     .controller
                     .wav_label(entry_index)
                     .unwrap_or_else(|| view_model::sample_display_label(&path));
-                if let Some(prediction) = self.controller.cached_prediction_for_entry(entry_index)
-                    && prediction.class_id == "UNKNOWN"
-                {
-                    label.push_str(" • UNKNOWN");
-                }
                 let analysis_failure = self
                     .controller
                     .analysis_failure_for_entry(entry_index)
@@ -373,69 +368,6 @@ impl EguiApp {
                     ui.close();
                 }
             }
-            ui.separator();
-            ui.label(RichText::new("Training-free labels").color(palette.text_primary));
-            if ui.button("Manage TF labels").clicked() {
-                self.open_tf_label_editor();
-                close_menu = true;
-                ui.close();
-            }
-            if ui.button("Create label from sample").clicked() {
-                match self.controller.sample_id_for_visible_row(row) {
-                    Ok(sample_id) => {
-                        let default_name = view_model::sample_display_label(path);
-                        self.open_tf_label_create_prompt(default_name, Some(sample_id));
-                        close_menu = true;
-                        ui.close();
-                    }
-                    Err(err) => {
-                        self.controller.set_status(err, StatusTone::Error);
-                    }
-                }
-            }
-            let labels = match self.controller.list_tf_labels() {
-                Ok(labels) => labels,
-                Err(err) => {
-                    self.controller.set_status(
-                        format!("Load TF labels failed: {err}"),
-                        StatusTone::Error,
-                    );
-                    Vec::new()
-                }
-            };
-            ui.menu_button("Add as anchor to...", |ui| {
-                if labels.is_empty() {
-                    ui.label(RichText::new("No labels yet").color(palette.text_muted));
-                }
-                for label in &labels {
-                    if ui.button(&label.name).clicked() {
-                        match self.controller.sample_id_for_visible_row(row) {
-                            Ok(sample_id) => {
-                                if let Err(err) = self
-                                    .controller
-                                    .add_tf_anchor(&label.label_id, &sample_id, 1.0)
-                                {
-                                    self.controller.set_status(
-                                        format!("Add anchor failed: {err}"),
-                                        StatusTone::Error,
-                                    );
-                                } else {
-                                    self.controller.clear_tf_label_score_cache();
-                                    self.controller.set_status(
-                                        format!("Added anchor to {}", label.name),
-                                        StatusTone::Info,
-                                    );
-                                    close_menu = true;
-                                    ui.close();
-                                }
-                            }
-                            Err(err) => {
-                                self.controller.set_status(err, StatusTone::Error);
-                            }
-                        }
-                    }
-                }
-            });
             ui.separator();
             self.sample_tag_menu(ui, &mut close_menu, |app, tag| {
                 app.controller

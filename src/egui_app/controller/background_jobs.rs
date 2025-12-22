@@ -22,7 +22,6 @@ impl EguiController {
                     self.runtime.analysis.cancel();
                     self.clear_progress();
                 }
-                Some(ProgressTaskKind::ModelTraining) => {}
                 _ => {}
             }
         }
@@ -265,14 +264,7 @@ impl EguiController {
                             if let Some(source_id) =
                                 self.selection_state.ctx.selected_source.clone()
                             {
-                                self.ui_cache.browser.predictions.remove(&source_id);
                                 self.ui_cache.browser.features.remove(&source_id);
-                                if self.ui.browser.category_filter.is_some()
-                                    || self.ui.browser.confidence_threshold > 0.0
-                                    || !self.ui.browser.include_unknowns
-                                {
-                                    self.rebuild_browser_lists();
-                                }
                             }
                             if self.ui.progress.task == Some(ProgressTaskKind::Analysis) {
                                 self.clear_progress();
@@ -356,89 +348,6 @@ impl EguiController {
                             format!("Embedding backfill enqueue failed: {err}"),
                             StatusTone::Error,
                         );
-                    }
-                    super::AnalysisJobMessage::PredictionLoaded {
-                        sample_id,
-                        top_class,
-                        confidence,
-                    } => {
-                        let current_sample_id = self.current_source().and_then(|source| {
-                            self.sample_view.wav.selected_wav.as_ref().map(|path| {
-                                format!("{}::{}", source.id.as_str(), path.to_string_lossy())
-                            })
-                        });
-                        if current_sample_id.as_deref() != Some(sample_id.as_str()) {
-                            continue;
-                        }
-                        self.ui.waveform.predicted_category =
-                            top_class.zip(confidence).map(|(class_id, confidence)| {
-                                crate::egui_app::state::PredictedCategory {
-                                    class_id,
-                                    confidence,
-                                    margin: None,
-                                }
-                            });
-                    }
-                },
-                JobMessage::ModelTraining(message) => match message {
-                    super::model_training::ModelTrainingMessage::Progress {
-                        completed,
-                        total,
-                        detail,
-                    } => {
-                        if self.ui.progress.task.is_none()
-                            || self.ui.progress.task == Some(ProgressTaskKind::ModelTraining)
-                        {
-                            if !self.ui.progress.visible
-                                || self.ui.progress.task != Some(ProgressTaskKind::ModelTraining)
-                            {
-                                self.show_status_progress(
-                                    ProgressTaskKind::ModelTraining,
-                                    "Training model",
-                                    total,
-                                    false,
-                                );
-                            }
-                            self.ui.progress.completed = completed.min(total);
-                            self.ui.progress.total = total;
-                            self.ui.progress.detail = Some(detail);
-                        }
-                    }
-                    super::model_training::ModelTrainingMessage::Finished { result } => {
-                        self.runtime.jobs.clear_model_training();
-                        if self.ui.progress.task == Some(ProgressTaskKind::ModelTraining) {
-                            self.clear_progress();
-                        }
-                        match result {
-                            Ok(outcome) => {
-                                self.ui_cache.browser.predictions.clear();
-                                self.ui_cache.browser.prediction_categories = None;
-                                self.ui_cache.browser.prediction_categories_checked = false;
-                                self.rebuild_browser_lists();
-                                self.settings.model.classifier_model_id = outcome.model_id.clone();
-                                self.runtime
-                                    .analysis
-                                    .set_classifier_model_id(Some(outcome.model_id.clone()));
-                                if let Err(err) = self.persist_config("Save config failed") {
-                                    self.set_status(err, StatusTone::Warning);
-                                }
-                                self.set_status(
-                                    format!(
-                                        "Trained model {} ({} samples); enqueued {} inference jobs",
-                                        outcome.model_id,
-                                        outcome.exported_samples,
-                                        outcome.inference_jobs_enqueued
-                                    ),
-                                    StatusTone::Info,
-                                );
-                            }
-                            Err(err) => {
-                                self.set_status(
-                                    format!("Model training failed: {err}"),
-                                    StatusTone::Error,
-                                );
-                            }
-                        }
                     }
                 },
                 JobMessage::UmapBuilt(message) => {

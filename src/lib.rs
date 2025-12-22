@@ -15,10 +15,6 @@ pub mod external_drag;
 pub mod issue_gateway;
 /// Logging setup helpers.
 pub mod logging;
-/// Training dataset export helpers.
-pub mod dataset;
-/// Machine learning helpers.
-pub mod ml;
 /// Sample source management.
 pub mod sample_sources;
 /// Optional SQLite extension loader.

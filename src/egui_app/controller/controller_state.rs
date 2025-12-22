@@ -75,8 +75,6 @@ pub(super) struct SelectionContextState {
 
 pub(super) struct AppSettingsState {
     pub(super) feature_flags: crate::sample_sources::config::FeatureFlags,
-    pub(super) model: crate::sample_sources::config::ModelSettings,
-    pub(super) training: crate::sample_sources::config::TrainingSettings,
     pub(super) analysis: crate::sample_sources::config::AnalysisSettings,
     pub(super) updates: crate::sample_sources::config::UpdateSettings,
     pub(super) audio_output: AudioOutputConfig,
@@ -109,16 +107,7 @@ pub(super) struct BrowserCacheState {
     pub(super) labels: HashMap<SourceId, Vec<String>>,
     pub(super) analysis_failures: HashMap<SourceId, HashMap<PathBuf, String>>,
     pub(super) search: wavs::BrowserSearchCache,
-    pub(super) predictions: HashMap<SourceId, PredictionCache>,
     pub(super) features: HashMap<SourceId, FeatureCache>,
-    pub(super) prediction_categories: Option<PredictionCategories>,
-    pub(super) prediction_categories_checked: bool,
-}
-
-pub(super) struct PredictionCache {
-    pub(super) model_id: Option<String>,
-    pub(super) rows: Vec<Option<crate::egui_app::state::PredictedCategory>>,
-    pub(super) user_overrides: Vec<bool>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -142,10 +131,6 @@ pub(crate) struct FeatureCache {
     pub(crate) rows: Vec<Option<FeatureStatus>>,
 }
 
-pub(super) struct PredictionCategories {
-    pub(super) model_id: String,
-    pub(super) classes: Vec<String>,
-}
 
 pub(super) struct FolderBrowsersState {
     pub(super) models: HashMap<SourceId, source_folders::FolderBrowserModel>,

@@ -27,18 +27,6 @@ pub struct SampleBrowserState {
     pub search_focus_requested: bool,
     /// When enabled, Up/Down jump through random samples instead of list order.
     pub random_navigation_mode: bool,
-    /// Optional predicted category filter (top class) sourced from the latest model.
-    pub category_filter: Option<String>,
-    /// Minimum prediction confidence required when category filtering is active.
-    pub confidence_threshold: f32,
-    /// When false, exclude rows predicted as `UNKNOWN` unless explicitly filtering to it.
-    pub include_unknowns: bool,
-    /// When enabled, show only low-confidence samples for fast review.
-    pub review_mode: bool,
-    /// Maximum confidence to include during review mode.
-    pub review_max_confidence: f32,
-    /// When true, include samples that have no prediction row yet.
-    pub review_include_unpredicted: bool,
     /// Optional similar-sounds filter scoped to the current source.
     pub similar_query: Option<SimilarQuery>,
     /// Pending inline action for the sample browser rows.
@@ -67,12 +55,6 @@ impl Default for SampleBrowserState {
             search_query: String::new(),
             search_focus_requested: false,
             random_navigation_mode: false,
-            category_filter: None,
-            confidence_threshold: 0.0,
-            include_unknowns: true,
-            review_mode: false,
-            review_max_confidence: 0.55,
-            review_include_unpredicted: true,
             similar_query: None,
             pending_action: None,
             rename_focus_requested: false,

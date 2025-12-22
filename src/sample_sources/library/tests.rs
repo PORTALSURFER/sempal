@@ -92,24 +92,6 @@ fn migrates_legacy_collection_export_paths() {
 }
 
 #[test]
-fn creates_labels_user_table() {
-    let temp = tempdir().unwrap();
-    with_config_home(temp.path(), || {
-        let _ = load().unwrap();
-        let conn = Connection::open(database_path().unwrap()).unwrap();
-        let exists: Option<String> = conn
-            .query_row(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='labels_user'",
-                [],
-                |row| row.get(0),
-            )
-            .optional()
-            .unwrap();
-        assert_eq!(exists.as_deref(), Some("labels_user"));
-    });
-}
-
-#[test]
 fn creates_embedding_tables() {
     let temp = tempdir().unwrap();
     with_config_home(temp.path(), || {
@@ -118,8 +100,6 @@ fn creates_embedding_tables() {
         for table in [
             "embeddings",
             "ann_index_meta",
-            "tf_labels",
-            "tf_anchors",
             "layout_umap",
             "hdbscan_clusters",
         ] {

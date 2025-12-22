@@ -1,6 +1,5 @@
 use super::audio_cache::CacheKey;
 use super::*;
-use crate::egui_app::state::{FocusContext, WaveformView};
 use crate::egui_app::view_model;
 use crate::waveform::DecodedWaveform;
 use std::path::{Path, PathBuf};
@@ -11,7 +10,6 @@ mod browser_lists;
 mod browser_search;
 mod feature_cache;
 mod missing_samples;
-mod prediction_filter;
 mod selection_ops;
 mod similar;
 mod waveform_loading;
@@ -79,36 +77,6 @@ impl EguiController {
     /// Apply a fuzzy search query to the browser and refresh visible rows.
     pub fn set_browser_search(&mut self, query: impl Into<String>) {
         browser_search::set_browser_search(self, query);
-    }
-
-    /// Apply a predicted category filter and refresh visible rows.
-    pub fn set_category_filter(&mut self, category: Option<String>) {
-        prediction_filter::set_category_filter(self, category);
-    }
-
-    /// Apply a minimum confidence threshold for predicted category filtering and refresh visible rows.
-    pub fn set_confidence_threshold(&mut self, threshold: f32) {
-        prediction_filter::set_confidence_threshold(self, threshold);
-    }
-
-    /// Toggle whether to include `UNKNOWN` predicted samples in the list.
-    pub fn set_include_unknowns(&mut self, include: bool) {
-        prediction_filter::set_include_unknowns(self, include);
-    }
-
-    /// Toggle low-confidence review mode, filtering visible rows to questionable predictions.
-    pub fn set_review_mode(&mut self, enabled: bool) {
-        prediction_filter::set_review_mode(self, enabled);
-    }
-
-    /// Set the max confidence threshold used by low-confidence review mode.
-    pub fn set_review_max_confidence(&mut self, value: f32) {
-        prediction_filter::set_review_max_confidence(self, value);
-    }
-
-    /// Toggle whether review mode includes samples without predictions.
-    pub fn set_review_include_unpredicted(&mut self, include: bool) {
-        prediction_filter::set_review_include_unpredicted(self, include);
     }
 
     /// Filter the browser to show similar samples for the chosen visible row.

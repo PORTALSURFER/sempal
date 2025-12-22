@@ -24,12 +24,6 @@ mod sample_browser_rename;
 mod sample_menus;
 mod sources_panel;
 pub mod style;
-mod tf_label_calibration;
-mod tf_label_editor;
-mod tf_label_matches;
-mod tf_label_prompts;
-mod tf_label_scores;
-mod tf_labels;
 mod update;
 mod waveform_view;
 

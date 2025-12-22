@@ -25,12 +25,8 @@ mod hotkeys_controller;
 mod interaction_options;
 mod jobs;
 mod loading;
-mod model_options;
-mod training_dataset;
-mod model_training;
 mod os_explorer;
 mod playback;
-mod predictions;
 mod progress;
 mod map_view;
 mod scans;
@@ -43,10 +39,8 @@ mod similarity_prep;
 mod tagging_service;
 mod trash;
 mod trash_move;
-mod tf_labels;
 mod undo;
 mod updates;
-mod user_labels;
 mod wav_entries_loader;
 mod waveform_controller;
 mod wavs;
@@ -71,7 +65,6 @@ use analysis_jobs::AnalysisWorkerPool;
 use audio_cache::AudioCache;
 use audio_loader::{AudioLoadError, AudioLoadJob, AudioLoadOutcome, AudioLoadResult};
 pub(in crate::egui_app::controller) use controller_state::*;
-pub use tf_labels::{TfLabel, TfLabelCoverageStats, TfLabelThresholdMode};
 use egui::Color32;
 use open;
 use rfd::FileDialog;
@@ -158,10 +151,7 @@ impl EguiController {
                     labels: HashMap::new(),
                     analysis_failures: HashMap::new(),
                     search: wavs::BrowserSearchCache::default(),
-                    predictions: HashMap::new(),
                     features: HashMap::new(),
-                    prediction_categories: None,
-                    prediction_categories_checked: false,
                 },
                 folders: FolderBrowsersState {
                     models: HashMap::new(),
@@ -182,8 +172,6 @@ impl EguiController {
             },
             settings: AppSettingsState {
                 feature_flags: crate::sample_sources::config::FeatureFlags::default(),
-                model: crate::sample_sources::config::ModelSettings::default(),
-                training: crate::sample_sources::config::TrainingSettings::default(),
                 analysis: crate::sample_sources::config::AnalysisSettings::default(),
                 updates: crate::sample_sources::config::UpdateSettings::default(),
                 audio_output: AudioOutputConfig::default(),

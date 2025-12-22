@@ -338,42 +338,6 @@ impl EguiApp {
                 }
                 ui.close();
             }
-            let labels = match self.controller.list_tf_labels() {
-                Ok(labels) => labels,
-                Err(err) => {
-                    self.controller.set_status(
-                        format!("Load labels failed: {err}"),
-                        style::StatusTone::Error,
-                    );
-                    Vec::new()
-                }
-            };
-            ui.menu_button("Add as anchor to...", |ui| {
-                if labels.is_empty() {
-                    ui.label("No labels yet");
-                }
-                for label in &labels {
-                    if ui.button(&label.name).clicked() {
-                        if let Err(err) = self.controller.add_tf_anchor(
-                            &label.label_id,
-                            sample_id,
-                            1.0,
-                        ) {
-                            self.controller.set_status(
-                                format!("Add anchor failed: {err}"),
-                                style::StatusTone::Error,
-                            );
-                        } else {
-                            self.controller.set_status(
-                                format!("Added anchor to {}", label.name),
-                                style::StatusTone::Info,
-                            );
-                            self.controller.clear_tf_label_score_cache();
-                            ui.close();
-                        }
-                    }
-                }
-            });
         });
 
         let mut draw_calls = 0usize;

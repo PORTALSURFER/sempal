@@ -13,8 +13,6 @@ mod map;
 mod progress;
 mod sources;
 mod status;
-mod tf_labels;
-mod training;
 mod update;
 mod waveform;
 
@@ -30,8 +28,6 @@ pub use map::*;
 pub use progress::*;
 pub use sources::*;
 pub use status::*;
-pub use tf_labels::*;
-pub use training::*;
 pub use update::*;
 pub use waveform::*;
 
@@ -56,10 +52,6 @@ pub struct UiState {
     pub feedback_issue: FeedbackIssueUiState,
     /// Audio device/options UI state.
     pub audio: AudioOptionsState,
-    /// Model training controls.
-    pub training: TrainingUiState,
-    /// Training-free label UI state.
-    pub tf_labels: TfLabelsUiState,
     /// 2D map explorer state.
     pub map: MapUiState,
     /// Interaction and navigation tuning options.
@@ -89,8 +81,6 @@ impl Default for UiState {
             hotkeys: HotkeyUiState::default(),
             feedback_issue: FeedbackIssueUiState::default(),
             audio: AudioOptionsState::default(),
-            training: TrainingUiState::default(),
-            tf_labels: TfLabelsUiState::default(),
             map: MapUiState::default(),
             controls: InteractionOptionsState::default(),
             volume: 1.0,

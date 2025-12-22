@@ -19,10 +19,6 @@ pub struct AppConfig {
     pub collections: Vec<Collection>,
     pub feature_flags: FeatureFlags,
     #[serde(default)]
-    pub model: ModelSettings,
-    #[serde(default)]
-    pub training: TrainingSettings,
-    #[serde(default)]
     pub analysis: AnalysisSettings,
     #[serde(default)]
     pub updates: UpdateSettings,
@@ -43,10 +39,6 @@ pub struct AppConfig {
 struct AppSettings {
     #[serde(default)]
     pub feature_flags: FeatureFlags,
-    #[serde(default)]
-    pub model: ModelSettings,
-    #[serde(default)]
-    pub training: TrainingSettings,
     #[serde(default)]
     pub analysis: AnalysisSettings,
     #[serde(default)]
@@ -74,129 +66,16 @@ pub struct FeatureFlags {
     pub autoplay_selection: bool,
 }
 
-/// Global model inference preferences.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ModelSettings {
-    /// Below this confidence, predictions are assigned to `UNKNOWN`.
-    #[serde(default = "default_unknown_confidence_threshold")]
-    pub unknown_confidence_threshold: f32,
-    /// Preferred classifier model id to use for predictions.
-    #[serde(default = "default_classifier_model_id")]
-    pub classifier_model_id: String,
-    /// Prefer user overrides when displaying categories.
-    #[serde(default = "default_use_user_overrides")]
-    pub use_user_overrides: bool,
-}
-
-impl Default for ModelSettings {
-    fn default() -> Self {
-        Self {
-            unknown_confidence_threshold: default_unknown_confidence_threshold(),
-            classifier_model_id: default_classifier_model_id(),
-            use_user_overrides: default_use_user_overrides(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TrainingSettings {
-    /// Folder depth used to derive `pack_id` and split datasets to prevent leakage.
-    #[serde(default = "default_retrain_pack_depth")]
-    pub retrain_pack_depth: usize,
-    /// Include user override labels when exporting training data.
-    #[serde(default = "default_use_user_labels")]
-    pub use_user_labels: bool,
-    /// Model type used for in-app retraining.
-    #[serde(default = "default_training_model_kind")]
-    pub model_kind: TrainingModelKind,
-    /// Minimum samples required per class in curated datasets.
-    #[serde(default = "default_training_min_class_samples")]
-    pub min_class_samples: usize,
-    /// Use hybrid embeddings + lightweight DSP features when training.
-    #[serde(default)]
-    pub use_hybrid_features: bool,
-    /// Training-time audio augmentation controls.
-    #[serde(default)]
-    pub augmentation: TrainingAugmentation,
-    /// Optional folder used for curated training data.
-    #[serde(default)]
-    pub training_dataset_root: Option<PathBuf>,
-}
-
-impl Default for TrainingSettings {
-    fn default() -> Self {
-        Self {
-            retrain_pack_depth: default_retrain_pack_depth(),
-            use_user_labels: default_use_user_labels(),
-            model_kind: default_training_model_kind(),
-            min_class_samples: default_training_min_class_samples(),
-            use_hybrid_features: false,
-            augmentation: TrainingAugmentation::default(),
-            training_dataset_root: None,
-        }
-    }
-}
-
-/// Training-time audio augmentation knobs for curated datasets.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TrainingAugmentation {
-    /// Enable augmentation during training dataset ingestion.
-    #[serde(default)]
-    pub enabled: bool,
-    /// Extra augmented copies per sample.
-    #[serde(default = "default_augmentation_copies")]
-    pub copies_per_sample: usize,
-    /// Gain jitter range in dB (+/-).
-    #[serde(default = "default_augmentation_gain_db")]
-    pub gain_jitter_db: f32,
-    /// Added noise standard deviation.
-    #[serde(default = "default_augmentation_noise_std")]
-    pub noise_std: f32,
-    /// Pitch shift range in semitones (+/-).
-    #[serde(default = "default_augmentation_pitch_semitones")]
-    pub pitch_semitones: f32,
-    /// Time-stretch range in percent (+/-).
-    #[serde(default = "default_augmentation_time_stretch_pct")]
-    pub time_stretch_pct: f32,
-    /// Apply extra trim/normalize preprocessing before embedding.
-    #[serde(default)]
-    pub preprocess: bool,
-}
-
-impl Default for TrainingAugmentation {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            copies_per_sample: default_augmentation_copies(),
-            gain_jitter_db: default_augmentation_gain_db(),
-            noise_std: default_augmentation_noise_std(),
-            pitch_semitones: default_augmentation_pitch_semitones(),
-            time_stretch_pct: default_augmentation_time_stretch_pct(),
-            preprocess: false,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum TrainingModelKind {
-    GbdtStumpV1,
-    MlpV1,
-    LogRegV1,
-}
 
 /// Global preferences for analysis and feature extraction.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnalysisSettings {
-    /// Skip feature extraction and predictions for files longer than this many seconds.
+    /// Skip analysis for files longer than this many seconds.
     #[serde(default = "default_max_analysis_duration_seconds")]
     pub max_analysis_duration_seconds: f32,
     /// Analysis worker count override (0 = auto).
     #[serde(default = "default_analysis_worker_count")]
     pub analysis_worker_count: u32,
-    /// Aggregation strategy for training-free label scoring.
-    #[serde(default)]
-    pub tf_label_aggregation: TfLabelAggregationMode,
 }
 
 impl Default for AnalysisSettings {
@@ -204,21 +83,7 @@ impl Default for AnalysisSettings {
         Self {
             max_analysis_duration_seconds: default_max_analysis_duration_seconds(),
             analysis_worker_count: default_analysis_worker_count(),
-            tf_label_aggregation: TfLabelAggregationMode::default(),
         }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TfLabelAggregationMode {
-    MeanTopK,
-    Max,
-}
-
-impl Default for TfLabelAggregationMode {
-    fn default() -> Self {
-        Self::MeanTopK
     }
 }
 
@@ -376,8 +241,6 @@ pub fn load_or_default() -> Result<AppConfig, ConfigError> {
         sources: library.sources,
         collections: library.collections,
         feature_flags: settings.feature_flags,
-        model: settings.model,
-        training: settings.training,
         analysis: settings.analysis,
         updates: settings.updates,
         trash_folder: settings.trash_folder,
@@ -408,8 +271,6 @@ pub fn save_to_path(config: &AppConfig, path: &Path) -> Result<(), ConfigError> 
     save_settings_to_path(
         &AppSettings {
             feature_flags: config.feature_flags.clone(),
-            model: config.model.clone(),
-            training: config.training.clone(),
             analysis: config.analysis.clone(),
             updates: config.updates.clone(),
             trash_folder: config.trash_folder.clone(),
@@ -460,8 +321,6 @@ fn migrate_legacy_config(legacy_path: &Path, new_path: &Path) -> Result<AppSetti
     })?;
     let settings = AppSettings {
         feature_flags: legacy.feature_flags,
-        model: ModelSettings::default(),
-        training: TrainingSettings::default(),
         analysis: AnalysisSettings::default(),
         updates: UpdateSettings::default(),
         trash_folder: legacy.trash_folder,
@@ -527,54 +386,6 @@ fn default_audio_output() -> AudioOutputConfig {
     AudioOutputConfig::default()
 }
 
-fn default_unknown_confidence_threshold() -> f32 {
-    0.8
-}
-
-fn default_classifier_model_id() -> String {
-    crate::ml::logreg::DEFAULT_CLASSIFIER_MODEL_ID.to_string()
-}
-
-fn default_use_user_overrides() -> bool {
-    true
-}
-
-fn default_retrain_pack_depth() -> usize {
-    1
-}
-
-fn default_use_user_labels() -> bool {
-    true
-}
-
-fn default_training_model_kind() -> TrainingModelKind {
-    TrainingModelKind::MlpV1
-}
-
-fn default_training_min_class_samples() -> usize {
-    30
-}
-
-fn default_augmentation_copies() -> usize {
-    1
-}
-
-fn default_augmentation_gain_db() -> f32 {
-    2.0
-}
-
-fn default_augmentation_noise_std() -> f32 {
-    0.002
-}
-
-fn default_augmentation_pitch_semitones() -> f32 {
-    1.5
-}
-
-fn default_augmentation_time_stretch_pct() -> f32 {
-    0.05
-}
-
 fn default_max_analysis_duration_seconds() -> f32 {
     30.0
 }
@@ -605,8 +416,6 @@ impl Default for AppConfig {
             sources: Vec::new(),
             collections: Vec::new(),
             feature_flags: FeatureFlags::default(),
-            model: ModelSettings::default(),
-            training: TrainingSettings::default(),
             analysis: AnalysisSettings::default(),
             updates: UpdateSettings::default(),
             trash_folder: None,
@@ -623,8 +432,6 @@ impl Default for AppSettings {
     fn default() -> Self {
         Self {
             feature_flags: FeatureFlags::default(),
-            model: ModelSettings::default(),
-            training: TrainingSettings::default(),
             analysis: AnalysisSettings::default(),
             updates: UpdateSettings::default(),
             trash_folder: None,
@@ -686,8 +493,6 @@ mod tests {
                 sources: vec![SampleSource::new(PathBuf::from("old_source"))],
                 collections: vec![Collection::new("Old Collection")],
                 feature_flags: FeatureFlags::default(),
-                model: ModelSettings::default(),
-                training: TrainingSettings::default(),
                 analysis: AnalysisSettings::default(),
                 updates: UpdateSettings::default(),
                 trash_folder: Some(PathBuf::from("trash_here")),
@@ -783,53 +588,4 @@ mod tests {
         });
     }
 
-    #[test]
-    fn model_settings_round_trip() {
-        let dir = tempdir().unwrap();
-        with_config_home(dir.path(), || {
-            let path = dir.path().join("cfg.toml");
-            let cfg = AppConfig {
-                model: ModelSettings {
-                    unknown_confidence_threshold: 0.91,
-                    classifier_model_id: "test_model".to_string(),
-                    use_user_overrides: false,
-                },
-                ..AppConfig::default()
-            };
-            save_to_path(&cfg, &path).unwrap();
-            let loaded = super::load_settings_from(&path).unwrap();
-            assert!((loaded.model.unknown_confidence_threshold - 0.91).abs() < f32::EPSILON);
-            assert_eq!(loaded.model.classifier_model_id, "test_model");
-            assert_eq!(loaded.model.use_user_overrides, false);
-        });
-    }
-
-    #[test]
-    fn training_settings_round_trip() {
-        let dir = tempdir().unwrap();
-        with_config_home(dir.path(), || {
-            let path = dir.path().join("cfg.toml");
-            let cfg = AppConfig {
-                training: TrainingSettings {
-                    retrain_pack_depth: 3,
-                    use_user_labels: false,
-                    model_kind: TrainingModelKind::GbdtStumpV1,
-                    min_class_samples: default_training_min_class_samples(),
-                    use_hybrid_features: false,
-                    augmentation: TrainingAugmentation::default(),
-                    training_dataset_root: Some(PathBuf::from("training")),
-                },
-                ..AppConfig::default()
-            };
-            save_to_path(&cfg, &path).unwrap();
-            let loaded = super::load_settings_from(&path).unwrap();
-            assert_eq!(loaded.training.retrain_pack_depth, 3);
-            assert_eq!(loaded.training.use_user_labels, false);
-            assert_eq!(loaded.training.model_kind, TrainingModelKind::GbdtStumpV1);
-            assert_eq!(
-                loaded.training.training_dataset_root,
-                Some(PathBuf::from("training"))
-            );
-        });
-    }
 }

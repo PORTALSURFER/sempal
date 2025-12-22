@@ -6,17 +6,11 @@ impl EguiController {
     pub fn load_configuration(&mut self) -> Result<(), crate::sample_sources::config::ConfigError> {
         let cfg = crate::sample_sources::config::load_or_default()?;
         self.settings.feature_flags = cfg.feature_flags;
-        self.settings.model = cfg.model;
-        self.settings.training = cfg.training;
         self.settings.analysis = cfg.analysis;
         self.settings.analysis.max_analysis_duration_seconds =
             super::analysis_options::clamp_max_analysis_duration_seconds(
                 self.settings.analysis.max_analysis_duration_seconds,
             );
-        self.ui.tf_labels.aggregation_mode = self.settings.analysis.tf_label_aggregation;
-        self.ui.tf_labels.last_score_mode = self.ui.tf_labels.aggregation_mode;
-        self.ui.tf_labels.last_score_sample_id = None;
-        self.ui.tf_labels.last_scores.clear();
         self.settings.updates = cfg.updates.clone();
         self.settings.trash_folder = cfg.trash_folder.clone();
         self.settings.collection_export_root = cfg.collection_export_root.clone();
@@ -102,17 +96,6 @@ impl EguiController {
             let _ = self.refresh_wavs();
         }
         self.maybe_check_for_updates_on_startup();
-        self.runtime
-            .analysis
-            .set_unknown_confidence_threshold(self.settings.model.unknown_confidence_threshold);
-        let model_id = self.settings.model.classifier_model_id.trim();
-        self.runtime.analysis.set_classifier_model_id(
-            if model_id.is_empty() {
-                None
-            } else {
-                Some(model_id.to_string())
-            },
-        );
         self.runtime.analysis.set_max_analysis_duration_seconds(
             self.settings.analysis.max_analysis_duration_seconds,
         );
@@ -122,39 +105,6 @@ impl EguiController {
         self.runtime
             .analysis
             .start(self.runtime.jobs.message_sender());
-        {
-            let source_ids: Vec<String> = self
-                .library
-                .sources
-                .iter()
-                .map(|source| source.id.as_str().to_string())
-                .collect();
-            let preferred_model_id = self.classifier_model_id();
-            let tx = self.runtime.jobs.message_sender();
-            std::thread::spawn(move || {
-                let result = super::analysis_jobs::enqueue_inference_jobs_for_sources(
-                    &source_ids,
-                    preferred_model_id.as_deref(),
-                );
-                match result {
-                    Ok((inserted, progress)) => {
-                        if inserted > 0 {
-                            let _ = tx.send(super::jobs::JobMessage::Analysis(
-                                super::analysis_jobs::AnalysisJobMessage::EnqueueFinished {
-                                    inserted,
-                                    progress,
-                                },
-                            ));
-                        }
-                    }
-                    Err(err) => {
-                        let _ = tx.send(super::jobs::JobMessage::Analysis(
-                            super::analysis_jobs::AnalysisJobMessage::EnqueueFailed(err),
-                        ));
-                    }
-                }
-            });
-        }
         Ok(())
     }
 
@@ -170,8 +120,6 @@ impl EguiController {
             sources: self.library.sources.clone(),
             collections: self.library.collections.clone(),
             feature_flags: self.settings.feature_flags.clone(),
-            model: self.settings.model.clone(),
-            training: self.settings.training.clone(),
             analysis: self.settings.analysis.clone(),
             updates: self.settings.updates.clone(),
             trash_folder: self.settings.trash_folder.clone(),

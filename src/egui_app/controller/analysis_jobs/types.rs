@@ -42,13 +42,6 @@ impl fmt::Display for AnalysisProgress {
     }
 }
 
-/// Single top-k probability item stored for predictions.
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub(in crate::egui_app::controller) struct TopKProbability {
-    pub(in crate::egui_app::controller) class_id: String,
-    pub(in crate::egui_app::controller) probability: f32,
-}
-
 /// Controller messages emitted by the background analysis system.
 #[derive(Clone, Debug)]
 pub(in crate::egui_app::controller) enum AnalysisJobMessage {
@@ -62,10 +55,4 @@ pub(in crate::egui_app::controller) enum AnalysisJobMessage {
     EmbeddingBackfillEnqueueFinished { inserted: usize, progress: AnalysisProgress },
     /// Embedding backfill enqueue failed.
     EmbeddingBackfillEnqueueFailed(String),
-    /// Latest prediction loaded for a selected sample.
-    PredictionLoaded {
-        sample_id: String,
-        top_class: Option<String>,
-        confidence: Option<f32>,
-    },
 }
