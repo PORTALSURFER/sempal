@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 /// UI state for training-free label creation and editing.
 #[derive(Clone, Debug)]
 pub struct TfLabelsUiState {
@@ -10,6 +12,7 @@ pub struct TfLabelsUiState {
     pub last_candidate_label_id: Option<String>,
     pub last_candidate_results: Vec<TfLabelCandidateCache>,
     pub auto_tag_prompt: Option<TfAutoTagPrompt>,
+    pub calibration: Option<TfLabelCalibrationState>,
 }
 
 impl Default for TfLabelsUiState {
@@ -24,6 +27,7 @@ impl Default for TfLabelsUiState {
             last_candidate_label_id: None,
             last_candidate_results: Vec::new(),
             auto_tag_prompt: None,
+            calibration: None,
         }
     }
 }
@@ -59,4 +63,21 @@ pub struct TfLabelCandidateCache {
 pub struct TfAutoTagPrompt {
     pub label_id: String,
     pub label_name: String,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct TfLabelCalibrationSample {
+    pub sample_id: String,
+    pub score: f32,
+    pub bucket: crate::analysis::anchor_scoring::ConfidenceBucket,
+}
+
+#[derive(Clone, Debug)]
+pub struct TfLabelCalibrationState {
+    pub label_id: String,
+    pub label_name: String,
+    pub samples: Vec<TfLabelCalibrationSample>,
+    pub decisions: HashMap<String, bool>,
+    pub suggested_threshold: Option<f32>,
+    pub suggested_gap: Option<f32>,
 }
