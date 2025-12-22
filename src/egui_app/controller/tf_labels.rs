@@ -136,27 +136,6 @@ impl EguiController {
         )
     }
 
-    pub fn update_tf_label_adaptive_settings(
-        &mut self,
-        label_id: &str,
-        mode: TfLabelThresholdMode,
-        adaptive_threshold: Option<f32>,
-        adaptive_percentile: Option<f32>,
-        adaptive_mean: Option<f32>,
-        adaptive_std: Option<f32>,
-    ) -> Result<(), String> {
-        let mut conn = open_library_db()?;
-        update_tf_label_adaptive_with_conn(
-            &mut conn,
-            label_id,
-            mode,
-            adaptive_threshold,
-            adaptive_percentile,
-            adaptive_mean,
-            adaptive_std,
-        )
-    }
-
     /// Remove a training-free label (anchors cascade).
     pub fn delete_tf_label(&mut self, label_id: &str) -> Result<(), String> {
         let mut conn = open_library_db()?;
