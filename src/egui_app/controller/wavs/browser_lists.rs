@@ -1,4 +1,5 @@
 use super::*;
+use crate::egui_app::state::FocusContext;
 
 impl EguiController {
     pub(in crate::egui_app::controller) fn rebuild_browser_lists(&mut self) {

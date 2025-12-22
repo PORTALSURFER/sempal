@@ -1,4 +1,5 @@
 use super::*;
+use crate::egui_app::state::WaveformView;
 
 impl EguiController {
     pub(in crate::egui_app::controller) fn load_waveform_for_selection(

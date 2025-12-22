@@ -120,6 +120,22 @@ impl EguiController {
         ))
     }
 
+    /// Load waveform/audio for a given library sample_id without requiring browser selection.
+    pub fn preview_sample_by_id(&mut self, sample_id: &str) -> Result<(), String> {
+        let (source_id, relative_path) = super::analysis_jobs::parse_sample_id(sample_id)?;
+        let source = self
+            .library
+            .sources
+            .iter()
+            .find(|source| source.id.as_str() == source_id)
+            .map(|source| SampleSource {
+                id: source.id.clone(),
+                root: source.root.clone(),
+            })
+            .ok_or_else(|| format!("Unknown source for sample_id: {sample_id}"))?;
+        self.load_waveform_for_selection(&source, &relative_path)
+    }
+
     /// Select a wav by absolute index into the full wav list.
     pub fn select_wav_by_index(&mut self, index: usize) {
         selection_ops::select_wav_by_index(self, index);

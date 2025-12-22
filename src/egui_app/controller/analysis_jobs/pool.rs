@@ -9,6 +9,7 @@ use std::sync::{
     Arc,
     atomic::AtomicU32,
     atomic::{AtomicBool, Ordering},
+    Mutex,
     mpsc::{Sender, channel},
 };
 use std::thread::{JoinHandle, sleep};

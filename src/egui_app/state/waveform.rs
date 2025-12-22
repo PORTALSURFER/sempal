@@ -4,6 +4,7 @@ use crate::waveform::WaveformChannelView;
 use egui;
 use std::collections::VecDeque;
 use std::path::PathBuf;
+use std::time::Instant;
 
 /// Cached waveform image and playback overlays.
 #[derive(Clone, Debug)]

@@ -1,6 +1,5 @@
 //! Global SQLite storage for sources and collections that should not live in the config file.
 
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{LazyLock, Mutex};
 
