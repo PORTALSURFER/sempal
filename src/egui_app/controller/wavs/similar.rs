@@ -42,8 +42,9 @@ pub(super) fn find_similar_for_visible_row(
         &sample_id,
         SIMILAR_RE_RANK_CANDIDATES,
     )?;
+    let query_embedding = load_embedding_for_sample(&conn, &sample_id)?;
     let query_dsp = load_light_dsp_for_sample(&conn, &sample_id)?;
-    let ranked = rerank_with_dsp(&conn, neighbours, query_dsp.as_deref())?;
+    let ranked = rerank_with_dsp(&conn, neighbours, query_embedding.as_deref(), query_dsp.as_deref())?;
 
     let mut indices = Vec::new();
     for candidate_id in ranked {
@@ -109,7 +110,7 @@ pub(super) fn find_similar_for_audio_path(
         &embedding,
         SIMILAR_RE_RANK_CANDIDATES,
     )?;
-    let ranked = rerank_with_dsp(&conn, neighbours, query_dsp.as_deref())?;
+    let ranked = rerank_with_dsp(&conn, neighbours, Some(&embedding), query_dsp.as_deref())?;
 
     let mut indices = Vec::new();
     for candidate_id in ranked {
@@ -147,6 +148,7 @@ pub(super) fn find_similar_for_audio_path(
 fn rerank_with_dsp(
     conn: &rusqlite::Connection,
     neighbours: Vec<crate::analysis::ann_index::SimilarNeighbor>,
+    query_embedding: Option<&[f32]>,
     query_dsp: Option<&[f32]>,
 ) -> Result<Vec<String>, String> {
     let mut scored = Vec::with_capacity(neighbours.len());
@@ -154,7 +156,14 @@ fn rerank_with_dsp(
         if neighbour.sample_id.is_empty() {
             continue;
         }
-        let embed_sim = (1.0 - neighbour.distance).clamp(-1.0, 1.0);
+        let embed_sim = if let Some(query_embedding) = query_embedding {
+            match load_embedding_for_sample(conn, &neighbour.sample_id)? {
+                Some(candidate) => cosine_similarity(query_embedding, &candidate).clamp(-1.0, 1.0),
+                None => (1.0 - neighbour.distance).clamp(-1.0, 1.0),
+            }
+        } else {
+            (1.0 - neighbour.distance).clamp(-1.0, 1.0)
+        };
         let dsp_sim = if let Some(query_dsp) = query_dsp {
             load_light_dsp_for_sample(conn, &neighbour.sample_id)?
                 .as_deref()
@@ -191,6 +200,24 @@ fn load_light_dsp_for_sample(
     let features = crate::analysis::decode_f32_le_blob(&blob)?;
     let light = crate::analysis::light_dsp_from_features_v1(&features);
     Ok(light.map(normalize_l2))
+}
+
+fn load_embedding_for_sample(
+    conn: &rusqlite::Connection,
+    sample_id: &str,
+) -> Result<Option<Vec<f32>>, String> {
+    let blob: Option<Vec<u8>> = conn
+        .query_row(
+            "SELECT vec FROM embeddings WHERE sample_id = ?1 AND model_id = ?2",
+            params![sample_id, crate::analysis::embedding::EMBEDDING_MODEL_ID],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|err| format!("Load embedding failed: {err}"))?;
+    let Some(blob) = blob else {
+        return Ok(None);
+    };
+    crate::analysis::decode_f32_le_blob(&blob).map(Some)
 }
 
 fn normalize_l2(mut values: Vec<f32>) -> Vec<f32> {
