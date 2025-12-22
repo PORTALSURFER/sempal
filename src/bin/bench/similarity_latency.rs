@@ -16,7 +16,7 @@ pub(super) struct SimilarityBenchResult {
 
 pub(super) fn run(options: &BenchOptions) -> Result<SimilarityBenchResult, String> {
     let _temp = tempdir().map_err(|err| format!("Tempdir failed: {err}"))?;
-    let conn = Connection::open_in_memory().map_err(|err| format!("Open sqlite failed: {err}"))?;
+    let mut conn = Connection::open_in_memory().map_err(|err| format!("Open sqlite failed: {err}"))?;
     conn.execute_batch(
         "PRAGMA journal_mode=OFF;
          PRAGMA synchronous=OFF;
