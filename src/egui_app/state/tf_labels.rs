@@ -82,4 +82,5 @@ pub struct TfLabelCalibrationState {
     pub decisions: HashMap<String, bool>,
     pub suggested_threshold: Option<f32>,
     pub suggested_gap: Option<f32>,
+    pub suggested_topk: Option<i64>,
 }

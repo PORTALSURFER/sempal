@@ -7,7 +7,6 @@ use std::collections::HashMap;
 
 const CALIBRATION_CANDIDATE_K: usize = 1000;
 const CALIBRATION_TOP_K: usize = 200;
-const THRESHOLD_MARGIN: f32 = 0.02;
 
 impl EguiApp {
     pub(super) fn open_tf_label_calibration(&mut self, label: &crate::egui_app::controller::TfLabel) {
@@ -37,10 +36,26 @@ impl EguiApp {
             return;
         };
 
-        let (suggested_threshold, suggested_gap) =
-            suggest_thresholds(&state.samples, &state.decisions, label.threshold, label.gap);
-        state.suggested_threshold = suggested_threshold;
-        state.suggested_gap = suggested_gap;
+        match self.controller.tf_label_calibration_suggestions(
+            &state.label_id,
+            &state.samples,
+            &state.decisions,
+        ) {
+            Ok((suggested_threshold, suggested_gap, suggested_topk)) => {
+                state.suggested_threshold = suggested_threshold;
+                state.suggested_gap = suggested_gap;
+                state.suggested_topk = suggested_topk;
+            }
+            Err(err) => {
+                self.controller.set_status(
+                    format!("Calibration suggestion failed: {err}"),
+                    style::StatusTone::Error,
+                );
+                state.suggested_threshold = None;
+                state.suggested_gap = None;
+                state.suggested_topk = None;
+            }
+        }
 
         let mut close = false;
         egui::Window::new("Label calibration")
@@ -55,8 +70,8 @@ impl EguiApp {
                 );
                 ui.label(
                     RichText::new(format!(
-                        "Current threshold {:.3}, gap {:.3}",
-                        label.threshold, label.gap
+                        "Current threshold {:.3}, gap {:.3}, topK {}",
+                        label.threshold, label.gap, label.topk
                     ))
                     .color(palette.text_muted),
                 );
@@ -88,6 +103,24 @@ impl EguiApp {
                 } else {
                     ui.label(
                         RichText::new("Suggested gap: need both up/down samples")
+                            .color(palette.text_muted),
+                    );
+                }
+                if let Some(value) = state.suggested_topk {
+                    ui.label(
+                        RichText::new(format!("Suggested topK: {value}"))
+                            .color(palette.text_primary),
+                    );
+                } else if self.controller.ui.tf_labels.aggregation_mode
+                    == crate::sample_sources::config::TfLabelAggregationMode::Max
+                {
+                    ui.label(
+                        RichText::new("Suggested topK: switch to MeanTopK to tune")
+                            .color(palette.text_muted),
+                    );
+                } else {
+                    ui.label(
+                        RichText::new("Suggested topK: need both up/down samples")
                             .color(palette.text_muted),
                     );
                 }
@@ -157,26 +190,29 @@ impl EguiApp {
                         self.refresh_tf_label_calibration(label.label_id.clone(), label.name.clone());
                         close = true;
                     }
-                    let can_apply = state.suggested_threshold.is_some();
+                    let can_apply = state.suggested_threshold.is_some()
+                        || state.suggested_gap.is_some()
+                        || state.suggested_topk.is_some();
                     if ui
                         .add_enabled(can_apply, egui::Button::new("Apply suggested values"))
                         .clicked()
                     {
                         let next_threshold = state.suggested_threshold.unwrap_or(label.threshold);
                         let next_gap = state.suggested_gap.unwrap_or(label.gap);
+                        let next_topk = state.suggested_topk.unwrap_or(label.topk);
                         match self.controller.update_tf_label(
                             &label.label_id,
                             &label.name,
                             next_threshold,
                             next_gap,
-                            label.topk,
+                            next_topk,
                         ) {
                             Ok(()) => {
                                 self.controller.clear_tf_label_score_cache();
                                 self.controller.set_status(
                                     format!(
-                                        "Saved threshold {:.3}, gap {:.3}",
-                                        next_threshold, next_gap
+                                        "Saved threshold {:.3}, gap {:.3}, topK {}",
+                                        next_threshold, next_gap, next_topk
                                     ),
                                     style::StatusTone::Info,
                                 );
@@ -222,6 +258,7 @@ impl EguiApp {
                     decisions: HashMap::new(),
                     suggested_threshold: None,
                     suggested_gap: None,
+                    suggested_topk: None,
                 });
             }
             Err(err) => {
@@ -240,51 +277,6 @@ impl EguiApp {
         let labels = self.controller.list_tf_labels()?;
         Ok(labels.into_iter().find(|label| label.label_id == label_id))
     }
-}
-
-fn suggest_thresholds(
-    samples: &[TfLabelCalibrationSample],
-    decisions: &HashMap<String, bool>,
-    current_threshold: f32,
-    _current_gap: f32,
-) -> (Option<f32>, Option<f32>) {
-    let mut positives = Vec::new();
-    let mut negatives = Vec::new();
-    for sample in samples {
-        match decisions.get(&sample.sample_id) {
-            Some(true) => positives.push(sample.score),
-            Some(false) => negatives.push(sample.score),
-            None => {}
-        }
-    }
-    if positives.is_empty() {
-        return (None, None);
-    }
-    let min_pos = positives
-        .iter()
-        .copied()
-        .fold(f32::INFINITY, f32::min);
-    let max_neg = negatives.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-
-    let threshold = if negatives.is_empty() {
-        (min_pos - THRESHOLD_MARGIN).max(0.0)
-    } else {
-        ((min_pos + max_neg) * 0.5).clamp(0.0, 1.0)
-    };
-    let threshold = threshold.clamp(0.0, 1.0);
-
-    let gap = if negatives.is_empty() {
-        None
-    } else {
-        Some((min_pos - max_neg).max(0.0).min(2.0))
-    };
-
-    let threshold = if threshold.is_finite() {
-        Some(threshold)
-    } else {
-        Some(current_threshold)
-    };
-    (threshold, gap)
 }
 
 fn count_votes(decisions: &HashMap<String, bool>) -> (usize, usize) {

@@ -79,6 +79,23 @@ pub struct TfLabelCoverageStats {
     pub low: usize,
 }
 
+const CALIBRATION_THRESHOLD_MARGIN: f32 = 0.02;
+const CALIBRATION_TIE_EPSILON: f32 = 1e-6;
+
+#[derive(Debug)]
+struct CalibrationSampleScores {
+    sample_id: String,
+    sorted_scores: Vec<f32>,
+    prefix_sums: Vec<f32>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct TopkCandidate {
+    topk: usize,
+    f1: f32,
+    margin: f32,
+}
+
 impl EguiController {
     /// List all training-free labels.
     pub fn list_tf_labels(&mut self) -> Result<Vec<TfLabel>, String> {
@@ -315,6 +332,41 @@ impl EguiController {
                 }
             })
             .collect())
+    }
+
+    /// Suggest threshold, gap, and topK based on calibration votes.
+    pub fn tf_label_calibration_suggestions(
+        &mut self,
+        label_id: &str,
+        samples: &[crate::egui_app::state::TfLabelCalibrationSample],
+        decisions: &HashMap<String, bool>,
+    ) -> Result<(Option<f32>, Option<f32>, Option<i64>), String> {
+        let conn = open_library_db()?;
+        let label = load_tf_label_by_id(&conn, label_id)?
+            .ok_or_else(|| "Label not found".to_string())?;
+        let anchors = load_tf_anchor_embeddings_for_label(&conn, &label.label_id)?;
+        if anchors.is_empty() {
+            return Ok((None, None, None));
+        }
+        let sample_ids = calibration_sample_ids(samples);
+        let embeddings = load_embeddings_for_samples(&conn, &sample_ids)?;
+        let scores = build_calibration_scores(&anchors, &embeddings);
+        if scores.is_empty() {
+            return Ok((None, None, None));
+        }
+        let current_topk = label.topk.max(1) as usize;
+        let suggested_topk = if self.ui.tf_labels.aggregation_mode
+            == crate::sample_sources::config::TfLabelAggregationMode::MeanTopK
+        {
+            select_best_topk(&scores, decisions, current_topk, label.threshold)
+        } else {
+            None
+        };
+        let topk_for_threshold = suggested_topk.unwrap_or(current_topk);
+        let (positives, negatives) = collect_scored_votes(&scores, decisions, topk_for_threshold);
+        let (threshold, gap) =
+            threshold_gap_from_votes(&positives, &negatives, label.threshold);
+        Ok((threshold, gap, suggested_topk.map(|topk| topk as i64)))
     }
 
     pub fn tf_label_coverage_stats_for_label(
@@ -717,6 +769,258 @@ fn mean_std(scores: &[f32]) -> (f32, f32) {
     (mean, std)
 }
 
+fn calibration_sample_ids(
+    samples: &[crate::egui_app::state::TfLabelCalibrationSample],
+) -> Vec<String> {
+    samples.iter().map(|sample| sample.sample_id.clone()).collect()
+}
+
+fn load_embeddings_for_samples(
+    conn: &Connection,
+    sample_ids: &[String],
+) -> Result<HashMap<String, Vec<f32>>, String> {
+    let mut stmt = conn
+        .prepare("SELECT vec FROM embeddings WHERE sample_id = ?1 AND model_id = ?2")
+        .map_err(|err| format!("Prepare embedding lookup failed: {err}"))?;
+    let mut embeddings = HashMap::new();
+    for sample_id in sample_ids {
+        let blob: Option<Vec<u8>> = stmt
+            .query_row(
+                params![sample_id, crate::analysis::embedding::EMBEDDING_MODEL_ID],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|err| format!("Load embedding failed: {err}"))?;
+        if let Some(blob) = blob {
+            if let Ok(vec) = crate::analysis::decode_f32_le_blob(&blob) {
+                embeddings.insert(sample_id.clone(), vec);
+            }
+        }
+    }
+    Ok(embeddings)
+}
+
+fn build_calibration_scores(
+    anchors: &[crate::analysis::anchor_match::AnchorEmbedding],
+    embeddings: &HashMap<String, Vec<f32>>,
+) -> Vec<CalibrationSampleScores> {
+    let mut results = Vec::new();
+    for (sample_id, embedding) in embeddings {
+        let mut scores = weighted_similarity_scores(embedding, anchors);
+        if scores.is_empty() {
+            continue;
+        }
+        scores.sort_by(|a, b| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
+        let prefix_sums = prefix_sums(&scores);
+        results.push(CalibrationSampleScores {
+            sample_id: sample_id.clone(),
+            sorted_scores: scores,
+            prefix_sums,
+        });
+    }
+    results
+}
+
+fn weighted_similarity_scores(
+    embedding: &[f32],
+    anchors: &[crate::analysis::anchor_match::AnchorEmbedding],
+) -> Vec<f32> {
+    let mut scores = Vec::with_capacity(anchors.len());
+    for anchor in anchors {
+        let similarity = dot_product(embedding, &anchor.embedding);
+        scores.push((similarity * anchor.weight).max(0.0));
+    }
+    scores
+}
+
+fn prefix_sums(values: &[f32]) -> Vec<f32> {
+    let mut sums = Vec::with_capacity(values.len());
+    let mut running = 0.0_f32;
+    for value in values {
+        running += *value;
+        sums.push(running);
+    }
+    sums
+}
+
+fn score_for_topk(scores: &CalibrationSampleScores, topk: usize) -> Option<f32> {
+    if scores.sorted_scores.is_empty() {
+        return None;
+    }
+    let k = topk.max(1).min(scores.sorted_scores.len());
+    let sum = scores.prefix_sums[k - 1];
+    Some(sum / k as f32)
+}
+
+fn collect_scored_votes(
+    scores: &[CalibrationSampleScores],
+    decisions: &HashMap<String, bool>,
+    topk: usize,
+) -> (Vec<f32>, Vec<f32>) {
+    let mut positives = Vec::new();
+    let mut negatives = Vec::new();
+    for sample in scores {
+        let Some(decision) = decisions.get(&sample.sample_id) else {
+            continue;
+        };
+        if let Some(score) = score_for_topk(sample, topk) {
+            if *decision {
+                positives.push(score);
+            } else {
+                negatives.push(score);
+            }
+        }
+    }
+    (positives, negatives)
+}
+
+fn threshold_gap_from_votes(
+    positives: &[f32],
+    negatives: &[f32],
+    current_threshold: f32,
+) -> (Option<f32>, Option<f32>) {
+    if positives.is_empty() {
+        return (None, None);
+    }
+    let min_pos = min_score(positives).unwrap_or(current_threshold);
+    let max_neg = max_score(negatives).unwrap_or(f32::NEG_INFINITY);
+
+    let threshold = if negatives.is_empty() {
+        (min_pos - CALIBRATION_THRESHOLD_MARGIN).max(0.0)
+    } else {
+        ((min_pos + max_neg) * 0.5).clamp(0.0, 1.0)
+    };
+    let threshold = threshold.clamp(0.0, 1.0);
+
+    let gap = if negatives.is_empty() {
+        None
+    } else {
+        Some((min_pos - max_neg).max(0.0).min(2.0))
+    };
+
+    let threshold = if threshold.is_finite() {
+        Some(threshold)
+    } else {
+        Some(current_threshold)
+    };
+    (threshold, gap)
+}
+
+fn min_score(scores: &[f32]) -> Option<f32> {
+    scores
+        .iter()
+        .copied()
+        .fold(None, |acc, value| Some(acc.map_or(value, |best| best.min(value))))
+}
+
+fn max_score(scores: &[f32]) -> Option<f32> {
+    scores
+        .iter()
+        .copied()
+        .fold(None, |acc, value| Some(acc.map_or(value, |best| best.max(value))))
+}
+
+fn select_best_topk(
+    scores: &[CalibrationSampleScores],
+    decisions: &HashMap<String, bool>,
+    current_topk: usize,
+    current_threshold: f32,
+) -> Option<usize> {
+    if scores.is_empty() {
+        return None;
+    }
+    if !has_both_votes(decisions) {
+        return None;
+    }
+    let max_topk = scores[0].sorted_scores.len().max(1);
+    let mut best: Option<TopkCandidate> = None;
+    for topk in 1..=max_topk {
+        let (positives, negatives) = collect_scored_votes(scores, decisions, topk);
+        if positives.is_empty() || negatives.is_empty() {
+            continue;
+        }
+        let (threshold, _) = threshold_gap_from_votes(&positives, &negatives, current_threshold);
+        let threshold = threshold.unwrap_or(current_threshold);
+        let f1 = f1_score(&positives, &negatives, threshold);
+        let margin = score_margin(&positives, &negatives);
+        let candidate = TopkCandidate { topk, f1, margin };
+        if best
+            .as_ref()
+            .map_or(true, |best| better_topk_candidate(&candidate, best, current_topk))
+        {
+            best = Some(candidate);
+        }
+    }
+    best.map(|candidate| candidate.topk)
+}
+
+fn has_both_votes(decisions: &HashMap<String, bool>) -> bool {
+    let mut has_positive = false;
+    let mut has_negative = false;
+    for value in decisions.values() {
+        if *value {
+            has_positive = true;
+        } else {
+            has_negative = true;
+        }
+    }
+    has_positive && has_negative
+}
+
+fn f1_score(positives: &[f32], negatives: &[f32], threshold: f32) -> f32 {
+    let tp = positives.iter().filter(|score| **score >= threshold).count() as f32;
+    let fn_count = positives.len() as f32 - tp;
+    let fp = negatives.iter().filter(|score| **score >= threshold).count() as f32;
+    let precision = if tp + fp > 0.0 { tp / (tp + fp) } else { 0.0 };
+    let recall = if tp + fn_count > 0.0 {
+        tp / (tp + fn_count)
+    } else {
+        0.0
+    };
+    if precision + recall > 0.0 {
+        2.0 * precision * recall / (precision + recall)
+    } else {
+        0.0
+    }
+}
+
+fn score_margin(positives: &[f32], negatives: &[f32]) -> f32 {
+    let Some(min_pos) = min_score(positives) else {
+        return 0.0;
+    };
+    let Some(max_neg) = max_score(negatives) else {
+        return 0.0;
+    };
+    (min_pos - max_neg).max(0.0)
+}
+
+fn better_topk_candidate(candidate: &TopkCandidate, best: &TopkCandidate, current_topk: usize) -> bool {
+    if candidate.f1 > best.f1 + CALIBRATION_TIE_EPSILON {
+        return true;
+    }
+    if (candidate.f1 - best.f1).abs() > CALIBRATION_TIE_EPSILON {
+        return false;
+    }
+    if candidate.margin > best.margin + CALIBRATION_TIE_EPSILON {
+        return true;
+    }
+    if (candidate.margin - best.margin).abs() > CALIBRATION_TIE_EPSILON {
+        return false;
+    }
+    let candidate_distance = candidate.topk.abs_diff(current_topk);
+    let best_distance = best.topk.abs_diff(current_topk);
+    candidate_distance < best_distance
+}
+
+fn dot_product(a: &[f32], b: &[f32]) -> f32 {
+    let len = a.len().min(b.len());
+    let mut sum = 0.0_f32;
+    for i in 0..len {
+        sum += a[i] * b[i];
+    }
+    sum
+}
+
 fn load_tf_anchor_embeddings(
     conn: &Connection,
 ) -> Result<
@@ -830,6 +1134,42 @@ fn load_tf_anchor_embeddings_for_label(
         }
     }
     Ok(anchors)
+}
+
+#[cfg(test)]
+mod calibration_tests {
+    use super::*;
+
+    #[test]
+    fn threshold_gap_from_votes_defaults_when_negatives_missing() {
+        let positives = vec![0.6, 0.8];
+        let (threshold, gap) = threshold_gap_from_votes(&positives, &[], 0.7);
+        assert!(gap.is_none());
+        let threshold = threshold.unwrap();
+        assert!((threshold - 0.58).abs() < 1e-6);
+    }
+
+    #[test]
+    fn select_best_topk_prefers_larger_margin_on_ties() {
+        let scores = vec![
+            CalibrationSampleScores {
+                sample_id: "pos".to_string(),
+                sorted_scores: vec![0.9, 0.5],
+                prefix_sums: prefix_sums(&[0.9, 0.5]),
+            },
+            CalibrationSampleScores {
+                sample_id: "neg".to_string(),
+                sorted_scores: vec![0.6, 0.1],
+                prefix_sums: prefix_sums(&[0.6, 0.1]),
+            },
+        ];
+        let mut decisions = HashMap::new();
+        decisions.insert("pos".to_string(), true);
+        decisions.insert("neg".to_string(), false);
+
+        let suggested = select_best_topk(&scores, &decisions, 1, 0.7);
+        assert_eq!(suggested, Some(2));
+    }
 }
 
 fn validate_tf_label_fields(
