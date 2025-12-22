@@ -1,6 +1,6 @@
 use super::style;
 use super::*;
-use crate::egui_app::state::TfLabelCreatePrompt;
+use crate::egui_app::state::{TfLabelAggregationMode, TfLabelCreatePrompt, TfLabelScoreCache};
 use eframe::egui::{self, RichText};
 
 impl EguiApp {
@@ -77,6 +77,7 @@ impl EguiApp {
                                         );
                                     }
                                 }
+                                self.controller.clear_tf_label_score_cache();
                                 self.controller.set_status(
                                     format!("Created label {}", label.name),
                                     style::StatusTone::Info,
@@ -125,6 +126,26 @@ impl EguiApp {
                 ui.horizontal(|ui| {
                     if ui.button("New label").clicked() {
                         self.open_tf_label_create_prompt(String::new(), None);
+                    }
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Aggregation");
+                    let mut mode = self.controller.ui.tf_labels.aggregation_mode;
+                    if ui
+                        .selectable_label(mode == TfLabelAggregationMode::MeanTopK, "TopK mean")
+                        .clicked()
+                    {
+                        mode = TfLabelAggregationMode::MeanTopK;
+                    }
+                    if ui
+                        .selectable_label(mode == TfLabelAggregationMode::Max, "Max")
+                        .clicked()
+                    {
+                        mode = TfLabelAggregationMode::Max;
+                    }
+                    if mode != self.controller.ui.tf_labels.aggregation_mode {
+                        self.controller.ui.tf_labels.aggregation_mode = mode;
+                        self.controller.clear_tf_label_score_cache();
                     }
                 });
                 ui.add_space(ui.spacing().item_spacing.y);
@@ -201,6 +222,7 @@ impl EguiApp {
                                 .update_tf_label(&label.label_id, &name, threshold, gap, topk)
                             {
                                 Ok(()) => {
+                                    self.controller.clear_tf_label_score_cache();
                                     self.controller.set_status(
                                         format!("Updated {}", name),
                                         style::StatusTone::Info,
@@ -220,6 +242,7 @@ impl EguiApp {
                         if ui.add(delete_button).clicked() {
                             match self.controller.delete_tf_label(&label.label_id) {
                                 Ok(()) => {
+                                    self.controller.clear_tf_label_score_cache();
                                     self.controller.set_status(
                                         format!("Deleted {}", label.name),
                                         style::StatusTone::Info,
@@ -273,6 +296,7 @@ impl EguiApp {
                             if ui.button("Update").clicked() {
                                 match self.controller.update_tf_anchor(&anchor.anchor_id, weight) {
                                     Ok(()) => {
+                                        self.controller.clear_tf_label_score_cache();
                                         self.controller.set_status(
                                             "Anchor updated".to_string(),
                                             style::StatusTone::Info,
@@ -292,6 +316,7 @@ impl EguiApp {
                             if ui.add(delete_button).clicked() {
                                 match self.controller.delete_tf_anchor(&anchor.anchor_id) {
                                     Ok(()) => {
+                                        self.controller.clear_tf_label_score_cache();
                                         self.controller.set_status(
                                             "Anchor removed".to_string(),
                                             style::StatusTone::Info,
@@ -336,15 +361,37 @@ impl EguiApp {
             .map(|entry| view_model::sample_display_label(&entry.relative_path))
             .unwrap_or_else(|| "Selected sample".to_string());
         ui.label(RichText::new(format!("Scores for {}", sample_label)).color(palette.text_primary));
-        let matches = match self.controller.tf_label_matches_for_sample(&sample_id) {
-            Ok(matches) => matches,
-            Err(err) => {
-                self.controller.set_status(
-                    format!("Score labels failed: {err}"),
-                    style::StatusTone::Error,
-                );
-                Vec::new()
-            }
+        let mode = self.controller.ui.tf_labels.aggregation_mode;
+        let cache_hit = self.controller.ui.tf_labels.last_score_sample_id.as_deref() == Some(&sample_id)
+            && self.controller.ui.tf_labels.last_score_mode == mode;
+        let matches: Vec<TfLabelScoreCache> = if cache_hit {
+            self.controller.ui.tf_labels.last_scores.clone()
+        } else {
+            let matches = match self.controller.tf_label_matches_for_sample(&sample_id, mode) {
+                Ok(matches) => matches,
+                Err(err) => {
+                    self.controller.set_status(
+                        format!("Score labels failed: {err}"),
+                        style::StatusTone::Error,
+                    );
+                    Vec::new()
+                }
+            };
+            let cache: Vec<TfLabelScoreCache> = matches
+                .into_iter()
+                .map(|entry| TfLabelScoreCache {
+                    label_id: entry.label_id,
+                    name: entry.name,
+                    score: entry.score,
+                    bucket: entry.bucket,
+                    gap: entry.gap,
+                    anchor_count: entry.anchor_count,
+                })
+                .collect();
+            self.controller.ui.tf_labels.last_score_sample_id = Some(sample_id.clone());
+            self.controller.ui.tf_labels.last_score_mode = mode;
+            self.controller.ui.tf_labels.last_scores = cache.clone();
+            cache
         };
         if matches.is_empty() {
             ui.label(RichText::new("No label scores yet.").color(palette.text_muted));

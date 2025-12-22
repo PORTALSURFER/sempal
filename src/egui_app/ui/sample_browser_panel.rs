@@ -642,6 +642,7 @@ impl EguiApp {
                                         StatusTone::Error,
                                     );
                                 } else {
+                                    self.controller.clear_tf_label_score_cache();
                                     self.controller.set_status(
                                         format!("Added anchor to {}", label.name),
                                         StatusTone::Info,

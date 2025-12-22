@@ -111,6 +111,7 @@ impl EguiController {
     pub fn tf_label_matches_for_sample(
         &mut self,
         sample_id: &str,
+        mode: crate::egui_app::state::TfLabelAggregationMode,
     ) -> Result<Vec<TfLabelMatch>, String> {
         let conn = open_library_db()?;
         let embedding = load_tf_embedding(&conn, sample_id)?;
@@ -134,7 +135,14 @@ impl EguiController {
             &label_specs,
             &anchors,
             &embedding,
-            |label| crate::analysis::anchor_scoring::AnchorAggregation::MeanTopK(label.topk),
+            |label| match mode {
+                crate::egui_app::state::TfLabelAggregationMode::MeanTopK => {
+                    crate::analysis::anchor_scoring::AnchorAggregation::MeanTopK(label.topk)
+                }
+                crate::egui_app::state::TfLabelAggregationMode::Max => {
+                    crate::analysis::anchor_scoring::AnchorAggregation::Max
+                }
+            },
             defaults.low_threshold_ratio,
         );
         let matches = scores
@@ -153,6 +161,11 @@ impl EguiController {
             })
             .collect();
         Ok(matches)
+    }
+
+    pub fn clear_tf_label_score_cache(&mut self) {
+        self.ui.tf_labels.last_score_sample_id = None;
+        self.ui.tf_labels.last_scores.clear();
     }
 }
 
