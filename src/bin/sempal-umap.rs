@@ -38,8 +38,9 @@ fn run() -> Result<(), String> {
     if layout.len() != sample_ids.len() {
         return Err("UMAP output length mismatch".to_string());
     }
+    let mut conn = conn;
     let inserted = write_layout(
-        &conn,
+        &mut conn,
         &sample_ids,
         &layout,
         &options.model_id,
@@ -201,31 +202,33 @@ fn compute_umap(vectors: &[Vec<f32>], seed: u64) -> Result<Vec<[f32; 2]>, String
     }
     let n_samples = vectors.len();
     let dim = vectors.first().map(|v| v.len()).unwrap_or(0);
-    let dataset = umap_rs::Dataset::new(data, n_samples, dim);
-    let umap = umap_rs::Umap::new(
-        DEFAULT_NEIGHBORS,
-        DEFAULT_N_COMPONENTS,
-        DEFAULT_MIN_DIST,
-        seed,
-    );
+    let matrix = ndarray::Array2::from_shape_vec((n_samples, dim), data)
+        .map_err(|err| format!("Build embedding matrix failed: {err}"))?;
+    let mut config = umap_rs::UmapConfig::default();
+    config.n_neighbors = DEFAULT_NEIGHBORS;
+    config.n_components = DEFAULT_N_COMPONENTS;
+    config.min_dist = DEFAULT_MIN_DIST;
+    config.seed = seed;
+    let umap = umap_rs::Umap::new(config);
     let embedding = umap
-        .fit_transform(&dataset)
+        .fit(&matrix)
         .map_err(|err| format!("UMAP fit failed: {err}"))?;
-    if embedding.ncols() != 2 {
+    let coords = embedding.embedding;
+    if coords.ncols() != 2 {
         return Err(format!(
             "UMAP returned {} columns, expected 2",
-            embedding.ncols()
+            coords.ncols()
         ));
     }
     let mut out = Vec::with_capacity(n_samples);
-    for row in embedding.rows() {
+    for row in coords.rows() {
         out.push([row[0], row[1]]);
     }
     Ok(out)
 }
 
 fn write_layout(
-    conn: &Connection,
+    conn: &mut Connection,
     sample_ids: &[String],
     layout: &[[f32; 2]],
     model_id: &str,
@@ -264,6 +267,7 @@ fn write_layout(
         ])
         .map_err(|err| format!("Insert layout failed: {err}"))?;
     }
+    drop(stmt);
     tx.commit()
         .map_err(|err| format!("Commit layout failed: {err}"))?;
     Ok(sample_ids.len())
