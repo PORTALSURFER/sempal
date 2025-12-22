@@ -125,6 +125,15 @@ impl EguiApp {
                 self.controller.request_hard_sync();
                 close_menu = true;
             }
+            if ui
+                .button("Recompute embeddings")
+                .on_hover_text("Queue embedding backfill jobs for this source")
+                .clicked()
+            {
+                self.controller.select_source_by_index(index);
+                self.controller.backfill_embeddings_for_selected_source();
+                close_menu = true;
+            }
             ui.separator();
             if ui.button("Open in file explorer").clicked() {
                 self.controller.select_source_by_index(index);
