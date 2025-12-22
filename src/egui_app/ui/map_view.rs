@@ -112,9 +112,9 @@ impl EguiApp {
             }
         }
 
-        let points = &self.controller.ui.map.cached_points;
+        let points = self.controller.ui.map.cached_points.clone();
         let painter = ui.painter_at(rect);
-        let hovered = find_hover_point(points, rect, center, scale, self.controller.ui.map.pan, pointer);
+        let hovered = find_hover_point(&points, rect, center, scale, self.controller.ui.map.pan, pointer);
         self.controller.ui.map.hovered_sample_id = hovered.as_ref().map(|(point, _)| point.sample_id.clone());
 
         if let Some((point, pos)) = hovered.as_ref() {
@@ -144,14 +144,19 @@ impl EguiApp {
             }
         }
 
+        let context_point = hovered.as_ref().map(|(point, _)| point.sample_id.clone());
         response.context_menu(|ui| {
+            let Some(sample_id) = context_point.as_ref() else {
+                ui.label("Hover a point to see map actions.");
+                return;
+            };
             let Some((point, _)) = hovered.as_ref() else {
                 ui.label("Hover a point to see map actions.");
                 return;
             };
             ui.label(sample_label_from_id(&point.sample_id));
             if ui.button("Preview").clicked() {
-                if let Err(err) = self.controller.preview_sample_by_id(&point.sample_id) {
+                if let Err(err) = self.controller.preview_sample_by_id(sample_id) {
                     self.controller
                         .set_status(format!("Preview failed: {err}"), style::StatusTone::Error);
                 } else if let Err(err) = self.controller.play_audio(false, None) {
@@ -178,7 +183,7 @@ impl EguiApp {
                     if ui.button(&label.name).clicked() {
                         if let Err(err) = self.controller.add_tf_anchor(
                             &label.label_id,
-                            &point.sample_id,
+                            sample_id,
                             1.0,
                         ) {
                             self.controller.set_status(
