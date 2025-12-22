@@ -31,42 +31,10 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
         {
             app.controller.toggle_loop();
         }
-        if let Some(prediction) = app.controller.ui.waveform.predicted_category.as_ref() {
-            ui.add_space(10.0);
-            let color = if prediction.class_id == "UNKNOWN" {
-                palette.accent_copper
-            } else {
-                confidence_heat_color(prediction.confidence, palette)
-            };
-            let band = confidence_band_label(prediction.confidence);
-            let label = RichText::new(format!(
-                "Category: {} ({:.0}% {})",
-                prediction.class_id,
-                prediction.confidence * 100.0,
-                band
-            ))
-            .color(color);
-            ui.label(label);
-        }
     });
     if view_mode != app.controller.ui.waveform.channel_view {
         app.controller.set_waveform_channel_view(view_mode);
     }
-}
-
-fn confidence_band_label(confidence: f32) -> &'static str {
-    if confidence >= 0.75 {
-        "high"
-    } else if confidence >= 0.45 {
-        "med"
-    } else {
-        "low"
-    }
-}
-
-fn confidence_heat_color(confidence: f32, palette: &style::Palette) -> egui::Color32 {
-    let t = confidence.clamp(0.0, 1.0);
-    lerp_color(palette.warning, palette.success, t)
 }
 
 fn lerp_color(a: egui::Color32, b: egui::Color32, t: f32) -> egui::Color32 {

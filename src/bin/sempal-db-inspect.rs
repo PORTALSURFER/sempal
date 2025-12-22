@@ -31,8 +31,6 @@ fn run() -> Result<(), String> {
     print_count(&conn, "samples")?;
     print_count(&conn, "features")?;
     print_count_where(&conn, "features(feat_version=1)", "features", "feat_version = 1")?;
-    print_count(&conn, "labels_weak")?;
-    print_count_where(&conn, "labels_weak(conf>=0.85)", "labels_weak", "confidence >= 0.85")?;
     print_count(&conn, "labels_user")?;
     print_count(&conn, "predictions")?;
     print_count(&conn, "analysis_jobs")?;

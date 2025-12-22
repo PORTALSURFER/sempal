@@ -2,7 +2,6 @@ use super::*;
 use crate::dataset::curated;
 use crate::egui_app::state::ProgressTaskKind;
 use rusqlite::{params, OptionalExtension};
-use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 use std::sync::mpsc::Sender;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -12,7 +11,6 @@ use tracing::warn;
 pub(super) struct ModelTrainingJob {
     pub(super) db_path: PathBuf,
     pub(super) source_ids: Vec<String>,
-    pub(super) min_confidence: f32,
     pub(super) pack_depth: usize,
     pub(super) use_user_labels: bool,
     pub(super) model_kind: crate::sample_sources::config::TrainingModelKind,
@@ -56,14 +54,13 @@ pub(super) fn run_model_training(
         tx,
         0,
         total_steps,
-        format!("Exporting dataset (min_conf={:.2})…", job.min_confidence),
+        "Exporting dataset…".to_string(),
     )?;
     let temp = tempfile::tempdir().map_err(|err| err.to_string())?;
     let out_dir = temp.path().join("dataset");
-    let mut options = crate::dataset::export::ExportOptions {
+    let options = crate::dataset::export::ExportOptions {
         out_dir,
         db_path: Some(job.db_path.clone()),
-        min_confidence: job.min_confidence,
         pack_depth: job.pack_depth,
         use_user_labels: job.use_user_labels,
         seed: "sempal-dataset-v1".to_string(),
@@ -72,8 +69,21 @@ pub(super) fn run_model_training(
         split_mode: crate::dataset::export::SplitMode::Pack,
     };
 
-    let (summary, used_min_confidence) =
-        export_with_confidence_fallback(&mut options, &job, tx)?;
+    let summary = match job.model_kind {
+        crate::sample_sources::config::TrainingModelKind::LogRegV1
+        | crate::sample_sources::config::TrainingModelKind::MlpV1 => {
+            crate::dataset::export::export_embedding_dataset_for_sources(
+                &options,
+                &job.source_ids,
+            )
+            .map_err(|err| err.to_string())?
+        }
+        _ => crate::dataset::export::export_training_dataset_for_sources(
+            &options,
+            &job.source_ids,
+        )
+        .map_err(|err| err.to_string())?,
+    };
     if summary.total_exported < 2 {
         return Err(format!(
             "Not enough labeled samples to train (need >=2, got {}). {}",
@@ -81,7 +91,6 @@ pub(super) fn run_model_training(
             training_diagnostics_hint(
                 &job.db_path,
                 &job.source_ids,
-                used_min_confidence,
                 job.use_user_labels,
                 job.model_kind.clone()
             )?
@@ -342,7 +351,6 @@ pub(super) fn begin_retrain_from_app(controller: &mut EguiController) {
         if let Ok(diag) = training_diagnostics_for_sources(
             &conn,
             &source_ids,
-            controller.retrain_min_confidence(),
             controller.retrain_use_user_labels(),
             &model_kind,
         ) {
@@ -377,7 +385,6 @@ pub(super) fn begin_retrain_from_app(controller: &mut EguiController) {
         .begin_model_training(ModelTrainingJob {
             db_path,
             source_ids,
-            min_confidence: controller.retrain_min_confidence(),
             pack_depth: controller.retrain_pack_depth(),
             use_user_labels: controller.retrain_use_user_labels(),
             model_kind,
@@ -421,12 +428,10 @@ impl EguiController {
                 return;
             }
         };
-        let min_confidence = self.retrain_min_confidence();
         let model_kind = self.training_model_kind();
         let diagnostics = match training_diagnostics_for_sources(
             &conn,
             &source_ids,
-            min_confidence,
             self.retrain_use_user_labels(),
             &model_kind,
         ) {
@@ -445,7 +450,6 @@ impl EguiController {
         let exportable = match training_exportable_count(
             &conn,
             &source_ids,
-            min_confidence,
             self.retrain_use_user_labels(),
             model_kind,
         ) {
@@ -483,14 +487,12 @@ impl EguiController {
             samples_total: diagnostics.samples_total,
             features_v1: diagnostics.features_v1,
             user_labeled: diagnostics.user_join,
-            weak_labeled: diagnostics.weak_join,
             exportable,
             predictions_total,
             predictions_unknown,
             predictions_min_conf,
             predictions_avg_conf,
             predictions_max_conf,
-            min_confidence,
             active_model_id,
             active_model_kind,
             active_model_classes,
@@ -975,69 +977,9 @@ fn unzip_rows(rows: Vec<DatasetRow>) -> (Vec<Vec<f32>>, Vec<usize>) {
     (x, y)
 }
 
-fn export_with_confidence_fallback(
-    options: &mut crate::dataset::export::ExportOptions,
-    job: &ModelTrainingJob,
-    tx: &Sender<super::jobs::JobMessage>,
-) -> Result<(crate::dataset::export::ExportSummary, f32), String> {
-    let candidates = confidence_candidates(job.min_confidence);
-    let mut last_summary: Option<crate::dataset::export::ExportSummary> = None;
-    let mut last_conf = job.min_confidence;
-
-    for (idx, conf) in candidates.iter().copied().enumerate() {
-        options.min_confidence = conf;
-        if idx > 0 {
-            send_progress(
-                tx,
-                0,
-                4,
-                format!("Exporting dataset (min_conf={:.2})…", conf),
-            )?;
-        }
-        let summary = match job.model_kind {
-            crate::sample_sources::config::TrainingModelKind::LogRegV1
-            | crate::sample_sources::config::TrainingModelKind::MlpV1 => {
-                crate::dataset::export::export_embedding_dataset_for_sources(
-                    options,
-                    &job.source_ids,
-                )
-                .map_err(|err| err.to_string())?
-            }
-            _ => crate::dataset::export::export_training_dataset_for_sources(
-                options,
-                &job.source_ids,
-            )
-            .map_err(|err| err.to_string())?,
-        };
-        last_conf = conf;
-        last_summary = Some(summary.clone());
-        if summary.total_exported >= 2 {
-            return Ok((summary, conf));
-        }
-    }
-
-    Ok((
-        last_summary.unwrap_or(crate::dataset::export::ExportSummary {
-            total_exported: 0,
-            total_packs: 0,
-            db_path: job.db_path.clone(),
-            class_counts: std::collections::BTreeMap::new(),
-        }),
-        last_conf,
-    ))
-}
-
-fn confidence_candidates(initial: f32) -> Vec<f32> {
-    let mut values = vec![initial.clamp(0.0, 1.0), 0.75, 0.6, 0.5, 0.4, 0.3, 0.2, 0.0];
-    values.sort_by(|a, b| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
-    values.dedup_by(|a, b| (*a - *b).abs() < 0.0001);
-    values
-}
-
 fn training_diagnostics_hint(
     db_path: &PathBuf,
     source_ids: &[String],
-    min_confidence: f32,
     include_user_labels: bool,
     model_kind: crate::sample_sources::config::TrainingModelKind,
 ) -> Result<String, String> {
@@ -1045,7 +987,6 @@ fn training_diagnostics_hint(
     let diag = training_diagnostics_for_sources(
         &conn,
         source_ids,
-        min_confidence,
         include_user_labels,
         &model_kind,
     )?;
@@ -1060,14 +1001,12 @@ fn training_diagnostics_hint(
         "User-labeled (ignored)"
     };
     Ok(format!(
-        "Samples: {}. {}: {}. {}: {}. Name-labeled(conf>={:.2}): {}. Tip: assign categories to a few samples (dropdown) or lower the weak-label threshold.",
+        "Samples: {}. {}: {}. {}: {}. Tip: assign categories to a few samples (dropdown) to provide training data.",
         diag.samples_total,
         vector_label,
         diag.features_v1,
         user_hint,
-        diag.user_join,
-        min_confidence,
-        diag.weak_join
+        diag.user_join
     ))
 }
 
@@ -1075,7 +1014,6 @@ struct TrainingDiagnostics {
     samples_total: i64,
     features_v1: i64,
     user_join: i64,
-    weak_join: i64,
 }
 
 struct TrainingPredictionStats {
@@ -1089,11 +1027,9 @@ struct TrainingPredictionStats {
 fn training_diagnostics_for_sources(
     conn: &rusqlite::Connection,
     source_ids: &[String],
-    min_confidence: f32,
     include_user_labels: bool,
     model_kind: &crate::sample_sources::config::TrainingModelKind,
 ) -> Result<TrainingDiagnostics, String> {
-    let ruleset_version = crate::labeling::weak::WEAK_LABEL_RULESET_VERSION;
     let (where_sql_samples, params_samples) = source_id_where_clause("s", source_ids);
     let (where_sql_vectors, params_vectors) = if matches!(
         model_kind,
@@ -1183,54 +1119,10 @@ fn training_diagnostics_for_sources(
         0
     };
 
-    let weak_join = if matches!(
-        model_kind,
-        crate::sample_sources::config::TrainingModelKind::LogRegV1
-            | crate::sample_sources::config::TrainingModelKind::MlpV1
-    ) {
-        let sql = format!(
-            "SELECT COUNT(*)
-             FROM embeddings e
-             JOIN labels_weak w ON w.sample_id = e.sample_id
-             WHERE e.model_id = ?1
-               AND w.ruleset_version = ?2
-               AND w.confidence >= ?3
-               AND ({})",
-            where_sql_vectors
-        );
-        let mut params_vec = vec![
-            rusqlite::types::Value::Text(crate::analysis::embedding::EMBEDDING_MODEL_ID.to_string()),
-            rusqlite::types::Value::Integer(ruleset_version),
-            rusqlite::types::Value::Real(min_confidence as f64),
-        ];
-        params_vec.extend(params_vectors.iter().cloned());
-        conn.query_row(&sql, rusqlite::params_from_iter(params_vec), |row| row.get(0))
-            .map_err(|err| err.to_string())?
-    } else {
-        let sql = format!(
-            "SELECT COUNT(*)
-             FROM features f
-             JOIN labels_weak w ON w.sample_id = f.sample_id
-             WHERE f.feat_version = 1
-               AND w.ruleset_version = ?1
-               AND w.confidence >= ?2
-               AND ({})",
-            where_sql_vectors
-        );
-        let mut params_vec = vec![
-            rusqlite::types::Value::Integer(ruleset_version),
-            rusqlite::types::Value::Real(min_confidence as f64),
-        ];
-        params_vec.extend(params_vectors.iter().cloned());
-        conn.query_row(&sql, rusqlite::params_from_iter(params_vec), |row| row.get(0))
-            .map_err(|err| err.to_string())?
-    };
-
     Ok(TrainingDiagnostics {
         samples_total,
         features_v1,
         user_join,
-        weak_join,
     })
 }
 
@@ -1253,14 +1145,15 @@ fn source_id_where_clause(
 fn training_exportable_count(
     conn: &rusqlite::Connection,
     source_ids: &[String],
-    min_confidence: f32,
     include_user_labels: bool,
     model_kind: crate::sample_sources::config::TrainingModelKind,
 ) -> Result<i64, String> {
     if source_ids.is_empty() {
         return Ok(0);
     }
-    let ruleset_version = crate::labeling::weak::WEAK_LABEL_RULESET_VERSION;
+    if !include_user_labels {
+        return Ok(0);
+    }
     let (table, extra_where, model_param) = if matches!(
         model_kind,
         crate::sample_sources::config::TrainingModelKind::LogRegV1
@@ -1274,10 +1167,7 @@ fn training_exportable_count(
     } else {
         ("features", "t.feat_version = ?3", None)
     };
-    let mut params: Vec<rusqlite::types::Value> = vec![
-        rusqlite::types::Value::Integer(ruleset_version),
-        rusqlite::types::Value::Real(min_confidence as f64),
-    ];
+    let mut params: Vec<rusqlite::types::Value> = Vec::new();
     if let Some(model_id) = model_param {
         params.push(rusqlite::types::Value::Text(model_id.to_string()));
     } else {
@@ -1289,39 +1179,15 @@ fn training_exportable_count(
         params.push(rusqlite::types::Value::Text(format!("{source_id}::%")));
     }
     let where_sql = where_parts.join(" OR ");
-    let join_user = if include_user_labels {
-        "LEFT JOIN labels_user u ON u.sample_id = t.sample_id"
-    } else {
-        ""
-    };
-    let user_filter = if include_user_labels {
-        "(u.class_id IS NOT NULL OR w.class_id IS NOT NULL)"
-    } else {
-        "w.class_id IS NOT NULL"
-    };
+    let join_user = "JOIN labels_user u ON u.sample_id = t.sample_id";
+    let user_filter = "u.class_id IS NOT NULL";
     let sql = format!(
-        "WITH best_weak AS (
-            SELECT l.sample_id, l.class_id, l.confidence
-            FROM labels_weak l
-            WHERE l.ruleset_version = ?1
-              AND l.confidence >= ?2
-              AND l.class_id = (
-                SELECT l2.class_id
-                FROM labels_weak l2
-                WHERE l2.sample_id = l.sample_id
-                  AND l2.ruleset_version = ?1
-                  AND l2.confidence >= ?2
-                ORDER BY l2.confidence DESC, l2.class_id ASC
-                LIMIT 1
-              )
-        )
-        SELECT COUNT(*)
-        FROM {table} t
-        {join_user}
-        LEFT JOIN best_weak w ON w.sample_id = t.sample_id
-        WHERE {extra_where}
-          AND {user_filter}
-          AND ({where_sql})"
+        "SELECT COUNT(*)
+         FROM {table} t
+         {join_user}
+         WHERE {extra_where}
+           AND {user_filter}
+           AND ({where_sql})"
     );
     conn.query_row(&sql, rusqlite::params_from_iter(params), |row| row.get(0))
         .map_err(|err| err.to_string())

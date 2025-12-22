@@ -15,8 +15,6 @@ pub mod external_drag;
 pub mod issue_gateway;
 /// Logging setup helpers.
 pub mod logging;
-/// Automatic labeling helpers.
-pub mod labeling;
 /// Training dataset export helpers.
 pub mod dataset;
 /// Machine learning helpers.

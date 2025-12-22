@@ -16,7 +16,6 @@ pub use stats::{ExportDiagnostics, diagnose_export};
 use stats::load_export_rows_filtered;
 
 const DATASET_FORMAT_VERSION: i64 = 1;
-const DEFAULT_RULESET_VERSION: i64 = 1;
 const FEATURES_FILE_NAME: &str = "features.f32le";
 const SAMPLES_FILE_NAME: &str = "samples.jsonl";
 const MANIFEST_FILE_NAME: &str = "manifest.json";
@@ -27,8 +26,6 @@ pub struct ExportOptions {
     pub out_dir: PathBuf,
     /// Optional explicit library DB path.
     pub db_path: Option<PathBuf>,
-    /// Minimum weak-label confidence to include a sample.
-    pub min_confidence: f32,
     /// Number of relative-path folder components used to compute pack_id.
     pub pack_depth: usize,
     /// Include user override labels when exporting.
@@ -48,7 +45,6 @@ impl Default for ExportOptions {
         Self {
             out_dir: PathBuf::new(),
             db_path: None,
-            min_confidence: 0.85,
             pack_depth: 1,
             use_user_labels: true,
             seed: "sempal-dataset-v1".to_string(),
@@ -90,8 +86,6 @@ pub struct ExportSummary {
 pub enum ExportError {
     #[error("invalid dataset split fractions (val+test must be <= 1.0)")]
     InvalidSplitFractions,
-    #[error("invalid min_confidence {0} (expected 0..=1)")]
-    InvalidMinConfidence(f32),
     #[error("invalid pack_depth 0 (expected >= 1)")]
     InvalidPackDepth,
     #[error("library error: {0}")]
@@ -116,8 +110,6 @@ pub fn export_training_dataset(options: &ExportOptions) -> Result<ExportSummary,
     let conn = stats::open_db(&db_path)?;
     let rows = stats::load_export_rows(
         &conn,
-        options.min_confidence,
-        DEFAULT_RULESET_VERSION,
         options.use_user_labels,
     )?;
     export_rows_to_dir(
@@ -137,8 +129,6 @@ pub fn export_embedding_dataset(options: &ExportOptions) -> Result<ExportSummary
     let conn = stats::open_db(&db_path)?;
     let rows = stats::load_embedding_export_rows_filtered(
         &conn,
-        options.min_confidence,
-        DEFAULT_RULESET_VERSION,
         None,
         options.use_user_labels,
         crate::analysis::embedding::EMBEDDING_MODEL_ID,
@@ -164,8 +154,6 @@ pub fn export_training_dataset_for_sources(
     let conn = stats::open_db(&db_path)?;
     let rows = load_export_rows_filtered(
         &conn,
-        options.min_confidence,
-        DEFAULT_RULESET_VERSION,
         Some(source_ids),
         options.use_user_labels,
     )?;
@@ -189,8 +177,6 @@ pub fn export_embedding_dataset_for_sources(
     let conn = stats::open_db(&db_path)?;
     let rows = stats::load_embedding_export_rows_filtered(
         &conn,
-        options.min_confidence,
-        DEFAULT_RULESET_VERSION,
         Some(source_ids),
         options.use_user_labels,
         crate::analysis::embedding::EMBEDDING_MODEL_ID,
@@ -207,9 +193,6 @@ pub fn export_embedding_dataset_for_sources(
 fn validate_options(options: &ExportOptions) -> Result<(), ExportError> {
     if options.pack_depth == 0 {
         return Err(ExportError::InvalidPackDepth);
-    }
-    if !(0.0..=1.0).contains(&options.min_confidence) {
-        return Err(ExportError::InvalidMinConfidence(options.min_confidence));
     }
     if options.test_fraction + options.val_fraction > 1.0 + f64::EPSILON {
         return Err(ExportError::InvalidSplitFractions);

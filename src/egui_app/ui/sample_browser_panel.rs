@@ -13,10 +13,6 @@ use std::path::Path;
 impl EguiApp {
     pub(super) fn render_sample_browser(&mut self, ui: &mut Ui) {
         let palette = style::palette();
-        let categories = self.controller.label_override_categories();
-        if !categories.is_empty() {
-            self.controller.prepare_prediction_cache_for_browser();
-        }
         self.controller.prepare_feature_cache_for_browser();
         let selected_row = self.controller.ui.browser.selected_visible;
         let loaded_row = self.controller.ui.browser.loaded_visible;
@@ -72,9 +68,6 @@ impl EguiApp {
                 autoscroll_padding_rows: 1.0,
             },
             |ui, row, metrics| {
-                const CATEGORY_COL_WIDTH: f32 = 140.0;
-                const FEATURE_COL_WIDTH: f32 = 56.0;
-                const WEAK_LABEL_COL_WIDTH: f32 = 140.0;
                 let entry_index = {
                     let indices = self.controller.visible_browser_indices();
                     match indices.get(row) {
@@ -138,13 +131,6 @@ impl EguiApp {
                     - metrics.padding
                     - metrics.number_width
                     - metrics.number_gap
-                    - FEATURE_COL_WIDTH
-                    - WEAK_LABEL_COL_WIDTH
-                    - if categories.is_empty() {
-                        0.0
-                    } else {
-                        CATEGORY_COL_WIDTH
-                    }
                     - trailing_space;
                 let row_label = if rename_match {
                     String::new()
@@ -197,237 +183,6 @@ impl EguiApp {
                             marker: triage_marker,
                         },
                     );
-                    if !rename_match && !categories.is_empty() {
-                        let (category, is_override) = self
-                            .controller
-                            .cached_category_for_entry(entry_index)
-                            .unwrap_or_else(|| ("—".to_string(), false));
-                        let pred_confidence = self
-                            .controller
-                            .cached_prediction_for_entry(entry_index)
-                            .map(|p| p.confidence);
-                        let (band_label, band_color) = pred_confidence
-                            .map(|conf| {
-                                (
-                                    confidence_band_label(conf),
-                                    confidence_heat_color(conf, palette),
-                                )
-                            })
-                            .unwrap_or(("—", palette.text_muted));
-                        let category_label = if category == "—" {
-                            "—".to_string()
-                        } else if is_override {
-                            format!("{category} (user)")
-                        } else if let Some(conf) = pred_confidence {
-                            format!("{category} {:.2} {band_label}", conf)
-                        } else {
-                            category.clone()
-                        };
-                        let right = response.rect.right();
-                        let x2 = right - trailing_space;
-                        let x1 = (x2 - CATEGORY_COL_WIDTH).max(response.rect.left());
-                        let rect = egui::Rect::from_min_max(
-                            egui::pos2(x1, response.rect.top()),
-                            egui::pos2(x2, response.rect.bottom()),
-                        );
-                        let mut selected = if category == "—" {
-                            None
-                        } else {
-                            Some(category)
-                        };
-                        let combo = egui::ComboBox::from_id_salt("category_override")
-                            .selected_text(
-                                RichText::new(category_label).color(if is_override {
-                                    palette.text_primary
-                                } else if pred_confidence.is_some() {
-                                    band_color
-                                } else {
-                                    palette.text_muted
-                                }),
-                            )
-                            .width(rect.width());
-                        let hover = if is_override {
-                            "User override (click to change)".to_string()
-                        } else if let Some(conf) = pred_confidence {
-                            format!(
-                                "Predicted category (click to override)\nConfidence: {:.2} ({})",
-                                conf,
-                                band_label
-                            )
-                        } else {
-                            "Predicted category (click to override)".to_string()
-                        };
-                        let inner = ui.allocate_ui_at_rect(rect, |ui| {
-                            combo.show_ui(ui, |ui| {
-                                if ui.selectable_label(false, "Clear override").clicked() {
-                                    let action_rows = self.controller.action_rows_from_primary(row);
-                                    if let Err(err) = self
-                                        .controller
-                                        .set_user_category_override_for_visible_rows(&action_rows, None)
-                                    {
-                                        self.controller.set_status(
-                                            format!("Clear category override failed: {err}"),
-                                            StatusTone::Error,
-                                        );
-                                    } else {
-                                        selected = None;
-                                        ui.close();
-                                    }
-                                }
-                                ui.separator();
-                                for category in &categories {
-                                    if category == "UNKNOWN" {
-                                        continue;
-                                    }
-                                    let is_selected = selected.as_deref() == Some(category.as_str());
-                                    if ui.selectable_label(is_selected, category).clicked() {
-                                        let action_rows = self.controller.action_rows_from_primary(row);
-                                        if let Err(err) = self.controller.set_user_category_override_for_visible_rows(
-                                            &action_rows,
-                                            Some(category.as_str()),
-                                        ) {
-                                            self.controller.set_status(
-                                                format!("Set category override failed: {err}"),
-                                                StatusTone::Error,
-                                            );
-                                        } else {
-                                            selected = Some(category.clone());
-                                            ui.close();
-                                        }
-                                    }
-                                }
-                            });
-                        });
-                        let _ = inner.response.on_hover_text(hover);
-                    }
-
-                    if !rename_match {
-                        let status = self.controller.cached_feature_status_for_entry(entry_index);
-                        let weak = status.and_then(|s| s.weak_label.as_ref());
-                        let label = weak
-                            .map(|w| format!("{} {:.2}", w.class_id, w.confidence))
-                            .unwrap_or_else(|| "—".to_string());
-                        let hover = weak
-                            .map(|w| format!("Weak label from filename/folders\nRule: {}", w.rule_id))
-                            .unwrap_or_else(|| "No weak label from filename/folders".to_string());
-                        let color = weak
-                            .map(|w| confidence_heat_color(w.confidence, palette))
-                            .unwrap_or(palette.text_muted);
-
-                        let right = response.rect.right();
-                        let x2 = if categories.is_empty() {
-                            right - trailing_space
-                        } else {
-                            right - trailing_space - CATEGORY_COL_WIDTH
-                        };
-                        let x1 = (x2 - WEAK_LABEL_COL_WIDTH).max(response.rect.left());
-                        let rect = egui::Rect::from_min_max(
-                            egui::pos2(x1, response.rect.top()),
-                            egui::pos2(x2, response.rect.bottom()),
-                        );
-                        let inner = ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
-                            ui.with_layout(
-                                egui::Layout::centered_and_justified(egui::Direction::LeftToRight),
-                                |ui| {
-                                    ui.label(RichText::new(label).color(color));
-                                },
-                            );
-                        });
-                        let _ = inner.response.on_hover_text(hover);
-                    }
-
-                    if !rename_match {
-                        let max_duration = self.controller.max_analysis_duration_seconds();
-                        let status = self.controller.cached_feature_status_for_entry(entry_index);
-                        let (label, hover, color) = match status {
-                            Some(status) if status.has_features_v1 => (
-                                "v1".to_string(),
-                                {
-                                    let mut lines = Vec::new();
-                                    lines.push("Features: v1".to_string());
-                                    lines.push(
-                                        status
-                                            .duration_seconds
-                                            .map(|s| format!("Duration: {:.2}s", s))
-                                            .unwrap_or_else(|| "Duration: —".to_string()),
-                                    );
-                                    lines.push(
-                                        status
-                                            .sr_used
-                                            .map(|sr| format!("SR used: {sr}"))
-                                            .unwrap_or_else(|| "SR used: —".to_string()),
-                                    );
-                                    if let Some(weak) = &status.weak_label {
-                                        lines.push(format!(
-                                            "Weak label: {} ({:.2})",
-                                            weak.class_id, weak.confidence
-                                        ));
-                                        lines.push(format!("Weak rule: {}", weak.rule_id));
-                                    }
-                                    lines.join("\n")
-                                },
-                                palette.text_muted,
-                            ),
-                            Some(status)
-                                if status.analysis_status == Some(crate::egui_app::controller::controller_state::AnalysisJobStatus::Failed) =>
-                            (
-                                "fail".to_string(),
-                                "Analysis failed (see FAILED marker on name)".to_string(),
-                                style::destructive_text(),
-                            ),
-                            Some(status)
-                                if matches!(
-                                    status.analysis_status,
-                                    Some(crate::egui_app::controller::controller_state::AnalysisJobStatus::Pending)
-                                        | Some(crate::egui_app::controller::controller_state::AnalysisJobStatus::Running)
-                                ) =>
-                            (
-                                "…".to_string(),
-                                "Analysis in progress".to_string(),
-                                palette.text_muted,
-                            ),
-                            Some(status)
-                                if status
-                                    .duration_seconds
-                                    .is_some_and(|s| max_duration.is_finite() && s > max_duration)
-                                    && !status.has_features_v1 =>
-                            (
-                                "skip".to_string(),
-                                format!(
-                                    "Skipped feature extraction (duration > max = {:.0}s)",
-                                    max_duration
-                                ),
-                                palette.text_muted,
-                            ),
-                            Some(status) if status.duration_seconds.is_some() => (
-                                "meta".to_string(),
-                                "Metadata available (duration/SR), features not computed yet".to_string(),
-                                palette.text_muted,
-                            ),
-                            _ => ("—".to_string(), "No analysis metadata yet".to_string(), palette.text_muted),
-                        };
-
-                        let right = response.rect.right();
-                        let x2 = if categories.is_empty() {
-                            right - trailing_space - WEAK_LABEL_COL_WIDTH
-                        } else {
-                            right - trailing_space - CATEGORY_COL_WIDTH - WEAK_LABEL_COL_WIDTH
-                        };
-                        let x1 = (x2 - FEATURE_COL_WIDTH).max(response.rect.left());
-                        let rect = egui::Rect::from_min_max(
-                            egui::pos2(x1, response.rect.top()),
-                            egui::pos2(x2, response.rect.bottom()),
-                        );
-                        let inner = ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
-                            ui.with_layout(
-                                egui::Layout::centered_and_justified(egui::Direction::LeftToRight),
-                                |ui| {
-                                    ui.label(RichText::new(label).color(color).small());
-                                },
-                            );
-                        });
-                        let _ = inner.response.on_hover_text(hover);
-                    }
                     let response = if let Some(reason) = analysis_failure.as_deref() {
                         let reason = reason.lines().next().unwrap_or(reason);
                         response.on_hover_text(format!("Analysis failed: {reason}"))
@@ -681,45 +436,6 @@ impl EguiApp {
                     }
                 }
             });
-            let categories = self.controller.label_override_categories();
-            if !categories.is_empty() {
-                ui.separator();
-                ui.menu_button("Set category override", |ui| {
-                    if ui.button("Clear override").clicked() {
-                        if let Err(err) = self
-                            .controller
-                            .set_user_category_override_for_visible_rows(&action_rows, None)
-                        {
-                            self.controller.set_status(
-                                format!("Clear category override failed: {err}"),
-                                StatusTone::Error,
-                            );
-                        } else {
-                            close_menu = true;
-                            ui.close();
-                        }
-                    }
-                    ui.separator();
-                    for category in &categories {
-                        if ui.button(category).clicked() {
-                            if let Err(err) =
-                                self.controller.set_user_category_override_for_visible_rows(
-                                    &action_rows,
-                                    Some(category.as_str()),
-                                )
-                            {
-                                self.controller.set_status(
-                                    format!("Set category override failed: {err}"),
-                                    StatusTone::Error,
-                                );
-                            } else {
-                                close_menu = true;
-                                ui.close();
-                            }
-                        }
-                    }
-                });
-            }
             ui.separator();
             self.sample_tag_menu(ui, &mut close_menu, |app, tag| {
                 app.controller
@@ -786,21 +502,6 @@ impl EguiApp {
                 ui.close();
             }
         });
-    }
-}
-
-fn confidence_heat_color(confidence: f32, palette: style::Palette) -> egui::Color32 {
-    let t = confidence.clamp(0.0, 1.0);
-    lerp_color(palette.warning, palette.success, t)
-}
-
-fn confidence_band_label(confidence: f32) -> &'static str {
-    if confidence >= 0.75 {
-        "high"
-    } else if confidence >= 0.45 {
-        "med"
-    } else {
-        "low"
     }
 }
 

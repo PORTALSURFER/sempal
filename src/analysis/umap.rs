@@ -31,7 +31,7 @@ pub fn build_umap_layout(
     seed: u64,
     min_coverage: f32,
 ) -> Result<UmapReport, String> {
-    let (sample_ids, vectors, dim) = load_embeddings(conn, model_id)?;
+    let (sample_ids, vectors, _dim) = load_embeddings(conn, model_id)?;
     if vectors.is_empty() {
         return Err(format!("No embeddings found for model_id {model_id}"));
     }

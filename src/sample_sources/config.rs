@@ -98,12 +98,8 @@ impl Default for ModelSettings {
     }
 }
 
-/// Controls how in-app retraining selects weak labels from filenames/folders.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TrainingSettings {
-    /// Minimum `labels_weak.confidence` to include when exporting a training dataset.
-    #[serde(default = "default_retrain_min_confidence")]
-    pub retrain_min_confidence: f32,
     /// Folder depth used to derive `pack_id` and split datasets to prevent leakage.
     #[serde(default = "default_retrain_pack_depth")]
     pub retrain_pack_depth: usize,
@@ -130,7 +126,6 @@ pub struct TrainingSettings {
 impl Default for TrainingSettings {
     fn default() -> Self {
         Self {
-            retrain_min_confidence: default_retrain_min_confidence(),
             retrain_pack_depth: default_retrain_pack_depth(),
             use_user_labels: default_use_user_labels(),
             model_kind: default_training_model_kind(),
@@ -544,10 +539,6 @@ fn default_use_user_overrides() -> bool {
     true
 }
 
-fn default_retrain_min_confidence() -> f32 {
-    0.75
-}
-
 fn default_retrain_pack_depth() -> usize {
     1
 }
@@ -820,7 +811,6 @@ mod tests {
             let path = dir.path().join("cfg.toml");
             let cfg = AppConfig {
                 training: TrainingSettings {
-                    retrain_min_confidence: 0.42,
                     retrain_pack_depth: 3,
                     use_user_labels: false,
                     model_kind: TrainingModelKind::GbdtStumpV1,
@@ -833,7 +823,6 @@ mod tests {
             };
             save_to_path(&cfg, &path).unwrap();
             let loaded = super::load_settings_from(&path).unwrap();
-            assert!((loaded.training.retrain_min_confidence - 0.42).abs() < f32::EPSILON);
             assert_eq!(loaded.training.retrain_pack_depth, 3);
             assert_eq!(loaded.training.use_user_labels, false);
             assert_eq!(loaded.training.model_kind, TrainingModelKind::GbdtStumpV1);

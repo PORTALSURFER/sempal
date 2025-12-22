@@ -28,23 +28,6 @@ pub(in crate::egui_app::controller) fn enqueue_jobs_for_source(
         .iter()
         .map(|sample| (sample.sample_id.clone(), sample.content_hash.clone()))
         .collect();
-    let weak_labels: Vec<super::weak_labels::SampleWeakLabels> = changed_samples
-        .iter()
-        .map(|sample| {
-            let sample_id = db::build_sample_id(source_id.as_str(), &sample.relative_path);
-            let labels =
-                crate::labeling::weak::weak_labels_for_relative_path(&sample.relative_path)
-                    .into_iter()
-                    .map(|label| super::weak_labels::WeakLabelInsert {
-                        class_id: label.class_id.to_string(),
-                        confidence: label.confidence,
-                        rule_id: label.rule_id.to_string(),
-                    })
-                    .collect();
-            super::weak_labels::SampleWeakLabels { sample_id, labels }
-        })
-        .collect();
-
     let db_path = library_db_path()?;
     let mut conn = db::open_library_db(&db_path)?;
     db::upsert_samples(&mut conn, &sample_metadata)?;
@@ -55,12 +38,6 @@ pub(in crate::egui_app::controller) fn enqueue_jobs_for_source(
     db::invalidate_analysis_artifacts(&mut conn, &sample_ids)?;
 
     let created_at = now_epoch_seconds();
-    super::weak_labels::replace_weak_labels_for_samples(
-        &mut conn,
-        &weak_labels,
-        crate::labeling::weak::WEAK_LABEL_RULESET_VERSION,
-        created_at,
-    )?;
     let inserted = db::enqueue_jobs(&mut conn, &jobs, db::ANALYZE_SAMPLE_JOB_TYPE, created_at)?;
     let progress = db::current_progress(&conn)?;
     Ok((inserted, progress))
@@ -98,7 +75,7 @@ pub(in crate::egui_app::controller) fn enqueue_jobs_for_source_backfill(
         return Ok((0, db::current_progress(&conn)?));
     }
 
-    let (sample_metadata, jobs, weak_labels, invalidate) = {
+    let (sample_metadata, jobs, invalidate) = {
         let mut features_stmt = conn
             .prepare(
                 "SELECT 1 FROM features WHERE sample_id = ?1 AND feat_version = 1 LIMIT 1",
@@ -115,7 +92,6 @@ pub(in crate::egui_app::controller) fn enqueue_jobs_for_source_backfill(
 
         let mut sample_metadata = Vec::with_capacity(entries.len());
         let mut jobs = Vec::with_capacity(entries.len());
-        let mut weak_labels = Vec::with_capacity(entries.len());
         let mut invalidate = Vec::new();
 
         for entry in entries {
@@ -158,18 +134,9 @@ pub(in crate::egui_app::controller) fn enqueue_jobs_for_source_backfill(
                 mtime_ns: entry.modified_ns,
             });
             jobs.push((sample_id.clone(), content_hash));
-            let labels = crate::labeling::weak::weak_labels_for_relative_path(&entry.relative_path)
-                .into_iter()
-                .map(|label| super::weak_labels::WeakLabelInsert {
-                    class_id: label.class_id.to_string(),
-                    confidence: label.confidence,
-                    rule_id: label.rule_id.to_string(),
-                })
-                .collect();
-            weak_labels.push(super::weak_labels::SampleWeakLabels { sample_id, labels });
         }
 
-        (sample_metadata, jobs, weak_labels, invalidate)
+        (sample_metadata, jobs, invalidate)
     };
 
     if !invalidate.is_empty() {
@@ -178,12 +145,6 @@ pub(in crate::egui_app::controller) fn enqueue_jobs_for_source_backfill(
     db::upsert_samples(&mut conn, &sample_metadata)?;
 
     let created_at = now_epoch_seconds();
-    super::weak_labels::replace_weak_labels_for_samples(
-        &mut conn,
-        &weak_labels,
-        crate::labeling::weak::WEAK_LABEL_RULESET_VERSION,
-        created_at,
-    )?;
     let inserted = db::enqueue_jobs(&mut conn, &jobs, db::ANALYZE_SAMPLE_JOB_TYPE, created_at)?;
     let progress = db::current_progress(&conn)?;
     Ok((inserted, progress))
@@ -203,7 +164,7 @@ pub(in crate::egui_app::controller) fn enqueue_jobs_for_source_missing_features(
         return Ok((0, db::current_progress(&conn)?));
     }
 
-    let (sample_metadata, jobs, weak_labels, invalidate) = {
+    let (sample_metadata, jobs, invalidate) = {
         let mut features_stmt = conn
             .prepare(
                 "SELECT 1 FROM features WHERE sample_id = ?1 AND feat_version = 1 LIMIT 1",
@@ -220,7 +181,6 @@ pub(in crate::egui_app::controller) fn enqueue_jobs_for_source_missing_features(
 
         let mut sample_metadata = Vec::new();
         let mut jobs = Vec::new();
-        let mut weak_labels = Vec::new();
         let mut invalidate = Vec::new();
 
         for entry in entries {
@@ -277,17 +237,8 @@ pub(in crate::egui_app::controller) fn enqueue_jobs_for_source_missing_features(
                 mtime_ns: entry.modified_ns,
             });
             jobs.push((sample_id.clone(), content_hash));
-            let labels = crate::labeling::weak::weak_labels_for_relative_path(&entry.relative_path)
-                .into_iter()
-                .map(|label| super::weak_labels::WeakLabelInsert {
-                    class_id: label.class_id.to_string(),
-                    confidence: label.confidence,
-                    rule_id: label.rule_id.to_string(),
-                })
-                .collect();
-            weak_labels.push(super::weak_labels::SampleWeakLabels { sample_id, labels });
         }
-        (sample_metadata, jobs, weak_labels, invalidate)
+        (sample_metadata, jobs, invalidate)
     };
     if !invalidate.is_empty() {
         db::invalidate_analysis_artifacts(&mut conn, &invalidate)?;
@@ -298,12 +249,6 @@ pub(in crate::egui_app::controller) fn enqueue_jobs_for_source_missing_features(
     }
     db::upsert_samples(&mut conn, &sample_metadata)?;
     let created_at = now_epoch_seconds();
-    super::weak_labels::replace_weak_labels_for_samples(
-        &mut conn,
-        &weak_labels,
-        crate::labeling::weak::WEAK_LABEL_RULESET_VERSION,
-        created_at,
-    )?;
     let inserted = db::enqueue_jobs(&mut conn, &jobs, db::ANALYZE_SAMPLE_JOB_TYPE, created_at)?;
     let progress = db::current_progress(&conn)?;
     Ok((inserted, progress))

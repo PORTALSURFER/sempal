@@ -82,7 +82,6 @@ pub(in crate::egui_app::controller) fn purge_orphaned_samples(
         "predictions",
         "predictions_head",
         "labels_user",
-        "labels_weak",
         "labels",
         "samples",
     ] {

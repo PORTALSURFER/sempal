@@ -56,7 +56,7 @@ pub struct UiState {
     pub feedback_issue: FeedbackIssueUiState,
     /// Audio device/options UI state.
     pub audio: AudioOptionsState,
-    /// Model training and weak labeling controls.
+    /// Model training controls.
     pub training: TrainingUiState,
     /// Training-free label UI state.
     pub tf_labels: TfLabelsUiState,

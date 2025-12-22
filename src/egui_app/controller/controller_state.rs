@@ -136,14 +136,6 @@ pub(crate) struct FeatureStatus {
     pub(crate) duration_seconds: Option<f32>,
     pub(crate) sr_used: Option<i64>,
     pub(crate) analysis_status: Option<AnalysisJobStatus>,
-    pub(crate) weak_label: Option<WeakLabelInfo>,
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct WeakLabelInfo {
-    pub(crate) class_id: String,
-    pub(crate) confidence: f32,
-    pub(crate) rule_id: String,
 }
 
 pub(crate) struct FeatureCache {

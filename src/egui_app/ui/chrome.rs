@@ -384,14 +384,6 @@ impl EguiApp {
         if ui.add(slider).changed() {
             self.controller.set_unknown_confidence_threshold(unknown);
         }
-        let mut use_overrides = self.controller.use_user_overrides_in_browser();
-        if ui
-            .checkbox(&mut use_overrides, "Prefer user overrides")
-            .on_hover_text("Show manual category overrides instead of predictions")
-            .clicked()
-        {
-            self.controller.set_use_user_overrides_in_browser(use_overrides);
-        }
         if ui
             .button("Re-run inference (loaded sources)")
             .on_hover_text("Clear old predictions and recompute for loaded sources")

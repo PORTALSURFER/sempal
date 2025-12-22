@@ -357,51 +357,6 @@ impl EguiController {
                             StatusTone::Error,
                         );
                     }
-                    super::AnalysisJobMessage::WeakLabelsRecomputed {
-                        source_id,
-                        processed,
-                        skipped,
-                    } => {
-                        let source_id = crate::sample_sources::SourceId::from_string(source_id);
-                        self.ui_cache.browser.features.remove(&source_id);
-                        self.rebuild_browser_lists();
-                        let skipped_label = if skipped > 0 {
-                            format!(" (skipped {skipped})")
-                        } else {
-                            String::new()
-                        };
-                        self.set_status(
-                            format!(
-                                "Recomputed weak labels for {processed} files (selected source){skipped_label}"
-                            ),
-                            StatusTone::Info,
-                        );
-                    }
-                    super::AnalysisJobMessage::WeakLabelsRecomputedAll {
-                        sources,
-                        processed,
-                        skipped,
-                    } => {
-                        self.ui_cache.browser.features.clear();
-                        self.rebuild_browser_lists();
-                        let skipped_label = if skipped > 0 {
-                            format!(" (skipped {skipped})")
-                        } else {
-                            String::new()
-                        };
-                        self.set_status(
-                            format!(
-                                "Recomputed weak labels for {processed} files across {sources} sources{skipped_label}"
-                            ),
-                            StatusTone::Info,
-                        );
-                    }
-                    super::AnalysisJobMessage::WeakLabelsRecomputeFailed(err) => {
-                        self.set_status(
-                            format!("Weak label recompute failed: {err}"),
-                            StatusTone::Error,
-                        );
-                    }
                     super::AnalysisJobMessage::PredictionLoaded {
                         sample_id,
                         top_class,

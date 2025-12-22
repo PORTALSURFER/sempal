@@ -43,22 +43,11 @@ fn run() -> Result<(), String> {
         if let Some(n) = diag.labels_user_total {
             println!("labels_user: {n}");
         }
-        if let Some(n) = diag.labels_weak_ruleset_ge_conf {
-            println!(
-                "labels_weak(ruleset={}, conf>={:.2}): {n}",
-                sempal::labeling::weak::WEAK_LABEL_RULESET_VERSION,
-                options.min_confidence
-            );
-        }
         if let Some(n) = diag.join_rows_user {
             println!("features⋈labels_user join rows: {n}");
         }
-        if let Some(n) = diag.join_rows {
-            println!("features⋈labels_weak join rows: {n}");
-        }
         println!("Hints:");
         println!("- Make sure the GUI app has scanned your sources and finished analysis.");
-        println!("- Try lowering --min-confidence (e.g. 0.70) to include more weak labels.");
         println!("- If you're exporting from a different machine/profile, pass --db <path-to-library.db>.");
     }
     Ok(())
@@ -83,15 +72,6 @@ fn parse_args(args: Vec<String>) -> Result<Option<sempal::dataset::export::Expor
                 idx += 1;
                 let value = args.get(idx).ok_or_else(|| "--db requires a value".to_string())?;
                 options.db_path = Some(PathBuf::from(value));
-            }
-            "--min-confidence" => {
-                idx += 1;
-                let value = args
-                    .get(idx)
-                    .ok_or_else(|| "--min-confidence requires a value".to_string())?;
-                options.min_confidence = value
-                    .parse::<f32>()
-                    .map_err(|_| format!("Invalid --min-confidence value: {value}"))?;
             }
             "--pack-depth" => {
                 idx += 1;
@@ -142,7 +122,7 @@ fn help_text() -> String {
     [
         "sempal-dataset-export",
         "",
-        "Exports features + weak labels into a deterministic pack-split dataset.",
+        "Exports features + user labels into a deterministic pack-split dataset.",
         "",
         "Usage:",
         "  sempal-dataset-export --out <dir> [--db <path>] [options]",
@@ -150,7 +130,6 @@ fn help_text() -> String {
         "Options:",
         "  --out <dir>             Output directory (required).",
         "  --db <path>             Path to library.db (defaults to app data location).",
-        "  --min-confidence <f32>  Minimum label confidence (default: 0.85).",
         "  --pack-depth <usize>    Folder components used for pack_id (default: 1).",
         "  --seed <string>         Seed for deterministic pack split (default: sempal-dataset-v1).",
         "  --test-fraction <f64>   Pack fraction assigned to test (default: 0.1).",

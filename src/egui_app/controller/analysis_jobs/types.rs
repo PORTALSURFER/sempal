@@ -62,20 +62,6 @@ pub(in crate::egui_app::controller) enum AnalysisJobMessage {
     EmbeddingBackfillEnqueueFinished { inserted: usize, progress: AnalysisProgress },
     /// Embedding backfill enqueue failed.
     EmbeddingBackfillEnqueueFailed(String),
-    /// Weak labels were recomputed for a source.
-    WeakLabelsRecomputed {
-        source_id: String,
-        processed: usize,
-        skipped: usize,
-    },
-    /// Weak labels were recomputed for all sources.
-    WeakLabelsRecomputedAll {
-        sources: usize,
-        processed: usize,
-        skipped: usize,
-    },
-    /// Weak-label recompute failed.
-    WeakLabelsRecomputeFailed(String),
     /// Latest prediction loaded for a selected sample.
     PredictionLoaded {
         sample_id: String,

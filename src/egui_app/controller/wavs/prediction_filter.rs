@@ -141,11 +141,7 @@ impl EguiController {
     }
 
     pub fn label_override_categories(&mut self) -> Vec<String> {
-        let mut categories = self.prediction_categories();
-        if categories.is_empty() {
-            categories = label_rules_categories();
-        }
-        categories
+        self.prediction_categories()
     }
 
     fn ensure_prediction_categories(&mut self) -> Result<(), String> {
@@ -317,12 +313,6 @@ fn select_active_model_id(
         .optional()
         .map_err(|err| format!("Failed to query latest model id: {err}"))?;
     Ok(latest)
-}
-
-fn label_rules_categories() -> Vec<String> {
-    crate::labeling::weak_config::load_label_rules_from_app_dir()
-        .map(|cfg| cfg.categories.keys().cloned().collect())
-        .unwrap_or_default()
 }
 
 pub(super) fn set_category_filter(controller: &mut EguiController, category: Option<String>) {

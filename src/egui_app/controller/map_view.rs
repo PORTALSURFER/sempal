@@ -1,5 +1,6 @@
 use super::*;
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, OptionalExtension, params, params_from_iter};
+use rusqlite::types::Value;
 
 pub(crate) struct UmapBounds {
     pub min_x: f32,
@@ -158,17 +159,17 @@ fn load_umap_points(
                AND layout_umap.y >= ?8 AND layout_umap.y <= ?9
              ORDER BY layout_umap.sample_id ASC
              LIMIT ?10",
-            params![
-                model_id,
-                umap_version,
-                cluster_method,
-                cluster_umap_version,
-                prefix,
-                bounds.min_x as f64,
-                bounds.max_x as f64,
-                bounds.min_y as f64,
-                bounds.max_y as f64,
-                limit as i64,
+            vec![
+                Value::Text(model_id.to_string()),
+                Value::Text(umap_version.to_string()),
+                Value::Text(cluster_method.to_string()),
+                Value::Text(cluster_umap_version.to_string()),
+                Value::Text(prefix),
+                Value::Real(bounds.min_x as f64),
+                Value::Real(bounds.max_x as f64),
+                Value::Real(bounds.min_y as f64),
+                Value::Real(bounds.max_y as f64),
+                Value::Integer(limit as i64),
             ],
         )
     } else {
@@ -185,16 +186,16 @@ fn load_umap_points(
                AND layout_umap.y >= ?7 AND layout_umap.y <= ?8
              ORDER BY layout_umap.sample_id ASC
              LIMIT ?9",
-            params![
-                model_id,
-                umap_version,
-                cluster_method,
-                cluster_umap_version,
-                bounds.min_x as f64,
-                bounds.max_x as f64,
-                bounds.min_y as f64,
-                bounds.max_y as f64,
-                limit as i64,
+            vec![
+                Value::Text(model_id.to_string()),
+                Value::Text(umap_version.to_string()),
+                Value::Text(cluster_method.to_string()),
+                Value::Text(cluster_umap_version.to_string()),
+                Value::Real(bounds.min_x as f64),
+                Value::Real(bounds.max_x as f64),
+                Value::Real(bounds.min_y as f64),
+                Value::Real(bounds.max_y as f64),
+                Value::Integer(limit as i64),
             ],
         )
     };
@@ -202,7 +203,7 @@ fn load_umap_points(
         .prepare(sql)
         .map_err(|err| format!("Prepare layout query failed: {err}"))?;
     let rows = stmt
-        .query_map(params, |row| {
+        .query_map(params_from_iter(params), |row| {
             let cluster_id: Option<i64> = row.get(3)?;
             Ok(UmapPoint {
                 sample_id: row.get(0)?,

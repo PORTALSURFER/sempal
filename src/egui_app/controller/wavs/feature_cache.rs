@@ -1,7 +1,5 @@
 use super::*;
-use crate::egui_app::controller::controller_state::{
-    AnalysisJobStatus, FeatureCache, FeatureStatus, WeakLabelInfo,
-};
+use crate::egui_app::controller::controller_state::{AnalysisJobStatus, FeatureCache, FeatureStatus};
 use rusqlite::params;
 use std::collections::HashMap;
 
@@ -106,56 +104,8 @@ impl EguiController {
                         duration_seconds: duration_seconds.map(|s| s as f32),
                         sr_used,
                         analysis_status,
-                        weak_label: None,
                     },
                 );
-            }
-        }
-
-        let mut weak_map: HashMap<String, (i64, WeakLabelInfo)> = HashMap::new();
-        {
-            let mut stmt = conn
-                .prepare(
-                    "SELECT sample_id, ruleset_version, class_id, confidence, rule_id
-                     FROM labels_weak
-                     WHERE sample_id >= ?1
-                       AND sample_id < ?2",
-                )
-                .map_err(|err| format!("Prepare weak label cache query failed: {err}"))?;
-            let mut rows = stmt
-                .query(params![prefix, prefix_end])
-                .map_err(|err| format!("Query weak label cache failed: {err}"))?;
-            while let Some(row) = rows
-                .next()
-                .map_err(|err| format!("Query weak label cache failed: {err}"))?
-            {
-                let sample_id: String = row.get(0).map_err(|err| err.to_string())?;
-                let ruleset_version: i64 = row.get(1).map_err(|err| err.to_string())?;
-                let class_id: String = row.get(2).map_err(|err| err.to_string())?;
-                let confidence: f64 = row.get(3).map_err(|err| err.to_string())?;
-                let rule_id: String = row.get(4).map_err(|err| err.to_string())?;
-                let Some(relative_path) = sample_id.split_once("::").map(|(_, p)| p) else {
-                    continue;
-                };
-                let key = normalize_relative_key(relative_path);
-                let candidate = WeakLabelInfo {
-                    class_id,
-                    confidence: confidence as f32,
-                    rule_id,
-                };
-                match weak_map.get(&key) {
-                    Some((existing_version, existing)) => {
-                        if ruleset_version > *existing_version
-                            || (ruleset_version == *existing_version
-                                && candidate.confidence > existing.confidence)
-                        {
-                            weak_map.insert(key, (ruleset_version, candidate));
-                        }
-                    }
-                    None => {
-                        weak_map.insert(key, (ruleset_version, candidate));
-                    }
-                }
             }
         }
 
@@ -166,11 +116,7 @@ impl EguiController {
                 duration_seconds: None,
                 sr_used: None,
                 analysis_status: None,
-                weak_label: None,
             });
-            if let Some((_, weak)) = weak_map.get(&key) {
-                status.weak_label = Some(weak.clone());
-            }
             cache.rows[idx] = Some(status);
         }
 

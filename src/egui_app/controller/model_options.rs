@@ -45,21 +45,6 @@ impl EguiController {
         }
     }
 
-    pub fn retrain_min_confidence(&self) -> f32 {
-        self.settings.training.retrain_min_confidence
-    }
-
-    pub fn set_retrain_min_confidence(&mut self, value: f32) {
-        let clamped = value.clamp(0.0, 1.0);
-        if (self.settings.training.retrain_min_confidence - clamped).abs() < f32::EPSILON {
-            return;
-        }
-        self.settings.training.retrain_min_confidence = clamped;
-        if let Err(err) = self.persist_config("Failed to save options") {
-            self.set_status(err, StatusTone::Warning);
-        }
-    }
-
     pub fn retrain_pack_depth(&self) -> usize {
         self.settings.training.retrain_pack_depth
     }

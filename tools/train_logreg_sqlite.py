@@ -29,9 +29,6 @@ def main() -> int:
         default=Path("assets/ml/classes_v1.json"),
         help="Classes JSON file (default: assets/ml/classes_v1.json)",
     )
-    parser.add_argument("--min-confidence", type=float, default=0.85)
-    parser.add_argument("--ruleset-version", type=int, default=1)
-    parser.add_argument("--use-user-labels", action="store_true")
     parser.add_argument("--seed", type=int, default=123)
     parser.add_argument("--test-fraction", type=float, default=0.1)
     parser.add_argument("--val-fraction", type=float, default=0.1)
@@ -58,9 +55,6 @@ def main() -> int:
     rows = load_training_rows(
         conn,
         args.model_id,
-        args.min_confidence,
-        args.ruleset_version,
-        args.use_user_labels,
     )
     if not rows:
         raise RuntimeError("No labeled embeddings found for training.")
@@ -144,46 +138,17 @@ def load_class_order(path: Path) -> list[str]:
 def load_training_rows(
     conn: sqlite3.Connection,
     model_id: str,
-    min_confidence: float,
-    ruleset_version: int,
-    use_user_labels: bool,
 ) -> list[sqlite3.Row]:
     sql = """
-    WITH best_weak AS (
-        SELECT l.sample_id, l.class_id, l.confidence, l.rule_id, l.ruleset_version
-        FROM labels_weak l
-        WHERE l.ruleset_version = ?
-          AND l.confidence >= ?
-          AND l.class_id = (
-            SELECT l2.class_id
-            FROM labels_weak l2
-            WHERE l2.sample_id = l.sample_id
-              AND l2.ruleset_version = ?
-              AND l2.confidence >= ?
-            ORDER BY l2.confidence DESC, l2.class_id ASC
-            LIMIT 1
-          )
-    )
     SELECT e.sample_id,
            e.vec,
-           {class_expr} AS class_id
+           u.class_id AS class_id
     FROM embeddings e
-    {label_join}
+    JOIN labels_user u ON u.sample_id = e.sample_id
     WHERE e.model_id = ?
-      AND {label_filter}
     ORDER BY e.sample_id ASC
     """
-    if use_user_labels:
-        label_join = "LEFT JOIN labels_user u ON u.sample_id = e.sample_id LEFT JOIN best_weak w ON w.sample_id = e.sample_id"
-        class_expr = "COALESCE(u.class_id, w.class_id)"
-        label_filter = "u.class_id IS NOT NULL OR w.class_id IS NOT NULL"
-    else:
-        label_join = "JOIN best_weak w ON w.sample_id = e.sample_id"
-        class_expr = "w.class_id"
-        label_filter = "1=1"
-    sql = sql.format(class_expr=class_expr, label_join=label_join, label_filter=label_filter)
-    params = [ruleset_version, min_confidence, ruleset_version, min_confidence, model_id]
-    return conn.execute(sql, params).fetchall()
+    return conn.execute(sql, [model_id]).fetchall()
 
 
 def build_arrays(rows: list[sqlite3.Row], class_order: list[str]):

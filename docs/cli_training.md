@@ -123,7 +123,7 @@ cargo run --bin sempal-model-import -- --model ./model.json --kind gbdt
 ## Notes
 
 - Use `--db <path-to-library.db>` with the export tools if your library is not in the default app data location.
-- Adjust `--min-confidence` to include more weak labels (e.g. `0.70`) if export yields too few rows.
+- Ensure you have enough user-labeled samples if export yields too few rows.
 - For stratified splits, use `sempal-embedding-export` (the feature exporter keeps pack-level splits).
 
 ## What a good training set looks like
