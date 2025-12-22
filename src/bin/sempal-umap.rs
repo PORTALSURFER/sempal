@@ -249,7 +249,7 @@ fn build_knn_graph(
     ef_search: usize,
 ) -> Result<(Array2<u32>, Array2<f32>), String> {
     let n_samples = matrix.nrows();
-    let dim = matrix.ncols();
+    let _dim = matrix.ncols();
     let max_elements = n_samples.max(1024);
     let hnsw = Hnsw::new(16, max_elements, 16, 200, DistCosine {});
     for (idx, row) in matrix.rows().into_iter().enumerate() {
