@@ -14,6 +14,7 @@ const MAP_HEATMAP_BINS: usize = 64;
 const MAP_ZOOM_MIN: f32 = 0.2;
 const MAP_ZOOM_MAX: f32 = 20.0;
 const MAP_ZOOM_SPEED: f32 = 0.0015;
+const CLUSTER_PULL_STRENGTH: f32 = 0.7;
 
 impl EguiApp {
     pub(super) fn render_map_panel(&mut self, ui: &mut egui::Ui) {
@@ -216,20 +217,20 @@ impl EguiApp {
         let cluster_overlay = self.controller.ui.map.cluster_overlay;
         let similarity_blend = self.controller.ui.map.similarity_blend;
         let blend_threshold = self.controller.ui.map.similarity_blend_threshold;
-        let blend_enabled = cluster_overlay && similarity_blend;
-        let centroids = if blend_enabled {
-            Some(map_clusters::cluster_centroids(&points))
+        let centroids = if cluster_overlay {
+            Some(map_clusters::cluster_centroids(&filtered_points))
         } else {
             None
         };
+        let blend_enabled = cluster_overlay && similarity_blend;
         let map_diagonal =
             ((bounds.max_x - bounds.min_x).powi(2) + (bounds.max_y - bounds.min_y).powi(2)).sqrt();
         let point_color = |point: &crate::egui_app::state::MapPoint, alpha: u8| {
             if cluster_overlay {
-                if let Some(centroids) = centroids.as_ref() {
+                if blend_enabled {
                     map_clusters::blended_cluster_color(
                         point,
-                        centroids,
+                        centroids.as_ref().expect("centroids set for cluster overlay"),
                         &palette,
                         alpha,
                         map_diagonal,
@@ -245,9 +246,37 @@ impl EguiApp {
                 palette.accent_mint
             }
         };
+        let display_points = if cluster_overlay {
+            if let Some(centroids) = centroids.as_ref() {
+                filtered_points
+                    .iter()
+                    .map(|point| {
+                        let Some(cluster_id) = point.cluster_id else {
+                            return point.clone();
+                        };
+                        if cluster_id < 0 {
+                            return point.clone();
+                        }
+                        let Some(centroid) = centroids.get(&cluster_id) else {
+                            return point.clone();
+                        };
+                        crate::egui_app::state::MapPoint {
+                            sample_id: point.sample_id.clone(),
+                            x: point.x + (centroid.x - point.x) * CLUSTER_PULL_STRENGTH,
+                            y: point.y + (centroid.y - point.y) * CLUSTER_PULL_STRENGTH,
+                            cluster_id: point.cluster_id,
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            } else {
+                filtered_points.clone()
+            }
+        } else {
+            filtered_points.clone()
+        };
         let painter = ui.painter_at(rect);
         let hovered = map_interactions::find_hover_point(
-            &filtered_points,
+            &display_points,
             rect,
             center,
             scale,
@@ -323,7 +352,7 @@ impl EguiApp {
                 draw_calls = map_render::render_heatmap_with_color(
                     &painter,
                     rect,
-                    &filtered_points,
+                    &display_points,
                     center,
                     scale,
                     self.controller.ui.map.pan,
@@ -334,17 +363,17 @@ impl EguiApp {
                 draw_calls = map_render::render_heatmap(
                     &painter,
                     rect,
-                    &filtered_points,
+                    &display_points,
                     center,
                     scale,
                     self.controller.ui.map.pan,
                     MAP_HEATMAP_BINS,
                 );
             }
-            points_rendered = filtered_points.len();
+            points_rendered = display_points.len();
             self.controller.ui.map.last_render_mode = crate::egui_app::state::MapRenderMode::Heatmap;
         } else {
-            for point in filtered_points {
+            for point in display_points {
                 let pos = map_render::map_to_screen(
                     point.x,
                     point.y,
