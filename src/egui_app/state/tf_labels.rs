@@ -7,6 +7,8 @@ pub struct TfLabelsUiState {
     pub last_score_sample_id: Option<String>,
     pub last_score_mode: crate::sample_sources::config::TfLabelAggregationMode,
     pub last_scores: Vec<TfLabelScoreCache>,
+    pub last_candidate_label_id: Option<String>,
+    pub last_candidate_results: Vec<TfLabelCandidateCache>,
 }
 
 impl Default for TfLabelsUiState {
@@ -18,6 +20,8 @@ impl Default for TfLabelsUiState {
             last_score_sample_id: None,
             last_score_mode: crate::sample_sources::config::TfLabelAggregationMode::MeanTopK,
             last_scores: Vec::new(),
+            last_candidate_label_id: None,
+            last_candidate_results: Vec::new(),
         }
     }
 }
@@ -40,4 +44,10 @@ pub struct TfLabelScoreCache {
     pub bucket: crate::analysis::anchor_scoring::ConfidenceBucket,
     pub gap: f32,
     pub anchor_count: usize,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct TfLabelCandidateCache {
+    pub sample_id: String,
+    pub score: f32,
 }

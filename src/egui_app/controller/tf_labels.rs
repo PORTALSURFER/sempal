@@ -34,6 +34,12 @@ pub struct TfLabelMatch {
     pub anchor_count: usize,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct TfLabelCandidateMatch {
+    pub sample_id: String,
+    pub score: f32,
+}
+
 impl EguiController {
     /// List all training-free labels.
     pub fn list_tf_labels(&mut self) -> Result<Vec<TfLabel>, String> {
@@ -166,6 +172,8 @@ impl EguiController {
     pub fn clear_tf_label_score_cache(&mut self) {
         self.ui.tf_labels.last_score_sample_id = None;
         self.ui.tf_labels.last_scores.clear();
+        self.ui.tf_labels.last_candidate_label_id = None;
+        self.ui.tf_labels.last_candidate_results.clear();
     }
 
     pub fn set_tf_label_aggregation_mode(
@@ -176,6 +184,51 @@ impl EguiController {
         self.settings.analysis.tf_label_aggregation = mode;
         let _ = self.persist_config("Failed to save TF label settings");
         self.clear_tf_label_score_cache();
+    }
+
+    pub fn tf_label_candidate_matches_for_label(
+        &mut self,
+        label_id: &str,
+        candidate_k: usize,
+        top_k: usize,
+    ) -> Result<Vec<TfLabelCandidateMatch>, String> {
+        let conn = open_library_db()?;
+        let label = load_tf_label_by_id(&conn, label_id)?
+            .ok_or_else(|| "Label not found".to_string())?;
+        let anchors = load_tf_anchor_embeddings_for_label(&conn, &label.label_id)?;
+        if anchors.is_empty() {
+            return Ok(Vec::new());
+        }
+        let label_spec = crate::analysis::anchor_match::LabelSpec {
+            label_id: label.label_id.clone(),
+            name: label.name.clone(),
+            threshold: label.threshold,
+            gap: label.gap,
+            topk: label.topk.max(1) as usize,
+        };
+        let aggregation = match self.ui.tf_labels.aggregation_mode {
+            crate::sample_sources::config::TfLabelAggregationMode::MeanTopK => {
+                crate::analysis::anchor_scoring::AnchorAggregation::MeanTopK(label_spec.topk)
+            }
+            crate::sample_sources::config::TfLabelAggregationMode::Max => {
+                crate::analysis::anchor_scoring::AnchorAggregation::Max
+            }
+        };
+        let candidates = crate::analysis::label_match_ann::match_label_candidates_with_ann(
+            &conn,
+            &label_spec,
+            &anchors,
+            candidate_k,
+            top_k,
+            aggregation,
+        )?;
+        Ok(candidates
+            .into_iter()
+            .map(|entry| TfLabelCandidateMatch {
+                sample_id: entry.sample_id,
+                score: entry.score,
+            })
+            .collect())
     }
 }
 
@@ -387,6 +440,16 @@ fn load_tf_embedding(conn: &Connection, sample_id: &str) -> Result<Vec<f32>, Str
     crate::analysis::decode_f32_le_blob(&blob)
 }
 
+fn load_tf_label_by_id(conn: &Connection, label_id: &str) -> Result<Option<TfLabel>, String> {
+    conn.query_row(
+        "SELECT label_id, name, threshold, gap, topk FROM tf_labels WHERE label_id = ?1",
+        params![label_id],
+        row_to_tf_label,
+    )
+    .optional()
+    .map_err(|err| format!("Query tf_label failed: {err}"))
+}
+
 fn load_tf_anchor_embeddings(
     conn: &Connection,
 ) -> Result<
@@ -464,6 +527,42 @@ fn load_tf_anchor_embeddings(
     }
 
     Ok((anchors, anchor_counts))
+}
+
+fn load_tf_anchor_embeddings_for_label(
+    conn: &Connection,
+    label_id: &str,
+) -> Result<Vec<crate::analysis::anchor_match::AnchorEmbedding>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT sample_id, weight FROM tf_anchors WHERE label_id = ?1 ORDER BY created_at ASC",
+        )
+        .map_err(|err| format!("Prepare tf_anchors lookup failed: {err}"))?;
+    let rows = stmt
+        .query_map([label_id], |row| Ok((row.get::<_, String>(0)?, row.get::<_, f32>(1)?)))
+        .map_err(|err| format!("Query tf_anchors failed: {err}"))?;
+
+    let mut embedding_stmt = conn
+        .prepare("SELECT vec FROM embeddings WHERE sample_id = ?1 AND model_id = ?2")
+        .map_err(|err| format!("Prepare embedding lookup failed: {err}"))?;
+    let mut anchors = Vec::new();
+    for row in rows {
+        let (sample_id, weight) =
+            row.map_err(|err| format!("Read tf_anchors row failed: {err}"))?;
+        let blob: Option<Vec<u8>> = embedding_stmt
+            .query_row(
+                params![sample_id, crate::analysis::embedding::EMBEDDING_MODEL_ID],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|err| format!("Load embedding failed: {err}"))?;
+        if let Some(blob) = blob {
+            if let Ok(vec) = crate::analysis::decode_f32_le_blob(&blob) {
+                anchors.push(crate::analysis::anchor_match::AnchorEmbedding { weight, embedding: vec });
+            }
+        }
+    }
+    Ok(anchors)
 }
 
 fn validate_tf_label_fields(

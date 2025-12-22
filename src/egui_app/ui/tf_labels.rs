@@ -1,6 +1,8 @@
 use super::style;
 use super::*;
-use crate::egui_app::state::{TfLabelCreatePrompt, TfLabelScoreCache};
+use crate::egui_app::state::{
+    TfLabelCandidateCache, TfLabelCreatePrompt, TfLabelScoreCache,
+};
 use crate::egui_app::view_model;
 use crate::sample_sources::config::TfLabelAggregationMode;
 use eframe::egui::{self, RichText};
@@ -162,6 +164,48 @@ impl EguiApp {
                 for label in labels {
                     ui.separator();
                     ui.label(RichText::new(&label.name).color(palette.text_primary).strong());
+                    ui.horizontal(|ui| {
+                        if ui.button("Find matches").clicked() {
+                            match self
+                                .controller
+                                .tf_label_candidate_matches_for_label(&label.label_id, 500, 40)
+                            {
+                                Ok(matches) => {
+                                    self.controller.ui.tf_labels.last_candidate_label_id =
+                                        Some(label.label_id.clone());
+                                    self.controller.ui.tf_labels.last_candidate_results = matches
+                                        .into_iter()
+                                        .map(|entry| TfLabelCandidateCache {
+                                            sample_id: entry.sample_id,
+                                            score: entry.score,
+                                        })
+                                        .collect();
+                                    self.controller.set_status(
+                                        format!("Found matches for {}", label.name),
+                                        style::StatusTone::Info,
+                                    );
+                                }
+                                Err(err) => {
+                                    self.controller.set_status(
+                                        format!("Match search failed: {err}"),
+                                        style::StatusTone::Error,
+                                    );
+                                }
+                            }
+                        }
+                        if self
+                            .controller
+                            .ui
+                            .tf_labels
+                            .last_candidate_label_id
+                            .as_deref()
+                            == Some(&label.label_id)
+                            && ui.button("Clear matches").clicked()
+                        {
+                            self.controller.ui.tf_labels.last_candidate_label_id = None;
+                            self.controller.ui.tf_labels.last_candidate_results.clear();
+                        }
+                    });
 
                     let name_id = ui.make_persistent_id(format!("tf_label_name:{}", label.label_id));
                     let mut name = ui.ctx().data_mut(|data| {
@@ -332,6 +376,39 @@ impl EguiApp {
                                 }
                             }
                         });
+                    }
+
+                    if self
+                        .controller
+                        .ui
+                        .tf_labels
+                        .last_candidate_label_id
+                        .as_deref()
+                        == Some(&label.label_id)
+                    {
+                        let candidates = self.controller.ui.tf_labels.last_candidate_results.clone();
+                        if candidates.is_empty() {
+                            ui.label(
+                                RichText::new("No matches returned.").color(palette.text_muted),
+                            );
+                        } else {
+                            ui.add_space(ui.spacing().item_spacing.y);
+                            ui.label(
+                                RichText::new("Top matches").color(palette.text_primary),
+                            );
+                            egui::Grid::new(format!("tf_label_matches_{}", label.label_id))
+                                .striped(true)
+                                .show(ui, |ui| {
+                                    ui.label(RichText::new("Sample").color(palette.text_muted));
+                                    ui.label(RichText::new("Score").color(palette.text_muted));
+                                    ui.end_row();
+                                    for candidate in candidates.iter().take(20) {
+                                        ui.label(&candidate.sample_id);
+                                        ui.label(format!("{:.3}", candidate.score));
+                                        ui.end_row();
+                                    }
+                                });
+                        }
                     }
                 }
             });
