@@ -12,6 +12,7 @@ pub mod embedding;
 pub(crate) mod features;
 pub(crate) mod fft;
 pub(crate) mod frequency_domain;
+pub mod hdbscan;
 pub mod umap;
 pub(crate) mod time_domain;
 pub mod vector;

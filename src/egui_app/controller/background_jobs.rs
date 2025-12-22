@@ -208,6 +208,7 @@ impl EguiController {
                                         }
                                     });
                                 }
+                                self.handle_similarity_scan_finished(&result.source_id);
                             }
                             Err(crate::sample_sources::scanner::ScanError::Canceled) => {
                                 if is_selected_source {
@@ -243,6 +244,7 @@ impl EguiController {
                 },
                 JobMessage::Analysis(message) => match message {
                     super::AnalysisJobMessage::Progress(progress) => {
+                        self.handle_similarity_analysis_progress(&progress);
                         if progress.total() == 0 {
                             if self.ui.progress.task == Some(ProgressTaskKind::Analysis) {
                                 self.clear_progress();
@@ -502,6 +504,9 @@ impl EguiController {
                             );
                         }
                     }
+                }
+                JobMessage::SimilarityPrepared(message) => {
+                    self.handle_similarity_prep_result(message);
                 }
                 JobMessage::UpdateChecked(message) => {
                     self.runtime.jobs.clear_update_check();

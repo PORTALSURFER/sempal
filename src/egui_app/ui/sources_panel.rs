@@ -134,6 +134,15 @@ impl EguiApp {
                 self.controller.backfill_embeddings_for_selected_source();
                 close_menu = true;
             }
+            if ui
+                .button("Prepare similarity search")
+                .on_hover_text("Scan, embed, build ANN, UMAP, and cluster for this source")
+                .clicked()
+            {
+                self.controller.select_source_by_index(index);
+                self.controller.prepare_similarity_for_selected_source();
+                close_menu = true;
+            }
             ui.separator();
             if ui.button("Open in file explorer").clicked() {
                 self.controller.select_source_by_index(index);

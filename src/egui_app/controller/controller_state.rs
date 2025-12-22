@@ -179,8 +179,23 @@ pub(super) struct ControllerAudioState {
 pub(super) struct ControllerRuntimeState {
     pub(super) jobs: jobs::ControllerJobs,
     pub(super) analysis: super::analysis_jobs::AnalysisWorkerPool,
+    pub(super) similarity_prep: Option<SimilarityPrepState>,
     #[cfg(test)]
     pub(super) progress_cancel_after: Option<usize>,
+}
+
+#[derive(Clone, Debug)]
+pub(super) struct SimilarityPrepState {
+    pub(super) source_id: SourceId,
+    pub(super) stage: SimilarityPrepStage,
+    pub(super) umap_version: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum SimilarityPrepStage {
+    AwaitScan,
+    AwaitEmbeddings,
+    Finalizing,
 }
 
 pub(super) struct ControllerHistoryState {

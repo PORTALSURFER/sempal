@@ -23,6 +23,7 @@ pub(super) enum JobMessage {
     Analysis(AnalysisJobMessage),
     ModelTraining(model_training::ModelTrainingMessage),
     UmapBuilt(UmapBuildResult),
+    SimilarityPrepared(SimilarityPrepResult),
     UpdateChecked(UpdateCheckResult),
     IssueGatewayCreated(IssueGatewayCreateResult),
 }
@@ -51,6 +52,18 @@ pub(super) struct UmapBuildJob {
 pub(super) struct UmapBuildResult {
     pub(super) umap_version: String,
     pub(super) result: Result<(), String>,
+}
+
+#[derive(Debug)]
+pub(super) struct SimilarityPrepOutcome {
+    pub(super) cluster_stats: crate::analysis::hdbscan::HdbscanStats,
+    pub(super) umap_version: String,
+}
+
+#[derive(Debug)]
+pub(super) struct SimilarityPrepResult {
+    pub(super) source_id: SourceId,
+    pub(super) result: Result<SimilarityPrepOutcome, String>,
 }
 
 pub(super) struct ControllerJobs {

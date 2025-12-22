@@ -39,6 +39,7 @@ mod selection_export;
 mod source_cache_invalidator;
 mod source_folders;
 mod sources;
+mod similarity_prep;
 mod tagging_service;
 mod trash;
 mod trash_move;
@@ -193,6 +194,7 @@ impl EguiController {
             runtime: ControllerRuntimeState {
                 jobs,
                 analysis,
+                similarity_prep: None,
                 #[cfg(test)]
                 progress_cancel_after: None,
             },
