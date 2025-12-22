@@ -8,8 +8,8 @@ use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-const DEFAULT_NEIGHBORS: usize = 15;
-const DEFAULT_MIN_DIST: f32 = 0.1;
+const DEFAULT_NEIGHBORS: usize = 8;
+const DEFAULT_MIN_DIST: f32 = 0.0;
 const DEFAULT_N_COMPONENTS: usize = 2;
 
 #[derive(Debug, Serialize)]
