@@ -112,8 +112,8 @@ impl EguiApp {
         let render_started = Instant::now();
         let model_id = crate::analysis::embedding::EMBEDDING_MODEL_ID;
         let umap_version = self.controller.ui.map.umap_version.clone();
-        let cluster_method_str = "umap";
-        let cluster_umap_version = umap_version.as_str();
+        let cluster_method_str = "embedding";
+        let cluster_umap_version = "";
 
         let source_id = self
             .controller

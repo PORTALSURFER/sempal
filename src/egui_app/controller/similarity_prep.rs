@@ -166,24 +166,25 @@ impl EguiController {
 
 fn run_similarity_finalize(umap_version: &str) -> Result<jobs::SimilarityPrepOutcome, String> {
     let mut conn = open_library_db_for_similarity()?;
-    crate::analysis::rebuild_ann_index(&conn)?;
-    crate::analysis::umap::build_umap_layout(
-        &mut conn,
-        crate::analysis::embedding::EMBEDDING_MODEL_ID,
-        umap_version,
-        0,
-        0.95,
-    )?;
     let cluster_stats = crate::analysis::hdbscan::build_hdbscan_clusters(
         &mut conn,
         crate::analysis::embedding::EMBEDDING_MODEL_ID,
-        HdbscanMethod::Umap,
-        Some(umap_version),
+        HdbscanMethod::Embedding,
+        None,
         HdbscanConfig {
             min_cluster_size: DEFAULT_CLUSTER_MIN_SIZE,
             min_samples: None,
             allow_single_cluster: false,
         },
+    )?;
+    crate::analysis::rebuild_ann_index(&conn)?;
+    crate::analysis::umap::build_umap_layout_with_cluster_lock(
+        &mut conn,
+        crate::analysis::embedding::EMBEDDING_MODEL_ID,
+        umap_version,
+        0,
+        0.95,
+        "embedding",
     )?;
     Ok(jobs::SimilarityPrepOutcome {
         cluster_stats,
