@@ -109,6 +109,7 @@ impl LibraryDatabase {
         db.migrate_labels_user_table()?;
         db.migrate_tf_labels_table()?;
         db.migrate_tf_anchors_table()?;
+        db.migrate_layout_umap_table()?;
         db.migrate_embeddings_table()?;
         db.migrate_labels_table()?;
         db.migrate_classes_table()?;

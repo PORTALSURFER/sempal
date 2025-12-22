@@ -157,6 +157,19 @@ impl LibraryDatabase {
                  ) WITHOUT ROWID;
                  CREATE INDEX IF NOT EXISTS idx_tf_anchors_label_id ON tf_anchors (label_id);
                  CREATE INDEX IF NOT EXISTS idx_tf_anchors_sample_id ON tf_anchors (sample_id);
+                 CREATE TABLE IF NOT EXISTS layout_umap (
+                    sample_id TEXT PRIMARY KEY,
+                    model_id TEXT NOT NULL,
+                    umap_version TEXT NOT NULL,
+                    x REAL NOT NULL,
+                    y REAL NOT NULL,
+                    created_at INTEGER NOT NULL,
+                    FOREIGN KEY(sample_id) REFERENCES samples(sample_id) ON DELETE CASCADE
+                 ) WITHOUT ROWID;
+                 CREATE INDEX IF NOT EXISTS idx_layout_umap_model_version
+                    ON layout_umap (model_id, umap_version);
+                 CREATE INDEX IF NOT EXISTS idx_layout_umap_xy
+                    ON layout_umap (x, y);
                  CREATE TABLE IF NOT EXISTS embeddings (
                     sample_id TEXT PRIMARY KEY,
                     model_id TEXT NOT NULL,
@@ -474,6 +487,39 @@ impl LibraryDatabase {
                 ) WITHOUT ROWID;
                 CREATE INDEX IF NOT EXISTS idx_tf_anchors_label_id ON tf_anchors (label_id);
                 CREATE INDEX IF NOT EXISTS idx_tf_anchors_sample_id ON tf_anchors (sample_id);",
+            )
+            .map_err(map_sql_error)?;
+        Ok(())
+    }
+
+    pub(super) fn migrate_layout_umap_table(&mut self) -> Result<(), LibraryError> {
+        let mut stmt = self
+            .connection
+            .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='layout_umap'")
+            .map_err(map_sql_error)?;
+        let exists: Option<String> = stmt
+            .query_row([], |row| row.get(0))
+            .optional()
+            .map_err(map_sql_error)?;
+        drop(stmt);
+        if exists.is_some() {
+            return Ok(());
+        }
+        self.connection
+            .execute_batch(
+                "CREATE TABLE IF NOT EXISTS layout_umap (
+                    sample_id TEXT PRIMARY KEY,
+                    model_id TEXT NOT NULL,
+                    umap_version TEXT NOT NULL,
+                    x REAL NOT NULL,
+                    y REAL NOT NULL,
+                    created_at INTEGER NOT NULL,
+                    FOREIGN KEY(sample_id) REFERENCES samples(sample_id) ON DELETE CASCADE
+                ) WITHOUT ROWID;
+                CREATE INDEX IF NOT EXISTS idx_layout_umap_model_version
+                    ON layout_umap (model_id, umap_version);
+                CREATE INDEX IF NOT EXISTS idx_layout_umap_xy
+                    ON layout_umap (x, y);",
             )
             .map_err(map_sql_error)?;
         Ok(())
