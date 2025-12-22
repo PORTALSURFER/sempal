@@ -258,7 +258,7 @@ fn start_cluster_tx(conn: &mut Connection) -> Result<Transaction<'_>, String> {
         .map_err(|err| format!("Start transaction failed: {err}"))
 }
 
-fn prepare_cluster_insert(tx: &Transaction<'_>) -> Result<Statement<'_>, String> {
+fn prepare_cluster_insert<'a>(tx: &'a Transaction<'a>) -> Result<Statement<'a>, String> {
     tx.prepare(
         "INSERT INTO hdbscan_clusters (
             sample_id,

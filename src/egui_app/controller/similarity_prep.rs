@@ -50,22 +50,28 @@ impl EguiController {
 
     pub(super) fn handle_similarity_analysis_progress(
         &mut self,
-        progress: &analysis_jobs::types::AnalysisProgress,
+        progress: &analysis_jobs::AnalysisProgress,
     ) {
         if progress.pending > 0 || progress.running > 0 {
             return;
         }
-        let Some(state) = self.runtime.similarity_prep.as_mut() else {
-            return;
+        let (source_id, umap_version) = {
+            let Some(state) = self.runtime.similarity_prep.as_mut() else {
+                return;
+            };
+            if state.stage != SimilarityPrepStage::AwaitEmbeddings {
+                return;
+            }
+            state.stage = SimilarityPrepStage::Finalizing;
+            (state.source_id.clone(), state.umap_version.clone())
         };
-        if state.stage != SimilarityPrepStage::AwaitEmbeddings {
-            return;
-        }
-        state.stage = SimilarityPrepStage::Finalizing;
         self.set_status("Finalizing similarity prep...", StatusTone::Busy);
-        self.show_status_progress(ProgressTaskKind::Analysis, "Finalizing similarity prep", 0, true);
-        let source_id = state.source_id.clone();
-        let umap_version = state.umap_version.clone();
+        self.show_status_progress(
+            ProgressTaskKind::Analysis,
+            "Finalizing similarity prep",
+            0,
+            true,
+        );
         self.start_similarity_finalize(source_id, umap_version);
     }
 
