@@ -320,16 +320,24 @@ pub(super) fn infer_and_upsert_prediction(
 
 pub(super) fn ensure_bundled_model(conn: &Connection) -> Result<(), String> {
     let bundled_id = crate::ml::logreg::DEFAULT_CLASSIFIER_MODEL_ID;
-    let exists: Option<String> = conn
+    let existing: Option<(String, String)> = conn
         .query_row(
-            "SELECT model_id FROM models WHERE model_id = ?1",
+            "SELECT kind, model_json FROM models WHERE model_id = ?1",
             params![bundled_id],
-            |row| row.get(0),
+            |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .optional()
         .map_err(|err| format!("Failed to query bundled model: {err}"))?;
-    if exists.is_some() {
-        return Ok(());
+    if let Some((kind, model_json)) = &existing {
+        if kind == "logreg_v1" {
+            if let Ok(model) = serde_json::from_str::<crate::ml::logreg::LogRegModel>(model_json) {
+                if model.validate().is_ok() {
+                    return Ok(());
+                }
+            }
+        }
+        conn.execute("DELETE FROM models WHERE model_id = ?1", params![bundled_id])
+            .map_err(|err| format!("Failed to delete bundled model: {err}"))?;
     }
     let model = crate::ml::logreg::LogRegModel::bundled();
     let model_json = serde_json::to_string(&model).map_err(|err| err.to_string())?;
