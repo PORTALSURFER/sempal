@@ -176,7 +176,8 @@ impl LibraryDatabase {
                     dim INTEGER NOT NULL,
                     dtype TEXT NOT NULL,
                     l2_normed INTEGER NOT NULL,
-                    vec BLOB NOT NULL
+                    vec BLOB NOT NULL,
+                    created_at INTEGER NOT NULL
                  ) WITHOUT ROWID;
                  CREATE INDEX IF NOT EXISTS idx_embeddings_model_id ON embeddings (model_id);
                  CREATE TABLE IF NOT EXISTS classes (
@@ -567,7 +568,18 @@ impl LibraryDatabase {
         let has_l2 = columns.iter().any(|c| c == "l2_normed");
         let has_dtype = columns.iter().any(|c| c == "dtype");
         let has_vec_blob = columns.iter().any(|c| c == "vec_blob");
-        if has_vec && has_l2 && has_dtype && !has_vec_blob {
+        let has_created_at = columns.iter().any(|c| c == "created_at");
+        if has_vec && has_l2 && has_dtype && !has_vec_blob && has_created_at {
+            return Ok(());
+        }
+
+        if has_vec && has_l2 && has_dtype && !has_vec_blob && !has_created_at {
+            self.connection
+                .execute(
+                    "ALTER TABLE embeddings ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0",
+                    [],
+                )
+                .map_err(map_sql_error)?;
             return Ok(());
         }
 
@@ -580,10 +592,11 @@ impl LibraryDatabase {
                     dim INTEGER NOT NULL,
                     dtype TEXT NOT NULL,
                     l2_normed INTEGER NOT NULL,
-                    vec BLOB NOT NULL
+                    vec BLOB NOT NULL,
+                    created_at INTEGER NOT NULL
                  ) WITHOUT ROWID;
-                 INSERT INTO embeddings_new (sample_id, model_id, dim, dtype, l2_normed, vec)
-                    SELECT sample_id, model_id, dim, 'f32', 1, vec_blob
+                 INSERT INTO embeddings_new (sample_id, model_id, dim, dtype, l2_normed, vec, created_at)
+                    SELECT sample_id, model_id, dim, 'f32', 1, vec_blob, 0
                     FROM embeddings;
                  DROP TABLE embeddings;
                  ALTER TABLE embeddings_new RENAME TO embeddings;

@@ -185,6 +185,27 @@ impl EguiController {
                                                 ));
                                             }
                                         }
+                                        let embed_result =
+                                            super::analysis_jobs::enqueue_jobs_for_embedding_backfill(
+                                                &source,
+                                            );
+                                        match embed_result {
+                                            Ok((inserted, progress)) => {
+                                                if inserted > 0 {
+                                                    let _ = tx.send(JobMessage::Analysis(
+                                                        super::AnalysisJobMessage::EmbeddingBackfillEnqueueFinished {
+                                                            inserted,
+                                                            progress,
+                                                        },
+                                                    ));
+                                                }
+                                            }
+                                            Err(err) => {
+                                                let _ = tx.send(JobMessage::Analysis(
+                                                    super::AnalysisJobMessage::EmbeddingBackfillEnqueueFailed(err),
+                                                ));
+                                            }
+                                        }
                                     });
                                 }
                             }
@@ -306,6 +327,31 @@ impl EguiController {
                     super::AnalysisJobMessage::EnqueueFailed(err) => {
                         self.set_status(
                             format!("Analysis enqueue failed: {err}"),
+                            StatusTone::Error,
+                        );
+                    }
+                    super::AnalysisJobMessage::EmbeddingBackfillEnqueueFinished {
+                        inserted,
+                        progress,
+                    } => {
+                        self.runtime.analysis.resume();
+                        if inserted > 0 {
+                            self.set_status(
+                                format!("Queued {inserted} embedding backfill jobs"),
+                                StatusTone::Info,
+                            );
+                        }
+                        let _ = self
+                            .runtime
+                            .jobs
+                            .message_sender()
+                            .send(JobMessage::Analysis(super::AnalysisJobMessage::Progress(
+                                progress,
+                            )));
+                    }
+                    super::AnalysisJobMessage::EmbeddingBackfillEnqueueFailed(err) => {
+                        self.set_status(
+                            format!("Embedding backfill enqueue failed: {err}"),
                             StatusTone::Error,
                         );
                     }

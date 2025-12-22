@@ -470,26 +470,29 @@ fn run_embedding_backfill_job(conn: &rusqlite::Connection, job: &db::ClaimedJob)
 
     const INSERT_BATCH: usize = 32;
     for chunk in results.chunks(INSERT_BATCH) {
+        let created_at = now_epoch_seconds();
         conn.execute_batch("BEGIN IMMEDIATE")
             .map_err(|err| format!("Begin embedding backfill tx failed: {err}"))?;
         for result in chunk {
             let embedding_blob = crate::analysis::vector::encode_f32_le_blob(&result.embedding);
             let insert = conn.execute(
-                "INSERT INTO embeddings (sample_id, model_id, dim, dtype, l2_normed, vec)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                "INSERT INTO embeddings (sample_id, model_id, dim, dtype, l2_normed, vec, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
                  ON CONFLICT(sample_id) DO UPDATE SET
                     model_id = excluded.model_id,
                     dim = excluded.dim,
                     dtype = excluded.dtype,
                     l2_normed = excluded.l2_normed,
-                    vec = excluded.vec",
+                    vec = excluded.vec,
+                    created_at = excluded.created_at",
                 rusqlite::params![
                     result.sample_id,
                     crate::analysis::embedding::EMBEDDING_MODEL_ID,
                     crate::analysis::embedding::EMBEDDING_DIM as i64,
                     crate::analysis::embedding::EMBEDDING_DTYPE_F32,
                     true,
-                    embedding_blob
+                    embedding_blob,
+                    created_at
                 ],
             );
             if let Err(err) = insert {
@@ -560,6 +563,7 @@ fn run_analysis_job(
         let embedding =
             crate::analysis::embedding::infer_embedding(&processed, decoded.sample_rate_used)?;
         let embedding_blob = crate::analysis::vector::encode_f32_le_blob(&embedding);
+        let created_at = now_epoch_seconds();
         db::upsert_embedding(
             conn,
             &job.sample_id,
@@ -568,6 +572,7 @@ fn run_analysis_job(
             crate::analysis::embedding::EMBEDDING_DTYPE_F32,
             true,
             &embedding_blob,
+            created_at,
         )?;
         embedding
     };

@@ -736,8 +736,8 @@ mod tests {
             .unwrap();
         }
         conn.execute(
-            "INSERT INTO embeddings (sample_id, model_id, dim, dtype, l2_normed, vec)
-             VALUES (?1, ?2, ?3, ?4, 1, X'01020304')",
+            "INSERT INTO embeddings (sample_id, model_id, dim, dtype, l2_normed, vec, created_at)
+             VALUES (?1, ?2, ?3, ?4, 1, X'01020304', 0)",
             params![
                 &b,
                 crate::analysis::embedding::EMBEDDING_MODEL_ID,
@@ -747,8 +747,8 @@ mod tests {
         )
         .unwrap();
         conn.execute(
-            "INSERT INTO embeddings (sample_id, model_id, dim, dtype, l2_normed, vec)
-             VALUES (?1, 'old_model', ?2, ?3, 1, X'01020304')",
+            "INSERT INTO embeddings (sample_id, model_id, dim, dtype, l2_normed, vec, created_at)
+             VALUES (?1, 'old_model', ?2, ?3, 1, X'01020304', 0)",
             params![
                 &c,
                 crate::analysis::embedding::EMBEDDING_DIM as i64,

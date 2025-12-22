@@ -58,6 +58,10 @@ pub(in crate::egui_app::controller) enum AnalysisJobMessage {
     EnqueueFinished { inserted: usize, progress: AnalysisProgress },
     /// An enqueue job failed.
     EnqueueFailed(String),
+    /// Embedding backfill enqueue finished.
+    EmbeddingBackfillEnqueueFinished { inserted: usize, progress: AnalysisProgress },
+    /// Embedding backfill enqueue failed.
+    EmbeddingBackfillEnqueueFailed(String),
     /// Weak labels were recomputed for a source.
     WeakLabelsRecomputed {
         source_id: String,
