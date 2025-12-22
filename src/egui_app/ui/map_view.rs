@@ -371,15 +371,28 @@ impl EguiApp {
         let mut draw_calls = 0usize;
         let mut points_rendered = 0usize;
         if filtered_points.len() > 8000 || self.controller.ui.map.zoom < 0.6 {
-            draw_calls = map_render::render_heatmap(
-                &painter,
-                rect,
-                &filtered_points,
-                center,
-                scale,
-                self.controller.ui.map.pan,
-                MAP_HEATMAP_BINS,
-            );
+            if self.controller.ui.map.cluster_overlay {
+                draw_calls = map_render::render_heatmap_with_color(
+                    &painter,
+                    rect,
+                    &filtered_points,
+                    center,
+                    scale,
+                    self.controller.ui.map.pan,
+                    MAP_HEATMAP_BINS,
+                    |point| point_color(point, 255),
+                );
+            } else {
+                draw_calls = map_render::render_heatmap(
+                    &painter,
+                    rect,
+                    &filtered_points,
+                    center,
+                    scale,
+                    self.controller.ui.map.pan,
+                    MAP_HEATMAP_BINS,
+                );
+            }
             points_rendered = filtered_points.len();
             self.controller.ui.map.last_render_mode = crate::egui_app::state::MapRenderMode::Heatmap;
         } else {
