@@ -117,21 +117,19 @@ fn compute_umap(vectors: &[Vec<f32>], seed: u64) -> Result<Vec<[f32; 2]>, String
     }
     let n_samples = vectors.len();
     let dim = vectors.first().map(|v| v.len()).unwrap_or(0);
-    if n_samples <= DEFAULT_NEIGHBORS {
-        return Err(format!(
-            "Need more samples than n_neighbors ({} <= {})",
-            n_samples, DEFAULT_NEIGHBORS
-        ));
+    if n_samples < 2 {
+        return Err("Need at least 2 embeddings to build UMAP".to_string());
     }
+    let n_neighbors = DEFAULT_NEIGHBORS.min(n_samples.saturating_sub(1)).max(1);
     let matrix = Array2::from_shape_vec((n_samples, dim), data)
         .map_err(|err| format!("Build embedding matrix failed: {err}"))?;
     let (knn_indices, knn_dists) =
-        build_knn_graph(&matrix, DEFAULT_NEIGHBORS, DEFAULT_NEIGHBORS * 2)?;
+        build_knn_graph(&matrix, n_neighbors, n_neighbors * 2)?;
     let init = random_init(n_samples, DEFAULT_N_COMPONENTS, seed);
 
     let mut config = umap_rs::UmapConfig::default();
     config.n_components = DEFAULT_N_COMPONENTS;
-    config.graph.n_neighbors = DEFAULT_NEIGHBORS;
+    config.graph.n_neighbors = n_neighbors;
     config.manifold.min_dist = DEFAULT_MIN_DIST;
     let umap = umap_rs::Umap::new(config.clone());
     let fitted = umap.fit(
