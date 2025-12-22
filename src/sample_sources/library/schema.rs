@@ -134,6 +134,29 @@ impl LibraryDatabase {
                     updated_at INTEGER NOT NULL
                  ) WITHOUT ROWID;
                  CREATE INDEX IF NOT EXISTS idx_labels_user_class_id ON labels_user (class_id);
+                 CREATE TABLE IF NOT EXISTS tf_labels (
+                    label_id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    threshold REAL NOT NULL,
+                    gap REAL NOT NULL,
+                    topk INTEGER NOT NULL,
+                    created_at INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL
+                 ) WITHOUT ROWID;
+                 CREATE UNIQUE INDEX IF NOT EXISTS idx_tf_labels_name ON tf_labels (name);
+                 CREATE TABLE IF NOT EXISTS tf_anchors (
+                    anchor_id TEXT PRIMARY KEY,
+                    label_id TEXT NOT NULL,
+                    sample_id TEXT NOT NULL,
+                    weight REAL NOT NULL DEFAULT 1.0,
+                    created_at INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL,
+                    FOREIGN KEY(label_id) REFERENCES tf_labels(label_id) ON DELETE CASCADE,
+                    FOREIGN KEY(sample_id) REFERENCES samples(sample_id) ON DELETE CASCADE,
+                    UNIQUE(label_id, sample_id)
+                 ) WITHOUT ROWID;
+                 CREATE INDEX IF NOT EXISTS idx_tf_anchors_label_id ON tf_anchors (label_id);
+                 CREATE INDEX IF NOT EXISTS idx_tf_anchors_sample_id ON tf_anchors (sample_id);
                  CREATE TABLE IF NOT EXISTS embeddings (
                     sample_id TEXT PRIMARY KEY,
                     model_id TEXT NOT NULL,
@@ -396,6 +419,69 @@ impl LibraryDatabase {
                     updated_at INTEGER NOT NULL
                 ) WITHOUT ROWID;
                 CREATE INDEX IF NOT EXISTS idx_labels_user_class_id ON labels_user (class_id);",
+            )
+            .map_err(map_sql_error)?;
+        Ok(())
+    }
+
+    pub(super) fn migrate_tf_labels_table(&mut self) -> Result<(), LibraryError> {
+        let mut stmt = self
+            .connection
+            .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='tf_labels'")
+            .map_err(map_sql_error)?;
+        let exists: Option<String> = stmt
+            .query_row([], |row| row.get(0))
+            .optional()
+            .map_err(map_sql_error)?;
+        drop(stmt);
+        if exists.is_some() {
+            return Ok(());
+        }
+        self.connection
+            .execute_batch(
+                "CREATE TABLE IF NOT EXISTS tf_labels (
+                    label_id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    threshold REAL NOT NULL,
+                    gap REAL NOT NULL,
+                    topk INTEGER NOT NULL,
+                    created_at INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL
+                ) WITHOUT ROWID;
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_tf_labels_name ON tf_labels (name);",
+            )
+            .map_err(map_sql_error)?;
+        Ok(())
+    }
+
+    pub(super) fn migrate_tf_anchors_table(&mut self) -> Result<(), LibraryError> {
+        let mut stmt = self
+            .connection
+            .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='tf_anchors'")
+            .map_err(map_sql_error)?;
+        let exists: Option<String> = stmt
+            .query_row([], |row| row.get(0))
+            .optional()
+            .map_err(map_sql_error)?;
+        drop(stmt);
+        if exists.is_some() {
+            return Ok(());
+        }
+        self.connection
+            .execute_batch(
+                "CREATE TABLE IF NOT EXISTS tf_anchors (
+                    anchor_id TEXT PRIMARY KEY,
+                    label_id TEXT NOT NULL,
+                    sample_id TEXT NOT NULL,
+                    weight REAL NOT NULL DEFAULT 1.0,
+                    created_at INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL,
+                    FOREIGN KEY(label_id) REFERENCES tf_labels(label_id) ON DELETE CASCADE,
+                    FOREIGN KEY(sample_id) REFERENCES samples(sample_id) ON DELETE CASCADE,
+                    UNIQUE(label_id, sample_id)
+                ) WITHOUT ROWID;
+                CREATE INDEX IF NOT EXISTS idx_tf_anchors_label_id ON tf_anchors (label_id);
+                CREATE INDEX IF NOT EXISTS idx_tf_anchors_sample_id ON tf_anchors (sample_id);",
             )
             .map_err(map_sql_error)?;
         Ok(())

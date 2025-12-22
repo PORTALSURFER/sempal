@@ -115,7 +115,7 @@ fn creates_embedding_tables() {
     with_config_home(temp.path(), || {
         let _ = load().unwrap();
         let conn = Connection::open(database_path().unwrap()).unwrap();
-        for table in ["embeddings", "labels", "ann_index_meta"] {
+        for table in ["embeddings", "labels", "ann_index_meta", "tf_labels", "tf_anchors"] {
             let exists: Option<String> = conn
                 .query_row(
                     "SELECT name FROM sqlite_master WHERE type='table' AND name = ?1",

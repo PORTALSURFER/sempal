@@ -107,6 +107,8 @@ impl LibraryDatabase {
         db.migrate_predictions_head_table()?;
         db.migrate_labels_weak_table()?;
         db.migrate_labels_user_table()?;
+        db.migrate_tf_labels_table()?;
+        db.migrate_tf_anchors_table()?;
         db.migrate_embeddings_table()?;
         db.migrate_labels_table()?;
         db.migrate_classes_table()?;
