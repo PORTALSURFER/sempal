@@ -323,7 +323,10 @@ fn load_index_from_disk(meta: &AnnIndexMetaRow) -> Result<Option<AnnIndexState>,
     if !id_map_path.is_file() {
         return Ok(None);
     }
-    let id_map = load_id_map(&id_map_path)?;
+    let id_map = match load_id_map(&id_map_path) {
+        Ok(id_map) => id_map,
+        Err(_) => return Ok(None),
+    };
     let id_lookup = build_id_lookup(&id_map);
     let basename = index_path
         .file_name()
@@ -335,9 +338,10 @@ fn load_index_from_disk(meta: &AnnIndexMetaRow) -> Result<Option<AnnIndexState>,
     // Leak the reloader to satisfy Hnsw's lifetime requirements for reloaded data.
     let hnsw_io = Box::new(HnswIo::new(dir, basename));
     let hnsw_io = Box::leak(hnsw_io);
-    let hnsw: Hnsw<f32, DistCosine> = hnsw_io
-        .load_hnsw::<f32, DistCosine>()
-        .map_err(|err| format!("Failed to reload ANN index: {err}"))?;
+    let hnsw: Hnsw<f32, DistCosine> = match hnsw_io.load_hnsw::<f32, DistCosine>() {
+        Ok(hnsw) => hnsw,
+        Err(_) => return Ok(None),
+    };
     if hnsw.get_nb_point() != id_map.len() {
         return Ok(None);
     }
