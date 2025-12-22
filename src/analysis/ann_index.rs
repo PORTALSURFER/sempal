@@ -328,6 +328,12 @@ fn maybe_flush(conn: &Connection, state: &mut AnnIndexState) -> Result<(), Strin
 }
 
 fn flush_index(conn: &Connection, state: &mut AnnIndexState) -> Result<(), String> {
+    if state.id_map.is_empty() {
+        upsert_meta(conn, state)?;
+        state.last_flush = Instant::now();
+        state.dirty_inserts = 0;
+        return Ok(());
+    }
     let index_path = state.index_path.clone();
     let dir = index_path
         .parent()
