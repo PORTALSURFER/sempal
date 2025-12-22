@@ -1,5 +1,9 @@
 //! Developer utility to build a UMAP layout from stored embeddings.
 
+use hnsw_rs::prelude::*;
+use ndarray::Array2;
+use rand::{Rng, SeedableRng};
+use rand::rngs::StdRng;
 use rusqlite::{Connection, params};
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -202,18 +206,30 @@ fn compute_umap(vectors: &[Vec<f32>], seed: u64) -> Result<Vec<[f32; 2]>, String
     }
     let n_samples = vectors.len();
     let dim = vectors.first().map(|v| v.len()).unwrap_or(0);
-    let matrix = ndarray::Array2::from_shape_vec((n_samples, dim), data)
+    if n_samples <= DEFAULT_NEIGHBORS {
+        return Err(format!(
+            "Need more samples than n_neighbors ({} <= {})",
+            n_samples, DEFAULT_NEIGHBORS
+        ));
+    }
+    let matrix = Array2::from_shape_vec((n_samples, dim), data)
         .map_err(|err| format!("Build embedding matrix failed: {err}"))?;
+    let (knn_indices, knn_dists) =
+        build_knn_graph(&matrix, DEFAULT_NEIGHBORS, DEFAULT_NEIGHBORS * 2)?;
+    let init = random_init(n_samples, DEFAULT_N_COMPONENTS, seed);
+
     let mut config = umap_rs::UmapConfig::default();
-    config.n_neighbors = DEFAULT_NEIGHBORS;
     config.n_components = DEFAULT_N_COMPONENTS;
-    config.min_dist = DEFAULT_MIN_DIST;
-    config.seed = seed;
-    let umap = umap_rs::Umap::new(config);
-    let embedding = umap
-        .fit(&matrix)
-        .map_err(|err| format!("UMAP fit failed: {err}"))?;
-    let coords = embedding.embedding;
+    config.graph.n_neighbors = DEFAULT_NEIGHBORS;
+    config.manifold.min_dist = DEFAULT_MIN_DIST;
+    let umap = umap_rs::Umap::new(config.clone());
+    let fitted = umap.fit(
+        matrix.view(),
+        knn_indices.view(),
+        knn_dists.view(),
+        init.view(),
+    );
+    let coords = fitted.embedding();
     if coords.ncols() != 2 {
         return Err(format!(
             "UMAP returned {} columns, expected 2",
@@ -225,6 +241,51 @@ fn compute_umap(vectors: &[Vec<f32>], seed: u64) -> Result<Vec<[f32; 2]>, String
         out.push([row[0], row[1]]);
     }
     Ok(out)
+}
+
+fn build_knn_graph(
+    matrix: &Array2<f32>,
+    n_neighbors: usize,
+    ef_search: usize,
+) -> Result<(Array2<u32>, Array2<f32>), String> {
+    let n_samples = matrix.nrows();
+    let dim = matrix.ncols();
+    let max_elements = n_samples.max(1024);
+    let hnsw = Hnsw::new(16, max_elements, 16, 200, DistCosine {});
+    for (idx, row) in matrix.rows().into_iter().enumerate() {
+        hnsw.insert((row.as_slice().ok_or_else(|| "Embedding not contiguous".to_string())?, idx));
+    }
+
+    let mut knn_indices = Array2::<u32>::zeros((n_samples, n_neighbors));
+    let mut knn_dists = Array2::<f32>::zeros((n_samples, n_neighbors));
+    for (row_idx, row) in matrix.rows().into_iter().enumerate() {
+        let neighbours = hnsw.search(
+            row.as_slice().ok_or_else(|| "Embedding not contiguous".to_string())?,
+            n_neighbors + 1,
+            ef_search.max(n_neighbors + 1),
+        );
+        let mut filled = 0usize;
+        for neighbour in neighbours {
+            if neighbour.d_id == row_idx {
+                continue;
+            }
+            if filled >= n_neighbors {
+                break;
+            }
+            knn_indices[(row_idx, filled)] = neighbour.d_id as u32;
+            knn_dists[(row_idx, filled)] = neighbour.distance;
+            filled += 1;
+        }
+        if filled < n_neighbors {
+            return Err("ANN search returned insufficient neighbors".to_string());
+        }
+    }
+    Ok((knn_indices, knn_dists))
+}
+
+fn random_init(n_samples: usize, n_components: usize, seed: u64) -> Array2<f32> {
+    let mut rng = StdRng::seed_from_u64(seed);
+    Array2::from_shape_fn((n_samples, n_components), |_| rng.random::<f32>() * 10.0)
 }
 
 fn write_layout(
