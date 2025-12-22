@@ -1,3 +1,7 @@
+use super::map_clusters;
+use super::map_interactions;
+use super::map_math;
+use super::map_render;
 use super::style;
 use super::*;
 use crate::egui_app::view_model;
@@ -19,8 +23,78 @@ impl EguiApp {
             .resizable(true)
             .default_size([640.0, 420.0])
             .show(ctx, |ui| {
+                let refresh = self.render_map_controls(ui);
+                if refresh {
+                    self.controller.ui.map.last_query = None;
+                }
+                ui.separator();
                 self.render_map_canvas(ui);
             });
+    }
+
+    fn render_map_controls(&mut self, ui: &mut egui::Ui) -> bool {
+        let mut refresh = false;
+        ui.horizontal(|ui| {
+            refresh |= ui
+                .checkbox(&mut self.controller.ui.map.cluster_overlay, "Clusters")
+                .changed();
+            if self.controller.ui.map.cluster_overlay {
+                let mut method = self.controller.ui.map.cluster_method;
+                egui::ComboBox::from_id_source("cluster_method")
+                    .selected_text(method.label())
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(
+                            &mut method,
+                            crate::egui_app::state::MapClusterMethod::Umap,
+                            "UMAP",
+                        );
+                        ui.selectable_value(
+                            &mut method,
+                            crate::egui_app::state::MapClusterMethod::Embedding,
+                            "Embedding",
+                        );
+                    });
+                if method != self.controller.ui.map.cluster_method {
+                    self.controller.ui.map.cluster_method = method;
+                    refresh = true;
+                }
+                ui.checkbox(&mut self.controller.ui.map.cluster_hide_noise, "Hide noise");
+                ui.label("Filter");
+                let response =
+                    ui.text_edit_singleline(&mut self.controller.ui.map.cluster_filter_input);
+                if response.changed() {
+                    self.controller.ui.map.cluster_filter = self
+                        .controller
+                        .ui
+                        .map
+                        .cluster_filter_input
+                        .trim()
+                        .parse::<i32>()
+                        .ok();
+                }
+            }
+        });
+        if self.controller.ui.map.cluster_overlay {
+            if let Some(stats) =
+                map_clusters::compute_cluster_stats(&self.controller.ui.map.cached_points)
+            {
+                ui.horizontal(|ui| {
+                    ui.label(format!(
+                        "Clusters: {}",
+                        stats.cluster_count
+                    ));
+                    ui.label(format!(
+                        "Noise: {:.1}%",
+                        stats.noise_ratio * 100.0
+                    ));
+                    ui.label(format!(
+                        "Size min/max: {}/{}",
+                        stats.min_cluster_size, stats.max_cluster_size
+                    ));
+                });
+            }
+        }
+        refresh
     }
 
     fn render_map_canvas(&mut self, ui: &mut egui::Ui) {
@@ -29,6 +103,13 @@ impl EguiApp {
         let (rect, response) = ui.allocate_exact_size(available, egui::Sense::drag());
         let model_id = crate::analysis::embedding::EMBEDDING_MODEL_ID;
         let umap_version = self.controller.ui.map.umap_version.clone();
+        let cluster_method = self.controller.ui.map.cluster_method;
+        let cluster_method_str = cluster_method.as_str();
+        let cluster_umap_version = if cluster_method == crate::egui_app::state::MapClusterMethod::Umap {
+            umap_version.as_str()
+        } else {
+            ""
+        };
 
         if self.controller.ui.map.bounds.is_none() {
             match self.controller.umap_bounds(model_id, &umap_version) {
@@ -84,11 +165,14 @@ impl EguiApp {
             (bounds.min_x + bounds.max_x) * 0.5,
             (bounds.min_y + bounds.max_y) * 0.5,
         );
-        let world_bounds = world_bounds_from_view(rect, center, scale, self.controller.ui.map.pan);
-        if should_requery(&self.controller.ui.map.last_query, &world_bounds) {
+        let world_bounds =
+            map_math::world_bounds_from_view(rect, center, scale, self.controller.ui.map.pan);
+        if map_math::should_requery(&self.controller.ui.map.last_query, &world_bounds) {
             match self.controller.umap_points_in_bounds(
                 model_id,
                 &umap_version,
+                cluster_method_str,
+                cluster_umap_version,
                 world_bounds,
                 MAP_POINT_LIMIT,
             ) {
@@ -99,6 +183,7 @@ impl EguiApp {
                             sample_id: p.sample_id,
                             x: p.x,
                             y: p.y,
+                            cluster_id: p.cluster_id,
                         })
                         .collect();
                     self.controller.ui.map.last_query = Some(world_bounds);
@@ -113,12 +198,33 @@ impl EguiApp {
         }
 
         let points = self.controller.ui.map.cached_points.clone();
+        let points = map_clusters::filter_points(
+            &points,
+            self.controller.ui.map.cluster_overlay,
+            self.controller.ui.map.cluster_hide_noise,
+            self.controller.ui.map.cluster_filter,
+        );
         let painter = ui.painter_at(rect);
-        let hovered = find_hover_point(&points, rect, center, scale, self.controller.ui.map.pan, pointer);
+        let hovered = map_interactions::find_hover_point(
+            &points,
+            rect,
+            center,
+            scale,
+            self.controller.ui.map.pan,
+            pointer,
+        );
         self.controller.ui.map.hovered_sample_id = hovered.as_ref().map(|(point, _)| point.sample_id.clone());
 
         if let Some((point, pos)) = hovered.as_ref() {
-            painter.circle_stroke(*pos, 4.0, egui::Stroke::new(1.5, palette.accent_mint));
+            let stroke_color = if self.controller.ui.map.cluster_overlay {
+                point
+                    .cluster_id
+                    .map(|id| map_clusters::cluster_color(id, &palette, 200))
+                    .unwrap_or(palette.accent_mint)
+            } else {
+                palette.accent_mint
+            };
+            painter.circle_stroke(*pos, 4.0, egui::Stroke::new(1.5, stroke_color));
             egui::Tooltip::always_open(
                 ui.ctx().clone(),
                 ui.layer_id(),
@@ -127,6 +233,15 @@ impl EguiApp {
             )
             .show(|ui| {
                 ui.label(sample_label_from_id(&point.sample_id));
+                if self.controller.ui.map.cluster_overlay {
+                    if let Some(cluster_id) = point.cluster_id {
+                        if cluster_id < 0 {
+                            ui.label("Cluster: noise");
+                        } else {
+                            ui.label(format!("Cluster: {cluster_id}"));
+                        }
+                    }
+                }
                 ui.label("Click to audition");
             });
         }
@@ -204,10 +319,25 @@ impl EguiApp {
         });
 
         if points.len() > 8000 || self.controller.ui.map.zoom < 0.6 {
-            render_heatmap(&painter, rect, &points, center, scale, self.controller.ui.map.pan);
+            map_render::render_heatmap(
+                &painter,
+                rect,
+                &points,
+                center,
+                scale,
+                self.controller.ui.map.pan,
+                MAP_HEATMAP_BINS,
+            );
         } else {
             for point in points {
-                let pos = map_to_screen(point.x, point.y, rect, center, scale, self.controller.ui.map.pan);
+                let pos = map_render::map_to_screen(
+                    point.x,
+                    point.y,
+                    rect,
+                    center,
+                    scale,
+                    self.controller.ui.map.pan,
+                );
                 if rect.contains(pos) {
                     let radius = if self.controller.ui.map.selected_sample_id.as_deref()
                         == Some(point.sample_id.as_str())
@@ -216,7 +346,15 @@ impl EguiApp {
                     } else {
                         2.0
                     };
-                    painter.circle_filled(pos, radius, palette.accent_mint);
+                    let color = if self.controller.ui.map.cluster_overlay {
+                        point
+                            .cluster_id
+                            .map(|id| map_clusters::cluster_color(id, &palette, 200))
+                            .unwrap_or(palette.accent_mint)
+                    } else {
+                        palette.accent_mint
+                    };
+                    painter.circle_filled(pos, radius, color);
                 }
             }
         }
@@ -230,133 +368,6 @@ fn map_scale(rect: egui::Rect, bounds: crate::egui_app::state::MapBounds, zoom: 
     let scale_y = rect.height() / world_h;
     let base = scale_x.min(scale_y) * 0.9;
     base * zoom
-}
-
-fn map_to_screen(
-    x: f32,
-    y: f32,
-    rect: egui::Rect,
-    center: egui::Pos2,
-    scale: f32,
-    pan: egui::Vec2,
-) -> egui::Pos2 {
-    let dx = (x - center.x) * scale;
-    let dy = (y - center.y) * scale;
-    egui::pos2(rect.center().x + dx + pan.x, rect.center().y + dy + pan.y)
-}
-
-fn world_bounds_from_view(
-    rect: egui::Rect,
-    center: egui::Pos2,
-    scale: f32,
-    pan: egui::Vec2,
-) -> crate::egui_app::state::MapQueryBounds {
-    let to_world = |pos: egui::Pos2| {
-        let dx = (pos.x - rect.center().x - pan.x) / scale;
-        let dy = (pos.y - rect.center().y - pan.y) / scale;
-        (center.x + dx, center.y + dy)
-    };
-    let (min_x, min_y) = to_world(rect.min);
-    let (max_x, max_y) = to_world(rect.max);
-    crate::egui_app::state::MapQueryBounds {
-        min_x: min_x.min(max_x),
-        max_x: min_x.max(max_x),
-        min_y: min_y.min(max_y),
-        max_y: min_y.max(max_y),
-    }
-}
-
-fn should_requery(
-    last: &Option<crate::egui_app::state::MapQueryBounds>,
-    next: &crate::egui_app::state::MapQueryBounds,
-) -> bool {
-    match last {
-        None => true,
-        Some(prev) => {
-            let dx = (prev.min_x - next.min_x).abs()
-                + (prev.max_x - next.max_x).abs();
-            let dy = (prev.min_y - next.min_y).abs()
-                + (prev.max_y - next.max_y).abs();
-            dx + dy > 0.05
-        }
-    }
-}
-
-fn render_heatmap(
-    painter: &egui::Painter,
-    rect: egui::Rect,
-    points: &[crate::egui_app::state::MapPoint],
-    center: egui::Pos2,
-    scale: f32,
-    pan: egui::Vec2,
-) {
-    let mut bins = vec![0u32; MAP_HEATMAP_BINS * MAP_HEATMAP_BINS];
-    let width = rect.width().max(1.0);
-    let height = rect.height().max(1.0);
-    for point in points {
-        let pos = map_to_screen(point.x, point.y, rect, center, scale, pan);
-        if !rect.contains(pos) {
-            continue;
-        }
-        let nx = ((pos.x - rect.min.x) / width).clamp(0.0, 0.999);
-        let ny = ((pos.y - rect.min.y) / height).clamp(0.0, 0.999);
-        let ix = (nx * MAP_HEATMAP_BINS as f32) as usize;
-        let iy = (ny * MAP_HEATMAP_BINS as f32) as usize;
-        let idx = iy * MAP_HEATMAP_BINS + ix;
-        if let Some(cell) = bins.get_mut(idx) {
-            *cell = cell.saturating_add(1);
-        }
-    }
-    let max_count = bins.iter().copied().max().unwrap_or(1).max(1) as f32;
-    for iy in 0..MAP_HEATMAP_BINS {
-        for ix in 0..MAP_HEATMAP_BINS {
-            let idx = iy * MAP_HEATMAP_BINS + ix;
-            let count = bins[idx] as f32;
-            if count <= 0.0 {
-                continue;
-            }
-            let intensity = (count / max_count).clamp(0.0, 1.0);
-            let alpha = (intensity * 200.0) as u8;
-            let color = egui::Color32::from_rgba_premultiplied(80, 180, 255, alpha);
-            let cell_w = rect.width() / MAP_HEATMAP_BINS as f32;
-            let cell_h = rect.height() / MAP_HEATMAP_BINS as f32;
-            let min = egui::pos2(
-                rect.min.x + ix as f32 * cell_w,
-                rect.min.y + iy as f32 * cell_h,
-            );
-            let max = egui::pos2(min.x + cell_w, min.y + cell_h);
-            painter.rect_filled(egui::Rect::from_min_max(min, max), 0.0, color);
-        }
-    }
-}
-
-fn find_hover_point(
-    points: &[crate::egui_app::state::MapPoint],
-    rect: egui::Rect,
-    center: egui::Pos2,
-    scale: f32,
-    pan: egui::Vec2,
-    pointer: Option<egui::Pos2>,
-) -> Option<(crate::egui_app::state::MapPoint, egui::Pos2)> {
-    let pointer = pointer?;
-    if !rect.contains(pointer) {
-        return None;
-    }
-    let mut best: Option<(crate::egui_app::state::MapPoint, egui::Pos2, f32)> = None;
-    for point in points {
-        let pos = map_to_screen(point.x, point.y, rect, center, scale, pan);
-        let dist_sq = pos.distance_sq(pointer);
-        if dist_sq > 36.0 {
-            continue;
-        }
-        match best {
-            Some((_, _, best_sq)) if dist_sq >= best_sq => {}
-            _ => {
-                best = Some((point.clone(), pos, dist_sq));
-            }
-        }
-    }
-    best.map(|(point, pos, _)| (point, pos))
 }
 
 fn sample_label_from_id(sample_id: &str) -> String {

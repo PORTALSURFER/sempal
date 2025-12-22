@@ -12,6 +12,7 @@ pub(crate) struct UmapPoint {
     pub sample_id: String,
     pub x: f32,
     pub y: f32,
+    pub cluster_id: Option<i32>,
 }
 
 impl EguiController {
@@ -28,11 +29,21 @@ impl EguiController {
         &mut self,
         model_id: &str,
         umap_version: &str,
+        cluster_method: &str,
+        cluster_umap_version: &str,
         bounds: crate::egui_app::state::MapQueryBounds,
         limit: usize,
     ) -> Result<Vec<UmapPoint>, String> {
         let conn = open_library_db()?;
-        load_umap_points(&conn, model_id, umap_version, bounds, limit)
+        load_umap_points(
+            &conn,
+            model_id,
+            umap_version,
+            cluster_method,
+            cluster_umap_version,
+            bounds,
+            limit,
+        )
     }
 }
 
@@ -80,17 +91,24 @@ fn load_umap_points(
     conn: &Connection,
     model_id: &str,
     umap_version: &str,
+    cluster_method: &str,
+    cluster_umap_version: &str,
     bounds: crate::egui_app::state::MapQueryBounds,
     limit: usize,
 ) -> Result<Vec<UmapPoint>, String> {
     let mut stmt = conn
         .prepare(
-            "SELECT sample_id, x, y
+            "SELECT layout_umap.sample_id, layout_umap.x, layout_umap.y, hdbscan_clusters.cluster_id
              FROM layout_umap
-             WHERE model_id = ?1 AND umap_version = ?2
-               AND x >= ?3 AND x <= ?4 AND y >= ?5 AND y <= ?6
+             LEFT JOIN hdbscan_clusters
+                ON layout_umap.sample_id = hdbscan_clusters.sample_id
+               AND hdbscan_clusters.model_id = ?1
+               AND hdbscan_clusters.method = ?3
+               AND hdbscan_clusters.umap_version = ?4
+             WHERE layout_umap.model_id = ?1 AND layout_umap.umap_version = ?2
+               AND x >= ?5 AND x <= ?6 AND y >= ?7 AND y <= ?8
              ORDER BY sample_id ASC
-             LIMIT ?7",
+             LIMIT ?9",
         )
         .map_err(|err| format!("Prepare layout query failed: {err}"))?;
     let rows = stmt
@@ -98,6 +116,8 @@ fn load_umap_points(
             params![
                 model_id,
                 umap_version,
+                cluster_method,
+                cluster_umap_version,
                 bounds.min_x as f64,
                 bounds.max_x as f64,
                 bounds.min_y as f64,
@@ -105,10 +125,12 @@ fn load_umap_points(
                 limit as i64,
             ],
             |row| {
+                let cluster_id: Option<i64> = row.get(3)?;
                 Ok(UmapPoint {
                     sample_id: row.get(0)?,
                     x: row.get::<_, f32>(1)?,
                     y: row.get::<_, f32>(2)?,
+                    cluster_id: cluster_id.map(|id| id as i32),
                 })
             },
         )

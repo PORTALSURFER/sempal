@@ -12,6 +12,11 @@ pub struct MapUiState {
     pub hovered_sample_id: Option<String>,
     pub selected_sample_id: Option<String>,
     pub umap_version: String,
+    pub cluster_overlay: bool,
+    pub cluster_hide_noise: bool,
+    pub cluster_method: MapClusterMethod,
+    pub cluster_filter_input: String,
+    pub cluster_filter: Option<i32>,
 }
 
 impl Default for MapUiState {
@@ -27,6 +32,11 @@ impl Default for MapUiState {
             hovered_sample_id: None,
             selected_sample_id: None,
             umap_version: "v1".to_string(),
+            cluster_overlay: false,
+            cluster_hide_noise: false,
+            cluster_method: MapClusterMethod::Umap,
+            cluster_filter_input: String::new(),
+            cluster_filter: None,
         }
     }
 }
@@ -52,4 +62,27 @@ pub struct MapPoint {
     pub sample_id: String,
     pub x: f32,
     pub y: f32,
+    pub cluster_id: Option<i32>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MapClusterMethod {
+    Embedding,
+    Umap,
+}
+
+impl MapClusterMethod {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            MapClusterMethod::Embedding => "embedding",
+            MapClusterMethod::Umap => "umap",
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            MapClusterMethod::Embedding => "Embedding",
+            MapClusterMethod::Umap => "UMAP",
+        }
+    }
 }
