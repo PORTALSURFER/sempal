@@ -1,20 +1,26 @@
 ## Goal
-- Add a small dice logo button to the sample browser toolbar (next to the search bar) that plays a random visible sample on click, and toggles sticky random navigation mode on Shift+click.
+- Replace the trained classification pipeline with a training-free system using CLAP embeddings, ANN similarity search, user anchors/labels, and a 2D UMAP map that fits the current Rust + SQLite architecture.
 
 ## Proposed solutions
-- **Text/Unicode icon button:** Add an `egui::Button` with a compact label like `dice` or a non-emoji die glyph, styled to match existing toolbar controls; simplest, no new assets.
-- **Image icon button:** Add a small PNG/SVG dice icon under `assets/`, load it as a texture (similar to waveform textures), and render it via an `ImageButton`; gives a true “logo” feel but requires asset plumbing.
-- **Right-aligned control cluster:** Place the dice button in the right-to-left toolbar area near the item count, optionally indicating sticky mode via highlight; keeps layout tidy regardless of filter label width.
+- **Incremental MVP first:** Deliver CLAP embeddings + ANN similarity search, then layer anchors/labels, then the UMAP map; reduces risk and validates each stage.
+- **Backend-first integration:** Implement data model, embedding ingestion, and ANN index in Rust, then expose APIs for UI to adopt; keeps UI changes clean.
+- **Hybrid offline tooling:** Use a small offline tool for UMAP (and optional clustering), while keeping runtime UI and scoring in-app; avoids heavy runtime dependencies.
 
 ## Step-by-step plan
-1. [x] Locate the sample browser toolbar code (`render_sample_browser_filter` in `src/egui_app/ui/sample_browser_panel.rs`) and review existing layout/styling helpers.
-2. [x] Decide on icon approach (text vs. image) based on consistency with other UI affordances and effort; if image, pick/create a small dice asset.
-3. [x] Add a dice button to the toolbar horizontal row, positioned near the search field or in the right-aligned cluster, with hover text explaining click vs. Shift+click.
-4. [x] Wire click handling: normal click calls `controller.play_random_visible_sample()`, Shift+click calls `controller.toggle_random_navigation_mode()`.
-5. [x] Add a visual sticky-mode indicator on the button when `controller.random_navigation_mode_enabled()` is true (e.g., selected state or subtle color change) to reflect toggle state.
-6. [x] Add/adjust tests if feasible (prefer controller-level unit tests for random mode and random play invariants) and manually verify UI behavior and layout.
-7. [x] Update usage/help text if needed (e.g., `docs/usage.md` or hotkey overlay) to mention the dice button as an alternative to `Shift+R` / `Alt+R`.
-8. [x] Fix egui API mismatch for selected-state button styling on older egui versions.
+1. [-] Review existing embedding/feature vector work (e.g., `docs/todov2.md` and related Rust modules) to align with current ingestion and DB patterns.
+2. [-] Define the CLAP embedding contract: model artifact format, input windowing, mono mixdown, normalization target, output dim, and `model_version` tracking.
+3. [-] Add or update SQLite schema/migrations for `embeddings`, `labels`, `anchors`, `layout_umap`, and `index_meta`, including backfill strategy.
+4. [-] Implement embedding ingestion: audio decode, preprocessing, CLAP inference, L2-normalization, and persistence keyed by `model_version`.
+5. [-] Integrate ANN (HNSW) index lifecycle: build from embeddings, persist/load, and incremental updates on new embeddings.
+6. [-] Implement similarity APIs (by `sample_id` and by audio blob) and wire ANN queries with cosine similarity scoring.
+7. [-] Implement label/anchor CRUD plus scoring (max or mean-of-topK), gap logic, and confidence buckets.
+8. [-] Implement efficient label match retrieval using per-anchor ANN candidate sets, union/dedupe, then scoring and ranking.
+9. [-] Add UI workflows for anchors and label suggestions (add anchor, review matches, optional auto-tag), staying consistent with current UI patterns.
+10. [-] Build the offline UMAP pipeline and persist `(x, y)` to `layout_umap` for the current `model_version`.
+11. [-] Implement the 2D map UI with pan/zoom, hover audition, selection, and anchor actions using canvas/WebGL with LOD rendering.
+12. [-] Add optional clustering (HDBSCAN) and overlays/filters for cluster and label views.
+13. [-] Add calibration tooling for thresholds and gap tuning from user feedback.
+14. [-] Add tests and metrics: embedding norm checks, ANN recall sanity on subsets, anchor scoring unit tests, and latency/frame-time stats.
 
 ## Code Style & Architecture Rules Reminder
 - Keep files under 400 lines; split when necessary.
