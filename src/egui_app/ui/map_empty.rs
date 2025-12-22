@@ -18,7 +18,11 @@ pub(crate) fn render_empty_state(
                         .strong(),
                 );
                 ui.label(
-                    RichText::new("Generate it with sempal-umap or click below.")
+                    RichText::new("UMAP projects embeddings into 2D for this map.")
+                        .color(palette.text_muted),
+                );
+                ui.label(
+                    RichText::new("Build the layout now (uses stored embeddings).")
                         .color(palette.text_muted),
                 );
                 if ui.button("Build map layout").clicked() {

@@ -60,36 +60,8 @@ impl EguiController {
 }
 
 pub(super) fn run_umap_build(model_id: &str, umap_version: &str) -> Result<(), String> {
-    let exe = std::env::current_exe()
-        .map_err(|err| format!("Resolve executable failed: {err}"))?;
-    let candidate = exe
-        .parent()
-        .map(|dir| {
-            if cfg!(target_os = "windows") {
-                dir.join("sempal-umap.exe")
-            } else {
-                dir.join("sempal-umap")
-            }
-        });
-    let mut cmd = if let Some(path) = candidate {
-        if path.exists() {
-            std::process::Command::new(path)
-        } else {
-            std::process::Command::new("sempal-umap")
-        }
-    } else {
-        std::process::Command::new("sempal-umap")
-    };
-    let status = cmd
-        .arg("--model-id")
-        .arg(model_id)
-        .arg("--umap-version")
-        .arg(umap_version)
-        .status()
-        .map_err(|err| format!("Launch sempal-umap failed: {err}"))?;
-    if !status.success() {
-        return Err(format!("sempal-umap exited with {status}"));
-    }
+    let mut conn = open_library_db()?;
+    crate::analysis::umap::build_umap_layout(&mut conn, model_id, umap_version, 0, 0.95)?;
     Ok(())
 }
 
