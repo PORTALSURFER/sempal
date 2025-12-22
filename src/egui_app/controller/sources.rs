@@ -243,6 +243,9 @@ impl EguiController {
         self.selection_state.ctx.selected_source = id;
         self.sample_view.wav.selected_wav = None;
         self.clear_waveform_view();
+        self.ui.map.bounds = None;
+        self.ui.map.last_query = None;
+        self.ui.map.cached_points.clear();
         self.refresh_sources_ui();
         self.queue_wav_load();
         let _ = self.persist_config("Failed to save selection");

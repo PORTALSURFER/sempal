@@ -139,8 +139,15 @@ impl EguiApp {
             ""
         };
 
+        let source_id = self
+            .controller
+            .current_source()
+            .map(|source| source.id);
         if self.controller.ui.map.bounds.is_none() {
-            match self.controller.umap_bounds(model_id, &umap_version) {
+            match self
+                .controller
+                .umap_bounds(model_id, &umap_version, source_id.as_ref())
+            {
                 Ok(bounds) => {
                     self.controller.ui.map.bounds = bounds.map(|b| {
                         crate::egui_app::state::MapBounds {
@@ -198,6 +205,7 @@ impl EguiApp {
                 &umap_version,
                 cluster_method_str,
                 cluster_umap_version,
+                source_id.as_ref(),
                 world_bounds,
                 MAP_POINT_LIMIT,
             ) {

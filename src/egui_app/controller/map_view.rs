@@ -32,9 +32,14 @@ impl EguiController {
         self.set_status("Building UMAP layout…", StatusTone::Info);
     }
 
-    pub fn umap_bounds(&mut self, model_id: &str, umap_version: &str) -> Result<Option<UmapBounds>, String> {
+    pub fn umap_bounds(
+        &mut self,
+        model_id: &str,
+        umap_version: &str,
+        source_id: Option<&SourceId>,
+    ) -> Result<Option<UmapBounds>, String> {
         let conn = open_library_db()?;
-        load_umap_bounds(&conn, model_id, umap_version)
+        load_umap_bounds(&conn, model_id, umap_version, source_id)
     }
 
     pub fn umap_points_in_bounds(
@@ -43,6 +48,7 @@ impl EguiController {
         umap_version: &str,
         cluster_method: &str,
         cluster_umap_version: &str,
+        source_id: Option<&SourceId>,
         bounds: crate::egui_app::state::MapQueryBounds,
         limit: usize,
     ) -> Result<Vec<UmapPoint>, String> {
@@ -53,6 +59,7 @@ impl EguiController {
             umap_version,
             cluster_method,
             cluster_umap_version,
+            source_id,
             bounds,
             limit,
         )
@@ -74,9 +81,28 @@ fn load_umap_bounds(
     conn: &Connection,
     model_id: &str,
     umap_version: &str,
+    source_id: Option<&SourceId>,
 ) -> Result<Option<UmapBounds>, String> {
-    let row = conn
-        .query_row(
+    let row = if let Some(source_id) = source_id {
+        let prefix = format!("{}::%", source_id.as_str());
+        conn.query_row(
+            "SELECT MIN(x), MAX(x), MIN(y), MAX(y)
+             FROM layout_umap
+             WHERE model_id = ?1 AND umap_version = ?2
+               AND sample_id LIKE ?3",
+            params![model_id, umap_version, prefix],
+            |row| {
+                let min_x: Option<f32> = row.get(0)?;
+                let max_x: Option<f32> = row.get(1)?;
+                let min_y: Option<f32> = row.get(2)?;
+                let max_y: Option<f32> = row.get(3)?;
+                Ok((min_x, max_x, min_y, max_y))
+            },
+        )
+        .optional()
+        .map_err(|err| format!("Query UMAP bounds failed: {err}"))?
+    } else {
+        conn.query_row(
             "SELECT MIN(x), MAX(x), MIN(y), MAX(y)
              FROM layout_umap
              WHERE model_id = ?1 AND umap_version = ?2",
@@ -90,7 +116,8 @@ fn load_umap_bounds(
             },
         )
         .optional()
-        .map_err(|err| format!("Query UMAP bounds failed: {err}"))?;
+        .map_err(|err| format!("Query UMAP bounds failed: {err}"))?
+    };
     let Some((min_x, max_x, min_y, max_y)) = row else {
         return Ok(None);
     };
@@ -111,11 +138,41 @@ fn load_umap_points(
     umap_version: &str,
     cluster_method: &str,
     cluster_umap_version: &str,
+    source_id: Option<&SourceId>,
     bounds: crate::egui_app::state::MapQueryBounds,
     limit: usize,
 ) -> Result<Vec<UmapPoint>, String> {
-    let mut stmt = conn
-        .prepare(
+    let (sql, params) = if let Some(source_id) = source_id {
+        let prefix = format!("{}::%", source_id.as_str());
+        (
+            "SELECT layout_umap.sample_id, layout_umap.x, layout_umap.y, hdbscan_clusters.cluster_id
+             FROM layout_umap
+             LEFT JOIN hdbscan_clusters
+                ON layout_umap.sample_id = hdbscan_clusters.sample_id
+               AND hdbscan_clusters.model_id = ?1
+               AND hdbscan_clusters.method = ?3
+               AND hdbscan_clusters.umap_version = ?4
+             WHERE layout_umap.model_id = ?1 AND layout_umap.umap_version = ?2
+               AND layout_umap.sample_id LIKE ?5
+               AND layout_umap.x >= ?6 AND layout_umap.x <= ?7
+               AND layout_umap.y >= ?8 AND layout_umap.y <= ?9
+             ORDER BY layout_umap.sample_id ASC
+             LIMIT ?10",
+            params![
+                model_id,
+                umap_version,
+                cluster_method,
+                cluster_umap_version,
+                prefix,
+                bounds.min_x as f64,
+                bounds.max_x as f64,
+                bounds.min_y as f64,
+                bounds.max_y as f64,
+                limit as i64,
+            ],
+        )
+    } else {
+        (
             "SELECT layout_umap.sample_id, layout_umap.x, layout_umap.y, hdbscan_clusters.cluster_id
              FROM layout_umap
              LEFT JOIN hdbscan_clusters
@@ -128,10 +185,6 @@ fn load_umap_points(
                AND layout_umap.y >= ?7 AND layout_umap.y <= ?8
              ORDER BY layout_umap.sample_id ASC
              LIMIT ?9",
-        )
-        .map_err(|err| format!("Prepare layout query failed: {err}"))?;
-    let rows = stmt
-        .query_map(
             params![
                 model_id,
                 umap_version,
@@ -143,16 +196,21 @@ fn load_umap_points(
                 bounds.max_y as f64,
                 limit as i64,
             ],
-            |row| {
-                let cluster_id: Option<i64> = row.get(3)?;
-                Ok(UmapPoint {
-                    sample_id: row.get(0)?,
-                    x: row.get::<_, f32>(1)?,
-                    y: row.get::<_, f32>(2)?,
-                    cluster_id: cluster_id.map(|id| id as i32),
-                })
-            },
         )
+    };
+    let mut stmt = conn
+        .prepare(sql)
+        .map_err(|err| format!("Prepare layout query failed: {err}"))?;
+    let rows = stmt
+        .query_map(params, |row| {
+            let cluster_id: Option<i64> = row.get(3)?;
+            Ok(UmapPoint {
+                sample_id: row.get(0)?,
+                x: row.get::<_, f32>(1)?,
+                y: row.get::<_, f32>(2)?,
+                cluster_id: cluster_id.map(|id| id as i32),
+            })
+        })
         .map_err(|err| format!("Query layout points failed: {err}"))?;
     let mut points = Vec::new();
     for row in rows {
