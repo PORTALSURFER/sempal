@@ -65,6 +65,25 @@ impl EguiApp {
                     refresh = true;
                 }
                 ui.checkbox(&mut self.controller.ui.map.cluster_hide_noise, "Hide noise");
+                ui.checkbox(&mut self.controller.ui.map.similarity_blend, "Similarity blend");
+                if self.controller.ui.map.similarity_blend {
+                    let response = ui.add(
+                        egui::Slider::new(
+                            &mut self.controller.ui.map.similarity_blend_threshold,
+                            0.02..=0.5,
+                        )
+                        .clamp_to_range(true)
+                        .text("Blend range"),
+                    );
+                    if response.changed() {
+                        self.controller.ui.map.similarity_blend_threshold = self
+                            .controller
+                            .ui
+                            .map
+                            .similarity_blend_threshold
+                            .clamp(0.02, 0.5);
+                    }
+                }
                 ui.label("Filter");
                 let response =
                     ui.text_edit_singleline(&mut self.controller.ui.map.cluster_filter_input);
@@ -204,15 +223,45 @@ impl EguiApp {
         }
 
         let points = self.controller.ui.map.cached_points.clone();
-        let points = map_clusters::filter_points(
+        let filtered_points = map_clusters::filter_points(
             &points,
             self.controller.ui.map.cluster_overlay,
             self.controller.ui.map.cluster_hide_noise,
             self.controller.ui.map.cluster_filter,
         );
+        let blend_enabled =
+            self.controller.ui.map.cluster_overlay && self.controller.ui.map.similarity_blend;
+        let centroids = if blend_enabled {
+            Some(map_clusters::cluster_centroids(&points))
+        } else {
+            None
+        };
+        let map_diagonal =
+            ((bounds.max_x - bounds.min_x).powi(2) + (bounds.max_y - bounds.min_y).powi(2)).sqrt();
+        let point_color = |point: &crate::egui_app::state::MapPoint, alpha: u8| {
+            if self.controller.ui.map.cluster_overlay {
+                if let Some(centroids) = centroids.as_ref() {
+                    map_clusters::blended_cluster_color(
+                        point,
+                        centroids,
+                        &palette,
+                        alpha,
+                        map_diagonal,
+                        self.controller.ui.map.similarity_blend_threshold,
+                    )
+                } else {
+                    point
+                        .cluster_id
+                        .map(|id| map_clusters::cluster_color(id, &palette, alpha))
+                        .unwrap_or(palette.accent_mint)
+                }
+            } else {
+                palette.accent_mint
+            }
+        };
         let painter = ui.painter_at(rect);
         let hovered = map_interactions::find_hover_point(
-            &points,
+            &filtered_points,
             rect,
             center,
             scale,
@@ -222,14 +271,7 @@ impl EguiApp {
         self.controller.ui.map.hovered_sample_id = hovered.as_ref().map(|(point, _)| point.sample_id.clone());
 
         if let Some((point, pos)) = hovered.as_ref() {
-            let stroke_color = if self.controller.ui.map.cluster_overlay {
-                point
-                    .cluster_id
-                    .map(|id| map_clusters::cluster_color(id, &palette, 200))
-                    .unwrap_or(palette.accent_mint)
-            } else {
-                palette.accent_mint
-            };
+            let stroke_color = point_color(point, 200);
             painter.circle_stroke(*pos, 4.0, egui::Stroke::new(1.5, stroke_color));
             egui::Tooltip::always_open(
                 ui.ctx().clone(),
@@ -326,20 +368,20 @@ impl EguiApp {
 
         let mut draw_calls = 0usize;
         let mut points_rendered = 0usize;
-        if points.len() > 8000 || self.controller.ui.map.zoom < 0.6 {
+        if filtered_points.len() > 8000 || self.controller.ui.map.zoom < 0.6 {
             draw_calls = map_render::render_heatmap(
                 &painter,
                 rect,
-                &points,
+                &filtered_points,
                 center,
                 scale,
                 self.controller.ui.map.pan,
                 MAP_HEATMAP_BINS,
             );
-            points_rendered = points.len();
+            points_rendered = filtered_points.len();
             self.controller.ui.map.last_render_mode = crate::egui_app::state::MapRenderMode::Heatmap;
         } else {
-            for point in points {
+            for point in filtered_points {
                 let pos = map_render::map_to_screen(
                     point.x,
                     point.y,
@@ -357,14 +399,7 @@ impl EguiApp {
                     } else {
                         2.0
                     };
-                    let color = if self.controller.ui.map.cluster_overlay {
-                        point
-                            .cluster_id
-                            .map(|id| map_clusters::cluster_color(id, &palette, 200))
-                            .unwrap_or(palette.accent_mint)
-                    } else {
-                        palette.accent_mint
-                    };
+                    let color = point_color(&point, 200);
                     painter.circle_filled(pos, radius, color);
                     draw_calls += 1;
                 }
