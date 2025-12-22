@@ -124,8 +124,9 @@ fn load_umap_points(
                AND hdbscan_clusters.method = ?3
                AND hdbscan_clusters.umap_version = ?4
              WHERE layout_umap.model_id = ?1 AND layout_umap.umap_version = ?2
-               AND x >= ?5 AND x <= ?6 AND y >= ?7 AND y <= ?8
-             ORDER BY sample_id ASC
+               AND layout_umap.x >= ?5 AND layout_umap.x <= ?6
+               AND layout_umap.y >= ?7 AND layout_umap.y <= ?8
+             ORDER BY layout_umap.sample_id ASC
              LIMIT ?9",
         )
         .map_err(|err| format!("Prepare layout query failed: {err}"))?;
