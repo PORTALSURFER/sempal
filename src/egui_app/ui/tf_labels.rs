@@ -1,6 +1,7 @@
 use super::style;
 use super::*;
 use crate::egui_app::state::{TfLabelCreatePrompt, TfLabelScoreCache};
+use crate::egui_app::view_model;
 use crate::sample_sources::config::TfLabelAggregationMode;
 use eframe::egui::{self, RichText};
 
