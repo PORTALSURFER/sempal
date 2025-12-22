@@ -3,7 +3,7 @@
 pub(crate) mod audio;
 pub(crate) mod audio_decode;
 pub(crate) mod augment;
-pub(crate) mod ann_index;
+pub mod ann_index;
 pub(crate) mod anchor_match;
 pub(crate) mod anchor_scoring;
 pub(crate) mod label_match_ann;
@@ -14,7 +14,7 @@ pub(crate) mod fft;
 pub(crate) mod frequency_domain;
 pub mod umap;
 pub(crate) mod time_domain;
-pub(crate) mod vector;
+pub mod vector;
 pub(crate) mod version;
 
 pub use vector::{FEATURE_VECTOR_LEN_V1, FEATURE_VERSION_V1};

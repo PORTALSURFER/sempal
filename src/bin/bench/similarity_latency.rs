@@ -2,7 +2,6 @@ use super::options::BenchOptions;
 use super::stats;
 use sempal::analysis::{ann_index, embedding};
 use sempal::analysis::vector::encode_f32_le_blob;
-use sempal::app_dirs::ConfigBaseGuard;
 use rand::{Rng, SeedableRng};
 use rand::rngs::StdRng;
 use rusqlite::{Connection, params};
@@ -16,8 +15,7 @@ pub(super) struct SimilarityBenchResult {
 }
 
 pub(super) fn run(options: &BenchOptions) -> Result<SimilarityBenchResult, String> {
-    let temp = tempdir().map_err(|err| format!("Tempdir failed: {err}"))?;
-    let _guard = ConfigBaseGuard::set(temp.path().to_path_buf());
+    let _temp = tempdir().map_err(|err| format!("Tempdir failed: {err}"))?;
     let conn = Connection::open_in_memory().map_err(|err| format!("Open sqlite failed: {err}"))?;
     conn.execute_batch(
         "PRAGMA journal_mode=OFF;
