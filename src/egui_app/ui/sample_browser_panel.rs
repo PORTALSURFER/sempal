@@ -3,7 +3,7 @@ use super::helpers::{NumberColumn, RowMarker, clamp_label_for_width, render_list
 use super::style;
 use super::*;
 use crate::egui_app::state::{
-    DragPayload, DragSource, DragTarget, FocusContext, SampleBrowserActionPrompt,
+    DragPayload, DragSource, DragTarget, FocusContext, SampleBrowserActionPrompt, SampleBrowserTab,
 };
 use crate::egui_app::ui::style::StatusTone;
 use crate::egui_app::view_model;
@@ -21,6 +21,29 @@ impl EguiApp {
         let selected_row = self.controller.ui.browser.selected_visible;
         let loaded_row = self.controller.ui.browser.loaded_visible;
         let drop_target = self.controller.triage_flag_drop_target();
+        let mut tab = self.controller.ui.browser.active_tab;
+        ui.horizontal(|ui| {
+            if ui
+                .selectable_label(tab == SampleBrowserTab::List, "Samples")
+                .clicked()
+            {
+                tab = SampleBrowserTab::List;
+            }
+            if ui
+                .selectable_label(tab == SampleBrowserTab::Map, "Similarity map")
+                .clicked()
+            {
+                tab = SampleBrowserTab::Map;
+            }
+        });
+        if tab != self.controller.ui.browser.active_tab {
+            self.controller.ui.browser.active_tab = tab;
+        }
+        ui.add_space(4.0);
+        if self.controller.ui.browser.active_tab == SampleBrowserTab::Map {
+            self.render_map_panel(ui);
+            return;
+        }
         self.render_sample_browser_filter(ui);
         ui.add_space(6.0);
 

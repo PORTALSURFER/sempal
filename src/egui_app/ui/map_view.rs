@@ -16,6 +16,15 @@ const MAP_ZOOM_MAX: f32 = 20.0;
 const MAP_ZOOM_SPEED: f32 = 0.0015;
 
 impl EguiApp {
+    pub(super) fn render_map_panel(&mut self, ui: &mut egui::Ui) {
+        let refresh = self.render_map_controls(ui);
+        if refresh {
+            self.controller.ui.map.last_query = None;
+        }
+        ui.separator();
+        self.render_map_canvas(ui);
+    }
+
     pub(super) fn render_map_window(&mut self, ctx: &egui::Context) {
         if !self.controller.ui.map.open {
             return;
@@ -25,12 +34,7 @@ impl EguiApp {
             .resizable(true)
             .default_size([640.0, 420.0])
             .show(ctx, |ui| {
-                let refresh = self.render_map_controls(ui);
-                if refresh {
-                    self.controller.ui.map.last_query = None;
-                }
-                ui.separator();
-                self.render_map_canvas(ui);
+                self.render_map_panel(ui);
             });
     }
 

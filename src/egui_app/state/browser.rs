@@ -45,6 +45,8 @@ pub struct SampleBrowserState {
     pub pending_action: Option<SampleBrowserActionPrompt>,
     /// Flag to request focus on the active inline rename editor.
     pub rename_focus_requested: bool,
+    /// Active tab in the sample browser area.
+    pub active_tab: SampleBrowserTab,
 }
 
 impl Default for SampleBrowserState {
@@ -74,6 +76,7 @@ impl Default for SampleBrowserState {
             similar_query: None,
             pending_action: None,
             rename_focus_requested: false,
+            active_tab: SampleBrowserTab::List,
         }
     }
 }
@@ -114,4 +117,11 @@ pub enum TriageFlagFilter {
 #[derive(Clone, Debug)]
 pub enum SampleBrowserActionPrompt {
     Rename { target: PathBuf, name: String },
+}
+
+/// Tabs for the sample browser area.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SampleBrowserTab {
+    List,
+    Map,
 }
