@@ -1,4 +1,5 @@
 use rusqlite::{Connection, OptionalExtension, params};
+use log::warn;
 use std::borrow::Cow;
 
 use super::types::TopKProbability;
@@ -82,20 +83,32 @@ pub(super) fn refresh_latest_model(
             let model: crate::ml::gbdt_stump::GbdtStumpModel =
                 serde_json::from_str(&model_json)
                     .map_err(|err| format!("Failed to parse model_json: {err}"))?;
-            model.validate()?;
+            if let Err(err) = model.validate() {
+                warn!("Skipping model {model_id}: {err}");
+                *cache = None;
+                return Ok(());
+            }
             CachedModelKind::Gbdt(model)
         }
         "mlp_v1" => {
             let model: crate::ml::mlp::MlpModel = serde_json::from_str(&model_json)
                 .map_err(|err| format!("Failed to parse model_json: {err}"))?;
-            model.validate()?;
+            if let Err(err) = model.validate() {
+                warn!("Skipping model {model_id}: {err}");
+                *cache = None;
+                return Ok(());
+            }
             CachedModelKind::Mlp(model)
         }
         "logreg_v1" => {
             let model: crate::ml::logreg::LogRegModel =
                 serde_json::from_str(&model_json)
                     .map_err(|err| format!("Failed to parse model_json: {err}"))?;
-            model.validate()?;
+            if let Err(err) = model.validate() {
+                warn!("Skipping model {model_id}: {err}");
+                *cache = None;
+                return Ok(());
+            }
             CachedModelKind::LogReg(model)
         }
         _ => {
