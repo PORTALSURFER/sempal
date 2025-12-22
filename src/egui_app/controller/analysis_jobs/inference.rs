@@ -1,5 +1,5 @@
 use rusqlite::{Connection, OptionalExtension, params};
-use log::warn;
+use tracing::warn;
 use std::borrow::Cow;
 
 use super::types::TopKProbability;
