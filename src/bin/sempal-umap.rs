@@ -54,6 +54,14 @@ fn run() -> Result<(), String> {
         "Wrote {} layout rows for umap_version {}",
         inserted, options.umap_version
     );
+    let report = validate_layout(&layout, options.min_coverage)?;
+    let report_path = default_report_path(&db_path, &options.umap_version);
+    write_report(&report_path, &report)?;
+    println!(
+        "UMAP coverage {:.2}% (report: {})",
+        report.coverage_ratio * 100.0,
+        report_path.display()
+    );
     Ok(())
 }
 
@@ -63,6 +71,7 @@ struct Options {
     model_id: String,
     umap_version: String,
     seed: u64,
+    min_coverage: f32,
 }
 
 fn parse_args(args: Vec<String>) -> Result<Option<Options>, String> {
@@ -71,6 +80,7 @@ fn parse_args(args: Vec<String>) -> Result<Option<Options>, String> {
         model_id: String::new(),
         umap_version: String::new(),
         seed: 0,
+        min_coverage: 0.95,
     };
 
     let mut idx = 0usize;
@@ -104,6 +114,17 @@ fn parse_args(args: Vec<String>) -> Result<Option<Options>, String> {
                     .parse::<u64>()
                     .map_err(|_| format!("Invalid --seed value: {value}"))?;
             }
+            "--min-coverage" => {
+                idx += 1;
+                let value =
+                    args.get(idx).ok_or_else(|| "--min-coverage requires a value".to_string())?;
+                options.min_coverage = value
+                    .parse::<f32>()
+                    .map_err(|_| format!("Invalid --min-coverage value: {value}"))?;
+                if !(0.0..=1.0).contains(&options.min_coverage) {
+                    return Err("--min-coverage must be between 0.0 and 1.0".to_string());
+                }
+            }
             unknown => {
                 return Err(format!("Unknown argument: {unknown}\n\n{}", help_text()));
             }
@@ -135,6 +156,7 @@ fn help_text() -> String {
         "  --model-id <id>      Embedding model id to read (required).",
         "  --umap-version <v>   Layout version tag to store (required).",
         "  --seed <u64>         Seed for deterministic layouts (default: 0).",
+        "  --min-coverage <f>   Fail if coverage below threshold (default: 0.95).",
     ]
     .join("\n")
 }
@@ -286,6 +308,76 @@ fn build_knn_graph(
 fn random_init(n_samples: usize, n_components: usize, seed: u64) -> Array2<f32> {
     let mut rng = StdRng::seed_from_u64(seed);
     Array2::from_shape_fn((n_samples, n_components), |_| rng.random::<f32>() * 10.0)
+}
+
+#[derive(Debug, serde::Serialize)]
+struct UmapReport {
+    total: usize,
+    valid: usize,
+    invalid: usize,
+    coverage_ratio: f32,
+    x_min: f32,
+    x_max: f32,
+    y_min: f32,
+    y_max: f32,
+}
+
+fn validate_layout(layout: &[[f32; 2]], min_coverage: f32) -> Result<UmapReport, String> {
+    let total = layout.len();
+    let mut valid = 0usize;
+    let mut x_min = f32::INFINITY;
+    let mut x_max = f32::NEG_INFINITY;
+    let mut y_min = f32::INFINITY;
+    let mut y_max = f32::NEG_INFINITY;
+    for coords in layout {
+        let x = coords[0];
+        let y = coords[1];
+        if x.is_finite() && y.is_finite() {
+            valid += 1;
+            x_min = x_min.min(x);
+            x_max = x_max.max(x);
+            y_min = y_min.min(y);
+            y_max = y_max.max(y);
+        }
+    }
+    let invalid = total.saturating_sub(valid);
+    let coverage_ratio = if total == 0 {
+        0.0
+    } else {
+        valid as f32 / total as f32
+    };
+    if coverage_ratio < min_coverage {
+        return Err(format!(
+            "UMAP coverage {:.2}% below threshold {:.2}%",
+            coverage_ratio * 100.0,
+            min_coverage * 100.0
+        ));
+    }
+    if valid == 0 {
+        return Err("UMAP produced no valid coordinates".to_string());
+    }
+    Ok(UmapReport {
+        total,
+        valid,
+        invalid,
+        coverage_ratio,
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+    })
+}
+
+fn default_report_path(db_path: &PathBuf, umap_version: &str) -> PathBuf {
+    let parent = db_path.parent().unwrap_or_else(|| std::path::Path::new("."));
+    parent.join(format!("umap_report_{}.json", umap_version))
+}
+
+fn write_report(path: &PathBuf, report: &UmapReport) -> Result<(), String> {
+    let data = serde_json::to_vec_pretty(report)
+        .map_err(|err| format!("Serialize report failed: {err}"))?;
+    std::fs::write(path, data).map_err(|err| format!("Write report failed: {err}"))?;
+    Ok(())
 }
 
 fn write_layout(
