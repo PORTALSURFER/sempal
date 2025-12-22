@@ -79,7 +79,7 @@ fn load_embeddings_for_candidates(
 }
 
 fn score_label_candidates(
-    label: &LabelSpec,
+    _label: &LabelSpec,
     anchors: &[AnchorEmbedding],
     candidates: &HashMap<String, Vec<f32>>,
     aggregation: AnchorAggregation,

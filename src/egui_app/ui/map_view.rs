@@ -118,16 +118,17 @@ impl EguiApp {
         self.controller.ui.map.hovered_sample_id = hovered.as_ref().map(|(point, _)| point.sample_id.clone());
 
         if let Some((point, pos)) = hovered.as_ref() {
-            painter.circle_stroke(*pos, 4.0, egui::Stroke::new(1.5, palette.accent));
-            egui::show_tooltip_at_pointer(
-                ui.ctx(),
+            painter.circle_stroke(*pos, 4.0, egui::Stroke::new(1.5, palette.accent_mint));
+            egui::Tooltip::always_open(
+                ui.ctx().clone(),
                 ui.layer_id(),
                 egui::Id::new("map_hover_tooltip"),
-                |ui| {
-                    ui.label(sample_label_from_id(&point.sample_id));
-                    ui.label("Click to audition");
-                },
-            );
+                egui::PopupAnchor::Pointer,
+            )
+            .show(|ui| {
+                ui.label(sample_label_from_id(&point.sample_id));
+                ui.label("Click to audition");
+            });
         }
 
         if response.clicked() {
@@ -210,7 +211,7 @@ impl EguiApp {
                     } else {
                         2.0
                     };
-                    painter.circle_filled(pos, radius, palette.accent);
+                    painter.circle_filled(pos, radius, palette.accent_mint);
                 }
             }
         }
