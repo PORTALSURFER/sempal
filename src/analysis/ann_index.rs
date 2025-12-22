@@ -332,6 +332,8 @@ fn flush_index(conn: &Connection, state: &mut AnnIndexState) -> Result<(), Strin
     let dir = index_path
         .parent()
         .ok_or_else(|| "Index path missing parent".to_string())?;
+    std::fs::create_dir_all(dir)
+        .map_err(|err| format!("Failed to create ANN dir: {err}"))?;
     let basename = index_path
         .file_name()
         .and_then(|name| name.to_str())
