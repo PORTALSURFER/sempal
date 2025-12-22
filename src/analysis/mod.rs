@@ -49,6 +49,9 @@ pub fn rebuild_ann_index(conn: &Connection) -> Result<(), String> {
 }
 
 #[cfg(test)]
+mod ann_index_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use hound::{SampleFormat, WavSpec, WavWriter};
