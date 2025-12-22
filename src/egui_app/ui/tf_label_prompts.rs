@@ -1,6 +1,6 @@
 use super::style;
 use super::*;
-use crate::egui_app::state::{TfAutoTagPrompt, TfLabelCreatePrompt};
+use crate::egui_app::state::TfLabelCreatePrompt;
 use eframe::egui::{self, RichText};
 
 impl EguiApp {
