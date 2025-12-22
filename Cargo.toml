@@ -49,7 +49,7 @@ ndarray = "0.16.1"
 ort = { version = "2.0.0-rc.4", features = ["load-dynamic", "ndarray"] }
 hnsw_rs = "0.3.3"
 symphonia = { version = "0.5.4", default-features = false, features = ["aiff"] }
-umap-rs = "0.1.2"
+umap-rs = "0.4.5"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 cpal = { version = "0.16.0", features = ["asio"] }
