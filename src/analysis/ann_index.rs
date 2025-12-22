@@ -127,6 +127,51 @@ pub fn find_similar(
     Ok(results)
 }
 
+pub fn find_similar_for_embedding(
+    conn: &Connection,
+    embedding: &[f32],
+    k: usize,
+) -> Result<Vec<SimilarNeighbor>, String> {
+    if k == 0 {
+        return Ok(Vec::new());
+    }
+    if embedding.len() != embedding::EMBEDDING_DIM {
+        return Err(format!(
+            "Embedding dim mismatch: expected {}, got {}",
+            embedding::EMBEDDING_DIM,
+            embedding.len()
+        ));
+    }
+    let mut guard = ANN_INDEX
+        .lock()
+        .map_err(|_| "ANN index lock poisoned".to_string())?;
+    if guard.is_none() {
+        let state = load_or_build_index(conn)?;
+        *guard = Some(state);
+    }
+    let Some(state) = guard.as_mut() else {
+        return Ok(Vec::new());
+    };
+    if state.id_map.is_empty() {
+        return Err("ANN index has no embeddings".to_string());
+    }
+    let ef = state.params.ef_search.max(k);
+    let neighbours = state.hnsw.search(embedding, k, ef);
+    let mut results = Vec::with_capacity(k);
+    for neighbour in neighbours {
+        if let Some(candidate) = state.id_map.get(neighbour.d_id) {
+            results.push(SimilarNeighbor {
+                sample_id: candidate.clone(),
+                distance: neighbour.distance,
+            });
+            if results.len() >= k {
+                break;
+            }
+        }
+    }
+    Ok(results)
+}
+
 fn load_embedding(conn: &Connection, sample_id: &str) -> Result<Vec<f32>, String> {
     let blob: Vec<u8> = conn
         .query_row(

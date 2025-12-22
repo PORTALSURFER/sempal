@@ -66,3 +66,57 @@ pub(super) fn clear_similar_filter(controller: &mut EguiController) {
         controller.rebuild_browser_lists();
     }
 }
+
+pub(super) fn find_similar_for_audio_path(
+    controller: &mut EguiController,
+    path: &Path,
+) -> Result<(), String> {
+    let source_id = controller
+        .selection_state
+        .ctx
+        .selected_source
+        .clone()
+        .ok_or_else(|| "No active source selected".to_string())?;
+    let decoded = crate::analysis::audio::decode_for_analysis(path)?;
+    let processed = crate::analysis::audio::preprocess_mono_for_embedding(
+        &decoded.mono,
+        decoded.sample_rate_used,
+    );
+    let embedding =
+        crate::analysis::embedding::infer_embedding(&processed, decoded.sample_rate_used)?;
+    let db_path = crate::app_dirs::app_root_dir()
+        .map_err(|err| err.to_string())?
+        .join(crate::sample_sources::library::LIBRARY_DB_FILE_NAME);
+    let conn = super::super::analysis_jobs::open_library_db(&db_path)?;
+    let neighbours =
+        crate::analysis::ann_index::find_similar_for_embedding(&conn, &embedding, DEFAULT_SIMILAR_COUNT)?;
+
+    let mut indices = Vec::new();
+    for neighbour in neighbours {
+        let (candidate_source, relative_path) =
+            super::super::analysis_jobs::parse_sample_id(&neighbour.sample_id)?;
+        if candidate_source.as_str() != source_id.as_str() {
+            continue;
+        }
+        if let Some(index) = controller.wav_entries.lookup.get(&relative_path) {
+            indices.push(*index);
+        }
+    }
+    if indices.is_empty() {
+        return Err("No similar samples found in the current source".to_string());
+    }
+    let label = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map(|name| format!("Clip: {name}"))
+        .unwrap_or_else(|| "Clip".to_string());
+    controller.ui.browser.similar_query = Some(crate::egui_app::state::SimilarQuery {
+        sample_id: format!("clip::{}", path.display()),
+        label,
+        indices,
+    });
+    controller.ui.browser.search_query.clear();
+    controller.ui.browser.search_focus_requested = false;
+    controller.rebuild_browser_lists();
+    Ok(())
+}

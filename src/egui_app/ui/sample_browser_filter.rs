@@ -55,6 +55,19 @@ impl EguiApp {
                         .set_status(format!("Find similar failed: {err}"), style::StatusTone::Error);
                 }
             }
+            if ui.button("Find similar file...").clicked() {
+                if let Some(path) = rfd::FileDialog::new()
+                    .add_filter("Audio", &["wav", "mp3", "flac", "ogg", "aiff", "aif"])
+                    .pick_file()
+                {
+                    if let Err(err) = self.controller.find_similar_for_audio_path(&path) {
+                        self.controller.set_status(
+                            format!("Find similar failed: {err}"),
+                            style::StatusTone::Error,
+                        );
+                    }
+                }
+            }
             ui.add_space(ui.spacing().item_spacing.x);
             if let Some(similar) = self.controller.ui.browser.similar_query.as_ref() {
                 ui.label(

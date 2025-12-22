@@ -116,6 +116,11 @@ impl EguiController {
         similar::find_similar_for_visible_row(self, row)
     }
 
+    /// Filter the browser to show similar samples for an external audio clip.
+    pub fn find_similar_for_audio_path(&mut self, path: &Path) -> Result<(), String> {
+        similar::find_similar_for_audio_path(self, path)
+    }
+
     /// Clear any active similar-sounds filter.
     pub fn clear_similar_filter(&mut self) {
         similar::clear_similar_filter(self);
