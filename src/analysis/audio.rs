@@ -13,6 +13,7 @@ pub(crate) const SILENCE_THRESHOLD_ON_DB: f32 = -45.0;
 pub(crate) const SILENCE_THRESHOLD_OFF_DB: f32 = -55.0;
 pub(crate) const SILENCE_PRE_ROLL_SECONDS: f32 = 0.01;
 pub(crate) const SILENCE_POST_ROLL_SECONDS: f32 = 0.005;
+const EMBEDDING_TARGET_RMS_DB: f32 = -20.0;
 
 /// Decoded mono audio ready for analysis.
 #[derive(Debug)]
@@ -29,7 +30,8 @@ pub(crate) fn decode_for_analysis(path: &Path) -> Result<AnalysisAudio, String> 
 
 pub(crate) fn preprocess_mono_for_embedding(samples: &[f32], sample_rate: u32) -> Vec<f32> {
     let mut trimmed = trim_silence_with_hysteresis(samples, sample_rate);
-    normalize_peak_in_place(&mut trimmed);
+    normalize_rms_in_place(&mut trimmed, EMBEDDING_TARGET_RMS_DB);
+    normalize_peak_limit_in_place(&mut trimmed);
     trimmed
 }
 
@@ -144,6 +146,42 @@ fn normalize_peak_in_place(samples: &mut [f32]) {
     let gain = 1.0_f32 / peak;
     for sample in samples.iter_mut() {
         *sample = (*sample * gain).clamp(-1.0, 1.0);
+    }
+}
+
+fn normalize_peak_limit_in_place(samples: &mut [f32]) {
+    let mut peak = 0.0_f32;
+    for &sample in samples.iter() {
+        peak = peak.max(sample.abs());
+    }
+    if !peak.is_finite() || peak <= 1.0 {
+        return;
+    }
+    let gain = 1.0_f32 / peak;
+    for sample in samples.iter_mut() {
+        *sample *= gain;
+    }
+}
+
+fn normalize_rms_in_place(samples: &mut [f32], target_db: f32) {
+    if samples.is_empty() {
+        return;
+    }
+    let mut sum = 0.0_f32;
+    for &sample in samples.iter() {
+        sum += sample * sample;
+    }
+    let rms = (sum / samples.len() as f32).sqrt();
+    if !rms.is_finite() || rms <= 0.0 {
+        return;
+    }
+    let target = db_to_linear(target_db);
+    if !target.is_finite() || target <= 0.0 {
+        return;
+    }
+    let gain = target / rms;
+    for sample in samples.iter_mut() {
+        *sample *= gain;
     }
 }
 
