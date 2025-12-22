@@ -7,6 +7,7 @@ use super::style;
 use super::*;
 use crate::egui_app::view_model;
 use eframe::egui;
+use std::collections::HashMap;
 use std::time::Instant;
 
 const MAP_POINT_LIMIT: usize = 50_000;
@@ -14,7 +15,8 @@ const MAP_HEATMAP_BINS: usize = 64;
 const MAP_ZOOM_MIN: f32 = 0.2;
 const MAP_ZOOM_MAX: f32 = 20.0;
 const MAP_ZOOM_SPEED: f32 = 0.0015;
-const CLUSTER_PULL_STRENGTH: f32 = 0.7;
+const CLUSTER_SEPARATION_SCALE: f32 = 0.22;
+const CLUSTER_BLOB_SCALE: f32 = 0.6;
 
 impl EguiApp {
     pub(super) fn render_map_panel(&mut self, ui: &mut egui::Ui) {
@@ -248,6 +250,26 @@ impl EguiApp {
         };
         let display_points = if cluster_overlay {
             if let Some(centroids) = centroids.as_ref() {
+                let mut cluster_points: HashMap<i32, Vec<&crate::egui_app::state::MapPoint>> =
+                    HashMap::new();
+                for point in &filtered_points {
+                    if let Some(cluster_id) = point.cluster_id
+                        && cluster_id >= 0
+                    {
+                        cluster_points.entry(cluster_id).or_default().push(point);
+                    }
+                }
+                let mut cluster_ids: Vec<i32> = cluster_points.keys().copied().collect();
+                cluster_ids.sort_unstable();
+                let cluster_count = cluster_ids.len().max(1);
+                let ring_radius = map_diagonal * CLUSTER_SEPARATION_SCALE;
+                let mut display_centers: HashMap<i32, (f32, f32)> = HashMap::new();
+                for (idx, cluster_id) in cluster_ids.iter().enumerate() {
+                    let theta = (idx as f32 / cluster_count as f32) * std::f32::consts::TAU;
+                    let cx = center.x + ring_radius * theta.cos();
+                    let cy = center.y + ring_radius * theta.sin();
+                    display_centers.insert(*cluster_id, (cx, cy));
+                }
                 filtered_points
                     .iter()
                     .map(|point| {
@@ -260,10 +282,15 @@ impl EguiApp {
                         let Some(centroid) = centroids.get(&cluster_id) else {
                             return point.clone();
                         };
+                        let Some((cx, cy)) = display_centers.get(&cluster_id) else {
+                            return point.clone();
+                        };
+                        let dx = (point.x - centroid.x) * CLUSTER_BLOB_SCALE;
+                        let dy = (point.y - centroid.y) * CLUSTER_BLOB_SCALE;
                         crate::egui_app::state::MapPoint {
                             sample_id: point.sample_id.clone(),
-                            x: point.x + (centroid.x - point.x) * CLUSTER_PULL_STRENGTH,
-                            y: point.y + (centroid.y - point.y) * CLUSTER_PULL_STRENGTH,
+                            x: cx + dx,
+                            y: cy + dy,
                             cluster_id: point.cluster_id,
                         }
                     })
