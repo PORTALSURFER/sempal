@@ -146,10 +146,7 @@ impl EguiApp {
                         mode = TfLabelAggregationMode::Max;
                     }
                     if mode != self.controller.ui.tf_labels.aggregation_mode {
-                        self.controller.ui.tf_labels.aggregation_mode = mode;
-                        self.controller.settings.analysis.tf_label_aggregation = mode;
-                        let _ = self.controller.persist_config("Failed to save TF label settings");
-                        self.controller.clear_tf_label_score_cache();
+                        self.controller.set_tf_label_aggregation_mode(mode);
                     }
                 });
                 ui.add_space(ui.spacing().item_spacing.y);

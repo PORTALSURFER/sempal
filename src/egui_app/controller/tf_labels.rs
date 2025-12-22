@@ -167,6 +167,16 @@ impl EguiController {
         self.ui.tf_labels.last_score_sample_id = None;
         self.ui.tf_labels.last_scores.clear();
     }
+
+    pub fn set_tf_label_aggregation_mode(
+        &mut self,
+        mode: crate::sample_sources::config::TfLabelAggregationMode,
+    ) {
+        self.ui.tf_labels.aggregation_mode = mode;
+        self.settings.analysis.tf_label_aggregation = mode;
+        let _ = self.persist_config("Failed to save TF label settings");
+        self.clear_tf_label_score_cache();
+    }
 }
 
 fn list_tf_labels_with_conn(conn: &Connection) -> Result<Vec<TfLabel>, String> {
