@@ -176,7 +176,6 @@ pub(super) fn handle_context_menu(
                 .clone()
                 .or_else(|| hovered.map(|(point, _)| point.sample_id.clone()));
             let Some(sample_id) = sample_id else {
-                ui.label("Hover a point to see map actions.");
                 return;
             };
             ui.label(map_state::sample_label_from_id(&sample_id));
