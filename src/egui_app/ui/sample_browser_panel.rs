@@ -233,6 +233,7 @@ impl EguiApp {
                     let drag_label = view_model::sample_display_label(&path);
                     let pending_path = path.clone();
                     let pending_label = drag_label.clone();
+                    let match_path = path.clone();
                     drag_targets::handle_sample_row_drag(
                         ui,
                         &response,
@@ -271,7 +272,7 @@ impl EguiApp {
                                 &pending.payload,
                                 DragPayload::Sample {
                                     relative_path, ..
-                                } if *relative_path == path
+                                } if *relative_path == match_path
                             )
                         },
                     );
