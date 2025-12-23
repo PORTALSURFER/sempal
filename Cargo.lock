@@ -4719,7 +4719,7 @@ dependencies = [
 
 [[package]]
 name = "sempal"
-version = "0.363.0"
+version = "0.364.0"
 dependencies = [
  "blake3",
  "chacha20poly1305",
@@ -4752,6 +4752,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "sprs",
  "symphonia",
  "sysinfo",
  "tempfile",
