@@ -80,6 +80,7 @@ impl EguiController {
         };
         self.ui.sources.folders.focused = Some(row_index);
         self.ui.sources.folders.scroll_to = Some(row_index);
+        self.ui.sources.folders.last_focused_path = Some(path.clone());
         self.focus_folder_context();
         self.build_folder_rows(&snapshot);
     }
@@ -101,6 +102,7 @@ impl EguiController {
         };
         self.ui.sources.folders.focused = Some(row_index);
         self.ui.sources.folders.scroll_to = Some(row_index);
+        self.ui.sources.folders.last_focused_path = Some(path.clone());
         self.focus_folder_context();
         self.build_folder_rows(&snapshot);
     }

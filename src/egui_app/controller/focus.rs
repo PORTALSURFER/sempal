@@ -155,7 +155,28 @@ impl EguiController {
         match context {
             FocusContext::SampleBrowser => self.focus_browser_list(),
             FocusContext::Waveform => self.focus_waveform_context(),
-            FocusContext::SourceFolders => self.focus_folder_context(),
+            FocusContext::SourceFolders => {
+                if self.ui.sources.folders.focused.is_none() {
+                    if let Some(path) = self.ui.sources.folders.last_focused_path.clone() {
+                        if let Some(index) = self
+                            .ui
+                            .sources
+                            .folders
+                            .rows
+                            .iter()
+                            .position(|row| row.path == path)
+                        {
+                            self.focus_folder_row(index);
+                            return;
+                        }
+                    }
+                    if !self.ui.sources.folders.rows.is_empty() {
+                        self.focus_folder_row(0);
+                        return;
+                    }
+                }
+                self.focus_folder_context();
+            }
             FocusContext::CollectionSample => {
                 if self.current_collection().is_none() && !self.library.collections.is_empty() {
                     self.select_collection_by_index(Some(0));
