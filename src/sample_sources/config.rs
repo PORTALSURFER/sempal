@@ -1,5 +1,8 @@
+#[path = "config_defaults.rs"]
 mod config_defaults;
+#[path = "config_io.rs"]
 mod config_io;
+#[path = "config_types.rs"]
 mod config_types;
 
 pub use config_io::{
