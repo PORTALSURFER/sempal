@@ -3,7 +3,7 @@ use super::map_state;
 use super::style;
 use super::EguiApp;
 use crate::egui_app::state::{FocusContext, SampleBrowserTab};
-use eframe::egui::{self, popup::show_context_menu};
+use eframe::egui;
 
 pub(super) fn handle_zoom(app: &mut EguiApp, ui: &egui::Ui, response: &egui::Response) {
     let scroll_delta = ui.input(|i| i.smooth_scroll_delta.y);
@@ -172,23 +172,18 @@ pub(super) fn handle_click(
 
 pub(super) fn handle_context_menu(
     app: &mut EguiApp,
-    ui: &mut egui::Ui,
     response: &egui::Response,
     hovered: Option<&(crate::egui_app::state::MapPoint, egui::Pos2)>,
 ) {
-    if !response.secondary_clicked() {
-        return;
-    }
-    let context_sample = hovered.map(|(point, _)| point.sample_id.clone());
-    show_context_menu(ui.ctx(), ui.id().with("similarity_map_context"), |ui| {
-        let Some(sample_id) = context_sample.as_ref() else {
+    response.context_menu(|ui| {
+        let Some((point, _)) = hovered else {
             ui.label("Hover a point to see map actions.");
             return;
         };
-        ui.label(map_state::sample_label_from_id(sample_id));
-
+        let sample_id = point.sample_id.clone();
+        ui.label(map_state::sample_label_from_id(&sample_id));
         if ui.button("Preview").clicked() {
-            if let Err(err) = app.controller.preview_sample_by_id(sample_id) {
+            if let Err(err) = app.controller.preview_sample_by_id(&sample_id) {
                 app.controller
                     .set_status(format!("Preview failed: {err}"), style::StatusTone::Error);
             } else if let Err(err) = app.controller.play_audio(false, None) {
@@ -198,11 +193,10 @@ pub(super) fn handle_context_menu(
             ui.close_menu();
             return;
         }
-
         ui.separator();
         if ui.button("List similar").clicked() {
             app.controller.ui.browser.active_tab = SampleBrowserTab::List;
-            if let Err(err) = app.controller.find_similar_for_sample_id(sample_id) {
+            if let Err(err) = app.controller.find_similar_for_sample_id(&sample_id) {
                 app.controller.set_status(
                     format!("Find similar failed: {err}"),
                     style::StatusTone::Error,
