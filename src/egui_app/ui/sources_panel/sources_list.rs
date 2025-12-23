@@ -7,7 +7,6 @@ use eframe::egui::{self, RichText, Ui};
 impl EguiApp {
     pub(super) fn render_sources_list(&mut self, ui: &mut Ui, height: f32) -> egui::Rect {
         let mut row_clicked = false;
-        let mut row_clicked = false;
         let output = egui::ScrollArea::vertical()
             .id_salt("sources_scroll")
             .max_height(height)
