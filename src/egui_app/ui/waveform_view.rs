@@ -183,6 +183,7 @@ fn handle_waveform_drag_handle_interactions(
         let label = view_model::sample_display_label(&path);
         app.controller
             .start_sample_drag(source.id.clone(), path, label, pos);
+        app.controller.ui.drag.origin_source = Some(DragSource::Waveform);
     } else if response.dragged() {
         if let Some(pos) = response.interact_pointer_pos() {
             let shift_down = ui.input(|i| i.modifiers.shift);
