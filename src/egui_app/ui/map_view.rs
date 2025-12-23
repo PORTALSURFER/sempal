@@ -149,6 +149,11 @@ impl EguiApp {
             }
         }
 
+        let focused_sample_id = self.controller.selected_sample_id();
+        if self.controller.ui.map.selected_sample_id != focused_sample_id {
+            self.controller.ui.map.selected_sample_id = focused_sample_id;
+        }
+
         let Some(bounds) = self.controller.ui.map.bounds else {
             if map_empty::render_empty_state(ui, rect, &palette) {
                 self.controller.build_umap_layout(model_id, &umap_version);
@@ -362,6 +367,12 @@ impl EguiApp {
         if response.clicked() {
             if let Some((point, _)) = hovered.as_ref() {
                 self.controller.ui.map.selected_sample_id = Some(point.sample_id.clone());
+                if let Err(err) = self.controller.focus_sample_from_map(&point.sample_id) {
+                    self.controller.set_status(
+                        format!("Map focus failed: {err}"),
+                        style::StatusTone::Error,
+                    );
+                }
                 if let Err(err) = self.controller.preview_sample_by_id(&point.sample_id) {
                     self.controller
                         .set_status(format!("Preview failed: {err}"), style::StatusTone::Error);
@@ -397,6 +408,13 @@ impl EguiApp {
 
         let mut draw_calls = 0usize;
         let mut points_rendered = 0usize;
+        let focused_point = self
+            .controller
+            .ui
+            .map
+            .selected_sample_id
+            .as_ref()
+            .and_then(|id| filtered_points.iter().find(|point| point.sample_id == *id));
         if filtered_points.len() > 8000 || self.controller.ui.map.zoom < 0.6 {
             if self.controller.ui.map.cluster_overlay {
                 draw_calls = map_render::render_heatmap_with_color(
@@ -435,19 +453,33 @@ impl EguiApp {
                 );
                 if rect.contains(pos) {
                     points_rendered += 1;
-                    let radius = if self.controller.ui.map.selected_sample_id.as_deref()
-                        == Some(point.sample_id.as_str())
-                    {
-                        3.5
-                    } else {
-                        2.0
-                    };
+                    let is_focused = self
+                        .controller
+                        .ui
+                        .map
+                        .selected_sample_id
+                        .as_deref()
+                        == Some(point.sample_id.as_str());
+                    let radius = if is_focused { 3.5 } else { 2.0 };
                     let color = point_color(&point, 200);
                     painter.circle_filled(pos, radius, color);
                     draw_calls += 1;
                 }
             }
             self.controller.ui.map.last_render_mode = crate::egui_app::state::MapRenderMode::Points;
+        }
+        if let Some(point) = focused_point {
+            let pos = map_render::map_to_screen(
+                point.x,
+                point.y,
+                rect,
+                center,
+                scale,
+                self.controller.ui.map.pan,
+            );
+            if rect.contains(pos) {
+                painter.circle_stroke(pos, 6.0, style::focused_row_stroke());
+            }
         }
         self.controller.ui.map.last_render_ms = render_started.elapsed().as_secs_f32() * 1000.0;
         self.controller.ui.map.last_draw_calls = draw_calls;

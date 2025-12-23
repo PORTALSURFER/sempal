@@ -120,6 +120,34 @@ impl EguiController {
         ))
     }
 
+    /// Build a library sample_id for the currently selected wav.
+    pub fn selected_sample_id(&self) -> Option<String> {
+        let source_id = self.selection_state.ctx.selected_source.as_ref()?;
+        let path = self.sample_view.wav.selected_wav.as_ref()?;
+        Some(super::analysis_jobs::build_sample_id(
+            source_id.as_str(),
+            path,
+        ))
+    }
+
+    /// Focus the sample browser on a library sample_id without autoplay.
+    pub fn focus_sample_from_map(&mut self, sample_id: &str) -> Result<(), String> {
+        let (source_id, relative_path) = super::analysis_jobs::parse_sample_id(sample_id)?;
+        if self.selection_state.ctx.selected_source.as_ref() != Some(&source_id) {
+            self.select_source(Some(source_id.clone()));
+        }
+        self.focus_browser_context();
+        self.ui.browser.autoscroll = true;
+        self.ui.browser.selected_paths.clear();
+        self.ui.browser.selection_anchor_visible = None;
+        self.selection_state.suppress_autoplay_once = true;
+        self.select_wav_by_path(&relative_path);
+        if let Some(row) = self.visible_row_for_path(&relative_path) {
+            self.ui.browser.selection_anchor_visible = Some(row);
+        }
+        Ok(())
+    }
+
     /// Load waveform/audio for a given library sample_id without requiring browser selection.
     pub fn preview_sample_by_id(&mut self, sample_id: &str) -> Result<(), String> {
         let (source_id, relative_path) = super::analysis_jobs::parse_sample_id(sample_id)?;
