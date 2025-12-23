@@ -44,7 +44,7 @@ impl EguiController {
         if let Some(source) = self.find_source_by_id(source_id) {
             self.runtime.similarity_prep.as_mut().expect("checked").stage =
                 SimilarityPrepStage::AwaitEmbeddings;
-            self.enqueue_embedding_backfill(source);
+            self.enqueue_similarity_backfill(source);
         }
     }
 
@@ -120,11 +120,30 @@ fn matches_similarity_stage(
 }
 
 impl EguiController {
-    fn enqueue_embedding_backfill(&mut self, source: SampleSource) {
+    fn enqueue_similarity_backfill(&mut self, source: SampleSource) {
         let tx = self.runtime.jobs.message_sender();
         thread::spawn(move || {
-            let result = analysis_jobs::enqueue_jobs_for_embedding_backfill(&source);
-            match result {
+            let analysis_result = analysis_jobs::enqueue_jobs_for_source_backfill(&source);
+            match analysis_result {
+                Ok((inserted, progress)) => {
+                    if inserted > 0 {
+                        let _ = tx.send(jobs::JobMessage::Analysis(
+                            analysis_jobs::AnalysisJobMessage::EnqueueFinished {
+                                inserted,
+                                progress,
+                            },
+                        ));
+                    }
+                }
+                Err(err) => {
+                    let _ = tx.send(jobs::JobMessage::Analysis(
+                        analysis_jobs::AnalysisJobMessage::EnqueueFailed(err),
+                    ));
+                }
+            }
+
+            let embed_result = analysis_jobs::enqueue_jobs_for_embedding_backfill(&source);
+            match embed_result {
                 Ok((inserted, progress)) => {
                     if inserted > 0 {
                         let _ = tx.send(jobs::JobMessage::Analysis(
