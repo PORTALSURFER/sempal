@@ -48,7 +48,7 @@ impl EguiController {
             return;
         }
         self.runtime.jobs.send_wav_job(job);
-        self.ensure_wav_load_progress(source);
+        self.ensure_wav_load_progress(&source);
     }
 
     pub(super) fn handle_wav_load_error(&mut self, source_id: &SourceId, err: LoadEntriesError) {
