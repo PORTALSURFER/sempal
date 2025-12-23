@@ -175,19 +175,16 @@ pub(super) fn handle_context_menu(
     response: &egui::Response,
     hovered: Option<&(crate::egui_app::state::MapPoint, egui::Pos2)>,
 ) {
-    let context_point = hovered.as_ref().map(|(point, _)| point.sample_id.clone());
     response.context_menu(|ui| {
-        let Some(sample_id) = context_point.as_ref() else {
+        let Some((point, _)) = hovered else {
             ui.label("Hover a point to see map actions.");
             return;
         };
-        let Some((point, _)) = hovered.as_ref() else {
-            ui.label("Hover a point to see map actions.");
-            return;
-        };
-        ui.label(map_state::sample_label_from_id(&point.sample_id));
+        let sample_id = point.sample_id.clone();
+        ui.label(map_state::sample_label_from_id(&sample_id));
+
         if ui.button("Preview").clicked() {
-            if let Err(err) = app.controller.preview_sample_by_id(sample_id) {
+            if let Err(err) = app.controller.preview_sample_by_id(&sample_id) {
                 app.controller
                     .set_status(format!("Preview failed: {err}"), style::StatusTone::Error);
             } else if let Err(err) = app.controller.play_audio(false, None) {
@@ -195,10 +192,13 @@ pub(super) fn handle_context_menu(
                     .set_status(format!("Playback failed: {err}"), style::StatusTone::Error);
             }
             ui.close();
+            return;
         }
+
+        ui.separator();
         if ui.button("List similar").clicked() {
             app.controller.ui.browser.active_tab = SampleBrowserTab::List;
-            if let Err(err) = app.controller.find_similar_for_sample_id(sample_id) {
+            if let Err(err) = app.controller.find_similar_for_sample_id(&sample_id) {
                 app.controller.set_status(
                     format!("Find similar failed: {err}"),
                     style::StatusTone::Error,
