@@ -1,5 +1,6 @@
 use eframe::egui::{Pos2, Vec2};
 use std::collections::HashMap;
+use std::sync::Arc;
 
 #[derive(Clone, Debug)]
 pub struct MapUiState {
@@ -11,7 +12,7 @@ pub struct MapUiState {
     pub last_query: Option<MapQueryBounds>,
     pub cached_points: Vec<MapPoint>,
     pub cached_cluster_centroids_key: Option<String>,
-    pub cached_cluster_centroids: Option<HashMap<i32, MapClusterCentroid>>,
+    pub cached_cluster_centroids: Option<Arc<HashMap<i32, MapClusterCentroid>>>,
     pub auto_cluster_build_requested_key: Option<String>,
     pub hovered_sample_id: Option<String>,
     pub selected_sample_id: Option<String>,

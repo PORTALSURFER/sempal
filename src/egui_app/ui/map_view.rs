@@ -8,6 +8,7 @@ use super::*;
 use crate::egui_app::view_model;
 use eframe::egui;
 use std::time::Instant;
+use std::sync::Arc;
 
 const MAP_POINT_LIMIT: usize = 50_000;
 const MAP_HEATMAP_BINS: usize = 64;
@@ -252,7 +253,7 @@ impl EguiApp {
                 source_id.as_ref(),
             ) {
                 Ok(centroids) => {
-                    self.controller.ui.map.cached_cluster_centroids = Some(centroids);
+                    self.controller.ui.map.cached_cluster_centroids = Some(Arc::new(centroids));
                 }
                 Err(err) => {
                     self.controller.set_status(
@@ -288,21 +289,14 @@ impl EguiApp {
                     .build_umap_clusters(crate::analysis::embedding::EMBEDDING_MODEL_ID, &umap_version);
             }
         }
-        let centroids_fallback = if cluster_overlay {
-            Some(map_clusters::cluster_centroids(&points))
-        } else {
-            None
-        };
-        let centroids = if cluster_overlay {
-            Some(
-                self.controller
-                    .ui
-                    .map
-                    .cached_cluster_centroids
-                    .as_ref()
-                    .filter(|centroids| !centroids.is_empty())
-                    .unwrap_or_else(|| centroids_fallback.as_ref().expect("overlay set")),
-            )
+        let centroids_arc = if cluster_overlay {
+            self.controller
+                .ui
+                .map
+                .cached_cluster_centroids
+                .clone()
+                .filter(|centroids| !centroids.is_empty())
+                .or_else(|| Some(Arc::new(map_clusters::cluster_centroids(&points))))
         } else {
             None
         };
@@ -314,7 +308,7 @@ impl EguiApp {
                 if blend_enabled {
                     map_clusters::blended_cluster_color(
                         point,
-                        centroids
+                        centroids_arc
                             .as_ref()
                             .expect("centroids set for cluster overlay"),
                         &bounds,
@@ -326,7 +320,7 @@ impl EguiApp {
                 } else {
                     map_clusters::distance_shaded_cluster_color(
                         point,
-                        centroids
+                        centroids_arc
                             .as_ref()
                             .expect("centroids set for cluster overlay"),
                         &bounds,
