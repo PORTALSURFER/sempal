@@ -31,8 +31,10 @@ impl EguiApp {
             });
             ui.add_space(6.0);
             let rows = self.controller.ui.collections.rows.clone();
+            let list_height = (ui.available_height() * 0.35).max(140.0);
             let list_response = egui::ScrollArea::vertical()
                 .id_salt("collections_scroll")
+                .max_height(list_height)
                 .show(ui, |ui| {
                     let row_height = list_row_height(ui);
                     for (index, collection) in rows.iter().enumerate() {
