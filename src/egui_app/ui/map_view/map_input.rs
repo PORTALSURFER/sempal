@@ -176,11 +176,17 @@ pub(super) fn handle_context_menu(
     hovered: Option<&(crate::egui_app::state::MapPoint, egui::Pos2)>,
 ) {
     response.context_menu(|ui| {
-        let Some((point, _)) = hovered else {
+        let sample_id = app
+            .controller
+            .ui
+            .map
+            .hovered_sample_id
+            .clone()
+            .or_else(|| hovered.map(|(point, _)| point.sample_id.clone()));
+        let Some(sample_id) = sample_id else {
             ui.label("Hover a point to see map actions.");
             return;
         };
-        let sample_id = point.sample_id.clone();
         ui.label(map_state::sample_label_from_id(&sample_id));
         if ui.button("Preview").clicked() {
             if let Err(err) = app.controller.preview_sample_by_id(&sample_id) {
