@@ -292,6 +292,18 @@ fn run_similarity_finalize(
         0,
         0.95,
     )?;
+    let layout_rows = count_umap_layout_rows(
+        &conn,
+        crate::analysis::embedding::EMBEDDING_MODEL_ID,
+        umap_version,
+        &sample_id_prefix,
+    )?;
+    if layout_rows == 0 {
+        return Err(format!(
+            "No t-SNE layout rows for source {} (check embeddings)",
+            source_id.as_str()
+        ));
+    }
     let cluster_stats = crate::analysis::hdbscan::build_hdbscan_clusters_for_sample_id_prefix(
         &mut conn,
         crate::analysis::embedding::EMBEDDING_MODEL_ID,
@@ -309,6 +321,21 @@ fn run_similarity_finalize(
         cluster_stats,
         umap_version: umap_version.to_string(),
     })
+}
+
+fn count_umap_layout_rows(
+    conn: &rusqlite::Connection,
+    model_id: &str,
+    umap_version: &str,
+    sample_id_prefix: &str,
+) -> Result<i64, String> {
+    conn.query_row(
+        "SELECT COUNT(*) FROM layout_umap
+         WHERE model_id = ?1 AND umap_version = ?2 AND sample_id LIKE ?3",
+        rusqlite::params![model_id, umap_version, sample_id_prefix],
+        |row| row.get(0),
+    )
+    .map_err(|err| format!("Count layout rows failed: {err}"))
 }
 
 fn open_library_db_for_similarity() -> Result<rusqlite::Connection, String> {
