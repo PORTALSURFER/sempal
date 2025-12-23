@@ -56,7 +56,7 @@ impl EguiApp {
                             &mut self.controller.ui.map.similarity_blend_threshold,
                             0.02..=0.5,
                         )
-                        .clamp_to_range(true)
+                        .clamping(egui::SliderClamping::Always)
                         .text("Blend range"),
                     );
                     if response.changed() {
@@ -237,7 +237,7 @@ impl EguiApp {
                         centroids
                             .as_ref()
                             .expect("centroids set for cluster overlay"),
-                        bounds,
+                        &bounds,
                         &palette,
                         alpha,
                         map_diagonal,
@@ -249,7 +249,7 @@ impl EguiApp {
                         centroids
                             .as_ref()
                             .expect("centroids set for cluster overlay"),
-                        bounds,
+                        &bounds,
                         &palette,
                         alpha,
                         map_diagonal,
