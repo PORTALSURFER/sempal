@@ -10,12 +10,14 @@ pub(crate) fn render_empty_state(
     let mut build_clicked = false;
     let pulse = if busy {
         ui.ctx().request_repaint();
-        let t = ui.ctx().time() as f32;
-        (t * 2.4).sin() * 0.5 + 0.5
+        let t = ui.ctx().input(|i| i.time) as f32;
+        (t * 2.4_f32).sin() * 0.5_f32 + 0.5_f32
     } else {
         0.0
     };
-    let pulse_alpha = (80.0 + pulse * 160.0).round().clamp(0.0, 255.0) as u8;
+    let pulse_alpha = (80.0_f32 + pulse * 160.0_f32)
+        .round()
+        .clamp(0.0_f32, 255.0_f32) as u8;
     let pulse_color = egui::Color32::from_rgba_unmultiplied(
         palette.accent_mint.r(),
         palette.accent_mint.g(),
