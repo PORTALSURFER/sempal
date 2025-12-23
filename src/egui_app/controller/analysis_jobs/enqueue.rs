@@ -296,6 +296,7 @@ pub(in crate::egui_app::controller) fn enqueue_jobs_for_embedding_backfill(
         }
         sample_ids.push(sample_id);
     }
+    drop(stmt);
 
     if sample_ids.is_empty() {
         return Ok((0, db::current_progress(&conn)?));
