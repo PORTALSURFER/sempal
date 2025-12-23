@@ -130,7 +130,8 @@ impl EguiController {
                     self.ui_cache.browser.analysis_failures.remove(&id);
                 }
             }
-            self.sync_missing_from_entries(&id, &self.wav_entries.entries);
+            let entries = self.wav_entries.entries.clone();
+            self.sync_missing_from_entries(&id, &entries);
         }
         let prefix = if from_cache { "Cached" } else { "Loaded" };
         let suffix = elapsed
