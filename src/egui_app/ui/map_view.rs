@@ -15,6 +15,7 @@ const MAP_HEATMAP_BINS: usize = 64;
 const MAP_ZOOM_MIN: f32 = 0.2;
 const MAP_ZOOM_MAX: f32 = 20.0;
 const MAP_ZOOM_SPEED: f32 = 0.0015;
+const MAP_PAINT_REPEAT_COOLDOWN_SECS: f64 = 0.08;
 
 impl EguiApp {
     pub(super) fn render_map_panel(&mut self, ui: &mut egui::Ui) {
@@ -315,6 +316,9 @@ impl EguiApp {
         );
         self.controller.ui.map.hovered_sample_id =
             hovered.as_ref().map(|(point, _)| point.sample_id.clone());
+        if response.dragged_by(egui::PointerButton::Primary) {
+            self.paint_map_hover(ui, hovered.as_ref());
+        }
 
         if let Some((point, pos)) = hovered.as_ref() {
             let stroke_color = point_color(point, 200);
@@ -458,6 +462,44 @@ impl EguiApp {
         self.controller.ui.map.last_render_ms = render_started.elapsed().as_secs_f32() * 1000.0;
         self.controller.ui.map.last_draw_calls = draw_calls;
         self.controller.ui.map.last_points_rendered = points_rendered;
+    }
+
+    fn paint_map_hover(
+        &mut self,
+        ui: &egui::Ui,
+        hovered: Option<&(crate::egui_app::state::MapPoint, egui::Pos2)>,
+    ) {
+        let Some((point, _)) = hovered else {
+            return;
+        };
+        let now = ui.input(|i| i.time);
+        let same_sample = self
+            .controller
+            .ui
+            .map
+            .last_painted_sample_id
+            .as_deref()
+            == Some(point.sample_id.as_str());
+        let elapsed = now - self.controller.ui.map.last_paint_time;
+        if same_sample && elapsed < MAP_PAINT_REPEAT_COOLDOWN_SECS {
+            return;
+        }
+        self.controller.ui.map.last_painted_sample_id = Some(point.sample_id.clone());
+        self.controller.ui.map.last_paint_time = now;
+        self.controller.ui.map.selected_sample_id = Some(point.sample_id.clone());
+        if let Err(err) = self.controller.focus_sample_from_map(&point.sample_id) {
+            self.controller.set_status(
+                format!("Map focus failed: {err}"),
+                style::StatusTone::Error,
+            );
+        }
+        if let Err(err) = self.controller.preview_sample_by_id(&point.sample_id) {
+            self.controller
+                .set_status(format!("Preview failed: {err}"), style::StatusTone::Error);
+        } else if let Err(err) = self.controller.play_audio(false, None) {
+            self.controller
+                .set_status(format!("Playback failed: {err}"), style::StatusTone::Error);
+        }
     }
 }
 
