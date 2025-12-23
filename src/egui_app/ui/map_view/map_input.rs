@@ -3,7 +3,7 @@ use super::map_interactions;
 use super::map_state;
 use super::style;
 use crate::egui_app::state::{FocusContext, SampleBrowserTab};
-use eframe::egui;
+use eframe::egui::{self, LayerId, Order, Popup, PopupAnchor, PopupCloseBehavior, SetOpenCommand};
 
 pub(super) fn handle_zoom(app: &mut EguiApp, ui: &egui::Ui, response: &egui::Response) {
     let scroll_delta = ui.input(|i| i.smooth_scroll_delta.y);
@@ -160,46 +160,61 @@ pub(super) fn handle_click(
 
 pub(super) fn handle_context_menu(
     app: &mut EguiApp,
-    _ui: &mut egui::Ui,
+    ui: &mut egui::Ui,
     response: &egui::Response,
     hovered: Option<&(crate::egui_app::state::MapPoint, egui::Pos2)>,
 ) {
-    response.context_menu(|ui| {
-        let sample_id = app
-            .controller
-            .ui
-            .map
-            .hovered_sample_id
-            .clone()
-            .or_else(|| hovered.map(|(point, _)| point.sample_id.clone()));
-        let Some(sample_id) = sample_id else {
-            return;
-        };
-        ui.label(map_state::sample_label_from_id(&sample_id));
-        if ui.button("Preview").clicked() {
-            if let Err(err) = app.controller.preview_sample_by_id(&sample_id) {
-                app.controller
-                    .set_status(format!("Preview failed: {err}"), style::StatusTone::Error);
-            } else if let Err(err) = app.controller.play_audio(false, None) {
-                app.controller
-                    .set_status(format!("Playback failed: {err}"), style::StatusTone::Error);
+    let sample_id = app
+        .controller
+        .ui
+        .map
+        .hovered_sample_id
+        .clone()
+        .or_else(|| hovered.map(|(point, _)| point.sample_id.clone()));
+    let popup_id = response.id.with("similarity_map_context");
+    let ctx = ui.ctx();
+    let mut set_state = None;
+    if response.secondary_clicked() {
+        set_state = Some(SetOpenCommand::Bool(sample_id.is_some()));
+    }
+
+    let layer = LayerId::new(Order::Foreground, popup_id);
+    Popup::new(popup_id, ctx.clone(), PopupAnchor::PointerFixed, layer)
+        .open_memory(set_state)
+        .at_pointer_fixed()
+        .close_behavior(PopupCloseBehavior::CloseOnClick)
+        .show(|ui| {
+            let Some(sample_id) = sample_id.clone() else {
+                return;
+            };
+            ui.label(map_state::sample_label_from_id(&sample_id));
+            if ui.button("Preview").clicked() {
+                if let Err(err) = app.controller.preview_sample_by_id(&sample_id) {
+                    app.controller
+                        .set_status(format!("Preview failed: {err}"), style::StatusTone::Error);
+                } else if let Err(err) = app.controller.play_audio(false, None) {
+                    app.controller
+                        .set_status(
+                            format!("Playback failed: {err}"),
+                            style::StatusTone::Error,
+                        );
+                }
+                Popup::close_id(ctx, popup_id);
+                return;
             }
-            ui.close();
-            return;
-        }
-        ui.separator();
-        if ui.button("List similar").clicked() {
-            app.controller.ui.browser.active_tab = SampleBrowserTab::List;
-            if let Err(err) = app.controller.find_similar_for_sample_id(&sample_id) {
-                app.controller.set_status(
-                    format!("Find similar failed: {err}"),
-                    style::StatusTone::Error,
-                );
-            } else {
-                app.controller
-                    .focus_context_from_ui(FocusContext::SampleBrowser);
+            ui.separator();
+            if ui.button("List similar").clicked() {
+                app.controller.ui.browser.active_tab = SampleBrowserTab::List;
+                if let Err(err) = app.controller.find_similar_for_sample_id(&sample_id) {
+                    app.controller.set_status(
+                        format!("Find similar failed: {err}"),
+                        style::StatusTone::Error,
+                    );
+                } else {
+                    app.controller
+                        .focus_context_from_ui(FocusContext::SampleBrowser);
+                }
+                Popup::close_id(ctx, popup_id);
             }
-            ui.close();
-        }
-    });
+        });
 }
