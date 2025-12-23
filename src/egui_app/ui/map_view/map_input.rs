@@ -160,7 +160,7 @@ pub(super) fn handle_click(
 
 pub(super) fn handle_context_menu(
     app: &mut EguiApp,
-    ui: &mut egui::Ui,
+    _ui: &mut egui::Ui,
     response: &egui::Response,
     hovered: Option<&(crate::egui_app::state::MapPoint, egui::Pos2)>,
 ) {
@@ -184,7 +184,7 @@ pub(super) fn handle_context_menu(
                 app.controller
                     .set_status(format!("Playback failed: {err}"), style::StatusTone::Error);
             }
-            ui.close_menu();
+            ui.close();
             return;
         }
         ui.separator();
@@ -199,7 +199,7 @@ pub(super) fn handle_context_menu(
                 app.controller
                     .focus_context_from_ui(FocusContext::SampleBrowser);
             }
-            ui.close_menu();
+            ui.close();
         }
     });
 }
