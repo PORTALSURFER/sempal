@@ -74,6 +74,53 @@ pub(super) fn find_similar_for_visible_row(
     Ok(())
 }
 
+pub(super) fn find_similar_for_sample_id(
+    controller: &mut EguiController,
+    sample_id: &str,
+) -> Result<(), String> {
+    let (source_id, relative_path) = super::super::analysis_jobs::parse_sample_id(sample_id)?;
+    let source_id = SourceId::from_string(source_id);
+    if controller.selection_state.ctx.selected_source.as_ref() != Some(&source_id) {
+        controller.select_source(Some(source_id.clone()));
+    }
+    let db_path = crate::app_dirs::app_root_dir()
+        .map_err(|err| err.to_string())?
+        .join(crate::sample_sources::library::LIBRARY_DB_FILE_NAME);
+    let conn = super::super::analysis_jobs::open_library_db(&db_path)?;
+    let neighbours =
+        crate::analysis::ann_index::find_similar(&conn, sample_id, SIMILAR_RE_RANK_CANDIDATES)?;
+    let query_embedding = load_embedding_for_sample(&conn, sample_id)?;
+    let query_dsp = load_light_dsp_for_sample(&conn, sample_id)?;
+    let ranked = rerank_with_dsp(&conn, neighbours, query_embedding.as_deref(), query_dsp.as_deref())?;
+
+    let mut indices = Vec::new();
+    for candidate_id in ranked {
+        let (candidate_source, candidate_path) =
+            super::super::analysis_jobs::parse_sample_id(&candidate_id)?;
+        if candidate_source.as_str() != source_id.as_str() {
+            continue;
+        }
+        if let Some(index) = controller.wav_entries.lookup.get(&candidate_path) {
+            indices.push(*index);
+            if indices.len() >= DEFAULT_SIMILAR_COUNT {
+                break;
+            }
+        }
+    }
+    if indices.is_empty() {
+        return Err("No similar samples found in the current source".to_string());
+    }
+    controller.ui.browser.similar_query = Some(crate::egui_app::state::SimilarQuery {
+        sample_id: sample_id.to_string(),
+        label: view_model::sample_display_label(&relative_path),
+        indices,
+    });
+    controller.ui.browser.search_query.clear();
+    controller.ui.browser.search_focus_requested = false;
+    controller.rebuild_browser_lists();
+    Ok(())
+}
+
 pub(super) fn clear_similar_filter(controller: &mut EguiController) {
     if controller.ui.browser.similar_query.take().is_some() {
         controller.rebuild_browser_lists();

@@ -83,6 +83,11 @@ impl EguiController {
         similar::find_similar_for_visible_row(self, row)
     }
 
+    /// Filter the browser to show similar samples for a specific library sample_id.
+    pub fn find_similar_for_sample_id(&mut self, sample_id: &str) -> Result<(), String> {
+        similar::find_similar_for_sample_id(self, sample_id)
+    }
+
     /// Filter the browser to show similar samples for an external audio clip.
     pub fn find_similar_for_audio_path(&mut self, path: &Path) -> Result<(), String> {
         similar::find_similar_for_audio_path(self, path)

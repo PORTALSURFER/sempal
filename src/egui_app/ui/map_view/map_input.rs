@@ -2,6 +2,7 @@ use super::map_interactions;
 use super::map_state;
 use super::style;
 use super::EguiApp;
+use crate::egui_app::state::{FocusContext, SampleBrowserTab};
 use eframe::egui;
 
 pub(super) fn handle_zoom(app: &mut EguiApp, ui: &egui::Ui, response: &egui::Response) {
@@ -192,6 +193,19 @@ pub(super) fn handle_context_menu(
             } else if let Err(err) = app.controller.play_audio(false, None) {
                 app.controller
                     .set_status(format!("Playback failed: {err}"), style::StatusTone::Error);
+            }
+            ui.close();
+        }
+        if ui.button("List similar").clicked() {
+            app.controller.ui.browser.active_tab = SampleBrowserTab::List;
+            if let Err(err) = app.controller.find_similar_for_sample_id(sample_id) {
+                app.controller.set_status(
+                    format!("Find similar failed: {err}"),
+                    style::StatusTone::Error,
+                );
+            } else {
+                app.controller
+                    .focus_context_from_ui(FocusContext::SampleBrowser);
             }
             ui.close();
         }
