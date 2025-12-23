@@ -108,8 +108,8 @@ impl EguiApp {
         self.render_status(ctx);
         egui::SidePanel::left("sources")
             .resizable(true)
-            .default_width(230.0)
-            .min_width(200.0)
+            .default_width(260.0)
+            .min_width(220.0)
             .max_width(520.0)
             .show(ctx, |ui| self.render_sources_panel(ui));
         self.consume_source_panel_drops(ctx);
