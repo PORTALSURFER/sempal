@@ -1,38 +1,23 @@
-use rodio::{Decoder, Source};
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
 
-/// Fixed sample rate used during analysis.
-pub(crate) const ANALYSIS_SAMPLE_RATE: u32 = 16_000;
-pub(crate) const MAX_ANALYSIS_SECONDS: f32 = 6.0;
-pub(crate) const WINDOW_SECONDS: f32 = 2.0;
-pub(crate) const WINDOW_HOP_SECONDS: f32 = 1.0;
-pub(crate) const MIN_ANALYSIS_SECONDS: f32 = 0.1;
-pub(crate) const SILENCE_THRESHOLD_ON_DB: f32 = -45.0;
-pub(crate) const SILENCE_THRESHOLD_OFF_DB: f32 = -55.0;
-pub(crate) const SILENCE_PRE_ROLL_SECONDS: f32 = 0.01;
-pub(crate) const SILENCE_POST_ROLL_SECONDS: f32 = 0.005;
-const EMBEDDING_TARGET_RMS_DB: f32 = -20.0;
+use rodio::{Decoder, Source};
 
-/// Decoded mono audio ready for analysis.
-#[derive(Debug)]
-#[allow(dead_code)]
-pub(crate) struct AnalysisAudio {
-    pub(crate) mono: Vec<f32>,
-    pub(crate) duration_seconds: f32,
-    pub(crate) sample_rate_used: u32,
-}
+use super::{
+    AnalysisAudio,
+    ANALYSIS_SAMPLE_RATE,
+    MAX_ANALYSIS_SECONDS,
+    MIN_ANALYSIS_SECONDS,
+    WINDOW_HOP_SECONDS,
+    WINDOW_SECONDS,
+};
+use super::normalize::{normalize_peak_in_place, rms};
+use super::resample::resample_linear;
+use super::silence::trim_silence_with_hysteresis;
 
 pub(crate) fn decode_for_analysis(path: &Path) -> Result<AnalysisAudio, String> {
     decode_for_analysis_with_rate(path, ANALYSIS_SAMPLE_RATE)
-}
-
-pub(crate) fn preprocess_mono_for_embedding(samples: &[f32], sample_rate: u32) -> Vec<f32> {
-    let mut trimmed = trim_silence_with_hysteresis(samples, sample_rate);
-    normalize_rms_in_place(&mut trimmed, EMBEDDING_TARGET_RMS_DB);
-    normalize_peak_limit_in_place(&mut trimmed);
-    trimmed
 }
 
 pub(crate) fn probe_duration_seconds(path: &Path) -> Result<Option<f32>, String> {
@@ -105,86 +90,6 @@ fn downmix_to_mono(samples: &[f32], channels: u16) -> Vec<f32> {
     mono
 }
 
-/// Resample mono samples using linear interpolation.
-pub(crate) fn resample_linear(samples: &[f32], input_rate: u32, output_rate: u32) -> Vec<f32> {
-    let input_rate = input_rate.max(1);
-    let output_rate = output_rate.max(1);
-    if samples.is_empty() || input_rate == output_rate {
-        return samples.to_vec();
-    }
-    let duration_seconds = samples.len() as f64 / input_rate as f64;
-    let out_len = (duration_seconds * output_rate as f64).round().max(1.0) as usize;
-    let mut out = Vec::with_capacity(out_len);
-    for i in 0..out_len {
-        let t = i as f64 / output_rate as f64;
-        let pos = t * input_rate as f64;
-        out.push(lerp_sample(samples, pos));
-    }
-    out
-}
-
-fn lerp_sample(samples: &[f32], pos: f64) -> f32 {
-    if samples.is_empty() {
-        return 0.0;
-    }
-    let idx0 = pos.floor().max(0.0) as usize;
-    let frac = (pos - idx0 as f64).clamp(0.0, 1.0) as f32;
-    let idx1 = idx0.saturating_add(1).min(samples.len().saturating_sub(1));
-    let a = samples.get(idx0).copied().unwrap_or(0.0);
-    let b = samples.get(idx1).copied().unwrap_or(a);
-    a + (b - a) * frac
-}
-
-fn normalize_peak_in_place(samples: &mut [f32]) {
-    let mut peak = 0.0_f32;
-    for &sample in samples.iter() {
-        peak = peak.max(sample.abs());
-    }
-    if !peak.is_finite() || peak <= 0.0 {
-        return;
-    }
-    let gain = 1.0_f32 / peak;
-    for sample in samples.iter_mut() {
-        *sample = (*sample * gain).clamp(-1.0, 1.0);
-    }
-}
-
-fn normalize_peak_limit_in_place(samples: &mut [f32]) {
-    let mut peak = 0.0_f32;
-    for &sample in samples.iter() {
-        peak = peak.max(sample.abs());
-    }
-    if !peak.is_finite() || peak <= 1.0 {
-        return;
-    }
-    let gain = 1.0_f32 / peak;
-    for sample in samples.iter_mut() {
-        *sample *= gain;
-    }
-}
-
-fn normalize_rms_in_place(samples: &mut [f32], target_db: f32) {
-    if samples.is_empty() {
-        return;
-    }
-    let mut sum = 0.0_f32;
-    for &sample in samples.iter() {
-        sum += sample * sample;
-    }
-    let rms = (sum / samples.len() as f32).sqrt();
-    if !rms.is_finite() || rms <= 0.0 {
-        return;
-    }
-    let target = db_to_linear(target_db);
-    if !target.is_finite() || target <= 0.0 {
-        return;
-    }
-    let gain = target / rms;
-    for sample in samples.iter_mut() {
-        *sample *= gain;
-    }
-}
-
 fn sanitize_sample(sample: f32) -> f32 {
     if !sample.is_finite() {
         return 0.0;
@@ -197,74 +102,11 @@ fn sanitize_sample(sample: f32) -> f32 {
     }
 }
 
-pub(crate) fn sanitize_samples_in_place(samples: &mut [f32]) {
-    for sample in samples.iter_mut() {
-        *sample = sanitize_sample(*sample);
-    }
-}
-
 fn duration_seconds(sample_count: usize, sample_rate: u32) -> f32 {
     if sample_rate == 0 {
         return 0.0;
     }
     sample_count as f32 / sample_rate as f32
-}
-
-fn trim_silence_with_hysteresis(samples: &[f32], sample_rate: u32) -> Vec<f32> {
-    if samples.is_empty() || sample_rate == 0 {
-        return samples.to_vec();
-    }
-    let window_size = (sample_rate as f32 * 0.02).round().max(1.0) as usize; // 20ms
-    let hop = window_size;
-    if samples.len() <= window_size {
-        return samples.to_vec();
-    }
-
-    let threshold_on = db_to_linear(SILENCE_THRESHOLD_ON_DB);
-    let threshold_off = db_to_linear(SILENCE_THRESHOLD_OFF_DB);
-    let pre_roll = (sample_rate as f32 * SILENCE_PRE_ROLL_SECONDS)
-        .round()
-        .max(0.0) as usize; // 10ms
-    let post_roll = (sample_rate as f32 * SILENCE_POST_ROLL_SECONDS)
-        .round()
-        .max(0.0) as usize; // 5ms
-
-    let mut active_start: Option<usize> = None;
-    let mut active_end: Option<usize> = None;
-
-    let mut active = false;
-    let mut window_start = 0usize;
-    while window_start < samples.len() {
-        let window_end = (window_start + window_size).min(samples.len());
-        let rms = rms(&samples[window_start..window_end]);
-        if !active {
-            if rms >= threshold_on {
-                active = true;
-                active_start = Some(window_start);
-                active_end = Some(window_end);
-            }
-        } else {
-            if rms >= threshold_off {
-                active_end = Some(window_end);
-            } else {
-                active = false;
-            }
-        }
-        window_start = window_start.saturating_add(hop);
-    }
-
-    let Some(active_start) = active_start else {
-        return samples.to_vec();
-    };
-    let Some(active_end) = active_end else {
-        return samples.to_vec();
-    };
-
-    let trimmed_start = active_start.saturating_sub(pre_roll).min(samples.len());
-    let trimmed_end = (active_end + post_roll)
-        .max(trimmed_start.saturating_add(1))
-        .min(samples.len());
-    samples[trimmed_start..trimmed_end].to_vec()
 }
 
 fn apply_energy_windowing(samples: &[f32], sample_rate: u32) -> Vec<f32> {
@@ -356,23 +198,6 @@ fn pad_to_min_duration(samples: &mut Vec<f32>, sample_rate: u32) {
     }
 }
 
-fn rms(samples: &[f32]) -> f32 {
-    if samples.is_empty() {
-        return 0.0;
-    }
-    let mut sum = 0.0_f64;
-    for &sample in samples {
-        let sample = sanitize_sample(sample) as f64;
-        sum += sample * sample;
-    }
-    let mean = sum / samples.len() as f64;
-    (mean.max(0.0).sqrt() as f32).min(1.0)
-}
-
-fn db_to_linear(db: f32) -> f32 {
-    10.0_f32.powf(db / 20.0)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -386,24 +211,6 @@ mod tests {
         assert_eq!(mono.len(), 2);
         assert!((mono[0] - 0.0).abs() < 1e-6);
         assert!((mono[1] - 0.375).abs() < 1e-6);
-    }
-
-    #[test]
-    fn resample_linear_preserves_endpoints_for_ramp() {
-        let input = vec![0.0_f32, 1.0];
-        let out = resample_linear(&input, 1, 2);
-        assert_eq!(out.len(), 4);
-        assert!((out[0] - 0.0).abs() < 1e-6);
-        assert!((out[out.len() - 1] - 1.0).abs() < 1e-6);
-    }
-
-    #[test]
-    fn sanitize_samples_removes_nan_and_denormals() {
-        let mut out = vec![0.0_f32, f32::NAN, f32::MIN_POSITIVE / 2.0];
-        sanitize_samples_in_place(&mut out);
-        assert_eq!(out.len(), 3);
-        assert!(out.iter().all(|v| v.is_finite()));
-        assert!(out.iter().all(|v| v.abs() == 0.0 || v.abs() >= f32::MIN_POSITIVE));
     }
 
     #[test]
@@ -423,14 +230,6 @@ mod tests {
         writer.finalize().unwrap();
         let duration = probe_duration_seconds(&path).unwrap().unwrap();
         assert!((duration - 1.0).abs() < 1e-3);
-    }
-
-    #[test]
-    fn normalize_peak_scales_to_unit_peak() {
-        let mut samples = vec![0.25_f32, -0.5, 0.125];
-        normalize_peak_in_place(&mut samples);
-        let peak = samples.iter().copied().map(|v| v.abs()).fold(0.0, f32::max);
-        assert!((peak - 1.0).abs() < 1e-6);
     }
 
     #[test]
