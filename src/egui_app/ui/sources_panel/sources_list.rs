@@ -77,15 +77,6 @@ impl EguiApp {
                 close_menu = true;
             }
             if ui
-                .button("Recompute embeddings")
-                .on_hover_text("Queue embedding backfill jobs for this source")
-                .clicked()
-            {
-                self.controller.select_source_by_index(index);
-                self.controller.backfill_embeddings_for_selected_source();
-                close_menu = true;
-            }
-            if ui
                 .button("Prepare similarity search")
                 .on_hover_text("Scan, embed, build ANN, t-SNE, and cluster for this source")
                 .clicked()
