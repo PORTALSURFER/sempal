@@ -82,7 +82,7 @@ impl EguiController {
         self.library.sources.push(source.clone());
         self.select_source(Some(source.id.clone()));
         self.persist_config("Failed to save config after adding source")?;
-        self.request_quick_sync();
+        self.prepare_similarity_for_selected_source();
         Ok(())
     }
 
