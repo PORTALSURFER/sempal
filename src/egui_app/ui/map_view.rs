@@ -241,6 +241,7 @@ impl EguiApp {
         if self.controller.ui.map.cached_cluster_centroids_key.as_deref() != Some(&centroids_key) {
             self.controller.ui.map.cached_cluster_centroids_key = Some(centroids_key);
             self.controller.ui.map.cached_cluster_centroids = None;
+            self.controller.ui.map.auto_cluster_build_requested_key = None;
         }
         if cluster_overlay && self.controller.ui.map.cached_cluster_centroids.is_none() {
             match self.controller.umap_cluster_centroids(
@@ -251,11 +252,7 @@ impl EguiApp {
                 source_id.as_ref(),
             ) {
                 Ok(centroids) => {
-                    if centroids.is_empty() {
-                        self.controller.ui.map.cached_cluster_centroids = None;
-                    } else {
-                        self.controller.ui.map.cached_cluster_centroids = Some(centroids);
-                    }
+                    self.controller.ui.map.cached_cluster_centroids = Some(centroids);
                 }
                 Err(err) => {
                     self.controller.set_status(
@@ -263,6 +260,32 @@ impl EguiApp {
                         style::StatusTone::Error,
                     );
                 }
+            }
+        }
+        if cluster_overlay {
+            let has_any_points = !points.is_empty();
+            let has_missing_cluster_ids = points.iter().any(|point| point.cluster_id.is_none());
+            let centroids_empty = self
+                .controller
+                .ui
+                .map
+                .cached_cluster_centroids
+                .as_ref()
+                .is_some_and(|centroids| centroids.is_empty());
+            if has_any_points
+                && (has_missing_cluster_ids || centroids_empty)
+                && self
+                    .controller
+                    .ui
+                    .map
+                    .auto_cluster_build_requested_key
+                    .is_none()
+            {
+                self.controller.ui.map.auto_cluster_build_requested_key =
+                    self.controller.ui.map.cached_cluster_centroids_key.clone();
+                let umap_version = umap_version.clone();
+                self.controller
+                    .build_umap_clusters(crate::analysis::embedding::EMBEDDING_MODEL_ID, &umap_version);
             }
         }
         let centroids_fallback = if cluster_overlay {
@@ -277,6 +300,7 @@ impl EguiApp {
                     .map
                     .cached_cluster_centroids
                     .as_ref()
+                    .filter(|centroids| !centroids.is_empty())
                     .unwrap_or_else(|| centroids_fallback.as_ref().expect("overlay set")),
             )
         } else {

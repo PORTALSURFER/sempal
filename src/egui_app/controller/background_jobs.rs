@@ -376,6 +376,7 @@ impl EguiController {
                             self.ui.map.last_query = None;
                             self.ui.map.cached_cluster_centroids_key = None;
                             self.ui.map.cached_cluster_centroids = None;
+                            self.ui.map.auto_cluster_build_requested_key = None;
                             let scope = message
                                 .source_id
                                 .as_ref()

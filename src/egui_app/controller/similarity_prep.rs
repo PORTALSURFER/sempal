@@ -92,6 +92,7 @@ impl EguiController {
                 self.ui.map.last_query = None;
                 self.ui.map.cached_cluster_centroids_key = None;
                 self.ui.map.cached_cluster_centroids = None;
+                self.ui.map.auto_cluster_build_requested_key = None;
                 self.set_status(
                     format!(
                         "Similarity ready: {} clusters (noise {:.1}%)",
