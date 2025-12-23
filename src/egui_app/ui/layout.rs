@@ -37,11 +37,7 @@ impl EguiApp {
         ui.vertical(|ui| {
             self.render_waveform(ui);
             ui.add_space(8.0);
-            let browser_top = ui.cursor().min.y;
-            let browser_rect = egui::Rect::from_min_max(
-                egui::pos2(ui.max_rect().left(), browser_top),
-                ui.max_rect().max,
-            );
+            let browser_rect = ui.available_rect_before_wrap();
             if browser_rect.height() > 0.0 {
                 let mut browser_ui = ui.new_child(
                     UiBuilder::new()
