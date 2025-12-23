@@ -2,6 +2,7 @@ use super::*;
 use crate::egui_app::controller::hotkeys::{HotkeyAction, HotkeyCommand};
 use crate::egui_app::state::DestructiveSelectionEdit;
 use crate::egui_app::state::FocusContext;
+use crate::egui_app::state::SampleBrowserTab;
 use crate::sample_sources::SampleTag;
 
 pub(crate) trait HotkeysActions {
@@ -103,7 +104,12 @@ impl HotkeysActions for HotkeysController<'_> {
             }
             HotkeyCommand::FocusBrowserSearch => {
                 if matches!(focus, FocusContext::SampleBrowser) {
-                    self.focus_browser_search();
+                    if matches!(self.ui.browser.active_tab, SampleBrowserTab::Map) {
+                        self.ui.browser.active_tab = SampleBrowserTab::List;
+                        self.focus_browser_list();
+                    } else {
+                        self.focus_browser_search();
+                    }
                 }
             }
             HotkeyCommand::AddFocusedToCollection => {
