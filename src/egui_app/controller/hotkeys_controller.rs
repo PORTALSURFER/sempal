@@ -105,8 +105,7 @@ impl HotkeysActions for HotkeysController<'_> {
             HotkeyCommand::FocusBrowserSearch => {
                 if matches!(focus, FocusContext::SampleBrowser) {
                     if matches!(self.ui.browser.active_tab, SampleBrowserTab::Map) {
-                        self.ui.browser.active_tab = SampleBrowserTab::List;
-                        self.focus_browser_list();
+                        self.ui.map.focus_selected_requested = true;
                     } else {
                         self.focus_browser_search();
                     }

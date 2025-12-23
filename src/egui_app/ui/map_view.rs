@@ -151,6 +151,58 @@ impl EguiApp {
             (bounds.min_x + bounds.max_x) * 0.5,
             (bounds.min_y + bounds.max_y) * 0.5,
         );
+        if self.controller.ui.map.focus_selected_requested {
+            self.controller.ui.map.focus_selected_requested = false;
+            let target_id = self
+                .controller
+                .ui
+                .map
+                .selected_sample_id
+                .clone()
+                .or_else(|| self.controller.ui.map.hovered_sample_id.clone());
+            if let Some(sample_id) = target_id {
+                let mut target_point = self
+                    .controller
+                    .ui
+                    .map
+                    .cached_points
+                    .iter()
+                    .find(|point| point.sample_id == sample_id)
+                    .map(|point| (point.x, point.y));
+                if target_point.is_none() {
+                    match self
+                        .controller
+                        .umap_point_for_sample(model_id, &umap_version, &sample_id)
+                    {
+                        Ok(point) => {
+                            target_point = point;
+                        }
+                        Err(err) => {
+                            self.controller.set_status(
+                                format!("Map focus failed: {err}"),
+                                style::StatusTone::Error,
+                            );
+                        }
+                    }
+                }
+                if let Some((x, y)) = target_point {
+                    let dx = (x - center.x) * scale;
+                    let dy = (y - center.y) * scale;
+                    self.controller.ui.map.pan = egui::vec2(-dx, -dy);
+                    self.controller.ui.map.last_query = None;
+                } else {
+                    self.controller.set_status(
+                        "Map focus failed: sample not in layout",
+                        style::StatusTone::Warning,
+                    );
+                }
+            } else {
+                self.controller.set_status(
+                    "Select a sample to focus the map",
+                    style::StatusTone::Info,
+                );
+            }
+        }
         let world_bounds =
             map_math::world_bounds_from_view(rect, center, scale, self.controller.ui.map.pan);
         if map_math::should_requery(&self.controller.ui.map.last_query, &world_bounds) {

@@ -83,6 +83,16 @@ impl EguiController {
         )
     }
 
+    pub fn umap_point_for_sample(
+        &mut self,
+        model_id: &str,
+        umap_version: &str,
+        sample_id: &str,
+    ) -> Result<Option<(f32, f32)>, String> {
+        let conn = open_library_db()?;
+        load_umap_point_for_sample(&conn, model_id, umap_version, sample_id)
+    }
+
     pub fn umap_cluster_centroids(
         &mut self,
         model_id: &str,
@@ -275,6 +285,27 @@ fn load_umap_points(
         points.push(row.map_err(|err| format!("Read layout row failed: {err}"))?);
     }
     Ok(points)
+}
+
+fn load_umap_point_for_sample(
+    conn: &Connection,
+    model_id: &str,
+    umap_version: &str,
+    sample_id: &str,
+) -> Result<Option<(f32, f32)>, String> {
+    conn.query_row(
+        "SELECT x, y
+         FROM layout_umap
+         WHERE model_id = ?1 AND umap_version = ?2 AND sample_id = ?3",
+        params![model_id, umap_version, sample_id],
+        |row| {
+            let x: f32 = row.get(0)?;
+            let y: f32 = row.get(1)?;
+            Ok((x, y))
+        },
+    )
+    .optional()
+    .map_err(|err| format!("Query t-SNE point failed: {err}"))
 }
 
 fn load_umap_cluster_centroids(
