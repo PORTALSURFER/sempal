@@ -60,10 +60,8 @@ mod tests {
     fn decode_reports_invalid_data_errors() {
         let renderer = WaveformRenderer::new(12, 12);
         let bytes = vec![0, 1, 2, 3, 4, 5];
-        let err = renderer
-            .decode_from_bytes(&bytes)
-            .expect_err("expected invalid data error");
-        assert!(matches!(err, WaveformDecodeError::Invalid { .. }));
+        let err = renderer.decode_from_bytes(&bytes);
+        assert!(matches!(err, Err(WaveformDecodeError::Invalid { .. })));
     }
 
     #[test]
