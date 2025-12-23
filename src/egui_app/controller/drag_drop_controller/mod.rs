@@ -1,6 +1,8 @@
 mod actions;
 mod delegates;
+mod drag_effects;
 mod drag_state;
+mod drag_transitions;
 mod label_formatting;
 mod path_resolution;
 
