@@ -153,25 +153,6 @@ impl EguiApp {
         if let Some((point, pos)) = hovered.as_ref() {
             let stroke_color = point_color(point, 200);
             painter.circle_stroke(*pos, 4.0, egui::Stroke::new(1.5, stroke_color));
-            if !ui.ctx().memory().is_popup_open(context_menu_id) {
-                egui::Tooltip::always_open(
-                    ui.ctx().clone(),
-                    ui.layer_id(),
-                    egui::Id::new("map_hover_tooltip"),
-                    egui::PopupAnchor::Pointer,
-                )
-                .show(|ui| {
-                    ui.label(map_state::sample_label_from_id(&point.sample_id));
-                    if self.controller.ui.map.cluster_overlay {
-                        if let Some(cluster_id) = point.cluster_id {
-                            ui.label(format!("Cluster: {cluster_id}"));
-                        } else {
-                            ui.label("Cluster: (missing)");
-                        }
-                    }
-                    ui.label("Click to audition");
-                });
-            }
         }
 
         if response.clicked() {
