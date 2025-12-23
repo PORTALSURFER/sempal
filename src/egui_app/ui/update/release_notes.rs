@@ -1,5 +1,3 @@
-use crate::egui_app::state::TriageFlagColumn;
-use crate::sample_sources::SampleTag;
 use crate::selection::SelectionEdge;
 use eframe::egui;
 
@@ -100,17 +98,6 @@ impl EguiApp {
             self.controller.expand_focused_folder();
         } else if ctrl_or_command && focus.browser && browser_has_selection {
             self.controller.move_selection_column(1);
-        } else if focus.collection_sample {
-            self.controller
-                .tag_selected_collection_sample(SampleTag::Keep);
-        } else if focus.browser && browser_has_selection {
-            let col = self.controller.ui.browser.selected.map(|t| t.column);
-            let target = if matches!(col, Some(TriageFlagColumn::Trash)) {
-                SampleTag::Neutral
-            } else {
-                SampleTag::Keep
-            };
-            self.controller.tag_selected(target);
         }
         consume_keypress(ctx, input, egui::Key::ArrowRight);
     }
@@ -132,10 +119,6 @@ impl EguiApp {
             self.controller.collapse_focused_folder();
         } else if ctrl_or_command && focus.browser && browser_has_selection {
             self.controller.move_selection_column(-1);
-        } else if focus.collection_sample {
-            self.controller.tag_selected_collection_left();
-        } else if focus.browser && browser_has_selection {
-            self.controller.tag_selected_left();
         }
         consume_keypress(ctx, input, egui::Key::ArrowLeft);
     }
