@@ -41,53 +41,49 @@ impl EguiApp {
 
     fn render_map_controls(&mut self, ui: &mut egui::Ui) -> bool {
         let mut refresh = false;
+        self.controller.ui.map.cluster_overlay = true;
         ui.horizontal(|ui| {
-            refresh |= ui
-                .checkbox(&mut self.controller.ui.map.cluster_overlay, "Clusters")
-                .changed();
-            if self.controller.ui.map.cluster_overlay {
-                ui.checkbox(
-                    &mut self.controller.ui.map.similarity_blend,
-                    "Similarity blend",
+            ui.checkbox(
+                &mut self.controller.ui.map.similarity_blend,
+                "Similarity blend",
+            );
+            if self.controller.ui.map.similarity_blend {
+                let response = ui.add(
+                    egui::Slider::new(
+                        &mut self.controller.ui.map.similarity_blend_threshold,
+                        0.01..=1.0,
+                    )
+                    .clamping(egui::SliderClamping::Always)
+                    .text("Blend sensitivity"),
                 );
-                if self.controller.ui.map.similarity_blend {
-                    let response = ui.add(
-                        egui::Slider::new(
-                            &mut self.controller.ui.map.similarity_blend_threshold,
-                            0.01..=1.0,
-                        )
-                        .clamping(egui::SliderClamping::Always)
-                        .text("Blend sensitivity"),
-                    );
-                    if response.changed() {
-                        self.controller.ui.map.similarity_blend_threshold = self
-                            .controller
-                            .ui
-                            .map
-                            .similarity_blend_threshold
-                            .clamp(0.01, 1.0);
-                    }
-                }
-                ui.label("Filter");
-                let response =
-                    ui.text_edit_singleline(&mut self.controller.ui.map.cluster_filter_input);
                 if response.changed() {
-                    self.controller.ui.map.cluster_filter = self
+                    self.controller.ui.map.similarity_blend_threshold = self
                         .controller
                         .ui
                         .map
-                        .cluster_filter_input
-                        .trim()
-                        .parse::<i32>()
-                        .ok();
+                        .similarity_blend_threshold
+                        .clamp(0.01, 1.0);
                 }
-                if ui.button("Build clusters").clicked() {
-                    let umap_version = self.controller.ui.map.umap_version.clone();
-                    self.controller.build_umap_clusters(
-                        crate::analysis::embedding::EMBEDDING_MODEL_ID,
-                        &umap_version,
-                    );
-                }
+            }
+            ui.label("Filter");
+            let response =
+                ui.text_edit_singleline(&mut self.controller.ui.map.cluster_filter_input);
+            if response.changed() {
+                self.controller.ui.map.cluster_filter = self
+                    .controller
+                    .ui
+                    .map
+                    .cluster_filter_input
+                    .trim()
+                    .parse::<i32>()
+                    .ok();
+            }
+            if ui.button("Build clusters").clicked() {
+                let umap_version = self.controller.ui.map.umap_version.clone();
+                self.controller.build_umap_clusters(
+                    crate::analysis::embedding::EMBEDDING_MODEL_ID,
+                    &umap_version,
+                );
             }
         });
         ui.horizontal(|ui| {
