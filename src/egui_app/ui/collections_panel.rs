@@ -4,6 +4,7 @@ use super::helpers::{
     InlineTextEditAction, NumberColumn, RowMarker, clamp_label_for_width, list_row_height,
     render_inline_text_edit, render_list_row,
 };
+use super::status_badges;
 use super::style;
 use super::*;
 use crate::egui_app::state::{
@@ -42,7 +43,7 @@ impl EguiApp {
                         let selected = collection.selected;
                         let mut label = format!("{} ({})", collection.name, collection.count);
                         let (text_color, indicator) = if collection.missing {
-                            (style::missing_text(), "! ")
+                            (status_badges::missing_text_color(), status_badges::missing_prefix())
                         } else if collection.export_path.is_none() {
                             (style::warning_soft_text(), "! ")
                         } else {
@@ -214,10 +215,7 @@ impl EguiApp {
                 };
                 let row_width = ui.available_width();
                 let path = sample.path.clone();
-                let mut label = format!("{} — {}", sample.source, sample.label);
-                if sample.missing {
-                    label.insert_str(0, "! ");
-                }
+                let base_label = format!("{} — {}", sample.source, sample.label);
                 let is_selected = Some(row) == selected_row;
                 let is_duplicate_hover =
                     drag_active && active_drag_path.as_ref().is_some_and(|p| p == &path);
@@ -245,12 +243,17 @@ impl EguiApp {
                             - metrics.number_gap
                             - trailing_space;
                         let number_text = format!("{}", row + 1);
-                        let text_color = if sample.missing {
-                            style::missing_text()
-                        } else {
-                            style::triage_label_color(sample.tag)
-                        };
-                        let clamped_label = clamp_label_for_width(&label, label_width);
+                        let status_label = status_badges::apply_sample_status(
+                            base_label,
+                            style::triage_label_color(sample.tag),
+                            sample.missing,
+                            None,
+                        );
+                        let text_color = status_label.text_color;
+                        let clamped_label = clamp_label_for_width(
+                            &status_label.label,
+                            label_width,
+                        );
                         let response = render_list_row(
                             ui,
                             super::helpers::ListRow {

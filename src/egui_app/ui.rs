@@ -24,6 +24,7 @@ mod sample_browser_render;
 mod sample_browser_rename;
 mod sample_menus;
 mod sources_panel;
+mod status_badges;
 pub mod style;
 mod update;
 mod waveform_view;

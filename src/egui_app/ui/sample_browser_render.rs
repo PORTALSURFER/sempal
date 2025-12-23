@@ -1,6 +1,7 @@
 use super::drag_targets;
 use super::flat_items_list::{FlatItemsListConfig, render_flat_items_list};
 use super::helpers::{NumberColumn, RowMarker, clamp_label_for_width, render_list_row};
+use super::status_badges;
 use super::style;
 use super::*;
 use crate::egui_app::state::{FocusContext, SampleBrowserActionPrompt, SampleBrowserTab};
@@ -98,24 +99,25 @@ impl EguiApp {
                     .map(|marker| marker.width + metrics.padding * 0.5)
                     .unwrap_or(0.0);
 
-                let mut label = self
+                let mut base_label = self
                     .controller
                     .wav_label(entry_index)
                     .unwrap_or_else(|| view_model::sample_display_label(&path));
+                if is_loaded {
+                    base_label.push_str(" • loaded");
+                }
                 let analysis_failure = self
                     .controller
                     .analysis_failure_for_entry(entry_index)
                     .map(str::to_string);
-                if analysis_failure.is_some() {
-                    label.push_str(" • FAILED");
-                }
-                if is_loaded {
-                    label.push_str(" • loaded");
-                }
-                if missing {
-                    label = format!("! {label}");
-                }
-                let display_label = label.clone();
+                let base_color = style::triage_label_color(tag);
+                let status_label = status_badges::apply_sample_status(
+                    base_label,
+                    base_color,
+                    missing,
+                    analysis_failure.as_deref(),
+                );
+                let display_label = status_label.label.clone();
 
                 let row_label_width = row_width
                     - metrics.padding
@@ -125,7 +127,7 @@ impl EguiApp {
                 let row_label = if rename_match {
                     String::new()
                 } else {
-                    clamp_label_for_width(&label, row_label_width)
+                    clamp_label_for_width(&status_label.label, row_label_width)
                 };
                 let bg = if drag_active
                     && pointer_pos
@@ -142,13 +144,7 @@ impl EguiApp {
                     None
                 };
                 let number_text = format!("{}", row + 1);
-                let text_color = if missing {
-                    style::missing_text()
-                } else if analysis_failure.is_some() {
-                    style::destructive_text()
-                } else {
-                    style::triage_label_color(tag)
-                };
+                let text_color = status_label.text_color;
 
                 ui.push_id(&path, |ui| {
                     let sense = if rename_match {
@@ -173,9 +169,8 @@ impl EguiApp {
                             marker: triage_marker,
                         },
                     );
-                    let response = if let Some(reason) = analysis_failure.as_deref() {
-                        let reason = reason.lines().next().unwrap_or(reason);
-                        response.on_hover_text(format!("Analysis failed: {reason}"))
+                    let response = if let Some(hover) = status_label.hover_text.as_deref() {
+                        response.on_hover_text(hover)
                     } else {
                         response
                     };
