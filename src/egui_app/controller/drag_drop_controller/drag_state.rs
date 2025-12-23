@@ -25,45 +25,6 @@ impl std::ops::DerefMut for DragDropController<'_> {
 }
 
 impl DragDropController<'_> {
-    fn selection_clip_root_for_collection(
-        &self,
-        collection_id: &CollectionId,
-    ) -> Result<PathBuf, String> {
-        let preferred = self
-            .library
-            .collections
-            .iter()
-            .find(|c| &c.id == collection_id)
-            .and_then(|collection| {
-                super::super::collection_export::resolved_export_dir(
-                    collection,
-                    self.settings.collection_export_root.as_deref(),
-                )
-            });
-        if let Some(path) = preferred {
-            if path.exists() && !path.is_dir() {
-                return Err(format!(
-                    "Collection export path is not a directory: {}",
-                    path.display()
-                ));
-            }
-            std::fs::create_dir_all(&path).map_err(|err| {
-                format!(
-                    "Failed to create collection export path {}: {err}",
-                    path.display()
-                )
-            })?;
-            return Ok(path);
-        }
-        let fallback = crate::app_dirs::app_root_dir()
-            .map_err(|err| err.to_string())?
-            .join("collection_clips")
-            .join(collection_id.as_str());
-        std::fs::create_dir_all(&fallback)
-            .map_err(|err| format!("Failed to create collection clip folder: {err}"))?;
-        Ok(fallback)
-    }
-
     pub(super) fn reset_drag(&mut self) {
         self.ui.drag.payload = None;
         self.ui.drag.label.clear();
@@ -84,20 +45,6 @@ impl DragDropController<'_> {
         crate::external_drag::start_file_drag(hwnd, paths)
     }
 
-    #[cfg(target_os = "windows")]
-    pub(super) fn sample_absolute_path(
-        &self,
-        source_id: &SourceId,
-        relative_path: &Path,
-    ) -> PathBuf {
-        self.library
-            .sources
-            .iter()
-            .find(|s| &s.id == source_id)
-            .map(|source| source.root.join(relative_path))
-            .unwrap_or_else(|| relative_path.to_path_buf())
-    }
-
     pub(super) fn begin_drag(&mut self, payload: DragPayload, label: String, pos: Pos2) {
         self.ui.drag.payload = Some(payload);
         self.ui.drag.label = label;
@@ -108,55 +55,6 @@ impl DragDropController<'_> {
         self.ui.drag.external_arm_at = None;
         self.ui.drag.pointer_left_window = false;
         self.ui.drag.pending_os_drag = None;
-    }
-
-    pub(super) fn selection_drag_label(
-        &self,
-        audio: &LoadedAudio,
-        bounds: SelectionRange,
-    ) -> String {
-        let name = audio
-            .relative_path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("Selection");
-        let seconds = (audio.duration_seconds * bounds.width()).max(0.0);
-        format!("{name} ({seconds:.2}s)")
-    }
-
-    #[cfg(target_os = "windows")]
-    pub(super) fn export_selection_for_drag(
-        &mut self,
-        bounds: SelectionRange,
-    ) -> Result<(PathBuf, String), String> {
-        let audio = self
-            .sample_view
-            .wav
-            .loaded_audio
-            .as_ref()
-            .ok_or_else(|| "Load a sample before dragging a selection".to_string())?;
-        let clip = self.selection_audio(&audio.source_id, &audio.relative_path)?;
-        let entry = self.export_selection_clip(
-            &clip.source_id,
-            &clip.relative_path,
-            bounds,
-            None,
-            true,
-            true,
-        )?;
-        let source = self
-            .library
-            .sources
-            .iter()
-            .find(|s| s.id == clip.source_id)
-            .cloned()
-            .ok_or_else(|| "Source not available for selection export".to_string())?;
-        let absolute = source.root.join(&entry.relative_path);
-        let label = format!(
-            "Drag {} to an external target",
-            entry.relative_path.display()
-        );
-        Ok((absolute, label))
     }
 
     pub(super) fn handle_sample_drop(

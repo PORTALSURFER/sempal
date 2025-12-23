@@ -1,9 +1,11 @@
 mod actions;
 mod delegates;
-mod helpers;
+mod drag_state;
+mod label_formatting;
+mod path_resolution;
 
 pub(crate) use actions::DragDropActions;
-pub(crate) use helpers::DragDropController;
+pub(crate) use drag_state::DragDropController;
 
 use super::*;
 use crate::egui_app::controller::collection_items_helpers::file_metadata;
