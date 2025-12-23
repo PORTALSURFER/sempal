@@ -5,7 +5,7 @@ use super::super::style;
 use super::super::EguiApp;
 
 impl EguiApp {
-    pub(super) fn render_status(&mut self, ctx: &egui::Context) {
+    pub(crate) fn render_status(&mut self, ctx: &egui::Context) {
         self.log_viewport_info(ctx);
         let palette = style::palette();
         egui::TopBottomPanel::bottom("status_bar")
