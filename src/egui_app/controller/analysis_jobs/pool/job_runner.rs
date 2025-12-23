@@ -1,4 +1,4 @@
-use super::db;
+use crate::egui_app::controller::analysis_jobs::db;
 use rusqlite::OptionalExtension;
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;

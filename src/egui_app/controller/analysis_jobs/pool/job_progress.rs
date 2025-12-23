@@ -1,5 +1,6 @@
-use super::db;
-use super::types::{AnalysisJobMessage, AnalysisProgress};
+use crate::egui_app::controller::analysis_jobs::db;
+use crate::egui_app::controller::analysis_jobs::types::{AnalysisJobMessage, AnalysisProgress};
+use crate::egui_app::controller::jobs::JobMessage;
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
@@ -10,7 +11,7 @@ use std::time::Duration;
 
 #[cfg_attr(test, allow(dead_code))]
 pub(super) fn spawn_progress_poller(
-    tx: Sender<super::super::jobs::JobMessage>,
+    tx: Sender<JobMessage>,
     cancel: Arc<AtomicBool>,
     shutdown: Arc<AtomicBool>,
 ) -> JoinHandle<()> {
@@ -41,7 +42,7 @@ pub(super) fn spawn_progress_poller(
             };
             if last != Some(progress) {
                 last = Some(progress);
-                let _ = tx.send(super::super::jobs::JobMessage::Analysis(
+                let _ = tx.send(JobMessage::Analysis(
                     AnalysisJobMessage::Progress(progress),
                 ));
             }

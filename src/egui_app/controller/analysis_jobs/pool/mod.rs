@@ -44,7 +44,7 @@ impl AnalysisWorkerPool {
 
     pub(in crate::egui_app::controller) fn start(
         &mut self,
-        message_tx: Sender<super::super::jobs::JobMessage>,
+        message_tx: Sender<crate::egui_app::controller::jobs::JobMessage>,
     ) {
         let _ = &message_tx;
         if !self.threads.is_empty() {

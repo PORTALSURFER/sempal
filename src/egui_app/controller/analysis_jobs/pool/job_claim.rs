@@ -1,6 +1,7 @@
-use super::db;
+use crate::egui_app::controller::analysis_jobs::db;
+use crate::egui_app::controller::analysis_jobs::types::AnalysisJobMessage;
+use crate::egui_app::controller::jobs::JobMessage;
 use super::job_runner::run_job;
-use super::types::AnalysisJobMessage;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::{
     Arc,
@@ -33,7 +34,7 @@ pub(super) fn worker_count_with_override(override_count: u32) -> usize {
 #[cfg_attr(test, allow(dead_code))]
 pub(super) fn spawn_worker(
     _worker_index: usize,
-    tx: Sender<super::super::jobs::JobMessage>,
+    tx: Sender<JobMessage>,
     cancel: Arc<AtomicBool>,
     shutdown: Arc<AtomicBool>,
     max_duration_bits: Arc<AtomicU32>,
@@ -83,7 +84,7 @@ pub(super) fn spawn_worker(
                 }
             }
             if let Ok(progress) = db::current_progress(&conn) {
-                let _ = tx.send(super::super::jobs::JobMessage::Analysis(
+                let _ = tx.send(JobMessage::Analysis(
                     AnalysisJobMessage::Progress(progress),
                 ));
             }

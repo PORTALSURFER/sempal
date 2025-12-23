@@ -1,4 +1,4 @@
-use super::db;
+use crate::egui_app::controller::analysis_jobs::db;
 
 #[cfg_attr(test, allow(dead_code))]
 pub(super) fn reset_running_jobs() -> Result<(), String> {
