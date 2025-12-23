@@ -92,6 +92,13 @@ impl DragDropController<'_> {
             "handle_waveform_sample_drop_to_browser source={} path={}",
             source_id, relative_path.display()
         );
+        self.set_status(
+            format!(
+                "Waveform drop to browser handled for {}",
+                relative_path.display()
+            ),
+            StatusTone::Info,
+        );
         let Some(source) = self
             .library
             .sources
