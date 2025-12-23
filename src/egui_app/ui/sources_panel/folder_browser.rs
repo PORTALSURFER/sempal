@@ -1,0 +1,380 @@
+use super::helpers::{list_row_height, render_list_row};
+use super::style;
+use super::utils::{folder_row_label, sample_housing_folders};
+use super::EguiApp;
+use crate::egui_app::state::{DragSource, DragTarget, FocusContext};
+use eframe::egui::{self, Align2, Layout, RichText, StrokeKind, TextStyle, Ui};
+use std::collections::HashSet;
+use std::path::PathBuf;
+
+impl EguiApp {
+    pub(super) fn render_folder_browser(
+        &mut self,
+        ui: &mut Ui,
+        height: f32,
+        folder_drop_active: bool,
+        pointer_pos: Option<egui::Pos2>,
+    ) {
+        let mut sample_parent_folders = HashSet::<PathBuf>::new();
+        for path in self.controller.ui.browser.selected_paths.iter() {
+            sample_parent_folders.extend(sample_housing_folders(path));
+        }
+        if let Some(selected_row) = self.controller.ui.browser.selected_visible {
+            let visible_indices = self.controller.visible_browser_indices();
+            if let Some(entry_index) = visible_indices.get(selected_row).copied()
+                && let Some(entry) = self.controller.wav_entry(entry_index)
+            {
+                sample_parent_folders.extend(sample_housing_folders(&entry.relative_path));
+            }
+        }
+
+        let palette = style::palette();
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Folders").color(palette.text_primary));
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                let mut query = self.controller.ui.sources.folders.search_query.clone();
+                let response = ui.add(
+                    egui::TextEdit::singleline(&mut query)
+                        .hint_text("Search folders (f)...")
+                        .desired_width(180.0),
+                );
+                if self.controller.ui.sources.folders.search_focus_requested {
+                    response.request_focus();
+                    self.controller.ui.sources.folders.search_focus_requested = false;
+                }
+                if response.changed() {
+                    self.controller.set_folder_search(query);
+                }
+            });
+        });
+        let frame = style::section_frame();
+        let focused = matches!(
+            self.controller.ui.focus.context,
+            FocusContext::SourceFolders
+        );
+        let scroll_to = self.controller.ui.sources.folders.scroll_to;
+        let mut hovered_folder = None;
+        let rows = self.controller.ui.sources.folders.rows.clone();
+        let root_row = rows.first().filter(|row| row.is_root).cloned();
+        let has_folder_rows = rows.iter().any(|row| !row.is_root);
+        let mut inline_parent = self
+            .controller
+            .ui
+            .sources
+            .folders
+            .new_folder
+            .as_ref()
+            .map(|state| state.parent.clone());
+        if let Some(parent) = inline_parent.clone() {
+            if !parent.as_os_str().is_empty() && !rows.iter().any(|row| row.path == parent) {
+                self.controller.cancel_new_folder_creation();
+                inline_parent = None;
+            }
+        }
+        let inline_parent_for_rows = inline_parent.clone();
+        let frame_response = frame.show(ui, |ui| {
+            ui.set_min_height(height);
+            ui.set_max_height(height);
+            let row_height = list_row_height(ui);
+            let active_folder_target = match &self.controller.ui.drag.active_target {
+                DragTarget::FolderPanel { folder } => folder
+                    .clone()
+                    .or_else(|| self.controller.ui.drag.last_folder_target.clone()),
+                _ => None,
+            };
+            if let Some(root_row) = root_row.clone() {
+                let row_width = ui.available_width();
+                let is_focused = self.controller.ui.sources.folders.focused == Some(0);
+                let bg = if is_focused {
+                    Some(style::row_selected_fill())
+                } else {
+                    None
+                };
+                let label = folder_row_label(&root_row, row_width, ui);
+                let response = render_list_row(
+                    ui,
+                    super::helpers::ListRow {
+                        label: &label,
+                        row_width,
+                        row_height,
+                        bg,
+                        text_color: style::high_contrast_text(),
+                        sense: egui::Sense::click(),
+                        number: None,
+                        marker: None,
+                    },
+                );
+                if sample_parent_folders.contains(&root_row.path) {
+                    paint_right_side_dot(ui, response.rect);
+                }
+                if scroll_to == Some(0) {
+                    ui.scroll_to_rect(response.rect, None);
+                }
+                if folder_drop_active {
+                    if let Some(pointer) = pointer_pos
+                        && response.rect.contains(pointer)
+                    {
+                        hovered_folder = Some(root_row.path.clone());
+                        let shift_down = ui.input(|i| i.modifiers.shift);
+                        self.controller.update_active_drag(
+                            pointer,
+                            DragSource::Folders,
+                            DragTarget::FolderPanel {
+                                folder: Some(root_row.path.clone()),
+                            },
+                            shift_down,
+                        );
+                    }
+                    if hovered_folder
+                        .as_ref()
+                        .is_some_and(|path| path == &root_row.path)
+                        || active_folder_target
+                            .as_ref()
+                            .is_some_and(|path| path == &root_row.path)
+                    {
+                        ui.painter().rect_stroke(
+                            response.rect.expand(2.0),
+                            0.0,
+                            style::drag_target_stroke(),
+                            StrokeKind::Inside,
+                        );
+                    }
+                }
+                if response.clicked() {
+                    self.controller.focus_folder_row(0);
+                    self.controller.clear_folder_selection();
+                } else if response.secondary_clicked() {
+                    self.controller.focus_folder_row(0);
+                }
+                self.root_row_menu(&response);
+                if is_focused {
+                    ui.painter().rect_stroke(
+                        response.rect,
+                        0.0,
+                        style::focused_row_stroke(),
+                        StrokeKind::Inside,
+                    );
+                }
+                ui.add_space(2.0);
+            }
+            let inline_parent = inline_parent_for_rows.clone();
+            let scroll = egui::ScrollArea::vertical()
+                .id_salt("folder_browser_scroll")
+                .max_height(height);
+            scroll.show(ui, |ui| {
+                let mut inline_rendered = false;
+                let inline_is_root = inline_parent
+                    .as_ref()
+                    .is_some_and(|path| path.as_os_str().is_empty());
+                if inline_is_root {
+                    inline_rendered = true;
+                    let row_width = ui.available_width();
+                    self.render_inline_new_folder_row(ui, 0, row_width, row_height);
+                }
+                if !has_folder_rows {
+                    if inline_is_root {
+                        return;
+                    }
+                    let text = if self.controller.current_source().is_some() {
+                        "No folders detected for this source"
+                    } else {
+                        "Add a source to browse folders"
+                    };
+                    let (rect, _) = ui.allocate_exact_size(
+                        egui::vec2(ui.available_width(), row_height),
+                        egui::Sense::hover(),
+                    );
+                    ui.painter().text(
+                        rect.left_center(),
+                        Align2::LEFT_CENTER,
+                        text,
+                        TextStyle::Body.resolve(ui.style()),
+                        palette.text_muted,
+                    );
+                    return;
+                }
+                let focused_row = self.controller.ui.sources.folders.focused;
+                let active_folder_target = match &self.controller.ui.drag.active_target {
+                    DragTarget::FolderPanel { folder } => folder
+                        .clone()
+                        .or_else(|| self.controller.ui.drag.last_folder_target.clone()),
+                    _ => None,
+                };
+                for (index, row) in rows.iter().enumerate() {
+                    if row.is_root {
+                        continue;
+                    }
+                    let is_focused = Some(index) == focused_row;
+                    let rename_match = matches!(
+                        self.controller.ui.sources.folders.pending_action,
+                        Some(crate::egui_app::state::FolderActionPrompt::Rename {
+                            ref target,
+                            ..
+                        }) if target == &row.path
+                    );
+                    let bg = if row.selected || is_focused {
+                        Some(style::row_selected_fill())
+                    } else {
+                        None
+                    };
+                    let row_width = ui.available_width();
+                    let label = if rename_match {
+                        String::new()
+                    } else {
+                        folder_row_label(row, row_width, ui)
+                    };
+                    let sense = if rename_match {
+                        egui::Sense::hover()
+                    } else {
+                        egui::Sense::click()
+                    };
+                    let response = render_list_row(
+                        ui,
+                        super::helpers::ListRow {
+                            label: &label,
+                            row_width,
+                            row_height,
+                            bg,
+                            text_color: style::high_contrast_text(),
+                            sense,
+                            number: None,
+                            marker: None,
+                        },
+                    );
+                    if sample_parent_folders.contains(&row.path) {
+                        paint_right_side_dot(ui, response.rect);
+                    }
+                    if Some(index) == scroll_to {
+                        ui.scroll_to_rect(response.rect, None);
+                    }
+                    if row.selected {
+                        let marker_width = 4.0;
+                        let marker_rect = egui::Rect::from_min_max(
+                            response.rect.left_top(),
+                            response.rect.left_top() + egui::vec2(marker_width, row_height),
+                        );
+                        ui.painter()
+                            .rect_filled(marker_rect, 0.0, style::selection_marker_fill());
+                    }
+                    if folder_drop_active {
+                        if let Some(pointer) = pointer_pos
+                            && response.rect.contains(pointer)
+                        {
+                            hovered_folder = Some(row.path.clone());
+                            let shift_down = ui.input(|i| i.modifiers.shift);
+                            self.controller.update_active_drag(
+                                pointer,
+                                DragSource::Folders,
+                                DragTarget::FolderPanel {
+                                    folder: Some(row.path.clone()),
+                                },
+                                shift_down,
+                            );
+                        }
+                        if hovered_folder
+                            .as_ref()
+                            .is_some_and(|path| path == &row.path)
+                            || active_folder_target
+                                .as_ref()
+                                .is_some_and(|path| path == &row.path)
+                        {
+                            ui.painter().rect_stroke(
+                                response.rect.expand(2.0),
+                                0.0,
+                                style::drag_target_stroke(),
+                                StrokeKind::Inside,
+                            );
+                        }
+                    }
+                    if rename_match {
+                        self.render_folder_rename_editor(ui, &response, row);
+                    } else if response.clicked() {
+                        let pointer = response.interact_pointer_pos();
+                        let hit_expand = row.has_children
+                            && pointer.is_some_and(|pos| {
+                                let padding = ui.spacing().button_padding.x;
+                                let indent = row.depth as f32 * 12.0;
+                                pos.x <= response.rect.left() + padding + indent + 14.0
+                            });
+                        if hit_expand {
+                            self.controller.toggle_folder_expanded(index);
+                        } else {
+                            let modifiers = ui.input(|i| i.modifiers);
+                            if modifiers.shift {
+                                self.controller.select_folder_range(index);
+                            } else if modifiers.command || modifiers.ctrl {
+                                self.controller.toggle_folder_row_selection(index);
+                            } else {
+                                self.controller.replace_folder_selection(index);
+                            }
+                        }
+                    } else if response.secondary_clicked() {
+                        self.controller.focus_folder_row(index);
+                    }
+                    self.folder_row_menu(&response, index, row);
+                    if is_focused {
+                        ui.painter().rect_stroke(
+                            response.rect,
+                            0.0,
+                            style::focused_row_stroke(),
+                            StrokeKind::Inside,
+                        );
+                    }
+                    if let Some(parent) = inline_parent.as_ref() {
+                        if parent == &row.path && !inline_rendered {
+                            let row_width = ui.available_width();
+                            self.render_inline_new_folder_row(
+                                ui,
+                                row.depth + 1,
+                                row_width,
+                                row_height,
+                            );
+                            inline_rendered = true;
+                        }
+                    }
+                }
+                if folder_drop_active && hovered_folder.is_none() {
+                    let pointer = pointer_pos.unwrap_or_default();
+                    let shift_down = ui.input(|i| i.modifiers.shift);
+                    self.controller.update_active_drag(
+                        pointer,
+                        DragSource::Folders,
+                        DragTarget::FolderPanel { folder: None },
+                        shift_down,
+                    );
+                }
+            });
+        });
+        if folder_drop_active && let Some(pointer) = pointer_pos {
+            if frame_response.response.rect.contains(pointer) {
+                if hovered_folder.is_none() {
+                    let shift_down = ui.input(|i| i.modifiers.shift);
+                    self.controller.update_active_drag(
+                        pointer,
+                        DragSource::Folders,
+                        DragTarget::FolderPanel { folder: None },
+                        shift_down,
+                    );
+                }
+            } else {
+                let shift_down = ui.input(|i| i.modifiers.shift);
+                self.controller.update_active_drag(
+                    pointer,
+                    DragSource::Folders,
+                    DragTarget::None,
+                    shift_down,
+                );
+            }
+        }
+        style::paint_section_border(ui, frame_response.response.rect, focused);
+        self.controller.ui.sources.folders.scroll_to = None;
+    }
+}
+
+fn paint_right_side_dot(ui: &mut Ui, rect: egui::Rect) {
+    let padding = ui.spacing().button_padding.x;
+    let radius = 3.0;
+    let center = egui::pos2(rect.right() - padding - radius, rect.center().y);
+    ui.painter()
+        .circle_filled(center, radius, egui::Color32::WHITE);
+}
