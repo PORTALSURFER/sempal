@@ -285,6 +285,13 @@ fn run_similarity_finalize(
 ) -> Result<jobs::SimilarityPrepOutcome, String> {
     let mut conn = open_library_db_for_similarity()?;
     let sample_id_prefix = format!("{}::%", source_id.as_str());
+    crate::analysis::umap::build_umap_layout(
+        &mut conn,
+        crate::analysis::embedding::EMBEDDING_MODEL_ID,
+        umap_version,
+        0,
+        0.95,
+    )?;
     let cluster_stats = crate::analysis::hdbscan::build_hdbscan_clusters_for_sample_id_prefix(
         &mut conn,
         crate::analysis::embedding::EMBEDDING_MODEL_ID,
@@ -298,13 +305,6 @@ fn run_similarity_finalize(
         },
     )?;
     crate::analysis::rebuild_ann_index(&conn)?;
-    crate::analysis::umap::build_umap_layout(
-        &mut conn,
-        crate::analysis::embedding::EMBEDDING_MODEL_ID,
-        umap_version,
-        0,
-        0.95,
-    )?;
     Ok(jobs::SimilarityPrepOutcome {
         cluster_stats,
         umap_version: umap_version.to_string(),
