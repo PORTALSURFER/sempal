@@ -28,6 +28,7 @@ mod loading;
 mod os_explorer;
 mod playback;
 mod progress;
+mod progress_messages;
 mod map_view;
 mod missing_samples;
 mod scans;

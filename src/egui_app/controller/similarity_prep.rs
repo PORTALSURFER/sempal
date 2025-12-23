@@ -68,12 +68,7 @@ impl EguiController {
             (state.source_id.clone(), state.umap_version.clone())
         };
         self.set_status_message(StatusMessage::FinalizingSimilarityPrep);
-        self.show_status_progress(
-            ProgressTaskKind::Analysis,
-            "Finalizing similarity prep",
-            0,
-            true,
-        );
+        self.show_similarity_finalize_progress();
         self.start_similarity_finalize(source_id, umap_version);
     }
 
@@ -210,24 +205,14 @@ impl EguiController {
                 if self.ui.progress.visible {
                     return;
                 }
-                self.show_status_progress(
-                    ProgressTaskKind::Analysis,
-                    "Preparing similarity search",
-                    0,
-                    false,
-                );
+                self.show_similarity_prep_progress(0, false);
             }
             SimilarityPrepStage::AwaitEmbeddings => {
                 let progress = match analysis_jobs::current_progress() {
                     Ok(progress) => progress,
                     Err(_) => {
                         if !self.ui.progress.visible {
-                            self.show_status_progress(
-                                ProgressTaskKind::Analysis,
-                                "Preparing similarity search",
-                                0,
-                                false,
-                            );
+                            self.show_similarity_prep_progress(0, false);
                         }
                         return;
                     }
@@ -236,16 +221,7 @@ impl EguiController {
                     self.handle_similarity_analysis_progress(&progress);
                     return;
                 }
-                if !self.ui.progress.visible
-                    || self.ui.progress.task != Some(ProgressTaskKind::Analysis)
-                {
-                    self.show_status_progress(
-                        ProgressTaskKind::Analysis,
-                        "Preparing similarity search",
-                        progress.total(),
-                        true,
-                    );
-                }
+                self.ensure_similarity_prep_progress(progress.total(), true);
                 self.ui.progress.total = progress.total();
                 self.ui.progress.completed = progress.completed();
                 let jobs_completed = progress.completed();
@@ -261,16 +237,7 @@ impl EguiController {
                 self.ui.progress.detail = Some(detail);
             }
             SimilarityPrepStage::Finalizing => {
-                if !self.ui.progress.visible
-                    || self.ui.progress.task != Some(ProgressTaskKind::Analysis)
-                {
-                    self.show_status_progress(
-                        ProgressTaskKind::Analysis,
-                        "Finalizing similarity prep",
-                        0,
-                        true,
-                    );
-                }
+                self.ensure_similarity_finalize_progress();
             }
         }
     }
