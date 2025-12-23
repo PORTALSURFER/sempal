@@ -32,4 +32,4 @@ pub(super) fn default_decode_cache() -> Mutex<cache::DecodeCache> {
     Mutex::new(cache::DecodeCache::new(DEFAULT_DECODE_CACHE_LIMIT))
 }
 
-pub(super) use cache::DecodeCache;
+pub(crate) use cache::DecodeCache;

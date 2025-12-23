@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use crate::waveform::DecodedWaveform;
 
-pub(super) struct DecodeCache {
+pub(crate) struct DecodeCache {
     entries: HashMap<String, Arc<DecodedWaveform>>,
     order: VecDeque<String>,
     max_entries: usize,

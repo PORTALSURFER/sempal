@@ -1,7 +1,5 @@
 use std::path::PathBuf;
 
-use rusqlite::params;
-
 use super::{SourceDatabase, SourceDbError, WavEntry};
 use super::util::map_sql_error;
 
