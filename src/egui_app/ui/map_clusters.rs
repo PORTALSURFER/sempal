@@ -78,14 +78,30 @@ pub(crate) fn distance_shaded_cluster_color(
         return palette.accent_mint;
     };
     if map_diagonal <= 0.0 {
-        return cluster_color(cluster_id, centroids, bounds, palette, alpha);
+        return blend_colors(
+            cluster_color(cluster_id, centroids, bounds, palette, alpha),
+            point_position_color(point.x, point.y, bounds, palette, alpha),
+            0.65,
+            0.35,
+        );
     }
     let Some(primary) = centroids.get(&cluster_id) else {
-        return cluster_color(cluster_id, centroids, bounds, palette, alpha);
+        return blend_colors(
+            cluster_color(cluster_id, centroids, bounds, palette, alpha),
+            point_position_color(point.x, point.y, bounds, palette, alpha),
+            0.65,
+            0.35,
+        );
     };
     let dist = distance(point.x, point.y, primary.x, primary.y);
-    shade_by_distance(
+    let base = blend_colors(
         cluster_color(cluster_id, centroids, bounds, palette, alpha),
+        point_position_color(point.x, point.y, bounds, palette, alpha),
+        0.65,
+        0.35,
+    );
+    shade_by_distance(
+        base,
         dist,
         map_diagonal,
     )
@@ -161,16 +177,22 @@ pub(crate) fn blended_cluster_color(
     let mut blended: Option<(egui::Color32, f32)> = None;
     for (id, dist) in nearby {
         let weight = (-dist / threshold).exp();
-        let color = cluster_color(id, centroids, bounds, palette, alpha);
+        let color = cluster_id_color(id, palette, alpha);
         blended = Some(match blended {
             None => (color, weight),
             Some((acc, acc_w)) => (blend_colors(acc, color, acc_w, weight), acc_w + weight),
         });
     }
     let color = blended.map(|(c, _)| c).unwrap_or_else(|| {
-        cluster_color(cluster_id, centroids, bounds, palette, alpha)
+        cluster_id_color(cluster_id, palette, alpha)
     });
-    shade_by_distance(color, primary_dist, map_diagonal)
+    let base = blend_colors(
+        color,
+        point_position_color(point.x, point.y, bounds, palette, alpha),
+        0.65,
+        0.35,
+    );
+    shade_by_distance(base, primary_dist, map_diagonal)
 }
 
 pub(crate) fn filter_points(
@@ -232,6 +254,31 @@ fn position_based_color(
     let hue = angle * 360.0;
     let saturation = 0.35 + 0.25 * radius;
     let value = 0.70 + 0.20 * (1.0 - radius);
+    let (r, g, b) = hsv_to_rgb(hue, saturation, value);
+    egui::Color32::from_rgba_unmultiplied(r, g, b, alpha)
+}
+
+fn point_position_color(
+    x: f32,
+    y: f32,
+    bounds: &MapBounds,
+    palette: &style::Palette,
+    alpha: u8,
+) -> egui::Color32 {
+    let width = (bounds.max_x - bounds.min_x).abs();
+    let height = (bounds.max_y - bounds.min_y).abs();
+    if width <= f32::EPSILON || height <= f32::EPSILON {
+        return palette.accent_mint;
+    }
+    let fx = ((x - bounds.min_x) / width).clamp(0.0, 1.0);
+    let fy = ((y - bounds.min_y) / height).clamp(0.0, 1.0);
+    let dx = fx - 0.5;
+    let dy = fy - 0.5;
+    let angle = (dy.atan2(dx) + PI) / (2.0 * PI);
+    let radius = (dx * dx + dy * dy).sqrt().clamp(0.0, 1.0);
+    let hue = angle * 360.0;
+    let saturation = 0.45 + 0.35 * radius;
+    let value = 0.78 + 0.18 * (1.0 - radius);
     let (r, g, b) = hsv_to_rgb(hue, saturation, value);
     egui::Color32::from_rgba_unmultiplied(r, g, b, alpha)
 }
