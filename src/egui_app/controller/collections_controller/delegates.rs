@@ -32,6 +32,49 @@ impl EguiController {
             .rename_collection(collection_id, new_name);
     }
 
+    /// Begin renaming the focused collection in the list.
+    pub fn start_collection_rename(&mut self) {
+        let Some(collection) = self.current_collection() else {
+            self.set_status("Select a collection to rename it", StatusTone::Info);
+            return;
+        };
+        self.focus_collections_list_context();
+        self.ui.collections.pending_action = Some(
+            crate::egui_app::state::CollectionActionPrompt::Rename {
+                target: collection.id.clone(),
+                name: collection.name.clone(),
+            },
+        );
+        self.ui.collections.rename_focus_requested = true;
+    }
+
+    /// Cancel a pending collection rename.
+    pub fn cancel_collection_rename(&mut self) {
+        if matches!(
+            self.ui.collections.pending_action,
+            Some(crate::egui_app::state::CollectionActionPrompt::Rename { .. })
+        ) {
+            self.ui.collections.pending_action = None;
+            self.ui.collections.rename_focus_requested = false;
+        }
+    }
+
+    /// Apply a pending inline rename for the collection list.
+    pub fn apply_pending_collection_rename(&mut self) {
+        let action = self.ui.collections.pending_action.clone();
+        if let Some(crate::egui_app::state::CollectionActionPrompt::Rename { target, name }) =
+            action
+        {
+            let trimmed = name.trim();
+            if trimmed.is_empty() {
+                self.set_status("Collection name cannot be empty", StatusTone::Error);
+                return;
+            }
+            self.rename_collection(&target, trimmed.to_string());
+            self.cancel_collection_rename();
+        }
+    }
+
     /// Add a sample from the current source to a collection.
     pub fn add_sample_to_collection(
         &mut self,

@@ -67,6 +67,13 @@ pub(super) const HOTKEY_ACTIONS: &[HotkeyAction] = &[
         command: HotkeyCommand::RenameFocusedSample,
     },
     HotkeyAction {
+        id: "rename-collection",
+        label: "Rename collection",
+        gesture: HotkeyGesture::new(Key::R),
+        scope: HotkeyScope::Focus(FocusContext::CollectionsList),
+        command: HotkeyCommand::RenameFocusedCollection,
+    },
+    HotkeyAction {
         id: "new-folder",
         label: "New folder",
         gesture: HotkeyGesture::new(Key::N),

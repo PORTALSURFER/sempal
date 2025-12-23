@@ -90,6 +90,25 @@ fn renaming_collection_updates_export_folder() -> Result<(), String> {
 }
 
 #[test]
+fn start_collection_rename_sets_pending_action() {
+    let renderer = WaveformRenderer::new(10, 10);
+    let mut controller = EguiController::new(renderer, None);
+    let collection = Collection::new("Rename Me");
+    let collection_id = collection.id.clone();
+    controller.library.collections.push(collection);
+    controller.selection_state.ctx.selected_collection = Some(collection_id.clone());
+
+    controller.start_collection_rename();
+
+    assert!(matches!(
+        controller.ui.collections.pending_action,
+        Some(crate::egui_app::state::CollectionActionPrompt::Rename { ref target, .. })
+            if target == &collection_id
+    ));
+    assert!(controller.ui.collections.rename_focus_requested);
+}
+
+#[test]
 fn browser_rename_updates_collections_and_lookup() {
     let temp = tempdir().unwrap();
     let root = temp.path().join("source");

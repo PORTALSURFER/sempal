@@ -92,6 +92,11 @@ impl HotkeysActions for HotkeysController<'_> {
                     self.start_browser_rename();
                 }
             }
+            HotkeyCommand::RenameFocusedCollection => {
+                if matches!(focus, FocusContext::CollectionsList) {
+                    self.start_collection_rename();
+                }
+            }
             HotkeyCommand::CreateFolder => {
                 if matches!(focus, FocusContext::SourceFolders) {
                     self.start_new_folder();

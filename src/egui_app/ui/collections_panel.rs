@@ -1,11 +1,13 @@
 use super::flat_items_list::{FlatItemsListConfig, render_flat_items_list};
 use super::helpers::{
-    NumberColumn, RowMarker, clamp_label_for_width, list_row_height, render_list_row,
+    InlineTextEditAction, NumberColumn, RowMarker, clamp_label_for_width, list_row_height,
+    render_inline_text_edit, render_list_row,
 };
 use super::style;
 use super::*;
 use crate::egui_app::state::{
-    CollectionRowView, CollectionSampleView, DragPayload, DragSource, DragTarget, FocusContext,
+    CollectionActionPrompt, CollectionRowView, CollectionSampleView, DragPayload, DragSource,
+    DragTarget, FocusContext,
 };
 use crate::egui_app::view_model;
 use eframe::egui::{self, RichText, Stroke, StrokeKind, Ui};
@@ -50,10 +52,19 @@ impl EguiApp {
                         if !indicator.is_empty() {
                             label.insert_str(0, indicator);
                         }
+                        let rename_match = matches!(
+                            self.controller.ui.collections.pending_action,
+                            Some(CollectionActionPrompt::Rename { ref target, .. })
+                                if target == &collection.id
+                        );
                         ui.push_id(&collection.id, |ui| {
                             let row_width = ui.available_width();
                             let padding = ui.spacing().button_padding.x * 2.0;
-                            let label = clamp_label_for_width(&label, row_width - padding);
+                            let label = if rename_match {
+                                String::new()
+                            } else {
+                                clamp_label_for_width(&label, row_width - padding)
+                            };
                             let bg = selected.then_some(style::row_selected_fill());
                             let response = render_list_row(
                                 ui,
@@ -63,19 +74,27 @@ impl EguiApp {
                                     row_height,
                                     bg,
                                     text_color,
-                                    sense: egui::Sense::click(),
+                                    sense: if rename_match {
+                                        egui::Sense::hover()
+                                    } else {
+                                        egui::Sense::click()
+                                    },
                                     number: None,
                                     marker: None,
                                 },
                             );
-                            if response.clicked() {
+                            if response.clicked() && !rename_match {
                                 if selected {
                                     self.controller.select_collection_by_index(None);
                                 } else {
                                     self.controller.select_collection_by_index(Some(index));
                                 }
                             }
-                            self.collection_row_menu(&response, collection);
+                            if rename_match {
+                                self.render_collection_rename_editor(ui, &response);
+                            } else {
+                                self.collection_row_menu(&response, collection);
+                            }
                             if drag_active
                                 && let Some(pointer) = pointer_pos
                                 && response.rect.contains(pointer)
@@ -105,6 +124,32 @@ impl EguiApp {
             ui.label(RichText::new("Collection items").color(palette.text_primary));
             self.render_collection_samples(ui, drag_active, pointer_pos);
         });
+    }
+
+    fn render_collection_rename_editor(&mut self, ui: &mut Ui, row_response: &egui::Response) {
+        let Some(prompt) = self.controller.ui.collections.pending_action.as_mut() else {
+            return;
+        };
+        let name = match prompt {
+            CollectionActionPrompt::Rename { name, .. } => name,
+        };
+        let padding = ui.spacing().button_padding.x;
+        let mut edit_rect = row_response.rect;
+        edit_rect.min.x += padding;
+        edit_rect.max.x -= padding;
+        edit_rect.min.y += 2.0;
+        edit_rect.max.y -= 2.0;
+        match render_inline_text_edit(
+            ui,
+            edit_rect,
+            name,
+            "Rename collection",
+            &mut self.controller.ui.collections.rename_focus_requested,
+        ) {
+            InlineTextEditAction::Submit => self.controller.apply_pending_collection_rename(),
+            InlineTextEditAction::Cancel => self.controller.cancel_collection_rename(),
+            InlineTextEditAction::None => {}
+        }
     }
 
     fn render_collection_samples(

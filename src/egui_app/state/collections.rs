@@ -12,6 +12,8 @@ pub struct CollectionsState {
     pub drop_active: bool,
     pub selected_sample: Option<usize>,
     pub scroll_to_sample: Option<usize>,
+    pub pending_action: Option<CollectionActionPrompt>,
+    pub rename_focus_requested: bool,
 }
 
 impl Default for CollectionsState {
@@ -25,6 +27,8 @@ impl Default for CollectionsState {
             drop_active: false,
             selected_sample: None,
             scroll_to_sample: None,
+            pending_action: None,
+            rename_focus_requested: false,
         }
     }
 }
@@ -38,6 +42,12 @@ pub struct CollectionRowView {
     pub count: usize,
     pub export_path: Option<PathBuf>,
     pub missing: bool,
+}
+
+/// Pending inline action for the collections list.
+#[derive(Clone, Debug)]
+pub enum CollectionActionPrompt {
+    Rename { target: CollectionId, name: String },
 }
 
 /// Display data for a sample inside a collection.
