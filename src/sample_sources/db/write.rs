@@ -138,6 +138,40 @@ impl<'conn> SourceWriteBatch<'conn> {
         Ok(())
     }
 
+    pub fn upsert_file_with_hash_and_tag(
+        &mut self,
+        relative_path: &Path,
+        file_size: u64,
+        modified_ns: i64,
+        content_hash: &str,
+        tag: SampleTag,
+        missing: bool,
+    ) -> Result<(), SourceDbError> {
+        let path = normalize_relative_path(relative_path)?;
+        let flag = if missing { 1i64 } else { 0i64 };
+        self.tx
+            .prepare_cached(
+                "INSERT INTO wav_files (path, file_size, modified_ns, content_hash, tag, missing)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                 ON CONFLICT(path) DO UPDATE SET file_size = excluded.file_size,
+                                                modified_ns = excluded.modified_ns,
+                                                content_hash = excluded.content_hash,
+                                                tag = excluded.tag,
+                                                missing = excluded.missing",
+            )
+            .map_err(map_sql_error)?
+            .execute(params![
+                path,
+                file_size as i64,
+                modified_ns,
+                content_hash,
+                tag.as_i64(),
+                flag
+            ])
+            .map_err(map_sql_error)?;
+        Ok(())
+    }
+
     /// Update the tag for a wav row within the batch.
     pub fn set_tag(&mut self, relative_path: &Path, tag: SampleTag) -> Result<(), SourceDbError> {
         let path = normalize_relative_path(relative_path)?;

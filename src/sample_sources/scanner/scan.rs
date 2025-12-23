@@ -1,18 +1,17 @@
 use std::{
     collections::HashMap,
-    fs,
     path::{Path, PathBuf},
     sync::atomic::{AtomicBool, Ordering},
     thread,
 };
 
 use thiserror::Error;
-use tracing::warn;
 
-use crate::sample_sources::db::{SourceWriteBatch, WavEntry};
+use crate::sample_sources::db::WavEntry;
 use crate::sample_sources::{SourceDatabase, SourceDbError};
 
-use super::metadata::{compute_content_hash, is_supported_audio, read_facts, FileFacts};
+use super::scan_diff::{apply_diff, index_by_hash, mark_missing};
+use super::scan_fs::{ensure_root_dir, read_facts, visit_dir};
 
 /// Summary of a scan run.
 #[derive(Debug, Default, Clone)]
@@ -89,6 +88,7 @@ fn scan(
     let root = ensure_root_dir(db)?;
     let mut stats = ScanStats::default();
     let mut existing = index_existing(db)?;
+    let mut existing_by_hash = index_by_hash(&existing);
     let mut batch = db.write_batch()?;
     visit_dir(&root, cancel, &mut |path| {
         if let Some(cancel) = cancel
@@ -96,7 +96,14 @@ fn scan(
         {
             return Err(ScanError::Canceled);
         }
-        sync_file(&mut batch, &root, path, &mut existing, &mut stats)?;
+        sync_file(
+            &mut batch,
+            &root,
+            path,
+            &mut existing,
+            &mut existing_by_hash,
+            &mut stats,
+        )?;
         if let Some(on_progress) = on_progress.as_mut() {
             on_progress(stats.total_files, path);
         }
@@ -125,165 +132,17 @@ fn index_existing(db: &SourceDatabase) -> Result<HashMap<PathBuf, WavEntry>, Sca
         .collect())
 }
 
-fn visit_dir(
-    root: &Path,
-    cancel: Option<&AtomicBool>,
-    visitor: &mut impl FnMut(&Path) -> Result<(), ScanError>,
-) -> Result<(), ScanError> {
-    let mut stack = vec![root.to_path_buf()];
-    while let Some(dir) = stack.pop() {
-        if let Some(cancel) = cancel
-            && cancel.load(Ordering::Relaxed)
-        {
-            return Err(ScanError::Canceled);
-        }
-        let entries = match fs::read_dir(&dir) {
-            Ok(entries) => entries,
-            Err(source) if dir != root => {
-                warn!(
-                    dir = %dir.display(),
-                    error = %source,
-                    "Failed to read directory during scan"
-                );
-                continue;
-            }
-            Err(source) => {
-                return Err(ScanError::Io {
-                    path: dir.clone(),
-                    source,
-                });
-            }
-        };
-        for entry_result in entries {
-            let entry = match entry_result {
-                Ok(entry) => entry,
-                Err(err) => {
-                    warn!(
-                        dir = %dir.display(),
-                        error = %err,
-                        "Failed to read directory entry during scan"
-                    );
-                    continue;
-                }
-            };
-
-            let path = entry.path();
-            let file_type = match entry.file_type() {
-                Ok(file_type) => file_type,
-                Err(err) => {
-                    warn!(
-                        path = %path.display(),
-                        error = %err,
-                        "Failed to read file type during scan"
-                    );
-                    continue;
-                }
-            };
-            if file_type.is_symlink() {
-                continue;
-            }
-            if file_type.is_dir() {
-                stack.push(path);
-                continue;
-            }
-            if file_type.is_file() && is_supported_audio(&path) {
-                visitor(&path)?;
-            }
-        }
-    }
-    Ok(())
-}
-
-fn ensure_root_dir(db: &SourceDatabase) -> Result<PathBuf, ScanError> {
-    let root = db.root().to_path_buf();
-    if root.is_dir() {
-        Ok(root)
-    } else {
-        Err(ScanError::InvalidRoot(root))
-    }
-}
-
 fn sync_file(
-    batch: &mut SourceWriteBatch<'_>,
+    batch: &mut crate::sample_sources::db::SourceWriteBatch<'_>,
     root: &Path,
     path: &Path,
     existing: &mut HashMap<PathBuf, WavEntry>,
+    existing_by_hash: &mut HashMap<String, Vec<PathBuf>>,
     stats: &mut ScanStats,
 ) -> Result<(), ScanError> {
     let facts = read_facts(root, path)?;
-    apply_diff(batch, facts, existing, stats, root)?;
+    apply_diff(batch, facts, existing, existing_by_hash, stats, root)?;
     stats.total_files += 1;
-    Ok(())
-}
-
-fn mark_missing(
-    batch: &mut SourceWriteBatch<'_>,
-    existing: HashMap<PathBuf, WavEntry>,
-    stats: &mut ScanStats,
-    mode: ScanMode,
-) -> Result<(), ScanError> {
-    for leftover in existing.values() {
-        match mode {
-            ScanMode::Quick => {
-                if leftover.missing {
-                    continue;
-                }
-                batch.set_missing(&leftover.relative_path, true)?;
-                stats.missing += 1;
-            }
-            ScanMode::Hard => {
-                batch.remove_file(&leftover.relative_path)?;
-                stats.missing += 1;
-            }
-        }
-    }
-    Ok(())
-}
-
-fn apply_diff(
-    batch: &mut SourceWriteBatch<'_>,
-    facts: FileFacts,
-    existing: &mut HashMap<PathBuf, WavEntry>,
-    stats: &mut ScanStats,
-    root: &Path,
-) -> Result<(), ScanError> {
-    let path = facts.relative.clone();
-    match existing.remove(&path) {
-        Some(entry) if entry.file_size == facts.size && entry.modified_ns == facts.modified_ns => {
-            if entry.missing {
-                batch.set_missing(&path, false)?;
-            }
-        }
-        Some(entry) => {
-            let absolute = root.join(&path);
-            let hash = compute_content_hash(&absolute)?;
-            let previous_hash = entry.content_hash.as_deref();
-            batch.upsert_file_with_hash(&path, facts.size, facts.modified_ns, &hash)?;
-            if previous_hash != Some(hash.as_str()) {
-                stats.content_changed += 1;
-                stats.changed_samples.push(ChangedSample {
-                    relative_path: path.clone(),
-                    file_size: facts.size,
-                    modified_ns: facts.modified_ns,
-                    content_hash: hash,
-                });
-            }
-            stats.updated += 1;
-        }
-        None => {
-            let absolute = root.join(&path);
-            let hash = compute_content_hash(&absolute)?;
-            batch.upsert_file_with_hash(&path, facts.size, facts.modified_ns, &hash)?;
-            stats.added += 1;
-            stats.content_changed += 1;
-            stats.changed_samples.push(ChangedSample {
-                relative_path: path.clone(),
-                file_size: facts.size,
-                modified_ns: facts.modified_ns,
-                content_hash: hash,
-            });
-        }
-    }
     Ok(())
 }
 
@@ -446,6 +305,51 @@ mod tests {
         let stats = scan_once(&db).unwrap();
         assert_eq!(stats.content_changed, 1);
         assert_eq!(stats.changed_samples.len(), 1);
+    }
+
+    #[test]
+    fn scan_detects_rename_and_preserves_tag() {
+        let dir = tempdir().unwrap();
+        let first_path = dir.path().join("one.wav");
+        let second_path = dir.path().join("two.wav");
+        std::fs::write(&first_path, b"one").unwrap();
+
+        let db = SourceDatabase::open(dir.path()).unwrap();
+        scan_once(&db).unwrap();
+        db.set_tag(Path::new("one.wav"), SampleTag::Keep).unwrap();
+
+        std::fs::rename(&first_path, &second_path).unwrap();
+        let stats = scan_once(&db).unwrap();
+
+        assert_eq!(stats.missing, 0);
+        assert_eq!(stats.added, 0);
+        assert_eq!(stats.content_changed, 0);
+        assert_eq!(stats.updated, 1);
+
+        let rows = db.list_files().unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].relative_path, PathBuf::from("two.wav"));
+        assert_eq!(rows[0].tag, SampleTag::Keep);
+        assert!(!rows[0].missing);
+    }
+
+    #[test]
+    fn hard_rescan_prunes_missing_files_with_tags() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("one.wav");
+        std::fs::write(&file_path, b"one").unwrap();
+
+        let db = SourceDatabase::open(dir.path()).unwrap();
+        scan_once(&db).unwrap();
+        db.set_tag(Path::new("one.wav"), SampleTag::Keep).unwrap();
+
+        std::fs::remove_file(&file_path).unwrap();
+        scan_once(&db).unwrap();
+
+        let stats = hard_rescan(&db).unwrap();
+        assert_eq!(stats.missing, 1);
+        let rows = db.list_files().unwrap();
+        assert!(rows.is_empty());
     }
 
     #[cfg(unix)]
