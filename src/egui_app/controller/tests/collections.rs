@@ -109,6 +109,74 @@ fn start_collection_rename_sets_pending_action() {
 }
 
 #[test]
+fn cancelling_collection_rename_clears_prompt() {
+    let renderer = WaveformRenderer::new(10, 10);
+    let mut controller = EguiController::new(renderer, None);
+    let collection = Collection::new("Rename Me");
+    let collection_id = collection.id.clone();
+    controller.library.collections.push(collection);
+    controller.selection_state.ctx.selected_collection = Some(collection_id);
+    controller.start_collection_rename();
+
+    controller.cancel_collection_rename();
+
+    assert!(controller.ui.collections.pending_action.is_none());
+    assert!(!controller.ui.collections.rename_focus_requested);
+}
+
+#[test]
+fn applying_collection_rename_submits_and_clears_prompt() {
+    let renderer = WaveformRenderer::new(10, 10);
+    let mut controller = EguiController::new(renderer, None);
+    let collection = Collection::new("Old Name");
+    let collection_id = collection.id.clone();
+    controller.library.collections.push(collection);
+    controller.selection_state.ctx.selected_collection = Some(collection_id.clone());
+    controller.start_collection_rename();
+    if let Some(crate::egui_app::state::CollectionActionPrompt::Rename { name, .. }) =
+        controller.ui.collections.pending_action.as_mut()
+    {
+        *name = "New Name".to_string();
+    } else {
+        panic!("expected collection rename prompt");
+    }
+
+    controller.apply_pending_collection_rename();
+
+    assert!(controller.ui.collections.pending_action.is_none());
+    assert!(!controller.ui.collections.rename_focus_requested);
+    assert_eq!(controller.library.collections[0].name, "New Name");
+}
+
+#[test]
+fn applying_collection_rename_rejects_empty_name() {
+    let renderer = WaveformRenderer::new(10, 10);
+    let mut controller = EguiController::new(renderer, None);
+    let collection = Collection::new("Keep Me");
+    let collection_id = collection.id.clone();
+    controller.library.collections.push(collection);
+    controller.selection_state.ctx.selected_collection = Some(collection_id);
+    controller.start_collection_rename();
+    if let Some(crate::egui_app::state::CollectionActionPrompt::Rename { name, .. }) =
+        controller.ui.collections.pending_action.as_mut()
+    {
+        *name = "   ".to_string();
+    } else {
+        panic!("expected collection rename prompt");
+    }
+
+    controller.apply_pending_collection_rename();
+
+    assert!(matches!(
+        controller.ui.collections.pending_action,
+        Some(crate::egui_app::state::CollectionActionPrompt::Rename { .. })
+    ));
+    assert!(controller.ui.collections.rename_focus_requested);
+    assert_eq!(controller.library.collections[0].name, "Keep Me");
+    assert_eq!(controller.ui.status.text, "Collection name cannot be empty");
+}
+
+#[test]
 fn browser_rename_updates_collections_and_lookup() {
     let temp = tempdir().unwrap();
     let root = temp.path().join("source");
