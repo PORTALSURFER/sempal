@@ -335,6 +335,9 @@ impl EguiApp {
                         let match_source_id = sample.source_id.clone();
                         let match_path = path.clone();
                         let pending_selected = selected_samples.clone();
+                        let pending_selected_for_drag = pending_selected.clone();
+                        let pending_selected_for_pending = pending_selected.clone();
+                        let pending_selected_for_match = pending_selected.clone();
                         let is_multi_drag =
                             selected_samples.len() > 1 && is_selected;
                         drag_targets::handle_sample_row_drag(
@@ -344,13 +347,11 @@ impl EguiApp {
                             &mut self.controller,
                             DragSource::Collections,
                             DragTarget::None,
-                            move |pos, controller| {
+                        let drag_samples = pending_selected_for_drag.clone();
+                        move |pos, controller| {
                                 if is_multi_drag {
                                     controller.start_samples_drag(
-                                        pending_selected.clone(),
-                                        format!("{} samples", pending_selected.len()),
-                                        pos,
-                                    );
+                                        drag_samples,
                                 } else {
                                     controller.start_sample_drag(
                                         drag_source_id,
@@ -360,14 +361,15 @@ impl EguiApp {
                                     );
                                 }
                             },
-                            move |pos, _controller| {
-                                let payload = if pending_selected.len() > 1
-                                    && pending_selected
-                                        .iter()
-                                        .any(|sample| sample.relative_path == pending_path)
+                        let pending_samples_for_pending = pending_selected_for_pending.clone();
+                        move |pos, _controller| {
+                                let payload = if pending_samples_for_pending.len() > 1
+                                    && pending_samples_for_pending.iter().any(
+                                        |sample| sample.relative_path == pending_path,
+                                    )
                                 {
                                     DragPayload::Samples {
-                                        samples: pending_selected.clone(),
+                                        samples: pending_samples_for_pending.clone(),
                                     }
                                 } else {
                                     DragPayload::Sample {
@@ -376,7 +378,7 @@ impl EguiApp {
                                     }
                                 };
                                 let label = if matches!(payload, DragPayload::Samples { .. }) {
-                                    format!("{} samples", pending_selected.len())
+                                    format!("{} samples", pending_samples_for_pending.len())
                                 } else {
                                     pending_label
                                 };
@@ -386,7 +388,8 @@ impl EguiApp {
                                     origin: pos,
                                 })
                             },
-                            move |pending| {
+                        let pending_samples_for_match = pending_selected_for_match.clone();
+                        move |pending| {
                                 match &pending.payload {
                                     DragPayload::Sample {
                                         source_id,
