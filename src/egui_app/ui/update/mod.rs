@@ -1,4 +1,3 @@
-use crate::egui_app::state::FocusContext;
 use eframe::egui;
 
 use super::EguiApp;

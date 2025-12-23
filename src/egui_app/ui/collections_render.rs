@@ -85,7 +85,7 @@ impl EguiApp {
                                 } else {
                                     self.controller.select_collection_by_index(Some(index));
                                 }
-                                self.controller.focus_collections_list_context();
+                                self.controller.focus_collections_list_from_ui();
                             }
                             if rename_match {
                                 self.render_collection_rename_editor(ui, &response);

@@ -48,6 +48,11 @@ impl EguiController {
         self.ui.collections.rename_focus_requested = true;
     }
 
+    /// Mark the collections list as the active focus surface.
+    pub fn focus_collections_list_from_ui(&mut self) {
+        self.focus_collections_list_context();
+    }
+
     /// Cancel a pending collection rename.
     pub fn cancel_collection_rename(&mut self) {
         if matches!(
