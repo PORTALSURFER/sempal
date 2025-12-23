@@ -58,11 +58,88 @@ pub fn build_hdbscan_clusters_for_sample_id_prefix(
     let (sample_ids, data) =
         load_cluster_data(conn, model_id, method, umap_version, sample_id_prefix)?;
     ensure_non_empty(&data)?;
-    let labels = run_hdbscan(&data, config)?;
+    let mut labels = run_hdbscan(&data, config)?;
+    assign_all_points_to_clusters(&data, &mut labels);
     let stats = summarize_labels(&labels);
     let version = umap_version.unwrap_or("");
     write_clusters(conn, &sample_ids, &labels, model_id, method.as_str(), version)?;
     Ok(stats)
+}
+
+fn assign_all_points_to_clusters(data: &[Vec<f32>], labels: &mut [i32]) {
+    if data.is_empty() || labels.is_empty() {
+        return;
+    }
+    if labels.iter().all(|label| *label >= 0) {
+        return;
+    }
+    let mut centroid_sums: HashMap<i32, (Vec<f32>, usize)> = HashMap::new();
+    for (idx, label) in labels.iter().enumerate() {
+        if *label < 0 {
+            continue;
+        }
+        let point = match data.get(idx) {
+            Some(point) => point,
+            None => continue,
+        };
+        let entry = centroid_sums
+            .entry(*label)
+            .or_insert_with(|| (vec![0.0; point.len()], 0));
+        for (dim, value) in point.iter().enumerate() {
+            if let Some(sum) = entry.0.get_mut(dim) {
+                *sum += *value;
+            }
+        }
+        entry.1 += 1;
+    }
+    if centroid_sums.is_empty() {
+        labels.fill(0);
+        return;
+    }
+    let mut centroids: Vec<(i32, Vec<f32>)> = Vec::with_capacity(centroid_sums.len());
+    for (label, (mut sums, count)) in centroid_sums {
+        if count == 0 {
+            continue;
+        }
+        let denom = count as f32;
+        for value in &mut sums {
+            *value /= denom;
+        }
+        centroids.push((label, sums));
+    }
+    if centroids.is_empty() {
+        labels.fill(0);
+        return;
+    }
+    for (idx, label) in labels.iter_mut().enumerate() {
+        if *label >= 0 {
+            continue;
+        }
+        let point = match data.get(idx) {
+            Some(point) => point,
+            None => continue,
+        };
+        let mut best: Option<(i32, f32)> = None;
+        for (centroid_label, centroid) in &centroids {
+            let dist = squared_distance(point, centroid);
+            if best.map(|(_, best_dist)| dist < best_dist).unwrap_or(true) {
+                best = Some((*centroid_label, dist));
+            }
+        }
+        if let Some((centroid_label, _)) = best {
+            *label = centroid_label;
+        } else {
+            *label = 0;
+        }
+    }
+}
+
+fn squared_distance(a: &[f32], b: &[f32]) -> f32 {
+    let mut sum = 0.0;
+    for (av, bv) in a.iter().zip(b.iter()) {
+        sum += (*av - *bv) * (*av - *bv);
+    }
+    sum
 }
 
 fn load_cluster_data(
@@ -260,6 +337,29 @@ fn summarize_labels(labels: &[i32]) -> HdbscanStats {
         noise_ratio: noise as f32 / total,
         min_cluster_size,
         max_cluster_size,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn assigns_noise_points_to_nearest_centroid() {
+        let data = vec![vec![0.0, 0.0], vec![1.0, 1.0], vec![10.0, 10.0]];
+        let mut labels = vec![0, -1, 1];
+        assign_all_points_to_clusters(&data, &mut labels);
+        assert_eq!(labels.len(), 3);
+        assert_eq!(labels[1], 0);
+        assert!(labels.iter().all(|label| *label >= 0));
+    }
+
+    #[test]
+    fn assigns_single_cluster_when_everything_is_noise() {
+        let data = vec![vec![0.0], vec![1.0], vec![2.0]];
+        let mut labels = vec![-1, -1, -1];
+        assign_all_points_to_clusters(&data, &mut labels);
+        assert_eq!(labels, vec![0, 0, 0]);
     }
 }
 

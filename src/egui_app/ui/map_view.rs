@@ -45,7 +45,6 @@ impl EguiApp {
                 .checkbox(&mut self.controller.ui.map.cluster_overlay, "Clusters")
                 .changed();
             if self.controller.ui.map.cluster_overlay {
-                ui.checkbox(&mut self.controller.ui.map.cluster_hide_noise, "Hide noise");
                 ui.checkbox(
                     &mut self.controller.ui.map.similarity_blend,
                     "Similarity blend",
@@ -107,7 +106,6 @@ impl EguiApp {
             if let Some(stats) = map_clusters::compute_cluster_stats(&self.controller.ui.map.cached_points) {
                 ui.horizontal(|ui| {
                     ui.label(format!("Clusters: {}", stats.cluster_count));
-                    ui.label(format!("Noise: {:.1}%", stats.noise_ratio * 100.0));
                     if stats.missing_count > 0 {
                         let missing_ratio =
                             stats.missing_count as f32 / stats.total_count.max(1) as f32;
@@ -227,7 +225,6 @@ impl EguiApp {
         let filtered_points = map_clusters::filter_points(
             &points,
             self.controller.ui.map.cluster_overlay,
-            self.controller.ui.map.cluster_hide_noise,
             self.controller.ui.map.cluster_filter,
         );
         let cluster_overlay = self.controller.ui.map.cluster_overlay;
@@ -297,11 +294,7 @@ impl EguiApp {
                 ui.label(sample_label_from_id(&point.sample_id));
                 if self.controller.ui.map.cluster_overlay {
                     if let Some(cluster_id) = point.cluster_id {
-                        if cluster_id < 0 {
-                            ui.label("Cluster: noise");
-                        } else {
-                            ui.label(format!("Cluster: {cluster_id}"));
-                        }
+                        ui.label(format!("Cluster: {cluster_id}"));
                     } else {
                         ui.label("Cluster: (missing)");
                     }

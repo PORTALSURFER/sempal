@@ -6,8 +6,6 @@ use std::f32::consts::PI;
 
 pub(crate) struct ClusterStats {
     pub cluster_count: usize,
-    pub noise_count: usize,
-    pub noise_ratio: f32,
     pub min_cluster_size: usize,
     pub max_cluster_size: usize,
     pub assigned_count: usize,
@@ -19,7 +17,6 @@ pub(crate) fn compute_cluster_stats(
     points: &[crate::egui_app::state::MapPoint],
 ) -> Option<ClusterStats> {
     let mut cluster_sizes: HashMap<i32, usize> = HashMap::new();
-    let mut noise_count = 0usize;
     let mut assigned_count = 0usize;
     let mut missing_count = 0usize;
     for point in points {
@@ -28,11 +25,7 @@ pub(crate) fn compute_cluster_stats(
             continue;
         };
         assigned_count += 1;
-        if cluster_id < 0 {
-            noise_count += 1;
-        } else {
-            *cluster_sizes.entry(cluster_id).or_insert(0) += 1;
-        }
+        *cluster_sizes.entry(cluster_id).or_insert(0) += 1;
     }
     if assigned_count == 0 {
         return None;
@@ -50,8 +43,6 @@ pub(crate) fn compute_cluster_stats(
     };
     Some(ClusterStats {
         cluster_count: cluster_sizes.len(),
-        noise_count,
-        noise_ratio: noise_count as f32 / assigned_count as f32,
         min_cluster_size,
         max_cluster_size,
         assigned_count,
@@ -200,10 +191,9 @@ pub(crate) fn blended_cluster_color(
 pub(crate) fn filter_points(
     points: &[crate::egui_app::state::MapPoint],
     overlay: bool,
-    hide_noise: bool,
     filter: Option<i32>,
 ) -> Vec<crate::egui_app::state::MapPoint> {
-    if !overlay && filter.is_none() && !hide_noise {
+    if !overlay && filter.is_none() {
         return points.to_vec();
     }
     points
@@ -211,9 +201,6 @@ pub(crate) fn filter_points(
         .filter(|point| {
             if let Some(target) = filter {
                 return point.cluster_id == Some(target);
-            }
-            if overlay && hide_noise {
-                return point.cluster_id.is_some_and(|cluster_id| cluster_id >= 0);
             }
             true
         })
