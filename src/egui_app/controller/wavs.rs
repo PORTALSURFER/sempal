@@ -9,7 +9,6 @@ mod browser_actions;
 mod browser_lists;
 mod browser_search;
 mod feature_cache;
-mod missing_samples;
 mod selection_ops;
 mod similar;
 mod waveform_loading;

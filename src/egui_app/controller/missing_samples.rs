@@ -3,6 +3,19 @@ use std::collections::HashSet;
 use std::path::Path;
 
 impl EguiController {
+    pub(in crate::egui_app::controller) fn sync_missing_from_entries(
+        &mut self,
+        source_id: &SourceId,
+        entries: &[WavEntry],
+    ) {
+        let missing = entries
+            .iter()
+            .filter(|entry| entry.missing)
+            .map(|entry| entry.relative_path.clone())
+            .collect();
+        self.library.missing.wavs.insert(source_id.clone(), missing);
+    }
+
     pub(in crate::egui_app::controller) fn rebuild_missing_lookup_for_source(
         &mut self,
         source_id: &SourceId,

@@ -2,7 +2,9 @@ use super::super::test_support::dummy_controller;
 use super::super::*;
 use crate::sample_sources::Collection;
 use crate::sample_sources::collections::CollectionMember;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use tempfile::tempdir;
 
 #[test]
 fn selecting_missing_sample_sets_waveform_notice() {
@@ -109,4 +111,106 @@ fn read_failure_marks_sample_missing() {
             .get(&source.id)
             .is_some_and(|set| set.contains(&rel))
     );
+}
+
+#[test]
+fn apply_wav_entries_updates_missing_lookup() {
+    let (mut controller, source) = dummy_controller();
+    controller.library.sources.push(source.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
+    controller
+        .ui_cache
+        .browser
+        .analysis_failures
+        .insert(source.id.clone(), HashMap::new());
+    let entries = vec![
+        WavEntry {
+            relative_path: PathBuf::from("alive.wav"),
+            file_size: 1,
+            modified_ns: 1,
+            content_hash: None,
+            tag: SampleTag::Neutral,
+            missing: false,
+        },
+        WavEntry {
+            relative_path: PathBuf::from("gone.wav"),
+            file_size: 1,
+            modified_ns: 1,
+            content_hash: None,
+            tag: SampleTag::Neutral,
+            missing: true,
+        },
+    ];
+
+    controller.apply_wav_entries(entries, true, Some(source.id.clone()), None);
+
+    assert!(
+        controller
+            .library
+            .missing
+            .wavs
+            .get(&source.id)
+            .is_some_and(|set| set.contains(&PathBuf::from("gone.wav")))
+    );
+    assert!(
+        !controller
+            .library
+            .missing
+            .wavs
+            .get(&source.id)
+            .is_some_and(|set| set.contains(&PathBuf::from("alive.wav")))
+    );
+}
+
+#[test]
+fn remove_dead_links_rebuilds_missing_state() -> Result<(), String> {
+    let temp = tempdir().unwrap();
+    let root = temp.path().join("source");
+    std::fs::create_dir_all(&root).unwrap();
+    let renderer = WaveformRenderer::new(10, 10);
+    let mut controller = EguiController::new(renderer, None);
+    let source = SampleSource::new(root.clone());
+    controller.library.sources.push(source.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
+    controller.cache_db(&source).unwrap();
+    controller
+        .ui_cache
+        .browser
+        .analysis_failures
+        .insert(source.id.clone(), HashMap::new());
+
+    let db = SourceDatabase::open(&root).unwrap();
+    db.upsert_file(Path::new("alive.wav"), 1, 1).unwrap();
+    db.upsert_file(Path::new("gone.wav"), 1, 1).unwrap();
+    db.set_missing(Path::new("gone.wav"), true).unwrap();
+
+    let entries = db.list_files().unwrap();
+    controller.apply_wav_entries(entries, true, Some(source.id.clone()), None);
+
+    let removed = controller.remove_dead_links_for_source_entries(&source)?;
+    assert_eq!(removed, 1);
+
+    let remaining = db
+        .list_files()
+        .unwrap()
+        .iter()
+        .map(|entry| entry.relative_path.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(remaining, vec![PathBuf::from("alive.wav")]);
+    assert!(
+        !controller
+            .library
+            .missing
+            .wavs
+            .get(&source.id)
+            .is_some_and(|set| set.contains(&PathBuf::from("gone.wav")))
+    );
+    assert!(
+        controller
+            .wav_entries
+            .entries
+            .iter()
+            .all(|entry| entry.relative_path != PathBuf::from("gone.wav"))
+    );
+    Ok(())
 }

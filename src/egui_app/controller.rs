@@ -29,6 +29,7 @@ mod os_explorer;
 mod playback;
 mod progress;
 mod map_view;
+mod missing_samples;
 mod scans;
 mod selection_edits;
 mod selection_export;

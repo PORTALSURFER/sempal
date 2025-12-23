@@ -130,14 +130,7 @@ impl EguiController {
                     self.ui_cache.browser.analysis_failures.remove(&id);
                 }
             }
-            let missing: std::collections::HashSet<std::path::PathBuf> = self
-                .wav_entries
-                .entries
-                .iter()
-                .filter(|entry| entry.missing)
-                .map(|entry| entry.relative_path.clone())
-                .collect();
-            self.library.missing.wavs.insert(id, missing);
+            self.sync_missing_from_entries(&id, &self.wav_entries.entries);
         }
         let prefix = if from_cache { "Cached" } else { "Loaded" };
         let suffix = elapsed
