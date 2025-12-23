@@ -71,6 +71,7 @@ impl EguiApp {
                                     row_width,
                                     row_height,
                                     bg,
+                                    skip_hover: false,
                                     text_color,
                                     sense: if rename_match {
                                         egui::Sense::hover()
@@ -270,6 +271,7 @@ impl EguiApp {
                                 row_width,
                                 row_height: metrics.row_height,
                                 bg,
+                                skip_hover: false,
                                 text_color,
                                 sense: egui::Sense::click_and_drag(),
                                 number: Some(NumberColumn {
