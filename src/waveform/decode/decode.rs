@@ -35,7 +35,7 @@ impl WaveformRenderer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::{rodio_reader, wav_reader};
+    use crate::waveform::decode::{rodio_reader, wav_reader};
     use hound::SampleFormat;
 
     fn wav_bytes_i16(channels: u16, samples: &[i16]) -> Vec<u8> {
@@ -60,7 +60,9 @@ mod tests {
     fn decode_reports_invalid_data_errors() {
         let renderer = WaveformRenderer::new(12, 12);
         let bytes = vec![0, 1, 2, 3, 4, 5];
-        let err = renderer.decode_from_bytes(&bytes).unwrap_err();
+        let err = renderer
+            .decode_from_bytes(&bytes)
+            .expect_err("expected invalid data error");
         assert!(matches!(err, WaveformDecodeError::Invalid { .. }));
     }
 

@@ -339,7 +339,7 @@ impl EguiApp {
                             selected_samples.len() > 1 && is_selected;
                         let drag_samples = pending_selected.clone();
                         let pending_samples_for_pending = pending_selected.clone();
-                        let pending_samples_for_match = pending_selected.clone();
+                        let _pending_samples_for_match = pending_selected.clone();
                         drag_targets::handle_sample_row_drag(
                             ui,
                             &response,
