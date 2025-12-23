@@ -36,6 +36,10 @@ pub(super) fn render_progress_overlay(ctx: &egui::Context, progress: &mut Progre
                     if progress.total > 0 {
                         let pct = (fraction * 100.0).round().clamp(0.0, 100.0);
                         bar = bar.text(format!("{pct:.0}%"));
+                    } else if progress.task == Some(crate::egui_app::state::ProgressTaskKind::Scan)
+                        && progress.completed > 0
+                    {
+                        bar = bar.text(format!("{} files", progress.completed));
                     } else {
                         bar = bar.text("Working...");
                     }

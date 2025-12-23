@@ -361,6 +361,7 @@ impl DragDropController<'_> {
             relative_path: new_relative.clone(),
             file_size,
             modified_ns,
+            content_hash: None,
             tag,
             missing: false,
         };

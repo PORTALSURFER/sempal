@@ -18,6 +18,7 @@ pub(super) struct FlatItemsListMetrics {
     pub number_width: f32,
     pub number_gap: f32,
     pub padding: f32,
+    pub row_width: f32,
 }
 
 pub(super) struct FlatItemsListResponse {
@@ -42,6 +43,7 @@ pub(super) fn render_flat_items_list(
         number_width,
         number_gap,
         padding,
+        row_width: ui.available_width(),
     };
 
     let frame = style::section_frame();

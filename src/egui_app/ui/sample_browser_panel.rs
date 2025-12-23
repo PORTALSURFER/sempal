@@ -1,12 +1,9 @@
 use super::flat_items_list::{FlatItemsListConfig, render_flat_items_list};
-use super::helpers::{
-    InlineTextEditAction, NumberColumn, RowMarker, clamp_label_for_width, render_inline_text_edit,
-    render_list_row,
-};
+use super::helpers::{NumberColumn, RowMarker, clamp_label_for_width, render_list_row};
 use super::style;
 use super::*;
 use crate::egui_app::state::{
-    DragPayload, DragSource, DragTarget, FocusContext, SampleBrowserActionPrompt, TriageFlagFilter,
+    DragPayload, DragSource, DragTarget, FocusContext, SampleBrowserActionPrompt, SampleBrowserTab,
 };
 use crate::egui_app::ui::style::StatusTone;
 use crate::egui_app::view_model;
@@ -16,9 +13,33 @@ use std::path::Path;
 impl EguiApp {
     pub(super) fn render_sample_browser(&mut self, ui: &mut Ui) {
         let palette = style::palette();
+        self.controller.prepare_feature_cache_for_browser();
         let selected_row = self.controller.ui.browser.selected_visible;
         let loaded_row = self.controller.ui.browser.loaded_visible;
         let drop_target = self.controller.triage_flag_drop_target();
+        let mut tab = self.controller.ui.browser.active_tab;
+        ui.horizontal(|ui| {
+            if ui
+                .selectable_label(tab == SampleBrowserTab::List, "Samples")
+                .clicked()
+            {
+                tab = SampleBrowserTab::List;
+            }
+            if ui
+                .selectable_label(tab == SampleBrowserTab::Map, "Similarity map")
+                .clicked()
+            {
+                tab = SampleBrowserTab::Map;
+            }
+        });
+        if tab != self.controller.ui.browser.active_tab {
+            self.controller.ui.browser.active_tab = tab;
+        }
+        ui.add_space(4.0);
+        if self.controller.ui.browser.active_tab == SampleBrowserTab::Map {
+            self.render_map_panel(ui);
+            return;
+        }
         self.render_sample_browser_filter(ui);
         ui.add_space(6.0);
 
@@ -72,7 +93,7 @@ impl EguiApp {
                     .iter()
                     .any(|p| p == &path);
                 let is_loaded = loaded_row == Some(row);
-                let row_width = ui.available_width();
+                let row_width = metrics.row_width;
                 let triage_marker = style::triage_marker_color(tag).map(|color| RowMarker {
                     width: style::triage_marker_width(),
                     color,
@@ -86,6 +107,13 @@ impl EguiApp {
                     .controller
                     .wav_label(entry_index)
                     .unwrap_or_else(|| view_model::sample_display_label(&path));
+                let analysis_failure = self
+                    .controller
+                    .analysis_failure_for_entry(entry_index)
+                    .map(str::to_string);
+                if analysis_failure.is_some() {
+                    label.push_str(" • FAILED");
+                }
                 if is_loaded {
                     label.push_str(" • loaded");
                 }
@@ -121,6 +149,8 @@ impl EguiApp {
                 let number_text = format!("{}", row + 1);
                 let text_color = if missing {
                     style::missing_text()
+                } else if analysis_failure.is_some() {
+                    style::destructive_text()
                 } else {
                     style::triage_label_color(tag)
                 };
@@ -148,6 +178,12 @@ impl EguiApp {
                             marker: triage_marker,
                         },
                     );
+                    let response = if let Some(reason) = analysis_failure.as_deref() {
+                        let reason = reason.lines().next().unwrap_or(reason);
+                        response.on_hover_text(format!("Analysis failed: {reason}"))
+                    } else {
+                        response
+                    };
 
                     if is_selected {
                         let marker_width = 4.0;
@@ -323,6 +359,15 @@ impl EguiApp {
                 self.controller.reveal_browser_sample_in_file_explorer(path);
                 close_menu = true;
             }
+            if ui.button("Find similar").clicked() {
+                if let Err(err) = self.controller.find_similar_for_visible_row(row) {
+                    self.controller
+                        .set_status(format!("Find similar failed: {err}"), StatusTone::Error);
+                } else {
+                    close_menu = true;
+                    ui.close();
+                }
+            }
             ui.separator();
             self.sample_tag_menu(ui, &mut close_menu, |app, tag| {
                 app.controller
@@ -390,107 +435,14 @@ impl EguiApp {
             }
         });
     }
+}
 
-    fn render_browser_rename_editor(
-        &mut self,
-        ui: &mut Ui,
-        row_response: &egui::Response,
-        padding: f32,
-        number_width: f32,
-        number_gap: f32,
-        trailing_space: f32,
-    ) {
-        let Some(prompt) = self.controller.ui.browser.pending_action.as_mut() else {
-            return;
-        };
-        let name = match prompt {
-            SampleBrowserActionPrompt::Rename { name, .. } => name,
-        };
-        let mut edit_rect = row_response.rect;
-        edit_rect.min.x += number_width + number_gap + padding;
-        edit_rect.max.x -= padding + trailing_space;
-        edit_rect.min.y += 2.0;
-        edit_rect.max.y -= 2.0;
-        match render_inline_text_edit(
-            ui,
-            edit_rect,
-            name,
-            "Rename sample",
-            &mut self.controller.ui.browser.rename_focus_requested,
-        ) {
-            InlineTextEditAction::Submit => self.controller.apply_pending_browser_rename(),
-            InlineTextEditAction::Cancel => self.controller.cancel_browser_rename(),
-            InlineTextEditAction::None => {}
-        }
-    }
-
-    fn render_sample_browser_filter(&mut self, ui: &mut Ui) {
-        let palette = style::palette();
-        let visible_count = self.controller.visible_browser_indices().len();
-        ui.horizontal(|ui| {
-            ui.label(RichText::new("Filter").color(palette.text_primary));
-            for filter in [
-                TriageFlagFilter::All,
-                TriageFlagFilter::Keep,
-                TriageFlagFilter::Trash,
-                TriageFlagFilter::Untagged,
-            ] {
-                let selected = self.controller.ui.browser.filter == filter;
-                let label = match filter {
-                    TriageFlagFilter::All => "All",
-                    TriageFlagFilter::Keep => "Keep",
-                    TriageFlagFilter::Trash => "Trash",
-                    TriageFlagFilter::Untagged => "Untagged",
-                };
-                if ui.selectable_label(selected, label).clicked() {
-                    self.controller.set_browser_filter(filter);
-                }
-            }
-            ui.add_space(ui.spacing().item_spacing.x);
-            let mut query = self.controller.ui.browser.search_query.clone();
-            let response = ui.add(
-                egui::TextEdit::singleline(&mut query)
-                    .hint_text("Search samples (f)...")
-                    .desired_width(160.0),
-            );
-            if self.controller.ui.browser.search_focus_requested {
-                response.request_focus();
-                self.controller.ui.browser.search_focus_requested = false;
-            }
-            if response.changed() {
-                self.controller.set_browser_search(query);
-            }
-            ui.add_space(ui.spacing().item_spacing.x);
-            let random_mode_enabled = self.controller.random_navigation_mode_enabled();
-            let dice_label = RichText::new("🎲").color(if random_mode_enabled {
-                palette.text_primary
-            } else {
-                palette.text_muted
-            });
-            let dice_button = egui::Button::new(dice_label).selected(random_mode_enabled);
-            let dice_response = ui.add(dice_button).on_hover_text(
-                "Play a random visible sample (click)\nToggle sticky random navigation (Shift+click)",
-            );
-            if dice_response.clicked() {
-                let modifiers = ui.input(|i| i.modifiers);
-                if modifiers.shift {
-                    self.controller.toggle_random_navigation_mode();
-                } else {
-                    self.controller.play_random_visible_sample();
-                }
-            }
-            let count_label = format!(
-                "{} item{}",
-                visible_count,
-                if visible_count == 1 { "" } else { "s" }
-            );
-            ui.allocate_ui_with_layout(
-                egui::vec2(ui.available_width(), 0.0),
-                egui::Layout::right_to_left(egui::Align::Center),
-                |ui| {
-                    ui.label(RichText::new(count_label).color(palette.text_muted).small());
-                },
-            );
-        });
-    }
+fn lerp_color(a: egui::Color32, b: egui::Color32, t: f32) -> egui::Color32 {
+    let t = t.clamp(0.0, 1.0);
+    let lerp = |start: u8, end: u8| -> u8 {
+        let start = start as f32;
+        let end = end as f32;
+        (start + (end - start) * t).round().clamp(0.0, 255.0) as u8
+    };
+    egui::Color32::from_rgb(lerp(a.r(), b.r()), lerp(a.g(), b.g()), lerp(a.b(), b.b()))
 }

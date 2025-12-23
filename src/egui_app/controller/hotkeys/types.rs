@@ -140,6 +140,17 @@ pub(crate) enum HotkeyCommand {
     CropSelection,
     CropSelectionNewSample,
     OpenFeedbackIssuePrompt,
+    CopyStatusLog,
+    ReviewAssignCategory1,
+    ReviewAssignCategory2,
+    ReviewAssignCategory3,
+    ReviewAssignCategory4,
+    ReviewAssignCategory5,
+    ReviewAssignCategory6,
+    ReviewAssignCategory7,
+    ReviewAssignCategory8,
+    ReviewAssignCategory9,
+    ReviewClearCategoryOverride,
 }
 
 /// Hotkey metadata surfaced to the UI.

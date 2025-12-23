@@ -117,6 +117,19 @@ impl EguiController {
                     self.build_label_cache(&self.wav_entries.entries),
                 );
             }
+            let needs_failures = !from_cache
+                || !self
+                    .ui_cache
+                    .browser
+                    .analysis_failures
+                    .contains_key(&id);
+            if needs_failures {
+                if let Ok(failures) = super::analysis_jobs::failed_samples_for_source(&id) {
+                    self.ui_cache.browser.analysis_failures.insert(id.clone(), failures);
+                } else {
+                    self.ui_cache.browser.analysis_failures.remove(&id);
+                }
+            }
             let missing: std::collections::HashSet<std::path::PathBuf> = self
                 .wav_entries
                 .entries

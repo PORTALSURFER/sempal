@@ -75,6 +75,7 @@ pub(super) struct SelectionContextState {
 
 pub(super) struct AppSettingsState {
     pub(super) feature_flags: crate::sample_sources::config::FeatureFlags,
+    pub(super) analysis: crate::sample_sources::config::AnalysisSettings,
     pub(super) updates: crate::sample_sources::config::UpdateSettings,
     pub(super) audio_output: AudioOutputConfig,
     pub(super) controls: crate::sample_sources::config::InteractionOptions,
@@ -104,8 +105,32 @@ impl LibraryCacheState {
 
 pub(super) struct BrowserCacheState {
     pub(super) labels: HashMap<SourceId, Vec<String>>,
+    pub(super) analysis_failures: HashMap<SourceId, HashMap<PathBuf, String>>,
     pub(super) search: wavs::BrowserSearchCache,
+    pub(super) features: HashMap<SourceId, FeatureCache>,
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum AnalysisJobStatus {
+    Pending,
+    Running,
+    Done,
+    Failed,
+    Canceled,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct FeatureStatus {
+    pub(crate) has_features_v1: bool,
+    pub(crate) duration_seconds: Option<f32>,
+    pub(crate) sr_used: Option<i64>,
+    pub(crate) analysis_status: Option<AnalysisJobStatus>,
+}
+
+pub(crate) struct FeatureCache {
+    pub(crate) rows: Vec<Option<FeatureStatus>>,
+}
+
 
 pub(super) struct FolderBrowsersState {
     pub(super) models: HashMap<SourceId, source_folders::FolderBrowserModel>,
@@ -130,8 +155,24 @@ pub(super) struct ControllerAudioState {
 
 pub(super) struct ControllerRuntimeState {
     pub(super) jobs: jobs::ControllerJobs,
+    pub(super) analysis: super::analysis_jobs::AnalysisWorkerPool,
+    pub(super) similarity_prep: Option<SimilarityPrepState>,
     #[cfg(test)]
     pub(super) progress_cancel_after: Option<usize>,
+}
+
+#[derive(Clone, Debug)]
+pub(super) struct SimilarityPrepState {
+    pub(super) source_id: SourceId,
+    pub(super) stage: SimilarityPrepStage,
+    pub(super) umap_version: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum SimilarityPrepStage {
+    AwaitScan,
+    AwaitEmbeddings,
+    Finalizing,
 }
 
 pub(super) struct ControllerHistoryState {

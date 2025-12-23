@@ -2,6 +2,7 @@ use super::*;
 use crate::egui_app::controller::hotkeys::{HotkeyAction, HotkeyCommand};
 use crate::egui_app::state::DestructiveSelectionEdit;
 use crate::egui_app::state::FocusContext;
+use crate::egui_app::state::SampleBrowserTab;
 use crate::sample_sources::SampleTag;
 
 pub(crate) trait HotkeysActions {
@@ -103,7 +104,12 @@ impl HotkeysActions for HotkeysController<'_> {
             }
             HotkeyCommand::FocusBrowserSearch => {
                 if matches!(focus, FocusContext::SampleBrowser) {
-                    self.focus_browser_search();
+                    if matches!(self.ui.browser.active_tab, SampleBrowserTab::Map) {
+                        self.ui.browser.active_tab = SampleBrowserTab::List;
+                        self.focus_browser_list();
+                    } else {
+                        self.focus_browser_search();
+                    }
                 }
             }
             HotkeyCommand::AddFocusedToCollection => {
@@ -117,6 +123,9 @@ impl HotkeysActions for HotkeysController<'_> {
             HotkeyCommand::OpenFeedbackIssuePrompt => {
                 self.ui.hotkeys.overlay_visible = false;
                 self.open_feedback_issue_prompt();
+            }
+            HotkeyCommand::CopyStatusLog => {
+                self.copy_status_log_to_clipboard();
             }
             HotkeyCommand::ToggleLoop => {
                 self.toggle_loop();
@@ -204,6 +213,16 @@ impl HotkeysActions for HotkeysController<'_> {
                     );
                 }
             }
+            HotkeyCommand::ReviewAssignCategory1
+            | HotkeyCommand::ReviewAssignCategory2
+            | HotkeyCommand::ReviewAssignCategory3
+            | HotkeyCommand::ReviewAssignCategory4
+            | HotkeyCommand::ReviewAssignCategory5
+            | HotkeyCommand::ReviewAssignCategory6
+            | HotkeyCommand::ReviewAssignCategory7
+            | HotkeyCommand::ReviewAssignCategory8
+            | HotkeyCommand::ReviewAssignCategory9
+            | HotkeyCommand::ReviewClearCategoryOverride => {}
         }
     }
 }
@@ -248,6 +267,7 @@ impl HotkeysController<'_> {
             relative_path: relative_path.clone(),
             file_size,
             modified_ns,
+            content_hash: None,
             tag,
             missing: false,
         };
@@ -328,6 +348,7 @@ impl HotkeysController<'_> {
             self.set_status(err, StatusTone::Error);
         }
     }
+
 }
 
 impl EguiController {

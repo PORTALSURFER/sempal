@@ -2,6 +2,9 @@
 //! This module now delegates responsibilities into focused submodules to
 //! keep files small and behaviour easy to reason about.
 
+mod analysis_backfill;
+mod analysis_jobs;
+mod analysis_options;
 mod audio_cache;
 mod audio_loader;
 mod audio_options;
@@ -13,10 +16,10 @@ mod collection_items;
 mod collection_items_helpers;
 mod collections_controller;
 mod config;
-mod controller_state;
+pub(crate) mod controller_state;
 mod drag_drop_controller;
-mod focus;
 mod feedback_issue;
+mod focus;
 pub(crate) mod hotkeys;
 mod hotkeys_controller;
 mod interaction_options;
@@ -25,12 +28,14 @@ mod loading;
 mod os_explorer;
 mod playback;
 mod progress;
+mod map_view;
 mod scans;
 mod selection_edits;
 mod selection_export;
 mod source_cache_invalidator;
 mod source_folders;
 mod sources;
+mod similarity_prep;
 mod tagging_service;
 mod trash;
 mod trash_move;
@@ -55,6 +60,8 @@ use crate::{
     selection::{SelectionRange, SelectionState},
     waveform::{DecodedWaveform, WaveformRenderer},
 };
+pub(in crate::egui_app::controller) use analysis_jobs::AnalysisJobMessage;
+use analysis_jobs::AnalysisWorkerPool;
 use audio_cache::AudioCache;
 use audio_loader::{AudioLoadError, AudioLoadJob, AudioLoadOutcome, AudioLoadResult};
 pub(in crate::egui_app::controller) use controller_state::*;
@@ -65,9 +72,10 @@ use std::{
     cell::RefCell,
     collections::{HashMap, HashSet, VecDeque},
     fs,
+    io::Write,
     path::{Path, PathBuf},
     rc::Rc,
-    time::{Duration, SystemTime},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 /// Minimum selection width used to decide when to play a looped region.
@@ -76,6 +84,7 @@ const AUDIO_CACHE_CAPACITY: usize = 12;
 const AUDIO_HISTORY_LIMIT: usize = 8;
 const RANDOM_HISTORY_LIMIT: usize = 20;
 const UNDO_LIMIT: usize = 20;
+const STATUS_LOG_LIMIT: usize = 200;
 
 /// Maintains app state and bridges core logic to the egui UI.
 pub struct EguiController {
@@ -101,6 +110,7 @@ impl EguiController {
         let (audio_job_tx, audio_job_rx) = audio_loader::spawn_audio_loader(renderer.clone());
         let (waveform_width, waveform_height) = renderer.dimensions();
         let jobs = jobs::ControllerJobs::new(wav_job_tx, wav_job_rx, audio_job_tx, audio_job_rx);
+        let analysis = AnalysisWorkerPool::new();
         Self {
             ui: UiState::default(),
             audio: ControllerAudioState {
@@ -139,7 +149,9 @@ impl EguiController {
             ui_cache: ControllerUiCacheState {
                 browser: BrowserCacheState {
                     labels: HashMap::new(),
+                    analysis_failures: HashMap::new(),
                     search: wavs::BrowserSearchCache::default(),
+                    features: HashMap::new(),
                 },
                 folders: FolderBrowsersState {
                     models: HashMap::new(),
@@ -160,6 +172,7 @@ impl EguiController {
             },
             settings: AppSettingsState {
                 feature_flags: crate::sample_sources::config::FeatureFlags::default(),
+                analysis: crate::sample_sources::config::AnalysisSettings::default(),
                 updates: crate::sample_sources::config::UpdateSettings::default(),
                 audio_output: AudioOutputConfig::default(),
                 controls: crate::sample_sources::config::InteractionOptions::default(),
@@ -168,6 +181,8 @@ impl EguiController {
             },
             runtime: ControllerRuntimeState {
                 jobs,
+                analysis,
+                similarity_prep: None,
                 #[cfg(test)]
                 progress_cancel_after: None,
             },
@@ -190,9 +205,20 @@ impl EguiController {
 
     pub(crate) fn set_status(&mut self, text: impl Into<String>, tone: StatusTone) {
         let (label, color) = status_badge(tone);
-        self.ui.status.text = text.into();
+        let text = text.into();
+        self.ui.status.text = text.clone();
         self.ui.status.badge_label = label;
         self.ui.status.badge_color = color;
+        let entry = format!("[{}] {}", self.ui.status.badge_label, text);
+        if self.ui.status.log.last().is_some_and(|last| last == &entry) {
+            return;
+        }
+        self.ui.status.log.push(entry);
+        if self.ui.status.log.len() > STATUS_LOG_LIMIT {
+            let overflow = self.ui.status.log.len() - STATUS_LOG_LIMIT;
+            self.ui.status.log.drain(0..overflow);
+        }
+        append_status_log_line(self.ui.status.log.last().expect("just pushed"));
     }
 
     #[allow(dead_code)]
@@ -256,6 +282,22 @@ impl EguiController {
     pub(crate) fn hotkeys_ctrl(&mut self) -> hotkeys_controller::HotkeysController<'_> {
         hotkeys_controller::HotkeysController::new(self)
     }
+}
+
+fn append_status_log_line(entry: &str) {
+    let Ok(dir) = crate::app_dirs::logs_dir() else {
+        return;
+    };
+    let path = dir.join("status.log");
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let line = format!("{timestamp} {entry}\n");
+    let Ok(mut file) = fs::OpenOptions::new().create(true).append(true).open(&path) else {
+        return;
+    };
+    let _ = file.write_all(line.as_bytes());
 }
 
 /// UI status tone for badge coloring.

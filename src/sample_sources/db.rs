@@ -41,6 +41,7 @@ pub struct WavEntry {
     pub relative_path: PathBuf,
     pub file_size: u64,
     pub modified_ns: i64,
+    pub content_hash: Option<String>,
     pub tag: SampleTag,
     pub missing: bool,
 }
@@ -162,7 +163,7 @@ impl SourceDatabase {
     /// Fetch all tracked wav files for this source.
     pub fn list_files(&self) -> Result<Vec<WavEntry>, SourceDbError> {
         let mut stmt = self.connection.prepare(
-            "SELECT path, file_size, modified_ns, tag, missing FROM wav_files ORDER BY path ASC",
+            "SELECT path, file_size, modified_ns, content_hash, tag, missing FROM wav_files ORDER BY path ASC",
         ).map_err(map_sql_error)?;
         let rows = stmt
             .query_map([], |row| {
@@ -171,8 +172,9 @@ impl SourceDatabase {
                     relative_path: PathBuf::from(path),
                     file_size: row.get::<_, i64>(1)? as u64,
                     modified_ns: row.get(2)?,
-                    tag: SampleTag::from_i64(row.get(3)?),
-                    missing: row.get::<_, i64>(4)? != 0,
+                    content_hash: row.get::<_, Option<String>>(3)?,
+                    tag: SampleTag::from_i64(row.get(4)?),
+                    missing: row.get::<_, i64>(5)? != 0,
                 })
             })
             .map_err(map_sql_error)?
@@ -209,9 +211,16 @@ impl SourceDatabase {
             .execute_batch(
                 "PRAGMA journal_mode=WAL;
              PRAGMA synchronous = NORMAL;
-             PRAGMA foreign_keys=ON;",
+             PRAGMA foreign_keys=ON;
+             PRAGMA busy_timeout=5000;
+             PRAGMA temp_store=MEMORY;
+             PRAGMA cache_size=-32000;
+             PRAGMA mmap_size=134217728;",
             )
             .map_err(map_sql_error)?;
+        if let Err(err) = crate::sqlite_ext::try_load_optional_extension(&self.connection) {
+            tracing::debug!("SQLite extension not loaded: {err}");
+        }
         Ok(())
     }
 
@@ -232,6 +241,12 @@ impl SourceDatabase {
             )
             .map_err(map_sql_error)?;
         ensure_optional_columns(&self.connection)?;
+        self.connection
+            .execute_batch(
+                "CREATE INDEX IF NOT EXISTS idx_wav_files_missing
+                 ON wav_files(path) WHERE missing != 0;",
+            )
+            .map_err(map_sql_error)?;
         Ok(())
     }
 }
@@ -263,6 +278,36 @@ impl<'conn> SourceWriteBatch<'conn> {
                 path,
                 file_size as i64,
                 modified_ns,
+                SampleTag::Neutral.as_i64(),
+                0i64
+            ])
+            .map_err(map_sql_error)?;
+        Ok(())
+    }
+
+    pub fn upsert_file_with_hash(
+        &mut self,
+        relative_path: &Path,
+        file_size: u64,
+        modified_ns: i64,
+        content_hash: &str,
+    ) -> Result<(), SourceDbError> {
+        let path = normalize_relative_path(relative_path)?;
+        self.tx
+            .prepare_cached(
+                "INSERT INTO wav_files (path, file_size, modified_ns, content_hash, tag, missing)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                 ON CONFLICT(path) DO UPDATE SET file_size = excluded.file_size,
+                                                modified_ns = excluded.modified_ns,
+                                                content_hash = excluded.content_hash,
+                                                missing = excluded.missing",
+            )
+            .map_err(map_sql_error)?
+            .execute(params![
+                path,
+                file_size as i64,
+                modified_ns,
+                content_hash,
                 SampleTag::Neutral.as_i64(),
                 0i64
             ])
@@ -375,12 +420,18 @@ fn ensure_optional_columns(connection: &Connection) -> Result<(), SourceDbError>
             )
             .map_err(map_sql_error)?;
     }
+    if !columns.contains("content_hash") {
+        connection
+            .execute("ALTER TABLE wav_files ADD COLUMN content_hash TEXT", [])
+            .map_err(map_sql_error)?;
+    }
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rusqlite::OptionalExtension;
     use tempfile::tempdir;
 
     #[test]
@@ -473,5 +524,33 @@ mod tests {
         db.set_missing(Path::new("one.wav"), false).unwrap();
         let rows = db.list_files().unwrap();
         assert!(!rows[0].missing);
+    }
+
+    #[test]
+    fn applies_workload_pragmas_and_indices() {
+        let dir = tempdir().unwrap();
+        let _db = SourceDatabase::open(dir.path()).unwrap();
+        let conn = Connection::open(dir.path().join(DB_FILE_NAME)).unwrap();
+
+        let journal_mode: String = conn.query_row("PRAGMA journal_mode", [], |row| row.get(0)).unwrap();
+        assert_eq!(journal_mode.to_ascii_lowercase(), "wal");
+
+        let synchronous: i64 = conn.query_row("PRAGMA synchronous", [], |row| row.get(0)).unwrap();
+        assert_eq!(synchronous, 2, "expected PRAGMA synchronous=NORMAL (2)");
+
+        let busy_timeout: i64 = conn
+            .query_row("PRAGMA busy_timeout", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(busy_timeout, 5000);
+
+        let idx: Option<String> = conn
+            .query_row(
+                "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_wav_files_missing'",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .unwrap();
+        assert_eq!(idx.as_deref(), Some("idx_wav_files_missing"));
     }
 }

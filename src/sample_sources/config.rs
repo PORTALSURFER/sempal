@@ -19,6 +19,8 @@ pub struct AppConfig {
     pub collections: Vec<Collection>,
     pub feature_flags: FeatureFlags,
     #[serde(default)]
+    pub analysis: AnalysisSettings,
+    #[serde(default)]
     pub updates: UpdateSettings,
     pub trash_folder: Option<PathBuf>,
     /// Optional default root used when creating collection export folders.
@@ -37,6 +39,8 @@ pub struct AppConfig {
 struct AppSettings {
     #[serde(default)]
     pub feature_flags: FeatureFlags,
+    #[serde(default)]
+    pub analysis: AnalysisSettings,
     #[serde(default)]
     pub updates: UpdateSettings,
     #[serde(default)]
@@ -60,6 +64,27 @@ pub struct FeatureFlags {
     pub collections_enabled: bool,
     #[serde(default = "default_true")]
     pub autoplay_selection: bool,
+}
+
+
+/// Global preferences for analysis and feature extraction.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AnalysisSettings {
+    /// Skip analysis for files longer than this many seconds.
+    #[serde(default = "default_max_analysis_duration_seconds")]
+    pub max_analysis_duration_seconds: f32,
+    /// Analysis worker count override (0 = auto).
+    #[serde(default = "default_analysis_worker_count")]
+    pub analysis_worker_count: u32,
+}
+
+impl Default for AnalysisSettings {
+    fn default() -> Self {
+        Self {
+            max_analysis_duration_seconds: default_max_analysis_duration_seconds(),
+            analysis_worker_count: default_analysis_worker_count(),
+        }
+    }
 }
 
 /// Persisted preferences for update checks.
@@ -216,6 +241,7 @@ pub fn load_or_default() -> Result<AppConfig, ConfigError> {
         sources: library.sources,
         collections: library.collections,
         feature_flags: settings.feature_flags,
+        analysis: settings.analysis,
         updates: settings.updates,
         trash_folder: settings.trash_folder,
         collection_export_root: settings.collection_export_root,
@@ -245,6 +271,7 @@ pub fn save_to_path(config: &AppConfig, path: &Path) -> Result<(), ConfigError> 
     save_settings_to_path(
         &AppSettings {
             feature_flags: config.feature_flags.clone(),
+            analysis: config.analysis.clone(),
             updates: config.updates.clone(),
             trash_folder: config.trash_folder.clone(),
             collection_export_root: config.collection_export_root.clone(),
@@ -294,6 +321,7 @@ fn migrate_legacy_config(legacy_path: &Path, new_path: &Path) -> Result<AppSetti
     })?;
     let settings = AppSettings {
         feature_flags: legacy.feature_flags,
+        analysis: AnalysisSettings::default(),
         updates: UpdateSettings::default(),
         trash_folder: legacy.trash_folder,
         collection_export_root: None,
@@ -358,6 +386,14 @@ fn default_audio_output() -> AudioOutputConfig {
     AudioOutputConfig::default()
 }
 
+fn default_max_analysis_duration_seconds() -> f32 {
+    30.0
+}
+
+fn default_analysis_worker_count() -> u32 {
+    0
+}
+
 fn default_volume() -> f32 {
     1.0
 }
@@ -380,6 +416,7 @@ impl Default for AppConfig {
             sources: Vec::new(),
             collections: Vec::new(),
             feature_flags: FeatureFlags::default(),
+            analysis: AnalysisSettings::default(),
             updates: UpdateSettings::default(),
             trash_folder: None,
             collection_export_root: None,
@@ -395,6 +432,7 @@ impl Default for AppSettings {
     fn default() -> Self {
         Self {
             feature_flags: FeatureFlags::default(),
+            analysis: AnalysisSettings::default(),
             updates: UpdateSettings::default(),
             trash_folder: None,
             collection_export_root: None,
@@ -455,6 +493,7 @@ mod tests {
                 sources: vec![SampleSource::new(PathBuf::from("old_source"))],
                 collections: vec![Collection::new("Old Collection")],
                 feature_flags: FeatureFlags::default(),
+                analysis: AnalysisSettings::default(),
                 updates: UpdateSettings::default(),
                 trash_folder: Some(PathBuf::from("trash_here")),
                 collection_export_root: None,
@@ -548,4 +587,5 @@ mod tests {
             assert_eq!(loaded.collection_export_root, Some(root));
         });
     }
+
 }

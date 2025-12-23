@@ -1,0 +1,77 @@
+{
+  "version": "v1",
+  "classes": [
+    {
+      "id": "kick",
+      "name": "Kick",
+      "description": "Low-frequency drum hit with a short transient and strong sub/body.",
+      "examples": ["808 kick", "acoustic kick", "punchy kick", "sub kick"]
+    },
+    {
+      "id": "snare",
+      "name": "Snare",
+      "description": "Sharp drum hit with a noisy body and bright transient.",
+      "examples": ["rimmed snare", "tight snare", "fat snare", "snare roll hit"]
+    },
+    {
+      "id": "clap",
+      "name": "Clap",
+      "description": "Handclap-style hit with layered transients and mid/high noise.",
+      "examples": ["808 clap", "layered clap", "reverb clap", "tight clap"]
+    },
+    {
+      "id": "hihat",
+      "name": "Hi-hat",
+      "description": "Short metallic percussion, closed or semi-open.",
+      "examples": ["closed hat", "open hat", "shuffled hat", "hat loop hit"]
+    },
+    {
+      "id": "tom",
+      "name": "Tom",
+      "description": "Drum tom hit with pitched body and short decay.",
+      "examples": ["low tom", "mid tom", "high tom", "tom fill hit"]
+    },
+    {
+      "id": "cymbal",
+      "name": "Cymbal",
+      "description": "Crash/ride-style metallic hit or wash.",
+      "examples": ["crash", "ride", "china", "splash"]
+    },
+    {
+      "id": "perc",
+      "name": "Percussion",
+      "description": "Non-drumkit percussive hit or texture.",
+      "examples": ["conga", "bongo", "shaker hit", "woodblock"]
+    },
+    {
+      "id": "bass",
+      "name": "Bass",
+      "description": "Low-frequency tonal one-shots or notes.",
+      "examples": ["bass one-shot", "sub bass note", "synth bass hit", "bass stab"]
+    },
+    {
+      "id": "vocal",
+      "name": "Vocal",
+      "description": "Human voice phrases, chops, or one-shots.",
+      "examples": ["vocal chop", "spoken word", "chant", "adlib"]
+    },
+    {
+      "id": "fx",
+      "name": "FX",
+      "description": "Sound effects and non-musical textures.",
+      "examples": ["risers", "impacts", "sweeps", "noise burst"]
+    },
+    {
+      "id": "loop",
+      "name": "Loop",
+      "description": "Multi-hit rhythmic or melodic loop.",
+      "examples": ["drum loop", "percussion loop", "melodic loop", "top loop"]
+    },
+    {
+      "id": "one_shot",
+      "name": "One-shot",
+      "description": "Single-hit sample that is not a drum or vocal.",
+      "examples": ["synth stab", "pluck hit", "guitar hit", "piano stab"]
+    }
+  ]
+}

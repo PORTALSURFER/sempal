@@ -6,6 +6,11 @@ impl EguiController {
     pub fn load_configuration(&mut self) -> Result<(), crate::sample_sources::config::ConfigError> {
         let cfg = crate::sample_sources::config::load_or_default()?;
         self.settings.feature_flags = cfg.feature_flags;
+        self.settings.analysis = cfg.analysis;
+        self.settings.analysis.max_analysis_duration_seconds =
+            super::analysis_options::clamp_max_analysis_duration_seconds(
+                self.settings.analysis.max_analysis_duration_seconds,
+            );
         self.settings.updates = cfg.updates.clone();
         self.settings.trash_folder = cfg.trash_folder.clone();
         self.settings.collection_export_root = cfg.collection_export_root.clone();
@@ -45,6 +50,17 @@ impl EguiController {
             );
         }
         self.library.collections = cfg.collections;
+        if let Ok(root) = crate::app_dirs::app_root_dir() {
+            let db_path = root.join(crate::sample_sources::library::LIBRARY_DB_FILE_NAME);
+            if let Ok(mut conn) = super::analysis_jobs::open_library_db(&db_path) {
+                if let Err(err) = super::analysis_jobs::purge_orphaned_samples(&mut conn) {
+                    self.set_status(
+                        format!("Failed to purge orphaned sample data: {err}"),
+                        StatusTone::Warning,
+                    );
+                }
+            }
+        }
         // Backfill clip roots for legacy collection-owned clips that were not persisted.
         for collection in self.library.collections.iter_mut() {
             let expected_source_prefix = format!("collection-{}", collection.id.as_str());
@@ -80,6 +96,15 @@ impl EguiController {
             let _ = self.refresh_wavs();
         }
         self.maybe_check_for_updates_on_startup();
+        self.runtime.analysis.set_max_analysis_duration_seconds(
+            self.settings.analysis.max_analysis_duration_seconds,
+        );
+        self.runtime
+            .analysis
+            .set_worker_count(self.settings.analysis.analysis_worker_count);
+        self.runtime
+            .analysis
+            .start(self.runtime.jobs.message_sender());
         Ok(())
     }
 
@@ -95,6 +120,7 @@ impl EguiController {
             sources: self.library.sources.clone(),
             collections: self.library.collections.clone(),
             feature_flags: self.settings.feature_flags.clone(),
+            analysis: self.settings.analysis.clone(),
             updates: self.settings.updates.clone(),
             trash_folder: self.settings.trash_folder.clone(),
             collection_export_root: self.settings.collection_export_root.clone(),

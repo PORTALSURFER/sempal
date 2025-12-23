@@ -55,6 +55,7 @@ impl BrowserController<'_> {
             relative_path: ctx.entry.relative_path.clone(),
             file_size,
             modified_ns,
+            content_hash: None,
             tag,
             missing: false,
         };
@@ -183,6 +184,7 @@ impl BrowserController<'_> {
                 relative_path: updated_path.clone(),
                 file_size,
                 modified_ns,
+                content_hash: None,
                 tag,
                 missing: false,
             },

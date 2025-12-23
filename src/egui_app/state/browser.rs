@@ -27,10 +27,14 @@ pub struct SampleBrowserState {
     pub search_focus_requested: bool,
     /// When enabled, Up/Down jump through random samples instead of list order.
     pub random_navigation_mode: bool,
+    /// Optional similar-sounds filter scoped to the current source.
+    pub similar_query: Option<SimilarQuery>,
     /// Pending inline action for the sample browser rows.
     pub pending_action: Option<SampleBrowserActionPrompt>,
     /// Flag to request focus on the active inline rename editor.
     pub rename_focus_requested: bool,
+    /// Active tab in the sample browser area.
+    pub active_tab: SampleBrowserTab,
 }
 
 impl Default for SampleBrowserState {
@@ -51,10 +55,20 @@ impl Default for SampleBrowserState {
             search_query: String::new(),
             search_focus_requested: false,
             random_navigation_mode: false,
+            similar_query: None,
             pending_action: None,
             rename_focus_requested: false,
+            active_tab: SampleBrowserTab::List,
         }
     }
+}
+
+/// Holds the current similar-sounds query context.
+#[derive(Clone, Debug)]
+pub struct SimilarQuery {
+    pub sample_id: String,
+    pub label: String,
+    pub indices: Vec<usize>,
 }
 
 /// Identifies a row inside one of the triage flag columns.
@@ -85,4 +99,11 @@ pub enum TriageFlagFilter {
 #[derive(Clone, Debug)]
 pub enum SampleBrowserActionPrompt {
     Rename { target: PathBuf, name: String },
+}
+
+/// Tabs for the sample browser area.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SampleBrowserTab {
+    List,
+    Map,
 }

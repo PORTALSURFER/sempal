@@ -1,20 +1,18 @@
 ## Goal
-- Add a small dice logo button to the sample browser toolbar (next to the search bar) that plays a random visible sample on click, and toggles sticky random navigation mode on Shift+click.
+- Update the similarity map UX so panning only happens on right-click drag, and add a left-click drag “paint to play” interaction that scrubs/plays samples under the cursor as the user drags.
 
 ## Proposed solutions
-- **Text/Unicode icon button:** Add an `egui::Button` with a compact label like `dice` or a non-emoji die glyph, styled to match existing toolbar controls; simplest, no new assets.
-- **Image icon button:** Add a small PNG/SVG dice icon under `assets/`, load it as a texture (similar to waveform textures), and render it via an `ImageButton`; gives a true “logo” feel but requires asset plumbing.
-- **Right-aligned control cluster:** Place the dice button in the right-to-left toolbar area near the item count, optionally indicating sticky mode via highlight; keeps layout tidy regardless of filter label width.
+- Add explicit mouse button handling in the map controller: gate pan logic to right button, leave left button free for playback gesture.
+- Implement a drag-to-play handler that tracks cursor over map coordinates, finds nearest sample(s), and streams short previews as the cursor moves.
+- Debounce/limit playback triggers (e.g., threshold movement distance or time) to avoid flooding audio playback while painting.
+- Keep existing zoom/hover/selection behavior intact; ensure new gestures don’t conflict with current shortcuts.
 
 ## Step-by-step plan
-1. [x] Locate the sample browser toolbar code (`render_sample_browser_filter` in `src/egui_app/ui/sample_browser_panel.rs`) and review existing layout/styling helpers.
-2. [x] Decide on icon approach (text vs. image) based on consistency with other UI affordances and effort; if image, pick/create a small dice asset.
-3. [x] Add a dice button to the toolbar horizontal row, positioned near the search field or in the right-aligned cluster, with hover text explaining click vs. Shift+click.
-4. [x] Wire click handling: normal click calls `controller.play_random_visible_sample()`, Shift+click calls `controller.toggle_random_navigation_mode()`.
-5. [x] Add a visual sticky-mode indicator on the button when `controller.random_navigation_mode_enabled()` is true (e.g., selected state or subtle color change) to reflect toggle state.
-6. [x] Add/adjust tests if feasible (prefer controller-level unit tests for random mode and random play invariants) and manually verify UI behavior and layout.
-7. [x] Update usage/help text if needed (e.g., `docs/usage.md` or hotkey overlay) to mention the dice button as an alternative to `Shift+R` / `Alt+R`.
-8. [x] Fix egui API mismatch for selected-state button styling on older egui versions.
+1. [-] Inspect current similarity map input handling (controller + UI) to see how pan/zoom, hover, and playback are wired.
+2. [-] Gate panning to right-click drag only and confirm zoom/selection still work as before.
+3. [-] Add left-click drag “paint to play”: track cursor movement, find nearest samples under the path, and trigger audio playback.
+4. [-] Add throttling/debouncing so playback events don’t spam while dragging; ensure audio stop/cleanup on release.
+5. [-] Test the new interactions (right-click pan, left-click paint-to-play) and adjust any conflicting shortcuts or behaviors.
 
 ## Code Style & Architecture Rules Reminder
 - Keep files under 400 lines; split when necessary.

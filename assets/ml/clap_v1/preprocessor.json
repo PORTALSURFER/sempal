@@ -1,0 +1,19 @@
+{
+  "version": "v1",
+  "model": "laion/clap-htsat-fused",
+  "runtime": "onnxruntime-cpu",
+  "sampling_rate_hz": 48000,
+  "chunk_seconds": 10.0,
+  "chunk_samples": 480000,
+  "padding": "repeat",
+  "stft": {
+    "n_fft": 1024,
+    "hop_length": 480
+  },
+  "mel": {
+    "n_mels": 64,
+    "fmin": 0.0,
+    "fmax": 16000.0
+  },
+  "log_scaling": "match_hf_clap_feature_extractor"
+}

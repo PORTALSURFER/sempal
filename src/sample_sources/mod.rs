@@ -65,6 +65,11 @@ impl SampleSource {
         }
     }
 
+    /// Create a sample source with an existing id (used when re-attaching a known root).
+    pub fn new_with_id(id: SourceId, root: PathBuf) -> Self {
+        Self { id, root }
+    }
+
     /// Location of the SQLite database for this source.
     #[allow(dead_code)]
     pub fn db_path(&self) -> PathBuf {

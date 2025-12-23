@@ -9,6 +9,7 @@ mod drag;
 mod feedback_issue;
 mod focus;
 mod hotkeys;
+mod map;
 mod progress;
 mod sources;
 mod status;
@@ -23,6 +24,7 @@ pub use drag::*;
 pub use feedback_issue::*;
 pub use focus::*;
 pub use hotkeys::*;
+pub use map::*;
 pub use progress::*;
 pub use sources::*;
 pub use status::*;
@@ -50,6 +52,8 @@ pub struct UiState {
     pub feedback_issue: FeedbackIssueUiState,
     /// Audio device/options UI state.
     pub audio: AudioOptionsState,
+    /// 2D map explorer state.
+    pub map: MapUiState,
     /// Interaction and navigation tuning options.
     pub controls: InteractionOptionsState,
     /// Master output volume (0.0-1.0).
@@ -77,6 +81,7 @@ impl Default for UiState {
             hotkeys: HotkeyUiState::default(),
             feedback_issue: FeedbackIssueUiState::default(),
             audio: AudioOptionsState::default(),
+            map: MapUiState::default(),
             controls: InteractionOptionsState::default(),
             volume: 1.0,
             update: UpdateUiState::default(),

@@ -143,6 +143,8 @@ impl EguiApp {
                                 ui.separator();
                                 self.render_audio_options_menu(ui);
                                 ui.separator();
+                                self.render_analysis_options_menu(ui);
+                                ui.separator();
                                 if ui.button("Move trashed samples to folder").clicked() {
                                     self.controller.move_all_trashed_to_folder();
                                     close_menu = true;
@@ -245,6 +247,11 @@ impl EguiApp {
                                         progress.completed.min(progress.total),
                                         progress.total
                                     ))
+                                } else if progress.task
+                                    == Some(crate::egui_app::state::ProgressTaskKind::Scan)
+                                    && progress.completed > 0
+                                {
+                                    bar.text(format!("{} files", progress.completed))
                                 } else {
                                     bar.text("Working…")
                                 };
@@ -323,6 +330,44 @@ impl EguiApp {
             ui.label(
                 RichText::new(warning).color(style::status_badge_color(style::StatusTone::Warning)),
             );
+        }
+    }
+
+    fn render_analysis_options_menu(&mut self, ui: &mut egui::Ui) {
+        let palette = style::palette();
+        ui.label(
+            RichText::new("Analysis")
+                .strong()
+                .color(palette.text_primary),
+        );
+        ui.label(
+            RichText::new("Skip feature extraction for files longer than:")
+                .color(palette.text_muted),
+        );
+        let mut seconds = self.controller.max_analysis_duration_seconds();
+        let drag = egui::DragValue::new(&mut seconds)
+            .speed(1.0)
+            .range(1.0..=3600.0)
+            .suffix(" s");
+        let response = ui
+            .add(drag)
+            .on_hover_text("Long songs/loops can be expensive to decode and analyze");
+        if response.changed() {
+            self.controller.set_max_analysis_duration_seconds(seconds);
+        }
+
+        ui.add_space(ui.spacing().item_spacing.y);
+        ui.label(
+            RichText::new("Analysis workers (0 = auto):").color(palette.text_muted),
+        );
+        let mut workers = self.controller.analysis_worker_count() as i64;
+        let drag = egui::DragValue::new(&mut workers).range(0..=64);
+        let response = ui
+            .add(drag)
+            .on_hover_text("Limit background CPU usage (change takes effect on next start)");
+        if response.changed() {
+            self.controller
+                .set_analysis_worker_count(workers.max(0) as u32);
         }
     }
 

@@ -65,13 +65,24 @@ impl EguiController {
             self.set_status("Source already added", StatusTone::Info);
             return Ok(());
         }
-        let source = SampleSource::new(normalized.clone());
+        let source = match crate::sample_sources::library::lookup_source_id_for_root(&normalized) {
+            Ok(Some(id)) => SampleSource::new_with_id(id, normalized.clone()),
+            Ok(None) => SampleSource::new(normalized.clone()),
+            Err(err) => {
+                self.set_status(
+                    format!("Could not check library history (continuing): {err}"),
+                    StatusTone::Warning,
+                );
+                SampleSource::new(normalized.clone())
+            }
+        };
         SourceDatabase::open(&normalized)
             .map_err(|err| format!("Failed to create database: {err}"))?;
         let _ = self.cache_db(&source);
         self.library.sources.push(source.clone());
         self.select_source(Some(source.id.clone()));
         self.persist_config("Failed to save config after adding source")?;
+        self.request_quick_sync();
         Ok(())
     }
 
@@ -110,6 +121,17 @@ impl EguiController {
             self.clear_waveform_view();
         }
         let _ = self.persist_config("Failed to save config after removing source");
+        if let Ok(root) = crate::app_dirs::app_root_dir() {
+            let db_path = root.join(crate::sample_sources::library::LIBRARY_DB_FILE_NAME);
+            if let Ok(mut conn) = super::analysis_jobs::open_library_db(&db_path) {
+                if let Err(err) = super::analysis_jobs::purge_orphaned_samples(&mut conn) {
+                    self.set_status(
+                        format!("Failed to purge removed source data: {err}"),
+                        StatusTone::Warning,
+                    );
+                }
+            }
+        }
         self.refresh_sources_ui();
         let _ = self.refresh_wavs();
         self.refresh_collections_ui();
@@ -221,6 +243,9 @@ impl EguiController {
         self.selection_state.ctx.selected_source = id;
         self.sample_view.wav.selected_wav = None;
         self.clear_waveform_view();
+        self.ui.map.bounds = None;
+        self.ui.map.last_query = None;
+        self.ui.map.cached_points.clear();
         self.refresh_sources_ui();
         self.queue_wav_load();
         let _ = self.persist_config("Failed to save selection");

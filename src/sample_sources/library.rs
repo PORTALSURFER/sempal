@@ -3,8 +3,11 @@
 use std::path::{Path, PathBuf};
 use std::sync::{LazyLock, Mutex};
 
-use rusqlite::{Connection, OptionalExtension, Transaction, params};
+use rusqlite::{Connection, Transaction, params};
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
+
+mod schema;
 
 use super::{Collection, CollectionId, SampleSource, SourceId};
 use crate::app_dirs;
@@ -25,6 +28,7 @@ const COLLECTION_EXPORT_PATHS_VERSION_KEY: &str = "collections_export_paths_vers
 const COLLECTION_EXPORT_PATHS_VERSION_V2: &str = "2";
 const COLLECTION_MEMBER_CLIP_ROOT_VERSION_KEY: &str = "collection_members_clip_root_version";
 const COLLECTION_MEMBER_CLIP_ROOT_VERSION_V1: &str = "1";
+const KNOWN_SOURCES_KEY: &str = "known_sources_v1";
 
 static LIBRARY_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
@@ -43,6 +47,8 @@ pub enum LibraryError {
     /// Failed to open or query the database.
     #[error("Library database query failed: {0}")]
     Sql(#[from] rusqlite::Error),
+    #[error("Library metadata parse failed: {0}")]
+    Json(#[from] serde_json::Error),
 }
 
 /// Load all sources and collections from the global library database, creating it if missing.
@@ -59,6 +65,23 @@ pub fn save(state: &LibraryState) -> Result<(), LibraryError> {
     db.replace_state(state)
 }
 
+/// Open a connection to the library DB with schema + migrations applied.
+pub fn open_connection() -> Result<Connection, LibraryError> {
+    let _guard = LIBRARY_LOCK.lock().expect("library lock mutex poisoned");
+    let db = LibraryDatabase::open()?;
+    Ok(db.into_connection())
+}
+
+/// Attempt to reuse a historical source id for the given root folder.
+///
+/// This allows removing and re-adding a source without creating a new `source_id::...` namespace
+/// (and therefore avoids re-analysis when files are unchanged).
+pub fn lookup_source_id_for_root(root: &Path) -> Result<Option<SourceId>, LibraryError> {
+    let _guard = LIBRARY_LOCK.lock().expect("library lock mutex poisoned");
+    let db = LibraryDatabase::open()?;
+    db.lookup_known_source_id(root)
+}
+
 struct LibraryDatabase {
     connection: Connection,
 }
@@ -73,7 +96,18 @@ impl LibraryDatabase {
         db.apply_schema()?;
         db.migrate_collection_member_clip_roots()?;
         db.migrate_collection_export_paths()?;
+        db.migrate_analysis_jobs_content_hash()?;
+        db.migrate_samples_analysis_metadata()?;
+        db.migrate_features_table()?;
+        db.migrate_layout_umap_table()?;
+        db.migrate_hdbscan_clusters_table()?;
+        db.migrate_embeddings_table()?;
+        db.migrate_ann_index_meta_table()?;
         Ok(db)
+    }
+
+    fn into_connection(self) -> Connection {
+        self.connection
     }
 
     fn load_state(&self) -> Result<LibraryState, LibraryError> {
@@ -90,6 +124,7 @@ impl LibraryDatabase {
         Self::replace_sources(&tx, &state.sources)?;
         Self::replace_collections(&tx, &state.collections)?;
         tx.commit().map_err(map_sql_error)?;
+        self.remember_known_sources(&state.sources)?;
         Ok(())
     }
 
@@ -194,14 +229,46 @@ impl LibraryDatabase {
             .prepare("INSERT INTO sources (id, root, sort_order) VALUES (?1, ?2, ?3)")
             .map_err(map_sql_error)?;
         for (idx, source) in sources.iter().enumerate() {
-            stmt.execute(params![
-                source.id.as_str(),
-                source.root.to_string_lossy(),
-                idx as i64
-            ])
-            .map_err(map_sql_error)?;
+            stmt.execute(params![source.id.as_str(), source.root.to_string_lossy(), idx as i64])
+                .map_err(map_sql_error)?;
         }
         Ok(())
+    }
+
+    fn lookup_known_source_id(&self, root: &Path) -> Result<Option<SourceId>, LibraryError> {
+        let normalized = normalize_path(root);
+        let needle = normalized.to_string_lossy().to_string();
+        let mappings = self.load_known_sources()?;
+        Ok(mappings
+            .into_iter()
+            .find(|entry| entry.root == needle)
+            .map(|entry| SourceId::from_string(entry.source_id)))
+    }
+
+    fn remember_known_sources(&mut self, sources: &[SampleSource]) -> Result<(), LibraryError> {
+        let mut mappings = self.load_known_sources()?;
+        for source in sources {
+            let normalized = normalize_path(&source.root);
+            let root = normalized.to_string_lossy().to_string();
+            if let Some(existing) = mappings.iter_mut().find(|entry| entry.root == root) {
+                existing.source_id = source.id.as_str().to_string();
+            } else {
+                mappings.push(KnownSourceMapping {
+                    root,
+                    source_id: source.id.as_str().to_string(),
+                });
+            }
+        }
+        mappings.sort_by(|a, b| a.root.cmp(&b.root));
+        self.set_metadata(KNOWN_SOURCES_KEY, &serde_json::to_string(&mappings)?)?;
+        Ok(())
+    }
+
+    fn load_known_sources(&self) -> Result<Vec<KnownSourceMapping>, LibraryError> {
+        let Some(value) = self.get_metadata(KNOWN_SOURCES_KEY)? else {
+            return Ok(Vec::new());
+        };
+        serde_json::from_str::<Vec<KnownSourceMapping>>(&value).or_else(|_| Ok(Vec::new()))
     }
 
     fn replace_collections(
@@ -276,146 +343,12 @@ impl LibraryDatabase {
         }
         Ok(())
     }
+}
 
-    fn apply_pragmas(&self) -> Result<(), LibraryError> {
-        self.connection
-            .execute_batch(
-                "PRAGMA journal_mode=WAL;
-                 PRAGMA synchronous = NORMAL;
-                 PRAGMA foreign_keys=ON;",
-            )
-            .map_err(map_sql_error)?;
-        Ok(())
-    }
-
-    fn apply_schema(&self) -> Result<(), LibraryError> {
-        self.connection
-            .execute_batch(
-                "CREATE TABLE IF NOT EXISTS metadata (
-                    key TEXT PRIMARY KEY,
-                    value TEXT NOT NULL
-                );
-                 CREATE TABLE IF NOT EXISTS sources (
-                    id TEXT PRIMARY KEY,
-                    root TEXT NOT NULL,
-                    sort_order INTEGER NOT NULL
-                );
-                 CREATE TABLE IF NOT EXISTS collections (
-                    id TEXT PRIMARY KEY,
-                    name TEXT NOT NULL,
-                    export_path TEXT,
-                    sort_order INTEGER NOT NULL
-                );
-                 CREATE TABLE IF NOT EXISTS collection_members (
-                    collection_id TEXT NOT NULL,
-                    source_id TEXT NOT NULL,
-                    relative_path TEXT NOT NULL,
-                    clip_root TEXT,
-                    sort_order INTEGER NOT NULL,
-                    PRIMARY KEY (collection_id, source_id, relative_path),
-                    FOREIGN KEY(collection_id) REFERENCES collections(id) ON DELETE CASCADE
-                );",
-            )
-            .map_err(map_sql_error)?;
-        Ok(())
-    }
-
-    fn migrate_collection_member_clip_roots(&mut self) -> Result<(), LibraryError> {
-        let current = self.get_metadata(COLLECTION_MEMBER_CLIP_ROOT_VERSION_KEY)?;
-        if current.as_deref() == Some(COLLECTION_MEMBER_CLIP_ROOT_VERSION_V1) {
-            return Ok(());
-        }
-        let tx = self.connection.transaction().map_err(map_sql_error)?;
-        let alter_result = tx.execute(
-            "ALTER TABLE collection_members ADD COLUMN clip_root TEXT",
-            [],
-        );
-        match alter_result {
-            Ok(_) => {}
-            Err(err) => {
-                let message = err.to_string().to_ascii_lowercase();
-                if !message.contains("duplicate column") {
-                    return Err(map_sql_error(err));
-                }
-            }
-        }
-        tx.commit().map_err(map_sql_error)?;
-        self.set_metadata(
-            COLLECTION_MEMBER_CLIP_ROOT_VERSION_KEY,
-            COLLECTION_MEMBER_CLIP_ROOT_VERSION_V1,
-        )
-    }
-
-    fn migrate_collection_export_paths(&mut self) -> Result<(), LibraryError> {
-        let current = self.get_metadata(COLLECTION_EXPORT_PATHS_VERSION_KEY)?;
-        if current.as_deref() == Some(COLLECTION_EXPORT_PATHS_VERSION_V2) {
-            return Ok(());
-        }
-        self.convert_export_paths_to_final_dirs()?;
-        self.set_metadata(
-            COLLECTION_EXPORT_PATHS_VERSION_KEY,
-            COLLECTION_EXPORT_PATHS_VERSION_V2,
-        )
-    }
-
-    fn convert_export_paths_to_final_dirs(&mut self) -> Result<(), LibraryError> {
-        let tx = self.connection.transaction().map_err(map_sql_error)?;
-        let mut select = tx
-            .prepare(
-                "SELECT id, name, export_path
-                 FROM collections
-                 WHERE export_path IS NOT NULL",
-            )
-            .map_err(map_sql_error)?;
-        let updates = select
-            .query_map([], |row| {
-                let id: String = row.get(0)?;
-                let name: String = row.get(1)?;
-                let export_path: String = row.get(2)?;
-                Ok((id, name, export_path))
-            })
-            .map_err(map_sql_error)?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(map_sql_error)?;
-        drop(select);
-        if !updates.is_empty() {
-            let mut update = tx
-                .prepare("UPDATE collections SET export_path = ?1 WHERE id = ?2")
-                .map_err(map_sql_error)?;
-            for (id, name, export_path) in updates {
-                let legacy_root = PathBuf::from(export_path);
-                let folder_name = collection_folder_name_from_str(&name);
-                let new_path = normalize_path(legacy_root.join(folder_name).as_path());
-                update
-                    .execute(params![new_path.to_string_lossy(), id])
-                    .map_err(map_sql_error)?;
-            }
-        }
-        tx.commit().map_err(map_sql_error)
-    }
-
-    fn get_metadata(&self, key: &str) -> Result<Option<String>, LibraryError> {
-        self.connection
-            .query_row(
-                "SELECT value FROM metadata WHERE key = ?1",
-                params![key],
-                |row| row.get(0),
-            )
-            .optional()
-            .map_err(map_sql_error)
-    }
-
-    fn set_metadata(&self, key: &str, value: &str) -> Result<(), LibraryError> {
-        self.connection
-            .execute(
-                "INSERT INTO metadata (key, value)
-                 VALUES (?1, ?2)
-                 ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-                params![key, value],
-            )
-            .map_err(map_sql_error)?;
-        Ok(())
-    }
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct KnownSourceMapping {
+    root: String,
+    source_id: String,
 }
 
 fn database_path() -> Result<PathBuf, LibraryError> {
@@ -448,100 +381,4 @@ fn map_app_dir_error(error: app_dirs::AppDirError) -> LibraryError {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::fs;
-    use tempfile::tempdir;
-
-    fn with_config_home<T>(dir: &Path, f: impl FnOnce() -> T) -> T {
-        let _guard = crate::app_dirs::ConfigBaseGuard::set(dir.to_path_buf());
-        f()
-    }
-
-    #[test]
-    fn saves_and_loads_sources_and_collections() {
-        let temp = tempdir().unwrap();
-        with_config_home(temp.path(), || {
-            let state = LibraryState {
-                sources: vec![
-                    SampleSource::new(PathBuf::from("one")),
-                    SampleSource::new(PathBuf::from("two")),
-                ],
-                collections: vec![Collection {
-                    id: CollectionId::new(),
-                    name: "Test".into(),
-                    members: vec![CollectionMember {
-                        source_id: SourceId::new(),
-                        relative_path: PathBuf::from("file.wav"),
-                        clip_root: None,
-                    }],
-                    export_path: None,
-                }],
-            };
-            save(&state).unwrap();
-            let loaded = load().unwrap();
-            assert_eq!(loaded.sources.len(), 2);
-            assert_eq!(loaded.collections.len(), 1);
-            assert_eq!(loaded.collections[0].members.len(), 1);
-        });
-    }
-
-    #[test]
-    fn database_lives_under_app_root() {
-        let temp = tempdir().unwrap();
-        with_config_home(temp.path(), || {
-            let _ = load().unwrap();
-            let db_path = temp
-                .path()
-                .join(app_dirs::APP_DIR_NAME)
-                .join(LIBRARY_DB_FILE_NAME);
-            assert!(
-                db_path.exists(),
-                "expected database at {}",
-                db_path.display()
-            );
-            let metadata = fs::metadata(db_path).unwrap();
-            assert!(metadata.is_file());
-        });
-    }
-
-    #[test]
-    fn migrates_legacy_collection_export_paths() {
-        let temp = tempdir().unwrap();
-        with_config_home(temp.path(), || {
-            // Ensure schema exists.
-            let _ = load().unwrap();
-            let db_path = database_path().unwrap();
-            let conn = Connection::open(&db_path).unwrap();
-            conn.execute("DELETE FROM collection_members", []).unwrap();
-            conn.execute("DELETE FROM collections", []).unwrap();
-            conn.execute(
-                "DELETE FROM metadata WHERE key = ?1",
-                [COLLECTION_EXPORT_PATHS_VERSION_KEY],
-            )
-            .unwrap();
-            conn.execute(
-                "INSERT INTO collections (id, name, export_path, sort_order) VALUES (?1, ?2, ?3, 0)",
-                params!["abc", "Demo/Name", "exports"],
-            )
-            .unwrap();
-            drop(conn);
-
-            let state = load().unwrap();
-            assert_eq!(state.collections.len(), 1);
-            let expected_path = PathBuf::from("exports").join("Demo_Name");
-            assert_eq!(state.collections[0].export_path, Some(expected_path));
-
-            let conn = Connection::open(database_path().unwrap()).unwrap();
-            let version: Option<String> = conn
-                .query_row(
-                    "SELECT value FROM metadata WHERE key = ?1",
-                    [COLLECTION_EXPORT_PATHS_VERSION_KEY],
-                    |row| row.get(0),
-                )
-                .optional()
-                .unwrap();
-            assert_eq!(version.as_deref(), Some(COLLECTION_EXPORT_PATHS_VERSION_V2));
-        });
-    }
-}
+mod tests;

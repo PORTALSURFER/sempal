@@ -1,4 +1,5 @@
 use super::*;
+use crate::egui_app::state::WaveformView;
 
 pub(super) fn clear_waveform_view(controller: &mut EguiController) {
     controller.ui.waveform.image = None;
