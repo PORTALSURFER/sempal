@@ -243,8 +243,8 @@ fn position_based_color(
     let angle = (dy.atan2(dx) + PI) / (2.0 * PI);
     let radius = (dx * dx + dy * dy).sqrt().clamp(0.0, 1.0);
     let hue = angle * 360.0;
-    let saturation = 0.35 + 0.25 * radius;
-    let value = 0.70 + 0.20 * (1.0 - radius);
+    let saturation = 0.45 + 0.35 * radius;
+    let value = 0.82 + 0.16 * (1.0 - radius);
     let (r, g, b) = hsv_to_rgb(hue, saturation, value);
     egui::Color32::from_rgba_unmultiplied(r, g, b, alpha)
 }
@@ -268,8 +268,8 @@ fn point_position_color(
     let angle = (dy.atan2(dx) + PI) / (2.0 * PI);
     let radius = (dx * dx + dy * dy).sqrt().clamp(0.0, 1.0);
     let hue = angle * 360.0;
-    let saturation = 0.45 + 0.35 * radius;
-    let value = 0.78 + 0.18 * (1.0 - radius);
+    let saturation = 0.55 + 0.35 * radius;
+    let value = 0.86 + 0.14 * (1.0 - radius);
     let (r, g, b) = hsv_to_rgb(hue, saturation, value);
     egui::Color32::from_rgba_unmultiplied(r, g, b, alpha)
 }
@@ -280,8 +280,8 @@ fn cluster_id_color(cluster_id: i32, palette: &style::Palette, alpha: u8) -> egu
     }
     let id = cluster_id as f32;
     let hue = (id * 137.50776) % 360.0;
-    let saturation = 0.62;
-    let value = 0.86;
+    let saturation = 0.78;
+    let value = 0.94;
     let (r, g, b) = hsv_to_rgb(hue, saturation, value);
     egui::Color32::from_rgba_unmultiplied(r, g, b, alpha)
 }
@@ -319,7 +319,7 @@ fn shade_by_distance(color: egui::Color32, distance: f32, map_diagonal: f32) -> 
         return color;
     }
     let norm = (distance / (map_diagonal * 0.4)).clamp(0.0, 1.0);
-    let shade = 0.55 + 0.45 * (1.0 - norm);
+    let shade = 0.70 + 0.30 * (1.0 - norm);
     let r = (color.r() as f32 * shade).round().clamp(0.0, 255.0) as u8;
     let g = (color.g() as f32 * shade).round().clamp(0.0, 255.0) as u8;
     let b = (color.b() as f32 * shade).round().clamp(0.0, 255.0) as u8;
