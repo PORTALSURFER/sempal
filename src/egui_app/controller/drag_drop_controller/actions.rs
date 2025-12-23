@@ -138,6 +138,10 @@ impl DragDropActions for DragDropController<'_> {
             "Finish drag payload={:?} active_target={:?} last_folder_target={:?}",
             payload, active_target, self.ui.drag.last_folder_target
         );
+        debug!(
+            "Drag origin_source={:?} active_target={:?} payload={:?}",
+            origin_source, active_target, payload
+        );
 
         let (triage_target, folder_target, over_folder_panel) = match &active_target {
             DragTarget::BrowserTriage(column) => (Some(*column), None, false),

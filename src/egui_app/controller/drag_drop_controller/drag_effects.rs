@@ -88,6 +88,10 @@ impl DragDropController<'_> {
         source_id: SourceId,
         relative_path: PathBuf,
     ) {
+        info!(
+            "handle_waveform_sample_drop_to_browser source={} path={}",
+            source_id, relative_path.display()
+        );
         let Some(source) = self
             .library
             .sources
