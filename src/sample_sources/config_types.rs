@@ -5,7 +5,7 @@ use thiserror::Error;
 
 use crate::{audio::AudioOutputConfig, waveform::WaveformChannelView};
 
-use super::{Collection, SampleSource, SourceId};
+use crate::sample_sources::{Collection, SampleSource, SourceId};
 use super::config_defaults::{
     clamp_analysis_worker_count,
     clamp_volume,
