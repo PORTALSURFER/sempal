@@ -13,6 +13,9 @@ pub(super) fn resample_linear(
     if frames == 0 {
         return Vec::new();
     }
+    if frames == 1 {
+        return samples.to_vec();
+    }
     if src_rate == dst_rate {
         return samples.to_vec();
     }
