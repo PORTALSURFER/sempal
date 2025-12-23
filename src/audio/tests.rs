@@ -1,6 +1,7 @@
 // Regression tests for audio playback math using deterministic tone fixtures.
 use super::*;
 use crate::waveform::WaveformRenderer;
+use rodio::Source;
 use std::{
     io::Cursor,
     path::PathBuf,
