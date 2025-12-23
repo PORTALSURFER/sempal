@@ -1,6 +1,6 @@
 use super::enqueue_helpers::{fast_content_hash, library_db_path, now_epoch_seconds};
-use super::types::AnalysisProgress;
-use super::db;
+use crate::egui_app::controller::analysis_jobs::db;
+use crate::egui_app::controller::analysis_jobs::types::AnalysisProgress;
 use rusqlite::{OptionalExtension, params};
 
 struct EnqueueSamplesRequest<'a> {
