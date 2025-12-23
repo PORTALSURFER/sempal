@@ -1,12 +1,10 @@
 use super::helpers::{clamp_label_for_width, list_row_height, render_list_row};
 use super::style;
 use super::EguiApp;
-use crate::egui_app::state::FocusContext;
 use eframe::egui::{self, RichText, Ui};
 
 impl EguiApp {
     pub(super) fn render_sources_list(&mut self, ui: &mut Ui, height: f32) -> egui::Rect {
-        let mut row_clicked = false;
         let output = egui::ScrollArea::vertical()
             .id_salt("sources_scroll")
             .max_height(height)
@@ -47,9 +45,7 @@ impl EguiApp {
                         .on_hover_text(&row.path);
                         if response.clicked() {
                             self.controller.select_source_by_index(index);
-                            self.controller
-                                .focus_context_from_ui(FocusContext::SourcesList);
-                            row_clicked = true;
+                            self.controller.focus_sources_context();
                         }
                         self.source_row_menu(&response, index, row);
                     });
@@ -65,15 +61,6 @@ impl EguiApp {
             output.inner_rect.min,
             egui::vec2(output.inner_rect.width(), focus_height),
         );
-        let focus_response = ui.interact(
-            focus_rect,
-            ui.id().with("sources_list_focus"),
-            egui::Sense::click(),
-        );
-        if !row_clicked && focus_response.clicked() {
-            self.controller
-                .focus_context_from_ui(FocusContext::SourcesList);
-        }
         focus_rect
     }
 
