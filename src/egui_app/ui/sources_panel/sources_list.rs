@@ -53,11 +53,16 @@ impl EguiApp {
                     });
                 }
             });
-        if output.response.clicked() {
+        let focus_response = ui.interact(
+            output.inner_rect,
+            ui.id().with("sources_list_focus"),
+            egui::Sense::click(),
+        );
+        if focus_response.clicked() {
             self.controller
                 .focus_context_from_ui(FocusContext::SourcesList);
         }
-        output.response.rect
+        output.inner_rect
     }
 
     fn source_row_menu(
