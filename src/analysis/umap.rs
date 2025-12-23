@@ -13,7 +13,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 const DEFAULT_PERPLEXITY: f64 = 35.0;
 const DEFAULT_APPROX_THRESHOLD: f64 = 0.5;
-const DEFAULT_MAX_ITER: u64 = 1500;
+const DEFAULT_MAX_ITER: usize = 1500;
 const DEFAULT_N_COMPONENTS: usize = 2;
 const DEFAULT_PCA_COMPONENTS: usize = 50;
 
