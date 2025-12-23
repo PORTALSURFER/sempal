@@ -44,20 +44,9 @@ impl EguiApp {
         self.controller.ui.map.cluster_overlay = true;
         self.controller.ui.map.similarity_blend = true;
         self.controller.ui.map.similarity_blend_threshold = 0.2;
+        self.controller.ui.map.cluster_filter_input.clear();
+        self.controller.ui.map.cluster_filter = None;
         ui.horizontal(|ui| {
-            ui.label("Filter");
-            let response =
-                ui.text_edit_singleline(&mut self.controller.ui.map.cluster_filter_input);
-            if response.changed() {
-                self.controller.ui.map.cluster_filter = self
-                    .controller
-                    .ui
-                    .map
-                    .cluster_filter_input
-                    .trim()
-                    .parse::<i32>()
-                    .ok();
-            }
             if ui.button("Build clusters").clicked() {
                 let umap_version = self.controller.ui.map.umap_version.clone();
                 self.controller.build_umap_clusters(
