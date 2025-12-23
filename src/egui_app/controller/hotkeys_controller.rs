@@ -93,7 +93,7 @@ impl HotkeysActions for HotkeysController<'_> {
                 }
             }
             HotkeyCommand::RenameFocusedCollection => {
-                if matches!(focus, FocusContext::CollectionsList) {
+                if matches!(focus, FocusContext::CollectionsList | FocusContext::CollectionSample) {
                     self.start_collection_rename();
                 }
             }
