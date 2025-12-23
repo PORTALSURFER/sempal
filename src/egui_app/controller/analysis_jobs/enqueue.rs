@@ -273,32 +273,29 @@ pub(in crate::egui_app::controller) fn enqueue_jobs_for_embedding_backfill(
         return Ok((0, db::current_progress(&conn)?));
     }
 
-    let sample_ids = {
-        let mut stmt = conn
-            .prepare(
-                "SELECT s.sample_id
-                 FROM samples s
-                 LEFT JOIN embeddings e ON e.sample_id = s.sample_id
-                 WHERE s.sample_id LIKE ?1
-                   AND (e.sample_id IS NULL OR e.model_id != ?2)
-                 ORDER BY s.sample_id ASC",
-            )
-            .map_err(|err| format!("Prepare embedding backfill query failed: {err}"))?;
-        let mut sample_ids = Vec::new();
-        let rows = stmt
-            .query_map(
-                params![
-                    format!("{}::%", source.id.as_str()),
-                    crate::analysis::embedding::EMBEDDING_MODEL_ID
-                ],
-                |row| row.get::<_, String>(0),
-            )
+    let source_db =
+        crate::sample_sources::SourceDatabase::open(&source.root).map_err(|err| err.to_string())?;
+    let mut entries = source_db.list_files().map_err(|err| err.to_string())?;
+    entries.retain(|entry| !entry.missing);
+    if entries.is_empty() {
+        return Ok((0, db::current_progress(&conn)?));
+    }
+
+    let mut stmt = conn
+        .prepare("SELECT model_id FROM embeddings WHERE sample_id = ?1")
+        .map_err(|err| format!("Prepare embedding backfill query failed: {err}"))?;
+    let mut sample_ids = Vec::new();
+    for entry in entries {
+        let sample_id = db::build_sample_id(source.id.as_str(), &entry.relative_path);
+        let model_id: Option<String> = stmt
+            .query_row(params![&sample_id], |row| row.get(0))
+            .optional()
             .map_err(|err| format!("Failed to query embedding backfill rows: {err}"))?;
-        for row in rows {
-            sample_ids.push(row.map_err(|err| format!("Failed to decode sample_id: {err}"))?);
+        if model_id.as_deref() == Some(crate::analysis::embedding::EMBEDDING_MODEL_ID) {
+            continue;
         }
-        sample_ids
-    };
+        sample_ids.push(sample_id);
+    }
 
     if sample_ids.is_empty() {
         return Ok((0, db::current_progress(&conn)?));
@@ -499,6 +496,18 @@ mod tests {
                 collections: vec![],
             })
             .unwrap();
+        let source_db = crate::sample_sources::SourceDatabase::open(&source.root).unwrap();
+        let mut batch = source_db.write_batch().unwrap();
+        batch
+            .upsert_file_with_hash(Path::new("Pack/a.wav"), 1, 1, "ha")
+            .unwrap();
+        batch
+            .upsert_file_with_hash(Path::new("Pack/b.wav"), 1, 1, "hb")
+            .unwrap();
+        batch
+            .upsert_file_with_hash(Path::new("Pack/c.wav"), 1, 1, "hc")
+            .unwrap();
+        batch.commit().unwrap();
 
         let db_path = crate::app_dirs::app_root_dir()
             .unwrap()
