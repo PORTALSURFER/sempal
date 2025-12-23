@@ -1,26 +1,18 @@
 ## Goal
-- Replace the trained classification pipeline with a training-free system using CLAP embeddings, ANN similarity search, user anchors/labels, and a 2D UMAP map that fits the current Rust + SQLite architecture.
+- Update the similarity map UX so panning only happens on right-click drag, and add a left-click drag “paint to play” interaction that scrubs/plays samples under the cursor as the user drags.
 
 ## Proposed solutions
-- **Incremental MVP first:** Deliver CLAP embeddings + ANN similarity search, then layer anchors/labels, then the UMAP map; reduces risk and validates each stage.
-- **Backend-first integration:** Implement data model, embedding ingestion, and ANN index in Rust, then expose APIs for UI to adopt; keeps UI changes clean.
-- **Hybrid offline tooling:** Use a small offline tool for UMAP (and optional clustering), while keeping runtime UI and scoring in-app; avoids heavy runtime dependencies.
+- Add explicit mouse button handling in the map controller: gate pan logic to right button, leave left button free for playback gesture.
+- Implement a drag-to-play handler that tracks cursor over map coordinates, finds nearest sample(s), and streams short previews as the cursor moves.
+- Debounce/limit playback triggers (e.g., threshold movement distance or time) to avoid flooding audio playback while painting.
+- Keep existing zoom/hover/selection behavior intact; ensure new gestures don’t conflict with current shortcuts.
 
 ## Step-by-step plan
-1. [-] Review existing embedding/feature vector work (e.g., `docs/todov2.md` and related Rust modules) to align with current ingestion and DB patterns.
-2. [-] Define the CLAP embedding contract: model artifact format, input windowing, mono mixdown, normalization target, output dim, and `model_version` tracking.
-3. [-] Add or update SQLite schema/migrations for `embeddings`, `labels`, `anchors`, `layout_umap`, and `index_meta`, including backfill strategy.
-4. [-] Implement embedding ingestion: audio decode, preprocessing, CLAP inference, L2-normalization, and persistence keyed by `model_version`.
-5. [-] Integrate ANN (HNSW) index lifecycle: build from embeddings, persist/load, and incremental updates on new embeddings.
-6. [-] Implement similarity APIs (by `sample_id` and by audio blob) and wire ANN queries with cosine similarity scoring.
-7. [-] Implement label/anchor CRUD plus scoring (max or mean-of-topK), gap logic, and confidence buckets.
-8. [-] Implement efficient label match retrieval using per-anchor ANN candidate sets, union/dedupe, then scoring and ranking.
-9. [-] Add UI workflows for anchors and label suggestions (add anchor, review matches, optional auto-tag), staying consistent with current UI patterns.
-10. [-] Build the offline UMAP pipeline and persist `(x, y)` to `layout_umap` for the current `model_version`.
-11. [-] Implement the 2D map UI with pan/zoom, hover audition, selection, and anchor actions using canvas/WebGL with LOD rendering.
-12. [-] Add optional clustering (HDBSCAN) and overlays/filters for cluster and label views.
-13. [-] Add calibration tooling for thresholds and gap tuning from user feedback.
-14. [-] Add tests and metrics: embedding norm checks, ANN recall sanity on subsets, anchor scoring unit tests, and latency/frame-time stats.
+1. [-] Inspect current similarity map input handling (controller + UI) to see how pan/zoom, hover, and playback are wired.
+2. [-] Gate panning to right-click drag only and confirm zoom/selection still work as before.
+3. [-] Add left-click drag “paint to play”: track cursor movement, find nearest samples under the path, and trigger audio playback.
+4. [-] Add throttling/debouncing so playback events don’t spam while dragging; ensure audio stop/cleanup on release.
+5. [-] Test the new interactions (right-click pan, left-click paint-to-play) and adjust any conflicting shortcuts or behaviors.
 
 ## Code Style & Architecture Rules Reminder
 - Keep files under 400 lines; split when necessary.

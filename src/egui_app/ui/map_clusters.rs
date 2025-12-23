@@ -50,17 +50,40 @@ pub(crate) fn compute_cluster_stats(
     })
 }
 
-pub(crate) fn cluster_color(
-    cluster_id: i32,
-    palette: &style::Palette,
-    alpha: u8,
-) -> egui::Color32 {
+pub(crate) fn cluster_color(cluster_id: i32, palette: &style::Palette, alpha: u8) -> egui::Color32 {
     if cluster_id < 0 {
         return style::with_alpha(palette.text_muted, alpha);
     }
     let hue = (cluster_id as u32).wrapping_mul(97) % 360;
     let (r, g, b) = hsv_to_rgb(hue as f32, 0.55, 0.85);
     egui::Color32::from_rgba_unmultiplied(r, g, b, alpha)
+}
+
+pub(crate) fn distance_shaded_cluster_color(
+    point: &crate::egui_app::state::MapPoint,
+    centroids: &HashMap<i32, ClusterCentroid>,
+    palette: &style::Palette,
+    alpha: u8,
+    map_diagonal: f32,
+) -> egui::Color32 {
+    let Some(cluster_id) = point.cluster_id else {
+        return palette.accent_mint;
+    };
+    if cluster_id < 0 {
+        return style::with_alpha(palette.text_muted, alpha);
+    }
+    if map_diagonal <= 0.0 {
+        return cluster_color(cluster_id, palette, alpha);
+    }
+    let Some(primary) = centroids.get(&cluster_id) else {
+        return cluster_color(cluster_id, palette, alpha);
+    };
+    let dist = distance(point.x, point.y, primary.x, primary.y);
+    shade_by_distance(
+        cluster_color(cluster_id, palette, alpha),
+        dist,
+        map_diagonal,
+    )
 }
 
 pub(crate) struct ClusterCentroid {
@@ -138,16 +161,21 @@ pub(crate) fn blended_cluster_color(
         }
     }
     let Some((other_id, other_dist)) = nearest_other else {
-        return cluster_color(cluster_id, palette, alpha);
+        return shade_by_distance(
+            cluster_color(cluster_id, palette, alpha),
+            primary_dist,
+            map_diagonal,
+        );
     };
     let weight_primary = 1.0 / (primary_dist + 1e-3);
     let weight_other = 1.0 / (other_dist + 1e-3);
-    blend_colors(
+    let blended = blend_colors(
         cluster_color(cluster_id, palette, alpha),
         cluster_color(other_id, palette, alpha),
         weight_primary,
         weight_other,
-    )
+    );
+    shade_by_distance(blended, primary_dist, map_diagonal)
 }
 
 pub(crate) fn filter_points(
@@ -206,9 +234,29 @@ fn blend_colors(
     let sum = (weight_first + weight_second).max(1e-6);
     let wf = weight_first / sum;
     let ws = weight_second / sum;
-    let r = (first.r() as f32 * wf + second.r() as f32 * ws).round().clamp(0.0, 255.0) as u8;
-    let g = (first.g() as f32 * wf + second.g() as f32 * ws).round().clamp(0.0, 255.0) as u8;
-    let b = (first.b() as f32 * wf + second.b() as f32 * ws).round().clamp(0.0, 255.0) as u8;
-    let a = (first.a() as f32 * wf + second.a() as f32 * ws).round().clamp(0.0, 255.0) as u8;
+    let r = (first.r() as f32 * wf + second.r() as f32 * ws)
+        .round()
+        .clamp(0.0, 255.0) as u8;
+    let g = (first.g() as f32 * wf + second.g() as f32 * ws)
+        .round()
+        .clamp(0.0, 255.0) as u8;
+    let b = (first.b() as f32 * wf + second.b() as f32 * ws)
+        .round()
+        .clamp(0.0, 255.0) as u8;
+    let a = (first.a() as f32 * wf + second.a() as f32 * ws)
+        .round()
+        .clamp(0.0, 255.0) as u8;
     egui::Color32::from_rgba_unmultiplied(r, g, b, a)
+}
+
+fn shade_by_distance(color: egui::Color32, distance: f32, map_diagonal: f32) -> egui::Color32 {
+    if map_diagonal <= 0.0 {
+        return color;
+    }
+    let norm = (distance / (map_diagonal * 0.4)).clamp(0.0, 1.0);
+    let shade = 0.55 + 0.45 * (1.0 - norm);
+    let r = (color.r() as f32 * shade).round().clamp(0.0, 255.0) as u8;
+    let g = (color.g() as f32 * shade).round().clamp(0.0, 255.0) as u8;
+    let b = (color.b() as f32 * shade).round().clamp(0.0, 255.0) as u8;
+    egui::Color32::from_rgba_unmultiplied(r, g, b, color.a())
 }

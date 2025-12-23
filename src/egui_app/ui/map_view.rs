@@ -46,7 +46,10 @@ impl EguiApp {
                 .changed();
             if self.controller.ui.map.cluster_overlay {
                 ui.checkbox(&mut self.controller.ui.map.cluster_hide_noise, "Hide noise");
-                ui.checkbox(&mut self.controller.ui.map.similarity_blend, "Similarity blend");
+                ui.checkbox(
+                    &mut self.controller.ui.map.similarity_blend,
+                    "Similarity blend",
+                );
                 if self.controller.ui.map.similarity_blend {
                     let response = ui.add(
                         egui::Slider::new(
@@ -94,11 +97,16 @@ impl EguiApp {
             ));
         });
         if self.controller.ui.map.cluster_overlay {
-            if let Some(stats) = map_clusters::compute_cluster_stats(&self.controller.ui.map.cached_points) {
+            if let Some(stats) =
+                map_clusters::compute_cluster_stats(&self.controller.ui.map.cached_points)
+            {
                 ui.horizontal(|ui| {
                     ui.label(format!("Clusters: {}", stats.cluster_count));
                     ui.label(format!("Noise: {:.1}%", stats.noise_ratio * 100.0));
-                    ui.label(format!("Size min/max: {}/{}", stats.min_cluster_size, stats.max_cluster_size));
+                    ui.label(format!(
+                        "Size min/max: {}/{}",
+                        stats.min_cluster_size, stats.max_cluster_size
+                    ));
                 });
             }
         }
@@ -115,36 +123,33 @@ impl EguiApp {
         let cluster_method_str = "umap";
         let cluster_umap_version = umap_version.as_str();
 
-        let source_id = self
-            .controller
-            .current_source()
-            .map(|source| source.id);
+        let source_id = self.controller.current_source().map(|source| source.id);
         if self.controller.ui.map.bounds.is_none() {
             match self
                 .controller
                 .umap_bounds(model_id, &umap_version, source_id.as_ref())
             {
                 Ok(bounds) => {
-                    self.controller.ui.map.bounds = bounds.map(|b| {
-                        crate::egui_app::state::MapBounds {
+                    self.controller.ui.map.bounds =
+                        bounds.map(|b| crate::egui_app::state::MapBounds {
                             min_x: b.min_x,
                             max_x: b.max_x,
                             min_y: b.min_y,
                             max_y: b.max_y,
-                        }
-                    });
+                        });
                 }
                 Err(err) => {
-                    self.controller
-                        .set_status(format!("t-SNE bounds failed: {err}"), style::StatusTone::Error);
+                    self.controller.set_status(
+                        format!("t-SNE bounds failed: {err}"),
+                        style::StatusTone::Error,
+                    );
                 }
             }
         }
 
         let Some(bounds) = self.controller.ui.map.bounds else {
             if map_empty::render_empty_state(ui, rect, &palette) {
-                self.controller
-                    .build_umap_layout(model_id, &umap_version);
+                self.controller.build_umap_layout(model_id, &umap_version);
             }
             return;
         };
@@ -229,17 +234,24 @@ impl EguiApp {
                 if blend_enabled {
                     map_clusters::blended_cluster_color(
                         point,
-                        centroids.as_ref().expect("centroids set for cluster overlay"),
+                        centroids
+                            .as_ref()
+                            .expect("centroids set for cluster overlay"),
                         &palette,
                         alpha,
                         map_diagonal,
                         blend_threshold,
                     )
                 } else {
-                    point
-                        .cluster_id
-                        .map(|id| map_clusters::cluster_color(id, &palette, alpha))
-                        .unwrap_or(palette.accent_mint)
+                    map_clusters::distance_shaded_cluster_color(
+                        point,
+                        centroids
+                            .as_ref()
+                            .expect("centroids set for cluster overlay"),
+                        &palette,
+                        alpha,
+                        map_diagonal,
+                    )
                 }
             } else {
                 palette.accent_mint
@@ -255,7 +267,8 @@ impl EguiApp {
             self.controller.ui.map.pan,
             pointer,
         );
-        self.controller.ui.map.hovered_sample_id = hovered.as_ref().map(|(point, _)| point.sample_id.clone());
+        self.controller.ui.map.hovered_sample_id =
+            hovered.as_ref().map(|(point, _)| point.sample_id.clone());
 
         if let Some((point, pos)) = hovered.as_ref() {
             let stroke_color = point_color(point, 200);
@@ -343,7 +356,8 @@ impl EguiApp {
                 );
             }
             points_rendered = display_points.len();
-            self.controller.ui.map.last_render_mode = crate::egui_app::state::MapRenderMode::Heatmap;
+            self.controller.ui.map.last_render_mode =
+                crate::egui_app::state::MapRenderMode::Heatmap;
         } else {
             for point in display_points {
                 let pos = map_render::map_to_screen(
