@@ -9,12 +9,42 @@ impl EguiController {
 
     /// Focus the sample browser, selecting a row if none is active.
     pub(super) fn focus_browser_list(&mut self) {
-        let Some(target_row) =
-            self.ui
-                .browser
-                .selected_visible
-                .or(self.ui.browser.visible.first().copied())
-        else {
+        let visible_len = self.ui.browser.visible.len();
+        let anchor = self
+            .ui
+            .browser
+            .selection_anchor_visible
+            .filter(|row| *row < visible_len);
+        let selected = self
+            .ui
+            .browser
+            .selected_visible
+            .filter(|row| *row < visible_len);
+        let target_row = anchor
+            .or(selected)
+            .or_else(|| {
+                self.ui
+                    .browser
+                    .last_focused_path
+                    .as_ref()
+                    .and_then(|path| self.visible_row_for_path(path))
+            })
+            .or_else(|| {
+                self.ui
+                    .browser
+                    .selected_paths
+                    .iter()
+                    .find_map(|path| self.visible_row_for_path(path))
+            })
+            .or_else(|| {
+                self.sample_view
+                    .wav
+                    .selected_wav
+                    .as_ref()
+                    .and_then(|path| self.visible_row_for_path(path))
+            })
+            .or_else(|| self.ui.browser.visible.first().copied());
+        let Some(target_row) = target_row else {
             self.set_status_message(StatusMessage::AddSourceWithSamplesFirst);
             return;
         };

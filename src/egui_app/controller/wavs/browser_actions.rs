@@ -78,6 +78,7 @@ impl EguiController {
         self.focus_browser_context();
         self.ui.browser.autoscroll = true;
         self.ui.browser.selection_anchor_visible = Some(visible_row);
+        self.ui.browser.last_focused_path = Some(path.to_path_buf());
         self.select_wav_by_path_with_rebuild(&path, true);
     }
 
