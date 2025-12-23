@@ -263,6 +263,10 @@ impl CollectionsController<'_> {
         self.selection_state.ctx.selected_collection = Some(collection_id.clone());
         self.ui.collections.selected_sample = Some(index);
         self.ui.collections.scroll_to_sample = Some(index);
+        if let Some(sample) = self.ui.collections.samples.get(index) {
+            self.ui.collections.last_focused_collection = Some(collection_id.clone());
+            self.ui.collections.last_focused_path = Some(sample.path.clone());
+        }
         self.focus_collection_context();
         self.ui.browser.selected = None;
         self.ui.browser.autoscroll = false;
@@ -271,6 +275,11 @@ impl CollectionsController<'_> {
 
     fn maybe_autoplay_selection(&mut self) {
         if !self.settings.feature_flags.autoplay_selection {
+            self.selection_state.suppress_autoplay_once = false;
+            return;
+        }
+        if self.selection_state.suppress_autoplay_once {
+            self.selection_state.suppress_autoplay_once = false;
             return;
         }
         let looped = self.ui.waveform.loop_enabled;

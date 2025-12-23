@@ -12,6 +12,8 @@ pub struct CollectionsState {
     pub drop_active: bool,
     pub selected_sample: Option<usize>,
     pub scroll_to_sample: Option<usize>,
+    pub last_focused_collection: Option<CollectionId>,
+    pub last_focused_path: Option<PathBuf>,
     pub pending_action: Option<CollectionActionPrompt>,
     pub rename_focus_requested: bool,
 }
@@ -27,6 +29,8 @@ impl Default for CollectionsState {
             drop_active: false,
             selected_sample: None,
             scroll_to_sample: None,
+            last_focused_collection: None,
+            last_focused_path: None,
             pending_action: None,
             rename_focus_requested: false,
         }

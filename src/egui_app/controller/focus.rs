@@ -79,12 +79,33 @@ impl EguiController {
             self.set_status_message(StatusMessage::CollectionEmpty);
             return;
         }
-        let target = self
+        let last_focused = self
             .ui
             .collections
-            .selected_sample
+            .last_focused_collection
+            .as_ref()
+            .and_then(|id| {
+                if id == &collection.id {
+                    self.ui
+                        .collections
+                        .last_focused_path
+                        .as_ref()
+                        .and_then(|path| {
+                            self.ui
+                                .collections
+                                .samples
+                                .iter()
+                                .position(|sample| &sample.path == path)
+                        })
+                } else {
+                    None
+                }
+            });
+        let target = last_focused
+            .or(self.ui.collections.selected_sample)
             .unwrap_or(0)
             .min(collection.members.len().saturating_sub(1));
+        self.selection_state.suppress_autoplay_once = true;
         self.select_collection_sample(target);
     }
 
