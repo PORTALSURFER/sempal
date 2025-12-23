@@ -42,28 +42,23 @@ impl EguiApp {
     fn render_map_controls(&mut self, ui: &mut egui::Ui) -> bool {
         let mut refresh = false;
         self.controller.ui.map.cluster_overlay = true;
+        self.controller.ui.map.similarity_blend = true;
         ui.horizontal(|ui| {
-            ui.checkbox(
-                &mut self.controller.ui.map.similarity_blend,
-                "Similarity blend",
+            let response = ui.add(
+                egui::Slider::new(
+                    &mut self.controller.ui.map.similarity_blend_threshold,
+                    0.01..=1.0,
+                )
+                .clamping(egui::SliderClamping::Always)
+                .text("Blend sensitivity"),
             );
-            if self.controller.ui.map.similarity_blend {
-                let response = ui.add(
-                    egui::Slider::new(
-                        &mut self.controller.ui.map.similarity_blend_threshold,
-                        0.01..=1.0,
-                    )
-                    .clamping(egui::SliderClamping::Always)
-                    .text("Blend sensitivity"),
-                );
-                if response.changed() {
-                    self.controller.ui.map.similarity_blend_threshold = self
-                        .controller
-                        .ui
-                        .map
-                        .similarity_blend_threshold
-                        .clamp(0.01, 1.0);
-                }
+            if response.changed() {
+                self.controller.ui.map.similarity_blend_threshold = self
+                    .controller
+                    .ui
+                    .map
+                    .similarity_blend_threshold
+                    .clamp(0.01, 1.0);
             }
             ui.label("Filter");
             let response =

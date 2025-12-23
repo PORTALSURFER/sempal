@@ -49,7 +49,7 @@ impl Default for MapUiState {
             cluster_hide_noise: true,
             cluster_filter_input: String::new(),
             cluster_filter: None,
-            similarity_blend: false,
+            similarity_blend: true,
             similarity_blend_threshold: 0.12,
             last_render_ms: 0.0,
             last_draw_calls: 0,
