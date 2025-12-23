@@ -65,7 +65,7 @@ impl EguiApp {
                     FocusContext::CollectionsList
                 }
                 FocusContext::SampleBrowser | FocusContext::Waveform | FocusContext::None => {
-                    FocusContext::SampleBrowser
+                    FocusContext::Waveform
                 }
             })
         } else if input.arrow_down {
@@ -77,7 +77,7 @@ impl EguiApp {
                     FocusContext::CollectionSample
                 }
                 FocusContext::SampleBrowser | FocusContext::Waveform | FocusContext::None => {
-                    FocusContext::Waveform
+                    FocusContext::SampleBrowser
                 }
             })
         } else {
