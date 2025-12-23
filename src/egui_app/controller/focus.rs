@@ -156,7 +156,12 @@ impl EguiController {
             FocusContext::SampleBrowser => self.focus_browser_list(),
             FocusContext::Waveform => self.focus_waveform_context(),
             FocusContext::SourceFolders => self.focus_folder_context(),
-            FocusContext::CollectionSample => self.focus_collection_samples_list(),
+            FocusContext::CollectionSample => {
+                if self.current_collection().is_none() && !self.library.collections.is_empty() {
+                    self.select_collection_by_index(Some(0));
+                }
+                self.focus_collection_samples_list();
+            }
             FocusContext::SourcesList => self.focus_sources_list(),
             FocusContext::SelectedFolders => self.focus_selected_folders_context(),
             FocusContext::CollectionsList => self.focus_collections_list(),
