@@ -352,6 +352,26 @@ mod tests {
         assert!(rows.is_empty());
     }
 
+    #[test]
+    fn hard_rescan_prunes_missing_without_touching_existing() {
+        let dir = tempdir().unwrap();
+        let keep_path = dir.path().join("keep.wav");
+        let remove_path = dir.path().join("remove.wav");
+        std::fs::write(&keep_path, b"keep").unwrap();
+        std::fs::write(&remove_path, b"remove").unwrap();
+
+        let db = SourceDatabase::open(dir.path()).unwrap();
+        scan_once(&db).unwrap();
+
+        std::fs::remove_file(&remove_path).unwrap();
+        let stats = hard_rescan(&db).unwrap();
+        assert_eq!(stats.missing, 1);
+
+        let rows = db.list_files().unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].relative_path, PathBuf::from("keep.wav"));
+    }
+
     #[cfg(unix)]
     #[test]
     fn scan_tolerates_vanishing_nested_directories() {
@@ -402,5 +422,22 @@ mod tests {
         let stats = scan_once(&db).unwrap();
         assert_eq!(stats.total_files, 2);
         assert_eq!(stats.added, 2);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn scan_skips_symlink_files() {
+        use std::os::unix::fs as unix_fs;
+
+        let dir = tempdir().unwrap();
+        let target = dir.path().join("one.wav");
+        std::fs::write(&target, b"one").unwrap();
+        let link = dir.path().join("one_link.wav");
+        unix_fs::symlink(&target, &link).unwrap();
+
+        let db = SourceDatabase::open(dir.path()).unwrap();
+        let stats = scan_once(&db).unwrap();
+        assert_eq!(stats.total_files, 1);
+        assert_eq!(stats.added, 1);
     }
 }
