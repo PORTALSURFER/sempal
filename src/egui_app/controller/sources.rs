@@ -139,6 +139,24 @@ impl EguiController {
         self.set_status("Source removed", StatusTone::Info);
     }
 
+    /// Remove all dead-link rows (missing samples) for a source.
+    pub fn remove_dead_links_for_source(&mut self, index: usize) {
+        let Some(source) = self.library.sources.get(index).cloned() else {
+            return;
+        };
+        match self.remove_dead_links_for_source_entries(&source) {
+            Ok(0) => {
+                self.set_status("No dead links to remove", StatusTone::Info);
+            }
+            Ok(count) => {
+                self.set_status(format!("Removed {count} dead links"), StatusTone::Info);
+            }
+            Err(err) => {
+                self.set_status(err, StatusTone::Error);
+            }
+        }
+    }
+
     pub(super) fn refresh_sources_ui(&mut self) {
         self.ui.sources.rows = self
             .library

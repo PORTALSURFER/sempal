@@ -432,6 +432,31 @@ fn browser_remove_dead_links_prunes_missing_rows() -> Result<(), String> {
 }
 
 #[test]
+fn removing_dead_links_for_source_prunes_missing_entries() -> Result<(), String> {
+    let (mut controller, source) = dummy_controller();
+    controller.library.sources.push(source.clone());
+    controller.cache_db(&source).unwrap();
+
+    write_test_wav(&source.root.join("alive.wav"), &[0.0, 0.1, -0.1]);
+    let mut dead = sample_entry("gone.wav", SampleTag::Neutral);
+    dead.missing = true;
+    controller.wav_entries.entries = vec![sample_entry("alive.wav", SampleTag::Neutral), dead];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+    let mut missing = std::collections::HashSet::new();
+    missing.insert(PathBuf::from("gone.wav"));
+    controller.library.missing.wavs.insert(source.id.clone(), missing);
+
+    let removed = controller.remove_dead_links_for_source_entries(&source)?;
+
+    assert_eq!(removed, 1);
+    assert_eq!(controller.wav_entries.entries.len(), 1);
+    assert!(controller.wav_entries.lookup.contains_key(Path::new("alive.wav")));
+    assert!(!controller.wav_entries.lookup.contains_key(Path::new("gone.wav")));
+    Ok(())
+}
+
+#[test]
 fn deleting_browser_sample_moves_focus_forward() -> Result<(), String> {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source.clone());

@@ -77,6 +77,14 @@ impl EguiApp {
                 close_menu = true;
             }
             if ui
+                .button("Remove dead links")
+                .on_hover_text("Remove missing rows from the library")
+                .clicked()
+            {
+                self.controller.remove_dead_links_for_source(index);
+                close_menu = true;
+            }
+            if ui
                 .button("Prepare similarity search")
                 .on_hover_text("Scan, embed, build ANN, t-SNE, and cluster for this source")
                 .clicked()
