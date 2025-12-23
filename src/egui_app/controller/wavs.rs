@@ -133,6 +133,7 @@ impl EguiController {
     /// Focus the sample browser on a library sample_id without autoplay.
     pub fn focus_sample_from_map(&mut self, sample_id: &str) -> Result<(), String> {
         let (source_id, relative_path) = super::analysis_jobs::parse_sample_id(sample_id)?;
+        let source_id = SourceId::from_string(source_id);
         if self.selection_state.ctx.selected_source.as_ref() != Some(&source_id) {
             self.select_source(Some(source_id.clone()));
         }
