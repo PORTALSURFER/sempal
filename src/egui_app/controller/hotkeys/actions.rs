@@ -88,6 +88,13 @@ pub(super) const HOTKEY_ACTIONS: &[HotkeyAction] = &[
         command: HotkeyCommand::FocusBrowserSearch,
     },
     HotkeyAction {
+        id: "select-all-browser",
+        label: "Select all samples",
+        gesture: HotkeyGesture::with_command(Key::A),
+        scope: HotkeyScope::Focus(FocusContext::SampleBrowser),
+        command: HotkeyCommand::SelectAllBrowser,
+    },
+    HotkeyAction {
         id: "normalize-browser",
         label: "Normalize sample",
         gesture: HotkeyGesture::new(Key::N),

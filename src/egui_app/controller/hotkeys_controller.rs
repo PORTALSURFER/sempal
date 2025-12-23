@@ -116,6 +116,11 @@ impl HotkeysActions for HotkeysController<'_> {
                     self.add_focused_sample_to_collection();
                 }
             }
+            HotkeyCommand::SelectAllBrowser => {
+                if matches!(focus, FocusContext::SampleBrowser) {
+                    self.select_all_browser_rows();
+                }
+            }
             HotkeyCommand::ToggleOverlay => {
                 self.ui.hotkeys.overlay_visible = !self.ui.hotkeys.overlay_visible;
             }

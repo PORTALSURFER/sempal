@@ -46,6 +46,24 @@ fn escape_clears_selection() {
 }
 
 #[test]
+fn select_all_populates_visible_browser_paths() {
+    let (mut controller, source) = dummy_controller();
+    controller.library.sources.push(source);
+    controller.wav_entries.entries = vec![
+        sample_entry("one.wav", SampleTag::Neutral),
+        sample_entry("two.wav", SampleTag::Neutral),
+        sample_entry("three.wav", SampleTag::Neutral),
+    ];
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+
+    controller.select_all_browser_rows();
+
+    assert_eq!(controller.ui.browser.selected_paths.len(), 3);
+    assert_eq!(controller.ui.browser.selection_anchor_visible, Some(0));
+}
+
+#[test]
 fn escape_handler_clears_waveform_and_browser_state() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source.clone());

@@ -156,6 +156,38 @@ impl EguiController {
         self.rebuild_browser_lists();
     }
 
+    /// Select all visible sample browser rows.
+    pub fn select_all_browser_rows(&mut self) {
+        if self.ui.browser.visible.is_empty() {
+            return;
+        }
+        self.ui.collections.selected_sample = None;
+        self.focus_browser_context();
+        self.ui.browser.autoscroll = false;
+        self.ui.browser.selected_paths.clear();
+        self.ui
+            .browser
+            .selected_paths
+            .reserve(self.ui.browser.visible.len());
+        for index in &self.ui.browser.visible {
+            if let Some(entry) = self.wav_entries.entries.get(*index) {
+                self.ui
+                    .browser
+                    .selected_paths
+                    .push(entry.relative_path.clone());
+            }
+        }
+        let anchor = self
+            .ui
+            .browser
+            .selection_anchor_visible
+            .or(self.ui.browser.selected_visible)
+            .unwrap_or(0);
+        let max_row = self.ui.browser.visible.len().saturating_sub(1);
+        self.ui.browser.selection_anchor_visible = Some(anchor.min(max_row));
+        self.rebuild_browser_lists();
+    }
+
     /// Reveal the given sample browser item in the OS file explorer.
     pub fn reveal_browser_sample_in_file_explorer(&mut self, relative_path: &Path) {
         let Some(source) = self.current_source() else {
