@@ -1,19 +1,18 @@
 use std::{
     collections::HashMap,
     fs,
-    io::Read,
     path::{Path, PathBuf},
     sync::atomic::{AtomicBool, Ordering},
     thread,
-    time::{SystemTime, UNIX_EPOCH},
 };
 
 use thiserror::Error;
 use tracing::warn;
 
-use super::db::SourceWriteBatch;
-use super::db::WavEntry;
-use super::{SourceDatabase, SourceDbError};
+use crate::sample_sources::db::{SourceWriteBatch, WavEntry};
+use crate::sample_sources::{SourceDatabase, SourceDbError};
+
+use super::metadata::{compute_content_hash, is_supported_audio, read_facts, FileFacts};
 
 /// Summary of a scan run.
 #[derive(Debug, Default, Clone)]
@@ -241,39 +240,6 @@ fn mark_missing(
     Ok(())
 }
 
-fn strip_relative(root: &Path, path: &Path) -> Result<PathBuf, ScanError> {
-    path.strip_prefix(root)
-        .map(PathBuf::from)
-        .map_err(|_| ScanError::InvalidRoot(path.to_path_buf()))
-}
-
-#[derive(Debug)]
-struct FileFacts {
-    relative: PathBuf,
-    size: u64,
-    modified_ns: i64,
-}
-
-fn read_facts(root: &Path, path: &Path) -> Result<FileFacts, ScanError> {
-    let relative = strip_relative(root, path)?;
-    let meta = path.metadata().map_err(|source| ScanError::Io {
-        path: path.to_path_buf(),
-        source,
-    })?;
-    let modified_ns = to_nanos(
-        &meta.modified().map_err(|source| ScanError::Io {
-            path: path.to_path_buf(),
-            source,
-        })?,
-        path,
-    )?;
-    Ok(FileFacts {
-        relative,
-        size: meta.len(),
-        modified_ns,
-    })
-}
-
 fn apply_diff(
     batch: &mut SourceWriteBatch<'_>,
     facts: FileFacts,
@@ -319,45 +285,6 @@ fn apply_diff(
         }
     }
     Ok(())
-}
-
-fn compute_content_hash(path: &Path) -> Result<String, ScanError> {
-    let mut file = std::fs::File::open(path).map_err(|source| ScanError::Io {
-        path: path.to_path_buf(),
-        source,
-    })?;
-    let mut hasher = blake3::Hasher::new();
-    let mut buffer = [0u8; 64 * 1024];
-    loop {
-        let read = file.read(&mut buffer).map_err(|source| ScanError::Io {
-            path: path.to_path_buf(),
-            source,
-        })?;
-        if read == 0 {
-            break;
-        }
-        hasher.update(&buffer[..read]);
-    }
-    Ok(hasher.finalize().to_hex().to_string())
-}
-
-fn to_nanos(time: &SystemTime, path: &Path) -> Result<i64, ScanError> {
-    let duration = time
-        .duration_since(UNIX_EPOCH)
-        .map_err(|_| ScanError::Time {
-            path: path.to_path_buf(),
-        })?;
-    Ok(duration.as_nanos().min(i64::MAX as u128) as i64)
-}
-
-fn is_supported_audio(path: &Path) -> bool {
-    let Some(ext) = path.extension().and_then(|ext| ext.to_str()) else {
-        return false;
-    };
-    match ext.to_ascii_lowercase().as_str() {
-        "wav" | "aif" | "aiff" | "flac" | "mp3" => true,
-        _ => false,
-    }
 }
 
 #[cfg(test)]
@@ -487,6 +414,38 @@ mod tests {
         assert_eq!(stats.missing, 1);
         let rows = db.list_files().unwrap();
         assert!(rows.is_empty());
+    }
+
+    #[test]
+    fn scan_detects_missing_paths_without_double_counting() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("one.wav");
+        std::fs::write(&file_path, b"one").unwrap();
+
+        let db = SourceDatabase::open(dir.path()).unwrap();
+        scan_once(&db).unwrap();
+
+        std::fs::remove_file(&file_path).unwrap();
+        let first = scan_once(&db).unwrap();
+        assert_eq!(first.missing, 1);
+
+        let second = scan_once(&db).unwrap();
+        assert_eq!(second.missing, 0);
+    }
+
+    #[test]
+    fn scan_detects_changed_content_hash() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("one.wav");
+        std::fs::write(&file_path, b"one").unwrap();
+
+        let db = SourceDatabase::open(dir.path()).unwrap();
+        scan_once(&db).unwrap();
+
+        std::fs::write(&file_path, b"two").unwrap();
+        let stats = scan_once(&db).unwrap();
+        assert_eq!(stats.content_changed, 1);
+        assert_eq!(stats.changed_samples.len(), 1);
     }
 
     #[cfg(unix)]
