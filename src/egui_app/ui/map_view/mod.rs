@@ -149,7 +149,6 @@ impl EguiApp {
             map_input::handle_paint_hover(self, ui, hovered.as_ref());
         }
 
-        let context_menu_id = ui.id().with("similarity_map_context");
         if let Some((point, pos)) = hovered.as_ref() {
             let stroke_color = point_color(point, 200);
             painter.circle_stroke(*pos, 4.0, egui::Stroke::new(1.5, stroke_color));
@@ -159,7 +158,7 @@ impl EguiApp {
             map_input::handle_click(self, hovered.as_ref());
         }
 
-        map_input::handle_context_menu(self, ui, &response, hovered.as_ref(), context_menu_id);
+        map_input::handle_context_menu(self, ui, &response, hovered.as_ref());
 
         let focused_sample_id = self.controller.ui.map.selected_sample_id.as_deref();
         let (draw_calls, points_rendered, render_mode) = map_render::render_points(

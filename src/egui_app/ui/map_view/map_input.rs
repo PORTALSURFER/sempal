@@ -4,7 +4,6 @@ use super::map_state;
 use super::style;
 use crate::egui_app::state::{FocusContext, SampleBrowserTab};
 use eframe::egui;
-use eframe::egui::popup;
 
 pub(super) fn handle_zoom(app: &mut EguiApp, ui: &egui::Ui, response: &egui::Response) {
     let scroll_delta = ui.input(|i| i.smooth_scroll_delta.y);
@@ -164,46 +163,43 @@ pub(super) fn handle_context_menu(
     ui: &mut egui::Ui,
     response: &egui::Response,
     hovered: Option<&(crate::egui_app::state::MapPoint, egui::Pos2)>,
-    popup_id: egui::Id,
 ) {
-    if response.secondary_clicked() {
-        popup::popup_below_widget(ui, popup_id, response, |ui| {
-            let sample_id = app
-                .controller
-                .ui
-                .map
-                .hovered_sample_id
-                .clone()
-                .or_else(|| hovered.map(|(point, _)| point.sample_id.clone()));
-            let Some(sample_id) = sample_id else {
-                return;
-            };
-            ui.label(map_state::sample_label_from_id(&sample_id));
-            if ui.button("Preview").clicked() {
-                if let Err(err) = app.controller.preview_sample_by_id(&sample_id) {
-                    app.controller
-                        .set_status(format!("Preview failed: {err}"), style::StatusTone::Error);
-                } else if let Err(err) = app.controller.play_audio(false, None) {
-                    app.controller
-                        .set_status(format!("Playback failed: {err}"), style::StatusTone::Error);
-                }
-                ui.close_menu();
-                return;
+    response.context_menu(|ui| {
+        let sample_id = app
+            .controller
+            .ui
+            .map
+            .hovered_sample_id
+            .clone()
+            .or_else(|| hovered.map(|(point, _)| point.sample_id.clone()));
+        let Some(sample_id) = sample_id else {
+            return;
+        };
+        ui.label(map_state::sample_label_from_id(&sample_id));
+        if ui.button("Preview").clicked() {
+            if let Err(err) = app.controller.preview_sample_by_id(&sample_id) {
+                app.controller
+                    .set_status(format!("Preview failed: {err}"), style::StatusTone::Error);
+            } else if let Err(err) = app.controller.play_audio(false, None) {
+                app.controller
+                    .set_status(format!("Playback failed: {err}"), style::StatusTone::Error);
             }
-            ui.separator();
-            if ui.button("List similar").clicked() {
-                app.controller.ui.browser.active_tab = SampleBrowserTab::List;
-                if let Err(err) = app.controller.find_similar_for_sample_id(&sample_id) {
-                    app.controller.set_status(
-                        format!("Find similar failed: {err}"),
-                        style::StatusTone::Error,
-                    );
-                } else {
-                    app.controller
-                        .focus_context_from_ui(FocusContext::SampleBrowser);
-                }
-                ui.close_menu();
+            ui.close_menu();
+            return;
+        }
+        ui.separator();
+        if ui.button("List similar").clicked() {
+            app.controller.ui.browser.active_tab = SampleBrowserTab::List;
+            if let Err(err) = app.controller.find_similar_for_sample_id(&sample_id) {
+                app.controller.set_status(
+                    format!("Find similar failed: {err}"),
+                    style::StatusTone::Error,
+                );
+            } else {
+                app.controller
+                    .focus_context_from_ui(FocusContext::SampleBrowser);
             }
-        });
-    }
+            ui.close_menu();
+        }
+    });
 }
