@@ -337,7 +337,7 @@ fn play_range_at_track_end_expands_backwards() {
     player.set_audio(silent_wav_bytes(duration, 44_100, 1), duration);
 
     assert!(player.play_range(1.0, 1.0, false).is_ok());
-    let (start, end) = player.play_span.expect("play span set");
+    let (start, end) = player.play_span().expect("play span set");
 
     assert!(start < duration);
     assert!((end - duration).abs() < 0.0005);
@@ -351,7 +351,7 @@ fn set_audio_prefers_provided_duration() {
     };
     let bytes = silent_wav_bytes(2.0, 44_100, 2);
     player.set_audio(bytes, 2.0);
-    let duration = player.track_duration.expect("duration set");
+    let duration = player.track_duration().expect("duration set");
     assert!((duration - 2.0).abs() < 0.01);
 }
 
@@ -362,7 +362,7 @@ fn set_audio_falls_back_to_header() {
     };
     let bytes = silent_wav_bytes(2.0, 44_100, 2);
     player.set_audio(bytes, 0.0);
-    let duration = player.track_duration.expect("duration set");
+    let duration = player.track_duration().expect("duration set");
     assert!((duration - 2.0).abs() < 0.01);
 }
 

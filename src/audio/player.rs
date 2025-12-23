@@ -226,6 +226,16 @@ impl AudioPlayer {
         self.looping
     }
 
+    #[cfg(test)]
+    pub(crate) fn play_span(&self) -> Option<(f32, f32)> {
+        self.play_span
+    }
+
+    #[cfg(test)]
+    pub(crate) fn track_duration(&self) -> Option<f32> {
+        self.track_duration
+    }
+
     /// Remaining wall-clock time until the current loop iteration finishes.
     pub fn remaining_loop_duration(&self) -> Option<Duration> {
         if !self.looping {
