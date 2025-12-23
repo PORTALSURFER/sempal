@@ -171,8 +171,10 @@ fn handle_waveform_drag_handle_interactions(
             return;
         };
         let Some(source) = app.controller.current_source() else {
-            app.controller
-                .set_status("Select a source before dragging", style::StatusTone::Warning);
+            app.controller.set_status(
+                "Select a source before dragging",
+                style::StatusTone::Warning,
+            );
             return;
         };
         let Some(path) = app.controller.ui.loaded_wav.clone() else {
