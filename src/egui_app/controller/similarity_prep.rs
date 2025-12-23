@@ -11,19 +11,21 @@ impl EguiController {
     pub fn prepare_similarity_for_selected_source(&mut self) {
         if self.runtime.similarity_prep.is_some() {
             self.refresh_similarity_prep_progress();
-            self.set_status("Similarity prep already running", StatusTone::Info);
+            self.set_status_message(StatusMessage::SimilarityPrepAlreadyRunning);
             return;
         }
         if self.runtime.jobs.scan_in_progress() {
-            self.set_status("Scan already in progress", StatusTone::Info);
+            self.set_status_message(StatusMessage::SimilarityScanAlreadyRunning);
             return;
         }
         if self.runtime.jobs.umap_build_in_progress() {
-            self.set_status("t-SNE build already in progress", StatusTone::Info);
+            self.set_status_message(StatusMessage::TsneBuildAlreadyRunning);
             return;
         }
         let Some(source) = self.current_source() else {
-            self.set_status("Select a source first", StatusTone::Warning);
+            self.set_status_message(StatusMessage::SelectSourceFirst {
+                tone: StatusTone::Warning,
+            });
             return;
         };
         self.runtime.similarity_prep = Some(SimilarityPrepState {
@@ -31,10 +33,9 @@ impl EguiController {
             stage: SimilarityPrepStage::AwaitScan,
             umap_version: self.ui.map.umap_version.clone(),
         });
-        self.set_status(
-            format!("Preparing similarity search for {}", source.root.display()),
-            StatusTone::Busy,
-        );
+        self.set_status_message(StatusMessage::PreparingSimilarity {
+            source: source.root.display().to_string(),
+        });
         self.request_hard_sync();
     }
 
@@ -66,7 +67,7 @@ impl EguiController {
             state.stage = SimilarityPrepStage::Finalizing;
             (state.source_id.clone(), state.umap_version.clone())
         };
-        self.set_status("Finalizing similarity prep...", StatusTone::Busy);
+        self.set_status_message(StatusMessage::FinalizingSimilarityPrep);
         self.show_status_progress(
             ProgressTaskKind::Analysis,
             "Finalizing similarity prep",
@@ -94,17 +95,13 @@ impl EguiController {
                 self.ui.map.cached_cluster_centroids_key = None;
                 self.ui.map.cached_cluster_centroids = None;
                 self.ui.map.auto_cluster_build_requested_key = None;
-                self.set_status(
-                    format!(
-                        "Similarity ready: {} clusters (noise {:.1}%)",
-                        outcome.cluster_stats.cluster_count,
-                        outcome.cluster_stats.noise_ratio * 100.0
-                    ),
-                    StatusTone::Info,
-                );
+                self.set_status_message(StatusMessage::SimilarityReady {
+                    cluster_count: outcome.cluster_stats.cluster_count,
+                    noise_ratio: outcome.cluster_stats.noise_ratio,
+                });
             }
             Err(err) => {
-                self.set_status(format!("Similarity prep failed: {err}"), StatusTone::Error);
+                self.set_status_message(StatusMessage::SimilarityPrepFailed { err });
             }
         }
     }

@@ -16,11 +16,11 @@ impl EguiController {
 
     fn request_scan_with_mode(&mut self, mode: ScanMode) {
         if self.runtime.jobs.scan_in_progress() {
-            self.set_status("Scan already in progress", StatusTone::Info);
+            self.set_status_message(StatusMessage::ScanAlreadyRunning);
             return;
         }
         let Some(source) = self.current_source() else {
-            self.set_status("Select a source to scan", StatusTone::Warning);
+            self.set_status_message(StatusMessage::SelectSourceToScan);
             return;
         };
         self.prepare_for_scan(&source, mode);
@@ -28,10 +28,10 @@ impl EguiController {
             ScanMode::Quick => "Quick sync",
             ScanMode::Hard => "Hard sync",
         };
-        self.set_status(
+        self.set_status_message(StatusMessage::custom(
             format!("{status_label} on {}", source.root.display()),
             StatusTone::Busy,
-        );
+        ));
         self.show_status_progress(ProgressTaskKind::Scan, status_label, 0, true);
         self.update_progress_detail("Scanning audio files…");
 

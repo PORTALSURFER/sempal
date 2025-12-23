@@ -22,7 +22,7 @@ pub(super) fn focus_random_visible_sample(controller: &mut EguiController) {
 
 pub(super) fn play_previous_random_sample(controller: &mut EguiController) {
     if controller.history.random_history.entries.is_empty() {
-        controller.set_status("No random history yet", StatusTone::Info);
+        controller.set_status_message(StatusMessage::RandomHistoryEmpty);
         return;
     }
     let current = controller.history.random_history.cursor.unwrap_or_else(|| {
@@ -35,7 +35,7 @@ pub(super) fn play_previous_random_sample(controller: &mut EguiController) {
     });
     if current == 0 {
         controller.history.random_history.cursor = Some(0);
-        controller.set_status("Reached start of random history", StatusTone::Info);
+        controller.set_status_message(StatusMessage::RandomHistoryStart);
         return;
     }
     let target = current - 1;
@@ -54,12 +54,12 @@ pub(super) fn play_previous_random_sample(controller: &mut EguiController) {
 pub(super) fn toggle_random_navigation_mode(controller: &mut EguiController) {
     controller.ui.browser.random_navigation_mode = !controller.ui.browser.random_navigation_mode;
     if controller.ui.browser.random_navigation_mode {
-        controller.set_status(
+        controller.set_status_message(StatusMessage::custom(
             "Random navigation on: Up/Down jump to random samples",
             StatusTone::Info,
-        );
+        ));
     } else {
-        controller.set_status("Random navigation off", StatusTone::Info);
+        controller.set_status_message(StatusMessage::RandomNavOff);
     }
 }
 
@@ -73,7 +73,9 @@ fn play_random_visible_sample_internal<R: Rng + ?Sized>(
     start_playback: bool,
 ) {
     let Some(source_id) = controller.selection_state.ctx.selected_source.clone() else {
-        controller.set_status("Select a source first", StatusTone::Info);
+        controller.set_status_message(StatusMessage::SelectSourceFirst {
+            tone: StatusTone::Info,
+        });
         return;
     };
     let Some((visible_row, entry_index)) = controller
@@ -83,7 +85,7 @@ fn play_random_visible_sample_internal<R: Rng + ?Sized>(
         .enumerate()
         .choose(rng)
     else {
-        controller.set_status("No samples available to randomize", StatusTone::Info);
+        controller.set_status_message(StatusMessage::NoSamplesToRandomize);
         return;
     };
     let Some(path) = controller

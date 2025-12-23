@@ -24,19 +24,19 @@ impl EguiController {
 
     pub fn build_umap_layout(&mut self, model_id: &str, umap_version: &str) {
         if self.runtime.jobs.umap_build_in_progress() {
-            self.set_status("t-SNE build already running", StatusTone::Info);
+            self.set_status_message(StatusMessage::TsneBuildAlreadyRunning);
             return;
         }
         self.runtime.jobs.begin_umap_build(super::jobs::UmapBuildJob {
             model_id: model_id.to_string(),
             umap_version: umap_version.to_string(),
         });
-        self.set_status("Building t-SNE layout…", StatusTone::Info);
+        self.set_status_message(StatusMessage::BuildingTsneLayout);
     }
 
     pub fn build_umap_clusters(&mut self, model_id: &str, umap_version: &str) {
         if self.runtime.jobs.umap_cluster_build_in_progress() {
-            self.set_status("Cluster build already running", StatusTone::Info);
+            self.set_status_message(StatusMessage::ClusterBuildAlreadyRunning);
             return;
         }
         let source_id = self.current_source().map(|source| source.id);
@@ -47,7 +47,7 @@ impl EguiController {
                 umap_version: umap_version.to_string(),
                 source_id,
             });
-        self.set_status("Building clusters…", StatusTone::Info);
+        self.set_status_message(StatusMessage::BuildingClusters);
     }
 
     pub fn umap_bounds(

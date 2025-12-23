@@ -15,7 +15,7 @@ impl EguiController {
                 .selected_visible
                 .or(self.ui.browser.visible.first().copied())
         else {
-            self.set_status("Add a source with samples first", StatusTone::Info);
+            self.set_status_message(StatusMessage::AddSourceWithSamplesFirst);
             return;
         };
         // Entering via the focus hotkey should not autoplay; suppress it for this selection.
@@ -36,11 +36,13 @@ impl EguiController {
     /// Focus the collection samples list, selecting the current row or first row.
     pub(super) fn focus_collection_samples_list(&mut self) {
         let Some(collection) = self.current_collection() else {
-            self.set_status("Select a collection first", StatusTone::Info);
+            self.set_status_message(StatusMessage::SelectCollectionFirst {
+                tone: StatusTone::Info,
+            });
             return;
         };
         if collection.members.is_empty() {
-            self.set_status("This collection has no samples yet", StatusTone::Info);
+            self.set_status_message(StatusMessage::CollectionEmpty);
             return;
         }
         let target = self
@@ -65,7 +67,9 @@ impl EguiController {
     /// Focus the sources list, selecting the current row or the first available source.
     pub(super) fn focus_sources_list(&mut self) {
         if self.library.sources.is_empty() {
-            self.set_status("Add a source first", StatusTone::Info);
+            self.set_status_message(StatusMessage::AddSourceFirst {
+                tone: StatusTone::Info,
+            });
             return;
         }
         let target = self
@@ -86,7 +90,7 @@ impl EguiController {
     /// Focus the collections list, selecting the active row or the first entry.
     pub(super) fn focus_collections_list(&mut self) {
         if self.library.collections.is_empty() {
-            self.set_status("Create a collection to focus it", StatusTone::Info);
+            self.set_status_message(StatusMessage::CreateCollectionFirst);
             return;
         }
         let target = self
