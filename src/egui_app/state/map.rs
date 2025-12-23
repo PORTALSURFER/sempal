@@ -50,7 +50,7 @@ impl Default for MapUiState {
             cluster_filter_input: String::new(),
             cluster_filter: None,
             similarity_blend: true,
-            similarity_blend_threshold: 0.12,
+            similarity_blend_threshold: 0.2,
             last_render_ms: 0.0,
             last_draw_calls: 0,
             last_points_rendered: 0,

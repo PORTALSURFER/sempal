@@ -43,23 +43,8 @@ impl EguiApp {
         let mut refresh = false;
         self.controller.ui.map.cluster_overlay = true;
         self.controller.ui.map.similarity_blend = true;
+        self.controller.ui.map.similarity_blend_threshold = 0.2;
         ui.horizontal(|ui| {
-            let response = ui.add(
-                egui::Slider::new(
-                    &mut self.controller.ui.map.similarity_blend_threshold,
-                    0.01..=1.0,
-                )
-                .clamping(egui::SliderClamping::Always)
-                .text("Blend sensitivity"),
-            );
-            if response.changed() {
-                self.controller.ui.map.similarity_blend_threshold = self
-                    .controller
-                    .ui
-                    .map
-                    .similarity_blend_threshold
-                    .clamp(0.01, 1.0);
-            }
             ui.label("Filter");
             let response =
                 ui.text_edit_singleline(&mut self.controller.ui.map.cluster_filter_input);
