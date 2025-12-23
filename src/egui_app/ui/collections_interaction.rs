@@ -157,25 +157,5 @@ impl EguiApp {
 }
 
 fn collection_export_dir(collection: &CollectionRowView) -> Option<PathBuf> {
-    collection
-        .export_path
-        .clone()
-        .map(|base| base.join(sanitized_collection_name(&collection.name)))
-}
-
-fn sanitized_collection_name(name: &str) -> String {
-    let mut cleaned: String = name
-        .chars()
-        .map(|c| {
-            if matches!(c, '/' | '\\' | ':' | '*') {
-                '_'
-            } else {
-                c
-            }
-        })
-        .collect();
-    if cleaned.is_empty() {
-        cleaned.push_str("collection");
-    }
-    cleaned
+    collection.export_path.clone()
 }
