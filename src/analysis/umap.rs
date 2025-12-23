@@ -4,8 +4,8 @@ use linfa::traits::{Fit, Transformer};
 use linfa_reduction::Pca;
 use linfa_tsne::TSneParams;
 use ndarray::Array2;
-use rand::rngs::SmallRng;
-use rand::SeedableRng;
+use rand_08::rngs::SmallRng;
+use rand_08::SeedableRng;
 use rusqlite::{Connection, params};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -13,7 +13,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 const DEFAULT_PERPLEXITY: f64 = 35.0;
 const DEFAULT_APPROX_THRESHOLD: f64 = 0.5;
-const DEFAULT_MAX_ITER: usize = 1500;
+const DEFAULT_MAX_ITER: u64 = 1500;
 const DEFAULT_N_COMPONENTS: usize = 2;
 const DEFAULT_PCA_COMPONENTS: usize = 50;
 
@@ -134,9 +134,7 @@ fn compute_tsne(vectors: &[Vec<f32>], seed: u64) -> Result<Vec<[f32; 2]>, String
         let pca = Pca::params(DEFAULT_PCA_COMPONENTS)
             .fit(&dataset)
             .map_err(|err| format!("PCA fit failed: {err}"))?;
-        let reduced = pca
-            .transform(dataset)
-            .map_err(|err| format!("PCA transform failed: {err}"))?;
+        let reduced = pca.transform(dataset);
         matrix = reduced.records;
     }
     let rng = SmallRng::seed_from_u64(seed);
