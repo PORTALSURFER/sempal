@@ -1,4 +1,5 @@
 use super::*;
+use crate::egui_app::state::DragSample;
 
 impl EguiController {
     /// Begin dragging a sample row from the UI.

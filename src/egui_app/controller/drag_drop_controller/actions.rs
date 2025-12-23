@@ -1,4 +1,5 @@
 use super::*;
+use crate::egui_app::state::DragSample;
 #[cfg(any(target_os = "windows", test))]
 use std::time::{Duration, Instant};
 
