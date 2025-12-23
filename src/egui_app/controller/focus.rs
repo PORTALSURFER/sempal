@@ -66,12 +66,16 @@ impl EguiController {
     /// Focus the collection samples list, selecting the current row or first row.
     pub(super) fn focus_collection_samples_list(&mut self) {
         let Some(collection) = self.current_collection() else {
+            self.focus_collection_context();
             self.set_status_message(StatusMessage::SelectCollectionFirst {
                 tone: StatusTone::Info,
             });
             return;
         };
         if collection.members.is_empty() {
+            self.ui.collections.selected_sample = None;
+            self.ui.collections.scroll_to_sample = None;
+            self.focus_collection_context();
             self.set_status_message(StatusMessage::CollectionEmpty);
             return;
         }
