@@ -3,7 +3,7 @@ use super::map_state;
 use super::style;
 use super::EguiApp;
 use crate::egui_app::state::{FocusContext, SampleBrowserTab};
-use eframe::egui::{self, show_context_menu};
+use eframe::egui::{self, popup::show_context_menu};
 
 pub(super) fn handle_zoom(app: &mut EguiApp, ui: &egui::Ui, response: &egui::Response) {
     let scroll_delta = ui.input(|i| i.smooth_scroll_delta.y);
