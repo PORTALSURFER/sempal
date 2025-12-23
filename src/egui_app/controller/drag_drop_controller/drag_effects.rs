@@ -122,13 +122,14 @@ impl DragDropController<'_> {
             .file_stem()
             .map(|name| name.to_string_lossy().to_string())
             .unwrap_or_else(|| "sample".to_string());
+        let base_stem = base_sample_stem(&stem);
         let extension = relative_path
             .extension()
             .map(|ext| ext.to_string_lossy().to_string());
         let mut copy_relative = None;
         let mut copy_absolute = None;
         for count in 1.. {
-            let suffix = format!("{stem}_copy{count:03}");
+            let suffix = format!("{base_stem}_copy{count:03}");
             let file_name = if let Some(ext) = &extension {
                 format!("{suffix}.{ext}")
             } else {
@@ -622,5 +623,27 @@ impl DragDropController<'_> {
             }
             Err(err) => self.set_status(err, StatusTone::Error),
         }
+    }
+}
+
+fn base_sample_stem(stem: &str) -> String {
+    let mut base = stem.to_string();
+    loop {
+        if let Some(idx) = base.rfind("_copy") {
+            let suffix = &base[idx + 5..];
+            if !suffix.is_empty()
+                && suffix.chars().all(|c| c.is_ascii_digit())
+                && idx > 0
+            {
+                base.truncate(idx);
+                continue;
+            }
+        }
+        break;
+    }
+    if base.is_empty() {
+        stem.to_string()
+    } else {
+        base
     }
 }
