@@ -1,6 +1,6 @@
+use super::EguiApp;
 use super::helpers::{InlineTextEditAction, render_inline_text_edit, render_list_row};
 use super::style;
-use super::EguiApp;
 use eframe::egui::{self, RichText, Ui};
 use std::path::Path;
 
@@ -54,6 +54,7 @@ impl EguiApp {
                 row_width,
                 row_height,
                 bg: Some(style::row_selected_fill()),
+                skip_hover: false,
                 text_color: style::high_contrast_text(),
                 sense: egui::Sense::hover(),
                 number: None,

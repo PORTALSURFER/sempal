@@ -1,6 +1,6 @@
+use super::EguiApp;
 use super::helpers::{clamp_label_for_width, list_row_height, render_list_row};
 use super::style;
-use super::EguiApp;
 use crate::egui_app::state::FocusContext;
 use eframe::egui::{self, RichText, Ui};
 
@@ -37,6 +37,7 @@ impl EguiApp {
                                 row_width,
                                 row_height,
                                 bg,
+                                skip_hover: false,
                                 text_color,
                                 sense: egui::Sense::click(),
                                 number: None,

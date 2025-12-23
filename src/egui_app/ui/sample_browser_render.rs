@@ -98,11 +98,7 @@ impl EguiApp {
                     .as_ref()
                     .and_then(|sim| sim.anchor_index)
                     == Some(entry_index);
-                let marker_color = if is_anchor {
-                    Some(style::similar_anchor_fill())
-                } else {
-                    style::triage_marker_color(tag)
-                };
+                let marker_color = style::triage_marker_color(tag);
                 let triage_marker = marker_color.map(|color| RowMarker {
                     width: style::triage_marker_width(),
                     color,
@@ -142,7 +138,7 @@ impl EguiApp {
                 } else {
                     clamp_label_for_width(&status_label.label, row_label_width)
                 };
-                let bg = if drag_active
+                let mut row_bg = if drag_active
                     && pointer_pos
                         .as_ref()
                         .is_some_and(|pos| ui.cursor().contains(*pos))
@@ -156,6 +152,10 @@ impl EguiApp {
                 } else {
                     None
                 };
+                let skip_hover = is_anchor;
+                if is_anchor {
+                    row_bg = Some(style::similar_anchor_fill());
+                }
                 let number_text = format!("{}", row + 1);
                 let text_color = status_label.text_color;
 
@@ -171,7 +171,8 @@ impl EguiApp {
                             label: &row_label,
                             row_width,
                             row_height: metrics.row_height,
-                            bg,
+                            bg: row_bg,
+                            skip_hover,
                             text_color,
                             sense,
                             number: Some(NumberColumn {

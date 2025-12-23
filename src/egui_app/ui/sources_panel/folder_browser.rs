@@ -1,7 +1,7 @@
+use super::EguiApp;
 use super::helpers::{list_row_height, render_list_row};
 use super::style;
 use super::utils::{folder_row_label, sample_housing_folders};
-use super::EguiApp;
 use crate::egui_app::state::{DragSource, DragTarget, FocusContext};
 use eframe::egui::{self, Align, Align2, Layout, RichText, StrokeKind, TextStyle, Ui};
 use std::collections::HashSet;
@@ -98,6 +98,7 @@ impl EguiApp {
                         row_width,
                         row_height,
                         bg,
+                        skip_hover: false,
                         text_color: style::high_contrast_text(),
                         sense: egui::Sense::click(),
                         number: None,
@@ -235,6 +236,7 @@ impl EguiApp {
                             row_width,
                             row_height,
                             bg,
+                            skip_hover: false,
                             text_color: style::high_contrast_text(),
                             sense,
                             number: None,
