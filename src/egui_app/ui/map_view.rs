@@ -46,13 +46,6 @@ impl EguiApp {
         self.controller.ui.map.cluster_filter_input.clear();
         self.controller.ui.map.cluster_filter = None;
         ui.horizontal(|ui| {
-            if ui.button("Build clusters").clicked() {
-                let umap_version = self.controller.ui.map.umap_version.clone();
-                self.controller.build_umap_clusters(
-                    crate::analysis::embedding::EMBEDDING_MODEL_ID,
-                    &umap_version,
-                );
-            }
         });
         ui.horizontal(|ui| {
             let mode = match self.controller.ui.map.last_render_mode {
