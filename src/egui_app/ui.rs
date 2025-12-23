@@ -2,6 +2,7 @@
 
 mod chrome;
 mod collections_panel;
+mod drag_targets;
 mod drag_overlay;
 mod feedback_issue;
 mod flat_items_list;

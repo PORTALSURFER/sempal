@@ -1,3 +1,4 @@
+use super::drag_targets;
 use super::flat_items_list::{FlatItemsListConfig, render_flat_items_list};
 use super::helpers::{NumberColumn, RowMarker, clamp_label_for_width, render_list_row};
 use super::style;
@@ -45,9 +46,7 @@ impl EguiApp {
 
         let list_height = ui.available_height().max(0.0);
         let drag_active = self.controller.ui.drag.payload.is_some();
-        let pointer_pos = ui
-            .input(|i| i.pointer.hover_pos().or_else(|| i.pointer.interact_pos()))
-            .or(self.controller.ui.drag.position);
+        let pointer_pos = drag_targets::pointer_pos_for_drag(ui, self.controller.ui.drag.position);
         let autoscroll_enabled = self.controller.ui.browser.autoscroll
             && self.controller.ui.collections.selected_sample.is_none();
         let total_rows = self.controller.visible_browser_indices().len();
@@ -230,90 +229,52 @@ impl EguiApp {
                         self.browser_sample_menu(&response, row, &path, &display_label, missing);
                     }
 
-                    let should_start_drag =
-                        response.drag_started() || (!drag_active && response.dragged());
-                    if should_start_drag {
-                        self.controller.ui.drag.pending_os_drag = None;
-                        if let Some(pos) = response.interact_pointer_pos() {
-                            if let Some(source) = self.controller.current_source() {
-                                let name = view_model::sample_display_label(&path);
-                                self.controller.start_sample_drag(
+                    let drag_path = path.clone();
+                    let drag_label = view_model::sample_display_label(&path);
+                    let pending_path = path.clone();
+                    let pending_label = drag_label.clone();
+                    drag_targets::handle_sample_row_drag(
+                        ui,
+                        &response,
+                        drag_active,
+                        &mut self.controller,
+                        DragSource::Browser,
+                        DragTarget::BrowserTriage(drop_target),
+                        move |pos, controller| {
+                            if let Some(source) = controller.current_source() {
+                                controller.start_sample_drag(
                                     source.id.clone(),
-                                    path.clone(),
-                                    name,
+                                    drag_path,
+                                    drag_label,
                                     pos,
                                 );
                             } else {
-                                self.controller.set_status(
+                                controller.set_status(
                                     "Select a source before dragging",
                                     StatusTone::Warning,
                                 );
                             }
-                        }
-                    } else if !drag_active
-                        && self.controller.ui.drag.payload.is_none()
-                        && self.controller.ui.drag.os_left_mouse_pressed
-                        && self.controller.ui.drag.pending_os_drag.is_none()
-                    {
-                        let pointer_pos = ui
-                            .input(|i| i.pointer.hover_pos().or_else(|| i.pointer.interact_pos()))
-                            .or(self.controller.ui.drag.os_cursor_pos);
-                        if let Some(pos) = pointer_pos {
-                            if !response.rect.contains(pos) {
-                                return;
-                            }
-                            if let Some(source) = self.controller.current_source() {
-                                let name = view_model::sample_display_label(&path);
-                                self.controller.ui.drag.pending_os_drag =
-                                    Some(crate::egui_app::state::PendingOsDragStart {
-                                        payload: DragPayload::Sample {
-                                            source_id: source.id.clone(),
-                                            relative_path: path.clone(),
-                                        },
-                                        label: name,
-                                        origin: pos,
-                                    });
-                            }
-                        }
-                    } else if !drag_active
-                        && self.controller.ui.drag.payload.is_none()
-                        && self.controller.ui.drag.os_left_mouse_down
-                        && let Some(pending) = self.controller.ui.drag.pending_os_drag.clone()
-                        && let DragPayload::Sample {
-                            source_id,
-                            relative_path,
-                        } = &pending.payload
-                        && *relative_path == path
-                    {
-                        let pointer_pos = ui
-                            .input(|i| i.pointer.hover_pos().or_else(|| i.pointer.interact_pos()))
-                            .or(self.controller.ui.drag.os_cursor_pos);
-                        if let Some(pos) = pointer_pos {
-                            let moved_sq = (pos - pending.origin).length_sq();
-                            const START_DRAG_DISTANCE_SQ: f32 = 4.0 * 4.0;
-                            if moved_sq >= START_DRAG_DISTANCE_SQ {
-                                self.controller.ui.drag.pending_os_drag = None;
-                                self.controller.start_sample_drag(
-                                    source_id.clone(),
-                                    relative_path.clone(),
-                                    pending.label,
-                                    pos,
-                                );
-                            }
-                        }
-                    } else if drag_active && response.dragged() {
-                        if let Some(pos) = response.interact_pointer_pos() {
-                            let shift_down = ui.input(|i| i.modifiers.shift);
-                            self.controller.update_active_drag(
-                                pos,
-                                DragSource::Browser,
-                                DragTarget::BrowserTriage(drop_target),
-                                shift_down,
-                            );
-                        }
-                    } else if response.drag_stopped() {
-                        self.controller.finish_active_drag();
-                    }
+                        },
+                        move |pos, controller| {
+                            let source = controller.current_source()?;
+                            Some(crate::egui_app::state::PendingOsDragStart {
+                                payload: DragPayload::Sample {
+                                    source_id: source.id.clone(),
+                                    relative_path: pending_path,
+                                },
+                                label: pending_label,
+                                origin: pos,
+                            })
+                        },
+                        move |pending| {
+                            matches!(
+                                &pending.payload,
+                                DragPayload::Sample {
+                                    relative_path, ..
+                                } if *relative_path == path
+                            )
+                        },
+                    );
                 });
             },
         );
