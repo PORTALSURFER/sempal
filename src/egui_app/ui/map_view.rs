@@ -82,9 +82,10 @@ impl EguiApp {
                         .ok();
                 }
                 if ui.button("Build clusters").clicked() {
+                    let umap_version = self.controller.ui.map.umap_version.clone();
                     self.controller.build_umap_clusters(
                         crate::analysis::embedding::EMBEDDING_MODEL_ID,
-                        &self.controller.ui.map.umap_version,
+                        &umap_version,
                     );
                 }
             }
