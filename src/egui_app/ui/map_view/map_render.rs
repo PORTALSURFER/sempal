@@ -111,7 +111,7 @@ pub(super) fn render_points(
             if rect.contains(pos) {
                 points_rendered += 1;
                 let is_focused = focused_sample_id == Some(point.sample_id.as_str());
-                let radius = if is_focused { 3.5 } else { 2.0 };
+                let radius = if is_focused { 7.0 } else { 4.0 };
                 let color = point_color(point, 200);
                 painter.circle_filled(pos, radius, color);
                 draw_calls += 1;
