@@ -50,7 +50,7 @@ impl EguiController {
         self.set_status_message(StatusMessage::BuildingClusters);
     }
 
-    pub fn umap_bounds(
+    pub(crate) fn umap_bounds(
         &mut self,
         model_id: &str,
         umap_version: &str,
@@ -60,7 +60,7 @@ impl EguiController {
         load_umap_bounds(&conn, model_id, umap_version, source_id)
     }
 
-    pub fn umap_points_in_bounds(
+    pub(crate) fn umap_points_in_bounds(
         &mut self,
         model_id: &str,
         umap_version: &str,

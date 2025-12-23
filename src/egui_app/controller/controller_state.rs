@@ -119,6 +119,7 @@ pub(crate) enum AnalysisJobStatus {
     Canceled,
 }
 
+#[allow(dead_code)]
 #[derive(Clone, Debug)]
 pub(crate) struct FeatureStatus {
     pub(crate) has_features_v1: bool,

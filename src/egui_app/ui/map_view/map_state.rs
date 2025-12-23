@@ -9,14 +9,12 @@ use eframe::egui;
 use std::sync::Arc;
 
 pub(super) fn render_map_controls(app: &mut EguiApp, ui: &mut egui::Ui) -> bool {
-    let mut refresh = false;
+    let refresh = false;
     app.controller.ui.map.cluster_overlay = true;
     app.controller.ui.map.similarity_blend = true;
     app.controller.ui.map.similarity_blend_threshold = 0.2;
     app.controller.ui.map.cluster_filter_input.clear();
     app.controller.ui.map.cluster_filter = None;
-    ui.horizontal(|ui| {
-    });
     ui.horizontal(|ui| {
         let mode = match app.controller.ui.map.last_render_mode {
             crate::egui_app::state::MapRenderMode::Heatmap => "heatmap",

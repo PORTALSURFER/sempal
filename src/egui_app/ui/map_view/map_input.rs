@@ -34,7 +34,7 @@ pub(super) fn handle_focus_request(
     app: &mut EguiApp,
     model_id: &str,
     umap_version: &str,
-    bounds: crate::egui_app::state::MapBounds,
+    _bounds: crate::egui_app::state::MapBounds,
     center: egui::Pos2,
     scale: f32,
 ) {
