@@ -1,6 +1,8 @@
 use super::style;
+use crate::egui_app::state::MapBounds;
 use eframe::egui;
 use std::collections::HashMap;
+use std::f32::consts::PI;
 
 pub(crate) struct ClusterStats {
     pub cluster_count: usize,
@@ -50,18 +52,26 @@ pub(crate) fn compute_cluster_stats(
     })
 }
 
-pub(crate) fn cluster_color(cluster_id: i32, palette: &style::Palette, alpha: u8) -> egui::Color32 {
+pub(crate) fn cluster_color(
+    cluster_id: i32,
+    centroids: &HashMap<i32, ClusterCentroid>,
+    bounds: &MapBounds,
+    palette: &style::Palette,
+    alpha: u8,
+) -> egui::Color32 {
     if cluster_id < 0 {
         return style::with_alpha(palette.text_muted, alpha);
     }
-    let hue = (cluster_id as u32).wrapping_mul(97) % 360;
-    let (r, g, b) = hsv_to_rgb(hue as f32, 0.55, 0.85);
-    egui::Color32::from_rgba_unmultiplied(r, g, b, alpha)
+    let Some(centroid) = centroids.get(&cluster_id) else {
+        return palette.accent_mint;
+    };
+    position_based_color(centroid, bounds, palette, alpha)
 }
 
 pub(crate) fn distance_shaded_cluster_color(
     point: &crate::egui_app::state::MapPoint,
     centroids: &HashMap<i32, ClusterCentroid>,
+    bounds: &MapBounds,
     palette: &style::Palette,
     alpha: u8,
     map_diagonal: f32,
@@ -73,14 +83,14 @@ pub(crate) fn distance_shaded_cluster_color(
         return style::with_alpha(palette.text_muted, alpha);
     }
     if map_diagonal <= 0.0 {
-        return cluster_color(cluster_id, palette, alpha);
+        return cluster_color(cluster_id, centroids, bounds, palette, alpha);
     }
     let Some(primary) = centroids.get(&cluster_id) else {
-        return cluster_color(cluster_id, palette, alpha);
+        return cluster_color(cluster_id, centroids, bounds, palette, alpha);
     };
     let dist = distance(point.x, point.y, primary.x, primary.y);
     shade_by_distance(
-        cluster_color(cluster_id, palette, alpha),
+        cluster_color(cluster_id, centroids, bounds, palette, alpha),
         dist,
         map_diagonal,
     )
@@ -128,6 +138,7 @@ pub(crate) fn cluster_centroids(
 pub(crate) fn blended_cluster_color(
     point: &crate::egui_app::state::MapPoint,
     centroids: &HashMap<i32, ClusterCentroid>,
+    bounds: &MapBounds,
     palette: &style::Palette,
     alpha: u8,
     map_diagonal: f32,
@@ -140,10 +151,10 @@ pub(crate) fn blended_cluster_color(
         return style::with_alpha(palette.text_muted, alpha);
     }
     if blend_threshold <= 0.0 || map_diagonal <= 0.0 {
-        return cluster_color(cluster_id, palette, alpha);
+        return cluster_color(cluster_id, centroids, bounds, palette, alpha);
     }
     let Some(primary) = centroids.get(&cluster_id) else {
-        return cluster_color(cluster_id, palette, alpha);
+        return cluster_color(cluster_id, centroids, bounds, palette, alpha);
     };
     let threshold = map_diagonal * blend_threshold;
     let primary_dist = distance(point.x, point.y, primary.x, primary.y);
@@ -162,7 +173,7 @@ pub(crate) fn blended_cluster_color(
     }
     let Some((other_id, other_dist)) = nearest_other else {
         return shade_by_distance(
-            cluster_color(cluster_id, palette, alpha),
+            cluster_color(cluster_id, centroids, bounds, palette, alpha),
             primary_dist,
             map_diagonal,
         );
@@ -170,8 +181,8 @@ pub(crate) fn blended_cluster_color(
     let weight_primary = 1.0 / (primary_dist + 1e-3);
     let weight_other = 1.0 / (other_dist + 1e-3);
     let blended = blend_colors(
-        cluster_color(cluster_id, palette, alpha),
-        cluster_color(other_id, palette, alpha),
+        cluster_color(cluster_id, centroids, bounds, palette, alpha),
+        cluster_color(other_id, centroids, bounds, palette, alpha),
         weight_primary,
         weight_other,
     );
@@ -219,6 +230,30 @@ fn hsv_to_rgb(h: f32, s: f32, v: f32) -> (u8, u8, u8) {
     let g = ((g1 + m) * 255.0).round().clamp(0.0, 255.0) as u8;
     let b = ((b1 + m) * 255.0).round().clamp(0.0, 255.0) as u8;
     (r, g, b)
+}
+
+fn position_based_color(
+    centroid: &ClusterCentroid,
+    bounds: &MapBounds,
+    palette: &style::Palette,
+    alpha: u8,
+) -> egui::Color32 {
+    let width = (bounds.max_x - bounds.min_x).abs();
+    let height = (bounds.max_y - bounds.min_y).abs();
+    if width <= f32::EPSILON || height <= f32::EPSILON {
+        return palette.accent_mint;
+    }
+    let fx = ((centroid.x - bounds.min_x) / width).clamp(0.0, 1.0);
+    let fy = ((centroid.y - bounds.min_y) / height).clamp(0.0, 1.0);
+    let dx = fx - 0.5;
+    let dy = fy - 0.5;
+    let angle = (dy.atan2(dx) + PI) / (2.0 * PI);
+    let radius = (dx * dx + dy * dy).sqrt().clamp(0.0, 1.0);
+    let hue = angle * 360.0;
+    let saturation = 0.35 + 0.25 * radius;
+    let value = 0.70 + 0.20 * (1.0 - radius);
+    let (r, g, b) = hsv_to_rgb(hue, saturation, value);
+    egui::Color32::from_rgba_unmultiplied(r, g, b, alpha)
 }
 
 fn distance(ax: f32, ay: f32, bx: f32, by: f32) -> f32 {

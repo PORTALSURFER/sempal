@@ -237,6 +237,7 @@ impl EguiApp {
                         centroids
                             .as_ref()
                             .expect("centroids set for cluster overlay"),
+                        bounds,
                         &palette,
                         alpha,
                         map_diagonal,
@@ -248,6 +249,7 @@ impl EguiApp {
                         centroids
                             .as_ref()
                             .expect("centroids set for cluster overlay"),
+                        bounds,
                         &palette,
                         alpha,
                         map_diagonal,
