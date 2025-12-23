@@ -1,4 +1,5 @@
 use super::*;
+use crate::egui_app::controller::jobs::IssueGatewayCreateResult;
 
 pub(super) fn handle_update_checked(
     controller: &mut EguiController,
