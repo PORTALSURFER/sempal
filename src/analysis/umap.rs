@@ -121,6 +121,8 @@ fn compute_tsne(vectors: &[Vec<f32>], seed: u64) -> Result<Vec<[f32; 2]>, String
     if n_samples < 2 {
         return Err("Need at least 2 embeddings to build t-SNE".to_string());
     }
+    let max_perplexity = ((n_samples as f64) - 1.0).max(1.0) / 3.0;
+    let perplexity = DEFAULT_PERPLEXITY.min(max_perplexity).max(1.0);
     let mut data = Vec::with_capacity(n_samples * dim);
     for vec in vectors {
         for value in vec {
@@ -139,7 +141,7 @@ fn compute_tsne(vectors: &[Vec<f32>], seed: u64) -> Result<Vec<[f32; 2]>, String
     }
     let rng = SmallRng::seed_from_u64(seed);
     let embedding = TSneParams::embedding_size_with_rng(DEFAULT_N_COMPONENTS, rng)
-        .perplexity(DEFAULT_PERPLEXITY)
+        .perplexity(perplexity)
         .approx_threshold(DEFAULT_APPROX_THRESHOLD)
         .max_iter(DEFAULT_MAX_ITER)
         .transform(matrix)

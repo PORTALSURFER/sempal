@@ -152,6 +152,8 @@ impl CollectionsController<'_> {
         let Some(selected_index) = selected_index else {
             self.ui.collections.samples.clear();
             self.ui.collections.selected_sample = None;
+            self.ui.collections.selected_paths.clear();
+            self.ui.collections.selection_anchor = None;
             self.clear_collection_focus_context();
             return;
         };
@@ -232,10 +234,28 @@ impl CollectionsController<'_> {
         if let Some(err) = tag_error {
             self.set_status(err, StatusTone::Warning);
         }
+        if !self.ui.collections.selected_paths.is_empty() {
+            let available: Vec<PathBuf> = self
+                .ui
+                .collections
+                .samples
+                .iter()
+                .map(|sample| sample.path.clone())
+                .collect();
+            self.ui
+                .collections
+                .selected_paths
+                .retain(|path| available.iter().any(|p| p == path));
+            if self.ui.collections.selected_paths.is_empty() {
+                self.ui.collections.selection_anchor = None;
+            }
+        }
         let len = self.ui.collections.samples.len();
         if len == 0 {
             self.ui.collections.selected_sample = None;
             self.ui.collections.scroll_to_sample = None;
+            self.ui.collections.selected_paths.clear();
+            self.ui.collections.selection_anchor = None;
             self.clear_collection_focus_context();
         } else if let Some(selected) = self.ui.collections.selected_sample
             && selected >= len

@@ -1,6 +1,6 @@
 [package]
 name = "sempal"
-version = "0.364.0"
+version = "0.365.0"
 edition = "2024"
 default-run = "sempal"
 
@@ -46,10 +46,11 @@ ureq = { version = "2.12.1", features = ["json", "tls"] }
 zip = { version = "2.2.1", default-features = false, features = ["deflate"] }
 keyring = "3.6.2"
 chacha20poly1305 = "0.10.1"
-ndarray = "0.16.1"
+ndarray = "=0.16.1"
 linfa = "0.8.0"
 linfa-reduction = "0.8.0"
 linfa-tsne = "0.8.0"
+sprs = "=0.11.2"
 ort = { version = "2.0.0-rc.4", features = ["load-dynamic", "ndarray"] }
 hnsw_rs = "0.3.3"
 symphonia = { version = "0.5.4", default-features = false, features = ["aiff"] }

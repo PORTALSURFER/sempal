@@ -92,6 +92,11 @@ impl HotkeysActions for HotkeysController<'_> {
                     self.start_browser_rename();
                 }
             }
+            HotkeyCommand::RenameFocusedCollection => {
+                if matches!(focus, FocusContext::CollectionsList | FocusContext::CollectionSample) {
+                    self.start_collection_rename();
+                }
+            }
             HotkeyCommand::CreateFolder => {
                 if matches!(focus, FocusContext::SourceFolders) {
                     self.start_new_folder();
@@ -105,8 +110,7 @@ impl HotkeysActions for HotkeysController<'_> {
             HotkeyCommand::FocusBrowserSearch => {
                 if matches!(focus, FocusContext::SampleBrowser) {
                     if matches!(self.ui.browser.active_tab, SampleBrowserTab::Map) {
-                        self.ui.browser.active_tab = SampleBrowserTab::List;
-                        self.focus_browser_list();
+                        self.ui.map.focus_selected_requested = true;
                     } else {
                         self.focus_browser_search();
                     }
@@ -115,6 +119,11 @@ impl HotkeysActions for HotkeysController<'_> {
             HotkeyCommand::AddFocusedToCollection => {
                 if matches!(focus, FocusContext::SampleBrowser) {
                     self.add_focused_sample_to_collection();
+                }
+            }
+            HotkeyCommand::SelectAllBrowser => {
+                if matches!(focus, FocusContext::SampleBrowser) {
+                    self.select_all_browser_rows();
                 }
             }
             HotkeyCommand::ToggleOverlay => {
@@ -307,6 +316,7 @@ impl HotkeysController<'_> {
             | FocusContext::Waveform
             | FocusContext::SourceFolders
             | FocusContext::SourcesList
+            | FocusContext::SelectedFolders
             | FocusContext::CollectionsList => {}
         }
     }
@@ -331,6 +341,7 @@ impl HotkeysController<'_> {
             | FocusContext::Waveform
             | FocusContext::SourceFolders
             | FocusContext::SourcesList
+            | FocusContext::SelectedFolders
             | FocusContext::CollectionsList => {}
         }
     }

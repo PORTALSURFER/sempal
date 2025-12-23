@@ -1,3 +1,4 @@
+use super::status_badges;
 use super::style;
 use super::*;
 use eframe::egui::{self, Align2, Rgba, TextStyle, TextureOptions};
@@ -17,7 +18,7 @@ pub(super) fn render_waveform_base(
             Align2::CENTER_CENTER,
             message,
             font,
-            style::missing_text(),
+            status_badges::missing_text_color(),
         );
         return false;
     }

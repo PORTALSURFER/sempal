@@ -28,7 +28,7 @@ impl EguiController {
         loaded_index: Option<usize>,
     ) -> (Vec<usize>, Option<usize>, Option<usize>) {
         if let Some(similar) = self.ui.browser.similar_query.as_ref() {
-            let visible: Vec<usize> = similar
+            let mut visible: Vec<usize> = similar
                 .indices
                 .iter()
                 .copied()
@@ -41,6 +41,18 @@ impl EguiController {
                     }
                 })
                 .collect();
+            if let Some(anchor) = similar.anchor_index {
+                if let Some(entry) = self.wav_entries.entries.get(anchor) {
+                    if self.browser_filter_accepts(entry.tag)
+                        && self.folder_filter_accepts(&entry.relative_path)
+                    {
+                        if let Some(pos) = visible.iter().position(|i| *i == anchor) {
+                            visible.remove(pos);
+                        }
+                        visible.insert(0, anchor);
+                    }
+                }
+            }
             let selected_visible =
                 focused_index.and_then(|idx| visible.iter().position(|i| *i == idx));
             let loaded_visible =
@@ -53,13 +65,12 @@ impl EguiController {
                 .entries
                 .iter()
                 .enumerate()
-                .filter(|(index, entry)| {
+                .filter(|(_index, entry)| {
                     self.browser_filter_accepts(entry.tag)
                         && self.folder_filter_accepts(&entry.relative_path)
                 })
                 .map(|(index, _)| index)
                 .collect();
-            let mut visible = visible;
             let selected_visible =
                 focused_index.and_then(|idx| visible.iter().position(|i| *i == idx));
             let loaded_visible =

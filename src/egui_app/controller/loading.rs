@@ -1,6 +1,4 @@
 use super::*;
-use crate::egui_app::state::ProgressTaskKind;
-
 impl EguiController {
     fn sync_after_wav_entries_changed(&mut self) {
         self.rebuild_wav_lookup();
@@ -50,14 +48,7 @@ impl EguiController {
             return;
         }
         self.runtime.jobs.send_wav_job(job);
-        if !self.ui.progress.visible || self.ui.progress.task == Some(ProgressTaskKind::WavLoad) {
-            self.show_status_progress(ProgressTaskKind::WavLoad, "Loading samples", 0, false);
-            self.update_progress_detail(format!("Loading wavs for {}", source.root.display()));
-        }
-        self.set_status(
-            format!("Loading wavs for {}", source.root.display()),
-            StatusTone::Info,
-        );
+        self.ensure_wav_load_progress(&source);
     }
 
     pub(super) fn handle_wav_load_error(&mut self, source_id: &SourceId, err: LoadEntriesError) {
@@ -130,14 +121,8 @@ impl EguiController {
                     self.ui_cache.browser.analysis_failures.remove(&id);
                 }
             }
-            let missing: std::collections::HashSet<std::path::PathBuf> = self
-                .wav_entries
-                .entries
-                .iter()
-                .filter(|entry| entry.missing)
-                .map(|entry| entry.relative_path.clone())
-                .collect();
-            self.library.missing.wavs.insert(id, missing);
+            let entries = self.wav_entries.entries.clone();
+            self.sync_missing_from_entries(&id, &entries);
         }
         let prefix = if from_cache { "Cached" } else { "Loaded" };
         let suffix = elapsed

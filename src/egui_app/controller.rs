@@ -28,7 +28,9 @@ mod loading;
 mod os_explorer;
 mod playback;
 mod progress;
+mod progress_messages;
 mod map_view;
+mod missing_samples;
 mod scans;
 mod selection_edits;
 mod selection_export;
@@ -36,6 +38,7 @@ mod source_cache_invalidator;
 mod source_folders;
 mod sources;
 mod similarity_prep;
+mod status_message;
 mod tagging_service;
 mod trash;
 mod trash_move;
@@ -61,6 +64,7 @@ use crate::{
     waveform::{DecodedWaveform, WaveformRenderer},
 };
 pub(in crate::egui_app::controller) use analysis_jobs::AnalysisJobMessage;
+pub(crate) use status_message::StatusMessage;
 use analysis_jobs::AnalysisWorkerPool;
 use audio_cache::AudioCache;
 use audio_loader::{AudioLoadError, AudioLoadJob, AudioLoadOutcome, AudioLoadResult};
@@ -219,6 +223,11 @@ impl EguiController {
             self.ui.status.log.drain(0..overflow);
         }
         append_status_log_line(self.ui.status.log.last().expect("just pushed"));
+    }
+
+    pub(crate) fn set_status_message(&mut self, message: StatusMessage) {
+        let (text, tone) = message.into_text_and_tone();
+        self.set_status(text, tone);
     }
 
     #[allow(dead_code)]

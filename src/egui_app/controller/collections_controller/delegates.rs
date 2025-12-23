@@ -6,6 +6,33 @@ impl EguiController {
         self.collections_ctrl().select_collection_sample(index);
     }
 
+    /// Focus a collection sample row and replace the multi-selection set.
+    pub fn focus_collection_sample_row(&mut self, row: usize) {
+        self.collections_ctrl().focus_collection_sample_row(row);
+    }
+
+    /// Toggle a collection sample row in the multi-selection set.
+    pub fn toggle_collection_sample_selection(&mut self, row: usize) {
+        self.collections_ctrl().toggle_collection_sample_selection(row);
+    }
+
+    /// Extend the collection selection to a row (shift).
+    pub fn extend_collection_sample_selection_to_row(&mut self, row: usize) {
+        self.collections_ctrl()
+            .extend_collection_sample_selection_to_row(row);
+    }
+
+    /// Add a range of collection rows to the selection (shift + ctrl).
+    pub fn add_range_collection_sample_selection(&mut self, row: usize) {
+        self.collections_ctrl()
+            .add_range_collection_sample_selection(row);
+    }
+
+    /// Clear the collection sample multi-selection set.
+    pub fn clear_collection_sample_selection(&mut self) {
+        self.collections_ctrl().clear_collection_sample_selection();
+    }
+
     /// Select a collection row (or clear selection).
     pub fn select_collection_by_index(&mut self, index: Option<usize>) {
         self.collections_ctrl().select_collection_by_index(index);
@@ -30,6 +57,54 @@ impl EguiController {
     pub fn rename_collection(&mut self, collection_id: &CollectionId, new_name: String) {
         self.collections_ctrl()
             .rename_collection(collection_id, new_name);
+    }
+
+    /// Begin renaming the focused collection in the list.
+    pub fn start_collection_rename(&mut self) {
+        let Some(collection) = self.current_collection() else {
+            self.set_status("Select a collection to rename it", StatusTone::Info);
+            return;
+        };
+        self.focus_collections_list_context();
+        self.ui.collections.pending_action = Some(
+            crate::egui_app::state::CollectionActionPrompt::Rename {
+                target: collection.id.clone(),
+                name: collection.name.clone(),
+            },
+        );
+        self.ui.collections.rename_focus_requested = true;
+    }
+
+    /// Mark the collections list as the active focus surface.
+    pub fn focus_collections_list_from_ui(&mut self) {
+        self.focus_collections_list_context();
+    }
+
+    /// Cancel a pending collection rename.
+    pub fn cancel_collection_rename(&mut self) {
+        if matches!(
+            self.ui.collections.pending_action,
+            Some(crate::egui_app::state::CollectionActionPrompt::Rename { .. })
+        ) {
+            self.ui.collections.pending_action = None;
+            self.ui.collections.rename_focus_requested = false;
+        }
+    }
+
+    /// Apply a pending inline rename for the collection list.
+    pub fn apply_pending_collection_rename(&mut self) {
+        let action = self.ui.collections.pending_action.clone();
+        if let Some(crate::egui_app::state::CollectionActionPrompt::Rename { target, name }) =
+            action
+        {
+            let trimmed = name.trim();
+            if trimmed.is_empty() {
+                self.set_status("Collection name cannot be empty", StatusTone::Error);
+                return;
+            }
+            self.rename_collection(&target, trimmed.to_string());
+            self.cancel_collection_rename();
+        }
     }
 
     /// Add a sample from the current source to a collection.

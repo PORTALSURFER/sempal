@@ -24,19 +24,19 @@ impl EguiController {
 
     pub fn build_umap_layout(&mut self, model_id: &str, umap_version: &str) {
         if self.runtime.jobs.umap_build_in_progress() {
-            self.set_status("t-SNE build already running", StatusTone::Info);
+            self.set_status_message(StatusMessage::TsneBuildAlreadyRunning);
             return;
         }
         self.runtime.jobs.begin_umap_build(super::jobs::UmapBuildJob {
             model_id: model_id.to_string(),
             umap_version: umap_version.to_string(),
         });
-        self.set_status("Building t-SNE layout…", StatusTone::Info);
+        self.set_status_message(StatusMessage::BuildingTsneLayout);
     }
 
     pub fn build_umap_clusters(&mut self, model_id: &str, umap_version: &str) {
         if self.runtime.jobs.umap_cluster_build_in_progress() {
-            self.set_status("Cluster build already running", StatusTone::Info);
+            self.set_status_message(StatusMessage::ClusterBuildAlreadyRunning);
             return;
         }
         let source_id = self.current_source().map(|source| source.id);
@@ -47,10 +47,10 @@ impl EguiController {
                 umap_version: umap_version.to_string(),
                 source_id,
             });
-        self.set_status("Building clusters…", StatusTone::Info);
+        self.set_status_message(StatusMessage::BuildingClusters);
     }
 
-    pub fn umap_bounds(
+    pub(crate) fn umap_bounds(
         &mut self,
         model_id: &str,
         umap_version: &str,
@@ -60,7 +60,7 @@ impl EguiController {
         load_umap_bounds(&conn, model_id, umap_version, source_id)
     }
 
-    pub fn umap_points_in_bounds(
+    pub(crate) fn umap_points_in_bounds(
         &mut self,
         model_id: &str,
         umap_version: &str,
@@ -81,6 +81,16 @@ impl EguiController {
             bounds,
             limit,
         )
+    }
+
+    pub fn umap_point_for_sample(
+        &mut self,
+        model_id: &str,
+        umap_version: &str,
+        sample_id: &str,
+    ) -> Result<Option<(f32, f32)>, String> {
+        let conn = open_library_db()?;
+        load_umap_point_for_sample(&conn, model_id, umap_version, sample_id)
     }
 
     pub fn umap_cluster_centroids(
@@ -275,6 +285,27 @@ fn load_umap_points(
         points.push(row.map_err(|err| format!("Read layout row failed: {err}"))?);
     }
     Ok(points)
+}
+
+fn load_umap_point_for_sample(
+    conn: &Connection,
+    model_id: &str,
+    umap_version: &str,
+    sample_id: &str,
+) -> Result<Option<(f32, f32)>, String> {
+    conn.query_row(
+        "SELECT x, y
+         FROM layout_umap
+         WHERE model_id = ?1 AND umap_version = ?2 AND sample_id = ?3",
+        params![model_id, umap_version, sample_id],
+        |row| {
+            let x: f32 = row.get(0)?;
+            let y: f32 = row.get(1)?;
+            Ok((x, y))
+        },
+    )
+    .optional()
+    .map_err(|err| format!("Query t-SNE point failed: {err}"))
 }
 
 fn load_umap_cluster_centroids(

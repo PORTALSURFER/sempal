@@ -85,7 +85,7 @@ impl EguiController {
     }
 
     /// Reconcile a collection with the current contents of its export folder.
-    pub fn refresh_collection_export(&mut self, collection_id: &CollectionId) {
+    pub fn sync_collection_export(&mut self, collection_id: &CollectionId) {
         let Some(collection) = self
             .library
             .collections
@@ -104,7 +104,7 @@ impl EguiController {
         let result = reconcile_collection_export(self, collection_id);
         match result {
             Ok((added, removed)) => {
-                let summary = format!("Refresh export complete: +{added} new, -{removed} missing");
+                let summary = format!("Sync export complete: +{added} new, -{removed} missing");
                 self.set_status(summary, StatusTone::Info);
             }
             Err(err) => self.set_status(err, StatusTone::Error),

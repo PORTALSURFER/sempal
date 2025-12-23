@@ -7,6 +7,8 @@ const MAX_ZOOM_FACTOR: f32 = 0.995;
 const WHEEL_ZOOM_ANCHOR_FACTOR: f32 = 0.96;
 const MIN_WHEEL_ZOOM_SPEED: f32 = 0.1;
 const MAX_WHEEL_ZOOM_SPEED: f32 = 20.0;
+const MIN_ANTI_CLIP_FADE_MS: f32 = 0.0;
+const MAX_ANTI_CLIP_FADE_MS: f32 = 20.0;
 
 pub(super) fn clamp_scroll_speed(speed: f32) -> f32 {
     speed.clamp(MIN_SCROLL_SPEED, MAX_SCROLL_SPEED)
@@ -14,6 +16,10 @@ pub(super) fn clamp_scroll_speed(speed: f32) -> f32 {
 
 pub(super) fn clamp_zoom_factor(factor: f32) -> f32 {
     factor.clamp(MIN_ZOOM_FACTOR, MAX_ZOOM_FACTOR)
+}
+
+pub(super) fn clamp_anti_clip_fade_ms(fade_ms: f32) -> f32 {
+    fade_ms.clamp(MIN_ANTI_CLIP_FADE_MS, MAX_ANTI_CLIP_FADE_MS)
 }
 
 fn clamp_wheel_zoom_speed(speed: f32) -> f32 {
@@ -83,6 +89,29 @@ impl EguiController {
         self.persist_controls();
     }
 
+    /// Toggle and persist the anti-clip fade.
+    pub fn set_anti_clip_fade_enabled(&mut self, enabled: bool) {
+        if self.settings.controls.anti_clip_fade_enabled == enabled {
+            return;
+        }
+        self.settings.controls.anti_clip_fade_enabled = enabled;
+        self.ui.controls.anti_clip_fade_enabled = enabled;
+        self.apply_anti_clip_fade_settings();
+        self.persist_controls();
+    }
+
+    /// Set and persist the anti-clip fade duration in milliseconds.
+    pub fn set_anti_clip_fade_ms(&mut self, fade_ms: f32) {
+        let clamped = clamp_anti_clip_fade_ms(fade_ms);
+        if (self.settings.controls.anti_clip_fade_ms - clamped).abs() < f32::EPSILON {
+            return;
+        }
+        self.settings.controls.anti_clip_fade_ms = clamped;
+        self.ui.controls.anti_clip_fade_ms = clamped;
+        self.apply_anti_clip_fade_settings();
+        self.persist_controls();
+    }
+
     /// Toggle and persist destructive "yolo mode" (skip confirmation prompts).
     pub fn set_destructive_yolo_mode(&mut self, enabled: bool) {
         if self.settings.controls.destructive_yolo_mode == enabled {
@@ -91,6 +120,14 @@ impl EguiController {
         self.settings.controls.destructive_yolo_mode = enabled;
         self.ui.controls.destructive_yolo_mode = enabled;
         self.persist_controls();
+    }
+
+    fn apply_anti_clip_fade_settings(&mut self) {
+        let fade_ms = self.settings.controls.anti_clip_fade_ms;
+        let enabled = self.settings.controls.anti_clip_fade_enabled;
+        if let Some(player) = self.audio.player.as_ref() {
+            player.borrow_mut().set_anti_clip_settings(enabled, fade_ms);
+        }
     }
 
     /// Set and persist the waveform channel view mode and refresh the waveform image.

@@ -31,6 +31,12 @@ impl CollectionsActions for CollectionsController<'_> {
         };
         self.apply_collection_sample_selection_ui(&collection.id, index);
         let target_path = member.relative_path.clone();
+        if self.ui.collections.selection_anchor.is_none() {
+            self.ui.collections.selection_anchor = Some(index);
+        }
+        if self.ui.collections.selected_paths.is_empty() {
+            self.ui.collections.selected_paths.push(target_path.clone());
+        }
         let Some(source) = self.collection_member_source(&member) else {
             self.set_status("Source not available for this sample", StatusTone::Warning);
             return;
@@ -62,6 +68,8 @@ impl CollectionsActions for CollectionsController<'_> {
         }
         self.ui.collections.selected_sample = None;
         self.ui.collections.scroll_to_sample = None;
+        self.ui.collections.selected_paths.clear();
+        self.ui.collections.selection_anchor = None;
         self.clear_focus_context();
         self.ui.browser.autoscroll = false;
         self.refresh_collection_selection_ui();
@@ -263,6 +271,16 @@ impl CollectionsController<'_> {
         self.selection_state.ctx.selected_collection = Some(collection_id.clone());
         self.ui.collections.selected_sample = Some(index);
         self.ui.collections.scroll_to_sample = Some(index);
+        let focused_path = self
+            .ui
+            .collections
+            .samples
+            .get(index)
+            .map(|sample| sample.path.clone());
+        if let Some(path) = focused_path {
+            self.ui.collections.last_focused_collection = Some(collection_id.clone());
+            self.ui.collections.last_focused_path = Some(path);
+        }
         self.focus_collection_context();
         self.ui.browser.selected = None;
         self.ui.browser.autoscroll = false;
@@ -271,9 +289,117 @@ impl CollectionsController<'_> {
 
     fn maybe_autoplay_selection(&mut self) {
         if !self.settings.feature_flags.autoplay_selection {
+            self.selection_state.suppress_autoplay_once = false;
+            return;
+        }
+        if self.selection_state.suppress_autoplay_once {
+            self.selection_state.suppress_autoplay_once = false;
             return;
         }
         let looped = self.ui.waveform.loop_enabled;
         let _ = self.play_audio(looped, None);
     }
+
+    pub(super) fn clear_collection_sample_selection(&mut self) {
+        self.ui.collections.selected_paths.clear();
+        self.ui.collections.selection_anchor = None;
+    }
+
+    pub(super) fn focus_collection_sample_row(&mut self, row: usize) {
+        self.apply_collection_sample_selection(row, CollectionSelectionAction::Replace);
+    }
+
+    pub(super) fn toggle_collection_sample_selection(&mut self, row: usize) {
+        self.apply_collection_sample_selection(row, CollectionSelectionAction::Toggle);
+    }
+
+    pub(super) fn extend_collection_sample_selection_to_row(&mut self, row: usize) {
+        self.apply_collection_sample_selection(row, CollectionSelectionAction::Extend { additive: false });
+    }
+
+    pub(super) fn add_range_collection_sample_selection(&mut self, row: usize) {
+        self.apply_collection_sample_selection(row, CollectionSelectionAction::Extend { additive: true });
+    }
+
+    fn collection_path_for_row(&self, row: usize) -> Option<PathBuf> {
+        self.ui.collections.samples.get(row).map(|sample| sample.path.clone())
+    }
+
+    fn apply_collection_sample_selection(
+        &mut self,
+        row: usize,
+        action: CollectionSelectionAction,
+    ) {
+        let Some(path) = self.collection_path_for_row(row) else {
+            return;
+        };
+        let max_row = self.ui.collections.samples.len().saturating_sub(1);
+        let row = row.min(max_row);
+        let anchor = self
+            .ui
+            .collections
+            .selection_anchor
+            .or(self.ui.collections.selected_sample)
+            .unwrap_or(row)
+            .min(max_row);
+        match action {
+            CollectionSelectionAction::Replace => {
+                self.ui.collections.selection_anchor = Some(row);
+                self.ui.collections.selected_paths.clear();
+                self.ui.collections.selected_paths.push(path);
+            }
+            CollectionSelectionAction::Toggle => {
+                self.ui.collections.selection_anchor = Some(anchor);
+                if self.ui.collections.selected_paths.is_empty()
+                    && anchor != row
+                    && let Some(anchor_path) = self.collection_path_for_row(anchor)
+                    && !self
+                        .ui
+                        .collections
+                        .selected_paths
+                        .iter()
+                        .any(|p| p == &anchor_path)
+                {
+                    self.ui.collections.selected_paths.push(anchor_path);
+                }
+                if let Some(pos) = self
+                    .ui
+                    .collections
+                    .selected_paths
+                    .iter()
+                    .position(|p| p == &path)
+                {
+                    self.ui.collections.selected_paths.remove(pos);
+                    if self.ui.collections.selected_paths.is_empty() {
+                        self.ui.collections.selection_anchor = None;
+                    }
+                } else {
+                    self.ui.collections.selected_paths.push(path);
+                }
+            }
+            CollectionSelectionAction::Extend { additive } => {
+                let start = anchor.min(row);
+                let end = anchor.max(row);
+                if !additive {
+                    self.ui.collections.selected_paths.clear();
+                }
+                for index in start..=end {
+                    if let Some(path) = self.collection_path_for_row(index)
+                        && !self.ui.collections.selected_paths.iter().any(|p| p == &path)
+                    {
+                        self.ui.collections.selected_paths.push(path);
+                    }
+                }
+                self.ui.collections.selection_anchor = Some(anchor);
+            }
+        }
+        self.select_collection_sample(row);
+    }
+}
+
+#[derive(Clone, Copy)]
+enum CollectionSelectionAction {
+    Replace,
+    Toggle,
+    Extend { additive: bool },
 }

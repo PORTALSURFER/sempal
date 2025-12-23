@@ -82,7 +82,7 @@ impl EguiController {
         self.library.sources.push(source.clone());
         self.select_source(Some(source.id.clone()));
         self.persist_config("Failed to save config after adding source")?;
-        self.request_quick_sync();
+        self.prepare_similarity_for_selected_source();
         Ok(())
     }
 
@@ -137,6 +137,24 @@ impl EguiController {
         self.refresh_collections_ui();
         self.select_first_source();
         self.set_status("Source removed", StatusTone::Info);
+    }
+
+    /// Remove all dead-link rows (missing samples) for a source.
+    pub fn remove_dead_links_for_source(&mut self, index: usize) {
+        let Some(source) = self.library.sources.get(index).cloned() else {
+            return;
+        };
+        match self.remove_dead_links_for_source_entries(&source) {
+            Ok(0) => {
+                self.set_status("No dead links to remove", StatusTone::Info);
+            }
+            Ok(count) => {
+                self.set_status(format!("Removed {count} dead links"), StatusTone::Info);
+            }
+            Err(err) => {
+                self.set_status(err, StatusTone::Error);
+            }
+        }
     }
 
     pub(super) fn refresh_sources_ui(&mut self) {

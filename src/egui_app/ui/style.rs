@@ -141,6 +141,11 @@ pub fn duplicate_hover_stroke() -> Color32 {
     semantic_palette().duplicate_hover_stroke
 }
 
+/// Highlight used for the anchor sample of a similarity query.
+pub fn similar_anchor_fill() -> Color32 {
+    Color32::from_rgb(88, 110, 148)
+}
+
 /// Stroke used to indicate drag targets.
 pub fn drag_target_stroke() -> Stroke {
     Stroke::new(2.0, with_alpha(semantic_palette().drag_highlight, 180))

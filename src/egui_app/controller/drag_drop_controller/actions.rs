@@ -1,4 +1,5 @@
 use super::*;
+use crate::egui_app::state::{DragSample, DragSource};
 #[cfg(any(target_os = "windows", test))]
 use std::time::{Duration, Instant};
 
@@ -10,6 +11,7 @@ pub(crate) trait DragDropActions {
         label: String,
         pos: Pos2,
     );
+    fn start_samples_drag(&mut self, samples: Vec<DragSample>, label: String, pos: Pos2);
     fn start_selection_drag_payload(
         &mut self,
         bounds: SelectionRange,
@@ -43,6 +45,10 @@ impl DragDropActions for DragDropController<'_> {
             label,
             pos,
         );
+    }
+
+    fn start_samples_drag(&mut self, samples: Vec<DragSample>, label: String, pos: Pos2) {
+        self.begin_drag(DragPayload::Samples { samples }, label, pos);
     }
 
     fn start_selection_drag_payload(
@@ -89,6 +95,7 @@ impl DragDropActions for DragDropController<'_> {
             pos, source, target
         );
         self.ui.drag.position = Some(pos);
+        self.ui.drag.origin_source = Some(source);
         self.ui.drag.set_target(source, target);
         if let Some(DragPayload::Selection {
             keep_source_focused,
@@ -116,6 +123,7 @@ impl DragDropActions for DragDropController<'_> {
     }
 
     fn finish_active_drag(&mut self) {
+        let origin_source = self.ui.drag.origin_source;
         let payload = match self.ui.drag.payload.take() {
             Some(payload) => payload,
             None => {
@@ -142,7 +150,10 @@ impl DragDropActions for DragDropController<'_> {
             _ => (None, None, false),
         };
 
-        let is_sample_payload = matches!(payload, DragPayload::Sample { .. });
+        let is_sample_payload = matches!(
+            payload,
+            DragPayload::Sample { .. } | DragPayload::Samples { .. }
+        );
         if is_sample_payload && over_folder_panel && folder_target.is_none() {
             self.reset_drag();
             self.set_status("Drop onto a folder to move the sample", StatusTone::Warning);
@@ -151,8 +162,10 @@ impl DragDropActions for DragDropController<'_> {
 
         let current_collection_id = self.current_collection_id();
 
-        if matches!(payload, DragPayload::Sample { .. })
-            && matches!(active_target, DragTarget::CollectionsDropZone { .. })
+        if matches!(
+            payload,
+            DragPayload::Sample { .. } | DragPayload::Samples { .. }
+        ) && matches!(active_target, DragTarget::CollectionsDropZone { .. })
             && current_collection_id.is_none()
         {
             self.reset_drag();
@@ -188,8 +201,10 @@ impl DragDropActions for DragDropController<'_> {
             self.ui.drag.position,
         );
 
-        if matches!(payload, DragPayload::Sample { .. })
-            && drop_in_collections_panel
+        if matches!(
+            payload,
+            DragPayload::Sample { .. } | DragPayload::Samples { .. }
+        ) && drop_in_collections_panel
             && current_collection_id.is_none()
             && collection_target.is_none()
             && folder_target.is_none()
@@ -219,7 +234,11 @@ impl DragDropActions for DragDropController<'_> {
                 source_id,
                 relative_path,
             } => {
-                if let Some(folder) = folder_target {
+                if origin_source == Some(DragSource::Waveform)
+                    && matches!(active_target, DragTarget::BrowserTriage(_))
+                {
+                    self.handle_waveform_sample_drop_to_browser(source_id, relative_path);
+                } else if let Some(folder) = folder_target {
                     self.handle_sample_drop_to_folder(source_id, relative_path, &folder);
                 } else {
                     self.handle_sample_drop(
@@ -228,6 +247,13 @@ impl DragDropActions for DragDropController<'_> {
                         collection_target,
                         triage_target,
                     );
+                }
+            }
+            DragPayload::Samples { samples } => {
+                if let Some(folder) = folder_target {
+                    self.handle_samples_drop_to_folder(&samples, &folder);
+                } else {
+                    self.handle_samples_drop(&samples, collection_target, triage_target);
                 }
             }
             DragPayload::Selection {
@@ -298,6 +324,16 @@ impl DragDropController<'_> {
                 let absolute = self.sample_absolute_path(&source_id, &relative_path);
                 self.start_external_drag(&[absolute])
                     .map(|_| format!("Drag {} to an external target", relative_path.display()))
+            }
+            Some(DragPayload::Samples { samples }) => {
+                let absolutes: Vec<PathBuf> = samples
+                    .iter()
+                    .map(|sample| {
+                        self.sample_absolute_path(&sample.source_id, &sample.relative_path)
+                    })
+                    .collect();
+                self.start_external_drag(&absolutes)
+                    .map(|_| format!("Drag {} samples to an external target", samples.len()))
             }
             Some(DragPayload::Selection { bounds, .. }) => self
                 .export_selection_for_drag(bounds)

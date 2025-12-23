@@ -30,6 +30,13 @@ pub(super) fn format_keypress(press: &Option<hotkeys::KeyPress>) -> String {
 impl EguiApp {
     pub(super) fn process_hotkeys(&mut self, ctx: &egui::Context, focus: FocusContext) {
         let overlay_open = self.controller.ui.hotkeys.overlay_visible;
+        let collection_rename_active = matches!(
+            self.controller.ui.collections.pending_action,
+            Some(crate::egui_app::state::CollectionActionPrompt::Rename { .. })
+        );
+        if collection_rename_active {
+            return;
+        }
         let wants_text_input = ctx.wants_keyboard_input();
         let actions: Vec<_> = hotkeys::iter_actions()
             .filter(|action| (!overlay_open || action.is_global()) && action.is_active(focus))

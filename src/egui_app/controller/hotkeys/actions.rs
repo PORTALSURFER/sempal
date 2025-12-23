@@ -67,6 +67,20 @@ pub(super) const HOTKEY_ACTIONS: &[HotkeyAction] = &[
         command: HotkeyCommand::RenameFocusedSample,
     },
     HotkeyAction {
+        id: "rename-collection",
+        label: "Rename collection",
+        gesture: HotkeyGesture::new(Key::R),
+        scope: HotkeyScope::Focus(FocusContext::CollectionsList),
+        command: HotkeyCommand::RenameFocusedCollection,
+    },
+    HotkeyAction {
+        id: "rename-collection-from-samples",
+        label: "Rename collection",
+        gesture: HotkeyGesture::new(Key::R),
+        scope: HotkeyScope::Focus(FocusContext::CollectionSample),
+        command: HotkeyCommand::RenameFocusedCollection,
+    },
+    HotkeyAction {
         id: "new-folder",
         label: "New folder",
         gesture: HotkeyGesture::new(Key::N),
@@ -86,6 +100,13 @@ pub(super) const HOTKEY_ACTIONS: &[HotkeyAction] = &[
         gesture: HotkeyGesture::new(Key::F),
         scope: HotkeyScope::Focus(FocusContext::SampleBrowser),
         command: HotkeyCommand::FocusBrowserSearch,
+    },
+    HotkeyAction {
+        id: "select-all-browser",
+        label: "Select all samples",
+        gesture: HotkeyGesture::with_command(Key::A),
+        scope: HotkeyScope::Focus(FocusContext::SampleBrowser),
+        command: HotkeyCommand::SelectAllBrowser,
     },
     HotkeyAction {
         id: "normalize-browser",

@@ -3,7 +3,9 @@ use super::*;
 impl EguiController {
     pub fn backfill_missing_features_for_selected_source(&mut self) {
         let Some(source) = self.current_source() else {
-            self.set_status("Select a source first", StatusTone::Warning);
+            self.set_status_message(StatusMessage::SelectSourceFirst {
+                tone: StatusTone::Warning,
+            });
             return;
         };
         let tx = self.runtime.jobs.message_sender();
@@ -30,7 +32,9 @@ impl EguiController {
 
     pub fn backfill_embeddings_for_selected_source(&mut self) {
         let Some(source) = self.current_source() else {
-            self.set_status("Select a source first", StatusTone::Warning);
+            self.set_status_message(StatusMessage::SelectSourceFirst {
+                tone: StatusTone::Warning,
+            });
             return;
         };
         let tx = self.runtime.jobs.message_sender();

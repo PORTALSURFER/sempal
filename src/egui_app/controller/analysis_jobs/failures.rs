@@ -16,17 +16,30 @@ fn failed_samples_for_source_conn(
     source_id: &crate::sample_sources::SourceId,
 ) -> Result<HashMap<PathBuf, String>, String> {
     let prefix = format!("{}::%", source_id.as_str());
+    let embedding_model = crate::analysis::embedding::EMBEDDING_MODEL_ID;
+    let analysis_version = crate::analysis::version::analysis_version();
     let mut stmt = conn
         .prepare(
-            "SELECT sample_id, last_error
-             FROM analysis_jobs
-             WHERE status = 'failed' AND sample_id LIKE ?1
-             ORDER BY sample_id ASC",
+            "SELECT aj.sample_id, aj.last_error
+             FROM analysis_jobs aj
+             LEFT JOIN samples s ON s.sample_id = aj.sample_id
+             LEFT JOIN features f
+                ON f.sample_id = aj.sample_id AND f.feat_version = ?2
+             LEFT JOIN embeddings e
+                ON e.sample_id = aj.sample_id AND e.model_id = ?3
+             WHERE aj.status = 'failed' AND aj.sample_id LIKE ?1
+               AND (
+                  f.sample_id IS NULL
+                  OR s.analysis_version IS NULL
+                  OR s.analysis_version != ?4
+                  OR e.sample_id IS NULL
+               )
+             ORDER BY aj.sample_id ASC",
         )
         .map_err(|err| format!("Failed to query failed analysis jobs: {err}"))?;
     let mut out = HashMap::new();
     let rows = stmt
-        .query_map(params![prefix], |row| {
+        .query_map(params![prefix, 1i64, embedding_model, analysis_version], |row| {
             let sample_id: String = row.get(0)?;
             let last_error: Option<String> = row.get(1)?;
             Ok((sample_id, last_error))
@@ -74,7 +87,26 @@ mod tests {
                 created_at INTEGER NOT NULL,
                 last_error TEXT,
                 UNIQUE(sample_id, job_type)
-            );",
+            );
+            CREATE TABLE samples (
+                sample_id TEXT PRIMARY KEY,
+                analysis_version TEXT
+            );
+            CREATE TABLE features (
+                sample_id TEXT PRIMARY KEY,
+                feat_version INTEGER NOT NULL,
+                vec_blob BLOB NOT NULL,
+                computed_at INTEGER NOT NULL
+            ) WITHOUT ROWID;
+            CREATE TABLE embeddings (
+                sample_id TEXT PRIMARY KEY,
+                model_id TEXT NOT NULL,
+                dim INTEGER NOT NULL,
+                dtype TEXT NOT NULL,
+                l2_normed INTEGER NOT NULL,
+                vec BLOB NOT NULL,
+                created_at INTEGER NOT NULL
+            ) WITHOUT ROWID;",
         )
         .unwrap();
         conn.execute(
@@ -95,14 +127,31 @@ mod tests {
             [],
         )
         .unwrap();
+        conn.execute(
+            "INSERT INTO samples (sample_id, analysis_version)
+             VALUES ('s1::Pack/a.wav', ?1)",
+            params![crate::analysis::version::analysis_version()],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO features (sample_id, feat_version, vec_blob, computed_at)
+             VALUES ('s1::Pack/a.wav', 1, X'00', 0)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO embeddings (sample_id, model_id, dim, dtype, l2_normed, vec, created_at)
+             VALUES ('s1::Pack/a.wav', ?1, 1, 'f32', 1, X'00', 0)",
+            params![crate::analysis::embedding::EMBEDDING_MODEL_ID],
+        )
+        .unwrap();
 
         let map = failed_samples_for_source_conn(
             &conn,
             &crate::sample_sources::SourceId::from_string("s1"),
         )
         .unwrap();
-        assert_eq!(map.len(), 2);
-        assert_eq!(map.get(&PathBuf::from("Pack/a.wav")).map(|s| s.as_str()), Some("boom"));
+        assert_eq!(map.len(), 1);
         assert_eq!(
             map.get(&PathBuf::from("Pack/b.wav")).map(|s| s.as_str()),
             Some("Analysis failed")

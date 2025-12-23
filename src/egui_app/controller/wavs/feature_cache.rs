@@ -111,7 +111,7 @@ impl EguiController {
 
         for (idx, entry) in self.wav_entries.entries.iter().enumerate() {
             let key = normalize_relative_key(&entry.relative_path.to_string_lossy());
-            let mut status = sample_map.remove(&key).unwrap_or(FeatureStatus {
+            let status = sample_map.remove(&key).unwrap_or(FeatureStatus {
                 has_features_v1: false,
                 duration_seconds: None,
                 sr_used: None,

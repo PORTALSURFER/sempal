@@ -19,6 +19,8 @@ pub struct SampleBrowserState {
     pub selection_anchor_visible: Option<usize>,
     /// Paths currently included in the multi-selection set.
     pub selected_paths: Vec<PathBuf>,
+    /// Last focused browser item to restore focus after context changes.
+    pub last_focused_path: Option<PathBuf>,
     pub autoscroll: bool,
     pub filter: TriageFlagFilter,
     /// Text query applied to visible rows via fuzzy search.
@@ -50,6 +52,7 @@ impl Default for SampleBrowserState {
             loaded_visible: None,
             selection_anchor_visible: None,
             selected_paths: Vec::new(),
+            last_focused_path: None,
             autoscroll: false,
             filter: TriageFlagFilter::All,
             search_query: String::new(),
@@ -69,6 +72,7 @@ pub struct SimilarQuery {
     pub sample_id: String,
     pub label: String,
     pub indices: Vec<usize>,
+    pub anchor_index: Option<usize>,
 }
 
 /// Identifies a row inside one of the triage flag columns.

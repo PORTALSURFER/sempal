@@ -9,13 +9,43 @@ impl EguiController {
 
     /// Focus the sample browser, selecting a row if none is active.
     pub(super) fn focus_browser_list(&mut self) {
-        let Some(target_row) =
-            self.ui
-                .browser
-                .selected_visible
-                .or(self.ui.browser.visible.first().copied())
-        else {
-            self.set_status("Add a source with samples first", StatusTone::Info);
+        let visible_len = self.ui.browser.visible.len();
+        let anchor = self
+            .ui
+            .browser
+            .selection_anchor_visible
+            .filter(|row| *row < visible_len);
+        let selected = self
+            .ui
+            .browser
+            .selected_visible
+            .filter(|row| *row < visible_len);
+        let target_row = anchor
+            .or(selected)
+            .or_else(|| {
+                self.ui
+                    .browser
+                    .last_focused_path
+                    .as_ref()
+                    .and_then(|path| self.visible_row_for_path(path))
+            })
+            .or_else(|| {
+                self.ui
+                    .browser
+                    .selected_paths
+                    .iter()
+                    .find_map(|path| self.visible_row_for_path(path))
+            })
+            .or_else(|| {
+                self.sample_view
+                    .wav
+                    .selected_wav
+                    .as_ref()
+                    .and_then(|path| self.visible_row_for_path(path))
+            })
+            .or_else(|| self.ui.browser.visible.first().copied());
+        let Some(target_row) = target_row else {
+            self.set_status_message(StatusMessage::AddSourceWithSamplesFirst);
             return;
         };
         // Entering via the focus hotkey should not autoplay; suppress it for this selection.
@@ -36,19 +66,46 @@ impl EguiController {
     /// Focus the collection samples list, selecting the current row or first row.
     pub(super) fn focus_collection_samples_list(&mut self) {
         let Some(collection) = self.current_collection() else {
-            self.set_status("Select a collection first", StatusTone::Info);
+            self.focus_collection_context();
+            self.set_status_message(StatusMessage::SelectCollectionFirst {
+                tone: StatusTone::Info,
+            });
             return;
         };
         if collection.members.is_empty() {
-            self.set_status("This collection has no samples yet", StatusTone::Info);
+            self.ui.collections.selected_sample = None;
+            self.ui.collections.scroll_to_sample = None;
+            self.focus_collection_context();
+            self.set_status_message(StatusMessage::CollectionEmpty);
             return;
         }
-        let target = self
+        let last_focused = self
             .ui
             .collections
-            .selected_sample
+            .last_focused_collection
+            .as_ref()
+            .and_then(|id| {
+                if id == &collection.id {
+                    self.ui
+                        .collections
+                        .last_focused_path
+                        .as_ref()
+                        .and_then(|path| {
+                            self.ui
+                                .collections
+                                .samples
+                                .iter()
+                                .position(|sample| &sample.path == path)
+                        })
+                } else {
+                    None
+                }
+            });
+        let target = last_focused
+            .or(self.ui.collections.selected_sample)
             .unwrap_or(0)
             .min(collection.members.len().saturating_sub(1));
+        self.selection_state.suppress_autoplay_once = true;
         self.select_collection_sample(target);
     }
 
@@ -62,10 +119,17 @@ impl EguiController {
         self.set_focus_context(FocusContext::SourceFolders);
     }
 
+    /// Mark the selected folders list as the active focus surface.
+    pub(super) fn focus_selected_folders_context(&mut self) {
+        self.set_focus_context(FocusContext::SelectedFolders);
+    }
+
     /// Focus the sources list, selecting the current row or the first available source.
     pub(super) fn focus_sources_list(&mut self) {
         if self.library.sources.is_empty() {
-            self.set_status("Add a source first", StatusTone::Info);
+            self.set_status_message(StatusMessage::AddSourceFirst {
+                tone: StatusTone::Info,
+            });
             return;
         }
         let target = self
@@ -86,7 +150,7 @@ impl EguiController {
     /// Focus the collections list, selecting the active row or the first entry.
     pub(super) fn focus_collections_list(&mut self) {
         if self.library.collections.is_empty() {
-            self.set_status("Create a collection to focus it", StatusTone::Info);
+            self.set_status_message(StatusMessage::CreateCollectionFirst);
             return;
         }
         let target = self
@@ -108,6 +172,46 @@ impl EguiController {
     pub(super) fn clear_collection_focus_context(&mut self) {
         if matches!(self.ui.focus.context, FocusContext::CollectionSample) {
             self.clear_focus_context();
+        }
+    }
+
+    /// Focus a UI surface from UI-driven navigation (e.g. alt+arrow switching).
+    pub(crate) fn focus_context_from_ui(&mut self, context: FocusContext) {
+        match context {
+            FocusContext::SampleBrowser => self.focus_browser_list(),
+            FocusContext::Waveform => self.focus_waveform_context(),
+            FocusContext::SourceFolders => {
+                if self.ui.sources.folders.focused.is_none() {
+                    if let Some(path) = self.ui.sources.folders.last_focused_path.clone() {
+                        if let Some(index) = self
+                            .ui
+                            .sources
+                            .folders
+                            .rows
+                            .iter()
+                            .position(|row| row.path == path)
+                        {
+                            self.focus_folder_row(index);
+                            return;
+                        }
+                    }
+                    if !self.ui.sources.folders.rows.is_empty() {
+                        self.focus_folder_row(0);
+                        return;
+                    }
+                }
+                self.focus_folder_context();
+            }
+            FocusContext::CollectionSample => {
+                if self.current_collection().is_none() && !self.library.collections.is_empty() {
+                    self.select_collection_by_index(Some(0));
+                }
+                self.focus_collection_samples_list();
+            }
+            FocusContext::SourcesList => self.focus_sources_list(),
+            FocusContext::SelectedFolders => self.focus_selected_folders_context(),
+            FocusContext::CollectionsList => self.focus_collections_list(),
+            FocusContext::None => self.clear_focus_context(),
         }
     }
 

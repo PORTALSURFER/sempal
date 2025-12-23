@@ -217,24 +217,22 @@ fn default_params() -> AnnIndexParams {
 struct AnnIndexMetaRow {
     index_path: PathBuf,
     params: AnnIndexParams,
-    count: usize,
 }
 
 fn read_meta(conn: &Connection, model_id: &str) -> Result<Option<AnnIndexMetaRow>, String> {
     let row = conn
         .query_row(
-            "SELECT index_path, params_json, count FROM ann_index_meta WHERE model_id = ?1",
+            "SELECT index_path, params_json FROM ann_index_meta WHERE model_id = ?1",
             params![model_id],
             |row| {
                 let path: String = row.get(0)?;
                 let params_json: String = row.get(1)?;
-                let count: i64 = row.get(2)?;
-                Ok((path, params_json, count))
+                Ok((path, params_json))
             },
         )
         .optional()
         .map_err(|err| format!("Failed to read ann_index_meta: {err}"))?;
-    let Some((path, params_json, count)) = row else {
+    let Some((path, params_json)) = row else {
         return Ok(None);
     };
     let params: AnnIndexParams =
@@ -243,7 +241,6 @@ fn read_meta(conn: &Connection, model_id: &str) -> Result<Option<AnnIndexMetaRow
     Ok(Some(AnnIndexMetaRow {
         index_path,
         params,
-        count: count.max(0) as usize,
     }))
 }
 

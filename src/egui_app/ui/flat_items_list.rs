@@ -86,7 +86,8 @@ pub(super) fn render_flat_items_list(
     state.offset.y = desired_offset.clamp(0.0, max_offset);
     state.store(ui.ctx(), scroll_response.inner.id);
 
-    style::paint_section_border(ui, scroll_response.response.rect, config.focused_section);
+    let border_rect = scroll_response.response.rect.intersect(ui.clip_rect());
+    style::paint_section_border(ui, border_rect, config.focused_section);
 
     FlatItemsListResponse {
         frame_rect: scroll_response.response.rect,

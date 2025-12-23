@@ -26,6 +26,7 @@ pub struct FolderBrowserUiState {
     pub rows: Vec<FolderRowView>,
     pub focused: Option<usize>,
     pub scroll_to: Option<usize>,
+    pub last_focused_path: Option<PathBuf>,
     pub search_query: String,
     pub search_focus_requested: bool,
     pub rename_focus_requested: bool,

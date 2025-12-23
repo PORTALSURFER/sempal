@@ -10,19 +10,22 @@ pub(super) const DEFAULT_CLUSTER_MIN_SIZE: usize = 10;
 impl EguiController {
     pub fn prepare_similarity_for_selected_source(&mut self) {
         if self.runtime.similarity_prep.is_some() {
-            self.set_status("Similarity prep already running", StatusTone::Info);
+            self.refresh_similarity_prep_progress();
+            self.set_status_message(StatusMessage::SimilarityPrepAlreadyRunning);
             return;
         }
         if self.runtime.jobs.scan_in_progress() {
-            self.set_status("Scan already in progress", StatusTone::Info);
+            self.set_status_message(StatusMessage::SimilarityScanAlreadyRunning);
             return;
         }
         if self.runtime.jobs.umap_build_in_progress() {
-            self.set_status("t-SNE build already in progress", StatusTone::Info);
+            self.set_status_message(StatusMessage::TsneBuildAlreadyRunning);
             return;
         }
         let Some(source) = self.current_source() else {
-            self.set_status("Select a source first", StatusTone::Warning);
+            self.set_status_message(StatusMessage::SelectSourceFirst {
+                tone: StatusTone::Warning,
+            });
             return;
         };
         self.runtime.similarity_prep = Some(SimilarityPrepState {
@@ -30,11 +33,17 @@ impl EguiController {
             stage: SimilarityPrepStage::AwaitScan,
             umap_version: self.ui.map.umap_version.clone(),
         });
-        self.set_status(
-            format!("Preparing similarity search for {}", source.root.display()),
-            StatusTone::Busy,
-        );
+        self.set_status_message(StatusMessage::PreparingSimilarity {
+            source: source.root.display().to_string(),
+        });
         self.request_hard_sync();
+    }
+
+    pub(crate) fn similarity_prep_in_progress(&self) -> bool {
+        self.runtime.similarity_prep.is_some()
+            || self.runtime.jobs.scan_in_progress()
+            || self.runtime.jobs.umap_build_in_progress()
+            || self.runtime.jobs.umap_cluster_build_in_progress()
     }
 
     pub(super) fn handle_similarity_scan_finished(&mut self, source_id: &SourceId) {
@@ -44,7 +53,7 @@ impl EguiController {
         if let Some(source) = self.find_source_by_id(source_id) {
             self.runtime.similarity_prep.as_mut().expect("checked").stage =
                 SimilarityPrepStage::AwaitEmbeddings;
-            self.enqueue_embedding_backfill(source);
+            self.enqueue_similarity_backfill(source);
         }
     }
 
@@ -65,13 +74,8 @@ impl EguiController {
             state.stage = SimilarityPrepStage::Finalizing;
             (state.source_id.clone(), state.umap_version.clone())
         };
-        self.set_status("Finalizing similarity prep...", StatusTone::Busy);
-        self.show_status_progress(
-            ProgressTaskKind::Analysis,
-            "Finalizing similarity prep",
-            0,
-            true,
-        );
+        self.set_status_message(StatusMessage::FinalizingSimilarityPrep);
+        self.show_similarity_finalize_progress();
         self.start_similarity_finalize(source_id, umap_version);
     }
 
@@ -93,18 +97,29 @@ impl EguiController {
                 self.ui.map.cached_cluster_centroids_key = None;
                 self.ui.map.cached_cluster_centroids = None;
                 self.ui.map.auto_cluster_build_requested_key = None;
-                self.set_status(
-                    format!(
-                        "Similarity ready: {} clusters (noise {:.1}%)",
-                        outcome.cluster_stats.cluster_count,
-                        outcome.cluster_stats.noise_ratio * 100.0
-                    ),
-                    StatusTone::Info,
-                );
+                self.set_status_message(StatusMessage::SimilarityReady {
+                    cluster_count: outcome.cluster_stats.cluster_count,
+                    noise_ratio: outcome.cluster_stats.noise_ratio,
+                });
             }
             Err(err) => {
-                self.set_status(format!("Similarity prep failed: {err}"), StatusTone::Error);
+                self.set_status_message(StatusMessage::SimilarityPrepFailed { err });
             }
+        }
+    }
+
+    pub(super) fn cancel_similarity_prep(&mut self, source_id: &SourceId) {
+        let matches = self
+            .runtime
+            .similarity_prep
+            .as_ref()
+            .is_some_and(|state| &state.source_id == source_id);
+        if !matches {
+            return;
+        }
+        self.runtime.similarity_prep = None;
+        if self.ui.progress.task == Some(ProgressTaskKind::Analysis) {
+            self.clear_progress();
         }
     }
 }
@@ -120,11 +135,30 @@ fn matches_similarity_stage(
 }
 
 impl EguiController {
-    fn enqueue_embedding_backfill(&mut self, source: SampleSource) {
+    fn enqueue_similarity_backfill(&mut self, source: SampleSource) {
         let tx = self.runtime.jobs.message_sender();
         thread::spawn(move || {
-            let result = analysis_jobs::enqueue_jobs_for_embedding_backfill(&source);
-            match result {
+            let analysis_result = analysis_jobs::enqueue_jobs_for_source_backfill(&source);
+            match analysis_result {
+                Ok((inserted, progress)) => {
+                    if inserted > 0 {
+                        let _ = tx.send(jobs::JobMessage::Analysis(
+                            analysis_jobs::AnalysisJobMessage::EnqueueFinished {
+                                inserted,
+                                progress,
+                            },
+                        ));
+                    }
+                }
+                Err(err) => {
+                    let _ = tx.send(jobs::JobMessage::Analysis(
+                        analysis_jobs::AnalysisJobMessage::EnqueueFailed(err),
+                    ));
+                }
+            }
+
+            let embed_result = analysis_jobs::enqueue_jobs_for_embedding_backfill(&source);
+            match embed_result {
                 Ok((inserted, progress)) => {
                     if inserted > 0 {
                         let _ = tx.send(jobs::JobMessage::Analysis(
@@ -165,6 +199,55 @@ impl EguiController {
             .find(|source| &source.id == source_id)
             .cloned()
     }
+
+    fn refresh_similarity_prep_progress(&mut self) {
+        let Some(state) = self.runtime.similarity_prep.as_ref() else {
+            return;
+        };
+        match state.stage {
+            SimilarityPrepStage::AwaitScan => {
+                if self.runtime.jobs.scan_in_progress() {
+                    return;
+                }
+                if self.ui.progress.visible {
+                    return;
+                }
+                self.show_similarity_prep_progress(0, false);
+            }
+            SimilarityPrepStage::AwaitEmbeddings => {
+                let progress = match analysis_jobs::current_progress() {
+                    Ok(progress) => progress,
+                    Err(_) => {
+                        if !self.ui.progress.visible {
+                            self.show_similarity_prep_progress(0, false);
+                        }
+                        return;
+                    }
+                };
+                if progress.pending == 0 && progress.running == 0 {
+                    self.handle_similarity_analysis_progress(&progress);
+                    return;
+                }
+                self.ensure_similarity_prep_progress(progress.total(), true);
+                self.ui.progress.total = progress.total();
+                self.ui.progress.completed = progress.completed();
+                let jobs_completed = progress.completed();
+                let jobs_total = progress.total();
+                let samples_completed = progress.samples_completed();
+                let samples_total = progress.samples_total;
+                let mut detail = format!(
+                    "Jobs {jobs_completed}/{jobs_total} • Samples {samples_completed}/{samples_total}"
+                );
+                if progress.failed > 0 {
+                    detail.push_str(&format!(" • {} failed", progress.failed));
+                }
+                self.ui.progress.detail = Some(detail);
+            }
+            SimilarityPrepStage::Finalizing => {
+                self.ensure_similarity_finalize_progress();
+            }
+        }
+    }
 }
 
 fn run_similarity_finalize(
@@ -173,6 +256,25 @@ fn run_similarity_finalize(
 ) -> Result<jobs::SimilarityPrepOutcome, String> {
     let mut conn = open_library_db_for_similarity()?;
     let sample_id_prefix = format!("{}::%", source_id.as_str());
+    crate::analysis::umap::build_umap_layout(
+        &mut conn,
+        crate::analysis::embedding::EMBEDDING_MODEL_ID,
+        umap_version,
+        0,
+        0.95,
+    )?;
+    let layout_rows = count_umap_layout_rows(
+        &conn,
+        crate::analysis::embedding::EMBEDDING_MODEL_ID,
+        umap_version,
+        &sample_id_prefix,
+    )?;
+    if layout_rows == 0 {
+        return Err(format!(
+            "No t-SNE layout rows for source {} (check embeddings)",
+            source_id.as_str()
+        ));
+    }
     let cluster_stats = crate::analysis::hdbscan::build_hdbscan_clusters_for_sample_id_prefix(
         &mut conn,
         crate::analysis::embedding::EMBEDDING_MODEL_ID,
@@ -186,17 +288,25 @@ fn run_similarity_finalize(
         },
     )?;
     crate::analysis::rebuild_ann_index(&conn)?;
-    crate::analysis::umap::build_umap_layout(
-        &mut conn,
-        crate::analysis::embedding::EMBEDDING_MODEL_ID,
-        umap_version,
-        0,
-        0.95,
-    )?;
     Ok(jobs::SimilarityPrepOutcome {
         cluster_stats,
         umap_version: umap_version.to_string(),
     })
+}
+
+fn count_umap_layout_rows(
+    conn: &rusqlite::Connection,
+    model_id: &str,
+    umap_version: &str,
+    sample_id_prefix: &str,
+) -> Result<i64, String> {
+    conn.query_row(
+        "SELECT COUNT(*) FROM layout_umap
+         WHERE model_id = ?1 AND umap_version = ?2 AND sample_id LIKE ?3",
+        rusqlite::params![model_id, umap_version, sample_id_prefix],
+        |row| row.get(0),
+    )
+    .map_err(|err| format!("Count layout rows failed: {err}"))
 }
 
 fn open_library_db_for_similarity() -> Result<rusqlite::Connection, String> {

@@ -37,11 +37,7 @@ impl EguiApp {
         ui.vertical(|ui| {
             self.render_waveform(ui);
             ui.add_space(8.0);
-            let browser_top = ui.cursor().min.y;
-            let browser_rect = egui::Rect::from_min_max(
-                egui::pos2(ui.max_rect().left(), browser_top),
-                ui.max_rect().max,
-            );
+            let browser_rect = ui.available_rect_before_wrap();
             if browser_rect.height() > 0.0 {
                 let mut browser_ui = ui.new_child(
                     UiBuilder::new()
@@ -112,8 +108,8 @@ impl EguiApp {
         self.render_status(ctx);
         egui::SidePanel::left("sources")
             .resizable(true)
-            .default_width(230.0)
-            .min_width(200.0)
+            .default_width(260.0)
+            .min_width(220.0)
             .max_width(520.0)
             .show(ctx, |ui| self.render_sources_panel(ui));
         self.consume_source_panel_drops(ctx);

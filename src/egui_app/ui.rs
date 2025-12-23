@@ -1,7 +1,9 @@
 //! egui renderer for the application UI.
 
 mod chrome;
-mod collections_panel;
+mod collections_interaction;
+mod collections_render;
+mod drag_targets;
 mod drag_overlay;
 mod feedback_issue;
 mod flat_items_list;
@@ -14,15 +16,16 @@ mod map_clusters;
 mod map_empty;
 mod map_interactions;
 mod map_math;
-mod map_render;
 mod map_view;
 mod platform;
 mod progress_overlay;
 mod sample_browser_filter;
-mod sample_browser_panel;
+mod sample_browser_interaction;
+mod sample_browser_render;
 mod sample_browser_rename;
 mod sample_menus;
 mod sources_panel;
+mod status_badges;
 pub mod style;
 mod update;
 mod waveform_view;

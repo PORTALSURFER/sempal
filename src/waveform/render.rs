@@ -70,7 +70,7 @@ impl WaveformRenderer {
         let fraction = (end - start).max(0.000_001);
 
         if decoded.samples.is_empty() {
-            if let Some(peaks) = decoded.peaks.as_ref() {
+            if let Some(peaks) = decoded.peaks.as_deref() {
                 let columns = peaks.sample_columns_for_view(start, end, width, view);
                 return match columns {
                     WaveformColumnView::Mono(cols) => Self::paint_color_image_for_size(
@@ -325,7 +325,7 @@ mod tests {
         let renderer = WaveformRenderer::new(2, 2);
         let decoded = DecodedWaveform {
             cache_token: 1,
-            samples: vec![0.0, 0.5, -0.25, 0.25],
+            samples: std::sync::Arc::from(vec![0.0, 0.5, -0.25, 0.25]),
             peaks: None,
             duration_seconds: 1.0,
             sample_rate: 48_000,

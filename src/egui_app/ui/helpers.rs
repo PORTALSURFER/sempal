@@ -63,6 +63,7 @@ pub(super) struct ListRow<'a> {
     pub row_width: f32,
     pub row_height: f32,
     pub bg: Option<Color32>,
+    pub skip_hover: bool,
     pub text_color: Color32,
     pub sense: egui::Sense,
     pub number: Option<NumberColumn<'a>>,
@@ -83,7 +84,7 @@ pub(super) fn render_list_row(ui: &mut Ui, row: ListRow<'_>) -> egui::Response {
         );
         ui.painter().rect_filled(marker_rect, 0.0, marker.color);
     }
-    if response.hovered() {
+    if response.hovered() && !row.skip_hover {
         ui.painter().rect_filled(rect, 0.0, style::row_hover_fill());
     }
     // Single divider to avoid stacking strokes between rows.

@@ -151,6 +151,8 @@ pub(crate) enum HotkeyCommand {
     ReviewAssignCategory8,
     ReviewAssignCategory9,
     ReviewClearCategoryOverride,
+    SelectAllBrowser,
+    RenameFocusedCollection,
 }
 
 /// Hotkey metadata surfaced to the UI.
