@@ -124,7 +124,7 @@ mod tests {
     fn decoded() -> DecodedWaveform {
         DecodedWaveform {
             cache_token: 1,
-            samples: vec![0.1, 0.2],
+            samples: std::sync::Arc::from(vec![0.1, 0.2]),
             peaks: None,
             duration_seconds: 1.0,
             sample_rate: 44_100,

@@ -1,4 +1,5 @@
-use super::{DecodedWaveform, WaveformDecodeError, WaveformPeaks, WaveformRenderer};
+use super::normalize::clamp_sample;
+use crate::waveform::{DecodedWaveform, WaveformDecodeError, WaveformPeaks, WaveformRenderer};
 use hound::SampleFormat;
 use rodio::{Decoder, Source};
 use std::sync::Arc;
@@ -7,14 +8,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 static NEXT_CACHE_TOKEN: AtomicU64 = AtomicU64::new(1);
 
 impl WaveformRenderer {
-    /// Decode wav bytes into samples and duration without rendering.
-    pub fn decode_from_bytes(&self, bytes: &[u8]) -> Result<DecodedWaveform, WaveformDecodeError> {
-        self.load_decoded(bytes)
-    }
+    pub(super) const MAX_FULL_SAMPLE_FRAMES: usize = 2_500_000;
 
-    const MAX_FULL_SAMPLE_FRAMES: usize = 2_500_000;
-
-    fn load_decoded(&self, bytes: &[u8]) -> Result<DecodedWaveform, WaveformDecodeError> {
+    pub(super) fn load_decoded(&self, bytes: &[u8]) -> Result<DecodedWaveform, WaveformDecodeError> {
         let cache_token = NEXT_CACHE_TOKEN.fetch_add(1, Ordering::Relaxed);
         let mut reader = match hound::WavReader::new(std::io::Cursor::new(bytes)) {
             Ok(reader) => reader,
@@ -34,8 +30,8 @@ impl WaveformRenderer {
             };
             return Ok(DecodedWaveform {
                 cache_token,
-                samples: Vec::new(),
-                peaks: Some(peaks),
+                samples: Arc::from(Vec::new()),
+                peaks: Some(Arc::new(peaks)),
                 duration_seconds,
                 sample_rate: spec.sample_rate,
                 channels: spec.channels,
@@ -49,7 +45,7 @@ impl WaveformRenderer {
 
         Ok(DecodedWaveform {
             cache_token,
-            samples,
+            samples: Arc::from(samples),
             peaks: None,
             duration_seconds,
             sample_rate: spec.sample_rate,
@@ -98,7 +94,7 @@ impl WaveformRenderer {
         let duration_seconds = frames as f32 / sample_rate as f32;
         Ok(DecodedWaveform {
             cache_token,
-            samples,
+            samples: Arc::from(samples),
             peaks: None,
             duration_seconds,
             sample_rate,
@@ -160,21 +156,21 @@ impl WaveformRenderer {
                     }
                     return Ok(DecodedWaveform {
                         cache_token,
-                        samples: Vec::new(),
-                        peaks: Some(WaveformPeaks {
+                        samples: Arc::from(Vec::new()),
+                        peaks: Some(Arc::new(WaveformPeaks {
                             total_frames,
                             channels,
                             bucket_size_frames,
                             mono,
                             left,
                             right,
-                        }),
+                        })),
                         duration_seconds,
                         sample_rate,
                         channels,
                     });
                 };
-                let sample = sample.clamp(-1.0, 1.0);
+                let sample = clamp_sample(sample);
                 frame_min = frame_min.min(sample);
                 frame_max = frame_max.max(sample);
                 if ch == 0 {
@@ -261,7 +257,8 @@ impl WaveformRenderer {
             let mut frame_min = 1.0_f32;
             let mut frame_max = -1.0_f32;
             for ch in 0..channels {
-                let sample = iter.next().transpose()?.unwrap_or(0.0).clamp(-1.0, 1.0);
+                let sample = iter.next().transpose()?.unwrap_or(0.0);
+                let sample = clamp_sample(sample);
                 frame_min = frame_min.min(sample);
                 frame_max = frame_max.max(sample);
                 if ch == 0 {
@@ -324,7 +321,7 @@ impl WaveformRenderer {
             let mut frame_max = -1.0_f32;
             for ch in 0..channels {
                 let sample = iter.next().transpose()?.unwrap_or(0) as f32 / scale;
-                let sample = sample.clamp(-1.0, 1.0);
+                let sample = clamp_sample(sample);
                 frame_min = frame_min.min(sample);
                 frame_max = frame_max.max(sample);
                 if ch == 0 {
@@ -504,5 +501,13 @@ mod tests {
         assert_eq!(decoded.sample_rate, 48_000);
         assert!(!decoded.samples.is_empty());
         assert!(decoded.duration_seconds > 0.0);
+    }
+
+    #[test]
+    fn decode_reports_invalid_data_errors() {
+        let renderer = WaveformRenderer::new(12, 12);
+        let bytes = vec![0, 1, 2, 3, 4, 5];
+        let err = renderer.decode_from_bytes(&bytes).unwrap_err();
+        assert!(matches!(err, WaveformDecodeError::Invalid { .. }));
     }
 }

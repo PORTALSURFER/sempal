@@ -8,6 +8,7 @@ use egui::Color32;
 use egui::ColorImage;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
+use std::sync::Arc;
 
 pub use error::{WaveformDecodeError, WaveformLoadError};
 
@@ -29,9 +30,9 @@ pub struct DecodedWaveform {
     /// Interleaved `[-1.0, 1.0]` samples for the full file.
     ///
     /// For very long files this may be empty and `peaks` will be populated instead.
-    pub samples: Vec<f32>,
+    pub samples: Arc<[f32]>,
     /// Decimated min/max envelope for very long files to avoid holding every sample in memory.
-    pub peaks: Option<WaveformPeaks>,
+    pub peaks: Option<Arc<WaveformPeaks>>,
     pub duration_seconds: f32,
     pub sample_rate: u32,
     pub channels: u16,
@@ -54,7 +55,7 @@ impl DecodedWaveform {
     }
 
     pub fn frame_count(&self) -> usize {
-        if let Some(peaks) = self.peaks.as_ref() {
+        if let Some(peaks) = self.peaks.as_deref() {
             return peaks.total_frames;
         }
         let channels = self.channel_count();
@@ -201,6 +202,7 @@ pub struct WaveformRenderer {
     pub(crate) background: Color32,
     pub(crate) foreground: Color32,
     zoom_cache: std::sync::Arc<zoom_cache::WaveformZoomCache>,
+    decode_cache: std::sync::Arc<std::sync::Mutex<decode::DecodeCache>>,
 }
 
 impl WaveformRenderer {
@@ -212,6 +214,7 @@ impl WaveformRenderer {
             background: Color32::from_rgb(18, 16, 14),
             foreground: Color32::from_rgb(250, 246, 240),
             zoom_cache: std::sync::Arc::new(zoom_cache::WaveformZoomCache::new()),
+            decode_cache: std::sync::Arc::new(decode::default_decode_cache()),
         }
     }
 

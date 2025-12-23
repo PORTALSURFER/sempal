@@ -16,7 +16,7 @@ fn cursor_step_size_tracks_view_zoom() {
     controller.select_wav_by_path(Path::new("zoom.wav"));
     controller.sample_view.waveform.decoded = Some(DecodedWaveform {
         cache_token: 1,
-        samples: vec![0.0; 10_000],
+        samples: std::sync::Arc::from(vec![0.0; 10_000]),
         peaks: None,
         duration_seconds: 1.0,
         sample_rate: 48_000,
@@ -46,7 +46,7 @@ fn waveform_refresh_respects_view_slice_and_caps_width() {
     };
     controller.sample_view.waveform.decoded = Some(DecodedWaveform {
         cache_token: 1,
-        samples: (0..1000).map(|i| i as f32).collect(),
+        samples: std::sync::Arc::from((0..1000).map(|i| i as f32).collect::<Vec<_>>()),
         peaks: None,
         duration_seconds: 1.0,
         sample_rate: 48_000,
