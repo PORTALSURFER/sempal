@@ -18,23 +18,15 @@ fn remaining_loop_duration_stays_within_span_on_long_elapsed() {
     };
     let span = (1.0_f32, 1.1_f32);
     let span_length = span.1 - span.0;
-    let player = AudioPlayer {
+    let player = AudioPlayer::test_with_state(
         stream,
-        sink: None,
-        fade_out: None,
-        sink_format: None,
-        current_audio: None,
-        track_duration: Some(8.0),
-        started_at: Some(Instant::now()),
-        play_span: Some(span),
-        looping: true,
-        loop_offset: None,
-        volume: 1.0,
-        anti_clip_enabled: true,
-        anti_clip_fade: DEFAULT_ANTI_CLIP_FADE,
-        output: ResolvedOutput::default(),
-        elapsed_override: Some(Duration::from_secs(60 * 60)),
-    };
+        Some(8.0),
+        Some(Instant::now()),
+        Some(span),
+        true,
+        None,
+        Some(Duration::from_secs(60 * 60)),
+    );
 
     let remaining = player.remaining_loop_duration().unwrap().as_secs_f32();
     assert!(remaining > 0.0);
@@ -50,23 +42,15 @@ fn progress_math_is_stable_for_long_running_full_track_loops() {
     let offset = 2.0_f32;
     let elapsed = 60.0_f32 * 60.0_f32 * 5.0_f32 + 0.25_f32;
 
-    let player = AudioPlayer {
+    let player = AudioPlayer::test_with_state(
         stream,
-        sink: None,
-        fade_out: None,
-        sink_format: None,
-        current_audio: None,
-        track_duration: Some(duration),
-        started_at: Some(Instant::now()),
-        play_span: Some((0.0, duration)),
-        looping: true,
-        loop_offset: Some(offset),
-        volume: 1.0,
-        anti_clip_enabled: true,
-        anti_clip_fade: DEFAULT_ANTI_CLIP_FADE,
-        output: ResolvedOutput::default(),
-        elapsed_override: Some(Duration::from_secs_f32(elapsed)),
-    };
+        Some(duration),
+        Some(Instant::now()),
+        Some((0.0, duration)),
+        true,
+        Some(offset),
+        Some(Duration::from_secs_f32(elapsed)),
+    );
 
     let progress = player.progress().unwrap();
     let expected = ((offset as f64 + elapsed as f64) % duration as f64) / duration as f64;

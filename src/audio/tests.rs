@@ -11,6 +11,26 @@ use std::{
 
 mod playhead_edges;
 
+fn test_player(
+    stream: rodio::OutputStream,
+    track_duration: Option<f32>,
+    started_at: Option<Instant>,
+    play_span: Option<(f32, f32)>,
+    looping: bool,
+    loop_offset: Option<f32>,
+    elapsed_override: Option<Duration>,
+) -> AudioPlayer {
+    AudioPlayer::test_with_state(
+        stream,
+        track_duration,
+        started_at,
+        play_span,
+        looping,
+        loop_offset,
+        elapsed_override,
+    )
+}
+
 mod fixtures {
     use super::*;
     use hound::{SampleFormat, WavSpec, WavWriter};
@@ -167,23 +187,15 @@ fn remaining_loop_duration_reports_time_left_in_cycle() {
         return;
     };
     let started_at = Instant::now() - Duration::from_secs_f32(0.75);
-    let player = AudioPlayer {
+    let player = test_player(
         stream,
-        sink: None,
-        fade_out: None,
-        sink_format: None,
-        current_audio: None,
-        track_duration: Some(8.0),
-        started_at: Some(started_at),
-        play_span: Some((1.0, 3.0)),
-        looping: true,
-        loop_offset: None,
-        volume: 1.0,
-        anti_clip_enabled: true,
-        anti_clip_fade: DEFAULT_ANTI_CLIP_FADE,
-        output: ResolvedOutput::default(),
-        elapsed_override: None,
-    };
+        Some(8.0),
+        Some(started_at),
+        Some((1.0, 3.0)),
+        true,
+        None,
+        None,
+    );
 
     let remaining = player.remaining_loop_duration().unwrap();
     assert!((remaining.as_secs_f32() - 1.25).abs() < 0.1);
@@ -195,23 +207,15 @@ fn remaining_loop_duration_accounts_for_full_track_offset() {
         return;
     };
     let started_at = Instant::now() - Duration::from_secs_f32(0.5);
-    let player = AudioPlayer {
+    let player = test_player(
         stream,
-        sink: None,
-        fade_out: None,
-        sink_format: None,
-        current_audio: None,
-        track_duration: Some(8.0),
-        started_at: Some(started_at),
-        play_span: Some((0.0, 8.0)),
-        looping: true,
-        loop_offset: Some(2.0),
-        volume: 1.0,
-        anti_clip_enabled: true,
-        anti_clip_fade: DEFAULT_ANTI_CLIP_FADE,
-        output: ResolvedOutput::default(),
-        elapsed_override: None,
-    };
+        Some(8.0),
+        Some(started_at),
+        Some((0.0, 8.0)),
+        true,
+        Some(2.0),
+        None,
+    );
 
     let remaining = player.remaining_loop_duration().unwrap();
     assert!((remaining.as_secs_f32() - 5.5).abs() < 0.1);
@@ -222,23 +226,15 @@ fn remaining_loop_duration_none_when_not_looping() {
     let Ok(stream) = rodio::OutputStreamBuilder::open_default_stream() else {
         return;
     };
-    let player = AudioPlayer {
+    let player = test_player(
         stream,
-        sink: None,
-        fade_out: None,
-        sink_format: None,
-        current_audio: None,
-        track_duration: Some(8.0),
-        started_at: Some(Instant::now()),
-        play_span: Some((1.0, 3.0)),
-        looping: false,
-        loop_offset: None,
-        volume: 1.0,
-        anti_clip_enabled: true,
-        anti_clip_fade: DEFAULT_ANTI_CLIP_FADE,
-        output: ResolvedOutput::default(),
-        elapsed_override: None,
-    };
+        Some(8.0),
+        Some(Instant::now()),
+        Some((1.0, 3.0)),
+        false,
+        None,
+        None,
+    );
 
     assert!(player.remaining_loop_duration().is_none());
 }
@@ -306,23 +302,15 @@ fn progress_wraps_full_loop_from_offset() {
     let Ok(stream) = rodio::OutputStreamBuilder::open_default_stream() else {
         return;
     };
-    let player = AudioPlayer {
+    let player = test_player(
         stream,
-        sink: None,
-        fade_out: None,
-        sink_format: None,
-        current_audio: None,
-        track_duration: Some(10.0),
-        started_at: Some(Instant::now() - Duration::from_secs_f32(2.0)),
-        play_span: Some((0.0, 10.0)),
-        looping: true,
-        loop_offset: Some(7.0),
-        volume: 1.0,
-        anti_clip_enabled: true,
-        anti_clip_fade: DEFAULT_ANTI_CLIP_FADE,
-        output: ResolvedOutput::default(),
-        elapsed_override: None,
-    };
+        Some(10.0),
+        Some(Instant::now() - Duration::from_secs_f32(2.0)),
+        Some((0.0, 10.0)),
+        true,
+        Some(7.0),
+        None,
+    );
 
     let progress = player.progress().unwrap();
     assert!((progress - 0.9).abs() < 0.05);
@@ -381,23 +369,7 @@ fn play_range_accepts_zero_width_request() {
     let Ok(stream) = rodio::OutputStreamBuilder::open_default_stream() else {
         return;
     };
-    let mut player = AudioPlayer {
-        stream,
-        sink: None,
-        fade_out: None,
-        sink_format: None,
-        current_audio: None,
-        track_duration: None,
-        started_at: None,
-        play_span: None,
-        looping: false,
-        loop_offset: None,
-        volume: 1.0,
-        anti_clip_enabled: true,
-        anti_clip_fade: DEFAULT_ANTI_CLIP_FADE,
-        output: ResolvedOutput::default(),
-        elapsed_override: None,
-    };
+    let mut player = test_player(stream, None, None, None, false, None, None);
     let bytes = vec![
         0x52, 0x49, 0x46, 0x46, 0x24, 0x80, 0x00, 0x00, 0x57, 0x41, 0x56, 0x45, 0x66, 0x6D, 0x74,
         0x20, 0x10, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x44, 0xAC, 0x00, 0x00, 0x88, 0x58,

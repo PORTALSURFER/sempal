@@ -254,6 +254,35 @@ impl AudioPlayer {
         Some(span_length.saturating_sub(elapsed_in_span))
     }
 
+    #[cfg(test)]
+    pub(crate) fn test_with_state(
+        stream: OutputStream,
+        track_duration: Option<f32>,
+        started_at: Option<Instant>,
+        play_span: Option<(f32, f32)>,
+        looping: bool,
+        loop_offset: Option<f32>,
+        elapsed_override: Option<Duration>,
+    ) -> Self {
+        Self {
+            stream,
+            sink: None,
+            fade_out: None,
+            sink_format: None,
+            current_audio: None,
+            track_duration,
+            started_at,
+            play_span,
+            looping,
+            loop_offset,
+            volume: 1.0,
+            anti_clip_enabled: true,
+            anti_clip_fade: DEFAULT_ANTI_CLIP_FADE,
+            output: ResolvedOutput::default(),
+            elapsed_override,
+        }
+    }
+
     fn elapsed_since(&self, started_at: Instant) -> Duration {
         #[cfg(test)]
         if let Some(override_elapsed) = self.elapsed_override {
