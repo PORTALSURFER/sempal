@@ -95,7 +95,9 @@ impl DragDropActions for DragDropController<'_> {
             pos, source, target
         );
         self.ui.drag.position = Some(pos);
-        self.ui.drag.origin_source = Some(source);
+        if self.ui.drag.origin_source.is_none() {
+            self.ui.drag.origin_source = Some(source);
+        }
         self.ui.drag.set_target(source, target);
         if let Some(DragPayload::Selection {
             keep_source_focused,
