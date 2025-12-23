@@ -39,7 +39,11 @@ impl EguiApp {
             let drag_payload = self.controller.ui.drag.payload.clone();
             let folder_drop_active = matches!(
                 drag_payload,
-                Some(DragPayload::Sample { .. } | DragPayload::Selection { .. })
+                Some(
+                    DragPayload::Sample { .. }
+                        | DragPayload::Samples { .. }
+                        | DragPayload::Selection { .. }
+                )
             );
             if drag_payload.is_some() && !folder_drop_active {
                 self.controller

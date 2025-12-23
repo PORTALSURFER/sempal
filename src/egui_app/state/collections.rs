@@ -12,6 +12,10 @@ pub struct CollectionsState {
     pub drop_active: bool,
     pub selected_sample: Option<usize>,
     pub scroll_to_sample: Option<usize>,
+    /// Paths currently included in the multi-selection set.
+    pub selected_paths: Vec<PathBuf>,
+    /// Anchor row for range selection (shift + click).
+    pub selection_anchor: Option<usize>,
     pub last_focused_collection: Option<CollectionId>,
     pub last_focused_path: Option<PathBuf>,
     pub pending_action: Option<CollectionActionPrompt>,
@@ -29,6 +33,8 @@ impl Default for CollectionsState {
             drop_active: false,
             selected_sample: None,
             scroll_to_sample: None,
+            selected_paths: Vec::new(),
+            selection_anchor: None,
             last_focused_collection: None,
             last_focused_path: None,
             pending_action: None,

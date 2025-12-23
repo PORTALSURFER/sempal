@@ -1,4 +1,5 @@
 use super::{file_metadata, DragDropController};
+use crate::egui_app::state::DragSample;
 use crate::egui_app::state::TriageFlagColumn;
 use crate::egui_app::ui::style::StatusTone;
 use crate::sample_sources::{CollectionId, SampleTag, SourceId, WavEntry};
@@ -62,6 +63,22 @@ impl DragDropController<'_> {
             } else {
                 let _ = self.set_sample_tag(&relative_path, column);
             }
+        }
+    }
+
+    pub(super) fn handle_samples_drop(
+        &mut self,
+        samples: &[DragSample],
+        collection_target: Option<CollectionId>,
+        triage_target: Option<TriageFlagColumn>,
+    ) {
+        for sample in samples {
+            self.handle_sample_drop(
+                sample.source_id.clone(),
+                sample.relative_path.clone(),
+                collection_target.clone(),
+                triage_target,
+            );
         }
     }
 
@@ -234,6 +251,20 @@ impl DragDropController<'_> {
             format!("Moved to {}", target_folder.display()),
             StatusTone::Info,
         );
+    }
+
+    pub(super) fn handle_samples_drop_to_folder(
+        &mut self,
+        samples: &[DragSample],
+        target_folder: &Path,
+    ) {
+        for sample in samples {
+            self.handle_sample_drop_to_folder(
+                sample.source_id.clone(),
+                sample.relative_path.clone(),
+                target_folder,
+            );
+        }
     }
 
     pub(super) fn handle_selection_drop(

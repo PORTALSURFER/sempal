@@ -7,7 +7,7 @@ use super::status_badges;
 use super::style;
 use super::*;
 use crate::egui_app::state::{
-    CollectionActionPrompt, DragPayload, DragSource, DragTarget, FocusContext,
+    CollectionActionPrompt, DragPayload, DragSample, DragSource, DragTarget, FocusContext,
 };
 use eframe::egui::{self, RichText, Stroke, StrokeKind, Ui};
 use tracing::debug;
@@ -144,6 +144,7 @@ impl EguiApp {
         let palette = style::palette();
         let samples = self.controller.ui.collections.samples.clone();
         let selected_row = self.controller.ui.collections.selected_sample;
+        let selected_paths = self.controller.ui.collections.selected_paths.clone();
         let current_collection_id = self.controller.current_collection_id();
         let hovering_collection = match &self.controller.ui.drag.active_target {
             DragTarget::CollectionsRow(id) => Some(id.clone()),
@@ -156,9 +157,17 @@ impl EguiApp {
             }
             _ => None,
         };
-        let active_drag_path = if drag_active {
+        let active_drag_paths = if drag_active {
             match &self.controller.ui.drag.payload {
-                Some(DragPayload::Sample { relative_path, .. }) => Some(relative_path.clone()),
+                Some(DragPayload::Sample { relative_path, .. }) => {
+                    Some(vec![relative_path.clone()])
+                }
+                Some(DragPayload::Samples { samples }) => Some(
+                    samples
+                        .iter()
+                        .map(|sample| sample.relative_path.clone())
+                        .collect(),
+                ),
                 _ => None,
             }
         } else {
@@ -169,11 +178,25 @@ impl EguiApp {
                 .as_ref()
                 .is_some_and(|id| Some(id) == current_collection_id.as_ref())
         {
-            active_drag_path
-                .as_ref()
-                .and_then(|p| samples.iter().position(|s| &s.path == p))
+            active_drag_paths.as_ref().and_then(|paths| {
+                samples
+                    .iter()
+                    .position(|s| paths.iter().any(|p| p == &s.path))
+            })
         } else {
             None
+        };
+        let selected_samples: Vec<DragSample> = if selected_paths.len() > 1 {
+            samples
+                .iter()
+                .filter(|sample| selected_paths.iter().any(|p| p == &sample.path))
+                .map(|sample| DragSample {
+                    source_id: sample.source_id.clone(),
+                    relative_path: sample.path.clone(),
+                })
+                .collect()
+        } else {
+            Vec::new()
         };
         let available_height = ui.available_height();
         let focused_section = matches!(
@@ -199,9 +222,12 @@ impl EguiApp {
                 let row_width = ui.available_width();
                 let path = sample.path.clone();
                 let base_label = format!("{} — {}", sample.source, sample.label);
-                let is_selected = Some(row) == selected_row;
+                let is_selected = selected_paths.iter().any(|p| p == &path);
+                let is_focused = Some(row) == selected_row;
                 let is_duplicate_hover =
-                    drag_active && active_drag_path.as_ref().is_some_and(|p| p == &path);
+                    drag_active && active_drag_paths.as_ref().is_some_and(|paths| {
+                        paths.iter().any(|candidate| candidate == &path)
+                    });
                 let triage_marker = style::triage_marker_color(sample.tag).map(|color| RowMarker {
                     width: style::triage_marker_width(),
                     color,
@@ -212,7 +238,7 @@ impl EguiApp {
                     .unwrap_or(0.0);
                 let bg = if is_duplicate_hover {
                     Some(style::duplicate_hover_fill())
-                } else if is_selected {
+                } else if is_focused {
                     Some(style::row_selected_fill())
                 } else {
                     None
@@ -266,6 +292,8 @@ impl EguiApp {
                                 0.0,
                                 style::selection_marker_fill(),
                             );
+                        }
+                        if is_focused {
                             ui.painter().rect_stroke(
                                 response.rect,
                                 0.0,
@@ -274,7 +302,20 @@ impl EguiApp {
                             );
                         }
                         if response.clicked() {
-                            self.controller.select_collection_sample(row);
+                            let modifiers = ui.input(|i| i.modifiers);
+                            let ctrl = modifiers.command || modifiers.ctrl;
+                            if modifiers.shift && ctrl {
+                                self.controller
+                                    .add_range_collection_sample_selection(row);
+                            } else if modifiers.shift {
+                                self.controller
+                                    .extend_collection_sample_selection_to_row(row);
+                            } else if ctrl {
+                                self.controller.toggle_collection_sample_selection(row);
+                            } else {
+                                self.controller.clear_collection_sample_selection();
+                                self.controller.focus_collection_sample_row(row);
+                            }
                         }
                         self.collection_sample_menu(&response, row, sample);
                         if is_duplicate_hover {
@@ -293,6 +334,9 @@ impl EguiApp {
                         let pending_label = sample.label.clone();
                         let match_source_id = sample.source_id.clone();
                         let match_path = path.clone();
+                        let pending_selected = selected_samples.clone();
+                        let is_multi_drag =
+                            selected_samples.len() > 1 && is_selected;
                         drag_targets::handle_sample_row_drag(
                             ui,
                             &response,
@@ -301,31 +345,62 @@ impl EguiApp {
                             DragSource::Collections,
                             DragTarget::None,
                             move |pos, controller| {
-                                controller.start_sample_drag(
-                                    drag_source_id,
-                                    drag_path,
-                                    drag_label,
-                                    pos,
-                                );
+                                if is_multi_drag {
+                                    controller.start_samples_drag(
+                                        pending_selected.clone(),
+                                        format!("{} samples", pending_selected.len()),
+                                        pos,
+                                    );
+                                } else {
+                                    controller.start_sample_drag(
+                                        drag_source_id,
+                                        drag_path,
+                                        drag_label,
+                                        pos,
+                                    );
+                                }
                             },
                             move |pos, _controller| {
-                                Some(crate::egui_app::state::PendingOsDragStart {
-                                    payload: DragPayload::Sample {
+                                let payload = if pending_selected.len() > 1
+                                    && pending_selected
+                                        .iter()
+                                        .any(|sample| sample.relative_path == pending_path)
+                                {
+                                    DragPayload::Samples {
+                                        samples: pending_selected.clone(),
+                                    }
+                                } else {
+                                    DragPayload::Sample {
                                         source_id: pending_source_id,
                                         relative_path: pending_path,
-                                    },
-                                    label: pending_label,
+                                    }
+                                };
+                                let label = if matches!(payload, DragPayload::Samples { .. }) {
+                                    format!("{} samples", pending_selected.len())
+                                } else {
+                                    pending_label
+                                };
+                                Some(crate::egui_app::state::PendingOsDragStart {
+                                    payload,
+                                    label,
                                     origin: pos,
                                 })
                             },
                             move |pending| {
-                                matches!(
-                                    &pending.payload,
+                                match &pending.payload {
                                     DragPayload::Sample {
                                         source_id,
-                                        relative_path
-                                    } if *source_id == match_source_id && *relative_path == match_path
-                                )
+                                        relative_path,
+                                    } => *source_id == match_source_id
+                                        && *relative_path == match_path,
+                                    DragPayload::Samples { samples } => samples.iter().any(
+                                        |sample| {
+                                            sample.source_id == match_source_id
+                                                && sample.relative_path == match_path
+                                        },
+                                    ),
+                                    DragPayload::Selection { .. } => false,
+                                }
                             },
                         );
                     },

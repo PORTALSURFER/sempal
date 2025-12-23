@@ -13,6 +13,11 @@ impl EguiController {
             .start_sample_drag(source_id, relative_path, label, pos);
     }
 
+    /// Begin dragging multiple sample rows from the UI.
+    pub fn start_samples_drag(&mut self, samples: Vec<DragSample>, label: String, pos: Pos2) {
+        self.drag_drop().start_samples_drag(samples, label, pos);
+    }
+
     /// Begin dragging the current waveform selection as a payload.
     pub fn start_selection_drag_payload(
         &mut self,

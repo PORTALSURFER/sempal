@@ -6,6 +6,33 @@ impl EguiController {
         self.collections_ctrl().select_collection_sample(index);
     }
 
+    /// Focus a collection sample row and replace the multi-selection set.
+    pub fn focus_collection_sample_row(&mut self, row: usize) {
+        self.collections_ctrl().focus_collection_sample_row(row);
+    }
+
+    /// Toggle a collection sample row in the multi-selection set.
+    pub fn toggle_collection_sample_selection(&mut self, row: usize) {
+        self.collections_ctrl().toggle_collection_sample_selection(row);
+    }
+
+    /// Extend the collection selection to a row (shift).
+    pub fn extend_collection_sample_selection_to_row(&mut self, row: usize) {
+        self.collections_ctrl()
+            .extend_collection_sample_selection_to_row(row);
+    }
+
+    /// Add a range of collection rows to the selection (shift + ctrl).
+    pub fn add_range_collection_sample_selection(&mut self, row: usize) {
+        self.collections_ctrl()
+            .add_range_collection_sample_selection(row);
+    }
+
+    /// Clear the collection sample multi-selection set.
+    pub fn clear_collection_sample_selection(&mut self) {
+        self.collections_ctrl().clear_collection_sample_selection();
+    }
+
     /// Select a collection row (or clear selection).
     pub fn select_collection_by_index(&mut self, index: Option<usize>) {
         self.collections_ctrl().select_collection_by_index(index);

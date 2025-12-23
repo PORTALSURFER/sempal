@@ -113,11 +113,14 @@ fn start_drag_from_pending(
     pending: PendingOsDragStart,
     pos: egui::Pos2,
 ) {
-    if let DragPayload::Sample {
-        source_id,
-        relative_path,
-    } = pending.payload
-    {
-        controller.start_sample_drag(source_id, relative_path, pending.label, pos);
+    match pending.payload {
+        DragPayload::Sample {
+            source_id,
+            relative_path,
+        } => controller.start_sample_drag(source_id, relative_path, pending.label, pos),
+        DragPayload::Samples { samples } => {
+            controller.start_samples_drag(samples, pending.label, pos)
+        }
+        DragPayload::Selection { .. } => {}
     }
 }

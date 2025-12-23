@@ -1,5 +1,5 @@
 use super::*;
-use crate::egui_app::state::{DragPayload, DragSource, DragTarget};
+use crate::egui_app::state::{DragPayload, DragSample, DragSource, DragTarget};
 use crate::egui_app::ui::style::StatusTone;
 use crate::egui_app::view_model;
 use eframe::egui::{self, RichText};
@@ -38,9 +38,13 @@ impl EguiApp {
     ) {
         let drag_path = path.to_path_buf();
         let drag_label = view_model::sample_display_label(path);
+        let selected_paths = self.controller.ui.browser.selected_paths.clone();
+        let is_multi_drag =
+            selected_paths.len() > 1 && selected_paths.iter().any(|p| p == &drag_path);
         let pending_path = drag_path.clone();
         let pending_label = drag_label.clone();
         let match_path = drag_path.clone();
+        let pending_selected = selected_paths.clone();
         drag_targets::handle_sample_row_drag(
             ui,
             response,
@@ -50,7 +54,27 @@ impl EguiApp {
             drop_target,
             move |pos, controller| {
                 if let Some(source) = controller.current_source() {
-                    controller.start_sample_drag(source.id.clone(), drag_path, drag_label, pos);
+                    if is_multi_drag {
+                        let samples = selected_paths
+                            .iter()
+                            .map(|path| DragSample {
+                                source_id: source.id.clone(),
+                                relative_path: path.clone(),
+                            })
+                            .collect();
+                        controller.start_samples_drag(
+                            samples,
+                            format!("{} samples", selected_paths.len()),
+                            pos,
+                        );
+                    } else {
+                        controller.start_sample_drag(
+                            source.id.clone(),
+                            drag_path,
+                            drag_label,
+                            pos,
+                        );
+                    }
                 } else {
                     controller.set_status(
                         "Select a source before dragging",
@@ -60,22 +84,43 @@ impl EguiApp {
             },
             move |pos, controller| {
                 let source = controller.current_source()?;
-                Some(crate::egui_app::state::PendingOsDragStart {
-                    payload: DragPayload::Sample {
+                let payload = if pending_selected.len() > 1
+                    && pending_selected.iter().any(|path| path == &pending_path)
+                {
+                    DragPayload::Samples {
+                        samples: pending_selected
+                            .iter()
+                            .map(|path| DragSample {
+                                source_id: source.id.clone(),
+                                relative_path: path.clone(),
+                            })
+                            .collect(),
+                    }
+                } else {
+                    DragPayload::Sample {
                         source_id: source.id.clone(),
                         relative_path: pending_path,
-                    },
-                    label: pending_label,
+                    }
+                };
+                let label = if matches!(payload, DragPayload::Samples { .. }) {
+                    format!("{} samples", pending_selected.len())
+                } else {
+                    pending_label
+                };
+                Some(crate::egui_app::state::PendingOsDragStart {
+                    payload,
+                    label,
                     origin: pos,
                 })
             },
             move |pending| {
-                matches!(
-                    &pending.payload,
-                    DragPayload::Sample {
-                        relative_path, ..
-                    } if *relative_path == match_path
-                )
+                match &pending.payload {
+                    DragPayload::Sample { relative_path, .. } => *relative_path == match_path,
+                    DragPayload::Samples { samples } => samples
+                        .iter()
+                        .any(|sample| sample.relative_path == match_path),
+                    DragPayload::Selection { .. } => false,
+                }
             },
         );
     }

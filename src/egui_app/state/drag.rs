@@ -6,12 +6,22 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Instant;
 
+/// Single sample reference used for multi-sample drags.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DragSample {
+    pub source_id: SourceId,
+    pub relative_path: PathBuf,
+}
+
 /// Active drag payload carried across UI panels.
 #[derive(Clone, Debug, PartialEq)]
 pub enum DragPayload {
     Sample {
         source_id: SourceId,
         relative_path: PathBuf,
+    },
+    Samples {
+        samples: Vec<DragSample>,
     },
     Selection {
         source_id: SourceId,
