@@ -99,10 +99,10 @@ impl EguiApp {
             }
             let refresh_enabled = collection.export_path.is_some();
             if ui
-                .add_enabled(refresh_enabled, egui::Button::new("Refresh export"))
+                .add_enabled(refresh_enabled, egui::Button::new("Sync export"))
                 .clicked()
             {
-                self.controller.refresh_collection_export(&collection.id);
+                self.controller.sync_collection_export(&collection.id);
                 ui.close();
             }
             let export_dir = collection_export_dir(collection);

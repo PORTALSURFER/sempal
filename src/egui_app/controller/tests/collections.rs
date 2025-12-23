@@ -41,7 +41,7 @@ fn export_path_copies_and_refreshes_members() -> Result<(), String> {
     std::fs::create_dir_all(&nested).unwrap();
     std::fs::write(nested.join("extra.wav"), b"more").unwrap();
 
-    controller.refresh_collection_export(&collection_id);
+    controller.sync_collection_export(&collection_id);
     let collection = controller
         .library
         .collections
