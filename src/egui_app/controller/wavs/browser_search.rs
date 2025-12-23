@@ -53,11 +53,8 @@ impl EguiController {
                     }
                 }
             }
-            let selected_visible = similar
-                .anchor_index
-                .filter(|anchor| visible.get(0).copied() == Some(*anchor))
-                .map(|_| 0)
-                .or_else(|| focused_index.and_then(|idx| visible.iter().position(|i| *i == idx)));
+            let selected_visible =
+                focused_index.and_then(|idx| visible.iter().position(|i| *i == idx));
             let loaded_visible =
                 loaded_index.and_then(|idx| visible.iter().position(|i| *i == idx));
             return (visible, selected_visible, loaded_visible);
