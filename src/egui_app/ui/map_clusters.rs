@@ -1,5 +1,5 @@
 use super::style;
-use crate::egui_app::state::MapBounds;
+use crate::egui_app::state::{MapBounds, MapClusterCentroid};
 use eframe::egui;
 use std::collections::HashMap;
 use std::f32::consts::PI;
@@ -53,7 +53,7 @@ pub(crate) fn compute_cluster_stats(
 
 pub(crate) fn cluster_color(
     cluster_id: i32,
-    centroids: &HashMap<i32, ClusterCentroid>,
+    centroids: &HashMap<i32, MapClusterCentroid>,
     bounds: &MapBounds,
     palette: &style::Palette,
     alpha: u8,
@@ -68,7 +68,7 @@ pub(crate) fn cluster_color(
 
 pub(crate) fn distance_shaded_cluster_color(
     point: &crate::egui_app::state::MapPoint,
-    centroids: &HashMap<i32, ClusterCentroid>,
+    centroids: &HashMap<i32, MapClusterCentroid>,
     bounds: &MapBounds,
     palette: &style::Palette,
     alpha: u8,
@@ -107,23 +107,14 @@ pub(crate) fn distance_shaded_cluster_color(
     )
 }
 
-pub(crate) struct ClusterCentroid {
-    pub x: f32,
-    pub y: f32,
-    pub count: usize,
-}
-
 pub(crate) fn cluster_centroids(
     points: &[crate::egui_app::state::MapPoint],
-) -> HashMap<i32, ClusterCentroid> {
+) -> HashMap<i32, MapClusterCentroid> {
     let mut sums: HashMap<i32, (f32, f32, usize)> = HashMap::new();
     for point in points {
         let Some(cluster_id) = point.cluster_id else {
             continue;
         };
-        if cluster_id < 0 {
-            continue;
-        }
         let entry = sums.entry(cluster_id).or_insert((0.0, 0.0, 0));
         entry.0 += point.x;
         entry.1 += point.y;
@@ -136,7 +127,7 @@ pub(crate) fn cluster_centroids(
         }
         centroids.insert(
             cluster_id,
-            ClusterCentroid {
+            MapClusterCentroid {
                 x: sum_x / count as f32,
                 y: sum_y / count as f32,
                 count,
@@ -148,7 +139,7 @@ pub(crate) fn cluster_centroids(
 
 pub(crate) fn blended_cluster_color(
     point: &crate::egui_app::state::MapPoint,
-    centroids: &HashMap<i32, ClusterCentroid>,
+    centroids: &HashMap<i32, MapClusterCentroid>,
     bounds: &MapBounds,
     palette: &style::Palette,
     alpha: u8,
@@ -235,7 +226,7 @@ fn hsv_to_rgb(h: f32, s: f32, v: f32) -> (u8, u8, u8) {
 }
 
 fn position_based_color(
-    centroid: &ClusterCentroid,
+    centroid: &MapClusterCentroid,
     bounds: &MapBounds,
     palette: &style::Palette,
     alpha: u8,

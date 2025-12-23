@@ -1,6 +1,7 @@
 use super::*;
 use rusqlite::{Connection, OptionalExtension, params, params_from_iter};
 use rusqlite::types::Value;
+use std::collections::HashMap;
 
 pub(crate) struct UmapBounds {
     pub min_x: f32,
@@ -79,6 +80,25 @@ impl EguiController {
             source_id,
             bounds,
             limit,
+        )
+    }
+
+    pub fn umap_cluster_centroids(
+        &mut self,
+        model_id: &str,
+        umap_version: &str,
+        cluster_method: &str,
+        cluster_umap_version: &str,
+        source_id: Option<&SourceId>,
+    ) -> Result<HashMap<i32, crate::egui_app::state::MapClusterCentroid>, String> {
+        let conn = open_library_db()?;
+        load_umap_cluster_centroids(
+            &conn,
+            model_id,
+            umap_version,
+            cluster_method,
+            cluster_umap_version,
+            source_id,
         )
     }
 }
@@ -255,4 +275,82 @@ fn load_umap_points(
         points.push(row.map_err(|err| format!("Read layout row failed: {err}"))?);
     }
     Ok(points)
+}
+
+fn load_umap_cluster_centroids(
+    conn: &Connection,
+    model_id: &str,
+    umap_version: &str,
+    cluster_method: &str,
+    cluster_umap_version: &str,
+    source_id: Option<&SourceId>,
+) -> Result<HashMap<i32, crate::egui_app::state::MapClusterCentroid>, String> {
+    let (sql, params) = if let Some(source_id) = source_id {
+        let prefix = format!("{}::%", source_id.as_str());
+        (
+            "SELECT hdbscan_clusters.cluster_id, AVG(layout_umap.x), AVG(layout_umap.y), COUNT(*)
+             FROM layout_umap
+             JOIN hdbscan_clusters
+               ON layout_umap.sample_id = hdbscan_clusters.sample_id
+              AND hdbscan_clusters.model_id = ?1
+              AND hdbscan_clusters.method = ?3
+              AND hdbscan_clusters.umap_version = ?4
+             WHERE layout_umap.model_id = ?1 AND layout_umap.umap_version = ?2
+               AND layout_umap.sample_id LIKE ?5
+             GROUP BY hdbscan_clusters.cluster_id",
+            vec![
+                Value::Text(model_id.to_string()),
+                Value::Text(umap_version.to_string()),
+                Value::Text(cluster_method.to_string()),
+                Value::Text(cluster_umap_version.to_string()),
+                Value::Text(prefix),
+            ],
+        )
+    } else {
+        (
+            "SELECT hdbscan_clusters.cluster_id, AVG(layout_umap.x), AVG(layout_umap.y), COUNT(*)
+             FROM layout_umap
+             JOIN hdbscan_clusters
+               ON layout_umap.sample_id = hdbscan_clusters.sample_id
+              AND hdbscan_clusters.model_id = ?1
+              AND hdbscan_clusters.method = ?3
+              AND hdbscan_clusters.umap_version = ?4
+             WHERE layout_umap.model_id = ?1 AND layout_umap.umap_version = ?2
+             GROUP BY hdbscan_clusters.cluster_id",
+            vec![
+                Value::Text(model_id.to_string()),
+                Value::Text(umap_version.to_string()),
+                Value::Text(cluster_method.to_string()),
+                Value::Text(cluster_umap_version.to_string()),
+            ],
+        )
+    };
+
+    let mut stmt = conn
+        .prepare(sql)
+        .map_err(|err| format!("Prepare centroid query failed: {err}"))?;
+    let rows = stmt
+        .query_map(params_from_iter(params), |row| {
+            let cluster_id: i64 = row.get(0)?;
+            let x: f64 = row.get(1)?;
+            let y: f64 = row.get(2)?;
+            let count: i64 = row.get(3)?;
+            Ok((
+                cluster_id as i32,
+                crate::egui_app::state::MapClusterCentroid {
+                    x: x as f32,
+                    y: y as f32,
+                    count: count as usize,
+                },
+            ))
+        })
+        .map_err(|err| format!("Query centroids failed: {err}"))?;
+
+    let mut centroids = HashMap::new();
+    for row in rows {
+        let (cluster_id, centroid) =
+            row.map_err(|err| format!("Read centroid row failed: {err}"))?;
+        centroids.insert(cluster_id, centroid);
+    }
+    Ok(centroids)
 }

@@ -374,6 +374,8 @@ impl EguiController {
                     match message.result {
                         Ok(stats) => {
                             self.ui.map.last_query = None;
+                            self.ui.map.cached_cluster_centroids_key = None;
+                            self.ui.map.cached_cluster_centroids = None;
                             let scope = message
                                 .source_id
                                 .as_ref()

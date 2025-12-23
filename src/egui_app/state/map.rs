@@ -1,4 +1,5 @@
 use eframe::egui::{Pos2, Vec2};
+use std::collections::HashMap;
 
 #[derive(Clone, Debug)]
 pub struct MapUiState {
@@ -9,6 +10,8 @@ pub struct MapUiState {
     pub bounds: Option<MapBounds>,
     pub last_query: Option<MapQueryBounds>,
     pub cached_points: Vec<MapPoint>,
+    pub cached_cluster_centroids_key: Option<String>,
+    pub cached_cluster_centroids: Option<HashMap<i32, MapClusterCentroid>>,
     pub hovered_sample_id: Option<String>,
     pub selected_sample_id: Option<String>,
     pub umap_version: String,
@@ -34,6 +37,8 @@ impl Default for MapUiState {
             bounds: None,
             last_query: None,
             cached_points: Vec::new(),
+            cached_cluster_centroids_key: None,
+            cached_cluster_centroids: None,
             hovered_sample_id: None,
             selected_sample_id: None,
             umap_version: "v1".to_string(),
@@ -73,6 +78,13 @@ pub struct MapPoint {
     pub x: f32,
     pub y: f32,
     pub cluster_id: Option<i32>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MapClusterCentroid {
+    pub x: f32,
+    pub y: f32,
+    pub count: usize,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

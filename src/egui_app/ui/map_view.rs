@@ -230,8 +230,55 @@ impl EguiApp {
         let cluster_overlay = self.controller.ui.map.cluster_overlay;
         let similarity_blend = self.controller.ui.map.similarity_blend;
         let blend_threshold = self.controller.ui.map.similarity_blend_threshold;
+        let source_key = source_id.as_ref().map(|id| id.as_str().to_string());
+        let centroids_key = format!(
+            "{}|{}|{}|{}",
+            umap_version,
+            source_key.as_deref().unwrap_or(""),
+            cluster_method_str,
+            cluster_umap_version
+        );
+        if self.controller.ui.map.cached_cluster_centroids_key.as_deref() != Some(&centroids_key) {
+            self.controller.ui.map.cached_cluster_centroids_key = Some(centroids_key);
+            self.controller.ui.map.cached_cluster_centroids = None;
+        }
+        if cluster_overlay && self.controller.ui.map.cached_cluster_centroids.is_none() {
+            match self.controller.umap_cluster_centroids(
+                model_id,
+                &umap_version,
+                cluster_method_str,
+                cluster_umap_version,
+                source_id.as_ref(),
+            ) {
+                Ok(centroids) => {
+                    if centroids.is_empty() {
+                        self.controller.ui.map.cached_cluster_centroids = None;
+                    } else {
+                        self.controller.ui.map.cached_cluster_centroids = Some(centroids);
+                    }
+                }
+                Err(err) => {
+                    self.controller.set_status(
+                        format!("Cluster centroids query failed: {err}"),
+                        style::StatusTone::Error,
+                    );
+                }
+            }
+        }
+        let centroids_fallback = if cluster_overlay {
+            Some(map_clusters::cluster_centroids(&points))
+        } else {
+            None
+        };
         let centroids = if cluster_overlay {
-            Some(map_clusters::cluster_centroids(&filtered_points))
+            Some(
+                self.controller
+                    .ui
+                    .map
+                    .cached_cluster_centroids
+                    .as_ref()
+                    .unwrap_or_else(|| centroids_fallback.as_ref().expect("overlay set")),
+            )
         } else {
             None
         };

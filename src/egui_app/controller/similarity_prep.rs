@@ -90,6 +90,8 @@ impl EguiController {
             Ok(outcome) => {
                 self.ui.map.bounds = None;
                 self.ui.map.last_query = None;
+                self.ui.map.cached_cluster_centroids_key = None;
+                self.ui.map.cached_cluster_centroids = None;
                 self.set_status(
                     format!(
                         "Similarity ready: {} clusters (noise {:.1}%)",
