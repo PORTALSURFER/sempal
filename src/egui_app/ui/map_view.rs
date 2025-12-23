@@ -169,7 +169,7 @@ impl EguiApp {
         }
 
         let pointer = response.interact_pointer_pos();
-        if response.dragged() {
+        if response.dragged_by(egui::PointerButton::Secondary) {
             if let Some(pos) = pointer {
                 let last = self.controller.ui.map.last_drag_pos.unwrap_or(pos);
                 let delta = pos - last;
