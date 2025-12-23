@@ -1,7 +1,7 @@
 use std::io::Cursor;
 use std::sync::Arc;
 
-use rodio::Decoder;
+use rodio::{Decoder, Source};
 
 pub(crate) fn decoder_from_bytes(bytes: Arc<[u8]>) -> Result<Decoder<Cursor<Arc<[u8]>>>, String> {
     let byte_len = bytes.len() as u64;

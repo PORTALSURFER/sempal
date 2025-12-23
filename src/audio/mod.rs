@@ -13,7 +13,11 @@ pub use output::{
 };
 pub use player::AudioPlayer;
 
-pub(crate) use fade::{EdgeFade, FadeOutHandle, FadeOutOnRequest, fade_duration, fade_frames_for_duration};
+#[cfg(test)]
+pub(crate) use fade::{
+    EdgeFade, FadeOutHandle, FadeOutOnRequest, fade_duration, fade_frames_for_duration,
+};
+#[cfg(test)]
 pub(crate) use routing::normalized_progress;
 
 pub(crate) const DEFAULT_ANTI_CLIP_FADE: Duration = Duration::from_millis(2);

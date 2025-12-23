@@ -240,13 +240,13 @@ impl EguiApp {
             }
         }
 
-        let points = &self.controller.ui.map.cached_points;
         let filter_key = crate::egui_app::state::MapFilterKey {
             points_revision: self.controller.ui.map.cached_points_revision,
             overlay: self.controller.ui.map.cluster_overlay,
             filter: self.controller.ui.map.cluster_filter,
         };
         if self.controller.ui.map.cached_filtered_key != Some(filter_key) {
+            let points = &self.controller.ui.map.cached_points;
             self.controller.ui.map.cached_filtered_points = map_clusters::filter_points(
                 points,
                 self.controller.ui.map.cluster_overlay,
@@ -254,7 +254,6 @@ impl EguiApp {
             );
             self.controller.ui.map.cached_filtered_key = Some(filter_key);
         }
-        let filtered_points = &self.controller.ui.map.cached_filtered_points;
         let cluster_overlay = self.controller.ui.map.cluster_overlay;
         let similarity_blend = self.controller.ui.map.similarity_blend;
         let blend_threshold = self.controller.ui.map.similarity_blend_threshold;
@@ -291,8 +290,13 @@ impl EguiApp {
             }
         }
         if cluster_overlay {
-            let has_any_points = !points.is_empty();
-            let has_missing_cluster_ids = points.iter().any(|point| point.cluster_id.is_none());
+            let (has_any_points, has_missing_cluster_ids) = {
+                let points = &self.controller.ui.map.cached_points;
+                (
+                    !points.is_empty(),
+                    points.iter().any(|point| point.cluster_id.is_none()),
+                )
+            };
             let centroids_empty = self
                 .controller
                 .ui
@@ -323,7 +327,10 @@ impl EguiApp {
                 .cached_cluster_centroids
                 .clone()
                 .filter(|centroids| !centroids.is_empty())
-            .or_else(|| Some(Arc::new(map_clusters::cluster_centroids(points))))
+                .or_else(|| {
+                    let points = &self.controller.ui.map.cached_points;
+                    Some(Arc::new(map_clusters::cluster_centroids(points)))
+                })
         } else {
             None
         };
@@ -360,16 +367,18 @@ impl EguiApp {
                 palette.accent_mint
             }
         };
-        let display_points = filtered_points;
         let painter = ui.painter_at(rect);
-        let hovered = map_interactions::find_hover_point(
-            display_points,
-            rect,
-            center,
-            scale,
-            self.controller.ui.map.pan,
-            pointer,
-        );
+        let hovered = {
+            let display_points = &self.controller.ui.map.cached_filtered_points;
+            map_interactions::find_hover_point(
+                display_points,
+                rect,
+                center,
+                scale,
+                self.controller.ui.map.pan,
+                pointer,
+            )
+        };
         self.controller.ui.map.hovered_sample_id =
             hovered.as_ref().map(|(point, _)| point.sample_id.clone());
         if self.controller.ui.map.hovered_sample_id.is_none() {
@@ -445,40 +454,42 @@ impl EguiApp {
 
         let mut draw_calls = 0usize;
         let mut points_rendered = 0usize;
-        let focused_point = self
-            .controller
-            .ui
-            .map
-            .selected_sample_id
-            .as_ref()
-            .and_then(|id| filtered_points.iter().find(|point| point.sample_id == *id));
-        if filtered_points.len() > 8000 || self.controller.ui.map.zoom < 0.6 {
+        let focused_sample_id = self.controller.ui.map.selected_sample_id.as_deref();
+        let display_count = self.controller.ui.map.cached_filtered_points.len();
+        if display_count > 8000 || self.controller.ui.map.zoom < 0.6 {
             if self.controller.ui.map.cluster_overlay {
-                draw_calls = map_render::render_heatmap_with_color(
-                    &painter,
-                    rect,
-                    display_points,
-                    center,
-                    scale,
-                    self.controller.ui.map.pan,
-                    MAP_HEATMAP_BINS,
-                    |point| point_color(point, 255),
-                );
+                draw_calls = {
+                    let display_points = &self.controller.ui.map.cached_filtered_points;
+                    map_render::render_heatmap_with_color(
+                        &painter,
+                        rect,
+                        display_points,
+                        center,
+                        scale,
+                        self.controller.ui.map.pan,
+                        MAP_HEATMAP_BINS,
+                        |point| point_color(point, 255),
+                    )
+                };
             } else {
-                draw_calls = map_render::render_heatmap(
-                    &painter,
-                    rect,
-                    display_points,
-                    center,
-                    scale,
-                    self.controller.ui.map.pan,
-                    MAP_HEATMAP_BINS,
-                );
+                draw_calls = {
+                    let display_points = &self.controller.ui.map.cached_filtered_points;
+                    map_render::render_heatmap(
+                        &painter,
+                        rect,
+                        display_points,
+                        center,
+                        scale,
+                        self.controller.ui.map.pan,
+                        MAP_HEATMAP_BINS,
+                    )
+                };
             }
-            points_rendered = display_points.len();
+            points_rendered = display_count;
             self.controller.ui.map.last_render_mode =
                 crate::egui_app::state::MapRenderMode::Heatmap;
         } else {
+            let display_points = &self.controller.ui.map.cached_filtered_points;
             for point in display_points {
                 let pos = map_render::map_to_screen(
                     point.x,
@@ -490,30 +501,29 @@ impl EguiApp {
                 );
                 if rect.contains(pos) {
                     points_rendered += 1;
-                    let is_focused = self
-                        .controller
-                        .ui
-                        .map
-                        .selected_sample_id
-                        .as_deref()
-                        == Some(point.sample_id.as_str());
+                    let is_focused = focused_sample_id == Some(point.sample_id.as_str());
                     let radius = if is_focused { 3.5 } else { 2.0 };
-                    let color = point_color(&point, 200);
+                    let color = point_color(point, 200);
                     painter.circle_filled(pos, radius, color);
                     draw_calls += 1;
                 }
             }
             self.controller.ui.map.last_render_mode = crate::egui_app::state::MapRenderMode::Points;
         }
-        if let Some(point) = focused_point {
-            let pos = map_render::map_to_screen(
-                point.x,
-                point.y,
-                rect,
-                center,
-                scale,
-                self.controller.ui.map.pan,
-            );
+        let focused_pos = focused_sample_id.and_then(|id| {
+            let display_points = &self.controller.ui.map.cached_filtered_points;
+            display_points.iter().find(|point| point.sample_id == id).map(|point| {
+                map_render::map_to_screen(
+                    point.x,
+                    point.y,
+                    rect,
+                    center,
+                    scale,
+                    self.controller.ui.map.pan,
+                )
+            })
+        });
+        if let Some(pos) = focused_pos {
             if rect.contains(pos) {
                 painter.circle_stroke(pos, 6.0, style::focused_row_stroke());
             }
