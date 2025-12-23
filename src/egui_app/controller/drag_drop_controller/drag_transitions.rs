@@ -11,6 +11,7 @@ impl DragDropController<'_> {
         self.ui.drag.external_arm_at = None;
         self.ui.drag.pointer_left_window = false;
         self.ui.drag.pending_os_drag = None;
+        self.ui.drag.origin_source = None;
     }
 
     pub(super) fn begin_drag(&mut self, payload: DragPayload, label: String, pos: Pos2) {
@@ -23,5 +24,6 @@ impl DragDropController<'_> {
         self.ui.drag.external_arm_at = None;
         self.ui.drag.pointer_left_window = false;
         self.ui.drag.pending_os_drag = None;
+        self.ui.drag.origin_source = None;
     }
 }

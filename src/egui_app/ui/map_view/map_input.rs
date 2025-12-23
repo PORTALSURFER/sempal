@@ -194,10 +194,7 @@ pub(super) fn handle_context_menu(
                         .set_status(format!("Preview failed: {err}"), style::StatusTone::Error);
                 } else if let Err(err) = app.controller.play_audio(false, None) {
                     app.controller
-                        .set_status(
-                            format!("Playback failed: {err}"),
-                            style::StatusTone::Error,
-                        );
+                        .set_status(format!("Playback failed: {err}"), style::StatusTone::Error);
                 }
                 Popup::close_id(ctx, popup_id);
                 return;

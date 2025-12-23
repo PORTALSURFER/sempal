@@ -4,7 +4,9 @@ use super::helpers::{NumberColumn, RowMarker, clamp_label_for_width, render_list
 use super::status_badges;
 use super::style;
 use super::*;
-use crate::egui_app::state::{FocusContext, SampleBrowserActionPrompt, SampleBrowserTab};
+use crate::egui_app::state::{
+    DragSource, FocusContext, SampleBrowserActionPrompt, SampleBrowserTab,
+};
 use crate::egui_app::view_model;
 use eframe::egui::{self, StrokeKind, Ui};
 
@@ -236,13 +238,19 @@ impl EguiApp {
             self.controller.ui.browser.autoscroll = false;
         }
 
+        let drag_source = self
+            .controller
+            .ui
+            .drag
+            .origin_source
+            .unwrap_or(DragSource::Browser);
         drag_targets::handle_drop_zone(
             ui,
             &mut self.controller,
             drag_active,
             pointer_pos,
             list_response.frame_rect,
-            crate::egui_app::state::DragSource::Browser,
+            drag_source,
             crate::egui_app::state::DragTarget::BrowserTriage(drop_target),
             style::drag_target_stroke(),
             StrokeKind::Inside,
