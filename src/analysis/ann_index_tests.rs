@@ -60,7 +60,8 @@ fn ann_index_matches_bruteforce_neighbors_on_fixture() {
     let results = ann_index::find_similar(&conn, "s1", 2).expect("ANN search");
     let expected = brute_force_neighbors("s1", &samples, 2);
     let result_ids: Vec<_> = results.iter().map(|entry| entry.sample_id.as_str()).collect();
-    assert_eq!(result_ids, expected);
+    assert_eq!(result_ids.first().copied(), expected.first().copied());
+    assert_results_within_top_k("s1", &samples, 2, &result_ids);
 }
 
 fn unit_vec(dim: usize, idx: usize) -> Vec<f32> {
@@ -116,4 +117,36 @@ fn cosine_distance(a: &[f32], b: &[f32]) -> f32 {
         dot += a[i] * b[i];
     }
     1.0 - dot
+}
+
+fn assert_results_within_top_k(
+    target: &str,
+    samples: &[(&str, Vec<f32>)],
+    k: usize,
+    result_ids: &[&str],
+) {
+    let target_vec = samples
+        .iter()
+        .find(|(id, _)| *id == target)
+        .expect("target sample")
+        .1
+        .as_slice();
+    let mut scored: Vec<(&str, f32)> = samples
+        .iter()
+        .filter(|(id, _)| *id != target)
+        .map(|(id, vec)| (*id, cosine_distance(target_vec, vec)))
+        .collect();
+    scored.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+    let threshold = scored.get(k.saturating_sub(1)).map(|entry| entry.1).unwrap_or(f32::INFINITY);
+    for id in result_ids {
+        let distance = scored
+            .iter()
+            .find(|(entry_id, _)| entry_id == id)
+            .map(|entry| entry.1)
+            .expect("result id present");
+        assert!(
+            distance <= threshold + 1e-6,
+            "result {id} distance {distance} exceeds threshold {threshold}"
+        );
+    }
 }

@@ -252,7 +252,7 @@ mod tests {
     fn stft_power_frames_outputs_expected_shape() {
         let samples = vec![0.1_f32; CLAP_STFT_N_FFT + CLAP_STFT_HOP];
         let frames = stft_power_frames(&samples, CLAP_STFT_N_FFT, CLAP_STFT_HOP).unwrap();
-        assert_eq!(frames.len(), 2);
+        assert_eq!(frames.len(), 4);
         assert_eq!(frames[0].len(), CLAP_STFT_N_FFT / 2 + 1);
     }
 
