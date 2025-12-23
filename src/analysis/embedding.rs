@@ -232,6 +232,7 @@ fn onnx_runtime_filename() -> &'static str {
     }
 }
 
+#[allow(dead_code)]
 pub(crate) fn embedding_model_path() -> &'static PathBuf {
     static PATH: LazyLock<PathBuf> = LazyLock::new(|| {
         crate::app_dirs::app_root_dir()

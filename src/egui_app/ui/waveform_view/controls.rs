@@ -36,13 +36,3 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
         app.controller.set_waveform_channel_view(view_mode);
     }
 }
-
-fn lerp_color(a: egui::Color32, b: egui::Color32, t: f32) -> egui::Color32 {
-    let t = t.clamp(0.0, 1.0);
-    let lerp = |start: u8, end: u8| -> u8 {
-        let start = start as f32;
-        let end = end as f32;
-        (start + (end - start) * t).round().clamp(0.0, 255.0) as u8
-    };
-    egui::Color32::from_rgb(lerp(a.r(), b.r()), lerp(a.g(), b.g()), lerp(a.b(), b.b()))
-}

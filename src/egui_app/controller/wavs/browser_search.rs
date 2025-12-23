@@ -53,13 +53,12 @@ impl EguiController {
                 .entries
                 .iter()
                 .enumerate()
-                .filter(|(index, entry)| {
+                .filter(|(_index, entry)| {
                     self.browser_filter_accepts(entry.tag)
                         && self.folder_filter_accepts(&entry.relative_path)
                 })
                 .map(|(index, _)| index)
                 .collect();
-            let mut visible = visible;
             let selected_visible =
                 focused_index.and_then(|idx| visible.iter().position(|i| *i == idx));
             let loaded_visible =

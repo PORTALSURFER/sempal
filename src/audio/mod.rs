@@ -15,7 +15,7 @@ pub use player::AudioPlayer;
 
 #[cfg(test)]
 pub(crate) use fade::{
-    EdgeFade, FadeOutHandle, FadeOutOnRequest, fade_duration, fade_frames_for_duration,
+    EdgeFade, FadeOutHandle, FadeOutOnRequest, fade_duration,
 };
 #[cfg(test)]
 pub(crate) use routing::normalized_progress;

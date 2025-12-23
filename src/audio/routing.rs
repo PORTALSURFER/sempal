@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+#[cfg(test)]
 pub(crate) fn normalized_progress(
     span: Option<(f32, f32)>,
     duration: f32,
