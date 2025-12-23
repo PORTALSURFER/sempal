@@ -287,6 +287,10 @@ pub(in crate::egui_app::controller) fn ensure_player(
         let mut created = AudioPlayer::from_config(&controller.settings.audio_output)
             .map_err(|err| format!("Audio init failed: {err}"))?;
         created.set_volume(controller.ui.volume);
+        created.set_anti_clip_settings(
+            controller.settings.controls.anti_clip_fade_enabled,
+            controller.settings.controls.anti_clip_fade_ms,
+        );
         controller.audio.player = Some(Rc::new(RefCell::new(created)));
         controller.update_audio_output_status();
     }

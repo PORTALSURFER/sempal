@@ -24,11 +24,17 @@ impl EguiController {
             clamp_zoom_factor(self.settings.controls.wheel_zoom_factor);
         self.settings.controls.keyboard_zoom_factor =
             clamp_zoom_factor(self.settings.controls.keyboard_zoom_factor);
+        self.settings.controls.anti_clip_fade_ms =
+            super::interaction_options::clamp_anti_clip_fade_ms(
+                self.settings.controls.anti_clip_fade_ms,
+            );
         self.ui.controls = crate::egui_app::state::InteractionOptionsState {
             invert_waveform_scroll: self.settings.controls.invert_waveform_scroll,
             waveform_scroll_speed: self.settings.controls.waveform_scroll_speed,
             wheel_zoom_factor: self.settings.controls.wheel_zoom_factor,
             keyboard_zoom_factor: self.settings.controls.keyboard_zoom_factor,
+            anti_clip_fade_enabled: self.settings.controls.anti_clip_fade_enabled,
+            anti_clip_fade_ms: self.settings.controls.anti_clip_fade_ms,
             destructive_yolo_mode: self.settings.controls.destructive_yolo_mode,
             waveform_channel_view: self.settings.controls.waveform_channel_view,
         };

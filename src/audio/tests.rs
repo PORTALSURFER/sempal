@@ -178,6 +178,8 @@ fn remaining_loop_duration_reports_time_left_in_cycle() {
         looping: true,
         loop_offset: None,
         volume: 1.0,
+        anti_clip_enabled: true,
+        anti_clip_fade: DEFAULT_ANTI_CLIP_FADE,
         output: ResolvedOutput::default(),
         elapsed_override: None,
     };
@@ -204,6 +206,8 @@ fn remaining_loop_duration_accounts_for_full_track_offset() {
         looping: true,
         loop_offset: Some(2.0),
         volume: 1.0,
+        anti_clip_enabled: true,
+        anti_clip_fade: DEFAULT_ANTI_CLIP_FADE,
         output: ResolvedOutput::default(),
         elapsed_override: None,
     };
@@ -229,6 +233,8 @@ fn remaining_loop_duration_none_when_not_looping() {
         looping: false,
         loop_offset: None,
         volume: 1.0,
+        anti_clip_enabled: true,
+        anti_clip_fade: DEFAULT_ANTI_CLIP_FADE,
         output: ResolvedOutput::default(),
         elapsed_override: None,
     };
@@ -244,11 +250,14 @@ fn normalized_progress_returns_none_when_invalid_duration() {
 
 #[test]
 fn fade_duration_clamps_to_span_length() {
-    let short = fade_duration(0.004);
+    let short = fade_duration(0.004, DEFAULT_ANTI_CLIP_FADE);
     assert!((short.as_secs_f32() - 0.002).abs() < 1e-6);
-    let long = fade_duration(0.25);
-    assert!((long.as_secs_f32() - SEGMENT_FADE.as_secs_f32()).abs() < 1e-6);
-    assert_eq!(fade_duration(0.0), Duration::from_secs(0));
+    let long = fade_duration(0.25, DEFAULT_ANTI_CLIP_FADE);
+    assert!((long.as_secs_f32() - DEFAULT_ANTI_CLIP_FADE.as_secs_f32()).abs() < 1e-6);
+    assert_eq!(
+        fade_duration(0.0, DEFAULT_ANTI_CLIP_FADE),
+        Duration::from_secs(0)
+    );
 }
 
 #[test]
@@ -264,7 +273,7 @@ fn edge_fade_ramps_start_samples() {
 #[test]
 fn edge_fade_handles_tiny_segments() {
     let span_secs = 0.002;
-    let fade = fade_duration(span_secs);
+    let fade = fade_duration(span_secs, DEFAULT_ANTI_CLIP_FADE);
     let source = ConstantSource::new(1_000, 1, span_secs, 1.0);
     let samples: Vec<f32> = EdgeFade::new(source, fade).collect();
     assert_eq!(samples.len(), 2);
@@ -308,6 +317,8 @@ fn progress_wraps_full_loop_from_offset() {
         looping: true,
         loop_offset: Some(7.0),
         volume: 1.0,
+        anti_clip_enabled: true,
+        anti_clip_fade: DEFAULT_ANTI_CLIP_FADE,
         output: ResolvedOutput::default(),
         elapsed_override: None,
     };
@@ -381,6 +392,8 @@ fn play_range_accepts_zero_width_request() {
         looping: false,
         loop_offset: None,
         volume: 1.0,
+        anti_clip_enabled: true,
+        anti_clip_fade: DEFAULT_ANTI_CLIP_FADE,
         output: ResolvedOutput::default(),
         elapsed_override: None,
     };

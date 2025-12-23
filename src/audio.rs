@@ -21,13 +21,14 @@ pub struct AudioPlayer {
     looping: bool,
     loop_offset: Option<f32>,
     volume: f32,
+    anti_clip_enabled: bool,
+    anti_clip_fade: Duration,
     output: ResolvedOutput,
     #[cfg(test)]
     elapsed_override: Option<Duration>,
 }
 
-const SEGMENT_FADE: Duration = Duration::from_millis(5);
-const RESTART_FADE: Duration = Duration::from_millis(2);
+const DEFAULT_ANTI_CLIP_FADE: Duration = Duration::from_millis(2);
 
 impl AudioPlayer {
     /// Create a new audio player using the default output device.
@@ -50,6 +51,8 @@ impl AudioPlayer {
             looping: false,
             loop_offset: None,
             volume: 1.0,
+            anti_clip_enabled: true,
+            anti_clip_fade: DEFAULT_ANTI_CLIP_FADE,
             output: outcome.resolved,
             #[cfg(test)]
             elapsed_override: None,
@@ -84,9 +87,15 @@ impl AudioPlayer {
         }
     }
 
+    /// Configure the anti-click fade used for playback edges.
+    pub fn set_anti_clip_settings(&mut self, enabled: bool, fade_ms: f32) {
+        self.anti_clip_enabled = enabled;
+        self.anti_clip_fade = duration_from_secs_f32(fade_ms / 1000.0);
+    }
+
     /// Stop any active playback.
     pub fn stop(&mut self) {
-        self.fade_out_current_sink(SEGMENT_FADE);
+        self.fade_out_current_sink(self.anti_clip_fade());
         self.started_at = None;
         self.play_span = None;
         self.looping = false;
@@ -140,9 +149,9 @@ impl AudioPlayer {
             return Err("Load a .wav file first".into());
         }
 
-        self.fade_out_current_sink(RESTART_FADE);
+        self.fade_out_current_sink(self.anti_clip_fade());
 
-        let fade = fade_duration(duration);
+        let fade = fade_duration(duration, self.anti_clip_fade());
         let source = Self::decoder_from_bytes(bytes)?;
         let limited = source
             .fade_in(fade)
@@ -258,9 +267,9 @@ impl AudioPlayer {
         let bounded_start = start_seconds.clamp(0.0, duration);
         let bounded_end = end_seconds.clamp(bounded_start, duration);
         let span_length = (bounded_end - bounded_start).max(0.001);
-        let fade = fade_duration(span_length);
+        let fade = fade_duration(span_length, self.anti_clip_fade());
 
-        self.fade_out_current_sink(RESTART_FADE);
+        self.fade_out_current_sink(self.anti_clip_fade());
 
         let mut source = Self::decoder_from_bytes(bytes)?;
         source
@@ -313,6 +322,14 @@ impl AudioPlayer {
             .ok_or_else(|| "Load a .wav file first".to_string())
     }
 
+    fn anti_clip_fade(&self) -> Duration {
+        if self.anti_clip_enabled {
+            self.anti_clip_fade
+        } else {
+            Duration::ZERO
+        }
+    }
+
     fn decoder_from_bytes(bytes: Arc<[u8]>) -> Result<Decoder<Cursor<Arc<[u8]>>>, String> {
         let byte_len = bytes.len() as u64;
         Decoder::builder()
@@ -353,7 +370,7 @@ impl AudioPlayer {
             .try_seek(Duration::from_secs_f32(start_seconds))
             .map_err(Self::map_seek_error)?;
         let span_length = (end_seconds - start_seconds).max(0.001);
-        let fade = fade_duration(span_length);
+        let fade = fade_duration(span_length, self.anti_clip_fade());
         let limited = source
             .fade_in(fade)
             .take_duration(Duration::from_secs_f32(span_length))
@@ -384,6 +401,10 @@ impl AudioPlayer {
             sink.stop();
             return;
         };
+        if fade.is_zero() {
+            sink.stop();
+            return;
+        }
         let fade_frames = fade_frames_for_duration(sample_rate, fade);
         handle.request_fade_out_frames(fade_frames);
         sink.detach();
@@ -419,19 +440,21 @@ impl AudioPlayer {
             looping: true,
             loop_offset: Some(0.0),
             volume: 1.0,
+            anti_clip_enabled: true,
+            anti_clip_fade: DEFAULT_ANTI_CLIP_FADE,
             output: outcome.resolved,
             elapsed_override: None,
         })
     }
 }
 
-fn fade_duration(span_seconds: f32) -> Duration {
-    if span_seconds <= 0.0 {
-        return Duration::from_secs(0);
+fn fade_duration(span_seconds: f32, max_fade: Duration) -> Duration {
+    if span_seconds <= 0.0 || max_fade.is_zero() {
+        return Duration::ZERO;
     }
-    let max_fade = SEGMENT_FADE.as_secs_f32();
-    let clamped = max_fade.min(span_seconds * 0.5);
-    Duration::from_secs_f32(clamped.max(0.0))
+    let max_fade_secs = max_fade.as_secs_f32();
+    let clamped = max_fade_secs.min(span_seconds * 0.5);
+    duration_from_secs_f32(clamped)
 }
 
 fn fade_frames_for_duration(sample_rate: u32, fade: Duration) -> u32 {

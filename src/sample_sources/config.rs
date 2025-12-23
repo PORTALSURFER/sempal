@@ -133,6 +133,10 @@ pub struct InteractionOptions {
     pub wheel_zoom_factor: f32,
     #[serde(default = "default_keyboard_zoom_factor")]
     pub keyboard_zoom_factor: f32,
+    #[serde(default = "default_true")]
+    pub anti_clip_fade_enabled: bool,
+    #[serde(default = "default_anti_clip_fade_ms")]
+    pub anti_clip_fade_ms: f32,
     #[serde(default)]
     pub destructive_yolo_mode: bool,
     #[serde(default)]
@@ -146,6 +150,8 @@ impl Default for InteractionOptions {
             waveform_scroll_speed: default_scroll_speed(),
             wheel_zoom_factor: default_wheel_zoom_factor(),
             keyboard_zoom_factor: default_keyboard_zoom_factor(),
+            anti_clip_fade_enabled: true,
+            anti_clip_fade_ms: default_anti_clip_fade_ms(),
             destructive_yolo_mode: false,
             waveform_channel_view: WaveformChannelView::Mono,
         }
@@ -408,6 +414,10 @@ fn default_wheel_zoom_factor() -> f32 {
 
 fn default_keyboard_zoom_factor() -> f32 {
     0.9
+}
+
+fn default_anti_clip_fade_ms() -> f32 {
+    2.0
 }
 
 impl Default for AppConfig {

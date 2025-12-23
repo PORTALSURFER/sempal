@@ -7,6 +7,8 @@ pub struct InteractionOptionsState {
     pub waveform_scroll_speed: f32,
     pub wheel_zoom_factor: f32,
     pub keyboard_zoom_factor: f32,
+    pub anti_clip_fade_enabled: bool,
+    pub anti_clip_fade_ms: f32,
     pub destructive_yolo_mode: bool,
     pub waveform_channel_view: WaveformChannelView,
 }
@@ -18,6 +20,8 @@ impl Default for InteractionOptionsState {
             waveform_scroll_speed: 1.2,
             wheel_zoom_factor: 0.96,
             keyboard_zoom_factor: 0.9,
+            anti_clip_fade_enabled: true,
+            anti_clip_fade_ms: 2.0,
             destructive_yolo_mode: false,
             waveform_channel_view: WaveformChannelView::Mono,
         }

@@ -451,6 +451,24 @@ impl EguiApp {
                     self.controller.set_keyboard_zoom_factor(keyboard_zoom);
                 }
                 ui.add_space(6.0);
+                ui.separator();
+                ui.label(
+                    RichText::new("Playback")
+                        .strong()
+                        .color(style::palette().text_primary),
+                );
+                let mut anti_clip_enabled = self.controller.ui.controls.anti_clip_fade_enabled;
+                if ui.checkbox(&mut anti_clip_enabled, "Anti-click fade").changed() {
+                    self.controller.set_anti_clip_fade_enabled(anti_clip_enabled);
+                }
+                let mut anti_clip_fade_ms = self.controller.ui.controls.anti_clip_fade_ms;
+                let anti_clip_slider = egui::Slider::new(&mut anti_clip_fade_ms, 0.0..=20.0)
+                    .text("Fade length")
+                    .suffix(" ms");
+                if ui.add_enabled(anti_clip_enabled, anti_clip_slider).changed() {
+                    self.controller.set_anti_clip_fade_ms(anti_clip_fade_ms);
+                }
+                ui.add_space(6.0);
                 let mut yolo_mode = self.controller.ui.controls.destructive_yolo_mode;
                 let yolo_label = RichText::new("Yolo mode: apply destructive edits without confirmation")
                     .color(style::destructive_text());

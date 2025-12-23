@@ -30,6 +30,8 @@ fn remaining_loop_duration_stays_within_span_on_long_elapsed() {
         looping: true,
         loop_offset: None,
         volume: 1.0,
+        anti_clip_enabled: true,
+        anti_clip_fade: DEFAULT_ANTI_CLIP_FADE,
         output: ResolvedOutput::default(),
         elapsed_override: Some(Duration::from_secs(60 * 60)),
     };
@@ -60,6 +62,8 @@ fn progress_math_is_stable_for_long_running_full_track_loops() {
         looping: true,
         loop_offset: Some(offset),
         volume: 1.0,
+        anti_clip_enabled: true,
+        anti_clip_fade: DEFAULT_ANTI_CLIP_FADE,
         output: ResolvedOutput::default(),
         elapsed_override: Some(Duration::from_secs_f32(elapsed)),
     };
