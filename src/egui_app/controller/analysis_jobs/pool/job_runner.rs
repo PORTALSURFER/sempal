@@ -1,264 +1,18 @@
 use super::db;
-use super::types::{AnalysisJobMessage, AnalysisProgress};
-use tracing::warn;
 use rusqlite::OptionalExtension;
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
-use std::panic::{AssertUnwindSafe, catch_unwind};
-use std::sync::{
-    Arc,
-    atomic::AtomicU32,
-    atomic::{AtomicBool, Ordering},
-    Mutex,
-    mpsc::{Sender, channel},
-};
-use std::thread::{JoinHandle, sleep};
+use std::sync::{Arc, Mutex, mpsc::channel};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use tracing::warn;
 
-/// Long-lived worker pool that claims and processes analysis jobs from the library database.
-pub(in crate::egui_app::controller) struct AnalysisWorkerPool {
-    cancel: Arc<AtomicBool>,
-    shutdown: Arc<AtomicBool>,
-    max_duration_bits: Arc<AtomicU32>,
-    worker_count_override: Arc<AtomicU32>,
-    threads: Vec<JoinHandle<()>>,
-}
-
-impl AnalysisWorkerPool {
-    pub(in crate::egui_app::controller) fn new() -> Self {
-        Self {
-            cancel: Arc::new(AtomicBool::new(false)),
-            shutdown: Arc::new(AtomicBool::new(false)),
-            max_duration_bits: Arc::new(AtomicU32::new(30.0f32.to_bits())),
-            worker_count_override: Arc::new(AtomicU32::new(0)),
-            threads: Vec::new(),
-        }
-    }
-
-    pub(in crate::egui_app::controller) fn set_max_analysis_duration_seconds(&self, value: f32) {
-        let clamped = value.clamp(1.0, 60.0 * 60.0);
-        self.max_duration_bits
-            .store(clamped.to_bits(), Ordering::Relaxed);
-    }
-
-    pub(in crate::egui_app::controller) fn set_worker_count(&self, value: u32) {
-        self.worker_count_override
-            .store(value, Ordering::Relaxed);
-    }
-
-    pub(in crate::egui_app::controller) fn start(
-        &mut self,
-        message_tx: Sender<super::super::jobs::JobMessage>,
-    ) {
-        let _ = &message_tx;
-        if !self.threads.is_empty() {
-            return;
-        }
-        #[cfg(not(test))]
-        {
-            let worker_count =
-                worker_count_with_override(self.worker_count_override.load(Ordering::Relaxed));
-            for worker_index in 0..worker_count {
-                self.threads.push(spawn_worker(
-                    worker_index,
-                    message_tx.clone(),
-                    self.cancel.clone(),
-                    self.shutdown.clone(),
-                    self.max_duration_bits.clone(),
-                ));
-            }
-            self.threads.push(spawn_progress_poller(
-                message_tx,
-                self.cancel.clone(),
-                self.shutdown.clone(),
-            ));
-        }
-    }
-
-    pub(in crate::egui_app::controller) fn cancel(&self) {
-        self.cancel.store(true, Ordering::Relaxed);
-        let _ = reset_running_jobs();
-    }
-
-    pub(in crate::egui_app::controller) fn resume(&self) {
-        self.cancel.store(false, Ordering::Relaxed);
-    }
-
-    pub(in crate::egui_app::controller) fn shutdown(&mut self) {
-        self.shutdown.store(true, Ordering::Relaxed);
-        self.cancel.store(true, Ordering::Relaxed);
-        let _ = reset_running_jobs();
-        for handle in self.threads.drain(..) {
-            let _ = handle.join();
-        }
-    }
-}
-
-impl Drop for AnalysisWorkerPool {
-    fn drop(&mut self) {
-        self.shutdown();
-    }
-}
-
-#[cfg_attr(test, allow(dead_code))]
-fn worker_count_with_override(override_count: u32) -> usize {
-    if override_count >= 1 {
-        return override_count as usize;
-    }
-    if let Ok(value) = std::env::var("SEMPAL_ANALYSIS_WORKERS") {
-        if let Ok(parsed) = value.trim().parse::<usize>() {
-            if parsed >= 1 {
-                return parsed;
-            }
-        }
-    }
-    std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(1)
-        .saturating_sub(2)
-        .max(1)
-}
-
-#[cfg_attr(test, allow(dead_code))]
-fn reset_running_jobs() -> Result<(), String> {
-    let db_path = library_db_path()?;
-    let conn = db::open_library_db(&db_path)?;
-    let _ = db::prune_jobs_for_missing_sources(&conn)?;
-    let _ = db::reset_running_to_pending(&conn)?;
-    Ok(())
-}
-
-#[cfg_attr(test, allow(dead_code))]
-fn spawn_progress_poller(
-    tx: Sender<super::super::jobs::JobMessage>,
-    cancel: Arc<AtomicBool>,
-    shutdown: Arc<AtomicBool>,
-) -> JoinHandle<()> {
-    std::thread::spawn(move || {
-        let db_path = match library_db_path() {
-            Ok(path) => path,
-            Err(_) => return,
-        };
-        let conn = match db::open_library_db(&db_path) {
-            Ok(conn) => conn,
-            Err(_) => return,
-        };
-        let mut last: Option<AnalysisProgress> = None;
-        loop {
-            if shutdown.load(Ordering::Relaxed) {
-                break;
-            }
-            if cancel.load(Ordering::Relaxed) {
-                sleep(Duration::from_millis(200));
-                continue;
-            }
-            let progress = match db::current_progress(&conn) {
-                Ok(progress) => progress,
-                Err(_) => {
-                    sleep(Duration::from_millis(500));
-                    continue;
-                }
-            };
-            if last != Some(progress) {
-                last = Some(progress);
-                let _ = tx.send(super::super::jobs::JobMessage::Analysis(
-                    AnalysisJobMessage::Progress(progress),
-                ));
-            }
-            sleep(Duration::from_millis(200));
-        }
-    })
-}
-
-#[cfg_attr(test, allow(dead_code))]
-fn spawn_worker(
-    _worker_index: usize,
-    tx: Sender<super::super::jobs::JobMessage>,
-    cancel: Arc<AtomicBool>,
-    shutdown: Arc<AtomicBool>,
-    max_duration_bits: Arc<AtomicU32>,
-) -> JoinHandle<()> {
-    std::thread::spawn(move || {
-        let db_path = match library_db_path() {
-            Ok(path) => path,
-            Err(_) => return,
-        };
-        let mut conn = match db::open_library_db(&db_path) {
-            Ok(conn) => conn,
-            Err(_) => return,
-        };
-        let _ = db::prune_jobs_for_missing_sources(&conn);
-        let _ = db::reset_running_to_pending(&conn);
-        loop {
-            if shutdown.load(Ordering::Relaxed) {
-                break;
-            }
-            if cancel.load(Ordering::Relaxed) {
-                sleep(Duration::from_millis(50));
-                continue;
-            }
-            let job = match db::claim_next_job(&mut conn) {
-                Ok(job) => job,
-                Err(_) => {
-                    sleep(Duration::from_millis(200));
-                    continue;
-                }
-            };
-            let Some(job) = job else {
-                sleep(Duration::from_millis(25));
-                continue;
-            };
-            let max_analysis_duration_seconds =
-                f32::from_bits(max_duration_bits.load(Ordering::Relaxed));
-            let outcome = catch_unwind(AssertUnwindSafe(|| {
-                run_job(
-                    &conn,
-                    &job,
-                    max_analysis_duration_seconds,
-                )
-            }))
-            .unwrap_or_else(|payload| Err(panic_to_string(payload)));
-            match outcome {
-                Ok(()) => {
-                    let _ = db::mark_done(&conn, job.id);
-                }
-                Err(err) => {
-                    let _ = db::mark_failed(&conn, job.id, &err);
-                }
-            }
-            if let Ok(progress) = db::current_progress(&conn) {
-                let _ = tx.send(super::super::jobs::JobMessage::Analysis(
-                    AnalysisJobMessage::Progress(progress),
-                ));
-            }
-        }
-    })
-}
-
-fn panic_to_string(payload: Box<dyn std::any::Any + Send>) -> String {
-    let message = if let Some(message) = payload.downcast_ref::<&str>() {
-        (*message).to_string()
-    } else if let Some(message) = payload.downcast_ref::<String>() {
-        message.clone()
-    } else {
-        "Unknown panic payload".to_string()
-    };
-    let backtrace = std::backtrace::Backtrace::capture();
-    format!("Analysis worker panicked: {message}\n{backtrace}")
-}
-
-#[cfg_attr(test, allow(dead_code))]
-fn run_job(
+pub(super) fn run_job(
     conn: &rusqlite::Connection,
     job: &db::ClaimedJob,
     max_analysis_duration_seconds: f32,
 ) -> Result<(), String> {
     match job.job_type.as_str() {
-        db::ANALYZE_SAMPLE_JOB_TYPE => run_analysis_job(
-            conn,
-            job,
-            max_analysis_duration_seconds,
-        ),
+        db::ANALYZE_SAMPLE_JOB_TYPE => run_analysis_job(conn, job, max_analysis_duration_seconds),
         db::EMBEDDING_BACKFILL_JOB_TYPE => run_embedding_backfill_job(conn, job),
         db::REBUILD_INDEX_JOB_TYPE => Err("Rebuild index job not implemented yet".to_string()),
         _ => Err(format!("Unknown job type: {}", job.job_type)),
@@ -445,9 +199,11 @@ fn run_embedding_backfill_job(conn: &rusqlite::Connection, job: &db::ClaimedJob)
         conn.execute_batch("COMMIT")
             .map_err(|err| format!("Commit embedding backfill tx failed: {err}"))?;
         for result in chunk {
-            if let Err(err) =
-                crate::analysis::ann_index::upsert_embedding(conn, &result.sample_id, &result.embedding)
-            {
+            if let Err(err) = crate::analysis::ann_index::upsert_embedding(
+                conn,
+                &result.sample_id,
+                &result.embedding,
+            ) {
                 warn!("ANN index update failed for {}: {err}", result.sample_id);
             }
         }
@@ -576,7 +332,6 @@ fn load_embedding_vec_optional(
     Ok(Some(vec))
 }
 
-
 fn decode_f32le_blob(blob: Vec<u8>) -> Result<Vec<f32>, String> {
     if blob.len() % 4 != 0 {
         return Err("Blob length is not a multiple of 4 bytes".to_string());
@@ -595,9 +350,4 @@ fn now_epoch_seconds() -> i64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_else(|_| Duration::from_secs(0))
         .as_secs() as i64
-}
-
-fn library_db_path() -> Result<PathBuf, String> {
-    let dir = crate::app_dirs::app_root_dir().map_err(|err| err.to_string())?;
-    Ok(dir.join(crate::sample_sources::library::LIBRARY_DB_FILE_NAME))
 }
