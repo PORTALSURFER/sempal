@@ -95,7 +95,9 @@ impl DragDropActions for DragDropController<'_> {
             pos, source, target
         );
         self.ui.drag.position = Some(pos);
-        self.ui.drag.origin_source = Some(source);
+        if self.ui.drag.origin_source.is_none() {
+            self.ui.drag.origin_source = Some(source);
+        }
         self.ui.drag.set_target(source, target);
         if let Some(DragPayload::Selection {
             keep_source_focused,
@@ -137,6 +139,10 @@ impl DragDropActions for DragDropController<'_> {
         info!(
             "Finish drag payload={:?} active_target={:?} last_folder_target={:?}",
             payload, active_target, self.ui.drag.last_folder_target
+        );
+        debug!(
+            "Drag origin_source={:?} active_target={:?} payload={:?}",
+            origin_source, active_target, payload
         );
 
         let (triage_target, folder_target, over_folder_panel) = match &active_target {
