@@ -335,9 +335,6 @@ impl EguiApp {
                         let match_source_id = sample.source_id.clone();
                         let match_path = path.clone();
                         let pending_selected = selected_samples.clone();
-                        let pending_selected_for_drag = pending_selected.clone();
-                        let pending_selected_for_pending = pending_selected.clone();
-                        let pending_selected_for_match = pending_selected.clone();
                         let is_multi_drag =
                             selected_samples.len() > 1 && is_selected;
                         let drag_samples = pending_selected.clone();

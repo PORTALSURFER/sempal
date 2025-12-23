@@ -6,6 +6,7 @@ use eframe::egui::{self, RichText, Ui};
 
 impl EguiApp {
     pub(super) fn render_sources_list(&mut self, ui: &mut Ui, height: f32) -> egui::Rect {
+        let mut row_clicked = false;
         let output = egui::ScrollArea::vertical()
             .id_salt("sources_scroll")
             .max_height(height)
@@ -13,11 +14,10 @@ impl EguiApp {
                 let rows = self.controller.ui.sources.rows.clone();
                 let selected = self.controller.ui.sources.selected;
                 let row_height = list_row_height(ui);
-        let mut row_clicked = false;
-        for (index, row) in rows.iter().enumerate() {
-            let is_selected = Some(index) == selected;
-            ui.push_id(&row.id, |ui| {
-                let row_width = ui.available_width();
+                for (index, row) in rows.iter().enumerate() {
+                    let is_selected = Some(index) == selected;
+                    ui.push_id(&row.id, |ui| {
+                        let row_width = ui.available_width();
                         let padding = ui.spacing().button_padding.x * 2.0;
                         let base_label = clamp_label_for_width(&row.name, row_width - padding);
                         let label = if row.missing {
@@ -45,13 +45,10 @@ impl EguiApp {
                             },
                         )
                         .on_hover_text(&row.path);
-                        let clicked = response.clicked();
-                        if clicked {
+                        if response.clicked() {
                             self.controller.select_source_by_index(index);
                             self.controller
                                 .focus_context_from_ui(FocusContext::SourcesList);
-                        }
-                        if clicked {
                             row_clicked = true;
                         }
                         self.source_row_menu(&response, index, row);
