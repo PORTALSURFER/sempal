@@ -1,6 +1,6 @@
 use crate::egui_app::controller::EguiController;
 use crate::egui_app::state::{DragPayload, DragSource, DragTarget, PendingOsDragStart};
-use eframe::egui;
+use eframe::egui::{self, StrokeKind};
 
 pub(super) fn pointer_pos_for_drag(
     ui: &egui::Ui,
@@ -8,6 +8,33 @@ pub(super) fn pointer_pos_for_drag(
 ) -> Option<egui::Pos2> {
     ui.input(|i| i.pointer.hover_pos().or_else(|| i.pointer.interact_pos()))
         .or(drag_position)
+}
+
+pub(super) fn handle_drop_zone(
+    ui: &egui::Ui,
+    controller: &mut EguiController,
+    drag_active: bool,
+    pointer_pos: Option<egui::Pos2>,
+    target_rect: egui::Rect,
+    drag_source: DragSource,
+    drag_target: DragTarget,
+    stroke: egui::Stroke,
+    stroke_kind: StrokeKind,
+) -> bool {
+    if !drag_active {
+        return false;
+    }
+    let Some(pointer) = pointer_pos else {
+        return false;
+    };
+    if !target_rect.contains(pointer) {
+        return false;
+    }
+    let shift_down = ui.input(|i| i.modifiers.shift);
+    controller.update_active_drag(pointer, drag_source, drag_target, shift_down);
+    ui.painter()
+        .rect_stroke(target_rect, 6.0, stroke, stroke_kind);
+    true
 }
 
 pub(super) fn handle_sample_row_drag<StartDrag, BuildPending, PendingMatch>(
@@ -76,10 +103,7 @@ pub(super) fn handle_sample_row_drag<StartDrag, BuildPending, PendingMatch>(
     }
 }
 
-fn cursor_pos_for_pending(
-    ui: &egui::Ui,
-    controller: &EguiController,
-) -> Option<egui::Pos2> {
+fn cursor_pos_for_pending(ui: &egui::Ui, controller: &EguiController) -> Option<egui::Pos2> {
     ui.input(|i| i.pointer.hover_pos().or_else(|| i.pointer.interact_pos()))
         .or(controller.ui.drag.os_cursor_pos)
 }

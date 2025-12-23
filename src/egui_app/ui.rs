@@ -1,7 +1,8 @@
 //! egui renderer for the application UI.
 
 mod chrome;
-mod collections_panel;
+mod collections_interaction;
+mod collections_render;
 mod drag_targets;
 mod drag_overlay;
 mod feedback_issue;

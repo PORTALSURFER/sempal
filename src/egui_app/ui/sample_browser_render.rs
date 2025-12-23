@@ -222,23 +222,16 @@ impl EguiApp {
             self.controller.ui.browser.autoscroll = false;
         }
 
-        if drag_active
-            && let Some(pointer) = pointer_pos
-            && list_response.frame_rect.contains(pointer)
-        {
-            let shift_down = ui.input(|i| i.modifiers.shift);
-            self.controller.update_active_drag(
-                pointer,
-                crate::egui_app::state::DragSource::Browser,
-                crate::egui_app::state::DragTarget::BrowserTriage(drop_target),
-                shift_down,
-            );
-            ui.painter().rect_stroke(
-                list_response.frame_rect,
-                0.0,
-                style::drag_target_stroke(),
-                StrokeKind::Inside,
-            );
-        }
+        drag_targets::handle_drop_zone(
+            ui,
+            &mut self.controller,
+            drag_active,
+            pointer_pos,
+            list_response.frame_rect,
+            crate::egui_app::state::DragSource::Browser,
+            crate::egui_app::state::DragTarget::BrowserTriage(drop_target),
+            style::drag_target_stroke(),
+            StrokeKind::Inside,
+        );
     }
 }
