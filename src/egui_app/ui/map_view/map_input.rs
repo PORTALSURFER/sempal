@@ -172,33 +172,37 @@ pub(super) fn handle_click(
 
 pub(super) fn handle_context_menu(
     app: &mut EguiApp,
+    ui: &mut egui::Ui,
     response: &egui::Response,
     hovered: Option<&(crate::egui_app::state::MapPoint, egui::Pos2)>,
 ) {
-    response.context_menu(|ui| {
-        let Some((point, _)) = hovered else {
+    if !response.secondary_clicked() {
+        return;
+    }
+    let context_sample = hovered.map(|(point, _)| point.sample_id.clone());
+    egui::popup::show_context_menu(ui.ctx(), ui.id().with("similarity_map_context"), |ui| {
+        let Some(sample_id) = context_sample.as_ref() else {
             ui.label("Hover a point to see map actions.");
             return;
         };
-        let sample_id = point.sample_id.clone();
-        ui.label(map_state::sample_label_from_id(&sample_id));
+        ui.label(map_state::sample_label_from_id(sample_id));
 
         if ui.button("Preview").clicked() {
-            if let Err(err) = app.controller.preview_sample_by_id(&sample_id) {
+            if let Err(err) = app.controller.preview_sample_by_id(sample_id) {
                 app.controller
                     .set_status(format!("Preview failed: {err}"), style::StatusTone::Error);
             } else if let Err(err) = app.controller.play_audio(false, None) {
                 app.controller
                     .set_status(format!("Playback failed: {err}"), style::StatusTone::Error);
             }
-            ui.close();
+            ui.close_menu();
             return;
         }
 
         ui.separator();
         if ui.button("List similar").clicked() {
             app.controller.ui.browser.active_tab = SampleBrowserTab::List;
-            if let Err(err) = app.controller.find_similar_for_sample_id(&sample_id) {
+            if let Err(err) = app.controller.find_similar_for_sample_id(sample_id) {
                 app.controller.set_status(
                     format!("Find similar failed: {err}"),
                     style::StatusTone::Error,
@@ -207,7 +211,7 @@ pub(super) fn handle_context_menu(
                 app.controller
                     .focus_context_from_ui(FocusContext::SampleBrowser);
             }
-            ui.close();
+            ui.close_menu();
         }
     });
 }

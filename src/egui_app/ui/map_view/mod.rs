@@ -178,7 +178,7 @@ impl EguiApp {
             map_input::handle_click(self, hovered.as_ref());
         }
 
-        map_input::handle_context_menu(self, &response, hovered.as_ref());
+        map_input::handle_context_menu(self, ui, &response, hovered.as_ref());
 
         let focused_sample_id = self.controller.ui.map.selected_sample_id.as_deref();
         let (draw_calls, points_rendered, render_mode) = map_render::render_points(

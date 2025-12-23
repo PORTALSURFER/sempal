@@ -90,7 +90,20 @@ impl EguiApp {
                     .any(|p| p == &path);
                 let is_loaded = loaded_row == Some(row);
                 let row_width = metrics.row_width;
-                let triage_marker = style::triage_marker_color(tag).map(|color| RowMarker {
+                let is_anchor = self
+                    .controller
+                    .ui
+                    .browser
+                    .similar_query
+                    .as_ref()
+                    .and_then(|sim| sim.anchor_index)
+                    == Some(entry_index);
+                let marker_color = if is_anchor {
+                    Some(style::similar_anchor_fill())
+                } else {
+                    style::triage_marker_color(tag)
+                };
+                let triage_marker = marker_color.map(|color| RowMarker {
                     width: style::triage_marker_width(),
                     color,
                 });
@@ -143,18 +156,6 @@ impl EguiApp {
                 } else {
                     None
                 };
-                if bg.is_none()
-                    && self
-                        .controller
-                        .ui
-                        .browser
-                        .similar_query
-                        .as_ref()
-                        .and_then(|sim| sim.anchor_index)
-                        == Some(entry_index)
-                {
-                    bg = Some(style::similar_anchor_fill());
-                }
                 let number_text = format!("{}", row + 1);
                 let text_color = status_label.text_color;
 
