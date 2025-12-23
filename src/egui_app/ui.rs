@@ -14,7 +14,6 @@ mod map_clusters;
 mod map_empty;
 mod map_interactions;
 mod map_math;
-mod map_render;
 mod map_view;
 mod platform;
 mod progress_overlay;

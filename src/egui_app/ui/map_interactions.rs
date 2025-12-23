@@ -1,4 +1,4 @@
-use super::map_render;
+use super::map_view::map_render;
 use eframe::egui;
 
 pub(crate) fn find_hover_point(

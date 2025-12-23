@@ -1,4 +1,5 @@
 use eframe::egui;
+use crate::egui_app::state::MapRenderMode;
 
 pub(crate) fn map_to_screen(
     x: f32,
@@ -61,6 +62,63 @@ where
         }
     }
     render_heatmap_bins(painter, rect, bins, &counts, &r_sums, &g_sums, &b_sums)
+}
+
+pub(super) fn render_points(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    points: &[crate::egui_app::state::MapPoint],
+    center: egui::Pos2,
+    scale: f32,
+    pan: egui::Vec2,
+    zoom: f32,
+    focused_sample_id: Option<&str>,
+    cluster_overlay: bool,
+    heatmap_bins: usize,
+    point_color: impl Fn(&crate::egui_app::state::MapPoint, u8) -> egui::Color32,
+) -> (usize, usize, MapRenderMode) {
+    let display_count = points.len();
+    let mut draw_calls = 0usize;
+    let mut points_rendered = 0usize;
+    if display_count > 8000 || zoom < 0.6 {
+        if cluster_overlay {
+            draw_calls = render_heatmap_with_color(
+                painter,
+                rect,
+                points,
+                center,
+                scale,
+                pan,
+                heatmap_bins,
+                |point| point_color(point, 255),
+            );
+        } else {
+            draw_calls = render_heatmap(
+                painter,
+                rect,
+                points,
+                center,
+                scale,
+                pan,
+                heatmap_bins,
+            );
+        }
+        points_rendered = display_count;
+        (draw_calls, points_rendered, MapRenderMode::Heatmap)
+    } else {
+        for point in points {
+            let pos = map_to_screen(point.x, point.y, rect, center, scale, pan);
+            if rect.contains(pos) {
+                points_rendered += 1;
+                let is_focused = focused_sample_id == Some(point.sample_id.as_str());
+                let radius = if is_focused { 3.5 } else { 2.0 };
+                let color = point_color(point, 200);
+                painter.circle_filled(pos, radius, color);
+                draw_calls += 1;
+            }
+        }
+        (draw_calls, points_rendered, MapRenderMode::Points)
+    }
 }
 
 fn heatmap_bin_index(
