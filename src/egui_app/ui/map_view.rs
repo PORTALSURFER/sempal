@@ -15,8 +15,6 @@ const MAP_HEATMAP_BINS: usize = 64;
 const MAP_ZOOM_MIN: f32 = 0.2;
 const MAP_ZOOM_MAX: f32 = 20.0;
 const MAP_ZOOM_SPEED: f32 = 0.0015;
-const MAP_PAINT_REPEAT_COOLDOWN_SECS: f64 = 0.08;
-
 impl EguiApp {
     pub(super) fn render_map_panel(&mut self, ui: &mut egui::Ui) {
         let refresh = self.render_map_controls(ui);
@@ -316,6 +314,9 @@ impl EguiApp {
         );
         self.controller.ui.map.hovered_sample_id =
             hovered.as_ref().map(|(point, _)| point.sample_id.clone());
+        if self.controller.ui.map.hovered_sample_id.is_none() {
+            self.controller.ui.map.paint_hover_active_id = None;
+        }
         if response.dragged_by(egui::PointerButton::Primary) {
             self.paint_map_hover(ui, hovered.as_ref());
         }
@@ -472,20 +473,17 @@ impl EguiApp {
         let Some((point, _)) = hovered else {
             return;
         };
-        let now = ui.input(|i| i.time);
         let same_sample = self
             .controller
             .ui
             .map
-            .last_painted_sample_id
+            .paint_hover_active_id
             .as_deref()
             == Some(point.sample_id.as_str());
-        let elapsed = now - self.controller.ui.map.last_paint_time;
-        if same_sample && elapsed < MAP_PAINT_REPEAT_COOLDOWN_SECS {
+        if same_sample {
             return;
         }
-        self.controller.ui.map.last_painted_sample_id = Some(point.sample_id.clone());
-        self.controller.ui.map.last_paint_time = now;
+        self.controller.ui.map.paint_hover_active_id = Some(point.sample_id.clone());
         self.controller.ui.map.selected_sample_id = Some(point.sample_id.clone());
         if let Err(err) = self.controller.focus_sample_from_map(&point.sample_id) {
             self.controller.set_status(
