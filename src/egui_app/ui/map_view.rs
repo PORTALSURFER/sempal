@@ -225,6 +225,10 @@ impl EguiApp {
                             cluster_id: p.cluster_id,
                         })
                         .collect();
+                    self.controller.ui.map.cached_points_revision =
+                        self.controller.ui.map.cached_points_revision.wrapping_add(1);
+                    self.controller.ui.map.cached_filtered_key = None;
+                    self.controller.ui.map.cached_filtered_points.clear();
                     self.controller.ui.map.last_query = Some(world_bounds);
                 }
                 Err(err) => {
@@ -236,12 +240,21 @@ impl EguiApp {
             }
         }
 
-        let points = self.controller.ui.map.cached_points.clone();
-        let filtered_points = map_clusters::filter_points(
-            &points,
-            self.controller.ui.map.cluster_overlay,
-            self.controller.ui.map.cluster_filter,
-        );
+        let points = &self.controller.ui.map.cached_points;
+        let filter_key = crate::egui_app::state::MapFilterKey {
+            points_revision: self.controller.ui.map.cached_points_revision,
+            overlay: self.controller.ui.map.cluster_overlay,
+            filter: self.controller.ui.map.cluster_filter,
+        };
+        if self.controller.ui.map.cached_filtered_key != Some(filter_key) {
+            self.controller.ui.map.cached_filtered_points = map_clusters::filter_points(
+                points,
+                self.controller.ui.map.cluster_overlay,
+                self.controller.ui.map.cluster_filter,
+            );
+            self.controller.ui.map.cached_filtered_key = Some(filter_key);
+        }
+        let filtered_points = &self.controller.ui.map.cached_filtered_points;
         let cluster_overlay = self.controller.ui.map.cluster_overlay;
         let similarity_blend = self.controller.ui.map.similarity_blend;
         let blend_threshold = self.controller.ui.map.similarity_blend_threshold;
@@ -310,7 +323,7 @@ impl EguiApp {
                 .cached_cluster_centroids
                 .clone()
                 .filter(|centroids| !centroids.is_empty())
-                .or_else(|| Some(Arc::new(map_clusters::cluster_centroids(&points))))
+            .or_else(|| Some(Arc::new(map_clusters::cluster_centroids(points))))
         } else {
             None
         };
@@ -347,10 +360,10 @@ impl EguiApp {
                 palette.accent_mint
             }
         };
-        let display_points = filtered_points.clone();
+        let display_points = filtered_points;
         let painter = ui.painter_at(rect);
         let hovered = map_interactions::find_hover_point(
-            &display_points,
+            display_points,
             rect,
             center,
             scale,
@@ -444,7 +457,7 @@ impl EguiApp {
                 draw_calls = map_render::render_heatmap_with_color(
                     &painter,
                     rect,
-                    &display_points,
+                    display_points,
                     center,
                     scale,
                     self.controller.ui.map.pan,
@@ -455,7 +468,7 @@ impl EguiApp {
                 draw_calls = map_render::render_heatmap(
                     &painter,
                     rect,
-                    &display_points,
+                    display_points,
                     center,
                     scale,
                     self.controller.ui.map.pan,

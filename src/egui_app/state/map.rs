@@ -11,6 +11,9 @@ pub struct MapUiState {
     pub bounds: Option<MapBounds>,
     pub last_query: Option<MapQueryBounds>,
     pub cached_points: Vec<MapPoint>,
+    pub cached_points_revision: u64,
+    pub cached_filtered_key: Option<MapFilterKey>,
+    pub cached_filtered_points: Vec<MapPoint>,
     pub cached_cluster_centroids_key: Option<String>,
     pub cached_cluster_centroids: Option<Arc<HashMap<i32, MapClusterCentroid>>>,
     pub auto_cluster_build_requested_key: Option<String>,
@@ -41,6 +44,9 @@ impl Default for MapUiState {
             bounds: None,
             last_query: None,
             cached_points: Vec::new(),
+            cached_points_revision: 0,
+            cached_filtered_key: None,
+            cached_filtered_points: Vec::new(),
             cached_cluster_centroids_key: None,
             cached_cluster_centroids: None,
             auto_cluster_build_requested_key: None,
@@ -92,6 +98,13 @@ pub struct MapClusterCentroid {
     pub x: f32,
     pub y: f32,
     pub count: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MapFilterKey {
+    pub points_revision: u64,
+    pub overlay: bool,
+    pub filter: Option<i32>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
