@@ -53,10 +53,10 @@ impl EguiApp {
                     let response = ui.add(
                         egui::Slider::new(
                             &mut self.controller.ui.map.similarity_blend_threshold,
-                            0.02..=0.5,
+                            0.01..=1.0,
                         )
                         .clamping(egui::SliderClamping::Always)
-                        .text("Blend range"),
+                        .text("Blend sensitivity"),
                     );
                     if response.changed() {
                         self.controller.ui.map.similarity_blend_threshold = self
@@ -64,7 +64,7 @@ impl EguiApp {
                             .ui
                             .map
                             .similarity_blend_threshold
-                            .clamp(0.02, 0.5);
+                            .clamp(0.01, 1.0);
                     }
                 }
                 ui.label("Filter");

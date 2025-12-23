@@ -58,13 +58,12 @@ pub(crate) fn cluster_color(
     palette: &style::Palette,
     alpha: u8,
 ) -> egui::Color32 {
-    if cluster_id < 0 {
-        return style::with_alpha(palette.text_muted, alpha);
-    }
     let Some(centroid) = centroids.get(&cluster_id) else {
         return palette.accent_mint;
     };
-    position_based_color(centroid, bounds, palette, alpha)
+    let id_color = cluster_id_color(cluster_id, palette, alpha);
+    let pos_color = position_based_color(centroid, bounds, palette, alpha);
+    blend_colors(id_color, pos_color, 0.8, 0.2)
 }
 
 pub(crate) fn distance_shaded_cluster_color(
@@ -78,9 +77,6 @@ pub(crate) fn distance_shaded_cluster_color(
     let Some(cluster_id) = point.cluster_id else {
         return palette.accent_mint;
     };
-    if cluster_id < 0 {
-        return style::with_alpha(palette.text_muted, alpha);
-    }
     if map_diagonal <= 0.0 {
         return cluster_color(cluster_id, centroids, bounds, palette, alpha);
     }
@@ -146,46 +142,35 @@ pub(crate) fn blended_cluster_color(
     let Some(cluster_id) = point.cluster_id else {
         return palette.accent_mint;
     };
-    if cluster_id < 0 {
-        return style::with_alpha(palette.text_muted, alpha);
-    }
     if blend_threshold <= 0.0 || map_diagonal <= 0.0 {
         return cluster_color(cluster_id, centroids, bounds, palette, alpha);
     }
     let Some(primary) = centroids.get(&cluster_id) else {
         return cluster_color(cluster_id, centroids, bounds, palette, alpha);
     };
-    let threshold = map_diagonal * blend_threshold;
+    let threshold = (map_diagonal * blend_threshold).max(1e-6);
     let primary_dist = distance(point.x, point.y, primary.x, primary.y);
-    let mut nearest_other: Option<(i32, f32)> = None;
-    for (other_id, centroid) in centroids {
-        if *other_id == cluster_id {
-            continue;
-        }
-        let dist = distance(point.x, point.y, centroid.x, centroid.y);
-        if dist > threshold {
-            continue;
-        }
-        if nearest_other.map(|(_, best)| dist < best).unwrap_or(true) {
-            nearest_other = Some((*other_id, dist));
-        }
+
+    let mut nearby: Vec<(i32, f32)> = centroids
+        .iter()
+        .map(|(id, centroid)| (*id, distance(point.x, point.y, centroid.x, centroid.y)))
+        .collect();
+    nearby.sort_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    nearby.truncate(3);
+
+    let mut blended: Option<(egui::Color32, f32)> = None;
+    for (id, dist) in nearby {
+        let weight = (-dist / threshold).exp();
+        let color = cluster_color(id, centroids, bounds, palette, alpha);
+        blended = Some(match blended {
+            None => (color, weight),
+            Some((acc, acc_w)) => (blend_colors(acc, color, acc_w, weight), acc_w + weight),
+        });
     }
-    let Some((other_id, other_dist)) = nearest_other else {
-        return shade_by_distance(
-            cluster_color(cluster_id, centroids, bounds, palette, alpha),
-            primary_dist,
-            map_diagonal,
-        );
-    };
-    let weight_primary = 1.0 / (primary_dist + 1e-3);
-    let weight_other = 1.0 / (other_dist + 1e-3);
-    let blended = blend_colors(
-        cluster_color(cluster_id, centroids, bounds, palette, alpha),
-        cluster_color(other_id, centroids, bounds, palette, alpha),
-        weight_primary,
-        weight_other,
-    );
-    shade_by_distance(blended, primary_dist, map_diagonal)
+    let color = blended.map(|(c, _)| c).unwrap_or_else(|| {
+        cluster_color(cluster_id, centroids, bounds, palette, alpha)
+    });
+    shade_by_distance(color, primary_dist, map_diagonal)
 }
 
 pub(crate) fn filter_points(
@@ -247,6 +232,18 @@ fn position_based_color(
     let hue = angle * 360.0;
     let saturation = 0.35 + 0.25 * radius;
     let value = 0.70 + 0.20 * (1.0 - radius);
+    let (r, g, b) = hsv_to_rgb(hue, saturation, value);
+    egui::Color32::from_rgba_unmultiplied(r, g, b, alpha)
+}
+
+fn cluster_id_color(cluster_id: i32, palette: &style::Palette, alpha: u8) -> egui::Color32 {
+    if cluster_id < 0 {
+        return style::with_alpha(palette.text_muted, alpha);
+    }
+    let id = cluster_id as f32;
+    let hue = (id * 137.50776) % 360.0;
+    let saturation = 0.62;
+    let value = 0.86;
     let (r, g, b) = hsv_to_rgb(hue, saturation, value);
     egui::Color32::from_rgba_unmultiplied(r, g, b, alpha)
 }
