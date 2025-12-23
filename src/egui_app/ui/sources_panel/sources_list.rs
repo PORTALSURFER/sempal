@@ -1,6 +1,7 @@
 use super::helpers::{clamp_label_for_width, list_row_height, render_list_row};
 use super::style;
 use super::EguiApp;
+use crate::egui_app::state::FocusContext;
 use eframe::egui::{self, RichText, Ui};
 
 impl EguiApp {
@@ -45,7 +46,8 @@ impl EguiApp {
                         .on_hover_text(&row.path);
                         if response.clicked() {
                             self.controller.select_source_by_index(index);
-                            self.controller.focus_sources_context();
+                            self.controller
+                                .focus_context_from_ui(FocusContext::SourcesList);
                         }
                         self.source_row_menu(&response, index, row);
                     });
