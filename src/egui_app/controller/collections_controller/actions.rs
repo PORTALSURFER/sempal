@@ -263,9 +263,15 @@ impl CollectionsController<'_> {
         self.selection_state.ctx.selected_collection = Some(collection_id.clone());
         self.ui.collections.selected_sample = Some(index);
         self.ui.collections.scroll_to_sample = Some(index);
-        if let Some(sample) = self.ui.collections.samples.get(index) {
+        let focused_path = self
+            .ui
+            .collections
+            .samples
+            .get(index)
+            .map(|sample| sample.path.clone());
+        if let Some(path) = focused_path {
             self.ui.collections.last_focused_collection = Some(collection_id.clone());
-            self.ui.collections.last_focused_path = Some(sample.path.clone());
+            self.ui.collections.last_focused_path = Some(path);
         }
         self.focus_collection_context();
         self.ui.browser.selected = None;
