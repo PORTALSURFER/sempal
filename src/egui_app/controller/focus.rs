@@ -115,6 +115,19 @@ impl EguiController {
         }
     }
 
+    /// Focus a UI surface from UI-driven navigation (e.g. alt+arrow switching).
+    pub(crate) fn focus_context_from_ui(&mut self, context: FocusContext) {
+        match context {
+            FocusContext::SampleBrowser => self.focus_browser_list(),
+            FocusContext::Waveform => self.focus_waveform_context(),
+            FocusContext::SourceFolders => self.focus_folder_context(),
+            FocusContext::CollectionSample => self.focus_collection_samples_list(),
+            FocusContext::SourcesList => self.focus_sources_list(),
+            FocusContext::CollectionsList => self.focus_collections_list(),
+            FocusContext::None => self.clear_focus_context(),
+        }
+    }
+
     fn set_focus_context(&mut self, context: FocusContext) {
         let previous = self.ui.focus.context;
         if previous == context {

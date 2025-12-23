@@ -1,3 +1,4 @@
+use crate::egui_app::state::FocusContext;
 use crate::selection::SelectionEdge;
 use eframe::egui;
 
@@ -16,12 +17,87 @@ impl EguiApp {
         if ctx.wants_keyboard_input() {
             return;
         }
+        if input.alt && self.handle_alt_focus_navigation(ctx, input) {
+            return;
+        }
         let browser_has_selection = self.controller.ui.browser.selected.is_some();
         let ctrl_or_command = input.ctrl_or_command();
         self.handle_arrow_down(ctx, focus, input);
         self.handle_arrow_up(ctx, focus, input);
         self.handle_arrow_right(ctx, focus, input, browser_has_selection, ctrl_or_command);
         self.handle_arrow_left(ctx, focus, input, browser_has_selection, ctrl_or_command);
+    }
+
+    fn handle_alt_focus_navigation(
+        &mut self,
+        ctx: &egui::Context,
+        input: &InputSnapshot,
+    ) -> bool {
+        let focus = self.controller.ui.focus.context;
+        let target = if input.arrow_left {
+            Some(match focus {
+                FocusContext::SourcesList | FocusContext::SourceFolders => {
+                    FocusContext::SourceFolders
+                }
+                FocusContext::CollectionsList | FocusContext::CollectionSample => {
+                    FocusContext::SampleBrowser
+                }
+                FocusContext::SampleBrowser | FocusContext::Waveform | FocusContext::None => {
+                    FocusContext::SourceFolders
+                }
+            })
+        } else if input.arrow_right {
+            Some(match focus {
+                FocusContext::SourcesList | FocusContext::SourceFolders => {
+                    FocusContext::SampleBrowser
+                }
+                FocusContext::CollectionsList | FocusContext::CollectionSample => {
+                    FocusContext::CollectionSample
+                }
+                FocusContext::SampleBrowser | FocusContext::Waveform | FocusContext::None => {
+                    FocusContext::CollectionSample
+                }
+            })
+        } else if input.arrow_up {
+            Some(match focus {
+                FocusContext::SourcesList | FocusContext::SourceFolders => FocusContext::SourcesList,
+                FocusContext::CollectionsList | FocusContext::CollectionSample => {
+                    FocusContext::CollectionsList
+                }
+                FocusContext::SampleBrowser | FocusContext::Waveform | FocusContext::None => {
+                    FocusContext::SampleBrowser
+                }
+            })
+        } else if input.arrow_down {
+            Some(match focus {
+                FocusContext::SourcesList | FocusContext::SourceFolders => {
+                    FocusContext::SourceFolders
+                }
+                FocusContext::CollectionsList | FocusContext::CollectionSample => {
+                    FocusContext::CollectionSample
+                }
+                FocusContext::SampleBrowser | FocusContext::Waveform | FocusContext::None => {
+                    FocusContext::Waveform
+                }
+            })
+        } else {
+            None
+        };
+
+        let Some(target) = target else {
+            return false;
+        };
+        self.controller.focus_context_from_ui(target);
+        if input.arrow_left {
+            consume_keypress(ctx, input, egui::Key::ArrowLeft);
+        } else if input.arrow_right {
+            consume_keypress(ctx, input, egui::Key::ArrowRight);
+        } else if input.arrow_up {
+            consume_keypress(ctx, input, egui::Key::ArrowUp);
+        } else if input.arrow_down {
+            consume_keypress(ctx, input, egui::Key::ArrowDown);
+        }
+        true
     }
 
     fn handle_arrow_down(
