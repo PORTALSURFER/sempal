@@ -67,6 +67,7 @@ pub(super) fn find_similar_for_visible_row(
         sample_id,
         label: view_model::sample_display_label(&entry.relative_path),
         indices,
+        anchor_index: Some(entry_index),
     });
     controller.ui.browser.search_query.clear();
     controller.ui.browser.search_focus_requested = false;
@@ -114,6 +115,7 @@ pub(super) fn find_similar_for_sample_id(
         sample_id: sample_id.to_string(),
         label: view_model::sample_display_label(&relative_path),
         indices,
+        anchor_index: controller.wav_entries.lookup.get(&relative_path).copied(),
     });
     controller.ui.browser.search_query.clear();
     controller.ui.browser.search_focus_requested = false;
@@ -185,6 +187,7 @@ pub(super) fn find_similar_for_audio_path(
         sample_id: format!("clip::{}", path.display()),
         label,
         indices,
+        anchor_index: None,
     });
     controller.ui.browser.search_query.clear();
     controller.ui.browser.search_focus_requested = false;

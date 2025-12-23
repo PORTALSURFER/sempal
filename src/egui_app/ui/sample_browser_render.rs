@@ -129,7 +129,7 @@ impl EguiApp {
                 } else {
                     clamp_label_for_width(&status_label.label, row_label_width)
                 };
-                let bg = if drag_active
+                let mut bg = if drag_active
                     && pointer_pos
                         .as_ref()
                         .is_some_and(|pos| ui.cursor().contains(*pos))
@@ -143,6 +143,18 @@ impl EguiApp {
                 } else {
                     None
                 };
+                if bg.is_none()
+                    && self
+                        .controller
+                        .ui
+                        .browser
+                        .similar_query
+                        .as_ref()
+                        .and_then(|sim| sim.anchor_index)
+                        == Some(entry_index)
+                {
+                    bg = Some(style::similar_anchor_fill());
+                }
                 let number_text = format!("{}", row + 1);
                 let text_color = status_label.text_color;
 

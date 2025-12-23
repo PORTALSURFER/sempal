@@ -72,6 +72,7 @@ pub struct SimilarQuery {
     pub sample_id: String,
     pub label: String,
     pub indices: Vec<usize>,
+    pub anchor_index: Option<usize>,
 }
 
 /// Identifies a row inside one of the triage flag columns.
