@@ -17,3 +17,10 @@ pub(super) use failures::failed_samples_for_source;
 pub(super) use pool::AnalysisWorkerPool;
 pub(in crate::egui_app::controller) use types::AnalysisProgress;
 pub(super) use types::AnalysisJobMessage;
+
+pub(in crate::egui_app::controller) fn current_progress() -> Result<AnalysisProgress, String> {
+    let root = crate::app_dirs::app_root_dir().map_err(|err| err.to_string())?;
+    let path = root.join(crate::sample_sources::library::LIBRARY_DB_FILE_NAME);
+    let conn = db::open_library_db(&path)?;
+    db::current_progress(&conn)
+}

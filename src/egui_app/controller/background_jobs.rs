@@ -216,6 +216,7 @@ impl EguiController {
                                         StatusTone::Warning,
                                     );
                                 }
+                                self.cancel_similarity_prep(&result.source_id);
                             }
                             Err(err) => {
                                 if is_selected_source {
@@ -224,6 +225,7 @@ impl EguiController {
                                         StatusTone::Error,
                                     );
                                 }
+                                self.cancel_similarity_prep(&result.source_id);
                             }
                         }
                     }

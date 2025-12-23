@@ -10,6 +10,7 @@ pub(super) const DEFAULT_CLUSTER_MIN_SIZE: usize = 10;
 impl EguiController {
     pub fn prepare_similarity_for_selected_source(&mut self) {
         if self.runtime.similarity_prep.is_some() {
+            self.refresh_similarity_prep_progress();
             self.set_status("Similarity prep already running", StatusTone::Info);
             return;
         }
@@ -107,6 +108,21 @@ impl EguiController {
             }
         }
     }
+
+    pub(super) fn cancel_similarity_prep(&mut self, source_id: &SourceId) {
+        let matches = self
+            .runtime
+            .similarity_prep
+            .as_ref()
+            .is_some_and(|state| &state.source_id == source_id);
+        if !matches {
+            return;
+        }
+        self.runtime.similarity_prep = None;
+        if self.ui.progress.task == Some(ProgressTaskKind::Analysis) {
+            self.clear_progress();
+        }
+    }
 }
 
 fn matches_similarity_stage(
@@ -183,6 +199,83 @@ impl EguiController {
             .iter()
             .find(|source| &source.id == source_id)
             .cloned()
+    }
+
+    fn refresh_similarity_prep_progress(&mut self) {
+        let Some(state) = self.runtime.similarity_prep.as_ref() else {
+            return;
+        };
+        match state.stage {
+            SimilarityPrepStage::AwaitScan => {
+                if self.runtime.jobs.scan_in_progress() {
+                    return;
+                }
+                if self.ui.progress.visible {
+                    return;
+                }
+                self.show_status_progress(
+                    ProgressTaskKind::Analysis,
+                    "Preparing similarity search",
+                    0,
+                    false,
+                );
+            }
+            SimilarityPrepStage::AwaitEmbeddings => {
+                let progress = match analysis_jobs::current_progress() {
+                    Ok(progress) => progress,
+                    Err(_) => {
+                        if !self.ui.progress.visible {
+                            self.show_status_progress(
+                                ProgressTaskKind::Analysis,
+                                "Preparing similarity search",
+                                0,
+                                false,
+                            );
+                        }
+                        return;
+                    }
+                };
+                if progress.pending == 0 && progress.running == 0 {
+                    self.handle_similarity_analysis_progress(&progress);
+                    return;
+                }
+                if !self.ui.progress.visible
+                    || self.ui.progress.task != Some(ProgressTaskKind::Analysis)
+                {
+                    self.show_status_progress(
+                        ProgressTaskKind::Analysis,
+                        "Preparing similarity search",
+                        progress.total(),
+                        true,
+                    );
+                }
+                self.ui.progress.total = progress.total();
+                self.ui.progress.completed = progress.completed();
+                let jobs_completed = progress.completed();
+                let jobs_total = progress.total();
+                let samples_completed = progress.samples_completed();
+                let samples_total = progress.samples_total;
+                let mut detail = format!(
+                    "Jobs {jobs_completed}/{jobs_total} • Samples {samples_completed}/{samples_total}"
+                );
+                if progress.failed > 0 {
+                    detail.push_str(&format!(" • {} failed", progress.failed));
+                }
+                self.ui.progress.detail = Some(detail);
+            }
+            SimilarityPrepStage::Finalizing => {
+                if !self.ui.progress.visible
+                    || self.ui.progress.task != Some(ProgressTaskKind::Analysis)
+                {
+                    self.show_status_progress(
+                        ProgressTaskKind::Analysis,
+                        "Finalizing similarity prep",
+                        0,
+                        true,
+                    );
+                }
+            }
+        }
     }
 }
 
