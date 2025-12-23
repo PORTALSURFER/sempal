@@ -66,6 +66,7 @@ fn focus_header(focus: FocusContext) -> &'static str {
         FocusContext::SourceFolders => "Source folders",
         FocusContext::CollectionSample => "Focused sample (collection)",
         FocusContext::SourcesList => "Sources list",
+        FocusContext::SelectedFolders => "Selected folders",
         FocusContext::CollectionsList => "Collections list",
         FocusContext::None => "Focused sample",
     }

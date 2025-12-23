@@ -36,9 +36,9 @@ impl EguiApp {
         let focus = self.controller.ui.focus.context;
         let target = if input.arrow_left {
             Some(match focus {
-                FocusContext::SourcesList | FocusContext::SourceFolders => {
-                    FocusContext::SourceFolders
-                }
+                FocusContext::SourcesList => FocusContext::SourcesList,
+                FocusContext::SourceFolders => FocusContext::SourceFolders,
+                FocusContext::SelectedFolders => FocusContext::SelectedFolders,
                 FocusContext::CollectionsList | FocusContext::CollectionSample => {
                     FocusContext::SampleBrowser
                 }
@@ -48,7 +48,9 @@ impl EguiApp {
             })
         } else if input.arrow_right {
             Some(match focus {
-                FocusContext::SourcesList | FocusContext::SourceFolders => {
+                FocusContext::SourcesList
+                | FocusContext::SourceFolders
+                | FocusContext::SelectedFolders => {
                     FocusContext::SampleBrowser
                 }
                 FocusContext::CollectionsList | FocusContext::CollectionSample => {
@@ -60,7 +62,9 @@ impl EguiApp {
             })
         } else if input.arrow_up {
             Some(match focus {
-                FocusContext::SourcesList | FocusContext::SourceFolders => FocusContext::SourcesList,
+                FocusContext::SourcesList => FocusContext::SourcesList,
+                FocusContext::SourceFolders => FocusContext::SourcesList,
+                FocusContext::SelectedFolders => FocusContext::SourceFolders,
                 FocusContext::CollectionsList | FocusContext::CollectionSample => {
                     FocusContext::CollectionsList
                 }
@@ -70,9 +74,9 @@ impl EguiApp {
             })
         } else if input.arrow_down {
             Some(match focus {
-                FocusContext::SourcesList | FocusContext::SourceFolders => {
-                    FocusContext::SourceFolders
-                }
+                FocusContext::SourcesList => FocusContext::SourceFolders,
+                FocusContext::SourceFolders => FocusContext::SelectedFolders,
+                FocusContext::SelectedFolders => FocusContext::SelectedFolders,
                 FocusContext::CollectionsList | FocusContext::CollectionSample => {
                     FocusContext::CollectionSample
                 }

@@ -31,7 +31,7 @@ impl EguiApp {
             });
             ui.add_space(6.0);
             let source_list_height = (ui.available_height() * 0.25).max(140.0);
-            self.render_sources_list(ui, source_list_height);
+            let sources_rect = self.render_sources_list(ui, source_list_height);
             ui.add_space(8.0);
             let remaining = ui.available_height();
             let folder_height = (remaining * 0.7).max(120.0).min(remaining);
@@ -52,16 +52,19 @@ impl EguiApp {
                 .or(self.controller.ui.drag.position);
             self.render_folder_browser(ui, folder_height, folder_drop_active, pointer_pos);
             ui.add_space(8.0);
-            self.render_selected_folders(ui, selected_height);
+            let selected_rect = self.render_selected_folders(ui, selected_height);
+
+            let focus = self.controller.ui.focus.context;
+            let stroke = style::focused_row_stroke();
+            if matches!(focus, FocusContext::SourcesList) {
+                ui.painter()
+                    .rect_stroke(sources_rect, 0.0, stroke, StrokeKind::Outside);
+            }
+            if matches!(focus, FocusContext::SelectedFolders) {
+                ui.painter()
+                    .rect_stroke(selected_rect, 0.0, stroke, StrokeKind::Outside);
+            }
         });
-        if matches!(self.controller.ui.focus.context, FocusContext::SourcesList) {
-            ui.painter().rect_stroke(
-                panel_rect,
-                0.0,
-                style::focused_row_stroke(),
-                StrokeKind::Outside,
-            );
-        }
         if drop_hovered {
             let painter = ui.painter();
             painter.rect_stroke(
@@ -81,41 +84,53 @@ impl EguiApp {
         }
     }
 
-    fn render_selected_folders(&mut self, ui: &mut Ui, max_height: f32) {
+    fn render_selected_folders(&mut self, ui: &mut Ui, max_height: f32) -> egui::Rect {
         let palette = style::palette();
         let selected_paths = self.controller.selected_folder_paths();
         let has_selection = !selected_paths.is_empty();
         let max_height = max_height.max(0.0);
-        ui.horizontal(|ui| {
-            ui.label(RichText::new("Selected folders").color(palette.text_primary));
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                let button = egui::Button::new(
-                    RichText::new("Clear selection").color(style::high_contrast_text()),
-                )
-                .small();
-                let response = ui
-                    .add_enabled(has_selection, button)
-                    .on_hover_text("Show samples from all folders in this source");
-                if response.clicked() {
-                    self.controller.clear_folder_selection();
-                }
+        let response = ui.vertical(|ui| {
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Selected folders").color(palette.text_primary));
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    let button = egui::Button::new(
+                        RichText::new("Clear selection").color(style::high_contrast_text()),
+                    )
+                    .small();
+                    let response = ui
+                        .add_enabled(has_selection, button)
+                        .on_hover_text("Show samples from all folders in this source");
+                    if response.clicked() {
+                        self.controller.clear_folder_selection();
+                    }
+                });
             });
+            egui::ScrollArea::vertical()
+                .id_salt("selected_folders_scroll")
+                .max_height(max_height)
+                .show(ui, |ui| {
+                    if selected_paths.is_empty() {
+                        ui.label(RichText::new("No folders selected").color(palette.text_muted));
+                        return;
+                    }
+                    ui.spacing_mut().item_spacing.y = 4.0;
+                    for path in selected_paths {
+                        ui.label(
+                            RichText::new(format!("• {}", path.display()))
+                                .color(palette.text_primary),
+                        );
+                    }
+                });
         });
-        egui::ScrollArea::vertical()
-            .id_salt("selected_folders_scroll")
-            .max_height(max_height)
-            .show(ui, |ui| {
-                if selected_paths.is_empty() {
-                    ui.label(RichText::new("No folders selected").color(palette.text_muted));
-                    return;
-                }
-                ui.spacing_mut().item_spacing.y = 4.0;
-                for path in selected_paths {
-                    ui.label(
-                        RichText::new(format!("• {}", path.display()))
-                            .color(palette.text_primary),
-                    );
-                }
-            });
+        let focus_response = ui.interact(
+            response.response.rect,
+            ui.id().with("selected_folders_focus"),
+            egui::Sense::click(),
+        );
+        if focus_response.clicked() {
+            self.controller
+                .focus_context_from_ui(FocusContext::SelectedFolders);
+        }
+        response.response.rect
     }
 }

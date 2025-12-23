@@ -64,6 +64,11 @@ impl EguiController {
         self.set_focus_context(FocusContext::SourceFolders);
     }
 
+    /// Mark the selected folders list as the active focus surface.
+    pub(super) fn focus_selected_folders_context(&mut self) {
+        self.set_focus_context(FocusContext::SelectedFolders);
+    }
+
     /// Focus the sources list, selecting the current row or the first available source.
     pub(super) fn focus_sources_list(&mut self) {
         if self.library.sources.is_empty() {
@@ -123,6 +128,7 @@ impl EguiController {
             FocusContext::SourceFolders => self.focus_folder_context(),
             FocusContext::CollectionSample => self.focus_collection_samples_list(),
             FocusContext::SourcesList => self.focus_sources_list(),
+            FocusContext::SelectedFolders => self.focus_selected_folders_context(),
             FocusContext::CollectionsList => self.focus_collections_list(),
             FocusContext::None => self.clear_focus_context(),
         }

@@ -13,6 +13,8 @@ pub enum FocusContext {
     CollectionSample,
     /// The sources list handles navigation/shortcuts.
     SourcesList,
+    /// The selected folders list handles navigation/shortcuts.
+    SelectedFolders,
     /// The collections list handles navigation/shortcuts.
     CollectionsList,
 }

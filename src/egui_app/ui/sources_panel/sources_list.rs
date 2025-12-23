@@ -1,11 +1,12 @@
 use super::helpers::{clamp_label_for_width, list_row_height, render_list_row};
 use super::style;
 use super::EguiApp;
+use crate::egui_app::state::FocusContext;
 use eframe::egui::{self, RichText, Ui};
 
 impl EguiApp {
-    pub(super) fn render_sources_list(&mut self, ui: &mut Ui, height: f32) {
-        egui::ScrollArea::vertical()
+    pub(super) fn render_sources_list(&mut self, ui: &mut Ui, height: f32) -> egui::Rect {
+        let output = egui::ScrollArea::vertical()
             .id_salt("sources_scroll")
             .max_height(height)
             .show(ui, |ui| {
@@ -45,11 +46,18 @@ impl EguiApp {
                         .on_hover_text(&row.path);
                         if response.clicked() {
                             self.controller.select_source_by_index(index);
+                            self.controller
+                                .focus_context_from_ui(FocusContext::SourcesList);
                         }
                         self.source_row_menu(&response, index, row);
                     });
                 }
             });
+        if output.response.clicked() {
+            self.controller
+                .focus_context_from_ui(FocusContext::SourcesList);
+        }
+        output.response.rect
     }
 
     fn source_row_menu(
