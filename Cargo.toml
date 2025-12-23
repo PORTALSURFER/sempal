@@ -45,7 +45,7 @@ ureq = { version = "2.12.1", features = ["json", "tls"] }
 zip = { version = "2.2.1", default-features = false, features = ["deflate"] }
 keyring = "3.6.2"
 chacha20poly1305 = "0.10.1"
-ndarray = "0.17.1"
+ndarray = "0.16.1"
 linfa = "0.8.0"
 linfa-reduction = "0.8.0"
 linfa-tsne = "0.8.0"
