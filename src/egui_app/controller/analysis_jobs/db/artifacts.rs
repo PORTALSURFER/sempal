@@ -1,6 +1,6 @@
 use rusqlite::{Connection, TransactionBehavior, params};
 
-pub(super) fn invalidate_analysis_artifacts(
+pub(in crate::egui_app::controller::analysis_jobs) fn invalidate_analysis_artifacts(
     conn: &mut Connection,
     sample_ids: &[String],
 ) -> Result<(), String> {
@@ -38,7 +38,7 @@ pub(super) fn invalidate_analysis_artifacts(
     Ok(())
 }
 
-pub(super) fn update_analysis_metadata(
+pub(in crate::egui_app::controller::analysis_jobs) fn update_analysis_metadata(
     conn: &Connection,
     sample_id: &str,
     content_hash: Option<&str>,
@@ -65,7 +65,7 @@ pub(super) fn update_analysis_metadata(
     Ok(())
 }
 
-pub(super) fn upsert_analysis_features(
+pub(in crate::egui_app::controller::analysis_jobs) fn upsert_analysis_features(
     conn: &Connection,
     sample_id: &str,
     vec_blob: &[u8],
@@ -85,7 +85,7 @@ pub(super) fn upsert_analysis_features(
     Ok(())
 }
 
-pub(super) fn upsert_embedding(
+pub(in crate::egui_app::controller::analysis_jobs) fn upsert_embedding(
     conn: &Connection,
     sample_id: &str,
     model_id: &str,

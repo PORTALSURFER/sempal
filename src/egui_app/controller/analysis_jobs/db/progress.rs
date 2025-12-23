@@ -1,7 +1,9 @@
 use super::super::types::AnalysisProgress;
 use rusqlite::Connection;
 
-pub(super) fn current_progress(conn: &Connection) -> Result<AnalysisProgress, String> {
+pub(in crate::egui_app::controller::analysis_jobs) fn current_progress(
+    conn: &Connection,
+) -> Result<AnalysisProgress, String> {
     let mut stmt = conn
         .prepare("SELECT status, COUNT(*) FROM analysis_jobs GROUP BY status")
         .map_err(|err| format!("Failed to query analysis progress: {err}"))?;

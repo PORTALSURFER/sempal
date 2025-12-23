@@ -1,7 +1,7 @@
 use super::types::SampleMetadata;
 use rusqlite::{Connection, TransactionBehavior, params};
 
-pub(super) fn enqueue_jobs(
+pub(in crate::egui_app::controller::analysis_jobs) fn enqueue_jobs(
     conn: &mut Connection,
     jobs: &[(String, String)],
     job_type: &str,
@@ -47,7 +47,7 @@ fn enqueue_jobs_tx(
     Ok(inserted)
 }
 
-pub(super) fn upsert_samples(
+pub(in crate::egui_app::controller::analysis_jobs) fn upsert_samples(
     conn: &mut Connection,
     samples: &[SampleMetadata],
 ) -> Result<usize, String> {

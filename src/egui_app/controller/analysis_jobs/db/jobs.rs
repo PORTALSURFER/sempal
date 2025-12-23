@@ -2,7 +2,7 @@ use super::types::ClaimedJob;
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use std::path::PathBuf;
 
-pub(super) fn sample_content_hash(
+pub(in crate::egui_app::controller::analysis_jobs) fn sample_content_hash(
     conn: &Connection,
     sample_id: &str,
 ) -> Result<Option<String>, String> {
@@ -15,7 +15,9 @@ pub(super) fn sample_content_hash(
     .map_err(|err| format!("Failed to lookup sample content hash: {err}"))
 }
 
-pub(super) fn claim_next_job(conn: &mut Connection) -> Result<Option<ClaimedJob>, String> {
+pub(in crate::egui_app::controller::analysis_jobs) fn claim_next_job(
+    conn: &mut Connection,
+) -> Result<Option<ClaimedJob>, String> {
     let tx = conn
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|err| format!("Failed to start analysis claim transaction: {err}"))?;
@@ -63,7 +65,10 @@ pub(super) fn claim_next_job(conn: &mut Connection) -> Result<Option<ClaimedJob>
 }
 
 #[cfg_attr(test, allow(dead_code))]
-pub(super) fn mark_done(conn: &Connection, job_id: i64) -> Result<(), String> {
+pub(in crate::egui_app::controller::analysis_jobs) fn mark_done(
+    conn: &Connection,
+    job_id: i64,
+) -> Result<(), String> {
     conn.execute(
         "UPDATE analysis_jobs
          SET status = 'done', last_error = NULL
@@ -75,7 +80,11 @@ pub(super) fn mark_done(conn: &Connection, job_id: i64) -> Result<(), String> {
 }
 
 #[cfg_attr(test, allow(dead_code))]
-pub(super) fn mark_failed(conn: &Connection, job_id: i64, error: &str) -> Result<(), String> {
+pub(in crate::egui_app::controller::analysis_jobs) fn mark_failed(
+    conn: &Connection,
+    job_id: i64,
+    error: &str,
+) -> Result<(), String> {
     conn.execute(
         "UPDATE analysis_jobs
          SET status = 'failed', last_error = ?2
@@ -87,7 +96,10 @@ pub(super) fn mark_failed(conn: &Connection, job_id: i64, error: &str) -> Result
 }
 
 #[cfg_attr(test, allow(dead_code))]
-pub(super) fn source_root_for(conn: &Connection, source_id: &str) -> Result<Option<PathBuf>, String> {
+pub(in crate::egui_app::controller::analysis_jobs) fn source_root_for(
+    conn: &Connection,
+    source_id: &str,
+) -> Result<Option<PathBuf>, String> {
     conn.query_row(
         "SELECT root FROM sources WHERE id = ?1",
         params![source_id],

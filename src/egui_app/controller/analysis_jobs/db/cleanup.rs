@@ -1,6 +1,8 @@
 use rusqlite::{Connection, TransactionBehavior};
 
-pub(super) fn reset_running_to_pending(conn: &Connection) -> Result<usize, String> {
+pub(in crate::egui_app::controller::analysis_jobs) fn reset_running_to_pending(
+    conn: &Connection,
+) -> Result<usize, String> {
     conn.execute(
         "UPDATE analysis_jobs SET status = 'pending' WHERE status = 'running'",
         [],
@@ -8,7 +10,9 @@ pub(super) fn reset_running_to_pending(conn: &Connection) -> Result<usize, Strin
     .map_err(|err| format!("Failed to reset running analysis jobs: {err}"))
 }
 
-pub(super) fn prune_jobs_for_missing_sources(conn: &Connection) -> Result<usize, String> {
+pub(in crate::egui_app::controller::analysis_jobs) fn prune_jobs_for_missing_sources(
+    conn: &Connection,
+) -> Result<usize, String> {
     conn.execute(
         "DELETE FROM analysis_jobs
          WHERE NOT EXISTS (
