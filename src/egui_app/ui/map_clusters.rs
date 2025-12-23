@@ -10,6 +10,9 @@ pub(crate) struct ClusterStats {
     pub noise_ratio: f32,
     pub min_cluster_size: usize,
     pub max_cluster_size: usize,
+    pub assigned_count: usize,
+    pub missing_count: usize,
+    pub total_count: usize,
 }
 
 pub(crate) fn compute_cluster_stats(
@@ -17,19 +20,21 @@ pub(crate) fn compute_cluster_stats(
 ) -> Option<ClusterStats> {
     let mut cluster_sizes: HashMap<i32, usize> = HashMap::new();
     let mut noise_count = 0usize;
-    let mut seen = 0usize;
+    let mut assigned_count = 0usize;
+    let mut missing_count = 0usize;
     for point in points {
         let Some(cluster_id) = point.cluster_id else {
+            missing_count += 1;
             continue;
         };
-        seen += 1;
+        assigned_count += 1;
         if cluster_id < 0 {
             noise_count += 1;
         } else {
             *cluster_sizes.entry(cluster_id).or_insert(0) += 1;
         }
     }
-    if seen == 0 {
+    if assigned_count == 0 {
         return None;
     }
     let (min_cluster_size, max_cluster_size) = if cluster_sizes.is_empty() {
@@ -46,9 +51,12 @@ pub(crate) fn compute_cluster_stats(
     Some(ClusterStats {
         cluster_count: cluster_sizes.len(),
         noise_count,
-        noise_ratio: noise_count as f32 / seen as f32,
+        noise_ratio: noise_count as f32 / assigned_count as f32,
         min_cluster_size,
         max_cluster_size,
+        assigned_count,
+        missing_count,
+        total_count: points.len(),
     })
 }
 

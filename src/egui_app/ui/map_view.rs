@@ -81,6 +81,12 @@ impl EguiApp {
                         .parse::<i32>()
                         .ok();
                 }
+                if ui.button("Build clusters").clicked() {
+                    self.controller.build_umap_clusters(
+                        crate::analysis::embedding::EMBEDDING_MODEL_ID,
+                        &self.controller.ui.map.umap_version,
+                    );
+                }
             }
         });
         ui.horizontal(|ui| {
@@ -97,17 +103,22 @@ impl EguiApp {
             ));
         });
         if self.controller.ui.map.cluster_overlay {
-            if let Some(stats) =
-                map_clusters::compute_cluster_stats(&self.controller.ui.map.cached_points)
-            {
+            if let Some(stats) = map_clusters::compute_cluster_stats(&self.controller.ui.map.cached_points) {
                 ui.horizontal(|ui| {
                     ui.label(format!("Clusters: {}", stats.cluster_count));
                     ui.label(format!("Noise: {:.1}%", stats.noise_ratio * 100.0));
+                    if stats.missing_count > 0 {
+                        let missing_ratio =
+                            stats.missing_count as f32 / stats.total_count.max(1) as f32;
+                        ui.label(format!("Missing: {:.1}%", missing_ratio * 100.0));
+                    }
                     ui.label(format!(
                         "Size min/max: {}/{}",
                         stats.min_cluster_size, stats.max_cluster_size
                     ));
                 });
+            } else {
+                ui.label("Clusters missing for this view (press Build clusters).");
             }
         }
         refresh
@@ -290,6 +301,8 @@ impl EguiApp {
                         } else {
                             ui.label(format!("Cluster: {cluster_id}"));
                         }
+                    } else {
+                        ui.label("Cluster: (missing)");
                     }
                 }
                 ui.label("Click to audition");

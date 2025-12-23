@@ -369,6 +369,33 @@ impl EguiController {
                         }
                     }
                 }
+                JobMessage::UmapClustersBuilt(message) => {
+                    self.runtime.jobs.clear_umap_cluster_build();
+                    match message.result {
+                        Ok(stats) => {
+                            self.ui.map.last_query = None;
+                            let scope = message
+                                .source_id
+                                .as_ref()
+                                .map(|id| id.as_str())
+                                .unwrap_or("all sources");
+                            self.set_status(
+                                format!(
+                                    "Clusters built for {scope} ({} clusters, {:.1}% noise)",
+                                    stats.cluster_count,
+                                    stats.noise_ratio * 100.0
+                                ),
+                                StatusTone::Info,
+                            );
+                        }
+                        Err(err) => {
+                            self.set_status(
+                                format!("Cluster build failed: {err}"),
+                                StatusTone::Error,
+                            );
+                        }
+                    }
+                }
                 JobMessage::SimilarityPrepared(message) => {
                     self.handle_similarity_prep_result(message);
                 }

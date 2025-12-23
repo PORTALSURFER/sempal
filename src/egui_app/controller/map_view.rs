@@ -33,6 +33,22 @@ impl EguiController {
         self.set_status("Building t-SNE layout…", StatusTone::Info);
     }
 
+    pub fn build_umap_clusters(&mut self, model_id: &str, umap_version: &str) {
+        if self.runtime.jobs.umap_cluster_build_in_progress() {
+            self.set_status("Cluster build already running", StatusTone::Info);
+            return;
+        }
+        let source_id = self.current_source().map(|source| source.id);
+        self.runtime
+            .jobs
+            .begin_umap_cluster_build(super::jobs::UmapClusterBuildJob {
+                model_id: model_id.to_string(),
+                umap_version: umap_version.to_string(),
+                source_id,
+            });
+        self.set_status("Building clusters…", StatusTone::Info);
+    }
+
     pub fn umap_bounds(
         &mut self,
         model_id: &str,
@@ -71,6 +87,27 @@ pub(super) fn run_umap_build(model_id: &str, umap_version: &str) -> Result<(), S
     let mut conn = open_library_db()?;
     crate::analysis::umap::build_umap_layout(&mut conn, model_id, umap_version, 0, 0.95)?;
     Ok(())
+}
+
+pub(super) fn run_umap_cluster_build(
+    model_id: &str,
+    umap_version: &str,
+    source_id: Option<&SourceId>,
+) -> Result<crate::analysis::hdbscan::HdbscanStats, String> {
+    let mut conn = open_library_db()?;
+    let sample_id_prefix = source_id.map(|source_id| format!("{}::%", source_id.as_str()));
+    crate::analysis::hdbscan::build_hdbscan_clusters_for_sample_id_prefix(
+        &mut conn,
+        model_id,
+        crate::analysis::hdbscan::HdbscanMethod::Umap,
+        Some(umap_version),
+        sample_id_prefix.as_deref(),
+        crate::analysis::hdbscan::HdbscanConfig {
+            min_cluster_size: super::similarity_prep::DEFAULT_CLUSTER_MIN_SIZE,
+            min_samples: None,
+            allow_single_cluster: false,
+        },
+    )
 }
 
 fn open_library_db() -> Result<Connection, String> {

@@ -1,7 +1,8 @@
 //! HDBSCAN clustering helpers for embeddings and 2D layouts.
 
 use hdbscan::{Hdbscan, HdbscanHyperParams};
-use rusqlite::{Connection, Transaction, params};
+use rusqlite::{Connection, Transaction, params, params_from_iter};
+use rusqlite::types::Value;
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -43,7 +44,19 @@ pub fn build_hdbscan_clusters(
     umap_version: Option<&str>,
     config: HdbscanConfig,
 ) -> Result<HdbscanStats, String> {
-    let (sample_ids, data) = load_cluster_data(conn, model_id, method, umap_version)?;
+    build_hdbscan_clusters_for_sample_id_prefix(conn, model_id, method, umap_version, None, config)
+}
+
+pub fn build_hdbscan_clusters_for_sample_id_prefix(
+    conn: &mut Connection,
+    model_id: &str,
+    method: HdbscanMethod,
+    umap_version: Option<&str>,
+    sample_id_prefix: Option<&str>,
+    config: HdbscanConfig,
+) -> Result<HdbscanStats, String> {
+    let (sample_ids, data) =
+        load_cluster_data(conn, model_id, method, umap_version, sample_id_prefix)?;
     ensure_non_empty(&data)?;
     let labels = run_hdbscan(&data, config)?;
     let stats = summarize_labels(&labels);
@@ -57,12 +70,13 @@ fn load_cluster_data(
     model_id: &str,
     method: HdbscanMethod,
     umap_version: Option<&str>,
+    sample_id_prefix: Option<&str>,
 ) -> Result<(Vec<String>, Vec<Vec<f32>>), String> {
     match method {
-        HdbscanMethod::Embedding => load_embeddings(conn, model_id),
+        HdbscanMethod::Embedding => load_embeddings(conn, model_id, sample_id_prefix),
         HdbscanMethod::Umap => {
             let version = umap_version.ok_or_else(|| "Layout version required".to_string())?;
-            load_umap_points(conn, model_id, version)
+            load_umap_points(conn, model_id, version, sample_id_prefix)
         }
     }
 }
@@ -97,17 +111,30 @@ fn build_hyperparams(config: HdbscanConfig) -> HdbscanHyperParams {
 fn load_embeddings(
     conn: &Connection,
     model_id: &str,
+    sample_id_prefix: Option<&str>,
 ) -> Result<(Vec<String>, Vec<Vec<f32>>), String> {
-    let mut stmt = conn
-        .prepare(
+    let (sql, params) = if let Some(prefix) = sample_id_prefix {
+        (
+            "SELECT sample_id, dim, vec
+             FROM embeddings
+             WHERE model_id = ?1 AND sample_id LIKE ?2
+             ORDER BY sample_id ASC",
+            vec![Value::Text(model_id.to_string()), Value::Text(prefix.to_string())],
+        )
+    } else {
+        (
             "SELECT sample_id, dim, vec
              FROM embeddings
              WHERE model_id = ?1
              ORDER BY sample_id ASC",
+            vec![Value::Text(model_id.to_string())],
         )
+    };
+    let mut stmt = conn
+        .prepare(sql)
         .map_err(|err| format!("Prepare embedding query failed: {err}"))?;
     let rows = stmt
-        .query_map(params![model_id], |row| {
+        .query_map(params_from_iter(params), |row| {
             let sample_id: String = row.get(0)?;
             let dim: i64 = row.get(1)?;
             let blob: Vec<u8> = row.get(2)?;
@@ -161,17 +188,37 @@ fn load_umap_points(
     conn: &Connection,
     model_id: &str,
     umap_version: &str,
+    sample_id_prefix: Option<&str>,
 ) -> Result<(Vec<String>, Vec<Vec<f32>>), String> {
-    let mut stmt = conn
-        .prepare(
+    let (sql, params) = if let Some(prefix) = sample_id_prefix {
+        (
+            "SELECT sample_id, x, y
+             FROM layout_umap
+             WHERE model_id = ?1 AND umap_version = ?2 AND sample_id LIKE ?3
+             ORDER BY sample_id ASC",
+            vec![
+                Value::Text(model_id.to_string()),
+                Value::Text(umap_version.to_string()),
+                Value::Text(prefix.to_string()),
+            ],
+        )
+    } else {
+        (
             "SELECT sample_id, x, y
              FROM layout_umap
              WHERE model_id = ?1 AND umap_version = ?2
              ORDER BY sample_id ASC",
+            vec![
+                Value::Text(model_id.to_string()),
+                Value::Text(umap_version.to_string()),
+            ],
         )
+    };
+    let mut stmt = conn
+        .prepare(sql)
         .map_err(|err| format!("Prepare layout query failed: {err}"))?;
     let rows = stmt
-        .query_map(params![model_id, umap_version], |row| {
+        .query_map(params_from_iter(params), |row| {
             let sample_id: String = row.get(0)?;
             let x: f64 = row.get(1)?;
             let y: f64 = row.get(2)?;

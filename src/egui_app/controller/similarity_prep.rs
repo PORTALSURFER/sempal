@@ -5,7 +5,7 @@ use crate::analysis::hdbscan::{HdbscanConfig, HdbscanMethod};
 use crate::egui_app::state::ProgressTaskKind;
 use std::thread;
 
-const DEFAULT_CLUSTER_MIN_SIZE: usize = 10;
+pub(super) const DEFAULT_CLUSTER_MIN_SIZE: usize = 10;
 
 impl EguiController {
     pub fn prepare_similarity_for_selected_source(&mut self) {
@@ -148,7 +148,7 @@ impl EguiController {
     fn start_similarity_finalize(&mut self, source_id: SourceId, umap_version: String) {
         let tx = self.runtime.jobs.message_sender();
         thread::spawn(move || {
-            let result = run_similarity_finalize(&umap_version);
+            let result = run_similarity_finalize(&source_id, &umap_version);
             let _ = tx.send(jobs::JobMessage::SimilarityPrepared(
                 jobs::SimilarityPrepResult { source_id, result },
             ));
@@ -164,13 +164,18 @@ impl EguiController {
     }
 }
 
-fn run_similarity_finalize(umap_version: &str) -> Result<jobs::SimilarityPrepOutcome, String> {
+fn run_similarity_finalize(
+    source_id: &SourceId,
+    umap_version: &str,
+) -> Result<jobs::SimilarityPrepOutcome, String> {
     let mut conn = open_library_db_for_similarity()?;
-    let cluster_stats = crate::analysis::hdbscan::build_hdbscan_clusters(
+    let sample_id_prefix = format!("{}::%", source_id.as_str());
+    let cluster_stats = crate::analysis::hdbscan::build_hdbscan_clusters_for_sample_id_prefix(
         &mut conn,
         crate::analysis::embedding::EMBEDDING_MODEL_ID,
         HdbscanMethod::Umap,
         Some(umap_version),
+        Some(sample_id_prefix.as_str()),
         HdbscanConfig {
             min_cluster_size: DEFAULT_CLUSTER_MIN_SIZE,
             min_samples: None,
