@@ -75,7 +75,7 @@ impl EguiController {
             if !model.expanded.remove(&path) {
                 model.expanded.insert(path.clone());
             }
-            model.focused = Some(path);
+            model.focused = Some(path.clone());
             model.clone()
         };
         self.ui.sources.folders.focused = Some(row_index);
@@ -97,7 +97,7 @@ impl EguiController {
             if !row.is_root && !model.available.contains(&path) {
                 return;
             }
-            model.focused = Some(path);
+            model.focused = Some(path.clone());
             model.clone()
         };
         self.ui.sources.folders.focused = Some(row_index);
