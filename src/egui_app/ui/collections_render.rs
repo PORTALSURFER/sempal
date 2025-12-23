@@ -109,12 +109,22 @@ impl EguiApp {
                         });
                     }
                 });
+            let min_focus_height = list_row_height(ui);
+            let focus_height = list_response
+                .content_size
+                .y
+                .max(min_focus_height)
+                .min(list_response.inner_rect.height());
+            let focus_rect = egui::Rect::from_min_size(
+                list_response.inner_rect.min,
+                egui::vec2(list_response.inner_rect.width(), focus_height),
+            );
             if matches!(
                 self.controller.ui.focus.context,
                 FocusContext::CollectionsList
             ) {
                 ui.painter().rect_stroke(
-                    list_response.inner_rect,
+                    focus_rect,
                     0.0,
                     style::focused_row_stroke(),
                     StrokeKind::Outside,

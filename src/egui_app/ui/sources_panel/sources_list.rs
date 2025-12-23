@@ -53,8 +53,18 @@ impl EguiApp {
                     });
                 }
             });
+        let min_focus_height = list_row_height(ui);
+        let focus_height = output
+            .content_size
+            .y
+            .max(min_focus_height)
+            .min(output.inner_rect.height());
+        let focus_rect = egui::Rect::from_min_size(
+            output.inner_rect.min,
+            egui::vec2(output.inner_rect.width(), focus_height),
+        );
         let focus_response = ui.interact(
-            output.inner_rect,
+            focus_rect,
             ui.id().with("sources_list_focus"),
             egui::Sense::click(),
         );
@@ -62,7 +72,7 @@ impl EguiApp {
             self.controller
                 .focus_context_from_ui(FocusContext::SourcesList);
         }
-        output.inner_rect
+        focus_rect
     }
 
     fn source_row_menu(
