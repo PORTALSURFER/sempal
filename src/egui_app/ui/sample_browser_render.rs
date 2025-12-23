@@ -142,7 +142,7 @@ impl EguiApp {
                 } else {
                     clamp_label_for_width(&status_label.label, row_label_width)
                 };
-                let mut bg = if drag_active
+                let bg = if drag_active
                     && pointer_pos
                         .as_ref()
                         .is_some_and(|pos| ui.cursor().contains(*pos))
