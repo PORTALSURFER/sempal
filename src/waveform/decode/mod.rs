@@ -1,7 +1,10 @@
 mod cache;
 mod decode;
 mod normalize;
+mod peaks;
+mod rodio_reader;
 mod resample;
+mod wav_reader;
 
 use std::sync::Arc;
 use std::sync::Mutex;
