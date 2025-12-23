@@ -1,4 +1,5 @@
-use super::*;
+use super::super::{AudioPlayer, normalized_progress};
+use std::time::{Duration, Instant};
 
 #[test]
 fn normalized_progress_handles_tiny_selection_near_end() {
