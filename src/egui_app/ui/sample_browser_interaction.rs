@@ -34,6 +34,7 @@ impl EguiApp {
         response: &egui::Response,
         drag_active: bool,
         drop_target: DragTarget,
+        drag_source: DragSource,
         path: &Path,
     ) {
         let drag_path = path.to_path_buf();
@@ -50,7 +51,7 @@ impl EguiApp {
             response,
             drag_active,
             &mut self.controller,
-            DragSource::Browser,
+            drag_source,
             drop_target,
             move |pos, controller| {
                 if let Some(source) = controller.current_source() {

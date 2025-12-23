@@ -223,11 +223,18 @@ impl EguiApp {
                         self.browser_sample_menu(&response, row, &path, &display_label, missing);
                     }
 
+                    let row_drag_source = self
+                        .controller
+                        .ui
+                        .drag
+                        .origin_source
+                        .unwrap_or(DragSource::Browser);
                     self.handle_sample_row_drag(
                         ui,
                         &response,
                         drag_active,
                         crate::egui_app::state::DragTarget::BrowserTriage(drop_target),
+                        row_drag_source,
                         &path,
                     );
                 });
