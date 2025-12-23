@@ -39,6 +39,13 @@ impl EguiController {
         self.request_hard_sync();
     }
 
+    pub(crate) fn similarity_prep_in_progress(&self) -> bool {
+        self.runtime.similarity_prep.is_some()
+            || self.runtime.jobs.scan_in_progress()
+            || self.runtime.jobs.umap_build_in_progress()
+            || self.runtime.jobs.umap_cluster_build_in_progress()
+    }
+
     pub(super) fn handle_similarity_scan_finished(&mut self, source_id: &SourceId) {
         if !matches_similarity_stage(&self.runtime.similarity_prep, source_id, SimilarityPrepStage::AwaitScan) {
             return;

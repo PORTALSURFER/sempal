@@ -58,8 +58,13 @@ impl EguiApp {
             &umap_version,
             source_id.as_ref(),
         ) else {
-            if map_empty::render_empty_state(ui, rect, &palette) {
-                self.controller.build_umap_layout(model_id, &umap_version);
+            let prep_active = self.controller.similarity_prep_in_progress();
+            if !prep_active {
+                self.controller.prepare_similarity_for_selected_source();
+            }
+            let busy = prep_active || self.controller.ui.progress.visible;
+            if map_empty::render_empty_state(ui, rect, &palette, busy) {
+                self.controller.prepare_similarity_for_selected_source();
             }
             return;
         };

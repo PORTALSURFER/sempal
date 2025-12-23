@@ -5,28 +5,54 @@ pub(crate) fn render_empty_state(
     ui: &mut egui::Ui,
     rect: egui::Rect,
     palette: &style::Palette,
+    busy: bool,
 ) -> bool {
     let mut build_clicked = false;
+    let pulse = if busy {
+        ui.ctx().request_repaint();
+        let t = ui.ctx().time() as f32;
+        (t * 2.4).sin() * 0.5 + 0.5
+    } else {
+        0.0
+    };
+    let pulse_alpha = (80.0 + pulse * 160.0).round().clamp(0.0, 255.0) as u8;
+    let pulse_color = egui::Color32::from_rgba_unmultiplied(
+        palette.accent_mint.r(),
+        palette.accent_mint.g(),
+        palette.accent_mint.b(),
+        pulse_alpha,
+    );
     let _ = ui.scope_builder(UiBuilder::new().max_rect(rect), |ui| {
         ui.with_layout(
             egui::Layout::top_down(egui::Align::Center),
             |ui| {
                 ui.add_space(rect.height() * 0.35);
-                ui.label(
-                    RichText::new("No map layout yet.")
-                        .color(palette.text_primary)
-                        .strong(),
-                );
-                ui.label(
-                    RichText::new("t-SNE projects embeddings into 2D for this map.")
-                        .color(palette.text_muted),
-                );
-                ui.label(
-                    RichText::new("Build the layout now (uses stored embeddings).")
-                        .color(palette.text_muted),
-                );
-                if ui.button("Build map layout").clicked() {
-                    build_clicked = true;
+                if busy {
+                    ui.label(
+                        RichText::new("Preparing similarity map…")
+                            .color(palette.text_primary)
+                            .strong(),
+                    );
+                    ui.label(
+                        RichText::new("This can take a minute for new sources.")
+                            .color(palette.text_muted),
+                    );
+                    let center = rect.center();
+                    ui.painter()
+                        .circle_filled(center + egui::vec2(0.0, 50.0), 8.0, pulse_color);
+                } else {
+                    ui.label(
+                        RichText::new("No map layout yet.")
+                            .color(palette.text_primary)
+                            .strong(),
+                    );
+                    ui.label(
+                        RichText::new("Preparing similarity data will build the map.")
+                            .color(palette.text_muted),
+                    );
+                    if ui.button("Prepare similarity map").clicked() {
+                        build_clicked = true;
+                    }
                 }
             },
         );
