@@ -3,7 +3,7 @@ use super::style;
 use super::utils::{folder_row_label, sample_housing_folders};
 use super::EguiApp;
 use crate::egui_app::state::{DragSource, DragTarget, FocusContext};
-use eframe::egui::{self, Align2, Layout, RichText, StrokeKind, TextStyle, Ui};
+use eframe::egui::{self, Align, Align2, Layout, RichText, StrokeKind, TextStyle, Ui};
 use std::collections::HashSet;
 use std::path::PathBuf;
 
