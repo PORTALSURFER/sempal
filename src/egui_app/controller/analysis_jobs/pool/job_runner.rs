@@ -322,6 +322,10 @@ fn run_analysis_job(
     analysis_sample_rate: u32,
     analysis_version: &str,
 ) -> Result<(), String> {
+    let content_hash = job
+        .content_hash
+        .as_deref()
+        .ok_or_else(|| format!("Missing content_hash for analysis job {}", job.sample_id))?;
     let current_hash = db::sample_content_hash(conn, &job.sample_id)?;
     if current_hash.as_deref() != Some(content_hash) {
         return Ok(());
@@ -429,10 +433,6 @@ pub(super) fn run_analysis_job_with_decoded(
     use_cache: bool,
     analysis_version: &str,
 ) -> Result<(), String> {
-    let content_hash = job
-        .content_hash
-        .as_deref()
-        .ok_or_else(|| format!("Missing content_hash for analysis job {}", job.sample_id))?;
     let mut needs_embedding_upsert = false;
     let embedding = if use_cache {
         if let Some(cached) = load_embedding_vec_optional(
