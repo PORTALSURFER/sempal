@@ -1,6 +1,7 @@
 pub(super) struct MelBank {
     dct_size: usize,
     filters: Vec<Vec<(usize, f32)>>,
+    dct_cos: Vec<f32>,
 }
 
 impl MelBank {
@@ -14,17 +15,54 @@ impl MelBank {
     ) -> Self {
         let bins = mel_bins(sample_rate, fft_len, mel_bands, f_min, f_max);
         let filters = build_filters(&bins, mel_bands);
-        Self { dct_size, filters }
+        let dct_cos = build_dct_cos_table(dct_size, filters.len());
+        Self {
+            dct_size,
+            filters,
+            dct_cos,
+        }
     }
 
     pub(super) fn mfcc_from_power(&self, power: &[f32]) -> Vec<f32> {
-        let mel_energies = apply_filters(&self.filters, power);
-        let log_energies: Vec<f32> = mel_energies
-            .iter()
-            .copied()
-            .map(|e| (e.max(1e-12)).ln())
-            .collect();
-        dct_ii(&log_energies, self.dct_size)
+        let mut scratch = MelScratch::new(self.filters.len());
+        let mut out = Vec::with_capacity(self.dct_size);
+        self.mfcc_from_power_into(power, &mut scratch, &mut out);
+        out
+    }
+
+    pub(super) fn mfcc_from_power_into(
+        &self,
+        power: &[f32],
+        scratch: &mut MelScratch,
+        out: &mut Vec<f32>,
+    ) {
+        apply_filters_into(&self.filters, power, &mut scratch.mel);
+        for (dst, src) in scratch.log.iter_mut().zip(scratch.mel.iter()) {
+            *dst = (src.max(1e-12)).ln();
+        }
+        dct_ii_into(&scratch.log, self.dct_size, &self.dct_cos, out);
+    }
+
+    pub(super) fn mel_bands(&self) -> usize {
+        self.filters.len()
+    }
+
+    pub(super) fn dct_size(&self) -> usize {
+        self.dct_size
+    }
+}
+
+pub(super) struct MelScratch {
+    mel: Vec<f32>,
+    log: Vec<f32>,
+}
+
+impl MelScratch {
+    pub(super) fn new(bands: usize) -> Self {
+        Self {
+            mel: vec![0.0; bands],
+            log: vec![0.0; bands],
+        }
     }
 }
 
@@ -62,17 +100,17 @@ fn build_filters(bins: &[usize], mel_bands: usize) -> Vec<Vec<(usize, f32)>> {
     filters
 }
 
-fn apply_filters(filters: &[Vec<(usize, f32)>], power: &[f32]) -> Vec<f32> {
-    let mut out = Vec::with_capacity(filters.len());
-    for filter in filters {
+fn apply_filters_into(filters: &[Vec<(usize, f32)>], power: &[f32], out: &mut [f32]) {
+    for (idx, filter) in filters.iter().enumerate() {
         let mut sum = 0.0_f64;
         for &(bin, weight) in filter {
             let p = power.get(bin).copied().unwrap_or(0.0).max(0.0) as f64;
             sum += p * weight as f64;
         }
-        out.push(sum as f32);
+        if let Some(slot) = out.get_mut(idx) {
+            *slot = sum as f32;
+        }
     }
-    out
 }
 
 fn build_tri_filter(left: usize, center: usize, right: usize) -> Vec<(usize, f32)> {
@@ -113,18 +151,48 @@ fn mel_to_hz(mel: f32) -> f32 {
     700.0_f32 * (10.0_f32.powf(mel / 2595.0) - 1.0)
 }
 
-fn dct_ii(values: &[f32], count: usize) -> Vec<f32> {
-    let n = values.len().max(1) as f32;
-    let mut out = Vec::with_capacity(count);
+fn build_dct_cos_table(dct_size: usize, bands: usize) -> Vec<f32> {
+    if bands == 0 || dct_size == 0 {
+        return Vec::new();
+    }
+    let n = bands as f32;
+    let mut table = Vec::with_capacity(dct_size * bands);
+    for k in 0..dct_size {
+        for m in 0..bands {
+            let angle = std::f32::consts::PI * (k as f32) * ((m as f32) + 0.5) / n;
+            table.push(angle.cos());
+        }
+    }
+    table
+}
+
+fn dct_ii_into(values: &[f32], count: usize, cos_table: &[f32], out: &mut Vec<f32>) {
+    out.resize(count, 0.0);
+    let bands = values.len();
+    if bands == 0 || count == 0 {
+        return;
+    }
+    let expected = count * bands;
+    if cos_table.len() != expected {
+        for k in 0..count {
+            let mut sum = 0.0_f64;
+            for (m, &v) in values.iter().enumerate() {
+                let angle =
+                    std::f64::consts::PI * (k as f64) * ((m as f64) + 0.5) / bands as f64;
+                sum += v as f64 * angle.cos();
+            }
+            out[k] = sum as f32;
+        }
+        return;
+    }
     for k in 0..count {
         let mut sum = 0.0_f64;
-        for (m, &v) in values.iter().enumerate() {
-            let angle = std::f64::consts::PI * (k as f64) * ((m as f64) + 0.5) / n as f64;
-            sum += v as f64 * angle.cos();
+        let base = k * bands;
+        for m in 0..bands {
+            sum += values[m] as f64 * cos_table[base + m] as f64;
         }
-        out.push(sum as f32);
+        out[k] = sum as f32;
     }
-    out
 }
 
 #[cfg(test)]

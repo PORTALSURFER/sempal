@@ -1,4 +1,4 @@
-use super::mel::MelBank;
+use super::mel::{MelBank, MelScratch};
 use crate::analysis::fft::{Complex32, FftPlan, fft_radix2_inplace_with_plan, hann_window};
 
 pub(super) struct FrameSet {
@@ -37,6 +37,8 @@ pub(super) fn compute_frames(
     let hop_size = hop_size.max(1);
     let window = hann_window(frame_size);
     let plan = FftPlan::new(frame_size).expect("FFT plan must be valid");
+    let mut mel_scratch = MelScratch::new(mel.mel_bands());
+    let mut mfcc_out = Vec::with_capacity(mel.dct_size());
     let mut complex = vec![Complex32::default(); frame_size];
     let mut spectral = Vec::new();
     let mut bands = Vec::new();
@@ -47,6 +49,8 @@ pub(super) fn compute_frames(
             &mut complex,
             &window,
             &plan,
+            &mut mel_scratch,
+            &mut mfcc_out,
             samples,
             start,
             sample_rate,
@@ -76,6 +80,8 @@ fn process_frame(
     complex: &mut [Complex32],
     window: &[f32],
     plan: &FftPlan,
+    mel_scratch: &mut MelScratch,
+    mfcc_out: &mut Vec<f32>,
     samples: &[f32],
     start: usize,
     sample_rate: u32,
@@ -92,7 +98,8 @@ fn process_frame(
     let power = power_spectrum(complex);
     spectral.push(spectral_from_power(&power, sample_rate, frame_size));
     bands.push(bands_from_power(&power, sample_rate, frame_size));
-    mfcc.push(mel.mfcc_from_power(&power));
+    mel.mfcc_from_power_into(&power, mel_scratch, mfcc_out);
+    mfcc.push(mfcc_out.clone());
     true
 }
 
