@@ -3,7 +3,7 @@
   "os": "windows",
   "arch": "x86_64",
   "cpu_cores": 8,
-  "total_elapsed_ms": 3948,
+  "total_elapsed_ms": 4027,
   "params": {
     "out": "bench.json",
     "analysis": true,
@@ -22,16 +22,16 @@
   },
   "analysis": {
     "samples": 500,
-    "total_elapsed_ms": 1285,
-    "mean_ms_per_sample": 2.570149,
-    "samples_per_sec": 389.0825006643584
+    "total_elapsed_ms": 1266,
+    "mean_ms_per_sample": 2.5336548,
+    "samples_per_sec": 394.68675843291675
   },
   "similarity": null,
   "feature_blob_decode": {
     "blobs": 600000,
     "feature_len_f32": 183,
-    "total_elapsed_ms": 163,
-    "blobs_per_sec": 3670425.182053089,
-    "mb_per_sec": 2562.2856457356083
+    "total_elapsed_ms": 164,
+    "blobs_per_sec": 3640732.515382095,
+    "mb_per_sec": 2541.5575039479195
   }
 }
