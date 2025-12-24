@@ -32,7 +32,7 @@ impl AnalysisWorkerPool {
     }
 
     pub(in crate::egui_app::controller) fn set_max_analysis_duration_seconds(&self, value: f32) {
-        let clamped = value.clamp(1.0, 60.0 * 60.0);
+        let clamped = value.clamp(0.0, 60.0 * 60.0);
         self.max_duration_bits
             .store(clamped.to_bits(), Ordering::Relaxed);
     }

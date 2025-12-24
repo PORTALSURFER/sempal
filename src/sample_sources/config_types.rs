@@ -86,12 +86,16 @@ pub struct FeatureFlags {
 
 /// Global preferences for analysis and feature extraction.
 ///
-/// Config keys: `max_analysis_duration_seconds`, `analysis_worker_count`.
+/// Config keys: `max_analysis_duration_seconds`, `analysis_worker_count`,
+/// `limit_similarity_prep_duration`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnalysisSettings {
     /// Skip analysis for files longer than this many seconds.
     #[serde(default = "default_max_analysis_duration_seconds")]
     pub max_analysis_duration_seconds: f32,
+    /// Apply the duration cap when preparing similarity search.
+    #[serde(default = "default_true")]
+    pub limit_similarity_prep_duration: bool,
     /// Analysis worker count override (0 = auto).
     #[serde(default = "default_analysis_worker_count")]
     pub analysis_worker_count: u32,
@@ -101,6 +105,7 @@ impl Default for AnalysisSettings {
     fn default() -> Self {
         Self {
             max_analysis_duration_seconds: default_max_analysis_duration_seconds(),
+            limit_similarity_prep_duration: default_true(),
             analysis_worker_count: default_analysis_worker_count(),
         }
     }

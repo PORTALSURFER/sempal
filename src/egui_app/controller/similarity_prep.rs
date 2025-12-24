@@ -33,6 +33,7 @@ impl EguiController {
             stage: SimilarityPrepStage::AwaitScan,
             umap_version: self.ui.map.umap_version.clone(),
         });
+        self.apply_similarity_prep_duration_cap();
         self.set_status_message(StatusMessage::PreparingSimilarity {
             source: source.root.display().to_string(),
         });
@@ -96,6 +97,7 @@ impl EguiController {
         if state.as_ref().map(|s| &s.source_id) != Some(&result.source_id) {
             return;
         }
+        self.restore_similarity_prep_duration_cap();
         if self.ui.progress.task == Some(ProgressTaskKind::Analysis) {
             self.clear_progress();
         }
@@ -127,6 +129,7 @@ impl EguiController {
             return;
         }
         self.runtime.similarity_prep = None;
+        self.restore_similarity_prep_duration_cap();
         if self.ui.progress.task == Some(ProgressTaskKind::Analysis) {
             self.clear_progress();
         }
@@ -144,6 +147,23 @@ fn matches_similarity_stage(
 }
 
 impl EguiController {
+    fn apply_similarity_prep_duration_cap(&mut self) {
+        let max_duration = if self.similarity_prep_duration_cap_enabled() {
+            self.settings.analysis.max_analysis_duration_seconds
+        } else {
+            0.0
+        };
+        self.runtime
+            .analysis
+            .set_max_analysis_duration_seconds(max_duration);
+    }
+
+    fn restore_similarity_prep_duration_cap(&mut self) {
+        self.runtime
+            .analysis
+            .set_max_analysis_duration_seconds(self.settings.analysis.max_analysis_duration_seconds);
+    }
+
     fn enqueue_similarity_backfill(&mut self, source: SampleSource) {
         let tx = self.runtime.jobs.message_sender();
         thread::spawn(move || {

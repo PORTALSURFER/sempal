@@ -16,6 +16,20 @@ impl EguiController {
         self.settings.analysis.max_analysis_duration_seconds
     }
 
+    pub fn similarity_prep_duration_cap_enabled(&self) -> bool {
+        self.settings.analysis.limit_similarity_prep_duration
+    }
+
+    pub fn set_similarity_prep_duration_cap_enabled(&mut self, enabled: bool) {
+        if self.settings.analysis.limit_similarity_prep_duration == enabled {
+            return;
+        }
+        self.settings.analysis.limit_similarity_prep_duration = enabled;
+        if let Err(err) = self.persist_config("Failed to save options") {
+            self.set_status(err, StatusTone::Warning);
+        }
+    }
+
     pub fn set_max_analysis_duration_seconds(&mut self, seconds: f32) {
         let clamped = clamp_max_analysis_duration_seconds(seconds);
         if (self.settings.analysis.max_analysis_duration_seconds - clamped).abs() < f32::EPSILON {

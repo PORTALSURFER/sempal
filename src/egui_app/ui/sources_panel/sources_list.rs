@@ -109,6 +109,33 @@ impl EguiApp {
                 close_menu = true;
             }
             ui.separator();
+            ui.label(
+                RichText::new("Similarity prep")
+                    .color(style::palette().text_muted),
+            );
+            let mut cap_enabled = self.controller.similarity_prep_duration_cap_enabled();
+            if ui
+                .checkbox(&mut cap_enabled, "Limit analysis duration")
+                .on_hover_text("Skip long files during similarity prep to speed up analysis")
+                .changed()
+            {
+                self.controller
+                    .set_similarity_prep_duration_cap_enabled(cap_enabled);
+            }
+            ui.add_enabled_ui(cap_enabled, |ui| {
+                let mut seconds = self.controller.max_analysis_duration_seconds();
+                let drag = egui::DragValue::new(&mut seconds)
+                    .speed(1.0)
+                    .range(1.0..=3600.0)
+                    .suffix(" s");
+                let response = ui.add(drag).on_hover_text(
+                    "Maximum file length to analyze during similarity preparation",
+                );
+                if response.changed() {
+                    self.controller.set_max_analysis_duration_seconds(seconds);
+                }
+            });
+            ui.separator();
             if ui.button("Open in file explorer").clicked() {
                 self.controller.select_source_by_index(index);
                 self.controller.open_source_folder(index);
