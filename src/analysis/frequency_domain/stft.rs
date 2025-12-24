@@ -304,11 +304,47 @@ fn bands_from_power(power: &[f32], sample_rate: u32, fft_len: usize) -> BandFram
 fn band_energy(power: &[f32], sample_rate: u32, fft_len: usize, lo: f32, hi: f32) -> f64 {
     let lo_bin = freq_to_bin(lo, sample_rate, fft_len);
     let hi_bin = freq_to_bin(hi, sample_rate, fft_len).max(lo_bin + 1);
-    power[lo_bin..hi_bin.min(power.len())]
+    let slice = &power[lo_bin..hi_bin.min(power.len())];
+    if slice.is_empty() {
+        return 0.0;
+    }
+    #[cfg(target_arch = "x86_64")]
+    {
+        if std::is_x86_feature_detected!("sse2") {
+            // SAFETY: gated by runtime feature check; power bins are non-negative.
+            return unsafe { sum_power_sse2(slice) };
+        }
+    }
+    slice
         .iter()
         .copied()
         .map(|v| v.max(0.0) as f64)
         .sum()
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "sse2")]
+unsafe fn sum_power_sse2(values: &[f32]) -> f64 {
+    use std::arch::x86_64::*;
+    let mut sum0 = _mm_set1_pd(0.0);
+    let mut sum1 = _mm_set1_pd(0.0);
+    let mut chunks = values.chunks_exact(4);
+    for chunk in &mut chunks {
+        let v = unsafe { _mm_loadu_ps(chunk.as_ptr()) };
+        let lo = _mm_cvtps_pd(v);
+        let hi = _mm_cvtps_pd(_mm_movehl_ps(v, v));
+        sum0 = _mm_add_pd(sum0, lo);
+        sum1 = _mm_add_pd(sum1, hi);
+    }
+    let mut tmp0 = [0.0_f64; 2];
+    let mut tmp1 = [0.0_f64; 2];
+    unsafe { _mm_storeu_pd(tmp0.as_mut_ptr(), sum0) };
+    unsafe { _mm_storeu_pd(tmp1.as_mut_ptr(), sum1) };
+    let mut sum = tmp0.iter().copied().sum::<f64>() + tmp1.iter().copied().sum::<f64>();
+    for &val in chunks.remainder() {
+        sum += val.max(0.0) as f64;
+    }
+    sum
 }
 
 fn freq_to_bin(freq_hz: f32, sample_rate: u32, fft_len: usize) -> usize {
