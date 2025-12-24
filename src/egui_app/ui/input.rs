@@ -50,3 +50,13 @@ pub(super) fn copy_shortcut_pressed(ctx: &egui::Context) -> bool {
         _ => false,
     })
 }
+
+pub(super) fn user_activity_detected(ctx: &egui::Context) -> bool {
+    ctx.input(|i| {
+        !i.events.is_empty()
+            || i.pointer.any_down()
+            || i.pointer.any_pressed()
+            || i.pointer.any_released()
+            || i.raw_scroll_delta != egui::Vec2::ZERO
+    })
+}

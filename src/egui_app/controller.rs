@@ -78,7 +78,7 @@ use std::{
     io::Write,
     path::{Path, PathBuf},
     rc::Rc,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 /// Minimum selection width used to decide when to play a looped region.
@@ -181,6 +181,11 @@ impl EguiController {
             runtime: ControllerRuntimeState {
                 jobs,
                 analysis,
+                performance: PerformanceGovernorState {
+                    last_user_activity_at: None,
+                    last_worker_count: None,
+                    idle_worker_override: None,
+                },
                 similarity_prep: None,
                 #[cfg(test)]
                 progress_cancel_after: None,
@@ -194,6 +199,30 @@ impl EguiController {
             },
             #[cfg(target_os = "windows")]
             drag_hwnd: None,
+        }
+    }
+
+    pub(crate) fn update_performance_governor(&mut self, user_active: bool) {
+        const ACTIVE_WINDOW: Duration = Duration::from_millis(400);
+        let now = Instant::now();
+        if user_active {
+            self.runtime.performance.last_user_activity_at = Some(now);
+        }
+        let recent_input = self
+            .runtime
+            .performance
+            .last_user_activity_at
+            .is_some_and(|time| now.saturating_duration_since(time) <= ACTIVE_WINDOW);
+        let busy = self.is_playing() || recent_input;
+        let idle_target = self
+            .runtime
+            .performance
+            .idle_worker_override
+            .unwrap_or(self.settings.analysis.analysis_worker_count);
+        let target = if busy { 1 } else { idle_target };
+        if self.runtime.performance.last_worker_count != Some(target) {
+            self.runtime.analysis.set_worker_count(target);
+            self.runtime.performance.last_worker_count = Some(target);
         }
     }
 

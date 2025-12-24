@@ -152,9 +152,16 @@ pub(super) struct ControllerAudioState {
 pub(super) struct ControllerRuntimeState {
     pub(super) jobs: jobs::ControllerJobs,
     pub(super) analysis: super::analysis_jobs::AnalysisWorkerPool,
+    pub(super) performance: PerformanceGovernorState,
     pub(super) similarity_prep: Option<SimilarityPrepState>,
     #[cfg(test)]
     pub(super) progress_cancel_after: Option<usize>,
+}
+
+pub(super) struct PerformanceGovernorState {
+    pub(super) last_user_activity_at: Option<Instant>,
+    pub(super) last_worker_count: Option<u32>,
+    pub(super) idle_worker_override: Option<u32>,
 }
 
 #[derive(Clone, Debug)]

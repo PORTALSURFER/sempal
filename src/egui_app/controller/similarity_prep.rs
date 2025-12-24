@@ -231,10 +231,12 @@ impl EguiController {
             .unwrap_or(1)
             .max(1)
             .min(64);
+        self.runtime.performance.idle_worker_override = Some(boosted);
         self.runtime.analysis.set_worker_count(boosted);
     }
 
     fn restore_similarity_prep_worker_count(&mut self) {
+        self.runtime.performance.idle_worker_override = None;
         self.runtime
             .analysis
             .set_worker_count(self.settings.analysis.analysis_worker_count);
