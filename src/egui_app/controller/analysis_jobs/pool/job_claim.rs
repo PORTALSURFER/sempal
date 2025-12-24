@@ -177,6 +177,8 @@ pub(super) fn spawn_decoder_worker(
         let mut last_refresh = Instant::now() - SOURCE_REFRESH_INTERVAL;
         let mut reset_done = HashSet::new();
         let mut next_source = 0usize;
+        let mut local_queue: VecDeque<db::ClaimedJob> = VecDeque::new();
+        const CLAIM_BATCH_SIZE: usize = 32;
         loop {
             if shutdown.load(Ordering::Relaxed) {
                 break;
@@ -194,21 +196,30 @@ pub(super) fn spawn_decoder_worker(
                 sleep(Duration::from_millis(200));
                 continue;
             }
-            let mut claimed = None;
-            for _ in 0..sources.len() {
-                let idx = next_source % sources.len();
-                next_source = next_source.wrapping_add(1);
-                let source = &mut sources[idx];
-                let job = match db::claim_next_job(&mut source.conn, &source.source.root) {
-                    Ok(job) => job,
-                    Err(_) => continue,
-                };
-                if job.is_some() {
-                    claimed = job;
-                    break;
+            if local_queue.is_empty() {
+                for _ in 0..sources.len() {
+                    let idx = next_source % sources.len();
+                    next_source = next_source.wrapping_add(1);
+                    let source = &mut sources[idx];
+                    let jobs = match db::claim_next_jobs(
+                        &mut source.conn,
+                        &source.source.root,
+                        CLAIM_BATCH_SIZE,
+                    ) {
+                        Ok(jobs) => jobs,
+                        Err(_) => continue,
+                    };
+                    if !jobs.is_empty() {
+                        local_queue.extend(jobs);
+                        break;
+                    }
+                }
+                if local_queue.is_empty() {
+                    sleep(Duration::from_millis(25));
+                    continue;
                 }
             }
-            let Some(job) = claimed else {
+            let Some(job) = local_queue.pop_front() else {
                 sleep(Duration::from_millis(25));
                 continue;
             };

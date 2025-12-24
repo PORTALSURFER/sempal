@@ -68,51 +68,72 @@ pub(in crate::egui_app::controller::analysis_jobs) fn claim_next_job(
     conn: &mut Connection,
     source_root: &Path,
 ) -> Result<Option<ClaimedJob>, String> {
+    let mut jobs = claim_next_jobs(conn, source_root, 1)?;
+    Ok(jobs.pop())
+}
+
+pub(in crate::egui_app::controller::analysis_jobs) fn claim_next_jobs(
+    conn: &mut Connection,
+    source_root: &Path,
+    limit: usize,
+) -> Result<Vec<ClaimedJob>, String> {
+    if limit == 0 {
+        return Ok(Vec::new());
+    }
     let tx = conn
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|err| format!("Failed to start analysis claim transaction: {err}"))?;
-    let job = tx
-        .query_row(
+    let mut stmt = tx
+        .prepare(
             "SELECT id, sample_id, content_hash, job_type
              FROM analysis_jobs
              WHERE status = 'pending'
              ORDER BY created_at ASC, id ASC
-             LIMIT 1",
-            [],
-            |row| {
-                Ok(ClaimedJob {
-                    id: row.get(0)?,
-                    sample_id: row.get(1)?,
-                    content_hash: row.get(2)?,
-                    job_type: row.get(3)?,
-                    source_root: source_root.to_path_buf(),
-                })
-            },
+             LIMIT ?1",
         )
-        .optional()
-        .map_err(|err| format!("Failed to query next analysis job: {err}"))?;
-    let Some(job) = job else {
+        .map_err(|err| format!("Failed to prepare analysis job claim: {err}"))?;
+    let mut rows = stmt
+        .query(params![limit as i64])
+        .map_err(|err| format!("Failed to query analysis jobs: {err}"))?;
+    let mut jobs = Vec::new();
+    while let Some(row) = rows
+        .next()
+        .map_err(|err| format!("Failed to query analysis jobs: {err}"))?
+    {
+        jobs.push(ClaimedJob {
+            id: row.get(0)?,
+            sample_id: row.get(1)?,
+            content_hash: row.get(2)?,
+            job_type: row.get(3)?,
+            source_root: source_root.to_path_buf(),
+        });
+    }
+    if jobs.is_empty() {
         tx.commit()
             .map_err(|err| format!("Failed to commit empty analysis claim transaction: {err}"))?;
-        return Ok(None);
-    };
-
+        return Ok(Vec::new());
+    }
+    let placeholders = std::iter::repeat("?")
+        .take(jobs.len())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let sql = format!(
+        "UPDATE analysis_jobs
+         SET status = 'running', attempts = attempts + 1
+         WHERE status = 'pending' AND id IN ({placeholders})"
+    );
+    let params: Vec<i64> = jobs.iter().map(|job| job.id).collect();
     let updated = tx
-        .execute(
-            "UPDATE analysis_jobs
-             SET status = 'running', attempts = attempts + 1
-             WHERE id = ?1 AND status = 'pending'",
-            params![job.id],
-        )
-        .map_err(|err| format!("Failed to claim analysis job: {err}"))?;
+        .execute(&sql, params_from_iter(params.iter()))
+        .map_err(|err| format!("Failed to claim analysis jobs: {err}"))?;
     if updated == 0 {
         tx.commit()
             .map_err(|err| format!("Failed to commit analysis claim transaction: {err}"))?;
-        return Ok(None);
+        return Ok(Vec::new());
     }
     tx.commit()
         .map_err(|err| format!("Failed to commit analysis claim transaction: {err}"))?;
-    Ok(Some(job))
+    Ok(jobs)
 }
 
 #[cfg_attr(test, allow(dead_code))]
