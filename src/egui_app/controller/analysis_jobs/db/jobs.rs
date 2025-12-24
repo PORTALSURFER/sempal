@@ -100,11 +100,15 @@ pub(in crate::egui_app::controller::analysis_jobs) fn claim_next_jobs(
         .next()
         .map_err(|err| format!("Failed to query analysis jobs: {err}"))?
     {
+        let id: i64 = row.get(0).map_err(|err| err.to_string())?;
+        let sample_id: String = row.get(1).map_err(|err| err.to_string())?;
+        let content_hash: Option<String> = row.get(2).map_err(|err| err.to_string())?;
+        let job_type: String = row.get(3).map_err(|err| err.to_string())?;
         jobs.push(ClaimedJob {
-            id: row.get(0)?,
-            sample_id: row.get(1)?,
-            content_hash: row.get(2)?,
-            job_type: row.get(3)?,
+            id,
+            sample_id,
+            content_hash,
+            job_type,
             source_root: source_root.to_path_buf(),
         });
     }
