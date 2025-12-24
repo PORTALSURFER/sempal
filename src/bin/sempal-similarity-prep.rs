@@ -48,7 +48,7 @@ fn main() {
 
     let normalized = sempal::sample_sources::config::normalize_path(&opts.source);
     if opts.reset_failed {
-        if let Err(err) = reset_failed_analysis_jobs(&normalized) {
+        if let Err(err) = reset_stalled_analysis_jobs(&normalized) {
             eprintln!("Warning: failed to reset analysis jobs: {err}");
         }
     }
@@ -207,17 +207,19 @@ Options:\n\
   --duration-cap-seconds <s>  Skip analysis beyond this duration\n\
   --analysis-workers <n>      Override analysis worker count\n\
   --analysis-full             Force full analysis even when cached\n\
-  --reset-failed              Reset failed analysis jobs to pending\n\
+  --reset-failed              Reset failed/running analysis jobs to pending\n\
   --skip-finalize             Exit after analysis before UMAP/cluster finalize\n\
   --poll-ms <n>               Poll interval (default: 25)\n\
   -h, --help                  Show this help\n"
 }
 
-fn reset_failed_analysis_jobs(source_root: &PathBuf) -> Result<(), String> {
+fn reset_stalled_analysis_jobs(source_root: &PathBuf) -> Result<(), String> {
     let conn = sempal::sample_sources::SourceDatabase::open_connection(source_root)
         .map_err(|err| format!("Open source DB failed: {err}"))?;
     conn.execute(
-        "UPDATE analysis_jobs SET status = 'pending', last_error = NULL WHERE status = 'failed'",
+        "UPDATE analysis_jobs
+         SET status = 'pending', last_error = NULL
+         WHERE status IN ('failed', 'running')",
         [],
     )
     .map_err(|err| format!("Failed to reset analysis jobs: {err}"))?;
