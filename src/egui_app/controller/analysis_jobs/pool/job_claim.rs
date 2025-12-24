@@ -106,7 +106,7 @@ pub(super) fn spawn_decoder_worker(
             Ok(path) => path,
             Err(_) => return,
         };
-        let conn = match db::open_library_db(&db_path) {
+        let mut conn = match db::open_library_db(&db_path) {
             Ok(conn) => conn,
             Err(_) => return,
         };
