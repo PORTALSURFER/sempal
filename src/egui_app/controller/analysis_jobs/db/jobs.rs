@@ -83,34 +83,36 @@ pub(in crate::egui_app::controller::analysis_jobs) fn claim_next_jobs(
     let tx = conn
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|err| format!("Failed to start analysis claim transaction: {err}"))?;
-    let mut stmt = tx
-        .prepare(
-            "SELECT id, sample_id, content_hash, job_type
-             FROM analysis_jobs
-             WHERE status = 'pending'
-             ORDER BY created_at ASC, id ASC
-             LIMIT ?1",
-        )
-        .map_err(|err| format!("Failed to prepare analysis job claim: {err}"))?;
-    let mut rows = stmt
-        .query(params![limit as i64])
-        .map_err(|err| format!("Failed to query analysis jobs: {err}"))?;
     let mut jobs = Vec::new();
-    while let Some(row) = rows
-        .next()
-        .map_err(|err| format!("Failed to query analysis jobs: {err}"))?
     {
-        let id: i64 = row.get(0).map_err(|err| err.to_string())?;
-        let sample_id: String = row.get(1).map_err(|err| err.to_string())?;
-        let content_hash: Option<String> = row.get(2).map_err(|err| err.to_string())?;
-        let job_type: String = row.get(3).map_err(|err| err.to_string())?;
-        jobs.push(ClaimedJob {
-            id,
-            sample_id,
-            content_hash,
-            job_type,
-            source_root: source_root.to_path_buf(),
-        });
+        let mut stmt = tx
+            .prepare(
+                "SELECT id, sample_id, content_hash, job_type
+                 FROM analysis_jobs
+                 WHERE status = 'pending'
+                 ORDER BY created_at ASC, id ASC
+                 LIMIT ?1",
+            )
+            .map_err(|err| format!("Failed to prepare analysis job claim: {err}"))?;
+        let mut rows = stmt
+            .query(params![limit as i64])
+            .map_err(|err| format!("Failed to query analysis jobs: {err}"))?;
+        while let Some(row) = rows
+            .next()
+            .map_err(|err| format!("Failed to query analysis jobs: {err}"))?
+        {
+            let id: i64 = row.get(0).map_err(|err| err.to_string())?;
+            let sample_id: String = row.get(1).map_err(|err| err.to_string())?;
+            let content_hash: Option<String> = row.get(2).map_err(|err| err.to_string())?;
+            let job_type: String = row.get(3).map_err(|err| err.to_string())?;
+            jobs.push(ClaimedJob {
+                id,
+                sample_id,
+                content_hash,
+                job_type,
+                source_root: source_root.to_path_buf(),
+            });
+        }
     }
     if jobs.is_empty() {
         tx.commit()

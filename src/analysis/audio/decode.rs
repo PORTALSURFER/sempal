@@ -90,9 +90,10 @@ pub(crate) fn decode_for_analysis_with_rate_limit(
     DECODE_SCRATCH.with(|scratch| {
         let mut scratch = scratch.borrow_mut();
         downmix_to_mono_into(&mut scratch.mono, &decoded.samples, decoded.channels);
+        let mono_len = scratch.mono.len();
         resample_linear_into(
             &mut scratch.resampled,
-            &scratch.mono,
+            &scratch.mono[..mono_len],
             decoded.sample_rate,
             sample_rate,
         );
