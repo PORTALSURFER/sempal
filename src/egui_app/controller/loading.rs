@@ -108,15 +108,14 @@ impl EguiController {
                     self.build_label_cache(&self.wav_entries.entries),
                 );
             }
-            let needs_failures = !from_cache
-                || !self
-                    .ui_cache
-                    .browser
-                    .analysis_failures
-                    .contains_key(&id);
+            let needs_failures =
+                !from_cache || !self.ui_cache.browser.analysis_failures.contains_key(&id);
             if needs_failures {
                 if let Ok(failures) = super::analysis_jobs::failed_samples_for_source(&id) {
-                    self.ui_cache.browser.analysis_failures.insert(id.clone(), failures);
+                    self.ui_cache
+                        .browser
+                        .analysis_failures
+                        .insert(id.clone(), failures);
                 } else {
                     self.ui_cache.browser.analysis_failures.remove(&id);
                 }
@@ -135,5 +134,21 @@ impl EguiController {
             ),
             StatusTone::Info,
         );
+        if let Some(source_id) = source_id.as_ref() {
+            self.maybe_refresh_source_db_in_background(source_id, from_cache);
+        }
+    }
+
+    fn maybe_refresh_source_db_in_background(&self, source_id: &SourceId, from_cache: bool) {
+        if !from_cache || self.runtime.jobs.scan_in_progress() {
+            return;
+        }
+        let Some(source) = self.library.sources.iter().find(|s| &s.id == source_id) else {
+            return;
+        };
+        if !source.root.is_dir() {
+            return;
+        }
+        let _ = crate::sample_sources::scanner::scan_in_background(source.root.clone());
     }
 }
