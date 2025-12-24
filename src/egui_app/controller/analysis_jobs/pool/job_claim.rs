@@ -205,6 +205,7 @@ pub(super) fn spawn_decoder_worker(
                     let jobs = match db::claim_next_jobs(
                         &mut source.conn,
                         &source.source.root,
+                        source.source.id.as_str(),
                         CLAIM_BATCH_SIZE,
                     ) {
                         Ok(jobs) => jobs,

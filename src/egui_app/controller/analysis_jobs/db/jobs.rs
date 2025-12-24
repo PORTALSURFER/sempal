@@ -67,14 +67,16 @@ pub(in crate::egui_app::controller::analysis_jobs) fn sample_analysis_states(
 pub(in crate::egui_app::controller::analysis_jobs) fn claim_next_job(
     conn: &mut Connection,
     source_root: &Path,
+    source_id: &str,
 ) -> Result<Option<ClaimedJob>, String> {
-    let mut jobs = claim_next_jobs(conn, source_root, 1)?;
+    let mut jobs = claim_next_jobs(conn, source_root, source_id, 1)?;
     Ok(jobs.pop())
 }
 
 pub(in crate::egui_app::controller::analysis_jobs) fn claim_next_jobs(
     conn: &mut Connection,
     source_root: &Path,
+    source_id: &str,
     limit: usize,
 ) -> Result<Vec<ClaimedJob>, String> {
     if limit == 0 {
@@ -89,13 +91,13 @@ pub(in crate::egui_app::controller::analysis_jobs) fn claim_next_jobs(
             .prepare(
                 "SELECT id, sample_id, content_hash, job_type
                  FROM analysis_jobs
-                 WHERE status = 'pending'
+                 WHERE status = 'pending' AND sample_id LIKE ?1
                  ORDER BY created_at ASC, id ASC
-                 LIMIT ?1",
+                 LIMIT ?2",
             )
             .map_err(|err| format!("Failed to prepare analysis job claim: {err}"))?;
         let mut rows = stmt
-            .query(params![limit as i64])
+            .query(params![format!("{source_id}::%"), limit as i64])
             .map_err(|err| format!("Failed to query analysis jobs: {err}"))?;
         while let Some(row) = rows
             .next()

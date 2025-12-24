@@ -76,7 +76,7 @@ fn claim_next_job_marks_running_and_increments_attempts() {
     let mut conn = conn_with_schema();
     let jobs = vec![("s::a.wav".to_string(), "h1".to_string())];
     enqueue_jobs(&mut conn, &jobs, DEFAULT_JOB_TYPE, 123).unwrap();
-    let job = claim_next_job(&mut conn, std::path::Path::new("/tmp"))
+    let job = claim_next_job(&mut conn, std::path::Path::new("/tmp"), "s")
         .unwrap()
         .expect("job claimed");
     assert_eq!(job.sample_id, "s::a.wav");
