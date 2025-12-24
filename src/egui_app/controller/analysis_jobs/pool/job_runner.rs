@@ -173,6 +173,7 @@ fn run_embedding_backfill_job(
                     let mut inputs = Vec::new();
                     let mut payloads = Vec::new();
                     let mut processed_buffers = Vec::new();
+                    let mut sample_rates = Vec::new();
                     for work in batch {
                         let decoded =
                             match crate::analysis::audio::decode_for_analysis_with_rate(
@@ -187,18 +188,21 @@ fn run_embedding_backfill_job(
                                     )));
                                     continue;
                                 }
-                            };
+                        };
                         let processed = crate::analysis::audio::preprocess_mono_for_embedding(
                             &decoded.mono,
                             decoded.sample_rate_used,
                         );
                         processed_buffers.push(processed);
-                        let idx = processed_buffers.len() - 1;
-                        inputs.push(crate::analysis::embedding::EmbeddingBatchInput {
-                            samples: processed_buffers[idx].as_slice(),
-                            sample_rate: decoded.sample_rate_used,
-                        });
+                        sample_rates.push(decoded.sample_rate_used);
                         payloads.push((work.sample_id, work.content_hash));
+                    }
+
+                    for (idx, processed) in processed_buffers.iter().enumerate() {
+                        inputs.push(crate::analysis::embedding::EmbeddingBatchInput {
+                            samples: processed.as_slice(),
+                            sample_rate: sample_rates[idx],
+                        });
                     }
 
                     if inputs.is_empty() {
@@ -318,7 +322,7 @@ fn run_analysis_job(
     analysis_sample_rate: u32,
     analysis_version: &str,
 ) -> Result<(), String> {
-    let content_hash = job
+    let _content_hash = job
         .content_hash
         .as_deref()
         .ok_or_else(|| format!("Missing content_hash for analysis job {}", job.sample_id))?;
@@ -489,6 +493,8 @@ pub(super) fn run_analysis_jobs_with_decoded_batch(
 
     let mut batch_jobs = Vec::with_capacity(jobs.len());
     for (job, decoded) in jobs {
+        let sample_id = job.sample_id.clone();
+        let sample_rate_used = decoded.sample_rate_used;
         let mut item = BatchJob {
             job,
             decoded,
@@ -497,10 +503,10 @@ pub(super) fn run_analysis_jobs_with_decoded_batch(
             needs_embedding_upsert: false,
             error: None,
         };
-        if job.content_hash.as_deref().is_none() {
+        if item.job.content_hash.as_deref().is_none() {
             item.error = Some(format!(
                 "Missing content_hash for analysis job {}",
-                job.sample_id
+                sample_id
             ));
             batch_jobs.push(item);
             continue;
@@ -508,7 +514,7 @@ pub(super) fn run_analysis_jobs_with_decoded_batch(
         if use_cache {
             match load_embedding_vec_optional(
                 conn,
-                &job.sample_id,
+                &sample_id,
                 crate::analysis::embedding::EMBEDDING_MODEL_ID,
                 crate::analysis::embedding::EMBEDDING_DIM,
             ) {
@@ -517,8 +523,8 @@ pub(super) fn run_analysis_jobs_with_decoded_batch(
                 }
                 Ok(None) => {
                     let processed = crate::analysis::audio::preprocess_mono_for_embedding(
-                        &decoded.mono,
-                        decoded.sample_rate_used,
+                        &item.decoded.mono,
+                        sample_rate_used,
                     );
                     item.processed = Some(processed);
                     item.needs_embedding_upsert = true;
@@ -529,8 +535,8 @@ pub(super) fn run_analysis_jobs_with_decoded_batch(
             }
         } else {
             let processed = crate::analysis::audio::preprocess_mono_for_embedding(
-                &decoded.mono,
-                decoded.sample_rate_used,
+                &item.decoded.mono,
+                sample_rate_used,
             );
             item.processed = Some(processed);
             item.needs_embedding_upsert = true;
