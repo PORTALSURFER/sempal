@@ -16,7 +16,13 @@ pub(crate) fn decode_for_analysis(path: &Path) -> Result<AnalysisAudio, String> 
     decode_for_analysis_with_rate(path, ANALYSIS_SAMPLE_RATE)
 }
 
-pub(crate) fn probe_duration_seconds(path: &Path) -> Result<Option<f32>, String> {
+pub(crate) struct AudioProbe {
+    pub(crate) duration_seconds: Option<f32>,
+    pub(crate) sample_rate: Option<u32>,
+    pub(crate) channels: Option<u16>,
+}
+
+pub(crate) fn probe_metadata(path: &Path) -> Result<AudioProbe, String> {
     if path
         .extension()
         .and_then(|ext| ext.to_str())
@@ -25,10 +31,17 @@ pub(crate) fn probe_duration_seconds(path: &Path) -> Result<Option<f32>, String>
         let reader = hound::WavReader::open(path)
             .map_err(|err| format!("WAV probe failed for {}: {err}", path.display()))?;
         let spec = reader.spec();
-        let sample_rate = spec.sample_rate.max(1) as f32;
-        let channels = spec.channels.max(1) as f32;
-        let samples = reader.duration() as f32;
-        return Ok(Some((samples / channels / sample_rate).max(0.0)));
+        let sample_rate = spec.sample_rate.max(1);
+        let channels = spec.channels.max(1);
+        let duration_seconds = (reader.duration() as f32
+            / channels as f32
+            / sample_rate as f32)
+            .max(0.0);
+        return Ok(AudioProbe {
+            duration_seconds: Some(duration_seconds),
+            sample_rate: Some(sample_rate),
+            channels: Some(channels),
+        });
     }
 
     let file =
@@ -47,8 +60,12 @@ pub(crate) fn probe_duration_seconds(path: &Path) -> Result<Option<f32>, String>
     }
     let decoder = builder
         .build()
-        .map_err(|err| format!("Audio decode probe failed for {}: {err}", path.display()))?;
-    Ok(decoder.total_duration().map(|dur| dur.as_secs_f32()))
+        .map_err(|err| format!("Audio metadata probe failed for {}: {err}", path.display()))?;
+    Ok(AudioProbe {
+        duration_seconds: decoder.total_duration().map(|dur| dur.as_secs_f32()),
+        sample_rate: Some(decoder.sample_rate().max(1)),
+        channels: Some(decoder.channels().max(1)),
+    })
 }
 
 fn decode_for_analysis_with_rate(path: &Path, sample_rate: u32) -> Result<AnalysisAudio, String> {
@@ -225,8 +242,11 @@ mod tests {
             writer.write_sample::<i16>(0).unwrap();
         }
         writer.finalize().unwrap();
-        let duration = probe_duration_seconds(&path).unwrap().unwrap();
+        let probe = probe_metadata(&path).unwrap();
+        let duration = probe.duration_seconds.unwrap();
         assert!((duration - 1.0).abs() < 1e-3);
+        assert_eq!(probe.sample_rate, Some(48_000));
+        assert_eq!(probe.channels, Some(1));
     }
 
     #[test]

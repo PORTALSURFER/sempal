@@ -239,18 +239,21 @@ fn run_analysis_job(
     };
     let absolute = root.join(&relative_path);
     if max_analysis_duration_seconds.is_finite() && max_analysis_duration_seconds > 0.0 {
-        if let Ok(Some(duration_seconds)) =
-            crate::analysis::audio::probe_duration_seconds(&absolute)
-        {
-            if duration_seconds > max_analysis_duration_seconds {
-                db::update_analysis_metadata(
-                    conn,
-                    &job.sample_id,
-                    job.content_hash.as_deref(),
-                    duration_seconds,
-                    crate::analysis::audio::ANALYSIS_SAMPLE_RATE,
-                )?;
-                return Ok(());
+        if let Ok(probe) = crate::analysis::audio::probe_metadata(&absolute) {
+            if let Some(duration_seconds) = probe.duration_seconds {
+                if duration_seconds > max_analysis_duration_seconds {
+                    let sample_rate = probe
+                        .sample_rate
+                        .unwrap_or(crate::analysis::audio::ANALYSIS_SAMPLE_RATE);
+                    db::update_analysis_metadata(
+                        conn,
+                        &job.sample_id,
+                        job.content_hash.as_deref(),
+                        duration_seconds,
+                        sample_rate,
+                    )?;
+                    return Ok(());
+                }
             }
         }
     }

@@ -15,7 +15,7 @@ pub(crate) const SILENCE_PRE_ROLL_SECONDS: f32 = 0.01;
 pub(crate) const SILENCE_POST_ROLL_SECONDS: f32 = 0.005;
 const EMBEDDING_TARGET_RMS_DB: f32 = -20.0;
 
-pub(crate) use decode::{decode_for_analysis, probe_duration_seconds};
+pub(crate) use decode::{decode_for_analysis, probe_metadata};
 pub(crate) use normalize::sanitize_samples_in_place;
 pub(crate) use resample::resample_linear;
 
