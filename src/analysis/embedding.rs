@@ -268,6 +268,7 @@ fn ensure_onnx_env(runtime_path: &PathBuf) -> Result<(), String> {
         ort::environment::init_from(runtime_path.clone())
             .with_name("sempal_clap")
             .commit()
+            .map(|_| ())
             .map_err(|err| format!("Failed to initialize ONNX environment: {err}"))
     });
     init.clone()
