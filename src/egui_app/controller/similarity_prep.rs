@@ -436,7 +436,7 @@ impl EguiController {
                     if !self.source_has_embeddings(&source) {
                         self.ensure_similarity_prep_progress(0, true);
                         self.set_similarity_embedding_detail();
-                        self.enqueue_similarity_backfill(source);
+                        self.enqueue_similarity_backfill(source, false);
                         return;
                     }
                     self.handle_similarity_analysis_progress(&progress);
