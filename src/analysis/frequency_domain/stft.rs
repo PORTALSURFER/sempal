@@ -1,5 +1,5 @@
 use super::mel::MelBank;
-use crate::analysis::fft::{Complex32, fft_radix2_inplace, hann_window};
+use crate::analysis::fft::{Complex32, FftPlan, fft_radix2_inplace_with_plan, hann_window};
 
 pub(super) struct FrameSet {
     pub(super) spectral: Vec<SpectralFrame>,
@@ -36,6 +36,7 @@ pub(super) fn compute_frames(
     let frame_size = frame_size.max(1);
     let hop_size = hop_size.max(1);
     let window = hann_window(frame_size);
+    let plan = FftPlan::new(frame_size).expect("FFT plan must be valid");
     let mut complex = vec![Complex32::default(); frame_size];
     let mut spectral = Vec::new();
     let mut bands = Vec::new();
@@ -45,6 +46,7 @@ pub(super) fn compute_frames(
         if !process_frame(
             &mut complex,
             &window,
+            &plan,
             samples,
             start,
             sample_rate,
@@ -73,6 +75,7 @@ pub(super) fn compute_frames(
 fn process_frame(
     complex: &mut [Complex32],
     window: &[f32],
+    plan: &FftPlan,
     samples: &[f32],
     start: usize,
     sample_rate: u32,
@@ -83,7 +86,7 @@ fn process_frame(
     mfcc: &mut Vec<Vec<f32>>,
 ) -> bool {
     fill_windowed(complex, samples, start, window);
-    if fft_radix2_inplace(complex).is_err() {
+    if fft_radix2_inplace_with_plan(complex, plan).is_err() {
         return false;
     }
     let power = power_spectrum(complex);
