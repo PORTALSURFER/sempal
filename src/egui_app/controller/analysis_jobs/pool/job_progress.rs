@@ -4,6 +4,7 @@ use crate::egui_app::controller::jobs::JobMessage;
 use rusqlite::Connection;
 use std::sync::{
     Arc,
+    RwLock,
     atomic::{AtomicBool, Ordering},
     mpsc::Sender,
 };
@@ -18,7 +19,11 @@ struct ProgressSourceDb {
     conn: Connection,
 }
 
-fn refresh_sources(sources: &mut Vec<ProgressSourceDb>, last_refresh: &mut Instant) {
+fn refresh_sources(
+    sources: &mut Vec<ProgressSourceDb>,
+    last_refresh: &mut Instant,
+    allowed_source_ids: Option<&std::collections::HashSet<crate::sample_sources::SourceId>>,
+) {
     if last_refresh.elapsed() < SOURCE_REFRESH_INTERVAL {
         return;
     }
@@ -30,6 +35,11 @@ fn refresh_sources(sources: &mut Vec<ProgressSourceDb>, last_refresh: &mut Insta
     for source in state.sources {
         if !source.root.is_dir() {
             continue;
+        }
+        if let Some(allowed) = allowed_source_ids {
+            if !allowed.contains(&source.id) {
+                continue;
+            }
         }
         let conn = match db::open_source_db(&source.root) {
             Ok(conn) => conn,
@@ -60,6 +70,7 @@ pub(super) fn spawn_progress_poller(
     tx: Sender<JobMessage>,
     cancel: Arc<AtomicBool>,
     shutdown: Arc<AtomicBool>,
+    allowed_source_ids: Arc<RwLock<Option<std::collections::HashSet<crate::sample_sources::SourceId>>>>,
 ) -> JoinHandle<()> {
     std::thread::spawn(move || {
         let mut sources = Vec::new();
@@ -74,7 +85,11 @@ pub(super) fn spawn_progress_poller(
                 sleep(POLL_INTERVAL_IDLE);
                 continue;
             }
-            refresh_sources(&mut sources, &mut last_refresh);
+            let allowed = allowed_source_ids
+                .read()
+                .ok()
+                .and_then(|guard| guard.clone());
+            refresh_sources(&mut sources, &mut last_refresh, allowed.as_ref());
             let progress = current_progress_all(&mut sources);
             if last != Some(progress) {
                 last = Some(progress);

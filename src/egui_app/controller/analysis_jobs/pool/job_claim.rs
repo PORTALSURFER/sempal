@@ -9,6 +9,7 @@ use std::sync::{
     Arc,
     Condvar,
     Mutex,
+    RwLock,
     atomic::AtomicU32,
     atomic::{AtomicBool, Ordering},
     mpsc::Sender,
@@ -110,6 +111,7 @@ fn refresh_sources(
     sources: &mut Vec<SourceClaimDb>,
     last_refresh: &mut Instant,
     reset_done: &mut HashSet<std::path::PathBuf>,
+    allowed_source_ids: Option<&HashSet<crate::sample_sources::SourceId>>,
 ) {
     if last_refresh.elapsed() < SOURCE_REFRESH_INTERVAL {
         return;
@@ -122,6 +124,11 @@ fn refresh_sources(
     for source in state.sources {
         if !source.root.is_dir() {
             continue;
+        }
+        if let Some(allowed) = allowed_source_ids {
+            if !allowed.contains(&source.id) {
+                continue;
+            }
         }
         let conn = match db::open_source_db(&source.root) {
             Ok(conn) => conn,
@@ -168,6 +175,7 @@ pub(super) fn spawn_decoder_worker(
     cancel: Arc<AtomicBool>,
     shutdown: Arc<AtomicBool>,
     pause_claiming: Arc<AtomicBool>,
+    allowed_source_ids: Arc<RwLock<Option<HashSet<crate::sample_sources::SourceId>>>>,
     max_duration_bits: Arc<AtomicU32>,
     analysis_sample_rate: Arc<AtomicU32>,
 ) -> JoinHandle<()> {
@@ -192,7 +200,16 @@ pub(super) fn spawn_decoder_worker(
                 sleep(Duration::from_millis(50));
                 continue;
             }
-            refresh_sources(&mut sources, &mut last_refresh, &mut reset_done);
+            let allowed = allowed_source_ids
+                .read()
+                .ok()
+                .and_then(|guard| guard.clone());
+            refresh_sources(
+                &mut sources,
+                &mut last_refresh,
+                &mut reset_done,
+                allowed.as_ref(),
+            );
             if sources.is_empty() {
                 sleep(Duration::from_millis(200));
                 continue;
@@ -225,6 +242,17 @@ pub(super) fn spawn_decoder_worker(
                 sleep(Duration::from_millis(25));
                 continue;
             };
+            if let Some(allowed) = allowed.as_ref() {
+                if let Ok((source_id, _)) = db::parse_sample_id(&job.sample_id) {
+                    let source_id = crate::sample_sources::SourceId::from_string(source_id);
+                    if !allowed.contains(&source_id) {
+                        if let Ok(conn) = db::open_source_db(&job.source_root) {
+                            let _ = db::mark_pending(&conn, job.id);
+                        }
+                        continue;
+                    }
+                }
+            }
             if log_jobs {
                 eprintln!("analysis decode start: {} ({})", job.sample_id, job.job_type);
             }
@@ -262,6 +290,7 @@ pub(super) fn spawn_compute_worker(
     cancel: Arc<AtomicBool>,
     shutdown: Arc<AtomicBool>,
     use_cache: Arc<AtomicBool>,
+    allowed_source_ids: Arc<RwLock<Option<HashSet<crate::sample_sources::SourceId>>>>,
     max_duration_bits: Arc<AtomicU32>,
     analysis_sample_rate: Arc<AtomicU32>,
     analysis_version_override: Arc<std::sync::RwLock<Option<String>>>,
@@ -299,6 +328,33 @@ pub(super) fn spawn_compute_worker(
             let mut immediate_jobs: Vec<(db::ClaimedJob, Result<(), String>)> = Vec::new();
 
             for work in batch {
+                let allowed = allowed_source_ids
+                    .read()
+                    .ok()
+                    .and_then(|guard| guard.clone());
+                if let Some(allowed) = allowed.as_ref() {
+                    if let Ok((source_id, _)) = db::parse_sample_id(&work.job.sample_id) {
+                        let source_id = crate::sample_sources::SourceId::from_string(source_id);
+                        if !allowed.contains(&source_id) {
+                            let conn = match connections.entry(work.job.source_root.clone()) {
+                                std::collections::hash_map::Entry::Occupied(entry) => {
+                                    entry.into_mut()
+                                }
+                                std::collections::hash_map::Entry::Vacant(entry) => {
+                                    let conn = match db::open_source_db(&work.job.source_root) {
+                                        Ok(conn) => conn,
+                                        Err(_) => {
+                                            continue;
+                                        }
+                                    };
+                                    entry.insert(conn)
+                                }
+                            };
+                            let _ = db::mark_pending(conn, work.job.id);
+                            continue;
+                        }
+                    }
+                }
                 if log_jobs {
                     eprintln!("analysis run start: {} ({})", work.job.sample_id, work.job.job_type);
                 }

@@ -3,6 +3,7 @@ mod job_cleanup;
 mod job_progress;
 mod job_runner;
 
+use crate::sample_sources::SourceId;
 use std::sync::{
     Arc, RwLock,
     atomic::AtomicU32,
@@ -17,6 +18,7 @@ pub(in crate::egui_app::controller) struct AnalysisWorkerPool {
     shutdown: Arc<AtomicBool>,
     pause_claiming: Arc<AtomicBool>,
     use_cache: Arc<AtomicBool>,
+    allowed_source_ids: Arc<RwLock<Option<std::collections::HashSet<SourceId>>>>,
     max_duration_bits: Arc<AtomicU32>,
     analysis_sample_rate: Arc<AtomicU32>,
     analysis_version_override: Arc<RwLock<Option<String>>>,
@@ -31,6 +33,7 @@ impl AnalysisWorkerPool {
             shutdown: Arc::new(AtomicBool::new(false)),
             pause_claiming: Arc::new(AtomicBool::new(false)),
             use_cache: Arc::new(AtomicBool::new(true)),
+            allowed_source_ids: Arc::new(RwLock::new(None)),
             max_duration_bits: Arc::new(AtomicU32::new(30.0f32.to_bits())),
             analysis_sample_rate: Arc::new(AtomicU32::new(
                 crate::analysis::audio::ANALYSIS_SAMPLE_RATE,
@@ -69,6 +72,15 @@ impl AnalysisWorkerPool {
         }
     }
 
+    pub(in crate::egui_app::controller) fn set_allowed_sources(
+        &self,
+        sources: Option<Vec<SourceId>>,
+    ) {
+        if let Ok(mut guard) = self.allowed_source_ids.write() {
+            *guard = sources.map(|ids| ids.into_iter().collect());
+        }
+    }
+
     pub(in crate::egui_app::controller) fn pause_claiming(&self) {
         self.pause_claiming.store(true, Ordering::Relaxed);
     }
@@ -99,6 +111,7 @@ impl AnalysisWorkerPool {
                     self.cancel.clone(),
                     self.shutdown.clone(),
                     self.pause_claiming.clone(),
+                    self.allowed_source_ids.clone(),
                     self.max_duration_bits.clone(),
                     self.analysis_sample_rate.clone(),
                 ));
@@ -111,6 +124,7 @@ impl AnalysisWorkerPool {
                     self.cancel.clone(),
                     self.shutdown.clone(),
                     self.use_cache.clone(),
+                    self.allowed_source_ids.clone(),
                     self.max_duration_bits.clone(),
                     self.analysis_sample_rate.clone(),
                     self.analysis_version_override.clone(),
@@ -120,6 +134,7 @@ impl AnalysisWorkerPool {
                 message_tx,
                 self.cancel.clone(),
                 self.shutdown.clone(),
+                self.allowed_source_ids.clone(),
             ));
         }
     }

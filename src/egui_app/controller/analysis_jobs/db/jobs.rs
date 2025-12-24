@@ -174,3 +174,17 @@ pub(in crate::egui_app::controller::analysis_jobs) fn mark_failed(
     .map_err(|err| format!("Failed to mark analysis job failed: {err}"))?;
     Ok(())
 }
+
+pub(in crate::egui_app::controller::analysis_jobs) fn mark_pending(
+    conn: &Connection,
+    job_id: i64,
+) -> Result<(), String> {
+    conn.execute(
+        "UPDATE analysis_jobs
+         SET status = 'pending'
+         WHERE id = ?1",
+        params![job_id],
+    )
+    .map_err(|err| format!("Failed to mark analysis job pending: {err}"))?;
+    Ok(())
+}

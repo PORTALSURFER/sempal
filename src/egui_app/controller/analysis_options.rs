@@ -90,4 +90,8 @@ impl EguiController {
             self.set_status(err, StatusTone::Warning);
         }
     }
+
+    pub fn set_analysis_worker_allowed_sources(&mut self, sources: Option<Vec<SourceId>>) {
+        self.runtime.analysis.set_allowed_sources(sources);
+    }
 }
