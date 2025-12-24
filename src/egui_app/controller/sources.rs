@@ -1,6 +1,7 @@
 use super::collection_export;
 use super::*;
 use std::fs;
+use std::path::Path;
 
 impl EguiController {
     /// Select the first available source or refresh the current one.
@@ -36,6 +37,22 @@ impl EguiController {
     /// Change the selected source by id and refresh dependent state.
     pub fn select_source(&mut self, id: Option<SourceId>) {
         self.select_source_internal(id, None);
+    }
+
+    /// Select a source by its root path.
+    pub fn select_source_by_root(&mut self, root: &Path) -> bool {
+        let normalized = crate::sample_sources::config::normalize_path(root);
+        let id = self
+            .library
+            .sources
+            .iter()
+            .find(|source| source.root == normalized)
+            .map(|source| source.id.clone());
+        if id.is_some() {
+            self.select_source(id);
+            return true;
+        }
+        false
     }
 
     /// Refresh the wav list for the selected source (delegates to background load).

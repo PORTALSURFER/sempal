@@ -43,9 +43,14 @@ fn main() {
         controller.set_similarity_prep_fast_sample_rate(rate);
     }
 
-    if let Err(err) = controller.add_source_from_path(opts.source) {
-        eprintln!("Failed to add source: {err}");
-        std::process::exit(1);
+    let normalized = sempal::sample_sources::config::normalize_path(&opts.source);
+    if !controller.select_source_by_root(&normalized) {
+        if let Err(err) = controller.add_source_from_path(normalized.clone()) {
+            eprintln!("Failed to add source: {err}");
+            std::process::exit(1);
+        }
+    } else {
+        controller.prepare_similarity_for_selected_source();
     }
 
     let started = Instant::now();
