@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
@@ -5,7 +6,7 @@ use std::path::Path;
 use rodio::{Decoder, Source};
 
 use super::normalize::{normalize_peak_in_place, rms};
-use super::resample::resample_linear;
+use super::resample::resample_linear_into;
 use super::silence::trim_silence_with_hysteresis;
 use super::{
     ANALYSIS_SAMPLE_RATE, AnalysisAudio, MAX_ANALYSIS_SECONDS, MIN_ANALYSIS_SECONDS,
@@ -86,13 +87,28 @@ pub(crate) fn decode_for_analysis_with_rate_limit(
         .map(|limit| default_max.min(limit + WINDOW_SECONDS))
         .unwrap_or(default_max);
     let decoded = crate::analysis::audio_decode::decode_audio(path, Some(max_decode_seconds))?;
-    let mono = downmix_to_mono(&decoded.samples, decoded.channels);
-    let resampled = resample_linear(&mono, decoded.sample_rate, sample_rate);
-    Ok(prepare_mono_for_analysis(resampled, sample_rate))
+    DECODE_SCRATCH.with(|scratch| {
+        let mut scratch = scratch.borrow_mut();
+        downmix_to_mono_into(&mut scratch.mono, &decoded.samples, decoded.channels);
+        resample_linear_into(
+            &mut scratch.resampled,
+            &scratch.mono,
+            decoded.sample_rate,
+            sample_rate,
+        );
+        Ok(prepare_mono_for_analysis_from_slice(
+            &scratch.resampled,
+            sample_rate,
+        ))
+    })
 }
 
 pub(crate) fn prepare_mono_for_analysis(samples: Vec<f32>, sample_rate: u32) -> AnalysisAudio {
-    let mut processed = trim_silence_with_hysteresis(&samples, sample_rate);
+    prepare_mono_for_analysis_from_slice(&samples, sample_rate)
+}
+
+fn prepare_mono_for_analysis_from_slice(samples: &[f32], sample_rate: u32) -> AnalysisAudio {
+    let mut processed = trim_silence_with_hysteresis(samples, sample_rate);
     processed = apply_energy_windowing(&processed, sample_rate);
     pad_to_min_duration(&mut processed, sample_rate);
     normalize_peak_in_place(&mut processed);
@@ -104,13 +120,19 @@ pub(crate) fn prepare_mono_for_analysis(samples: Vec<f32>, sample_rate: u32) -> 
     }
 }
 
-fn downmix_to_mono(samples: &[f32], channels: u16) -> Vec<f32> {
+fn downmix_to_mono_into(out: &mut Vec<f32>, samples: &[f32], channels: u16) {
     let channels = channels.max(1) as usize;
     if channels == 1 {
-        return samples.iter().copied().map(sanitize_sample).collect();
+        out.clear();
+        out.reserve(samples.len().saturating_sub(out.capacity()));
+        for sample in samples.iter().copied() {
+            out.push(sanitize_sample(sample));
+        }
+        return;
     }
     let frames = samples.len() / channels;
-    let mut mono = Vec::with_capacity(frames);
+    out.clear();
+    out.reserve(frames.saturating_sub(out.capacity()));
     for frame in 0..frames {
         let start = frame * channels;
         let end = start + channels;
@@ -119,9 +141,20 @@ fn downmix_to_mono(samples: &[f32], channels: u16) -> Vec<f32> {
         for &sample in slice {
             sum += sanitize_sample(sample);
         }
-        mono.push(sum / channels as f32);
+        out.push(sum / channels as f32);
     }
-    mono
+}
+
+struct DecodeScratch {
+    mono: Vec<f32>,
+    resampled: Vec<f32>,
+}
+
+thread_local! {
+    static DECODE_SCRATCH: RefCell<DecodeScratch> = RefCell::new(DecodeScratch {
+        mono: Vec::new(),
+        resampled: Vec::new(),
+    });
 }
 
 fn sanitize_sample(sample: f32) -> f32 {
