@@ -15,6 +15,7 @@ use std::thread::JoinHandle;
 pub(in crate::egui_app::controller) struct AnalysisWorkerPool {
     cancel: Arc<AtomicBool>,
     shutdown: Arc<AtomicBool>,
+    pause_claiming: Arc<AtomicBool>,
     max_duration_bits: Arc<AtomicU32>,
     worker_count_override: Arc<AtomicU32>,
     threads: Vec<JoinHandle<()>>,
@@ -25,6 +26,7 @@ impl AnalysisWorkerPool {
         Self {
             cancel: Arc::new(AtomicBool::new(false)),
             shutdown: Arc::new(AtomicBool::new(false)),
+            pause_claiming: Arc::new(AtomicBool::new(false)),
             max_duration_bits: Arc::new(AtomicU32::new(30.0f32.to_bits())),
             worker_count_override: Arc::new(AtomicU32::new(0)),
             threads: Vec::new(),
@@ -39,6 +41,14 @@ impl AnalysisWorkerPool {
 
     pub(in crate::egui_app::controller) fn set_worker_count(&self, value: u32) {
         self.worker_count_override.store(value, Ordering::Relaxed);
+    }
+
+    pub(in crate::egui_app::controller) fn pause_claiming(&self) {
+        self.pause_claiming.store(true, Ordering::Relaxed);
+    }
+
+    pub(in crate::egui_app::controller) fn resume_claiming(&self) {
+        self.pause_claiming.store(false, Ordering::Relaxed);
     }
 
     pub(in crate::egui_app::controller) fn start(
@@ -60,6 +70,7 @@ impl AnalysisWorkerPool {
                     message_tx.clone(),
                     self.cancel.clone(),
                     self.shutdown.clone(),
+                    self.pause_claiming.clone(),
                     self.max_duration_bits.clone(),
                 ));
             }

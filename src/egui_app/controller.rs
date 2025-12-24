@@ -220,6 +220,11 @@ impl EguiController {
             .idle_worker_override
             .unwrap_or(self.settings.analysis.analysis_worker_count);
         let target = if busy { 1 } else { idle_target };
+        if busy {
+            self.runtime.analysis.pause_claiming();
+        } else {
+            self.runtime.analysis.resume_claiming();
+        }
         if self.runtime.performance.last_worker_count != Some(target) {
             self.runtime.analysis.set_worker_count(target);
             self.runtime.performance.last_worker_count = Some(target);

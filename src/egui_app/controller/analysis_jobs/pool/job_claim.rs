@@ -37,6 +37,7 @@ pub(super) fn spawn_worker(
     tx: Sender<JobMessage>,
     cancel: Arc<AtomicBool>,
     shutdown: Arc<AtomicBool>,
+    pause_claiming: Arc<AtomicBool>,
     max_duration_bits: Arc<AtomicU32>,
 ) -> JoinHandle<()> {
     std::thread::spawn(move || {
@@ -55,6 +56,10 @@ pub(super) fn spawn_worker(
                 break;
             }
             if cancel.load(Ordering::Relaxed) {
+                sleep(Duration::from_millis(50));
+                continue;
+            }
+            if pause_claiming.load(Ordering::Relaxed) {
                 sleep(Duration::from_millis(50));
                 continue;
             }
