@@ -1,5 +1,6 @@
+use std::cell::RefCell;
 use std::path::PathBuf;
-use std::sync::{LazyLock, Mutex};
+use std::sync::OnceLock;
 
 use ort::session::Session;
 use ort::session::builder::SessionBuilder;
@@ -24,7 +25,11 @@ pub(crate) struct ClapModel {
     input_scratch: Vec<f32>,
 }
 
-static GLOBAL_CLAP_MODEL: LazyLock<Mutex<Option<ClapModel>>> = LazyLock::new(|| Mutex::new(None));
+static ORT_ENV_INIT: OnceLock<Result<(), String>> = OnceLock::new();
+
+thread_local! {
+    static TLS_CLAP_MODEL: RefCell<Option<ClapModel>> = RefCell::new(None);
+}
 
 impl ClapModel {
     pub(crate) fn load() -> Result<Self, String> {
@@ -42,13 +47,7 @@ impl ClapModel {
                 runtime_path.to_string_lossy()
             ));
         }
-        unsafe {
-            std::env::set_var("ORT_DYLIB_PATH", &runtime_path);
-        }
-        ort::environment::init_from(runtime_path.to_string_lossy().to_string())
-            .with_name("sempal_clap")
-            .commit()
-            .map_err(|err| format!("Failed to initialize ONNX environment: {err}"))?;
+        ensure_onnx_env(&runtime_path)?;
         let session = SessionBuilder::new()
             .map_err(|err| format!("Failed to create ONNX session builder: {err}"))?
             .with_intra_threads(
@@ -70,14 +69,7 @@ pub(crate) fn infer_embedding(samples: &[f32], sample_rate: u32) -> Result<Vec<f
     if samples.is_empty() {
         return Err("CLAP inference requires non-empty samples".into());
     }
-    let mut guard = GLOBAL_CLAP_MODEL
-        .lock()
-        .map_err(|_| "CLAP model lock poisoned".to_string())?;
-    if guard.is_none() {
-        *guard = Some(ClapModel::load()?);
-    }
-    let model = guard.as_mut().expect("CLAP model loaded");
-    infer_embedding_with_model(model, samples, sample_rate)
+    with_clap_model(|model| infer_embedding_with_model(model, samples, sample_rate))
 }
 
 pub(crate) fn infer_embedding_query(samples: &[f32], sample_rate: u32) -> Result<Vec<f32>, String> {
@@ -88,27 +80,22 @@ pub(crate) fn infer_embedding_query(samples: &[f32], sample_rate: u32) -> Result
     if ranges.len() <= 1 {
         return infer_embedding(samples, sample_rate);
     }
-    let mut guard = GLOBAL_CLAP_MODEL
-        .lock()
-        .map_err(|_| "CLAP model lock poisoned".to_string())?;
-    if guard.is_none() {
-        *guard = Some(ClapModel::load()?);
-    }
-    let model = guard.as_mut().expect("CLAP model loaded");
-    let count = ranges.len().max(1) as f32;
-    let mut sum = vec![0.0_f32; EMBEDDING_DIM];
-    for (start, end) in ranges {
-        let embedding = infer_embedding_with_model(model, &samples[start..end], sample_rate)?;
-        for (acc, value) in sum.iter_mut().zip(embedding.iter()) {
-            *acc += value;
+    with_clap_model(|model| {
+        let count = ranges.len().max(1) as f32;
+        let mut sum = vec![0.0_f32; EMBEDDING_DIM];
+        for (start, end) in ranges {
+            let embedding = infer_embedding_with_model(model, &samples[start..end], sample_rate)?;
+            for (acc, value) in sum.iter_mut().zip(embedding.iter()) {
+                *acc += value;
+            }
         }
-    }
-    let scale = 1.0 / count;
-    for value in &mut sum {
-        *value *= scale;
-    }
-    normalize_l2_in_place(&mut sum);
-    Ok(sum)
+        let scale = 1.0 / count;
+        for value in &mut sum {
+            *value *= scale;
+        }
+        normalize_l2_in_place(&mut sum);
+        Ok(sum)
+    })
 }
 
 fn infer_embedding_with_model(
@@ -214,6 +201,31 @@ fn l2_norm(values: &[f32]) -> f32 {
         sum += value * value;
     }
     sum.sqrt()
+}
+
+fn ensure_onnx_env(runtime_path: &PathBuf) -> Result<(), String> {
+    let runtime_path = runtime_path.to_string_lossy().to_string();
+    let init = ORT_ENV_INIT.get_or_init(|| {
+        unsafe {
+            std::env::set_var("ORT_DYLIB_PATH", &runtime_path);
+        }
+        ort::environment::init_from(runtime_path.clone())
+            .with_name("sempal_clap")
+            .commit()
+            .map_err(|err| format!("Failed to initialize ONNX environment: {err}"))
+    });
+    init.clone()
+}
+
+fn with_clap_model<T>(f: impl FnOnce(&mut ClapModel) -> Result<T, String>) -> Result<T, String> {
+    TLS_CLAP_MODEL.with(|cell| {
+        let mut guard = cell.borrow_mut();
+        if guard.is_none() {
+            *guard = Some(ClapModel::load()?);
+        }
+        let model = guard.as_mut().expect("CLAP model loaded");
+        f(model)
+    })
 }
 
 fn clap_model_path() -> Result<PathBuf, String> {
