@@ -22,10 +22,12 @@ pub(super) fn run_job(
 struct EmbeddingWork {
     sample_id: String,
     absolute_path: PathBuf,
+    content_hash: String,
 }
 
 struct EmbeddingResult {
     sample_id: String,
+    content_hash: String,
     embedding: Vec<f32>,
 }
 
@@ -56,6 +58,32 @@ fn run_embedding_backfill_job(
         {
             continue;
         }
+        let Some(content_hash) = db::sample_content_hash(conn, &sample_id)? else {
+            continue;
+        };
+        if let Some(cached) = db::cached_embedding_by_hash(
+            conn,
+            &content_hash,
+            crate::analysis::version::analysis_version(),
+            crate::analysis::embedding::EMBEDDING_MODEL_ID,
+        )? {
+            if let Ok(vec) = crate::analysis::decode_f32_le_blob(&cached.vec_blob) {
+                if vec.len() == crate::analysis::embedding::EMBEDDING_DIM {
+                    db::upsert_embedding(
+                        conn,
+                        &sample_id,
+                        &cached.model_id,
+                        cached.dim,
+                        &cached.dtype,
+                        cached.l2_normed,
+                        &cached.vec_blob,
+                        cached.created_at,
+                    )?;
+                    crate::analysis::ann_index::upsert_embedding(conn, &sample_id, &vec)?;
+                    continue;
+                }
+            }
+        }
         let (source_id, relative_path) = match db::parse_sample_id(&sample_id) {
             Ok(parsed) => parsed,
             Err(err) => {
@@ -84,6 +112,7 @@ fn run_embedding_backfill_job(
         items.push(EmbeddingWork {
             sample_id,
             absolute_path,
+            content_hash,
         });
     }
 
@@ -145,6 +174,7 @@ fn run_embedding_backfill_job(
                     };
                     let _ = tx.send(Ok(EmbeddingResult {
                         sample_id: work.sample_id,
+                        content_hash: work.content_hash,
                         embedding,
                     }));
                 }
@@ -196,7 +226,7 @@ fn run_embedding_backfill_job(
                     crate::analysis::embedding::EMBEDDING_DIM as i64,
                     crate::analysis::embedding::EMBEDDING_DTYPE_F32,
                     true,
-                    embedding_blob,
+                    &embedding_blob,
                     created_at
                 ],
             );
@@ -204,6 +234,17 @@ fn run_embedding_backfill_job(
                 let _ = conn.execute_batch("ROLLBACK");
                 return Err(format!("Embedding backfill insert failed: {err}"));
             }
+            db::upsert_cached_embedding(
+                conn,
+                &result.content_hash,
+                crate::analysis::version::analysis_version(),
+                crate::analysis::embedding::EMBEDDING_MODEL_ID,
+                crate::analysis::embedding::EMBEDDING_DIM as i64,
+                crate::analysis::embedding::EMBEDDING_DTYPE_F32,
+                true,
+                &embedding_blob,
+                created_at,
+            )?;
         }
         conn.execute_batch("COMMIT")
             .map_err(|err| format!("Commit embedding backfill tx failed: {err}"))?;
@@ -227,6 +268,72 @@ fn run_analysis_job(
     job: &db::ClaimedJob,
     max_analysis_duration_seconds: f32,
 ) -> Result<(), String> {
+    let content_hash = job
+        .content_hash
+        .as_deref()
+        .ok_or_else(|| format!("Missing content_hash for analysis job {}", job.sample_id))?;
+    let current_hash = db::sample_content_hash(conn, &job.sample_id)?;
+    if current_hash.as_deref() != Some(content_hash) {
+        return Ok(());
+    }
+    let analysis_version = crate::analysis::version::analysis_version();
+    let cached_features = db::cached_features_by_hash(
+        conn,
+        content_hash,
+        analysis_version,
+        crate::analysis::vector::FEATURE_VERSION_V1,
+    )?;
+    let cached_embedding = db::cached_embedding_by_hash(
+        conn,
+        content_hash,
+        analysis_version,
+        crate::analysis::embedding::EMBEDDING_MODEL_ID,
+    )?;
+    if let (Some(features), Some(embedding)) = (&cached_features, &cached_embedding) {
+        if let Ok(vec) = crate::analysis::decode_f32_le_blob(&embedding.vec_blob) {
+            if vec.len() == crate::analysis::embedding::EMBEDDING_DIM {
+                db::update_analysis_metadata(
+                    conn,
+                    &job.sample_id,
+                    Some(content_hash),
+                    features.duration_seconds,
+                    features.sr_used,
+                )?;
+                db::upsert_analysis_features(
+                    conn,
+                    &job.sample_id,
+                    &features.vec_blob,
+                    features.feat_version,
+                    features.computed_at,
+                )?;
+                db::upsert_embedding(
+                    conn,
+                    &job.sample_id,
+                    &embedding.model_id,
+                    embedding.dim,
+                    &embedding.dtype,
+                    embedding.l2_normed,
+                    &embedding.vec_blob,
+                    embedding.created_at,
+                )?;
+                crate::analysis::ann_index::upsert_embedding(conn, &job.sample_id, &vec)?;
+                return Ok(());
+            }
+        }
+    }
+    if let Some(embedding) = cached_embedding {
+        db::upsert_embedding(
+            conn,
+            &job.sample_id,
+            &embedding.model_id,
+            embedding.dim,
+            &embedding.dtype,
+            embedding.l2_normed,
+            &embedding.vec_blob,
+            embedding.created_at,
+        )?;
+    }
+
     let (source_id, relative_path) = db::parse_sample_id(&job.sample_id)?;
     let Some(root) = db::source_root_for(conn, &source_id)? else {
         return Err(format!(
@@ -308,10 +415,6 @@ pub(super) fn run_analysis_job_with_decoded(
         decoded.duration_seconds,
         decoded.sample_rate_used,
     )?;
-    let content_hash = job
-        .content_hash
-        .as_deref()
-        .ok_or_else(|| format!("Missing content_hash for analysis job {}", job.sample_id))?;
     let current_hash = db::sample_content_hash(conn, &job.sample_id)?;
     if current_hash.as_deref() != Some(content_hash) {
         return Ok(());
@@ -326,6 +429,29 @@ pub(super) fn run_analysis_job_with_decoded(
         &blob,
         crate::analysis::vector::FEATURE_VERSION_V1,
         computed_at,
+    )?;
+    let analysis_version = crate::analysis::version::analysis_version();
+    let embedding_blob = crate::analysis::vector::encode_f32_le_blob(&embedding);
+    db::upsert_cached_features(
+        conn,
+        content_hash,
+        analysis_version,
+        crate::analysis::vector::FEATURE_VERSION_V1,
+        &blob,
+        computed_at,
+        decoded.duration_seconds,
+        decoded.sample_rate_used,
+    )?;
+    db::upsert_cached_embedding(
+        conn,
+        content_hash,
+        analysis_version,
+        crate::analysis::embedding::EMBEDDING_MODEL_ID,
+        crate::analysis::embedding::EMBEDDING_DIM as i64,
+        crate::analysis::embedding::EMBEDDING_DTYPE_F32,
+        true,
+        &embedding_blob,
+        now_epoch_seconds(),
     )?;
     Ok(())
 }
@@ -347,24 +473,11 @@ fn load_embedding_vec_optional(
     let Some(blob) = row else {
         return Ok(None);
     };
-    let vec = decode_f32le_blob(blob)?;
+    let vec = crate::analysis::decode_f32_le_blob(&blob)?;
     if vec.len() != expected_dim {
         return Ok(None);
     }
     Ok(Some(vec))
-}
-
-fn decode_f32le_blob(blob: Vec<u8>) -> Result<Vec<f32>, String> {
-    if blob.len() % 4 != 0 {
-        return Err("Blob length is not a multiple of 4 bytes".to_string());
-    }
-    let mut out = Vec::with_capacity(blob.len() / 4);
-    for chunk in blob.chunks_exact(4) {
-        out.push(f32::from_le_bytes(
-            chunk.try_into().expect("chunk size verified"),
-        ));
-    }
-    Ok(out)
 }
 
 fn now_epoch_seconds() -> i64 {
