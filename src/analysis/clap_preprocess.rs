@@ -1,4 +1,4 @@
-use crate::analysis::fft::{Complex32, fft_radix2_inplace, hann_window};
+use crate::analysis::fft::{Complex32, FftPlan, fft_radix2_inplace_with_plan, hann_window};
 
 pub(crate) const CLAP_STFT_N_FFT: usize = 1024;
 pub(crate) const CLAP_STFT_HOP: usize = 480;
@@ -15,12 +15,13 @@ pub(crate) fn stft_power_frames(
     let n_fft = n_fft.max(1);
     let hop = hop.max(1);
     let window = hann_window(n_fft);
+    let plan = FftPlan::new(n_fft)?;
     let mut frames = Vec::new();
     let mut buf = vec![Complex32::default(); n_fft];
     let mut start = 0usize;
     while start < samples.len() {
         fill_windowed(&mut buf, samples, start, &window);
-        fft_radix2_inplace(&mut buf)?;
+        fft_radix2_inplace_with_plan(&mut buf, &plan)?;
         frames.push(power_spectrum(&buf));
         start = start.saturating_add(hop);
     }
