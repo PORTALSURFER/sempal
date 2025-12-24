@@ -19,12 +19,14 @@ navigation inside these contexts, like for example, navigating the browser list,
 
   Prepare similarity search analysis
 
-  - SIMD for hot loops: time/frequency feature extraction (RMS, windowing), vector
-    normalization; only after profiling
-  - FFT optimization: use an optimized backend or precomputed plans; avoid
-    re‑planning
-  - Add sampling‑based analysis for long files: compute features from several short
-    windows instead of full duration
-
-
+  2. FFT optimizations: consider SIMD/vectorized complex multiply/add and bit‑reverse
+     (or use a tuned FFT crate if acceptable). Your new SIMD normalizer won’t touch
+     this.
+  3. DCT/mel: precompute cosine tables once, reuse buffers, and avoid per-frame heap
+     allocs.
+  4. Avoid per-sample WAV writing in benches: write interleaved buffers rather than
+     calling write_sample in tight loops.
+  5. Reduce decode overhead: for prep with duration cap, avoid full decode (you
+     already planned this).
+  6. Eliminate extra memmoves: reuse scratch buffers and avoid realloc/copy.
 
