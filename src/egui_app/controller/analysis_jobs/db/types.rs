@@ -4,6 +4,7 @@ pub(in crate::egui_app::controller::analysis_jobs) struct ClaimedJob {
     pub(in crate::egui_app::controller::analysis_jobs) sample_id: String,
     pub(in crate::egui_app::controller::analysis_jobs) content_hash: Option<String>,
     pub(in crate::egui_app::controller::analysis_jobs) job_type: String,
+    pub(in crate::egui_app::controller::analysis_jobs) source_root: std::path::PathBuf,
 }
 
 #[derive(Clone, Debug)]

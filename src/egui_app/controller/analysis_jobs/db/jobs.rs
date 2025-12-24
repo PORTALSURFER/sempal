@@ -1,7 +1,7 @@
 use super::types::ClaimedJob;
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params, params_from_iter};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::Path;
 
 /// Cached analysis state for a sample row.
 pub(in crate::egui_app::controller::analysis_jobs) struct SampleAnalysisState {
@@ -66,6 +66,7 @@ pub(in crate::egui_app::controller::analysis_jobs) fn sample_analysis_states(
 
 pub(in crate::egui_app::controller::analysis_jobs) fn claim_next_job(
     conn: &mut Connection,
+    source_root: &Path,
 ) -> Result<Option<ClaimedJob>, String> {
     let tx = conn
         .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -84,6 +85,7 @@ pub(in crate::egui_app::controller::analysis_jobs) fn claim_next_job(
                     sample_id: row.get(1)?,
                     content_hash: row.get(2)?,
                     job_type: row.get(3)?,
+                    source_root: source_root.to_path_buf(),
                 })
             },
         )
@@ -142,19 +144,4 @@ pub(in crate::egui_app::controller::analysis_jobs) fn mark_failed(
     )
     .map_err(|err| format!("Failed to mark analysis job failed: {err}"))?;
     Ok(())
-}
-
-#[cfg_attr(test, allow(dead_code))]
-pub(in crate::egui_app::controller::analysis_jobs) fn source_root_for(
-    conn: &Connection,
-    source_id: &str,
-) -> Result<Option<PathBuf>, String> {
-    conn.query_row(
-        "SELECT root FROM sources WHERE id = ?1",
-        params![source_id],
-        |row| row.get::<_, String>(0),
-    )
-    .optional()
-    .map(|root| root.map(PathBuf::from))
-    .map_err(|err| format!("Failed to lookup source root for analysis job: {err}"))
 }

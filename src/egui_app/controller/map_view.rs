@@ -27,11 +27,18 @@ impl EguiController {
             self.set_status_message(StatusMessage::TsneBuildAlreadyRunning);
             return;
         }
+        let Some(source_id) = self.current_source().map(|source| source.id) else {
+            self.set_status_message(StatusMessage::SelectSourceFirst {
+                tone: StatusTone::Warning,
+            });
+            return;
+        };
         self.runtime
             .jobs
             .begin_umap_build(super::jobs::UmapBuildJob {
                 model_id: model_id.to_string(),
                 umap_version: umap_version.to_string(),
+                source_id,
             });
         self.set_status_message(StatusMessage::BuildingTsneLayout);
     }
@@ -58,7 +65,7 @@ impl EguiController {
         umap_version: &str,
         source_id: Option<&SourceId>,
     ) -> Result<Option<UmapBounds>, String> {
-        let conn = open_library_db()?;
+        let conn = open_source_db(self, source_id)?;
         load_umap_bounds(&conn, model_id, umap_version, source_id)
     }
 
@@ -72,7 +79,7 @@ impl EguiController {
         bounds: crate::egui_app::state::MapQueryBounds,
         limit: usize,
     ) -> Result<Vec<UmapPoint>, String> {
-        let conn = open_library_db()?;
+        let conn = open_source_db(self, source_id)?;
         load_umap_points(
             &conn,
             model_id,
@@ -91,7 +98,9 @@ impl EguiController {
         umap_version: &str,
         sample_id: &str,
     ) -> Result<Option<(f32, f32)>, String> {
-        let conn = open_library_db()?;
+        let (source_id, _relative) = super::analysis_jobs::parse_sample_id(sample_id)?;
+        let source_id = SourceId::from_string(source_id);
+        let conn = open_source_db(self, Some(&source_id))?;
         load_umap_point_for_sample(&conn, model_id, umap_version, sample_id)
     }
 
@@ -103,7 +112,7 @@ impl EguiController {
         cluster_umap_version: &str,
         source_id: Option<&SourceId>,
     ) -> Result<HashMap<i32, crate::egui_app::state::MapClusterCentroid>, String> {
-        let conn = open_library_db()?;
+        let conn = open_source_db(self, source_id)?;
         load_umap_cluster_centroids(
             &conn,
             model_id,
@@ -115,8 +124,12 @@ impl EguiController {
     }
 }
 
-pub(super) fn run_umap_build(model_id: &str, umap_version: &str) -> Result<(), String> {
-    let mut conn = open_library_db()?;
+pub(super) fn run_umap_build(
+    model_id: &str,
+    umap_version: &str,
+    source_id: &SourceId,
+) -> Result<(), String> {
+    let mut conn = open_source_db_for_id(source_id)?;
     crate::analysis::umap::build_umap_layout(&mut conn, model_id, umap_version, 0, 0.95)?;
     Ok(())
 }
@@ -126,8 +139,11 @@ pub(super) fn run_umap_cluster_build(
     umap_version: &str,
     source_id: Option<&SourceId>,
 ) -> Result<crate::analysis::hdbscan::HdbscanStats, String> {
-    let mut conn = open_library_db()?;
-    let sample_id_prefix = source_id.map(|source_id| format!("{}::%", source_id.as_str()));
+    let Some(source_id) = source_id else {
+        return Err("Missing source for cluster build".to_string());
+    };
+    let mut conn = open_source_db_for_id(source_id)?;
+    let sample_id_prefix = Some(format!("{}::%", source_id.as_str()));
     crate::analysis::hdbscan::build_hdbscan_clusters_for_sample_id_prefix(
         &mut conn,
         model_id,
@@ -142,9 +158,28 @@ pub(super) fn run_umap_cluster_build(
     )
 }
 
-fn open_library_db() -> Result<Connection, String> {
-    crate::sample_sources::library::open_connection()
-        .map_err(|err| format!("Open library DB failed: {err}"))
+fn open_source_db(
+    controller: &EguiController,
+    source_id: Option<&SourceId>,
+) -> Result<Connection, String> {
+    let source_id = source_id.ok_or_else(|| "No source selected".to_string())?;
+    let source = controller
+        .library
+        .sources
+        .iter()
+        .find(|source| &source.id == source_id)
+        .ok_or_else(|| "Source not found".to_string())?;
+    super::analysis_jobs::open_source_db(&source.root)
+}
+
+fn open_source_db_for_id(source_id: &SourceId) -> Result<Connection, String> {
+    let state = crate::sample_sources::library::load().map_err(|err| err.to_string())?;
+    let source = state
+        .sources
+        .iter()
+        .find(|source| &source.id == source_id)
+        .ok_or_else(|| "Source not found".to_string())?;
+    super::analysis_jobs::open_source_db(&source.root)
 }
 
 fn load_umap_bounds(

@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 pub(super) struct BenchOptions {
     pub(super) out: PathBuf,
     pub(super) analysis: bool,
+    pub(super) analysis_full: bool,
     pub(super) similarity: bool,
     pub(super) seed: u64,
     pub(super) warmup_iters: usize,
@@ -38,6 +39,7 @@ fn default_options() -> BenchOptions {
     BenchOptions {
         out: PathBuf::from("bench.json"),
         analysis: true,
+        analysis_full: false,
         similarity: true,
         seed: 1,
         warmup_iters: 5,
@@ -79,6 +81,8 @@ fn apply_toggle(options: &mut BenchOptions, flag: &str) -> bool {
     match flag {
         "--analysis" => options.analysis = true,
         "--no-analysis" => options.analysis = false,
+        "--analysis-full" => options.analysis_full = true,
+        "--analysis-lite" => options.analysis_full = false,
         "--similarity" => options.similarity = true,
         "--no-similarity" => options.similarity = false,
         _ => return false,
@@ -148,6 +152,8 @@ fn help_text() -> &'static str {
 Options:\n\
   --out <path>                Output JSON path (default: bench.json)\n\
   --analysis / --no-analysis   Enable/disable analysis throughput bench (default: enabled)\n\
+  --analysis-full              Include embedding inference in analysis bench\n\
+  --analysis-lite              Skip embedding inference (feature-only)\n\
   --similarity / --no-similarity Enable/disable ANN similarity bench (default: enabled)\n\
   --seed <u64>                 RNG seed for analysis fixtures (default: 1)\n\
   --warmup-iters <n>           Warmup iterations for each query (default: 5)\n\

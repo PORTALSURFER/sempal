@@ -44,63 +44,35 @@ pub struct SimilarNeighbor {
     pub distance: f32,
 }
 
-static ANN_INDEX: LazyLock<Mutex<Option<AnnIndexState>>> = LazyLock::new(|| Mutex::new(None));
+static ANN_INDEX: LazyLock<Mutex<HashMap<String, AnnIndexState>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+fn with_index_state<R>(
+    conn: &Connection,
+    f: impl FnOnce(&mut AnnIndexState) -> Result<R, String>,
+) -> Result<R, String> {
+    let key = index_key(conn)?;
+    let mut guard = ANN_INDEX
+        .lock()
+        .map_err(|_| "ANN index lock poisoned".to_string())?;
+    if !guard.contains_key(&key) {
+        let state = load_or_build_index(conn)?;
+        guard.insert(key.clone(), state);
+    }
+    let state = guard
+        .get_mut(&key)
+        .ok_or_else(|| "ANN index missing".to_string())?;
+    f(state)
+}
 
 pub fn upsert_embedding(
     conn: &Connection,
     sample_id: &str,
     embedding: &[f32],
 ) -> Result<(), String> {
-    let mut guard = ANN_INDEX
-        .lock()
-        .map_err(|_| "ANN index lock poisoned".to_string())?;
-    if guard.is_none() {
-        let state = load_or_build_index(conn)?;
-        *guard = Some(state);
-    }
-    let Some(state) = guard.as_mut() else {
-        return Ok(());
-    };
-    if state.id_lookup.contains_key(sample_id) {
-        return Ok(());
-    }
-    if embedding.len() != state.params.dim {
-        return Err(format!(
-            "Embedding dim mismatch: expected {}, got {}",
-            state.params.dim,
-            embedding.len()
-        ));
-    }
-    let id = state.id_map.len();
-    state.id_map.push(sample_id.to_string());
-    state.id_lookup.insert(sample_id.to_string(), id);
-    state.hnsw.insert((embedding, id));
-    state.dirty_inserts += 1;
-    maybe_flush(conn, state)?;
-    Ok(())
-}
-
-pub fn upsert_embeddings_batch<'a, I>(conn: &Connection, items: I) -> Result<(), String>
-where
-    I: IntoIterator<Item = (&'a str, &'a [f32])>,
-{
-    let mut iter = items.into_iter().peekable();
-    if iter.peek().is_none() {
-        return Ok(());
-    }
-    let mut guard = ANN_INDEX
-        .lock()
-        .map_err(|_| "ANN index lock poisoned".to_string())?;
-    if guard.is_none() {
-        let state = load_or_build_index(conn)?;
-        *guard = Some(state);
-    }
-    let Some(state) = guard.as_mut() else {
-        return Ok(());
-    };
-    for (sample_id, embedding) in iter {
+    with_index_state(conn, |state| {
         if state.id_lookup.contains_key(sample_id) {
-            continue;
+            return Ok(());
         }
         if embedding.len() != state.params.dim {
             return Err(format!(
@@ -114,36 +86,49 @@ where
         state.id_lookup.insert(sample_id.to_string(), id);
         state.hnsw.insert((embedding, id));
         state.dirty_inserts += 1;
+        maybe_flush(conn, state)?;
+        Ok(())
+    })
+}
+
+pub fn upsert_embeddings_batch<'a, I>(conn: &Connection, items: I) -> Result<(), String>
+where
+    I: IntoIterator<Item = (&'a str, &'a [f32])>,
+{
+    let mut iter = items.into_iter().peekable();
+    if iter.peek().is_none() {
+        return Ok(());
     }
-    maybe_flush(conn, state)?;
-    Ok(())
+    with_index_state(conn, |state| {
+        for (sample_id, embedding) in iter {
+            if state.id_lookup.contains_key(sample_id) {
+                continue;
+            }
+            if embedding.len() != state.params.dim {
+                return Err(format!(
+                    "Embedding dim mismatch: expected {}, got {}",
+                    state.params.dim,
+                    embedding.len()
+                ));
+            }
+            let id = state.id_map.len();
+            state.id_map.push(sample_id.to_string());
+            state.id_lookup.insert(sample_id.to_string(), id);
+            state.hnsw.insert((embedding, id));
+            state.dirty_inserts += 1;
+        }
+        maybe_flush(conn, state)?;
+        Ok(())
+    })
 }
 
 pub fn flush_pending_inserts(conn: &Connection) -> Result<(), String> {
-    let params = default_params();
-    let mut guard = ANN_INDEX
-        .lock()
-        .map_err(|_| "ANN index lock poisoned".to_string())?;
-    if guard.is_none() {
-        let Some(meta) = read_meta(conn, &params.model_id)? else {
-            return Ok(());
-        };
-        if meta.params != params {
+    with_index_state(conn, |state| {
+        if state.dirty_inserts == 0 {
             return Ok(());
         }
-        if let Some(state) = load_index_from_disk(&meta)? {
-            *guard = Some(state);
-        } else {
-            return Ok(());
-        }
-    }
-    let Some(state) = guard.as_mut() else {
-        return Ok(());
-    };
-    if state.dirty_inserts == 0 {
-        return Ok(());
-    }
-    flush_index(conn, state)
+        flush_index(conn, state)
+    })
 }
 
 pub fn find_similar(
@@ -155,42 +140,34 @@ pub fn find_similar(
         return Ok(Vec::new());
     }
     let embedding = load_embedding(conn, sample_id)?;
-    let mut guard = ANN_INDEX
-        .lock()
-        .map_err(|_| "ANN index lock poisoned".to_string())?;
-    if guard.is_none() {
-        let state = load_or_build_index(conn)?;
-        *guard = Some(state);
-    }
-    let Some(state) = guard.as_mut() else {
-        return Ok(Vec::new());
-    };
-    if !state.id_lookup.contains_key(sample_id) {
-        let id = state.id_map.len();
-        state.id_map.push(sample_id.to_string());
-        state.id_lookup.insert(sample_id.to_string(), id);
-        state.hnsw.insert((embedding.as_slice(), id));
-        state.dirty_inserts += 1;
-        maybe_flush(conn, state)?;
-    }
-    let ef = state.params.ef_search.max(k + 1);
-    let neighbours = state.hnsw.search(&embedding, k + 1, ef);
-    let mut results = Vec::with_capacity(k);
-    for neighbour in neighbours {
-        if let Some(candidate) = state.id_map.get(neighbour.d_id) {
-            if candidate == sample_id {
-                continue;
-            }
-            results.push(SimilarNeighbor {
-                sample_id: candidate.clone(),
-                distance: neighbour.distance,
-            });
-            if results.len() >= k {
-                break;
+    with_index_state(conn, |state| {
+        if !state.id_lookup.contains_key(sample_id) {
+            let id = state.id_map.len();
+            state.id_map.push(sample_id.to_string());
+            state.id_lookup.insert(sample_id.to_string(), id);
+            state.hnsw.insert((embedding.as_slice(), id));
+            state.dirty_inserts += 1;
+            maybe_flush(conn, state)?;
+        }
+        let ef = state.params.ef_search.max(k + 1);
+        let neighbours = state.hnsw.search(&embedding, k + 1, ef);
+        let mut results = Vec::with_capacity(k);
+        for neighbour in neighbours {
+            if let Some(candidate) = state.id_map.get(neighbour.d_id) {
+                if candidate == sample_id {
+                    continue;
+                }
+                results.push(SimilarNeighbor {
+                    sample_id: candidate.clone(),
+                    distance: neighbour.distance,
+                });
+                if results.len() >= k {
+                    break;
+                }
             }
         }
-    }
-    Ok(results)
+        Ok(results)
+    })
 }
 
 pub fn find_similar_for_embedding(
@@ -208,34 +185,26 @@ pub fn find_similar_for_embedding(
             embedding.len()
         ));
     }
-    let mut guard = ANN_INDEX
-        .lock()
-        .map_err(|_| "ANN index lock poisoned".to_string())?;
-    if guard.is_none() {
-        let state = load_or_build_index(conn)?;
-        *guard = Some(state);
-    }
-    let Some(state) = guard.as_mut() else {
-        return Ok(Vec::new());
-    };
-    if state.id_map.is_empty() {
-        return Err("ANN index has no embeddings".to_string());
-    }
-    let ef = state.params.ef_search.max(k);
-    let neighbours = state.hnsw.search(embedding, k, ef);
-    let mut results = Vec::with_capacity(k);
-    for neighbour in neighbours {
-        if let Some(candidate) = state.id_map.get(neighbour.d_id) {
-            results.push(SimilarNeighbor {
-                sample_id: candidate.clone(),
-                distance: neighbour.distance,
-            });
-            if results.len() >= k {
-                break;
+    with_index_state(conn, |state| {
+        if state.id_map.is_empty() {
+            return Err("ANN index has no embeddings".to_string());
+        }
+        let ef = state.params.ef_search.max(k);
+        let neighbours = state.hnsw.search(embedding, k, ef);
+        let mut results = Vec::with_capacity(k);
+        for neighbour in neighbours {
+            if let Some(candidate) = state.id_map.get(neighbour.d_id) {
+                results.push(SimilarNeighbor {
+                    sample_id: candidate.clone(),
+                    distance: neighbour.distance,
+                });
+                if results.len() >= k {
+                    break;
+                }
             }
         }
-    }
-    Ok(results)
+        Ok(results)
+    })
 }
 
 fn load_embedding(conn: &Connection, sample_id: &str) -> Result<Vec<f32>, String> {
@@ -261,7 +230,7 @@ fn load_or_build_index(conn: &Connection) -> Result<AnnIndexState, String> {
     }
     let index_path = meta
         .map(|meta| meta.index_path)
-        .unwrap_or(default_index_path()?);
+        .unwrap_or(default_index_path(conn)?);
     let mut state = build_index_from_db(conn, params, index_path)?;
     flush_index(conn, &mut state)?;
     Ok(state)
@@ -305,6 +274,15 @@ fn read_meta(conn: &Connection, model_id: &str) -> Result<Option<AnnIndexMetaRow
         serde_json::from_str(&params_json).map_err(|err| format!("{err}"))?;
     let index_path = PathBuf::from(path);
     Ok(Some(AnnIndexMetaRow { index_path, params }))
+}
+
+fn index_key(conn: &Connection) -> Result<String, String> {
+    let params = default_params();
+    let meta = read_meta(conn, &params.model_id)?;
+    let index_path = meta
+        .map(|meta| meta.index_path)
+        .unwrap_or(default_index_path(conn)?);
+    Ok(index_path.to_string_lossy().to_string())
 }
 
 fn id_map_path_for(index_path: &Path) -> PathBuf {
@@ -502,11 +480,37 @@ fn load_id_map(path: &Path) -> Result<Vec<String>, String> {
     serde_json::from_slice(&bytes).map_err(|err| format!("Failed to decode id map: {err}"))
 }
 
-fn default_index_path() -> Result<PathBuf, String> {
-    let root = app_dirs::app_root_dir().map_err(|err| err.to_string())?;
+fn default_index_path(conn: &Connection) -> Result<PathBuf, String> {
+    let root = match database_root_dir(conn) {
+        Ok(dir) => dir,
+        Err(_) => app_dirs::app_root_dir().map_err(|err| err.to_string())?,
+    };
     let dir = root.join(ANN_DIR);
     std::fs::create_dir_all(&dir).map_err(|err| format!("Failed to create ANN dir: {err}"))?;
     Ok(dir.join(ANN_BASENAME))
+}
+
+fn database_root_dir(conn: &Connection) -> Result<PathBuf, String> {
+    let mut stmt = conn
+        .prepare("PRAGMA database_list")
+        .map_err(|err| format!("Failed to read database_list: {err}"))?;
+    let mut rows = stmt
+        .query([])
+        .map_err(|err| format!("Failed to read database_list: {err}"))?;
+    let Some(row) = rows
+        .next()
+        .map_err(|err| format!("Failed to read database_list: {err}"))?
+    else {
+        return Err("Missing database_list row".to_string());
+    };
+    let path: Option<String> = row.get(2).map_err(|err| err.to_string())?;
+    let path = path.filter(|value| !value.is_empty());
+    let path = path.ok_or_else(|| "Database path missing".to_string())?;
+    let path = PathBuf::from(path);
+    let root = path
+        .parent()
+        .ok_or_else(|| "Database path missing parent".to_string())?;
+    Ok(root.to_path_buf())
 }
 
 fn hnsw_dump_paths(index_path: &Path) -> Result<(PathBuf, PathBuf), String> {
@@ -526,13 +530,14 @@ pub fn rebuild_index(conn: &Connection) -> Result<(), String> {
     let params = default_params();
     let index_path = read_meta(conn, &params.model_id)?
         .map(|meta| meta.index_path)
-        .unwrap_or(default_index_path()?);
+        .unwrap_or(default_index_path(conn)?);
     let mut state = build_index_from_db(conn, params, index_path)?;
     flush_index(conn, &mut state)?;
+    let key = index_key(conn)?;
     let mut guard = ANN_INDEX
         .lock()
         .map_err(|_| "ANN index lock poisoned".to_string())?;
-    *guard = Some(state);
+    guard.insert(key, state);
     Ok(())
 }
 

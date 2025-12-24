@@ -141,8 +141,3 @@ impl Drop for AnalysisWorkerPool {
         self.shutdown();
     }
 }
-
-pub(super) fn library_db_path() -> Result<std::path::PathBuf, String> {
-    let dir = crate::app_dirs::app_root_dir().map_err(|err| err.to_string())?;
-    Ok(dir.join(crate::sample_sources::library::LIBRARY_DB_FILE_NAME))
-}

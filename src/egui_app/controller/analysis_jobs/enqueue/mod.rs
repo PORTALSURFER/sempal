@@ -10,7 +10,6 @@ pub(in crate::egui_app::controller) use enqueue_samples::enqueue_jobs_for_source
 #[cfg(test)]
 mod tests {
     use super::enqueue_embeddings::enqueue_jobs_for_embedding_backfill;
-    use super::enqueue_helpers::library_db_path;
     use super::enqueue_samples::{
         enqueue_jobs_for_source_backfill, enqueue_jobs_for_source_missing_features,
     };
@@ -92,8 +91,14 @@ mod tests {
             })
             .unwrap();
 
-        let db_path = library_db_path().unwrap();
-        let conn = db::open_library_db(&db_path).unwrap();
+        let conn = db::open_source_db(&source.root).unwrap();
+        conn.execute_batch(
+            "DELETE FROM analysis_jobs;
+             DELETE FROM samples;
+             DELETE FROM features;
+             DELETE FROM embeddings;",
+        )
+        .unwrap();
 
         let a = format!("{}::Pack/a.wav", source.id.as_str());
         let b = format!("{}::Pack/b.wav", source.id.as_str());
@@ -168,8 +173,14 @@ mod tests {
             .unwrap();
         batch.commit().unwrap();
 
-        let db_path = library_db_path().unwrap();
-        let conn = db::open_library_db(&db_path).unwrap();
+        let conn = db::open_source_db(&source.root).unwrap();
+        conn.execute_batch(
+            "DELETE FROM analysis_jobs;
+             DELETE FROM samples;
+             DELETE FROM features;
+             DELETE FROM embeddings;",
+        )
+        .unwrap();
 
         let a = format!("{}::Pack/a.wav", source.id.as_str());
         let b = format!("{}::Pack/b.wav", source.id.as_str());

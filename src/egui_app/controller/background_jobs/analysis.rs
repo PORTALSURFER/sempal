@@ -7,8 +7,33 @@ pub(super) fn handle_analysis_message(
     message: AnalysisJobMessage,
 ) {
     match message {
-        AnalysisJobMessage::Progress(progress) => {
-            controller.handle_similarity_analysis_progress(&progress);
+        AnalysisJobMessage::Progress {
+            source_id,
+            progress,
+        } => {
+            let selected_matches = match source_id.as_ref() {
+                None => true,
+                Some(id) => controller
+                    .selection_state
+                    .ctx
+                    .selected_source
+                    .as_ref()
+                    .map(|selected| selected == id)
+                    .unwrap_or(false),
+            };
+            if let Some(source_id) = source_id.as_ref() {
+                if controller
+                    .runtime
+                    .similarity_prep
+                    .as_ref()
+                    .is_some_and(|state| &state.source_id == source_id)
+                {
+                    controller.handle_similarity_analysis_progress(&progress);
+                }
+            }
+            if !selected_matches {
+                return;
+            }
             if progress.total() == 0 {
                 if controller.ui.progress.task == Some(ProgressTaskKind::Analysis) {
                     controller.clear_progress();
@@ -16,18 +41,17 @@ pub(super) fn handle_analysis_message(
                 return;
             }
             if progress.pending == 0 && progress.running == 0 {
-                if let Some(source_id) = controller.selection_state.ctx.selected_source.clone()
-                    && let Ok(failures) =
-                        super::analysis_jobs::failed_samples_for_source(&source_id)
-                {
-                    controller
-                        .ui_cache
-                        .browser
-                        .analysis_failures
-                        .insert(source_id, failures);
-                }
-                if let Some(source_id) = controller.selection_state.ctx.selected_source.clone() {
-                    controller.ui_cache.browser.features.remove(&source_id);
+                if let Some(source) = controller.current_source() {
+                    if let Ok(failures) =
+                        super::analysis_jobs::failed_samples_for_source(&source)
+                    {
+                        controller
+                            .ui_cache
+                            .browser
+                            .analysis_failures
+                            .insert(source.id.clone(), failures);
+                    }
+                    controller.ui_cache.browser.features.remove(&source.id);
                 }
                 if controller.ui.progress.task == Some(ProgressTaskKind::Analysis) {
                     controller.clear_progress();
@@ -75,7 +99,10 @@ pub(super) fn handle_analysis_message(
                 .runtime
                 .jobs
                 .message_sender()
-                .send(JobMessage::Analysis(AnalysisJobMessage::Progress(progress)));
+                .send(JobMessage::Analysis(AnalysisJobMessage::Progress {
+                    source_id: controller.selection_state.ctx.selected_source.clone(),
+                    progress,
+                }));
         }
         AnalysisJobMessage::EnqueueFailed(err) => {
             controller.set_status(format!("Analysis enqueue failed: {err}"), StatusTone::Error);
@@ -92,7 +119,10 @@ pub(super) fn handle_analysis_message(
                 .runtime
                 .jobs
                 .message_sender()
-                .send(JobMessage::Analysis(AnalysisJobMessage::Progress(progress)));
+                .send(JobMessage::Analysis(AnalysisJobMessage::Progress {
+                    source_id: controller.selection_state.ctx.selected_source.clone(),
+                    progress,
+                }));
         }
         AnalysisJobMessage::EmbeddingBackfillEnqueueFailed(err) => {
             controller.set_status(

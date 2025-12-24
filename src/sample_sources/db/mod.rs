@@ -104,6 +104,12 @@ impl SourceDatabase {
         Ok(db)
     }
 
+    /// Open a database connection for the given root without wrapping in SourceDatabase.
+    pub fn open_connection(root: impl AsRef<Path>) -> Result<Connection, SourceDbError> {
+        let db = Self::open(root)?;
+        Ok(db.into_connection())
+    }
+
     /// Return the path to the root folder backing this database.
     pub fn root(&self) -> &Path {
         &self.root
@@ -129,6 +135,10 @@ impl SourceDatabase {
 
     fn apply_schema(&self) -> Result<(), SourceDbError> {
         schema::apply_schema(&self.connection)
+    }
+
+    fn into_connection(self) -> Connection {
+        self.connection
     }
 }
 

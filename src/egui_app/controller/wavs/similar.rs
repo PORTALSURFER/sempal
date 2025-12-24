@@ -29,10 +29,7 @@ pub(super) fn find_similar_for_visible_row(
     let entry_path = entry.relative_path.clone();
     let sample_id =
         super::super::analysis_jobs::build_sample_id(source_id.as_str(), &entry_path);
-    let db_path = crate::app_dirs::app_root_dir()
-        .map_err(|err| err.to_string())?
-        .join(crate::sample_sources::library::LIBRARY_DB_FILE_NAME);
-    let mut conn = super::super::analysis_jobs::open_library_db(&db_path)?;
+    let mut conn = open_source_db_for_id(controller, &source_id)?;
     if let Err(err) = maybe_enqueue_full_analysis(controller, &mut conn, &sample_id) {
         tracing::debug!("Fast prep refine enqueue failed: {err}");
     }
@@ -85,10 +82,7 @@ pub(super) fn find_similar_for_sample_id(
     if controller.selection_state.ctx.selected_source.as_ref() != Some(&source_id) {
         controller.select_source(Some(source_id.clone()));
     }
-    let db_path = crate::app_dirs::app_root_dir()
-        .map_err(|err| err.to_string())?
-        .join(crate::sample_sources::library::LIBRARY_DB_FILE_NAME);
-    let mut conn = super::super::analysis_jobs::open_library_db(&db_path)?;
+    let mut conn = open_source_db_for_id(controller, &source_id)?;
     if let Err(err) = maybe_enqueue_full_analysis(controller, &mut conn, sample_id) {
         tracing::debug!("Fast prep refine enqueue failed: {err}");
     }
@@ -138,6 +132,19 @@ pub(super) fn clear_similar_filter(controller: &mut EguiController) {
     }
 }
 
+fn open_source_db_for_id(
+    controller: &EguiController,
+    source_id: &SourceId,
+) -> Result<rusqlite::Connection, String> {
+    let source = controller
+        .library
+        .sources
+        .iter()
+        .find(|source| &source.id == source_id)
+        .ok_or_else(|| "Source not found".to_string())?;
+    super::super::analysis_jobs::open_source_db(&source.root)
+}
+
 pub(super) fn find_similar_for_audio_path(
     controller: &mut EguiController,
     path: &Path,
@@ -159,10 +166,7 @@ pub(super) fn find_similar_for_audio_path(
         .ok()
         .and_then(|features| crate::analysis::light_dsp_from_features_v1(&features))
         .map(normalize_l2);
-    let db_path = crate::app_dirs::app_root_dir()
-        .map_err(|err| err.to_string())?
-        .join(crate::sample_sources::library::LIBRARY_DB_FILE_NAME);
-    let conn = super::super::analysis_jobs::open_library_db(&db_path)?;
+    let conn = open_source_db_for_id(controller, &source_id)?;
     let neighbours = crate::analysis::ann_index::find_similar_for_embedding(
         &conn,
         &embedding,

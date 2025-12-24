@@ -68,25 +68,31 @@ pub(super) fn handle_scan_finished(controller: &mut EguiController, result: Scan
                 .cloned();
 
             if scan_changed {
-                let tx = controller.runtime.jobs.message_sender();
-                let source_id = result.source_id.clone();
-                let changed_samples = changed_samples.clone();
-                std::thread::spawn(move || {
-                    let result =
-                        super::analysis_jobs::enqueue_jobs_for_source(&source_id, &changed_samples);
-                    match result {
-                        Ok((inserted, progress)) => {
-                            let _ = tx.send(JobMessage::Analysis(
-                                super::AnalysisJobMessage::EnqueueFinished { inserted, progress },
-                            ));
+                if let Some(source) = source_for_jobs.clone() {
+                    let tx = controller.runtime.jobs.message_sender();
+                    let changed_samples = changed_samples.clone();
+                    std::thread::spawn(move || {
+                        let result = super::analysis_jobs::enqueue_jobs_for_source(
+                            &source,
+                            &changed_samples,
+                        );
+                        match result {
+                            Ok((inserted, progress)) => {
+                                let _ = tx.send(JobMessage::Analysis(
+                                    super::AnalysisJobMessage::EnqueueFinished {
+                                        inserted,
+                                        progress,
+                                    },
+                                ));
+                            }
+                            Err(err) => {
+                                let _ = tx.send(JobMessage::Analysis(
+                                    super::AnalysisJobMessage::EnqueueFailed(err),
+                                ));
+                            }
                         }
-                        Err(err) => {
-                            let _ = tx.send(JobMessage::Analysis(
-                                super::AnalysisJobMessage::EnqueueFailed(err),
-                            ));
-                        }
-                    }
-                });
+                    });
+                }
             } else if let Some(source) = source_for_jobs {
                 if similarity_prep_active {
                     controller.handle_similarity_scan_finished(&result.source_id, false);

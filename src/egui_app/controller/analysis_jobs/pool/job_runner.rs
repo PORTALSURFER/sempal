@@ -1,6 +1,6 @@
 use crate::egui_app::controller::analysis_jobs::db;
 use rusqlite::OptionalExtension;
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, mpsc::channel};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -57,7 +57,6 @@ fn run_embedding_backfill_job(
         return Ok(());
     }
 
-    let mut roots: HashMap<String, PathBuf> = HashMap::new();
     let mut items = Vec::new();
     for sample_id in sample_ids {
         if load_embedding_vec_optional(
@@ -96,24 +95,14 @@ fn run_embedding_backfill_job(
                 }
             }
         }
-        let (source_id, relative_path) = match db::parse_sample_id(&sample_id) {
+        let (_source_id, relative_path) = match db::parse_sample_id(&sample_id) {
             Ok(parsed) => parsed,
             Err(err) => {
                 warn!("Skipping embed backfill sample_id={sample_id}: {err}");
                 continue;
             }
         };
-        let root = if let Some(root) = roots.get(&source_id) {
-            root.clone()
-        } else {
-            let Some(root) = db::source_root_for(conn, &source_id)? else {
-                warn!("Missing source root for embed backfill source_id={source_id}");
-                continue;
-            };
-            roots.insert(source_id.clone(), root.clone());
-            root
-        };
-        let absolute_path = root.join(&relative_path);
+        let absolute_path = job.source_root.join(&relative_path);
         if !absolute_path.exists() {
             warn!(
                 "Missing file for embed backfill: {}",
@@ -351,14 +340,8 @@ fn run_analysis_job(
         )?;
     }
 
-    let (source_id, relative_path) = db::parse_sample_id(&job.sample_id)?;
-    let Some(root) = db::source_root_for(conn, &source_id)? else {
-        return Err(format!(
-            "Source not found for job sample_id={}",
-            job.sample_id
-        ));
-    };
-    let absolute = root.join(&relative_path);
+    let (_source_id, relative_path) = db::parse_sample_id(&job.sample_id)?;
+    let absolute = job.source_root.join(&relative_path);
     if max_analysis_duration_seconds.is_finite() && max_analysis_duration_seconds > 0.0 {
         if let Ok(probe) = crate::analysis::audio::probe_metadata(&absolute) {
             if let Some(duration_seconds) = probe.duration_seconds {

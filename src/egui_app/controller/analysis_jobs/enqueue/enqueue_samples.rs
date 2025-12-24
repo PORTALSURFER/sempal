@@ -1,19 +1,19 @@
-use super::enqueue_helpers::{fast_content_hash, library_db_path, now_epoch_seconds};
+use super::enqueue_helpers::{fast_content_hash, now_epoch_seconds};
 use crate::egui_app::controller::analysis_jobs::db;
 use crate::egui_app::controller::analysis_jobs::types::AnalysisProgress;
 use rusqlite::params;
 
 struct EnqueueSamplesRequest<'a> {
-    source_id: &'a crate::sample_sources::SourceId,
+    source: &'a crate::sample_sources::SampleSource,
     changed_samples: &'a [crate::sample_sources::scanner::ChangedSample],
 }
 
 pub(in crate::egui_app::controller) fn enqueue_jobs_for_source(
-    source_id: &crate::sample_sources::SourceId,
+    source: &crate::sample_sources::SampleSource,
     changed_samples: &[crate::sample_sources::scanner::ChangedSample],
 ) -> Result<(usize, AnalysisProgress), String> {
     let request = EnqueueSamplesRequest {
-        source_id,
+        source,
         changed_samples,
     };
     enqueue_samples(request)
@@ -23,22 +23,20 @@ fn enqueue_samples(
     request: EnqueueSamplesRequest<'_>,
 ) -> Result<(usize, AnalysisProgress), String> {
     if request.changed_samples.is_empty() {
-        let db_path = library_db_path()?;
-        let conn = db::open_library_db(&db_path)?;
+        let conn = db::open_source_db(&request.source.root)?;
         return Ok((0, db::current_progress(&conn)?));
     }
     let sample_metadata: Vec<db::SampleMetadata> = request
         .changed_samples
         .iter()
         .map(|sample| db::SampleMetadata {
-            sample_id: db::build_sample_id(request.source_id.as_str(), &sample.relative_path),
+            sample_id: db::build_sample_id(request.source.id.as_str(), &sample.relative_path),
             content_hash: sample.content_hash.clone(),
             size: sample.file_size,
             mtime_ns: sample.modified_ns,
         })
         .collect();
-    let db_path = library_db_path()?;
-    let mut conn = db::open_library_db(&db_path)?;
+    let mut conn = db::open_source_db(&request.source.root)?;
     let sample_ids: Vec<String> = sample_metadata
         .iter()
         .map(|sample| sample.sample_id.clone())
@@ -86,8 +84,7 @@ pub(in crate::egui_app::controller) fn enqueue_jobs_for_source_backfill(
 fn enqueue_source_backfill(
     request: EnqueueSourceRequest<'_>,
 ) -> Result<(usize, AnalysisProgress), String> {
-    let db_path = library_db_path()?;
-    let mut conn = db::open_library_db(&db_path)?;
+    let mut conn = db::open_source_db(&request.source.root)?;
     let prefix = format!("{}::%", request.source.id.as_str());
     let existing_jobs_total: i64 = conn
         .query_row(
@@ -161,8 +158,7 @@ pub(in crate::egui_app::controller) fn enqueue_jobs_for_source_missing_features(
 fn enqueue_missing_features(
     request: EnqueueMissingFeaturesRequest<'_>,
 ) -> Result<(usize, AnalysisProgress), String> {
-    let db_path = library_db_path()?;
-    let mut conn = db::open_library_db(&db_path)?;
+    let mut conn = db::open_source_db(&request.source.root)?;
 
     let source_db = crate::sample_sources::SourceDatabase::open(&request.source.root)
         .map_err(|err| err.to_string())?;

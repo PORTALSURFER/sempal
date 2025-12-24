@@ -56,12 +56,14 @@ impl EguiController {
             );
         }
         self.library.collections = cfg.collections;
-        if let Ok(root) = crate::app_dirs::app_root_dir() {
-            let db_path = root.join(crate::sample_sources::library::LIBRARY_DB_FILE_NAME);
-            if let Ok(mut conn) = super::analysis_jobs::open_library_db(&db_path) {
+        for source in &self.library.sources {
+            if let Ok(mut conn) = super::analysis_jobs::open_source_db(&source.root) {
                 if let Err(err) = super::analysis_jobs::purge_orphaned_samples(&mut conn) {
                     self.set_status(
-                        format!("Failed to purge orphaned sample data: {err}"),
+                        format!(
+                            "Failed to purge orphaned sample data for {}: {err}",
+                            source.root.display()
+                        ),
                         StatusTone::Warning,
                     );
                 }

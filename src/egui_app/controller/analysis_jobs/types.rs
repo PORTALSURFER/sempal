@@ -47,7 +47,10 @@ impl fmt::Display for AnalysisProgress {
 #[derive(Clone, Debug)]
 pub(in crate::egui_app::controller) enum AnalysisJobMessage {
     /// Queue counts changed (either due to enqueue or workers making progress).
-    Progress(AnalysisProgress),
+    Progress {
+        source_id: Option<crate::sample_sources::SourceId>,
+        progress: AnalysisProgress,
+    },
     /// An enqueue job finished, including how many rows were inserted.
     EnqueueFinished {
         inserted: usize,

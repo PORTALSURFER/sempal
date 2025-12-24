@@ -4,11 +4,10 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 pub(in crate::egui_app::controller) fn failed_samples_for_source(
-    source_id: &crate::sample_sources::SourceId,
+    source: &crate::sample_sources::SampleSource,
 ) -> Result<HashMap<PathBuf, String>, String> {
-    let db_path = library_db_path()?;
-    let conn = db::open_library_db(&db_path)?;
-    failed_samples_for_source_conn(&conn, source_id)
+    let conn = db::open_source_db(&source.root)?;
+    failed_samples_for_source_conn(&conn, &source.id)
 }
 
 fn failed_samples_for_source_conn(
@@ -60,11 +59,6 @@ fn failed_samples_for_source_conn(
     Ok(out)
 }
 
-fn library_db_path() -> Result<PathBuf, String> {
-    let dir = crate::app_dirs::app_root_dir().map_err(|err| err.to_string())?;
-    Ok(dir.join(crate::sample_sources::library::LIBRARY_DB_FILE_NAME))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -75,41 +69,17 @@ mod tests {
     fn loads_failed_jobs_for_source() {
         let config_dir = tempdir().unwrap();
         let _guard = ConfigBaseGuard::set(config_dir.path().to_path_buf());
-        let root = crate::app_dirs::app_root_dir().unwrap();
-        let db_path = root.join(crate::sample_sources::library::LIBRARY_DB_FILE_NAME);
-
-        let conn = Connection::open(&db_path).unwrap();
+        let source_root = tempdir().unwrap();
+        let source = crate::sample_sources::SampleSource::new_with_id(
+            crate::sample_sources::SourceId::from_string("s1"),
+            source_root.path().to_path_buf(),
+        );
+        let conn = db::open_source_db(&source.root).unwrap();
         conn.execute_batch(
-            "CREATE TABLE analysis_jobs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                sample_id TEXT NOT NULL,
-                job_type TEXT NOT NULL,
-                content_hash TEXT,
-                status TEXT NOT NULL,
-                attempts INTEGER NOT NULL DEFAULT 0,
-                created_at INTEGER NOT NULL,
-                last_error TEXT,
-                UNIQUE(sample_id, job_type)
-            );
-            CREATE TABLE samples (
-                sample_id TEXT PRIMARY KEY,
-                analysis_version TEXT
-            );
-            CREATE TABLE features (
-                sample_id TEXT PRIMARY KEY,
-                feat_version INTEGER NOT NULL,
-                vec_blob BLOB NOT NULL,
-                computed_at INTEGER NOT NULL
-            ) WITHOUT ROWID;
-            CREATE TABLE embeddings (
-                sample_id TEXT PRIMARY KEY,
-                model_id TEXT NOT NULL,
-                dim INTEGER NOT NULL,
-                dtype TEXT NOT NULL,
-                l2_normed INTEGER NOT NULL,
-                vec BLOB NOT NULL,
-                created_at INTEGER NOT NULL
-            ) WITHOUT ROWID;",
+            "DELETE FROM analysis_jobs;
+             DELETE FROM samples;
+             DELETE FROM features;
+             DELETE FROM embeddings;",
         )
         .unwrap();
         conn.execute(
@@ -149,11 +119,7 @@ mod tests {
         )
         .unwrap();
 
-        let map = failed_samples_for_source_conn(
-            &conn,
-            &crate::sample_sources::SourceId::from_string("s1"),
-        )
-        .unwrap();
+        let map = failed_samples_for_source_conn(&conn, &source.id).unwrap();
         assert_eq!(map.len(), 1);
         assert_eq!(
             map.get(&PathBuf::from("Pack/b.wav")).map(|s| s.as_str()),

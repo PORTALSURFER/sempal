@@ -2,7 +2,8 @@ use super::job_runner::{run_analysis_job_with_decoded, run_job};
 use crate::egui_app::controller::analysis_jobs::db;
 use crate::egui_app::controller::analysis_jobs::types::AnalysisJobMessage;
 use crate::egui_app::controller::jobs::JobMessage;
-use std::collections::VecDeque;
+use rusqlite::Connection;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::{
     Arc,
@@ -13,7 +14,7 @@ use std::sync::{
     mpsc::Sender,
 };
 use std::thread::{JoinHandle, sleep};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 #[cfg(target_os = "windows")]
 use windows::Win32::System::Threading::{
@@ -72,6 +73,49 @@ pub(super) enum DecodeOutcome {
     NotNeeded,
 }
 
+struct SourceClaimDb {
+    source: crate::sample_sources::SampleSource,
+    conn: Connection,
+}
+
+const SOURCE_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
+
+fn refresh_sources(
+    sources: &mut Vec<SourceClaimDb>,
+    last_refresh: &mut Instant,
+    reset_done: &mut HashSet<std::path::PathBuf>,
+) {
+    if last_refresh.elapsed() < SOURCE_REFRESH_INTERVAL {
+        return;
+    }
+    *last_refresh = Instant::now();
+    let Ok(state) = crate::sample_sources::library::load() else {
+        return;
+    };
+    let mut next = Vec::new();
+    for source in state.sources {
+        if !source.root.is_dir() {
+            continue;
+        }
+        let conn = match db::open_source_db(&source.root) {
+            Ok(conn) => conn,
+            Err(err) => {
+                tracing::debug!(
+                    "Source DB open failed for {}: {err}",
+                    source.root.display()
+                );
+                continue;
+            }
+        };
+        if reset_done.insert(source.root.clone()) {
+            let _ = db::prune_jobs_for_missing_sources(&conn);
+            let _ = db::reset_running_to_pending(&conn);
+        }
+        next.push(SourceClaimDb { source, conn });
+    }
+    *sources = next;
+}
+
 #[cfg_attr(test, allow(dead_code))]
 pub(super) fn worker_count_with_override(override_count: u32) -> usize {
     if override_count >= 1 {
@@ -103,16 +147,10 @@ pub(super) fn spawn_decoder_worker(
 ) -> JoinHandle<()> {
     std::thread::spawn(move || {
         lower_worker_priority();
-        let db_path = match super::library_db_path() {
-            Ok(path) => path,
-            Err(_) => return,
-        };
-        let mut conn = match db::open_library_db(&db_path) {
-            Ok(conn) => conn,
-            Err(_) => return,
-        };
-        let _ = db::prune_jobs_for_missing_sources(&conn);
-        let _ = db::reset_running_to_pending(&conn);
+        let mut sources = Vec::new();
+        let mut last_refresh = Instant::now() - SOURCE_REFRESH_INTERVAL;
+        let mut reset_done = HashSet::new();
+        let mut next_source = 0usize;
         loop {
             if shutdown.load(Ordering::Relaxed) {
                 break;
@@ -125,19 +163,31 @@ pub(super) fn spawn_decoder_worker(
                 sleep(Duration::from_millis(50));
                 continue;
             }
-            let job = match db::claim_next_job(&mut conn) {
-                Ok(job) => job,
-                Err(_) => {
-                    sleep(Duration::from_millis(200));
-                    continue;
+            refresh_sources(&mut sources, &mut last_refresh, &mut reset_done);
+            if sources.is_empty() {
+                sleep(Duration::from_millis(200));
+                continue;
+            }
+            let mut claimed = None;
+            for _ in 0..sources.len() {
+                let idx = next_source % sources.len();
+                next_source = next_source.wrapping_add(1);
+                let source = &mut sources[idx];
+                let job = match db::claim_next_job(&mut source.conn, &source.source.root) {
+                    Ok(job) => job,
+                    Err(_) => continue,
+                };
+                if job.is_some() {
+                    claimed = job;
+                    break;
                 }
-            };
-            let Some(job) = job else {
+            }
+            let Some(job) = claimed else {
                 sleep(Duration::from_millis(25));
                 continue;
             };
             let outcome = if job.job_type == db::ANALYZE_SAMPLE_JOB_TYPE {
-                decode_analysis_job(&conn, &job, &max_duration_bits, &analysis_sample_rate)
+                decode_analysis_job(&job, &max_duration_bits, &analysis_sample_rate)
             } else {
                 DecodeOutcome::NotNeeded
             };
@@ -159,16 +209,7 @@ pub(super) fn spawn_compute_worker(
 ) -> JoinHandle<()> {
     std::thread::spawn(move || {
         lower_worker_priority();
-        let db_path = match super::library_db_path() {
-            Ok(path) => path,
-            Err(_) => return,
-        };
-        let conn = match db::open_library_db(&db_path) {
-            Ok(conn) => conn,
-            Err(_) => return,
-        };
-        let _ = db::prune_jobs_for_missing_sources(&conn);
-        let _ = db::reset_running_to_pending(&conn);
+        let mut connections: HashMap<std::path::PathBuf, Connection> = HashMap::new();
         loop {
             if shutdown.load(Ordering::Relaxed) {
                 break;
@@ -188,10 +229,22 @@ pub(super) fn spawn_compute_worker(
                 .ok()
                 .and_then(|guard| guard.clone())
                 .unwrap_or_else(|| crate::analysis::version::analysis_version().to_string());
+            let conn = match connections.entry(work.job.source_root.clone()) {
+                std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+                std::collections::hash_map::Entry::Vacant(entry) => {
+                    let conn = match db::open_source_db(&work.job.source_root) {
+                        Ok(conn) => conn,
+                        Err(_) => {
+                            continue;
+                        }
+                    };
+                    entry.insert(conn)
+                }
+            };
             let outcome = catch_unwind(AssertUnwindSafe(|| match work.job.job_type.as_str() {
                 db::ANALYZE_SAMPLE_JOB_TYPE => match work.outcome {
                     DecodeOutcome::Decoded(decoded) => run_analysis_job_with_decoded(
-                        &conn,
+                        conn,
                         &work.job,
                         decoded,
                         &analysis_version,
@@ -200,7 +253,7 @@ pub(super) fn spawn_compute_worker(
                         duration_seconds,
                         sample_rate,
                     } => db::update_analysis_metadata(
-                        &conn,
+                        conn,
                         &work.job.sample_id,
                         work.job.content_hash.as_deref(),
                         duration_seconds,
@@ -211,7 +264,7 @@ pub(super) fn spawn_compute_worker(
                     DecodeOutcome::NotNeeded => Err("Decode missing for analysis job".to_string()),
                 },
                 _ => run_job(
-                    &conn,
+                    conn,
                     &work.job,
                     max_analysis_duration_seconds,
                     analysis_sample_rate,
@@ -221,40 +274,35 @@ pub(super) fn spawn_compute_worker(
             .unwrap_or_else(|payload| Err(panic_to_string(payload)));
             match outcome {
                 Ok(()) => {
-                    let _ = db::mark_done(&conn, work.job.id);
+                    let _ = db::mark_done(conn, work.job.id);
                 }
                 Err(err) => {
-                    let _ = db::mark_failed(&conn, work.job.id, &err);
+                    let _ = db::mark_failed(conn, work.job.id, &err);
                 }
             }
-            if let Ok(progress) = db::current_progress(&conn) {
-                let _ = tx.send(JobMessage::Analysis(AnalysisJobMessage::Progress(progress)));
+            if let Ok(progress) = db::current_progress(conn) {
+                let source_id = db::parse_sample_id(&work.job.sample_id)
+                    .ok()
+                    .map(|(source_id, _)| crate::sample_sources::SourceId::from_string(source_id));
+                let _ = tx.send(JobMessage::Analysis(AnalysisJobMessage::Progress {
+                    source_id,
+                    progress,
+                }));
             }
         }
     })
 }
 
 fn decode_analysis_job(
-    conn: &rusqlite::Connection,
     job: &db::ClaimedJob,
     max_duration_bits: &AtomicU32,
     analysis_sample_rate: &AtomicU32,
 ) -> DecodeOutcome {
-    let (source_id, relative_path) = match db::parse_sample_id(&job.sample_id) {
+    let (_source_id, relative_path) = match db::parse_sample_id(&job.sample_id) {
         Ok(parsed) => parsed,
         Err(err) => return DecodeOutcome::Failed(err),
     };
-    let root = match db::source_root_for(conn, &source_id) {
-        Ok(Some(root)) => root,
-        Ok(None) => {
-            return DecodeOutcome::Failed(format!(
-                "Source not found for job sample_id={}",
-                job.sample_id
-            ))
-        }
-        Err(err) => return DecodeOutcome::Failed(err),
-    };
-    let absolute = root.join(&relative_path);
+    let absolute = job.source_root.join(&relative_path);
     let max_analysis_duration_seconds = f32::from_bits(max_duration_bits.load(Ordering::Relaxed));
     let sample_rate = analysis_sample_rate.load(Ordering::Relaxed).max(1);
     if max_analysis_duration_seconds.is_finite() && max_analysis_duration_seconds > 0.0 {

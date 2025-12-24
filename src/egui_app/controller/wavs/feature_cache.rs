@@ -42,10 +42,13 @@ impl EguiController {
         }) {
             return Ok(());
         }
-        let db_path = crate::app_dirs::app_root_dir()
-            .map_err(|err| err.to_string())?
-            .join(crate::sample_sources::library::LIBRARY_DB_FILE_NAME);
-        let conn = super::analysis_jobs::open_library_db(&db_path)?;
+        let source = self
+            .library
+            .sources
+            .iter()
+            .find(|source| &source.id == source_id)
+            .ok_or_else(|| "Source not found".to_string())?;
+        let conn = super::analysis_jobs::open_source_db(&source.root)?;
         let mut rows = vec![None; needs_len];
 
         let prefix = format!("{}::", source_id.as_str());

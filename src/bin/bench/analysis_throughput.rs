@@ -7,6 +7,7 @@ use std::time::Instant;
 
 #[derive(Clone, Debug, Serialize)]
 pub(super) struct AnalysisBenchResult {
+    pub(super) mode: String,
     pub(super) samples: usize,
     pub(super) total_elapsed_ms: u64,
     pub(super) mean_ms_per_sample: f64,
@@ -29,8 +30,28 @@ pub(super) fn run(options: &BenchOptions) -> Result<AnalysisBenchResult, String>
         if vec.len() != sempal::analysis::FEATURE_VECTOR_LEN_V1 {
             source_err(vec.len())?;
         }
+        if options.analysis_full {
+            let processed = sempal::analysis::audio::preprocess_mono_for_embedding(
+                &samples,
+                options.analysis_sample_rate,
+            );
+            let embedding = sempal::analysis::embedding::infer_embedding(
+                &processed,
+                options.analysis_sample_rate,
+            )?;
+            if embedding.len() != sempal::analysis::embedding::EMBEDDING_DIM {
+                return Err(format!(
+                    "Unexpected embedding dim: {}",
+                    embedding.len()
+                ));
+            }
+        }
     }
-    Ok(summarize(options.analysis_samples, started.elapsed()))
+    Ok(summarize(
+        options.analysis_samples,
+        started.elapsed(),
+        options.analysis_full,
+    ))
 }
 
 fn synth_mono_samples(
@@ -53,7 +74,11 @@ fn synth_mono_samples(
     out
 }
 
-fn summarize(samples: usize, elapsed: std::time::Duration) -> AnalysisBenchResult {
+fn summarize(
+    samples: usize,
+    elapsed: std::time::Duration,
+    analysis_full: bool,
+) -> AnalysisBenchResult {
     let total_elapsed_ms = elapsed.as_millis() as u64;
     let mean_ms_per_sample = if samples == 0 {
         0.0
@@ -66,6 +91,11 @@ fn summarize(samples: usize, elapsed: std::time::Duration) -> AnalysisBenchResul
         samples as f64 / elapsed.as_secs_f64()
     };
     AnalysisBenchResult {
+        mode: if analysis_full {
+            "features+embeddings".to_string()
+        } else {
+            "features".to_string()
+        },
         samples,
         total_elapsed_ms,
         mean_ms_per_sample,

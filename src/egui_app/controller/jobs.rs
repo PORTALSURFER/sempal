@@ -46,6 +46,7 @@ pub(super) struct IssueGatewayCreateResult {
 pub(super) struct UmapBuildJob {
     pub(super) model_id: String,
     pub(super) umap_version: String,
+    pub(super) source_id: SourceId,
 }
 
 #[derive(Debug)]
@@ -292,7 +293,8 @@ impl ControllerJobs {
         self.umap_build_in_progress = true;
         let tx = self.message_tx.clone();
         thread::spawn(move || {
-            let result = super::map_view::run_umap_build(&job.model_id, &job.umap_version);
+            let result =
+                super::map_view::run_umap_build(&job.model_id, &job.umap_version, &job.source_id);
             let _ = tx.send(JobMessage::UmapBuilt(UmapBuildResult {
                 umap_version: job.umap_version,
                 result,

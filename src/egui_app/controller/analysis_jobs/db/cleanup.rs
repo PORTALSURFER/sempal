@@ -1,4 +1,4 @@
-use rusqlite::{Connection, TransactionBehavior};
+use rusqlite::{Connection, TransactionBehavior, params};
 
 pub(in crate::egui_app::controller::analysis_jobs) fn reset_running_to_pending(
     conn: &Connection,
@@ -15,14 +15,15 @@ pub(in crate::egui_app::controller::analysis_jobs) fn prune_jobs_for_missing_sou
 ) -> Result<usize, String> {
     conn.execute(
         "DELETE FROM analysis_jobs
-         WHERE NOT EXISTS (
+         WHERE job_type = ?1
+           AND NOT EXISTS (
             SELECT 1
-            FROM sources s
-            WHERE analysis_jobs.sample_id LIKE s.id || '::%'
+            FROM wav_files wf
+            WHERE wf.path = substr(analysis_jobs.sample_id, instr(analysis_jobs.sample_id, '::') + 2)
          )",
-        [],
+        params![super::ANALYZE_SAMPLE_JOB_TYPE],
     )
-    .map_err(|err| format!("Failed to prune analysis jobs for missing sources: {err}"))
+    .map_err(|err| format!("Failed to prune analysis jobs for missing files: {err}"))
 }
 
 pub(in crate::egui_app::controller) fn purge_orphaned_samples(
@@ -39,16 +40,33 @@ pub(in crate::egui_app::controller) fn purge_orphaned_samples(
         "embeddings",
         "samples",
     ] {
-        let sql = format!(
-            "DELETE FROM {table}
-             WHERE NOT EXISTS (
-                SELECT 1
-                FROM sources s
-                WHERE {table}.sample_id LIKE s.id || '::%'
-             )"
-        );
+        let (sql, params) = if table == "analysis_jobs" {
+            (
+                "DELETE FROM analysis_jobs
+                 WHERE job_type = ?1
+                   AND NOT EXISTS (
+                      SELECT 1
+                      FROM wav_files wf
+                      WHERE wf.path = substr(analysis_jobs.sample_id, instr(analysis_jobs.sample_id, '::') + 2)
+                   )"
+                    .to_string(),
+                params![super::ANALYZE_SAMPLE_JOB_TYPE],
+            )
+        } else {
+            (
+                format!(
+                    "DELETE FROM {table}
+                     WHERE NOT EXISTS (
+                        SELECT 1
+                        FROM wav_files wf
+                        WHERE wf.path = substr({table}.sample_id, instr({table}.sample_id, '::') + 2)
+                     )"
+                ),
+                params![],
+            )
+        };
         removed += tx
-            .execute(&sql, [])
+            .execute(&sql, params)
             .map_err(|err| format!("Failed to purge {table}: {err}"))? as usize;
     }
     tx.commit()

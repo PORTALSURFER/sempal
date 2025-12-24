@@ -129,7 +129,9 @@ impl EguiController {
             let needs_failures =
                 !from_cache || !self.ui_cache.browser.analysis_failures.contains_key(id);
             if needs_failures {
-                if let Ok(failures) = super::analysis_jobs::failed_samples_for_source(id) {
+                if let Some(source) = self.library.sources.iter().find(|s| &s.id == id)
+                    && let Ok(failures) = super::analysis_jobs::failed_samples_for_source(source)
+                {
                     self.ui_cache
                         .browser
                         .analysis_failures

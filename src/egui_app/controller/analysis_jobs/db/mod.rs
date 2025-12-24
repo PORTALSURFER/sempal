@@ -20,7 +20,7 @@ pub(in crate::egui_app::controller) use cleanup::purge_orphaned_samples;
 pub(in crate::egui_app::controller::analysis_jobs) use cleanup::{
     prune_jobs_for_missing_sources, reset_running_to_pending,
 };
-pub(in crate::egui_app::controller) use connection::open_library_db;
+pub(in crate::egui_app::controller) use connection::open_source_db;
 #[cfg(test)]
 pub(in crate::egui_app::controller::analysis_jobs) use constants::DEFAULT_JOB_TYPE;
 pub(in crate::egui_app::controller::analysis_jobs) use constants::{
@@ -30,7 +30,6 @@ pub(in crate::egui_app::controller::analysis_jobs) use enqueue::{enqueue_jobs, u
 pub(in crate::egui_app::controller) use ids::{build_sample_id, parse_sample_id};
 pub(in crate::egui_app::controller::analysis_jobs) use jobs::{
     claim_next_job, mark_done, mark_failed, sample_analysis_states, sample_content_hash,
-    source_root_for,
 };
 pub(in crate::egui_app::controller::analysis_jobs) use progress::current_progress;
 pub(in crate::egui_app::controller::analysis_jobs) use types::{ClaimedJob, SampleMetadata};

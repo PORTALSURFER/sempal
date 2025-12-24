@@ -1,4 +1,4 @@
-use super::enqueue_helpers::{library_db_path, now_epoch_seconds};
+use super::enqueue_helpers::now_epoch_seconds;
 use crate::egui_app::controller::analysis_jobs::db;
 use crate::egui_app::controller::analysis_jobs::types::AnalysisProgress;
 use rusqlite::params;
@@ -19,8 +19,7 @@ fn enqueue_embedding_backfill(
 ) -> Result<(usize, AnalysisProgress), String> {
     const BATCH_SIZE: usize = 32;
 
-    let db_path = library_db_path()?;
-    let mut conn = db::open_library_db(&db_path)?;
+    let mut conn = db::open_source_db(&request.source.root)?;
 
     let active_jobs: i64 = conn
         .query_row(
