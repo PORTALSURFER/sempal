@@ -28,6 +28,7 @@ fn main() {
 
     let renderer = WaveformRenderer::new(1, 1);
     let mut controller = EguiController::new(renderer, None);
+    controller.set_analysis_worker_allowed_sources(Some(Vec::new()));
     if let Err(err) = controller.load_configuration() {
         eprintln!("Failed to load config: {err}");
         std::process::exit(1);
