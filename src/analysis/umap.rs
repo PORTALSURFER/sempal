@@ -132,8 +132,14 @@ fn compute_tsne(vectors: &[Vec<f32>], seed: u64) -> Result<Vec<[f32; 2]>, String
     let mut matrix = Array2::from_shape_vec((n_samples, dim), data)
         .map_err(|err| format!("Build embedding matrix failed: {err}"))?;
     if dim > DEFAULT_PCA_COMPONENTS {
+        let pca_components = DEFAULT_PCA_COMPONENTS
+            .min(dim)
+            .min(n_samples.saturating_sub(1).max(1));
+        if pca_components < 2 {
+            return Err("Need at least 2 samples for PCA reduction".to_string());
+        }
         let dataset = DatasetBase::from(matrix);
-        let pca = Pca::params(DEFAULT_PCA_COMPONENTS)
+        let pca = Pca::params(pca_components)
             .fit(&dataset)
             .map_err(|err| format!("PCA fit failed: {err}"))?;
         let reduced = pca.transform(dataset);
