@@ -44,6 +44,7 @@ impl EguiController {
             skip_backfill: skip_scan,
         });
         self.apply_similarity_prep_duration_cap();
+        self.apply_similarity_prep_worker_boost();
         self.set_status_message(StatusMessage::PreparingSimilarity {
             source: source.root.display().to_string(),
         });
@@ -122,6 +123,7 @@ impl EguiController {
             return;
         }
         self.restore_similarity_prep_duration_cap();
+        self.restore_similarity_prep_worker_count();
         if self.ui.progress.task == Some(ProgressTaskKind::Analysis) {
             self.clear_progress();
         }
@@ -157,6 +159,7 @@ impl EguiController {
         }
         self.runtime.similarity_prep = None;
         self.restore_similarity_prep_duration_cap();
+        self.restore_similarity_prep_worker_count();
         if self.ui.progress.task == Some(ProgressTaskKind::Analysis) {
             self.clear_progress();
         }
@@ -217,6 +220,24 @@ impl EguiController {
         self.runtime
             .analysis
             .set_max_analysis_duration_seconds(self.settings.analysis.max_analysis_duration_seconds);
+    }
+
+    fn apply_similarity_prep_worker_boost(&mut self) {
+        if self.settings.analysis.analysis_worker_count != 0 {
+            return;
+        }
+        let boosted = thread::available_parallelism()
+            .map(|n| n.get() as u32)
+            .unwrap_or(1)
+            .max(1)
+            .min(64);
+        self.runtime.analysis.set_worker_count(boosted);
+    }
+
+    fn restore_similarity_prep_worker_count(&mut self) {
+        self.runtime
+            .analysis
+            .set_worker_count(self.settings.analysis.analysis_worker_count);
     }
 
     fn enqueue_similarity_backfill(&mut self, source: SampleSource) {
