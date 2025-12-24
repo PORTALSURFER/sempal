@@ -139,10 +139,10 @@ fn selecting_new_sample_clears_last_start_marker() {
     controller.library.sources.push(source.clone());
     write_test_wav(&source.root.join("a.wav"), &[0.0, 0.1]);
     write_test_wav(&source.root.join("b.wav"), &[0.2, -0.2]);
-    controller.wav_entries.entries = vec![
+    controller.set_wav_entries_for_tests( vec![
         sample_entry("a.wav", SampleTag::Neutral),
         sample_entry("b.wav", SampleTag::Neutral),
-    ];
+    ]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
@@ -239,7 +239,8 @@ fn play_from_cursor_ignores_hover_cursor_when_replaying() {
         channels: 1,
     });
     controller.ui.waveform.cursor = Some(0.33);
-    controller.ui.waveform.cursor_last_navigation_at = Some(Instant::now() - Duration::from_secs(5));
+    controller.ui.waveform.cursor_last_navigation_at =
+        Some(Instant::now() - Duration::from_secs(5));
     controller.ui.waveform.cursor_last_hover_at = Some(Instant::now());
     controller.ui.waveform.last_start_marker = Some(0.1);
 

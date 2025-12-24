@@ -29,7 +29,10 @@ struct EmbeddingResult {
     embedding: Vec<f32>,
 }
 
-fn run_embedding_backfill_job(conn: &rusqlite::Connection, job: &db::ClaimedJob) -> Result<(), String> {
+fn run_embedding_backfill_job(
+    conn: &rusqlite::Connection,
+    job: &db::ClaimedJob,
+) -> Result<(), String> {
     let payload = job
         .content_hash
         .as_deref()
@@ -72,7 +75,10 @@ fn run_embedding_backfill_job(conn: &rusqlite::Connection, job: &db::ClaimedJob)
         };
         let absolute_path = root.join(&relative_path);
         if !absolute_path.exists() {
-            warn!("Missing file for embed backfill: {}", absolute_path.display());
+            warn!(
+                "Missing file for embed backfill: {}",
+                absolute_path.display()
+            );
             continue;
         }
         items.push(EmbeddingWork {
@@ -97,48 +103,51 @@ fn run_embedding_backfill_job(conn: &rusqlite::Connection, job: &db::ClaimedJob)
         for _ in 0..worker_count {
             let queue = Arc::clone(&queue);
             let tx = tx.clone();
-            scope.spawn(move || loop {
-                let work = {
-                    let mut guard = match queue.lock() {
-                        Ok(guard) => guard,
-                        Err(_) => return,
+            scope.spawn(move || {
+                loop {
+                    let work = {
+                        let mut guard = match queue.lock() {
+                            Ok(guard) => guard,
+                            Err(_) => return,
+                        };
+                        guard.pop_front()
                     };
-                    guard.pop_front()
-                };
-                let Some(work) = work else {
-                    break;
-                };
-                let decoded = match crate::analysis::audio::decode_for_analysis(&work.absolute_path) {
-                    Ok(decoded) => decoded,
-                    Err(err) => {
-                        let _ = tx.send(Err(format!(
-                            "Decode failed for {}: {err}",
-                            work.absolute_path.display()
-                        )));
-                        continue;
-                    }
-                };
-                let processed = crate::analysis::audio::preprocess_mono_for_embedding(
-                    &decoded.mono,
-                    decoded.sample_rate_used,
-                );
-                let embedding = match crate::analysis::embedding::infer_embedding(
-                    &processed,
-                    decoded.sample_rate_used,
-                ) {
-                    Ok(embedding) => embedding,
-                    Err(err) => {
-                        let _ = tx.send(Err(format!(
-                            "Embed failed for {}: {err}",
-                            work.absolute_path.display()
-                        )));
-                        continue;
-                    }
-                };
-                let _ = tx.send(Ok(EmbeddingResult {
-                    sample_id: work.sample_id,
-                    embedding,
-                }));
+                    let Some(work) = work else {
+                        break;
+                    };
+                    let decoded =
+                        match crate::analysis::audio::decode_for_analysis(&work.absolute_path) {
+                            Ok(decoded) => decoded,
+                            Err(err) => {
+                                let _ = tx.send(Err(format!(
+                                    "Decode failed for {}: {err}",
+                                    work.absolute_path.display()
+                                )));
+                                continue;
+                            }
+                        };
+                    let processed = crate::analysis::audio::preprocess_mono_for_embedding(
+                        &decoded.mono,
+                        decoded.sample_rate_used,
+                    );
+                    let embedding = match crate::analysis::embedding::infer_embedding(
+                        &processed,
+                        decoded.sample_rate_used,
+                    ) {
+                        Ok(embedding) => embedding,
+                        Err(err) => {
+                            let _ = tx.send(Err(format!(
+                                "Embed failed for {}: {err}",
+                                work.absolute_path.display()
+                            )));
+                            continue;
+                        }
+                    };
+                    let _ = tx.send(Ok(EmbeddingResult {
+                        sample_id: work.sample_id,
+                        embedding,
+                    }));
+                }
             });
         }
         drop(tx);
@@ -223,11 +232,15 @@ fn run_analysis_job(
 ) -> Result<(), String> {
     let (source_id, relative_path) = db::parse_sample_id(&job.sample_id)?;
     let Some(root) = db::source_root_for(conn, &source_id)? else {
-        return Err(format!("Source not found for job sample_id={}", job.sample_id));
+        return Err(format!(
+            "Source not found for job sample_id={}",
+            job.sample_id
+        ));
     };
     let absolute = root.join(&relative_path);
     if max_analysis_duration_seconds.is_finite() && max_analysis_duration_seconds > 0.0 {
-        if let Ok(Some(duration_seconds)) = crate::analysis::audio::probe_duration_seconds(&absolute)
+        if let Ok(Some(duration_seconds)) =
+            crate::analysis::audio::probe_duration_seconds(&absolute)
         {
             if duration_seconds > max_analysis_duration_seconds {
                 db::update_analysis_metadata(
@@ -278,7 +291,8 @@ fn run_analysis_job(
         &decoded.mono,
         decoded.sample_rate_used,
     );
-    let features = crate::analysis::features::AnalysisFeaturesV1::new(time_domain, frequency_domain);
+    let features =
+        crate::analysis::features::AnalysisFeaturesV1::new(time_domain, frequency_domain);
     db::update_analysis_metadata(
         conn,
         &job.sample_id,

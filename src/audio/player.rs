@@ -4,7 +4,9 @@ use std::time::{Duration, Instant};
 use rodio::{OutputStream, Sink, Source};
 
 use super::DEFAULT_ANTI_CLIP_FADE;
-use super::fade::{EdgeFade, FadeOutHandle, FadeOutOnRequest, fade_duration, fade_frames_for_duration};
+use super::fade::{
+    EdgeFade, FadeOutHandle, FadeOutOnRequest, fade_duration, fade_frames_for_duration,
+};
 use super::mixer::{decoder_duration, decoder_from_bytes, map_seek_error, wav_header_duration};
 use super::output::{AudioOutputConfig, ResolvedOutput, open_output_stream};
 use super::routing::{duration_from_secs_f32, duration_mod};

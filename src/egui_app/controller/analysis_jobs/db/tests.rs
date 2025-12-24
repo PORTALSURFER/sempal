@@ -270,7 +270,10 @@ fn update_analysis_metadata_updates_matching_hash() {
         )
         .unwrap();
     assert_eq!(duration, Some(1.25));
-    assert_eq!(sr, Some(crate::analysis::audio::ANALYSIS_SAMPLE_RATE as i64));
+    assert_eq!(
+        sr,
+        Some(crate::analysis::audio::ANALYSIS_SAMPLE_RATE as i64)
+    );
 }
 
 #[test]

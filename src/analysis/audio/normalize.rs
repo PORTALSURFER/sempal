@@ -89,7 +89,10 @@ mod tests {
         sanitize_samples_in_place(&mut out);
         assert_eq!(out.len(), 3);
         assert!(out.iter().all(|v| v.is_finite()));
-        assert!(out.iter().all(|v| v.abs() == 0.0 || v.abs() >= f32::MIN_POSITIVE));
+        assert!(
+            out.iter()
+                .all(|v| v.abs() == 0.0 || v.abs() >= f32::MIN_POSITIVE)
+        );
     }
 
     #[test]

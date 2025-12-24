@@ -1,7 +1,7 @@
 use crate::analysis::{decode_f32_le_blob, embedding, version};
 use crate::app_dirs;
-use hnsw_rs::prelude::*;
 use hnsw_rs::hnswio::HnswIo;
+use hnsw_rs::prelude::*;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -238,10 +238,7 @@ fn read_meta(conn: &Connection, model_id: &str) -> Result<Option<AnnIndexMetaRow
     let params: AnnIndexParams =
         serde_json::from_str(&params_json).map_err(|err| format!("{err}"))?;
     let index_path = PathBuf::from(path);
-    Ok(Some(AnnIndexMetaRow {
-        index_path,
-        params,
-    }))
+    Ok(Some(AnnIndexMetaRow { index_path, params }))
 }
 
 fn id_map_path_for(index_path: &Path) -> PathBuf {
@@ -384,8 +381,7 @@ fn flush_index(conn: &Connection, state: &mut AnnIndexState) -> Result<(), Strin
     let dir = index_path
         .parent()
         .ok_or_else(|| "Index path missing parent".to_string())?;
-    std::fs::create_dir_all(dir)
-        .map_err(|err| format!("Failed to create ANN dir: {err}"))?;
+    std::fs::create_dir_all(dir).map_err(|err| format!("Failed to create ANN dir: {err}"))?;
     let basename = index_path
         .file_name()
         .and_then(|name| name.to_str())
@@ -402,8 +398,7 @@ fn flush_index(conn: &Connection, state: &mut AnnIndexState) -> Result<(), Strin
 }
 
 fn upsert_meta(conn: &Connection, state: &AnnIndexState) -> Result<(), String> {
-    let params_json =
-        serde_json::to_string(&state.params).map_err(|err| format!("{err}"))?;
+    let params_json = serde_json::to_string(&state.params).map_err(|err| format!("{err}"))?;
     let now = chrono_now_epoch_seconds();
     conn.execute(
         "INSERT INTO ann_index_meta (model_id, index_path, count, params_json, updated_at)

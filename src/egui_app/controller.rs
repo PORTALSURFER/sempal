@@ -25,21 +25,20 @@ mod hotkeys_controller;
 mod interaction_options;
 mod jobs;
 mod loading;
+mod map_view;
+mod missing_samples;
 mod os_explorer;
 mod playback;
 mod progress;
 mod progress_messages;
-mod map_view;
-mod missing_samples;
 mod scans;
 mod selection_edits;
 mod selection_export;
+mod similarity_prep;
 mod source_cache_invalidator;
 mod source_folders;
 mod sources;
-mod similarity_prep;
 mod status_message;
-mod tagging_service;
 mod trash;
 mod trash_move;
 mod undo;
@@ -64,7 +63,6 @@ use crate::{
     waveform::{DecodedWaveform, WaveformRenderer},
 };
 pub(in crate::egui_app::controller) use analysis_jobs::AnalysisJobMessage;
-pub(crate) use status_message::StatusMessage;
 use analysis_jobs::AnalysisWorkerPool;
 use audio_cache::AudioCache;
 use audio_loader::{AudioLoadError, AudioLoadJob, AudioLoadOutcome, AudioLoadResult};
@@ -72,6 +70,7 @@ pub(in crate::egui_app::controller) use controller_state::*;
 use egui::Color32;
 use open;
 use rfd::FileDialog;
+pub(crate) use status_message::StatusMessage;
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet, VecDeque},
@@ -147,7 +146,6 @@ impl EguiController {
                 db: HashMap::new(),
                 wav: WavCacheState {
                     entries: HashMap::new(),
-                    lookup: HashMap::new(),
                 },
             },
             ui_cache: ControllerUiCacheState {
@@ -161,10 +159,7 @@ impl EguiController {
                     models: HashMap::new(),
                 },
             },
-            wav_entries: WavEntriesState {
-                entries: Vec::new(),
-                lookup: HashMap::new(),
-            },
+            wav_entries: WavEntriesState::new(0, 1024),
             selection_state: ControllerSelectionState {
                 ctx: SelectionContextState {
                     selected_source: None,

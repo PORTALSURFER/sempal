@@ -11,7 +11,10 @@ const MIN_SAMPLE_DT: Duration = Duration::from_millis(8); // ~120Hz
 fn seed_trail(playhead: &mut PlayheadState, position: f32, now: Instant) {
     let position = position.clamp(0.0, 1.0);
     playhead.trail.clear();
-    playhead.trail.push_back(PlayheadTrailSample { position, time: now });
+    playhead.trail.push_back(PlayheadTrailSample {
+        position,
+        time: now,
+    });
     playhead.trail.push_back(PlayheadTrailSample {
         position,
         time: now + Duration::from_millis(1),
@@ -87,7 +90,10 @@ pub(super) fn tick_playhead_trail(
         None => true,
     };
     if should_push {
-        playhead.trail.push_back(PlayheadTrailSample { position, time: now });
+        playhead.trail.push_back(PlayheadTrailSample {
+            position,
+            time: now,
+        });
     }
 
     while let Some(front) = playhead.trail.front() {

@@ -30,7 +30,12 @@ fn run() -> Result<(), String> {
     print_count(&conn, "sources")?;
     print_count(&conn, "samples")?;
     print_count(&conn, "features")?;
-    print_count_where(&conn, "features(feat_version=1)", "features", "feat_version = 1")?;
+    print_count_where(
+        &conn,
+        "features(feat_version=1)",
+        "features",
+        "feat_version = 1",
+    )?;
     print_count(&conn, "analysis_jobs")?;
     print_count_where(
         &conn,
@@ -56,7 +61,9 @@ fn run() -> Result<(), String> {
         )
         .map_err(|err| err.to_string())?;
     let rows = stmt
-        .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)))
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })
         .map_err(|err| err.to_string())?;
     for row in rows {
         let (source_id, n) = row.map_err(|err| err.to_string())?;
@@ -82,7 +89,9 @@ fn parse_args(args: Vec<String>) -> Result<Option<CliOptions>, String> {
             }
             "--db" => {
                 idx += 1;
-                let value = args.get(idx).ok_or_else(|| "--db requires a value".to_string())?;
+                let value = args
+                    .get(idx)
+                    .ok_or_else(|| "--db requires a value".to_string())?;
                 db_path = Some(PathBuf::from(value));
             }
             unknown => return Err(format!("Unknown argument: {unknown}\n\n{}", help_text())),
@@ -97,8 +106,13 @@ fn parse_args(args: Vec<String>) -> Result<Option<CliOptions>, String> {
 }
 
 fn help_text() -> String {
-    ["sempal-db-inspect", "", "Usage:", "  sempal-db-inspect --db <path-to-library.db>"]
-        .join("\n")
+    [
+        "sempal-db-inspect",
+        "",
+        "Usage:",
+        "  sempal-db-inspect --db <path-to-library.db>",
+    ]
+    .join("\n")
 }
 
 fn print_count(conn: &Connection, table: &str) -> Result<(), String> {

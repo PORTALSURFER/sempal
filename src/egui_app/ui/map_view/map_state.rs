@@ -1,7 +1,7 @@
+use super::EguiApp;
 use super::map_clusters;
 use super::map_math;
 use super::style;
-use super::EguiApp;
 use crate::egui_app::state::{MapBounds, MapFilterKey, MapQueryBounds};
 use crate::egui_app::view_model;
 use crate::sample_sources::SourceId;
@@ -29,12 +29,14 @@ pub(super) fn render_map_controls(app: &mut EguiApp, ui: &mut egui::Ui) -> bool 
         ));
     });
     if app.controller.ui.map.cluster_overlay {
-        if let Some(stats) = map_clusters::compute_cluster_stats(&app.controller.ui.map.cached_points)
+        if let Some(stats) =
+            map_clusters::compute_cluster_stats(&app.controller.ui.map.cached_points)
         {
             ui.horizontal(|ui| {
                 ui.label(format!("Clusters: {}", stats.cluster_count));
                 if stats.missing_count > 0 {
-                    let missing_ratio = stats.missing_count as f32 / stats.total_count.max(1) as f32;
+                    let missing_ratio =
+                        stats.missing_count as f32 / stats.total_count.max(1) as f32;
                     ui.label(format!("Missing: {:.1}%", missing_ratio * 100.0));
                 }
                 ui.label(format!(
@@ -61,13 +63,12 @@ pub(super) fn ensure_bounds(
             .umap_bounds(model_id, umap_version, source_id)
         {
             Ok(bounds) => {
-                app.controller.ui.map.bounds =
-                    bounds.map(|b| crate::egui_app::state::MapBounds {
-                        min_x: b.min_x,
-                        max_x: b.max_x,
-                        min_y: b.min_y,
-                        max_y: b.max_y,
-                    });
+                app.controller.ui.map.bounds = bounds.map(|b| crate::egui_app::state::MapBounds {
+                    min_x: b.min_x,
+                    max_x: b.max_x,
+                    min_y: b.min_y,
+                    max_y: b.max_y,
+                });
             }
             Err(err) => {
                 app.controller.set_status(
@@ -170,7 +171,14 @@ pub(super) fn prepare_cluster_centroids(
         cluster_method_str,
         cluster_umap_version
     );
-    if app.controller.ui.map.cached_cluster_centroids_key.as_deref() != Some(&centroids_key) {
+    if app
+        .controller
+        .ui
+        .map
+        .cached_cluster_centroids_key
+        .as_deref()
+        != Some(&centroids_key)
+    {
         app.controller.ui.map.cached_cluster_centroids_key = Some(centroids_key);
         app.controller.ui.map.cached_cluster_centroids = None;
         app.controller.ui.map.auto_cluster_build_requested_key = None;
@@ -196,7 +204,10 @@ pub(super) fn prepare_cluster_centroids(
     }
     let (has_any_points, has_missing_cluster_ids) = {
         let points = &app.controller.ui.map.cached_points;
-        (!points.is_empty(), points.iter().any(|point| point.cluster_id.is_none()))
+        (
+            !points.is_empty(),
+            points.iter().any(|point| point.cluster_id.is_none()),
+        )
     };
     let centroids_empty = app
         .controller
@@ -217,8 +228,10 @@ pub(super) fn prepare_cluster_centroids(
         app.controller.ui.map.auto_cluster_build_requested_key =
             app.controller.ui.map.cached_cluster_centroids_key.clone();
         let umap_version = umap_version.to_string();
-        app.controller
-            .build_umap_clusters(crate::analysis::embedding::EMBEDDING_MODEL_ID, &umap_version);
+        app.controller.build_umap_clusters(
+            crate::analysis::embedding::EMBEDDING_MODEL_ID,
+            &umap_version,
+        );
     }
     app.controller
         .ui

@@ -1,6 +1,6 @@
 use super::super::test_support::{dummy_controller, sample_entry, write_test_wav};
 use super::super::*;
-use super::common::max_sample_amplitude;
+use super::common::{max_sample_amplitude, visible_indices};
 use crate::egui_app::controller::collection_export;
 use crate::egui_app::state::FocusContext;
 use crate::sample_sources::Collection;
@@ -15,10 +15,10 @@ fn hotkey_tagging_applies_to_all_selected_rows() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source.clone());
     controller.cache_db(&source).unwrap();
-    controller.wav_entries.entries = vec![
+    controller.set_wav_entries_for_tests( vec![
         sample_entry("one.wav", SampleTag::Neutral),
         sample_entry("two.wav", SampleTag::Neutral),
-    ];
+    ]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
@@ -26,8 +26,8 @@ fn hotkey_tagging_applies_to_all_selected_rows() {
     controller.toggle_browser_row_selection(1);
     controller.tag_selected_left();
 
-    assert_eq!(controller.wav_entries.entries[0].tag, SampleTag::Trash);
-    assert_eq!(controller.wav_entries.entries[1].tag, SampleTag::Trash);
+    assert_eq!(controller.wav_entry(0).unwrap().tag, SampleTag::Trash);
+    assert_eq!(controller.wav_entry(1).unwrap().tag, SampleTag::Trash);
 }
 
 #[test]
@@ -35,7 +35,7 @@ fn focus_hotkey_does_not_autoplay_browser_sample() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source.clone());
     write_test_wav(&source.root.join("one.wav"), &[0.0, 0.1]);
-    controller.wav_entries.entries = vec![sample_entry("one.wav", SampleTag::Neutral)];
+    controller.set_wav_entries_for_tests( vec![sample_entry("one.wav", SampleTag::Neutral)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
@@ -56,10 +56,10 @@ fn focus_hotkey_does_not_autoplay_browser_sample() {
 fn x_key_toggle_respects_focus() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source);
-    controller.wav_entries.entries = vec![
+    controller.set_wav_entries_for_tests( vec![
         sample_entry("one.wav", SampleTag::Neutral),
         sample_entry("two.wav", SampleTag::Neutral),
-    ];
+    ]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
@@ -84,11 +84,11 @@ fn x_key_toggle_respects_focus() {
 fn action_rows_include_selection_and_primary() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source);
-    controller.wav_entries.entries = vec![
+    controller.set_wav_entries_for_tests( vec![
         sample_entry("one.wav", SampleTag::Neutral),
         sample_entry("two.wav", SampleTag::Neutral),
         sample_entry("three.wav", SampleTag::Neutral),
-    ];
+    ]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
     controller.ui.browser.selected_paths =
@@ -104,10 +104,10 @@ fn tag_actions_apply_to_all_selected_rows() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source.clone());
     controller.cache_db(&source).unwrap();
-    controller.wav_entries.entries = vec![
+    controller.set_wav_entries_for_tests( vec![
         sample_entry("one.wav", SampleTag::Neutral),
         sample_entry("two.wav", SampleTag::Neutral),
-    ];
+    ]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
@@ -119,8 +119,8 @@ fn tag_actions_apply_to_all_selected_rows() {
         .tag_browser_samples(&rows, SampleTag::Keep, 0)
         .unwrap();
 
-    assert_eq!(controller.wav_entries.entries[0].tag, SampleTag::Keep);
-    assert_eq!(controller.wav_entries.entries[1].tag, SampleTag::Keep);
+    assert_eq!(controller.wav_entry(0).unwrap().tag, SampleTag::Keep);
+    assert_eq!(controller.wav_entry(1).unwrap().tag, SampleTag::Keep);
 }
 
 #[test]
@@ -131,11 +131,11 @@ fn delete_actions_apply_to_all_selected_rows() {
     write_test_wav(&source.root.join("one.wav"), &[0.0, 0.1]);
     write_test_wav(&source.root.join("two.wav"), &[0.0, 0.1]);
     write_test_wav(&source.root.join("three.wav"), &[0.0, 0.1]);
-    controller.wav_entries.entries = vec![
+    controller.set_wav_entries_for_tests( vec![
         sample_entry("one.wav", SampleTag::Neutral),
         sample_entry("two.wav", SampleTag::Neutral),
         sample_entry("three.wav", SampleTag::Neutral),
-    ];
+    ]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
@@ -146,7 +146,7 @@ fn delete_actions_apply_to_all_selected_rows() {
 
     controller.delete_browser_samples(&rows).unwrap();
 
-    assert!(controller.wav_entries.entries.is_empty());
+    assert_eq!(controller.wav_entries_len(), 0);
     assert!(!source.root.join("one.wav").exists());
     assert!(!source.root.join("two.wav").exists());
     assert!(!source.root.join("three.wav").exists());
@@ -159,10 +159,10 @@ fn normalize_actions_apply_to_all_selected_rows() {
     controller.cache_db(&source).unwrap();
     write_test_wav(&source.root.join("one.wav"), &[0.0, 0.1]);
     write_test_wav(&source.root.join("two.wav"), &[0.0, 0.1]);
-    controller.wav_entries.entries = vec![
+    controller.set_wav_entries_for_tests( vec![
         sample_entry("one.wav", SampleTag::Neutral),
         sample_entry("two.wav", SampleTag::Neutral),
-    ];
+    ]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
@@ -193,11 +193,11 @@ fn selection_persists_when_nudging_focus() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source.clone());
     controller.cache_db(&source).unwrap();
-    controller.wav_entries.entries = vec![
+    controller.set_wav_entries_for_tests( vec![
         sample_entry("one.wav", SampleTag::Neutral),
         sample_entry("two.wav", SampleTag::Neutral),
         sample_entry("three.wav", SampleTag::Neutral),
-    ];
+    ]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
@@ -217,10 +217,10 @@ fn focused_row_actions_work_without_explicit_selection() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source.clone());
     controller.cache_db(&source).unwrap();
-    controller.wav_entries.entries = vec![
+    controller.set_wav_entries_for_tests( vec![
         sample_entry("one.wav", SampleTag::Neutral),
         sample_entry("two.wav", SampleTag::Neutral),
-    ];
+    ]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
@@ -229,7 +229,7 @@ fn focused_row_actions_work_without_explicit_selection() {
 
     controller.tag_selected_left();
 
-    assert_eq!(controller.wav_entries.entries[0].tag, SampleTag::Trash);
+    assert_eq!(controller.wav_entry(0).unwrap().tag, SampleTag::Trash);
     assert_eq!(controller.ui.browser.selected_visible, Some(0));
 }
 
@@ -264,7 +264,7 @@ fn exporting_selection_updates_entries_and_db() {
 
     assert_eq!(entry.tag, SampleTag::Keep);
     assert_eq!(entry.relative_path, PathBuf::from("orig_sel.wav"));
-    assert_eq!(controller.wav_entries.entries.len(), 1);
+    assert_eq!(controller.wav_entries_len(), 1);
     assert_eq!(controller.ui.browser.visible.len(), 1);
     let exported_path = root.join(&entry.relative_path);
     assert!(exported_path.exists());
@@ -297,7 +297,7 @@ fn browser_normalize_refreshes_exports() -> Result<(), String> {
     controller.library.sources.push(source.clone());
 
     write_test_wav(&root.join("one.wav"), &[0.25, -0.5]);
-    controller.wav_entries.entries = vec![sample_entry("one.wav", SampleTag::Neutral)];
+    controller.set_wav_entries_for_tests( vec![sample_entry("one.wav", SampleTag::Neutral)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
     controller
@@ -359,7 +359,7 @@ fn browser_delete_prunes_collections_and_exports() -> Result<(), String> {
     controller.library.sources.push(source.clone());
 
     write_test_wav(&root.join("delete.wav"), &[0.1, 0.2]);
-    controller.wav_entries.entries = vec![sample_entry("delete.wav", SampleTag::Neutral)];
+    controller.set_wav_entries_for_tests( vec![sample_entry("delete.wav", SampleTag::Neutral)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
@@ -404,12 +404,12 @@ fn browser_remove_dead_links_prunes_missing_rows() -> Result<(), String> {
     write_test_wav(&source.root.join("alive.wav"), &[0.0, 0.1, -0.1]);
     let mut dead = sample_entry("gone.wav", SampleTag::Neutral);
     dead.missing = true;
-    controller.wav_entries.entries = vec![sample_entry("alive.wav", SampleTag::Neutral), dead];
+    controller.set_wav_entries_for_tests( vec![sample_entry("alive.wav", SampleTag::Neutral), dead]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
-    let missing_row = controller
-        .visible_browser_indices()
+    let visible = visible_indices(&controller);
+    let missing_row = visible
         .iter()
         .enumerate()
         .find_map(|(row, &idx)| {
@@ -422,12 +422,19 @@ fn browser_remove_dead_links_prunes_missing_rows() -> Result<(), String> {
 
     controller.remove_dead_link_browser_samples(&[missing_row])?;
 
-    assert_eq!(controller.visible_browser_indices().len(), 1);
-    let remaining_idx = controller.visible_browser_indices()[0];
-    let remaining = controller.wav_entry(remaining_idx).expect("remaining entry");
-    assert_eq!(remaining.relative_path, std::path::PathBuf::from("alive.wav"));
+    assert_eq!(controller.visible_browser_len(), 1);
+    let remaining_idx = visible_indices(&controller)[0];
+    let remaining = controller
+        .wav_entry(remaining_idx)
+        .expect("remaining entry");
+    assert_eq!(
+        remaining.relative_path,
+        std::path::PathBuf::from("alive.wav")
+    );
     assert!(!controller.sample_missing(&source.id, std::path::Path::new("alive.wav")));
-    assert!(!controller.wav_entries.lookup.contains_key(std::path::Path::new("gone.wav")));
+    assert!(controller
+        .wav_index_for_path(std::path::Path::new("gone.wav"))
+        .is_none());
     Ok(())
 }
 
@@ -440,19 +447,33 @@ fn removing_dead_links_for_source_prunes_missing_entries() -> Result<(), String>
     write_test_wav(&source.root.join("alive.wav"), &[0.0, 0.1, -0.1]);
     let mut dead = sample_entry("gone.wav", SampleTag::Neutral);
     dead.missing = true;
-    controller.wav_entries.entries = vec![sample_entry("alive.wav", SampleTag::Neutral), dead];
+    controller.set_wav_entries_for_tests( vec![sample_entry("alive.wav", SampleTag::Neutral), dead]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
     let mut missing = std::collections::HashSet::new();
     missing.insert(PathBuf::from("gone.wav"));
-    controller.library.missing.wavs.insert(source.id.clone(), missing);
+    controller
+        .library
+        .missing
+        .wavs
+        .insert(source.id.clone(), missing);
 
     let removed = controller.remove_dead_links_for_source_entries(&source)?;
 
     assert_eq!(removed, 1);
-    assert_eq!(controller.wav_entries.entries.len(), 1);
-    assert!(controller.wav_entries.lookup.contains_key(Path::new("alive.wav")));
-    assert!(!controller.wav_entries.lookup.contains_key(Path::new("gone.wav")));
+    assert_eq!(controller.wav_entries_len(), 1);
+    assert!(
+        controller
+            .wav_entries
+            .lookup
+            .contains_key(Path::new("alive.wav"))
+    );
+    assert!(
+        !controller
+            .wav_entries
+            .lookup
+            .contains_key(Path::new("gone.wav"))
+    );
     Ok(())
 }
 
@@ -464,11 +485,11 @@ fn deleting_browser_sample_moves_focus_forward() -> Result<(), String> {
     for name in ["a.wav", "b.wav", "c.wav"] {
         write_test_wav(&source.root.join(name), &[0.1, -0.1]);
     }
-    controller.wav_entries.entries = vec![
+    controller.set_wav_entries_for_tests( vec![
         sample_entry("a.wav", SampleTag::Neutral),
         sample_entry("b.wav", SampleTag::Neutral),
         sample_entry("c.wav", SampleTag::Neutral),
-    ];
+    ]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
     controller.focus_browser_row_only(1);

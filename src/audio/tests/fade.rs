@@ -1,5 +1,5 @@
 use super::super::{
-    EdgeFade, FadeOutHandle, FadeOutOnRequest, DEFAULT_ANTI_CLIP_FADE, fade_duration,
+    DEFAULT_ANTI_CLIP_FADE, EdgeFade, FadeOutHandle, FadeOutOnRequest, fade_duration,
 };
 use super::support::ConstantSource;
 use std::time::Duration;

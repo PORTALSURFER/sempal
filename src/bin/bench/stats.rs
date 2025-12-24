@@ -20,7 +20,11 @@ pub(super) fn bench_sql_query(
 ) -> Result<LatencySummary, String> {
     run_warmup(options.warmup_iters, &mut f)?;
     let samples_us = run_measure(options.measure_iters, &mut f)?;
-    Ok(summarize(options.warmup_iters, options.measure_iters, samples_us))
+    Ok(summarize(
+        options.warmup_iters,
+        options.measure_iters,
+        samples_us,
+    ))
 }
 
 pub(super) fn bench_action(
@@ -29,10 +33,17 @@ pub(super) fn bench_action(
 ) -> Result<LatencySummary, String> {
     run_warmup_action(options.warmup_iters, &mut f)?;
     let samples_us = run_measure_action(options.measure_iters, &mut f)?;
-    Ok(summarize(options.warmup_iters, options.measure_iters, samples_us))
+    Ok(summarize(
+        options.warmup_iters,
+        options.measure_iters,
+        samples_us,
+    ))
 }
 
-fn run_warmup(warmup_iters: usize, f: &mut impl FnMut() -> Result<(), SqlError>) -> Result<(), String> {
+fn run_warmup(
+    warmup_iters: usize,
+    f: &mut impl FnMut() -> Result<(), SqlError>,
+) -> Result<(), String> {
     for _ in 0..warmup_iters.max(1) {
         f().map_err(|err| format!("Warmup query failed: {err}"))?;
     }

@@ -20,30 +20,27 @@ impl EguiController {
             .browser
             .selected_visible
             .filter(|row| *row < visible_len);
+        let last_focused_path = self.ui.browser.last_focused_path.clone();
+        let selected_paths = self.ui.browser.selected_paths.clone();
+        let selected_wav = self.sample_view.wav.selected_wav.clone();
         let target_row = anchor
             .or(selected)
             .or_else(|| {
-                self.ui
-                    .browser
-                    .last_focused_path
+                last_focused_path
                     .as_ref()
                     .and_then(|path| self.visible_row_for_path(path))
             })
             .or_else(|| {
-                self.ui
-                    .browser
-                    .selected_paths
+                selected_paths
                     .iter()
                     .find_map(|path| self.visible_row_for_path(path))
             })
             .or_else(|| {
-                self.sample_view
-                    .wav
-                    .selected_wav
+                selected_wav
                     .as_ref()
                     .and_then(|path| self.visible_row_for_path(path))
             })
-            .or_else(|| self.ui.browser.visible.first().copied());
+            .or_else(|| self.ui.browser.visible.get(0));
         let Some(target_row) = target_row else {
             self.set_status_message(StatusMessage::AddSourceWithSamplesFirst);
             return;

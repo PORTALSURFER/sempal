@@ -229,8 +229,12 @@ impl LibraryDatabase {
             .prepare("INSERT INTO sources (id, root, sort_order) VALUES (?1, ?2, ?3)")
             .map_err(map_sql_error)?;
         for (idx, source) in sources.iter().enumerate() {
-            stmt.execute(params![source.id.as_str(), source.root.to_string_lossy(), idx as i64])
-                .map_err(map_sql_error)?;
+            stmt.execute(params![
+                source.id.as_str(),
+                source.root.to_string_lossy(),
+                idx as i64
+            ])
+            .map_err(map_sql_error)?;
         }
         Ok(())
     }

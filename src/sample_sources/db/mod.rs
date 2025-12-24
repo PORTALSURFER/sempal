@@ -234,10 +234,14 @@ mod tests {
         let _db = SourceDatabase::open(dir.path()).unwrap();
         let conn = Connection::open(dir.path().join(DB_FILE_NAME)).unwrap();
 
-        let journal_mode: String = conn.query_row("PRAGMA journal_mode", [], |row| row.get(0)).unwrap();
+        let journal_mode: String = conn
+            .query_row("PRAGMA journal_mode", [], |row| row.get(0))
+            .unwrap();
         assert_eq!(journal_mode.to_ascii_lowercase(), "wal");
 
-        let synchronous: i64 = conn.query_row("PRAGMA synchronous", [], |row| row.get(0)).unwrap();
+        let synchronous: i64 = conn
+            .query_row("PRAGMA synchronous", [], |row| row.get(0))
+            .unwrap();
         assert_eq!(synchronous, 2, "expected PRAGMA synchronous=NORMAL (2)");
 
         let busy_timeout: i64 = conn

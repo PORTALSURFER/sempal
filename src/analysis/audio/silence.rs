@@ -1,10 +1,8 @@
+use super::normalize::{db_to_linear, rms};
 use super::{
-    SILENCE_POST_ROLL_SECONDS,
-    SILENCE_PRE_ROLL_SECONDS,
-    SILENCE_THRESHOLD_OFF_DB,
+    SILENCE_POST_ROLL_SECONDS, SILENCE_PRE_ROLL_SECONDS, SILENCE_THRESHOLD_OFF_DB,
     SILENCE_THRESHOLD_ON_DB,
 };
-use super::normalize::{db_to_linear, rms};
 
 pub(super) fn trim_silence_with_hysteresis(samples: &[f32], sample_rate: u32) -> Vec<f32> {
     if samples.is_empty() || sample_rate == 0 {

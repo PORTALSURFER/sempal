@@ -69,18 +69,10 @@ impl EguiApp {
                             pos,
                         );
                     } else {
-                        controller.start_sample_drag(
-                            source.id.clone(),
-                            drag_path,
-                            drag_label,
-                            pos,
-                        );
+                        controller.start_sample_drag(source.id.clone(), drag_path, drag_label, pos);
                     }
                 } else {
-                    controller.set_status(
-                        "Select a source before dragging",
-                        StatusTone::Warning,
-                    );
+                    controller.set_status("Select a source before dragging", StatusTone::Warning);
                 }
             },
             move |pos, controller| {
@@ -114,14 +106,12 @@ impl EguiApp {
                     origin: pos,
                 })
             },
-            move |pending| {
-                match &pending.payload {
-                    DragPayload::Sample { relative_path, .. } => *relative_path == match_path,
-                    DragPayload::Samples { samples } => samples
-                        .iter()
-                        .any(|sample| sample.relative_path == match_path),
-                    DragPayload::Selection { .. } => false,
-                }
+            move |pending| match &pending.payload {
+                DragPayload::Sample { relative_path, .. } => *relative_path == match_path,
+                DragPayload::Samples { samples } => samples
+                    .iter()
+                    .any(|sample| sample.relative_path == match_path),
+                DragPayload::Selection { .. } => false,
             },
         );
     }
@@ -190,9 +180,8 @@ impl EguiApp {
                     .copied()
                     .filter(|&visible_row| {
                         self.controller
-                            .visible_browser_indices()
-                            .get(visible_row)
-                            .and_then(|&entry_idx| self.controller.wav_entry(entry_idx))
+                            .visible_browser_index(visible_row)
+                            .and_then(|entry_idx| self.controller.wav_entry(entry_idx))
                             .is_some_and(|entry| entry.missing)
                     })
                     .collect();

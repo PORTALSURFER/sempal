@@ -1,8 +1,8 @@
 use super::super::test_support::dummy_controller;
 use super::super::*;
 use crate::sample_sources::Collection;
-use crate::sample_sources::collections::CollectionMember;
 use crate::sample_sources::SourceDatabase;
+use crate::sample_sources::collections::CollectionMember;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tempfile::tempdir;
@@ -12,14 +12,14 @@ fn selecting_missing_sample_sets_waveform_notice() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source.clone());
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
-    controller.wav_entries.entries = vec![WavEntry {
+    controller.set_wav_entries_for_tests( vec![WavEntry {
         relative_path: PathBuf::from("one.wav"),
         file_size: 1,
         modified_ns: 1,
         content_hash: None,
         tag: SampleTag::Neutral,
         missing: true,
-    }];
+    }]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
@@ -41,14 +41,14 @@ fn collection_views_flag_missing_members() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source.clone());
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
-    controller.wav_entries.entries = vec![WavEntry {
+    controller.set_wav_entries_for_tests( vec![WavEntry {
         relative_path: PathBuf::from("one.wav"),
         file_size: 1,
         modified_ns: 1,
         content_hash: None,
         tag: SampleTag::Neutral,
         missing: true,
-    }];
+    }]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
     controller.rebuild_missing_lookup_for_source(&source.id);
@@ -87,14 +87,14 @@ fn read_failure_marks_sample_missing() {
     controller.library.sources.push(source.clone());
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
     let rel = PathBuf::from("gone.wav");
-    controller.wav_entries.entries = vec![WavEntry {
+    controller.set_wav_entries_for_tests( vec![WavEntry {
         relative_path: rel.clone(),
         file_size: 1,
         modified_ns: 1,
         content_hash: None,
         tag: SampleTag::Neutral,
         missing: false,
-    }];
+    }]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
@@ -103,7 +103,7 @@ fn read_failure_marks_sample_missing() {
         .unwrap_err();
     assert!(err.contains("Failed to read"));
     assert!(controller.sample_missing(&source.id, &rel));
-    assert!(controller.wav_entries.entries[0].missing);
+    assert!(controller.wav_entry(0).unwrap().missing);
     assert!(
         controller
             .library
@@ -143,7 +143,15 @@ fn apply_wav_entries_updates_missing_lookup() {
         },
     ];
 
-    controller.apply_wav_entries(entries, true, Some(source.id.clone()), None);
+    controller.apply_wav_entries(
+        entries,
+        2,
+        controller.wav_entries.page_size,
+        0,
+        true,
+        Some(source.id.clone()),
+        None,
+    );
 
     assert!(
         controller
@@ -186,7 +194,15 @@ fn remove_dead_links_rebuilds_missing_state() -> Result<(), String> {
     db.set_missing(Path::new("gone.wav"), true).unwrap();
 
     let entries = db.list_files().unwrap();
-    controller.apply_wav_entries(entries, true, Some(source.id.clone()), None);
+    controller.apply_wav_entries(
+        entries,
+        2,
+        controller.wav_entries.page_size,
+        0,
+        true,
+        Some(source.id.clone()),
+        None,
+    );
 
     let removed = controller.remove_dead_links_for_source_entries(&source)?;
     assert_eq!(removed, 1);
@@ -234,8 +250,9 @@ fn mark_missing_updates_cache_db_and_missing_set_when_inactive() {
 
     let db = SourceDatabase::open(&root).unwrap();
     db.upsert_file(Path::new("one.wav"), 1, 1).unwrap();
-    controller.cache.wav.entries.insert(
-        source.id.clone(),
+    let mut cache = WavEntriesState::new(1, controller.wav_entries.page_size);
+    cache.insert_page(
+        0,
         vec![WavEntry {
             relative_path: PathBuf::from("one.wav"),
             file_size: 1,
@@ -245,6 +262,7 @@ fn mark_missing_updates_cache_db_and_missing_set_when_inactive() {
             missing: false,
         }],
     );
+    controller.cache.wav.entries.insert(source.id.clone(), cache);
 
     controller.mark_sample_missing(&source, Path::new("one.wav"));
 

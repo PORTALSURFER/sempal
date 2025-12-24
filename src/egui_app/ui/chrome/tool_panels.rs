@@ -1,7 +1,7 @@
 use eframe::egui::{self, RichText, SliderClamping};
 
-use super::super::style;
 use super::super::EguiApp;
+use super::super::style;
 
 impl EguiApp {
     pub(super) fn render_audio_settings_window(&mut self, ctx: &egui::Context) {
@@ -179,9 +179,7 @@ impl EguiApp {
         }
 
         ui.add_space(ui.spacing().item_spacing.y);
-        ui.label(
-            RichText::new("Analysis workers (0 = auto):").color(palette.text_muted),
-        );
+        ui.label(RichText::new("Analysis workers (0 = auto):").color(palette.text_muted));
         let mut workers = self.controller.analysis_worker_count() as i64;
         let drag = egui::DragValue::new(&mut workers).range(0..=64);
         let response = ui

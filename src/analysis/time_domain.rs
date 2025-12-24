@@ -14,7 +14,10 @@ pub(crate) struct TimeDomainFeatures {
     pub(crate) onset_count: u32,
 }
 
-pub(crate) fn extract_time_domain_features(samples: &[f32], sample_rate: u32) -> TimeDomainFeatures {
+pub(crate) fn extract_time_domain_features(
+    samples: &[f32],
+    sample_rate: u32,
+) -> TimeDomainFeatures {
     let duration_seconds = duration_seconds(samples.len(), sample_rate);
     let peak = peak(samples);
     let rms = rms(samples);

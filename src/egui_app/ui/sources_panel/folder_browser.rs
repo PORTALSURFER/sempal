@@ -20,8 +20,7 @@ impl EguiApp {
             sample_parent_folders.extend(sample_housing_folders(path));
         }
         if let Some(selected_row) = self.controller.ui.browser.selected_visible {
-            let visible_indices = self.controller.visible_browser_indices();
-            if let Some(entry_index) = visible_indices.get(selected_row).copied()
+            if let Some(entry_index) = self.controller.visible_browser_index(selected_row)
                 && let Some(entry) = self.controller.wav_entry(entry_index)
             {
                 sample_parent_folders.extend(sample_housing_folders(&entry.relative_path));

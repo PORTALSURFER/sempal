@@ -1,5 +1,5 @@
-use crate::analysis::{ann_index, embedding};
 use crate::analysis::vector::encode_f32_le_blob;
+use crate::analysis::{ann_index, embedding};
 use crate::app_dirs::ConfigBaseGuard;
 use rusqlite::{Connection, params};
 use std::sync::{LazyLock, Mutex};
@@ -46,12 +46,7 @@ fn ann_index_matches_bruteforce_neighbors_on_fixture() {
         conn.execute(
             "INSERT INTO embeddings (sample_id, model_id, dim, dtype, l2_normed, vec, created_at)
              VALUES (?1, ?2, ?3, 'f32', 1, ?4, 0)",
-            params![
-                sample_id,
-                embedding::EMBEDDING_MODEL_ID,
-                dim as i64,
-                blob
-            ],
+            params![sample_id, embedding::EMBEDDING_MODEL_ID, dim as i64, blob],
         )
         .unwrap();
     }
@@ -59,7 +54,10 @@ fn ann_index_matches_bruteforce_neighbors_on_fixture() {
     ann_index::rebuild_index(&conn).expect("ANN rebuild");
     let results = ann_index::find_similar(&conn, "s1", 2).expect("ANN search");
     let expected = brute_force_neighbors("s1", &samples, 2);
-    let result_ids: Vec<_> = results.iter().map(|entry| entry.sample_id.as_str()).collect();
+    let result_ids: Vec<_> = results
+        .iter()
+        .map(|entry| entry.sample_id.as_str())
+        .collect();
     assert_eq!(result_ids.first().copied(), expected.first().copied());
     assert_results_within_top_k("s1", &samples, 2, &result_ids);
 }
@@ -137,7 +135,10 @@ fn assert_results_within_top_k(
         .map(|(id, vec)| (*id, cosine_distance(target_vec, vec)))
         .collect();
     scored.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
-    let threshold = scored.get(k.saturating_sub(1)).map(|entry| entry.1).unwrap_or(f32::INFINITY);
+    let threshold = scored
+        .get(k.saturating_sub(1))
+        .map(|entry| entry.1)
+        .unwrap_or(f32::INFINITY);
     for id in result_ids {
         let distance = scored
             .iter()

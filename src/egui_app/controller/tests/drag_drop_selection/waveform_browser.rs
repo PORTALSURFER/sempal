@@ -22,7 +22,7 @@ fn selection_drop_to_browser_ignores_active_collection() {
         .load_waveform_for_selection(&source, Path::new("clip.wav"))
         .unwrap();
     controller.ui.focus.context = FocusContext::Waveform;
-    controller.wav_entries.entries = vec![sample_entry("clip.wav", SampleTag::Neutral)];
+    controller.set_wav_entries_for_tests( vec![sample_entry("clip.wav", SampleTag::Neutral)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
@@ -79,7 +79,7 @@ fn selection_drop_to_browser_can_keep_source_focused() {
     let source = SampleSource::new(root.clone());
     controller.library.sources.push(source.clone());
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
-    controller.wav_entries.entries = vec![sample_entry("clip.wav", SampleTag::Neutral)];
+    controller.set_wav_entries_for_tests( vec![sample_entry("clip.wav", SampleTag::Neutral)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
@@ -131,7 +131,7 @@ fn selection_drop_to_browser_creates_clip_in_focused_folder() {
         .load_waveform_for_selection(&source, Path::new("clip.wav"))
         .unwrap();
     controller.ui.focus.context = FocusContext::Waveform;
-    controller.wav_entries.entries = vec![sample_entry("clip.wav", SampleTag::Neutral)];
+    controller.set_wav_entries_for_tests( vec![sample_entry("clip.wav", SampleTag::Neutral)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
     controller.ui.sources.folders.rows = vec![
@@ -196,7 +196,7 @@ fn selection_drop_to_browser_respects_shift_pressed_mid_drag() {
         .load_waveform_for_selection(&source, Path::new("clip.wav"))
         .unwrap();
     controller.ui.focus.context = FocusContext::Waveform;
-    controller.wav_entries.entries = vec![sample_entry("clip.wav", SampleTag::Neutral)];
+    controller.set_wav_entries_for_tests( vec![sample_entry("clip.wav", SampleTag::Neutral)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
@@ -247,7 +247,7 @@ fn selection_drop_to_folder_panel_creates_clip_in_folder() {
     controller
         .load_waveform_for_selection(&source, Path::new("clip.wav"))
         .unwrap();
-    controller.wav_entries.entries = vec![sample_entry("clip.wav", SampleTag::Neutral)];
+    controller.set_wav_entries_for_tests( vec![sample_entry("clip.wav", SampleTag::Neutral)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 

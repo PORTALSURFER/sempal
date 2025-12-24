@@ -8,7 +8,7 @@ pub struct SampleBrowserState {
     pub neutral: Vec<usize>,
     pub keep: Vec<usize>,
     /// Visible rows after applying the active filter.
-    pub visible: Vec<usize>,
+    pub visible: VisibleRows,
     /// Focused row used for playback/navigation (mirrors previously “selected”).
     pub selected: Option<SampleBrowserIndex>,
     pub loaded: Option<SampleBrowserIndex>,
@@ -45,7 +45,7 @@ impl Default for SampleBrowserState {
             trash: Vec::new(),
             neutral: Vec::new(),
             keep: Vec::new(),
-            visible: Vec::new(),
+            visible: VisibleRows::List(Vec::new()),
             selected: None,
             loaded: None,
             selected_visible: None,
@@ -73,6 +73,33 @@ pub struct SimilarQuery {
     pub label: String,
     pub indices: Vec<usize>,
     pub anchor_index: Option<usize>,
+}
+
+/// Visible list representation for the sample browser.
+#[derive(Clone, Debug)]
+pub enum VisibleRows {
+    All { total: usize },
+    List(Vec<usize>),
+}
+
+impl VisibleRows {
+    pub fn len(&self) -> usize {
+        match self {
+            VisibleRows::All { total } => *total,
+            VisibleRows::List(rows) => rows.len(),
+        }
+    }
+
+    pub fn get(&self, row: usize) -> Option<usize> {
+        match self {
+            VisibleRows::All { total } => (row < *total).then_some(row),
+            VisibleRows::List(rows) => rows.get(row).copied(),
+        }
+    }
+
+    pub fn clear_to_list(&mut self) {
+        *self = VisibleRows::List(Vec::new());
+    }
 }
 
 /// Identifies a row inside one of the triage flag columns.

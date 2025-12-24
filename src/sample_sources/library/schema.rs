@@ -251,7 +251,9 @@ impl LibraryDatabase {
     pub(super) fn migrate_hdbscan_clusters_table(&mut self) -> Result<(), LibraryError> {
         let mut stmt = self
             .connection
-            .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='hdbscan_clusters'")
+            .prepare(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='hdbscan_clusters'",
+            )
             .map_err(map_sql_error)?;
         let exists: Option<String> = stmt
             .query_row([], |row| row.get(0))

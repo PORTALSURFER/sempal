@@ -10,10 +10,10 @@ pub(in crate::egui_app::controller) use enqueue_samples::enqueue_jobs_for_source
 #[cfg(test)]
 mod tests {
     use super::enqueue_embeddings::enqueue_jobs_for_embedding_backfill;
+    use super::enqueue_helpers::library_db_path;
     use super::enqueue_samples::{
         enqueue_jobs_for_source_backfill, enqueue_jobs_for_source_missing_features,
     };
-    use super::enqueue_helpers::library_db_path;
     use crate::app_dirs::ConfigBaseGuard;
     use crate::egui_app::controller::analysis_jobs::db;
     use crate::sample_sources::SampleSource;

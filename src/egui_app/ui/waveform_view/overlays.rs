@@ -45,7 +45,12 @@ fn playhead_trail_mesh(
     Some(mesh)
 }
 
-fn paint_playhead_trail_mesh(ui: &mut egui::Ui, rect: egui::Rect, stops: &[(f32, u8)], color: Color32) {
+fn paint_playhead_trail_mesh(
+    ui: &mut egui::Ui,
+    rect: egui::Rect,
+    stops: &[(f32, u8)],
+    color: Color32,
+) {
     const MONOTONIC_EPS_PX: f32 = 0.25;
 
     if stops.len() < 2 {
@@ -76,7 +81,9 @@ fn trail_samples_in_window(
     let mut prev: Option<crate::egui_app::state::PlayheadTrailSample> = None;
     for sample in trail.iter().copied() {
         if sample.time >= cutoff {
-            if let Some(prev) = prev && prev.time < cutoff {
+            if let Some(prev) = prev
+                && prev.time < cutoff
+            {
                 let Some(span) = sample.time.checked_duration_since(prev.time) else {
                     continue;
                 };
@@ -284,20 +291,15 @@ pub(super) fn render_overlays(
         let Some(last_time) = fading.samples.back().map(|sample| sample.time) else {
             continue;
         };
-        let cutoff = last_time
-            .checked_sub(TRAIL_DURATION)
-            .unwrap_or(last_time);
+        let cutoff = last_time.checked_sub(TRAIL_DURATION).unwrap_or(last_time);
         let window = trail_samples_in_window(&fading.samples, cutoff);
         if window.len() < 2 {
             continue;
         }
         let stops = gradient_stops_from_trail_window(&window, rect, view, view_width, |time| {
             let base_age = last_time.saturating_duration_since(time);
-            let t =
-                1.0 - (base_age.as_secs_f32() / TRAIL_DURATION.as_secs_f32()).clamp(0.0, 1.0);
-            ((t * t) * 105.0 * fade_strength)
-                .round()
-                .clamp(0.0, 255.0) as u8
+            let t = 1.0 - (base_age.as_secs_f32() / TRAIL_DURATION.as_secs_f32()).clamp(0.0, 1.0);
+            ((t * t) * 105.0 * fade_strength).round().clamp(0.0, 255.0) as u8
         });
         paint_playhead_trail_mesh(ui, rect, &stops, highlight);
     }
@@ -356,7 +358,10 @@ mod tests {
     #[test]
     fn gradient_stops_from_trail_window_densifies_large_gaps() {
         let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(100.0, 10.0));
-        let view = WaveformView { start: 0.0, end: 1.0 };
+        let view = WaveformView {
+            start: 0.0,
+            end: 1.0,
+        };
         let base = Instant::now();
         let window = vec![
             PlayheadTrailSample {

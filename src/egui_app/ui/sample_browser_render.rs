@@ -48,7 +48,7 @@ impl EguiApp {
         let pointer_pos = drag_targets::pointer_pos_for_drag(ui, self.controller.ui.drag.position);
         let autoscroll_enabled = self.controller.ui.browser.autoscroll
             && self.controller.ui.collections.selected_sample.is_none();
-        let total_rows = self.controller.visible_browser_indices().len();
+        let total_rows = self.controller.visible_browser_len();
         let focused_section = matches!(
             self.controller.ui.focus.context,
             FocusContext::SampleBrowser
@@ -66,12 +66,9 @@ impl EguiApp {
                 autoscroll_padding_rows: 1.0,
             },
             |ui, row, metrics| {
-                let entry_index = {
-                    let indices = self.controller.visible_browser_indices();
-                    match indices.get(row) {
-                        Some(index) => *index,
-                        None => return,
-                    }
+                let entry_index = match self.controller.visible_browser_index(row) {
+                    Some(index) => index,
+                    None => return,
                 };
                 let (tag, path, missing) = match self.controller.wav_entry(entry_index) {
                     Some(entry) => (entry.tag, entry.relative_path.clone(), entry.missing),

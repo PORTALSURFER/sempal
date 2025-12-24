@@ -1,7 +1,7 @@
 use super::options::BenchOptions;
+use rand::Rng;
 use rand::SeedableRng;
 use rand::rngs::StdRng;
-use rand::Rng;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -76,7 +76,9 @@ fn write_synth_wav(
     };
     let mut writer =
         hound::WavWriter::create(path, spec).map_err(|err| format!("Create WAV failed: {err}"))?;
-    let samples = ((sample_rate as f64 * duration_ms as f64) / 1000.0).round().max(1.0) as usize;
+    let samples = ((sample_rate as f64 * duration_ms as f64) / 1000.0)
+        .round()
+        .max(1.0) as usize;
     let freq = rng.random_range(55.0_f32..880.0_f32);
     let phase = rng.random_range(0.0_f32..1.0_f32) * std::f32::consts::TAU;
     let amp = rng.random_range(0.1_f32..0.9_f32);

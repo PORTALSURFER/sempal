@@ -1,7 +1,6 @@
 use super::super::collection_export;
 use super::super::*;
 use super::CollectionSampleContext;
-use super::io::replace_entry;
 use crate::sample_sources::collections::CollectionMember;
 use std::path::Path;
 
@@ -89,15 +88,7 @@ impl EguiController {
         old_path: &Path,
         new_entry: WavEntry,
     ) {
-        if let Some(cache) = self.cache.wav.entries.get_mut(&source.id) {
-            replace_entry(cache, old_path, &new_entry);
-            self.rebuild_wav_cache_lookup(&source.id);
-        }
-        if self.selection_state.ctx.selected_source.as_ref() == Some(&source.id) {
-            replace_entry(&mut self.wav_entries.entries, old_path, &new_entry);
-            self.sync_browser_after_wav_entries_mutation(&source.id);
-        }
-        self.rebuild_missing_lookup_for_source(&source.id);
+        self.invalidate_wav_entries_for_source(source);
         self.update_selection_paths(source, old_path, &new_entry.relative_path);
         self.invalidate_cached_audio(&source.id, old_path);
         if old_path != new_entry.relative_path {
@@ -110,19 +101,7 @@ impl EguiController {
         source: &SampleSource,
         entry: WavEntry,
     ) {
-        if let Some(cache) = self.cache.wav.entries.get_mut(&source.id) {
-            cache.push(entry.clone());
-            cache.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
-            self.rebuild_wav_cache_lookup(&source.id);
-        }
-        if self.selection_state.ctx.selected_source.as_ref() == Some(&source.id) {
-            self.wav_entries.entries.push(entry.clone());
-            self.wav_entries
-                .entries
-                .sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
-            self.sync_browser_after_wav_entries_mutation(&source.id);
-        }
-        self.rebuild_missing_lookup_for_source(&source.id);
+        self.invalidate_wav_entries_for_source(source);
         self.invalidate_cached_audio(&source.id, &entry.relative_path);
     }
 

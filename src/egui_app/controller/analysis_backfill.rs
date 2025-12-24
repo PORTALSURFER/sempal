@@ -29,7 +29,6 @@ impl EguiController {
         });
     }
 
-
     pub fn backfill_embeddings_for_selected_source(&mut self) {
         let Some(source) = self.current_source() else {
             self.set_status_message(StatusMessage::SelectSourceFirst {
@@ -51,7 +50,9 @@ impl EguiController {
                 }
                 Err(err) => {
                     let _ = tx.send(super::jobs::JobMessage::Analysis(
-                        super::analysis_jobs::AnalysisJobMessage::EmbeddingBackfillEnqueueFailed(err),
+                        super::analysis_jobs::AnalysisJobMessage::EmbeddingBackfillEnqueueFailed(
+                            err,
+                        ),
                     ));
                 }
             }

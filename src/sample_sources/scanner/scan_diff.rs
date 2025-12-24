@@ -1,11 +1,16 @@
-use std::{collections::HashMap, path::{Path, PathBuf}};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
 
 use crate::sample_sources::db::{SourceWriteBatch, WavEntry};
 
 use super::scan::{ChangedSample, ScanError, ScanMode, ScanStats};
-use super::scan_fs::{compute_content_hash, FileFacts};
+use super::scan_fs::{FileFacts, compute_content_hash};
 
-pub(super) fn index_by_hash(existing: &HashMap<PathBuf, WavEntry>) -> HashMap<String, Vec<PathBuf>> {
+pub(super) fn index_by_hash(
+    existing: &HashMap<PathBuf, WavEntry>,
+) -> HashMap<String, Vec<PathBuf>> {
     let mut map: HashMap<String, Vec<PathBuf>> = HashMap::new();
     for entry in existing.values() {
         let Some(hash) = entry.content_hash.as_deref() else {

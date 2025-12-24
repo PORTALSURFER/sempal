@@ -4719,7 +4719,7 @@ dependencies = [
 
 [[package]]
 name = "sempal"
-version = "0.364.0"
+version = "0.366.0"
 dependencies = [
  "blake3",
  "chacha20poly1305",

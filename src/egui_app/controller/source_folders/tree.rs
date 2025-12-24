@@ -133,9 +133,12 @@ impl EguiController {
         self.ui.sources.folders.scroll_to = focused;
     }
 
-    fn collect_folders(&self) -> BTreeSet<PathBuf> {
+    fn collect_folders(&mut self) -> BTreeSet<PathBuf> {
         let mut folders = BTreeSet::new();
-        for entry in &self.wav_entries.entries {
+        for index in 0..self.wav_entries_len() {
+            let Some(entry) = self.wav_entry(index) else {
+                continue;
+            };
             let mut current = entry.relative_path.parent();
             while let Some(path) = current {
                 if !path.as_os_str().is_empty() {

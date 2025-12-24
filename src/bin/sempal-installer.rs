@@ -1,7 +1,6 @@
 use eframe::egui::{self, Align, Button, Layout, RichText, ScrollArea};
 use std::{
-    env,
-    fs,
+    env, fs,
     path::{Path, PathBuf},
     sync::mpsc,
     thread,
@@ -11,20 +10,20 @@ use sempal::app_dirs;
 use sempal::egui_app::ui::style;
 
 #[cfg(target_os = "windows")]
-use winreg::enums::{HKEY_CURRENT_USER, KEY_WRITE};
-#[cfg(target_os = "windows")]
-use winreg::RegKey;
-#[cfg(target_os = "windows")]
 use windows::{
-    core::{HSTRING, Interface, PCWSTR},
     Win32::{
         System::Com::{
-            CLSCTX_INPROC_SERVER, CoCreateInstance, CoInitializeEx, CoUninitialize,
-            COINIT_APARTMENTTHREADED, IPersistFile,
+            CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED, CoCreateInstance, CoInitializeEx,
+            CoUninitialize, IPersistFile,
         },
         UI::Shell::{IShellLinkW, ShellLink},
     },
+    core::{HSTRING, Interface, PCWSTR},
 };
+#[cfg(target_os = "windows")]
+use winreg::RegKey;
+#[cfg(target_os = "windows")]
+use winreg::enums::{HKEY_CURRENT_USER, KEY_WRITE};
 
 const APP_NAME: &str = "SemPal";
 const APP_PUBLISHER: &str = "SemPal";
@@ -239,10 +238,7 @@ impl eframe::App for InstallerApp {
                             }
                         }
                     });
-                    ui.label(format!(
-                        "Bundle source: {}",
-                        self.bundle_dir.display()
-                    ));
+                    ui.label(format!("Bundle source: {}", self.bundle_dir.display()));
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         if ui.button("Install").clicked() {
                             self.start_install();
@@ -253,9 +249,9 @@ impl eframe::App for InstallerApp {
                     });
                 }
                 InstallStep::Installing => {
-                    let progress =
-                        (self.progress.copied_files as f32 / self.progress.total_files.max(1) as f32)
-                            .clamp(0.0, 1.0);
+                    let progress = (self.progress.copied_files as f32
+                        / self.progress.total_files.max(1) as f32)
+                        .clamp(0.0, 1.0);
                     ui.label("Installing...");
                     ui.add(egui::ProgressBar::new(progress).show_percentage());
                     if let Some(current) = &self.progress.current {
@@ -314,7 +310,11 @@ fn default_bundle_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("bundle"))
 }
 
-fn run_install(bundle_dir: &Path, install_dir: &Path, sender: mpsc::Sender<InstallerEvent>) -> Result<(), String> {
+fn run_install(
+    bundle_dir: &Path,
+    install_dir: &Path,
+    sender: mpsc::Sender<InstallerEvent>,
+) -> Result<(), String> {
     let entries = collect_bundle_entries(bundle_dir)?;
     sender
         .send(InstallerEvent::Started {
@@ -363,7 +363,11 @@ fn collect_bundle_entries(bundle_dir: &Path) -> Result<Vec<(PathBuf, PathBuf)>, 
     Ok(files)
 }
 
-fn visit_bundle(root: &Path, dir: &Path, files: &mut Vec<(PathBuf, PathBuf)>) -> Result<(), String> {
+fn visit_bundle(
+    root: &Path,
+    dir: &Path,
+    files: &mut Vec<(PathBuf, PathBuf)>,
+) -> Result<(), String> {
     for entry in fs::read_dir(dir).map_err(|err| format!("Failed to read bundle: {err}"))? {
         let entry = entry.map_err(|err| format!("Failed to read bundle entry: {err}"))?;
         let path = entry.path();
@@ -471,7 +475,6 @@ fn create_start_menu_shortcut(install_dir: &Path) -> Result<(), String> {
             persist
                 .Save(PCWSTR::from_raw(shortcut.as_ptr()), true)
                 .map_err(|err| format!("Failed to save shortcut: {err}"))?;
-
         }
         return Ok(());
     }

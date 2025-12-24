@@ -1,10 +1,10 @@
 //! Background analysis helpers (decoding, normalization, feature extraction).
 
+pub mod ann_index;
 pub(crate) mod audio;
 pub(crate) mod audio_decode;
 #[allow(dead_code)]
 pub(crate) mod augment;
-pub mod ann_index;
 #[allow(dead_code)]
 pub(crate) mod clap_preprocess;
 pub mod embedding;
@@ -12,16 +12,16 @@ pub(crate) mod features;
 pub(crate) mod fft;
 pub(crate) mod frequency_domain;
 pub mod hdbscan;
-pub mod umap;
 pub(crate) mod time_domain;
+pub mod umap;
 pub mod vector;
 pub(crate) mod version;
 
-pub use vector::{FEATURE_VECTOR_LEN_V1, FEATURE_VERSION_V1};
 pub use vector::decode_f32_le_blob;
+pub use vector::{FEATURE_VECTOR_LEN_V1, FEATURE_VERSION_V1};
 
-use std::path::Path;
 use rusqlite::Connection;
+use std::path::Path;
 
 /// Lightweight DSP vector length (time-domain features only).
 pub const LIGHT_DSP_VECTOR_LEN: usize = 9;
@@ -29,9 +29,12 @@ pub const LIGHT_DSP_VECTOR_LEN: usize = 9;
 /// Decode an audio file and compute the V1 feature vector used by the analyzer.
 pub fn compute_feature_vector_v1_for_path(path: &Path) -> Result<Vec<f32>, String> {
     let decoded = audio::decode_for_analysis(path)?;
-    let time_domain = time_domain::extract_time_domain_features(&decoded.mono, decoded.sample_rate_used);
-    let frequency_domain =
-        frequency_domain::extract_frequency_domain_features(&decoded.mono, decoded.sample_rate_used);
+    let time_domain =
+        time_domain::extract_time_domain_features(&decoded.mono, decoded.sample_rate_used);
+    let frequency_domain = frequency_domain::extract_frequency_domain_features(
+        &decoded.mono,
+        decoded.sample_rate_used,
+    );
     let features = features::AnalysisFeaturesV1::new(time_domain, frequency_domain);
     Ok(vector::to_f32_vector_v1(&features))
 }

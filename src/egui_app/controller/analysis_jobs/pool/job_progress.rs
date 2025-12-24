@@ -42,9 +42,7 @@ pub(super) fn spawn_progress_poller(
             };
             if last != Some(progress) {
                 last = Some(progress);
-                let _ = tx.send(JobMessage::Analysis(
-                    AnalysisJobMessage::Progress(progress),
-                ));
+                let _ = tx.send(JobMessage::Analysis(AnalysisJobMessage::Progress(progress)));
             }
             sleep(Duration::from_millis(200));
         }

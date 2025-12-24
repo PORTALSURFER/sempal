@@ -1,10 +1,10 @@
 use super::options::BenchOptions;
 use super::stats;
-use sempal::analysis::{ann_index, embedding};
-use sempal::analysis::vector::encode_f32_le_blob;
-use rand::{Rng, SeedableRng};
 use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 use rusqlite::{Connection, params};
+use sempal::analysis::vector::encode_f32_le_blob;
+use sempal::analysis::{ann_index, embedding};
 use serde::Serialize;
 use tempfile::tempdir;
 
@@ -16,7 +16,8 @@ pub(super) struct SimilarityBenchResult {
 
 pub(super) fn run(options: &BenchOptions) -> Result<SimilarityBenchResult, String> {
     let _temp = tempdir().map_err(|err| format!("Tempdir failed: {err}"))?;
-    let mut conn = Connection::open_in_memory().map_err(|err| format!("Open sqlite failed: {err}"))?;
+    let mut conn =
+        Connection::open_in_memory().map_err(|err| format!("Open sqlite failed: {err}"))?;
     conn.execute_batch(
         "PRAGMA journal_mode=OFF;
          PRAGMA synchronous=OFF;
@@ -69,9 +70,7 @@ fn seed_embeddings(conn: &mut Connection, rows: usize, seed: u64) -> Result<(), 
             .map_err(|err| format!("Prepare seed embeddings failed: {err}"))?;
         for i in 0..rows.max(2) {
             let sample_id = format!("sample-{i:06}");
-            let mut vec: Vec<f32> = (0..dim)
-                .map(|_| rng.random::<f32>() * 2.0 - 1.0)
-                .collect();
+            let mut vec: Vec<f32> = (0..dim).map(|_| rng.random::<f32>() * 2.0 - 1.0).collect();
             let norm = vec.iter().map(|v| v * v).sum::<f32>().sqrt();
             if norm > 0.0 {
                 for value in &mut vec {

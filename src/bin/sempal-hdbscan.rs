@@ -55,9 +55,11 @@ fn run() -> Result<(), String> {
         stats.min_cluster_size,
         stats.max_cluster_size
     );
-    options
-        .noise_policy
-        .handle_ratio(stats.noise_ratio, options.min_noise_ratio, options.max_noise_ratio)?;
+    options.noise_policy.handle_ratio(
+        stats.noise_ratio,
+        options.min_noise_ratio,
+        options.max_noise_ratio,
+    )?;
 
     let mut conn = conn;
     let inserted = write_clusters(
@@ -108,13 +110,16 @@ fn parse_args(args: Vec<String>) -> Result<Option<Options>, String> {
             }
             "--db" => {
                 idx += 1;
-                let value = args.get(idx).ok_or_else(|| "--db requires a value".to_string())?;
+                let value = args
+                    .get(idx)
+                    .ok_or_else(|| "--db requires a value".to_string())?;
                 options.db_path = Some(PathBuf::from(value));
             }
             "--model-id" => {
                 idx += 1;
-                let value =
-                    args.get(idx).ok_or_else(|| "--model-id requires a value".to_string())?;
+                let value = args
+                    .get(idx)
+                    .ok_or_else(|| "--model-id requires a value".to_string())?;
                 options.model_id = value.to_string();
             }
             "--min-cluster-size" => {
@@ -128,8 +133,9 @@ fn parse_args(args: Vec<String>) -> Result<Option<Options>, String> {
             }
             "--min-samples" => {
                 idx += 1;
-                let value =
-                    args.get(idx).ok_or_else(|| "--min-samples requires a value".to_string())?;
+                let value = args
+                    .get(idx)
+                    .ok_or_else(|| "--min-samples requires a value".to_string())?;
                 options.min_samples = Some(
                     value
                         .parse::<usize>()
@@ -141,16 +147,18 @@ fn parse_args(args: Vec<String>) -> Result<Option<Options>, String> {
             }
             "--min-noise" => {
                 idx += 1;
-                let value =
-                    args.get(idx).ok_or_else(|| "--min-noise requires a value".to_string())?;
+                let value = args
+                    .get(idx)
+                    .ok_or_else(|| "--min-noise requires a value".to_string())?;
                 options.min_noise_ratio = value
                     .parse::<f32>()
                     .map_err(|_| format!("Invalid --min-noise value: {value}"))?;
             }
             "--max-noise" => {
                 idx += 1;
-                let value =
-                    args.get(idx).ok_or_else(|| "--max-noise requires a value".to_string())?;
+                let value = args
+                    .get(idx)
+                    .ok_or_else(|| "--max-noise requires a value".to_string())?;
                 options.max_noise_ratio = value
                     .parse::<f32>()
                     .map_err(|_| format!("Invalid --max-noise value: {value}"))?;
@@ -166,7 +174,7 @@ fn parse_args(args: Vec<String>) -> Result<Option<Options>, String> {
                     _ => {
                         return Err(format!(
                             "Invalid --noise-policy {value}. Use warn or error."
-                        ))
+                        ));
                     }
                 };
             }

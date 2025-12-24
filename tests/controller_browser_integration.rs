@@ -36,12 +36,12 @@ impl ControllerHarness {
         let expected = names.len();
         for _ in 0..200 {
             controller.tick_playhead();
-            if controller.visible_browser_indices().len() == expected {
+            if controller.visible_browser_len() == expected {
                 break;
             }
             std::thread::sleep(Duration::from_millis(5));
         }
-        assert_eq!(controller.visible_browser_indices().len(), expected);
+        assert_eq!(controller.visible_browser_len(), expected);
 
         Self {
             _config: env,
@@ -51,11 +51,9 @@ impl ControllerHarness {
     }
 }
 
-fn visible_path(controller: &EguiController, visible_row: usize) -> PathBuf {
+fn visible_path(controller: &mut EguiController, visible_row: usize) -> PathBuf {
     let entry_index = controller
-        .visible_browser_indices()
-        .get(visible_row)
-        .copied()
+        .visible_browser_index(visible_row)
         .expect("visible row exists");
     controller
         .wav_entry(entry_index)

@@ -41,7 +41,10 @@ impl EguiApp {
                         let selected = collection.selected;
                         let mut label = format!("{} ({})", collection.name, collection.count);
                         let (text_color, indicator) = if collection.missing {
-                            (status_badges::missing_text_color(), status_badges::missing_prefix())
+                            (
+                                status_badges::missing_text_color(),
+                                status_badges::missing_prefix(),
+                            )
                         } else if collection.export_path.is_none() {
                             (style::warning_soft_text(), "! ")
                         } else {
@@ -225,10 +228,10 @@ impl EguiApp {
                 let base_label = format!("{} — {}", sample.source, sample.label);
                 let is_selected = selected_paths.iter().any(|p| p == &path);
                 let is_focused = Some(row) == selected_row;
-                let is_duplicate_hover =
-                    drag_active && active_drag_paths.as_ref().is_some_and(|paths| {
-                        paths.iter().any(|candidate| candidate == &path)
-                    });
+                let is_duplicate_hover = drag_active
+                    && active_drag_paths
+                        .as_ref()
+                        .is_some_and(|paths| paths.iter().any(|candidate| candidate == &path));
                 let triage_marker = style::triage_marker_color(sample.tag).map(|color| RowMarker {
                     width: style::triage_marker_width(),
                     color,
@@ -260,10 +263,7 @@ impl EguiApp {
                             None,
                         );
                         let text_color = status_label.text_color;
-                        let clamped_label = clamp_label_for_width(
-                            &status_label.label,
-                            label_width,
-                        );
+                        let clamped_label = clamp_label_for_width(&status_label.label, label_width);
                         let response = render_list_row(
                             ui,
                             super::helpers::ListRow {
@@ -307,8 +307,7 @@ impl EguiApp {
                             let modifiers = ui.input(|i| i.modifiers);
                             let ctrl = modifiers.command || modifiers.ctrl;
                             if modifiers.shift && ctrl {
-                                self.controller
-                                    .add_range_collection_sample_selection(row);
+                                self.controller.add_range_collection_sample_selection(row);
                             } else if modifiers.shift {
                                 self.controller
                                     .extend_collection_sample_selection_to_row(row);
@@ -337,8 +336,7 @@ impl EguiApp {
                         let match_source_id = sample.source_id.clone();
                         let match_path = path.clone();
                         let pending_selected = selected_samples.clone();
-                        let is_multi_drag =
-                            selected_samples.len() > 1 && is_selected;
+                        let is_multi_drag = selected_samples.len() > 1 && is_selected;
                         let drag_samples = pending_selected.clone();
                         let pending_samples_for_pending = pending_selected.clone();
                         let _pending_samples_for_match = pending_selected.clone();
@@ -395,16 +393,11 @@ impl EguiApp {
                                 DragPayload::Sample {
                                     source_id,
                                     relative_path,
-                                } => {
-                                    *source_id == match_source_id
-                                        && *relative_path == match_path
-                                }
-                                DragPayload::Samples { samples } => samples.iter().any(
-                                    |sample| {
-                                        sample.source_id == match_source_id
-                                            && sample.relative_path == match_path
-                                    },
-                                ),
+                                } => *source_id == match_source_id && *relative_path == match_path,
+                                DragPayload::Samples { samples } => samples.iter().any(|sample| {
+                                    sample.source_id == match_source_id
+                                        && sample.relative_path == match_path
+                                }),
                                 DragPayload::Selection { .. } => false,
                             },
                         );

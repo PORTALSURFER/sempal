@@ -49,48 +49,24 @@ impl EguiController {
         source: &SampleSource,
         relative_path: &Path,
     ) -> Result<SampleTag, String> {
-        if self.cache.wav.entries.contains_key(&source.id) {
-            self.ensure_wav_cache_lookup(&source.id);
-            if let Some(lookup) = self.cache.wav.lookup.get(&source.id)
-                && let Some(index) = lookup.get(relative_path).copied()
-                && let Some(cache) = self.cache.wav.entries.get(&source.id)
-                && let Some(entry) = cache.get(index)
+        if let Some(cache) = self.cache.wav.entries.get(&source.id) {
+            if let Some(index) = cache.lookup.get(relative_path).copied()
+                && let Some(entry) = cache.entry(index)
             {
                 return Ok(entry.tag);
             }
         }
         if self.selection_state.ctx.selected_source.as_ref() == Some(&source.id)
-            && let Some(entry) = self
-                .wav_entries
-                .entries
-                .iter()
-                .find(|entry| entry.relative_path == relative_path)
+            && let Some(index) = self.wav_index_for_path(relative_path)
+            && let Some(entry) = self.wav_entries.entry(index)
         {
             return Ok(entry.tag);
         }
         let db = self
             .database_for(source)
             .map_err(|err| format!("Database unavailable: {err}"))?;
-        let entries = db
-            .list_files()
-            .map_err(|err| format!("Failed to read database: {err}"))?;
-        self.cache
-            .wav
-            .entries
-            .insert(source.id.clone(), entries.clone());
-        self.rebuild_wav_cache_lookup(&source.id);
-        self.library.missing.wavs.insert(
-            source.id.clone(),
-            entries
-                .iter()
-                .filter(|entry| entry.missing)
-                .map(|entry| entry.relative_path.clone())
-                .collect::<std::collections::HashSet<_>>(),
-        );
-        entries
-            .iter()
-            .find(|entry| entry.relative_path == relative_path)
-            .map(|entry| entry.tag)
+        db.tag_for_path(relative_path)
+            .map_err(|err| format!("Failed to read database: {err}"))?
             .ok_or_else(|| "Sample not found in database".to_string())
     }
 }
