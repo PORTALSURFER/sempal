@@ -9,6 +9,9 @@ use std::sync::{
 use std::thread::{JoinHandle, sleep};
 use std::time::Duration;
 
+const POLL_INTERVAL_ACTIVE: Duration = Duration::from_millis(500);
+const POLL_INTERVAL_IDLE: Duration = Duration::from_millis(1500);
+
 #[cfg_attr(test, allow(dead_code))]
 pub(super) fn spawn_progress_poller(
     tx: Sender<JobMessage>,
@@ -25,26 +28,38 @@ pub(super) fn spawn_progress_poller(
             Err(_) => return,
         };
         let mut last: Option<AnalysisProgress> = None;
+        let mut idle_polls = 0u32;
         loop {
             if shutdown.load(Ordering::Relaxed) {
                 break;
             }
             if cancel.load(Ordering::Relaxed) {
-                sleep(Duration::from_millis(200));
+                sleep(POLL_INTERVAL_IDLE);
                 continue;
             }
             let progress = match db::current_progress(&conn) {
                 Ok(progress) => progress,
                 Err(_) => {
-                    sleep(Duration::from_millis(500));
+                    sleep(POLL_INTERVAL_IDLE);
                     continue;
                 }
             };
             if last != Some(progress) {
                 last = Some(progress);
+                idle_polls = 0;
                 let _ = tx.send(JobMessage::Analysis(AnalysisJobMessage::Progress(progress)));
             }
-            sleep(Duration::from_millis(200));
+            if progress.pending == 0 && progress.running == 0 {
+                idle_polls = idle_polls.saturating_add(1);
+            } else {
+                idle_polls = 0;
+            }
+            let interval = if idle_polls > 2 {
+                POLL_INTERVAL_IDLE
+            } else {
+                POLL_INTERVAL_ACTIVE
+            };
+            sleep(interval);
         }
     })
 }
