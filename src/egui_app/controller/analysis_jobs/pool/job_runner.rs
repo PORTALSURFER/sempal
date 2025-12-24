@@ -139,7 +139,9 @@ fn run_embedding_backfill_job(
             let queue = Arc::clone(&queue);
             let tx = tx.clone();
             scope.spawn(move || {
+                const EMBEDDING_BATCH_MAX: usize = 4;
                 loop {
+                    let mut batch = Vec::with_capacity(EMBEDDING_BATCH_MAX);
                     let work = {
                         let mut guard = match queue.lock() {
                             Ok(guard) => guard,
@@ -150,42 +152,78 @@ fn run_embedding_backfill_job(
                     let Some(work) = work else {
                         break;
                     };
-                    let decoded =
-                        match crate::analysis::audio::decode_for_analysis_with_rate(
-                            &work.absolute_path,
-                            analysis_sample_rate,
-                        ) {
-                            Ok(decoded) => decoded,
-                            Err(err) => {
-                                let _ = tx.send(Err(format!(
-                                    "Decode failed for {}: {err}",
-                                    work.absolute_path.display()
-                                )));
-                                continue;
-                            }
-                        };
-                    let processed = crate::analysis::audio::preprocess_mono_for_embedding(
-                        &decoded.mono,
-                        decoded.sample_rate_used,
-                    );
-                    let embedding = match crate::analysis::embedding::infer_embedding(
-                        &processed,
-                        decoded.sample_rate_used,
-                    ) {
-                        Ok(embedding) => embedding,
-                        Err(err) => {
-                            let _ = tx.send(Err(format!(
-                                "Embed failed for {}: {err}",
-                                work.absolute_path.display()
-                            )));
-                            continue;
+                    batch.push(work);
+                    loop {
+                        if batch.len() >= EMBEDDING_BATCH_MAX {
+                            break;
                         }
-                    };
-                    let _ = tx.send(Ok(EmbeddingResult {
-                        sample_id: work.sample_id,
-                        content_hash: work.content_hash,
-                        embedding,
-                    }));
+                        let next = {
+                            let mut guard = match queue.lock() {
+                                Ok(guard) => guard,
+                                Err(_) => return,
+                            };
+                            guard.pop_front()
+                        };
+                        let Some(next) = next else {
+                            break;
+                        };
+                        batch.push(next);
+                    }
+
+                    let mut inputs = Vec::new();
+                    let mut payloads = Vec::new();
+                    let mut processed_buffers = Vec::new();
+                    for work in batch {
+                        let decoded =
+                            match crate::analysis::audio::decode_for_analysis_with_rate(
+                                &work.absolute_path,
+                                analysis_sample_rate,
+                            ) {
+                                Ok(decoded) => decoded,
+                                Err(err) => {
+                                    let _ = tx.send(Err(format!(
+                                        "Decode failed for {}: {err}",
+                                        work.absolute_path.display()
+                                    )));
+                                    continue;
+                                }
+                            };
+                        let processed = crate::analysis::audio::preprocess_mono_for_embedding(
+                            &decoded.mono,
+                            decoded.sample_rate_used,
+                        );
+                        processed_buffers.push(processed);
+                        let idx = processed_buffers.len() - 1;
+                        inputs.push(crate::analysis::embedding::EmbeddingBatchInput {
+                            samples: processed_buffers[idx].as_slice(),
+                            sample_rate: decoded.sample_rate_used,
+                        });
+                        payloads.push((work.sample_id, work.content_hash));
+                    }
+
+                    if inputs.is_empty() {
+                        continue;
+                    }
+
+                    match crate::analysis::embedding::infer_embeddings_batch(&inputs) {
+                        Ok(embeddings) => {
+                            for ((sample_id, content_hash), embedding) in
+                                payloads.into_iter().zip(embeddings.into_iter())
+                            {
+                                let _ = tx.send(Ok(EmbeddingResult {
+                                    sample_id,
+                                    content_hash,
+                                    embedding,
+                                }));
+                            }
+                        }
+                        Err(err) => {
+                            for (sample_id, _) in payloads {
+                                let _ =
+                                    tx.send(Err(format!("Embed failed for {}: {err}", sample_id)));
+                            }
+                        }
+                    }
                 }
             });
         }
@@ -395,6 +433,7 @@ pub(super) fn run_analysis_job_with_decoded(
         .content_hash
         .as_deref()
         .ok_or_else(|| format!("Missing content_hash for analysis job {}", job.sample_id))?;
+    let mut needs_embedding_upsert = false;
     let embedding = if use_cache {
         if let Some(cached) = load_embedding_vec_optional(
             conn,
@@ -410,18 +449,7 @@ pub(super) fn run_analysis_job_with_decoded(
             );
             let embedding =
                 crate::analysis::embedding::infer_embedding(&processed, decoded.sample_rate_used)?;
-            let embedding_blob = crate::analysis::vector::encode_f32_le_blob(&embedding);
-            let created_at = now_epoch_seconds();
-            db::upsert_embedding(
-                conn,
-                &job.sample_id,
-                crate::analysis::embedding::EMBEDDING_MODEL_ID,
-                crate::analysis::embedding::EMBEDDING_DIM as i64,
-                crate::analysis::embedding::EMBEDDING_DTYPE_F32,
-                true,
-                &embedding_blob,
-                created_at,
-            )?;
+            needs_embedding_upsert = true;
             embedding
         }
     } else {
@@ -431,6 +459,150 @@ pub(super) fn run_analysis_job_with_decoded(
         );
         let embedding =
             crate::analysis::embedding::infer_embedding(&processed, decoded.sample_rate_used)?;
+        needs_embedding_upsert = true;
+        embedding
+    };
+    finalize_analysis_job(
+        conn,
+        job,
+        decoded,
+        analysis_version,
+        embedding,
+        needs_embedding_upsert,
+    )
+}
+
+pub(super) fn run_analysis_jobs_with_decoded_batch(
+    conn: &rusqlite::Connection,
+    jobs: Vec<(db::ClaimedJob, crate::analysis::audio::AnalysisAudio)>,
+    use_cache: bool,
+    analysis_version: &str,
+) -> Vec<(db::ClaimedJob, Result<(), String>)> {
+    struct BatchJob {
+        job: db::ClaimedJob,
+        decoded: crate::analysis::audio::AnalysisAudio,
+        embedding: Option<Vec<f32>>,
+        processed: Option<Vec<f32>>,
+        needs_embedding_upsert: bool,
+        error: Option<String>,
+    }
+
+    let mut batch_jobs = Vec::with_capacity(jobs.len());
+    for (job, decoded) in jobs {
+        let mut item = BatchJob {
+            job,
+            decoded,
+            embedding: None,
+            processed: None,
+            needs_embedding_upsert: false,
+            error: None,
+        };
+        if job.content_hash.as_deref().is_none() {
+            item.error = Some(format!(
+                "Missing content_hash for analysis job {}",
+                job.sample_id
+            ));
+            batch_jobs.push(item);
+            continue;
+        }
+        if use_cache {
+            match load_embedding_vec_optional(
+                conn,
+                &job.sample_id,
+                crate::analysis::embedding::EMBEDDING_MODEL_ID,
+                crate::analysis::embedding::EMBEDDING_DIM,
+            ) {
+                Ok(Some(cached)) => {
+                    item.embedding = Some(cached);
+                }
+                Ok(None) => {
+                    let processed = crate::analysis::audio::preprocess_mono_for_embedding(
+                        &decoded.mono,
+                        decoded.sample_rate_used,
+                    );
+                    item.processed = Some(processed);
+                    item.needs_embedding_upsert = true;
+                }
+                Err(err) => {
+                    item.error = Some(err);
+                }
+            }
+        } else {
+            let processed = crate::analysis::audio::preprocess_mono_for_embedding(
+                &decoded.mono,
+                decoded.sample_rate_used,
+            );
+            item.processed = Some(processed);
+            item.needs_embedding_upsert = true;
+        }
+        batch_jobs.push(item);
+    }
+
+    let mut inputs = Vec::new();
+    let mut input_indices = Vec::new();
+    for (idx, item) in batch_jobs.iter().enumerate() {
+        if let Some(processed) = item.processed.as_ref() {
+            inputs.push(crate::analysis::embedding::EmbeddingBatchInput {
+                samples: processed.as_slice(),
+                sample_rate: item.decoded.sample_rate_used,
+            });
+            input_indices.push(idx);
+        }
+    }
+
+    if !inputs.is_empty() {
+        match crate::analysis::embedding::infer_embeddings_batch(&inputs) {
+            Ok(embeddings) => {
+                for (idx, embedding) in input_indices.into_iter().zip(embeddings.into_iter()) {
+                    if let Some(item) = batch_jobs.get_mut(idx) {
+                        item.embedding = Some(embedding);
+                    }
+                }
+            }
+            Err(err) => {
+                for idx in input_indices {
+                    if let Some(item) = batch_jobs.get_mut(idx) {
+                        item.error = Some(err.clone());
+                    }
+                }
+            }
+        }
+    }
+
+    let mut outcomes = Vec::with_capacity(batch_jobs.len());
+    for item in batch_jobs {
+        let result = if let Some(err) = item.error {
+            Err(err)
+        } else if let Some(embedding) = item.embedding {
+            finalize_analysis_job(
+                conn,
+                &item.job,
+                item.decoded,
+                analysis_version,
+                embedding,
+                item.needs_embedding_upsert,
+            )
+        } else {
+            Err("Missing embedding for analysis job".to_string())
+        };
+        outcomes.push((item.job, result));
+    }
+    outcomes
+}
+
+fn finalize_analysis_job(
+    conn: &rusqlite::Connection,
+    job: &db::ClaimedJob,
+    decoded: crate::analysis::audio::AnalysisAudio,
+    analysis_version: &str,
+    embedding: Vec<f32>,
+    needs_embedding_upsert: bool,
+) -> Result<(), String> {
+    let content_hash = job
+        .content_hash
+        .as_deref()
+        .ok_or_else(|| format!("Missing content_hash for analysis job {}", job.sample_id))?;
+    if needs_embedding_upsert {
         let embedding_blob = crate::analysis::vector::encode_f32_le_blob(&embedding);
         let created_at = now_epoch_seconds();
         db::upsert_embedding(
@@ -443,8 +615,7 @@ pub(super) fn run_analysis_job_with_decoded(
             &embedding_blob,
             created_at,
         )?;
-        embedding
-    };
+    }
     let time_domain = crate::analysis::time_domain::extract_time_domain_features(
         &decoded.mono,
         decoded.sample_rate_used,

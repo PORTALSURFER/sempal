@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 use std::path::PathBuf;
-use std::sync::OnceLock;
+use std::sync::{LazyLock, OnceLock};
 
 use ort::session::Session;
 use ort::session::builder::SessionBuilder;
@@ -23,6 +23,7 @@ const QUERY_MAX_WINDOWS: usize = 24;
 pub(crate) struct ClapModel {
     session: Session,
     input_scratch: Vec<f32>,
+    input_batch_scratch: Vec<f32>,
 }
 
 static ORT_ENV_INIT: OnceLock<Result<(), String>> = OnceLock::new();
@@ -61,8 +62,14 @@ impl ClapModel {
         Ok(Self {
             session,
             input_scratch: vec![0.0_f32; CLAP_INPUT_SAMPLES],
+            input_batch_scratch: Vec::new(),
         })
     }
+}
+
+pub(crate) struct EmbeddingBatchInput<'a> {
+    pub(crate) samples: &'a [f32],
+    pub(crate) sample_rate: u32,
 }
 
 pub(crate) fn infer_embedding(samples: &[f32], sample_rate: u32) -> Result<Vec<f32>, String> {
@@ -98,6 +105,15 @@ pub(crate) fn infer_embedding_query(samples: &[f32], sample_rate: u32) -> Result
     })
 }
 
+pub(crate) fn infer_embeddings_batch(
+    inputs: &[EmbeddingBatchInput<'_>],
+) -> Result<Vec<Vec<f32>>, String> {
+    if inputs.is_empty() {
+        return Ok(Vec::new());
+    }
+    with_clap_model(|model| infer_embeddings_with_model(model, inputs))
+}
+
 fn infer_embedding_with_model(
     model: &mut ClapModel,
     samples: &[f32],
@@ -119,20 +135,42 @@ fn infer_embedding_with_model(
         .session
         .run(ort::inputs![input_value])
         .map_err(|err| format!("ONNX inference failed: {err}"))?;
-    let mut embedding = extract_embedding(&outputs)?;
-    if embedding.len() != EMBEDDING_DIM {
-        return Err(format!(
-            "CLAP embedding length mismatch: expected {}, got {}",
-            EMBEDDING_DIM,
-            embedding.len()
-        ));
-    }
-    normalize_l2_in_place(&mut embedding);
-    let norm = l2_norm(&embedding);
-    if !norm.is_finite() || (norm - 1.0).abs() > 1e-3 {
-        return Err(format!("CLAP embedding L2 norm out of range: {norm:.6}"));
-    }
+    let mut embeddings = extract_embeddings(&outputs, 1)?;
+    let embedding = embeddings
+        .pop()
+        .ok_or_else(|| "CLAP embedding output missing".to_string())?;
     Ok(embedding)
+}
+
+fn infer_embeddings_with_model(
+    model: &mut ClapModel,
+    inputs: &[EmbeddingBatchInput<'_>],
+) -> Result<Vec<Vec<f32>>, String> {
+    let batch = inputs.len();
+    let total_len = batch * CLAP_INPUT_SAMPLES;
+    model.input_batch_scratch.clear();
+    model.input_batch_scratch.resize(total_len, 0.0);
+    for (idx, input) in inputs.iter().enumerate() {
+        let mut resampled = if input.sample_rate != CLAP_SAMPLE_RATE {
+            audio::resample_linear(input.samples, input.sample_rate, CLAP_SAMPLE_RATE)
+        } else {
+            input.samples.to_vec()
+        };
+        audio::sanitize_samples_in_place(&mut resampled);
+        let start = idx * CLAP_INPUT_SAMPLES;
+        let end = start + CLAP_INPUT_SAMPLES;
+        repeat_pad_slice(&mut model.input_batch_scratch[start..end], &resampled);
+    }
+    let input_value = TensorRef::from_array_view((
+        [batch, 1usize, CLAP_INPUT_SAMPLES],
+        model.input_batch_scratch.as_slice(),
+    ))
+    .map_err(|err| format!("Failed to create ONNX input tensor: {err}"))?;
+    let outputs = model
+        .session
+        .run(ort::inputs![input_value])
+        .map_err(|err| format!("ONNX inference failed: {err}"))?;
+    extract_embeddings(&outputs, batch)
 }
 
 fn query_window_ranges(sample_len: usize, sample_rate: u32) -> Vec<(usize, usize)> {
@@ -176,6 +214,24 @@ fn repeat_pad_into(out: &mut Vec<f32>, samples: &[f32], target_len: usize) {
     let mut offset = 0usize;
     while offset < target_len {
         let remaining = target_len - offset;
+        let take = remaining.min(samples.len());
+        out[offset..offset + take].copy_from_slice(&samples[..take]);
+        offset += take;
+    }
+}
+
+fn repeat_pad_slice(out: &mut [f32], samples: &[f32]) {
+    out.fill(0.0);
+    if samples.is_empty() || out.is_empty() {
+        return;
+    }
+    if samples.len() >= out.len() {
+        out.copy_from_slice(&samples[..out.len()]);
+        return;
+    }
+    let mut offset = 0usize;
+    while offset < out.len() {
+        let remaining = out.len() - offset;
         let take = remaining.min(samples.len());
         out[offset..offset + take].copy_from_slice(&samples[..take]);
         offset += take;
@@ -261,7 +317,7 @@ pub(crate) fn embedding_model_path() -> &'static PathBuf {
     &PATH
 }
 
-fn extract_embedding(outputs: &SessionOutputs) -> Result<Vec<f32>, String> {
+fn extract_embeddings(outputs: &SessionOutputs, batch: usize) -> Result<Vec<Vec<f32>>, String> {
     for value in outputs.values() {
         let array = value
             .try_extract_array::<f32>()
@@ -270,28 +326,66 @@ fn extract_embedding(outputs: &SessionOutputs) -> Result<Vec<f32>, String> {
         if shape.is_empty() || *shape.last().unwrap_or(&0) != EMBEDDING_DIM {
             continue;
         }
+        if shape.len() == 1 && batch == 1 {
+            let flat = array
+                .as_slice()
+                .ok_or_else(|| "ONNX output tensor not contiguous".to_string())?;
+            if flat.len() < EMBEDDING_DIM {
+                continue;
+            }
+            let mut pooled = flat[..EMBEDDING_DIM].to_vec();
+            normalize_l2_in_place(&mut pooled);
+            let norm = l2_norm(&pooled);
+            if !norm.is_finite() || (norm - 1.0).abs() > 1e-3 {
+                return Err(format!("CLAP embedding L2 norm out of range: {norm:.6}"));
+            }
+            return Ok(vec![pooled]);
+        }
+        if shape.len() < 2 {
+            continue;
+        }
+        let batch_dim = shape[0];
+        if batch_dim != batch {
+            continue;
+        }
+        let mut frames_per = 1usize;
+        if shape.len() > 2 {
+            for dim in &shape[1..shape.len() - 1] {
+                frames_per = frames_per.saturating_mul(*dim);
+            }
+        }
         let flat = array
             .as_slice()
             .ok_or_else(|| "ONNX output tensor not contiguous".to_string())?;
-        if flat.len() < EMBEDDING_DIM {
+        let expected_len = batch
+            .saturating_mul(frames_per)
+            .saturating_mul(EMBEDDING_DIM);
+        if flat.len() < expected_len {
             continue;
         }
-        let frames = flat.len() / EMBEDDING_DIM;
-        if frames <= 1 {
-            return Ok(flat.to_vec());
-        }
-        let mut pooled = vec![0.0_f32; EMBEDDING_DIM];
-        for frame in 0..frames {
-            let base = frame * EMBEDDING_DIM;
-            let chunk = &flat[base..base + EMBEDDING_DIM];
-            for (idx, value) in chunk.iter().enumerate() {
-                pooled[idx] += *value;
+        let mut outputs = Vec::with_capacity(batch);
+        for batch_idx in 0..batch {
+            let mut pooled = vec![0.0_f32; EMBEDDING_DIM];
+            let frame_base = batch_idx * frames_per * EMBEDDING_DIM;
+            for frame in 0..frames_per {
+                let base = frame_base + frame * EMBEDDING_DIM;
+                let chunk = &flat[base..base + EMBEDDING_DIM];
+                for (idx, value) in chunk.iter().enumerate() {
+                    pooled[idx] += *value;
+                }
             }
+            let scale = 1.0 / frames_per.max(1) as f32;
+            for value in &mut pooled {
+                *value *= scale;
+            }
+            normalize_l2_in_place(&mut pooled);
+            let norm = l2_norm(&pooled);
+            if !norm.is_finite() || (norm - 1.0).abs() > 1e-3 {
+                return Err(format!("CLAP embedding L2 norm out of range: {norm:.6}"));
+            }
+            outputs.push(pooled);
         }
-        for value in &mut pooled {
-            *value /= frames as f32;
-        }
-        return Ok(pooled);
+        return Ok(outputs);
     }
     Err("No embedding output found in ONNX outputs".to_string())
 }

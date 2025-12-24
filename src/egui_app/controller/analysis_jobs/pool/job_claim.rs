@@ -1,4 +1,4 @@
-use super::job_runner::{run_analysis_job_with_decoded, run_job};
+use super::job_runner::{run_analysis_jobs_with_decoded_batch, run_job};
 use crate::egui_app::controller::analysis_jobs::db;
 use crate::egui_app::controller::analysis_jobs::types::AnalysisJobMessage;
 use crate::egui_app::controller::jobs::JobMessage;
@@ -48,6 +48,32 @@ impl DecodedQueue {
             }
             if let Some(work) = guard.pop_front() {
                 return Some(work);
+            }
+            let (next_guard, _) = self
+                .ready
+                .wait_timeout(guard, Duration::from_millis(50))
+                .expect("decoded queue wait");
+            guard = next_guard;
+        }
+    }
+
+    pub(super) fn pop_batch(&self, shutdown: &AtomicBool, max: usize) -> Vec<DecodedWork> {
+        let mut guard = self.queue.lock().expect("decoded queue lock");
+        loop {
+            if shutdown.load(Ordering::Relaxed) {
+                return Vec::new();
+            }
+            if let Some(work) = guard.pop_front() {
+                let mut batch = Vec::with_capacity(max.max(1));
+                batch.push(work);
+                while batch.len() < max {
+                    if let Some(next) = guard.pop_front() {
+                        batch.push(next);
+                    } else {
+                        break;
+                    }
+                }
+                return batch;
             }
             let (next_guard, _) = self
                 .ready
@@ -211,6 +237,7 @@ pub(super) fn spawn_compute_worker(
     std::thread::spawn(move || {
         lower_worker_priority();
         let mut connections: HashMap<std::path::PathBuf, Connection> = HashMap::new();
+        const EMBEDDING_BATCH_MAX: usize = 4;
         loop {
             if shutdown.load(Ordering::Relaxed) {
                 break;
@@ -219,9 +246,10 @@ pub(super) fn spawn_compute_worker(
                 sleep(Duration::from_millis(50));
                 continue;
             }
-            let Some(work) = decode_queue.pop(&shutdown) else {
+            let batch = decode_queue.pop_batch(&shutdown, EMBEDDING_BATCH_MAX);
+            if batch.is_empty() {
                 continue;
-            };
+            }
             let max_analysis_duration_seconds =
                 f32::from_bits(max_duration_bits.load(Ordering::Relaxed));
             let analysis_sample_rate = analysis_sample_rate.load(Ordering::Relaxed).max(1);
@@ -231,67 +259,158 @@ pub(super) fn spawn_compute_worker(
                 .ok()
                 .and_then(|guard| guard.clone())
                 .unwrap_or_else(|| crate::analysis::version::analysis_version().to_string());
-            let conn = match connections.entry(work.job.source_root.clone()) {
-                std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
-                std::collections::hash_map::Entry::Vacant(entry) => {
-                    let conn = match db::open_source_db(&work.job.source_root) {
-                        Ok(conn) => conn,
-                        Err(_) => {
-                            continue;
+            let mut decoded_batches: HashMap<
+                std::path::PathBuf,
+                Vec<(db::ClaimedJob, crate::analysis::audio::AnalysisAudio)>,
+            > = HashMap::new();
+            let mut immediate_jobs: Vec<(db::ClaimedJob, Result<(), String>)> = Vec::new();
+
+            for work in batch {
+                let job_fallback = work.job.clone();
+                let mut batch_job: Option<(db::ClaimedJob, crate::analysis::audio::AnalysisAudio)> =
+                    None;
+                let mut immediate_job: Option<(db::ClaimedJob, Result<(), String>)> = None;
+
+                let outcome = catch_unwind(AssertUnwindSafe(|| {
+                    let conn = match connections.entry(work.job.source_root.clone()) {
+                        std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+                        std::collections::hash_map::Entry::Vacant(entry) => {
+                            let conn = match db::open_source_db(&work.job.source_root) {
+                                Ok(conn) => conn,
+                                Err(_) => {
+                                    immediate_job = Some((
+                                        work.job,
+                                        Err("Failed to open source DB".to_string()),
+                                    ));
+                                    return Ok(());
+                                }
+                            };
+                            entry.insert(conn)
                         }
                     };
-                    entry.insert(conn)
+                    match work.job.job_type.as_str() {
+                        db::ANALYZE_SAMPLE_JOB_TYPE => match work.outcome {
+                            DecodeOutcome::Decoded(decoded) => {
+                                batch_job = Some((work.job, decoded));
+                                Ok(())
+                            }
+                            DecodeOutcome::Skipped {
+                                duration_seconds,
+                                sample_rate,
+                            } => {
+                                let res = db::update_analysis_metadata(
+                                    conn,
+                                    &work.job.sample_id,
+                                    work.job.content_hash.as_deref(),
+                                    duration_seconds,
+                                    sample_rate,
+                                    &analysis_version,
+                                );
+                                immediate_job = Some((work.job, res));
+                                Ok(())
+                            }
+                            DecodeOutcome::Failed(err) => {
+                                immediate_job = Some((work.job, Err(err)));
+                                Ok(())
+                            }
+                            DecodeOutcome::NotNeeded => {
+                                immediate_job = Some((
+                                    work.job,
+                                    Err("Decode missing for analysis job".to_string()),
+                                ));
+                                Ok(())
+                            }
+                        },
+                        _ => {
+                            let res = run_job(
+                                conn,
+                                &work.job,
+                                use_cache,
+                                max_analysis_duration_seconds,
+                                analysis_sample_rate,
+                                &analysis_version,
+                            );
+                            immediate_job = Some((work.job, res));
+                            Ok(())
+                        }
+                    }
+                }))
+                .unwrap_or_else(|payload| Err(panic_to_string(payload)));
+
+                if let Err(err) = outcome {
+                    immediate_job = Some((job_fallback, Err(err)));
                 }
-            };
-            let outcome = catch_unwind(AssertUnwindSafe(|| match work.job.job_type.as_str() {
-                db::ANALYZE_SAMPLE_JOB_TYPE => match work.outcome {
-                    DecodeOutcome::Decoded(decoded) => run_analysis_job_with_decoded(
-                        conn,
-                        &work.job,
-                        decoded,
-                        use_cache,
-                        &analysis_version,
-                    ),
-                    DecodeOutcome::Skipped {
-                        duration_seconds,
-                        sample_rate,
-                    } => db::update_analysis_metadata(
-                        conn,
-                        &work.job.sample_id,
-                        work.job.content_hash.as_deref(),
-                        duration_seconds,
-                        sample_rate,
-                        &analysis_version,
-                    ),
-                    DecodeOutcome::Failed(err) => Err(err),
-                    DecodeOutcome::NotNeeded => Err("Decode missing for analysis job".to_string()),
-                },
-                _ => run_job(
-                    conn,
-                    &work.job,
-                    use_cache,
-                    max_analysis_duration_seconds,
-                    analysis_sample_rate,
-                    &analysis_version,
-                ),
-            }))
-            .unwrap_or_else(|payload| Err(panic_to_string(payload)));
-            match outcome {
-                Ok(()) => {
-                    update_job_status_with_retry(|| db::mark_done(conn, work.job.id));
+                if let Some((job, decoded)) = batch_job {
+                    decoded_batches
+                        .entry(job.source_root.clone())
+                        .or_default()
+                        .push((job, decoded));
                 }
-                Err(err) => {
-                    update_job_status_with_retry(|| db::mark_failed(conn, work.job.id, &err));
+                if let Some(entry) = immediate_job {
+                    immediate_jobs.push(entry);
                 }
             }
-            if let Ok(progress) = db::current_progress(conn) {
-                let source_id = db::parse_sample_id(&work.job.sample_id)
-                    .ok()
-                    .map(|(source_id, _)| crate::sample_sources::SourceId::from_string(source_id));
-                let _ = tx.send(JobMessage::Analysis(AnalysisJobMessage::Progress {
-                    source_id,
-                    progress,
-                }));
+
+            for (source_root, jobs) in decoded_batches {
+                let conn = match connections.entry(source_root.clone()) {
+                    std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+                    std::collections::hash_map::Entry::Vacant(entry) => {
+                        let conn = match db::open_source_db(&source_root) {
+                            Ok(conn) => conn,
+                            Err(_) => {
+                                for (job, _) in jobs {
+                                    immediate_jobs.push((
+                                        job,
+                                        Err("Failed to open source DB".to_string()),
+                                    ));
+                                }
+                                continue;
+                            }
+                        };
+                        entry.insert(conn)
+                    }
+                };
+                let batch_outcomes = run_analysis_jobs_with_decoded_batch(
+                    conn,
+                    jobs,
+                    use_cache,
+                    &analysis_version,
+                );
+                immediate_jobs.extend(batch_outcomes);
+            }
+
+            for (job, outcome) in immediate_jobs {
+                let conn = match connections.entry(job.source_root.clone()) {
+                    std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+                    std::collections::hash_map::Entry::Vacant(entry) => {
+                        let conn = match db::open_source_db(&job.source_root) {
+                            Ok(conn) => conn,
+                            Err(_) => {
+                                continue;
+                            }
+                        };
+                        entry.insert(conn)
+                    }
+                };
+                match outcome {
+                    Ok(()) => {
+                        update_job_status_with_retry(|| db::mark_done(conn, job.id));
+                    }
+                    Err(err) => {
+                        update_job_status_with_retry(|| db::mark_failed(conn, job.id, &err));
+                    }
+                }
+                if let Ok(progress) = db::current_progress(conn) {
+                    let source_id = db::parse_sample_id(&job.sample_id)
+                        .ok()
+                        .map(|(source_id, _)| {
+                            crate::sample_sources::SourceId::from_string(source_id)
+                        });
+                    let _ = tx.send(JobMessage::Analysis(AnalysisJobMessage::Progress {
+                        source_id,
+                        progress,
+                    }));
+                }
             }
         }
     })
