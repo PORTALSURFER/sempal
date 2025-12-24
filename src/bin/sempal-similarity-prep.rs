@@ -54,10 +54,17 @@ fn main() {
     }
 
     let started = Instant::now();
+    let mut last_dot = Instant::now();
     while controller.similarity_prep_in_progress() {
         controller.tick_playhead();
+        if last_dot.elapsed() >= Duration::from_secs(1) {
+            print!(".");
+            let _ = std::io::Write::flush(&mut std::io::stdout());
+            last_dot = Instant::now();
+        }
         std::thread::sleep(Duration::from_millis(opts.poll_ms));
     }
+    println!();
 
     println!(
         "Similarity prep completed in {:.2}s",
