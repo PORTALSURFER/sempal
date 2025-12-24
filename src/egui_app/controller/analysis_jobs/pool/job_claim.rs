@@ -106,7 +106,7 @@ pub(super) fn spawn_decoder_worker(
             Ok(path) => path,
             Err(_) => return,
         };
-        let mut conn = match db::open_library_db(&db_path) {
+        let conn = match db::open_library_db(&db_path) {
             Ok(conn) => conn,
             Err(_) => return,
         };
@@ -160,7 +160,7 @@ pub(super) fn spawn_compute_worker(
             Ok(path) => path,
             Err(_) => return,
         };
-        let mut conn = match db::open_library_db(&db_path) {
+        let conn = match db::open_library_db(&db_path) {
             Ok(conn) => conn,
             Err(_) => return,
         };
@@ -224,14 +224,15 @@ fn decode_analysis_job(
         Ok(parsed) => parsed,
         Err(err) => return DecodeOutcome::Failed(err),
     };
-    let Some(root) = match db::source_root_for(conn, &source_id) {
-        Ok(root) => root,
+    let root = match db::source_root_for(conn, &source_id) {
+        Ok(Some(root)) => root,
+        Ok(None) => {
+            return DecodeOutcome::Failed(format!(
+                "Source not found for job sample_id={}",
+                job.sample_id
+            ))
+        }
         Err(err) => return DecodeOutcome::Failed(err),
-    } else {
-        return DecodeOutcome::Failed(format!(
-            "Source not found for job sample_id={}",
-            job.sample_id
-        ));
     };
     let absolute = root.join(&relative_path);
     let max_analysis_duration_seconds = f32::from_bits(max_duration_bits.load(Ordering::Relaxed));

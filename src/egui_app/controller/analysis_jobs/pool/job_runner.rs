@@ -370,6 +370,10 @@ pub(super) fn run_analysis_job_with_decoded(
     job: &db::ClaimedJob,
     decoded: crate::analysis::audio::AnalysisAudio,
 ) -> Result<(), String> {
+    let content_hash = job
+        .content_hash
+        .as_deref()
+        .ok_or_else(|| format!("Missing content_hash for analysis job {}", job.sample_id))?;
     let embedding = if let Some(cached) = load_embedding_vec_optional(
         conn,
         &job.sample_id,

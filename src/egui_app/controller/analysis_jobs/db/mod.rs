@@ -12,9 +12,9 @@ mod types;
 mod tests;
 
 pub(in crate::egui_app::controller::analysis_jobs) use artifacts::{
-    CachedEmbedding, CachedFeatures, cached_embedding_by_hash, cached_features_by_hash,
-    invalidate_analysis_artifacts, update_analysis_metadata, upsert_analysis_features,
-    upsert_cached_embedding, upsert_cached_features, upsert_embedding,
+    cached_embedding_by_hash, cached_features_by_hash, invalidate_analysis_artifacts,
+    update_analysis_metadata, upsert_analysis_features, upsert_cached_embedding,
+    upsert_cached_features, upsert_embedding,
 };
 pub(in crate::egui_app::controller) use cleanup::purge_orphaned_samples;
 pub(in crate::egui_app::controller::analysis_jobs) use cleanup::{
