@@ -66,6 +66,24 @@ impl EguiController {
             || self.runtime.jobs.umap_cluster_build_in_progress()
     }
 
+    pub fn similarity_prep_debug_snapshot(&self) -> String {
+        let Some(state) = self.runtime.similarity_prep.as_ref() else {
+            return "similarity_prep=idle".to_string();
+        };
+        let mut out = format!(
+            "stage={:?} skip_backfill={} scan_in_progress={} umap_in_progress={} clusters_in_progress={}",
+            state.stage,
+            state.skip_backfill,
+            self.runtime.jobs.scan_in_progress(),
+            self.runtime.jobs.umap_build_in_progress(),
+            self.runtime.jobs.umap_cluster_build_in_progress()
+        );
+        if let Ok(progress) = analysis_jobs::current_progress() {
+            out.push_str(&format!(" analysis_progress={progress}"));
+        }
+        out
+    }
+
     pub(super) fn handle_similarity_scan_finished(
         &mut self,
         source_id: &SourceId,

@@ -55,12 +55,18 @@ fn main() {
 
     let started = Instant::now();
     let mut last_dot = Instant::now();
+    let mut last_status = Instant::now();
     while controller.similarity_prep_in_progress() {
         controller.tick_playhead();
         if last_dot.elapsed() >= Duration::from_secs(1) {
             print!(".");
             let _ = std::io::Write::flush(&mut std::io::stdout());
             last_dot = Instant::now();
+        }
+        if last_status.elapsed() >= Duration::from_secs(5) {
+            println!();
+            println!("status: {}", controller.similarity_prep_debug_snapshot());
+            last_status = Instant::now();
         }
         std::thread::sleep(Duration::from_millis(opts.poll_ms));
     }
