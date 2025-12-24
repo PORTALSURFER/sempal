@@ -37,37 +37,26 @@ fn enqueue_embedding_backfill(
         return Ok((0, db::current_progress(&conn)?));
     }
 
-    let source_db = crate::sample_sources::SourceDatabase::open(&request.source.root)
-        .map_err(|err| err.to_string())?;
-    let mut entries = source_db.list_files().map_err(|err| err.to_string())?;
-    entries.retain(|entry| !entry.missing);
-    if entries.is_empty() {
-        return Ok((0, db::current_progress(&conn)?));
-    }
-
-    let mut staged_ids = Vec::with_capacity(entries.len());
-    for entry in entries {
-        let sample_id = db::build_sample_id(request.source.id.as_str(), &entry.relative_path);
-        staged_ids.push(sample_id);
-    }
-    if staged_ids.is_empty() {
-        return Ok((0, db::current_progress(&conn)?));
-    }
-    stage_embedding_samples(&mut conn, &staged_ids)?;
     let mut sample_ids = Vec::new();
     {
         let mut stmt = conn
             .prepare(
                 "SELECT t.sample_id
-                 FROM temp_embedding_backfill_samples t
+                 FROM samples s
+                 JOIN features f
+                   ON f.sample_id = s.sample_id AND f.feat_version = 1
                  LEFT JOIN embeddings e
-                   ON e.sample_id = t.sample_id AND e.model_id = ?1
-                 WHERE e.sample_id IS NULL
-                 ORDER BY t.sample_id",
+                   ON e.sample_id = s.sample_id AND e.model_id = ?1
+                 WHERE s.sample_id LIKE ?2
+                   AND e.sample_id IS NULL
+                 ORDER BY s.sample_id",
             )
             .map_err(|err| format!("Prepare embedding backfill query failed: {err}"))?;
         let mut rows = stmt
-            .query(params![crate::analysis::embedding::EMBEDDING_MODEL_ID])
+            .query(params![
+                crate::analysis::embedding::EMBEDDING_MODEL_ID,
+                format!("{}::%", request.source.id)
+            ])
             .map_err(|err| format!("Failed to query embedding backfill rows: {err}"))?;
         while let Some(row) = rows
             .next()
@@ -98,25 +87,4 @@ fn enqueue_embedding_backfill(
     )?;
     let progress = db::current_progress(&conn)?;
     Ok((inserted, progress))
-}
-
-fn stage_embedding_samples(
-    conn: &mut rusqlite::Connection,
-    sample_ids: &[String],
-) -> Result<(), String> {
-    conn.execute_batch(
-        "CREATE TEMP TABLE IF NOT EXISTS temp_embedding_backfill_samples (
-            sample_id TEXT PRIMARY KEY
-        );
-        DELETE FROM temp_embedding_backfill_samples;",
-    )
-    .map_err(|err| format!("Prepare embedding staging table failed: {err}"))?;
-    let mut stmt = conn
-        .prepare("INSERT INTO temp_embedding_backfill_samples (sample_id) VALUES (?1)")
-        .map_err(|err| format!("Prepare embedding staging insert failed: {err}"))?;
-    for sample_id in sample_ids {
-        stmt.execute(params![sample_id])
-            .map_err(|err| format!("Insert embedding staging row failed: {err}"))?;
-    }
-    Ok(())
 }
