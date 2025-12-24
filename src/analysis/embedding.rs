@@ -111,7 +111,23 @@ pub(crate) fn infer_embeddings_batch(
     if inputs.is_empty() {
         return Ok(Vec::new());
     }
-    with_clap_model(|model| infer_embeddings_with_model(model, inputs))
+    with_clap_model(|model| {
+        match infer_embeddings_with_model(model, inputs) {
+            Ok(values) => Ok(values),
+            Err(err) if inputs.len() > 1 => {
+                let mut outputs = Vec::with_capacity(inputs.len());
+                for input in inputs {
+                    outputs.push(infer_embedding_with_model(
+                        model,
+                        input.samples,
+                        input.sample_rate,
+                    )?);
+                }
+                Ok(outputs)
+            }
+            Err(err) => Err(err),
+        }
+    })
 }
 
 fn infer_embedding_with_model(
