@@ -173,7 +173,7 @@ fn run_embedding_backfill_job(
         return Ok(());
     }
 
-    const INSERT_BATCH: usize = 32;
+    const INSERT_BATCH: usize = 128;
     for chunk in results.chunks(INSERT_BATCH) {
         let created_at = now_epoch_seconds();
         conn.execute_batch("BEGIN IMMEDIATE")
@@ -207,14 +207,11 @@ fn run_embedding_backfill_job(
         }
         conn.execute_batch("COMMIT")
             .map_err(|err| format!("Commit embedding backfill tx failed: {err}"))?;
-        for result in chunk {
-            if let Err(err) = crate::analysis::ann_index::upsert_embedding(
-                conn,
-                &result.sample_id,
-                &result.embedding,
-            ) {
-                warn!("ANN index update failed for {}: {err}", result.sample_id);
-            }
+        if let Err(err) = crate::analysis::ann_index::upsert_embeddings_batch(
+            conn,
+            chunk.iter().map(|result| (result.sample_id.as_str(), result.embedding.as_slice())),
+        ) {
+            warn!("ANN index batch update failed: {err}");
         }
     }
 

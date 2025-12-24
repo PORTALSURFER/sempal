@@ -80,6 +80,45 @@ pub fn upsert_embedding(
     Ok(())
 }
 
+pub fn upsert_embeddings_batch<'a, I>(conn: &Connection, items: I) -> Result<(), String>
+where
+    I: IntoIterator<Item = (&'a str, &'a [f32])>,
+{
+    let mut iter = items.into_iter().peekable();
+    if iter.peek().is_none() {
+        return Ok(());
+    }
+    let mut guard = ANN_INDEX
+        .lock()
+        .map_err(|_| "ANN index lock poisoned".to_string())?;
+    if guard.is_none() {
+        let state = load_or_build_index(conn)?;
+        *guard = Some(state);
+    }
+    let Some(state) = guard.as_mut() else {
+        return Ok(());
+    };
+    for (sample_id, embedding) in iter {
+        if state.id_lookup.contains_key(sample_id) {
+            continue;
+        }
+        if embedding.len() != state.params.dim {
+            return Err(format!(
+                "Embedding dim mismatch: expected {}, got {}",
+                state.params.dim,
+                embedding.len()
+            ));
+        }
+        let id = state.id_map.len();
+        state.id_map.push(sample_id.to_string());
+        state.id_lookup.insert(sample_id.to_string(), id);
+        state.hnsw.insert((embedding, id));
+        state.dirty_inserts += 1;
+    }
+    maybe_flush(conn, state)?;
+    Ok(())
+}
+
 pub fn find_similar(
     conn: &Connection,
     sample_id: &str,
