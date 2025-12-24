@@ -91,16 +91,14 @@ pub(crate) fn decode_for_analysis_with_rate_limit(
         let mut scratch = scratch.borrow_mut();
         downmix_to_mono_into(&mut scratch.mono, &decoded.samples, decoded.channels);
         let mono_len = scratch.mono.len();
+        let mut resampled = Vec::new();
         resample_linear_into(
-            &mut scratch.resampled,
+            &mut resampled,
             &scratch.mono[..mono_len],
             decoded.sample_rate,
             sample_rate,
         );
-        Ok(prepare_mono_for_analysis_from_slice(
-            &scratch.resampled,
-            sample_rate,
-        ))
+        Ok(prepare_mono_for_analysis_from_slice(&resampled, sample_rate))
     })
 }
 
