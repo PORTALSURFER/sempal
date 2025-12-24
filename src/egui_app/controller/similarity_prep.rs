@@ -59,7 +59,7 @@ impl EguiController {
         }
     }
 
-    pub(crate) fn similarity_prep_in_progress(&self) -> bool {
+    pub fn similarity_prep_in_progress(&self) -> bool {
         self.runtime.similarity_prep.is_some()
             || self.runtime.jobs.scan_in_progress()
             || self.runtime.jobs.umap_build_in_progress()
