@@ -255,6 +255,14 @@ fn run_analysis_job(
         }
     }
     let decoded = crate::analysis::audio::decode_for_analysis(&absolute)?;
+    run_analysis_job_with_decoded(conn, job, decoded)
+}
+
+pub(super) fn run_analysis_job_with_decoded(
+    conn: &rusqlite::Connection,
+    job: &db::ClaimedJob,
+    decoded: crate::analysis::audio::AnalysisAudio,
+) -> Result<(), String> {
     let embedding = if let Some(cached) = load_embedding_vec_optional(
         conn,
         &job.sample_id,

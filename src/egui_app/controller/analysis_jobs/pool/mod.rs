@@ -64,13 +64,25 @@ impl AnalysisWorkerPool {
             let worker_count = job_claim::worker_count_with_override(
                 self.worker_count_override.load(Ordering::Relaxed),
             );
-            for worker_index in 0..worker_count {
-                self.threads.push(job_claim::spawn_worker(
+            let decode_workers = worker_count.min(2).max(1);
+            let queue = std::sync::Arc::new(job_claim::DecodedQueue::new());
+            for worker_index in 0..decode_workers {
+                self.threads.push(job_claim::spawn_decoder_worker(
                     worker_index,
-                    message_tx.clone(),
+                    queue.clone(),
                     self.cancel.clone(),
                     self.shutdown.clone(),
                     self.pause_claiming.clone(),
+                    self.max_duration_bits.clone(),
+                ));
+            }
+            for worker_index in 0..worker_count {
+                self.threads.push(job_claim::spawn_compute_worker(
+                    worker_index,
+                    message_tx.clone(),
+                    queue.clone(),
+                    self.cancel.clone(),
+                    self.shutdown.clone(),
                     self.max_duration_bits.clone(),
                 ));
             }
