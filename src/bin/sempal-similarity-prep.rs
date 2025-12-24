@@ -47,7 +47,9 @@ fn main() {
         controller.set_similarity_prep_fast_sample_rate(rate);
     }
     if opts.log_jobs {
-        std::env::set_var("SEMPAL_ANALYSIS_LOG_JOBS", "1");
+        unsafe {
+            std::env::set_var("SEMPAL_ANALYSIS_LOG_JOBS", "1");
+        }
     }
 
     let normalized = sempal::sample_sources::config::normalize_path(&opts.source);
