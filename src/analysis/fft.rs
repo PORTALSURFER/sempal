@@ -1,5 +1,6 @@
 use std::f32::consts::PI;
 
+#[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct Complex32 {
     pub(crate) re: f32,

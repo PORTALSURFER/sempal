@@ -135,10 +135,41 @@ fn sanitize(sample: f32) -> f32 {
 
 fn power_spectrum(fft: &[Complex32]) -> Vec<f32> {
     let bins = fft.len() / 2 + 1;
+    #[cfg(target_arch = "x86_64")]
+    {
+        if std::is_x86_feature_detected!("sse3") {
+            // SAFETY: gated by runtime feature check.
+            return unsafe { power_spectrum_sse3(fft, bins) };
+        }
+    }
     let mut power = Vec::with_capacity(bins);
     for bin in 0..bins {
         let c = fft[bin];
         power.push((c.re * c.re + c.im * c.im).max(0.0));
+    }
+    power
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "sse3")]
+unsafe fn power_spectrum_sse3(fft: &[Complex32], bins: usize) -> Vec<f32> {
+    use std::arch::x86_64::*;
+    let mut power = vec![0.0_f32; bins];
+    let ptr = fft.as_ptr() as *const f32;
+    let mut bin = 0usize;
+    while bin + 4 <= bins {
+        let base = bin * 2;
+        let v0 = _mm_loadu_ps(ptr.add(base));
+        let v1 = _mm_loadu_ps(ptr.add(base + 4));
+        let v0_sq = _mm_mul_ps(v0, v0);
+        let v1_sq = _mm_mul_ps(v1, v1);
+        let sum = _mm_hadd_ps(v0_sq, v1_sq);
+        _mm_storeu_ps(power.as_mut_ptr().add(bin), sum);
+        bin += 4;
+    }
+    for i in bin..bins {
+        let c = fft[i];
+        power[i] = (c.re * c.re + c.im * c.im).max(0.0);
     }
     power
 }
