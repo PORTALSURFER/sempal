@@ -469,6 +469,7 @@ pub(super) fn run_analysis_job_with_decoded(
         analysis_version,
         embedding,
         needs_embedding_upsert,
+        true,
     )
 }
 
@@ -571,23 +572,39 @@ pub(super) fn run_analysis_jobs_with_decoded_batch(
         }
     }
 
+    let mut ann_batch: Vec<(String, Vec<f32>)> = Vec::new();
     let mut outcomes = Vec::with_capacity(batch_jobs.len());
     for item in batch_jobs {
         let result = if let Some(err) = item.error {
             Err(err)
         } else if let Some(embedding) = item.embedding {
+            let sample_id = item.job.sample_id.clone();
             finalize_analysis_job(
                 conn,
                 &item.job,
                 item.decoded,
                 analysis_version,
-                embedding,
+                embedding.clone(),
                 item.needs_embedding_upsert,
+                false,
             )
+            .map(|_| {
+                ann_batch.push((sample_id, embedding));
+            })
         } else {
             Err("Missing embedding for analysis job".to_string())
         };
         outcomes.push((item.job, result));
+    }
+    if !ann_batch.is_empty() {
+        if let Err(err) = crate::analysis::ann_index::upsert_embeddings_batch(
+            conn,
+            ann_batch
+                .iter()
+                .map(|(sample_id, embedding)| (sample_id.as_str(), embedding.as_slice())),
+        ) {
+            warn!("ANN index batch update failed: {err}");
+        }
     }
     outcomes
 }
@@ -599,6 +616,7 @@ fn finalize_analysis_job(
     analysis_version: &str,
     embedding: Vec<f32>,
     needs_embedding_upsert: bool,
+    do_ann_upsert: bool,
 ) -> Result<(), String> {
     let content_hash = job
         .content_hash
@@ -640,7 +658,9 @@ fn finalize_analysis_job(
     if current_hash.as_deref() != Some(content_hash) {
         return Ok(());
     }
-    crate::analysis::ann_index::upsert_embedding(conn, &job.sample_id, &embedding)?;
+    if do_ann_upsert {
+        crate::analysis::ann_index::upsert_embedding(conn, &job.sample_id, &embedding)?;
+    }
     let vector = crate::analysis::vector::to_f32_vector_v1(&features);
     let blob = crate::analysis::vector::encode_f32_le_blob(&vector);
     let computed_at = now_epoch_seconds();
