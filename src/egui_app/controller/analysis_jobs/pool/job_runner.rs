@@ -379,8 +379,17 @@ fn run_analysis_job(
             }
         }
     }
-    let decoded =
-        crate::analysis::audio::decode_for_analysis_with_rate(&absolute, analysis_sample_rate)?;
+    let decode_limit_seconds =
+        if max_analysis_duration_seconds.is_finite() && max_analysis_duration_seconds > 0.0 {
+            Some(max_analysis_duration_seconds)
+        } else {
+            None
+        };
+    let decoded = crate::analysis::audio::decode_for_analysis_with_rate_limit(
+        &absolute,
+        analysis_sample_rate,
+        decode_limit_seconds,
+    )?;
     run_analysis_job_with_decoded(conn, job, decoded, analysis_version)
 }
 

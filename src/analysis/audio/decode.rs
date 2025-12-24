@@ -72,10 +72,22 @@ pub(crate) fn decode_for_analysis_with_rate(
     path: &Path,
     sample_rate: u32,
 ) -> Result<AnalysisAudio, String> {
-    let max_decode_seconds = MAX_ANALYSIS_SECONDS + WINDOW_SECONDS;
+    decode_for_analysis_with_rate_limit(path, sample_rate, None)
+}
+
+pub(crate) fn decode_for_analysis_with_rate_limit(
+    path: &Path,
+    sample_rate: u32,
+    max_seconds: Option<f32>,
+) -> Result<AnalysisAudio, String> {
+    let default_max = MAX_ANALYSIS_SECONDS + WINDOW_SECONDS;
+    let max_decode_seconds = max_seconds
+        .filter(|limit| limit.is_finite() && *limit > 0.0)
+        .map(|limit| default_max.min(limit + WINDOW_SECONDS))
+        .unwrap_or(default_max);
     let decoded = crate::analysis::audio_decode::decode_audio(path, Some(max_decode_seconds))?;
     let mono = downmix_to_mono(&decoded.samples, decoded.channels);
-    let mut resampled = resample_linear(&mono, decoded.sample_rate, sample_rate);
+    let resampled = resample_linear(&mono, decoded.sample_rate, sample_rate);
     Ok(prepare_mono_for_analysis(resampled, sample_rate))
 }
 
