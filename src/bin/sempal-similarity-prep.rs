@@ -11,6 +11,7 @@ struct Options {
     worker_count: Option<u32>,
     skip_finalize: bool,
     analysis_full: bool,
+    reset_failed: bool,
     poll_ms: u64,
 }
 
@@ -46,6 +47,11 @@ fn main() {
     }
 
     let normalized = sempal::sample_sources::config::normalize_path(&opts.source);
+    if opts.reset_failed {
+        if let Err(err) = reset_failed_analysis_jobs(&normalized) {
+            eprintln!("Warning: failed to reset analysis jobs: {err}");
+        }
+    }
     if !controller.select_source_by_root(&normalized) {
         if opts.analysis_full {
             controller.set_similarity_prep_force_full_analysis_next(true);
@@ -96,6 +102,7 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
     let mut worker_count = None;
     let mut skip_finalize = false;
     let mut analysis_full = false;
+    let mut reset_failed = false;
     let mut poll_ms = 25_u64;
 
     let mut idx = 0usize;
@@ -141,6 +148,9 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
             "--analysis-full" => {
                 analysis_full = true;
             }
+            "--reset-failed" => {
+                reset_failed = true;
+            }
             "--poll-ms" => {
                 idx += 1;
                 let value = args
@@ -165,6 +175,7 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
         worker_count,
         skip_finalize,
         analysis_full,
+        reset_failed,
         poll_ms,
     })
 }
@@ -196,7 +207,19 @@ Options:\n\
   --duration-cap-seconds <s>  Skip analysis beyond this duration\n\
   --analysis-workers <n>      Override analysis worker count\n\
   --analysis-full             Force full analysis even when cached\n\
+  --reset-failed              Reset failed analysis jobs to pending\n\
   --skip-finalize             Exit after analysis before UMAP/cluster finalize\n\
   --poll-ms <n>               Poll interval (default: 25)\n\
   -h, --help                  Show this help\n"
+}
+
+fn reset_failed_analysis_jobs(source_root: &PathBuf) -> Result<(), String> {
+    let conn = sempal::sample_sources::SourceDatabase::open_connection(source_root)
+        .map_err(|err| format!("Open source DB failed: {err}"))?;
+    conn.execute(
+        "UPDATE analysis_jobs SET status = 'pending', last_error = NULL WHERE status = 'failed'",
+        [],
+    )
+    .map_err(|err| format!("Failed to reset analysis jobs: {err}"))?;
+    Ok(())
 }
