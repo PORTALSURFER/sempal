@@ -174,6 +174,15 @@ fn ensure_non_empty(data: &[Vec<f32>]) -> Result<(), String> {
 }
 
 fn run_hdbscan(data: &[Vec<f32>], config: HdbscanConfig) -> Result<Vec<i32>, String> {
+    let min_required = config
+        .min_samples
+        .unwrap_or(1)
+        .max(config.min_cluster_size)
+        .max(2);
+    if data.len() < min_required {
+        // HDBSCAN panics on tiny datasets; treat them as a single cluster.
+        return Ok(vec![0; data.len()]);
+    }
     let hyper = build_hyperparams(config);
     let clusterer = Hdbscan::new(data, hyper);
     clusterer
