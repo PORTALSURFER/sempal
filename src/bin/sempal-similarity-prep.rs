@@ -9,6 +9,7 @@ struct Options {
     fast_sample_rate: Option<u32>,
     duration_cap_seconds: Option<f32>,
     worker_count: Option<u32>,
+    skip_finalize: bool,
     poll_ms: u64,
 }
 
@@ -58,6 +59,11 @@ fn main() {
     let mut last_status = Instant::now();
     while controller.similarity_prep_in_progress() {
         controller.tick_playhead();
+        if opts.skip_finalize && controller.similarity_prep_is_finalizing() {
+            println!();
+            println!("Finalizing started; exiting early due to --skip-finalize.");
+            break;
+        }
         if last_dot.elapsed() >= Duration::from_secs(1) {
             print!(".");
             let _ = std::io::Write::flush(&mut std::io::stdout());
@@ -84,6 +90,7 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
     let mut fast_sample_rate = None;
     let mut duration_cap_seconds = None;
     let mut worker_count = None;
+    let mut skip_finalize = false;
     let mut poll_ms = 25_u64;
 
     let mut idx = 0usize;
@@ -123,6 +130,9 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
                     .ok_or_else(|| "--analysis-workers requires a value".to_string())?;
                 worker_count = Some(parse_u32(value, "--analysis-workers")?);
             }
+            "--skip-finalize" => {
+                skip_finalize = true;
+            }
             "--poll-ms" => {
                 idx += 1;
                 let value = args
@@ -145,6 +155,7 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
         fast_sample_rate,
         duration_cap_seconds,
         worker_count,
+        skip_finalize,
         poll_ms,
     })
 }
@@ -175,6 +186,7 @@ Options:\n\
   --fast-sample-rate <hz>     Sample rate for fast mode\n\
   --duration-cap-seconds <s>  Skip analysis beyond this duration\n\
   --analysis-workers <n>      Override analysis worker count\n\
+  --skip-finalize             Exit after analysis before UMAP/cluster finalize\n\
   --poll-ms <n>               Poll interval (default: 25)\n\
   -h, --help                  Show this help\n"
 }

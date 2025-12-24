@@ -66,6 +66,13 @@ impl EguiController {
             || self.runtime.jobs.umap_cluster_build_in_progress()
     }
 
+    pub fn similarity_prep_is_finalizing(&self) -> bool {
+        self.runtime
+            .similarity_prep
+            .as_ref()
+            .is_some_and(|state| state.stage == SimilarityPrepStage::Finalizing)
+    }
+
     pub fn similarity_prep_debug_snapshot(&self) -> String {
         let Some(state) = self.runtime.similarity_prep.as_ref() else {
             return "similarity_prep=idle".to_string();
