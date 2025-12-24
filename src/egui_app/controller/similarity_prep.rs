@@ -31,6 +31,7 @@ impl EguiController {
         let scan_completed_at = self.read_source_scan_timestamp(&source);
         let prep_scan_at = self.read_source_prep_timestamp(&source);
         let skip_scan = scan_completed_at.is_some() && scan_completed_at == prep_scan_at;
+        let needs_embeddings = !self.source_has_embeddings(&source);
         let stage = if skip_scan {
             SimilarityPrepStage::AwaitEmbeddings
         } else {
@@ -41,7 +42,7 @@ impl EguiController {
             stage,
             umap_version: self.ui.map.umap_version.clone(),
             scan_completed_at,
-            skip_backfill: skip_scan,
+            skip_backfill: skip_scan && !needs_embeddings,
         });
         self.apply_similarity_prep_duration_cap();
         self.apply_similarity_prep_fast_mode();
@@ -51,8 +52,14 @@ impl EguiController {
         });
         self.show_similarity_prep_progress(0, false);
         if skip_scan {
-            self.set_similarity_analysis_detail();
-            self.refresh_similarity_prep_progress();
+            if needs_embeddings {
+                self.ensure_similarity_prep_progress(0, true);
+                self.set_similarity_embedding_detail();
+                self.enqueue_similarity_backfill(source);
+            } else {
+                self.set_similarity_analysis_detail();
+                self.refresh_similarity_prep_progress();
+            }
         } else {
             self.set_similarity_scan_detail();
             self.request_hard_sync();
@@ -85,7 +92,9 @@ impl EguiController {
             self.runtime.jobs.umap_build_in_progress(),
             self.runtime.jobs.umap_cluster_build_in_progress()
         );
-        if let Ok(progress) = analysis_jobs::current_progress() {
+        if let Some(source) = self.find_source_by_id(&state.source_id)
+            && let Ok(progress) = analysis_jobs::current_progress_for_source(&source)
+        {
             out.push_str(&format!(" analysis_progress={progress}"));
         }
         out
@@ -323,7 +332,10 @@ impl EguiController {
                         ));
                     } else {
                         let _ = tx.send(jobs::JobMessage::Analysis(
-                            analysis_jobs::AnalysisJobMessage::Progress(progress),
+                            analysis_jobs::AnalysisJobMessage::Progress {
+                                source_id: Some(source.id.clone()),
+                                progress,
+                            },
                         ));
                     }
                 }
@@ -372,7 +384,10 @@ impl EguiController {
                 self.set_similarity_scan_detail();
             }
             SimilarityPrepStage::AwaitEmbeddings => {
-                let progress = match analysis_jobs::current_progress() {
+                let Some(source) = self.find_source_by_id(&state.source_id) else {
+                    return;
+                };
+                let progress = match analysis_jobs::current_progress_for_source(&source) {
                     Ok(progress) => progress,
                     Err(_) => {
                         if !self.ui.progress.visible {
@@ -383,6 +398,12 @@ impl EguiController {
                     }
                 };
                 if progress.pending == 0 && progress.running == 0 {
+                    if !self.source_has_embeddings(&source) {
+                        self.ensure_similarity_prep_progress(0, true);
+                        self.set_similarity_embedding_detail();
+                        self.enqueue_similarity_backfill(source);
+                        return;
+                    }
                     self.handle_similarity_analysis_progress(&progress);
                     return;
                 }
@@ -407,13 +428,26 @@ impl EguiController {
             }
         }
     }
+
+    fn source_has_embeddings(&self, source: &SampleSource) -> bool {
+        let Ok(conn) = analysis_jobs::open_source_db(&source.root) else {
+            return false;
+        };
+        let model_id = crate::analysis::embedding::EMBEDDING_MODEL_ID;
+        let count: Result<i64, _> = conn.query_row(
+            "SELECT COUNT(*) FROM embeddings WHERE model_id = ?1",
+            rusqlite::params![model_id],
+            |row| row.get(0),
+        );
+        count.map(|value| value > 0).unwrap_or(false)
+    }
 }
 
 fn run_similarity_finalize(
     source_id: &SourceId,
     umap_version: &str,
 ) -> Result<jobs::SimilarityPrepOutcome, String> {
-    let mut conn = open_library_db_for_similarity()?;
+    let mut conn = open_source_db_for_similarity(source_id)?;
     let sample_id_prefix = format!("{}::%", source_id.as_str());
     crate::analysis::umap::build_umap_layout(
         &mut conn,
@@ -468,8 +502,12 @@ fn count_umap_layout_rows(
     .map_err(|err| format!("Count layout rows failed: {err}"))
 }
 
-fn open_library_db_for_similarity() -> Result<rusqlite::Connection, String> {
-    let root = crate::app_dirs::app_root_dir().map_err(|err| err.to_string())?;
-    let path = root.join(crate::sample_sources::library::LIBRARY_DB_FILE_NAME);
-    rusqlite::Connection::open(path).map_err(|err| format!("Open library DB failed: {err}"))
+fn open_source_db_for_similarity(source_id: &SourceId) -> Result<rusqlite::Connection, String> {
+    let state = crate::sample_sources::library::load().map_err(|err| err.to_string())?;
+    let source = state
+        .sources
+        .iter()
+        .find(|source| &source.id == source_id)
+        .ok_or_else(|| "Source not found for similarity prep".to_string())?;
+    super::analysis_jobs::open_source_db(&source.root)
 }
