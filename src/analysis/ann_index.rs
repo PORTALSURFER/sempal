@@ -119,6 +119,33 @@ where
     Ok(())
 }
 
+pub fn flush_pending_inserts(conn: &Connection) -> Result<(), String> {
+    let params = default_params();
+    let mut guard = ANN_INDEX
+        .lock()
+        .map_err(|_| "ANN index lock poisoned".to_string())?;
+    if guard.is_none() {
+        let Some(meta) = read_meta(conn, &params.model_id)? else {
+            return Ok(());
+        };
+        if meta.params != params {
+            return Ok(());
+        }
+        if let Some(state) = load_index_from_disk(&meta)? {
+            *guard = Some(state);
+        } else {
+            return Ok(());
+        }
+    }
+    let Some(state) = guard.as_mut() else {
+        return Ok(());
+    };
+    if state.dirty_inserts == 0 {
+        return Ok(());
+    }
+    flush_index(conn, state)
+}
+
 pub fn find_similar(
     conn: &Connection,
     sample_id: &str,

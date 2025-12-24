@@ -399,7 +399,7 @@ fn run_similarity_finalize(
             allow_single_cluster: false,
         },
     )?;
-    crate::analysis::rebuild_ann_index(&conn)?;
+    crate::analysis::flush_ann_index(&conn)?;
     Ok(jobs::SimilarityPrepOutcome {
         cluster_stats,
         umap_version: umap_version.to_string(),

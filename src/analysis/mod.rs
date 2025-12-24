@@ -52,6 +52,11 @@ pub fn rebuild_ann_index(conn: &Connection) -> Result<(), String> {
     ann_index::rebuild_index(conn)
 }
 
+/// Flush any pending ANN insertions without forcing a rebuild.
+pub fn flush_ann_index(conn: &Connection) -> Result<(), String> {
+    ann_index::flush_pending_inserts(conn)
+}
+
 #[cfg(test)]
 mod ann_index_tests;
 
