@@ -111,6 +111,19 @@ pub(crate) fn infer_embeddings_batch(
     if inputs.is_empty() {
         return Ok(Vec::new());
     }
+    if !clap_batch_enabled() {
+        return with_clap_model(|model| {
+            let mut outputs = Vec::with_capacity(inputs.len());
+            for input in inputs {
+                outputs.push(infer_embedding_with_model(
+                    model,
+                    input.samples,
+                    input.sample_rate,
+                )?);
+            }
+            Ok(outputs)
+        });
+    }
     with_clap_model(|model| {
         match infer_embeddings_with_model(model, inputs) {
             Ok(values) => Ok(values),
@@ -298,6 +311,22 @@ fn with_clap_model<T>(f: impl FnOnce(&mut ClapModel) -> Result<T, String>) -> Re
         }
         let model = guard.as_mut().expect("CLAP model loaded");
         f(model)
+    })
+}
+
+fn clap_batch_enabled() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        if cfg!(target_os = "windows") {
+            if let Ok(value) = std::env::var("SEMPAL_CLAP_BATCH") {
+                return value.trim() == "1";
+            }
+            return false;
+        }
+        match std::env::var("SEMPAL_CLAP_BATCH") {
+            Ok(value) => value.trim() == "1",
+            Err(_) => true,
+        }
     })
 }
 
