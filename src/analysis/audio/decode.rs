@@ -76,16 +76,20 @@ pub(crate) fn decode_for_analysis_with_rate(
     let decoded = crate::analysis::audio_decode::decode_audio(path, Some(max_decode_seconds))?;
     let mono = downmix_to_mono(&decoded.samples, decoded.channels);
     let mut resampled = resample_linear(&mono, decoded.sample_rate, sample_rate);
-    resampled = trim_silence_with_hysteresis(&resampled, sample_rate);
-    resampled = apply_energy_windowing(&resampled, sample_rate);
-    pad_to_min_duration(&mut resampled, sample_rate);
-    normalize_peak_in_place(&mut resampled);
-    let duration_seconds = duration_seconds(resampled.len(), sample_rate);
-    Ok(AnalysisAudio {
-        mono: resampled,
+    Ok(prepare_mono_for_analysis(resampled, sample_rate))
+}
+
+pub(crate) fn prepare_mono_for_analysis(samples: Vec<f32>, sample_rate: u32) -> AnalysisAudio {
+    let mut processed = trim_silence_with_hysteresis(&samples, sample_rate);
+    processed = apply_energy_windowing(&processed, sample_rate);
+    pad_to_min_duration(&mut processed, sample_rate);
+    normalize_peak_in_place(&mut processed);
+    let duration_seconds = duration_seconds(processed.len(), sample_rate);
+    AnalysisAudio {
+        mono: processed,
         duration_seconds,
         sample_rate_used: sample_rate,
-    })
+    }
 }
 
 fn downmix_to_mono(samples: &[f32], channels: u16) -> Vec<f32> {

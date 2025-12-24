@@ -39,6 +39,30 @@ pub fn compute_feature_vector_v1_for_path(path: &Path) -> Result<Vec<f32>, Strin
     Ok(vector::to_f32_vector_v1(&features))
 }
 
+/// Compute the V1 feature vector from mono samples without decoding from disk.
+pub fn compute_feature_vector_v1_for_mono_samples(
+    samples: &[f32],
+    sample_rate: u32,
+) -> Result<Vec<f32>, String> {
+    if sample_rate == 0 {
+        return Err("Sample rate must be greater than 0".to_string());
+    }
+    if samples.is_empty() {
+        return Err("No samples provided".to_string());
+    }
+    let mut mono = samples.to_vec();
+    audio::sanitize_samples_in_place(&mut mono);
+    let prepared = audio::prepare_mono_for_analysis(mono, sample_rate);
+    let time_domain =
+        time_domain::extract_time_domain_features(&prepared.mono, prepared.sample_rate_used);
+    let frequency_domain = frequency_domain::extract_frequency_domain_features(
+        &prepared.mono,
+        prepared.sample_rate_used,
+    );
+    let features = features::AnalysisFeaturesV1::new(time_domain, frequency_domain);
+    Ok(vector::to_f32_vector_v1(&features))
+}
+
 /// Extract the lightweight DSP vector from a full V1 feature vector.
 pub fn light_dsp_from_features_v1(features: &[f32]) -> Option<Vec<f32>> {
     if features.len() < LIGHT_DSP_VECTOR_LEN {

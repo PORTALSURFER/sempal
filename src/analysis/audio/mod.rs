@@ -34,3 +34,7 @@ pub(crate) fn preprocess_mono_for_embedding(samples: &[f32], sample_rate: u32) -
     normalize::normalize_peak_limit_in_place(&mut trimmed);
     trimmed
 }
+
+pub(crate) fn prepare_mono_for_analysis(samples: Vec<f32>, sample_rate: u32) -> AnalysisAudio {
+    decode::prepare_mono_for_analysis(samples, sample_rate)
+}
