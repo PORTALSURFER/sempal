@@ -8,8 +8,8 @@ use crate::{audio::AudioOutputConfig, waveform::WaveformChannelView};
 use super::config_defaults::{
     clamp_analysis_worker_count, clamp_volume, default_analysis_worker_count,
     default_anti_clip_fade_ms, default_audio_output, default_keyboard_zoom_factor,
-    default_max_analysis_duration_seconds, default_scroll_speed, default_true, default_volume,
-    default_wheel_zoom_factor,
+    default_fast_similarity_prep_sample_rate, default_false, default_max_analysis_duration_seconds,
+    default_scroll_speed, default_true, default_volume, default_wheel_zoom_factor,
 };
 use crate::sample_sources::{Collection, SampleSource, SourceId};
 
@@ -87,7 +87,7 @@ pub struct FeatureFlags {
 /// Global preferences for analysis and feature extraction.
 ///
 /// Config keys: `max_analysis_duration_seconds`, `analysis_worker_count`,
-/// `limit_similarity_prep_duration`.
+/// `limit_similarity_prep_duration`, `fast_similarity_prep`, `fast_similarity_prep_sample_rate`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnalysisSettings {
     /// Skip analysis for files longer than this many seconds.
@@ -99,6 +99,12 @@ pub struct AnalysisSettings {
     /// Analysis worker count override (0 = auto).
     #[serde(default = "default_analysis_worker_count")]
     pub analysis_worker_count: u32,
+    /// Use a faster, lower-quality analysis pass during similarity prep.
+    #[serde(default = "default_false")]
+    pub fast_similarity_prep: bool,
+    /// Sample rate used during fast similarity prep analysis.
+    #[serde(default = "default_fast_similarity_prep_sample_rate")]
+    pub fast_similarity_prep_sample_rate: u32,
 }
 
 impl Default for AnalysisSettings {
@@ -107,6 +113,8 @@ impl Default for AnalysisSettings {
             max_analysis_duration_seconds: default_max_analysis_duration_seconds(),
             limit_similarity_prep_duration: default_true(),
             analysis_worker_count: default_analysis_worker_count(),
+            fast_similarity_prep: default_false(),
+            fast_similarity_prep_sample_rate: default_fast_similarity_prep_sample_rate(),
         }
     }
 }

@@ -62,6 +62,7 @@ pub(in crate::egui_app::controller::analysis_jobs) fn update_analysis_metadata(
     content_hash: Option<&str>,
     duration_seconds: f32,
     sr_used: u32,
+    analysis_version: &str,
 ) -> Result<(), String> {
     let updated = conn
         .execute(
@@ -73,7 +74,7 @@ pub(in crate::egui_app::controller::analysis_jobs) fn update_analysis_metadata(
                 content_hash,
                 duration_seconds as f64,
                 sr_used as i64,
-                crate::analysis::version::analysis_version()
+                analysis_version
             ],
         )
         .map_err(|err| format!("Failed to update analysis metadata: {err}"))?;

@@ -10,10 +10,20 @@ pub(super) fn run_job(
     conn: &rusqlite::Connection,
     job: &db::ClaimedJob,
     max_analysis_duration_seconds: f32,
+    analysis_sample_rate: u32,
+    analysis_version: &str,
 ) -> Result<(), String> {
     match job.job_type.as_str() {
-        db::ANALYZE_SAMPLE_JOB_TYPE => run_analysis_job(conn, job, max_analysis_duration_seconds),
-        db::EMBEDDING_BACKFILL_JOB_TYPE => run_embedding_backfill_job(conn, job),
+        db::ANALYZE_SAMPLE_JOB_TYPE => run_analysis_job(
+            conn,
+            job,
+            max_analysis_duration_seconds,
+            analysis_sample_rate,
+            analysis_version,
+        ),
+        db::EMBEDDING_BACKFILL_JOB_TYPE => {
+            run_embedding_backfill_job(conn, job, analysis_sample_rate, analysis_version)
+        }
         db::REBUILD_INDEX_JOB_TYPE => Err("Rebuild index job not implemented yet".to_string()),
         _ => Err(format!("Unknown job type: {}", job.job_type)),
     }
@@ -34,6 +44,8 @@ struct EmbeddingResult {
 fn run_embedding_backfill_job(
     conn: &rusqlite::Connection,
     job: &db::ClaimedJob,
+    analysis_sample_rate: u32,
+    analysis_version: &str,
 ) -> Result<(), String> {
     let payload = job
         .content_hash
@@ -64,7 +76,7 @@ fn run_embedding_backfill_job(
         if let Some(cached) = db::cached_embedding_by_hash(
             conn,
             &content_hash,
-            crate::analysis::version::analysis_version(),
+            analysis_version,
             crate::analysis::embedding::EMBEDDING_MODEL_ID,
         )? {
             if let Ok(vec) = crate::analysis::decode_f32_le_blob(&cached.vec_blob) {
@@ -145,7 +157,10 @@ fn run_embedding_backfill_job(
                         break;
                     };
                     let decoded =
-                        match crate::analysis::audio::decode_for_analysis(&work.absolute_path) {
+                        match crate::analysis::audio::decode_for_analysis_with_rate(
+                            &work.absolute_path,
+                            analysis_sample_rate,
+                        ) {
                             Ok(decoded) => decoded,
                             Err(err) => {
                                 let _ = tx.send(Err(format!(
@@ -237,7 +252,7 @@ fn run_embedding_backfill_job(
             db::upsert_cached_embedding(
                 conn,
                 &result.content_hash,
-                crate::analysis::version::analysis_version(),
+                analysis_version,
                 crate::analysis::embedding::EMBEDDING_MODEL_ID,
                 crate::analysis::embedding::EMBEDDING_DIM as i64,
                 crate::analysis::embedding::EMBEDDING_DTYPE_F32,
@@ -267,6 +282,8 @@ fn run_analysis_job(
     conn: &rusqlite::Connection,
     job: &db::ClaimedJob,
     max_analysis_duration_seconds: f32,
+    analysis_sample_rate: u32,
+    analysis_version: &str,
 ) -> Result<(), String> {
     let content_hash = job
         .content_hash
@@ -276,7 +293,6 @@ fn run_analysis_job(
     if current_hash.as_deref() != Some(content_hash) {
         return Ok(());
     }
-    let analysis_version = crate::analysis::version::analysis_version();
     let cached_features = db::cached_features_by_hash(
         conn,
         content_hash,
@@ -298,6 +314,7 @@ fn run_analysis_job(
                     Some(content_hash),
                     features.duration_seconds,
                     features.sr_used,
+                    analysis_version,
                 )?;
                 db::upsert_analysis_features(
                     conn,
@@ -355,20 +372,23 @@ fn run_analysis_job(
                         job.content_hash.as_deref(),
                         duration_seconds,
                         sample_rate,
+                        analysis_version,
                     )?;
                     return Ok(());
                 }
             }
         }
     }
-    let decoded = crate::analysis::audio::decode_for_analysis(&absolute)?;
-    run_analysis_job_with_decoded(conn, job, decoded)
+    let decoded =
+        crate::analysis::audio::decode_for_analysis_with_rate(&absolute, analysis_sample_rate)?;
+    run_analysis_job_with_decoded(conn, job, decoded, analysis_version)
 }
 
 pub(super) fn run_analysis_job_with_decoded(
     conn: &rusqlite::Connection,
     job: &db::ClaimedJob,
     decoded: crate::analysis::audio::AnalysisAudio,
+    analysis_version: &str,
 ) -> Result<(), String> {
     let content_hash = job
         .content_hash
@@ -418,6 +438,7 @@ pub(super) fn run_analysis_job_with_decoded(
         job.content_hash.as_deref(),
         decoded.duration_seconds,
         decoded.sample_rate_used,
+        analysis_version,
     )?;
     let current_hash = db::sample_content_hash(conn, &job.sample_id)?;
     if current_hash.as_deref() != Some(content_hash) {
@@ -434,7 +455,6 @@ pub(super) fn run_analysis_job_with_decoded(
         crate::analysis::vector::FEATURE_VERSION_V1,
         computed_at,
     )?;
-    let analysis_version = crate::analysis::version::analysis_version();
     let embedding_blob = crate::analysis::vector::encode_f32_le_blob(&embedding);
     db::upsert_cached_features(
         conn,

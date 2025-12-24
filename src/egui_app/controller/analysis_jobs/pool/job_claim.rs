@@ -99,6 +99,7 @@ pub(super) fn spawn_decoder_worker(
     shutdown: Arc<AtomicBool>,
     pause_claiming: Arc<AtomicBool>,
     max_duration_bits: Arc<AtomicU32>,
+    analysis_sample_rate: Arc<AtomicU32>,
 ) -> JoinHandle<()> {
     std::thread::spawn(move || {
         lower_worker_priority();
@@ -136,7 +137,7 @@ pub(super) fn spawn_decoder_worker(
                 continue;
             };
             let outcome = if job.job_type == db::ANALYZE_SAMPLE_JOB_TYPE {
-                decode_analysis_job(&conn, &job, &max_duration_bits)
+                decode_analysis_job(&conn, &job, &max_duration_bits, &analysis_sample_rate)
             } else {
                 DecodeOutcome::NotNeeded
             };
@@ -153,6 +154,8 @@ pub(super) fn spawn_compute_worker(
     cancel: Arc<AtomicBool>,
     shutdown: Arc<AtomicBool>,
     max_duration_bits: Arc<AtomicU32>,
+    analysis_sample_rate: Arc<AtomicU32>,
+    analysis_version_override: Arc<std::sync::RwLock<Option<String>>>,
 ) -> JoinHandle<()> {
     std::thread::spawn(move || {
         lower_worker_priority();
@@ -179,11 +182,20 @@ pub(super) fn spawn_compute_worker(
             };
             let max_analysis_duration_seconds =
                 f32::from_bits(max_duration_bits.load(Ordering::Relaxed));
+            let analysis_sample_rate = analysis_sample_rate.load(Ordering::Relaxed).max(1);
+            let analysis_version = analysis_version_override
+                .read()
+                .ok()
+                .and_then(|guard| guard.clone())
+                .unwrap_or_else(|| crate::analysis::version::analysis_version().to_string());
             let outcome = catch_unwind(AssertUnwindSafe(|| match work.job.job_type.as_str() {
                 db::ANALYZE_SAMPLE_JOB_TYPE => match work.outcome {
-                    DecodeOutcome::Decoded(decoded) => {
-                        run_analysis_job_with_decoded(&conn, &work.job, decoded)
-                    }
+                    DecodeOutcome::Decoded(decoded) => run_analysis_job_with_decoded(
+                        &conn,
+                        &work.job,
+                        decoded,
+                        &analysis_version,
+                    ),
                     DecodeOutcome::Skipped {
                         duration_seconds,
                         sample_rate,
@@ -193,11 +205,18 @@ pub(super) fn spawn_compute_worker(
                         work.job.content_hash.as_deref(),
                         duration_seconds,
                         sample_rate,
+                        &analysis_version,
                     ),
                     DecodeOutcome::Failed(err) => Err(err),
                     DecodeOutcome::NotNeeded => Err("Decode missing for analysis job".to_string()),
                 },
-                _ => run_job(&conn, &work.job, max_analysis_duration_seconds),
+                _ => run_job(
+                    &conn,
+                    &work.job,
+                    max_analysis_duration_seconds,
+                    analysis_sample_rate,
+                    &analysis_version,
+                ),
             }))
             .unwrap_or_else(|payload| Err(panic_to_string(payload)));
             match outcome {
@@ -219,6 +238,7 @@ fn decode_analysis_job(
     conn: &rusqlite::Connection,
     job: &db::ClaimedJob,
     max_duration_bits: &AtomicU32,
+    analysis_sample_rate: &AtomicU32,
 ) -> DecodeOutcome {
     let (source_id, relative_path) = match db::parse_sample_id(&job.sample_id) {
         Ok(parsed) => parsed,
@@ -236,6 +256,7 @@ fn decode_analysis_job(
     };
     let absolute = root.join(&relative_path);
     let max_analysis_duration_seconds = f32::from_bits(max_duration_bits.load(Ordering::Relaxed));
+    let sample_rate = analysis_sample_rate.load(Ordering::Relaxed).max(1);
     if max_analysis_duration_seconds.is_finite() && max_analysis_duration_seconds > 0.0 {
         if let Ok(probe) = crate::analysis::audio::probe_metadata(&absolute) {
             if let Some(duration_seconds) = probe.duration_seconds {
@@ -251,7 +272,7 @@ fn decode_analysis_job(
             }
         }
     }
-    match crate::analysis::audio::decode_for_analysis(&absolute) {
+    match crate::analysis::audio::decode_for_analysis_with_rate(&absolute, sample_rate) {
         Ok(decoded) => DecodeOutcome::Decoded(decoded),
         Err(err) => DecodeOutcome::Failed(err),
     }

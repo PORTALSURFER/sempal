@@ -6,11 +6,11 @@ pub(crate) fn analysis_version() -> &'static str {
     &ANALYSIS_VERSION
 }
 
-static ANALYSIS_VERSION: LazyLock<String> = LazyLock::new(|| {
+pub(crate) fn analysis_version_for_sample_rate(sample_rate: u32) -> String {
     let payload = format!(
         "embedder={}|sr={}|max={}|window={}|hop={}|min={}|trim_on_db={}|trim_off_db={}|pre={}|post={}",
         embedding::EMBEDDING_MODEL_ID,
-        audio::ANALYSIS_SAMPLE_RATE,
+        sample_rate,
         audio::MAX_ANALYSIS_SECONDS,
         audio::WINDOW_SECONDS,
         audio::WINDOW_HOP_SECONDS,
@@ -22,4 +22,7 @@ static ANALYSIS_VERSION: LazyLock<String> = LazyLock::new(|| {
     );
     let hash = blake3::hash(payload.as_bytes());
     format!("analysis_v1_{}", hash.to_hex())
-});
+}
+
+static ANALYSIS_VERSION: LazyLock<String> =
+    LazyLock::new(|| analysis_version_for_sample_rate(audio::ANALYSIS_SAMPLE_RATE));

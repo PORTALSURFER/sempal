@@ -4,7 +4,7 @@ mod job_progress;
 mod job_runner;
 
 use std::sync::{
-    Arc,
+    Arc, RwLock,
     atomic::AtomicU32,
     atomic::{AtomicBool, Ordering},
     mpsc::Sender,
@@ -17,6 +17,8 @@ pub(in crate::egui_app::controller) struct AnalysisWorkerPool {
     shutdown: Arc<AtomicBool>,
     pause_claiming: Arc<AtomicBool>,
     max_duration_bits: Arc<AtomicU32>,
+    analysis_sample_rate: Arc<AtomicU32>,
+    analysis_version_override: Arc<RwLock<Option<String>>>,
     worker_count_override: Arc<AtomicU32>,
     threads: Vec<JoinHandle<()>>,
 }
@@ -28,6 +30,10 @@ impl AnalysisWorkerPool {
             shutdown: Arc::new(AtomicBool::new(false)),
             pause_claiming: Arc::new(AtomicBool::new(false)),
             max_duration_bits: Arc::new(AtomicU32::new(30.0f32.to_bits())),
+            analysis_sample_rate: Arc::new(AtomicU32::new(
+                crate::analysis::audio::ANALYSIS_SAMPLE_RATE,
+            )),
+            analysis_version_override: Arc::new(RwLock::new(None)),
             worker_count_override: Arc::new(AtomicU32::new(0)),
             threads: Vec::new(),
         }
@@ -41,6 +47,20 @@ impl AnalysisWorkerPool {
 
     pub(in crate::egui_app::controller) fn set_worker_count(&self, value: u32) {
         self.worker_count_override.store(value, Ordering::Relaxed);
+    }
+
+    pub(in crate::egui_app::controller) fn set_analysis_sample_rate(&self, value: u32) {
+        let clamped = value.max(1);
+        self.analysis_sample_rate.store(clamped, Ordering::Relaxed);
+    }
+
+    pub(in crate::egui_app::controller) fn set_analysis_version_override(
+        &self,
+        value: Option<String>,
+    ) {
+        if let Ok(mut guard) = self.analysis_version_override.write() {
+            *guard = value;
+        }
     }
 
     pub(in crate::egui_app::controller) fn pause_claiming(&self) {
@@ -74,6 +94,7 @@ impl AnalysisWorkerPool {
                     self.shutdown.clone(),
                     self.pause_claiming.clone(),
                     self.max_duration_bits.clone(),
+                    self.analysis_sample_rate.clone(),
                 ));
             }
             for worker_index in 0..worker_count {
@@ -84,6 +105,8 @@ impl AnalysisWorkerPool {
                     self.cancel.clone(),
                     self.shutdown.clone(),
                     self.max_duration_bits.clone(),
+                    self.analysis_sample_rate.clone(),
+                    self.analysis_version_override.clone(),
                 ));
             }
             self.threads.push(job_progress::spawn_progress_poller(

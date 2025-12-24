@@ -68,7 +68,10 @@ pub(crate) fn probe_metadata(path: &Path) -> Result<AudioProbe, String> {
     })
 }
 
-fn decode_for_analysis_with_rate(path: &Path, sample_rate: u32) -> Result<AnalysisAudio, String> {
+pub(crate) fn decode_for_analysis_with_rate(
+    path: &Path,
+    sample_rate: u32,
+) -> Result<AnalysisAudio, String> {
     let max_decode_seconds = MAX_ANALYSIS_SECONDS + WINDOW_SECONDS;
     let decoded = crate::analysis::audio_decode::decode_audio(path, Some(max_decode_seconds))?;
     let mono = downmix_to_mono(&decoded.samples, decoded.channels);

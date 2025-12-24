@@ -3,6 +3,7 @@ use super::*;
 const MIN_MAX_ANALYSIS_DURATION_SECONDS: f32 = 1.0;
 const MAX_MAX_ANALYSIS_DURATION_SECONDS: f32 = 60.0 * 60.0;
 const MAX_ANALYSIS_WORKER_COUNT: u32 = 64;
+const MIN_FAST_PREP_SAMPLE_RATE: u32 = 8_000;
 
 pub(super) fn clamp_max_analysis_duration_seconds(seconds: f32) -> f32 {
     seconds.clamp(
@@ -46,6 +47,36 @@ impl EguiController {
 
     pub fn analysis_worker_count(&self) -> u32 {
         self.settings.analysis.analysis_worker_count
+    }
+
+    pub fn similarity_prep_fast_mode_enabled(&self) -> bool {
+        self.settings.analysis.fast_similarity_prep
+    }
+
+    pub fn set_similarity_prep_fast_mode_enabled(&mut self, enabled: bool) {
+        if self.settings.analysis.fast_similarity_prep == enabled {
+            return;
+        }
+        self.settings.analysis.fast_similarity_prep = enabled;
+        if let Err(err) = self.persist_config("Failed to save options") {
+            self.set_status(err, StatusTone::Warning);
+        }
+    }
+
+    pub fn similarity_prep_fast_sample_rate(&self) -> u32 {
+        self.settings.analysis.fast_similarity_prep_sample_rate
+    }
+
+    pub fn set_similarity_prep_fast_sample_rate(&mut self, value: u32) {
+        let max_rate = crate::analysis::audio::ANALYSIS_SAMPLE_RATE;
+        let clamped = value.clamp(MIN_FAST_PREP_SAMPLE_RATE, max_rate);
+        if self.settings.analysis.fast_similarity_prep_sample_rate == clamped {
+            return;
+        }
+        self.settings.analysis.fast_similarity_prep_sample_rate = clamped;
+        if let Err(err) = self.persist_config("Failed to save options") {
+            self.set_status(err, StatusTone::Warning);
+        }
     }
 
     pub fn set_analysis_worker_count(&mut self, value: u32) {

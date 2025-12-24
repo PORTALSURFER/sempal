@@ -260,13 +260,14 @@ fn update_analysis_metadata_updates_matching_hash() {
         Some("h1"),
         1.25,
         crate::analysis::audio::ANALYSIS_SAMPLE_RATE,
+        "analysis_v1_test",
     )
     .unwrap();
-    let (duration, sr): (Option<f64>, Option<i64>) = conn
+    let (duration, sr, version): (Option<f64>, Option<i64>, Option<String>) = conn
         .query_row(
-            "SELECT duration_seconds, sr_used FROM samples WHERE sample_id = 's::a.wav'",
+            "SELECT duration_seconds, sr_used, analysis_version FROM samples WHERE sample_id = 's::a.wav'",
             [],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .unwrap();
     assert_eq!(duration, Some(1.25));
@@ -274,6 +275,7 @@ fn update_analysis_metadata_updates_matching_hash() {
         sr,
         Some(crate::analysis::audio::ANALYSIS_SAMPLE_RATE as i64)
     );
+    assert_eq!(version.as_deref(), Some("analysis_v1_test"));
 }
 
 #[test]

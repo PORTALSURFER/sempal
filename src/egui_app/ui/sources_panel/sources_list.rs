@@ -135,6 +135,30 @@ impl EguiApp {
                     self.controller.set_max_analysis_duration_seconds(seconds);
                 }
             });
+            let mut fast_prep = self.controller.similarity_prep_fast_mode_enabled();
+            if ui
+                .checkbox(&mut fast_prep, "Fast similarity prep")
+                .on_hover_text(
+                    "Downsample audio during prep for faster analysis; refine lazily later",
+                )
+                .changed()
+            {
+                self.controller
+                    .set_similarity_prep_fast_mode_enabled(fast_prep);
+            }
+            ui.add_enabled_ui(fast_prep, |ui| {
+                let mut sample_rate = self.controller.similarity_prep_fast_sample_rate();
+                let drag = egui::DragValue::new(&mut sample_rate)
+                    .speed(500.0)
+                    .range(8_000..=16_000)
+                    .suffix(" Hz");
+                let response = ui.add(drag).on_hover_text(
+                    "Sample rate used for fast similarity prep analysis",
+                );
+                if response.changed() {
+                    self.controller.set_similarity_prep_fast_sample_rate(sample_rate);
+                }
+            });
             ui.separator();
             if ui.button("Open in file explorer").clicked() {
                 self.controller.select_source_by_index(index);

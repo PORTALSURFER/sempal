@@ -32,7 +32,10 @@ pub(super) fn find_similar_for_visible_row(
     let db_path = crate::app_dirs::app_root_dir()
         .map_err(|err| err.to_string())?
         .join(crate::sample_sources::library::LIBRARY_DB_FILE_NAME);
-    let conn = super::super::analysis_jobs::open_library_db(&db_path)?;
+    let mut conn = super::super::analysis_jobs::open_library_db(&db_path)?;
+    if let Err(err) = maybe_enqueue_full_analysis(controller, &mut conn, &sample_id) {
+        tracing::debug!("Fast prep refine enqueue failed: {err}");
+    }
     let neighbours =
         crate::analysis::ann_index::find_similar(&conn, &sample_id, SIMILAR_RE_RANK_CANDIDATES)?;
     let query_embedding = load_embedding_for_sample(&conn, &sample_id)?;
@@ -85,7 +88,10 @@ pub(super) fn find_similar_for_sample_id(
     let db_path = crate::app_dirs::app_root_dir()
         .map_err(|err| err.to_string())?
         .join(crate::sample_sources::library::LIBRARY_DB_FILE_NAME);
-    let conn = super::super::analysis_jobs::open_library_db(&db_path)?;
+    let mut conn = super::super::analysis_jobs::open_library_db(&db_path)?;
+    if let Err(err) = maybe_enqueue_full_analysis(controller, &mut conn, sample_id) {
+        tracing::debug!("Fast prep refine enqueue failed: {err}");
+    }
     let neighbours =
         crate::analysis::ann_index::find_similar(&conn, sample_id, SIMILAR_RE_RANK_CANDIDATES)?;
     let query_embedding = load_embedding_for_sample(&conn, sample_id)?;
@@ -297,4 +303,68 @@ fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
         sum += a[i] * b[i];
     }
     sum
+}
+
+fn maybe_enqueue_full_analysis(
+    controller: &EguiController,
+    conn: &mut rusqlite::Connection,
+    sample_id: &str,
+) -> Result<(), String> {
+    if !controller.similarity_prep_fast_mode_enabled() {
+        return Ok(());
+    }
+    let row: Option<(String, Option<String>)> = conn
+        .query_row(
+            "SELECT content_hash, analysis_version FROM samples WHERE sample_id = ?1",
+            params![sample_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .map_err(|err| format!("Load analysis version failed: {err}"))?;
+    let Some((content_hash, analysis_version)) = row else {
+        return Ok(());
+    };
+    if content_hash.trim().is_empty() {
+        return Ok(());
+    }
+    let fast_version = crate::analysis::version::analysis_version_for_sample_rate(
+        controller.similarity_prep_fast_sample_rate(),
+    );
+    if analysis_version.as_deref() != Some(fast_version.as_str()) {
+        return Ok(());
+    }
+    let active: i64 = conn
+        .query_row(
+            "SELECT COUNT(*)
+             FROM analysis_jobs
+             WHERE sample_id = ?1 AND job_type = ?2 AND status IN ('pending','running')",
+            params![sample_id, "wav_metadata_v1"],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+    if active > 0 {
+        return Ok(());
+    }
+    let created_at = now_epoch_seconds();
+    conn.execute(
+        "INSERT INTO analysis_jobs (sample_id, job_type, content_hash, status, attempts, created_at)
+         VALUES (?1, ?2, ?3, 'pending', 0, ?4)
+         ON CONFLICT(sample_id, job_type) DO UPDATE SET
+            content_hash = excluded.content_hash,
+            status = 'pending',
+            attempts = 0,
+            created_at = excluded.created_at,
+            last_error = NULL",
+        params![sample_id, "wav_metadata_v1", content_hash, created_at],
+    )
+    .map_err(|err| format!("Enqueue analysis job failed: {err}"))?;
+    Ok(())
+}
+
+fn now_epoch_seconds() -> i64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64
 }

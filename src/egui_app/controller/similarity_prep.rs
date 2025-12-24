@@ -44,6 +44,7 @@ impl EguiController {
             skip_backfill: skip_scan,
         });
         self.apply_similarity_prep_duration_cap();
+        self.apply_similarity_prep_fast_mode();
         self.apply_similarity_prep_worker_boost();
         self.set_status_message(StatusMessage::PreparingSimilarity {
             source: source.root.display().to_string(),
@@ -123,6 +124,7 @@ impl EguiController {
             return;
         }
         self.restore_similarity_prep_duration_cap();
+        self.restore_similarity_prep_fast_mode();
         self.restore_similarity_prep_worker_count();
         if self.ui.progress.task == Some(ProgressTaskKind::Analysis) {
             self.clear_progress();
@@ -159,6 +161,7 @@ impl EguiController {
         }
         self.runtime.similarity_prep = None;
         self.restore_similarity_prep_duration_cap();
+        self.restore_similarity_prep_fast_mode();
         self.restore_similarity_prep_worker_count();
         if self.ui.progress.task == Some(ProgressTaskKind::Analysis) {
             self.clear_progress();
@@ -220,6 +223,25 @@ impl EguiController {
         self.runtime
             .analysis
             .set_max_analysis_duration_seconds(self.settings.analysis.max_analysis_duration_seconds);
+    }
+
+    fn apply_similarity_prep_fast_mode(&mut self) {
+        if !self.similarity_prep_fast_mode_enabled() {
+            return;
+        }
+        let sample_rate = self.similarity_prep_fast_sample_rate();
+        let version = crate::analysis::version::analysis_version_for_sample_rate(sample_rate);
+        self.runtime.analysis.set_analysis_sample_rate(sample_rate);
+        self.runtime
+            .analysis
+            .set_analysis_version_override(Some(version));
+    }
+
+    fn restore_similarity_prep_fast_mode(&mut self) {
+        self.runtime
+            .analysis
+            .set_analysis_sample_rate(crate::analysis::audio::ANALYSIS_SAMPLE_RATE);
+        self.runtime.analysis.set_analysis_version_override(None);
     }
 
     fn apply_similarity_prep_worker_boost(&mut self) {
