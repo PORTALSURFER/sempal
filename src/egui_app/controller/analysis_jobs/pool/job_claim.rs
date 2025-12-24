@@ -278,10 +278,10 @@ pub(super) fn spawn_compute_worker(
             .unwrap_or_else(|payload| Err(panic_to_string(payload)));
             match outcome {
                 Ok(()) => {
-                    let _ = db::mark_done(conn, work.job.id);
+                    update_job_status_with_retry(|| db::mark_done(conn, work.job.id));
                 }
                 Err(err) => {
-                    let _ = db::mark_failed(conn, work.job.id, &err);
+                    update_job_status_with_retry(|| db::mark_failed(conn, work.job.id, &err));
                 }
             }
             if let Ok(progress) = db::current_progress(conn) {
@@ -327,6 +327,25 @@ fn decode_analysis_job(
     match crate::analysis::audio::decode_for_analysis_with_rate(&absolute, sample_rate) {
         Ok(decoded) => DecodeOutcome::Decoded(decoded),
         Err(err) => DecodeOutcome::Failed(err),
+    }
+}
+
+fn update_job_status_with_retry<F>(mut update: F)
+where
+    F: FnMut() -> Result<(), String>,
+{
+    const RETRIES: usize = 5;
+    for attempt in 0..RETRIES {
+        match update() {
+            Ok(()) => return,
+            Err(_) if attempt + 1 < RETRIES => {
+                sleep(Duration::from_millis(50));
+            }
+            Err(err) => {
+                tracing::warn!("Failed to update analysis job status: {err}");
+                return;
+            }
+        }
     }
 }
 
