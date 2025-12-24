@@ -4,13 +4,8 @@ use std::path::Path;
 
 use rodio::{Decoder, Source};
 use symphonia::core::{
-    audio::SampleBuffer,
-    codecs::DecoderOptions,
-    errors::Error,
-    formats::FormatOptions,
-    io::MediaSourceStream,
-    meta::MetadataOptions,
-    probe::Hint,
+    audio::SampleBuffer, codecs::DecoderOptions, errors::Error, formats::FormatOptions,
+    io::MediaSourceStream, meta::MetadataOptions, probe::Hint,
 };
 
 /// Raw decoded audio in interleaved `f32` samples.
@@ -24,11 +19,9 @@ pub(crate) struct DecodedAudio {
 ///
 /// Supported formats include wav/aiff/flac/mp3 via rodio, with a symphonia fallback.
 pub(crate) fn decode_audio(path: &Path) -> Result<DecodedAudio, String> {
-    let file = File::open(path).map_err(|err| format!("Failed to open {}: {err}", path.display()))?;
-    let byte_len = file
-        .metadata()
-        .map(|meta| meta.len())
-        .unwrap_or(0) as u64;
+    let file =
+        File::open(path).map_err(|err| format!("Failed to open {}: {err}", path.display()))?;
+    let byte_len = file.metadata().map(|meta| meta.len()).unwrap_or(0) as u64;
     let hint = path
         .extension()
         .and_then(|ext| ext.to_str())
@@ -75,7 +68,12 @@ fn decode_with_symphonia(path: &Path) -> Result<(Vec<f32>, u32, u16), String> {
     }
 
     let probed = symphonia::default::get_probe()
-        .format(&hint, mss, &FormatOptions::default(), &MetadataOptions::default())
+        .format(
+            &hint,
+            mss,
+            &FormatOptions::default(),
+            &MetadataOptions::default(),
+        )
         .map_err(|err| format!("Symphonia probe failed for {}: {err}", path.display()))?;
     let mut format = probed.format;
     let track = format
@@ -123,7 +121,10 @@ fn decode_with_symphonia(path: &Path) -> Result<(Vec<f32>, u32, u16), String> {
     }
 
     if samples.is_empty() {
-        return Err(format!("Symphonia decoded 0 samples for {}", path.display()));
+        return Err(format!(
+            "Symphonia decoded 0 samples for {}",
+            path.display()
+        ));
     }
 
     Ok((samples, sample_rate, channels))

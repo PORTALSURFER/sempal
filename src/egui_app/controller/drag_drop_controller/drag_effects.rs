@@ -92,6 +92,13 @@ impl DragDropController<'_> {
             "handle_waveform_sample_drop_to_browser source={} path={}",
             source_id, relative_path.display()
         );
+        self.set_status(
+            format!(
+                "Waveform drop to browser handled for {}",
+                relative_path.display()
+            ),
+            StatusTone::Info,
+        );
         let Some(source) = self
             .library
             .sources
@@ -187,21 +194,10 @@ impl DragDropController<'_> {
             self.set_status(format!("Failed to register copy: {err}"), StatusTone::Error);
             return;
         }
-        let entry = WavEntry {
-            relative_path: copy_relative.clone(),
-            file_size,
-            modified_ns,
-            content_hash: None,
-            tag: SampleTag::Neutral,
-            missing: false,
-        };
-        self.wav_entries.entries.push(entry);
-        self.wav_entries
-            .entries
-            .sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
-        self.rebuild_wav_lookup();
-        self.rebuild_browser_lists();
-        self.select_wav_by_path_with_rebuild(&copy_relative, true);
+        self.runtime
+            .jobs
+            .set_pending_select_path(Some(copy_relative.clone()));
+        self.invalidate_wav_entries_for_source(&source);
         self.set_status(
             format!("Copied sample to {}", copy_relative.display()),
             StatusTone::Info,

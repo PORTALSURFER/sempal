@@ -29,8 +29,7 @@ fn run() -> Result<(), String> {
         report.total,
         report.coverage_ratio * 100.0
     );
-    let report_path =
-        sempal::analysis::umap::default_report_path(&db_path, &options.umap_version);
+    let report_path = sempal::analysis::umap::default_report_path(&db_path, &options.umap_version);
     sempal::analysis::umap::write_report(&report_path, &report)?;
     println!(
         "t-SNE coverage {:.2}% (report: {})",
@@ -67,32 +66,39 @@ fn parse_args(args: Vec<String>) -> Result<Option<Options>, String> {
             }
             "--db" => {
                 idx += 1;
-                let value = args.get(idx).ok_or_else(|| "--db requires a value".to_string())?;
+                let value = args
+                    .get(idx)
+                    .ok_or_else(|| "--db requires a value".to_string())?;
                 options.db_path = Some(PathBuf::from(value));
             }
             "--model-id" => {
                 idx += 1;
-                let value =
-                    args.get(idx).ok_or_else(|| "--model-id requires a value".to_string())?;
+                let value = args
+                    .get(idx)
+                    .ok_or_else(|| "--model-id requires a value".to_string())?;
                 options.model_id = value.to_string();
             }
             "--umap-version" => {
                 idx += 1;
-                let value =
-                    args.get(idx).ok_or_else(|| "--umap-version requires a value".to_string())?;
+                let value = args
+                    .get(idx)
+                    .ok_or_else(|| "--umap-version requires a value".to_string())?;
                 options.umap_version = value.to_string();
             }
             "--seed" => {
                 idx += 1;
-                let value = args.get(idx).ok_or_else(|| "--seed requires a value".to_string())?;
+                let value = args
+                    .get(idx)
+                    .ok_or_else(|| "--seed requires a value".to_string())?;
                 options.seed = value
                     .parse::<u64>()
                     .map_err(|_| format!("Invalid --seed value: {value}"))?;
             }
             "--min-coverage" => {
                 idx += 1;
-                let value =
-                    args.get(idx).ok_or_else(|| "--min-coverage requires a value".to_string())?;
+                let value = args
+                    .get(idx)
+                    .ok_or_else(|| "--min-coverage requires a value".to_string())?;
                 options.min_coverage = value
                     .parse::<f32>()
                     .map_err(|_| format!("Invalid --min-coverage value: {value}"))?;

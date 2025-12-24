@@ -36,11 +36,7 @@ impl EguiController {
         );
     }
 
-    pub(super) fn show_similarity_prep_progress(
-        &mut self,
-        total: usize,
-        cancelable: bool,
-    ) {
+    pub(super) fn show_similarity_prep_progress(&mut self, total: usize, cancelable: bool) {
         self.show_status_progress(
             ProgressTaskKind::Analysis,
             SIMILARITY_PREP_LABEL,
@@ -49,11 +45,7 @@ impl EguiController {
         );
     }
 
-    pub(super) fn ensure_similarity_prep_progress(
-        &mut self,
-        total: usize,
-        cancelable: bool,
-    ) {
+    pub(super) fn ensure_similarity_prep_progress(&mut self, total: usize, cancelable: bool) {
         if !self.ui.progress.visible || self.ui.progress.task != Some(ProgressTaskKind::Analysis) {
             self.show_similarity_prep_progress(total, cancelable);
         }

@@ -19,7 +19,9 @@ pub(in crate::egui_app::controller) fn enqueue_jobs_for_source(
     enqueue_samples(request)
 }
 
-fn enqueue_samples(request: EnqueueSamplesRequest<'_>) -> Result<(usize, AnalysisProgress), String> {
+fn enqueue_samples(
+    request: EnqueueSamplesRequest<'_>,
+) -> Result<(usize, AnalysisProgress), String> {
     if request.changed_samples.is_empty() {
         let db_path = library_db_path()?;
         let conn = db::open_library_db(&db_path)?;
@@ -90,9 +92,8 @@ fn enqueue_source_backfill(
             return Ok((0, db::current_progress(&conn)?));
         }
     }
-    let source_db =
-        crate::sample_sources::SourceDatabase::open(&request.source.root)
-            .map_err(|err| err.to_string())?;
+    let source_db = crate::sample_sources::SourceDatabase::open(&request.source.root)
+        .map_err(|err| err.to_string())?;
     let entries = source_db.list_files().map_err(|err| err.to_string())?;
     if entries.is_empty() {
         return Ok((0, db::current_progress(&conn)?));
@@ -100,9 +101,7 @@ fn enqueue_source_backfill(
 
     let (sample_metadata, jobs, invalidate) = {
         let mut features_stmt = conn
-            .prepare(
-                "SELECT 1 FROM features WHERE sample_id = ?1 AND feat_version = 1 LIMIT 1",
-            )
+            .prepare("SELECT 1 FROM features WHERE sample_id = ?1 AND feat_version = 1 LIMIT 1")
             .map_err(|err| format!("Prepare feature lookup failed: {err}"))?;
         let mut version_stmt = conn
             .prepare("SELECT analysis_version FROM samples WHERE sample_id = ?1")
@@ -139,7 +138,9 @@ fn enqueue_source_backfill(
                 invalidate.push(sample_id.clone());
             }
             let status: Option<String> = job_stmt
-                .query_row(params![&sample_id, db::ANALYZE_SAMPLE_JOB_TYPE], |row| row.get(0))
+                .query_row(params![&sample_id, db::ANALYZE_SAMPLE_JOB_TYPE], |row| {
+                    row.get(0)
+                })
                 .optional()
                 .map_err(|err| format!("Job lookup failed: {err}"))?;
             if matches!(status.as_deref(), Some("pending") | Some("running")) {
@@ -190,9 +191,8 @@ fn enqueue_missing_features(
     let db_path = library_db_path()?;
     let mut conn = db::open_library_db(&db_path)?;
 
-    let source_db =
-        crate::sample_sources::SourceDatabase::open(&request.source.root)
-            .map_err(|err| err.to_string())?;
+    let source_db = crate::sample_sources::SourceDatabase::open(&request.source.root)
+        .map_err(|err| err.to_string())?;
     let mut entries = source_db.list_files().map_err(|err| err.to_string())?;
     entries.retain(|entry| !entry.missing);
     if entries.is_empty() {
@@ -201,9 +201,7 @@ fn enqueue_missing_features(
 
     let (sample_metadata, jobs, invalidate) = {
         let mut features_stmt = conn
-            .prepare(
-                "SELECT 1 FROM features WHERE sample_id = ?1 AND feat_version = 1 LIMIT 1",
-            )
+            .prepare("SELECT 1 FROM features WHERE sample_id = ?1 AND feat_version = 1 LIMIT 1")
             .map_err(|err| format!("Prepare feature lookup failed: {err}"))?;
         let mut version_stmt = conn
             .prepare("SELECT analysis_version FROM samples WHERE sample_id = ?1")
@@ -250,7 +248,9 @@ fn enqueue_missing_features(
                 invalidate.push(sample_id.clone());
             }
             let status: Option<String> = job_stmt
-                .query_row(params![&sample_id, db::ANALYZE_SAMPLE_JOB_TYPE], |row| row.get(0))
+                .query_row(params![&sample_id, db::ANALYZE_SAMPLE_JOB_TYPE], |row| {
+                    row.get(0)
+                })
                 .optional()
                 .map_err(|err| format!("Job lookup failed: {err}"))?;
             if matches!(status.as_deref(), Some("pending") | Some("running")) {

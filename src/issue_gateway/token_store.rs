@@ -126,7 +126,8 @@ impl IssueTokenStore {
             return Err(IssueTokenStoreError::Decode("token key invalid".into()));
         }
         let plaintext = decrypt(&key_bytes, nonce, ciphertext)?;
-        let token = String::from_utf8(plaintext).map_err(|err| IssueTokenStoreError::Decode(err.to_string()))?;
+        let token = String::from_utf8(plaintext)
+            .map_err(|err| IssueTokenStoreError::Decode(err.to_string()))?;
         Ok(Some(token))
     }
 

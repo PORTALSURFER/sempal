@@ -1,5 +1,7 @@
 use super::*;
-use crate::egui_app::controller::controller_state::{AnalysisJobStatus, FeatureCache, FeatureStatus};
+use crate::egui_app::controller::controller_state::{
+    AnalysisJobStatus, FeatureCache, FeatureStatus,
+};
 use rusqlite::params;
 use std::collections::HashMap;
 
@@ -33,35 +35,18 @@ impl EguiController {
     }
 
     fn ensure_feature_cache(&mut self, source_id: &SourceId) -> Result<(), String> {
-        let needs_len = self.wav_entries.entries.len();
+        let needs_len = self.wav_entries_len();
         let existing = self.ui_cache.browser.features.get(source_id);
         if existing.is_some_and(|cache| {
             cache.rows.len() == needs_len && cache.rows.iter().all(|row| row.is_some())
         }) {
             return Ok(());
         }
-        self.ui_cache.browser.features.insert(
-            source_id.clone(),
-            FeatureCache {
-                rows: vec![None; needs_len],
-            },
-        );
-
         let db_path = crate::app_dirs::app_root_dir()
             .map_err(|err| err.to_string())?
             .join(crate::sample_sources::library::LIBRARY_DB_FILE_NAME);
         let conn = super::analysis_jobs::open_library_db(&db_path)?;
-
-        let cache = self
-            .ui_cache
-            .browser
-            .features
-            .get_mut(source_id)
-            .expect("cache inserted above");
-        if cache.rows.len() != needs_len {
-            cache.rows = vec![None; needs_len];
-        }
-        cache.rows.fill(None);
+        let mut rows = vec![None; needs_len];
 
         let prefix = format!("{}::", source_id.as_str());
         let prefix_end = format!("{prefix}\u{10FFFF}");
@@ -109,7 +94,10 @@ impl EguiController {
             }
         }
 
-        for (idx, entry) in self.wav_entries.entries.iter().enumerate() {
+        for idx in 0..self.wav_entries_len() {
+            let Some(entry) = self.wav_entry(idx) else {
+                continue;
+            };
             let key = normalize_relative_key(&entry.relative_path.to_string_lossy());
             let status = sample_map.remove(&key).unwrap_or(FeatureStatus {
                 has_features_v1: false,
@@ -117,8 +105,12 @@ impl EguiController {
                 sr_used: None,
                 analysis_status: None,
             });
-            cache.rows[idx] = Some(status);
+            rows[idx] = Some(status);
         }
+        self.ui_cache
+            .browser
+            .features
+            .insert(source_id.clone(), FeatureCache { rows });
 
         Ok(())
     }

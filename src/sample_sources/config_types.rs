@@ -5,20 +5,13 @@ use thiserror::Error;
 
 use crate::{audio::AudioOutputConfig, waveform::WaveformChannelView};
 
-use crate::sample_sources::{Collection, SampleSource, SourceId};
 use super::config_defaults::{
-    clamp_analysis_worker_count,
-    clamp_volume,
-    default_analysis_worker_count,
-    default_audio_output,
-    default_anti_clip_fade_ms,
-    default_keyboard_zoom_factor,
-    default_max_analysis_duration_seconds,
-    default_scroll_speed,
-    default_true,
-    default_volume,
+    clamp_analysis_worker_count, clamp_volume, default_analysis_worker_count,
+    default_anti_clip_fade_ms, default_audio_output, default_keyboard_zoom_factor,
+    default_max_analysis_duration_seconds, default_scroll_speed, default_true, default_volume,
     default_wheel_zoom_factor,
 };
+use crate::sample_sources::{Collection, SampleSource, SourceId};
 
 /// Aggregate application state loaded from disk.
 ///

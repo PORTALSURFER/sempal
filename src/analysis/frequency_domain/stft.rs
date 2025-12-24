@@ -63,7 +63,11 @@ pub(super) fn compute_frames(
     }
 
     ensure_minimum_frame(&mut spectral, &mut bands, &mut mfcc);
-    FrameSet { spectral, bands, mfcc }
+    FrameSet {
+        spectral,
+        bands,
+        mfcc,
+    }
 }
 
 fn process_frame(
@@ -275,7 +279,14 @@ mod tests {
 
     #[test]
     fn compute_frames_returns_at_least_one_frame() {
-        let mel = MelBank::new(ANALYSIS_SAMPLE_RATE, STFT_FRAME_SIZE, 40, 20, 20.0, 16_000.0);
+        let mel = MelBank::new(
+            ANALYSIS_SAMPLE_RATE,
+            STFT_FRAME_SIZE,
+            40,
+            20,
+            20.0,
+            16_000.0,
+        );
         let frames = compute_frames(
             &[],
             ANALYSIS_SAMPLE_RATE,

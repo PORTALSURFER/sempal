@@ -1,6 +1,6 @@
-use super::*;
 use super::analysis_jobs;
 use super::jobs;
+use super::*;
 use crate::analysis::hdbscan::{HdbscanConfig, HdbscanMethod};
 use crate::egui_app::state::ProgressTaskKind;
 use std::thread;
@@ -47,12 +47,19 @@ impl EguiController {
     }
 
     pub(super) fn handle_similarity_scan_finished(&mut self, source_id: &SourceId) {
-        if !matches_similarity_stage(&self.runtime.similarity_prep, source_id, SimilarityPrepStage::AwaitScan) {
+        if !matches_similarity_stage(
+            &self.runtime.similarity_prep,
+            source_id,
+            SimilarityPrepStage::AwaitScan,
+        ) {
             return;
         }
         if let Some(source) = self.find_source_by_id(source_id) {
-            self.runtime.similarity_prep.as_mut().expect("checked").stage =
-                SimilarityPrepStage::AwaitEmbeddings;
+            self.runtime
+                .similarity_prep
+                .as_mut()
+                .expect("checked")
+                .stage = SimilarityPrepStage::AwaitEmbeddings;
             self.enqueue_similarity_backfill(source);
         }
     }
@@ -79,10 +86,7 @@ impl EguiController {
         self.start_similarity_finalize(source_id, umap_version);
     }
 
-    pub(super) fn handle_similarity_prep_result(
-        &mut self,
-        result: jobs::SimilarityPrepResult,
-    ) {
+    pub(super) fn handle_similarity_prep_result(&mut self, result: jobs::SimilarityPrepResult) {
         let state = self.runtime.similarity_prep.take();
         if state.as_ref().map(|s| &s.source_id) != Some(&result.source_id) {
             return;

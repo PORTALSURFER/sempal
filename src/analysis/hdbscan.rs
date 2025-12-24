@@ -1,8 +1,8 @@
 //! HDBSCAN clustering helpers for embeddings and 2D layouts.
 
 use hdbscan::{Hdbscan, HdbscanHyperParams};
-use rusqlite::{Connection, Transaction, params, params_from_iter};
 use rusqlite::types::Value;
+use rusqlite::{Connection, Transaction, params, params_from_iter};
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -62,7 +62,14 @@ pub fn build_hdbscan_clusters_for_sample_id_prefix(
     assign_all_points_to_clusters(&data, &mut labels);
     let stats = summarize_labels(&labels);
     let version = umap_version.unwrap_or("");
-    write_clusters(conn, &sample_ids, &labels, model_id, method.as_str(), version)?;
+    write_clusters(
+        conn,
+        &sample_ids,
+        &labels,
+        model_id,
+        method.as_str(),
+        version,
+    )?;
     Ok(stats)
 }
 
@@ -196,7 +203,10 @@ fn load_embeddings(
              FROM embeddings
              WHERE model_id = ?1 AND sample_id LIKE ?2
              ORDER BY sample_id ASC",
-            vec![Value::Text(model_id.to_string()), Value::Text(prefix.to_string())],
+            vec![
+                Value::Text(model_id.to_string()),
+                Value::Text(prefix.to_string()),
+            ],
         )
     } else {
         (
@@ -408,9 +418,7 @@ fn start_cluster_tx(conn: &mut Connection) -> Result<Transaction<'_>, String> {
         .map_err(|err| format!("Start transaction failed: {err}"))
 }
 
-fn prepare_cluster_insert<'a>(
-    tx: &'a Transaction<'a>,
-) -> Result<rusqlite::Statement<'a>, String> {
+fn prepare_cluster_insert<'a>(tx: &'a Transaction<'a>) -> Result<rusqlite::Statement<'a>, String> {
     tx.prepare(
         "INSERT INTO hdbscan_clusters (
             sample_id,

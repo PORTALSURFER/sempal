@@ -137,7 +137,9 @@ fn parse_usize(args: &[String], idx: &mut usize, flag: &str) -> Result<usize, St
 
 fn value_after<'a>(args: &'a [String], idx: &mut usize, flag: &str) -> Result<&'a str, String> {
     *idx += 1;
-    let value = args.get(*idx).ok_or_else(|| format!("{flag} requires a value"))?;
+    let value = args
+        .get(*idx)
+        .ok_or_else(|| format!("{flag} requires a value"))?;
     Ok(value)
 }
 

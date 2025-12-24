@@ -1,6 +1,6 @@
 use super::{
-    AnalysisJobMessage, AudioLoadJob, AudioLoadResult, PendingAudio, PendingPlayback, ScanJobMessage,
-    SourceId, UpdateCheckResult, WavLoadJob, WavLoadResult, trash_move,
+    AnalysisJobMessage, AudioLoadJob, AudioLoadResult, PendingAudio, PendingPlayback,
+    ScanJobMessage, SourceId, UpdateCheckResult, WavLoadJob, WavLoadResult, trash_move,
 };
 use std::{
     path::PathBuf,
@@ -352,7 +352,9 @@ impl ControllerJobs {
         let tx = self.message_tx.clone();
         thread::spawn(move || {
             let result = crate::issue_gateway::api::create_issue(&job.token, &job.request);
-            let _ = tx.send(JobMessage::IssueGatewayCreated(IssueGatewayCreateResult { result }));
+            let _ = tx.send(JobMessage::IssueGatewayCreated(IssueGatewayCreateResult {
+                result,
+            }));
         });
     }
 

@@ -6,7 +6,7 @@ use crate::egui_app::state::FocusContext;
 use crate::egui_app::ui::EguiApp;
 use crate::egui_app::ui::style;
 use eframe::egui;
-use eframe::egui::{Ui, UiBuilder};
+use eframe::egui::{TopBottomPanel, Ui, UiBuilder};
 
 impl EguiApp {
     pub(super) fn apply_visuals(&mut self, ctx: &egui::Context) {
@@ -102,6 +102,16 @@ impl EguiApp {
         self.render_panels(ctx);
         self.render_overlays(ctx, input, focus_context);
         ctx.request_repaint();
+    }
+
+    fn render_status(&mut self, ctx: &egui::Context) {
+        TopBottomPanel::top("status_bar")
+            .frame(egui::Frame::default())
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    self.render_status_controls(ui);
+                });
+            });
     }
 
     fn render_panels(&mut self, ctx: &egui::Context) {

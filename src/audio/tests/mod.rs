@@ -1,6 +1,6 @@
 mod decode;
 mod fade;
-mod playhead_edges;
 mod player;
+mod playhead_edges;
 mod routing;
 mod support;

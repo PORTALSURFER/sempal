@@ -70,7 +70,7 @@ fn selection_drop_adds_clip_to_collection() {
             .iter()
             .all(|entry| &entry.relative_path != member_path)
     );
-    assert!(controller.ui.browser.visible.is_empty());
+    assert!(controller.ui.browser.visible.len() == 0);
     assert!(
         controller
             .ui
@@ -156,7 +156,7 @@ fn sample_drop_falls_back_to_active_collection() {
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
     controller.cache_db(&source).unwrap();
     write_test_wav(&root.join("one.wav"), &[0.1, 0.2]);
-    controller.wav_entries.entries = vec![sample_entry("one.wav", SampleTag::Neutral)];
+    controller.set_wav_entries_for_tests( vec![sample_entry("one.wav", SampleTag::Neutral)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 

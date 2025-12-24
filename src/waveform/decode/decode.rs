@@ -6,7 +6,10 @@ static NEXT_CACHE_TOKEN: AtomicU64 = AtomicU64::new(1);
 impl WaveformRenderer {
     pub(super) const MAX_FULL_SAMPLE_FRAMES: usize = 2_500_000;
 
-    pub(super) fn load_decoded(&self, bytes: &[u8]) -> Result<DecodedWaveform, WaveformDecodeError> {
+    pub(super) fn load_decoded(
+        &self,
+        bytes: &[u8],
+    ) -> Result<DecodedWaveform, WaveformDecodeError> {
         self.load_decoded_with_limit(bytes, Self::MAX_FULL_SAMPLE_FRAMES)
     }
 
@@ -71,9 +74,7 @@ mod tests {
 
         let renderer = WaveformRenderer::new(12, 12);
         let bytes = wav_bytes_i16(1, &[0, 1000, -1000, 0]);
-        let decoded = renderer
-            .load_decoded(&bytes)
-            .expect("decode wav via hound");
+        let decoded = renderer.load_decoded(&bytes).expect("decode wav via hound");
 
         assert!(decoded.peaks.is_none());
         assert!(decoded.samples.len() > 0);
@@ -109,9 +110,7 @@ mod tests {
         let samples = vec![0_i16; 64];
         let bytes = wav_bytes_i16(1, &samples);
 
-        let full = renderer
-            .load_decoded(&bytes)
-            .expect("decode full samples");
+        let full = renderer.load_decoded(&bytes).expect("decode full samples");
         let peaks_only = renderer
             .load_decoded_with_max_frames(&bytes, 1)
             .expect("decode peaks only");

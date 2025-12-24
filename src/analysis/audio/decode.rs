@@ -4,17 +4,13 @@ use std::path::Path;
 
 use rodio::{Decoder, Source};
 
-use super::{
-    AnalysisAudio,
-    ANALYSIS_SAMPLE_RATE,
-    MAX_ANALYSIS_SECONDS,
-    MIN_ANALYSIS_SECONDS,
-    WINDOW_HOP_SECONDS,
-    WINDOW_SECONDS,
-};
 use super::normalize::{normalize_peak_in_place, rms};
 use super::resample::resample_linear;
 use super::silence::trim_silence_with_hysteresis;
+use super::{
+    ANALYSIS_SAMPLE_RATE, AnalysisAudio, MAX_ANALYSIS_SECONDS, MIN_ANALYSIS_SECONDS,
+    WINDOW_HOP_SECONDS, WINDOW_SECONDS,
+};
 
 pub(crate) fn decode_for_analysis(path: &Path) -> Result<AnalysisAudio, String> {
     decode_for_analysis_with_rate(path, ANALYSIS_SAMPLE_RATE)
@@ -35,7 +31,8 @@ pub(crate) fn probe_duration_seconds(path: &Path) -> Result<Option<f32>, String>
         return Ok(Some((samples / channels / sample_rate).max(0.0)));
     }
 
-    let file = File::open(path).map_err(|err| format!("Failed to open {}: {err}", path.display()))?;
+    let file =
+        File::open(path).map_err(|err| format!("Failed to open {}: {err}", path.display()))?;
     let byte_len = file.metadata().map(|meta| meta.len()).unwrap_or(0) as u64;
     let hint = path
         .extension()

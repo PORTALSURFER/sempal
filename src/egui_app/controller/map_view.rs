@@ -1,6 +1,6 @@
 use super::*;
-use rusqlite::{Connection, OptionalExtension, params, params_from_iter};
 use rusqlite::types::Value;
+use rusqlite::{Connection, OptionalExtension, params, params_from_iter};
 use std::collections::HashMap;
 
 pub(crate) struct UmapBounds {
@@ -27,10 +27,12 @@ impl EguiController {
             self.set_status_message(StatusMessage::TsneBuildAlreadyRunning);
             return;
         }
-        self.runtime.jobs.begin_umap_build(super::jobs::UmapBuildJob {
-            model_id: model_id.to_string(),
-            umap_version: umap_version.to_string(),
-        });
+        self.runtime
+            .jobs
+            .begin_umap_build(super::jobs::UmapBuildJob {
+                model_id: model_id.to_string(),
+                umap_version: umap_version.to_string(),
+            });
         self.set_status_message(StatusMessage::BuildingTsneLayout);
     }
 

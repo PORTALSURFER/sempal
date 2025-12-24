@@ -2,8 +2,8 @@ use std::path::{Path, PathBuf};
 
 use rusqlite::params;
 
-use super::{SampleTag, SourceDatabase, SourceDbError, SourceWriteBatch};
 use super::util::{map_sql_error, normalize_relative_path};
+use super::{SampleTag, SourceDatabase, SourceDbError, SourceWriteBatch};
 
 impl SourceDatabase {
     /// Upsert a wav file row using the path relative to the source root.

@@ -49,8 +49,7 @@ pub(in crate::egui_app::controller) fn purge_orphaned_samples(
         );
         removed += tx
             .execute(&sql, [])
-            .map_err(|err| format!("Failed to purge {table}: {err}"))?
-            as usize;
+            .map_err(|err| format!("Failed to purge {table}: {err}"))? as usize;
     }
     tx.commit()
         .map_err(|err| format!("Failed to commit purge transaction: {err}"))?;

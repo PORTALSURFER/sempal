@@ -3,17 +3,26 @@ use std::collections::HashSet;
 use std::path::Path;
 
 impl EguiController {
-    pub(in crate::egui_app::controller) fn sync_missing_from_entries(
-        &mut self,
-        source_id: &SourceId,
-        entries: &[WavEntry],
-    ) {
-        let missing = entries
+    pub(in crate::egui_app::controller) fn sync_missing_from_db(&mut self, source_id: &SourceId) {
+        let Some(source) = self
+            .library
+            .sources
             .iter()
-            .filter(|entry| entry.missing)
-            .map(|entry| entry.relative_path.clone())
-            .collect();
-        self.library.missing.wavs.insert(source_id.clone(), missing);
+            .find(|source| &source.id == source_id)
+            .cloned()
+        else {
+            return;
+        };
+        let db = match self.database_for(&source) {
+            Ok(db) => db,
+            Err(_) => return,
+        };
+        if let Ok(paths) = db.list_missing_paths() {
+            self.library
+                .missing
+                .wavs
+                .insert(source_id.clone(), paths.into_iter().collect());
+        }
     }
 
     pub(in crate::egui_app::controller) fn rebuild_missing_lookup_for_source(
@@ -22,15 +31,19 @@ impl EguiController {
     ) {
         let mut missing = HashSet::new();
         if let Some(cache) = self.cache.wav.entries.get(source_id) {
-            for entry in cache {
-                if entry.missing {
-                    missing.insert(entry.relative_path.clone());
+            for page in cache.pages.values() {
+                for entry in page {
+                    if entry.missing {
+                        missing.insert(entry.relative_path.clone());
+                    }
                 }
             }
         } else if self.selection_state.ctx.selected_source.as_ref() == Some(source_id) {
-            for entry in &self.wav_entries.entries {
-                if entry.missing {
-                    missing.insert(entry.relative_path.clone());
+            for page in self.wav_entries.pages.values() {
+                for entry in page {
+                    if entry.missing {
+                        missing.insert(entry.relative_path.clone());
+                    }
                 }
             }
         }
@@ -57,15 +70,14 @@ impl EguiController {
             }
         }
         if let Some(cache) = self.cache.wav.entries.get_mut(&source.id)
-            && let Some(entry) = cache
-                .iter_mut()
-                .find(|entry| entry.relative_path == relative_path)
+            && let Some(index) = cache.lookup.get(relative_path).copied()
+            && let Some(entry) = cache.entry_mut(index)
         {
             entry.missing = true;
         }
         if self.selection_state.ctx.selected_source.as_ref() == Some(&source.id)
-            && let Some(index) = self.wav_entries.lookup.get(relative_path).copied()
-            && let Some(entry) = self.wav_entries.entries.get_mut(index)
+            && let Some(index) = self.wav_index_for_path(relative_path)
+            && let Some(entry) = self.wav_entries.entry_mut(index)
         {
             entry.missing = true;
         }
@@ -118,22 +130,14 @@ impl EguiController {
             return true;
         }
         if self.selection_state.ctx.selected_source.as_ref() == Some(source_id)
-            && let Some(index) = self.wav_entries.lookup.get(relative_path)
-            && let Some(entry) = self.wav_entries.entries.get(*index)
+            && let Some(index) = self.wav_index_for_path(relative_path)
+            && let Some(entry) = self.wav_entries.entry(index)
         {
             return entry.missing;
         }
-        if self.cache.wav.entries.contains_key(source_id) {
-            self.ensure_wav_cache_lookup(source_id);
-            if let Some(index) = self
-                .cache
-                .wav
-                .lookup
-                .get(source_id)
-                .and_then(|lookup| lookup.get(relative_path))
-                .copied()
-                && let Some(cache) = self.cache.wav.entries.get(source_id)
-                && let Some(entry) = cache.get(index)
+        if let Some(cache) = self.cache.wav.entries.get(source_id) {
+            if let Some(index) = cache.lookup.get(relative_path).copied()
+                && let Some(entry) = cache.entry(index)
             {
                 return entry.missing;
             }

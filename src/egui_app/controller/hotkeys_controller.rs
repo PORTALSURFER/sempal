@@ -93,7 +93,10 @@ impl HotkeysActions for HotkeysController<'_> {
                 }
             }
             HotkeyCommand::RenameFocusedCollection => {
-                if matches!(focus, FocusContext::CollectionsList | FocusContext::CollectionSample) {
+                if matches!(
+                    focus,
+                    FocusContext::CollectionsList | FocusContext::CollectionSample
+                ) {
                     self.start_collection_rename();
                 }
             }
@@ -359,7 +362,6 @@ impl HotkeysController<'_> {
             self.set_status(err, StatusTone::Error);
         }
     }
-
 }
 
 impl EguiController {

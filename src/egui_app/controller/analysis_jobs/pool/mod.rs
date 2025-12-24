@@ -38,8 +38,7 @@ impl AnalysisWorkerPool {
     }
 
     pub(in crate::egui_app::controller) fn set_worker_count(&self, value: u32) {
-        self.worker_count_override
-            .store(value, Ordering::Relaxed);
+        self.worker_count_override.store(value, Ordering::Relaxed);
     }
 
     pub(in crate::egui_app::controller) fn start(

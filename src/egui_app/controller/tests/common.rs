@@ -18,7 +18,19 @@ pub(super) fn prepare_browser_sample(
 ) {
     controller.library.sources.push(source.clone());
     write_test_wav(&source.root.join(name), &[0.0, 0.1, -0.1]);
-    controller.wav_entries.entries = vec![sample_entry(name, SampleTag::Neutral)];
-    controller.rebuild_wav_lookup();
+    set_wav_entries(controller, vec![sample_entry(name, SampleTag::Neutral)]);
     controller.rebuild_browser_lists();
+}
+
+pub(super) fn set_wav_entries(controller: &mut EguiController, entries: Vec<WavEntry>) {
+    controller.wav_entries.clear();
+    controller.wav_entries.total = entries.len();
+    controller.wav_entries.insert_page(0, entries);
+    controller.rebuild_wav_lookup();
+}
+
+pub(super) fn visible_indices(controller: &EguiController) -> Vec<usize> {
+    (0..controller.visible_browser_len())
+        .filter_map(|row| controller.visible_browser_index(row))
+        .collect()
 }

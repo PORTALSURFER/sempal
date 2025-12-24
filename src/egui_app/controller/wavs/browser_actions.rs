@@ -6,15 +6,16 @@ use std::path::Path;
 
 impl EguiController {
     pub(in crate::egui_app::controller) fn visible_row_for_path(
-        &self,
+        &mut self,
         path: &Path,
     ) -> Option<usize> {
-        let entry_index = self.wav_entries.lookup.get(path)?;
-        self.ui
-            .browser
-            .visible
-            .iter()
-            .position(|idx| idx == entry_index)
+        let entry_index = self.wav_index_for_path(path)?;
+        match &self.ui.browser.visible {
+            crate::egui_app::state::VisibleRows::All { .. } => Some(entry_index),
+            crate::egui_app::state::VisibleRows::List(rows) => {
+                rows.iter().position(|idx| *idx == entry_index)
+            }
+        }
     }
 
     fn set_single_browser_selection(&mut self, path: &Path) {
@@ -37,7 +38,7 @@ impl EguiController {
     }
 
     fn extend_browser_selection_to(&mut self, target_visible: usize, additive: bool) {
-        if self.ui.browser.visible.is_empty() {
+        if self.ui.browser.visible.len() == 0 {
             return;
         }
         let max_row = self.ui.browser.visible.len().saturating_sub(1);
@@ -159,7 +160,7 @@ impl EguiController {
 
     /// Select all visible sample browser rows.
     pub fn select_all_browser_rows(&mut self) {
-        if self.ui.browser.visible.is_empty() {
+        if self.ui.browser.visible.len() == 0 {
             return;
         }
         self.ui.collections.selected_sample = None;
@@ -170,12 +171,27 @@ impl EguiController {
             .browser
             .selected_paths
             .reserve(self.ui.browser.visible.len());
-        for index in &self.ui.browser.visible {
-            if let Some(entry) = self.wav_entries.entries.get(*index) {
-                self.ui
-                    .browser
-                    .selected_paths
-                    .push(entry.relative_path.clone());
+        let visible = self.ui.browser.visible.clone();
+        match visible {
+            crate::egui_app::state::VisibleRows::All { total } => {
+                for index in 0..total {
+                    let path = self
+                        .wav_entry(index)
+                        .map(|entry| entry.relative_path.clone());
+                    if let Some(path) = path {
+                        self.ui.browser.selected_paths.push(path);
+                    }
+                }
+            }
+            crate::egui_app::state::VisibleRows::List(rows) => {
+                for index in rows {
+                    let path = self
+                        .wav_entry(index)
+                        .map(|entry| entry.relative_path.clone());
+                    if let Some(path) = path {
+                        self.ui.browser.selected_paths.push(path);
+                    }
+                }
             }
         }
         let anchor = self
@@ -271,11 +287,9 @@ impl EguiController {
     }
 
     /// Return the set of action rows for a primary row (multi-select aware).
-    pub fn action_rows_from_primary(&self, primary_visible_row: usize) -> Vec<usize> {
-        let mut rows: Vec<usize> = self
-            .ui
-            .browser
-            .selected_paths
+    pub fn action_rows_from_primary(&mut self, primary_visible_row: usize) -> Vec<usize> {
+        let selected_paths = self.ui.browser.selected_paths.clone();
+        let mut rows: Vec<usize> = selected_paths
             .iter()
             .filter_map(|path| self.visible_row_for_path(path))
             .collect();

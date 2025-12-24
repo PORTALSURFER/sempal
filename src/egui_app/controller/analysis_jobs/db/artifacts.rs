@@ -105,7 +105,9 @@ pub(in crate::egui_app::controller::analysis_jobs) fn upsert_embedding(
             l2_normed = excluded.l2_normed,
             vec = excluded.vec,
             created_at = excluded.created_at",
-        params![sample_id, model_id, dim, dtype, l2_normed, vec_blob, created_at],
+        params![
+            sample_id, model_id, dim, dtype, l2_normed, vec_blob, created_at
+        ],
     )
     .map_err(|err| format!("Failed to upsert embedding: {err}"))?;
     Ok(())

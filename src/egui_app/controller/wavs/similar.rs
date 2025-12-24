@@ -1,6 +1,6 @@
 use super::*;
-use rusqlite::{OptionalExtension, params};
 use crate::egui_app::view_model;
+use rusqlite::{OptionalExtension, params};
 
 const DEFAULT_SIMILAR_COUNT: usize = 40;
 const SIMILAR_RE_RANK_CANDIDATES: usize = 200;
@@ -22,29 +22,27 @@ pub(super) fn find_similar_for_visible_row(
         .browser
         .visible
         .get(visible_row)
-        .copied()
         .ok_or_else(|| "Selected row is out of range".to_string())?;
     let entry = controller
-        .wav_entries
-        .entries
-        .get(entry_index)
+        .wav_entry(entry_index)
         .ok_or_else(|| "Sample entry missing".to_string())?;
-    let sample_id = super::super::analysis_jobs::build_sample_id(
-        source_id.as_str(),
-        &entry.relative_path,
-    );
+    let entry_path = entry.relative_path.clone();
+    let sample_id =
+        super::super::analysis_jobs::build_sample_id(source_id.as_str(), &entry_path);
     let db_path = crate::app_dirs::app_root_dir()
         .map_err(|err| err.to_string())?
         .join(crate::sample_sources::library::LIBRARY_DB_FILE_NAME);
     let conn = super::super::analysis_jobs::open_library_db(&db_path)?;
-    let neighbours = crate::analysis::ann_index::find_similar(
-        &conn,
-        &sample_id,
-        SIMILAR_RE_RANK_CANDIDATES,
-    )?;
+    let neighbours =
+        crate::analysis::ann_index::find_similar(&conn, &sample_id, SIMILAR_RE_RANK_CANDIDATES)?;
     let query_embedding = load_embedding_for_sample(&conn, &sample_id)?;
     let query_dsp = load_light_dsp_for_sample(&conn, &sample_id)?;
-    let ranked = rerank_with_dsp(&conn, neighbours, query_embedding.as_deref(), query_dsp.as_deref())?;
+    let ranked = rerank_with_dsp(
+        &conn,
+        neighbours,
+        query_embedding.as_deref(),
+        query_dsp.as_deref(),
+    )?;
 
     let mut indices = Vec::new();
     for candidate_id in ranked {
@@ -53,8 +51,8 @@ pub(super) fn find_similar_for_visible_row(
         if candidate_source.as_str() != source_id.as_str() {
             continue;
         }
-        if let Some(index) = controller.wav_entries.lookup.get(&relative_path) {
-            indices.push(*index);
+        if let Some(index) = controller.wav_index_for_path(&relative_path) {
+            indices.push(index);
             if indices.len() >= DEFAULT_SIMILAR_COUNT {
                 break;
             }
@@ -65,7 +63,7 @@ pub(super) fn find_similar_for_visible_row(
     }
     controller.ui.browser.similar_query = Some(crate::egui_app::state::SimilarQuery {
         sample_id,
-        label: view_model::sample_display_label(&entry.relative_path),
+        label: view_model::sample_display_label(&entry_path),
         indices,
         anchor_index: Some(entry_index),
     });
@@ -92,7 +90,12 @@ pub(super) fn find_similar_for_sample_id(
         crate::analysis::ann_index::find_similar(&conn, sample_id, SIMILAR_RE_RANK_CANDIDATES)?;
     let query_embedding = load_embedding_for_sample(&conn, sample_id)?;
     let query_dsp = load_light_dsp_for_sample(&conn, sample_id)?;
-    let ranked = rerank_with_dsp(&conn, neighbours, query_embedding.as_deref(), query_dsp.as_deref())?;
+    let ranked = rerank_with_dsp(
+        &conn,
+        neighbours,
+        query_embedding.as_deref(),
+        query_dsp.as_deref(),
+    )?;
 
     let mut indices = Vec::new();
     for candidate_id in ranked {
@@ -101,8 +104,8 @@ pub(super) fn find_similar_for_sample_id(
         if candidate_source.as_str() != source_id.as_str() {
             continue;
         }
-        if let Some(index) = controller.wav_entries.lookup.get(&candidate_path) {
-            indices.push(*index);
+        if let Some(index) = controller.wav_index_for_path(&candidate_path) {
+            indices.push(index);
             if indices.len() >= DEFAULT_SIMILAR_COUNT {
                 break;
             }
@@ -115,7 +118,7 @@ pub(super) fn find_similar_for_sample_id(
         sample_id: sample_id.to_string(),
         label: view_model::sample_display_label(&relative_path),
         indices,
-        anchor_index: controller.wav_entries.lookup.get(&relative_path).copied(),
+        anchor_index: controller.wav_index_for_path(&relative_path),
     });
     controller.ui.browser.search_query.clear();
     controller.ui.browser.search_focus_requested = false;
@@ -168,8 +171,8 @@ pub(super) fn find_similar_for_audio_path(
         if candidate_source.as_str() != source_id.as_str() {
             continue;
         }
-        if let Some(index) = controller.wav_entries.lookup.get(&relative_path) {
-            indices.push(*index);
+        if let Some(index) = controller.wav_index_for_path(&relative_path) {
+            indices.push(index);
             if indices.len() >= DEFAULT_SIMILAR_COUNT {
                 break;
             }

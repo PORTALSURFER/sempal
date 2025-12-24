@@ -53,21 +53,17 @@ impl EguiController {
     }
 
     pub(in crate::egui_app::controller) fn resolve_browser_sample(
-        &self,
+        &mut self,
         row: usize,
     ) -> Result<helpers::TriageSampleContext, String> {
         let source = self
             .current_source()
             .ok_or_else(|| "Select a source first".to_string())?;
         let index = self
-            .visible_browser_indices()
-            .get(row)
-            .copied()
+            .visible_browser_index(row)
             .ok_or_else(|| "Sample not found".to_string())?;
         let entry = self
-            .wav_entries
-            .entries
-            .get(index)
+            .wav_entry(index)
             .cloned()
             .ok_or_else(|| "Sample not found".to_string())?;
         let absolute_path = source.root.join(&entry.relative_path);
@@ -84,14 +80,12 @@ impl EguiController {
         relative_path: &Path,
     ) {
         if let Some(cache) = self.cache.wav.entries.get_mut(&source.id) {
-            cache.retain(|entry| entry.relative_path != relative_path);
-            self.rebuild_wav_cache_lookup(&source.id);
+            cache.clear();
         }
         if self.selection_state.ctx.selected_source.as_ref() == Some(&source.id) {
-            self.wav_entries
-                .entries
-                .retain(|entry| entry.relative_path != relative_path);
-            self.sync_browser_after_wav_entries_mutation(&source.id);
+            self.wav_entries.clear();
+            self.sync_after_wav_entries_changed();
+            self.queue_wav_load();
         } else {
             self.ui_cache.browser.labels.remove(&source.id);
         }
@@ -249,7 +243,7 @@ impl EguiController {
         if matches!(self.ui.browser.filter, TriageFlagFilter::All) {
             return;
         }
-        if self.ui.browser.visible.is_empty() || self.ui.browser.selected_visible.is_some() {
+        if self.ui.browser.visible.len() == 0 || self.ui.browser.selected_visible.is_some() {
             return;
         }
         if self.random_navigation_mode_enabled() {

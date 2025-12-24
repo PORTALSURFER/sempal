@@ -1,5 +1,6 @@
 use super::super::test_support::{dummy_controller, sample_entry};
 use super::super::*;
+use super::common::visible_indices;
 use crate::egui_app::state::{
     DragPayload, DragSource, DragTarget, TriageFlagColumn, TriageFlagFilter,
 };
@@ -31,10 +32,10 @@ fn missing_source_is_marked_during_load() {
 fn label_cache_builds_on_first_lookup() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source.clone());
-    controller.wav_entries.entries = vec![
+    controller.set_wav_entries_for_tests( vec![
         sample_entry("a.wav", SampleTag::Neutral),
         sample_entry("b.wav", SampleTag::Neutral),
-    ];
+    ]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
@@ -48,11 +49,11 @@ fn label_cache_builds_on_first_lookup() {
 fn sample_browser_indices_track_tags() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source);
-    controller.wav_entries.entries = vec![
+    controller.set_wav_entries_for_tests( vec![
         sample_entry("trash.wav", SampleTag::Trash),
         sample_entry("neutral.wav", SampleTag::Neutral),
         sample_entry("keep.wav", SampleTag::Keep),
-    ];
+    ]);
     controller.sample_view.wav.selected_wav = Some(PathBuf::from("neutral.wav"));
     controller.sample_view.wav.loaded_wav = Some(PathBuf::from("keep.wav"));
     controller.rebuild_wav_lookup();
@@ -64,7 +65,7 @@ fn sample_browser_indices_track_tags() {
         1
     );
     assert_eq!(controller.browser_indices(TriageFlagColumn::Keep).len(), 1);
-    assert_eq!(controller.visible_browser_indices(), &[0, 1, 2]);
+    assert_eq!(visible_indices(&controller), vec![0, 1, 2]);
 
     let selected = controller.ui.browser.selected.unwrap();
     assert_eq!(selected.column, TriageFlagColumn::Neutral);
@@ -158,7 +159,7 @@ fn deleting_collection_removes_and_selects_next() {
 fn browser_autoscroll_disabled_when_collection_selected() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source);
-    controller.wav_entries.entries = vec![sample_entry("one.wav", SampleTag::Neutral)];
+    controller.set_wav_entries_for_tests( vec![sample_entry("one.wav", SampleTag::Neutral)]);
     controller.sample_view.wav.selected_wav = Some(PathBuf::from("one.wav"));
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
@@ -171,66 +172,66 @@ fn browser_autoscroll_disabled_when_collection_selected() {
 fn browser_filter_limits_visible_rows() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source);
-    controller.wav_entries.entries = vec![
+    controller.set_wav_entries_for_tests( vec![
         sample_entry("trash.wav", SampleTag::Trash),
         sample_entry("neutral.wav", SampleTag::Neutral),
         sample_entry("keep.wav", SampleTag::Keep),
-    ];
+    ]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
     controller.set_browser_filter(TriageFlagFilter::Keep);
-    assert_eq!(controller.visible_browser_indices(), &[2]);
+    assert_eq!(visible_indices(&controller), vec![2]);
     controller.set_browser_filter(TriageFlagFilter::Trash);
-    assert_eq!(controller.visible_browser_indices(), &[0]);
+    assert_eq!(visible_indices(&controller), vec![0]);
     controller.set_browser_filter(TriageFlagFilter::Untagged);
-    assert_eq!(controller.visible_browser_indices(), &[1]);
+    assert_eq!(visible_indices(&controller), vec![1]);
     controller.set_browser_filter(TriageFlagFilter::All);
-    assert_eq!(controller.visible_browser_indices(), &[0, 1, 2]);
+    assert_eq!(visible_indices(&controller), vec![0, 1, 2]);
 }
 
 #[test]
 fn browser_search_limits_visible_rows() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source);
-    controller.wav_entries.entries = vec![
+    controller.set_wav_entries_for_tests( vec![
         sample_entry("kick.wav", SampleTag::Neutral),
         sample_entry("snare.wav", SampleTag::Neutral),
         sample_entry("hat.wav", SampleTag::Neutral),
-    ];
+    ]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
     controller.set_browser_search("snr");
 
-    assert_eq!(controller.visible_browser_indices(), &[1]);
+    assert_eq!(visible_indices(&controller), vec![1]);
 }
 
 #[test]
 fn browser_search_orders_results_by_score_then_index() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source);
-    controller.wav_entries.entries = vec![
+    controller.set_wav_entries_for_tests( vec![
         sample_entry("abc.wav", SampleTag::Neutral),
         sample_entry("abc_extra.wav", SampleTag::Neutral),
         sample_entry("abdc.wav", SampleTag::Neutral),
-    ];
+    ]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
     controller.set_browser_search("abc");
 
-    assert_eq!(controller.visible_browser_indices(), &[0, 1, 2]);
+    assert_eq!(visible_indices(&controller), vec![0, 1, 2]);
 }
 
 #[test]
 fn tagging_keeps_selection_on_same_sample() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source);
-    controller.wav_entries.entries = vec![
+    controller.set_wav_entries_for_tests( vec![
         sample_entry("one.wav", SampleTag::Neutral),
         sample_entry("two.wav", SampleTag::Neutral),
-    ];
+    ]);
     controller.sample_view.wav.selected_wav = Some(PathBuf::from("one.wav"));
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
@@ -242,26 +243,26 @@ fn tagging_keeps_selection_on_same_sample() {
         Some(Path::new("one.wav"))
     );
     assert_eq!(controller.ui.browser.selected_visible, Some(0));
-    assert_eq!(controller.wav_entries.entries[0].tag, SampleTag::Keep);
+    assert_eq!(controller.wav_entry(0).unwrap().tag, SampleTag::Keep);
 }
 
 #[test]
 fn left_tagging_from_keep_untags_then_trashes() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source);
-    controller.wav_entries.entries = vec![
+    controller.set_wav_entries_for_tests( vec![
         sample_entry("one.wav", SampleTag::Keep),
         sample_entry("two.wav", SampleTag::Neutral),
-    ];
+    ]);
     controller.sample_view.wav.selected_wav = Some(PathBuf::from("one.wav"));
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
     controller.tag_selected_left();
-    assert_eq!(controller.wav_entries.entries[0].tag, SampleTag::Neutral);
+    assert_eq!(controller.wav_entry(0).unwrap().tag, SampleTag::Neutral);
 
     controller.tag_selected_left();
-    assert_eq!(controller.wav_entries.entries[0].tag, SampleTag::Trash);
+    assert_eq!(controller.wav_entry(0).unwrap().tag, SampleTag::Trash);
 }
 
 #[test]
@@ -269,11 +270,11 @@ fn tagging_under_filter_advances_focus_to_next_visible() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source.clone());
     controller.cache_db(&source).unwrap();
-    controller.wav_entries.entries = vec![
+    controller.set_wav_entries_for_tests( vec![
         sample_entry("one.wav", SampleTag::Neutral),
         sample_entry("two.wav", SampleTag::Neutral),
         sample_entry("three.wav", SampleTag::Neutral),
-    ];
+    ]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
     controller.set_browser_filter(TriageFlagFilter::Untagged);
@@ -281,7 +282,7 @@ fn tagging_under_filter_advances_focus_to_next_visible() {
     controller.focus_browser_row_only(1);
     controller.tag_selected(SampleTag::Keep);
 
-    assert_eq!(controller.visible_browser_indices(), &[0, 2]);
+    assert_eq!(visible_indices(&controller), vec![0, 2]);
     assert_eq!(controller.ui.browser.selected_visible, Some(1));
     assert_eq!(
         controller.sample_view.wav.selected_wav.as_deref(),
@@ -294,11 +295,11 @@ fn tagging_under_filter_uses_random_focus_in_random_mode() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source.clone());
     controller.cache_db(&source).unwrap();
-    controller.wav_entries.entries = vec![
+    controller.set_wav_entries_for_tests( vec![
         sample_entry("one.wav", SampleTag::Neutral),
         sample_entry("two.wav", SampleTag::Neutral),
         sample_entry("three.wav", SampleTag::Neutral),
-    ];
+    ]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
     controller.set_browser_filter(TriageFlagFilter::Untagged);
@@ -307,13 +308,13 @@ fn tagging_under_filter_uses_random_focus_in_random_mode() {
     controller.focus_browser_row_only(1);
     controller.tag_selected(SampleTag::Keep);
 
-    assert_eq!(controller.visible_browser_indices(), &[0, 2]);
+    assert_eq!(visible_indices(&controller), vec![0, 2]);
     assert_eq!(controller.history.random_history.entries.len(), 1);
     assert_eq!(controller.history.random_history.cursor, Some(0));
     let Some(selected_visible) = controller.ui.browser.selected_visible else {
         panic!("expected a selected row");
     };
-    assert!(selected_visible < controller.visible_browser_indices().len());
+    assert!(selected_visible < controller.visible_browser_len());
 }
 
 #[test]
@@ -321,18 +322,18 @@ fn undo_tagging_refocuses_original_sample_under_filter() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source.clone());
     controller.cache_db(&source).unwrap();
-    controller.wav_entries.entries = vec![
+    controller.set_wav_entries_for_tests( vec![
         sample_entry("one.wav", SampleTag::Neutral),
         sample_entry("two.wav", SampleTag::Neutral),
         sample_entry("three.wav", SampleTag::Neutral),
-    ];
+    ]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
     controller.set_browser_filter(TriageFlagFilter::Untagged);
 
     controller.focus_browser_row_only(1);
     controller.tag_selected(SampleTag::Keep);
-    assert_eq!(controller.visible_browser_indices(), &[0, 2]);
+    assert_eq!(visible_indices(&controller), vec![0, 2]);
     assert_eq!(
         controller.sample_view.wav.selected_wav.as_deref(),
         Some(Path::new("three.wav"))
@@ -340,8 +341,8 @@ fn undo_tagging_refocuses_original_sample_under_filter() {
 
     controller.undo();
 
-    assert_eq!(controller.visible_browser_indices(), &[0, 1, 2]);
-    assert_eq!(controller.wav_entries.entries[1].tag, SampleTag::Neutral);
+    assert_eq!(visible_indices(&controller), vec![0, 1, 2]);
+    assert_eq!(controller.wav_entry(1).unwrap().tag, SampleTag::Neutral);
     assert_eq!(
         controller.sample_view.wav.selected_wav.as_deref(),
         Some(Path::new("two.wav"))
@@ -353,10 +354,10 @@ fn undo_tagging_refocuses_original_sample_under_filter() {
 fn browser_selection_is_cleared_when_focus_leaves_browser() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source);
-    controller.wav_entries.entries = vec![
+    controller.set_wav_entries_for_tests( vec![
         sample_entry("one.wav", SampleTag::Neutral),
         sample_entry("two.wav", SampleTag::Neutral),
-    ];
+    ]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
@@ -376,10 +377,10 @@ fn browser_selection_is_cleared_when_focus_leaves_browser() {
 fn browser_selection_is_retained_when_waveform_focused() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source);
-    controller.wav_entries.entries = vec![
+    controller.set_wav_entries_for_tests( vec![
         sample_entry("one.wav", SampleTag::Neutral),
         sample_entry("two.wav", SampleTag::Neutral),
-    ];
+    ]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 

@@ -1,7 +1,7 @@
+use super::job_runner::run_job;
 use crate::egui_app::controller::analysis_jobs::db;
 use crate::egui_app::controller::analysis_jobs::types::AnalysisJobMessage;
 use crate::egui_app::controller::jobs::JobMessage;
-use super::job_runner::run_job;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::{
     Arc,
@@ -84,9 +84,7 @@ pub(super) fn spawn_worker(
                 }
             }
             if let Ok(progress) = db::current_progress(&conn) {
-                let _ = tx.send(JobMessage::Analysis(
-                    AnalysisJobMessage::Progress(progress),
-                ));
+                let _ = tx.send(JobMessage::Analysis(AnalysisJobMessage::Progress(progress)));
             }
         }
     })

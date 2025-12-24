@@ -5,15 +5,9 @@ pub(super) fn tag_selected(controller: &mut EguiController, target: SampleTag) {
         return;
     };
     let refocus_path = controller
-        .wav_entries
-        .entries
-        .get(selected_index)
+        .wav_entry(selected_index)
         .map(|entry| entry.relative_path.clone());
-    let primary_row = match controller
-        .visible_browser_indices()
-        .iter()
-        .position(|idx| *idx == selected_index)
-    {
+    let primary_row = match refocus_path.as_deref().and_then(|path| controller.visible_row_for_path(path)) {
         Some(row) => row,
         None => return,
     };

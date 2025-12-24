@@ -100,11 +100,7 @@ pub(crate) fn distance_shaded_cluster_color(
         0.65,
         0.35,
     );
-    shade_by_distance(
-        base,
-        dist,
-        map_diagonal,
-    )
+    shade_by_distance(base, dist, map_diagonal)
 }
 
 pub(crate) fn cluster_centroids(
@@ -174,9 +170,9 @@ pub(crate) fn blended_cluster_color(
             Some((acc, acc_w)) => (blend_colors(acc, color, acc_w, weight), acc_w + weight),
         });
     }
-    let color = blended.map(|(c, _)| c).unwrap_or_else(|| {
-        cluster_id_color(cluster_id, palette, alpha)
-    });
+    let color = blended
+        .map(|(c, _)| c)
+        .unwrap_or_else(|| cluster_id_color(cluster_id, palette, alpha));
     let base = blend_colors(
         color,
         point_position_color(point.x, point.y, bounds, palette, alpha),

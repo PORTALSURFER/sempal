@@ -167,7 +167,11 @@ fn query_window_ranges(sample_len: usize, sample_rate: u32) -> Vec<(usize, usize
     }
     if ranges.len() > QUERY_MAX_WINDOWS {
         let stride = (ranges.len() as f32 / QUERY_MAX_WINDOWS as f32).ceil() as usize;
-        ranges = ranges.into_iter().step_by(stride).take(QUERY_MAX_WINDOWS).collect();
+        ranges = ranges
+            .into_iter()
+            .step_by(stride)
+            .take(QUERY_MAX_WINDOWS)
+            .collect();
     }
     ranges
 }
@@ -219,7 +223,10 @@ fn clap_model_path() -> Result<PathBuf, String> {
 
 fn onnx_runtime_path() -> Result<PathBuf, String> {
     let root = crate::app_dirs::app_root_dir().map_err(|err| err.to_string())?;
-    Ok(root.join("models").join("onnxruntime").join(onnx_runtime_filename()))
+    Ok(root
+        .join("models")
+        .join("onnxruntime")
+        .join(onnx_runtime_filename()))
 }
 
 fn onnx_runtime_filename() -> &'static str {
@@ -251,9 +258,9 @@ fn extract_embedding(outputs: &SessionOutputs) -> Result<Vec<f32>, String> {
         if shape.is_empty() || *shape.last().unwrap_or(&0) != EMBEDDING_DIM {
             continue;
         }
-        let flat = array.as_slice().ok_or_else(|| {
-            "ONNX output tensor not contiguous".to_string()
-        })?;
+        let flat = array
+            .as_slice()
+            .ok_or_else(|| "ONNX output tensor not contiguous".to_string())?;
         if flat.len() < EMBEDDING_DIM {
             continue;
         }
@@ -312,16 +319,14 @@ mod tests {
         let mut tone = Vec::with_capacity(tone_len);
         for i in 0..tone_len {
             let t = i as f32 / golden.sample_rate.max(1) as f32;
-            let sample =
-                (2.0 * std::f32::consts::PI * golden.tone_hz * t).sin() * golden.tone_amp;
+            let sample = (2.0 * std::f32::consts::PI * golden.tone_hz * t).sin() * golden.tone_amp;
             tone.push(sample);
         }
         let target_len = (golden.sample_rate as f32 * golden.target_seconds).round() as usize;
         let mut padded = Vec::new();
         repeat_pad_into(&mut padded, &tone, target_len);
 
-        let embedding =
-            infer_embedding(&padded, golden.sample_rate).expect("rust embedding");
+        let embedding = infer_embedding(&padded, golden.sample_rate).expect("rust embedding");
         assert_eq!(embedding.len(), golden.embedding.len());
 
         let mut max_diff = 0.0_f32;

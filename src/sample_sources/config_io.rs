@@ -5,12 +5,7 @@ use serde::de::Error as SerdeDeError;
 use crate::app_dirs;
 
 use super::config_types::{
-    AnalysisSettings,
-    AppConfig,
-    AppSettings,
-    ConfigError,
-    InteractionOptions,
-    UpdateSettings,
+    AnalysisSettings, AppConfig, AppSettings, ConfigError, InteractionOptions, UpdateSettings,
 };
 
 /// Default filename used to store the app configuration.
@@ -198,15 +193,12 @@ fn map_app_dir_error(error: app_dirs::AppDirError) -> ConfigError {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::audio::AudioOutputConfig;
     use super::super::config_defaults::MAX_ANALYSIS_WORKER_COUNT;
     use super::super::config_types::{
-        AnalysisSettings,
-        FeatureFlags,
-        InteractionOptions,
-        UpdateSettings,
+        AnalysisSettings, FeatureFlags, InteractionOptions, UpdateSettings,
     };
+    use super::*;
+    use crate::audio::AudioOutputConfig;
     use crate::sample_sources::{Collection, SampleSource};
     use tempfile::tempdir;
 
@@ -354,7 +346,10 @@ analysis_worker_count = 999
             std::fs::write(&path, data).unwrap();
             let loaded = super::load_settings_from(&path).unwrap();
             assert!((loaded.volume - 1.0).abs() < f32::EPSILON);
-            assert_eq!(loaded.analysis.analysis_worker_count, MAX_ANALYSIS_WORKER_COUNT);
+            assert_eq!(
+                loaded.analysis.analysis_worker_count,
+                MAX_ANALYSIS_WORKER_COUNT
+            );
         });
     }
 }

@@ -135,8 +135,8 @@ fn clipboard_copy_label(paths: &[PathBuf]) -> String {
 mod tests {
     use super::*;
     use crate::app_dirs::ConfigBaseGuard;
-    use crate::egui_app::state::FocusContext;
     use crate::egui_app::controller::test_support::write_test_wav;
+    use crate::egui_app::state::FocusContext;
     use std::path::Path;
     use tempfile::tempdir;
 
@@ -168,9 +168,11 @@ mod tests {
         let paths = controller.clipboard_paths_for_copy().unwrap();
         assert_eq!(paths.len(), 1);
         assert!(paths[0].is_file());
-        assert!(paths[0]
-            .file_name()
-            .and_then(|n| n.to_str())
-            .is_some_and(|n| n.starts_with("clip_sel")));
+        assert!(
+            paths[0]
+                .file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n.starts_with("clip_sel"))
+        );
     }
 }

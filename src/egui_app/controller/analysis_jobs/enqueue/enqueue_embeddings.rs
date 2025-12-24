@@ -37,9 +37,8 @@ fn enqueue_embedding_backfill(
         return Ok((0, db::current_progress(&conn)?));
     }
 
-    let source_db =
-        crate::sample_sources::SourceDatabase::open(&request.source.root)
-            .map_err(|err| err.to_string())?;
+    let source_db = crate::sample_sources::SourceDatabase::open(&request.source.root)
+        .map_err(|err| err.to_string())?;
     let mut entries = source_db.list_files().map_err(|err| err.to_string())?;
     entries.retain(|entry| !entry.missing);
     if entries.is_empty() {
@@ -71,11 +70,16 @@ fn enqueue_embedding_backfill(
     let mut jobs = Vec::new();
     for (idx, chunk) in sample_ids.chunks(BATCH_SIZE).enumerate() {
         let job_id = format!("embed_backfill::{}::{}", request.source.id.as_str(), idx);
-        let payload =
-            serde_json::to_string(chunk).map_err(|err| format!("Encode backfill payload: {err}"))?;
+        let payload = serde_json::to_string(chunk)
+            .map_err(|err| format!("Encode backfill payload: {err}"))?;
         jobs.push((job_id, payload));
     }
-    let inserted = db::enqueue_jobs(&mut conn, &jobs, db::EMBEDDING_BACKFILL_JOB_TYPE, created_at)?;
+    let inserted = db::enqueue_jobs(
+        &mut conn,
+        &jobs,
+        db::EMBEDDING_BACKFILL_JOB_TYPE,
+        created_at,
+    )?;
     let progress = db::current_progress(&conn)?;
     Ok((inserted, progress))
 }

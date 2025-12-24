@@ -17,7 +17,8 @@ pub(super) fn handle_analysis_message(
             }
             if progress.pending == 0 && progress.running == 0 {
                 if let Some(source_id) = controller.selection_state.ctx.selected_source.clone()
-                    && let Ok(failures) = super::analysis_jobs::failed_samples_for_source(&source_id)
+                    && let Ok(failures) =
+                        super::analysis_jobs::failed_samples_for_source(&source_id)
                 {
                     controller
                         .ui_cache
@@ -65,10 +66,7 @@ pub(super) fn handle_analysis_message(
         AnalysisJobMessage::EnqueueFinished { inserted, progress } => {
             controller.runtime.analysis.resume();
             if inserted > 0 {
-                controller.set_status(
-                    format!("Queued {inserted} analysis jobs"),
-                    StatusTone::Info,
-                );
+                controller.set_status(format!("Queued {inserted} analysis jobs"), StatusTone::Info);
             }
             if let Some(source_id) = controller.selection_state.ctx.selected_source.clone() {
                 controller.ui_cache.browser.features.remove(&source_id);
@@ -80,10 +78,7 @@ pub(super) fn handle_analysis_message(
                 .send(JobMessage::Analysis(AnalysisJobMessage::Progress(progress)));
         }
         AnalysisJobMessage::EnqueueFailed(err) => {
-            controller.set_status(
-                format!("Analysis enqueue failed: {err}"),
-                StatusTone::Error,
-            );
+            controller.set_status(format!("Analysis enqueue failed: {err}"), StatusTone::Error);
         }
         AnalysisJobMessage::EmbeddingBackfillEnqueueFinished { inserted, progress } => {
             controller.runtime.analysis.resume();

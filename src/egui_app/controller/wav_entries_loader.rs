@@ -11,24 +11,43 @@ pub(super) fn spawn_wav_loader() -> (Sender<WavLoadJob>, Receiver<WavLoadResult>
     thread::spawn(move || {
         while let Ok(job) = rx.recv() {
             let start = Instant::now();
-            let result = load_entries(&job);
+            let (result, total) = load_entries(&job);
             let _ = result_tx.send(WavLoadResult {
                 source_id: job.source_id.clone(),
                 result,
                 elapsed: start.elapsed(),
+                total,
+                page_index: 0,
             });
         }
     });
     (tx, result_rx)
 }
 
-pub(super) fn load_entries(job: &WavLoadJob) -> Result<Vec<WavEntry>, LoadEntriesError> {
-    let db = SourceDatabase::open(&job.root).map_err(LoadEntriesError::Db)?;
-    let mut entries = db.list_files().map_err(LoadEntriesError::Db)?;
+pub(super) fn load_entries(job: &WavLoadJob) -> (Result<Vec<WavEntry>, LoadEntriesError>, usize) {
+    let db = match SourceDatabase::open(&job.root) {
+        Ok(db) => db,
+        Err(err) => return (Err(LoadEntriesError::Db(err)), 0),
+    };
+    let mut total = match db.count_files() {
+        Ok(total) => total,
+        Err(err) => return (Err(LoadEntriesError::Db(err)), 0),
+    };
+    let mut entries = match db.list_files_page(job.page_size, 0) {
+        Ok(entries) => entries,
+        Err(err) => return (Err(LoadEntriesError::Db(err)), total),
+    };
     if entries.is_empty() {
         // New sources start empty; trigger a quick scan to populate before reporting.
         let _ = crate::sample_sources::scanner::scan_once(&db);
-        entries = db.list_files().map_err(LoadEntriesError::Db)?;
+        total = match db.count_files() {
+            Ok(total) => total,
+            Err(err) => return (Err(LoadEntriesError::Db(err)), total),
+        };
+        entries = match db.list_files_page(job.page_size, 0) {
+            Ok(entries) => entries,
+            Err(err) => return (Err(LoadEntriesError::Db(err)), total),
+        };
     }
-    Ok(entries)
+    (Ok(entries), total)
 }

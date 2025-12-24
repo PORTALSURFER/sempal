@@ -25,7 +25,8 @@ impl EguiApp {
         }
         self.controller.tick_playhead();
         if !feedback_modal_open {
-            if let Some(pos) = ctx.input(|i| i.pointer.hover_pos().or_else(|| i.pointer.interact_pos()))
+            if let Some(pos) =
+                ctx.input(|i| i.pointer.hover_pos().or_else(|| i.pointer.interact_pos()))
             {
                 let shift_down = ctx.input(|i| i.modifiers.shift);
                 self.controller.refresh_drag_position(pos, shift_down);

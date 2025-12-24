@@ -39,11 +39,14 @@ fn failed_samples_for_source_conn(
         .map_err(|err| format!("Failed to query failed analysis jobs: {err}"))?;
     let mut out = HashMap::new();
     let rows = stmt
-        .query_map(params![prefix, 1i64, embedding_model, analysis_version], |row| {
-            let sample_id: String = row.get(0)?;
-            let last_error: Option<String> = row.get(1)?;
-            Ok((sample_id, last_error))
-        })
+        .query_map(
+            params![prefix, 1i64, embedding_model, analysis_version],
+            |row| {
+                let sample_id: String = row.get(0)?;
+                let last_error: Option<String> = row.get(1)?;
+                Ok((sample_id, last_error))
+            },
+        )
         .map_err(|err| format!("Failed to query failed analysis jobs: {err}"))?;
     for row in rows {
         let (sample_id, last_error) =

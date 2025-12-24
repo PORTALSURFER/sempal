@@ -13,18 +13,10 @@ pub(super) fn handle_scan_progress(
         }
         _ => format!("Scanned {completed} file(s)"),
     };
-    progress::update_progress_detail(
-        controller,
-        ProgressTaskKind::Scan,
-        completed,
-        Some(detail),
-    );
+    progress::update_progress_detail(controller, ProgressTaskKind::Scan, completed, Some(detail));
 }
 
-pub(super) fn handle_scan_finished(
-    controller: &mut EguiController,
-    result: ScanResult,
-) {
+pub(super) fn handle_scan_finished(controller: &mut EguiController, result: ScanResult) {
     controller.runtime.jobs.clear_scan();
     if controller.ui.progress.task == Some(ProgressTaskKind::Scan) {
         controller.clear_progress();

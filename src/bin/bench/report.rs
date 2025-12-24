@@ -12,7 +12,8 @@ pub(super) struct BenchReport {
     pub(super) system: SystemInfo,
     pub(super) analysis: Option<super::analysis_throughput::AnalysisBenchResult>,
     pub(super) similarity: Option<super::similarity_latency::SimilarityBenchResult>,
-    pub(super) feature_blob_decode: Option<super::feature_blob_decode::FeatureBlobDecodeBenchResult>,
+    pub(super) feature_blob_decode:
+        Option<super::feature_blob_decode::FeatureBlobDecodeBenchResult>,
 }
 
 impl BenchReport {

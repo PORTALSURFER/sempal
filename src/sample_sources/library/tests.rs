@@ -45,7 +45,11 @@ fn database_lives_under_app_root() {
             .path()
             .join(app_dirs::APP_DIR_NAME)
             .join(LIBRARY_DB_FILE_NAME);
-        assert!(db_path.exists(), "expected database at {}", db_path.display());
+        assert!(
+            db_path.exists(),
+            "expected database at {}",
+            db_path.display()
+        );
         let metadata = fs::metadata(db_path).unwrap();
         assert!(metadata.is_file());
     });
@@ -123,10 +127,14 @@ fn applies_workload_pragmas_and_indices() {
         let _ = load().unwrap();
         let conn = Connection::open(database_path().unwrap()).unwrap();
 
-        let journal_mode: String = conn.query_row("PRAGMA journal_mode", [], |row| row.get(0)).unwrap();
+        let journal_mode: String = conn
+            .query_row("PRAGMA journal_mode", [], |row| row.get(0))
+            .unwrap();
         assert_eq!(journal_mode.to_ascii_lowercase(), "wal");
 
-        let synchronous: i64 = conn.query_row("PRAGMA synchronous", [], |row| row.get(0)).unwrap();
+        let synchronous: i64 = conn
+            .query_row("PRAGMA synchronous", [], |row| row.get(0))
+            .unwrap();
         assert_eq!(synchronous, 2, "expected PRAGMA synchronous=NORMAL (2)");
 
         let busy_timeout: i64 = conn
@@ -165,7 +173,9 @@ fn reuses_known_source_id_for_same_root() {
         })
         .unwrap();
 
-        let reused = lookup_source_id_for_root(&root).unwrap().expect("expected mapping");
+        let reused = lookup_source_id_for_root(&root)
+            .unwrap()
+            .expect("expected mapping");
         assert_eq!(reused.as_str(), id.as_str());
     });
 }

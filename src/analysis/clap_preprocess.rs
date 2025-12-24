@@ -57,10 +57,7 @@ impl ClapMelBank {
 }
 
 /// Compute log-mel frames using CLAP defaults (natural log with epsilon).
-pub(crate) fn log_mel_frames(
-    samples: &[f32],
-    sample_rate: u32,
-) -> Result<Vec<Vec<f32>>, String> {
+pub(crate) fn log_mel_frames(samples: &[f32], sample_rate: u32) -> Result<Vec<Vec<f32>>, String> {
     let frames = stft_power_frames(samples, CLAP_STFT_N_FFT, CLAP_STFT_HOP)?;
     let mel_bank = ClapMelBank::new(sample_rate, CLAP_STFT_N_FFT);
     let mut out = Vec::with_capacity(frames.len());
@@ -139,11 +136,7 @@ fn log_mel(value: f32) -> f32 {
     const EPS: f32 = 1e-10;
     let v = value.max(EPS);
     let out = v.ln();
-    if out.is_finite() {
-        out
-    } else {
-        0.0
-    }
+    if out.is_finite() { out } else { 0.0 }
 }
 
 fn mel_bins(
@@ -313,8 +306,7 @@ mod tests {
         let mut tone = Vec::with_capacity(tone_len);
         for i in 0..tone_len {
             let t = i as f32 / golden.sample_rate.max(1) as f32;
-            let sample =
-                (2.0 * std::f32::consts::PI * golden.tone_hz * t).sin() * golden.tone_amp;
+            let sample = (2.0 * std::f32::consts::PI * golden.tone_hz * t).sin() * golden.tone_amp;
             tone.push(sample);
         }
         let target_len = (golden.sample_rate as f32 * golden.target_seconds).round() as usize;

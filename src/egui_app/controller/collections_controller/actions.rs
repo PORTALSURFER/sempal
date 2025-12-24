@@ -314,22 +314,28 @@ impl CollectionsController<'_> {
     }
 
     pub(super) fn extend_collection_sample_selection_to_row(&mut self, row: usize) {
-        self.apply_collection_sample_selection(row, CollectionSelectionAction::Extend { additive: false });
+        self.apply_collection_sample_selection(
+            row,
+            CollectionSelectionAction::Extend { additive: false },
+        );
     }
 
     pub(super) fn add_range_collection_sample_selection(&mut self, row: usize) {
-        self.apply_collection_sample_selection(row, CollectionSelectionAction::Extend { additive: true });
+        self.apply_collection_sample_selection(
+            row,
+            CollectionSelectionAction::Extend { additive: true },
+        );
     }
 
     fn collection_path_for_row(&self, row: usize) -> Option<PathBuf> {
-        self.ui.collections.samples.get(row).map(|sample| sample.path.clone())
+        self.ui
+            .collections
+            .samples
+            .get(row)
+            .map(|sample| sample.path.clone())
     }
 
-    fn apply_collection_sample_selection(
-        &mut self,
-        row: usize,
-        action: CollectionSelectionAction,
-    ) {
+    fn apply_collection_sample_selection(&mut self, row: usize, action: CollectionSelectionAction) {
         let Some(path) = self.collection_path_for_row(row) else {
             return;
         };
@@ -385,7 +391,12 @@ impl CollectionsController<'_> {
                 }
                 for index in start..=end {
                     if let Some(path) = self.collection_path_for_row(index)
-                        && !self.ui.collections.selected_paths.iter().any(|p| p == &path)
+                        && !self
+                            .ui
+                            .collections
+                            .selected_paths
+                            .iter()
+                            .any(|p| p == &path)
                     {
                         self.ui.collections.selected_paths.push(path);
                     }
