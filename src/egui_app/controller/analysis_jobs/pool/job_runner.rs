@@ -9,6 +9,7 @@ use tracing::warn;
 pub(super) fn run_job(
     conn: &rusqlite::Connection,
     job: &db::ClaimedJob,
+    use_cache: bool,
     max_analysis_duration_seconds: f32,
     analysis_sample_rate: u32,
     analysis_version: &str,
@@ -17,12 +18,13 @@ pub(super) fn run_job(
         db::ANALYZE_SAMPLE_JOB_TYPE => run_analysis_job(
             conn,
             job,
+            use_cache,
             max_analysis_duration_seconds,
             analysis_sample_rate,
             analysis_version,
         ),
         db::EMBEDDING_BACKFILL_JOB_TYPE => {
-            run_embedding_backfill_job(conn, job, analysis_sample_rate, analysis_version)
+            run_embedding_backfill_job(conn, job, use_cache, analysis_sample_rate, analysis_version)
         }
         db::REBUILD_INDEX_JOB_TYPE => Err("Rebuild index job not implemented yet".to_string()),
         _ => Err(format!("Unknown job type: {}", job.job_type)),
@@ -44,6 +46,7 @@ struct EmbeddingResult {
 fn run_embedding_backfill_job(
     conn: &rusqlite::Connection,
     job: &db::ClaimedJob,
+    use_cache: bool,
     analysis_sample_rate: u32,
     analysis_version: &str,
 ) -> Result<(), String> {
@@ -72,26 +75,28 @@ fn run_embedding_backfill_job(
         let Some(content_hash) = db::sample_content_hash(conn, &sample_id)? else {
             continue;
         };
-        if let Some(cached) = db::cached_embedding_by_hash(
-            conn,
-            &content_hash,
-            analysis_version,
-            crate::analysis::embedding::EMBEDDING_MODEL_ID,
-        )? {
-            if let Ok(vec) = crate::analysis::decode_f32_le_blob(&cached.vec_blob) {
-                if vec.len() == crate::analysis::embedding::EMBEDDING_DIM {
-                    db::upsert_embedding(
-                        conn,
-                        &sample_id,
-                        &cached.model_id,
-                        cached.dim,
-                        &cached.dtype,
-                        cached.l2_normed,
-                        &cached.vec_blob,
-                        cached.created_at,
-                    )?;
-                    crate::analysis::ann_index::upsert_embedding(conn, &sample_id, &vec)?;
-                    continue;
+        if use_cache {
+            if let Some(cached) = db::cached_embedding_by_hash(
+                conn,
+                &content_hash,
+                analysis_version,
+                crate::analysis::embedding::EMBEDDING_MODEL_ID,
+            )? {
+                if let Ok(vec) = crate::analysis::decode_f32_le_blob(&cached.vec_blob) {
+                    if vec.len() == crate::analysis::embedding::EMBEDDING_DIM {
+                        db::upsert_embedding(
+                            conn,
+                            &sample_id,
+                            &cached.model_id,
+                            cached.dim,
+                            &cached.dtype,
+                            cached.l2_normed,
+                            &cached.vec_blob,
+                            cached.created_at,
+                        )?;
+                        crate::analysis::ann_index::upsert_embedding(conn, &sample_id, &vec)?;
+                        continue;
+                    }
                 }
             }
         }
@@ -270,6 +275,7 @@ fn run_embedding_backfill_job(
 fn run_analysis_job(
     conn: &rusqlite::Connection,
     job: &db::ClaimedJob,
+    use_cache: bool,
     max_analysis_duration_seconds: f32,
     analysis_sample_rate: u32,
     analysis_version: &str,
@@ -282,62 +288,64 @@ fn run_analysis_job(
     if current_hash.as_deref() != Some(content_hash) {
         return Ok(());
     }
-    let cached_features = db::cached_features_by_hash(
-        conn,
-        content_hash,
-        analysis_version,
-        crate::analysis::vector::FEATURE_VERSION_V1,
-    )?;
-    let cached_embedding = db::cached_embedding_by_hash(
-        conn,
-        content_hash,
-        analysis_version,
-        crate::analysis::embedding::EMBEDDING_MODEL_ID,
-    )?;
-    if let (Some(features), Some(embedding)) = (&cached_features, &cached_embedding) {
-        if let Ok(vec) = crate::analysis::decode_f32_le_blob(&embedding.vec_blob) {
-            if vec.len() == crate::analysis::embedding::EMBEDDING_DIM {
-                db::update_analysis_metadata(
-                    conn,
-                    &job.sample_id,
-                    Some(content_hash),
-                    features.duration_seconds,
-                    features.sr_used,
-                    analysis_version,
-                )?;
-                db::upsert_analysis_features(
-                    conn,
-                    &job.sample_id,
-                    &features.vec_blob,
-                    features.feat_version,
-                    features.computed_at,
-                )?;
-                db::upsert_embedding(
-                    conn,
-                    &job.sample_id,
-                    &embedding.model_id,
-                    embedding.dim,
-                    &embedding.dtype,
-                    embedding.l2_normed,
-                    &embedding.vec_blob,
-                    embedding.created_at,
-                )?;
-                crate::analysis::ann_index::upsert_embedding(conn, &job.sample_id, &vec)?;
-                return Ok(());
+    if use_cache {
+        let cached_features = db::cached_features_by_hash(
+            conn,
+            content_hash,
+            analysis_version,
+            crate::analysis::vector::FEATURE_VERSION_V1,
+        )?;
+        let cached_embedding = db::cached_embedding_by_hash(
+            conn,
+            content_hash,
+            analysis_version,
+            crate::analysis::embedding::EMBEDDING_MODEL_ID,
+        )?;
+        if let (Some(features), Some(embedding)) = (&cached_features, &cached_embedding) {
+            if let Ok(vec) = crate::analysis::decode_f32_le_blob(&embedding.vec_blob) {
+                if vec.len() == crate::analysis::embedding::EMBEDDING_DIM {
+                    db::update_analysis_metadata(
+                        conn,
+                        &job.sample_id,
+                        Some(content_hash),
+                        features.duration_seconds,
+                        features.sr_used,
+                        analysis_version,
+                    )?;
+                    db::upsert_analysis_features(
+                        conn,
+                        &job.sample_id,
+                        &features.vec_blob,
+                        features.feat_version,
+                        features.computed_at,
+                    )?;
+                    db::upsert_embedding(
+                        conn,
+                        &job.sample_id,
+                        &embedding.model_id,
+                        embedding.dim,
+                        &embedding.dtype,
+                        embedding.l2_normed,
+                        &embedding.vec_blob,
+                        embedding.created_at,
+                    )?;
+                    crate::analysis::ann_index::upsert_embedding(conn, &job.sample_id, &vec)?;
+                    return Ok(());
+                }
             }
         }
-    }
-    if let Some(embedding) = cached_embedding {
-        db::upsert_embedding(
-            conn,
-            &job.sample_id,
-            &embedding.model_id,
-            embedding.dim,
-            &embedding.dtype,
-            embedding.l2_normed,
-            &embedding.vec_blob,
-            embedding.created_at,
-        )?;
+        if let Some(embedding) = cached_embedding {
+            db::upsert_embedding(
+                conn,
+                &job.sample_id,
+                &embedding.model_id,
+                embedding.dim,
+                &embedding.dtype,
+                embedding.l2_normed,
+                &embedding.vec_blob,
+                embedding.created_at,
+            )?;
+        }
     }
 
     let (_source_id, relative_path) = db::parse_sample_id(&job.sample_id)?;
@@ -373,26 +381,49 @@ fn run_analysis_job(
         analysis_sample_rate,
         decode_limit_seconds,
     )?;
-    run_analysis_job_with_decoded(conn, job, decoded, analysis_version)
+    run_analysis_job_with_decoded(conn, job, decoded, use_cache, analysis_version)
 }
 
 pub(super) fn run_analysis_job_with_decoded(
     conn: &rusqlite::Connection,
     job: &db::ClaimedJob,
     decoded: crate::analysis::audio::AnalysisAudio,
+    use_cache: bool,
     analysis_version: &str,
 ) -> Result<(), String> {
     let content_hash = job
         .content_hash
         .as_deref()
         .ok_or_else(|| format!("Missing content_hash for analysis job {}", job.sample_id))?;
-    let embedding = if let Some(cached) = load_embedding_vec_optional(
-        conn,
-        &job.sample_id,
-        crate::analysis::embedding::EMBEDDING_MODEL_ID,
-        crate::analysis::embedding::EMBEDDING_DIM,
-    )? {
-        cached
+    let embedding = if use_cache {
+        if let Some(cached) = load_embedding_vec_optional(
+            conn,
+            &job.sample_id,
+            crate::analysis::embedding::EMBEDDING_MODEL_ID,
+            crate::analysis::embedding::EMBEDDING_DIM,
+        )? {
+            cached
+        } else {
+            let processed = crate::analysis::audio::preprocess_mono_for_embedding(
+                &decoded.mono,
+                decoded.sample_rate_used,
+            );
+            let embedding =
+                crate::analysis::embedding::infer_embedding(&processed, decoded.sample_rate_used)?;
+            let embedding_blob = crate::analysis::vector::encode_f32_le_blob(&embedding);
+            let created_at = now_epoch_seconds();
+            db::upsert_embedding(
+                conn,
+                &job.sample_id,
+                crate::analysis::embedding::EMBEDDING_MODEL_ID,
+                crate::analysis::embedding::EMBEDDING_DIM as i64,
+                crate::analysis::embedding::EMBEDDING_DTYPE_F32,
+                true,
+                &embedding_blob,
+                created_at,
+            )?;
+            embedding
+        }
     } else {
         let processed = crate::analysis::audio::preprocess_mono_for_embedding(
             &decoded.mono,

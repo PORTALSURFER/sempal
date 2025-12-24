@@ -10,6 +10,7 @@ struct Options {
     duration_cap_seconds: Option<f32>,
     worker_count: Option<u32>,
     skip_finalize: bool,
+    analysis_full: bool,
     poll_ms: u64,
 }
 
@@ -46,12 +47,15 @@ fn main() {
 
     let normalized = sempal::sample_sources::config::normalize_path(&opts.source);
     if !controller.select_source_by_root(&normalized) {
+        if opts.analysis_full {
+            controller.set_similarity_prep_force_full_analysis_next(true);
+        }
         if let Err(err) = controller.add_source_from_path(normalized.clone()) {
             eprintln!("Failed to add source: {err}");
             std::process::exit(1);
         }
     } else {
-        controller.prepare_similarity_for_selected_source();
+        controller.prepare_similarity_for_selected_source_with_options(opts.analysis_full);
     }
 
     let started = Instant::now();
@@ -91,6 +95,7 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
     let mut duration_cap_seconds = None;
     let mut worker_count = None;
     let mut skip_finalize = false;
+    let mut analysis_full = false;
     let mut poll_ms = 25_u64;
 
     let mut idx = 0usize;
@@ -133,6 +138,9 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
             "--skip-finalize" => {
                 skip_finalize = true;
             }
+            "--analysis-full" => {
+                analysis_full = true;
+            }
             "--poll-ms" => {
                 idx += 1;
                 let value = args
@@ -156,6 +164,7 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
         duration_cap_seconds,
         worker_count,
         skip_finalize,
+        analysis_full,
         poll_ms,
     })
 }
@@ -186,6 +195,7 @@ Options:\n\
   --fast-sample-rate <hz>     Sample rate for fast mode\n\
   --duration-cap-seconds <s>  Skip analysis beyond this duration\n\
   --analysis-workers <n>      Override analysis worker count\n\
+  --analysis-full             Force full analysis even when cached\n\
   --skip-finalize             Exit after analysis before UMAP/cluster finalize\n\
   --poll-ms <n>               Poll interval (default: 25)\n\
   -h, --help                  Show this help\n"

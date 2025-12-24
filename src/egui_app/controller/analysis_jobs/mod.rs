@@ -12,6 +12,7 @@ pub(in crate::egui_app::controller) use db::{build_sample_id, parse_sample_id};
 pub(super) use enqueue::enqueue_jobs_for_embedding_backfill;
 pub(in crate::egui_app::controller) use enqueue::enqueue_jobs_for_source;
 pub(in crate::egui_app::controller) use enqueue::enqueue_jobs_for_source_backfill;
+pub(in crate::egui_app::controller) use enqueue::enqueue_jobs_for_source_backfill_full;
 pub(in crate::egui_app::controller) use enqueue::enqueue_jobs_for_source_missing_features;
 pub(super) use failures::failed_samples_for_source;
 pub(super) use pool::AnalysisWorkerPool;

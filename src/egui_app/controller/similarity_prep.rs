@@ -9,6 +9,15 @@ pub(super) const DEFAULT_CLUSTER_MIN_SIZE: usize = 10;
 
 impl EguiController {
     pub fn prepare_similarity_for_selected_source(&mut self) {
+        let force_full_analysis = self.runtime.similarity_prep_force_full_analysis_next;
+        self.runtime.similarity_prep_force_full_analysis_next = false;
+        self.prepare_similarity_for_selected_source_with_options(force_full_analysis);
+    }
+
+    pub fn prepare_similarity_for_selected_source_with_options(
+        &mut self,
+        force_full_analysis: bool,
+    ) {
         if self.runtime.similarity_prep.is_some() {
             self.refresh_similarity_prep_progress();
             self.set_status_message(StatusMessage::SimilarityPrepAlreadyRunning);
@@ -42,20 +51,22 @@ impl EguiController {
             stage,
             umap_version: self.ui.map.umap_version.clone(),
             scan_completed_at,
-            skip_backfill: skip_scan && !needs_embeddings,
+            skip_backfill: skip_scan && !needs_embeddings && !force_full_analysis,
+            force_full_analysis,
         });
         self.apply_similarity_prep_duration_cap();
         self.apply_similarity_prep_fast_mode();
+        self.apply_similarity_prep_full_analysis(force_full_analysis);
         self.apply_similarity_prep_worker_boost();
         self.set_status_message(StatusMessage::PreparingSimilarity {
             source: source.root.display().to_string(),
         });
         self.show_similarity_prep_progress(0, false);
         if skip_scan {
-            if needs_embeddings {
+            if needs_embeddings || force_full_analysis {
                 self.ensure_similarity_prep_progress(0, true);
                 self.set_similarity_embedding_detail();
-                self.enqueue_similarity_backfill(source);
+                self.enqueue_similarity_backfill(source, force_full_analysis);
             } else {
                 self.set_similarity_analysis_detail();
                 self.refresh_similarity_prep_progress();
@@ -64,6 +75,10 @@ impl EguiController {
             self.set_similarity_scan_detail();
             self.request_hard_sync();
         }
+    }
+
+    pub fn set_similarity_prep_force_full_analysis_next(&mut self, enabled: bool) {
+        self.runtime.similarity_prep_force_full_analysis_next = enabled;
     }
 
     pub fn similarity_prep_in_progress(&self) -> bool {
@@ -114,15 +129,18 @@ impl EguiController {
         }
         if let Some(source) = self.find_source_by_id(source_id) {
             let scan_completed_at = self.read_source_scan_timestamp(&source);
-            if let Some(state) = self.runtime.similarity_prep.as_mut() {
+            let force_full = if let Some(state) = self.runtime.similarity_prep.as_mut() {
                 state.stage = SimilarityPrepStage::AwaitEmbeddings;
                 state.scan_completed_at = scan_completed_at;
-                state.skip_backfill = !scan_changed;
-            }
-            if scan_changed {
+                state.skip_backfill = !scan_changed && !state.force_full_analysis;
+                state.force_full_analysis
+            } else {
+                false
+            };
+            if scan_changed || force_full {
                 self.ensure_similarity_prep_progress(0, true);
                 self.set_similarity_embedding_detail();
-                self.enqueue_similarity_backfill(source);
+                self.enqueue_similarity_backfill(source, force_full);
             } else {
                 self.refresh_similarity_prep_progress();
             }
@@ -159,6 +177,7 @@ impl EguiController {
         }
         self.restore_similarity_prep_duration_cap();
         self.restore_similarity_prep_fast_mode();
+        self.restore_similarity_prep_full_analysis();
         self.restore_similarity_prep_worker_count();
         if self.ui.progress.task == Some(ProgressTaskKind::Analysis) {
             self.clear_progress();
@@ -196,6 +215,7 @@ impl EguiController {
         self.runtime.similarity_prep = None;
         self.restore_similarity_prep_duration_cap();
         self.restore_similarity_prep_fast_mode();
+        self.restore_similarity_prep_full_analysis();
         self.restore_similarity_prep_worker_count();
         if self.ui.progress.task == Some(ProgressTaskKind::Analysis) {
             self.clear_progress();
@@ -278,6 +298,17 @@ impl EguiController {
         self.runtime.analysis.set_analysis_version_override(None);
     }
 
+    fn apply_similarity_prep_full_analysis(&mut self, force_full_analysis: bool) {
+        if !force_full_analysis {
+            return;
+        }
+        self.runtime.analysis.set_analysis_cache_enabled(false);
+    }
+
+    fn restore_similarity_prep_full_analysis(&mut self) {
+        self.runtime.analysis.set_analysis_cache_enabled(true);
+    }
+
     fn apply_similarity_prep_worker_boost(&mut self) {
         if self.settings.analysis.analysis_worker_count != 0 {
             return;
@@ -298,10 +329,14 @@ impl EguiController {
             .set_worker_count(self.settings.analysis.analysis_worker_count);
     }
 
-    fn enqueue_similarity_backfill(&mut self, source: SampleSource) {
+    fn enqueue_similarity_backfill(&mut self, source: SampleSource, force_full_analysis: bool) {
         let tx = self.runtime.jobs.message_sender();
         thread::spawn(move || {
-            let analysis_result = analysis_jobs::enqueue_jobs_for_source_backfill(&source);
+            let analysis_result = if force_full_analysis {
+                analysis_jobs::enqueue_jobs_for_source_backfill_full(&source)
+            } else {
+                analysis_jobs::enqueue_jobs_for_source_backfill(&source)
+            };
             match analysis_result {
                 Ok((inserted, progress)) => {
                     if inserted > 0 {

@@ -154,6 +154,7 @@ pub(super) struct ControllerRuntimeState {
     pub(super) analysis: super::analysis_jobs::AnalysisWorkerPool,
     pub(super) performance: PerformanceGovernorState,
     pub(super) similarity_prep: Option<SimilarityPrepState>,
+    pub(super) similarity_prep_force_full_analysis_next: bool,
     #[cfg(test)]
     pub(super) progress_cancel_after: Option<usize>,
 }
@@ -173,6 +174,7 @@ pub(super) struct SimilarityPrepState {
     pub(super) umap_version: String,
     pub(super) scan_completed_at: Option<i64>,
     pub(super) skip_backfill: bool,
+    pub(super) force_full_analysis: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

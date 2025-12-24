@@ -16,6 +16,7 @@ pub(in crate::egui_app::controller) struct AnalysisWorkerPool {
     cancel: Arc<AtomicBool>,
     shutdown: Arc<AtomicBool>,
     pause_claiming: Arc<AtomicBool>,
+    use_cache: Arc<AtomicBool>,
     max_duration_bits: Arc<AtomicU32>,
     analysis_sample_rate: Arc<AtomicU32>,
     analysis_version_override: Arc<RwLock<Option<String>>>,
@@ -29,6 +30,7 @@ impl AnalysisWorkerPool {
             cancel: Arc::new(AtomicBool::new(false)),
             shutdown: Arc::new(AtomicBool::new(false)),
             pause_claiming: Arc::new(AtomicBool::new(false)),
+            use_cache: Arc::new(AtomicBool::new(true)),
             max_duration_bits: Arc::new(AtomicU32::new(30.0f32.to_bits())),
             analysis_sample_rate: Arc::new(AtomicU32::new(
                 crate::analysis::audio::ANALYSIS_SAMPLE_RATE,
@@ -52,6 +54,10 @@ impl AnalysisWorkerPool {
     pub(in crate::egui_app::controller) fn set_analysis_sample_rate(&self, value: u32) {
         let clamped = value.max(1);
         self.analysis_sample_rate.store(clamped, Ordering::Relaxed);
+    }
+
+    pub(in crate::egui_app::controller) fn set_analysis_cache_enabled(&self, enabled: bool) {
+        self.use_cache.store(enabled, Ordering::Relaxed);
     }
 
     pub(in crate::egui_app::controller) fn set_analysis_version_override(
@@ -104,6 +110,7 @@ impl AnalysisWorkerPool {
                     queue.clone(),
                     self.cancel.clone(),
                     self.shutdown.clone(),
+                    self.use_cache.clone(),
                     self.max_duration_bits.clone(),
                     self.analysis_sample_rate.clone(),
                     self.analysis_version_override.clone(),

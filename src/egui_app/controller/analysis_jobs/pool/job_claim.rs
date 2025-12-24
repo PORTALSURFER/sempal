@@ -203,6 +203,7 @@ pub(super) fn spawn_compute_worker(
     decode_queue: Arc<DecodedQueue>,
     cancel: Arc<AtomicBool>,
     shutdown: Arc<AtomicBool>,
+    use_cache: Arc<AtomicBool>,
     max_duration_bits: Arc<AtomicU32>,
     analysis_sample_rate: Arc<AtomicU32>,
     analysis_version_override: Arc<std::sync::RwLock<Option<String>>>,
@@ -224,6 +225,7 @@ pub(super) fn spawn_compute_worker(
             let max_analysis_duration_seconds =
                 f32::from_bits(max_duration_bits.load(Ordering::Relaxed));
             let analysis_sample_rate = analysis_sample_rate.load(Ordering::Relaxed).max(1);
+            let use_cache = use_cache.load(Ordering::Relaxed);
             let analysis_version = analysis_version_override
                 .read()
                 .ok()
@@ -247,6 +249,7 @@ pub(super) fn spawn_compute_worker(
                         conn,
                         &work.job,
                         decoded,
+                        use_cache,
                         &analysis_version,
                     ),
                     DecodeOutcome::Skipped {
@@ -266,6 +269,7 @@ pub(super) fn spawn_compute_worker(
                 _ => run_job(
                     conn,
                     &work.job,
+                    use_cache,
                     max_analysis_duration_seconds,
                     analysis_sample_rate,
                     &analysis_version,

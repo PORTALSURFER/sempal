@@ -78,11 +78,19 @@ pub(in crate::egui_app::controller) fn enqueue_jobs_for_source_backfill(
     source: &crate::sample_sources::SampleSource,
 ) -> Result<(usize, AnalysisProgress), String> {
     let request = EnqueueSourceRequest { source };
-    enqueue_source_backfill(request)
+    enqueue_source_backfill(request, false)
+}
+
+pub(in crate::egui_app::controller) fn enqueue_jobs_for_source_backfill_full(
+    source: &crate::sample_sources::SampleSource,
+) -> Result<(usize, AnalysisProgress), String> {
+    let request = EnqueueSourceRequest { source };
+    enqueue_source_backfill(request, true)
 }
 
 fn enqueue_source_backfill(
     request: EnqueueSourceRequest<'_>,
+    force_full: bool,
 ) -> Result<(usize, AnalysisProgress), String> {
     let mut conn = db::open_source_db(&request.source.root)?;
     let prefix = format!("{}::%", request.source.id.as_str());
@@ -131,7 +139,7 @@ fn enqueue_source_backfill(
     }
     stage_backfill_samples(&mut conn, &staged_samples)?;
     let (sample_metadata, jobs, invalidate) =
-        collect_backfill_updates(&mut conn, db::ANALYZE_SAMPLE_JOB_TYPE)?;
+        collect_backfill_updates(&mut conn, db::ANALYZE_SAMPLE_JOB_TYPE, force_full)?;
 
     if !invalidate.is_empty() {
         db::invalidate_analysis_artifacts(&mut conn, &invalidate)?;
@@ -200,7 +208,7 @@ fn enqueue_missing_features(
     }
     stage_backfill_samples(&mut conn, &staged_samples)?;
     let (sample_metadata, jobs, invalidate) =
-        collect_backfill_updates(&mut conn, db::ANALYZE_SAMPLE_JOB_TYPE)?;
+        collect_backfill_updates(&mut conn, db::ANALYZE_SAMPLE_JOB_TYPE, false)?;
     if !invalidate.is_empty() {
         db::invalidate_analysis_artifacts(&mut conn, &invalidate)?;
     }
@@ -254,7 +262,12 @@ fn stage_backfill_samples(
 fn collect_backfill_updates(
     conn: &mut rusqlite::Connection,
     job_type: &str,
+    force_full: bool,
 ) -> Result<(Vec<db::SampleMetadata>, Vec<(String, String)>, Vec<String>), String> {
+    if force_full {
+        let (sample_metadata, jobs) = fetch_force_backfill_jobs(conn, job_type)?;
+        return Ok((sample_metadata, jobs, Vec::new()));
+    }
     let current_version = crate::analysis::version::analysis_version();
     let invalidate = fetch_backfill_invalidations(conn, current_version)?;
     let (sample_metadata, jobs) = fetch_backfill_jobs(
@@ -264,6 +277,47 @@ fn collect_backfill_updates(
         crate::analysis::embedding::EMBEDDING_MODEL_ID,
     )?;
     Ok((sample_metadata, jobs, invalidate))
+}
+
+fn fetch_force_backfill_jobs(
+    conn: &mut rusqlite::Connection,
+    job_type: &str,
+) -> Result<(Vec<db::SampleMetadata>, Vec<(String, String)>), String> {
+    let mut sample_metadata = Vec::new();
+    let mut jobs = Vec::new();
+    let mut stmt = conn
+        .prepare(
+            "SELECT t.sample_id, t.content_hash, t.size, t.mtime_ns
+             FROM temp_backfill_samples t
+             LEFT JOIN analysis_jobs j ON j.sample_id = t.sample_id AND j.job_type = ?1
+             WHERE j.status IS NULL OR j.status NOT IN ('pending','running')",
+        )
+        .map_err(|err| format!("Prepare full backfill job query failed: {err}"))?;
+    let mut rows = stmt
+        .query(params![job_type])
+        .map_err(|err| format!("Query full backfill job rows failed: {err}"))?;
+    while let Some(row) = rows
+        .next()
+        .map_err(|err| format!("Query full backfill job rows failed: {err}"))?
+    {
+        let sample_id: String = row.get(0).map_err(|err| err.to_string())?;
+        let content_hash: String = row.get(1).map_err(|err| err.to_string())?;
+        if content_hash.trim().is_empty() {
+            continue;
+        }
+        let size: i64 = row.get(2).map_err(|err| err.to_string())?;
+        let size = u64::try_from(size)
+            .map_err(|_| "Sample size exceeds storage limits".to_string())?;
+        let mtime_ns: i64 = row.get(3).map_err(|err| err.to_string())?;
+        sample_metadata.push(db::SampleMetadata {
+            sample_id: sample_id.clone(),
+            content_hash: content_hash.clone(),
+            size,
+            mtime_ns,
+        });
+        jobs.push((sample_id, content_hash));
+    }
+    Ok((sample_metadata, jobs))
 }
 
 fn prepare_backfill_staging(conn: &mut rusqlite::Connection) -> Result<(), String> {
