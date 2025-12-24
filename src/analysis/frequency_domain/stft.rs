@@ -38,19 +38,24 @@ pub(super) fn compute_frames(
     let window = hann_window(frame_size);
     let plan = FftPlan::new(frame_size).expect("FFT plan must be valid");
     let mut mel_scratch = MelScratch::new(mel.mel_bands());
-    let mut mfcc_out = Vec::with_capacity(mel.dct_size());
     let mut complex = vec![Complex32::default(); frame_size];
-    let mut spectral = Vec::new();
-    let mut bands = Vec::new();
-    let mut mfcc = Vec::new();
+    let mut power = Vec::with_capacity(frame_size / 2 + 1);
+    let max_frames = if samples.len() <= frame_size {
+        1
+    } else {
+        ((samples.len().saturating_sub(frame_size)) / hop_size).saturating_add(1)
+    };
+    let mut spectral = Vec::with_capacity(max_frames);
+    let mut bands = Vec::with_capacity(max_frames);
+    let mut mfcc = Vec::with_capacity(max_frames);
     let mut start = 0usize;
     while start < samples.len() {
         if !process_frame(
             &mut complex,
+            &mut power,
             &window,
             &plan,
             &mut mel_scratch,
-            &mut mfcc_out,
             samples,
             start,
             sample_rate,
@@ -78,10 +83,10 @@ pub(super) fn compute_frames(
 
 fn process_frame(
     complex: &mut [Complex32],
+    power: &mut Vec<f32>,
     window: &[f32],
     plan: &FftPlan,
     mel_scratch: &mut MelScratch,
-    mfcc_out: &mut Vec<f32>,
     samples: &[f32],
     start: usize,
     sample_rate: u32,
@@ -95,11 +100,13 @@ fn process_frame(
     if fft_radix2_inplace_with_plan(complex, plan).is_err() {
         return false;
     }
-    let power = power_spectrum(complex);
-    spectral.push(spectral_from_power(&power, sample_rate, frame_size));
-    bands.push(bands_from_power(&power, sample_rate, frame_size));
-    mel.mfcc_from_power_into(&power, mel_scratch, mfcc_out);
-    mfcc.push(mfcc_out.clone());
+    power_spectrum_into(complex, power);
+    spectral.push(spectral_from_power(power, sample_rate, frame_size));
+    bands.push(bands_from_power(power, sample_rate, frame_size));
+    mfcc.push(Vec::with_capacity(mel.dct_size()));
+    if let Some(entry) = mfcc.last_mut() {
+        mel.mfcc_from_power_into(power, mel_scratch, entry);
+    }
     true
 }
 
@@ -143,28 +150,27 @@ fn sanitize(sample: f32) -> f32 {
     }
 }
 
-fn power_spectrum(fft: &[Complex32]) -> Vec<f32> {
+fn power_spectrum_into(fft: &[Complex32], power: &mut Vec<f32>) {
     let bins = fft.len() / 2 + 1;
+    power.resize(bins, 0.0);
     #[cfg(target_arch = "x86_64")]
     {
         if std::is_x86_feature_detected!("sse3") {
             // SAFETY: gated by runtime feature check.
-            return unsafe { power_spectrum_sse3(fft, bins) };
+            unsafe { power_spectrum_sse3_into(fft, bins, power) };
+            return;
         }
     }
-    let mut power = Vec::with_capacity(bins);
     for bin in 0..bins {
         let c = fft[bin];
-        power.push((c.re * c.re + c.im * c.im).max(0.0));
+        power[bin] = (c.re * c.re + c.im * c.im).max(0.0);
     }
-    power
 }
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "sse3")]
-unsafe fn power_spectrum_sse3(fft: &[Complex32], bins: usize) -> Vec<f32> {
+unsafe fn power_spectrum_sse3_into(fft: &[Complex32], bins: usize, power: &mut [f32]) {
     use std::arch::x86_64::*;
-    let mut power = vec![0.0_f32; bins];
     let ptr = fft.as_ptr() as *const f32;
     let mut bin = 0usize;
     while bin + 4 <= bins {
@@ -181,7 +187,6 @@ unsafe fn power_spectrum_sse3(fft: &[Complex32], bins: usize) -> Vec<f32> {
         let c = fft[i];
         power[i] = (c.re * c.re + c.im * c.im).max(0.0);
     }
-    power
 }
 
 fn spectral_from_power(power: &[f32], sample_rate: u32, fft_len: usize) -> SpectralFrame {
