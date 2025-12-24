@@ -94,4 +94,9 @@ impl EguiController {
     pub fn set_analysis_worker_allowed_sources(&mut self, sources: Option<Vec<SourceId>>) {
         self.runtime.analysis.set_allowed_sources(sources);
     }
+
+    pub fn set_analysis_worker_allowed_sources_to_selected(&mut self) {
+        let sources = self.current_source().map(|source| vec![source.id]);
+        self.set_analysis_worker_allowed_sources(sources);
+    }
 }

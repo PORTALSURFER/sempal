@@ -69,9 +69,7 @@ fn main() {
     } else {
         controller.prepare_similarity_for_selected_source_with_options(opts.analysis_full);
     }
-    if let Some(source) = controller.current_source() {
-        controller.set_analysis_worker_allowed_sources(Some(vec![source.id.clone()]));
-    }
+    controller.set_analysis_worker_allowed_sources_to_selected();
 
     let started = Instant::now();
     let mut last_dot = Instant::now();
