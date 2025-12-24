@@ -12,6 +12,9 @@ use std::sync::{
 use std::thread::{JoinHandle, sleep};
 use std::time::Duration;
 
+#[cfg(target_os = "windows")]
+use windows::Win32::System::Threading::{GetCurrentThread, SetThreadPriority, THREAD_PRIORITY_BELOW_NORMAL};
+
 #[cfg_attr(test, allow(dead_code))]
 pub(super) fn worker_count_with_override(override_count: u32) -> usize {
     if override_count >= 1 {
@@ -41,6 +44,7 @@ pub(super) fn spawn_worker(
     max_duration_bits: Arc<AtomicU32>,
 ) -> JoinHandle<()> {
     std::thread::spawn(move || {
+        lower_worker_priority();
         let db_path = match super::library_db_path() {
             Ok(path) => path,
             Err(_) => return,
@@ -93,6 +97,13 @@ pub(super) fn spawn_worker(
             }
         }
     })
+}
+
+fn lower_worker_priority() {
+    #[cfg(target_os = "windows")]
+    unsafe {
+        let _ = SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
+    }
 }
 
 fn panic_to_string(payload: Box<dyn std::any::Any + Send>) -> String {
