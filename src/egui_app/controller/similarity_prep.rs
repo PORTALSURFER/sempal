@@ -36,6 +36,8 @@ impl EguiController {
         self.set_status_message(StatusMessage::PreparingSimilarity {
             source: source.root.display().to_string(),
         });
+        self.show_similarity_prep_progress(0, false);
+        self.set_similarity_scan_detail();
         self.request_hard_sync();
     }
 
@@ -60,6 +62,8 @@ impl EguiController {
                 .as_mut()
                 .expect("checked")
                 .stage = SimilarityPrepStage::AwaitEmbeddings;
+            self.ensure_similarity_prep_progress(0, true);
+            self.set_similarity_embedding_detail();
             self.enqueue_similarity_backfill(source);
         }
     }
@@ -83,6 +87,7 @@ impl EguiController {
         };
         self.set_status_message(StatusMessage::FinalizingSimilarityPrep);
         self.show_similarity_finalize_progress();
+        self.set_similarity_finalize_detail();
         self.start_similarity_finalize(source_id, umap_version);
     }
 
@@ -211,12 +216,15 @@ impl EguiController {
         match state.stage {
             SimilarityPrepStage::AwaitScan => {
                 if self.runtime.jobs.scan_in_progress() {
+                    self.ensure_similarity_prep_progress(0, false);
+                    self.set_similarity_scan_detail();
                     return;
                 }
                 if self.ui.progress.visible {
                     return;
                 }
                 self.show_similarity_prep_progress(0, false);
+                self.set_similarity_scan_detail();
             }
             SimilarityPrepStage::AwaitEmbeddings => {
                 let progress = match analysis_jobs::current_progress() {
@@ -224,6 +232,7 @@ impl EguiController {
                     Err(_) => {
                         if !self.ui.progress.visible {
                             self.show_similarity_prep_progress(0, false);
+                            self.set_similarity_analysis_detail();
                         }
                         return;
                     }
@@ -240,7 +249,7 @@ impl EguiController {
                 let samples_completed = progress.samples_completed();
                 let samples_total = progress.samples_total;
                 let mut detail = format!(
-                    "Jobs {jobs_completed}/{jobs_total} • Samples {samples_completed}/{samples_total}"
+                    "Analyzing… Jobs {jobs_completed}/{jobs_total} • Samples {samples_completed}/{samples_total}"
                 );
                 if progress.failed > 0 {
                     detail.push_str(&format!(" • {} failed", progress.failed));
@@ -249,6 +258,7 @@ impl EguiController {
             }
             SimilarityPrepStage::Finalizing => {
                 self.ensure_similarity_finalize_progress();
+                self.set_similarity_finalize_detail();
             }
         }
     }

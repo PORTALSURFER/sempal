@@ -5,6 +5,10 @@ use crate::sample_sources::scanner::ScanMode;
 const SCAN_PROGRESS_DETAIL: &str = "Scanning audio files…";
 const SIMILARITY_PREP_LABEL: &str = "Preparing similarity search";
 const SIMILARITY_FINALIZE_LABEL: &str = "Finalizing similarity prep";
+const SIMILARITY_SCAN_DETAIL: &str = "Scanning source…";
+const SIMILARITY_ANALYSIS_DETAIL: &str = "Analyzing…";
+const SIMILARITY_EMBEDDING_DETAIL: &str = "Embedding backfill…";
+const SIMILARITY_FINALIZE_DETAIL: &str = "Finalizing…";
 const WAV_LOAD_LABEL: &str = "Loading samples";
 
 impl EguiController {
@@ -43,6 +47,22 @@ impl EguiController {
             total,
             cancelable,
         );
+    }
+
+    pub(super) fn set_similarity_scan_detail(&mut self) {
+        self.update_progress_detail(SIMILARITY_SCAN_DETAIL);
+    }
+
+    pub(super) fn set_similarity_embedding_detail(&mut self) {
+        self.update_progress_detail(SIMILARITY_EMBEDDING_DETAIL);
+    }
+
+    pub(super) fn set_similarity_analysis_detail(&mut self) {
+        self.update_progress_detail(SIMILARITY_ANALYSIS_DETAIL);
+    }
+
+    pub(super) fn set_similarity_finalize_detail(&mut self) {
+        self.update_progress_detail(SIMILARITY_FINALIZE_DETAIL);
     }
 
     pub(super) fn ensure_similarity_prep_progress(&mut self, total: usize, cancelable: bool) {
