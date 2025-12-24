@@ -120,4 +120,17 @@ impl SourceDatabase {
             .map_err(map_sql_error)?;
         Ok(value.map(super::SampleTag::from_i64))
     }
+
+    pub fn get_metadata(&self, key: &str) -> Result<Option<String>, SourceDbError> {
+        let value: Option<String> = self
+            .connection
+            .query_row(
+                "SELECT value FROM metadata WHERE key = ?1",
+                rusqlite::params![key],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(map_sql_error)?;
+        Ok(value)
+    }
 }

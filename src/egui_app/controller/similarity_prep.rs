@@ -28,18 +28,33 @@ impl EguiController {
             });
             return;
         };
+        let scan_completed_at = self.read_source_scan_timestamp(&source);
+        let prep_scan_at = self.read_source_prep_timestamp(&source);
+        let skip_scan = scan_completed_at.is_some() && scan_completed_at == prep_scan_at;
+        let stage = if skip_scan {
+            SimilarityPrepStage::AwaitEmbeddings
+        } else {
+            SimilarityPrepStage::AwaitScan
+        };
         self.runtime.similarity_prep = Some(SimilarityPrepState {
             source_id: source.id.clone(),
-            stage: SimilarityPrepStage::AwaitScan,
+            stage,
             umap_version: self.ui.map.umap_version.clone(),
+            scan_completed_at,
+            skip_backfill: skip_scan,
         });
         self.apply_similarity_prep_duration_cap();
         self.set_status_message(StatusMessage::PreparingSimilarity {
             source: source.root.display().to_string(),
         });
         self.show_similarity_prep_progress(0, false);
-        self.set_similarity_scan_detail();
-        self.request_hard_sync();
+        if skip_scan {
+            self.set_similarity_analysis_detail();
+            self.refresh_similarity_prep_progress();
+        } else {
+            self.set_similarity_scan_detail();
+            self.request_hard_sync();
+        }
     }
 
     pub(crate) fn similarity_prep_in_progress(&self) -> bool {
@@ -49,7 +64,11 @@ impl EguiController {
             || self.runtime.jobs.umap_cluster_build_in_progress()
     }
 
-    pub(super) fn handle_similarity_scan_finished(&mut self, source_id: &SourceId) {
+    pub(super) fn handle_similarity_scan_finished(
+        &mut self,
+        source_id: &SourceId,
+        scan_changed: bool,
+    ) {
         if !matches_similarity_stage(
             &self.runtime.similarity_prep,
             source_id,
@@ -58,14 +77,19 @@ impl EguiController {
             return;
         }
         if let Some(source) = self.find_source_by_id(source_id) {
-            self.runtime
-                .similarity_prep
-                .as_mut()
-                .expect("checked")
-                .stage = SimilarityPrepStage::AwaitEmbeddings;
-            self.ensure_similarity_prep_progress(0, true);
-            self.set_similarity_embedding_detail();
-            self.enqueue_similarity_backfill(source);
+            let scan_completed_at = self.read_source_scan_timestamp(&source);
+            if let Some(state) = self.runtime.similarity_prep.as_mut() {
+                state.stage = SimilarityPrepStage::AwaitEmbeddings;
+                state.scan_completed_at = scan_completed_at;
+                state.skip_backfill = !scan_changed;
+            }
+            if scan_changed {
+                self.ensure_similarity_prep_progress(0, true);
+                self.set_similarity_embedding_detail();
+                self.enqueue_similarity_backfill(source);
+            } else {
+                self.refresh_similarity_prep_progress();
+            }
         }
     }
 
@@ -103,6 +127,9 @@ impl EguiController {
         }
         match result.result {
             Ok(outcome) => {
+                if let Some(scan_completed_at) = state.and_then(|s| s.scan_completed_at) {
+                    self.record_similarity_prep_scan_timestamp(&result.source_id, scan_completed_at);
+                }
                 self.ui.map.bounds = None;
                 self.ui.map.last_query = None;
                 self.ui.map.cached_cluster_centroids_key = None;
@@ -147,6 +174,34 @@ fn matches_similarity_stage(
 }
 
 impl EguiController {
+    fn read_source_scan_timestamp(&self, source: &SampleSource) -> Option<i64> {
+        let db = SourceDatabase::open(&source.root).ok()?;
+        db.get_metadata(crate::sample_sources::db::META_LAST_SCAN_COMPLETED_AT)
+            .ok()
+            .flatten()
+            .and_then(|value| value.parse().ok())
+    }
+
+    fn read_source_prep_timestamp(&self, source: &SampleSource) -> Option<i64> {
+        let db = SourceDatabase::open(&source.root).ok()?;
+        db.get_metadata(crate::sample_sources::db::META_LAST_SIMILARITY_PREP_SCAN_AT)
+            .ok()
+            .flatten()
+            .and_then(|value| value.parse().ok())
+    }
+
+    fn record_similarity_prep_scan_timestamp(&self, source_id: &SourceId, scan_completed_at: i64) {
+        let Some(source) = self.find_source_by_id(source_id) else {
+            return;
+        };
+        if let Ok(db) = SourceDatabase::open(&source.root) {
+            let _ = db.set_metadata(
+                crate::sample_sources::db::META_LAST_SIMILARITY_PREP_SCAN_AT,
+                &scan_completed_at.to_string(),
+            );
+        }
+    }
+
     fn apply_similarity_prep_duration_cap(&mut self) {
         let max_duration = if self.similarity_prep_duration_cap_enabled() {
             self.settings.analysis.max_analysis_duration_seconds

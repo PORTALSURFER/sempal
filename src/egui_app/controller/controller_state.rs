@@ -162,6 +162,8 @@ pub(super) struct SimilarityPrepState {
     pub(super) source_id: SourceId,
     pub(super) stage: SimilarityPrepStage,
     pub(super) umap_version: String,
+    pub(super) scan_completed_at: Option<i64>,
+    pub(super) skip_backfill: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

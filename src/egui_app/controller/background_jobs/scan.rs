@@ -30,6 +30,12 @@ pub(super) fn handle_scan_finished(controller: &mut EguiController, result: Scan
     match result.result {
         Ok(stats) => {
             let changed_samples = stats.changed_samples.clone();
+            let scan_changed = !changed_samples.is_empty();
+            let similarity_prep_active = controller
+                .runtime
+                .similarity_prep
+                .as_ref()
+                .is_some_and(|state| state.source_id == result.source_id);
             if is_selected_source {
                 controller.set_status(
                     format!(
@@ -61,9 +67,10 @@ pub(super) fn handle_scan_finished(controller: &mut EguiController, result: Scan
                 .find(|source| source.id == result.source_id)
                 .cloned();
 
-            if !changed_samples.is_empty() {
+            if scan_changed {
                 let tx = controller.runtime.jobs.message_sender();
                 let source_id = result.source_id.clone();
+                let changed_samples = changed_samples.clone();
                 std::thread::spawn(move || {
                     let result =
                         super::analysis_jobs::enqueue_jobs_for_source(&source_id, &changed_samples);
@@ -81,6 +88,10 @@ pub(super) fn handle_scan_finished(controller: &mut EguiController, result: Scan
                     }
                 });
             } else if let Some(source) = source_for_jobs {
+                if similarity_prep_active {
+                    controller.handle_similarity_scan_finished(&result.source_id, false);
+                    return;
+                }
                 let tx = controller.runtime.jobs.message_sender();
                 std::thread::spawn(move || {
                     let result = super::analysis_jobs::enqueue_jobs_for_source_backfill(&source);
@@ -117,7 +128,7 @@ pub(super) fn handle_scan_finished(controller: &mut EguiController, result: Scan
                     }
                 });
             }
-            controller.handle_similarity_scan_finished(&result.source_id);
+            controller.handle_similarity_scan_finished(&result.source_id, scan_changed);
         }
         Err(crate::sample_sources::scanner::ScanError::Canceled) => {
             if is_selected_source {

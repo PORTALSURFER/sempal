@@ -11,6 +11,8 @@ mod write;
 
 /// Hidden filename used for per-source databases.
 pub const DB_FILE_NAME: &str = ".sempal_samples.db";
+pub const META_LAST_SCAN_COMPLETED_AT: &str = "last_scan_completed_at";
+pub const META_LAST_SIMILARITY_PREP_SCAN_AT: &str = "last_similarity_prep_scan_at";
 
 /// Tag applied to a wav file to mark keep/trash decisions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

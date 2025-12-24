@@ -3,12 +3,14 @@ use std::{
     path::{Path, PathBuf},
     sync::atomic::{AtomicBool, Ordering},
     thread,
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use thiserror::Error;
 
 use crate::sample_sources::db::WavEntry;
 use crate::sample_sources::{SourceDatabase, SourceDbError};
+use crate::sample_sources::db::META_LAST_SCAN_COMPLETED_AT;
 
 use super::scan_diff::{apply_diff, index_by_hash, mark_missing};
 use super::scan_fs::{ensure_root_dir, read_facts, visit_dir};
@@ -111,6 +113,12 @@ fn scan(
     })?;
     mark_missing(&mut batch, existing, &mut stats, mode)?;
     batch.commit()?;
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+        .to_string();
+    db.set_metadata(META_LAST_SCAN_COMPLETED_AT, &timestamp)?;
     Ok(stats)
 }
 

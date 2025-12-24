@@ -77,6 +77,18 @@ impl SourceDatabase {
             .map_err(map_sql_error)?;
         Ok(SourceWriteBatch { tx })
     }
+
+    pub fn set_metadata(&self, key: &str, value: &str) -> Result<(), SourceDbError> {
+        self.connection
+            .execute(
+                "INSERT INTO metadata (key, value)
+                 VALUES (?1, ?2)
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                params![key, value],
+            )
+            .map_err(map_sql_error)?;
+        Ok(())
+    }
 }
 
 impl<'conn> SourceWriteBatch<'conn> {
