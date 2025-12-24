@@ -224,12 +224,33 @@ fn stage_backfill_samples(
     samples: &[db::SampleMetadata],
 ) -> Result<(), String> {
     prepare_backfill_staging(conn)?;
-    let mut stmt = prepare_backfill_insert(conn)?;
-    for sample in samples {
-        let size = i64::try_from(sample.size)
-            .map_err(|_| "Sample size exceeds storage limits".to_string())?;
-        stmt.execute(params![&sample.sample_id, &sample.content_hash, size, sample.mtime_ns])
-            .map_err(|err| format!("Insert backfill staging row failed: {err}"))?;
+    const BATCH_SIZE: usize = 400;
+    for chunk in samples.chunks(BATCH_SIZE) {
+        let mut sql = String::from(
+            "INSERT INTO temp_backfill_samples (sample_id, content_hash, size, mtime_ns) VALUES ",
+        );
+        let mut params: Vec<rusqlite::types::Value> = Vec::with_capacity(chunk.len() * 4);
+        for (idx, sample) in chunk.iter().enumerate() {
+            if idx > 0 {
+                sql.push_str(", ");
+            }
+            let size = i64::try_from(sample.size)
+                .map_err(|_| "Sample size exceeds storage limits".to_string())?;
+            let base = idx * 4;
+            sql.push_str(&format!(
+                "(?{}, ?{}, ?{}, ?{})",
+                base + 1,
+                base + 2,
+                base + 3,
+                base + 4
+            ));
+            params.push(rusqlite::types::Value::from(sample.sample_id.clone()));
+            params.push(rusqlite::types::Value::from(sample.content_hash.clone()));
+            params.push(rusqlite::types::Value::from(size));
+            params.push(rusqlite::types::Value::from(sample.mtime_ns));
+        }
+        conn.execute(&sql, rusqlite::params_from_iter(params))
+            .map_err(|err| format!("Insert backfill staging rows failed: {err}"))?;
     }
     Ok(())
 }
@@ -261,16 +282,6 @@ fn prepare_backfill_staging(conn: &mut rusqlite::Connection) -> Result<(), Strin
     )
     .map_err(|err| format!("Prepare backfill staging table failed: {err}"))?;
     Ok(())
-}
-
-fn prepare_backfill_insert(
-    conn: &mut rusqlite::Connection,
-) -> Result<rusqlite::Statement<'_>, String> {
-    conn.prepare(
-        "INSERT INTO temp_backfill_samples (sample_id, content_hash, size, mtime_ns)
-         VALUES (?1, ?2, ?3, ?4)",
-    )
-    .map_err(|err| format!("Prepare backfill staging insert failed: {err}"))
 }
 
 fn fetch_backfill_invalidations(
