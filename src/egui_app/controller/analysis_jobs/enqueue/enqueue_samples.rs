@@ -224,7 +224,12 @@ fn collect_backfill_updates(
 ) -> Result<(Vec<db::SampleMetadata>, Vec<(String, String)>, Vec<String>), String> {
     let current_version = crate::analysis::version::analysis_version();
     let invalidate = fetch_backfill_invalidations(conn, current_version)?;
-    let (sample_metadata, jobs) = fetch_backfill_jobs(conn, current_version, job_type)?;
+    let (sample_metadata, jobs) = fetch_backfill_jobs(
+        conn,
+        current_version,
+        job_type,
+        crate::analysis::embedding::EMBEDDING_MODEL_ID,
+    )?;
     Ok((sample_metadata, jobs, invalidate))
 }
 
@@ -283,6 +288,7 @@ fn fetch_backfill_jobs(
     conn: &mut rusqlite::Connection,
     current_version: &str,
     job_type: &str,
+    model_id: &str,
 ) -> Result<(Vec<db::SampleMetadata>, Vec<(String, String)>), String> {
     let mut sample_metadata = Vec::new();
     let mut jobs = Vec::new();
@@ -291,14 +297,15 @@ fn fetch_backfill_jobs(
             "SELECT t.sample_id, t.content_hash, t.size, t.mtime_ns
              FROM temp_backfill_samples t
              LEFT JOIN features f ON f.sample_id = t.sample_id AND f.feat_version = 1
+             LEFT JOIN embeddings e ON e.sample_id = t.sample_id AND e.model_id = ?3
              LEFT JOIN samples s ON s.sample_id = t.sample_id
              LEFT JOIN analysis_jobs j ON j.sample_id = t.sample_id AND j.job_type = ?2
-             WHERE (f.sample_id IS NULL OR s.analysis_version IS NULL OR s.analysis_version != ?1)
+             WHERE (f.sample_id IS NULL OR e.sample_id IS NULL OR s.analysis_version IS NULL OR s.analysis_version != ?1)
                AND (j.status IS NULL OR j.status NOT IN ('pending','running'))",
         )
         .map_err(|err| format!("Prepare backfill job query failed: {err}"))?;
     let mut rows = stmt
-        .query(params![current_version, job_type])
+        .query(params![current_version, job_type, model_id])
         .map_err(|err| format!("Query backfill job rows failed: {err}"))?;
     while let Some(row) = rows
         .next()
