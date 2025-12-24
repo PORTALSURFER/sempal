@@ -322,10 +322,6 @@ fn run_analysis_job(
     analysis_sample_rate: u32,
     analysis_version: &str,
 ) -> Result<(), String> {
-    let _content_hash = job
-        .content_hash
-        .as_deref()
-        .ok_or_else(|| format!("Missing content_hash for analysis job {}", job.sample_id))?;
     let current_hash = db::sample_content_hash(conn, &job.sample_id)?;
     if current_hash.as_deref() != Some(content_hash) {
         return Ok(());
