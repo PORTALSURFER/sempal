@@ -183,6 +183,8 @@ impl EguiController {
                 analysis,
                 performance: PerformanceGovernorState {
                     last_user_activity_at: None,
+                    last_slow_frame_at: None,
+                    last_frame_at: None,
                     last_worker_count: None,
                     idle_worker_override: None,
                 },
@@ -203,8 +205,17 @@ impl EguiController {
     }
 
     pub(crate) fn update_performance_governor(&mut self, user_active: bool) {
-        const ACTIVE_WINDOW: Duration = Duration::from_millis(400);
+        const ACTIVE_WINDOW: Duration = Duration::from_millis(300);
+        const IDLE_WINDOW: Duration = Duration::from_secs(2);
+        const SLOW_FRAME_THRESHOLD: Duration = Duration::from_millis(40);
         let now = Instant::now();
+        if let Some(last_frame) = self.runtime.performance.last_frame_at {
+            let frame_delta = now.saturating_duration_since(last_frame);
+            if frame_delta >= SLOW_FRAME_THRESHOLD {
+                self.runtime.performance.last_slow_frame_at = Some(now);
+            }
+        }
+        self.runtime.performance.last_frame_at = Some(now);
         if user_active {
             self.runtime.performance.last_user_activity_at = Some(now);
         }
@@ -213,13 +224,30 @@ impl EguiController {
             .performance
             .last_user_activity_at
             .is_some_and(|time| now.saturating_duration_since(time) <= ACTIVE_WINDOW);
-        let busy = self.is_playing() || recent_input;
+        let recent_slow_frame = self
+            .runtime
+            .performance
+            .last_slow_frame_at
+            .is_some_and(|time| now.saturating_duration_since(time) <= ACTIVE_WINDOW);
+        let busy = self.is_playing() || recent_input || recent_slow_frame;
+        let last_activity_at = match (
+            self.runtime.performance.last_user_activity_at,
+            self.runtime.performance.last_slow_frame_at,
+        ) {
+            (Some(input), Some(slow)) => Some(input.max(slow)),
+            (Some(input), None) => Some(input),
+            (None, Some(slow)) => Some(slow),
+            (None, None) => None,
+        };
+        let idle = !self.is_playing()
+            && last_activity_at
+                .is_some_and(|time| now.saturating_duration_since(time) >= IDLE_WINDOW);
         let idle_target = self
             .runtime
             .performance
             .idle_worker_override
             .unwrap_or(self.settings.analysis.analysis_worker_count);
-        let target = if busy { 1 } else { idle_target };
+        let target = if busy || !idle { 1 } else { idle_target };
         if busy {
             self.runtime.analysis.pause_claiming();
         } else {

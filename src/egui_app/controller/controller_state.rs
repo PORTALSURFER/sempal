@@ -160,6 +160,8 @@ pub(super) struct ControllerRuntimeState {
 
 pub(super) struct PerformanceGovernorState {
     pub(super) last_user_activity_at: Option<Instant>,
+    pub(super) last_slow_frame_at: Option<Instant>,
+    pub(super) last_frame_at: Option<Instant>,
     pub(super) last_worker_count: Option<u32>,
     pub(super) idle_worker_override: Option<u32>,
 }
