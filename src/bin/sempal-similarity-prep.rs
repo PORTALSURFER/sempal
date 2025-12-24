@@ -12,6 +12,7 @@ struct Options {
     skip_finalize: bool,
     analysis_full: bool,
     reset_failed: bool,
+    log_jobs: bool,
     poll_ms: u64,
 }
 
@@ -44,6 +45,9 @@ fn main() {
     }
     if let Some(rate) = opts.fast_sample_rate {
         controller.set_similarity_prep_fast_sample_rate(rate);
+    }
+    if opts.log_jobs {
+        std::env::set_var("SEMPAL_ANALYSIS_LOG_JOBS", "1");
     }
 
     let normalized = sempal::sample_sources::config::normalize_path(&opts.source);
@@ -103,6 +107,7 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
     let mut skip_finalize = false;
     let mut analysis_full = false;
     let mut reset_failed = false;
+    let mut log_jobs = false;
     let mut poll_ms = 25_u64;
 
     let mut idx = 0usize;
@@ -151,6 +156,9 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
             "--reset-failed" => {
                 reset_failed = true;
             }
+            "--log-jobs" => {
+                log_jobs = true;
+            }
             "--poll-ms" => {
                 idx += 1;
                 let value = args
@@ -176,6 +184,7 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
         skip_finalize,
         analysis_full,
         reset_failed,
+        log_jobs,
         poll_ms,
     })
 }
@@ -208,6 +217,7 @@ Options:\n\
   --analysis-workers <n>      Override analysis worker count\n\
   --analysis-full             Force full analysis even when cached\n\
   --reset-failed              Reset failed/running analysis jobs to pending\n\
+  --log-jobs                  Log analysis job start/finish to stderr\n\
   --skip-finalize             Exit after analysis before UMAP/cluster finalize\n\
   --poll-ms <n>               Poll interval (default: 25)\n\
   -h, --help                  Show this help\n"

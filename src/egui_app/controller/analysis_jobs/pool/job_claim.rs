@@ -173,6 +173,7 @@ pub(super) fn spawn_decoder_worker(
 ) -> JoinHandle<()> {
     std::thread::spawn(move || {
         lower_worker_priority();
+        let log_jobs = analysis_log_enabled();
         let mut sources = Vec::new();
         let mut last_refresh = Instant::now() - SOURCE_REFRESH_INTERVAL;
         let mut reset_done = HashSet::new();
@@ -223,11 +224,30 @@ pub(super) fn spawn_decoder_worker(
                 sleep(Duration::from_millis(25));
                 continue;
             };
+            if log_jobs {
+                eprintln!("analysis decode start: {} ({})", job.sample_id, job.job_type);
+            }
             let outcome = if job.job_type == db::ANALYZE_SAMPLE_JOB_TYPE {
                 decode_analysis_job(&job, &max_duration_bits, &analysis_sample_rate)
             } else {
                 DecodeOutcome::NotNeeded
             };
+            if log_jobs {
+                match &outcome {
+                    DecodeOutcome::Decoded(_) => {
+                        eprintln!("analysis decode done: {}", job.sample_id);
+                    }
+                    DecodeOutcome::Skipped { .. } => {
+                        eprintln!("analysis decode skipped: {}", job.sample_id);
+                    }
+                    DecodeOutcome::Failed(err) => {
+                        eprintln!("analysis decode failed: {} ({})", job.sample_id, err);
+                    }
+                    DecodeOutcome::NotNeeded => {
+                        eprintln!("analysis decode not needed: {}", job.sample_id);
+                    }
+                }
+            }
             decode_queue.push(DecodedWork { job, outcome });
         }
     })
@@ -247,6 +267,7 @@ pub(super) fn spawn_compute_worker(
 ) -> JoinHandle<()> {
     std::thread::spawn(move || {
         lower_worker_priority();
+        let log_jobs = analysis_log_enabled();
         let mut connections: HashMap<std::path::PathBuf, Connection> = HashMap::new();
         const EMBEDDING_BATCH_MAX: usize = 4;
         loop {
@@ -277,6 +298,9 @@ pub(super) fn spawn_compute_worker(
             let mut immediate_jobs: Vec<(db::ClaimedJob, Result<(), String>)> = Vec::new();
 
             for work in batch {
+                if log_jobs {
+                    eprintln!("analysis run start: {} ({})", work.job.sample_id, work.job.job_type);
+                }
                 let job_fallback = work.job.clone();
                 let mut batch_job: Option<(db::ClaimedJob, crate::analysis::audio::AnalysisAudio)> =
                     None;
@@ -391,6 +415,16 @@ pub(super) fn spawn_compute_worker(
             }
 
             for (job, outcome) in immediate_jobs {
+                if log_jobs {
+                    match &outcome {
+                        Ok(()) => {
+                            eprintln!("analysis run done: {}", job.sample_id);
+                        }
+                        Err(err) => {
+                            eprintln!("analysis run failed: {} ({})", job.sample_id, err);
+                        }
+                    }
+                }
                 let conn = match connections.entry(job.source_root.clone()) {
                     std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
                     std::collections::hash_map::Entry::Vacant(entry) => {
@@ -496,4 +530,10 @@ fn panic_to_string(payload: Box<dyn std::any::Any + Send>) -> String {
     };
     let backtrace = std::backtrace::Backtrace::capture();
     format!("Analysis worker panicked: {message}\n{backtrace}")
+}
+
+fn analysis_log_enabled() -> bool {
+    std::env::var("SEMPAL_ANALYSIS_LOG_JOBS")
+        .map(|value| value.trim() == "1")
+        .unwrap_or(false)
 }
