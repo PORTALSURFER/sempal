@@ -1,6 +1,13 @@
 use super::types::ClaimedJob;
-use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
+use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params, params_from_iter};
+use std::collections::HashMap;
 use std::path::PathBuf;
+
+/// Cached analysis state for a sample row.
+pub(in crate::egui_app::controller::analysis_jobs) struct SampleAnalysisState {
+    pub(in crate::egui_app::controller::analysis_jobs) content_hash: String,
+    pub(in crate::egui_app::controller::analysis_jobs) analysis_version: Option<String>,
+}
 
 pub(in crate::egui_app::controller::analysis_jobs) fn sample_content_hash(
     conn: &Connection,
@@ -13,6 +20,48 @@ pub(in crate::egui_app::controller::analysis_jobs) fn sample_content_hash(
     )
     .optional()
     .map_err(|err| format!("Failed to lookup sample content hash: {err}"))
+}
+
+/// Load content hashes and analysis versions for the requested sample ids.
+pub(in crate::egui_app::controller::analysis_jobs) fn sample_analysis_states(
+    conn: &Connection,
+    sample_ids: &[String],
+) -> Result<HashMap<String, SampleAnalysisState>, String> {
+    if sample_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let placeholders = std::iter::repeat("?")
+        .take(sample_ids.len())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let sql = format!(
+        "SELECT sample_id, content_hash, analysis_version
+         FROM samples
+         WHERE sample_id IN ({placeholders})"
+    );
+    let mut stmt = conn
+        .prepare(&sql)
+        .map_err(|err| format!("Failed to prepare sample analysis lookup: {err}"))?;
+    let mut rows = stmt
+        .query(params_from_iter(sample_ids.iter()))
+        .map_err(|err| format!("Failed to query sample analysis metadata: {err}"))?;
+    let mut states = HashMap::new();
+    while let Some(row) = rows
+        .next()
+        .map_err(|err| format!("Failed to query sample analysis metadata: {err}"))?
+    {
+        let sample_id: String = row.get(0).map_err(|err| err.to_string())?;
+        let content_hash: String = row.get(1).map_err(|err| err.to_string())?;
+        let analysis_version: Option<String> = row.get(2).map_err(|err| err.to_string())?;
+        states.insert(
+            sample_id,
+            SampleAnalysisState {
+                content_hash,
+                analysis_version,
+            },
+        );
+    }
+    Ok(states)
 }
 
 pub(in crate::egui_app::controller::analysis_jobs) fn claim_next_job(

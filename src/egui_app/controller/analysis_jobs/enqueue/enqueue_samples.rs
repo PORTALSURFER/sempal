@@ -37,18 +37,34 @@ fn enqueue_samples(
             mtime_ns: sample.modified_ns,
         })
         .collect();
-    let jobs: Vec<(String, String)> = sample_metadata
-        .iter()
-        .map(|sample| (sample.sample_id.clone(), sample.content_hash.clone()))
-        .collect();
     let db_path = library_db_path()?;
     let mut conn = db::open_library_db(&db_path)?;
-    db::upsert_samples(&mut conn, &sample_metadata)?;
     let sample_ids: Vec<String> = sample_metadata
         .iter()
         .map(|sample| sample.sample_id.clone())
         .collect();
-    db::invalidate_analysis_artifacts(&mut conn, &sample_ids)?;
+    let current_version = crate::analysis::version::analysis_version();
+    let existing_states = db::sample_analysis_states(&conn, &sample_ids)?;
+    db::upsert_samples(&mut conn, &sample_metadata)?;
+    let mut invalidate = Vec::new();
+    let mut jobs = Vec::new();
+    for sample in &sample_metadata {
+        let state = existing_states.get(&sample.sample_id);
+        let hash_changed = state
+            .map(|state| state.content_hash != sample.content_hash)
+            .unwrap_or(true);
+        let analysis_stale = state
+            .and_then(|state| state.analysis_version.as_deref())
+            .map(|version| version != current_version)
+            .unwrap_or(true);
+        if hash_changed || analysis_stale {
+            invalidate.push(sample.sample_id.clone());
+            jobs.push((sample.sample_id.clone(), sample.content_hash.clone()));
+        }
+    }
+    if !invalidate.is_empty() {
+        db::invalidate_analysis_artifacts(&mut conn, &invalidate)?;
+    }
 
     let created_at = now_epoch_seconds();
     let inserted = db::enqueue_jobs(&mut conn, &jobs, db::ANALYZE_SAMPLE_JOB_TYPE, created_at)?;

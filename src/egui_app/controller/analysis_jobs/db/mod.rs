@@ -28,7 +28,8 @@ pub(in crate::egui_app::controller::analysis_jobs) use constants::{
 pub(in crate::egui_app::controller::analysis_jobs) use enqueue::{enqueue_jobs, upsert_samples};
 pub(in crate::egui_app::controller) use ids::{build_sample_id, parse_sample_id};
 pub(in crate::egui_app::controller::analysis_jobs) use jobs::{
-    claim_next_job, mark_done, mark_failed, sample_content_hash, source_root_for,
+    claim_next_job, mark_done, mark_failed, sample_analysis_states, sample_content_hash,
+    source_root_for,
 };
 pub(in crate::egui_app::controller::analysis_jobs) use progress::current_progress;
 pub(in crate::egui_app::controller::analysis_jobs) use types::{ClaimedJob, SampleMetadata};

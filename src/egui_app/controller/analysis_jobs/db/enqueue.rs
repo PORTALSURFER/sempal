@@ -77,22 +77,16 @@ fn upsert_samples_tx(
                 mtime_ns = excluded.mtime_ns,
                 duration_seconds = CASE
                     WHEN samples.content_hash != excluded.content_hash
-                      OR samples.size != excluded.size
-                      OR samples.mtime_ns != excluded.mtime_ns
                     THEN NULL
                     ELSE samples.duration_seconds
                 END,
                 sr_used = CASE
                     WHEN samples.content_hash != excluded.content_hash
-                      OR samples.size != excluded.size
-                      OR samples.mtime_ns != excluded.mtime_ns
                     THEN NULL
                     ELSE samples.sr_used
                 END,
                 analysis_version = CASE
                     WHEN samples.content_hash != excluded.content_hash
-                      OR samples.size != excluded.size
-                      OR samples.mtime_ns != excluded.mtime_ns
                     THEN NULL
                     ELSE samples.analysis_version
                 END",
