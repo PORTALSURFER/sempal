@@ -134,13 +134,13 @@ unsafe fn max_abs_sse2(samples: &[f32]) -> f32 {
     let sign_mask = _mm_castsi128_ps(_mm_set1_epi32(0x7fffffff_u32 as i32));
     let mut chunks = samples.chunks_exact(4);
     for chunk in &mut chunks {
-        let v = _mm_loadu_ps(chunk.as_ptr());
+        let v = unsafe { _mm_loadu_ps(chunk.as_ptr()) };
         let abs = _mm_and_ps(v, sign_mask);
         max_v = _mm_max_ps(max_v, abs);
     }
     let mut max = 0.0_f32;
     let mut tmp = [0.0_f32; 4];
-    _mm_storeu_ps(tmp.as_mut_ptr(), max_v);
+    unsafe { _mm_storeu_ps(tmp.as_mut_ptr(), max_v) };
     for &val in &tmp {
         max = max.max(val);
     }
@@ -157,11 +157,11 @@ unsafe fn scale_in_place_sse2(samples: &mut [f32], gain: f32) {
     let gain_v = _mm_set1_ps(gain);
     let mut chunks = samples.chunks_exact_mut(4);
     for chunk in &mut chunks {
-        let v = _mm_loadu_ps(chunk.as_ptr());
+        let v = unsafe { _mm_loadu_ps(chunk.as_ptr()) };
         let scaled = _mm_mul_ps(v, gain_v);
-        _mm_storeu_ps(chunk.as_mut_ptr(), scaled);
+        unsafe { _mm_storeu_ps(chunk.as_mut_ptr(), scaled) };
     }
-    for sample in chunks.remainder() {
+    for sample in chunks.into_remainder() {
         *sample *= gain;
     }
 }
@@ -175,12 +175,12 @@ unsafe fn scale_and_clamp_sse2(samples: &mut [f32], gain: f32) {
     let max_v = _mm_set1_ps(1.0);
     let mut chunks = samples.chunks_exact_mut(4);
     for chunk in &mut chunks {
-        let v = _mm_loadu_ps(chunk.as_ptr());
+        let v = unsafe { _mm_loadu_ps(chunk.as_ptr()) };
         let scaled = _mm_mul_ps(v, gain_v);
         let clamped = _mm_min_ps(_mm_max_ps(scaled, min_v), max_v);
-        _mm_storeu_ps(chunk.as_mut_ptr(), clamped);
+        unsafe { _mm_storeu_ps(chunk.as_mut_ptr(), clamped) };
     }
-    for sample in chunks.remainder() {
+    for sample in chunks.into_remainder() {
         *sample = (*sample * gain).clamp(-1.0, 1.0);
     }
 }
@@ -192,12 +192,12 @@ unsafe fn rms_sse2(samples: &[f32]) -> f32 {
     let mut sum_v = _mm_set1_ps(0.0);
     let mut chunks = samples.chunks_exact(4);
     for chunk in &mut chunks {
-        let v = _mm_loadu_ps(chunk.as_ptr());
+        let v = unsafe { _mm_loadu_ps(chunk.as_ptr()) };
         let sq = _mm_mul_ps(v, v);
         sum_v = _mm_add_ps(sum_v, sq);
     }
     let mut tmp = [0.0_f32; 4];
-    _mm_storeu_ps(tmp.as_mut_ptr(), sum_v);
+    unsafe { _mm_storeu_ps(tmp.as_mut_ptr(), sum_v) };
     let mut sum = (tmp[0] + tmp[1] + tmp[2] + tmp[3]) as f64;
     for &val in chunks.remainder() {
         let val = val as f64;

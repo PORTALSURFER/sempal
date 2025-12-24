@@ -159,12 +159,12 @@ unsafe fn power_spectrum_sse3(fft: &[Complex32], bins: usize) -> Vec<f32> {
     let mut bin = 0usize;
     while bin + 4 <= bins {
         let base = bin * 2;
-        let v0 = _mm_loadu_ps(ptr.add(base));
-        let v1 = _mm_loadu_ps(ptr.add(base + 4));
+        let v0 = unsafe { _mm_loadu_ps(ptr.add(base)) };
+        let v1 = unsafe { _mm_loadu_ps(ptr.add(base + 4)) };
         let v0_sq = _mm_mul_ps(v0, v0);
         let v1_sq = _mm_mul_ps(v1, v1);
         let sum = _mm_hadd_ps(v0_sq, v1_sq);
-        _mm_storeu_ps(power.as_mut_ptr().add(bin), sum);
+        unsafe { _mm_storeu_ps(power.as_mut_ptr().add(bin), sum) };
         bin += 4;
     }
     for i in bin..bins {
