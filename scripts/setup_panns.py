@@ -3,6 +3,7 @@ import argparse
 import os
 import platform
 import shutil
+import urllib.request
 from pathlib import Path
 
 
@@ -21,6 +22,11 @@ def resolve_app_root() -> Path:
     base = os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config"))
     return Path(base) / ".sempal"
 
+def download_onnx(url: str, destination: Path) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with urllib.request.urlopen(url) as response, destination.open("wb") as handle:
+        shutil.copyfileobj(response, handle)
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(
@@ -32,6 +38,10 @@ def main() -> int:
         type=Path,
         default=Path("assets/ml/panns_cnn14/panns_cnn14.onnx"),
         help="Path to panns_cnn14.onnx",
+    )
+    parser.add_argument(
+        "--onnx-url",
+        help="Download URL for panns_cnn14.onnx when not found locally",
     )
     parser.add_argument(
         "--runtime-file",
@@ -46,7 +56,16 @@ def main() -> int:
     models_dir.mkdir(parents=True, exist_ok=True)
 
     if not args.onnx.exists():
-        raise RuntimeError(f"ONNX model not found: {args.onnx}")
+        onnx_url = args.onnx_url or os.environ.get("SEMPAL_PANNS_ONNX_URL")
+        if not onnx_url:
+            raise RuntimeError(
+                f"ONNX model not found: {args.onnx}. "
+                "Provide --onnx or set SEMPAL_PANNS_ONNX_URL to download it."
+            )
+        print(f"Downloading PANNs ONNX from {onnx_url}...")
+        download_onnx(onnx_url, args.onnx)
+        if not args.onnx.exists():
+            raise RuntimeError(f"ONNX download failed: {args.onnx}")
 
     target_onnx = models_dir / "panns_cnn14.onnx"
     if target_onnx.exists() and not args.force:

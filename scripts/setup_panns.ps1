@@ -1,6 +1,7 @@
 param(
     [string]$AppRoot,
     [string]$Onnx,
+    [string]$OnnxUrl,
     [string]$RuntimeFile,
     [switch]$Force
 )
@@ -22,6 +23,7 @@ $scriptPath = Join-Path $scriptDir "setup_panns.py"
 $argsList = @($scriptPath)
 if ($AppRoot) { $argsList += @("--app-root", $AppRoot) }
 if ($Onnx) { $argsList += @("--onnx", $Onnx) }
+if ($OnnxUrl) { $argsList += @("--onnx-url", $OnnxUrl) }
 if ($RuntimeFile) { $argsList += @("--runtime-file", $RuntimeFile) }
 if ($Force) { $argsList += "--force" }
 
