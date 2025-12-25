@@ -113,6 +113,9 @@ impl AnalysisWorkerPool {
                 worker_count,
                 self.decode_worker_count_override.load(Ordering::Relaxed),
             );
+            let embedding_batch_max = crate::analysis::embedding::embedding_batch_max();
+            let decode_queue_target =
+                job_claim::decode_queue_target(embedding_batch_max, worker_count);
             let queue = std::sync::Arc::new(job_claim::DecodedQueue::new());
             for worker_index in 0..decode_workers {
                 self.threads.push(job_claim::spawn_decoder_worker(
@@ -124,6 +127,7 @@ impl AnalysisWorkerPool {
                     self.allowed_source_ids.clone(),
                     self.max_duration_bits.clone(),
                     self.analysis_sample_rate.clone(),
+                    decode_queue_target,
                 ));
             }
             for worker_index in 0..worker_count {

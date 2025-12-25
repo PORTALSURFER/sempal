@@ -4,6 +4,7 @@ use crate::egui_app::controller::analysis_jobs::types::AnalysisJobMessage;
 use crate::egui_app::controller::jobs::JobMessage;
 use rusqlite::Connection;
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::cmp::min;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::{
     Arc,
@@ -199,7 +200,10 @@ pub(super) fn decode_worker_count_with_override(
             }
         }
     }
-    worker_count.max(2)
+    let max_workers = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(worker_count.max(1));
+    min(worker_count.saturating_mul(2).max(2), max_workers)
 }
 
 fn claim_batch_size() -> usize {
@@ -213,6 +217,17 @@ fn claim_batch_size() -> usize {
     64
 }
 
+pub(super) fn decode_queue_target(embedding_batch_max: usize, worker_count: usize) -> usize {
+    if let Ok(value) = std::env::var("SEMPAL_DECODE_QUEUE_TARGET") {
+        if let Ok(parsed) = value.trim().parse::<usize>() {
+            if parsed >= 1 {
+                return parsed;
+            }
+        }
+    }
+    (embedding_batch_max.saturating_mul(worker_count)).max(4)
+}
+
 #[cfg_attr(test, allow(dead_code))]
 pub(super) fn spawn_decoder_worker(
     _worker_index: usize,
@@ -223,6 +238,7 @@ pub(super) fn spawn_decoder_worker(
     allowed_source_ids: Arc<RwLock<Option<HashSet<crate::sample_sources::SourceId>>>>,
     max_duration_bits: Arc<AtomicU32>,
     analysis_sample_rate: Arc<AtomicU32>,
+    decode_queue_target: usize,
 ) -> JoinHandle<()> {
     std::thread::spawn(move || {
         lower_worker_priority();
@@ -233,6 +249,7 @@ pub(super) fn spawn_decoder_worker(
         let mut next_source = 0usize;
         let mut local_queue: VecDeque<db::ClaimedJob> = VecDeque::new();
         let claim_batch = claim_batch_size();
+        let decode_queue_target = decode_queue_target.max(1);
         loop {
             if shutdown.load(Ordering::Relaxed) {
                 break;
@@ -243,6 +260,10 @@ pub(super) fn spawn_decoder_worker(
             }
             if pause_claiming.load(Ordering::Relaxed) {
                 sleep(Duration::from_millis(50));
+                continue;
+            }
+            if decode_queue.len() >= decode_queue_target {
+                sleep(Duration::from_millis(10));
                 continue;
             }
             let allowed = allowed_source_ids
