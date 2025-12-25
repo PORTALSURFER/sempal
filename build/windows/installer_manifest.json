@@ -6,7 +6,7 @@
   "entries": [
     "sempal.exe",
     "sempal.ico",
-    "models/yamnet.onnx",
+    "models/panns_cnn14_16k.bpk",
     "models/onnxruntime/onnxruntime.dll"
   ]
 }

@@ -12,6 +12,7 @@ Set-Location $RepoRoot
 $BundleDir = Join-Path $OutDir "bundle"
 $ModelsOut = Join-Path $BundleDir "models"
 $RuntimeOut = Join-Path $ModelsOut "onnxruntime"
+$BurnpackName = "panns_cnn14_16k.bpk"
 
 Write-Host "Building release binaries..."
 cargo build --release
@@ -28,10 +29,16 @@ Copy-Item "target/release/sempal.exe" $BundleDir -Force
 Copy-Item "target/release/sempal-installer.exe" $OutDir -Force
 Copy-Item "assets/logo3.ico" (Join-Path $BundleDir "sempal.ico") -Force
 
-if (Test-Path (Join-Path $ModelsDir "panns_cnn14_16k.onnx")) {
-    Copy-Item (Join-Path $ModelsDir "panns_cnn14_16k.onnx") $ModelsOut -Force
+$BurnpackCandidate = Get-ChildItem -Path "target/release/build" -Recurse -Filter $BurnpackName -ErrorAction SilentlyContinue |
+    Sort-Object LastWriteTime -Descending |
+    Select-Object -First 1
+if (-not $BurnpackCandidate -and (Test-Path (Join-Path $ModelsDir $BurnpackName))) {
+    $BurnpackCandidate = Get-Item (Join-Path $ModelsDir $BurnpackName)
+}
+if ($BurnpackCandidate) {
+    Copy-Item $BurnpackCandidate.FullName $ModelsOut -Force
 } else {
-    Write-Warning "panns_cnn14_16k.onnx not found at $ModelsDir"
+    throw "$BurnpackName not found in target/release/build or $ModelsDir"
 }
 
 if (Test-Path (Join-Path $ModelsDir "onnxruntime\\onnxruntime.dll")) {
