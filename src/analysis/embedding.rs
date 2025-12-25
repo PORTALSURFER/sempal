@@ -111,6 +111,13 @@ pub(crate) fn embedding_inflight_max() -> usize {
         .unwrap_or(2)
 }
 
+pub(crate) fn embedding_pipeline_enabled() -> bool {
+    env::var("SEMPAL_EMBEDDING_PIPELINE")
+        .ok()
+        .map(|value| value.trim().eq_ignore_ascii_case("1"))
+        .unwrap_or(false)
+}
+
 pub(crate) struct EmbeddingBatchInput<'a> {
     pub(crate) samples: &'a [f32],
     pub(crate) sample_rate: u32,

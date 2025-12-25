@@ -215,13 +215,32 @@ fn run_embedding_backfill_job(
                         continue;
                     }
 
-                    let inflight = crate::analysis::embedding::embedding_inflight_max();
-                    let micro_batch = crate::analysis::embedding::embedding_batch_max();
-                    let embeddings = crate::analysis::embedding::infer_embeddings_from_logmel_batch_pipelined(
-                        &logmels,
-                        micro_batch,
-                        inflight,
-                    );
+                    let embeddings = if crate::analysis::embedding::embedding_pipeline_enabled() {
+                        let inflight = crate::analysis::embedding::embedding_inflight_max();
+                        let micro_batch = crate::analysis::embedding::embedding_batch_max();
+                        crate::analysis::embedding::infer_embeddings_from_logmel_batch_pipelined(
+                            &logmels,
+                            micro_batch,
+                            inflight,
+                        )
+                    } else {
+                        let mut batch_input = Vec::with_capacity(
+                            logmels.len() * crate::analysis::embedding::PANNS_LOGMEL_LEN,
+                        );
+                        for logmel in &logmels {
+                            batch_input.extend_from_slice(logmel);
+                        }
+                        match crate::analysis::embedding::infer_embeddings_from_logmel_batch(
+                            batch_input,
+                            logmels.len(),
+                        ) {
+                            Ok(embeddings) => embeddings.into_iter().map(Ok).collect(),
+                            Err(err) => logmels
+                                .iter()
+                                .map(|_| Err(err.clone()))
+                                .collect(),
+                        }
+                    };
                     for ((sample_id, content_hash), result) in
                         payloads.into_iter().zip(embeddings.into_iter())
                     {
@@ -610,13 +629,32 @@ pub(super) fn run_analysis_jobs_with_decoded_batch(
     }
 
     if !input_indices.is_empty() {
-        let inflight = crate::analysis::embedding::embedding_inflight_max();
-        let micro_batch = crate::analysis::embedding::embedding_batch_max();
-        let results = crate::analysis::embedding::infer_embeddings_from_logmel_batch_pipelined(
-            &logmel_inputs,
-            micro_batch,
-            inflight,
-        );
+        let results = if crate::analysis::embedding::embedding_pipeline_enabled() {
+            let inflight = crate::analysis::embedding::embedding_inflight_max();
+            let micro_batch = crate::analysis::embedding::embedding_batch_max();
+            crate::analysis::embedding::infer_embeddings_from_logmel_batch_pipelined(
+                &logmel_inputs,
+                micro_batch,
+                inflight,
+            )
+        } else {
+            let mut batch_input = Vec::with_capacity(
+                logmel_inputs.len() * crate::analysis::embedding::PANNS_LOGMEL_LEN,
+            );
+            for logmel in &logmel_inputs {
+                batch_input.extend_from_slice(logmel);
+            }
+            match crate::analysis::embedding::infer_embeddings_from_logmel_batch(
+                batch_input,
+                logmel_inputs.len(),
+            ) {
+                Ok(embeddings) => embeddings.into_iter().map(Ok).collect(),
+                Err(err) => logmel_inputs
+                    .iter()
+                    .map(|_| Err(err.clone()))
+                    .collect(),
+            }
+        };
         for (idx, result) in input_indices.iter().copied().zip(results.into_iter()) {
             match result {
                 Ok(embedding) => {
