@@ -238,7 +238,7 @@ def _shape_map(model) -> dict[str, list[int | None]]:
 
 def patch_layer_norm_weights(path: Path, fallback_dim: int | None) -> bool:
     import onnx
-    from onnx import numpy_helper, shape_inference
+    from onnx import helper, numpy_helper, shape_inference
     import numpy as np
 
     model = onnx.load(path)
@@ -249,7 +249,129 @@ def patch_layer_norm_weights(path: Path, fallback_dim: int | None) -> bool:
 
     shape_map = _shape_map(model)
     initializer_names = {init.name for init in model.graph.initializer}
+    initializer_map = {init.name: init for init in model.graph.initializer}
+    output_names = {out for node in model.graph.node for out in node.output}
     patched = False
+
+    def unique_const_name(base: str) -> str:
+        candidate = f"{base}_const"
+        if candidate not in output_names:
+            output_names.add(candidate)
+            return candidate
+        index = 2
+        while True:
+            candidate = f"{base}_const{index}"
+            if candidate not in output_names:
+                output_names.add(candidate)
+                return candidate
+            index += 1
+
+    def attach_constant(name_base: str, tensor_proto: onnx.TensorProto) -> str:
+        const_output = unique_const_name(name_base)
+        const_node = helper.make_node(
+            "Constant",
+            inputs=[],
+            outputs=[const_output],
+            value=tensor_proto,
+            name=f"{name_base}_const_node",
+        )
+        model.graph.node.append(const_node)
+        return const_output
+
+    def eval_const_tensor(name: str, cache: dict[str, np.ndarray], producer: dict[str, onnx.NodeProto]) -> np.ndarray | None:
+        if name in cache:
+            return cache[name]
+        node = producer.get(name)
+        if node is None:
+            return None
+        op = node.op_type
+        if op == "Constant":
+            for attr in node.attribute:
+                if attr.name == "value":
+                    cache[name] = numpy_helper.to_array(attr.t)
+                    return cache[name]
+            return None
+        inputs = []
+        for inp in node.input:
+            if not inp:
+                inputs.append(None)
+                continue
+            val = eval_const_tensor(inp, cache, producer)
+            if val is None:
+                return None
+            inputs.append(val)
+        try:
+            if op == "ConstantOfShape":
+                shape = inputs[0].astype(int).tolist()
+                value = 0.0
+                for attr in node.attribute:
+                    if attr.name == "value":
+                        value = numpy_helper.to_array(attr.t).reshape(()).item()
+                cache[name] = np.full(shape, value, dtype=np.float32)
+                return cache[name]
+            if op == "Concat":
+                axis = 0
+                for attr in node.attribute:
+                    if attr.name == "axis":
+                        axis = attr.i
+                cache[name] = np.concatenate(inputs, axis=axis)
+                return cache[name]
+            if op == "Reshape":
+                data, shape = inputs
+                cache[name] = data.reshape(shape.astype(int).tolist())
+                return cache[name]
+            if op == "Slice":
+                data, starts, ends = inputs[0], inputs[1], inputs[2]
+                axes = inputs[3] if len(inputs) > 3 and inputs[3] is not None else np.arange(len(starts))
+                steps = inputs[4] if len(inputs) > 4 and inputs[4] is not None else np.ones_like(starts)
+                slices = [slice(None)] * data.ndim
+                for s, e, a, st in zip(starts.astype(int), ends.astype(int), axes.astype(int), steps.astype(int)):
+                    slices[a] = slice(s, e, st)
+                cache[name] = data[tuple(slices)]
+                return cache[name]
+            if op == "Transpose":
+                perm = None
+                for attr in node.attribute:
+                    if attr.name == "perm":
+                        perm = list(attr.ints)
+                cache[name] = np.transpose(inputs[0], axes=perm)
+                return cache[name]
+            if op == "Cast":
+                to = None
+                for attr in node.attribute:
+                    if attr.name == "to":
+                        to = attr.i
+                if to == 7:
+                    cache[name] = inputs[0].astype(np.int64)
+                elif to == 6:
+                    cache[name] = inputs[0].astype(np.int32)
+                else:
+                    cache[name] = inputs[0].astype(np.float32)
+                return cache[name]
+        except Exception:
+            return None
+        return None
+
+    def topo_sort_nodes(nodes: list[onnx.NodeProto]) -> list[onnx.NodeProto]:
+        available = {inp.name for inp in model.graph.input}
+        available.update(init.name for init in model.graph.initializer)
+        remaining = list(nodes)
+        ordered: list[onnx.NodeProto] = []
+        while remaining:
+            progressed = False
+            next_remaining: list[onnx.NodeProto] = []
+            for node in remaining:
+                if all(not name or name in available for name in node.input):
+                    ordered.append(node)
+                    available.update(node.output)
+                    progressed = True
+                else:
+                    next_remaining.append(node)
+            if not progressed:
+                ordered.extend(next_remaining)
+                break
+            remaining = next_remaining
+        return ordered
 
     for node in model.graph.node:
         if node.op_type != "LayerNormalization":
@@ -272,38 +394,90 @@ def patch_layer_norm_weights(path: Path, fallback_dim: int | None) -> bool:
         num_features = dims[-1]
 
         weight_name = node.input[1] if len(node.input) > 1 else ""
-        if not weight_name or weight_name not in initializer_names:
-            scale_name = weight_name or (f"{node.name}_scale" if node.name else "layernorm_scale")
-            scale_init = numpy_helper.from_array(
-                np.ones((num_features,), dtype=np.float32), name=scale_name
+        if weight_name and weight_name in initializer_names:
+            weight_tensor = initializer_map[weight_name]
+        else:
+            weight_base = weight_name or (f"{node.name}_scale" if node.name else "layernorm_scale")
+            weight_tensor = numpy_helper.from_array(
+                np.ones((num_features,), dtype=np.float32), name=weight_base
             )
-            model.graph.initializer.append(scale_init)
-            initializer_names.add(scale_name)
-
-            if len(node.input) > 1:
-                node.input[1] = scale_name
-            else:
-                node.input.append(scale_name)
-            patched = True
+            model.graph.initializer.append(weight_tensor)
+            initializer_names.add(weight_base)
+            initializer_map[weight_base] = weight_tensor
 
         bias_name = node.input[2] if len(node.input) > 2 else ""
-        if not bias_name or bias_name not in initializer_names:
-            shift_name = bias_name or (f"{node.name}_bias" if node.name else "layernorm_bias")
-            shift_init = numpy_helper.from_array(
-                np.zeros((num_features,), dtype=np.float32), name=shift_name
+        if bias_name and bias_name in initializer_names:
+            bias_tensor = initializer_map[bias_name]
+        else:
+            bias_base = bias_name or (f"{node.name}_bias" if node.name else "layernorm_bias")
+            bias_tensor = numpy_helper.from_array(
+                np.zeros((num_features,), dtype=np.float32), name=bias_base
             )
-            model.graph.initializer.append(shift_init)
-            initializer_names.add(shift_name)
+            model.graph.initializer.append(bias_tensor)
+            initializer_names.add(bias_base)
+            initializer_map[bias_base] = bias_tensor
 
-            if len(node.input) > 2:
-                node.input[2] = shift_name
-            else:
-                while len(node.input) < 2:
-                    node.input.append("")
-                node.input.append(shift_name)
+        while len(node.input) < 2:
+            node.input.append("")
+        if len(node.input) < 3:
+            node.input.append("")
+
+        node.input[1] = attach_constant(
+            weight_tensor.name, weight_tensor
+        )
+        node.input[2] = attach_constant(
+            bias_tensor.name, bias_tensor
+        )
+        patched = True
+
+    for node in model.graph.node:
+        if node.op_type != "Constant":
+            continue
+        for attr in node.attribute:
+            if attr.name != "value":
+                continue
+            arr = numpy_helper.to_array(attr.t)
+            if not np.issubdtype(arr.dtype, np.floating):
+                continue
+            if np.isfinite(arr).all():
+                continue
+            finite = np.nan_to_num(
+                arr,
+                nan=0.0,
+                posinf=np.finfo(arr.dtype).max,
+                neginf=np.finfo(arr.dtype).min,
+            )
+            attr.t.CopyFrom(numpy_helper.from_array(finite, name=attr.t.name))
             patched = True
 
+    producer = {}
+    for node in model.graph.node:
+        for out in node.output:
+            producer[out] = node
+
+    cache: dict[str, np.ndarray] = {}
+    for init in model.graph.initializer:
+        cache[init.name] = numpy_helper.to_array(init)
+
+    for node in model.graph.node:
+        if node.op_type != "Pad" or len(node.input) < 2:
+            continue
+        pads_name = node.input[1]
+        if not pads_name:
+            continue
+        if pads_name in cache:
+            continue
+        pads_value = eval_const_tensor(pads_name, cache, producer)
+        if pads_value is None:
+            continue
+        pads_tensor = numpy_helper.from_array(pads_value.astype(np.int64), name=f"{pads_name}_value")
+        node.input[1] = attach_constant(pads_tensor.name, pads_tensor)
+        patched = True
+
     if patched:
+        sorted_nodes = topo_sort_nodes(list(model.graph.node))
+        model.graph.ClearField("node")
+        model.graph.node.extend(sorted_nodes)
         onnx.save(model, path)
     return patched
 

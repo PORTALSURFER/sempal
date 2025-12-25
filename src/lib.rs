@@ -1,4 +1,5 @@
 //! Library exports for reuse in benchmarks and tests.
+extern crate alloc;
 /// Background analysis helpers.
 pub mod analysis;
 /// Application directory helpers.
