@@ -24,7 +24,7 @@ def main() -> int:
     parser.add_argument(
         "--out",
         type=Path,
-        default=Path("assets/ml/panns_cnn14/golden_mel.json"),
+        default=Path("assets/ml/panns_cnn14_16k/golden_mel.json"),
         help="Output JSON path",
     )
     parser.add_argument("--tone-hz", type=float, default=440.0, help="Tone frequency")
@@ -35,12 +35,12 @@ def main() -> int:
     parser.add_argument(
         "--target-seconds", type=float, default=10.0, help="Target padded duration"
     )
-    parser.add_argument("--sample-rate", type=int, default=32000, help="Sample rate")
-    parser.add_argument("--n-fft", type=int, default=1024, help="FFT size")
-    parser.add_argument("--hop-length", type=int, default=320, help="Hop length")
+    parser.add_argument("--sample-rate", type=int, default=16000, help="Sample rate")
+    parser.add_argument("--n-fft", type=int, default=512, help="FFT size")
+    parser.add_argument("--hop-length", type=int, default=160, help="Hop length")
     parser.add_argument("--n-mels", type=int, default=64, help="Mel bands")
     parser.add_argument("--fmin", type=float, default=50.0, help="Mel fmin")
-    parser.add_argument("--fmax", type=float, default=14000.0, help="Mel fmax")
+    parser.add_argument("--fmax", type=float, default=8000.0, help="Mel fmax")
     args = parser.parse_args()
 
     try:
@@ -70,7 +70,7 @@ def main() -> int:
         fmax=float(args.fmax),
         power=2.0,
     )
-    log_mel = np.log10(np.maximum(mel, 1e-6))
+    log_mel = 10.0 * np.log10(np.maximum(mel, 1e-10))
     frames = log_mel.T.tolist()
 
     payload = {

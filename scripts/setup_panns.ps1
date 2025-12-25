@@ -2,6 +2,8 @@ param(
     [string]$AppRoot,
     [string]$Onnx,
     [string]$OnnxUrl,
+    [string]$Checkpoint,
+    [string]$CheckpointUrl,
     [string]$RuntimeFile,
     [switch]$Force
 )
@@ -24,6 +26,8 @@ $argsList = @($scriptPath)
 if ($AppRoot) { $argsList += @("--app-root", $AppRoot) }
 if ($Onnx) { $argsList += @("--onnx", $Onnx) }
 if ($OnnxUrl) { $argsList += @("--onnx-url", $OnnxUrl) }
+if ($Checkpoint) { $argsList += @("--checkpoint", $Checkpoint) }
+if ($CheckpointUrl) { $argsList += @("--checkpoint-url", $CheckpointUrl) }
 if ($RuntimeFile) { $argsList += @("--runtime-file", $RuntimeFile) }
 if ($Force) { $argsList += "--force" }
 

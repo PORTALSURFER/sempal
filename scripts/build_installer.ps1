@@ -28,10 +28,10 @@ Copy-Item "target/release/sempal.exe" $BundleDir -Force
 Copy-Item "target/release/sempal-installer.exe" $OutDir -Force
 Copy-Item "assets/logo3.ico" (Join-Path $BundleDir "sempal.ico") -Force
 
-if (Test-Path (Join-Path $ModelsDir "panns_cnn14.onnx")) {
-    Copy-Item (Join-Path $ModelsDir "panns_cnn14.onnx") $ModelsOut -Force
+if (Test-Path (Join-Path $ModelsDir "panns_cnn14_16k.onnx")) {
+    Copy-Item (Join-Path $ModelsDir "panns_cnn14_16k.onnx") $ModelsOut -Force
 } else {
-    Write-Warning "panns_cnn14.onnx not found at $ModelsDir"
+    Write-Warning "panns_cnn14_16k.onnx not found at $ModelsDir"
 }
 
 if (Test-Path (Join-Path $ModelsDir "onnxruntime\\onnxruntime.dll")) {

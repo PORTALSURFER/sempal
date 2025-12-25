@@ -28,18 +28,18 @@ authoritative for all embedding inference in the app and dataset tooling.
 
 ### Model input
 
-- Target sample rate: `32_000Hz` (resample if needed).
-- Window length: `10s` (`320_000` samples).
+- Target sample rate: `16_000Hz` (resample if needed).
+- Window length: `10s` (`160_000` samples).
 - If shorter than 10s, repeat-pad to length; if longer, truncate to 10s.
 - Compute log-mel features:
-  - STFT: `n_fft=1024`, `hop=320`, Hann window.
-  - Mel: `64` bands, `fmin=50Hz`, `fmax=14_000Hz`.
-  - Log scale: `log10(mel + 1e-6)`.
-- Model input tensor layout: `[batch, 1, mel, frames]` where `frames=1000`.
+  - STFT: `n_fft=512`, `hop=160`, Hann window.
+  - Mel: `64` bands, `fmin=50Hz`, `fmax=8_000Hz`.
+  - Log scale: `10 * log10(mel + 1e-10)`.
+- Model input tensor layout: `[batch, 1, frames, mel]` where `frames=1000`.
 
 ### Output embedding
 
-- Model ID: `panns_cnn14__sr32k__nfft1024__hop320__mel64__log10__chunk10__repeatpad_v1`
+- Model ID: `panns_cnn14_16k__sr16k__nfft512__hop160__mel64__log10__chunk10__repeatpad_v1`
 - Dimension: `2048` `f32` values.
 - L2-normalized with `||v|| ~= 1.0` (tolerance `1e-3`).
 - Stored with `embeddings.model_id`, `dim`, `dtype`, and `l2_normed = true`.

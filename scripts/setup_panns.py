@@ -3,6 +3,8 @@ import argparse
 import os
 import platform
 import shutil
+import subprocess
+import sys
 import urllib.request
 from pathlib import Path
 
@@ -22,7 +24,17 @@ def resolve_app_root() -> Path:
     base = os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config"))
     return Path(base) / ".sempal"
 
+DEFAULT_CHECKPOINT_URL = (
+    "https://zenodo.org/api/records/3987831/files/"
+    "Cnn14_16k_mAP=0.438.pth/content"
+)
+
 def download_onnx(url: str, destination: Path) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with urllib.request.urlopen(url) as response, destination.open("wb") as handle:
+        shutil.copyfileobj(response, handle)
+
+def download_checkpoint(url: str, destination: Path) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
     with urllib.request.urlopen(url) as response, destination.open("wb") as handle:
         shutil.copyfileobj(response, handle)
@@ -36,12 +48,21 @@ def main() -> int:
     parser.add_argument(
         "--onnx",
         type=Path,
-        default=Path("assets/ml/panns_cnn14/panns_cnn14.onnx"),
-        help="Path to panns_cnn14.onnx",
+        default=Path("assets/ml/panns_cnn14_16k/panns_cnn14_16k.onnx"),
+        help="Path to panns_cnn14_16k.onnx",
     )
     parser.add_argument(
         "--onnx-url",
-        help="Download URL for panns_cnn14.onnx when not found locally",
+        help="Download URL for panns_cnn14_16k.onnx when not found locally",
+    )
+    parser.add_argument(
+        "--checkpoint",
+        type=Path,
+        help="Path to PANNs checkpoint (.pth) to export when ONNX is missing",
+    )
+    parser.add_argument(
+        "--checkpoint-url",
+        help="Download URL for PANNs checkpoint when missing",
     )
     parser.add_argument(
         "--runtime-file",
@@ -57,17 +78,46 @@ def main() -> int:
 
     if not args.onnx.exists():
         onnx_url = args.onnx_url or os.environ.get("SEMPAL_PANNS_ONNX_URL")
-        if not onnx_url:
-            raise RuntimeError(
-                f"ONNX model not found: {args.onnx}. "
-                "Provide --onnx or set SEMPAL_PANNS_ONNX_URL to download it."
-            )
-        print(f"Downloading PANNs ONNX from {onnx_url}...")
-        download_onnx(onnx_url, args.onnx)
+        if onnx_url:
+            print(f"Downloading PANNs ONNX from {onnx_url}...")
+            download_onnx(onnx_url, args.onnx)
         if not args.onnx.exists():
-            raise RuntimeError(f"ONNX download failed: {args.onnx}")
+            checkpoint = args.checkpoint
+            if checkpoint is None:
+                checkpoint = Path("assets/ml/panns_cnn14_16k/Cnn14_16k_mAP=0.438.pth")
+            if not checkpoint.exists():
+                checkpoint_url = (
+                    args.checkpoint_url
+                    or os.environ.get("SEMPAL_PANNS_CHECKPOINT_URL")
+                    or DEFAULT_CHECKPOINT_URL
+                )
+                if not checkpoint_url:
+                    raise RuntimeError(
+                        f"ONNX model not found: {args.onnx}. "
+                        "Provide --onnx, --onnx-url, or set SEMPAL_PANNS_CHECKPOINT_URL."
+                    )
+                print(f"Downloading PANNs checkpoint from {checkpoint_url}...")
+                download_checkpoint(checkpoint_url, checkpoint)
+            if not checkpoint.exists():
+                raise RuntimeError(f"Checkpoint not found: {checkpoint}")
+            export_script = Path(__file__).resolve().parent.parent / "tools" / "export_panns_onnx.py"
+            print("Exporting PANNs checkpoint to ONNX...")
+            subprocess.check_call(
+                [
+                    sys.executable,
+                    str(export_script),
+                    "--checkpoint",
+                    str(checkpoint),
+                    "--out-dir",
+                    str(args.onnx.parent),
+                    "--onnx-name",
+                    args.onnx.name,
+                ]
+            )
+        if not args.onnx.exists():
+            raise RuntimeError(f"ONNX export failed: {args.onnx}")
 
-    target_onnx = models_dir / "panns_cnn14.onnx"
+    target_onnx = models_dir / "panns_cnn14_16k.onnx"
     if target_onnx.exists() and not args.force:
         print(f"{target_onnx} already exists; pass --force to overwrite")
     else:

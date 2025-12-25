@@ -72,22 +72,22 @@ fn panns_onnx_path() -> PathBuf {
     }
     if let Ok(path) = env::var("SEMPAL_MODELS_DIR") {
         if !path.trim().is_empty() {
-            return PathBuf::from(path).join("panns_cnn14.onnx");
+            return PathBuf::from(path).join("panns_cnn14_16k.onnx");
         }
     }
     if let Some(appdata) = env::var_os("APPDATA") {
         return PathBuf::from(appdata)
             .join(".sempal")
             .join("models")
-            .join("panns_cnn14.onnx");
+            .join("panns_cnn14_16k.onnx");
     }
     if let Some(home) = env::var_os("HOME") {
         return PathBuf::from(home)
             .join(".sempal")
             .join("models")
-            .join("panns_cnn14.onnx");
+            .join("panns_cnn14_16k.onnx");
     }
-    PathBuf::from("panns_cnn14.onnx")
+    PathBuf::from("panns_cnn14_16k.onnx")
 }
 
 fn write_panns_paths(out_dir: &Path, burnpack_path: &Path) -> Result<(), String> {

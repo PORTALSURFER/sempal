@@ -12,7 +12,7 @@ use crate::analysis::panns_preprocess::{
 };
 
 mod panns_burn {
-    include!(concat!(env!("OUT_DIR"), "/burn_panns/panns_cnn14.rs"));
+    include!(concat!(env!("OUT_DIR"), "/burn_panns/panns_cnn14_16k.rs"));
 }
 
 mod panns_paths {
@@ -22,10 +22,10 @@ mod panns_paths {
 type PannsBackend = wgpu::Wgpu;
 
 pub const EMBEDDING_MODEL_ID: &str =
-    "panns_cnn14__sr32k__nfft1024__hop320__mel64__log10__chunk10__repeatpad_v1";
+    "panns_cnn14_16k__sr16k__nfft512__hop160__mel64__log10__chunk10__repeatpad_v1";
 pub const EMBEDDING_DIM: usize = 2048;
 pub const EMBEDDING_DTYPE_F32: &str = "f32";
-const PANNS_SAMPLE_RATE: u32 = 32_000;
+const PANNS_SAMPLE_RATE: u32 = 16_000;
 const PANNS_INPUT_SECONDS: f32 = 10.0;
 const PANNS_INPUT_SAMPLES: usize = (PANNS_SAMPLE_RATE as f32 * PANNS_INPUT_SECONDS) as usize;
 const PANNS_INPUT_FRAMES: usize =
@@ -237,7 +237,7 @@ fn prepare_panns_input(
     out.fill(0.0);
     for (frame_idx, frame) in frames.iter().take(PANNS_INPUT_FRAMES).enumerate() {
         for (mel_idx, value) in frame.iter().enumerate().take(PANNS_MEL_BANDS) {
-            let idx = mel_idx * PANNS_INPUT_FRAMES + frame_idx;
+            let idx = frame_idx * PANNS_MEL_BANDS + mel_idx;
             out[idx] = *value;
         }
     }
@@ -252,7 +252,7 @@ fn run_panns_inference(
 ) -> Result<Vec<Vec<f32>>, String> {
     let data = TensorData::new(
         input.to_vec(),
-        [batch, 1, PANNS_MEL_BANDS, PANNS_INPUT_FRAMES],
+        [batch, 1, PANNS_INPUT_FRAMES, PANNS_MEL_BANDS],
     );
     let input_tensor = Tensor::<PannsBackend, 4>::from_data(data, device);
     let output = model.forward(input_tensor);
@@ -371,15 +371,15 @@ fn panns_burnpack_path() -> Result<PathBuf, String> {
         return Ok(generated);
     }
     let root = crate::app_dirs::app_root_dir().map_err(|err| err.to_string())?;
-    Ok(root.join("models").join("panns_cnn14.bpk"))
+    Ok(root.join("models").join("panns_cnn14_16k.bpk"))
 }
 
 #[allow(dead_code)]
 pub(crate) fn embedding_model_path() -> &'static PathBuf {
     static PATH: LazyLock<PathBuf> = LazyLock::new(|| {
         crate::app_dirs::app_root_dir()
-            .map(|root| root.join("models").join("panns_cnn14.bpk"))
-            .unwrap_or_else(|_| PathBuf::from("panns_cnn14.bpk"))
+            .map(|root| root.join("models").join("panns_cnn14_16k.bpk"))
+            .unwrap_or_else(|_| PathBuf::from("panns_cnn14_16k.bpk"))
     });
     &PATH
 }

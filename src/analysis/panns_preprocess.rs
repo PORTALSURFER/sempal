@@ -1,10 +1,10 @@
 use crate::analysis::fft::{Complex32, FftPlan, fft_radix2_inplace_with_plan, hann_window};
 
-pub(crate) const PANNS_STFT_N_FFT: usize = 1024;
-pub(crate) const PANNS_STFT_HOP: usize = 320;
+pub(crate) const PANNS_STFT_N_FFT: usize = 512;
+pub(crate) const PANNS_STFT_HOP: usize = 160;
 pub(crate) const PANNS_MEL_BANDS: usize = 64;
 pub(crate) const PANNS_MEL_FMIN_HZ: f32 = 50.0;
-pub(crate) const PANNS_MEL_FMAX_HZ: f32 = 14_000.0;
+pub(crate) const PANNS_MEL_FMAX_HZ: f32 = 8_000.0;
 
 /// Compute power spectra (0..=Nyquist) with Hann windowing for PANNs preprocessing.
 pub(crate) fn stft_power_frames(
@@ -134,9 +134,9 @@ fn power_spectrum(fft: &[Complex32]) -> Vec<f32> {
 }
 
 fn log_mel(value: f32) -> f32 {
-    const EPS: f32 = 1e-6;
+    const EPS: f32 = 1e-10;
     let v = value.max(EPS);
-    let out = v.log10();
+    let out = 10.0 * v.log10();
     if out.is_finite() { out } else { 0.0 }
 }
 
@@ -260,7 +260,7 @@ mod tests {
 
     #[test]
     fn panns_mel_bank_outputs_expected_length() {
-        let bank = PannsMelBank::new(32_000, PANNS_STFT_N_FFT);
+        let bank = PannsMelBank::new(16_000, PANNS_STFT_N_FFT);
         let power = vec![0.0_f32; PANNS_STFT_N_FFT / 2 + 1];
         let mel = bank.mel_from_power(&power);
         assert_eq!(mel.len(), PANNS_MEL_BANDS);
@@ -269,7 +269,7 @@ mod tests {
     #[test]
     fn log_mel_frames_are_finite() {
         let samples = vec![0.0_f32; PANNS_STFT_N_FFT];
-        let frames = log_mel_frames(&samples, 32_000).unwrap();
+        let frames = log_mel_frames(&samples, 16_000).unwrap();
         assert!(!frames.is_empty());
         assert!(frames.iter().all(|f| f.iter().all(|v| v.is_finite())));
     }

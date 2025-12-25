@@ -71,7 +71,7 @@ def log_mel_from_samples(samples, sr, n_fft, hop_length, n_mels, fmin, fmax):
         fmax=fmax,
         power=2.0,
     )
-    return np.log10(np.maximum(mel, 1e-6))
+    return 10.0 * np.log10(np.maximum(mel, 1e-10))
 
 
 def main() -> int:
@@ -82,16 +82,16 @@ def main() -> int:
     parser.add_argument(
         "--onnx",
         type=Path,
-        default=Path("assets/ml/panns_cnn14/panns_cnn14.onnx"),
+        default=Path("assets/ml/panns_cnn14_16k/panns_cnn14_16k.onnx"),
         help="Path to PANNs ONNX model",
     )
-    parser.add_argument("--sample-rate", type=int, default=32000, help="Sample rate")
+    parser.add_argument("--sample-rate", type=int, default=16000, help="Sample rate")
     parser.add_argument("--seconds", type=float, default=10.0, help="Target seconds")
-    parser.add_argument("--n-fft", type=int, default=1024, help="FFT size")
-    parser.add_argument("--hop-length", type=int, default=320, help="Hop length")
+    parser.add_argument("--n-fft", type=int, default=512, help="FFT size")
+    parser.add_argument("--hop-length", type=int, default=160, help="Hop length")
     parser.add_argument("--n-mels", type=int, default=64, help="Mel bands")
     parser.add_argument("--fmin", type=float, default=50.0, help="Mel fmin")
-    parser.add_argument("--fmax", type=float, default=14000.0, help="Mel fmax")
+    parser.add_argument("--fmax", type=float, default=8000.0, help="Mel fmax")
     parser.add_argument("--expected-dim", type=int, default=2048, help="Expected dim")
     args = parser.parse_args()
 
@@ -134,7 +134,7 @@ def main() -> int:
     elif frames > target_frames:
         mel = mel[:, :target_frames]
 
-    input_tensor = mel.astype("float32").reshape(1, 1, int(args.n_mels), target_frames)
+    input_tensor = mel.astype("float32").T.reshape(1, 1, target_frames, int(args.n_mels))
 
     sess = ort.InferenceSession(str(args.onnx), providers=["CPUExecutionProvider"])
     input_name = sess.get_inputs()[0].name

@@ -57,14 +57,14 @@ model.load_state_dict(torch.load("pretrained_model.pt", map_location=device))
 model.eval().to(device)
 
 # 2. Create a dummy input with correct shape
-# You need to know what PANNs expects, e.g. log-mel [batch, 1, mel, frames]
-dummy = torch.randn(1, 1, 64, 1000, device=device)  # 10s @ 32kHz, hop=320
+# You need to know what PANNs expects, e.g. log-mel [batch, 1, frames, mel]
+dummy = torch.randn(1, 1, 64, 1000, device=device)  # 10s @ 16kHz, hop=160
 
 # 3. Export to ONNX
 torch.onnx.export(
     model,
     dummy,
-    "panns_cnn14.onnx",
+    "panns_cnn14_16k.onnx",
     input_names=["audio"],
     output_names=["embedding"],
     dynamic_axes={
@@ -87,7 +87,7 @@ Write that down; you’ll mirror it in Rust.
 
 You now have:
 
-panns_cnn14.onnx – this will be shipped with your app as a data file.
+panns_cnn14_16k.onnx – this will be shipped with your app as a data file.
 
 2. Add ONNX Runtime to your Rust project
 
@@ -327,7 +327,7 @@ impl PannsEngine {
 
 Now your app can do:
 
-let engine = PannsEngine::new(Path::new("panns_cnn14.onnx"))?;
+let engine = PannsEngine::new(Path::new("panns_cnn14_16k.onnx"))?;
 let emb = engine.embed_file(Path::new("some_sample.wav"))?;
 println!("embedding len = {}", emb.len());
 
