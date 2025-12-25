@@ -19,19 +19,12 @@ pub(super) fn start_selection_edge_drag(
 
 pub(super) fn update_selection_drag(controller: &mut EguiController, position: f32) {
     if let Some(range) = controller.selection_state.range.update_drag(position) {
-        let range = controller.clamp_loop_selection(range);
-        controller.selection_state.range.set_range(Some(range));
         controller.apply_selection(Some(range));
     }
 }
 
 pub(super) fn finish_selection_drag(controller: &mut EguiController) {
     controller.selection_state.range.finish_drag();
-    if let Some(range) = controller.selection_state.range.range() {
-        let range = controller.clamp_loop_selection(range);
-        controller.selection_state.range.set_range(Some(range));
-        controller.apply_selection(Some(range));
-    }
     let is_playing = controller
         .audio
         .player
@@ -47,7 +40,6 @@ pub(super) fn finish_selection_drag(controller: &mut EguiController) {
 }
 
 pub(super) fn set_selection_range(controller: &mut EguiController, range: SelectionRange) {
-    let range = controller.clamp_loop_selection(range);
     controller.selection_state.range.set_range(Some(range));
     controller.apply_selection(Some(range));
 }

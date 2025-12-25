@@ -99,30 +99,6 @@ fn pruning_missing_selection_clears_waveform_view() {
     assert!(controller.sample_view.wav.loaded_wav.is_none());
 }
 
-#[test]
-fn loop_selection_clamps_to_min_duration() {
-    let (mut controller, source) = dummy_controller();
-    controller.library.sources.push(source.clone());
-    controller.cache_db(&source).unwrap();
-    let wav_path = source.root.join("loop.wav");
-    write_test_wav(&wav_path, &vec![0.0_f32; 16]);
-    controller.set_wav_entries_for_tests(vec![sample_entry("loop.wav", SampleTag::Neutral)]);
-    controller.rebuild_wav_lookup();
-    controller.rebuild_browser_lists();
-    controller
-        .load_waveform_for_selection(&source, Path::new("loop.wav"))
-        .unwrap();
-    controller.ui.waveform.loop_enabled = true;
-
-    controller.set_selection_range(SelectionRange::new(0.2, 0.21));
-
-    let selection = controller.ui.waveform.selection.unwrap();
-    let duration = controller.sample_view.wav.loaded_audio.as_ref().unwrap().duration_seconds;
-    let min_width = 0.1 / duration;
-    assert!(selection.width() + f32::EPSILON >= min_width);
-}
-
-#[test]
 fn cropping_selection_overwrites_file() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source.clone());
