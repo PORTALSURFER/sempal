@@ -161,6 +161,9 @@ def build_onnx(target: Path, checkpoint: Path | None, channels: int, samples: in
     except TypeError:
         torch.onnx.export(wrapper, dummy, target, **export_kwargs)
 
+    if patch_layer_norm_weights(target):
+        print("Patched LayerNormalization weights for Burn import compatibility.")
+
 
 def download_checkpoint(urls: list[str], dest: Path) -> Path:
     if dest.exists():
@@ -199,6 +202,80 @@ def verify_onnx(path: Path) -> None:
     data = path.read_bytes()
     if len(data) < 1024 * 100:
         raise RuntimeError(f"{path} is unexpectedly small ({len(data)} bytes)")
+
+
+def _shape_map(model) -> dict[str, list[int | None]]:
+    def dims_from_vi(vi):
+        if not vi or not vi.type or not vi.type.tensor_type:
+            return None
+        shape = vi.type.tensor_type.shape
+        if not shape:
+            return None
+        dims = []
+        for dim in shape.dim:
+            if dim.HasField("dim_value"):
+                dims.append(int(dim.dim_value))
+            else:
+                dims.append(None)
+        return dims
+
+    mapping = {}
+    for vi in list(model.graph.input) + list(model.graph.value_info) + list(model.graph.output):
+        dims = dims_from_vi(vi)
+        if dims is not None:
+            mapping[vi.name] = dims
+    return mapping
+
+
+def patch_layer_norm_weights(path: Path) -> bool:
+    import onnx
+    from onnx import numpy_helper, shape_inference
+    import numpy as np
+
+    model = onnx.load(path)
+    try:
+        model = shape_inference.infer_shapes(model)
+    except Exception:
+        pass
+
+    shape_map = _shape_map(model)
+    initializer_names = {init.name for init in model.graph.initializer}
+    patched = False
+
+    for node in model.graph.node:
+        if node.op_type != "LayerNormalization":
+            continue
+
+        weight_name = node.input[1] if len(node.input) > 1 else ""
+        if weight_name and weight_name in initializer_names:
+            continue
+
+        input_name = node.input[0] if node.input else ""
+        dims = shape_map.get(input_name)
+        if not dims or dims[-1] is None:
+            raise RuntimeError(
+                "Unable to infer LayerNorm weight shape. "
+                f"Missing or dynamic last-dim for input '{input_name}'."
+            )
+
+        num_features = dims[-1]
+        scale_name = weight_name or (f"{node.name}_scale" if node.name else "layernorm_scale")
+        scale_init = numpy_helper.from_array(
+            np.ones((num_features,), dtype=np.float32), name=scale_name
+        )
+        model.graph.initializer.append(scale_init)
+        initializer_names.add(scale_name)
+
+        if len(node.input) > 1:
+            node.input[1] = scale_name
+        else:
+            node.input.append(scale_name)
+
+        patched = True
+
+    if patched:
+        onnx.save(model, path)
+    return patched
 
 
 def find_ort_runtime() -> Path | None:
