@@ -5,7 +5,10 @@ use crate::egui_app::ui::style;
 use super::section_label;
 
 impl EguiApp {
-    pub(super) fn render_audio_settings_window(&mut self, ctx: &egui::Context) {
+    pub(in crate::egui_app::ui::chrome) fn render_audio_settings_window(
+        &mut self,
+        ctx: &egui::Context,
+    ) {
         if !self.controller.ui.audio.panel_open {
             return;
         }
@@ -116,7 +119,10 @@ impl EguiApp {
         self.controller.ui.audio.panel_open = open;
     }
 
-    pub(super) fn render_audio_options_menu(&mut self, ui: &mut egui::Ui) {
+    pub(in crate::egui_app::ui::chrome) fn render_audio_options_menu(
+        &mut self,
+        ui: &mut egui::Ui,
+    ) {
         let palette = style::palette();
         ui.label(
             RichText::new("Audio output")

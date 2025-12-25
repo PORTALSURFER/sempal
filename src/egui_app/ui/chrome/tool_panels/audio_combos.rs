@@ -3,7 +3,7 @@ use eframe::egui;
 use crate::egui_app::ui::EguiApp;
 
 impl EguiApp {
-    fn render_audio_host_combo(&mut self, ui: &mut egui::Ui) {
+    pub(super) fn render_audio_host_combo(&mut self, ui: &mut egui::Ui) {
         let selected_host = self.controller.ui.audio.selected.host.clone();
         let hosts = self.controller.ui.audio.hosts.clone();
         let current = selected_host
@@ -28,7 +28,7 @@ impl EguiApp {
             });
     }
 
-    fn render_audio_device_combo(&mut self, ui: &mut egui::Ui) {
+    pub(super) fn render_audio_device_combo(&mut self, ui: &mut egui::Ui) {
         let selected_device = self.controller.ui.audio.selected.device.clone();
         let devices = self.controller.ui.audio.devices.clone();
         let current = selected_device
@@ -53,7 +53,7 @@ impl EguiApp {
             });
     }
 
-    fn render_audio_sample_rate_combo(&mut self, ui: &mut egui::Ui) {
+    pub(super) fn render_audio_sample_rate_combo(&mut self, ui: &mut egui::Ui) {
         let selected_rate = self.controller.ui.audio.selected.sample_rate;
         let sample_rates = self.controller.ui.audio.sample_rates.clone();
         let selected = selected_rate
@@ -79,7 +79,7 @@ impl EguiApp {
             });
     }
 
-    fn render_audio_buffer_combo(&mut self, ui: &mut egui::Ui) {
+    pub(super) fn render_audio_buffer_combo(&mut self, ui: &mut egui::Ui) {
         let selected_buffer = self.controller.ui.audio.selected.buffer_size;
         let selected = selected_buffer
             .map(|frames| format!("{frames} frames"))

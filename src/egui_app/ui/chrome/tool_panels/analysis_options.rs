@@ -6,7 +6,10 @@ use super::super::buttons;
 use super::section_label;
 
 impl EguiApp {
-    pub(super) fn render_analysis_options_menu(&mut self, ui: &mut egui::Ui) {
+    pub(in crate::egui_app::ui::chrome) fn render_analysis_options_menu(
+        &mut self,
+        ui: &mut egui::Ui,
+    ) {
         let palette = style::palette();
         section_label(ui, "Analysis");
         ui.label(
