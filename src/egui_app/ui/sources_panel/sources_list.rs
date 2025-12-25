@@ -109,6 +109,72 @@ impl EguiApp {
                 close_menu = true;
             }
             ui.separator();
+            ui.label(
+                RichText::new("Similarity prep")
+                    .color(style::palette().text_muted),
+            );
+            let mut cap_enabled = self.controller.similarity_prep_duration_cap_enabled();
+            if ui
+                .checkbox(&mut cap_enabled, "Limit analysis duration")
+                .on_hover_text("Skip long files during similarity prep to speed up analysis")
+                .changed()
+            {
+                self.controller
+                    .set_similarity_prep_duration_cap_enabled(cap_enabled);
+            }
+            ui.add_enabled_ui(cap_enabled, |ui| {
+                let mut seconds = self.controller.max_analysis_duration_seconds();
+                let drag = egui::DragValue::new(&mut seconds)
+                    .speed(1.0)
+                    .range(1.0..=3600.0)
+                    .suffix(" s");
+                let response = ui.add(drag).on_hover_text(
+                    "Maximum file length to analyze during similarity preparation",
+                );
+                if response.changed() {
+                    self.controller.set_max_analysis_duration_seconds(seconds);
+                }
+            });
+            let mut fast_prep = self.controller.similarity_prep_fast_mode_enabled();
+            if ui
+                .checkbox(&mut fast_prep, "Fast similarity prep")
+                .on_hover_text(
+                    "Downsample audio during prep for faster analysis; refine lazily later",
+                )
+                .changed()
+            {
+                self.controller
+                    .set_similarity_prep_fast_mode_enabled(fast_prep);
+            }
+            ui.add_enabled_ui(fast_prep, |ui| {
+                let mut sample_rate = self.controller.similarity_prep_fast_sample_rate();
+                let drag = egui::DragValue::new(&mut sample_rate)
+                    .speed(500.0)
+                    .range(8_000..=16_000)
+                    .suffix(" Hz");
+                let response = ui.add(drag).on_hover_text(
+                    "Sample rate used for fast similarity prep analysis",
+                );
+                if response.changed() {
+                    self.controller.set_similarity_prep_fast_sample_rate(sample_rate);
+                }
+            });
+            ui.add_enabled_ui(!self.controller.similarity_prep_in_progress(), |ui| {
+                let mut force_full = self
+                    .controller
+                    .similarity_prep_force_full_analysis_next();
+                if ui
+                    .checkbox(&mut force_full, "Force full reanalysis (next run)")
+                    .on_hover_text(
+                        "Ignore cached features and embeddings on the next similarity prep run",
+                    )
+                    .changed()
+                {
+                    self.controller
+                        .set_similarity_prep_force_full_analysis_next(force_full);
+                }
+            });
+            ui.separator();
             if ui.button("Open in file explorer").clicked() {
                 self.controller.select_source_by_index(index);
                 self.controller.open_source_folder(index);

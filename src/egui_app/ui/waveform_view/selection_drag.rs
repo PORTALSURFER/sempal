@@ -1,5 +1,5 @@
 use super::*;
-use crate::egui_app::state::{DragSource, DragTarget, WaveformView};
+use crate::egui_app::state::{DragSource, WaveformView};
 use crate::selection::{SelectionEdge, SelectionRange};
 use eframe::egui::{self, CursorIcon};
 
@@ -29,6 +29,7 @@ pub(super) fn handle_selection_handle_drag(
                 let keep_source_focused = ui.input(|i| i.modifiers.shift);
                 app.controller
                     .start_selection_drag_payload(selection, pos, keep_source_focused);
+                app.controller.ui.drag.origin_source = Some(DragSource::Waveform);
             }
         }
     } else if handle_response.dragged() {
@@ -39,12 +40,7 @@ pub(super) fn handle_selection_handle_drag(
                 app.controller.set_selection_range(slide.range.shift(delta));
             } else {
                 let shift_down = ui.input(|i| i.modifiers.shift);
-                app.controller.update_active_drag(
-                    pos,
-                    DragSource::Waveform,
-                    DragTarget::None,
-                    shift_down,
-                );
+                app.controller.refresh_drag_position(pos, shift_down);
             }
         }
     } else if handle_response.drag_stopped() {

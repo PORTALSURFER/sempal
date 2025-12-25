@@ -1,6 +1,6 @@
 use super::*;
 impl EguiController {
-    fn sync_after_wav_entries_changed(&mut self) {
+    pub(super) fn sync_after_wav_entries_changed(&mut self) {
         self.rebuild_wav_lookup();
         self.ui_cache.browser.search.invalidate();
         self.refresh_folder_browser();
@@ -16,12 +16,21 @@ impl EguiController {
             return;
         }
         self.clear_source_missing(&source.id);
-        if let Some(entries) = self.cache.wav.entries.get(&source.id).cloned() {
-            self.ensure_wav_cache_lookup(&source.id);
-            self.apply_wav_entries(entries, true, Some(source.id.clone()), None);
-            return;
+        if let Some(cache) = self.cache.wav.entries.get(&source.id) {
+            if let Some(entries) = cache.pages.get(&0).cloned() {
+                self.apply_wav_entries(
+                    entries,
+                    cache.total,
+                    cache.page_size,
+                    0,
+                    true,
+                    Some(source.id.clone()),
+                    None,
+                );
+                return;
+            }
         }
-        self.wav_entries.entries.clear();
+        self.wav_entries.clear();
         self.sync_after_wav_entries_changed();
         if self.runtime.jobs.wav_load_pending_for(&source.id) {
             return;
@@ -30,17 +39,28 @@ impl EguiController {
         let job = WavLoadJob {
             source_id: source.id.clone(),
             root: source.root.clone(),
+            page_size: self.wav_entries.page_size,
         };
         if cfg!(test) {
-            let result = wav_entries_loader::load_entries(&job);
+            let (result, total) = wav_entries_loader::load_entries(&job);
             match result {
                 Ok(entries) => {
-                    self.cache
-                        .wav
-                        .entries
-                        .insert(source.id.clone(), entries.clone());
-                    self.rebuild_wav_cache_lookup(&source.id);
-                    self.apply_wav_entries(entries, false, Some(source.id.clone()), None);
+                    self.cache.wav.insert_page(
+                        source.id.clone(),
+                        total,
+                        job.page_size,
+                        0,
+                        entries.clone(),
+                    );
+                    self.apply_wav_entries(
+                        entries,
+                        total,
+                        job.page_size,
+                        0,
+                        false,
+                        Some(source.id.clone()),
+                        None,
+                    );
                 }
                 Err(err) => self.handle_wav_load_error(&source.id, err),
             }
@@ -72,15 +92,24 @@ impl EguiController {
     pub(super) fn apply_wav_entries(
         &mut self,
         entries: Vec<WavEntry>,
+        total: usize,
+        page_size: usize,
+        page_index: usize,
         from_cache: bool,
         source_id: Option<SourceId>,
         elapsed: Option<Duration>,
     ) {
-        self.wav_entries.entries = entries;
+        self.wav_entries.total = total;
+        self.wav_entries.page_size = page_size.max(1);
+        if page_index == 0 {
+            self.wav_entries.pages.clear();
+            self.wav_entries.lookup.clear();
+        }
+        self.wav_entries.insert_page(page_index, entries);
         self.sync_after_wav_entries_changed();
         let mut pending_applied = false;
         if let Some(path) = self.runtime.jobs.take_pending_select_path()
-            && self.wav_entries.lookup.contains_key(&path)
+            && self.wav_index_for_path(&path).is_some()
         {
             self.select_wav_by_path(&path);
             pending_applied = true;
@@ -88,41 +117,30 @@ impl EguiController {
         if !pending_applied
             && self.sample_view.wav.selected_wav.is_none()
             && self.ui.collections.selected_sample.is_none()
-            && !self.wav_entries.entries.is_empty()
+            && self.wav_entries.total > 0
         {
             self.selection_state.suppress_autoplay_once = true;
             self.select_wav_by_index(0);
         }
-        if let Some(id) = source_id {
-            let needs_labels = !from_cache
-                || self
-                    .ui_cache
-                    .browser
-                    .labels
-                    .get(&id)
-                    .map(|cached| cached.len() != self.wav_entries.entries.len())
-                    .unwrap_or(true);
-            if needs_labels {
-                self.ui_cache.browser.labels.insert(
-                    id.clone(),
-                    self.build_label_cache(&self.wav_entries.entries),
-                );
+        if let Some(ref id) = source_id {
+            if !from_cache {
+                self.ui_cache.browser.labels.remove(id);
             }
-            let needs_failures = !from_cache
-                || !self
-                    .ui_cache
-                    .browser
-                    .analysis_failures
-                    .contains_key(&id);
+            let needs_failures =
+                !from_cache || !self.ui_cache.browser.analysis_failures.contains_key(id);
             if needs_failures {
-                if let Ok(failures) = super::analysis_jobs::failed_samples_for_source(&id) {
-                    self.ui_cache.browser.analysis_failures.insert(id.clone(), failures);
+                if let Some(source) = self.library.sources.iter().find(|s| &s.id == id)
+                    && let Ok(failures) = super::analysis_jobs::failed_samples_for_source(source)
+                {
+                    self.ui_cache
+                        .browser
+                        .analysis_failures
+                        .insert(id.clone(), failures);
                 } else {
-                    self.ui_cache.browser.analysis_failures.remove(&id);
+                    self.ui_cache.browser.analysis_failures.remove(id);
                 }
             }
-            let entries = self.wav_entries.entries.clone();
-            self.sync_missing_from_entries(&id, &entries);
+            self.sync_missing_from_db(id);
         }
         let prefix = if from_cache { "Cached" } else { "Loaded" };
         let suffix = elapsed
@@ -131,9 +149,37 @@ impl EguiController {
         self.set_status(
             format!(
                 "{prefix} {} wav files{suffix}",
-                self.wav_entries.entries.len()
+                self.wav_entries.total
             ),
             StatusTone::Info,
         );
+        if let Some(source_id) = source_id.as_ref() {
+            self.maybe_refresh_source_db_in_background(source_id, from_cache);
+        }
+    }
+
+    fn maybe_refresh_source_db_in_background(&self, source_id: &SourceId, from_cache: bool) {
+        if !from_cache || self.runtime.jobs.scan_in_progress() {
+            return;
+        }
+        let Some(source) = self.library.sources.iter().find(|s| &s.id == source_id) else {
+            return;
+        };
+        if !source.root.is_dir() {
+            return;
+        }
+        let _ = crate::sample_sources::scanner::scan_in_background(source.root.clone());
+    }
+
+    pub(super) fn invalidate_wav_entries_for_source(&mut self, source: &SampleSource) {
+        self.cache.wav.entries.remove(&source.id);
+        if self.selection_state.ctx.selected_source.as_ref() == Some(&source.id) {
+            self.wav_entries.clear();
+            self.sync_after_wav_entries_changed();
+            self.queue_wav_load();
+        } else {
+            self.ui_cache.browser.labels.remove(&source.id);
+        }
+        self.rebuild_missing_lookup_for_source(&source.id);
     }
 }

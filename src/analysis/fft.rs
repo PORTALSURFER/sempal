@@ -1,37 +1,8 @@
 use std::f32::consts::PI;
+use std::sync::Arc;
 
-#[derive(Clone, Copy, Debug, Default)]
-pub(crate) struct Complex32 {
-    pub(crate) re: f32,
-    pub(crate) im: f32,
-}
-
-impl Complex32 {
-    pub(crate) fn new(re: f32, im: f32) -> Self {
-        Self { re, im }
-    }
-
-    pub(crate) fn mul(self, other: Self) -> Self {
-        Self {
-            re: self.re * other.re - self.im * other.im,
-            im: self.re * other.im + self.im * other.re,
-        }
-    }
-
-    pub(crate) fn add(self, other: Self) -> Self {
-        Self {
-            re: self.re + other.re,
-            im: self.im + other.im,
-        }
-    }
-
-    pub(crate) fn sub(self, other: Self) -> Self {
-        Self {
-            re: self.re - other.re,
-            im: self.im - other.im,
-        }
-    }
-}
+pub(crate) use rustfft::num_complex::Complex32;
+use rustfft::{Fft, FftPlanner};
 
 pub(crate) fn hann_window(length: usize) -> Vec<f32> {
     if length <= 1 {
@@ -44,44 +15,41 @@ pub(crate) fn hann_window(length: usize) -> Vec<f32> {
 }
 
 pub(crate) fn fft_radix2_inplace(buffer: &mut [Complex32]) -> Result<(), String> {
-    let n = buffer.len();
-    if n == 0 || !n.is_power_of_two() {
-        return Err(format!("FFT length must be power-of-two, got {n}"));
-    }
-    bit_reverse_permute(buffer);
-    let mut len = 2usize;
-    while len <= n {
-        let angle = -2.0_f32 * PI / len as f32;
-        let wlen = Complex32::new(angle.cos(), angle.sin());
-        for start in (0..n).step_by(len) {
-            let mut w = Complex32::new(1.0, 0.0);
-            for i in 0..(len / 2) {
-                let u = buffer[start + i];
-                let v = buffer[start + i + len / 2].mul(w);
-                buffer[start + i] = u.add(v);
-                buffer[start + i + len / 2] = u.sub(v);
-                w = w.mul(wlen);
-            }
-        }
-        len *= 2;
-    }
-    Ok(())
+    let plan = FftPlan::new(buffer.len())?;
+    fft_radix2_inplace_with_plan(buffer, &plan)
 }
 
-fn bit_reverse_permute(buffer: &mut [Complex32]) {
-    let n = buffer.len();
-    let mut j = 0usize;
-    for i in 1..n {
-        let mut bit = n >> 1;
-        while j & bit != 0 {
-            j ^= bit;
-            bit >>= 1;
+pub(crate) struct FftPlan {
+    len: usize,
+    plan: Arc<dyn Fft<f32>>,
+}
+
+impl FftPlan {
+    pub(crate) fn new(len: usize) -> Result<Self, String> {
+        if len == 0 || !len.is_power_of_two() {
+            return Err(format!("FFT length must be power-of-two, got {len}"));
         }
-        j ^= bit;
-        if i < j {
-            buffer.swap(i, j);
-        }
+        let mut planner = FftPlanner::<f32>::new();
+        Ok(Self {
+            len,
+            plan: planner.plan_fft_forward(len),
+        })
     }
+}
+
+pub(crate) fn fft_radix2_inplace_with_plan(
+    buffer: &mut [Complex32],
+    plan: &FftPlan,
+) -> Result<(), String> {
+    if buffer.len() != plan.len {
+        return Err(format!(
+            "FFT length mismatch: buffer {} plan {}",
+            buffer.len(),
+            plan.len
+        ));
+    }
+    plan.plan.process(buffer);
+    Ok(())
 }
 
 #[cfg(test)]
@@ -106,5 +74,20 @@ mod tests {
             assert!(buf[bin].im.abs() < 1e-4);
         }
     }
-}
 
+    #[test]
+    fn fft_plan_matches_plain_fft() {
+        let mut buf = vec![Complex32::new(0.0, 0.0); 16];
+        for (i, cell) in buf.iter_mut().enumerate() {
+            cell.re = (i as f32 * 0.25).sin();
+        }
+        let mut planned = buf.clone();
+        fft_radix2_inplace(&mut buf).unwrap();
+        let plan = FftPlan::new(planned.len()).unwrap();
+        fft_radix2_inplace_with_plan(&mut planned, &plan).unwrap();
+        for i in 0..buf.len() {
+            assert!((buf[i].re - planned[i].re).abs() < 1e-4);
+            assert!((buf[i].im - planned[i].im).abs() < 1e-4);
+        }
+    }
+}

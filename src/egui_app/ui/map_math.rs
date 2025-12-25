@@ -28,10 +28,8 @@ pub(crate) fn should_requery(
     match last {
         None => true,
         Some(prev) => {
-            let dx = (prev.min_x - next.min_x).abs()
-                + (prev.max_x - next.max_x).abs();
-            let dy = (prev.min_y - next.min_y).abs()
-                + (prev.max_y - next.max_y).abs();
+            let dx = (prev.min_x - next.min_x).abs() + (prev.max_x - next.max_x).abs();
+            let dy = (prev.min_y - next.min_y).abs() + (prev.max_y - next.max_y).abs();
             dx + dy > 0.05
         }
     }

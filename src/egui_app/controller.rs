@@ -25,21 +25,20 @@ mod hotkeys_controller;
 mod interaction_options;
 mod jobs;
 mod loading;
+mod map_view;
+mod missing_samples;
 mod os_explorer;
 mod playback;
 mod progress;
 mod progress_messages;
-mod map_view;
-mod missing_samples;
 mod scans;
 mod selection_edits;
 mod selection_export;
+mod similarity_prep;
 mod source_cache_invalidator;
 mod source_folders;
 mod sources;
-mod similarity_prep;
 mod status_message;
-mod tagging_service;
 mod trash;
 mod trash_move;
 mod undo;
@@ -64,7 +63,6 @@ use crate::{
     waveform::{DecodedWaveform, WaveformRenderer},
 };
 pub(in crate::egui_app::controller) use analysis_jobs::AnalysisJobMessage;
-pub(crate) use status_message::StatusMessage;
 use analysis_jobs::AnalysisWorkerPool;
 use audio_cache::AudioCache;
 use audio_loader::{AudioLoadError, AudioLoadJob, AudioLoadOutcome, AudioLoadResult};
@@ -72,6 +70,7 @@ pub(in crate::egui_app::controller) use controller_state::*;
 use egui::Color32;
 use open;
 use rfd::FileDialog;
+pub(crate) use status_message::StatusMessage;
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet, VecDeque},
@@ -79,7 +78,7 @@ use std::{
     io::Write,
     path::{Path, PathBuf},
     rc::Rc,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 /// Minimum selection width used to decide when to play a looped region.
@@ -147,7 +146,6 @@ impl EguiController {
                 db: HashMap::new(),
                 wav: WavCacheState {
                     entries: HashMap::new(),
-                    lookup: HashMap::new(),
                 },
             },
             ui_cache: ControllerUiCacheState {
@@ -161,10 +159,7 @@ impl EguiController {
                     models: HashMap::new(),
                 },
             },
-            wav_entries: WavEntriesState {
-                entries: Vec::new(),
-                lookup: HashMap::new(),
-            },
+            wav_entries: WavEntriesState::new(0, 1024),
             selection_state: ControllerSelectionState {
                 ctx: SelectionContextState {
                     selected_source: None,
@@ -186,7 +181,15 @@ impl EguiController {
             runtime: ControllerRuntimeState {
                 jobs,
                 analysis,
+                performance: PerformanceGovernorState {
+                    last_user_activity_at: None,
+                    last_slow_frame_at: None,
+                    last_frame_at: None,
+                    last_worker_count: None,
+                    idle_worker_override: None,
+                },
                 similarity_prep: None,
+                similarity_prep_force_full_analysis_next: false,
                 #[cfg(test)]
                 progress_cancel_after: None,
             },
@@ -199,6 +202,61 @@ impl EguiController {
             },
             #[cfg(target_os = "windows")]
             drag_hwnd: None,
+        }
+    }
+
+    pub(crate) fn update_performance_governor(&mut self, user_active: bool) {
+        const ACTIVE_WINDOW: Duration = Duration::from_millis(300);
+        const IDLE_WINDOW: Duration = Duration::from_secs(2);
+        const SLOW_FRAME_THRESHOLD: Duration = Duration::from_millis(40);
+        let now = Instant::now();
+        if let Some(last_frame) = self.runtime.performance.last_frame_at {
+            let frame_delta = now.saturating_duration_since(last_frame);
+            if frame_delta >= SLOW_FRAME_THRESHOLD {
+                self.runtime.performance.last_slow_frame_at = Some(now);
+            }
+        }
+        self.runtime.performance.last_frame_at = Some(now);
+        if user_active {
+            self.runtime.performance.last_user_activity_at = Some(now);
+        }
+        let recent_input = self
+            .runtime
+            .performance
+            .last_user_activity_at
+            .is_some_and(|time| now.saturating_duration_since(time) <= ACTIVE_WINDOW);
+        let recent_slow_frame = self
+            .runtime
+            .performance
+            .last_slow_frame_at
+            .is_some_and(|time| now.saturating_duration_since(time) <= ACTIVE_WINDOW);
+        let busy = self.is_playing() || recent_input || recent_slow_frame;
+        let last_activity_at = match (
+            self.runtime.performance.last_user_activity_at,
+            self.runtime.performance.last_slow_frame_at,
+        ) {
+            (Some(input), Some(slow)) => Some(input.max(slow)),
+            (Some(input), None) => Some(input),
+            (None, Some(slow)) => Some(slow),
+            (None, None) => None,
+        };
+        let idle = !self.is_playing()
+            && last_activity_at
+                .is_some_and(|time| now.saturating_duration_since(time) >= IDLE_WINDOW);
+        let idle_target = self
+            .runtime
+            .performance
+            .idle_worker_override
+            .unwrap_or(self.settings.analysis.analysis_worker_count);
+        let target = if busy || !idle { 1 } else { idle_target };
+        if busy {
+            self.runtime.analysis.pause_claiming();
+        } else {
+            self.runtime.analysis.resume_claiming();
+        }
+        if self.runtime.performance.last_worker_count != Some(target) {
+            self.runtime.analysis.set_worker_count(target);
+            self.runtime.performance.last_worker_count = Some(target);
         }
     }
 

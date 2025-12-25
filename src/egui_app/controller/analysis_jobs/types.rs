@@ -23,7 +23,8 @@ impl AnalysisProgress {
     }
 
     pub(in crate::egui_app::controller) fn samples_completed(&self) -> usize {
-        self.samples_total.saturating_sub(self.samples_pending_or_running)
+        self.samples_total
+            .saturating_sub(self.samples_pending_or_running)
     }
 }
 
@@ -46,13 +47,22 @@ impl fmt::Display for AnalysisProgress {
 #[derive(Clone, Debug)]
 pub(in crate::egui_app::controller) enum AnalysisJobMessage {
     /// Queue counts changed (either due to enqueue or workers making progress).
-    Progress(AnalysisProgress),
+    Progress {
+        source_id: Option<crate::sample_sources::SourceId>,
+        progress: AnalysisProgress,
+    },
     /// An enqueue job finished, including how many rows were inserted.
-    EnqueueFinished { inserted: usize, progress: AnalysisProgress },
+    EnqueueFinished {
+        inserted: usize,
+        progress: AnalysisProgress,
+    },
     /// An enqueue job failed.
     EnqueueFailed(String),
     /// Embedding backfill enqueue finished.
-    EmbeddingBackfillEnqueueFinished { inserted: usize, progress: AnalysisProgress },
+    EmbeddingBackfillEnqueueFinished {
+        inserted: usize,
+        progress: AnalysisProgress,
+    },
     /// Embedding backfill enqueue failed.
     EmbeddingBackfillEnqueueFailed(String),
 }

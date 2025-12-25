@@ -1,12 +1,12 @@
-use crate::analysis::fft::{Complex32, fft_radix2_inplace, hann_window};
+use crate::analysis::fft::{Complex32, FftPlan, fft_radix2_inplace_with_plan, hann_window};
 
-pub(crate) const CLAP_STFT_N_FFT: usize = 1024;
-pub(crate) const CLAP_STFT_HOP: usize = 480;
-pub(crate) const CLAP_MEL_BANDS: usize = 64;
-pub(crate) const CLAP_MEL_FMIN_HZ: f32 = 0.0;
-pub(crate) const CLAP_MEL_FMAX_HZ: f32 = 16_000.0;
+pub(crate) const PANNS_STFT_N_FFT: usize = 512;
+pub(crate) const PANNS_STFT_HOP: usize = 160;
+pub(crate) const PANNS_MEL_BANDS: usize = 64;
+pub(crate) const PANNS_MEL_FMIN_HZ: f32 = 50.0;
+pub(crate) const PANNS_MEL_FMAX_HZ: f32 = 8_000.0;
 
-/// Compute power spectra (0..=Nyquist) with Hann windowing for CLAP preprocessing.
+/// Compute power spectra (0..=Nyquist) with Hann windowing for PANNs preprocessing.
 pub(crate) fn stft_power_frames(
     samples: &[f32],
     n_fft: usize,
@@ -15,12 +15,13 @@ pub(crate) fn stft_power_frames(
     let n_fft = n_fft.max(1);
     let hop = hop.max(1);
     let window = hann_window(n_fft);
+    let plan = FftPlan::new(n_fft)?;
     let mut frames = Vec::new();
     let mut buf = vec![Complex32::default(); n_fft];
     let mut start = 0usize;
     while start < samples.len() {
         fill_windowed(&mut buf, samples, start, &window);
-        fft_radix2_inplace(&mut buf)?;
+        fft_radix2_inplace_with_plan(&mut buf, &plan)?;
         frames.push(power_spectrum(&buf));
         start = start.saturating_add(hop);
     }
@@ -30,20 +31,20 @@ pub(crate) fn stft_power_frames(
     Ok(frames)
 }
 
-pub(crate) struct ClapMelBank {
+pub(crate) struct PannsMelBank {
     filters: Vec<Vec<(usize, f32)>>,
 }
 
-impl ClapMelBank {
+impl PannsMelBank {
     pub(crate) fn new(sample_rate: u32, fft_len: usize) -> Self {
         let bins = mel_bins(
             sample_rate,
             fft_len,
-            CLAP_MEL_BANDS,
-            CLAP_MEL_FMIN_HZ,
-            CLAP_MEL_FMAX_HZ,
+            PANNS_MEL_BANDS,
+            PANNS_MEL_FMIN_HZ,
+            PANNS_MEL_FMAX_HZ,
         );
-        let filters = build_filters(&bins, CLAP_MEL_BANDS);
+        let filters = build_filters(&bins, PANNS_MEL_BANDS);
         Self { filters }
     }
 
@@ -56,13 +57,10 @@ impl ClapMelBank {
     }
 }
 
-/// Compute log-mel frames using CLAP defaults (natural log with epsilon).
-pub(crate) fn log_mel_frames(
-    samples: &[f32],
-    sample_rate: u32,
-) -> Result<Vec<Vec<f32>>, String> {
-    let frames = stft_power_frames(samples, CLAP_STFT_N_FFT, CLAP_STFT_HOP)?;
-    let mel_bank = ClapMelBank::new(sample_rate, CLAP_STFT_N_FFT);
+/// Compute log-mel frames using PANNs defaults (log10 with epsilon).
+pub(crate) fn log_mel_frames(samples: &[f32], sample_rate: u32) -> Result<Vec<Vec<f32>>, String> {
+    let frames = stft_power_frames(samples, PANNS_STFT_N_FFT, PANNS_STFT_HOP)?;
+    let mel_bank = PannsMelBank::new(sample_rate, PANNS_STFT_N_FFT);
     let mut out = Vec::with_capacity(frames.len());
     for power in frames {
         let mut mel = mel_bank.mel_from_power(&power);
@@ -74,14 +72,14 @@ pub(crate) fn log_mel_frames(
     Ok(out)
 }
 
-pub(crate) struct ClapPreprocessScratch {
+pub(crate) struct PannsPreprocessScratch {
     mel: Vec<f32>,
 }
 
-impl ClapPreprocessScratch {
+impl PannsPreprocessScratch {
     pub(crate) fn new() -> Self {
         Self {
-            mel: vec![0.0_f32; CLAP_MEL_BANDS],
+            mel: vec![0.0_f32; PANNS_MEL_BANDS],
         }
     }
 }
@@ -90,10 +88,10 @@ impl ClapPreprocessScratch {
 pub(crate) fn log_mel_frames_with_scratch(
     samples: &[f32],
     sample_rate: u32,
-    scratch: &mut ClapPreprocessScratch,
+    scratch: &mut PannsPreprocessScratch,
 ) -> Result<Vec<Vec<f32>>, String> {
-    let frames = stft_power_frames(samples, CLAP_STFT_N_FFT, CLAP_STFT_HOP)?;
-    let mel_bank = ClapMelBank::new(sample_rate, CLAP_STFT_N_FFT);
+    let frames = stft_power_frames(samples, PANNS_STFT_N_FFT, PANNS_STFT_HOP)?;
+    let mel_bank = PannsMelBank::new(sample_rate, PANNS_STFT_N_FFT);
     let mut out = Vec::with_capacity(frames.len());
     for power in frames {
         mel_bank.mel_from_power_into(&power, &mut scratch.mel);
@@ -138,12 +136,8 @@ fn power_spectrum(fft: &[Complex32]) -> Vec<f32> {
 fn log_mel(value: f32) -> f32 {
     const EPS: f32 = 1e-10;
     let v = value.max(EPS);
-    let out = v.ln();
-    if out.is_finite() {
-        out
-    } else {
-        0.0
-    }
+    let out = 10.0 * v.log10();
+    if out.is_finite() { out } else { 0.0 }
 }
 
 fn mel_bins(
@@ -250,32 +244,32 @@ mod tests {
 
     #[test]
     fn stft_power_frames_outputs_expected_shape() {
-        let samples = vec![0.1_f32; CLAP_STFT_N_FFT + CLAP_STFT_HOP];
-        let frames = stft_power_frames(&samples, CLAP_STFT_N_FFT, CLAP_STFT_HOP).unwrap();
+        let samples = vec![0.1_f32; PANNS_STFT_N_FFT + PANNS_STFT_HOP];
+        let frames = stft_power_frames(&samples, PANNS_STFT_N_FFT, PANNS_STFT_HOP).unwrap();
         assert_eq!(frames.len(), 4);
-        assert_eq!(frames[0].len(), CLAP_STFT_N_FFT / 2 + 1);
+        assert_eq!(frames[0].len(), PANNS_STFT_N_FFT / 2 + 1);
     }
 
     #[test]
     fn stft_power_frames_zero_pads_last_frame() {
         let samples = vec![1.0_f32; 1000];
-        let frames = stft_power_frames(&samples, CLAP_STFT_N_FFT, CLAP_STFT_HOP).unwrap();
+        let frames = stft_power_frames(&samples, PANNS_STFT_N_FFT, PANNS_STFT_HOP).unwrap();
         assert_eq!(frames.len(), 3);
         assert!(frames.iter().all(|f| f.iter().all(|v| v.is_finite())));
     }
 
     #[test]
-    fn clap_mel_bank_outputs_expected_length() {
-        let bank = ClapMelBank::new(48_000, CLAP_STFT_N_FFT);
-        let power = vec![0.0_f32; CLAP_STFT_N_FFT / 2 + 1];
+    fn panns_mel_bank_outputs_expected_length() {
+        let bank = PannsMelBank::new(16_000, PANNS_STFT_N_FFT);
+        let power = vec![0.0_f32; PANNS_STFT_N_FFT / 2 + 1];
         let mel = bank.mel_from_power(&power);
-        assert_eq!(mel.len(), CLAP_MEL_BANDS);
+        assert_eq!(mel.len(), PANNS_MEL_BANDS);
     }
 
     #[test]
     fn log_mel_frames_are_finite() {
-        let samples = vec![0.0_f32; CLAP_STFT_N_FFT];
-        let frames = log_mel_frames(&samples, 48_000).unwrap();
+        let samples = vec![0.0_f32; PANNS_STFT_N_FFT];
+        let frames = log_mel_frames(&samples, 16_000).unwrap();
         assert!(!frames.is_empty());
         assert!(frames.iter().all(|f| f.iter().all(|v| v.is_finite())));
     }
@@ -297,24 +291,23 @@ mod tests {
 
     #[test]
     fn golden_log_mel_matches_python() {
-        let path = match std::env::var("SEMPAL_CLAP_GOLDEN_PATH") {
+        let path = match std::env::var("SEMPAL_PANNS_GOLDEN_PATH") {
             Ok(path) if !path.trim().is_empty() => path,
             _ => return,
         };
         let payload = std::fs::read_to_string(path).expect("read golden json");
         let golden: GoldenMel = serde_json::from_str(&payload).expect("parse golden json");
-        assert_eq!(golden.n_fft, CLAP_STFT_N_FFT);
-        assert_eq!(golden.hop_length, CLAP_STFT_HOP);
-        assert_eq!(golden.n_mels, CLAP_MEL_BANDS);
-        assert!((golden.fmin - CLAP_MEL_FMIN_HZ).abs() < 1e-3);
-        assert!((golden.fmax - CLAP_MEL_FMAX_HZ).abs() < 1e-3);
+        assert_eq!(golden.n_fft, PANNS_STFT_N_FFT);
+        assert_eq!(golden.hop_length, PANNS_STFT_HOP);
+        assert_eq!(golden.n_mels, PANNS_MEL_BANDS);
+        assert!((golden.fmin - PANNS_MEL_FMIN_HZ).abs() < 1e-3);
+        assert!((golden.fmax - PANNS_MEL_FMAX_HZ).abs() < 1e-3);
 
         let tone_len = (golden.sample_rate as f32 * golden.tone_seconds).round() as usize;
         let mut tone = Vec::with_capacity(tone_len);
         for i in 0..tone_len {
             let t = i as f32 / golden.sample_rate.max(1) as f32;
-            let sample =
-                (2.0 * std::f32::consts::PI * golden.tone_hz * t).sin() * golden.tone_amp;
+            let sample = (2.0 * std::f32::consts::PI * golden.tone_hz * t).sin() * golden.tone_amp;
             tone.push(sample);
         }
         let target_len = (golden.sample_rate as f32 * golden.target_seconds).round() as usize;

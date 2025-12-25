@@ -173,21 +173,8 @@ impl EguiController {
         Ok(entry)
     }
 
-    fn insert_new_wav_entry(&mut self, source: &SampleSource, entry: WavEntry) {
-        let cache = self.cache.wav.entries.entry(source.id.clone()).or_default();
-        cache.push(entry.clone());
-        cache.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
-        self.rebuild_wav_cache_lookup(&source.id);
-
-        if self.selection_state.ctx.selected_source.as_ref() != Some(&source.id) {
-            return;
-        }
-        self.wav_entries.entries.push(entry);
-        self.wav_entries
-            .entries
-            .sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
-        self.sync_browser_after_wav_entries_mutation_keep_search_cache(&source.id);
-        self.rebuild_missing_lookup_for_source(&source.id);
+    fn insert_new_wav_entry(&mut self, source: &SampleSource, _entry: WavEntry) {
+        self.invalidate_wav_entries_for_source(source);
     }
 }
 

@@ -1,18 +1,31 @@
 pub(crate) fn resample_linear(samples: &[f32], input_rate: u32, output_rate: u32) -> Vec<f32> {
+    let mut out = Vec::new();
+    resample_linear_into(&mut out, samples, input_rate, output_rate);
+    out
+}
+
+pub(crate) fn resample_linear_into(
+    out: &mut Vec<f32>,
+    samples: &[f32],
+    input_rate: u32,
+    output_rate: u32,
+) {
     let input_rate = input_rate.max(1);
     let output_rate = output_rate.max(1);
     if samples.is_empty() || input_rate == output_rate {
-        return samples.to_vec();
+        out.clear();
+        out.extend_from_slice(samples);
+        return;
     }
     let duration_seconds = samples.len() as f64 / input_rate as f64;
     let out_len = (duration_seconds * output_rate as f64).round().max(1.0) as usize;
-    let mut out = Vec::with_capacity(out_len);
+    out.clear();
+    out.reserve(out_len.saturating_sub(out.capacity()));
     for i in 0..out_len {
         let t = i as f64 / output_rate as f64;
         let pos = t * input_rate as f64;
         out.push(lerp_sample(samples, pos));
     }
-    out
 }
 
 fn lerp_sample(samples: &[f32], pos: f64) -> f32 {

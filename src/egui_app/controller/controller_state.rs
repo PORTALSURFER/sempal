@@ -29,29 +29,25 @@ pub(super) struct LibraryState {
 }
 
 pub(super) struct WavCacheState {
-    pub(super) entries: HashMap<SourceId, Vec<WavEntry>>,
-    pub(super) lookup: HashMap<SourceId, HashMap<PathBuf, usize>>,
+    pub(super) entries: HashMap<SourceId, WavEntriesState>,
 }
 
 impl WavCacheState {
-    pub(super) fn ensure_lookup(&mut self, source_id: &SourceId) {
-        if self.lookup.contains_key(source_id) {
-            return;
-        }
-        let Some(entries) = self.entries.get(source_id) else {
-            return;
-        };
-        let lookup = entries
-            .iter()
-            .enumerate()
-            .map(|(index, entry)| (entry.relative_path.clone(), index))
-            .collect();
-        self.lookup.insert(source_id.clone(), lookup);
-    }
-
-    pub(super) fn rebuild_lookup(&mut self, source_id: &SourceId) {
-        self.lookup.remove(source_id);
-        self.ensure_lookup(source_id);
+    pub(super) fn insert_page(
+        &mut self,
+        source_id: SourceId,
+        total: usize,
+        page_size: usize,
+        page_index: usize,
+        entries: Vec<WavEntry>,
+    ) {
+        let cache = self
+            .entries
+            .entry(source_id)
+            .or_insert_with(|| WavEntriesState::new(total, page_size));
+        cache.total = total;
+        cache.page_size = page_size;
+        cache.insert_page(page_index, entries);
     }
 }
 
@@ -132,7 +128,6 @@ pub(crate) struct FeatureCache {
     pub(crate) rows: Vec<Option<FeatureStatus>>,
 }
 
-
 pub(super) struct FolderBrowsersState {
     pub(super) models: HashMap<SourceId, source_folders::FolderBrowserModel>,
 }
@@ -157,9 +152,19 @@ pub(super) struct ControllerAudioState {
 pub(super) struct ControllerRuntimeState {
     pub(super) jobs: jobs::ControllerJobs,
     pub(super) analysis: super::analysis_jobs::AnalysisWorkerPool,
+    pub(super) performance: PerformanceGovernorState,
     pub(super) similarity_prep: Option<SimilarityPrepState>,
+    pub(super) similarity_prep_force_full_analysis_next: bool,
     #[cfg(test)]
     pub(super) progress_cancel_after: Option<usize>,
+}
+
+pub(super) struct PerformanceGovernorState {
+    pub(super) last_user_activity_at: Option<Instant>,
+    pub(super) last_slow_frame_at: Option<Instant>,
+    pub(super) last_frame_at: Option<Instant>,
+    pub(super) last_worker_count: Option<u32>,
+    pub(super) idle_worker_override: Option<u32>,
 }
 
 #[derive(Clone, Debug)]
@@ -167,6 +172,9 @@ pub(super) struct SimilarityPrepState {
     pub(super) source_id: SourceId,
     pub(super) stage: SimilarityPrepStage,
     pub(super) umap_version: String,
+    pub(super) scan_completed_at: Option<i64>,
+    pub(super) skip_backfill: bool,
+    pub(super) force_full_analysis: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -182,8 +190,66 @@ pub(super) struct ControllerHistoryState {
 }
 
 pub(super) struct WavEntriesState {
-    pub(super) entries: Vec<WavEntry>,
+    pub(super) total: usize,
+    pub(super) page_size: usize,
+    pub(super) pages: HashMap<usize, Vec<WavEntry>>,
     pub(super) lookup: HashMap<PathBuf, usize>,
+}
+
+impl WavEntriesState {
+    pub(super) fn new(total: usize, page_size: usize) -> Self {
+        Self {
+            total,
+            page_size: page_size.max(1),
+            pages: HashMap::new(),
+            lookup: HashMap::new(),
+        }
+    }
+
+    pub(super) fn clear(&mut self) {
+        self.total = 0;
+        self.pages.clear();
+        self.lookup.clear();
+    }
+
+    pub(super) fn insert_page(&mut self, page_index: usize, entries: Vec<WavEntry>) {
+        let offset = page_index * self.page_size;
+        for (idx, entry) in entries.iter().enumerate() {
+            self.insert_lookup(entry.relative_path.clone(), offset + idx);
+        }
+        self.pages.insert(page_index, entries);
+    }
+
+    pub(super) fn entry(&self, index: usize) -> Option<&WavEntry> {
+        let page_index = index / self.page_size;
+        let in_page = index % self.page_size;
+        self.pages.get(&page_index).and_then(|page| page.get(in_page))
+    }
+
+    pub(super) fn entry_mut(&mut self, index: usize) -> Option<&mut WavEntry> {
+        let page_index = index / self.page_size;
+        let in_page = index % self.page_size;
+        self.pages
+            .get_mut(&page_index)
+            .and_then(|page| page.get_mut(in_page))
+    }
+
+    pub(super) fn insert_lookup(&mut self, path: PathBuf, index: usize) {
+        self.lookup.insert(path.clone(), index);
+        let path_str = path.to_string_lossy();
+        if path_str.contains('\\') {
+            let normalized = path_str.replace('\\', "/");
+            self.lookup
+                .entry(PathBuf::from(normalized))
+                .or_insert(index);
+        }
+        if path_str.contains('/') {
+            let normalized = path_str.replace('/', "\\");
+            self.lookup
+                .entry(PathBuf::from(normalized))
+                .or_insert(index);
+        }
+    }
 }
 
 pub(super) struct WaveformState {
@@ -206,12 +272,15 @@ pub(super) struct RandomHistoryState {
 pub(super) struct WavLoadJob {
     pub(super) source_id: SourceId,
     pub(super) root: PathBuf,
+    pub(super) page_size: usize,
 }
 
 pub(super) struct WavLoadResult {
     pub(super) source_id: SourceId,
     pub(super) result: Result<Vec<WavEntry>, LoadEntriesError>,
     pub(super) elapsed: Duration,
+    pub(super) total: usize,
+    pub(super) page_index: usize,
 }
 
 #[derive(Clone)]

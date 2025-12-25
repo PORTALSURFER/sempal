@@ -1,6 +1,6 @@
-use super::*;
 use super::analysis_jobs;
 use super::jobs;
+use super::*;
 use crate::analysis::hdbscan::{HdbscanConfig, HdbscanMethod};
 use crate::egui_app::state::ProgressTaskKind;
 use std::thread;
@@ -9,6 +9,18 @@ pub(super) const DEFAULT_CLUSTER_MIN_SIZE: usize = 10;
 
 impl EguiController {
     pub fn prepare_similarity_for_selected_source(&mut self) {
+        let force_full_analysis = self.runtime.similarity_prep_force_full_analysis_next;
+        self.runtime.similarity_prep_force_full_analysis_next = false;
+        self.prepare_similarity_for_selected_source_with_options(force_full_analysis);
+    }
+
+    pub fn prepare_similarity_for_selected_source_with_options(
+        &mut self,
+        force_full_analysis: bool,
+    ) {
+        if let Err(err) = crate::analysis::embedding::warmup_panns() {
+            tracing::warn!("PANNs warmup failed: {err}");
+        }
         if self.runtime.similarity_prep.is_some() {
             self.refresh_similarity_prep_progress();
             self.set_status_message(StatusMessage::SimilarityPrepAlreadyRunning);
@@ -28,32 +40,117 @@ impl EguiController {
             });
             return;
         };
+        let scan_completed_at = self.read_source_scan_timestamp(&source);
+        let prep_scan_at = self.read_source_prep_timestamp(&source);
+        let skip_scan = scan_completed_at.is_some() && scan_completed_at == prep_scan_at;
+        let needs_embeddings = !self.source_has_embeddings(&source);
+        let stage = if skip_scan {
+            SimilarityPrepStage::AwaitEmbeddings
+        } else {
+            SimilarityPrepStage::AwaitScan
+        };
         self.runtime.similarity_prep = Some(SimilarityPrepState {
             source_id: source.id.clone(),
-            stage: SimilarityPrepStage::AwaitScan,
+            stage,
             umap_version: self.ui.map.umap_version.clone(),
+            scan_completed_at,
+            skip_backfill: skip_scan && !needs_embeddings && !force_full_analysis,
+            force_full_analysis,
         });
+        self.apply_similarity_prep_duration_cap();
+        self.apply_similarity_prep_fast_mode();
+        self.apply_similarity_prep_full_analysis(force_full_analysis);
+        self.apply_similarity_prep_worker_boost();
         self.set_status_message(StatusMessage::PreparingSimilarity {
             source: source.root.display().to_string(),
         });
-        self.request_hard_sync();
+        self.show_similarity_prep_progress(0, false);
+        if skip_scan {
+            if needs_embeddings || force_full_analysis {
+                self.ensure_similarity_prep_progress(0, true);
+                self.set_similarity_embedding_detail();
+                self.enqueue_similarity_backfill(source, force_full_analysis);
+            } else {
+                self.set_similarity_analysis_detail();
+                self.refresh_similarity_prep_progress();
+            }
+        } else {
+            self.set_similarity_scan_detail();
+            self.request_hard_sync();
+        }
     }
 
-    pub(crate) fn similarity_prep_in_progress(&self) -> bool {
+    pub fn set_similarity_prep_force_full_analysis_next(&mut self, enabled: bool) {
+        self.runtime.similarity_prep_force_full_analysis_next = enabled;
+    }
+
+    pub fn similarity_prep_force_full_analysis_next(&self) -> bool {
+        self.runtime.similarity_prep_force_full_analysis_next
+    }
+
+    pub fn similarity_prep_in_progress(&self) -> bool {
         self.runtime.similarity_prep.is_some()
             || self.runtime.jobs.scan_in_progress()
             || self.runtime.jobs.umap_build_in_progress()
             || self.runtime.jobs.umap_cluster_build_in_progress()
     }
 
-    pub(super) fn handle_similarity_scan_finished(&mut self, source_id: &SourceId) {
-        if !matches_similarity_stage(&self.runtime.similarity_prep, source_id, SimilarityPrepStage::AwaitScan) {
+    pub fn similarity_prep_is_finalizing(&self) -> bool {
+        self.runtime
+            .similarity_prep
+            .as_ref()
+            .is_some_and(|state| state.stage == SimilarityPrepStage::Finalizing)
+    }
+
+    pub fn similarity_prep_debug_snapshot(&self) -> String {
+        let Some(state) = self.runtime.similarity_prep.as_ref() else {
+            return "similarity_prep=idle".to_string();
+        };
+        let mut out = format!(
+            "stage={:?} skip_backfill={} scan_in_progress={} umap_in_progress={} clusters_in_progress={}",
+            state.stage,
+            state.skip_backfill,
+            self.runtime.jobs.scan_in_progress(),
+            self.runtime.jobs.umap_build_in_progress(),
+            self.runtime.jobs.umap_cluster_build_in_progress()
+        );
+        if let Some(source) = self.find_source_by_id(&state.source_id)
+            && let Ok(progress) = analysis_jobs::current_progress_for_source(&source)
+        {
+            out.push_str(&format!(" analysis_progress={progress}"));
+        }
+        out
+    }
+
+    pub(super) fn handle_similarity_scan_finished(
+        &mut self,
+        source_id: &SourceId,
+        scan_changed: bool,
+    ) {
+        if !matches_similarity_stage(
+            &self.runtime.similarity_prep,
+            source_id,
+            SimilarityPrepStage::AwaitScan,
+        ) {
             return;
         }
         if let Some(source) = self.find_source_by_id(source_id) {
-            self.runtime.similarity_prep.as_mut().expect("checked").stage =
-                SimilarityPrepStage::AwaitEmbeddings;
-            self.enqueue_similarity_backfill(source);
+            let scan_completed_at = self.read_source_scan_timestamp(&source);
+            let force_full = if let Some(state) = self.runtime.similarity_prep.as_mut() {
+                state.stage = SimilarityPrepStage::AwaitEmbeddings;
+                state.scan_completed_at = scan_completed_at;
+                state.skip_backfill = !scan_changed && !state.force_full_analysis;
+                state.force_full_analysis
+            } else {
+                false
+            };
+            if scan_changed || force_full {
+                self.ensure_similarity_prep_progress(0, true);
+                self.set_similarity_embedding_detail();
+                self.enqueue_similarity_backfill(source, force_full);
+            } else {
+                self.refresh_similarity_prep_progress();
+            }
         }
     }
 
@@ -76,22 +173,27 @@ impl EguiController {
         };
         self.set_status_message(StatusMessage::FinalizingSimilarityPrep);
         self.show_similarity_finalize_progress();
+        self.set_similarity_finalize_detail();
         self.start_similarity_finalize(source_id, umap_version);
     }
 
-    pub(super) fn handle_similarity_prep_result(
-        &mut self,
-        result: jobs::SimilarityPrepResult,
-    ) {
+    pub(super) fn handle_similarity_prep_result(&mut self, result: jobs::SimilarityPrepResult) {
         let state = self.runtime.similarity_prep.take();
         if state.as_ref().map(|s| &s.source_id) != Some(&result.source_id) {
             return;
         }
+        self.restore_similarity_prep_duration_cap();
+        self.restore_similarity_prep_fast_mode();
+        self.restore_similarity_prep_full_analysis();
+        self.restore_similarity_prep_worker_count();
         if self.ui.progress.task == Some(ProgressTaskKind::Analysis) {
             self.clear_progress();
         }
         match result.result {
             Ok(outcome) => {
+                if let Some(scan_completed_at) = state.and_then(|s| s.scan_completed_at) {
+                    self.record_similarity_prep_scan_timestamp(&result.source_id, scan_completed_at);
+                }
                 self.ui.map.bounds = None;
                 self.ui.map.last_query = None;
                 self.ui.map.cached_cluster_centroids_key = None;
@@ -118,6 +220,10 @@ impl EguiController {
             return;
         }
         self.runtime.similarity_prep = None;
+        self.restore_similarity_prep_duration_cap();
+        self.restore_similarity_prep_fast_mode();
+        self.restore_similarity_prep_full_analysis();
+        self.restore_similarity_prep_worker_count();
         if self.ui.progress.task == Some(ProgressTaskKind::Analysis) {
             self.clear_progress();
         }
@@ -135,10 +241,109 @@ fn matches_similarity_stage(
 }
 
 impl EguiController {
-    fn enqueue_similarity_backfill(&mut self, source: SampleSource) {
+    fn read_source_scan_timestamp(&self, source: &SampleSource) -> Option<i64> {
+        let db = SourceDatabase::open(&source.root).ok()?;
+        db.get_metadata(crate::sample_sources::db::META_LAST_SCAN_COMPLETED_AT)
+            .ok()
+            .flatten()
+            .and_then(|value| value.parse().ok())
+    }
+
+    fn read_source_prep_timestamp(&self, source: &SampleSource) -> Option<i64> {
+        let db = SourceDatabase::open(&source.root).ok()?;
+        db.get_metadata(crate::sample_sources::db::META_LAST_SIMILARITY_PREP_SCAN_AT)
+            .ok()
+            .flatten()
+            .and_then(|value| value.parse().ok())
+    }
+
+    fn record_similarity_prep_scan_timestamp(&self, source_id: &SourceId, scan_completed_at: i64) {
+        let Some(source) = self.find_source_by_id(source_id) else {
+            return;
+        };
+        if let Ok(db) = SourceDatabase::open(&source.root) {
+            let _ = db.set_metadata(
+                crate::sample_sources::db::META_LAST_SIMILARITY_PREP_SCAN_AT,
+                &scan_completed_at.to_string(),
+            );
+        }
+    }
+
+    fn apply_similarity_prep_duration_cap(&mut self) {
+        let max_duration = if self.similarity_prep_duration_cap_enabled() {
+            self.settings.analysis.max_analysis_duration_seconds
+        } else {
+            0.0
+        };
+        self.runtime
+            .analysis
+            .set_max_analysis_duration_seconds(max_duration);
+    }
+
+    fn restore_similarity_prep_duration_cap(&mut self) {
+        self.runtime
+            .analysis
+            .set_max_analysis_duration_seconds(self.settings.analysis.max_analysis_duration_seconds);
+    }
+
+    fn apply_similarity_prep_fast_mode(&mut self) {
+        if !self.similarity_prep_fast_mode_enabled() {
+            return;
+        }
+        let sample_rate = self.similarity_prep_fast_sample_rate();
+        let version = crate::analysis::version::analysis_version_for_sample_rate(sample_rate);
+        self.runtime.analysis.set_analysis_sample_rate(sample_rate);
+        self.runtime
+            .analysis
+            .set_analysis_version_override(Some(version));
+    }
+
+    fn restore_similarity_prep_fast_mode(&mut self) {
+        self.runtime
+            .analysis
+            .set_analysis_sample_rate(crate::analysis::audio::ANALYSIS_SAMPLE_RATE);
+        self.runtime.analysis.set_analysis_version_override(None);
+    }
+
+    fn apply_similarity_prep_full_analysis(&mut self, force_full_analysis: bool) {
+        if !force_full_analysis {
+            return;
+        }
+        self.runtime.analysis.set_analysis_cache_enabled(false);
+    }
+
+    fn restore_similarity_prep_full_analysis(&mut self) {
+        self.runtime.analysis.set_analysis_cache_enabled(true);
+    }
+
+    fn apply_similarity_prep_worker_boost(&mut self) {
+        if self.settings.analysis.analysis_worker_count != 0 {
+            return;
+        }
+        let boosted = thread::available_parallelism()
+            .map(|n| n.get() as u32)
+            .unwrap_or(1)
+            .max(1)
+            .min(64);
+        self.runtime.performance.idle_worker_override = Some(boosted);
+        self.runtime.analysis.set_worker_count(boosted);
+    }
+
+    fn restore_similarity_prep_worker_count(&mut self) {
+        self.runtime.performance.idle_worker_override = None;
+        self.runtime
+            .analysis
+            .set_worker_count(self.settings.analysis.analysis_worker_count);
+    }
+
+    fn enqueue_similarity_backfill(&mut self, source: SampleSource, force_full_analysis: bool) {
         let tx = self.runtime.jobs.message_sender();
         thread::spawn(move || {
-            let analysis_result = analysis_jobs::enqueue_jobs_for_source_backfill(&source);
+            let analysis_result = if force_full_analysis {
+                analysis_jobs::enqueue_jobs_for_source_backfill_full(&source)
+            } else {
+                analysis_jobs::enqueue_jobs_for_source_backfill(&source)
+            };
             match analysis_result {
                 Ok((inserted, progress)) => {
                     if inserted > 0 {
@@ -169,7 +374,10 @@ impl EguiController {
                         ));
                     } else {
                         let _ = tx.send(jobs::JobMessage::Analysis(
-                            analysis_jobs::AnalysisJobMessage::Progress(progress),
+                            analysis_jobs::AnalysisJobMessage::Progress {
+                                source_id: Some(source.id.clone()),
+                                progress,
+                            },
                         ));
                     }
                 }
@@ -207,24 +415,37 @@ impl EguiController {
         match state.stage {
             SimilarityPrepStage::AwaitScan => {
                 if self.runtime.jobs.scan_in_progress() {
+                    self.ensure_similarity_prep_progress(0, false);
+                    self.set_similarity_scan_detail();
                     return;
                 }
                 if self.ui.progress.visible {
                     return;
                 }
                 self.show_similarity_prep_progress(0, false);
+                self.set_similarity_scan_detail();
             }
             SimilarityPrepStage::AwaitEmbeddings => {
-                let progress = match analysis_jobs::current_progress() {
+                let Some(source) = self.find_source_by_id(&state.source_id) else {
+                    return;
+                };
+                let progress = match analysis_jobs::current_progress_for_source(&source) {
                     Ok(progress) => progress,
                     Err(_) => {
                         if !self.ui.progress.visible {
                             self.show_similarity_prep_progress(0, false);
+                            self.set_similarity_analysis_detail();
                         }
                         return;
                     }
                 };
                 if progress.pending == 0 && progress.running == 0 {
+                    if !self.source_has_embeddings(&source) {
+                        self.ensure_similarity_prep_progress(0, true);
+                        self.set_similarity_embedding_detail();
+                        self.enqueue_similarity_backfill(source, false);
+                        return;
+                    }
                     self.handle_similarity_analysis_progress(&progress);
                     return;
                 }
@@ -236,7 +457,7 @@ impl EguiController {
                 let samples_completed = progress.samples_completed();
                 let samples_total = progress.samples_total;
                 let mut detail = format!(
-                    "Jobs {jobs_completed}/{jobs_total} • Samples {samples_completed}/{samples_total}"
+                    "Analyzing… Jobs {jobs_completed}/{jobs_total} • Samples {samples_completed}/{samples_total}"
                 );
                 if progress.failed > 0 {
                     detail.push_str(&format!(" • {} failed", progress.failed));
@@ -245,8 +466,22 @@ impl EguiController {
             }
             SimilarityPrepStage::Finalizing => {
                 self.ensure_similarity_finalize_progress();
+                self.set_similarity_finalize_detail();
             }
         }
+    }
+
+    fn source_has_embeddings(&self, source: &SampleSource) -> bool {
+        let Ok(conn) = analysis_jobs::open_source_db(&source.root) else {
+            return false;
+        };
+        let model_id = crate::analysis::embedding::EMBEDDING_MODEL_ID;
+        let count: Result<i64, _> = conn.query_row(
+            "SELECT COUNT(*) FROM embeddings WHERE model_id = ?1",
+            rusqlite::params![model_id],
+            |row| row.get(0),
+        );
+        count.map(|value| value > 0).unwrap_or(false)
     }
 }
 
@@ -254,7 +489,7 @@ fn run_similarity_finalize(
     source_id: &SourceId,
     umap_version: &str,
 ) -> Result<jobs::SimilarityPrepOutcome, String> {
-    let mut conn = open_library_db_for_similarity()?;
+    let mut conn = open_source_db_for_similarity(source_id)?;
     let sample_id_prefix = format!("{}::%", source_id.as_str());
     crate::analysis::umap::build_umap_layout(
         &mut conn,
@@ -287,7 +522,7 @@ fn run_similarity_finalize(
             allow_single_cluster: false,
         },
     )?;
-    crate::analysis::rebuild_ann_index(&conn)?;
+    crate::analysis::flush_ann_index(&conn)?;
     Ok(jobs::SimilarityPrepOutcome {
         cluster_stats,
         umap_version: umap_version.to_string(),
@@ -309,8 +544,12 @@ fn count_umap_layout_rows(
     .map_err(|err| format!("Count layout rows failed: {err}"))
 }
 
-fn open_library_db_for_similarity() -> Result<rusqlite::Connection, String> {
-    let root = crate::app_dirs::app_root_dir().map_err(|err| err.to_string())?;
-    let path = root.join(crate::sample_sources::library::LIBRARY_DB_FILE_NAME);
-    rusqlite::Connection::open(path).map_err(|err| format!("Open library DB failed: {err}"))
+fn open_source_db_for_similarity(source_id: &SourceId) -> Result<rusqlite::Connection, String> {
+    let state = crate::sample_sources::library::load().map_err(|err| err.to_string())?;
+    let source = state
+        .sources
+        .iter()
+        .find(|source| &source.id == source_id)
+        .ok_or_else(|| "Source not found for similarity prep".to_string())?;
+    super::analysis_jobs::open_source_db(&source.root)
 }

@@ -10,8 +10,7 @@ use std::{
 
 pub(super) struct SourceCacheInvalidator<'a> {
     db_cache: &'a mut HashMap<SourceId, Rc<SourceDatabase>>,
-    wav_cache: &'a mut HashMap<SourceId, Vec<super::WavEntry>>,
-    wav_cache_lookup: &'a mut HashMap<SourceId, HashMap<PathBuf, usize>>,
+    wav_cache: &'a mut HashMap<SourceId, super::WavEntriesState>,
     label_cache: &'a mut HashMap<SourceId, Vec<String>>,
     analysis_failures_cache: &'a mut HashMap<SourceId, HashMap<PathBuf, String>>,
     feature_cache: &'a mut HashMap<SourceId, FeatureCache>,
@@ -28,7 +27,6 @@ impl<'a> SourceCacheInvalidator<'a> {
         Self::new(
             &mut cache.db,
             &mut cache.wav.entries,
-            &mut cache.wav.lookup,
             &mut ui_cache.browser.labels,
             &mut ui_cache.browser.analysis_failures,
             &mut ui_cache.browser.features,
@@ -39,8 +37,7 @@ impl<'a> SourceCacheInvalidator<'a> {
 
     pub(super) fn new(
         db_cache: &'a mut HashMap<SourceId, Rc<SourceDatabase>>,
-        wav_cache: &'a mut HashMap<SourceId, Vec<super::WavEntry>>,
-        wav_cache_lookup: &'a mut HashMap<SourceId, HashMap<PathBuf, usize>>,
+        wav_cache: &'a mut HashMap<SourceId, super::WavEntriesState>,
         label_cache: &'a mut HashMap<SourceId, Vec<String>>,
         analysis_failures_cache: &'a mut HashMap<SourceId, HashMap<PathBuf, String>>,
         feature_cache: &'a mut HashMap<SourceId, FeatureCache>,
@@ -50,7 +47,6 @@ impl<'a> SourceCacheInvalidator<'a> {
         Self {
             db_cache,
             wav_cache,
-            wav_cache_lookup,
             label_cache,
             analysis_failures_cache,
             feature_cache,
@@ -61,7 +57,6 @@ impl<'a> SourceCacheInvalidator<'a> {
 
     pub(super) fn invalidate_wav_related(&mut self, source_id: &SourceId) {
         self.wav_cache.remove(source_id);
-        self.wav_cache_lookup.remove(source_id);
         self.label_cache.remove(source_id);
         self.analysis_failures_cache.remove(source_id);
         self.feature_cache.remove(source_id);

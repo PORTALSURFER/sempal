@@ -2,7 +2,9 @@ use crate::egui_app::ui::style::StatusTone;
 
 #[derive(Clone, Debug)]
 pub(crate) enum StatusMessage {
-    SelectSourceFirst { tone: StatusTone },
+    SelectSourceFirst {
+        tone: StatusTone,
+    },
     SelectSourceToScan,
     ScanAlreadyRunning,
     SimilarityPrepAlreadyRunning,
@@ -11,20 +13,34 @@ pub(crate) enum StatusMessage {
     ClusterBuildAlreadyRunning,
     BuildingTsneLayout,
     BuildingClusters,
-    PreparingSimilarity { source: String },
+    PreparingSimilarity {
+        source: String,
+    },
     FinalizingSimilarityPrep,
-    SimilarityReady { cluster_count: usize, noise_ratio: f32 },
-    SimilarityPrepFailed { err: String },
+    SimilarityReady {
+        cluster_count: usize,
+        noise_ratio: f32,
+    },
+    SimilarityPrepFailed {
+        err: String,
+    },
     RandomHistoryEmpty,
     RandomHistoryStart,
     RandomNavOff,
     NoSamplesToRandomize,
-    SelectCollectionFirst { tone: StatusTone },
+    SelectCollectionFirst {
+        tone: StatusTone,
+    },
     CollectionEmpty,
     CreateCollectionFirst,
-    AddSourceFirst { tone: StatusTone },
+    AddSourceFirst {
+        tone: StatusTone,
+    },
     AddSourceWithSamplesFirst,
-    Custom { text: String, tone: StatusTone },
+    Custom {
+        text: String,
+        tone: StatusTone,
+    },
 }
 
 impl StatusMessage {
@@ -41,7 +57,9 @@ impl StatusMessage {
             StatusMessage::SelectSourceToScan => {
                 ("Select a source to scan".into(), StatusTone::Warning)
             }
-            StatusMessage::ScanAlreadyRunning => ("Scan already in progress".into(), StatusTone::Info),
+            StatusMessage::ScanAlreadyRunning => {
+                ("Scan already in progress".into(), StatusTone::Info)
+            }
             StatusMessage::SimilarityPrepAlreadyRunning => {
                 ("Similarity prep already running".into(), StatusTone::Info)
             }
@@ -90,9 +108,10 @@ impl StatusMessage {
             StatusMessage::SelectCollectionFirst { tone } => {
                 ("Select a collection first".into(), tone)
             }
-            StatusMessage::CollectionEmpty => {
-                ("This collection has no samples yet".into(), StatusTone::Info)
-            }
+            StatusMessage::CollectionEmpty => (
+                "This collection has no samples yet".into(),
+                StatusTone::Info,
+            ),
             StatusMessage::CreateCollectionFirst => {
                 ("Create a collection to focus it".into(), StatusTone::Info)
             }

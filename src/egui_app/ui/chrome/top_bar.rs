@@ -1,19 +1,16 @@
 use eframe::egui::{self, RichText, SliderClamping};
 
-use super::buttons;
-use super::super::style;
 use super::super::EguiApp;
+use super::super::style;
+use super::buttons;
 
 impl EguiApp {
-    pub(super) fn render_status_controls(&mut self, ui: &mut egui::Ui) {
+    pub(crate) fn render_status_controls(&mut self, ui: &mut egui::Ui) {
         let palette = style::palette();
         let mut close_menu = false;
         ui.menu_button("Options", |ui| {
             let palette = style::palette();
-            ui.label(
-                RichText::new("Collection export root")
-                    .color(palette.text_primary),
-            );
+            ui.label(RichText::new("Collection export root").color(palette.text_primary));
             let export_label = self
                 .controller
                 .ui
@@ -53,19 +50,31 @@ impl EguiApp {
                 .map(|p| p.display().to_string())
                 .unwrap_or_else(|| "Not set".to_string());
             ui.label(RichText::new(trash_label).color(palette.text_muted));
-            if ui.add(buttons::action_button("Choose trash folder...")).clicked() {
+            if ui
+                .add(buttons::action_button("Choose trash folder..."))
+                .clicked()
+            {
                 self.controller.pick_trash_folder();
                 close_menu = true;
             }
-            if ui.add(buttons::action_button("Open trash folder")).clicked() {
+            if ui
+                .add(buttons::action_button("Open trash folder"))
+                .clicked()
+            {
                 self.controller.open_trash_folder();
                 close_menu = true;
             }
-            if ui.add(buttons::action_button("Open config folder")).clicked() {
+            if ui
+                .add(buttons::action_button("Open config folder"))
+                .clicked()
+            {
                 self.controller.open_config_folder();
                 close_menu = true;
             }
-            if ui.add(buttons::action_button("Check for updates")).clicked() {
+            if ui
+                .add(buttons::action_button("Check for updates"))
+                .clicked()
+            {
                 self.controller.check_for_updates_now();
                 close_menu = true;
             }
@@ -81,7 +90,10 @@ impl EguiApp {
                 self.controller.move_all_trashed_to_folder();
                 close_menu = true;
             }
-            if ui.add(buttons::destructive_button("Take out trash")).clicked() {
+            if ui
+                .add(buttons::destructive_button("Take out trash"))
+                .clicked()
+            {
                 self.controller.take_out_trash();
                 close_menu = true;
             }
@@ -93,10 +105,7 @@ impl EguiApp {
         const APP_VERSION: &str = concat!("v", env!("CARGO_PKG_VERSION"));
         match self.controller.ui.update.status {
             crate::egui_app::state::UpdateStatus::Checking => {
-                ui.label(
-                    RichText::new("Checking updates…")
-                        .color(palette.text_muted),
-                );
+                ui.label(RichText::new("Checking updates…").color(palette.text_muted));
                 ui.add_space(10.0);
             }
             crate::egui_app::state::UpdateStatus::UpdateAvailable => {
@@ -136,7 +145,10 @@ impl EguiApp {
                 ui.add_space(10.0);
             }
             crate::egui_app::state::UpdateStatus::Error => {
-                if ui.add(buttons::action_button("Update check failed")).clicked() {
+                if ui
+                    .add(buttons::action_button("Update check failed"))
+                    .clicked()
+                {
                     self.controller.check_for_updates_now();
                 }
                 ui.add_space(10.0);

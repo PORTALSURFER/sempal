@@ -1,5 +1,5 @@
-use super::mel::MelBank;
-use crate::analysis::fft::{Complex32, fft_radix2_inplace, hann_window};
+use super::mel::{MelBank, MelScratch};
+use crate::analysis::fft::{Complex32, FftPlan, fft_radix2_inplace_with_plan, hann_window};
 
 pub(super) struct FrameSet {
     pub(super) spectral: Vec<SpectralFrame>,
@@ -36,15 +36,26 @@ pub(super) fn compute_frames(
     let frame_size = frame_size.max(1);
     let hop_size = hop_size.max(1);
     let window = hann_window(frame_size);
+    let plan = FftPlan::new(frame_size).expect("FFT plan must be valid");
+    let mut mel_scratch = MelScratch::new(mel.mel_bands());
     let mut complex = vec![Complex32::default(); frame_size];
-    let mut spectral = Vec::new();
-    let mut bands = Vec::new();
-    let mut mfcc = Vec::new();
+    let mut power = Vec::with_capacity(frame_size / 2 + 1);
+    let max_frames = if samples.len() <= frame_size {
+        1
+    } else {
+        ((samples.len().saturating_sub(frame_size)) / hop_size).saturating_add(1)
+    };
+    let mut spectral = Vec::with_capacity(max_frames);
+    let mut bands = Vec::with_capacity(max_frames);
+    let mut mfcc = Vec::with_capacity(max_frames);
     let mut start = 0usize;
     while start < samples.len() {
         if !process_frame(
             &mut complex,
+            &mut power,
             &window,
+            &plan,
+            &mut mel_scratch,
             samples,
             start,
             sample_rate,
@@ -63,12 +74,19 @@ pub(super) fn compute_frames(
     }
 
     ensure_minimum_frame(&mut spectral, &mut bands, &mut mfcc);
-    FrameSet { spectral, bands, mfcc }
+    FrameSet {
+        spectral,
+        bands,
+        mfcc,
+    }
 }
 
 fn process_frame(
     complex: &mut [Complex32],
+    power: &mut Vec<f32>,
     window: &[f32],
+    plan: &FftPlan,
+    mel_scratch: &mut MelScratch,
     samples: &[f32],
     start: usize,
     sample_rate: u32,
@@ -79,13 +97,16 @@ fn process_frame(
     mfcc: &mut Vec<Vec<f32>>,
 ) -> bool {
     fill_windowed(complex, samples, start, window);
-    if fft_radix2_inplace(complex).is_err() {
+    if fft_radix2_inplace_with_plan(complex, plan).is_err() {
         return false;
     }
-    let power = power_spectrum(complex);
-    spectral.push(spectral_from_power(&power, sample_rate, frame_size));
-    bands.push(bands_from_power(&power, sample_rate, frame_size));
-    mfcc.push(mel.mfcc_from_power(&power));
+    power_spectrum_into(complex, power);
+    spectral.push(spectral_from_power(power, sample_rate, frame_size));
+    bands.push(bands_from_power(power, sample_rate, frame_size));
+    mfcc.push(Vec::with_capacity(mel.dct_size()));
+    if let Some(entry) = mfcc.last_mut() {
+        mel.mfcc_from_power_into(power, mel_scratch, entry);
+    }
     true
 }
 
@@ -129,14 +150,43 @@ fn sanitize(sample: f32) -> f32 {
     }
 }
 
-fn power_spectrum(fft: &[Complex32]) -> Vec<f32> {
+fn power_spectrum_into(fft: &[Complex32], power: &mut Vec<f32>) {
     let bins = fft.len() / 2 + 1;
-    let mut power = Vec::with_capacity(bins);
+    power.resize(bins, 0.0);
+    #[cfg(target_arch = "x86_64")]
+    {
+        if std::is_x86_feature_detected!("sse3") {
+            // SAFETY: gated by runtime feature check.
+            unsafe { power_spectrum_sse3_into(fft, bins, power) };
+            return;
+        }
+    }
     for bin in 0..bins {
         let c = fft[bin];
-        power.push((c.re * c.re + c.im * c.im).max(0.0));
+        power[bin] = (c.re * c.re + c.im * c.im).max(0.0);
     }
-    power
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "sse3")]
+unsafe fn power_spectrum_sse3_into(fft: &[Complex32], bins: usize, power: &mut [f32]) {
+    use std::arch::x86_64::*;
+    let ptr = fft.as_ptr() as *const f32;
+    let mut bin = 0usize;
+    while bin + 4 <= bins {
+        let base = bin * 2;
+        let v0 = unsafe { _mm_loadu_ps(ptr.add(base)) };
+        let v1 = unsafe { _mm_loadu_ps(ptr.add(base + 4)) };
+        let v0_sq = _mm_mul_ps(v0, v0);
+        let v1_sq = _mm_mul_ps(v1, v1);
+        let sum = _mm_hadd_ps(v0_sq, v1_sq);
+        unsafe { _mm_storeu_ps(power.as_mut_ptr().add(bin), sum) };
+        bin += 4;
+    }
+    for i in bin..bins {
+        let c = fft[i];
+        power[i] = (c.re * c.re + c.im * c.im).max(0.0);
+    }
 }
 
 fn spectral_from_power(power: &[f32], sample_rate: u32, fft_len: usize) -> SpectralFrame {
@@ -254,11 +304,47 @@ fn bands_from_power(power: &[f32], sample_rate: u32, fft_len: usize) -> BandFram
 fn band_energy(power: &[f32], sample_rate: u32, fft_len: usize, lo: f32, hi: f32) -> f64 {
     let lo_bin = freq_to_bin(lo, sample_rate, fft_len);
     let hi_bin = freq_to_bin(hi, sample_rate, fft_len).max(lo_bin + 1);
-    power[lo_bin..hi_bin.min(power.len())]
+    let slice = &power[lo_bin..hi_bin.min(power.len())];
+    if slice.is_empty() {
+        return 0.0;
+    }
+    #[cfg(target_arch = "x86_64")]
+    {
+        if std::is_x86_feature_detected!("sse2") {
+            // SAFETY: gated by runtime feature check; power bins are non-negative.
+            return unsafe { sum_power_sse2(slice) };
+        }
+    }
+    slice
         .iter()
         .copied()
         .map(|v| v.max(0.0) as f64)
         .sum()
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "sse2")]
+unsafe fn sum_power_sse2(values: &[f32]) -> f64 {
+    use std::arch::x86_64::*;
+    let mut sum0 = _mm_set1_pd(0.0);
+    let mut sum1 = _mm_set1_pd(0.0);
+    let mut chunks = values.chunks_exact(4);
+    for chunk in &mut chunks {
+        let v = unsafe { _mm_loadu_ps(chunk.as_ptr()) };
+        let lo = _mm_cvtps_pd(v);
+        let hi = _mm_cvtps_pd(_mm_movehl_ps(v, v));
+        sum0 = _mm_add_pd(sum0, lo);
+        sum1 = _mm_add_pd(sum1, hi);
+    }
+    let mut tmp0 = [0.0_f64; 2];
+    let mut tmp1 = [0.0_f64; 2];
+    unsafe { _mm_storeu_pd(tmp0.as_mut_ptr(), sum0) };
+    unsafe { _mm_storeu_pd(tmp1.as_mut_ptr(), sum1) };
+    let mut sum = tmp0.iter().copied().sum::<f64>() + tmp1.iter().copied().sum::<f64>();
+    for &val in chunks.remainder() {
+        sum += val.max(0.0) as f64;
+    }
+    sum
 }
 
 fn freq_to_bin(freq_hz: f32, sample_rate: u32, fft_len: usize) -> usize {
@@ -275,7 +361,14 @@ mod tests {
 
     #[test]
     fn compute_frames_returns_at_least_one_frame() {
-        let mel = MelBank::new(ANALYSIS_SAMPLE_RATE, STFT_FRAME_SIZE, 40, 20, 20.0, 16_000.0);
+        let mel = MelBank::new(
+            ANALYSIS_SAMPLE_RATE,
+            STFT_FRAME_SIZE,
+            40,
+            20,
+            20.0,
+            16_000.0,
+        );
         let frames = compute_frames(
             &[],
             ANALYSIS_SAMPLE_RATE,

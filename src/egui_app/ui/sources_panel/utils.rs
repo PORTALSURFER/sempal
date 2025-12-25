@@ -43,7 +43,10 @@ mod tests {
 
     #[test]
     fn sample_housing_folders_root_returns_empty_path() {
-        assert_eq!(sample_housing_folders(Path::new("kick.wav")), vec![PathBuf::new()]);
+        assert_eq!(
+            sample_housing_folders(Path::new("kick.wav")),
+            vec![PathBuf::new()]
+        );
     }
 
     #[test]

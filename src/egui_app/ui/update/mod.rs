@@ -1,7 +1,7 @@
 use eframe::egui;
 
 use super::EguiApp;
-use super::input::InputSnapshot;
+use super::input::{InputSnapshot, user_activity_detected};
 use update_prompt::FocusFlags;
 
 mod release_notes;
@@ -15,6 +15,8 @@ impl eframe::App for EguiApp {
         let focus_flags = FocusFlags::from_context(focus_context);
         self.handle_focus_side_effects(&focus_flags);
         let input = InputSnapshot::capture(ctx);
+        self.controller
+            .update_performance_governor(user_activity_detected(ctx));
         let feedback_modal_open = self.controller.ui.feedback_issue.open;
         if !feedback_modal_open {
             self.handle_space_shortcut(ctx, &input);

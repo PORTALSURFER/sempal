@@ -2,6 +2,7 @@ use super::*;
 use crate::egui_app::view_model;
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
+use std::path::Path;
 
 #[derive(Default)]
 pub(in super::super) struct BrowserSearchCache {
@@ -26,26 +27,43 @@ impl EguiController {
         &mut self,
         focused_index: Option<usize>,
         loaded_index: Option<usize>,
-    ) -> (Vec<usize>, Option<usize>, Option<usize>) {
-        if let Some(similar) = self.ui.browser.similar_query.as_ref() {
-            let mut visible: Vec<usize> = similar
-                .indices
+    ) -> (crate::egui_app::state::VisibleRows, Option<usize>, Option<usize>) {
+        let filter = self.ui.browser.filter;
+        let folder_filter = self.folder_selection_for_filter().cloned();
+        let filter_accepts = |tag: SampleTag| match filter {
+            TriageFlagFilter::All => true,
+            TriageFlagFilter::Keep => matches!(tag, SampleTag::Keep),
+            TriageFlagFilter::Trash => matches!(tag, SampleTag::Trash),
+            TriageFlagFilter::Untagged => matches!(tag, SampleTag::Neutral),
+        };
+        let folder_accepts = |relative_path: &Path| {
+            let Some(selection) = folder_filter.as_ref() else {
+                return true;
+            };
+            if selection.is_empty() {
+                return true;
+            }
+            selection
                 .iter()
-                .copied()
-                .filter(|index| {
-                    if let Some(entry) = self.wav_entries.entries.get(*index) {
-                        self.browser_filter_accepts(entry.tag)
-                            && self.folder_filter_accepts(&entry.relative_path)
-                    } else {
-                        false
-                    }
-                })
-                .collect();
+                .any(|folder| relative_path.starts_with(folder))
+        };
+        if let Some(similar) = self.ui.browser.similar_query.clone() {
+            let mut visible: Vec<usize> = Vec::new();
+            for index in similar.indices.iter().copied() {
+                let Some(entry) = self.wav_entry(index) else {
+                    continue;
+                };
+                let tag = entry.tag;
+                let path = entry.relative_path.clone();
+                if filter_accepts(tag) && folder_accepts(&path) {
+                    visible.push(index);
+                }
+            }
             if let Some(anchor) = similar.anchor_index {
-                if let Some(entry) = self.wav_entries.entries.get(anchor) {
-                    if self.browser_filter_accepts(entry.tag)
-                        && self.folder_filter_accepts(&entry.relative_path)
-                    {
+                if let Some(entry) = self.wav_entry(anchor) {
+                    let tag = entry.tag;
+                    let path = entry.relative_path.clone();
+                    if filter_accepts(tag) && folder_accepts(&path) {
                         if let Some(pos) = visible.iter().position(|i| *i == anchor) {
                             visible.remove(pos);
                         }
@@ -57,56 +75,56 @@ impl EguiController {
                 focused_index.and_then(|idx| visible.iter().position(|i| *i == idx));
             let loaded_visible =
                 loaded_index.and_then(|idx| visible.iter().position(|i| *i == idx));
-            return (visible, selected_visible, loaded_visible);
+            return (
+                crate::egui_app::state::VisibleRows::List(visible),
+                selected_visible,
+                loaded_visible,
+            );
         }
         let Some(query) = self.active_search_query().map(str::to_string) else {
-            let visible: Vec<usize> = self
-                .wav_entries
-                .entries
-                .iter()
-                .enumerate()
-                .filter(|(_index, entry)| {
-                    self.browser_filter_accepts(entry.tag)
-                        && self.folder_filter_accepts(&entry.relative_path)
-                })
-                .map(|(index, _)| index)
-                .collect();
+            if folder_filter.is_none()
+                && self.ui.browser.filter == TriageFlagFilter::All
+                && self.ui.browser.similar_query.is_none()
+            {
+                let total = self.wav_entries_len();
+                return (
+                    crate::egui_app::state::VisibleRows::All { total },
+                    focused_index,
+                    loaded_index,
+                );
+            }
+            let mut visible = Vec::new();
+            let _ = self.for_each_wav_entry(|index, entry| {
+                if filter_accepts(entry.tag) && folder_accepts(&entry.relative_path) {
+                    visible.push(index);
+                }
+            });
             let selected_visible =
                 focused_index.and_then(|idx| visible.iter().position(|i| *i == idx));
             let loaded_visible =
                 loaded_index.and_then(|idx| visible.iter().position(|i| *i == idx));
-            return (visible, selected_visible, loaded_visible);
+            return (
+                crate::egui_app::state::VisibleRows::List(visible),
+                selected_visible,
+                loaded_visible,
+            );
         };
         self.ensure_search_scores(&query);
-        self.ui_cache.browser.search.scratch.clear();
-        self.ui_cache
-            .browser
-            .search
-            .scratch
-            .reserve(self.wav_entries.entries.len().min(1024));
-
-        for (index, entry) in self.wav_entries.entries.iter().enumerate() {
-            if !self.browser_filter_accepts(entry.tag)
-                || !self.folder_filter_accepts(&entry.relative_path)
-            {
-                continue;
+        let scores = std::mem::take(&mut self.ui_cache.browser.search.scores);
+        let mut scratch = std::mem::take(&mut self.ui_cache.browser.search.scratch);
+        scratch.clear();
+        scratch.reserve(self.wav_entries_len().min(1024));
+        let _ = self.for_each_wav_entry(|index, entry| {
+            if !filter_accepts(entry.tag) || !folder_accepts(&entry.relative_path) {
+                return;
             }
-            if let Some(score) = self
-                .ui_cache
-                .browser
-                .search
-                .scores
-                .get(index)
-                .and_then(|s| *s)
-            {
-                self.ui_cache.browser.search.scratch.push((index, score));
+            if let Some(score) = scores.get(index).and_then(|s| *s) {
+                scratch.push((index, score));
             }
-        }
-        self.ui_cache
-            .browser
-            .search
-            .scratch
-            .sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        });
+        scratch.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        self.ui_cache.browser.search.scores = scores;
+        self.ui_cache.browser.search.scratch = scratch;
         let visible: Vec<usize> = self
             .ui_cache
             .browser
@@ -117,7 +135,11 @@ impl EguiController {
             .collect();
         let selected_visible = focused_index.and_then(|idx| visible.iter().position(|i| *i == idx));
         let loaded_visible = loaded_index.and_then(|idx| visible.iter().position(|i| *i == idx));
-        (visible, selected_visible, loaded_visible)
+        (
+            crate::egui_app::state::VisibleRows::List(visible),
+            selected_visible,
+            loaded_visible,
+        )
     }
 
     fn browser_filter_accepts(&self, tag: SampleTag) -> bool {
@@ -138,7 +160,7 @@ impl EguiController {
         let source_id = self.selection_state.ctx.selected_source.clone();
         if self.ui_cache.browser.search.source_id != source_id
             || self.ui_cache.browser.search.query != query
-            || self.ui_cache.browser.search.scores.len() != self.wav_entries.entries.len()
+            || self.ui_cache.browser.search.scores.len() != self.wav_entries_len()
         {
             self.ui_cache.browser.search.source_id = source_id;
             self.ui_cache.browser.search.query.clear();
@@ -148,7 +170,7 @@ impl EguiController {
                 .browser
                 .search
                 .scores
-                .resize(self.wav_entries.entries.len(), None);
+                .resize(self.wav_entries_len(), None);
 
             let Some(source_id) = self.selection_state.ctx.selected_source.clone() else {
                 return;
@@ -158,19 +180,14 @@ impl EguiController {
                 .browser
                 .labels
                 .get(&source_id)
-                .map(|cached| cached.len() != self.wav_entries.entries.len())
+                .map(|cached| cached.len() != self.wav_entries_len())
                 .unwrap_or(true);
             if needs_labels {
-                self.ui_cache.browser.labels.insert(
-                    source_id.clone(),
-                    self.build_label_cache(&self.wav_entries.entries),
-                );
+                self.ui_cache.browser.labels.insert(source_id.clone(), Vec::new());
             }
-            let Some(labels) = self.ui_cache.browser.labels.get(&source_id) else {
-                return;
-            };
-            for index in 0..self.wav_entries.entries.len() {
-                if let Some(label) = labels.get(index) {
+            for index in 0..self.wav_entries_len() {
+                let label = self.label_for_ref(index).map(str::to_string);
+                if let Some(label) = label {
                     self.ui_cache.browser.search.scores[index] = self
                         .ui_cache
                         .browser
@@ -189,27 +206,38 @@ impl EguiController {
             .browser
             .labels
             .get(&source_id)
-            .map(|cached| cached.len() != self.wav_entries.entries.len())
+            .map(|cached| cached.len() != self.wav_entries_len())
             .unwrap_or(true);
         if needs_labels {
-            self.ui_cache.browser.labels.insert(
-                source_id.clone(),
-                self.build_label_cache(&self.wav_entries.entries),
-            );
+            self.ui_cache
+                .browser
+                .labels
+                .insert(source_id.clone(), vec![String::new(); self.wav_entries_len()]);
+        }
+        let needs_fill = self
+            .ui_cache
+            .browser
+            .labels
+            .get(&source_id)
+            .and_then(|labels| labels.get(index))
+            .is_some_and(|label| label.is_empty());
+        if needs_fill {
+            let entry = self.wav_entry(index)?;
+            let label = view_model::sample_display_label(&entry.relative_path);
+            if let Some(labels) = self.ui_cache.browser.labels.get_mut(&source_id)
+                && index < labels.len()
+            {
+                labels[index] = label;
+            }
         }
         self.ui_cache
             .browser
             .labels
             .get(&source_id)
-            .and_then(|labels| labels.get(index).map(|s| s.as_str()))
+            .and_then(|labels| labels.get(index))
+            .map(|label| label.as_str())
     }
 
-    pub(in super::super) fn build_label_cache(&self, entries: &[WavEntry]) -> Vec<String> {
-        entries
-            .iter()
-            .map(|entry| view_model::sample_display_label(&entry.relative_path))
-            .collect()
-    }
 }
 
 pub(super) fn set_browser_filter(controller: &mut EguiController, filter: TriageFlagFilter) {

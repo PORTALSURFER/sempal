@@ -51,16 +51,25 @@ impl EguiController {
                     }
                     match message.result {
                         Ok(entries) => {
-                            self.cache
-                                .wav
-                                .entries
-                                .insert(message.source_id.clone(), entries.clone());
-                            self.rebuild_wav_cache_lookup(&message.source_id);
                             self.apply_wav_entries(
                                 entries,
+                                message.total,
+                                self.wav_entries.page_size,
+                                message.page_index,
                                 false,
                                 Some(message.source_id.clone()),
                                 Some(message.elapsed),
+                            );
+                            self.cache.wav.insert_page(
+                                message.source_id.clone(),
+                                message.total,
+                                self.wav_entries.page_size,
+                                message.page_index,
+                                self.wav_entries
+                                    .pages
+                                    .get(&message.page_index)
+                                    .cloned()
+                                    .unwrap_or_default(),
                             );
                         }
                         Err(err) => self.handle_wav_load_error(&message.source_id, err),

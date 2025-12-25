@@ -3,7 +3,8 @@
 use serde::{Deserialize, Serialize};
 
 pub const BASE_URL: &str = "https://sempal-gitissue-gateway.portalsurfer.workers.dev";
-pub const AUTH_START_URL: &str = "https://sempal-gitissue-gateway.portalsurfer.workers.dev/auth/start";
+pub const AUTH_START_URL: &str =
+    "https://sempal-gitissue-gateway.portalsurfer.workers.dev/auth/start";
 
 /// The kind of issue the user is submitting.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -51,7 +52,10 @@ pub enum CreateIssueError {
     Json(String),
 }
 
-pub fn create_issue(token: &str, request: &CreateIssueRequest) -> Result<CreateIssueResponse, CreateIssueError> {
+pub fn create_issue(
+    token: &str,
+    request: &CreateIssueRequest,
+) -> Result<CreateIssueResponse, CreateIssueError> {
     let url = format!("{BASE_URL}/issue");
     let req = ureq::post(&url)
         .set("Accept", "application/json")
@@ -64,7 +68,9 @@ pub fn create_issue(token: &str, request: &CreateIssueRequest) -> Result<CreateI
             let body = response.into_string().unwrap_or_default();
             return Err(map_status_error(code, body));
         }
-        Err(ureq::Error::Transport(err)) => return Err(CreateIssueError::Transport(err.to_string())),
+        Err(ureq::Error::Transport(err)) => {
+            return Err(CreateIssueError::Transport(err.to_string()));
+        }
     };
 
     let body = response.into_string().unwrap_or_default();
@@ -96,8 +102,8 @@ fn parse_create_issue_response(body: &str) -> Result<CreateIssueResponse, Create
     if trimmed.is_empty() {
         return Err(CreateIssueError::Json("Empty response body".to_string()));
     }
-    let parsed: CreateIssueResponseWire =
-        serde_json::from_str(trimmed).map_err(|err| CreateIssueError::Json(format!("{err}: {trimmed}")))?;
+    let parsed: CreateIssueResponseWire = serde_json::from_str(trimmed)
+        .map_err(|err| CreateIssueError::Json(format!("{err}: {trimmed}")))?;
 
     let ok = parsed.ok;
     if let (Some(issue_url), Some(number)) = (parsed.issue_url, parsed.number) {

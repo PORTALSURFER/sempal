@@ -31,7 +31,8 @@ impl EguiController {
     pub(crate) fn save_github_issue_token(&mut self, token: &str) {
         let token = token.trim();
         if token.len() < 20 {
-            self.ui.feedback_issue.last_error = Some("Invalid token (must be at least 20 characters).".to_string());
+            self.ui.feedback_issue.last_error =
+                Some("Invalid token (must be at least 20 characters).".to_string());
             return;
         }
         let store = match crate::issue_gateway::IssueTokenStore::new() {
@@ -79,8 +80,7 @@ impl EguiController {
         }
         let title = self.ui.feedback_issue.title.trim();
         if title.len() < 3 || title.len() > 200 {
-            self.ui.feedback_issue.last_error =
-                Some("Title must be 3–200 characters.".to_string());
+            self.ui.feedback_issue.last_error = Some("Title must be 3–200 characters.".to_string());
             return;
         }
         let store = match crate::issue_gateway::IssueTokenStore::new() {
@@ -114,13 +114,15 @@ impl EguiController {
         self.ui.feedback_issue.submitting = true;
         self.ui.feedback_issue.last_error = None;
         self.ui.feedback_issue.last_success_url = None;
-        self.runtime.jobs.begin_issue_gateway_create(super::jobs::IssueGatewayJob {
-            token,
-            request: crate::issue_gateway::api::CreateIssueRequest {
-                title: final_title,
-                body,
-            },
-        });
+        self.runtime
+            .jobs
+            .begin_issue_gateway_create(super::jobs::IssueGatewayJob {
+                token,
+                request: crate::issue_gateway::api::CreateIssueRequest {
+                    title: final_title,
+                    body,
+                },
+            });
     }
 
     fn compose_issue_body(&self) -> Option<String> {
@@ -135,7 +137,11 @@ impl EguiController {
 
     fn diagnostics_block(&self) -> String {
         let version = env!("CARGO_PKG_VERSION");
-        let build_type = if cfg!(debug_assertions) { "debug" } else { "release" };
+        let build_type = if cfg!(debug_assertions) {
+            "debug"
+        } else {
+            "release"
+        };
         let os = std::env::consts::OS;
         let arch = std::env::consts::ARCH;
         let logs = crate::app_dirs::logs_dir()

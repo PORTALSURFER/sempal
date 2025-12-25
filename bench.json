@@ -1,0 +1,37 @@
+{
+  "sempal_version": "0.366.0",
+  "os": "windows",
+  "arch": "x86_64",
+  "cpu_cores": 8,
+  "total_elapsed_ms": 4551,
+  "params": {
+    "out": "bench.json",
+    "analysis": true,
+    "similarity": false,
+    "seed": 1,
+    "warmup_iters": 5,
+    "measure_iters": 30,
+    "analysis_samples": 500,
+    "analysis_duration_ms": 1000,
+    "analysis_sample_rate": 16000,
+    "similarity_rows": 20000
+  },
+  "system": {
+    "cpu_brand": "Intel(R) Core(TM) i9-10980HK CPU @ 2.40GHz",
+    "memory_total_bytes": 34075361280
+  },
+  "analysis": {
+    "samples": 500,
+    "total_elapsed_ms": 1323,
+    "mean_ms_per_sample": 2.6477079999999997,
+    "samples_per_sec": 377.6851525923554
+  },
+  "similarity": null,
+  "feature_blob_decode": {
+    "blobs": 600000,
+    "feature_len_f32": 183,
+    "total_elapsed_ms": 199,
+    "blobs_per_sec": 3013389.998458149,
+    "mb_per_sec": 2103.6162174905444
+  }
+}

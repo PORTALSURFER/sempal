@@ -78,20 +78,21 @@ fn play_random_visible_sample_internal<R: Rng + ?Sized>(
         });
         return;
     };
-    let Some((visible_row, entry_index)) = controller
-        .visible_browser_indices()
-        .iter()
-        .copied()
-        .enumerate()
-        .choose(rng)
+    let total = controller.visible_browser_len();
+    let Some((visible_row, entry_index)) = (total > 0)
+        .then_some(())
+        .and_then(|_| (0..total).choose(rng))
+        .and_then(|visible_row| {
+            controller
+                .visible_browser_index(visible_row)
+                .map(|entry_index| (visible_row, entry_index))
+        })
     else {
         controller.set_status_message(StatusMessage::NoSamplesToRandomize);
         return;
     };
     let Some(path) = controller
-        .wav_entries
-        .entries
-        .get(entry_index)
+        .wav_entry(entry_index)
         .map(|entry| entry.relative_path.clone())
     else {
         return;

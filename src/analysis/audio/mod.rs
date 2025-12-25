@@ -15,9 +15,12 @@ pub(crate) const SILENCE_PRE_ROLL_SECONDS: f32 = 0.01;
 pub(crate) const SILENCE_POST_ROLL_SECONDS: f32 = 0.005;
 const EMBEDDING_TARGET_RMS_DB: f32 = -20.0;
 
-pub(crate) use decode::{decode_for_analysis, probe_duration_seconds};
+pub(crate) use decode::{
+    decode_for_analysis, decode_for_analysis_with_rate, decode_for_analysis_with_rate_limit,
+    probe_metadata,
+};
 pub(crate) use normalize::sanitize_samples_in_place;
-pub(crate) use resample::resample_linear;
+pub(crate) use resample::{resample_linear, resample_linear_into};
 
 /// Decoded mono audio ready for analysis.
 #[derive(Debug)]
@@ -33,4 +36,8 @@ pub(crate) fn preprocess_mono_for_embedding(samples: &[f32], sample_rate: u32) -
     normalize::normalize_rms_in_place(&mut trimmed, EMBEDDING_TARGET_RMS_DB);
     normalize::normalize_peak_limit_in_place(&mut trimmed);
     trimmed
+}
+
+pub(crate) fn prepare_mono_for_analysis(samples: Vec<f32>, sample_rate: u32) -> AnalysisAudio {
+    decode::prepare_mono_for_analysis(samples, sample_rate)
 }

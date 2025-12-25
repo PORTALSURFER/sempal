@@ -13,7 +13,8 @@ impl EguiController {
 
     /// Toggle a collection sample row in the multi-selection set.
     pub fn toggle_collection_sample_selection(&mut self, row: usize) {
-        self.collections_ctrl().toggle_collection_sample_selection(row);
+        self.collections_ctrl()
+            .toggle_collection_sample_selection(row);
     }
 
     /// Extend the collection selection to a row (shift).
@@ -66,12 +67,11 @@ impl EguiController {
             return;
         };
         self.focus_collections_list_context();
-        self.ui.collections.pending_action = Some(
-            crate::egui_app::state::CollectionActionPrompt::Rename {
+        self.ui.collections.pending_action =
+            Some(crate::egui_app::state::CollectionActionPrompt::Rename {
                 target: collection.id.clone(),
                 name: collection.name.clone(),
-            },
-        );
+            });
         self.ui.collections.rename_focus_requested = true;
     }
 

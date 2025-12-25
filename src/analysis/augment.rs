@@ -1,5 +1,5 @@
-use rand::{Rng, SeedableRng};
 use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 
 #[derive(Debug, Clone)]
 pub struct AugmentOptions {
@@ -18,11 +18,7 @@ impl AugmentOptions {
     }
 }
 
-pub fn augment_waveform(
-    samples: &[f32],
-    rng: &mut StdRng,
-    options: &AugmentOptions,
-) -> Vec<f32> {
+pub fn augment_waveform(samples: &[f32], rng: &mut StdRng, options: &AugmentOptions) -> Vec<f32> {
     if samples.is_empty() {
         return Vec::new();
     }
@@ -85,10 +81,7 @@ fn resample_linear(samples: &[f32], speed: f32) -> Vec<f32> {
     }
     if !out.is_empty() {
         let last = out.len() - 1;
-        out[last] = samples
-            .get(max_idx as usize)
-            .copied()
-            .unwrap_or(out[last]);
+        out[last] = samples.get(max_idx as usize).copied().unwrap_or(out[last]);
     }
     out
 }

@@ -1,5 +1,5 @@
-use super::style;
 use super::EguiApp;
+use super::style;
 use eframe::egui::{self, Align2, RichText};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -104,8 +104,10 @@ impl EguiApp {
         let palette = style::palette();
         ui.set_min_width(520.0);
         ui.label(
-            RichText::new("After authorizing in the browser, copy the token shown and paste it here.")
-                .color(palette.text_primary),
+            RichText::new(
+                "After authorizing in the browser, copy the token shown and paste it here.",
+            )
+            .color(palette.text_primary),
         );
         ui.add_space(8.0);
 
@@ -129,7 +131,10 @@ impl EguiApp {
                     cancel_clicked = true;
                 }
                 let token_valid = state.token_input.trim().len() >= 20;
-                if ui.add_enabled(token_valid, egui::Button::new("Save")).clicked() {
+                if ui
+                    .add_enabled(token_valid, egui::Button::new("Save"))
+                    .clicked()
+                {
                     save_clicked = true;
                 }
             });
@@ -238,7 +243,10 @@ impl EguiApp {
         ui.add_space(10.0);
         let mut action = FeedbackSubmitAction::None;
         ui.horizontal(|ui| {
-            if ui.add_enabled(!submitting, egui::Button::new("Cancel")).clicked() {
+            if ui
+                .add_enabled(!submitting, egui::Button::new("Cancel"))
+                .clicked()
+            {
                 action = FeedbackSubmitAction::Cancel;
             }
             ui.add_space(8.0);

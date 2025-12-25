@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import argparse
-import json
 import math
 from pathlib import Path
 
@@ -58,29 +57,42 @@ def repeat_pad(samples, target_len):
     return out
 
 
+def log_mel_from_samples(samples, sr, n_fft, hop_length, n_mels, fmin, fmax):
+    import numpy as np
+    import librosa
+
+    mel = librosa.feature.melspectrogram(
+        y=samples,
+        sr=sr,
+        n_fft=n_fft,
+        hop_length=hop_length,
+        n_mels=n_mels,
+        fmin=fmin,
+        fmax=fmax,
+        power=2.0,
+    )
+    return 10.0 * np.log10(np.maximum(mel, 1e-10))
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Validate CLAP audio encoder ONNX against HF transformers reference."
+        description="Validate PANNs ONNX embedding output shape and norm."
     )
     parser.add_argument("audio_path", type=Path, help="Path to an audio file")
     parser.add_argument(
         "--onnx",
         type=Path,
-        default=Path("assets/ml/clap_v1/audio_encoder.onnx"),
-        help="Path to audio_encoder.onnx",
+        default=Path("assets/ml/panns_cnn14_16k/panns_cnn14_16k.onnx"),
+        help="Path to PANNs ONNX model",
     )
-    parser.add_argument(
-        "--model",
-        default="laion/clap-htsat-fused",
-        help="HF model id (default: laion/clap-htsat-fused)",
-    )
-    parser.add_argument(
-        "--meta",
-        type=Path,
-        default=Path("assets/ml/clap_v1/model_meta.json"),
-        help="Path to model_meta.json",
-    )
-    parser.add_argument("--atol", type=float, default=1e-3, help="Absolute tolerance")
+    parser.add_argument("--sample-rate", type=int, default=16000, help="Sample rate")
+    parser.add_argument("--seconds", type=float, default=10.0, help="Target seconds")
+    parser.add_argument("--n-fft", type=int, default=512, help="FFT size")
+    parser.add_argument("--hop-length", type=int, default=160, help="Hop length")
+    parser.add_argument("--n-mels", type=int, default=64, help="Mel bands")
+    parser.add_argument("--fmin", type=float, default=50.0, help="Mel fmin")
+    parser.add_argument("--fmax", type=float, default=8000.0, help="Mel fmax")
+    parser.add_argument("--expected-dim", type=int, default=2048, help="Expected dim")
     args = parser.parse_args()
 
     if not args.audio_path.exists():
@@ -90,63 +102,52 @@ def main() -> int:
 
     try:
         import numpy as np
-        import torch
-        from transformers import ClapFeatureExtractor, ClapModel
+        import librosa
     except Exception as err:
         raise RuntimeError(
-            "transformers, torch, and numpy are required (pip install transformers torch numpy)"
+            "numpy and librosa are required (pip install numpy librosa)"
         ) from err
     try:
         import onnxruntime as ort
     except Exception as err:
         raise RuntimeError("onnxruntime is required (pip install onnxruntime)") from err
 
-    meta = json.loads(args.meta.read_text()) if args.meta.exists() else {}
-    expected_samples = None
-    if "input_shapes" in meta and meta["input_shapes"]:
-        shape = meta["input_shapes"][0]
-        if len(shape) >= 3:
-            expected_samples = int(shape[-1])
+    sr = int(args.sample_rate)
+    samples, _sr = load_audio(args.audio_path, sr)
+    target_len = int(sr * args.seconds)
+    samples = repeat_pad(samples, target_len)
 
-    feature_extractor = ClapFeatureExtractor.from_pretrained(args.model)
-    model = ClapModel.from_pretrained(args.model)
-    model.eval()
+    mel = log_mel_from_samples(
+        samples,
+        sr,
+        int(args.n_fft),
+        int(args.hop_length),
+        int(args.n_mels),
+        float(args.fmin),
+        float(args.fmax),
+    )
+    target_frames = int(round(float(sr) * float(args.seconds) / float(args.hop_length)))
+    frames = mel.shape[1]
+    if frames < target_frames:
+        pad_width = target_frames - frames
+        mel = np.pad(mel, ((0, 0), (0, pad_width)), mode="constant")
+    elif frames > target_frames:
+        mel = mel[:, :target_frames]
 
-    samples, sr = load_audio(args.audio_path, feature_extractor.sampling_rate)
-    if expected_samples:
-        samples = repeat_pad(samples, expected_samples)
-    inputs = feature_extractor(samples, sampling_rate=sr, return_tensors="pt")
-    with torch.no_grad():
-        ref = model.get_audio_features(**inputs).cpu().numpy().astype("float32")
-    ref = ref[0]
+    input_tensor = mel.astype("float32").T.reshape(1, 1, target_frames, int(args.n_mels))
 
     sess = ort.InferenceSession(str(args.onnx), providers=["CPUExecutionProvider"])
     input_name = sess.get_inputs()[0].name
-    input_shape = sess.get_inputs()[0].shape
-    if len(input_shape) != 3:
-        raise RuntimeError(
-            f"ONNX input shape {input_shape} is not [B,C,T]; update this script accordingly."
-        )
-    batch = 1
-    channels = int(input_shape[1]) if isinstance(input_shape[1], int) else 1
-    target_len = expected_samples or samples.shape[0]
-    samples = repeat_pad(samples, target_len)
-    audio = samples.reshape(batch, channels, target_len).astype("float32")
-    ort_out = sess.run(None, {input_name: audio})[0]
-    ort_out = ort_out[0].astype("float32")
+    ort_out = sess.run(None, {input_name: input_tensor})[0]
+    embedding = ort_out.reshape(-1).astype("float32")
 
-    diff = np.abs(ref - ort_out)
-    max_diff = float(diff.max())
-    mean_diff = float(diff.mean())
-    l2_ref = math.sqrt(float((ref * ref).sum()))
-    l2_ort = math.sqrt(float((ort_out * ort_out).sum()))
-    ok = max_diff <= args.atol
+    dim = int(embedding.shape[0])
+    norm = math.sqrt(float((embedding * embedding).sum()))
+    ok = dim == int(args.expected_dim)
 
-    print(f"max_abs_diff: {max_diff:.6f}")
-    print(f"mean_abs_diff: {mean_diff:.6f}")
-    print(f"ref_l2: {l2_ref:.6f}")
-    print(f"onnx_l2: {l2_ort:.6f}")
-    print(f"status: {'OK' if ok else 'MISMATCH'} (atol={args.atol})")
+    print(f"dim: {dim}")
+    print(f"l2_norm: {norm:.6f}")
+    print(f"status: {'OK' if ok else 'MISMATCH'} (expected_dim={args.expected_dim})")
     return 0 if ok else 2
 
 

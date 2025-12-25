@@ -122,14 +122,13 @@ impl DragDropController<'_> {
             .file_stem()
             .map(|name| name.to_string_lossy().to_string())
             .unwrap_or_else(|| "sample".to_string());
-        let base_stem = base_sample_stem(&stem);
         let extension = relative_path
             .extension()
             .map(|ext| ext.to_string_lossy().to_string());
         let mut copy_relative = None;
         let mut copy_absolute = None;
         for count in 1.. {
-            let suffix = format!("{base_stem}_copy{count:03}");
+            let suffix = format!("{stem}_copy{count:03}");
             let file_name = if let Some(ext) = &extension {
                 format!("{suffix}.{ext}")
             } else {
@@ -195,21 +194,10 @@ impl DragDropController<'_> {
             self.set_status(format!("Failed to register copy: {err}"), StatusTone::Error);
             return;
         }
-        let entry = WavEntry {
-            relative_path: copy_relative.clone(),
-            file_size,
-            modified_ns,
-            content_hash: None,
-            tag: SampleTag::Neutral,
-            missing: false,
-        };
-        self.wav_entries.entries.push(entry);
-        self.wav_entries
-            .entries
-            .sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
-        self.rebuild_wav_lookup();
-        self.rebuild_browser_lists();
-        self.select_wav_by_path_with_rebuild(&copy_relative, true);
+        self.runtime
+            .jobs
+            .set_pending_select_path(Some(copy_relative.clone()));
+        self.invalidate_wav_entries_for_source(&source);
         self.set_status(
             format!("Copied sample to {}", copy_relative.display()),
             StatusTone::Info,
@@ -623,27 +611,5 @@ impl DragDropController<'_> {
             }
             Err(err) => self.set_status(err, StatusTone::Error),
         }
-    }
-}
-
-fn base_sample_stem(stem: &str) -> String {
-    let mut base = stem.to_string();
-    loop {
-        if let Some(idx) = base.rfind("_copy") {
-            let suffix = &base[idx + 5..];
-            if !suffix.is_empty()
-                && suffix.chars().all(|c| c.is_ascii_digit())
-                && idx > 0
-            {
-                base.truncate(idx);
-                continue;
-            }
-        }
-        break;
-    }
-    if base.is_empty() {
-        stem.to_string()
-    } else {
-        base
     }
 }

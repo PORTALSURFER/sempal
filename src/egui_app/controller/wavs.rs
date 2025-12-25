@@ -37,8 +37,92 @@ impl EguiController {
     }
 
     /// Visible wav indices after applying the active sample browser filter.
-    pub fn visible_browser_indices(&self) -> &[usize] {
+    pub fn visible_browser_rows(&self) -> &crate::egui_app::state::VisibleRows {
         &self.ui.browser.visible
+    }
+
+    /// Visible row count after applying the active sample browser filter.
+    pub fn visible_browser_len(&self) -> usize {
+        self.ui.browser.visible.len()
+    }
+
+    /// Map a visible row to the absolute wav index.
+    pub fn visible_browser_index(&self, row: usize) -> Option<usize> {
+        self.ui.browser.visible.get(row)
+    }
+
+    pub(super) fn wav_entries_len(&self) -> usize {
+        self.wav_entries.total
+    }
+
+    pub(super) fn ensure_wav_page_loaded(&mut self, index: usize) -> Result<(), String> {
+        if self.wav_entries.entry(index).is_some() {
+            return Ok(());
+        }
+        let Some(source) = self.current_source() else {
+            return Err("No active source selected".to_string());
+        };
+        let page_size = self.wav_entries.page_size.max(1);
+        let page_index = index / page_size;
+        let offset = page_index * page_size;
+        let db = self
+            .database_for(&source)
+            .map_err(|err| err.to_string())?;
+        let entries = db
+            .list_files_page(page_size, offset)
+            .map_err(|err| err.to_string())?;
+        self.wav_entries.insert_page(page_index, entries);
+        Ok(())
+    }
+
+    pub(super) fn wav_index_for_path(&mut self, path: &Path) -> Option<usize> {
+        if let Some(index) = self.wav_entries.lookup.get(path).copied() {
+            return Some(index);
+        }
+        let source = self.current_source()?;
+        let db = self.database_for(&source).ok()?;
+        let index = db.index_for_path(path).ok().flatten()?;
+        self.wav_entries.insert_lookup(path.to_path_buf(), index);
+        Some(index)
+    }
+
+    pub(super) fn for_each_wav_entry(
+        &mut self,
+        mut visit: impl FnMut(usize, &WavEntry),
+    ) -> Result<(), String> {
+        let Some(source) = self.current_source() else {
+            return Ok(());
+        };
+        let db = self
+            .database_for(&source)
+            .map_err(|err| err.to_string())?;
+        let total = self.wav_entries.total;
+        let page_size = self.wav_entries.page_size.max(1);
+        let page_count = (total + page_size - 1) / page_size;
+        for page_index in 0..page_count {
+            let offset = page_index * page_size;
+            if let Some(page) = self.wav_entries.pages.get(&page_index) {
+                for (idx, entry) in page.iter().enumerate() {
+                    visit(offset + idx, entry);
+                }
+                continue;
+            }
+            let entries = db
+                .list_files_page(page_size, offset)
+                .map_err(|err| err.to_string())?;
+            for (idx, entry) in entries.iter().enumerate() {
+                visit(offset + idx, entry);
+            }
+        }
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_wav_entries_for_tests(&mut self, entries: Vec<WavEntry>) {
+        self.wav_entries.clear();
+        self.wav_entries.total = entries.len();
+        self.wav_entries.insert_page(0, entries);
+        self.rebuild_wav_lookup();
     }
 
     // Audio load queueing/polling moved to `audio_loading` submodule.
@@ -59,7 +143,7 @@ impl EguiController {
     }
 
     /// Current tag of the selected wav, if any.
-    pub fn selected_tag(&self) -> Option<SampleTag> {
+    pub fn selected_tag(&mut self) -> Option<SampleTag> {
         selection_ops::selected_tag(self)
     }
 
@@ -99,7 +183,7 @@ impl EguiController {
     }
 
     /// Build a library sample_id for the visible browser row.
-    pub fn sample_id_for_visible_row(&self, row: usize) -> Result<String, String> {
+    pub fn sample_id_for_visible_row(&mut self, row: usize) -> Result<String, String> {
         let source_id = self
             .selection_state
             .ctx
@@ -111,12 +195,9 @@ impl EguiController {
             .browser
             .visible
             .get(row)
-            .copied()
             .ok_or_else(|| "Selected row is out of range".to_string())?;
         let entry = self
-            .wav_entries
-            .entries
-            .get(entry_index)
+            .wav_entry(entry_index)
             .ok_or_else(|| "Sample entry missing".to_string())?;
         Ok(super::analysis_jobs::build_sample_id(
             source_id.as_str(),
@@ -180,18 +261,21 @@ impl EguiController {
     }
 
     /// Retrieve a wav entry by absolute index.
-    pub fn wav_entry(&self, index: usize) -> Option<&WavEntry> {
-        self.wav_entries.entries.get(index)
+    pub fn wav_entry(&mut self, index: usize) -> Option<&WavEntry> {
+        self.ensure_wav_page_loaded(index).ok()?;
+        self.wav_entries.entry(index)
     }
 
-    pub fn analysis_failure_for_entry(&self, index: usize) -> Option<&str> {
-        let source_id = self.selection_state.ctx.selected_source.as_ref()?;
-        let entry = self.wav_entries.entries.get(index)?;
+    pub fn analysis_failure_for_entry(&mut self, index: usize) -> Option<&str> {
+        let source_id = self.selection_state.ctx.selected_source.clone()?;
+        let path = self
+            .wav_entry(index)
+            .map(|entry| entry.relative_path.clone())?;
         self.ui_cache
             .browser
             .analysis_failures
-            .get(source_id)
-            .and_then(|failures| failures.get(&entry.relative_path))
+            .get(&source_id)
+            .and_then(|failures| failures.get(&path))
             .map(|s| s.as_str())
     }
 
@@ -224,14 +308,6 @@ impl EguiController {
         updates: &[(WavEntry, WavEntry)],
     ) {
         selection_ops::invalidate_cached_audio_for_entry_updates(self, source_id, updates);
-    }
-
-    pub(super) fn ensure_wav_cache_lookup(&mut self, source_id: &SourceId) {
-        selection_ops::ensure_wav_cache_lookup(self, source_id);
-    }
-
-    pub(super) fn rebuild_wav_cache_lookup(&mut self, source_id: &SourceId) {
-        selection_ops::rebuild_wav_cache_lookup(self, source_id);
     }
 
     pub(super) fn set_sample_tag(

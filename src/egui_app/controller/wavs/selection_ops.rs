@@ -9,9 +9,9 @@ pub(super) fn select_wav_by_path_with_rebuild(
     path: &Path,
     rebuild: bool,
 ) {
-    if !controller.wav_entries.lookup.contains_key(path) {
+    let Some(index) = controller.wav_index_for_path(path) else {
         return;
-    }
+    };
     controller.ui.collections.selected_sample = None;
     if controller.current_source().is_none() {
         if let Some(source_id) = controller
@@ -40,9 +40,7 @@ pub(super) fn select_wav_by_path_with_rebuild(
     controller.ui.browser.last_focused_path = Some(path.to_path_buf());
     let missing = controller
         .wav_entries
-        .lookup
-        .get(path)
-        .and_then(|index| controller.wav_entries.entries.get(*index))
+        .entry(index)
         .map(|entry| entry.missing)
         .unwrap_or(false);
     if missing {
@@ -88,7 +86,7 @@ pub(super) fn select_wav_by_path_with_rebuild(
 }
 
 pub(super) fn select_wav_by_index(controller: &mut EguiController, index: usize) {
-    let path = match controller.wav_entries.entries.get(index) {
+    let path = match controller.wav_entry(index) {
         Some(entry) => entry.relative_path.clone(),
         None => return,
     };
@@ -109,36 +107,24 @@ pub(super) fn triage_flag_drop_target(controller: &EguiController) -> TriageFlag
     }
 }
 
-pub(super) fn selected_tag(controller: &EguiController) -> Option<SampleTag> {
+pub(super) fn selected_tag(controller: &mut EguiController) -> Option<SampleTag> {
     controller
         .selected_row_index()
-        .and_then(|idx| controller.wav_entries.entries.get(idx))
+        .and_then(|idx| controller.wav_entry(idx))
         .map(|entry| entry.tag)
 }
 
 pub(super) fn rebuild_wav_lookup(controller: &mut EguiController) {
     controller.wav_entries.lookup.clear();
-    for (index, entry) in controller.wav_entries.entries.iter().enumerate() {
-        let path = entry.relative_path.clone();
-        controller.wav_entries.lookup.insert(path.clone(), index);
-
-        let path_str = path.to_string_lossy();
-        if path_str.contains('\\') {
-            let normalized = path_str.replace('\\', "/");
-            controller
-                .wav_entries
-                .lookup
-                .entry(PathBuf::from(normalized))
-                .or_insert(index);
+    let mut entries = Vec::new();
+    for (page_index, page) in controller.wav_entries.pages.iter() {
+        let base = page_index * controller.wav_entries.page_size;
+        for (idx, entry) in page.iter().enumerate() {
+            entries.push((entry.relative_path.clone(), base + idx));
         }
-        if path_str.contains('/') {
-            let normalized = path_str.replace('/', "\\");
-            controller
-                .wav_entries
-                .lookup
-                .entry(PathBuf::from(normalized))
-                .or_insert(index);
-        }
+    }
+    for (path, index) in entries {
+        controller.wav_entries.insert_lookup(path, index);
     }
 }
 
@@ -150,10 +136,7 @@ pub(super) fn sync_browser_after_wav_entries_mutation(
     controller.ui.browser.similar_query = None;
     controller.ui_cache.browser.search.invalidate();
     controller.rebuild_browser_lists();
-    controller.ui_cache.browser.labels.insert(
-        source_id.clone(),
-        controller.build_label_cache(&controller.wav_entries.entries),
-    );
+    controller.ui_cache.browser.labels.remove(source_id);
 }
 
 pub(super) fn sync_browser_after_wav_entries_mutation_keep_search_cache(
@@ -163,10 +146,7 @@ pub(super) fn sync_browser_after_wav_entries_mutation_keep_search_cache(
     rebuild_wav_lookup(controller);
     controller.ui.browser.similar_query = None;
     controller.rebuild_browser_lists();
-    controller.ui_cache.browser.labels.insert(
-        source_id.clone(),
-        controller.build_label_cache(&controller.wav_entries.entries),
-    );
+    controller.ui_cache.browser.labels.remove(source_id);
 }
 
 pub(super) fn invalidate_cached_audio_for_entry_updates(
@@ -178,14 +158,6 @@ pub(super) fn invalidate_cached_audio_for_entry_updates(
         controller.invalidate_cached_audio(source_id, &old_entry.relative_path);
         controller.invalidate_cached_audio(source_id, &new_entry.relative_path);
     }
-}
-
-pub(super) fn ensure_wav_cache_lookup(controller: &mut EguiController, source_id: &SourceId) {
-    controller.cache.wav.ensure_lookup(source_id);
-}
-
-pub(super) fn rebuild_wav_cache_lookup(controller: &mut EguiController, source_id: &SourceId) {
-    controller.cache.wav.rebuild_lookup(source_id);
 }
 
 pub(super) fn set_sample_tag(
@@ -222,14 +194,28 @@ pub(super) fn set_sample_tag_for_source(
     let db = controller
         .database_for(source)
         .map_err(|err| err.to_string())?;
-    let mut tagging = tagging_service::TaggingService::new(
-        controller.selection_state.ctx.selected_source.as_ref(),
-        &mut controller.wav_entries.entries,
-        &controller.wav_entries.lookup,
-        &mut controller.cache.wav,
-    );
-    tagging.apply_sample_tag(source, path, target_tag, require_present)?;
+    if require_present {
+        let exists = db
+            .index_for_path(path)
+            .map_err(|err| err.to_string())?
+            .is_some();
+        if !exists {
+            return Err("Sample not found".into());
+        }
+    }
     let _ = db.set_tag(path, target_tag);
+    if controller.selection_state.ctx.selected_source.as_ref() == Some(&source.id)
+        && let Some(index) = controller.wav_index_for_path(path)
+        && let Some(entry) = controller.wav_entries.entry_mut(index)
+    {
+        entry.tag = target_tag;
+    }
+    if let Some(cache) = controller.cache.wav.entries.get_mut(&source.id)
+        && let Some(index) = cache.lookup.get(path).copied()
+        && let Some(entry) = cache.entry_mut(index)
+    {
+        entry.tag = target_tag;
+    }
     if controller.selection_state.ctx.selected_source.as_ref() == Some(&source.id) {
         controller.rebuild_browser_lists();
     }

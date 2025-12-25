@@ -6,7 +6,7 @@ use eframe::egui::{self, RichText, Ui};
 impl EguiApp {
     pub(super) fn render_sample_browser_filter(&mut self, ui: &mut Ui) {
         let palette = style::palette();
-        let visible_count = self.controller.visible_browser_indices().len();
+        let visible_count = self.controller.visible_browser_len();
         ui.horizontal(|ui| {
             ui.label(RichText::new("Filter").color(palette.text_primary));
             for filter in [

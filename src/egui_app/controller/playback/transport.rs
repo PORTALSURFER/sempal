@@ -18,7 +18,15 @@ pub(super) fn start_selection_edge_drag(
 }
 
 pub(super) fn update_selection_drag(controller: &mut EguiController, position: f32) {
-    if let Some(range) = controller.selection_state.range.update_drag(position) {
+    let range = if let Some(step) = bpm_snap_step(controller) {
+        controller
+            .selection_state
+            .range
+            .update_drag_snapped(position, step)
+    } else {
+        controller.selection_state.range.update_drag(position)
+    };
+    if let Some(range) = range {
         controller.apply_selection(Some(range));
     }
 }
@@ -96,6 +104,31 @@ pub(super) fn seek_to(controller: &mut EguiController, position: f32) {
     record_play_start(controller, position);
     if let Err(err) = controller.play_audio(looped, Some(position)) {
         controller.set_status(err, StatusTone::Error);
+    }
+}
+
+fn bpm_snap_step(controller: &EguiController) -> Option<f32> {
+    if !controller.ui.waveform.bpm_snap_enabled {
+        return None;
+    }
+    let bpm = controller.ui.waveform.bpm_value?;
+    if !bpm.is_finite() || bpm <= 0.0 {
+        return None;
+    }
+    let duration = controller
+        .sample_view
+        .wav
+        .loaded_audio
+        .as_ref()
+        .map(|audio| audio.duration_seconds)?;
+    if !duration.is_finite() || duration <= 0.0 {
+        return None;
+    }
+    let step = 60.0 / bpm / duration;
+    if step.is_finite() && step > 0.0 {
+        Some(step)
+    } else {
+        None
     }
 }
 

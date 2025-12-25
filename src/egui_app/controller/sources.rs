@@ -1,6 +1,7 @@
 use super::collection_export;
 use super::*;
 use std::fs;
+use std::path::Path;
 
 impl EguiController {
     /// Select the first available source or refresh the current one.
@@ -36,6 +37,22 @@ impl EguiController {
     /// Change the selected source by id and refresh dependent state.
     pub fn select_source(&mut self, id: Option<SourceId>) {
         self.select_source_internal(id, None);
+    }
+
+    /// Select a source by its root path.
+    pub fn select_source_by_root(&mut self, root: &Path) -> bool {
+        let normalized = crate::sample_sources::config::normalize_path(root);
+        let id = self
+            .library
+            .sources
+            .iter()
+            .find(|source| source.root == normalized)
+            .map(|source| source.id.clone());
+        if id.is_some() {
+            self.select_source(id);
+            return true;
+        }
+        false
     }
 
     /// Refresh the wav list for the selected source (delegates to background load).
@@ -121,17 +138,6 @@ impl EguiController {
             self.clear_waveform_view();
         }
         let _ = self.persist_config("Failed to save config after removing source");
-        if let Ok(root) = crate::app_dirs::app_root_dir() {
-            let db_path = root.join(crate::sample_sources::library::LIBRARY_DB_FILE_NAME);
-            if let Ok(mut conn) = super::analysis_jobs::open_library_db(&db_path) {
-                if let Err(err) = super::analysis_jobs::purge_orphaned_samples(&mut conn) {
-                    self.set_status(
-                        format!("Failed to purge removed source data: {err}"),
-                        StatusTone::Warning,
-                    );
-                }
-            }
-        }
         self.refresh_sources_ui();
         let _ = self.refresh_wavs();
         self.refresh_collections_ui();
@@ -241,7 +247,7 @@ impl EguiController {
         if same_source {
             self.refresh_sources_ui();
             if let Some(path) = self.runtime.jobs.pending_select_path() {
-                if self.wav_entries.lookup.contains_key(&path) {
+                if self.wav_index_for_path(&path).is_some() {
                     self.runtime.jobs.set_pending_select_path(None);
                     self.select_wav_by_path(&path);
                 } else {
@@ -271,8 +277,7 @@ impl EguiController {
     }
 
     fn clear_wavs(&mut self) {
-        self.wav_entries.entries.clear();
-        self.wav_entries.lookup.clear();
+        self.wav_entries.clear();
         self.sample_view.wav.selected_wav = None;
         self.ui.browser = SampleBrowserState::default();
         self.ui.sources.folders = FolderBrowserUiState::default();

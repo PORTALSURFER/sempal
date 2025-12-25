@@ -28,9 +28,11 @@ pub(in crate::egui_app::controller::analysis_jobs) fn current_progress(
     }
 
     progress.samples_total = conn
-        .query_row("SELECT COUNT(DISTINCT sample_id) FROM analysis_jobs", [], |row| {
-            row.get::<_, i64>(0)
-        })
+        .query_row(
+            "SELECT COUNT(DISTINCT sample_id) FROM analysis_jobs",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
         .map_err(|err| format!("Failed to query analysis sample total: {err}"))?
         .max(0) as usize;
     progress.samples_pending_or_running = conn

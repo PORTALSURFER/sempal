@@ -14,7 +14,10 @@ pub(crate) struct TimeDomainFeatures {
     pub(crate) onset_count: u32,
 }
 
-pub(crate) fn extract_time_domain_features(samples: &[f32], sample_rate: u32) -> TimeDomainFeatures {
+pub(crate) fn extract_time_domain_features(
+    samples: &[f32],
+    sample_rate: u32,
+) -> TimeDomainFeatures {
     let duration_seconds = duration_seconds(samples.len(), sample_rate);
     let peak = peak(samples);
     let rms = rms(samples);
@@ -46,6 +49,21 @@ fn duration_seconds(sample_count: usize, sample_rate: u32) -> f32 {
 }
 
 fn peak(samples: &[f32]) -> f32 {
+    if samples.is_empty() {
+        return 0.0;
+    }
+    #[cfg(target_arch = "x86_64")]
+    {
+        if std::is_x86_feature_detected!("sse2")
+            && samples.iter().all(|s| {
+                s.is_finite() && s.abs() <= 1.0 && (s.abs() == 0.0 || s.abs() >= f32::MIN_POSITIVE)
+            })
+        {
+            // SAFETY: gated by runtime feature check and finite-range precondition.
+            let max = unsafe { max_abs_sse2(samples) };
+            return max.clamp(0.0, 1.0);
+        }
+    }
     samples
         .iter()
         .copied()
@@ -58,6 +76,17 @@ fn rms(samples: &[f32]) -> f32 {
     if samples.is_empty() {
         return 0.0;
     }
+    #[cfg(target_arch = "x86_64")]
+    {
+        if std::is_x86_feature_detected!("sse2")
+            && samples.iter().all(|s| {
+                s.is_finite() && s.abs() <= 1.0 && (s.abs() == 0.0 || s.abs() >= f32::MIN_POSITIVE)
+            })
+        {
+            // SAFETY: gated by runtime feature check and finite-range precondition.
+            return unsafe { rms_sse2(samples) };
+        }
+    }
     let mut sum = 0.0_f64;
     for &sample in samples {
         let sample = sanitize_sample(sample) as f64;
@@ -65,6 +94,56 @@ fn rms(samples: &[f32]) -> f32 {
     }
     let mean = sum / samples.len() as f64;
     (mean.max(0.0).sqrt() as f32).clamp(0.0, 1.0)
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "sse2")]
+unsafe fn max_abs_sse2(samples: &[f32]) -> f32 {
+    use std::arch::x86_64::*;
+    let mut max_v = _mm_set1_ps(0.0);
+    let sign_mask = _mm_castsi128_ps(_mm_set1_epi32(0x7fffffff_u32 as i32));
+    let mut chunks = samples.chunks_exact(4);
+    for chunk in &mut chunks {
+        let v = unsafe { _mm_loadu_ps(chunk.as_ptr()) };
+        let abs = _mm_and_ps(v, sign_mask);
+        max_v = _mm_max_ps(max_v, abs);
+    }
+    let mut tmp = [0.0_f32; 4];
+    unsafe { _mm_storeu_ps(tmp.as_mut_ptr(), max_v) };
+    let mut max = tmp.into_iter().fold(0.0_f32, f32::max);
+    for &val in chunks.remainder() {
+        max = max.max(val.abs());
+    }
+    max
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "sse2")]
+unsafe fn rms_sse2(samples: &[f32]) -> f32 {
+    use std::arch::x86_64::*;
+    let mut sum0 = _mm_set1_pd(0.0);
+    let mut sum1 = _mm_set1_pd(0.0);
+    let mut chunks = samples.chunks_exact(4);
+    for chunk in &mut chunks {
+        let v = unsafe { _mm_loadu_ps(chunk.as_ptr()) };
+        let lo = _mm_cvtps_pd(v);
+        let hi = _mm_cvtps_pd(_mm_movehl_ps(v, v));
+        let lo_sq = _mm_mul_pd(lo, lo);
+        let hi_sq = _mm_mul_pd(hi, hi);
+        sum0 = _mm_add_pd(sum0, lo_sq);
+        sum1 = _mm_add_pd(sum1, hi_sq);
+    }
+    let mut tmp0 = [0.0_f64; 2];
+    let mut tmp1 = [0.0_f64; 2];
+    unsafe { _mm_storeu_pd(tmp0.as_mut_ptr(), sum0) };
+    unsafe { _mm_storeu_pd(tmp1.as_mut_ptr(), sum1) };
+    let mut sum = tmp0.iter().copied().sum::<f64>() + tmp1.iter().copied().sum::<f64>();
+    for &val in chunks.remainder() {
+        let val = val as f64;
+        sum += val * val;
+    }
+    let mean = sum / samples.len() as f64;
+    (mean.max(0.0).sqrt() as f32).min(1.0)
 }
 
 fn zero_crossing_rate(samples: &[f32], sample_rate: u32) -> f32 {

@@ -56,16 +56,19 @@ impl EguiController {
             );
         }
         self.library.collections = cfg.collections;
-        if let Ok(root) = crate::app_dirs::app_root_dir() {
-            let db_path = root.join(crate::sample_sources::library::LIBRARY_DB_FILE_NAME);
-            if let Ok(mut conn) = super::analysis_jobs::open_library_db(&db_path) {
+        let mut purge_failures = Vec::new();
+        for source in &self.library.sources {
+            if let Ok(mut conn) = super::analysis_jobs::open_source_db(&source.root) {
                 if let Err(err) = super::analysis_jobs::purge_orphaned_samples(&mut conn) {
-                    self.set_status(
-                        format!("Failed to purge orphaned sample data: {err}"),
-                        StatusTone::Warning,
-                    );
+                    purge_failures.push((source.root.display().to_string(), err));
                 }
             }
+        }
+        for (root, err) in purge_failures {
+            self.set_status(
+                format!("Failed to purge orphaned sample data for {root}: {err}"),
+                StatusTone::Warning,
+            );
         }
         // Backfill clip roots for legacy collection-owned clips that were not persisted.
         for collection in self.library.collections.iter_mut() {
@@ -108,6 +111,8 @@ impl EguiController {
         self.runtime
             .analysis
             .set_worker_count(self.settings.analysis.analysis_worker_count);
+        self.sync_analysis_backend_from_env();
+        self.apply_analysis_backend_env();
         self.runtime
             .analysis
             .start(self.runtime.jobs.message_sender());

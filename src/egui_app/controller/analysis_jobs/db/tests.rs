@@ -24,6 +24,13 @@ fn conn_with_schema() -> Connection {
             sr_used INTEGER,
             analysis_version TEXT
         );
+        CREATE TABLE wav_files (
+            path TEXT PRIMARY KEY,
+            file_size INTEGER NOT NULL,
+            modified_ns INTEGER NOT NULL,
+            tag INTEGER NOT NULL DEFAULT 0,
+            missing INTEGER NOT NULL DEFAULT 0
+        );
         CREATE TABLE analysis_features (
             sample_id TEXT PRIMARY KEY,
             content_hash TEXT NOT NULL,
@@ -44,11 +51,7 @@ fn conn_with_schema() -> Connection {
             vec BLOB NOT NULL,
             created_at INTEGER NOT NULL
         ) WITHOUT ROWID;
-        CREATE TABLE sources (
-            id TEXT PRIMARY KEY,
-            root TEXT NOT NULL,
-            sort_order INTEGER NOT NULL
-        );",
+        ",
     )
     .unwrap();
     conn
@@ -73,7 +76,9 @@ fn claim_next_job_marks_running_and_increments_attempts() {
     let mut conn = conn_with_schema();
     let jobs = vec![("s::a.wav".to_string(), "h1".to_string())];
     enqueue_jobs(&mut conn, &jobs, DEFAULT_JOB_TYPE, 123).unwrap();
-    let job = claim_next_job(&mut conn).unwrap().expect("job claimed");
+    let job = claim_next_job(&mut conn, std::path::Path::new("/tmp"), "s")
+        .unwrap()
+        .expect("job claimed");
     assert_eq!(job.sample_id, "s::a.wav");
     assert_eq!(job.content_hash.as_deref(), Some("h1"));
     assert_eq!(job.job_type, DEFAULT_JOB_TYPE);
@@ -161,20 +166,21 @@ fn reset_running_to_pending_updates_rows() {
 fn prune_jobs_for_missing_sources_removes_orphans() {
     let conn = conn_with_schema();
     conn.execute(
-        "INSERT INTO sources (id, root, sort_order) VALUES ('s', '/tmp', 0)",
+        "INSERT INTO wav_files (path, file_size, modified_ns, tag, missing)
+         VALUES ('a.wav', 1, 1, 0, 0)",
         [],
     )
     .unwrap();
     conn.execute(
         "INSERT INTO analysis_jobs (sample_id, job_type, status, attempts, created_at)
-         VALUES ('s::a.wav', 'x', 'pending', 0, 0)",
-        [],
+         VALUES ('s::a.wav', ?1, 'pending', 0, 0)",
+        params![ANALYZE_SAMPLE_JOB_TYPE],
     )
     .unwrap();
     conn.execute(
         "INSERT INTO analysis_jobs (sample_id, job_type, status, attempts, created_at)
-         VALUES ('missing::b.wav', 'x', 'pending', 0, 0)",
-        [],
+         VALUES ('missing::b.wav', ?1, 'pending', 0, 0)",
+        params![ANALYZE_SAMPLE_JOB_TYPE],
     )
     .unwrap();
     let removed = prune_jobs_for_missing_sources(&conn).unwrap();
@@ -189,7 +195,8 @@ fn prune_jobs_for_missing_sources_removes_orphans() {
 fn purge_orphaned_samples_removes_rows_from_all_tables() {
     let mut conn = conn_with_schema();
     conn.execute(
-        "INSERT INTO sources (id, root, sort_order) VALUES ('s', '/tmp', 0)",
+        "INSERT INTO wav_files (path, file_size, modified_ns, tag, missing)
+         VALUES ('a.wav', 1, 1, 0, 0)",
         [],
     )
     .unwrap();
@@ -202,8 +209,8 @@ fn purge_orphaned_samples_removes_rows_from_all_tables() {
         .unwrap();
         conn.execute(
             "INSERT INTO analysis_jobs (sample_id, job_type, status, attempts, created_at)
-             VALUES (?1, 'x', 'pending', 0, 0)",
-            params![sample_id],
+             VALUES (?1, ?2, 'pending', 0, 0)",
+            params![sample_id, ANALYZE_SAMPLE_JOB_TYPE],
         )
         .unwrap();
         conn.execute(
@@ -260,17 +267,22 @@ fn update_analysis_metadata_updates_matching_hash() {
         Some("h1"),
         1.25,
         crate::analysis::audio::ANALYSIS_SAMPLE_RATE,
+        "analysis_v1_test",
     )
     .unwrap();
-    let (duration, sr): (Option<f64>, Option<i64>) = conn
+    let (duration, sr, version): (Option<f64>, Option<i64>, Option<String>) = conn
         .query_row(
-            "SELECT duration_seconds, sr_used FROM samples WHERE sample_id = 's::a.wav'",
+            "SELECT duration_seconds, sr_used, analysis_version FROM samples WHERE sample_id = 's::a.wav'",
             [],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .unwrap();
     assert_eq!(duration, Some(1.25));
-    assert_eq!(sr, Some(crate::analysis::audio::ANALYSIS_SAMPLE_RATE as i64));
+    assert_eq!(
+        sr,
+        Some(crate::analysis::audio::ANALYSIS_SAMPLE_RATE as i64)
+    );
+    assert_eq!(version.as_deref(), Some("analysis_v1_test"));
 }
 
 #[test]

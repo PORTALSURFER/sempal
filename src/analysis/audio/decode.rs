@@ -1,26 +1,29 @@
+use std::cell::RefCell;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
 
 use rodio::{Decoder, Source};
 
-use super::{
-    AnalysisAudio,
-    ANALYSIS_SAMPLE_RATE,
-    MAX_ANALYSIS_SECONDS,
-    MIN_ANALYSIS_SECONDS,
-    WINDOW_HOP_SECONDS,
-    WINDOW_SECONDS,
-};
 use super::normalize::{normalize_peak_in_place, rms};
-use super::resample::resample_linear;
+use super::resample::resample_linear_into;
 use super::silence::trim_silence_with_hysteresis;
+use super::{
+    ANALYSIS_SAMPLE_RATE, AnalysisAudio, MAX_ANALYSIS_SECONDS, MIN_ANALYSIS_SECONDS,
+    WINDOW_HOP_SECONDS, WINDOW_SECONDS,
+};
 
 pub(crate) fn decode_for_analysis(path: &Path) -> Result<AnalysisAudio, String> {
     decode_for_analysis_with_rate(path, ANALYSIS_SAMPLE_RATE)
 }
 
-pub(crate) fn probe_duration_seconds(path: &Path) -> Result<Option<f32>, String> {
+pub(crate) struct AudioProbe {
+    pub(crate) duration_seconds: Option<f32>,
+    pub(crate) sample_rate: Option<u32>,
+    pub(crate) channels: Option<u16>,
+}
+
+pub(crate) fn probe_metadata(path: &Path) -> Result<AudioProbe, String> {
     if path
         .extension()
         .and_then(|ext| ext.to_str())
@@ -29,13 +32,21 @@ pub(crate) fn probe_duration_seconds(path: &Path) -> Result<Option<f32>, String>
         let reader = hound::WavReader::open(path)
             .map_err(|err| format!("WAV probe failed for {}: {err}", path.display()))?;
         let spec = reader.spec();
-        let sample_rate = spec.sample_rate.max(1) as f32;
-        let channels = spec.channels.max(1) as f32;
-        let samples = reader.duration() as f32;
-        return Ok(Some((samples / channels / sample_rate).max(0.0)));
+        let sample_rate = spec.sample_rate.max(1);
+        let channels = spec.channels.max(1);
+        let duration_seconds = (reader.duration() as f32
+            / channels as f32
+            / sample_rate as f32)
+            .max(0.0);
+        return Ok(AudioProbe {
+            duration_seconds: Some(duration_seconds),
+            sample_rate: Some(sample_rate),
+            channels: Some(channels),
+        });
     }
 
-    let file = File::open(path).map_err(|err| format!("Failed to open {}: {err}", path.display()))?;
+    let file =
+        File::open(path).map_err(|err| format!("Failed to open {}: {err}", path.display()))?;
     let byte_len = file.metadata().map(|meta| meta.len()).unwrap_or(0) as u64;
     let hint = path
         .extension()
@@ -50,33 +61,77 @@ pub(crate) fn probe_duration_seconds(path: &Path) -> Result<Option<f32>, String>
     }
     let decoder = builder
         .build()
-        .map_err(|err| format!("Audio decode probe failed for {}: {err}", path.display()))?;
-    Ok(decoder.total_duration().map(|dur| dur.as_secs_f32()))
-}
-
-fn decode_for_analysis_with_rate(path: &Path, sample_rate: u32) -> Result<AnalysisAudio, String> {
-    let decoded = crate::analysis::audio_decode::decode_audio(path)?;
-    let mono = downmix_to_mono(&decoded.samples, decoded.channels);
-    let mut resampled = resample_linear(&mono, decoded.sample_rate, sample_rate);
-    resampled = trim_silence_with_hysteresis(&resampled, sample_rate);
-    resampled = apply_energy_windowing(&resampled, sample_rate);
-    pad_to_min_duration(&mut resampled, sample_rate);
-    normalize_peak_in_place(&mut resampled);
-    let duration_seconds = duration_seconds(resampled.len(), sample_rate);
-    Ok(AnalysisAudio {
-        mono: resampled,
-        duration_seconds,
-        sample_rate_used: sample_rate,
+        .map_err(|err| format!("Audio metadata probe failed for {}: {err}", path.display()))?;
+    Ok(AudioProbe {
+        duration_seconds: decoder.total_duration().map(|dur| dur.as_secs_f32()),
+        sample_rate: Some(decoder.sample_rate().max(1)),
+        channels: Some(decoder.channels().max(1)),
     })
 }
 
-fn downmix_to_mono(samples: &[f32], channels: u16) -> Vec<f32> {
+pub(crate) fn decode_for_analysis_with_rate(
+    path: &Path,
+    sample_rate: u32,
+) -> Result<AnalysisAudio, String> {
+    decode_for_analysis_with_rate_limit(path, sample_rate, None)
+}
+
+pub(crate) fn decode_for_analysis_with_rate_limit(
+    path: &Path,
+    sample_rate: u32,
+    max_seconds: Option<f32>,
+) -> Result<AnalysisAudio, String> {
+    let default_max = MAX_ANALYSIS_SECONDS + WINDOW_SECONDS;
+    let max_decode_seconds = max_seconds
+        .filter(|limit| limit.is_finite() && *limit > 0.0)
+        .map(|limit| default_max.min(limit + WINDOW_SECONDS))
+        .unwrap_or(default_max);
+    let decoded = crate::analysis::audio_decode::decode_audio(path, Some(max_decode_seconds))?;
+    DECODE_SCRATCH.with(|scratch| {
+        let mut scratch = scratch.borrow_mut();
+        downmix_to_mono_into(&mut scratch.mono, &decoded.samples, decoded.channels);
+        let mono_len = scratch.mono.len();
+        let mut resampled = Vec::new();
+        resample_linear_into(
+            &mut resampled,
+            &scratch.mono[..mono_len],
+            decoded.sample_rate,
+            sample_rate,
+        );
+        Ok(prepare_mono_for_analysis_from_slice(&resampled, sample_rate))
+    })
+}
+
+pub(crate) fn prepare_mono_for_analysis(samples: Vec<f32>, sample_rate: u32) -> AnalysisAudio {
+    prepare_mono_for_analysis_from_slice(&samples, sample_rate)
+}
+
+fn prepare_mono_for_analysis_from_slice(samples: &[f32], sample_rate: u32) -> AnalysisAudio {
+    let mut processed = trim_silence_with_hysteresis(samples, sample_rate);
+    processed = apply_energy_windowing(&processed, sample_rate);
+    pad_to_min_duration(&mut processed, sample_rate);
+    normalize_peak_in_place(&mut processed);
+    let duration_seconds = duration_seconds(processed.len(), sample_rate);
+    AnalysisAudio {
+        mono: processed,
+        duration_seconds,
+        sample_rate_used: sample_rate,
+    }
+}
+
+fn downmix_to_mono_into(out: &mut Vec<f32>, samples: &[f32], channels: u16) {
     let channels = channels.max(1) as usize;
     if channels == 1 {
-        return samples.iter().copied().map(sanitize_sample).collect();
+        out.clear();
+        out.reserve(samples.len().saturating_sub(out.capacity()));
+        for sample in samples.iter().copied() {
+            out.push(sanitize_sample(sample));
+        }
+        return;
     }
     let frames = samples.len() / channels;
-    let mut mono = Vec::with_capacity(frames);
+    out.clear();
+    out.reserve(frames.saturating_sub(out.capacity()));
     for frame in 0..frames {
         let start = frame * channels;
         let end = start + channels;
@@ -85,9 +140,20 @@ fn downmix_to_mono(samples: &[f32], channels: u16) -> Vec<f32> {
         for &sample in slice {
             sum += sanitize_sample(sample);
         }
-        mono.push(sum / channels as f32);
+        out.push(sum / channels as f32);
     }
-    mono
+}
+
+struct DecodeScratch {
+    mono: Vec<f32>,
+    resampled: Vec<f32>,
+}
+
+thread_local! {
+    static DECODE_SCRATCH: RefCell<DecodeScratch> = RefCell::new(DecodeScratch {
+        mono: Vec::new(),
+        resampled: Vec::new(),
+    });
 }
 
 fn sanitize_sample(sample: f32) -> f32 {
@@ -228,8 +294,11 @@ mod tests {
             writer.write_sample::<i16>(0).unwrap();
         }
         writer.finalize().unwrap();
-        let duration = probe_duration_seconds(&path).unwrap().unwrap();
+        let probe = probe_metadata(&path).unwrap();
+        let duration = probe.duration_seconds.unwrap();
         assert!((duration - 1.0).abs() < 1e-3);
+        assert_eq!(probe.sample_rate, Some(48_000));
+        assert_eq!(probe.channels, Some(1));
     }
 
     #[test]

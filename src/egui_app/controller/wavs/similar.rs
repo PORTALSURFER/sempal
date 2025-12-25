@@ -1,6 +1,6 @@
 use super::*;
-use rusqlite::{OptionalExtension, params};
 use crate::egui_app::view_model;
+use rusqlite::{OptionalExtension, params};
 
 const DEFAULT_SIMILAR_COUNT: usize = 40;
 const SIMILAR_RE_RANK_CANDIDATES: usize = 200;
@@ -22,29 +22,27 @@ pub(super) fn find_similar_for_visible_row(
         .browser
         .visible
         .get(visible_row)
-        .copied()
         .ok_or_else(|| "Selected row is out of range".to_string())?;
     let entry = controller
-        .wav_entries
-        .entries
-        .get(entry_index)
+        .wav_entry(entry_index)
         .ok_or_else(|| "Sample entry missing".to_string())?;
-    let sample_id = super::super::analysis_jobs::build_sample_id(
-        source_id.as_str(),
-        &entry.relative_path,
-    );
-    let db_path = crate::app_dirs::app_root_dir()
-        .map_err(|err| err.to_string())?
-        .join(crate::sample_sources::library::LIBRARY_DB_FILE_NAME);
-    let conn = super::super::analysis_jobs::open_library_db(&db_path)?;
-    let neighbours = crate::analysis::ann_index::find_similar(
-        &conn,
-        &sample_id,
-        SIMILAR_RE_RANK_CANDIDATES,
-    )?;
+    let entry_path = entry.relative_path.clone();
+    let sample_id =
+        super::super::analysis_jobs::build_sample_id(source_id.as_str(), &entry_path);
+    let mut conn = open_source_db_for_id(controller, &source_id)?;
+    if let Err(err) = maybe_enqueue_full_analysis(controller, &mut conn, &sample_id) {
+        tracing::debug!("Fast prep refine enqueue failed: {err}");
+    }
+    let neighbours =
+        crate::analysis::ann_index::find_similar(&conn, &sample_id, SIMILAR_RE_RANK_CANDIDATES)?;
     let query_embedding = load_embedding_for_sample(&conn, &sample_id)?;
     let query_dsp = load_light_dsp_for_sample(&conn, &sample_id)?;
-    let ranked = rerank_with_dsp(&conn, neighbours, query_embedding.as_deref(), query_dsp.as_deref())?;
+    let ranked = rerank_with_dsp(
+        &conn,
+        neighbours,
+        query_embedding.as_deref(),
+        query_dsp.as_deref(),
+    )?;
 
     let mut indices = Vec::new();
     for candidate_id in ranked {
@@ -53,8 +51,8 @@ pub(super) fn find_similar_for_visible_row(
         if candidate_source.as_str() != source_id.as_str() {
             continue;
         }
-        if let Some(index) = controller.wav_entries.lookup.get(&relative_path) {
-            indices.push(*index);
+        if let Some(index) = controller.wav_index_for_path(&relative_path) {
+            indices.push(index);
             if indices.len() >= DEFAULT_SIMILAR_COUNT {
                 break;
             }
@@ -65,7 +63,7 @@ pub(super) fn find_similar_for_visible_row(
     }
     controller.ui.browser.similar_query = Some(crate::egui_app::state::SimilarQuery {
         sample_id,
-        label: view_model::sample_display_label(&entry.relative_path),
+        label: view_model::sample_display_label(&entry_path),
         indices,
         anchor_index: Some(entry_index),
     });
@@ -84,15 +82,20 @@ pub(super) fn find_similar_for_sample_id(
     if controller.selection_state.ctx.selected_source.as_ref() != Some(&source_id) {
         controller.select_source(Some(source_id.clone()));
     }
-    let db_path = crate::app_dirs::app_root_dir()
-        .map_err(|err| err.to_string())?
-        .join(crate::sample_sources::library::LIBRARY_DB_FILE_NAME);
-    let conn = super::super::analysis_jobs::open_library_db(&db_path)?;
+    let mut conn = open_source_db_for_id(controller, &source_id)?;
+    if let Err(err) = maybe_enqueue_full_analysis(controller, &mut conn, sample_id) {
+        tracing::debug!("Fast prep refine enqueue failed: {err}");
+    }
     let neighbours =
         crate::analysis::ann_index::find_similar(&conn, sample_id, SIMILAR_RE_RANK_CANDIDATES)?;
     let query_embedding = load_embedding_for_sample(&conn, sample_id)?;
     let query_dsp = load_light_dsp_for_sample(&conn, sample_id)?;
-    let ranked = rerank_with_dsp(&conn, neighbours, query_embedding.as_deref(), query_dsp.as_deref())?;
+    let ranked = rerank_with_dsp(
+        &conn,
+        neighbours,
+        query_embedding.as_deref(),
+        query_dsp.as_deref(),
+    )?;
 
     let mut indices = Vec::new();
     for candidate_id in ranked {
@@ -101,8 +104,8 @@ pub(super) fn find_similar_for_sample_id(
         if candidate_source.as_str() != source_id.as_str() {
             continue;
         }
-        if let Some(index) = controller.wav_entries.lookup.get(&candidate_path) {
-            indices.push(*index);
+        if let Some(index) = controller.wav_index_for_path(&candidate_path) {
+            indices.push(index);
             if indices.len() >= DEFAULT_SIMILAR_COUNT {
                 break;
             }
@@ -115,7 +118,7 @@ pub(super) fn find_similar_for_sample_id(
         sample_id: sample_id.to_string(),
         label: view_model::sample_display_label(&relative_path),
         indices,
-        anchor_index: controller.wav_entries.lookup.get(&relative_path).copied(),
+        anchor_index: controller.wav_index_for_path(&relative_path),
     });
     controller.ui.browser.search_query.clear();
     controller.ui.browser.search_focus_requested = false;
@@ -127,6 +130,19 @@ pub(super) fn clear_similar_filter(controller: &mut EguiController) {
     if controller.ui.browser.similar_query.take().is_some() {
         controller.rebuild_browser_lists();
     }
+}
+
+fn open_source_db_for_id(
+    controller: &EguiController,
+    source_id: &SourceId,
+) -> Result<rusqlite::Connection, String> {
+    let source = controller
+        .library
+        .sources
+        .iter()
+        .find(|source| &source.id == source_id)
+        .ok_or_else(|| "Source not found".to_string())?;
+    super::super::analysis_jobs::open_source_db(&source.root)
 }
 
 pub(super) fn find_similar_for_audio_path(
@@ -150,10 +166,7 @@ pub(super) fn find_similar_for_audio_path(
         .ok()
         .and_then(|features| crate::analysis::light_dsp_from_features_v1(&features))
         .map(normalize_l2);
-    let db_path = crate::app_dirs::app_root_dir()
-        .map_err(|err| err.to_string())?
-        .join(crate::sample_sources::library::LIBRARY_DB_FILE_NAME);
-    let conn = super::super::analysis_jobs::open_library_db(&db_path)?;
+    let conn = open_source_db_for_id(controller, &source_id)?;
     let neighbours = crate::analysis::ann_index::find_similar_for_embedding(
         &conn,
         &embedding,
@@ -168,8 +181,8 @@ pub(super) fn find_similar_for_audio_path(
         if candidate_source.as_str() != source_id.as_str() {
             continue;
         }
-        if let Some(index) = controller.wav_entries.lookup.get(&relative_path) {
-            indices.push(*index);
+        if let Some(index) = controller.wav_index_for_path(&relative_path) {
+            indices.push(index);
             if indices.len() >= DEFAULT_SIMILAR_COUNT {
                 break;
             }
@@ -294,4 +307,68 @@ fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
         sum += a[i] * b[i];
     }
     sum
+}
+
+fn maybe_enqueue_full_analysis(
+    controller: &EguiController,
+    conn: &mut rusqlite::Connection,
+    sample_id: &str,
+) -> Result<(), String> {
+    if !controller.similarity_prep_fast_mode_enabled() {
+        return Ok(());
+    }
+    let row: Option<(String, Option<String>)> = conn
+        .query_row(
+            "SELECT content_hash, analysis_version FROM samples WHERE sample_id = ?1",
+            params![sample_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .map_err(|err| format!("Load analysis version failed: {err}"))?;
+    let Some((content_hash, analysis_version)) = row else {
+        return Ok(());
+    };
+    if content_hash.trim().is_empty() {
+        return Ok(());
+    }
+    let fast_version = crate::analysis::version::analysis_version_for_sample_rate(
+        controller.similarity_prep_fast_sample_rate(),
+    );
+    if analysis_version.as_deref() != Some(fast_version.as_str()) {
+        return Ok(());
+    }
+    let active: i64 = conn
+        .query_row(
+            "SELECT COUNT(*)
+             FROM analysis_jobs
+             WHERE sample_id = ?1 AND job_type = ?2 AND status IN ('pending','running')",
+            params![sample_id, "wav_metadata_v1"],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+    if active > 0 {
+        return Ok(());
+    }
+    let created_at = now_epoch_seconds();
+    conn.execute(
+        "INSERT INTO analysis_jobs (sample_id, job_type, content_hash, status, attempts, created_at)
+         VALUES (?1, ?2, ?3, 'pending', 0, ?4)
+         ON CONFLICT(sample_id, job_type) DO UPDATE SET
+            content_hash = excluded.content_hash,
+            status = 'pending',
+            attempts = 0,
+            created_at = excluded.created_at,
+            last_error = NULL",
+        params![sample_id, "wav_metadata_v1", content_hash, created_at],
+    )
+    .map_err(|err| format!("Enqueue analysis job failed: {err}"))?;
+    Ok(())
+}
+
+fn now_epoch_seconds() -> i64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64
 }

@@ -2,9 +2,14 @@ use crate::egui_app::controller::analysis_jobs::db;
 
 #[cfg_attr(test, allow(dead_code))]
 pub(super) fn reset_running_jobs() -> Result<(), String> {
-    let db_path = super::library_db_path()?;
-    let conn = db::open_library_db(&db_path)?;
-    let _ = db::prune_jobs_for_missing_sources(&conn)?;
-    let _ = db::reset_running_to_pending(&conn)?;
+    let state = crate::sample_sources::library::load().map_err(|err| err.to_string())?;
+    for source in state.sources {
+        if !source.root.is_dir() {
+            continue;
+        }
+        let conn = db::open_source_db(&source.root)?;
+        let _ = db::prune_jobs_for_missing_sources(&conn)?;
+        let _ = db::reset_running_to_pending(&conn)?;
+    }
     Ok(())
 }

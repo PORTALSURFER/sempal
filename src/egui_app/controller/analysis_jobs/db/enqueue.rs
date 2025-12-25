@@ -1,5 +1,7 @@
 use super::types::SampleMetadata;
-use rusqlite::{Connection, TransactionBehavior, params};
+use rusqlite::{Connection, TransactionBehavior};
+use rusqlite::types::Value;
+use rusqlite::params_from_iter;
 
 pub(in crate::egui_app::controller::analysis_jobs) fn enqueue_jobs(
     conn: &mut Connection,
@@ -25,24 +27,42 @@ fn enqueue_jobs_tx(
     job_type: &str,
     created_at: i64,
 ) -> Result<usize, String> {
-    let mut stmt = tx
-        .prepare(
-            "INSERT INTO analysis_jobs (sample_id, job_type, content_hash, status, attempts, created_at)
-             VALUES (?1, ?2, ?3, 'pending', 0, ?4)
-             ON CONFLICT(sample_id, job_type) DO UPDATE SET
+    let mut inserted = 0usize;
+    const BATCH_SIZE: usize = 200;
+    for chunk in jobs.chunks(BATCH_SIZE) {
+        let mut sql = String::from(
+            "INSERT INTO analysis_jobs (sample_id, job_type, content_hash, status, attempts, created_at) VALUES ",
+        );
+        let mut params: Vec<Value> = Vec::with_capacity(chunk.len() * 4);
+        for (idx, (sample_id, content_hash)) in chunk.iter().enumerate() {
+            if idx > 0 {
+                sql.push_str(", ");
+            }
+            let base = idx * 4;
+            sql.push_str(&format!(
+                "(?{}, ?{}, ?{}, 'pending', 0, ?{})",
+                base + 1,
+                base + 2,
+                base + 3,
+                base + 4
+            ));
+            params.push(Value::from(sample_id.clone()));
+            params.push(Value::from(job_type.to_string()));
+            params.push(Value::from(content_hash.clone()));
+            params.push(Value::from(created_at));
+        }
+        sql.push_str(
+            " ON CONFLICT(sample_id, job_type) DO UPDATE SET
                 content_hash = excluded.content_hash,
                 status = 'pending',
                 attempts = 0,
                 created_at = excluded.created_at,
                 last_error = NULL",
-        )
-        .map_err(|err| format!("Failed to prepare analysis enqueue statement: {err}"))?;
-    let mut inserted = 0usize;
-    for (sample_id, content_hash) in jobs {
-        let changed = stmt
-            .execute(params![sample_id, job_type, content_hash, created_at])
-            .map_err(|err| format!("Failed to enqueue analysis job: {err}"))?;
-        inserted += changed;
+        );
+        let changed = tx
+            .execute(&sql, params_from_iter(params))
+            .map_err(|err| format!("Failed to enqueue analysis jobs: {err}"))?;
+        inserted += changed as usize;
     }
     Ok(inserted)
 }
@@ -67,47 +87,55 @@ fn upsert_samples_tx(
     tx: &rusqlite::Transaction<'_>,
     samples: &[SampleMetadata],
 ) -> Result<usize, String> {
-    let mut stmt = tx
-        .prepare(
-            "INSERT INTO samples (sample_id, content_hash, size, mtime_ns, duration_seconds, sr_used, analysis_version)
-             VALUES (?1, ?2, ?3, ?4, NULL, NULL, NULL)
-             ON CONFLICT(sample_id) DO UPDATE SET
+    let mut changed = 0usize;
+    const BATCH_SIZE: usize = 200;
+    for chunk in samples.chunks(BATCH_SIZE) {
+        let mut sql = String::from(
+            "INSERT INTO samples (sample_id, content_hash, size, mtime_ns, duration_seconds, sr_used, analysis_version) VALUES ",
+        );
+        let mut params: Vec<Value> = Vec::with_capacity(chunk.len() * 4);
+        for (idx, sample) in chunk.iter().enumerate() {
+            if idx > 0 {
+                sql.push_str(", ");
+            }
+            let base = idx * 4;
+            sql.push_str(&format!(
+                "(?{}, ?{}, ?{}, ?{}, NULL, NULL, NULL)",
+                base + 1,
+                base + 2,
+                base + 3,
+                base + 4
+            ));
+            params.push(Value::from(sample.sample_id.clone()));
+            params.push(Value::from(sample.content_hash.clone()));
+            params.push(Value::from(sample.size as i64));
+            params.push(Value::from(sample.mtime_ns));
+        }
+        sql.push_str(
+            " ON CONFLICT(sample_id) DO UPDATE SET
                 content_hash = excluded.content_hash,
                 size = excluded.size,
                 mtime_ns = excluded.mtime_ns,
                 duration_seconds = CASE
                     WHEN samples.content_hash != excluded.content_hash
-                      OR samples.size != excluded.size
-                      OR samples.mtime_ns != excluded.mtime_ns
                     THEN NULL
                     ELSE samples.duration_seconds
                 END,
                 sr_used = CASE
                     WHEN samples.content_hash != excluded.content_hash
-                      OR samples.size != excluded.size
-                      OR samples.mtime_ns != excluded.mtime_ns
                     THEN NULL
                     ELSE samples.sr_used
                 END,
                 analysis_version = CASE
                     WHEN samples.content_hash != excluded.content_hash
-                      OR samples.size != excluded.size
-                      OR samples.mtime_ns != excluded.mtime_ns
                     THEN NULL
                     ELSE samples.analysis_version
                 END",
-        )
-        .map_err(|err| format!("Failed to prepare samples upsert statement: {err}"))?;
-    let mut changed = 0usize;
-    for sample in samples {
-        changed += stmt
-            .execute(params![
-                &sample.sample_id,
-                &sample.content_hash,
-                sample.size as i64,
-                sample.mtime_ns
-            ])
+        );
+        let batch_changed = tx
+            .execute(&sql, params_from_iter(params))
             .map_err(|err| format!("Failed to upsert sample metadata: {err}"))?;
+        changed += batch_changed as usize;
     }
     Ok(changed)
 }

@@ -1,10 +1,11 @@
 //! Library exports for reuse in benchmarks and tests.
+extern crate alloc;
+/// Background analysis helpers.
+pub mod analysis;
 /// Application directory helpers.
 pub mod app_dirs;
 /// Audio playback utilities.
 pub mod audio;
-/// Background analysis helpers.
-pub mod analysis;
 /// Shared egui UI modules.
 pub mod egui_app;
 /// Platform helpers for copying files to the clipboard.
@@ -17,10 +18,10 @@ pub mod issue_gateway;
 pub mod logging;
 /// Sample source management.
 pub mod sample_sources;
-/// Optional SQLite extension loader.
-pub mod sqlite_ext;
 /// Selection math utilities.
 pub mod selection;
+/// Optional SQLite extension loader.
+pub mod sqlite_ext;
 /// Update check + installer helper utilities.
 pub mod updater;
 /// WAV header sanitization helpers.

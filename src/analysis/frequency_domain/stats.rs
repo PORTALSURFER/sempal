@@ -1,7 +1,9 @@
-use super::{BandEnergyRatios, Mfcc20Stats, SpectralAggregates, Stats};
 use super::stft::{BandFrame, SpectralFrame};
+use super::{BandEnergyRatios, Mfcc20Stats, SpectralAggregates, Stats};
 
-pub(super) fn early_late_ranges(frame_count: usize) -> (std::ops::Range<usize>, std::ops::Range<usize>) {
+pub(super) fn early_late_ranges(
+    frame_count: usize,
+) -> (std::ops::Range<usize>, std::ops::Range<usize>) {
     if frame_count == 0 {
         return (0..0, 0..0);
     }
@@ -77,7 +79,10 @@ pub(super) fn mfcc_aggregates(
 
 fn stats_f32(values: &[f32]) -> Stats {
     if values.is_empty() {
-        return Stats { mean: 0.0, std: 0.0 };
+        return Stats {
+            mean: 0.0,
+            std: 0.0,
+        };
     }
     let mean = values.iter().copied().sum::<f32>() / values.len() as f32;
     let mut var = 0.0_f64;
@@ -85,7 +90,10 @@ fn stats_f32(values: &[f32]) -> Stats {
         let d = v as f64 - mean as f64;
         var += d * d;
     }
-    Stats { mean, std: (var / values.len() as f64).sqrt() as f32 }
+    Stats {
+        mean,
+        std: (var / values.len() as f64).sqrt() as f32,
+    }
 }
 
 fn collect<T>(frames: &[T], f: impl Fn(&T) -> f32) -> Vec<f32> {
@@ -125,4 +133,3 @@ fn std_vec(frames: &[Vec<f32>]) -> Vec<f32> {
         .map(|v| (v / frames.len() as f64).sqrt() as f32)
         .collect()
 }
-

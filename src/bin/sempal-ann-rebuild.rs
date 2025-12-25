@@ -18,8 +18,8 @@ fn run() -> Result<(), String> {
     let Some(options) = parse_args(std::env::args().skip(1).collect())? else {
         return Ok(());
     };
-    let conn = Connection::open(&options.db_path)
-        .map_err(|err| format!("Open DB failed: {err}"))?;
+    let conn =
+        Connection::open(&options.db_path).map_err(|err| format!("Open DB failed: {err}"))?;
     sempal::analysis::rebuild_ann_index(&conn)?;
     println!("Rebuilt ANN index for {}", options.db_path.display());
     Ok(())

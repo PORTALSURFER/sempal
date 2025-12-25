@@ -5,15 +5,16 @@ mod enqueue_samples;
 pub(in crate::egui_app::controller) use enqueue_embeddings::enqueue_jobs_for_embedding_backfill;
 pub(in crate::egui_app::controller) use enqueue_samples::enqueue_jobs_for_source;
 pub(in crate::egui_app::controller) use enqueue_samples::enqueue_jobs_for_source_backfill;
+pub(in crate::egui_app::controller) use enqueue_samples::enqueue_jobs_for_source_backfill_full;
 pub(in crate::egui_app::controller) use enqueue_samples::enqueue_jobs_for_source_missing_features;
 
 #[cfg(test)]
 mod tests {
     use super::enqueue_embeddings::enqueue_jobs_for_embedding_backfill;
     use super::enqueue_samples::{
-        enqueue_jobs_for_source_backfill, enqueue_jobs_for_source_missing_features,
+        enqueue_jobs_for_source_backfill, enqueue_jobs_for_source_backfill_full,
+        enqueue_jobs_for_source_missing_features,
     };
-    use super::enqueue_helpers::library_db_path;
     use crate::app_dirs::ConfigBaseGuard;
     use crate::egui_app::controller::analysis_jobs::db;
     use crate::sample_sources::SampleSource;
@@ -92,8 +93,14 @@ mod tests {
             })
             .unwrap();
 
-        let db_path = library_db_path().unwrap();
-        let conn = db::open_library_db(&db_path).unwrap();
+        let conn = db::open_source_db(&source.root).unwrap();
+        conn.execute_batch(
+            "DELETE FROM analysis_jobs;
+             DELETE FROM samples;
+             DELETE FROM features;
+             DELETE FROM embeddings;",
+        )
+        .unwrap();
 
         let a = format!("{}::Pack/a.wav", source.id.as_str());
         let b = format!("{}::Pack/b.wav", source.id.as_str());
@@ -143,6 +150,123 @@ mod tests {
     }
 
     #[test]
+    fn backfill_full_enqueues_even_when_up_to_date() {
+        let config_dir = tempdir().unwrap();
+        let _guard = ConfigBaseGuard::set(config_dir.path().to_path_buf());
+
+        let source_root = tempdir().unwrap();
+        let source = SampleSource::new(source_root.path().to_path_buf());
+        let _ =
+            crate::sample_sources::library::save(&crate::sample_sources::library::LibraryState {
+                sources: vec![source.clone()],
+                collections: vec![],
+            })
+            .unwrap();
+        std::fs::create_dir_all(source.root.join("Pack")).unwrap();
+        std::fs::write(source.root.join("Pack/a.wav"), b"test").unwrap();
+        std::fs::write(source.root.join("Pack/b.wav"), b"test").unwrap();
+
+        let source_db = crate::sample_sources::SourceDatabase::open(&source.root).unwrap();
+        let mut batch = source_db.write_batch().unwrap();
+        batch
+            .upsert_file_with_hash(Path::new("Pack/a.wav"), 1, 1, "ha")
+            .unwrap();
+        batch
+            .upsert_file_with_hash(Path::new("Pack/b.wav"), 1, 1, "hb")
+            .unwrap();
+        batch.commit().unwrap();
+
+        let conn = db::open_source_db(&source.root).unwrap();
+        conn.execute_batch(
+            "DELETE FROM analysis_jobs;
+             DELETE FROM samples;
+             DELETE FROM features;
+             DELETE FROM embeddings;",
+        )
+        .unwrap();
+        let version = crate::analysis::version::analysis_version();
+        for (rel, hash) in [("Pack/a.wav", "ha"), ("Pack/b.wav", "hb")] {
+            let sample_id = format!("{}::{}", source.id.as_str(), rel);
+            conn.execute(
+                "INSERT INTO samples (sample_id, content_hash, size, mtime_ns, duration_seconds, sr_used, analysis_version)
+                 VALUES (?1, ?2, 1, 1, NULL, NULL, ?3)",
+                params![&sample_id, hash, version],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO features (sample_id, feat_version, vec_blob, computed_at)
+                 VALUES (?1, 1, X'01020304', 1)",
+                params![&sample_id],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO embeddings (sample_id, model_id, dim, dtype, l2_normed, vec, created_at)
+                 VALUES (?1, ?2, ?3, ?4, 1, X'01020304', 0)",
+                params![
+                    &sample_id,
+                    crate::analysis::embedding::EMBEDDING_MODEL_ID,
+                    crate::analysis::embedding::EMBEDDING_DIM as i64,
+                    crate::analysis::embedding::EMBEDDING_DTYPE_F32
+                ],
+            )
+            .unwrap();
+        }
+
+        let (inserted, _progress) = enqueue_jobs_for_source_backfill_full(&source).unwrap();
+        assert_eq!(inserted, 2);
+
+        let (second_inserted, _progress) = enqueue_jobs_for_source_backfill_full(&source).unwrap();
+        assert_eq!(second_inserted, 0);
+    }
+
+    #[test]
+    fn missing_features_skips_missing_files_and_marks_them() {
+        let config_dir = tempdir().unwrap();
+        let _guard = ConfigBaseGuard::set(config_dir.path().to_path_buf());
+
+        let source_root = tempdir().unwrap();
+        let source = SampleSource::new(source_root.path().to_path_buf());
+        let _ =
+            crate::sample_sources::library::save(&crate::sample_sources::library::LibraryState {
+                sources: vec![source.clone()],
+                collections: vec![],
+            })
+            .unwrap();
+        std::fs::create_dir_all(source.root.join("Pack")).unwrap();
+        std::fs::write(source.root.join("Pack/a.wav"), b"test").unwrap();
+
+        let source_db = crate::sample_sources::SourceDatabase::open(&source.root).unwrap();
+        let mut batch = source_db.write_batch().unwrap();
+        batch
+            .upsert_file_with_hash(Path::new("Pack/a.wav"), 1, 1, "ha")
+            .unwrap();
+        batch
+            .upsert_file_with_hash(Path::new("Pack/missing.wav"), 1, 1, "hb")
+            .unwrap();
+        batch.commit().unwrap();
+
+        let (_inserted, _progress) = enqueue_jobs_for_source_missing_features(&source).unwrap();
+
+        let pending: i64 = db::open_source_db(&source.root)
+            .unwrap()
+            .query_row(
+                "SELECT COUNT(*) FROM analysis_jobs WHERE status='pending' AND job_type=?1",
+                params![db::ANALYZE_SAMPLE_JOB_TYPE],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(pending, 1);
+
+        let source_db = crate::sample_sources::SourceDatabase::open(&source.root).unwrap();
+        let entries = source_db.list_files().unwrap();
+        let missing_entry = entries
+            .iter()
+            .find(|entry| entry.relative_path == Path::new("Pack/missing.wav"))
+            .unwrap();
+        assert!(missing_entry.missing);
+    }
+
+    #[test]
     fn embedding_backfill_enqueues_missing_or_mismatched() {
         let config_dir = tempdir().unwrap();
         let _guard = ConfigBaseGuard::set(config_dir.path().to_path_buf());
@@ -168,8 +292,14 @@ mod tests {
             .unwrap();
         batch.commit().unwrap();
 
-        let db_path = library_db_path().unwrap();
-        let conn = db::open_library_db(&db_path).unwrap();
+        let conn = db::open_source_db(&source.root).unwrap();
+        conn.execute_batch(
+            "DELETE FROM analysis_jobs;
+             DELETE FROM samples;
+             DELETE FROM features;
+             DELETE FROM embeddings;",
+        )
+        .unwrap();
 
         let a = format!("{}::Pack/a.wav", source.id.as_str());
         let b = format!("{}::Pack/b.wav", source.id.as_str());

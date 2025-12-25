@@ -28,11 +28,7 @@ impl EguiApp {
         self.handle_arrow_left(ctx, focus, input, browser_has_selection, ctrl_or_command);
     }
 
-    fn handle_alt_focus_navigation(
-        &mut self,
-        ctx: &egui::Context,
-        input: &InputSnapshot,
-    ) -> bool {
+    fn handle_alt_focus_navigation(&mut self, ctx: &egui::Context, input: &InputSnapshot) -> bool {
         let focus = self.controller.ui.focus.context;
         let target = if input.arrow_left {
             Some(match focus {
@@ -50,9 +46,7 @@ impl EguiApp {
             Some(match focus {
                 FocusContext::SourcesList
                 | FocusContext::SourceFolders
-                | FocusContext::SelectedFolders => {
-                    FocusContext::SampleBrowser
-                }
+                | FocusContext::SelectedFolders => FocusContext::SampleBrowser,
                 FocusContext::CollectionsList | FocusContext::CollectionSample => {
                     FocusContext::CollectionSample
                 }

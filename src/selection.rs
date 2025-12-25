@@ -147,6 +147,36 @@ impl SelectionState {
         Some(next_range)
     }
 
+    /// Update the active drag, snapping the selection length to a beat-sized step.
+    pub fn update_drag_snapped(&mut self, position: f32, beat_step: f32) -> Option<SelectionRange> {
+        if !beat_step.is_finite() || beat_step <= 0.0 {
+            return self.update_drag(position);
+        }
+        let drag = self.drag?;
+        let step = beat_step.clamp(1.0e-6, 1.0);
+        let next_range = match drag {
+            DragKind::Create { anchor } => {
+                let delta = position - anchor;
+                let snapped = anchor + snap_delta(delta, step);
+                SelectionRange::new(anchor, snapped)
+            }
+            DragKind::StartEdge => {
+                let range = self.range?;
+                let delta = range.end() - position;
+                let snapped = range.end() - snap_delta(delta, step);
+                SelectionRange::new(snapped, range.end())
+            }
+            DragKind::EndEdge => {
+                let range = self.range?;
+                let delta = position - range.start();
+                let snapped = range.start() + snap_delta(delta, step);
+                SelectionRange::new(range.start(), snapped)
+            }
+        };
+        self.range = Some(next_range);
+        Some(next_range)
+    }
+
     /// Clear the active drag, keeping the current range intact.
     pub fn finish_drag(&mut self) {
         self.drag = None;
@@ -169,6 +199,13 @@ impl SelectionState {
 
 fn clamp01(value: f32) -> f32 {
     value.clamp(0.0, 1.0)
+}
+
+fn snap_delta(delta: f32, step: f32) -> f32 {
+    if !delta.is_finite() || !step.is_finite() || step <= 0.0 {
+        return delta;
+    }
+    (delta / step).round() * step
 }
 
 #[cfg(test)]
@@ -236,6 +273,23 @@ mod tests {
         assert!(state.is_dragging());
         state.finish_drag();
         assert!(!state.is_dragging());
+    }
+
+    #[test]
+    fn drag_create_snaps_to_beats() {
+        let mut state = SelectionState::new();
+        state.begin_new(0.1);
+        let updated = state.update_drag_snapped(0.45, 0.25).unwrap();
+        assert_range_close(updated, SelectionRange::new(0.1, 0.35));
+    }
+
+    #[test]
+    fn drag_edge_snaps_to_beats() {
+        let mut state = SelectionState::new();
+        state.set_range(Some(SelectionRange::new(0.2, 0.8)));
+        assert!(state.begin_edge_drag(SelectionEdge::Start));
+        let updated = state.update_drag_snapped(0.1, 0.25).unwrap();
+        assert_range_close(updated, SelectionRange::new(0.05, 0.8));
     }
 
     #[test]

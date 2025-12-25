@@ -1,5 +1,5 @@
-use eframe::egui;
 use crate::egui_app::state::MapRenderMode;
+use eframe::egui;
 
 pub(crate) fn map_to_screen(
     x: f32,
@@ -23,16 +23,9 @@ pub(crate) fn render_heatmap(
     pan: egui::Vec2,
     bins: usize,
 ) -> usize {
-    render_heatmap_with_color(
-        painter,
-        rect,
-        points,
-        center,
-        scale,
-        pan,
-        bins,
-        |_point| egui::Color32::from_rgba_premultiplied(80, 180, 255, 255),
-    )
+    render_heatmap_with_color(painter, rect, points, center, scale, pan, bins, |_point| {
+        egui::Color32::from_rgba_premultiplied(80, 180, 255, 255)
+    })
 }
 
 pub(crate) fn render_heatmap_with_color<F>(
@@ -55,10 +48,16 @@ where
     let width = rect.width().max(1.0);
     let height = rect.height().max(1.0);
     for point in points {
-        if let Some(idx) =
-            heatmap_bin_index(point, rect, center, scale, pan, width, height, bins)
-        {
-            accumulate_bin(idx, point, &color_for_point, &mut counts, &mut r_sums, &mut g_sums, &mut b_sums);
+        if let Some(idx) = heatmap_bin_index(point, rect, center, scale, pan, width, height, bins) {
+            accumulate_bin(
+                idx,
+                point,
+                &color_for_point,
+                &mut counts,
+                &mut r_sums,
+                &mut g_sums,
+                &mut b_sums,
+            );
         }
     }
     render_heatmap_bins(painter, rect, bins, &counts, &r_sums, &g_sums, &b_sums)
@@ -93,15 +92,7 @@ pub(super) fn render_points(
                 |point| point_color(point, 255),
             );
         } else {
-            draw_calls = render_heatmap(
-                painter,
-                rect,
-                points,
-                center,
-                scale,
-                pan,
-                heatmap_bins,
-            );
+            draw_calls = render_heatmap(painter, rect, points, center, scale, pan, heatmap_bins);
         }
         points_rendered = display_count;
         (draw_calls, points_rendered, MapRenderMode::Heatmap)
@@ -188,7 +179,10 @@ fn render_heatmap_bins(
             let g = (g_sums[idx] * avg).round().clamp(0.0, 255.0) as u8;
             let b = (b_sums[idx] * avg).round().clamp(0.0, 255.0) as u8;
             let color = egui::Color32::from_rgba_unmultiplied(r, g, b, alpha);
-            let min = egui::pos2(rect.min.x + ix as f32 * cell_w, rect.min.y + iy as f32 * cell_h);
+            let min = egui::pos2(
+                rect.min.x + ix as f32 * cell_w,
+                rect.min.y + iy as f32 * cell_h,
+            );
             let max = egui::pos2(min.x + cell_w, min.y + cell_h);
             painter.rect_filled(egui::Rect::from_min_max(min, max), 0.0, color);
         }

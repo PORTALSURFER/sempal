@@ -12,9 +12,9 @@ For `feat_version = 1`, the vector is a fixed-length array of `183` `f32` values
 - `time_domain`: `TimeDomainFeatures`
 - `frequency_domain`: `FrequencyDomainFeatures`
 
-## Embedding Contract (CLAP)
+## Embedding Contract (PANNs)
 
-Sempal stores CLAP embeddings in the `embeddings` table. The following contract is
+Sempal stores PANNs embeddings in the `embeddings` table. The following contract is
 authoritative for all embedding inference in the app and dataset tooling.
 
 ### Input preprocessing
@@ -28,14 +28,19 @@ authoritative for all embedding inference in the app and dataset tooling.
 
 ### Model input
 
-- Target sample rate: `48_000Hz` (resample if needed).
-- Window length: `10s` (`480_000` samples).
+- Target sample rate: `16_000Hz` (resample if needed).
+- Window length: `10s` (`160_000` samples).
 - If shorter than 10s, repeat-pad to length; if longer, truncate to 10s.
+- Compute log-mel features:
+  - STFT: `n_fft=512`, `hop=160`, Hann window.
+  - Mel: `64` bands, `fmin=50Hz`, `fmax=8_000Hz`.
+  - Log scale: `10 * log10(mel + 1e-10)`.
+- Model input tensor layout: `[batch, 1, frames, mel]` where `frames=1000`.
 
 ### Output embedding
 
-- Model ID: `clap_htsat_fused__sr48k__nfft1024__hop480__mel64__chunk10__repeatpad_v1`
-- Dimension: `512` `f32` values.
+- Model ID: `panns_cnn14_16k__sr16k__nfft512__hop160__mel64__log10__chunk10__repeatpad_v1`
+- Dimension: `2048` `f32` values.
 - L2-normalized with `||v|| ~= 1.0` (tolerance `1e-3`).
 - Stored with `embeddings.model_id`, `dim`, `dtype`, and `l2_normed = true`.
 

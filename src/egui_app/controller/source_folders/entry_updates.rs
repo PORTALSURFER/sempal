@@ -1,15 +1,18 @@
 use super::*;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 impl EguiController {
-    pub(super) fn folder_entries(&self, folder: &Path) -> Vec<WavEntry> {
-        self.wav_entries
-            .entries
-            .iter()
-            .filter(|entry| entry.relative_path.starts_with(folder))
-            .cloned()
-            .collect()
+    pub(super) fn folder_entries(&mut self, folder: &Path) -> Vec<WavEntry> {
+        let mut entries = Vec::new();
+        for index in 0..self.wav_entries_len() {
+            if let Some(entry) = self.wav_entry(index)
+                && entry.relative_path.starts_with(folder)
+            {
+                entries.push(entry.clone());
+            }
+        }
+        entries
     }
 
     pub(super) fn rewrite_entries_for_folder(
@@ -98,25 +101,15 @@ impl EguiController {
         if updates.is_empty() {
             return;
         }
-        if let Some(cache) = self.cache.wav.entries.get_mut(&source.id) {
-            apply_entry_updates(cache, updates);
-            self.rebuild_wav_cache_lookup(&source.id);
+        for (old_entry, new_entry) in updates {
+            self.update_selection_paths(
+                source,
+                &old_entry.relative_path,
+                &new_entry.relative_path,
+            );
         }
-        if self.selection_state.ctx.selected_source.as_ref() == Some(&source.id) {
-            apply_entry_updates(&mut self.wav_entries.entries, updates);
-            for (old_entry, new_entry) in updates {
-                self.update_selection_paths(
-                    source,
-                    &old_entry.relative_path,
-                    &new_entry.relative_path,
-                );
-            }
-            self.invalidate_cached_audio_for_entry_updates(&source.id, updates);
-            self.sync_browser_after_wav_entries_mutation_keep_search_cache(&source.id);
-        } else {
-            self.ui_cache.browser.labels.remove(&source.id);
-        }
-        self.rebuild_missing_lookup_for_source(&source.id);
+        self.invalidate_cached_audio_for_entry_updates(&source.id, updates);
+        self.invalidate_wav_entries_for_source(source);
     }
 
     pub(super) fn update_manual_folders<F>(&mut self, mut update: F)
@@ -143,25 +136,4 @@ impl EguiController {
             }
         });
     }
-}
-
-fn apply_entry_updates(list: &mut Vec<WavEntry>, updates: &[(WavEntry, WavEntry)]) {
-    if updates.is_empty() {
-        return;
-    }
-    let mut index_map: HashMap<PathBuf, usize> = list
-        .iter()
-        .enumerate()
-        .map(|(idx, entry)| (entry.relative_path.clone(), idx))
-        .collect();
-    for (old_entry, new_entry) in updates {
-        if let Some(idx) = index_map.remove(&old_entry.relative_path) {
-            list[idx] = new_entry.clone();
-            index_map.insert(new_entry.relative_path.clone(), idx);
-        } else {
-            list.push(new_entry.clone());
-            index_map.insert(new_entry.relative_path.clone(), list.len() - 1);
-        }
-    }
-    list.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
 }

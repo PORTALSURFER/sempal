@@ -1,7 +1,7 @@
-use super::enqueue_helpers::{library_db_path, now_epoch_seconds};
+use super::enqueue_helpers::now_epoch_seconds;
 use crate::egui_app::controller::analysis_jobs::db;
 use crate::egui_app::controller::analysis_jobs::types::AnalysisProgress;
-use rusqlite::{OptionalExtension, params};
+use rusqlite::params;
 
 struct EnqueueEmbeddingBackfillRequest<'a> {
     source: &'a crate::sample_sources::SampleSource,
@@ -19,8 +19,7 @@ fn enqueue_embedding_backfill(
 ) -> Result<(usize, AnalysisProgress), String> {
     const BATCH_SIZE: usize = 32;
 
-    let db_path = library_db_path()?;
-    let mut conn = db::open_library_db(&db_path)?;
+    let mut conn = db::open_source_db(&request.source.root)?;
 
     let active_jobs: i64 = conn
         .query_row(
@@ -37,31 +36,35 @@ fn enqueue_embedding_backfill(
         return Ok((0, db::current_progress(&conn)?));
     }
 
-    let source_db =
-        crate::sample_sources::SourceDatabase::open(&request.source.root)
-            .map_err(|err| err.to_string())?;
-    let mut entries = source_db.list_files().map_err(|err| err.to_string())?;
-    entries.retain(|entry| !entry.missing);
-    if entries.is_empty() {
-        return Ok((0, db::current_progress(&conn)?));
-    }
-
-    let mut stmt = conn
-        .prepare("SELECT model_id FROM embeddings WHERE sample_id = ?1")
-        .map_err(|err| format!("Prepare embedding backfill query failed: {err}"))?;
     let mut sample_ids = Vec::new();
-    for entry in entries {
-        let sample_id = db::build_sample_id(request.source.id.as_str(), &entry.relative_path);
-        let model_id: Option<String> = stmt
-            .query_row(params![&sample_id], |row| row.get(0))
-            .optional()
+    {
+        let mut stmt = conn
+            .prepare(
+                "SELECT t.sample_id
+                 FROM samples s
+                 JOIN features f
+                   ON f.sample_id = s.sample_id AND f.feat_version = 1
+                 LEFT JOIN embeddings e
+                   ON e.sample_id = s.sample_id AND e.model_id = ?1
+                 WHERE s.sample_id LIKE ?2
+                   AND e.sample_id IS NULL
+                 ORDER BY s.sample_id",
+            )
+            .map_err(|err| format!("Prepare embedding backfill query failed: {err}"))?;
+        let mut rows = stmt
+            .query(params![
+                crate::analysis::embedding::EMBEDDING_MODEL_ID,
+                format!("{}::%", request.source.id)
+            ])
             .map_err(|err| format!("Failed to query embedding backfill rows: {err}"))?;
-        if model_id.as_deref() == Some(crate::analysis::embedding::EMBEDDING_MODEL_ID) {
-            continue;
+        while let Some(row) = rows
+            .next()
+            .map_err(|err| format!("Failed to query embedding backfill rows: {err}"))?
+        {
+            let sample_id: String = row.get(0).map_err(|err| err.to_string())?;
+            sample_ids.push(sample_id);
         }
-        sample_ids.push(sample_id);
     }
-    drop(stmt);
 
     if sample_ids.is_empty() {
         return Ok((0, db::current_progress(&conn)?));
@@ -71,11 +74,16 @@ fn enqueue_embedding_backfill(
     let mut jobs = Vec::new();
     for (idx, chunk) in sample_ids.chunks(BATCH_SIZE).enumerate() {
         let job_id = format!("embed_backfill::{}::{}", request.source.id.as_str(), idx);
-        let payload =
-            serde_json::to_string(chunk).map_err(|err| format!("Encode backfill payload: {err}"))?;
+        let payload = serde_json::to_string(chunk)
+            .map_err(|err| format!("Encode backfill payload: {err}"))?;
         jobs.push((job_id, payload));
     }
-    let inserted = db::enqueue_jobs(&mut conn, &jobs, db::EMBEDDING_BACKFILL_JOB_TYPE, created_at)?;
+    let inserted = db::enqueue_jobs(
+        &mut conn,
+        &jobs,
+        db::EMBEDDING_BACKFILL_JOB_TYPE,
+        created_at,
+    )?;
     let progress = db::current_progress(&conn)?;
     Ok((inserted, progress))
 }

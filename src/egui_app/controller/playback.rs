@@ -3,8 +3,8 @@ use std::path::PathBuf;
 
 mod browser_nav;
 mod formatting;
-mod playhead_trail;
 mod player;
+mod playhead_trail;
 mod random_nav;
 mod tagging;
 mod transport;
