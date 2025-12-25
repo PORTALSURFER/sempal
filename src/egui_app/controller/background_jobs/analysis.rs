@@ -16,12 +16,24 @@ pub(super) fn handle_analysis_message(
                     return;
                 }
             }
+            let selected_source = controller.selection_state.ctx.selected_source.clone();
+            let mut progress = progress;
+            if source_id.is_none() {
+                if let Some(selected_id) = selected_source.as_ref() {
+                    if let Some(source) = controller.current_source() {
+                        if &source.id == selected_id {
+                            if let Ok(scoped) =
+                                super::analysis_jobs::current_progress_for_source(&source)
+                            {
+                                progress = scoped;
+                            }
+                        }
+                    }
+                }
+            }
             let selected_matches = match source_id.as_ref() {
                 None => true,
-                Some(id) => controller
-                    .selection_state
-                    .ctx
-                    .selected_source
+                Some(id) => selected_source
                     .as_ref()
                     .map(|selected| selected == id)
                     .unwrap_or(false),
