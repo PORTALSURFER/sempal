@@ -29,6 +29,7 @@ const PANNS_INPUT_SECONDS: f32 = 10.0;
 const PANNS_INPUT_SAMPLES: usize = (PANNS_SAMPLE_RATE as f32 * PANNS_INPUT_SECONDS) as usize;
 const PANNS_INPUT_FRAMES: usize =
     (PANNS_SAMPLE_RATE as f32 * PANNS_INPUT_SECONDS / PANNS_STFT_HOP as f32) as usize;
+pub(crate) const PANNS_LOGMEL_LEN: usize = PANNS_MEL_BANDS * PANNS_INPUT_FRAMES;
 const QUERY_WINDOW_SECONDS: f32 = 2.0;
 const QUERY_HOP_SECONDS: f32 = 1.0;
 const QUERY_MAX_WINDOWS: usize = 24;
@@ -41,6 +42,22 @@ pub(crate) struct PannsModel {
     resample_scratch: Vec<f32>,
     wave_scratch: Vec<f32>,
     preprocess_scratch: PannsPreprocessScratch,
+}
+
+pub(crate) struct PannsLogMelScratch {
+    resample_scratch: Vec<f32>,
+    wave_scratch: Vec<f32>,
+    preprocess_scratch: PannsPreprocessScratch,
+}
+
+impl Default for PannsLogMelScratch {
+    fn default() -> Self {
+        Self {
+            resample_scratch: Vec::new(),
+            wave_scratch: Vec::new(),
+            preprocess_scratch: PannsPreprocessScratch::new(),
+        }
+    }
 }
 
 static WGPU_INIT: OnceLock<()> = OnceLock::new();
@@ -150,13 +167,67 @@ pub(crate) fn infer_embeddings_batch(
     })
 }
 
+pub(crate) fn build_panns_logmel_into(
+    samples: &[f32],
+    sample_rate: u32,
+    out: &mut [f32],
+    scratch: &mut PannsLogMelScratch,
+) -> Result<(), String> {
+    if out.len() != PANNS_LOGMEL_LEN {
+        return Err(format!(
+            "PANNs log-mel buffer has wrong length: expected {PANNS_LOGMEL_LEN}, got {}",
+            out.len()
+        ));
+    }
+    prepare_panns_logmel(
+        &mut scratch.resample_scratch,
+        &mut scratch.wave_scratch,
+        &mut scratch.preprocess_scratch,
+        out,
+        samples,
+        sample_rate,
+    )
+}
+
+pub(crate) fn infer_embedding_from_logmel(logmel: &[f32]) -> Result<Vec<f32>, String> {
+    if logmel.len() != PANNS_LOGMEL_LEN {
+        return Err(format!(
+            "PANNs log-mel buffer has wrong length: expected {PANNS_LOGMEL_LEN}, got {}",
+            logmel.len()
+        ));
+    }
+    with_panns_model(|model| {
+        let mut embeddings = run_panns_inference(&model.model, &model.device, logmel, 1)?;
+        embeddings
+            .pop()
+            .ok_or_else(|| "PANNs embedding output missing".to_string())
+    })
+}
+
+pub(crate) fn infer_embeddings_from_logmel_batch(
+    logmel: &[f32],
+    batch: usize,
+) -> Result<Vec<Vec<f32>>, String> {
+    if batch == 0 {
+        return Ok(Vec::new());
+    }
+    let expected = PANNS_LOGMEL_LEN.saturating_mul(batch);
+    if logmel.len() != expected {
+        return Err(format!(
+            "PANNs log-mel batch buffer has wrong length: expected {expected}, got {}",
+            logmel.len()
+        ));
+    }
+    with_panns_model(|model| run_panns_inference(&model.model, &model.device, logmel, batch))
+}
+
 fn infer_embedding_with_model(
     model: &mut PannsModel,
     samples: &[f32],
     sample_rate: u32,
 ) -> Result<Vec<f32>, String> {
     let input_slice = model.input_scratch.as_mut_slice();
-    prepare_panns_input(
+    prepare_panns_logmel(
         &mut model.resample_scratch,
         &mut model.wave_scratch,
         &mut model.preprocess_scratch,
@@ -181,14 +252,14 @@ fn infer_embeddings_with_model(
     inputs: &[EmbeddingBatchInput<'_>],
 ) -> Result<Vec<Vec<f32>>, String> {
     let batch = inputs.len();
-    let total_len = batch * PANNS_MEL_BANDS * PANNS_INPUT_FRAMES;
+    let total_len = batch * PANNS_LOGMEL_LEN;
     model.input_batch_scratch.clear();
     model.input_batch_scratch.resize(total_len, 0.0);
     for (idx, input) in inputs.iter().enumerate() {
-        let start = idx * PANNS_MEL_BANDS * PANNS_INPUT_FRAMES;
-        let end = start + PANNS_MEL_BANDS * PANNS_INPUT_FRAMES;
+        let start = idx * PANNS_LOGMEL_LEN;
+        let end = start + PANNS_LOGMEL_LEN;
         let out = &mut model.input_batch_scratch[start..end];
-        prepare_panns_input(
+        prepare_panns_logmel(
             &mut model.resample_scratch,
             &mut model.wave_scratch,
             &mut model.preprocess_scratch,
@@ -205,7 +276,7 @@ fn infer_embeddings_with_model(
     )
 }
 
-fn prepare_panns_input(
+fn prepare_panns_logmel(
     resample_scratch: &mut Vec<f32>,
     wave_scratch: &mut Vec<f32>,
     preprocess_scratch: &mut PannsPreprocessScratch,

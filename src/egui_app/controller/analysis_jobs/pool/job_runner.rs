@@ -170,10 +170,10 @@ fn run_embedding_backfill_job(
                         batch.push(next);
                     }
 
-                    let mut inputs = Vec::new();
                     let mut payloads = Vec::new();
-                    let mut processed_buffers = Vec::new();
-                    let mut sample_rates = Vec::new();
+                    let mut logmels = Vec::new();
+                    let mut logmel_scratch =
+                        crate::analysis::embedding::PannsLogMelScratch::default();
                     for work in batch {
                         let decoded =
                             match crate::analysis::audio::decode_for_analysis_with_rate(
@@ -193,23 +193,38 @@ fn run_embedding_backfill_job(
                             &decoded.mono,
                             decoded.sample_rate_used,
                         );
-                        processed_buffers.push(processed);
-                        sample_rates.push(decoded.sample_rate_used);
+                        let mut logmel =
+                            vec![0.0_f32; crate::analysis::embedding::PANNS_LOGMEL_LEN];
+                        if let Err(err) = crate::analysis::embedding::build_panns_logmel_into(
+                            &processed,
+                            decoded.sample_rate_used,
+                            &mut logmel,
+                            &mut logmel_scratch,
+                        ) {
+                            let _ = tx.send(Err(format!(
+                                "Log-mel failed for {}: {err}",
+                                work.absolute_path.display()
+                            )));
+                            continue;
+                        }
+                        logmels.push(logmel);
                         payloads.push((work.sample_id, work.content_hash));
                     }
 
-                    for (idx, processed) in processed_buffers.iter().enumerate() {
-                        inputs.push(crate::analysis::embedding::EmbeddingBatchInput {
-                            samples: processed.as_slice(),
-                            sample_rate: sample_rates[idx],
-                        });
-                    }
-
-                    if inputs.is_empty() {
+                    if logmels.is_empty() {
                         continue;
                     }
 
-                    match crate::analysis::embedding::infer_embeddings_batch(&inputs) {
+                    let mut batch_input = Vec::with_capacity(
+                        logmels.len() * crate::analysis::embedding::PANNS_LOGMEL_LEN,
+                    );
+                    for logmel in &logmels {
+                        batch_input.extend_from_slice(logmel);
+                    }
+                    match crate::analysis::embedding::infer_embeddings_from_logmel_batch(
+                        batch_input.as_slice(),
+                        logmels.len(),
+                    ) {
                         Ok(embeddings) => {
                             for ((sample_id, content_hash), embedding) in
                                 payloads.into_iter().zip(embeddings.into_iter())
@@ -447,8 +462,17 @@ pub(super) fn run_analysis_job_with_decoded(
                 &decoded.mono,
                 decoded.sample_rate_used,
             );
-            let embedding =
-                crate::analysis::embedding::infer_embedding(&processed, decoded.sample_rate_used)?;
+            let mut logmel =
+                vec![0.0_f32; crate::analysis::embedding::PANNS_LOGMEL_LEN];
+            let mut logmel_scratch =
+                crate::analysis::embedding::PannsLogMelScratch::default();
+            crate::analysis::embedding::build_panns_logmel_into(
+                &processed,
+                decoded.sample_rate_used,
+                &mut logmel,
+                &mut logmel_scratch,
+            )?;
+            let embedding = crate::analysis::embedding::infer_embedding_from_logmel(&logmel)?;
             needs_embedding_upsert = true;
             embedding
         }
@@ -457,8 +481,17 @@ pub(super) fn run_analysis_job_with_decoded(
             &decoded.mono,
             decoded.sample_rate_used,
         );
-        let embedding =
-            crate::analysis::embedding::infer_embedding(&processed, decoded.sample_rate_used)?;
+        let mut logmel =
+            vec![0.0_f32; crate::analysis::embedding::PANNS_LOGMEL_LEN];
+        let mut logmel_scratch =
+            crate::analysis::embedding::PannsLogMelScratch::default();
+        crate::analysis::embedding::build_panns_logmel_into(
+            &processed,
+            decoded.sample_rate_used,
+            &mut logmel,
+            &mut logmel_scratch,
+        )?;
+        let embedding = crate::analysis::embedding::infer_embedding_from_logmel(&logmel)?;
         needs_embedding_upsert = true;
         embedding
     };
@@ -483,12 +516,13 @@ pub(super) fn run_analysis_jobs_with_decoded_batch(
         job: db::ClaimedJob,
         decoded: crate::analysis::audio::AnalysisAudio,
         embedding: Option<Vec<f32>>,
-        processed: Option<Vec<f32>>,
+        logmel: Option<Vec<f32>>,
         needs_embedding_upsert: bool,
         error: Option<String>,
     }
 
     let mut batch_jobs = Vec::with_capacity(jobs.len());
+    let mut logmel_scratch = crate::analysis::embedding::PannsLogMelScratch::default();
     for (job, decoded) in jobs {
         let sample_id = job.sample_id.clone();
         let sample_rate_used = decoded.sample_rate_used;
@@ -496,7 +530,7 @@ pub(super) fn run_analysis_jobs_with_decoded_batch(
             job,
             decoded,
             embedding: None,
-            processed: None,
+            logmel: None,
             needs_embedding_upsert: false,
             error: None,
         };
@@ -523,8 +557,22 @@ pub(super) fn run_analysis_jobs_with_decoded_batch(
                         &item.decoded.mono,
                         sample_rate_used,
                     );
-                    item.processed = Some(processed);
-                    item.needs_embedding_upsert = true;
+                    let mut logmel =
+                        vec![0.0_f32; crate::analysis::embedding::PANNS_LOGMEL_LEN];
+                    match crate::analysis::embedding::build_panns_logmel_into(
+                        &processed,
+                        sample_rate_used,
+                        &mut logmel,
+                        &mut logmel_scratch,
+                    ) {
+                        Ok(()) => {
+                            item.logmel = Some(logmel);
+                            item.needs_embedding_upsert = true;
+                        }
+                        Err(err) => {
+                            item.error = Some(err);
+                        }
+                    }
                 }
                 Err(err) => {
                     item.error = Some(err);
@@ -535,27 +583,40 @@ pub(super) fn run_analysis_jobs_with_decoded_batch(
                 &item.decoded.mono,
                 sample_rate_used,
             );
-            item.processed = Some(processed);
-            item.needs_embedding_upsert = true;
+            let mut logmel = vec![0.0_f32; crate::analysis::embedding::PANNS_LOGMEL_LEN];
+            match crate::analysis::embedding::build_panns_logmel_into(
+                &processed,
+                sample_rate_used,
+                &mut logmel,
+                &mut logmel_scratch,
+            ) {
+                Ok(()) => {
+                    item.logmel = Some(logmel);
+                    item.needs_embedding_upsert = true;
+                }
+                Err(err) => {
+                    item.error = Some(err);
+                }
+            }
         }
         batch_jobs.push(item);
     }
 
-    let mut inputs = Vec::new();
+    let mut batch_input = Vec::new();
     let mut input_indices = Vec::new();
     for (idx, item) in batch_jobs.iter().enumerate() {
-        if let Some(processed) = item.processed.as_ref() {
-            inputs.push(crate::analysis::embedding::EmbeddingBatchInput {
-                samples: processed.as_slice(),
-                sample_rate: item.decoded.sample_rate_used,
-            });
+        if let Some(logmel) = item.logmel.as_ref() {
+            batch_input.extend_from_slice(logmel.as_slice());
             input_indices.push(idx);
         }
     }
 
-    if !inputs.is_empty() {
+    if !input_indices.is_empty() {
         let batch_result = std::panic::catch_unwind(|| {
-            crate::analysis::embedding::infer_embeddings_batch(&inputs)
+            crate::analysis::embedding::infer_embeddings_from_logmel_batch(
+                batch_input.as_slice(),
+                input_indices.len(),
+            )
         })
         .unwrap_or_else(|_| Err("PANNs batch inference panicked".to_string()));
         match batch_result {
@@ -568,22 +629,18 @@ pub(super) fn run_analysis_jobs_with_decoded_batch(
             }
             Err(err) => {
                 for idx in input_indices.iter().copied() {
-                    let (processed, sample_rate) = match batch_jobs.get(idx) {
-                        Some(item) => (
-                            item.processed.as_ref(),
-                            item.decoded.sample_rate_used,
-                        ),
-                        None => (None, 0),
+                    let logmel = match batch_jobs.get(idx) {
+                        Some(item) => item.logmel.as_ref(),
+                        None => None,
                     };
-                    let fallback = match processed {
-                        Some(processed) => std::panic::catch_unwind(|| {
-                            crate::analysis::embedding::infer_embedding(
-                                processed.as_slice(),
-                                sample_rate,
+                    let fallback = match logmel {
+                        Some(logmel) => std::panic::catch_unwind(|| {
+                            crate::analysis::embedding::infer_embedding_from_logmel(
+                                logmel.as_slice(),
                             )
                         })
                         .unwrap_or_else(|_| Err("PANNs single inference panicked".to_string())),
-                        None => Err("Missing preprocessed samples for fallback".to_string()),
+                        None => Err("Missing log-mel for fallback".to_string()),
                     };
                     if let Some(item) = batch_jobs.get_mut(idx) {
                         match fallback {
