@@ -19,6 +19,12 @@ pub struct WaveformState {
     pub selection_duration: Option<String>,
     pub hover_time_label: Option<String>,
     pub channel_view: WaveformChannelView,
+    /// When true, selection edits snap to beat-sized steps using the bpm value.
+    pub bpm_snap_enabled: bool,
+    /// Last text input for bpm snapping.
+    pub bpm_input: String,
+    /// Parsed bpm value used for snapping, when valid.
+    pub bpm_value: Option<f32>,
     /// Current visible viewport within the waveform (0.0-1.0 normalized).
     pub view: WaveformView,
     pub loop_enabled: bool,
@@ -48,6 +54,9 @@ impl Default for WaveformState {
             selection_duration: None,
             hover_time_label: None,
             channel_view: WaveformChannelView::Mono,
+            bpm_snap_enabled: false,
+            bpm_input: String::new(),
+            bpm_value: None,
             view: WaveformView::default(),
             loop_enabled: false,
             notice: None,

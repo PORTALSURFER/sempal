@@ -31,8 +31,38 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
         {
             app.controller.toggle_loop();
         }
+        ui.add_space(10.0);
+        let waveform = &mut app.controller.ui.waveform;
+        let mut bpm_enabled = waveform.bpm_snap_enabled;
+        if ui.checkbox(&mut bpm_enabled, "BPM snap").clicked() {
+            waveform.bpm_snap_enabled = bpm_enabled;
+            if bpm_enabled && waveform.bpm_value.is_none() {
+                waveform.bpm_value = Some(120.0);
+                waveform.bpm_input = "120".to_string();
+            }
+        }
+        let bpm_edit = ui.add_enabled(
+            waveform.bpm_snap_enabled,
+            egui::TextEdit::singleline(&mut waveform.bpm_input)
+                .desired_width(64.0)
+                .hint_text("120"),
+        );
+        if bpm_edit.changed() {
+            waveform.bpm_value = parse_bpm_input(&waveform.bpm_input);
+        }
     });
     if view_mode != app.controller.ui.waveform.channel_view {
         app.controller.set_waveform_channel_view(view_mode);
+    }
+}
+
+fn parse_bpm_input(input: &str) -> Option<f32> {
+    let trimmed = input.trim().to_lowercase();
+    let trimmed = trimmed.strip_suffix("bpm").unwrap_or(trimmed.as_str()).trim();
+    let bpm = trimmed.parse::<f32>().ok()?;
+    if bpm.is_finite() && bpm > 0.0 {
+        Some(bpm)
+    } else {
+        None
     }
 }
