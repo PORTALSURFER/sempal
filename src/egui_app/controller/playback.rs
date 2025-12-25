@@ -78,6 +78,32 @@ impl EguiController {
         transport::stop_playback_if_active(self)
     }
 
+    fn clamp_loop_selection(&self, range: SelectionRange) -> SelectionRange {
+        if !self.ui.waveform.loop_enabled {
+            return range;
+        }
+        let Some(min_width) = self.loop_min_selection_width() else {
+            return range;
+        };
+        if range.width() >= min_width {
+            return range;
+        }
+        let mut start = range.start();
+        let mut end = (start + min_width).min(1.0);
+        if (end - start) < min_width {
+            start = (end - min_width).max(0.0);
+        }
+        SelectionRange::new(start, end)
+    }
+
+    fn loop_min_selection_width(&self) -> Option<f32> {
+        let audio = self.sample_view.wav.loaded_audio.as_ref()?;
+        if audio.duration_seconds <= 0.0 {
+            return None;
+        }
+        Some((MIN_LOOP_DURATION_SECS / audio.duration_seconds).clamp(0.0, 1.0))
+    }
+
     pub fn handle_escape(&mut self) {
         transport::handle_escape(self);
     }
