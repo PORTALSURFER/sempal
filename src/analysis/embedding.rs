@@ -62,6 +62,7 @@ impl Default for PannsLogMelScratch {
 
 static WGPU_INIT: OnceLock<()> = OnceLock::new();
 static PANNS_MODEL: OnceLock<Mutex<Option<PannsModel>>> = OnceLock::new();
+static PANNS_WARMED: OnceLock<()> = OnceLock::new();
 
 impl PannsModel {
     pub(crate) fn load() -> Result<Self, String> {
@@ -219,6 +220,21 @@ pub(crate) fn infer_embeddings_from_logmel_batch(
         ));
     }
     with_panns_model(|model| run_panns_inference(&model.model, &model.device, logmel, batch))
+}
+
+pub(crate) fn warmup_panns() -> Result<(), String> {
+    if PANNS_WARMED.get().is_some() {
+        return Ok(());
+    }
+    let mut logmel = vec![0.0_f32; PANNS_LOGMEL_LEN];
+    let result = with_panns_model(|model| {
+        let _ = run_panns_inference(&model.model, &model.device, logmel.as_slice(), 1)?;
+        Ok(())
+    });
+    if result.is_ok() {
+        let _ = PANNS_WARMED.set(());
+    }
+    result
 }
 
 fn infer_embedding_with_model(
