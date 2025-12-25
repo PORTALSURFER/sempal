@@ -25,6 +25,7 @@ pub(crate) struct ClapModel {
     session: Session,
     input_scratch: Vec<f32>,
     input_batch_scratch: Vec<f32>,
+    resample_scratch: Vec<f32>,
 }
 
 static ORT_ENV_INIT: OnceLock<Result<(), String>> = OnceLock::new();
@@ -60,6 +61,7 @@ impl ClapModel {
             session,
             input_scratch: vec![0.0_f32; CLAP_INPUT_SAMPLES],
             input_batch_scratch: Vec::new(),
+            resample_scratch: Vec::new(),
         })
     }
 }
@@ -161,13 +163,21 @@ fn infer_embedding_with_model(
     samples: &[f32],
     sample_rate: u32,
 ) -> Result<Vec<f32>, String> {
-    let mut resampled = if sample_rate != CLAP_SAMPLE_RATE {
-        audio::resample_linear(samples, sample_rate, CLAP_SAMPLE_RATE)
+    let resampled = if sample_rate != CLAP_SAMPLE_RATE {
+        audio::resample_linear_into(
+            &mut model.resample_scratch,
+            samples,
+            sample_rate,
+            CLAP_SAMPLE_RATE,
+        );
+        model.resample_scratch.as_mut_slice()
     } else {
-        samples.to_vec()
+        model.resample_scratch.clear();
+        model.resample_scratch.extend_from_slice(samples);
+        model.resample_scratch.as_mut_slice()
     };
-    audio::sanitize_samples_in_place(&mut resampled);
-    repeat_pad_into(&mut model.input_scratch, &resampled, CLAP_INPUT_SAMPLES);
+    audio::sanitize_samples_in_place(resampled);
+    repeat_pad_into(&mut model.input_scratch, resampled, CLAP_INPUT_SAMPLES);
     let input_value = TensorRef::from_array_view((
         [1usize, 1, CLAP_INPUT_SAMPLES],
         model.input_scratch.as_slice(),
@@ -193,15 +203,23 @@ fn infer_embeddings_with_model(
     model.input_batch_scratch.clear();
     model.input_batch_scratch.resize(total_len, 0.0);
     for (idx, input) in inputs.iter().enumerate() {
-        let mut resampled = if input.sample_rate != CLAP_SAMPLE_RATE {
-            audio::resample_linear(input.samples, input.sample_rate, CLAP_SAMPLE_RATE)
+        let resampled = if input.sample_rate != CLAP_SAMPLE_RATE {
+            audio::resample_linear_into(
+                &mut model.resample_scratch,
+                input.samples,
+                input.sample_rate,
+                CLAP_SAMPLE_RATE,
+            );
+            model.resample_scratch.as_mut_slice()
         } else {
-            input.samples.to_vec()
+            model.resample_scratch.clear();
+            model.resample_scratch.extend_from_slice(input.samples);
+            model.resample_scratch.as_mut_slice()
         };
-        audio::sanitize_samples_in_place(&mut resampled);
+        audio::sanitize_samples_in_place(resampled);
         let start = idx * CLAP_INPUT_SAMPLES;
         let end = start + CLAP_INPUT_SAMPLES;
-        repeat_pad_slice(&mut model.input_batch_scratch[start..end], &resampled);
+        repeat_pad_slice(&mut model.input_batch_scratch[start..end], resampled);
     }
     let input_value = TensorRef::from_array_view((
         [batch, 1usize, CLAP_INPUT_SAMPLES],
