@@ -4,6 +4,10 @@ version = "0.366.0"
 edition = "2024"
 default-run = "sempal"
 
+[features]
+default = []
+panns-cuda = ["burn/cuda"]
+
 [dependencies]
 hound = "3.5.1"
 cpal = "0.16.0"

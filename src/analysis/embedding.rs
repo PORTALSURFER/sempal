@@ -3,7 +3,11 @@ use std::path::PathBuf;
 use std::sync::{LazyLock, Mutex, OnceLock};
 
 use burn::backend::wgpu::{self, graphics::Vulkan, WgpuDevice};
+#[cfg(feature = "panns-cuda")]
+use burn::backend::{cuda::CudaDevice, Cuda};
+use burn::tensor::backend::Backend;
 use burn::tensor::{Tensor, TensorData};
+use tracing::warn;
 
 use crate::analysis::audio;
 use crate::analysis::panns_preprocess::{
@@ -18,8 +22,12 @@ mod panns_paths {
     include!(concat!(env!("OUT_DIR"), "/burn_panns/panns_paths.rs"));
 }
 
-type PannsBackend = wgpu::Wgpu;
-type PannsOutput = Tensor<PannsBackend, 2>;
+type PannsWgpuBackend = wgpu::Wgpu;
+type PannsWgpuDevice = WgpuDevice;
+#[cfg(feature = "panns-cuda")]
+type PannsCudaBackend = Cuda;
+#[cfg(feature = "panns-cuda")]
+type PannsCudaDevice = CudaDevice;
 
 pub const EMBEDDING_MODEL_ID: &str =
     "panns_cnn14_16k__sr16k__nfft512__hop160__mel64__log10__chunk10__repeatpad_v1";
@@ -35,9 +43,27 @@ const QUERY_WINDOW_SECONDS: f32 = 2.0;
 const QUERY_HOP_SECONDS: f32 = 1.0;
 const QUERY_MAX_WINDOWS: usize = 24;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PannsBackendKind {
+    Wgpu,
+    #[cfg(feature = "panns-cuda")]
+    Cuda,
+}
+
+enum PannsModelInner {
+    Wgpu {
+        model: panns_burn::Model<PannsWgpuBackend>,
+        device: PannsWgpuDevice,
+    },
+    #[cfg(feature = "panns-cuda")]
+    Cuda {
+        model: panns_burn::Model<PannsCudaBackend>,
+        device: PannsCudaDevice,
+    },
+}
+
 pub(crate) struct PannsModel {
-    model: panns_burn::Model<PannsBackend>,
-    device: WgpuDevice,
+    inner: PannsModelInner,
     input_scratch: Vec<f32>,
     input_batch_scratch: Vec<f32>,
     resample_scratch: Vec<f32>,
@@ -75,23 +101,53 @@ impl PannsModel {
             ));
         }
         init_cubecl_config();
-        let device = WgpuDevice::default();
-        init_wgpu(&device);
-        let model = panns_burn::Model::<PannsBackend>::from_file(
-            model_path
-                .to_str()
-                .ok_or_else(|| "PANNs burnpack path contains invalid UTF-8".to_string())?,
-            &device,
-        );
+        let inner = match panns_backend_kind() {
+            PannsBackendKind::Wgpu => {
+                let device = PannsWgpuDevice::default();
+                init_wgpu(&device);
+                let model = panns_burn::Model::<PannsWgpuBackend>::from_file(
+                    model_path
+                        .to_str()
+                        .ok_or_else(|| "PANNs burnpack path contains invalid UTF-8".to_string())?,
+                    &device,
+                );
+                PannsModelInner::Wgpu { model, device }
+            }
+            #[cfg(feature = "panns-cuda")]
+            PannsBackendKind::Cuda => {
+                let device = PannsCudaDevice::default();
+                let model = panns_burn::Model::<PannsCudaBackend>::from_file(
+                    model_path
+                        .to_str()
+                        .ok_or_else(|| "PANNs burnpack path contains invalid UTF-8".to_string())?,
+                    &device,
+                );
+                PannsModelInner::Cuda { model, device }
+            }
+        };
         Ok(Self {
-            model,
-            device,
+            inner,
             input_scratch: vec![0.0_f32; PANNS_MEL_BANDS * PANNS_INPUT_FRAMES],
             input_batch_scratch: Vec::new(),
             resample_scratch: Vec::new(),
             wave_scratch: Vec::new(),
             preprocess_scratch: PannsPreprocessScratch::new(),
         })
+    }
+}
+
+fn panns_backend_kind() -> PannsBackendKind {
+    let requested = env::var("SEMPAL_PANNS_BACKEND")
+        .ok()
+        .map(|value| value.trim().to_ascii_lowercase());
+    match requested.as_deref() {
+        #[cfg(feature = "panns-cuda")]
+        Some("cuda") => PannsBackendKind::Cuda,
+        Some("wgpu") | Some("vulkan") | None => PannsBackendKind::Wgpu,
+        Some(other) => {
+            warn!("Unknown PANNs backend '{other}', defaulting to WGPU.");
+            PannsBackendKind::Wgpu
+        }
     }
 }
 
@@ -221,7 +277,7 @@ pub(crate) fn infer_embedding_from_logmel(logmel: &[f32]) -> Result<Vec<f32>, St
         ));
     }
     with_panns_model(|model| {
-        let mut embeddings = run_panns_inference(&model.model, &model.device, logmel, 1)?;
+        let mut embeddings = run_panns_inference_for_model(model, logmel, 1)?;
         embeddings
             .pop()
             .ok_or_else(|| "PANNs embedding output missing".to_string())
@@ -247,7 +303,7 @@ pub(crate) fn infer_embeddings_from_logmel_batch(
             logmel,
             [batch, 1, PANNS_INPUT_FRAMES, PANNS_MEL_BANDS],
         );
-        run_panns_inference_from_data(&model.model, &model.device, data, batch)
+        run_panns_inference_from_data_for_model(model, data, batch)
     })
 }
 
@@ -296,11 +352,46 @@ pub(crate) fn infer_embeddings_from_logmel_batch_pipelined(
         );
         return logmels.iter().map(|_| Err(err.clone())).collect();
     }
+    let result = with_panns_model(|model| match &model.inner {
+        PannsModelInner::Wgpu { model, device } => {
+            Ok(infer_embeddings_from_logmel_batch_pipelined_with_backend(
+                model,
+                device,
+                logmels,
+                micro_batch,
+                inflight,
+            ))
+        }
+        #[cfg(feature = "panns-cuda")]
+        PannsModelInner::Cuda { model, device } => {
+            Ok(infer_embeddings_from_logmel_batch_pipelined_with_backend(
+                model,
+                device,
+                logmels,
+                micro_batch,
+                inflight,
+            ))
+        }
+    });
+    match result {
+        Ok(results) => results,
+        Err(err) => logmels.iter().map(|_| Err(err.clone())).collect(),
+    }
+}
+
+fn infer_embeddings_from_logmel_batch_pipelined_with_backend<B: Backend>(
+    model: &panns_burn::Model<B>,
+    device: &B::Device,
+    logmels: &[Vec<f32>],
+    micro_batch: usize,
+    inflight: usize,
+) -> Vec<Result<Vec<f32>, String>> {
     let micro_batch = micro_batch.max(1);
     let inflight = inflight.max(1);
     let results = std::sync::Arc::new(Mutex::new(vec![None; logmels.len()]));
     let errors = std::sync::Arc::new(Mutex::new(vec![None; logmels.len()]));
-    let (tx, rx) = std::sync::mpsc::sync_channel::<(usize, usize, PannsOutput)>(inflight);
+    let (tx, rx) =
+        std::sync::mpsc::sync_channel::<(usize, usize, Tensor<B, 2>)>(inflight);
     let results_handle = std::sync::Arc::clone(&results);
     let errors_handle = std::sync::Arc::clone(&errors);
     let readback = std::thread::spawn(move || {
@@ -326,28 +417,26 @@ pub(crate) fn infer_embeddings_from_logmel_batch_pipelined(
         }
     });
     let submit_tx = tx.clone();
-    let submit_result = with_panns_model(|model| {
-        for (offset, chunk) in logmels.chunks(micro_batch).enumerate() {
-            let start = offset * micro_batch;
-            let mut batch_input =
-                Vec::with_capacity(chunk.len() * PANNS_LOGMEL_LEN);
-            for logmel in chunk {
-                batch_input.extend_from_slice(logmel.as_slice());
-            }
-            let data = TensorData::new(
-                batch_input,
-                [chunk.len(), 1, PANNS_INPUT_FRAMES, PANNS_MEL_BANDS],
-            );
-            let output = run_panns_forward_from_data(&model.model, &model.device, data);
-            if submit_tx.send((start, chunk.len(), output)).is_err() {
-                return Err("PANNs readback channel closed".to_string());
-            }
+    let mut submit_error = None;
+    for (offset, chunk) in logmels.chunks(micro_batch).enumerate() {
+        let start = offset * micro_batch;
+        let mut batch_input = Vec::with_capacity(chunk.len() * PANNS_LOGMEL_LEN);
+        for logmel in chunk {
+            batch_input.extend_from_slice(logmel.as_slice());
         }
-        Ok(())
-    });
+        let data = TensorData::new(
+            batch_input,
+            [chunk.len(), 1, PANNS_INPUT_FRAMES, PANNS_MEL_BANDS],
+        );
+        let output = run_panns_forward_from_data(model, device, data);
+        if submit_tx.send((start, chunk.len(), output)).is_err() {
+            submit_error = Some("PANNs readback channel closed".to_string());
+            break;
+        }
+    }
     drop(tx);
     let _ = readback.join();
-    if let Err(err) = submit_result {
+    if let Some(err) = submit_error {
         let mut guard = errors.lock().unwrap_or_else(|err| err.into_inner());
         for slot in guard.iter_mut() {
             if slot.is_none() {
@@ -377,7 +466,7 @@ pub(crate) fn warmup_panns() -> Result<(), String> {
     }
     let mut logmel = vec![0.0_f32; PANNS_LOGMEL_LEN];
     let result = with_panns_model(|model| {
-        let _ = run_panns_inference(&model.model, &model.device, logmel.as_slice(), 1)?;
+        let _ = run_panns_inference_for_model(model, logmel.as_slice(), 1)?;
         Ok(())
     });
     if result.is_ok() {
@@ -400,12 +489,8 @@ fn infer_embedding_with_model(
         samples,
         sample_rate,
     )?;
-    let mut embeddings = run_panns_inference(
-        &model.model,
-        &model.device,
-        model.input_scratch.as_slice(),
-        1,
-    )?;
+    let mut embeddings =
+        run_panns_inference_for_model(model, model.input_scratch.as_slice(), 1)?;
     let embedding = embeddings
         .pop()
         .ok_or_else(|| "PANNs embedding output missing".to_string())?;
@@ -433,9 +518,8 @@ fn infer_embeddings_with_model(
             input.sample_rate,
         )?;
     }
-    run_panns_inference(
-        &model.model,
-        &model.device,
+    run_panns_inference_for_model(
+        model,
         model.input_batch_scratch.as_slice(),
         batch,
     )
@@ -474,9 +558,9 @@ fn prepare_panns_logmel(
     Ok(())
 }
 
-fn run_panns_inference(
-    model: &panns_burn::Model<PannsBackend>,
-    device: &WgpuDevice,
+fn run_panns_inference<B: Backend>(
+    model: &panns_burn::Model<B>,
+    device: &B::Device,
     input: &[f32],
     batch: usize,
 ) -> Result<Vec<Vec<f32>>, String> {
@@ -487,9 +571,9 @@ fn run_panns_inference(
     run_panns_inference_from_data(model, device, data, batch)
 }
 
-fn run_panns_inference_from_data(
-    model: &panns_burn::Model<PannsBackend>,
-    device: &WgpuDevice,
+fn run_panns_inference_from_data<B: Backend>(
+    model: &panns_burn::Model<B>,
+    device: &B::Device,
     data: TensorData,
     batch: usize,
 ) -> Result<Vec<Vec<f32>>, String> {
@@ -497,13 +581,45 @@ fn run_panns_inference_from_data(
     extract_embeddings_from_data(output.into_data(), batch)
 }
 
-fn run_panns_forward_from_data(
-    model: &panns_burn::Model<PannsBackend>,
-    device: &WgpuDevice,
+fn run_panns_forward_from_data<B: Backend>(
+    model: &panns_burn::Model<B>,
+    device: &B::Device,
     data: TensorData,
-) -> PannsOutput {
-    let input_tensor = Tensor::<PannsBackend, 4>::from_data(data, device);
+) -> Tensor<B, 2> {
+    let input_tensor = Tensor::<B, 4>::from_data(data, device);
     model.forward(input_tensor)
+}
+
+fn run_panns_inference_for_model(
+    model: &PannsModel,
+    input: &[f32],
+    batch: usize,
+) -> Result<Vec<Vec<f32>>, String> {
+    match &model.inner {
+        PannsModelInner::Wgpu { model, device } => {
+            run_panns_inference(model, device, input, batch)
+        }
+        #[cfg(feature = "panns-cuda")]
+        PannsModelInner::Cuda { model, device } => {
+            run_panns_inference(model, device, input, batch)
+        }
+    }
+}
+
+fn run_panns_inference_from_data_for_model(
+    model: &PannsModel,
+    data: TensorData,
+    batch: usize,
+) -> Result<Vec<Vec<f32>>, String> {
+    match &model.inner {
+        PannsModelInner::Wgpu { model, device } => {
+            run_panns_inference_from_data(model, device, data, batch)
+        }
+        #[cfg(feature = "panns-cuda")]
+        PannsModelInner::Cuda { model, device } => {
+            run_panns_inference_from_data(model, device, data, batch)
+        }
+    }
 }
 
 fn query_window_ranges(sample_len: usize, sample_rate: u32) -> Vec<(usize, usize)> {
