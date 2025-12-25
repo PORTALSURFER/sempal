@@ -29,6 +29,7 @@ pub(super) struct DecodedQueue {
     ready: Condvar,
     len: AtomicUsize,
     pending_jobs: Mutex<HashSet<i64>>,
+    inflight_jobs: Mutex<HashSet<i64>>,
 }
 
 impl DecodedQueue {
@@ -38,7 +39,22 @@ impl DecodedQueue {
             ready: Condvar::new(),
             len: AtomicUsize::new(0),
             pending_jobs: Mutex::new(HashSet::new()),
+            inflight_jobs: Mutex::new(HashSet::new()),
         }
+    }
+
+    pub(super) fn try_mark_inflight(&self, job_id: i64) -> bool {
+        let mut inflight = self.inflight_jobs.lock().expect("decoded queue inflight lock");
+        if inflight.contains(&job_id) {
+            return false;
+        }
+        inflight.insert(job_id);
+        true
+    }
+
+    pub(super) fn clear_inflight(&self, job_id: i64) {
+        let mut inflight = self.inflight_jobs.lock().expect("decoded queue inflight lock");
+        inflight.remove(&job_id);
     }
 
     pub(super) fn push(&self, work: DecodedWork) -> bool {
@@ -151,7 +167,7 @@ const SOURCE_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
 fn refresh_sources(
     sources: &mut Vec<SourceClaimDb>,
     last_refresh: &mut Instant,
-    reset_done: &mut HashSet<std::path::PathBuf>,
+    reset_done: &Arc<Mutex<HashSet<std::path::PathBuf>>>,
     allowed_source_ids: Option<&HashSet<crate::sample_sources::SourceId>>,
 ) {
     if last_refresh.elapsed() < SOURCE_REFRESH_INTERVAL {
@@ -181,7 +197,11 @@ fn refresh_sources(
                 continue;
             }
         };
-        if reset_done.insert(source.root.clone()) {
+        let should_reset = match reset_done.lock() {
+            Ok(mut guard) => guard.insert(source.root.clone()),
+            Err(mut guard) => guard.get_mut().insert(source.root.clone()),
+        };
+        if should_reset {
             let _ = db::prune_jobs_for_missing_sources(&conn);
             let _ = db::reset_running_to_pending(&conn);
         }
@@ -263,13 +283,13 @@ pub(super) fn spawn_decoder_worker(
     max_duration_bits: Arc<AtomicU32>,
     analysis_sample_rate: Arc<AtomicU32>,
     decode_queue_target: usize,
+    reset_done: Arc<Mutex<HashSet<std::path::PathBuf>>>,
 ) -> JoinHandle<()> {
     std::thread::spawn(move || {
         lower_worker_priority();
         let log_jobs = analysis_log_enabled();
         let mut sources = Vec::new();
         let mut last_refresh = Instant::now() - SOURCE_REFRESH_INTERVAL;
-        let mut reset_done = HashSet::new();
         let mut next_source = 0usize;
         let mut local_queue: VecDeque<db::ClaimedJob> = VecDeque::new();
         let claim_batch = claim_batch_size();
@@ -297,7 +317,7 @@ pub(super) fn spawn_decoder_worker(
             refresh_sources(
                 &mut sources,
                 &mut last_refresh,
-                &mut reset_done,
+                &reset_done,
                 allowed.as_ref(),
             );
             if sources.is_empty() {
@@ -343,6 +363,12 @@ pub(super) fn spawn_decoder_worker(
                     }
                 }
             }
+            if !decode_queue.try_mark_inflight(job.id) {
+                if log_jobs {
+                    eprintln!("analysis decode skipped inflight: {}", job.sample_id);
+                }
+                continue;
+            }
             if log_jobs {
                 eprintln!("analysis decode start: {} ({})", job.sample_id, job.job_type);
             }
@@ -368,8 +394,10 @@ pub(super) fn spawn_decoder_worker(
                 }
             }
             let job_sample_id = job.sample_id.clone();
+            let job_id = job.id;
             let queued = decode_queue.push(DecodedWork { job, outcome });
             if !queued {
+                decode_queue.clear_inflight(job_id);
                 if log_jobs {
                     eprintln!("analysis decode skipped duplicate: {}", job_sample_id);
                 }
@@ -451,6 +479,7 @@ pub(super) fn spawn_compute_worker(
                                     let conn = match db::open_source_db(&work.job.source_root) {
                                         Ok(conn) => conn,
                                         Err(_) => {
+                                            decode_queue.clear_inflight(work.job.id);
                                             continue;
                                         }
                                     };
@@ -458,6 +487,7 @@ pub(super) fn spawn_compute_worker(
                                 }
                             };
                             let _ = db::mark_pending(conn, work.job.id);
+                            decode_queue.clear_inflight(work.job.id);
                             continue;
                         }
                     }
@@ -616,6 +646,7 @@ pub(super) fn spawn_compute_worker(
                         update_job_status_with_retry(|| db::mark_failed(conn, job.id, &err));
                     }
                 }
+                decode_queue.clear_inflight(job.id);
                 if let Ok(progress) = db::current_progress(conn) {
                     let source_id = db::parse_sample_id(&job.sample_id)
                         .ok()

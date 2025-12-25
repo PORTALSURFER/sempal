@@ -4,8 +4,9 @@ mod job_progress;
 mod job_runner;
 
 use crate::sample_sources::SourceId;
+use std::collections::HashSet;
 use std::sync::{
-    Arc, RwLock,
+    Arc, RwLock, Mutex,
     atomic::AtomicU32,
     atomic::{AtomicBool, Ordering},
     mpsc::Sender,
@@ -117,6 +118,7 @@ impl AnalysisWorkerPool {
             let decode_queue_target =
                 job_claim::decode_queue_target(embedding_batch_max, worker_count);
             let queue = std::sync::Arc::new(job_claim::DecodedQueue::new());
+            let reset_done = Arc::new(Mutex::new(HashSet::new()));
             for worker_index in 0..decode_workers {
                 self.threads.push(job_claim::spawn_decoder_worker(
                     worker_index,
@@ -128,6 +130,7 @@ impl AnalysisWorkerPool {
                     self.max_duration_bits.clone(),
                     self.analysis_sample_rate.clone(),
                     decode_queue_target,
+                    reset_done.clone(),
                 ));
             }
             for worker_index in 0..worker_count {
