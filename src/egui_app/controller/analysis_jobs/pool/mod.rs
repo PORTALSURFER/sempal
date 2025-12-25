@@ -23,6 +23,7 @@ pub(in crate::egui_app::controller) struct AnalysisWorkerPool {
     analysis_sample_rate: Arc<AtomicU32>,
     analysis_version_override: Arc<RwLock<Option<String>>>,
     worker_count_override: Arc<AtomicU32>,
+    decode_worker_count_override: Arc<AtomicU32>,
     threads: Vec<JoinHandle<()>>,
 }
 
@@ -40,6 +41,7 @@ impl AnalysisWorkerPool {
             )),
             analysis_version_override: Arc::new(RwLock::new(None)),
             worker_count_override: Arc::new(AtomicU32::new(0)),
+            decode_worker_count_override: Arc::new(AtomicU32::new(0)),
             threads: Vec::new(),
         }
     }
@@ -52,6 +54,11 @@ impl AnalysisWorkerPool {
 
     pub(in crate::egui_app::controller) fn set_worker_count(&self, value: u32) {
         self.worker_count_override.store(value, Ordering::Relaxed);
+    }
+
+    pub(in crate::egui_app::controller) fn set_decode_worker_count(&self, value: u32) {
+        self.decode_worker_count_override
+            .store(value, Ordering::Relaxed);
     }
 
     pub(in crate::egui_app::controller) fn set_analysis_sample_rate(&self, value: u32) {
@@ -102,7 +109,10 @@ impl AnalysisWorkerPool {
             let worker_count = job_claim::worker_count_with_override(
                 self.worker_count_override.load(Ordering::Relaxed),
             );
-            let decode_workers = worker_count.min(2).max(1);
+            let decode_workers = job_claim::decode_worker_count_with_override(
+                worker_count,
+                self.decode_worker_count_override.load(Ordering::Relaxed),
+            );
             let queue = std::sync::Arc::new(job_claim::DecodedQueue::new());
             for worker_index in 0..decode_workers {
                 self.threads.push(job_claim::spawn_decoder_worker(

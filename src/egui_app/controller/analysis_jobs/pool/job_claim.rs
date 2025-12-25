@@ -11,6 +11,7 @@ use std::sync::{
     Mutex,
     RwLock,
     atomic::AtomicU32,
+    atomic::AtomicUsize,
     atomic::{AtomicBool, Ordering},
     mpsc::Sender,
 };
@@ -25,6 +26,7 @@ use windows::Win32::System::Threading::{
 pub(super) struct DecodedQueue {
     queue: Mutex<VecDeque<DecodedWork>>,
     ready: Condvar,
+    len: AtomicUsize,
 }
 
 impl DecodedQueue {
@@ -32,12 +34,14 @@ impl DecodedQueue {
         Self {
             queue: Mutex::new(VecDeque::new()),
             ready: Condvar::new(),
+            len: AtomicUsize::new(0),
         }
     }
 
     pub(super) fn push(&self, work: DecodedWork) {
         let mut guard = self.queue.lock().expect("decoded queue lock");
         guard.push_back(work);
+        self.len.fetch_add(1, Ordering::Relaxed);
         self.ready.notify_one();
     }
 
@@ -48,6 +52,7 @@ impl DecodedQueue {
                 return None;
             }
             if let Some(work) = guard.pop_front() {
+                self.len.fetch_sub(1, Ordering::Relaxed);
                 return Some(work);
             }
             let (next_guard, _) = self
@@ -67,9 +72,11 @@ impl DecodedQueue {
             if let Some(work) = guard.pop_front() {
                 let mut batch = Vec::with_capacity(max.max(1));
                 batch.push(work);
+                self.len.fetch_sub(1, Ordering::Relaxed);
                 while batch.len() < max {
                     if let Some(next) = guard.pop_front() {
                         batch.push(next);
+                        self.len.fetch_sub(1, Ordering::Relaxed);
                     } else {
                         break;
                     }
@@ -82,6 +89,10 @@ impl DecodedQueue {
                 .expect("decoded queue wait");
             guard = next_guard;
         }
+    }
+
+    pub(super) fn len(&self) -> usize {
+        self.len.load(Ordering::Relaxed)
     }
 }
 
@@ -169,6 +180,35 @@ pub(super) fn worker_count_with_override(override_count: u32) -> usize {
 }
 
 #[cfg_attr(test, allow(dead_code))]
+pub(super) fn decode_worker_count_with_override(
+    worker_count: usize,
+    override_count: u32,
+) -> usize {
+    if override_count >= 1 {
+        return override_count as usize;
+    }
+    if let Ok(value) = std::env::var("SEMPAL_DECODE_WORKERS") {
+        if let Ok(parsed) = value.trim().parse::<usize>() {
+            if parsed >= 1 {
+                return parsed;
+            }
+        }
+    }
+    worker_count.max(2)
+}
+
+fn claim_batch_size() -> usize {
+    if let Ok(value) = std::env::var("SEMPAL_ANALYSIS_CLAIM_BATCH") {
+        if let Ok(parsed) = value.trim().parse::<usize>() {
+            if parsed >= 1 {
+                return parsed;
+            }
+        }
+    }
+    64
+}
+
+#[cfg_attr(test, allow(dead_code))]
 pub(super) fn spawn_decoder_worker(
     _worker_index: usize,
     decode_queue: Arc<DecodedQueue>,
@@ -187,7 +227,7 @@ pub(super) fn spawn_decoder_worker(
         let mut reset_done = HashSet::new();
         let mut next_source = 0usize;
         let mut local_queue: VecDeque<db::ClaimedJob> = VecDeque::new();
-        const CLAIM_BATCH_SIZE: usize = 32;
+        let claim_batch = claim_batch_size();
         loop {
             if shutdown.load(Ordering::Relaxed) {
                 break;
@@ -223,7 +263,7 @@ pub(super) fn spawn_decoder_worker(
                         &mut source.conn,
                         &source.source.root,
                         source.source.id.as_str(),
-                        CLAIM_BATCH_SIZE,
+                        claim_batch,
                     ) {
                         Ok(jobs) => jobs,
                         Err(_) => continue,
@@ -298,6 +338,8 @@ pub(super) fn spawn_compute_worker(
     std::thread::spawn(move || {
         lower_worker_priority();
         let log_jobs = analysis_log_enabled();
+        let log_queue = analysis_log_queue_enabled();
+        let mut last_queue_log = Instant::now();
         let mut connections: HashMap<std::path::PathBuf, Connection> = HashMap::new();
         let embedding_batch_max = crate::analysis::embedding::embedding_batch_max();
         loop {
@@ -311,6 +353,14 @@ pub(super) fn spawn_compute_worker(
             let batch = decode_queue.pop_batch(&shutdown, embedding_batch_max);
             if batch.is_empty() {
                 continue;
+            }
+            if log_queue && last_queue_log.elapsed() >= Duration::from_secs(2) {
+                last_queue_log = Instant::now();
+                eprintln!(
+                    "analysis queue: decoded={}, batch={}",
+                    decode_queue.len(),
+                    batch.len()
+                );
             }
             let max_analysis_duration_seconds =
                 f32::from_bits(max_duration_bits.load(Ordering::Relaxed));
@@ -591,6 +641,12 @@ fn panic_to_string(payload: Box<dyn std::any::Any + Send>) -> String {
 
 fn analysis_log_enabled() -> bool {
     std::env::var("SEMPAL_ANALYSIS_LOG_JOBS")
+        .map(|value| value.trim() == "1")
+        .unwrap_or(false)
+}
+
+fn analysis_log_queue_enabled() -> bool {
+    std::env::var("SEMPAL_ANALYSIS_LOG_QUEUE")
         .map(|value| value.trim() == "1")
         .unwrap_or(false)
 }
