@@ -96,11 +96,17 @@ impl PannsModel {
 }
 
 pub(crate) fn embedding_batch_max() -> usize {
-    env::var("SEMPAL_EMBEDDING_BATCH")
+    let requested = env::var("SEMPAL_EMBEDDING_BATCH")
         .ok()
         .and_then(|value| value.trim().parse::<usize>().ok())
-        .filter(|value| *value >= 1)
-        .unwrap_or(if cfg!(target_os = "windows") { 4 } else { 16 })
+        .filter(|value| *value >= 1);
+    let default = if cfg!(target_os = "windows") { 4 } else { 16 };
+    let max = requested.unwrap_or(default);
+    if cfg!(target_os = "windows") {
+        max.min(4)
+    } else {
+        max
+    }
 }
 
 pub(crate) fn embedding_inflight_max() -> usize {
