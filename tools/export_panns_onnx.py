@@ -43,7 +43,7 @@ def ensure_repo(tmp_dir: Path) -> Path:
 def load_checkpoint(path: Path):
     import torch
 
-    checkpoint = torch.load(path, map_location="cpu")
+    checkpoint = torch.load(path, map_location="cpu", weights_only=False)
     if isinstance(checkpoint, dict) and "model" in checkpoint:
         return checkpoint["model"]
     return checkpoint
