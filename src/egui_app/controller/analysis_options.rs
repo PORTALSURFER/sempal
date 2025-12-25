@@ -8,6 +8,20 @@ const PANNS_BACKEND_ENV: &str = "SEMPAL_PANNS_BACKEND";
 const WGPU_POWER_ENV: &str = "WGPU_POWER_PREFERENCE";
 const WGPU_ADAPTER_ENV: &str = "WGPU_ADAPTER_NAME";
 
+fn set_env_var(key: &str, value: &str) {
+    // Safety: env var mutation is process-global; we keep it scoped to runtime config changes.
+    unsafe {
+        std::env::set_var(key, value);
+    }
+}
+
+fn remove_env_var(key: &str) {
+    // Safety: env var mutation is process-global; we keep it scoped to runtime config changes.
+    unsafe {
+        std::env::remove_var(key);
+    }
+}
+
 pub(super) fn clamp_max_analysis_duration_seconds(seconds: f32) -> f32 {
     seconds.clamp(
         MIN_MAX_ANALYSIS_DURATION_SECONDS,
@@ -56,21 +70,21 @@ impl EguiController {
             backend,
             crate::sample_sources::config::PannsBackendChoice::Cuda
         ) {
-            std::env::set_var(PANNS_BACKEND_ENV, backend.as_env());
+            set_env_var(PANNS_BACKEND_ENV, backend.as_env());
         } else {
-            std::env::remove_var(PANNS_BACKEND_ENV);
+            remove_env_var(PANNS_BACKEND_ENV);
         }
 
         match self.settings.analysis.wgpu_power_preference.as_env() {
-            Some(value) => std::env::set_var(WGPU_POWER_ENV, value),
-            None => std::env::remove_var(WGPU_POWER_ENV),
+            Some(value) => set_env_var(WGPU_POWER_ENV, value),
+            None => remove_env_var(WGPU_POWER_ENV),
         }
 
         match self.settings.analysis.wgpu_adapter_name.as_ref() {
             Some(value) if !value.trim().is_empty() => {
-                std::env::set_var(WGPU_ADAPTER_ENV, value);
+                set_env_var(WGPU_ADAPTER_ENV, value);
             }
-            _ => std::env::remove_var(WGPU_ADAPTER_ENV),
+            _ => remove_env_var(WGPU_ADAPTER_ENV),
         }
     }
 
