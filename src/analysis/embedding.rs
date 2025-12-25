@@ -73,6 +73,7 @@ impl PannsModel {
                 model_path.to_string_lossy()
             ));
         }
+        init_cubecl_config();
         let device = WgpuDevice::default();
         init_wgpu(&device);
         let model = panns_burn::Model::<PannsBackend>::from_file(
@@ -411,6 +412,16 @@ fn l2_norm(values: &[f32]) -> f32 {
 fn init_wgpu(device: &WgpuDevice) {
     WGPU_INIT.get_or_init(|| {
         wgpu::init_setup::<Vulkan>(device, Default::default());
+    });
+}
+
+fn init_cubecl_config() {
+    static CUBECL_CONFIG: OnceLock<()> = OnceLock::new();
+    CUBECL_CONFIG.get_or_init(|| {
+        let mut config = cubecl_runtime::config::GlobalConfig::default();
+        config.compilation.cache = Some(cubecl_runtime::config::cache::CacheConfig::Global);
+        config.autotune.cache = cubecl_runtime::config::cache::CacheConfig::Global;
+        let _ = std::panic::catch_unwind(|| cubecl_runtime::config::GlobalConfig::set(config));
     });
 }
 
