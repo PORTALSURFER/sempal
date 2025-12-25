@@ -123,6 +123,11 @@ def main() -> int:
     else:
         shutil.copy2(args.onnx, target_onnx)
         print(f"Wrote {target_onnx}")
+        onnx_data = Path(str(args.onnx) + ".data")
+        if onnx_data.exists():
+            target_data = Path(str(target_onnx) + ".data")
+            shutil.copy2(onnx_data, target_data)
+            print(f"Wrote {target_data}")
 
     if args.runtime_file:
         if not args.runtime_file.exists():

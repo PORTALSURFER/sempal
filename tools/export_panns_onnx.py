@@ -154,9 +154,13 @@ def export_from_checkpoint(
             dynamic_axes={"logmel": {0: "batch"}, "embedding": {0: "batch"}},
             opset_version=opset,
         )
+        data_path = Path(str(output) + ".data")
         model = onnx.load_model(output, load_external_data=True)
-        external_data_helper.convert_model_from_external_data(model)
+        if external_data_helper.uses_external_data(model):
+            external_data_helper.convert_model_from_external_data(model)
         onnx.save_model(model, output, save_as_external_data=False)
+        if data_path.exists():
+            data_path.unlink()
 
 
 def main() -> int:
