@@ -4,7 +4,7 @@ use std::sync::{Condvar, Mutex};
 use std::sync::{atomic::AtomicBool, atomic::AtomicUsize, atomic::Ordering};
 use std::time::Duration;
 
-pub(super) struct DecodedQueue {
+pub(in crate::egui_app::controller::analysis_jobs) struct DecodedQueue {
     queue: Mutex<VecDeque<DecodedWork>>,
     ready: Condvar,
     len: AtomicUsize,
@@ -13,7 +13,7 @@ pub(super) struct DecodedQueue {
 }
 
 impl DecodedQueue {
-    pub(super) fn new() -> Self {
+    pub(in crate::egui_app::controller::analysis_jobs) fn new() -> Self {
         Self {
             queue: Mutex::new(VecDeque::new()),
             ready: Condvar::new(),
@@ -122,12 +122,12 @@ impl DecodedQueue {
     }
 }
 
-pub(super) struct DecodedWork {
+pub(in crate::egui_app::controller::analysis_jobs) struct DecodedWork {
     pub(super) job: db::ClaimedJob,
     pub(super) outcome: DecodeOutcome,
 }
 
-pub(super) enum DecodeOutcome {
+pub(in crate::egui_app::controller::analysis_jobs) enum DecodeOutcome {
     Decoded(crate::analysis::audio::AnalysisAudio),
     Skipped {
         duration_seconds: f32,

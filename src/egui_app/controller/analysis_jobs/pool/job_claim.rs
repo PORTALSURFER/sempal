@@ -25,12 +25,13 @@ mod claim;
 mod logging;
 mod queue;
 
-pub(super) use claim::{
+pub(in crate::egui_app::controller::analysis_jobs) use claim::{
     decode_queue_target, decode_worker_count_with_override, worker_count_with_override,
 };
-pub(super) use queue::{DecodeOutcome, DecodedQueue, DecodedWork};
+pub(in crate::egui_app::controller::analysis_jobs) use queue::{
+    DecodeOutcome, DecodedQueue, DecodedWork,
+};
 
-use claim::SourceClaimDb;
 
 #[cfg_attr(test, allow(dead_code))]
 pub(super) fn spawn_decoder_worker(

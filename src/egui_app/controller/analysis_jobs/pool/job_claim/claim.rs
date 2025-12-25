@@ -3,14 +3,15 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-pub(super) struct SourceClaimDb {
+pub(in crate::egui_app::controller::analysis_jobs) struct SourceClaimDb {
     pub(super) source: crate::sample_sources::SampleSource,
     pub(super) conn: rusqlite::Connection,
 }
 
-pub(super) const SOURCE_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
+pub(in crate::egui_app::controller::analysis_jobs) const SOURCE_REFRESH_INTERVAL: Duration =
+    Duration::from_secs(5);
 
-pub(super) fn refresh_sources(
+pub(in crate::egui_app::controller::analysis_jobs) fn refresh_sources(
     sources: &mut Vec<SourceClaimDb>,
     last_refresh: &mut Instant,
     reset_done: &std::sync::Arc<std::sync::Mutex<HashSet<PathBuf>>>,
@@ -57,7 +58,9 @@ pub(super) fn refresh_sources(
 }
 
 #[cfg_attr(test, allow(dead_code))]
-pub(super) fn worker_count_with_override(override_count: u32) -> usize {
+pub(in crate::egui_app::controller::analysis_jobs) fn worker_count_with_override(
+    override_count: u32,
+) -> usize {
     if override_count >= 1 {
         return override_count as usize;
     }
@@ -76,7 +79,7 @@ pub(super) fn worker_count_with_override(override_count: u32) -> usize {
 }
 
 #[cfg_attr(test, allow(dead_code))]
-pub(super) fn decode_worker_count_with_override(
+pub(in crate::egui_app::controller::analysis_jobs) fn decode_worker_count_with_override(
     worker_count: usize,
     override_count: u32,
 ) -> usize {
@@ -107,7 +110,10 @@ pub(super) fn claim_batch_size() -> usize {
     64
 }
 
-pub(super) fn decode_queue_target(embedding_batch_max: usize, worker_count: usize) -> usize {
+pub(in crate::egui_app::controller::analysis_jobs) fn decode_queue_target(
+    embedding_batch_max: usize,
+    worker_count: usize,
+) -> usize {
     if let Ok(value) = std::env::var("SEMPAL_DECODE_QUEUE_TARGET") {
         if let Ok(parsed) = value.trim().parse::<usize>() {
             if parsed >= 1 {
