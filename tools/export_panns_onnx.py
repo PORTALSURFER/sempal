@@ -191,7 +191,7 @@ def main() -> int:
     parser.add_argument("--fmin", type=int, default=50)
     parser.add_argument("--fmax", type=int, default=8000)
     parser.add_argument("--seconds", type=float, default=10.0)
-    parser.add_argument("--opset", type=int, default=17)
+    parser.add_argument("--opset", type=int, default=18)
     parser.add_argument(
         "--model-id",
         default="panns_cnn14_16k",
