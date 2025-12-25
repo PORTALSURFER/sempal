@@ -159,6 +159,21 @@ impl EguiApp {
                     self.controller.set_similarity_prep_fast_sample_rate(sample_rate);
                 }
             });
+            ui.add_enabled_ui(!self.controller.similarity_prep_in_progress(), |ui| {
+                let mut force_full = self
+                    .controller
+                    .similarity_prep_force_full_analysis_next();
+                if ui
+                    .checkbox(&mut force_full, "Force full reanalysis (next run)")
+                    .on_hover_text(
+                        "Ignore cached features and embeddings on the next similarity prep run",
+                    )
+                    .changed()
+                {
+                    self.controller
+                        .set_similarity_prep_force_full_analysis_next(force_full);
+                }
+            });
             ui.separator();
             if ui.button("Open in file explorer").clicked() {
                 self.controller.select_source_by_index(index);

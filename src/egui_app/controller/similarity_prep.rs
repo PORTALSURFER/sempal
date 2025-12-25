@@ -81,6 +81,10 @@ impl EguiController {
         self.runtime.similarity_prep_force_full_analysis_next = enabled;
     }
 
+    pub fn similarity_prep_force_full_analysis_next(&self) -> bool {
+        self.runtime.similarity_prep_force_full_analysis_next
+    }
+
     pub fn similarity_prep_in_progress(&self) -> bool {
         self.runtime.similarity_prep.is_some()
             || self.runtime.jobs.scan_in_progress()
