@@ -3,7 +3,7 @@ use std::env;
 use std::path::PathBuf;
 use std::sync::{LazyLock, OnceLock};
 
-use ort::execution_providers::{CPUExecutionProvider, ExecutionProviderDispatch};
+use ort::execution_providers::{CPUExecutionProvider, ExecutionProvider, ExecutionProviderDispatch};
 #[cfg(target_os = "windows")]
 use ort::execution_providers::DirectMLExecutionProvider;
 use ort::session::Session;
