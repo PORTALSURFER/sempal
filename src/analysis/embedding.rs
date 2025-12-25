@@ -19,6 +19,7 @@ mod panns_paths {
 }
 
 type PannsBackend = wgpu::Wgpu;
+type PannsOutput = Tensor<PannsBackend, 2>;
 
 pub const EMBEDDING_MODEL_ID: &str =
     "panns_cnn14_16k__sr16k__nfft512__hop160__mel64__log10__chunk10__repeatpad_v1";
@@ -100,6 +101,14 @@ pub(crate) fn embedding_batch_max() -> usize {
         .and_then(|value| value.trim().parse::<usize>().ok())
         .filter(|value| *value >= 1)
         .unwrap_or(16)
+}
+
+pub(crate) fn embedding_inflight_max() -> usize {
+    env::var("SEMPAL_EMBEDDING_INFLIGHT")
+        .ok()
+        .and_then(|value| value.trim().parse::<usize>().ok())
+        .filter(|value| *value >= 1)
+        .unwrap_or(2)
 }
 
 pub(crate) struct EmbeddingBatchInput<'a> {
@@ -229,6 +238,96 @@ pub(crate) fn infer_embeddings_from_logmel_batch(
     })
 }
 
+pub(crate) fn infer_embeddings_from_logmel_batch_pipelined(
+    logmels: &[Vec<f32>],
+    micro_batch: usize,
+    inflight: usize,
+) -> Vec<Result<Vec<f32>, String>> {
+    if logmels.is_empty() {
+        return Vec::new();
+    }
+    let expected = PANNS_LOGMEL_LEN;
+    if logmels.iter().any(|item| item.len() != expected) {
+        let err = format!(
+            "PANNs log-mel buffer has wrong length: expected {expected}"
+        );
+        return logmels.iter().map(|_| Err(err.clone())).collect();
+    }
+    let micro_batch = micro_batch.max(1);
+    let inflight = inflight.max(1);
+    let results = std::sync::Arc::new(Mutex::new(vec![None; logmels.len()]));
+    let errors = std::sync::Arc::new(Mutex::new(vec![None; logmels.len()]));
+    let (tx, rx) = std::sync::mpsc::sync_channel::<(usize, usize, PannsOutput)>(inflight);
+    let results_handle = std::sync::Arc::clone(&results);
+    let errors_handle = std::sync::Arc::clone(&errors);
+    let readback = std::thread::spawn(move || {
+        while let Ok((offset, batch, output)) = rx.recv() {
+            match extract_embeddings_from_data(output.into_data(), batch) {
+                Ok(embeddings) => {
+                    let mut guard = results_handle.lock().unwrap_or_else(|err| err.into_inner());
+                    for (idx, embedding) in embeddings.into_iter().enumerate() {
+                        if let Some(slot) = guard.get_mut(offset + idx) {
+                            *slot = Some(embedding);
+                        }
+                    }
+                }
+                Err(err) => {
+                    let mut guard = errors_handle.lock().unwrap_or_else(|err| err.into_inner());
+                    for idx in 0..batch {
+                        if let Some(slot) = guard.get_mut(offset + idx) {
+                            *slot = Some(err.clone());
+                        }
+                    }
+                }
+            }
+        }
+    });
+    let submit_tx = tx.clone();
+    let submit_result = with_panns_model(|model| {
+        for (offset, chunk) in logmels.chunks(micro_batch).enumerate() {
+            let start = offset * micro_batch;
+            let mut batch_input =
+                Vec::with_capacity(chunk.len() * PANNS_LOGMEL_LEN);
+            for logmel in chunk {
+                batch_input.extend_from_slice(logmel.as_slice());
+            }
+            let data = TensorData::new(
+                batch_input,
+                [chunk.len(), 1, PANNS_INPUT_FRAMES, PANNS_MEL_BANDS],
+            );
+            let output = run_panns_forward_from_data(&model.model, &model.device, data);
+            if submit_tx.send((start, chunk.len(), output)).is_err() {
+                return Err("PANNs readback channel closed".to_string());
+            }
+        }
+        Ok(())
+    });
+    drop(tx);
+    let _ = readback.join();
+    if let Err(err) = submit_result {
+        let mut guard = errors.lock().unwrap_or_else(|err| err.into_inner());
+        for slot in guard.iter_mut() {
+            if slot.is_none() {
+                *slot = Some(err.clone());
+            }
+        }
+    }
+    let guard = results.lock().unwrap_or_else(|err| err.into_inner());
+    let err_guard = errors.lock().unwrap_or_else(|err| err.into_inner());
+    guard
+        .iter()
+        .zip(err_guard.iter())
+        .map(|(value, err)| {
+            if let Some(err) = err {
+                return Err(err.clone());
+            }
+            value
+                .clone()
+                .ok_or_else(|| "PANNs embedding output missing".to_string())
+        })
+        .collect()
+}
+
 pub(crate) fn warmup_panns() -> Result<(), String> {
     if PANNS_WARMED.get().is_some() {
         return Ok(());
@@ -351,9 +450,17 @@ fn run_panns_inference_from_data(
     data: TensorData,
     batch: usize,
 ) -> Result<Vec<Vec<f32>>, String> {
-    let input_tensor = Tensor::<PannsBackend, 4>::from_data(data, device);
-    let output = model.forward(input_tensor);
+    let output = run_panns_forward_from_data(model, device, data);
     extract_embeddings_from_data(output.into_data(), batch)
+}
+
+fn run_panns_forward_from_data(
+    model: &panns_burn::Model<PannsBackend>,
+    device: &WgpuDevice,
+    data: TensorData,
+) -> PannsOutput {
+    let input_tensor = Tensor::<PannsBackend, 4>::from_data(data, device);
+    model.forward(input_tensor)
 }
 
 fn query_window_ranges(sample_len: usize, sample_rate: u32) -> Vec<(usize, usize)> {

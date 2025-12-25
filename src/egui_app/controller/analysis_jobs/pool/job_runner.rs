@@ -215,31 +215,29 @@ fn run_embedding_backfill_job(
                         continue;
                     }
 
-                    let mut batch_input = Vec::with_capacity(
-                        logmels.len() * crate::analysis::embedding::PANNS_LOGMEL_LEN,
+                    let inflight = crate::analysis::embedding::embedding_inflight_max();
+                    let micro_batch = crate::analysis::embedding::embedding_batch_max();
+                    let embeddings = crate::analysis::embedding::infer_embeddings_from_logmel_batch_pipelined(
+                        &logmels,
+                        micro_batch,
+                        inflight,
                     );
-                    for logmel in &logmels {
-                        batch_input.extend_from_slice(logmel);
-                    }
-                    match crate::analysis::embedding::infer_embeddings_from_logmel_batch(
-                        batch_input,
-                        logmels.len(),
-                    ) {
-                        Ok(embeddings) => {
-                            for ((sample_id, content_hash), embedding) in
-                                payloads.into_iter().zip(embeddings.into_iter())
-                            {
+                    for ((sample_id, content_hash), result) in
+                        payloads.into_iter().zip(embeddings.into_iter())
+                    {
+                        match result {
+                            Ok(embedding) => {
                                 let _ = tx.send(Ok(EmbeddingResult {
                                     sample_id,
                                     content_hash,
                                     embedding,
                                 }));
                             }
-                        }
-                        Err(err) => {
-                            for (sample_id, _) in payloads {
-                                let _ =
-                                    tx.send(Err(format!("Embed failed for {}: {err}", sample_id)));
+                            Err(err) => {
+                                let _ = tx.send(Err(format!(
+                                    "Embed failed for {}: {err}",
+                                    sample_id
+                                )));
                             }
                         }
                     }
@@ -602,33 +600,31 @@ pub(super) fn run_analysis_jobs_with_decoded_batch(
         batch_jobs.push(item);
     }
 
-    let mut batch_input = Vec::new();
     let mut input_indices = Vec::new();
+    let mut logmel_inputs = Vec::new();
     for (idx, item) in batch_jobs.iter().enumerate() {
         if let Some(logmel) = item.logmel.as_ref() {
-            batch_input.extend_from_slice(logmel.as_slice());
             input_indices.push(idx);
+            logmel_inputs.push(logmel.clone());
         }
     }
 
     if !input_indices.is_empty() {
-        let batch_result = std::panic::catch_unwind(|| {
-            crate::analysis::embedding::infer_embeddings_from_logmel_batch(
-                batch_input,
-                input_indices.len(),
-            )
-        })
-        .unwrap_or_else(|_| Err("PANNs batch inference panicked".to_string()));
-        match batch_result {
-            Ok(embeddings) => {
-                for (idx, embedding) in input_indices.iter().copied().zip(embeddings.into_iter()) {
+        let inflight = crate::analysis::embedding::embedding_inflight_max();
+        let micro_batch = crate::analysis::embedding::embedding_batch_max();
+        let results = crate::analysis::embedding::infer_embeddings_from_logmel_batch_pipelined(
+            &logmel_inputs,
+            micro_batch,
+            inflight,
+        );
+        for (idx, result) in input_indices.iter().copied().zip(results.into_iter()) {
+            match result {
+                Ok(embedding) => {
                     if let Some(item) = batch_jobs.get_mut(idx) {
                         item.embedding = Some(embedding);
                     }
                 }
-            }
-            Err(err) => {
-                for idx in input_indices.iter().copied() {
+                Err(err) => {
                     let logmel = match batch_jobs.get(idx) {
                         Some(item) => item.logmel.as_ref(),
                         None => None,
