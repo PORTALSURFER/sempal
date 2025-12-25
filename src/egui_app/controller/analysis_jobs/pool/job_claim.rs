@@ -367,12 +367,11 @@ pub(super) fn spawn_decoder_worker(
                     }
                 }
             }
-            let job_id = job.id;
-            let job_source_root = job.source_root.clone();
+            let job_sample_id = job.sample_id.clone();
             let queued = decode_queue.push(DecodedWork { job, outcome });
             if !queued {
-                if let Ok(conn) = db::open_source_db(&job_source_root) {
-                    let _ = db::mark_pending(&conn, job_id);
+                if log_jobs {
+                    eprintln!("analysis decode skipped duplicate: {}", job_sample_id);
                 }
             }
         }
