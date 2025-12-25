@@ -5,7 +5,6 @@ mod gpu_embeddings;
 
 use eframe::egui::{self, RichText};
 
-use super::super::EguiApp;
 use super::super::style;
 
 fn section_label(ui: &mut egui::Ui, label: &str) {

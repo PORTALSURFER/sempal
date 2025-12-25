@@ -1,7 +1,7 @@
 use eframe::egui::{self, RichText};
 
-use super::super::EguiApp;
-use super::super::style;
+use crate::egui_app::ui::EguiApp;
+use crate::egui_app::ui::style;
 use super::section_label;
 
 impl EguiApp {

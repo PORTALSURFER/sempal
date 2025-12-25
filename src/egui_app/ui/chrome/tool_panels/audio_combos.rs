@@ -1,6 +1,6 @@
 use eframe::egui;
 
-use super::super::EguiApp;
+use crate::egui_app::ui::EguiApp;
 
 impl EguiApp {
     fn render_audio_host_combo(&mut self, ui: &mut egui::Ui) {
