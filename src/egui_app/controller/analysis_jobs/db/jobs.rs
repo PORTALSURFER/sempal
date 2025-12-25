@@ -1,5 +1,5 @@
 use super::types::ClaimedJob;
-use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
+use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params, params_from_iter};
 use std::collections::HashMap;
 use std::path::Path;
 
