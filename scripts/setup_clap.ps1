@@ -5,6 +5,7 @@ param(
     [string]$RuntimeUrl,
     [string]$RuntimeFile,
     [string]$OrtVersion,
+    [string]$OrtFlavor,
     [string]$Checkpoint,
     [string]$CheckpointUrl,
     [switch]$NoCheckpointDownload,
@@ -35,6 +36,7 @@ if ($Force) { $argsList += "--force" }
 if ($RuntimeUrl) { $argsList += @("--runtime-url", $RuntimeUrl) }
 if ($RuntimeFile) { $argsList += @("--runtime-file", $RuntimeFile) }
 if ($OrtVersion) { $argsList += @("--ort-version", $OrtVersion) }
+if ($OrtFlavor) { $argsList += @("--ort-flavor", $OrtFlavor) }
 if ($Checkpoint) { $argsList += @("--checkpoint", $Checkpoint) }
 if ($CheckpointUrl) { $argsList += @("--checkpoint-url", $CheckpointUrl) }
 if ($NoCheckpointDownload) { $argsList += "--no-checkpoint-download" }

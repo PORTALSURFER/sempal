@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import importlib
+import json
 import os
 import platform
 import shutil
@@ -9,6 +10,7 @@ import site
 import subprocess
 import sys
 import tarfile
+import urllib.error
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -229,6 +231,9 @@ def runtime_urls(version: str, flavor: str) -> list[str]:
     system = platform.system().lower()
     arch = "x64"
     base = f"https://github.com/microsoft/onnxruntime/releases/download/v{version}"
+    assets = release_asset_urls(version, flavor, system, arch)
+    if assets:
+        return assets
     if system == "windows":
         if flavor == "directml":
             name = f"onnxruntime-win-{arch}-directml-{version}.zip"
@@ -241,6 +246,39 @@ def runtime_urls(version: str, flavor: str) -> list[str]:
     else:
         name = f"onnxruntime-linux-{arch}-{version}.tgz"
     return [f"{base}/{name}"]
+
+
+def release_asset_urls(version: str, flavor: str, system: str, arch: str) -> list[str]:
+    if system != "windows":
+        return []
+    url = f"https://api.github.com/repos/microsoft/onnxruntime/releases/tags/v{version}"
+    try:
+        with urllib.request.urlopen(url, timeout=30) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+    except (urllib.error.URLError, json.JSONDecodeError):
+        return []
+    assets = payload.get("assets", [])
+    if not isinstance(assets, list):
+        return []
+    matches: list[str] = []
+    for asset in assets:
+        name = str(asset.get("name", "")).lower()
+        download = asset.get("browser_download_url")
+        if not download:
+            continue
+        if f"win-{arch}" not in name:
+            continue
+        if flavor == "directml":
+            if "directml" not in name:
+                continue
+        elif flavor == "cuda":
+            if "gpu" not in name:
+                continue
+        else:
+            if "directml" in name or "gpu" in name:
+                continue
+        matches.append(str(download))
+    return matches
 
 
 def download_runtime(
