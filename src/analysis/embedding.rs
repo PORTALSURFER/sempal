@@ -1,7 +1,6 @@
-use std::cell::RefCell;
 use std::env;
 use std::path::PathBuf;
-use std::sync::{LazyLock, OnceLock};
+use std::sync::{LazyLock, Mutex, OnceLock};
 
 use burn::backend::wgpu::{self, graphics::Vulkan, WgpuDevice};
 use burn::tensor::{Tensor, TensorData};
@@ -45,10 +44,7 @@ pub(crate) struct PannsModel {
 }
 
 static WGPU_INIT: OnceLock<()> = OnceLock::new();
-
-thread_local! {
-    static TLS_PANNS_MODEL: RefCell<Option<PannsModel>> = RefCell::new(None);
-}
+static PANNS_MODEL: OnceLock<Mutex<Option<PannsModel>>> = OnceLock::new();
 
 impl PannsModel {
     pub(crate) fn load() -> Result<Self, String> {
@@ -332,14 +328,15 @@ fn init_wgpu(device: &WgpuDevice) {
 }
 
 fn with_panns_model<T>(f: impl FnOnce(&mut PannsModel) -> Result<T, String>) -> Result<T, String> {
-    TLS_PANNS_MODEL.with(|cell| {
-        let mut guard = cell.borrow_mut();
-        if guard.is_none() {
-            *guard = Some(PannsModel::load()?);
-        }
-        let model = guard.as_mut().expect("PANNs model loaded");
-        f(model)
-    })
+    let mutex = PANNS_MODEL.get_or_init(|| Mutex::new(None));
+    let mut guard = mutex
+        .lock()
+        .map_err(|_| "PANNs model lock poisoned".to_string())?;
+    if guard.is_none() {
+        *guard = Some(PannsModel::load()?);
+    }
+    let model = guard.as_mut().expect("PANNs model loaded");
+    f(model)
 }
 
 fn panns_batch_enabled() -> bool {
