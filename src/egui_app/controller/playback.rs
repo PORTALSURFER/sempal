@@ -78,6 +78,14 @@ impl EguiController {
         transport::stop_playback_if_active(self)
     }
 
+    pub fn loaded_audio_duration_seconds(&self) -> Option<f32> {
+        self.sample_view
+            .wav
+            .loaded_audio
+            .as_ref()
+            .map(|audio| audio.duration_seconds)
+    }
+
     pub fn handle_escape(&mut self) {
         transport::handle_escape(self);
     }

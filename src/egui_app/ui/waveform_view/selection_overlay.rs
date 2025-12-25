@@ -207,13 +207,13 @@ fn handle_loop_bar_drag(
         ui.output_mut(|o| o.cursor_icon = CursorIcon::ResizeHorizontal);
     }
 
-    let Some(audio) = app.controller.sample_view.wav.loaded_audio.as_ref() else {
+    let Some(duration_seconds) = app.controller.loaded_audio_duration_seconds() else {
         return dragging;
     };
-    if audio.duration_seconds <= 0.0 {
+    if duration_seconds <= 0.0 {
         return dragging;
     }
-    let min_width = (LOOP_BAR_MIN_DURATION_SECS / audio.duration_seconds).clamp(0.0, 1.0);
+    let min_width = (LOOP_BAR_MIN_DURATION_SECS / duration_seconds).clamp(0.0, 1.0);
     let normalize = |pos: egui::Pos2| {
         ((pos.x - rect.left()) / rect.width())
             .mul_add(view_width, view.start)
