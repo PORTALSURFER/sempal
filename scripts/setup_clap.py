@@ -116,6 +116,7 @@ def build_onnx(
     samples: int,
     opset: int,
     static_shapes: bool,
+    layernorm_dim: int | None,
 ) -> None:
     import torch
     from laion_clap import CLAP_Module
@@ -169,7 +170,7 @@ def build_onnx(
     except TypeError:
         torch.onnx.export(wrapper, dummy, target, **export_kwargs)
 
-    if patch_layer_norm_weights(target):
+    if patch_layer_norm_weights(target, layernorm_dim):
         print("Patched LayerNormalization weights for Burn import compatibility.")
 
 
@@ -235,7 +236,7 @@ def _shape_map(model) -> dict[str, list[int | None]]:
     return mapping
 
 
-def patch_layer_norm_weights(path: Path) -> bool:
+def patch_layer_norm_weights(path: Path, fallback_dim: int | None) -> bool:
     import onnx
     from onnx import numpy_helper, shape_inference
     import numpy as np
@@ -265,10 +266,12 @@ def patch_layer_norm_weights(path: Path) -> bool:
             dims = shape_map.get(output_name)
 
         if not dims or dims[-1] is None:
-            raise RuntimeError(
-                "Unable to infer LayerNorm weight shape. "
-                f"Missing or dynamic last-dim for input '{input_name}'."
-            )
+            if fallback_dim is None:
+                raise RuntimeError(
+                    "Unable to infer LayerNorm weight shape. "
+                    f"Missing or dynamic last-dim for input '{input_name}'."
+                )
+            dims = [fallback_dim]
 
         num_features = dims[-1]
         scale_name = weight_name or (f"{node.name}_scale" if node.name else "layernorm_scale")
@@ -466,6 +469,12 @@ def main() -> int:
         action="store_true",
         help="Export ONNX with static batch size (helps Burn import).",
     )
+    parser.add_argument(
+        "--layernorm-dim",
+        type=int,
+        default=None,
+        help="Fallback LayerNorm dim when shape inference fails (e.g., 768 for CLAP).",
+    )
     args = parser.parse_args()
 
     app_root = args.app_root or resolve_app_root()
@@ -486,7 +495,17 @@ def main() -> int:
         checkpoint = download_checkpoint(urls, models_dir / DEFAULT_CHECKPOINT_NAME)
     input_samples = int(args.sample_rate * args.seconds)
     tmp_path = models_dir / "clap_audio.onnx.tmp"
-    build_onnx(tmp_path, checkpoint, args.channels, input_samples, args.opset, args.static_shapes)
+    env_fallback = os.environ.get("SEMPAL_CLAP_LAYERNORM_DIM")
+    layernorm_dim = args.layernorm_dim or (int(env_fallback) if env_fallback else None)
+    build_onnx(
+        tmp_path,
+        checkpoint,
+        args.channels,
+        input_samples,
+        args.opset,
+        args.static_shapes,
+        layernorm_dim,
+    )
     verify_onnx(tmp_path)
     shutil.move(str(tmp_path), str(target))
     print(f"Wrote {target}")
