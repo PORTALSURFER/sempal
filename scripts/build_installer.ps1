@@ -11,7 +11,6 @@ Set-Location $RepoRoot
 
 $BundleDir = Join-Path $OutDir "bundle"
 $ModelsOut = Join-Path $BundleDir "models"
-$RuntimeOut = Join-Path $ModelsOut "onnxruntime"
 $BurnpackName = "panns_cnn14_16k.bpk"
 
 Write-Host "Building release binaries..."
@@ -23,7 +22,6 @@ if (Test-Path $OutDir) {
 
 New-Item -ItemType Directory -Force -Path $BundleDir | Out-Null
 New-Item -ItemType Directory -Force -Path $ModelsOut | Out-Null
-New-Item -ItemType Directory -Force -Path $RuntimeOut | Out-Null
 
 Copy-Item "target/release/sempal.exe" $BundleDir -Force
 Copy-Item "target/release/sempal-installer.exe" $OutDir -Force
@@ -39,12 +37,6 @@ if ($BurnpackCandidate) {
     Copy-Item $BurnpackCandidate.FullName $ModelsOut -Force
 } else {
     throw "$BurnpackName not found in target/release/build or $ModelsDir"
-}
-
-if (Test-Path (Join-Path $ModelsDir "onnxruntime\\onnxruntime.dll")) {
-    Copy-Item (Join-Path $ModelsDir "onnxruntime\\onnxruntime.dll") $RuntimeOut -Force
-} else {
-    Write-Warning "onnxruntime.dll not found at $ModelsDir\\onnxruntime"
 }
 
 Copy-Item "build/windows/installer_manifest.json" $OutDir -Force
