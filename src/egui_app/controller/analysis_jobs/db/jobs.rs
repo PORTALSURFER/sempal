@@ -89,15 +89,38 @@ pub(in crate::egui_app::controller::analysis_jobs) fn claim_next_jobs(
     {
         let mut stmt = tx
             .prepare(
-                "UPDATE analysis_jobs
-                 SET status = 'running', attempts = attempts + 1
-                 WHERE id IN (
+                "WITH ranked AS (
+                     SELECT
+                         pending.id,
+                         pending.sample_id,
+                         pending.content_hash,
+                         pending.job_type,
+                         pending.created_at,
+                         ROW_NUMBER() OVER (
+                             PARTITION BY pending.sample_id, pending.job_type
+                             ORDER BY pending.created_at ASC, pending.id ASC
+                         ) AS rn
+                     FROM analysis_jobs AS pending
+                     WHERE pending.status = 'pending'
+                       AND pending.sample_id LIKE ?1
+                       AND NOT EXISTS (
+                           SELECT 1
+                           FROM analysis_jobs AS running
+                           WHERE running.sample_id = pending.sample_id
+                             AND running.job_type = pending.job_type
+                             AND running.status = 'running'
+                       )
+                 ),
+                 to_claim AS (
                      SELECT id
-                     FROM analysis_jobs
-                     WHERE status = 'pending' AND sample_id LIKE ?1
+                     FROM ranked
+                     WHERE rn = 1
                      ORDER BY created_at ASC, id ASC
                      LIMIT ?2
                  )
+                 UPDATE analysis_jobs
+                 SET status = 'running', attempts = attempts + 1
+                 WHERE id IN (SELECT id FROM to_claim)
                  RETURNING id, sample_id, content_hash, job_type",
             )
             .map_err(|err| format!("Failed to prepare analysis job claim: {err}"))?;
