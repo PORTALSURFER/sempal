@@ -109,7 +109,14 @@ def ensure_clap(no_install: bool) -> None:
     )
 
 
-def build_onnx(target: Path, checkpoint: Path | None, channels: int, samples: int, opset: int) -> None:
+def build_onnx(
+    target: Path,
+    checkpoint: Path | None,
+    channels: int,
+    samples: int,
+    opset: int,
+    static_shapes: bool,
+) -> None:
     import torch
     from laion_clap import CLAP_Module
 
@@ -144,12 +151,13 @@ def build_onnx(target: Path, checkpoint: Path | None, channels: int, samples: in
     export_kwargs = dict(
         input_names=["audio"],
         output_names=["embedding"],
-        dynamic_axes={
-            "audio": {0: "batch"},
-            "embedding": {0: "batch"},
-        },
         opset_version=opset,
     )
+    if not static_shapes:
+        export_kwargs["dynamic_axes"] = {
+            "audio": {0: "batch"},
+            "embedding": {0: "batch"},
+        }
     try:
         torch.onnx.export(
             wrapper,
@@ -449,6 +457,11 @@ def main() -> int:
     parser.add_argument("--seconds", type=float, default=10.0, help="Input duration in seconds")
     parser.add_argument("--channels", type=int, default=1, help="Input channel count")
     parser.add_argument("--opset", type=int, default=17, help="ONNX opset version")
+    parser.add_argument(
+        "--static-shapes",
+        action="store_true",
+        help="Export ONNX with static batch size (helps Burn import).",
+    )
     args = parser.parse_args()
 
     app_root = args.app_root or resolve_app_root()
@@ -469,7 +482,7 @@ def main() -> int:
         checkpoint = download_checkpoint(urls, models_dir / DEFAULT_CHECKPOINT_NAME)
     input_samples = int(args.sample_rate * args.seconds)
     tmp_path = models_dir / "clap_audio.onnx.tmp"
-    build_onnx(tmp_path, checkpoint, args.channels, input_samples, args.opset)
+    build_onnx(tmp_path, checkpoint, args.channels, input_samples, args.opset, args.static_shapes)
     verify_onnx(tmp_path)
     shutil.move(str(tmp_path), str(target))
     print(f"Wrote {target}")
