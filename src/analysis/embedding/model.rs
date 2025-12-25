@@ -1,9 +1,11 @@
 use std::sync::{Mutex, OnceLock};
 
 use super::backend::{
-    init_cubecl_config, init_wgpu, panns_backend_kind, PannsBackendKind, PannsCudaBackend,
-    PannsCudaDevice, PannsWgpuBackend, PannsWgpuDevice,
+    init_cubecl_config, init_wgpu, panns_backend_kind, PannsBackendKind, PannsWgpuBackend,
+    PannsWgpuDevice,
 };
+#[cfg(feature = "panns-cuda")]
+use super::backend::{PannsCudaBackend, PannsCudaDevice};
 use super::logmel::PANNS_LOGMEL_LEN;
 use super::panns_burn;
 use super::panns_burnpack_path;
@@ -95,7 +97,7 @@ pub(crate) fn warmup_panns() -> Result<(), String> {
     if PANNS_WARMED.get().is_some() {
         return Ok(());
     }
-    let mut logmel = vec![0.0_f32; PANNS_LOGMEL_LEN];
+    let logmel = vec![0.0_f32; PANNS_LOGMEL_LEN];
     let result = with_panns_model(|model| {
         let _ = super::infer::run_panns_inference_for_model(model, logmel.as_slice(), 1)?;
         Ok(())

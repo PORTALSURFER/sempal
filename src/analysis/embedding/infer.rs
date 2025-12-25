@@ -1,7 +1,7 @@
 use burn::tensor::backend::Backend;
 use burn::tensor::{Tensor, TensorData};
 
-use super::backend::{embedding_batch_max, embedding_pipeline_enabled, panns_batch_enabled};
+use super::backend::{embedding_batch_max, panns_batch_enabled};
 use super::logmel::{prepare_panns_logmel, PANNS_INPUT_FRAMES, PANNS_LOGMEL_LEN};
 use super::model::{with_panns_model, PannsModel, PannsModelInner};
 use super::query::query_window_ranges;
