@@ -261,6 +261,10 @@ def patch_layer_norm_weights(path: Path) -> bool:
         input_name = node.input[0] if node.input else ""
         dims = shape_map.get(input_name)
         if not dims or dims[-1] is None:
+            output_name = node.output[0] if node.output else ""
+            dims = shape_map.get(output_name)
+
+        if not dims or dims[-1] is None:
             raise RuntimeError(
                 "Unable to infer LayerNorm weight shape. "
                 f"Missing or dynamic last-dim for input '{input_name}'."
