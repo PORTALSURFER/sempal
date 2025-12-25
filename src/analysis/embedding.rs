@@ -100,7 +100,7 @@ pub(crate) fn embedding_batch_max() -> usize {
         .ok()
         .and_then(|value| value.trim().parse::<usize>().ok())
         .filter(|value| *value >= 1)
-        .unwrap_or(16)
+        .unwrap_or(if cfg!(target_os = "windows") { 4 } else { 16 })
 }
 
 pub(crate) fn embedding_inflight_max() -> usize {
@@ -243,6 +243,36 @@ pub(crate) fn infer_embeddings_from_logmel_batch(
         );
         run_panns_inference_from_data(&model.model, &model.device, data, batch)
     })
+}
+
+pub(crate) fn infer_embeddings_from_logmel_batch_chunked(
+    logmels: &[Vec<f32>],
+    micro_batch: usize,
+) -> Vec<Result<Vec<f32>, String>> {
+    if logmels.is_empty() {
+        return Vec::new();
+    }
+    let expected = PANNS_LOGMEL_LEN;
+    if logmels.iter().any(|item| item.len() != expected) {
+        let err = format!(
+            "PANNs log-mel buffer has wrong length: expected {expected}"
+        );
+        return logmels.iter().map(|_| Err(err.clone())).collect();
+    }
+    let micro_batch = micro_batch.max(1);
+    let mut outputs = Vec::with_capacity(logmels.len());
+    for chunk in logmels.chunks(micro_batch) {
+        let mut batch_input =
+            Vec::with_capacity(chunk.len() * PANNS_LOGMEL_LEN);
+        for logmel in chunk {
+            batch_input.extend_from_slice(logmel.as_slice());
+        }
+        match infer_embeddings_from_logmel_batch(batch_input, chunk.len()) {
+            Ok(embeddings) => outputs.extend(embeddings.into_iter().map(Ok)),
+            Err(err) => outputs.extend(chunk.iter().map(|_| Err(err.clone()))),
+        }
+    }
+    outputs
 }
 
 pub(crate) fn infer_embeddings_from_logmel_batch_pipelined(
