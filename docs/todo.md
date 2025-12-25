@@ -3,3 +3,9 @@ the idea to to have contexts chromes, like the sample browser or waveform etc, t
 navigation inside these contexts, like for example, navigating the browser list, the user can use plain arrow keys.
 
 ...
+
+2. Persist kernel/pipeline cache if Burn/CubeCL supports it (might need an env flag). I can wire this
+   in once we confirm the correct env var.
+
+3. Keep embedding batch at 4 and serialize inference (now done) to avoid device‑lost crashes; larger
+   batches are likely causing instability rather than speed.
