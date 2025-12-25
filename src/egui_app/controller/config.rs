@@ -111,6 +111,8 @@ impl EguiController {
         self.runtime
             .analysis
             .set_worker_count(self.settings.analysis.analysis_worker_count);
+        self.sync_analysis_backend_from_env();
+        self.apply_analysis_backend_env();
         self.runtime
             .analysis
             .start(self.runtime.jobs.message_sender());
