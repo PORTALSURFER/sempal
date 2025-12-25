@@ -225,12 +225,17 @@ def runtime_filename() -> str:
     return "libonnxruntime.so"
 
 
-def runtime_urls(version: str) -> list[str]:
+def runtime_urls(version: str, flavor: str) -> list[str]:
     system = platform.system().lower()
     arch = "x64"
     base = f"https://github.com/microsoft/onnxruntime/releases/download/v{version}"
     if system == "windows":
-        name = f"onnxruntime-win-{arch}-{version}.zip"
+        if flavor == "directml":
+            name = f"onnxruntime-win-{arch}-directml-{version}.zip"
+        elif flavor == "cuda":
+            name = f"onnxruntime-win-{arch}-gpu-{version}.zip"
+        else:
+            name = f"onnxruntime-win-{arch}-{version}.zip"
     elif system == "darwin":
         name = f"onnxruntime-osx-universal2-{version}.tgz"
     else:
@@ -238,8 +243,13 @@ def runtime_urls(version: str) -> list[str]:
     return [f"{base}/{name}"]
 
 
-def download_runtime(version: str, dest_dir: Path, override_url: str | None) -> Path | None:
-    urls = [override_url] if override_url else runtime_urls(version)
+def download_runtime(
+    version: str,
+    flavor: str,
+    dest_dir: Path,
+    override_url: str | None,
+) -> Path | None:
+    urls = [override_url] if override_url else runtime_urls(version, flavor)
     last_error = None
     for url in urls:
         if not url:
@@ -303,6 +313,12 @@ def main() -> int:
     parser.add_argument("--runtime-url", help="Override ONNX Runtime download URL")
     parser.add_argument("--runtime-file", type=Path, help="Use a local runtime archive/dll")
     parser.add_argument("--ort-version", default="1.22.0", help="ONNX Runtime version to download")
+    parser.add_argument(
+        "--ort-flavor",
+        default="cpu",
+        choices=["cpu", "directml", "cuda"],
+        help="ONNX Runtime flavor to download (Windows only)",
+    )
     parser.add_argument("--checkpoint", type=Path, help="Path to a CLAP checkpoint (.pt)")
     parser.add_argument(
         "--checkpoint-url",
@@ -349,7 +365,12 @@ def main() -> int:
     if runtime is None:
         runtime = find_ort_runtime()
     if runtime is None:
-        runtime = download_runtime(args.ort_version, runtime_dir, args.runtime_url)
+        runtime = download_runtime(
+            args.ort_version,
+            args.ort_flavor,
+            runtime_dir,
+            args.runtime_url,
+        )
         if runtime is None:
             print("WARNING: Could not locate or download ONNX Runtime.")
             print("Please copy onnxruntime.* into:", runtime_dir)
