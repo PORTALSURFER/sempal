@@ -2,6 +2,7 @@ use super::enqueue_helpers::{fast_content_hash, now_epoch_seconds};
 use crate::egui_app::controller::analysis_jobs::db;
 use crate::egui_app::controller::analysis_jobs::types::AnalysisProgress;
 use rusqlite::params;
+use std::path::Path;
 
 struct EnqueueSamplesRequest<'a> {
     source: &'a crate::sample_sources::SampleSource,
@@ -122,34 +123,26 @@ fn enqueue_source_backfill(
 
     let mut staged_samples = Vec::with_capacity(entries.len());
     for entry in entries {
-        let sample_id = db::build_sample_id(request.source.id.as_str(), &entry.relative_path);
-        let content_hash = match entry.content_hash {
-            Some(hash) if !hash.trim().is_empty() => hash,
-            _ => fast_content_hash(entry.file_size, entry.modified_ns),
-        };
-        staged_samples.push(db::SampleMetadata {
-            sample_id,
-            content_hash,
-            size: entry.file_size,
-            mtime_ns: entry.modified_ns,
-        });
+        if let Some(metadata) = sample_metadata_from_entry(
+            request.source.id.as_str(),
+            &entry.relative_path,
+            entry.content_hash,
+            entry.file_size,
+            entry.modified_ns,
+        ) {
+            staged_samples.push(metadata);
+        }
     }
     if staged_samples.is_empty() {
         return Ok((0, db::current_progress(&conn)?));
     }
-    stage_backfill_samples(&mut conn, &staged_samples)?;
-    let (sample_metadata, jobs, invalidate) =
-        collect_backfill_updates(&mut conn, db::ANALYZE_SAMPLE_JOB_TYPE, force_full)?;
-
-    if !invalidate.is_empty() {
-        db::invalidate_analysis_artifacts(&mut conn, &invalidate)?;
-    }
-    db::upsert_samples(&mut conn, &sample_metadata)?;
-
-    let created_at = now_epoch_seconds();
-    let inserted = db::enqueue_jobs(&mut conn, &jobs, db::ANALYZE_SAMPLE_JOB_TYPE, created_at)?;
-    let progress = db::current_progress(&conn)?;
-    Ok((inserted, progress))
+    enqueue_from_staged_samples(
+        &mut conn,
+        staged_samples,
+        db::ANALYZE_SAMPLE_JOB_TYPE,
+        force_full,
+        false,
+    )
 }
 
 struct EnqueueMissingFeaturesRequest<'a> {
@@ -178,7 +171,6 @@ fn enqueue_missing_features(
 
     let mut staged_samples = Vec::new();
     for entry in entries {
-        let sample_id = db::build_sample_id(request.source.id.as_str(), &entry.relative_path);
         let absolute = request.source.root.join(&entry.relative_path);
         if !absolute.exists() {
             if !entry.missing {
@@ -189,38 +181,76 @@ fn enqueue_missing_features(
         if entry.missing {
             let _ = source_db.set_missing(&entry.relative_path, false);
         }
-        let content_hash = match entry.content_hash {
-            Some(hash) if !hash.trim().is_empty() => hash,
-            _ => fast_content_hash(entry.file_size, entry.modified_ns),
-        };
-        if content_hash.trim().is_empty() {
-            continue;
+        if let Some(metadata) = sample_metadata_from_entry(
+            request.source.id.as_str(),
+            &entry.relative_path,
+            entry.content_hash,
+            entry.file_size,
+            entry.modified_ns,
+        ) {
+            staged_samples.push(metadata);
         }
-        staged_samples.push(db::SampleMetadata {
-            sample_id,
-            content_hash,
-            size: entry.file_size,
-            mtime_ns: entry.modified_ns,
-        });
     }
     if staged_samples.is_empty() {
         return Ok((0, db::current_progress(&conn)?));
     }
-    stage_backfill_samples(&mut conn, &staged_samples)?;
-    let (sample_metadata, jobs, invalidate) =
-        collect_backfill_updates(&mut conn, db::ANALYZE_SAMPLE_JOB_TYPE, false)?;
-    if !invalidate.is_empty() {
-        db::invalidate_analysis_artifacts(&mut conn, &invalidate)?;
-    }
+    enqueue_from_staged_samples(
+        &mut conn,
+        staged_samples,
+        db::ANALYZE_SAMPLE_JOB_TYPE,
+        false,
+        true,
+    )
+}
 
-    if jobs.is_empty() {
-        return Ok((0, db::current_progress(&conn)?));
+fn enqueue_from_staged_samples(
+    conn: &mut rusqlite::Connection,
+    staged_samples: Vec<db::SampleMetadata>,
+    job_type: &str,
+    force_full: bool,
+    skip_when_no_jobs: bool,
+) -> Result<(usize, AnalysisProgress), String> {
+    if staged_samples.is_empty() {
+        return Ok((0, db::current_progress(conn)?));
     }
-    db::upsert_samples(&mut conn, &sample_metadata)?;
+    stage_backfill_samples(conn, &staged_samples)?;
+    let (sample_metadata, jobs, invalidate) =
+        collect_backfill_updates(conn, job_type, force_full)?;
+
+    if !invalidate.is_empty() {
+        db::invalidate_analysis_artifacts(conn, &invalidate)?;
+    }
+    if skip_when_no_jobs && jobs.is_empty() {
+        return Ok((0, db::current_progress(conn)?));
+    }
+    db::upsert_samples(conn, &sample_metadata)?;
+
     let created_at = now_epoch_seconds();
-    let inserted = db::enqueue_jobs(&mut conn, &jobs, db::ANALYZE_SAMPLE_JOB_TYPE, created_at)?;
-    let progress = db::current_progress(&conn)?;
+    let inserted = db::enqueue_jobs(conn, &jobs, job_type, created_at)?;
+    let progress = db::current_progress(conn)?;
     Ok((inserted, progress))
+}
+
+fn sample_metadata_from_entry(
+    source_id: &str,
+    relative_path: &Path,
+    content_hash: Option<String>,
+    file_size: u64,
+    modified_ns: i64,
+) -> Option<db::SampleMetadata> {
+    let content_hash = match content_hash {
+        Some(hash) if !hash.trim().is_empty() => hash,
+        _ => fast_content_hash(file_size, modified_ns),
+    };
+    if content_hash.trim().is_empty() {
+        return None;
+    }
+    Some(db::SampleMetadata {
+        sample_id: db::build_sample_id(source_id, relative_path),
+        content_hash,
+        size: file_size,
+        mtime_ns: modified_ns,
+    })
 }
 
 fn stage_backfill_samples(
