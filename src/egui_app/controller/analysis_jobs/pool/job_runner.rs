@@ -139,9 +139,9 @@ fn run_embedding_backfill_job(
             let queue = Arc::clone(&queue);
             let tx = tx.clone();
             scope.spawn(move || {
-                const EMBEDDING_BATCH_MAX: usize = 4;
+                let embedding_batch_max = crate::analysis::embedding::embedding_batch_max();
                 loop {
-                    let mut batch = Vec::with_capacity(EMBEDDING_BATCH_MAX);
+                    let mut batch = Vec::with_capacity(embedding_batch_max);
                     let work = {
                         let mut guard = match queue.lock() {
                             Ok(guard) => guard,
@@ -154,7 +154,7 @@ fn run_embedding_backfill_job(
                     };
                     batch.push(work);
                     loop {
-                        if batch.len() >= EMBEDDING_BATCH_MAX {
+                        if batch.len() >= embedding_batch_max {
                             break;
                         }
                         let next = {

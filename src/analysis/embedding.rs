@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::env;
 use std::path::PathBuf;
 use std::sync::{LazyLock, OnceLock};
 
@@ -51,11 +52,7 @@ impl ClapModel {
         ensure_onnx_env(&runtime_path)?;
         let session = SessionBuilder::new()
             .map_err(|err| format!("Failed to create ONNX session builder: {err}"))?
-            .with_intra_threads(
-                std::thread::available_parallelism()
-                    .map(|n| n.get().saturating_sub(1).max(1))
-                    .unwrap_or(1),
-            )
+            .with_intra_threads(onnx_intra_threads())
             .map_err(|err| format!("Failed to set ONNX threads: {err}"))?
             .commit_from_file(&model_path)
             .map_err(|err| format!("Failed to load ONNX model: {err}"))?;
@@ -65,6 +62,22 @@ impl ClapModel {
             input_batch_scratch: Vec::new(),
         })
     }
+}
+
+pub(crate) fn embedding_batch_max() -> usize {
+    env::var("SEMPAL_EMBEDDING_BATCH")
+        .ok()
+        .and_then(|value| value.trim().parse::<usize>().ok())
+        .filter(|value| *value >= 1)
+        .unwrap_or(16)
+}
+
+fn onnx_intra_threads() -> usize {
+    env::var("SEMPAL_ONNX_INTRA_THREADS")
+        .ok()
+        .and_then(|value| value.trim().parse::<usize>().ok())
+        .filter(|value| *value >= 1)
+        .unwrap_or(1)
 }
 
 pub(crate) struct EmbeddingBatchInput<'a> {
@@ -127,7 +140,7 @@ pub(crate) fn infer_embeddings_batch(
     with_clap_model(|model| {
         match infer_embeddings_with_model(model, inputs) {
             Ok(values) => Ok(values),
-            Err(err) if inputs.len() > 1 => {
+            Err(_err) if inputs.len() > 1 => {
                 let mut outputs = Vec::with_capacity(inputs.len());
                 for input in inputs {
                     outputs.push(infer_embedding_with_model(

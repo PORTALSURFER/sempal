@@ -299,7 +299,7 @@ pub(super) fn spawn_compute_worker(
         lower_worker_priority();
         let log_jobs = analysis_log_enabled();
         let mut connections: HashMap<std::path::PathBuf, Connection> = HashMap::new();
-        const EMBEDDING_BATCH_MAX: usize = 4;
+        let embedding_batch_max = crate::analysis::embedding::embedding_batch_max();
         loop {
             if shutdown.load(Ordering::Relaxed) {
                 break;
@@ -308,7 +308,7 @@ pub(super) fn spawn_compute_worker(
                 sleep(Duration::from_millis(50));
                 continue;
             }
-            let batch = decode_queue.pop_batch(&shutdown, EMBEDDING_BATCH_MAX);
+            let batch = decode_queue.pop_batch(&shutdown, embedding_batch_max);
             if batch.is_empty() {
                 continue;
             }
