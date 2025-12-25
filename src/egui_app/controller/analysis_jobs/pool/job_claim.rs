@@ -28,7 +28,7 @@ pub(super) struct DecodedQueue {
     queue: Mutex<VecDeque<DecodedWork>>,
     ready: Condvar,
     len: AtomicUsize,
-    pending_samples: Mutex<HashSet<String>>,
+    pending_jobs: Mutex<HashSet<i64>>,
 }
 
 impl DecodedQueue {
@@ -37,18 +37,18 @@ impl DecodedQueue {
             queue: Mutex::new(VecDeque::new()),
             ready: Condvar::new(),
             len: AtomicUsize::new(0),
-            pending_samples: Mutex::new(HashSet::new()),
+            pending_jobs: Mutex::new(HashSet::new()),
         }
     }
 
     pub(super) fn push(&self, work: DecodedWork) -> bool {
         let mut guard = self.queue.lock().expect("decoded queue lock");
         if work.job.job_type == db::ANALYZE_SAMPLE_JOB_TYPE {
-            let mut pending = self.pending_samples.lock().expect("decoded queue pending lock");
-            if pending.contains(&work.job.sample_id) {
+            let mut pending = self.pending_jobs.lock().expect("decoded queue pending lock");
+            if pending.contains(&work.job.id) {
                 return false;
             }
-            pending.insert(work.job.sample_id.clone());
+            pending.insert(work.job.id);
         }
         guard.push_back(work);
         self.len.fetch_add(1, Ordering::Relaxed);
@@ -65,8 +65,8 @@ impl DecodedQueue {
             if let Some(work) = guard.pop_front() {
                 if work.job.job_type == db::ANALYZE_SAMPLE_JOB_TYPE {
                     let mut pending =
-                        self.pending_samples.lock().expect("decoded queue pending lock");
-                    pending.remove(&work.job.sample_id);
+                        self.pending_jobs.lock().expect("decoded queue pending lock");
+                    pending.remove(&work.job.id);
                 }
                 self.len.fetch_sub(1, Ordering::Relaxed);
                 return Some(work);
@@ -104,10 +104,10 @@ impl DecodedQueue {
                 }
                 {
                     let mut pending =
-                        self.pending_samples.lock().expect("decoded queue pending lock");
+                        self.pending_jobs.lock().expect("decoded queue pending lock");
                     for item in &batch {
                         if item.job.job_type == db::ANALYZE_SAMPLE_JOB_TYPE {
-                            pending.remove(&item.job.sample_id);
+                            pending.remove(&item.job.id);
                         }
                     }
                 }
