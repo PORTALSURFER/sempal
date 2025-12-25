@@ -28,6 +28,7 @@ pub(super) struct DecodedQueue {
     queue: Mutex<VecDeque<DecodedWork>>,
     ready: Condvar,
     len: AtomicUsize,
+    pending_samples: Mutex<HashSet<String>>,
 }
 
 impl DecodedQueue {
@@ -36,14 +37,23 @@ impl DecodedQueue {
             queue: Mutex::new(VecDeque::new()),
             ready: Condvar::new(),
             len: AtomicUsize::new(0),
+            pending_samples: Mutex::new(HashSet::new()),
         }
     }
 
-    pub(super) fn push(&self, work: DecodedWork) {
+    pub(super) fn push(&self, work: DecodedWork) -> bool {
         let mut guard = self.queue.lock().expect("decoded queue lock");
+        if work.job.job_type == db::ANALYZE_SAMPLE_JOB_TYPE {
+            let mut pending = self.pending_samples.lock().expect("decoded queue pending lock");
+            if pending.contains(&work.job.sample_id) {
+                return false;
+            }
+            pending.insert(work.job.sample_id.clone());
+        }
         guard.push_back(work);
         self.len.fetch_add(1, Ordering::Relaxed);
         self.ready.notify_one();
+        true
     }
 
     pub(super) fn pop(&self, shutdown: &AtomicBool) -> Option<DecodedWork> {
@@ -53,6 +63,11 @@ impl DecodedQueue {
                 return None;
             }
             if let Some(work) = guard.pop_front() {
+                if work.job.job_type == db::ANALYZE_SAMPLE_JOB_TYPE {
+                    let mut pending =
+                        self.pending_samples.lock().expect("decoded queue pending lock");
+                    pending.remove(&work.job.sample_id);
+                }
                 self.len.fetch_sub(1, Ordering::Relaxed);
                 return Some(work);
             }
@@ -85,6 +100,15 @@ impl DecodedQueue {
                         self.len.fetch_sub(1, Ordering::Relaxed);
                     } else {
                         break;
+                    }
+                }
+                {
+                    let mut pending =
+                        self.pending_samples.lock().expect("decoded queue pending lock");
+                    for item in &batch {
+                        if item.job.job_type == db::ANALYZE_SAMPLE_JOB_TYPE {
+                            pending.remove(&item.job.sample_id);
+                        }
                     }
                 }
                 return (batch, start.elapsed().as_millis() as u64);
@@ -343,7 +367,14 @@ pub(super) fn spawn_decoder_worker(
                     }
                 }
             }
-            decode_queue.push(DecodedWork { job, outcome });
+            let job_id = job.id;
+            let job_source_root = job.source_root.clone();
+            let queued = decode_queue.push(DecodedWork { job, outcome });
+            if !queued {
+                if let Ok(conn) = db::open_source_db(&job_source_root) {
+                    let _ = db::mark_pending(&conn, job_id);
+                }
+            }
         }
     })
 }
@@ -539,12 +570,19 @@ pub(super) fn spawn_compute_worker(
                         entry.insert(conn)
                     }
                 };
-                let batch_outcomes = run_analysis_jobs_with_decoded_batch(
-                    conn,
-                    jobs,
-                    use_cache,
-                    &analysis_version,
-                );
+                let jobs_for_failure: Vec<db::ClaimedJob> =
+                    jobs.iter().map(|(job, _)| job.clone()).collect();
+                let batch_outcomes = catch_unwind(AssertUnwindSafe(|| {
+                    run_analysis_jobs_with_decoded_batch(conn, jobs, use_cache, &analysis_version)
+                }))
+                .unwrap_or_else(|payload| {
+                    let err = panic_to_string(payload);
+                    tracing::warn!("Analysis batch panicked: {err}");
+                    jobs_for_failure
+                        .into_iter()
+                        .map(|job| (job, Err(err.clone())))
+                        .collect()
+                });
                 immediate_jobs.extend(batch_outcomes);
             }
 

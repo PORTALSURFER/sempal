@@ -554,18 +554,48 @@ pub(super) fn run_analysis_jobs_with_decoded_batch(
     }
 
     if !inputs.is_empty() {
-        match crate::analysis::embedding::infer_embeddings_batch(&inputs) {
+        let batch_result = std::panic::catch_unwind(|| {
+            crate::analysis::embedding::infer_embeddings_batch(&inputs)
+        })
+        .unwrap_or_else(|_| Err("PANNs batch inference panicked".to_string()));
+        match batch_result {
             Ok(embeddings) => {
-                for (idx, embedding) in input_indices.into_iter().zip(embeddings.into_iter()) {
+                for (idx, embedding) in input_indices.iter().copied().zip(embeddings.into_iter()) {
                     if let Some(item) = batch_jobs.get_mut(idx) {
                         item.embedding = Some(embedding);
                     }
                 }
             }
             Err(err) => {
-                for idx in input_indices {
+                for idx in input_indices.iter().copied() {
+                    let (processed, sample_rate) = match batch_jobs.get(idx) {
+                        Some(item) => (
+                            item.processed.as_ref(),
+                            item.decoded.sample_rate_used,
+                        ),
+                        None => (None, 0),
+                    };
+                    let fallback = match processed {
+                        Some(processed) => std::panic::catch_unwind(|| {
+                            crate::analysis::embedding::infer_embedding(
+                                processed.as_slice(),
+                                sample_rate,
+                            )
+                        })
+                        .unwrap_or_else(|_| Err("PANNs single inference panicked".to_string())),
+                        None => Err("Missing preprocessed samples for fallback".to_string()),
+                    };
                     if let Some(item) = batch_jobs.get_mut(idx) {
-                        item.error = Some(err.clone());
+                        match fallback {
+                            Ok(embedding) => {
+                                item.embedding = Some(embedding);
+                            }
+                            Err(fallback_err) => {
+                                item.error = Some(format!(
+                                    "Batch inference failed: {err}; fallback failed: {fallback_err}"
+                                ));
+                            }
+                        }
                     }
                 }
             }
