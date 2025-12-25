@@ -3,6 +3,9 @@ use std::env;
 use std::path::PathBuf;
 use std::sync::{LazyLock, OnceLock};
 
+use ort::execution_providers::{CPUExecutionProvider, ExecutionProviderDispatch};
+#[cfg(target_os = "windows")]
+use ort::execution_providers::DirectMLExecutionProvider;
 use ort::session::Session;
 use ort::session::builder::SessionBuilder;
 use ort::session::output::SessionOutputs;
@@ -51,10 +54,17 @@ impl ClapModel {
             ));
         }
         ensure_onnx_env(&runtime_path)?;
-        let session = SessionBuilder::new()
+        let mut session_builder = SessionBuilder::new()
             .map_err(|err| format!("Failed to create ONNX session builder: {err}"))?
             .with_intra_threads(onnx_intra_threads())
-            .map_err(|err| format!("Failed to set ONNX threads: {err}"))?
+            .map_err(|err| format!("Failed to set ONNX threads: {err}"))?;
+        let execution_providers = onnx_execution_providers()?;
+        if !execution_providers.is_empty() {
+            session_builder = session_builder
+                .with_execution_providers(execution_providers)
+                .map_err(|err| format!("Failed to configure ONNX execution providers: {err}"))?;
+        }
+        let session = session_builder
             .commit_from_file(&model_path)
             .map_err(|err| format!("Failed to load ONNX model: {err}"))?;
         Ok(Self {
@@ -80,6 +90,79 @@ fn onnx_intra_threads() -> usize {
         .and_then(|value| value.trim().parse::<usize>().ok())
         .filter(|value| *value >= 1)
         .unwrap_or(1)
+}
+
+fn onnx_execution_providers() -> Result<Vec<ExecutionProviderDispatch>, String> {
+    let selection = env::var("SEMPAL_ONNX_EP")
+        .ok()
+        .map(|value| value.trim().to_lowercase());
+    match selection.as_deref() {
+        None | Some("auto") => onnx_execution_providers_auto(),
+        Some("cpu") => Ok(vec![CPUExecutionProvider::default().build()]),
+        Some("directml") => onnx_execution_providers_directml(),
+        Some(other) => Err(format!(
+            "Unsupported SEMPAL_ONNX_EP '{other}'. Use 'auto', 'cpu', or 'directml'."
+        )),
+    }
+}
+
+fn onnx_execution_providers_auto() -> Result<Vec<ExecutionProviderDispatch>, String> {
+    let mut providers = Vec::new();
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(ep) = directml_execution_provider(false)? {
+            providers.push(ep);
+        }
+    }
+    providers.push(CPUExecutionProvider::default().build());
+    Ok(providers)
+}
+
+fn onnx_execution_providers_directml() -> Result<Vec<ExecutionProviderDispatch>, String> {
+    #[cfg(target_os = "windows")]
+    {
+        let mut providers = Vec::new();
+        if let Some(ep) = directml_execution_provider(true)? {
+            providers.push(ep);
+        }
+        providers.push(CPUExecutionProvider::default().build());
+        return Ok(providers);
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        Err("SEMPAL_ONNX_EP=directml is only supported on Windows.".to_string())
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn directml_execution_provider(
+    required: bool,
+) -> Result<Option<ExecutionProviderDispatch>, String> {
+    let provider = DirectMLExecutionProvider::default();
+    match provider.is_available() {
+        Ok(true) => {
+            let dispatch = if required {
+                provider.build().error_on_failure()
+            } else {
+                provider.build().fail_silently()
+            };
+            Ok(Some(dispatch))
+        }
+        Ok(false) => {
+            if required {
+                Err("DirectML execution provider not available. Ensure the ONNX Runtime build includes DirectML and DirectML is installed.".to_string())
+            } else {
+                Ok(None)
+            }
+        }
+        Err(err) => {
+            if required {
+                Err(format!("Failed to query DirectML availability: {err}"))
+            } else {
+                Ok(None)
+            }
+        }
+    }
 }
 
 pub(crate) struct EmbeddingBatchInput<'a> {
