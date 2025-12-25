@@ -11,6 +11,11 @@ pub(super) fn handle_analysis_message(
             source_id,
             progress,
         } => {
+            if let Some(state) = controller.runtime.similarity_prep.as_ref() {
+                if source_id.as_ref() != Some(&state.source_id) {
+                    return;
+                }
+            }
             let selected_matches = match source_id.as_ref() {
                 None => true,
                 Some(id) => controller
