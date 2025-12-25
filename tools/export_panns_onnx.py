@@ -111,6 +111,7 @@ def export_from_checkpoint(
     opset: int,
 ) -> None:
     import torch
+    import onnx
 
     with tempfile.TemporaryDirectory() as tmp:
         pytorch_dir = ensure_repo(Path(tmp))
@@ -152,6 +153,8 @@ def export_from_checkpoint(
             dynamic_axes={"logmel": {0: "batch"}, "embedding": {0: "batch"}},
             opset_version=opset,
         )
+        model = onnx.load(output)
+        onnx.save_model(model, output, save_as_external_data=False)
 
 
 def main() -> int:
