@@ -7,65 +7,74 @@ use burn::backend::wgpu::{self, graphics::Vulkan, WgpuDevice};
 use burn::tensor::{Tensor, TensorData};
 
 use crate::analysis::audio;
+use crate::analysis::panns_preprocess::{
+    PannsPreprocessScratch, PANNS_MEL_BANDS, PANNS_STFT_HOP, log_mel_frames_with_scratch,
+};
 
-mod clap_burn {
-    include!(concat!(env!("OUT_DIR"), "/burn_clap/clap_audio.rs"));
+mod panns_burn {
+    include!(concat!(env!("OUT_DIR"), "/burn_panns/panns_cnn14.rs"));
 }
 
-mod clap_paths {
-    include!(concat!(env!("OUT_DIR"), "/burn_clap/clap_paths.rs"));
+mod panns_paths {
+    include!(concat!(env!("OUT_DIR"), "/burn_panns/panns_paths.rs"));
 }
 
-type ClapBackend = wgpu::Wgpu;
+type PannsBackend = wgpu::Wgpu;
 
 pub const EMBEDDING_MODEL_ID: &str =
-    "clap_htsat_fused__sr48k__nfft1024__hop480__mel64__chunk10__repeatpad_v2";
-pub const EMBEDDING_DIM: usize = 512;
+    "panns_cnn14__sr32k__nfft1024__hop320__mel64__log10__chunk10__repeatpad_v1";
+pub const EMBEDDING_DIM: usize = 2048;
 pub const EMBEDDING_DTYPE_F32: &str = "f32";
-const CLAP_SAMPLE_RATE: u32 = 48_000;
-const CLAP_INPUT_SECONDS: f32 = 10.0;
-const CLAP_INPUT_SAMPLES: usize = (CLAP_SAMPLE_RATE as f32 * CLAP_INPUT_SECONDS) as usize;
+const PANNS_SAMPLE_RATE: u32 = 32_000;
+const PANNS_INPUT_SECONDS: f32 = 10.0;
+const PANNS_INPUT_SAMPLES: usize = (PANNS_SAMPLE_RATE as f32 * PANNS_INPUT_SECONDS) as usize;
+const PANNS_INPUT_FRAMES: usize =
+    (PANNS_SAMPLE_RATE as f32 * PANNS_INPUT_SECONDS / PANNS_STFT_HOP as f32) as usize;
 const QUERY_WINDOW_SECONDS: f32 = 2.0;
 const QUERY_HOP_SECONDS: f32 = 1.0;
 const QUERY_MAX_WINDOWS: usize = 24;
 
-pub(crate) struct ClapModel {
-    model: clap_burn::Model<ClapBackend>,
+pub(crate) struct PannsModel {
+    model: panns_burn::Model<PannsBackend>,
     device: WgpuDevice,
     input_scratch: Vec<f32>,
     input_batch_scratch: Vec<f32>,
     resample_scratch: Vec<f32>,
+    wave_scratch: Vec<f32>,
+    preprocess_scratch: PannsPreprocessScratch,
 }
 
 static WGPU_INIT: OnceLock<()> = OnceLock::new();
 
 thread_local! {
-    static TLS_CLAP_MODEL: RefCell<Option<ClapModel>> = RefCell::new(None);
+    static TLS_PANNS_MODEL: RefCell<Option<PannsModel>> = RefCell::new(None);
 }
 
-impl ClapModel {
+impl PannsModel {
     pub(crate) fn load() -> Result<Self, String> {
-        let model_path = clap_burnpack_path()?;
+        let model_path = panns_burnpack_path()?;
         if !model_path.exists() {
             return Err(format!(
-                "CLAP burnpack model not found at {}",
+                "PANNs burnpack model not found at {}",
                 model_path.to_string_lossy()
             ));
         }
         let device = WgpuDevice::default();
         init_wgpu(&device);
-        let model = clap_burn::Model::<ClapBackend>::from_file(
+        let model = panns_burn::Model::<PannsBackend>::from_file(
             model_path
                 .to_str()
-                .ok_or_else(|| "CLAP burnpack path contains invalid UTF-8".to_string())?,
+                .ok_or_else(|| "PANNs burnpack path contains invalid UTF-8".to_string())?,
             &device,
         );
         Ok(Self {
             model,
             device,
-            input_scratch: vec![0.0_f32; CLAP_INPUT_SAMPLES],
+            input_scratch: vec![0.0_f32; PANNS_MEL_BANDS * PANNS_INPUT_FRAMES],
             input_batch_scratch: Vec::new(),
             resample_scratch: Vec::new(),
+            wave_scratch: Vec::new(),
+            preprocess_scratch: PannsPreprocessScratch::new(),
         })
     }
 }
@@ -85,20 +94,20 @@ pub(crate) struct EmbeddingBatchInput<'a> {
 
 pub(crate) fn infer_embedding(samples: &[f32], sample_rate: u32) -> Result<Vec<f32>, String> {
     if samples.is_empty() {
-        return Err("CLAP inference requires non-empty samples".into());
+        return Err("PANNs inference requires non-empty samples".into());
     }
-    with_clap_model(|model| infer_embedding_with_model(model, samples, sample_rate))
+    with_panns_model(|model| infer_embedding_with_model(model, samples, sample_rate))
 }
 
 pub(crate) fn infer_embedding_query(samples: &[f32], sample_rate: u32) -> Result<Vec<f32>, String> {
     if samples.is_empty() {
-        return Err("CLAP inference requires non-empty samples".into());
+        return Err("PANNs inference requires non-empty samples".into());
     }
     let ranges = query_window_ranges(samples.len(), sample_rate);
     if ranges.len() <= 1 {
         return infer_embedding(samples, sample_rate);
     }
-    with_clap_model(|model| {
+    with_panns_model(|model| {
         let count = ranges.len().max(1) as f32;
         let mut sum = vec![0.0_f32; EMBEDDING_DIM];
         for (start, end) in ranges {
@@ -122,8 +131,8 @@ pub(crate) fn infer_embeddings_batch(
     if inputs.is_empty() {
         return Ok(Vec::new());
     }
-    if !clap_batch_enabled() {
-        return with_clap_model(|model| {
+    if !panns_batch_enabled() {
+        return with_panns_model(|model| {
             let mut outputs = Vec::with_capacity(inputs.len());
             for input in inputs {
                 outputs.push(infer_embedding_with_model(
@@ -135,7 +144,7 @@ pub(crate) fn infer_embeddings_batch(
             Ok(outputs)
         });
     }
-    with_clap_model(|model| {
+    with_panns_model(|model| {
         let mut outputs = Vec::with_capacity(inputs.len());
         for chunk in inputs.chunks(embedding_batch_max()) {
             let embeddings = infer_embeddings_with_model(model, chunk)?;
@@ -146,18 +155,20 @@ pub(crate) fn infer_embeddings_batch(
 }
 
 fn infer_embedding_with_model(
-    model: &mut ClapModel,
+    model: &mut PannsModel,
     samples: &[f32],
     sample_rate: u32,
 ) -> Result<Vec<f32>, String> {
     let input_slice = model.input_scratch.as_mut_slice();
-    prepare_clap_input(
+    prepare_panns_input(
         &mut model.resample_scratch,
+        &mut model.wave_scratch,
+        &mut model.preprocess_scratch,
         input_slice,
         samples,
         sample_rate,
-    );
-    let mut embeddings = run_clap_inference(
+    )?;
+    let mut embeddings = run_panns_inference(
         &model.model,
         &model.device,
         model.input_scratch.as_slice(),
@@ -165,30 +176,32 @@ fn infer_embedding_with_model(
     )?;
     let embedding = embeddings
         .pop()
-        .ok_or_else(|| "CLAP embedding output missing".to_string())?;
+        .ok_or_else(|| "PANNs embedding output missing".to_string())?;
     Ok(embedding)
 }
 
 fn infer_embeddings_with_model(
-    model: &mut ClapModel,
+    model: &mut PannsModel,
     inputs: &[EmbeddingBatchInput<'_>],
 ) -> Result<Vec<Vec<f32>>, String> {
     let batch = inputs.len();
-    let total_len = batch * CLAP_INPUT_SAMPLES;
+    let total_len = batch * PANNS_MEL_BANDS * PANNS_INPUT_FRAMES;
     model.input_batch_scratch.clear();
     model.input_batch_scratch.resize(total_len, 0.0);
     for (idx, input) in inputs.iter().enumerate() {
-        let start = idx * CLAP_INPUT_SAMPLES;
-        let end = start + CLAP_INPUT_SAMPLES;
+        let start = idx * PANNS_MEL_BANDS * PANNS_INPUT_FRAMES;
+        let end = start + PANNS_MEL_BANDS * PANNS_INPUT_FRAMES;
         let out = &mut model.input_batch_scratch[start..end];
-        prepare_clap_input(
+        prepare_panns_input(
             &mut model.resample_scratch,
+            &mut model.wave_scratch,
+            &mut model.preprocess_scratch,
             out,
             input.samples,
             input.sample_rate,
-        );
+        )?;
     }
-    run_clap_inference(
+    run_panns_inference(
         &model.model,
         &model.device,
         model.input_batch_scratch.as_slice(),
@@ -196,18 +209,20 @@ fn infer_embeddings_with_model(
     )
 }
 
-fn prepare_clap_input(
+fn prepare_panns_input(
     resample_scratch: &mut Vec<f32>,
+    wave_scratch: &mut Vec<f32>,
+    preprocess_scratch: &mut PannsPreprocessScratch,
     out: &mut [f32],
     samples: &[f32],
     sample_rate: u32,
-) {
-    let resampled = if sample_rate != CLAP_SAMPLE_RATE {
+) -> Result<(), String> {
+    let resampled = if sample_rate != PANNS_SAMPLE_RATE {
         audio::resample_linear_into(
             resample_scratch,
             samples,
             sample_rate,
-            CLAP_SAMPLE_RATE,
+            PANNS_SAMPLE_RATE,
         );
         resample_scratch.as_mut_slice()
     } else {
@@ -216,17 +231,30 @@ fn prepare_clap_input(
         resample_scratch.as_mut_slice()
     };
     audio::sanitize_samples_in_place(resampled);
-    repeat_pad_slice(out, resampled);
+    repeat_pad_into(wave_scratch, resampled, PANNS_INPUT_SAMPLES);
+    let frames =
+        log_mel_frames_with_scratch(wave_scratch, PANNS_SAMPLE_RATE, preprocess_scratch)?;
+    out.fill(0.0);
+    for (frame_idx, frame) in frames.iter().take(PANNS_INPUT_FRAMES).enumerate() {
+        for (mel_idx, value) in frame.iter().enumerate().take(PANNS_MEL_BANDS) {
+            let idx = mel_idx * PANNS_INPUT_FRAMES + frame_idx;
+            out[idx] = *value;
+        }
+    }
+    Ok(())
 }
 
-fn run_clap_inference(
-    model: &clap_burn::Model<ClapBackend>,
+fn run_panns_inference(
+    model: &panns_burn::Model<PannsBackend>,
     device: &WgpuDevice,
     input: &[f32],
     batch: usize,
 ) -> Result<Vec<Vec<f32>>, String> {
-    let data = TensorData::new(input.to_vec(), [batch, 1, CLAP_INPUT_SAMPLES]);
-    let input_tensor = Tensor::<ClapBackend, 3>::from_data(data, device);
+    let data = TensorData::new(
+        input.to_vec(),
+        [batch, 1, PANNS_MEL_BANDS, PANNS_INPUT_FRAMES],
+    );
+    let input_tensor = Tensor::<PannsBackend, 4>::from_data(data, device);
     let output = model.forward(input_tensor);
     extract_embeddings_from_data(output.into_data(), batch)
 }
@@ -278,24 +306,6 @@ fn repeat_pad_into(out: &mut Vec<f32>, samples: &[f32], target_len: usize) {
     }
 }
 
-fn repeat_pad_slice(out: &mut [f32], samples: &[f32]) {
-    out.fill(0.0);
-    if samples.is_empty() || out.is_empty() {
-        return;
-    }
-    if samples.len() >= out.len() {
-        out.copy_from_slice(&samples[..out.len()]);
-        return;
-    }
-    let mut offset = 0usize;
-    while offset < out.len() {
-        let remaining = out.len() - offset;
-        let take = remaining.min(samples.len());
-        out[offset..offset + take].copy_from_slice(&samples[..take]);
-        offset += take;
-    }
-}
-
 fn normalize_l2_in_place(values: &mut [f32]) {
     let mut norm = 0.0_f32;
     for value in values.iter() {
@@ -323,53 +333,53 @@ fn init_wgpu(device: &WgpuDevice) {
     });
 }
 
-fn with_clap_model<T>(f: impl FnOnce(&mut ClapModel) -> Result<T, String>) -> Result<T, String> {
-    TLS_CLAP_MODEL.with(|cell| {
+fn with_panns_model<T>(f: impl FnOnce(&mut PannsModel) -> Result<T, String>) -> Result<T, String> {
+    TLS_PANNS_MODEL.with(|cell| {
         let mut guard = cell.borrow_mut();
         if guard.is_none() {
-            *guard = Some(ClapModel::load()?);
+            *guard = Some(PannsModel::load()?);
         }
-        let model = guard.as_mut().expect("CLAP model loaded");
+        let model = guard.as_mut().expect("PANNs model loaded");
         f(model)
     })
 }
 
-fn clap_batch_enabled() -> bool {
+fn panns_batch_enabled() -> bool {
     static ENABLED: OnceLock<bool> = OnceLock::new();
     *ENABLED.get_or_init(|| {
         if cfg!(target_os = "windows") {
-            if let Ok(value) = std::env::var("SEMPAL_CLAP_BATCH") {
+            if let Ok(value) = std::env::var("SEMPAL_PANNS_BATCH") {
                 return value.trim() == "1";
             }
             return false;
         }
-        match std::env::var("SEMPAL_CLAP_BATCH") {
+        match std::env::var("SEMPAL_PANNS_BATCH") {
             Ok(value) => value.trim() == "1",
             Err(_) => true,
         }
     })
 }
 
-fn clap_burnpack_path() -> Result<PathBuf, String> {
-    if let Ok(path) = env::var("SEMPAL_CLAP_BURNPACK_PATH") {
+fn panns_burnpack_path() -> Result<PathBuf, String> {
+    if let Ok(path) = env::var("SEMPAL_PANNS_BURNPACK_PATH") {
         if !path.trim().is_empty() {
             return Ok(PathBuf::from(path));
         }
     }
-    let generated = PathBuf::from(clap_paths::CLAP_BURNPACK_PATH);
+    let generated = PathBuf::from(panns_paths::PANNS_BURNPACK_PATH);
     if generated.exists() {
         return Ok(generated);
     }
     let root = crate::app_dirs::app_root_dir().map_err(|err| err.to_string())?;
-    Ok(root.join("models").join("clap_audio.bpk"))
+    Ok(root.join("models").join("panns_cnn14.bpk"))
 }
 
 #[allow(dead_code)]
 pub(crate) fn embedding_model_path() -> &'static PathBuf {
     static PATH: LazyLock<PathBuf> = LazyLock::new(|| {
         crate::app_dirs::app_root_dir()
-            .map(|root| root.join("models").join("clap_audio.bpk"))
-            .unwrap_or_else(|_| PathBuf::from("clap_audio.bpk"))
+            .map(|root| root.join("models").join("panns_cnn14.bpk"))
+            .unwrap_or_else(|_| PathBuf::from("panns_cnn14.bpk"))
     });
     &PATH
 }
@@ -380,30 +390,30 @@ fn extract_embeddings_from_data(data: TensorData, batch: usize) -> Result<Vec<Ve
         .as_slice::<f32>()
         .map_err(|err| format!("Failed to read Burn output tensor: {err}"))?;
     if shape.is_empty() {
-        return Err("CLAP output tensor has empty shape".to_string());
+        return Err("PANNs output tensor has empty shape".to_string());
     }
     if shape.len() == 1 {
         if batch != 1 || flat.len() < EMBEDDING_DIM {
-            return Err("CLAP output tensor has unexpected shape".to_string());
+            return Err("PANNs output tensor has unexpected shape".to_string());
         }
         let mut pooled = flat[..EMBEDDING_DIM].to_vec();
         normalize_l2_in_place(&mut pooled);
         let norm = l2_norm(&pooled);
         if !norm.is_finite() || (norm - 1.0).abs() > 1e-3 {
-            return Err(format!("CLAP embedding L2 norm out of range: {norm:.6}"));
+            return Err(format!("PANNs embedding L2 norm out of range: {norm:.6}"));
         }
         return Ok(vec![pooled]);
     }
     let batch_dim = shape[0];
     if batch_dim != batch {
         return Err(format!(
-            "CLAP output batch mismatch: expected {batch}, got {batch_dim}"
+            "PANNs output batch mismatch: expected {batch}, got {batch_dim}"
         ));
     }
     let embedding_dim = *shape.last().unwrap_or(&0);
     if embedding_dim != EMBEDDING_DIM {
         return Err(format!(
-            "CLAP output embedding dim mismatch: expected {EMBEDDING_DIM}, got {embedding_dim}"
+            "PANNs output embedding dim mismatch: expected {EMBEDDING_DIM}, got {embedding_dim}"
         ));
     }
     let mut frames_per = 1usize;
@@ -416,7 +426,7 @@ fn extract_embeddings_from_data(data: TensorData, batch: usize) -> Result<Vec<Ve
         .saturating_mul(frames_per)
         .saturating_mul(EMBEDDING_DIM);
     if flat.len() < expected_len {
-        return Err("CLAP output tensor shorter than expected".to_string());
+        return Err("PANNs output tensor shorter than expected".to_string());
     }
     let mut outputs = Vec::with_capacity(batch);
     for batch_idx in 0..batch {
@@ -436,7 +446,7 @@ fn extract_embeddings_from_data(data: TensorData, batch: usize) -> Result<Vec<Ve
         normalize_l2_in_place(&mut pooled);
         let norm = l2_norm(&pooled);
         if !norm.is_finite() || (norm - 1.0).abs() > 1e-3 {
-            return Err(format!("CLAP embedding L2 norm out of range: {norm:.6}"));
+            return Err(format!("PANNs embedding L2 norm out of range: {norm:.6}"));
         }
         outputs.push(pooled);
     }
@@ -460,11 +470,13 @@ mod tests {
 
     #[test]
     fn golden_embedding_matches_python() {
-        let path = std::env::var("SEMPAL_CLAP_EMBED_GOLDEN_PATH")
+        let path = std::env::var("SEMPAL_PANNS_EMBED_GOLDEN_PATH")
             .ok()
-            .filter(|path| !path.trim().is_empty())
-            .unwrap_or_else(|| "tests/golden_embedding.json".to_string());
-        if !clap_burnpack_path().map(|p| p.exists()).unwrap_or(false) {
+            .filter(|path| !path.trim().is_empty());
+        let Some(path) = path else {
+            return;
+        };
+        if !panns_burnpack_path().map(|p| p.exists()).unwrap_or(false) {
             return;
         }
         let payload = std::fs::read_to_string(path).expect("read golden json");

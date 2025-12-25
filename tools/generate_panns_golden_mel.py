@@ -19,18 +19,13 @@ def repeat_pad(samples, target_len: int):
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Generate golden CLAP log-mel data for Rust tests."
+        description="Generate golden PANNs log-mel data for Rust tests."
     )
     parser.add_argument(
         "--out",
         type=Path,
-        default=Path("assets/ml/clap_v1/golden_mel.json"),
+        default=Path("assets/ml/panns_cnn14/golden_mel.json"),
         help="Output JSON path",
-    )
-    parser.add_argument(
-        "--model",
-        default="laion/clap-htsat-fused",
-        help="HF model id (default: laion/clap-htsat-fused)",
     )
     parser.add_argument("--tone-hz", type=float, default=440.0, help="Tone frequency")
     parser.add_argument("--tone-amp", type=float, default=0.5, help="Tone amplitude")
@@ -40,18 +35,23 @@ def main() -> int:
     parser.add_argument(
         "--target-seconds", type=float, default=10.0, help="Target padded duration"
     )
+    parser.add_argument("--sample-rate", type=int, default=32000, help="Sample rate")
+    parser.add_argument("--n-fft", type=int, default=1024, help="FFT size")
+    parser.add_argument("--hop-length", type=int, default=320, help="Hop length")
+    parser.add_argument("--n-mels", type=int, default=64, help="Mel bands")
+    parser.add_argument("--fmin", type=float, default=50.0, help="Mel fmin")
+    parser.add_argument("--fmax", type=float, default=14000.0, help="Mel fmax")
     args = parser.parse_args()
 
     try:
         import numpy as np
-        from transformers import ClapFeatureExtractor
+        import librosa
     except Exception as err:
         raise RuntimeError(
-            "numpy and transformers are required (pip install numpy transformers)"
+            "numpy and librosa are required (pip install numpy librosa)"
         ) from err
 
-    feature_extractor = ClapFeatureExtractor.from_pretrained(args.model)
-    sr = int(feature_extractor.sampling_rate)
+    sr = int(args.sample_rate)
     tone_len = int(sr * args.tone_seconds)
     t = np.arange(tone_len, dtype=np.float32) / float(sr)
     tone = np.sin(2.0 * math.pi * args.tone_hz * t) * float(args.tone_amp)
@@ -60,22 +60,26 @@ def main() -> int:
     padded = repeat_pad(tone.tolist(), target_samples)
     padded = np.asarray(padded, dtype=np.float32)
 
-    inputs = feature_extractor(
-        padded,
-        sampling_rate=sr,
-        return_tensors="np",
+    mel = librosa.feature.melspectrogram(
+        y=padded,
+        sr=sr,
+        n_fft=int(args.n_fft),
+        hop_length=int(args.hop_length),
+        n_mels=int(args.n_mels),
+        fmin=float(args.fmin),
+        fmax=float(args.fmax),
+        power=2.0,
     )
-    features = inputs["input_features"][0]
-    frames = features.T.tolist()
+    log_mel = np.log10(np.maximum(mel, 1e-6))
+    frames = log_mel.T.tolist()
 
     payload = {
-        "model": args.model,
         "sample_rate": sr,
-        "n_fft": int(feature_extractor.n_fft),
-        "hop_length": int(feature_extractor.hop_length),
-        "n_mels": int(feature_extractor.n_mels),
-        "fmin": float(feature_extractor.fmin),
-        "fmax": float(feature_extractor.fmax),
+        "n_fft": int(args.n_fft),
+        "hop_length": int(args.hop_length),
+        "n_mels": int(args.n_mels),
+        "fmin": float(args.fmin),
+        "fmax": float(args.fmax),
         "tone_hz": float(args.tone_hz),
         "tone_amp": float(args.tone_amp),
         "tone_seconds": float(args.tone_seconds),

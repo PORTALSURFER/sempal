@@ -6,7 +6,7 @@ pub(crate) mod audio_decode;
 #[allow(dead_code)]
 pub(crate) mod augment;
 #[allow(dead_code)]
-pub(crate) mod clap_preprocess;
+pub(crate) mod panns_preprocess;
 pub mod embedding;
 pub(crate) mod features;
 pub(crate) mod fft;

@@ -13,7 +13,7 @@
 
 \plan - add similarity search systems
 let’s wire a tiny ONNX demon into our app. 
-Here are concrete step-by-steps from “no CLAP” to “Rust calls ONNX model and gets embeddings”.
+Here are concrete step-by-steps from “no PANNs” to “Rust calls ONNX model and gets embeddings”.
 
 - add a name generator for samples
 
@@ -27,7 +27,7 @@ split into:
 
 You don’t have to do it all at once, but this is the full arc.
 
-1. One-time: export CLAP to ONNX (Python)
+1. One-time: export PANNs to ONNX (Python)
 
 This is purely a dev step. Users never see it.
 
@@ -39,32 +39,32 @@ python -m venv venv
 source venv/bin/activate  # or .\venv\Scripts\activate on Windows
 
 pip install torch torchaudio
-# plus the CLAP repo you're using, e.g.:
-# pip install laion-clap
+# plus the PANNs repo you're using, e.g.:
+# pip install laion-panns
 
 1.2. Small export script
 
-You’ll need to adapt to the exact CLAP repo you use, but conceptually:
+You’ll need to adapt to the exact PANNs repo you use, but conceptually:
 
 import torch
-from laion_clap import CLAP_Module  # example; adjust to actual lib
+from laion_panns import PANNs_Module  # example; adjust to actual lib
 
 device = "cpu"
 
 # 1. Load pretrained model
-model = CLAP_Module(enable_fusion=False)
+model = PANNs_Module(enable_fusion=False)
 model.load_state_dict(torch.load("pretrained_model.pt", map_location=device))
 model.eval().to(device)
 
 # 2. Create a dummy input with correct shape
-# You need to know what CLAP expects, e.g. [batch, channels, samples]
-dummy = torch.randn(1, 1, 48000 * 10, device=device)  # 10s mono example
+# You need to know what PANNs expects, e.g. log-mel [batch, 1, mel, frames]
+dummy = torch.randn(1, 1, 64, 1000, device=device)  # 10s @ 32kHz, hop=320
 
 # 3. Export to ONNX
 torch.onnx.export(
     model,
     dummy,
-    "clap_audio.onnx",
+    "panns_cnn14.onnx",
     input_names=["audio"],
     output_names=["embedding"],
     dynamic_axes={
@@ -79,15 +79,15 @@ Then test the ONNX model with onnxruntime in Python once (optional, but comforti
 
 The important bit you must learn from the Python side:
 
-Exact input tensor shape CLAP expects (channels, samples, dtype, scale).
+Exact input tensor shape PANNs expects (batch, channels, mel, frames).
 
-Any required preprocessing (e.g. waveform normalized to [-1, 1], specific sample rate, fixed length/padding).
+Any required preprocessing (e.g. log-mel extraction, specific sample rate, fixed length/padding).
 
 Write that down; you’ll mirror it in Rust.
 
 You now have:
 
-clap_audio.onnx – this will be shipped with your app as a data file.
+panns_cnn14.onnx – this will be shipped with your app as a data file.
 
 2. Add ONNX Runtime to your Rust project
 
@@ -109,26 +109,26 @@ You’ll also eventually want:
 symphonia = { version = "0.5", features = ["wav", "flac", "mp3", "ogg"] }
 # or similar for audio decoding
 
-2.2. ClapEngine skeleton
+2.2. PannsEngine skeleton
 
-Create a module, e.g. src/clap_engine.rs:
+Create a module, e.g. src/panns_engine.rs:
 
 use std::path::Path;
 use onnxruntime::{environment::Environment, session::Session, GraphOptimizationLevel};
 use onnxruntime::ndarray::Array2;
 use onnxruntime::tensor::OrtOwnedTensor;
 
-pub struct ClapEngine {
+pub struct PannsEngine {
     _env: Environment,     // keep it alive
     session: Session,      // the ONNX session
     dim: usize,            // output embedding dimension
 }
 
-impl ClapEngine {
+impl PannsEngine {
     pub fn new(model_path: &Path) -> anyhow::Result<Self> {
         // 1. Create environment
         let env = Environment::builder()
-            .with_name("clap")
+            .with_name("panns")
             .with_log_level(onnxruntime::LoggingLevel::Warning)
             .build()?;
 
@@ -179,7 +179,7 @@ decodes audio,
 
 resamples + converts to expected format,
 
-returns a Vec<f32> (or ndarray) ready to feed into CLAP.
+returns a Vec<f32> (or ndarray) ready to feed into PANNs.
 
 3.1. Decode file → mono PCM
 
@@ -264,19 +264,19 @@ pub fn load_audio_mono_f32(path: &Path, target_sr: u32) -> anyhow::Result<Vec<f3
 
 Later:
 
-plug in a resampler (e.g. rubato) if the CLAP model expects a fixed sample rate.
+plug in a resampler (e.g. rubato) if the PANNs model expects a fixed sample rate.
 
 trim / pad to a fixed length (e.g. first 10 seconds).
 
 3.2. Build the input tensor
 
-Suppose CLAP expects [batch, 1, samples].
+Suppose PANNs expects [batch, 1, samples].
 
 Then:
 
 use onnxruntime::ndarray::Array3;
 
-pub fn build_clap_input(samples: &[f32], fixed_len: usize) -> Array3<f32> {
+pub fn build_panns_input(samples: &[f32], fixed_len: usize) -> Array3<f32> {
     let mut buf = vec![0.0f32; fixed_len];
 
     let len = samples.len().min(fixed_len);
@@ -287,7 +287,7 @@ pub fn build_clap_input(samples: &[f32], fixed_len: usize) -> Array3<f32> {
 }
 
 
-(In ClapEngine::embed_batch you’d then expect Array3<f32> instead of Array2<f32>.)
+(In PannsEngine::embed_batch you’d then expect Array3<f32> instead of Array2<f32>.)
 
 4. Running inference & getting embeddings
 
@@ -295,13 +295,13 @@ Put it all together in a convenience function:
 
 use std::path::Path;
 
-impl ClapEngine {
+impl PannsEngine {
     pub fn embed_file(&self, path: &Path) -> anyhow::Result<Vec<f32>> {
         let target_sr = 48000;
         let fixed_len = target_sr as usize * 10; // 10 seconds
 
         let mono = load_audio_mono_f32(path, target_sr)?;
-        let input = build_clap_input(&mono, fixed_len); // Array3 [1,1,T]
+        let input = build_panns_input(&mono, fixed_len); // Array3 [1,1,T]
 
         let outputs: Vec<OrtOwnedTensor<f32, _>> = self
             .session
@@ -327,7 +327,7 @@ impl ClapEngine {
 
 Now your app can do:
 
-let engine = ClapEngine::new(Path::new("clap_audio.onnx"))?;
+let engine = PannsEngine::new(Path::new("panns_cnn14.onnx"))?;
 let emb = engine.embed_file(Path::new("some_sample.wav"))?;
 println!("embedding len = {}", emb.len());
 
@@ -360,7 +360,7 @@ show results.
 
 You already sketched that part earlier; now you have the engine.
 
-6. Testing against the Python CLAP reference
+6. Testing against the Python PANNs reference
 
 Before trusting the Rust ONNX path, sanity-check:
 
@@ -368,7 +368,7 @@ Choose a few test files.
 
 In Python:
 
-Run them through the original CLAP model.
+Run them through the original PANNs model.
 
 Save embeddings to .npy or .json.
 

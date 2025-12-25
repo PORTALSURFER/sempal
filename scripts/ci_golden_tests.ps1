@@ -1,11 +1,19 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-python tools\generate_clap_golden_mel.py --out assets\ml\clap_v1\golden_mel.json
-python tools\generate_clap_golden_embedding.py --out assets\ml\clap_v1\golden_embedding.json
+if (Test-Path "tools\\generate_panns_golden_mel.py") {
+    python tools\generate_panns_golden_mel.py --out assets\ml\panns_cnn14\golden_mel.json
+}
+if (Test-Path "tools\\generate_panns_golden_embedding.py") {
+    python tools\generate_panns_golden_embedding.py --out assets\ml\panns_cnn14\golden_embedding.json
+}
 
-$env:SEMPAL_CLAP_GOLDEN_PATH = "assets\ml\clap_v1\golden_mel.json"
-$env:SEMPAL_CLAP_EMBED_GOLDEN_PATH = "assets\ml\clap_v1\golden_embedding.json"
+if (Test-Path "assets\\ml\\panns_cnn14\\golden_mel.json") {
+    $env:SEMPAL_PANNS_GOLDEN_PATH = "assets\\ml\\panns_cnn14\\golden_mel.json"
+}
+if (Test-Path "assets\\ml\\panns_cnn14\\golden_embedding.json") {
+    $env:SEMPAL_PANNS_EMBED_GOLDEN_PATH = "assets\\ml\\panns_cnn14\\golden_embedding.json"
+}
 
 cargo test golden_log_mel_matches_python
 cargo test golden_embedding_matches_python
