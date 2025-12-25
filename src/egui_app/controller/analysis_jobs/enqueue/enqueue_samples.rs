@@ -289,8 +289,13 @@ fn fetch_force_backfill_jobs(
         .prepare(
             "SELECT t.sample_id, t.content_hash, t.size, t.mtime_ns
              FROM temp_backfill_samples t
-             LEFT JOIN analysis_jobs j ON j.sample_id = t.sample_id AND j.job_type = ?1
-             WHERE j.status IS NULL OR j.status NOT IN ('pending','running')",
+             WHERE NOT EXISTS (
+                 SELECT 1
+                 FROM analysis_jobs j
+                 WHERE j.sample_id = t.sample_id
+                   AND j.job_type = ?1
+                   AND j.status IN ('pending','running')
+             )",
         )
         .map_err(|err| format!("Prepare full backfill job query failed: {err}"))?;
     let mut rows = stmt
@@ -376,9 +381,14 @@ fn fetch_backfill_jobs(
              LEFT JOIN features f ON f.sample_id = t.sample_id AND f.feat_version = 1
              LEFT JOIN embeddings e ON e.sample_id = t.sample_id AND e.model_id = ?3
              LEFT JOIN samples s ON s.sample_id = t.sample_id
-             LEFT JOIN analysis_jobs j ON j.sample_id = t.sample_id AND j.job_type = ?2
              WHERE (f.sample_id IS NULL OR e.sample_id IS NULL OR s.analysis_version IS NULL OR s.analysis_version != ?1)
-               AND (j.status IS NULL OR j.status NOT IN ('pending','running'))",
+               AND NOT EXISTS (
+                   SELECT 1
+                   FROM analysis_jobs j
+                   WHERE j.sample_id = t.sample_id
+                     AND j.job_type = ?2
+                     AND j.status IN ('pending','running')
+               )",
         )
         .map_err(|err| format!("Prepare backfill job query failed: {err}"))?;
     let mut rows = stmt
