@@ -63,11 +63,16 @@ impl DecodedQueue {
         }
     }
 
-    pub(super) fn pop_batch(&self, shutdown: &AtomicBool, max: usize) -> Vec<DecodedWork> {
+    pub(super) fn pop_batch(
+        &self,
+        shutdown: &AtomicBool,
+        max: usize,
+    ) -> (Vec<DecodedWork>, u64) {
         let mut guard = self.queue.lock().expect("decoded queue lock");
+        let start = Instant::now();
         loop {
             if shutdown.load(Ordering::Relaxed) {
-                return Vec::new();
+                return (Vec::new(), start.elapsed().as_millis() as u64);
             }
             if let Some(work) = guard.pop_front() {
                 let mut batch = Vec::with_capacity(max.max(1));
@@ -81,7 +86,7 @@ impl DecodedQueue {
                         break;
                     }
                 }
-                return batch;
+                return (batch, start.elapsed().as_millis() as u64);
             }
             let (next_guard, _) = self
                 .ready
@@ -350,16 +355,17 @@ pub(super) fn spawn_compute_worker(
                 sleep(Duration::from_millis(50));
                 continue;
             }
-            let batch = decode_queue.pop_batch(&shutdown, embedding_batch_max);
+            let (batch, wait_ms) = decode_queue.pop_batch(&shutdown, embedding_batch_max);
             if batch.is_empty() {
                 continue;
             }
             if log_queue && last_queue_log.elapsed() >= Duration::from_secs(2) {
                 last_queue_log = Instant::now();
                 eprintln!(
-                    "analysis queue: decoded={}, batch={}",
+                    "analysis queue: decoded={}, batch={}, wait_ms={}",
                     decode_queue.len(),
-                    batch.len()
+                    batch.len(),
+                    wait_ms
                 );
             }
             let max_analysis_duration_seconds =
