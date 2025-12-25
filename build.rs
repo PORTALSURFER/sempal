@@ -1,9 +1,17 @@
 use std::env;
+use std::path::{Path, PathBuf};
+
+use burn_import::onnx::ModelGen;
 
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=build/windows/sempal.rc");
     println!("cargo:rerun-if-changed=assets/logo3.ico");
+
+    if let Err(error) = generate_burn_clap() {
+        eprintln!("Failed to generate Burn CLAP model: {error}");
+        std::process::exit(1);
+    }
 
     if compiling_for_windows_target()
         && let Err(error) = compile_windows_resources()
@@ -22,4 +30,69 @@ fn compiling_for_windows_target() -> bool {
 fn compile_windows_resources() -> Result<(), Box<dyn std::error::Error>> {
     embed_resource::compile("build/windows/sempal.rc", embed_resource::NONE).manifest_optional()?;
     Ok(())
+}
+
+fn generate_burn_clap() -> Result<(), String> {
+    println!("cargo:rerun-if-env-changed=SEMPAL_CLAP_ONNX_PATH");
+    println!("cargo:rerun-if-env-changed=SEMPAL_MODELS_DIR");
+
+    let onnx_path = clap_onnx_path();
+    println!("cargo:rerun-if-changed={}", onnx_path.display());
+    if !onnx_path.exists() {
+        return Err(format!(
+            "CLAP ONNX model not found at {}",
+            onnx_path.display()
+        ));
+    }
+
+    ModelGen::new()
+        .input(
+            onnx_path
+                .to_str()
+                .ok_or_else(|| "CLAP ONNX path contains invalid UTF-8".to_string())?,
+        )
+        .out_dir("burn_clap")
+        .run_from_script();
+
+    let out_dir = env::var("OUT_DIR").map_err(|err| err.to_string())?;
+    let out_dir = Path::new(&out_dir).join("burn_clap");
+    let stem = onnx_path
+        .file_stem()
+        .ok_or_else(|| "CLAP ONNX path missing file stem".to_string())?;
+    let burnpack_path = out_dir.join(stem).with_extension("bpk");
+    write_clap_paths(&out_dir, &burnpack_path)?;
+    Ok(())
+}
+
+fn clap_onnx_path() -> PathBuf {
+    if let Ok(path) = env::var("SEMPAL_CLAP_ONNX_PATH") {
+        if !path.trim().is_empty() {
+            return PathBuf::from(path);
+        }
+    }
+    if let Ok(path) = env::var("SEMPAL_MODELS_DIR") {
+        if !path.trim().is_empty() {
+            return PathBuf::from(path).join("clap_audio.onnx");
+        }
+    }
+    if let Some(appdata) = env::var_os("APPDATA") {
+        return PathBuf::from(appdata)
+            .join(".sempal")
+            .join("models")
+            .join("clap_audio.onnx");
+    }
+    if let Some(home) = env::var_os("HOME") {
+        return PathBuf::from(home)
+            .join(".sempal")
+            .join("models")
+            .join("clap_audio.onnx");
+    }
+    PathBuf::from("clap_audio.onnx")
+}
+
+fn write_clap_paths(out_dir: &Path, burnpack_path: &Path) -> Result<(), String> {
+    let path_literal = format!("{:?}", burnpack_path.to_string_lossy());
+    let contents = format!("pub const CLAP_BURNPACK_PATH: &str = {path_literal};\n");
+    let out_path = out_dir.join("clap_paths.rs");
+    std::fs::write(out_path, contents).map_err(|err| err.to_string())
 }

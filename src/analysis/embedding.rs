@@ -3,15 +3,20 @@ use std::env;
 use std::path::PathBuf;
 use std::sync::{LazyLock, OnceLock};
 
-use ort::execution_providers::{CPUExecutionProvider, ExecutionProvider, ExecutionProviderDispatch};
-#[cfg(target_os = "windows")]
-use ort::execution_providers::DirectMLExecutionProvider;
-use ort::session::Session;
-use ort::session::builder::SessionBuilder;
-use ort::session::output::SessionOutputs;
-use ort::value::TensorRef;
+use burn::backend::wgpu::{self, graphics::Vulkan, WgpuDevice};
+use burn::tensor::{Tensor, TensorData};
 
 use crate::analysis::audio;
+
+mod clap_burn {
+    include!(concat!(env!("OUT_DIR"), "/burn_clap/clap_audio.rs"));
+}
+
+mod clap_paths {
+    include!(concat!(env!("OUT_DIR"), "/burn_clap/clap_paths.rs"));
+}
+
+type ClapBackend = wgpu::Wgpu;
 
 pub const EMBEDDING_MODEL_ID: &str =
     "clap_htsat_fused__sr48k__nfft1024__hop480__mel64__chunk10__repeatpad_v2";
@@ -25,13 +30,14 @@ const QUERY_HOP_SECONDS: f32 = 1.0;
 const QUERY_MAX_WINDOWS: usize = 24;
 
 pub(crate) struct ClapModel {
-    session: Session,
+    model: clap_burn::Model<ClapBackend>,
+    device: WgpuDevice,
     input_scratch: Vec<f32>,
     input_batch_scratch: Vec<f32>,
     resample_scratch: Vec<f32>,
 }
 
-static ORT_ENV_INIT: OnceLock<Result<(), String>> = OnceLock::new();
+static WGPU_INIT: OnceLock<()> = OnceLock::new();
 
 thread_local! {
     static TLS_CLAP_MODEL: RefCell<Option<ClapModel>> = RefCell::new(None);
@@ -39,36 +45,24 @@ thread_local! {
 
 impl ClapModel {
     pub(crate) fn load() -> Result<Self, String> {
-        let model_path = clap_model_path()?;
+        let model_path = clap_burnpack_path()?;
         if !model_path.exists() {
             return Err(format!(
-                "CLAP ONNX model not found at {}",
+                "CLAP burnpack model not found at {}",
                 model_path.to_string_lossy()
             ));
         }
-        let runtime_path = onnx_runtime_path()?;
-        if !runtime_path.exists() {
-            return Err(format!(
-                "ONNX Runtime DLL not found at {}",
-                runtime_path.to_string_lossy()
-            ));
-        }
-        ensure_onnx_env(&runtime_path)?;
-        let mut session_builder = SessionBuilder::new()
-            .map_err(|err| format!("Failed to create ONNX session builder: {err}"))?
-            .with_intra_threads(onnx_intra_threads())
-            .map_err(|err| format!("Failed to set ONNX threads: {err}"))?;
-        let execution_providers = onnx_execution_providers()?;
-        if !execution_providers.is_empty() {
-            session_builder = session_builder
-                .with_execution_providers(execution_providers)
-                .map_err(|err| format!("Failed to configure ONNX execution providers: {err}"))?;
-        }
-        let session = session_builder
-            .commit_from_file(&model_path)
-            .map_err(|err| format!("Failed to load ONNX model: {err}"))?;
+        let device = WgpuDevice::default();
+        init_wgpu(&device);
+        let model = clap_burn::Model::<ClapBackend>::from_file(
+            model_path
+                .to_str()
+                .ok_or_else(|| "CLAP burnpack path contains invalid UTF-8".to_string())?,
+            &device,
+        );
         Ok(Self {
-            session,
+            model,
+            device,
             input_scratch: vec![0.0_f32; CLAP_INPUT_SAMPLES],
             input_batch_scratch: Vec::new(),
             resample_scratch: Vec::new(),
@@ -82,87 +76,6 @@ pub(crate) fn embedding_batch_max() -> usize {
         .and_then(|value| value.trim().parse::<usize>().ok())
         .filter(|value| *value >= 1)
         .unwrap_or(16)
-}
-
-fn onnx_intra_threads() -> usize {
-    env::var("SEMPAL_ONNX_INTRA_THREADS")
-        .ok()
-        .and_then(|value| value.trim().parse::<usize>().ok())
-        .filter(|value| *value >= 1)
-        .unwrap_or(1)
-}
-
-fn onnx_execution_providers() -> Result<Vec<ExecutionProviderDispatch>, String> {
-    let selection = env::var("SEMPAL_ONNX_EP")
-        .ok()
-        .map(|value| value.trim().to_lowercase());
-    match selection.as_deref() {
-        None | Some("auto") => onnx_execution_providers_auto(),
-        Some("cpu") => Ok(vec![CPUExecutionProvider::default().build()]),
-        Some("directml") => onnx_execution_providers_directml(),
-        Some(other) => Err(format!(
-            "Unsupported SEMPAL_ONNX_EP '{other}'. Use 'auto', 'cpu', or 'directml'."
-        )),
-    }
-}
-
-fn onnx_execution_providers_auto() -> Result<Vec<ExecutionProviderDispatch>, String> {
-    let mut providers = Vec::new();
-    #[cfg(target_os = "windows")]
-    {
-        if let Some(ep) = directml_execution_provider(false)? {
-            providers.push(ep);
-        }
-    }
-    providers.push(CPUExecutionProvider::default().build());
-    Ok(providers)
-}
-
-fn onnx_execution_providers_directml() -> Result<Vec<ExecutionProviderDispatch>, String> {
-    #[cfg(target_os = "windows")]
-    {
-        let mut providers = Vec::new();
-        if let Some(ep) = directml_execution_provider(true)? {
-            providers.push(ep);
-        }
-        providers.push(CPUExecutionProvider::default().build());
-        return Ok(providers);
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        Err("SEMPAL_ONNX_EP=directml is only supported on Windows.".to_string())
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn directml_execution_provider(
-    required: bool,
-) -> Result<Option<ExecutionProviderDispatch>, String> {
-    let provider = DirectMLExecutionProvider::default();
-    match provider.is_available() {
-        Ok(true) => {
-            let dispatch = if required {
-                provider.build().error_on_failure()
-            } else {
-                provider.build().fail_silently()
-            };
-            Ok(Some(dispatch))
-        }
-        Ok(false) => {
-            if required {
-                Err("DirectML execution provider not available. Ensure the ONNX Runtime build includes DirectML and DirectML is installed.".to_string())
-            } else {
-                Ok(None)
-            }
-        }
-        Err(err) => {
-            if required {
-                Err(format!("Failed to query DirectML availability: {err}"))
-            } else {
-                Ok(None)
-            }
-        }
-    }
 }
 
 pub(crate) struct EmbeddingBatchInput<'a> {
@@ -223,21 +136,12 @@ pub(crate) fn infer_embeddings_batch(
         });
     }
     with_clap_model(|model| {
-        match infer_embeddings_with_model(model, inputs) {
-            Ok(values) => Ok(values),
-            Err(_err) if inputs.len() > 1 => {
-                let mut outputs = Vec::with_capacity(inputs.len());
-                for input in inputs {
-                    outputs.push(infer_embedding_with_model(
-                        model,
-                        input.samples,
-                        input.sample_rate,
-                    )?);
-                }
-                Ok(outputs)
-            }
-            Err(err) => Err(err),
+        let mut outputs = Vec::with_capacity(inputs.len());
+        for chunk in inputs.chunks(embedding_batch_max()) {
+            let embeddings = infer_embeddings_with_model(model, chunk)?;
+            outputs.extend(embeddings);
         }
+        Ok(outputs)
     })
 }
 
@@ -246,31 +150,19 @@ fn infer_embedding_with_model(
     samples: &[f32],
     sample_rate: u32,
 ) -> Result<Vec<f32>, String> {
-    let resampled = if sample_rate != CLAP_SAMPLE_RATE {
-        audio::resample_linear_into(
-            &mut model.resample_scratch,
-            samples,
-            sample_rate,
-            CLAP_SAMPLE_RATE,
-        );
-        model.resample_scratch.as_mut_slice()
-    } else {
-        model.resample_scratch.clear();
-        model.resample_scratch.extend_from_slice(samples);
-        model.resample_scratch.as_mut_slice()
-    };
-    audio::sanitize_samples_in_place(resampled);
-    repeat_pad_into(&mut model.input_scratch, resampled, CLAP_INPUT_SAMPLES);
-    let input_value = TensorRef::from_array_view((
-        [1usize, 1, CLAP_INPUT_SAMPLES],
+    let input_slice = model.input_scratch.as_mut_slice();
+    prepare_clap_input(
+        &mut model.resample_scratch,
+        input_slice,
+        samples,
+        sample_rate,
+    );
+    let mut embeddings = run_clap_inference(
+        &model.model,
+        &model.device,
         model.input_scratch.as_slice(),
-    ))
-    .map_err(|err| format!("Failed to create ONNX input tensor: {err}"))?;
-    let outputs = model
-        .session
-        .run(ort::inputs![input_value])
-        .map_err(|err| format!("ONNX inference failed: {err}"))?;
-    let mut embeddings = extract_embeddings(&outputs, 1)?;
+        1,
+    )?;
     let embedding = embeddings
         .pop()
         .ok_or_else(|| "CLAP embedding output missing".to_string())?;
@@ -286,34 +178,57 @@ fn infer_embeddings_with_model(
     model.input_batch_scratch.clear();
     model.input_batch_scratch.resize(total_len, 0.0);
     for (idx, input) in inputs.iter().enumerate() {
-        let resampled = if input.sample_rate != CLAP_SAMPLE_RATE {
-            audio::resample_linear_into(
-                &mut model.resample_scratch,
-                input.samples,
-                input.sample_rate,
-                CLAP_SAMPLE_RATE,
-            );
-            model.resample_scratch.as_mut_slice()
-        } else {
-            model.resample_scratch.clear();
-            model.resample_scratch.extend_from_slice(input.samples);
-            model.resample_scratch.as_mut_slice()
-        };
-        audio::sanitize_samples_in_place(resampled);
         let start = idx * CLAP_INPUT_SAMPLES;
         let end = start + CLAP_INPUT_SAMPLES;
-        repeat_pad_slice(&mut model.input_batch_scratch[start..end], resampled);
+        let out = &mut model.input_batch_scratch[start..end];
+        prepare_clap_input(
+            &mut model.resample_scratch,
+            out,
+            input.samples,
+            input.sample_rate,
+        );
     }
-    let input_value = TensorRef::from_array_view((
-        [batch, 1usize, CLAP_INPUT_SAMPLES],
+    run_clap_inference(
+        &model.model,
+        &model.device,
         model.input_batch_scratch.as_slice(),
-    ))
-    .map_err(|err| format!("Failed to create ONNX input tensor: {err}"))?;
-    let outputs = model
-        .session
-        .run(ort::inputs![input_value])
-        .map_err(|err| format!("ONNX inference failed: {err}"))?;
-    extract_embeddings(&outputs, batch)
+        batch,
+    )
+}
+
+fn prepare_clap_input(
+    resample_scratch: &mut Vec<f32>,
+    out: &mut [f32],
+    samples: &[f32],
+    sample_rate: u32,
+) {
+    let resampled = if sample_rate != CLAP_SAMPLE_RATE {
+        audio::resample_linear_into(
+            resample_scratch,
+            samples,
+            sample_rate,
+            CLAP_SAMPLE_RATE,
+        );
+        resample_scratch.as_mut_slice()
+    } else {
+        resample_scratch.clear();
+        resample_scratch.extend_from_slice(samples);
+        resample_scratch.as_mut_slice()
+    };
+    audio::sanitize_samples_in_place(resampled);
+    repeat_pad_slice(out, resampled);
+}
+
+fn run_clap_inference(
+    model: &clap_burn::Model<ClapBackend>,
+    device: &WgpuDevice,
+    input: &[f32],
+    batch: usize,
+) -> Result<Vec<Vec<f32>>, String> {
+    let data = TensorData::new(input.to_vec(), [batch, 1, CLAP_INPUT_SAMPLES]);
+    let input_tensor = Tensor::<ClapBackend, 3>::from_data(data, device);
+    let output = model.forward(input_tensor);
+    extract_embeddings_from_data(output.into_data(), batch)
 }
 
 fn query_window_ranges(sample_len: usize, sample_rate: u32) -> Vec<(usize, usize)> {
@@ -402,19 +317,10 @@ fn l2_norm(values: &[f32]) -> f32 {
     sum.sqrt()
 }
 
-fn ensure_onnx_env(runtime_path: &PathBuf) -> Result<(), String> {
-    let runtime_path = runtime_path.to_string_lossy().to_string();
-    let init = ORT_ENV_INIT.get_or_init(|| {
-        unsafe {
-            std::env::set_var("ORT_DYLIB_PATH", &runtime_path);
-        }
-        ort::environment::init_from(runtime_path.clone())
-            .with_name("sempal_clap")
-            .commit()
-            .map(|_| ())
-            .map_err(|err| format!("Failed to initialize ONNX environment: {err}"))
+fn init_wgpu(device: &WgpuDevice) {
+    WGPU_INIT.get_or_init(|| {
+        wgpu::init_setup::<Vulkan>(device, Default::default());
     });
-    init.clone()
 }
 
 fn with_clap_model<T>(f: impl FnOnce(&mut ClapModel) -> Result<T, String>) -> Result<T, String> {
@@ -444,110 +350,97 @@ fn clap_batch_enabled() -> bool {
     })
 }
 
-fn clap_model_path() -> Result<PathBuf, String> {
-    let root = crate::app_dirs::app_root_dir().map_err(|err| err.to_string())?;
-    Ok(root.join("models").join("clap_audio.onnx"))
-}
-
-fn onnx_runtime_path() -> Result<PathBuf, String> {
-    let root = crate::app_dirs::app_root_dir().map_err(|err| err.to_string())?;
-    Ok(root
-        .join("models")
-        .join("onnxruntime")
-        .join(onnx_runtime_filename()))
-}
-
-fn onnx_runtime_filename() -> &'static str {
-    if cfg!(target_os = "windows") {
-        "onnxruntime.dll"
-    } else if cfg!(target_os = "macos") {
-        "libonnxruntime.dylib"
-    } else {
-        "libonnxruntime.so"
+fn clap_burnpack_path() -> Result<PathBuf, String> {
+    if let Ok(path) = env::var("SEMPAL_CLAP_BURNPACK_PATH") {
+        if !path.trim().is_empty() {
+            return Ok(PathBuf::from(path));
+        }
     }
+    let generated = PathBuf::from(clap_paths::CLAP_BURNPACK_PATH);
+    if generated.exists() {
+        return Ok(generated);
+    }
+    let root = crate::app_dirs::app_root_dir().map_err(|err| err.to_string())?;
+    Ok(root.join("models").join("clap_audio.bpk"))
 }
 
 #[allow(dead_code)]
 pub(crate) fn embedding_model_path() -> &'static PathBuf {
     static PATH: LazyLock<PathBuf> = LazyLock::new(|| {
         crate::app_dirs::app_root_dir()
-            .map(|root| root.join("models").join("clap_audio.onnx"))
-            .unwrap_or_else(|_| PathBuf::from("clap_audio.onnx"))
+            .map(|root| root.join("models").join("clap_audio.bpk"))
+            .unwrap_or_else(|_| PathBuf::from("clap_audio.bpk"))
     });
     &PATH
 }
 
-fn extract_embeddings(outputs: &SessionOutputs, batch: usize) -> Result<Vec<Vec<f32>>, String> {
-    for value in outputs.values() {
-        let array = value
-            .try_extract_array::<f32>()
-            .map_err(|err| format!("Failed to read ONNX output tensor: {err}"))?;
-        let shape = array.shape();
-        if shape.is_empty() || *shape.last().unwrap_or(&0) != EMBEDDING_DIM {
-            continue;
-        }
-        if shape.len() == 1 && batch == 1 {
-            let flat = array
-                .as_slice()
-                .ok_or_else(|| "ONNX output tensor not contiguous".to_string())?;
-            if flat.len() < EMBEDDING_DIM {
-                continue;
-            }
-            let mut pooled = flat[..EMBEDDING_DIM].to_vec();
-            normalize_l2_in_place(&mut pooled);
-            let norm = l2_norm(&pooled);
-            if !norm.is_finite() || (norm - 1.0).abs() > 1e-3 {
-                return Err(format!("CLAP embedding L2 norm out of range: {norm:.6}"));
-            }
-            return Ok(vec![pooled]);
-        }
-        if shape.len() < 2 {
-            continue;
-        }
-        let batch_dim = shape[0];
-        if batch_dim != batch {
-            continue;
-        }
-        let mut frames_per = 1usize;
-        if shape.len() > 2 {
-            for dim in &shape[1..shape.len() - 1] {
-                frames_per = frames_per.saturating_mul(*dim);
-            }
-        }
-        let flat = array
-            .as_slice()
-            .ok_or_else(|| "ONNX output tensor not contiguous".to_string())?;
-        let expected_len = batch
-            .saturating_mul(frames_per)
-            .saturating_mul(EMBEDDING_DIM);
-        if flat.len() < expected_len {
-            continue;
-        }
-        let mut outputs = Vec::with_capacity(batch);
-        for batch_idx in 0..batch {
-            let mut pooled = vec![0.0_f32; EMBEDDING_DIM];
-            let frame_base = batch_idx * frames_per * EMBEDDING_DIM;
-            for frame in 0..frames_per {
-                let base = frame_base + frame * EMBEDDING_DIM;
-                let chunk = &flat[base..base + EMBEDDING_DIM];
-                for (idx, value) in chunk.iter().enumerate() {
-                    pooled[idx] += *value;
-                }
-            }
-            let scale = 1.0 / frames_per.max(1) as f32;
-            for value in &mut pooled {
-                *value *= scale;
-            }
-            normalize_l2_in_place(&mut pooled);
-            let norm = l2_norm(&pooled);
-            if !norm.is_finite() || (norm - 1.0).abs() > 1e-3 {
-                return Err(format!("CLAP embedding L2 norm out of range: {norm:.6}"));
-            }
-            outputs.push(pooled);
-        }
-        return Ok(outputs);
+fn extract_embeddings_from_data(data: TensorData, batch: usize) -> Result<Vec<Vec<f32>>, String> {
+    let shape = data.shape.clone();
+    let flat = data
+        .as_slice::<f32>()
+        .map_err(|err| format!("Failed to read Burn output tensor: {err}"))?;
+    if shape.is_empty() {
+        return Err("CLAP output tensor has empty shape".to_string());
     }
-    Err("No embedding output found in ONNX outputs".to_string())
+    if shape.len() == 1 {
+        if batch != 1 || flat.len() < EMBEDDING_DIM {
+            return Err("CLAP output tensor has unexpected shape".to_string());
+        }
+        let mut pooled = flat[..EMBEDDING_DIM].to_vec();
+        normalize_l2_in_place(&mut pooled);
+        let norm = l2_norm(&pooled);
+        if !norm.is_finite() || (norm - 1.0).abs() > 1e-3 {
+            return Err(format!("CLAP embedding L2 norm out of range: {norm:.6}"));
+        }
+        return Ok(vec![pooled]);
+    }
+    let batch_dim = shape[0];
+    if batch_dim != batch {
+        return Err(format!(
+            "CLAP output batch mismatch: expected {batch}, got {batch_dim}"
+        ));
+    }
+    let embedding_dim = *shape.last().unwrap_or(&0);
+    if embedding_dim != EMBEDDING_DIM {
+        return Err(format!(
+            "CLAP output embedding dim mismatch: expected {EMBEDDING_DIM}, got {embedding_dim}"
+        ));
+    }
+    let mut frames_per = 1usize;
+    if shape.len() > 2 {
+        for dim in &shape[1..shape.len() - 1] {
+            frames_per = frames_per.saturating_mul(*dim);
+        }
+    }
+    let expected_len = batch
+        .saturating_mul(frames_per)
+        .saturating_mul(EMBEDDING_DIM);
+    if flat.len() < expected_len {
+        return Err("CLAP output tensor shorter than expected".to_string());
+    }
+    let mut outputs = Vec::with_capacity(batch);
+    for batch_idx in 0..batch {
+        let mut pooled = vec![0.0_f32; EMBEDDING_DIM];
+        let frame_base = batch_idx * frames_per * EMBEDDING_DIM;
+        for frame in 0..frames_per {
+            let base = frame_base + frame * EMBEDDING_DIM;
+            let chunk = &flat[base..base + EMBEDDING_DIM];
+            for (idx, value) in chunk.iter().enumerate() {
+                pooled[idx] += *value;
+            }
+        }
+        let scale = 1.0 / frames_per.max(1) as f32;
+        for value in &mut pooled {
+            *value *= scale;
+        }
+        normalize_l2_in_place(&mut pooled);
+        let norm = l2_norm(&pooled);
+        if !norm.is_finite() || (norm - 1.0).abs() > 1e-3 {
+            return Err(format!("CLAP embedding L2 norm out of range: {norm:.6}"));
+        }
+        outputs.push(pooled);
+    }
+    Ok(outputs)
 }
 
 #[cfg(test)]
@@ -571,10 +464,7 @@ mod tests {
             .ok()
             .filter(|path| !path.trim().is_empty())
             .unwrap_or_else(|| "tests/golden_embedding.json".to_string());
-        if !clap_model_path().map(|p| p.exists()).unwrap_or(false) {
-            return;
-        }
-        if !onnx_runtime_path().map(|p| p.exists()).unwrap_or(false) {
+        if !clap_burnpack_path().map(|p| p.exists()).unwrap_or(false) {
             return;
         }
         let payload = std::fs::read_to_string(path).expect("read golden json");
