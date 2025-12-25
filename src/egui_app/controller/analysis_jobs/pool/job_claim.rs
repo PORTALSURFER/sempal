@@ -4,15 +4,12 @@ use crate::egui_app::controller::analysis_jobs::types::AnalysisJobMessage;
 use crate::egui_app::controller::jobs::JobMessage;
 use rusqlite::Connection;
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::cmp::min;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::{
     Arc,
-    Condvar,
     Mutex,
     RwLock,
     atomic::AtomicU32,
-    atomic::AtomicUsize,
     atomic::{AtomicBool, Ordering},
     mpsc::Sender,
 };
@@ -24,253 +21,16 @@ use windows::Win32::System::Threading::{
     GetCurrentThread, SetThreadPriority, THREAD_PRIORITY_BELOW_NORMAL,
 };
 
-pub(super) struct DecodedQueue {
-    queue: Mutex<VecDeque<DecodedWork>>,
-    ready: Condvar,
-    len: AtomicUsize,
-    pending_jobs: Mutex<HashSet<i64>>,
-    inflight_jobs: Mutex<HashSet<i64>>,
-}
+mod claim;
+mod logging;
+mod queue;
 
-impl DecodedQueue {
-    pub(super) fn new() -> Self {
-        Self {
-            queue: Mutex::new(VecDeque::new()),
-            ready: Condvar::new(),
-            len: AtomicUsize::new(0),
-            pending_jobs: Mutex::new(HashSet::new()),
-            inflight_jobs: Mutex::new(HashSet::new()),
-        }
-    }
+pub(super) use claim::{
+    decode_queue_target, decode_worker_count_with_override, worker_count_with_override,
+};
+pub(super) use queue::{DecodeOutcome, DecodedQueue, DecodedWork};
 
-    pub(super) fn try_mark_inflight(&self, job_id: i64) -> bool {
-        let mut inflight = self.inflight_jobs.lock().expect("decoded queue inflight lock");
-        if inflight.contains(&job_id) {
-            return false;
-        }
-        inflight.insert(job_id);
-        true
-    }
-
-    pub(super) fn clear_inflight(&self, job_id: i64) {
-        let mut inflight = self.inflight_jobs.lock().expect("decoded queue inflight lock");
-        inflight.remove(&job_id);
-    }
-
-    pub(super) fn push(&self, work: DecodedWork) -> bool {
-        let mut guard = self.queue.lock().expect("decoded queue lock");
-        if work.job.job_type == db::ANALYZE_SAMPLE_JOB_TYPE {
-            let mut pending = self.pending_jobs.lock().expect("decoded queue pending lock");
-            if pending.contains(&work.job.id) {
-                return false;
-            }
-            pending.insert(work.job.id);
-        }
-        guard.push_back(work);
-        self.len.fetch_add(1, Ordering::Relaxed);
-        self.ready.notify_one();
-        true
-    }
-
-    pub(super) fn pop(&self, shutdown: &AtomicBool) -> Option<DecodedWork> {
-        let mut guard = self.queue.lock().expect("decoded queue lock");
-        loop {
-            if shutdown.load(Ordering::Relaxed) {
-                return None;
-            }
-            if let Some(work) = guard.pop_front() {
-                if work.job.job_type == db::ANALYZE_SAMPLE_JOB_TYPE {
-                    let mut pending =
-                        self.pending_jobs.lock().expect("decoded queue pending lock");
-                    pending.remove(&work.job.id);
-                }
-                self.len.fetch_sub(1, Ordering::Relaxed);
-                return Some(work);
-            }
-            let (next_guard, _) = self
-                .ready
-                .wait_timeout(guard, Duration::from_millis(50))
-                .expect("decoded queue wait");
-            guard = next_guard;
-        }
-    }
-
-    pub(super) fn pop_batch(
-        &self,
-        shutdown: &AtomicBool,
-        max: usize,
-    ) -> (Vec<DecodedWork>, u64) {
-        let mut guard = self.queue.lock().expect("decoded queue lock");
-        let start = Instant::now();
-        loop {
-            if shutdown.load(Ordering::Relaxed) {
-                return (Vec::new(), start.elapsed().as_millis() as u64);
-            }
-            if let Some(work) = guard.pop_front() {
-                let mut batch = Vec::with_capacity(max.max(1));
-                batch.push(work);
-                self.len.fetch_sub(1, Ordering::Relaxed);
-                while batch.len() < max {
-                    if let Some(next) = guard.pop_front() {
-                        batch.push(next);
-                        self.len.fetch_sub(1, Ordering::Relaxed);
-                    } else {
-                        break;
-                    }
-                }
-                {
-                    let mut pending =
-                        self.pending_jobs.lock().expect("decoded queue pending lock");
-                    for item in &batch {
-                        if item.job.job_type == db::ANALYZE_SAMPLE_JOB_TYPE {
-                            pending.remove(&item.job.id);
-                        }
-                    }
-                }
-                return (batch, start.elapsed().as_millis() as u64);
-            }
-            let (next_guard, _) = self
-                .ready
-                .wait_timeout(guard, Duration::from_millis(50))
-                .expect("decoded queue wait");
-            guard = next_guard;
-        }
-    }
-
-    pub(super) fn len(&self) -> usize {
-        self.len.load(Ordering::Relaxed)
-    }
-}
-
-pub(super) struct DecodedWork {
-    pub(super) job: db::ClaimedJob,
-    pub(super) outcome: DecodeOutcome,
-}
-
-pub(super) enum DecodeOutcome {
-    Decoded(crate::analysis::audio::AnalysisAudio),
-    Skipped {
-        duration_seconds: f32,
-        sample_rate: u32,
-    },
-    Failed(String),
-    NotNeeded,
-}
-
-struct SourceClaimDb {
-    source: crate::sample_sources::SampleSource,
-    conn: Connection,
-}
-
-const SOURCE_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
-
-fn refresh_sources(
-    sources: &mut Vec<SourceClaimDb>,
-    last_refresh: &mut Instant,
-    reset_done: &Arc<Mutex<HashSet<std::path::PathBuf>>>,
-    allowed_source_ids: Option<&HashSet<crate::sample_sources::SourceId>>,
-) {
-    if last_refresh.elapsed() < SOURCE_REFRESH_INTERVAL {
-        return;
-    }
-    *last_refresh = Instant::now();
-    let Ok(state) = crate::sample_sources::library::load() else {
-        return;
-    };
-    let mut next = Vec::new();
-    for source in state.sources {
-        if !source.root.is_dir() {
-            continue;
-        }
-        if let Some(allowed) = allowed_source_ids {
-            if !allowed.contains(&source.id) {
-                continue;
-            }
-        }
-        let conn = match db::open_source_db(&source.root) {
-            Ok(conn) => conn,
-            Err(err) => {
-                tracing::debug!(
-                    "Source DB open failed for {}: {err}",
-                    source.root.display()
-                );
-                continue;
-            }
-        };
-        let should_reset = match reset_done.lock() {
-            Ok(mut guard) => guard.insert(source.root.clone()),
-            Err(mut guard) => guard.get_mut().insert(source.root.clone()),
-        };
-        if should_reset {
-            let _ = db::prune_jobs_for_missing_sources(&conn);
-            let _ = db::reset_running_to_pending(&conn);
-        }
-        next.push(SourceClaimDb { source, conn });
-    }
-    *sources = next;
-}
-
-#[cfg_attr(test, allow(dead_code))]
-pub(super) fn worker_count_with_override(override_count: u32) -> usize {
-    if override_count >= 1 {
-        return override_count as usize;
-    }
-    if let Ok(value) = std::env::var("SEMPAL_ANALYSIS_WORKERS") {
-        if let Ok(parsed) = value.trim().parse::<usize>() {
-            if parsed >= 1 {
-                return parsed;
-            }
-        }
-    }
-    std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(1)
-        .saturating_sub(2)
-        .max(1)
-}
-
-#[cfg_attr(test, allow(dead_code))]
-pub(super) fn decode_worker_count_with_override(
-    worker_count: usize,
-    override_count: u32,
-) -> usize {
-    if override_count >= 1 {
-        return override_count as usize;
-    }
-    if let Ok(value) = std::env::var("SEMPAL_DECODE_WORKERS") {
-        if let Ok(parsed) = value.trim().parse::<usize>() {
-            if parsed >= 1 {
-                return parsed;
-            }
-        }
-    }
-    let max_workers = std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(worker_count.max(1));
-    min(worker_count.saturating_mul(2).max(2), max_workers)
-}
-
-fn claim_batch_size() -> usize {
-    if let Ok(value) = std::env::var("SEMPAL_ANALYSIS_CLAIM_BATCH") {
-        if let Ok(parsed) = value.trim().parse::<usize>() {
-            if parsed >= 1 {
-                return parsed;
-            }
-        }
-    }
-    64
-}
-
-pub(super) fn decode_queue_target(embedding_batch_max: usize, worker_count: usize) -> usize {
-    if let Ok(value) = std::env::var("SEMPAL_DECODE_QUEUE_TARGET") {
-        if let Ok(parsed) = value.trim().parse::<usize>() {
-            if parsed >= 1 {
-                return parsed;
-            }
-        }
-    }
-    (embedding_batch_max.saturating_mul(worker_count)).max(4)
-}
+use claim::SourceClaimDb;
 
 #[cfg_attr(test, allow(dead_code))]
 pub(super) fn spawn_decoder_worker(
@@ -287,12 +47,12 @@ pub(super) fn spawn_decoder_worker(
 ) -> JoinHandle<()> {
     std::thread::spawn(move || {
         lower_worker_priority();
-        let log_jobs = analysis_log_enabled();
+        let log_jobs = logging::analysis_log_enabled();
         let mut sources = Vec::new();
-        let mut last_refresh = Instant::now() - SOURCE_REFRESH_INTERVAL;
+        let mut last_refresh = Instant::now() - claim::SOURCE_REFRESH_INTERVAL;
         let mut next_source = 0usize;
         let mut local_queue: VecDeque<db::ClaimedJob> = VecDeque::new();
-        let claim_batch = claim_batch_size();
+        let claim_batch = claim::claim_batch_size();
         let decode_queue_target = decode_queue_target.max(1);
         loop {
             if shutdown.load(Ordering::Relaxed) {
@@ -314,7 +74,7 @@ pub(super) fn spawn_decoder_worker(
                 .read()
                 .ok()
                 .and_then(|guard| guard.clone());
-            refresh_sources(
+            claim::refresh_sources(
                 &mut sources,
                 &mut last_refresh,
                 &reset_done,
@@ -421,8 +181,8 @@ pub(super) fn spawn_compute_worker(
 ) -> JoinHandle<()> {
     std::thread::spawn(move || {
         lower_worker_priority();
-        let log_jobs = analysis_log_enabled();
-        let log_queue = analysis_log_queue_enabled();
+        let log_jobs = logging::analysis_log_enabled();
+        let log_queue = logging::analysis_log_queue_enabled();
         let mut last_queue_log = Instant::now();
         let mut connections: HashMap<std::path::PathBuf, Connection> = HashMap::new();
         let embedding_batch_max = crate::analysis::embedding::embedding_batch_max();
@@ -564,7 +324,7 @@ pub(super) fn spawn_compute_worker(
                         }
                     }
                 }))
-                .unwrap_or_else(|payload| Err(panic_to_string(payload)));
+                .unwrap_or_else(|payload| Err(logging::panic_to_string(payload)));
 
                 if let Err(err) = outcome {
                     immediate_job = Some((job_fallback, Err(err)));
@@ -605,7 +365,7 @@ pub(super) fn spawn_compute_worker(
                     run_analysis_jobs_with_decoded_batch(conn, jobs, use_cache, &analysis_version)
                 }))
                 .unwrap_or_else(|payload| {
-                    let err = panic_to_string(payload);
+                    let err = logging::panic_to_string(payload);
                     tracing::warn!("Analysis batch panicked: {err}");
                     jobs_for_failure
                         .into_iter()
@@ -720,28 +480,4 @@ fn lower_worker_priority() {
     unsafe {
         let _ = SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
     }
-}
-
-fn panic_to_string(payload: Box<dyn std::any::Any + Send>) -> String {
-    let message = if let Some(message) = payload.downcast_ref::<&str>() {
-        (*message).to_string()
-    } else if let Some(message) = payload.downcast_ref::<String>() {
-        message.clone()
-    } else {
-        "Unknown panic payload".to_string()
-    };
-    let backtrace = std::backtrace::Backtrace::capture();
-    format!("Analysis worker panicked: {message}\n{backtrace}")
-}
-
-fn analysis_log_enabled() -> bool {
-    std::env::var("SEMPAL_ANALYSIS_LOG_JOBS")
-        .map(|value| value.trim() == "1")
-        .unwrap_or(false)
-}
-
-fn analysis_log_queue_enabled() -> bool {
-    std::env::var("SEMPAL_ANALYSIS_LOG_QUEUE")
-        .map(|value| value.trim() == "1")
-        .unwrap_or(false)
 }
