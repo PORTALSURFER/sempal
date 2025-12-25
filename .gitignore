@@ -4,3 +4,7 @@ staging
 assets/ml/panns_cnn14_16k/Cnn14_16k_mAP=0.438.pth
 assets/ml/panns_cnn14_16k/panns_cnn14_16k.onnx.data
 assets/ml/panns_cnn14_16k/panns_cnn14_16k.onnx
+profile.kernel.etl
+profile.json.gz
+profile.json.gz
+profile.json.gz
