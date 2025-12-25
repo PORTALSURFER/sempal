@@ -217,21 +217,19 @@ fn prepare_panns_input(
     samples: &[f32],
     sample_rate: u32,
 ) -> Result<(), String> {
-    let resampled = if sample_rate != PANNS_SAMPLE_RATE {
+    if sample_rate != PANNS_SAMPLE_RATE {
         audio::resample_linear_into(
             resample_scratch,
             samples,
             sample_rate,
             PANNS_SAMPLE_RATE,
         );
-        resample_scratch.as_mut_slice()
+        audio::sanitize_samples_in_place(resample_scratch.as_mut_slice());
+        repeat_pad_into(wave_scratch, resample_scratch.as_slice(), PANNS_INPUT_SAMPLES);
     } else {
-        resample_scratch.clear();
-        resample_scratch.extend_from_slice(samples);
-        resample_scratch.as_mut_slice()
-    };
-    audio::sanitize_samples_in_place(resampled);
-    repeat_pad_into(wave_scratch, resampled, PANNS_INPUT_SAMPLES);
+        repeat_pad_into(wave_scratch, samples, PANNS_INPUT_SAMPLES);
+        audio::sanitize_samples_in_place(wave_scratch.as_mut_slice());
+    }
     let frames =
         log_mel_frames_with_scratch(wave_scratch, PANNS_SAMPLE_RATE, preprocess_scratch)?;
     out.fill(0.0);

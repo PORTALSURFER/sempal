@@ -26,6 +26,17 @@ fn main() {
         }
     };
 
+    if std::env::var_os("SEMPAL_PANNS_BATCH").is_none() {
+        unsafe {
+            std::env::set_var("SEMPAL_PANNS_BATCH", "1");
+        }
+    }
+    if std::env::var_os("SEMPAL_EMBEDDING_BATCH").is_none() {
+        unsafe {
+            std::env::set_var("SEMPAL_EMBEDDING_BATCH", "32");
+        }
+    }
+
     let renderer = WaveformRenderer::new(1, 1);
     let mut controller = EguiController::new(renderer, None);
     controller.set_analysis_worker_allowed_sources(Some(Vec::new()));
