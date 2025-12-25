@@ -112,6 +112,7 @@ def export_from_checkpoint(
 ) -> None:
     import torch
     import onnx
+    from onnx import external_data_helper
 
     with tempfile.TemporaryDirectory() as tmp:
         pytorch_dir = ensure_repo(Path(tmp))
@@ -153,7 +154,8 @@ def export_from_checkpoint(
             dynamic_axes={"logmel": {0: "batch"}, "embedding": {0: "batch"}},
             opset_version=opset,
         )
-        model = onnx.load(output)
+        model = onnx.load_model(output, load_external_data=True)
+        external_data_helper.convert_model_from_external_data(model)
         onnx.save_model(model, output, save_as_external_data=False)
 
 
