@@ -2,6 +2,7 @@ use eframe::egui::{self, RichText, SliderClamping};
 
 use super::super::EguiApp;
 use super::super::style;
+use super::buttons;
 
 impl EguiApp {
     pub(super) fn render_audio_settings_window(&mut self, ctx: &egui::Context) {
@@ -116,6 +117,9 @@ impl EguiApp {
                     )
                     .color(style::status_badge_color(style::StatusTone::Warning)),
                 );
+                ui.add_space(6.0);
+                ui.separator();
+                self.render_gpu_embeddings_panel(ui);
             });
         self.controller.ui.audio.panel_open = open;
     }
@@ -192,6 +196,29 @@ impl EguiApp {
 
         ui.add_space(ui.spacing().item_spacing.y);
         ui.separator();
+        ui.label(
+            RichText::new("GPU embeddings")
+                .strong()
+                .color(palette.text_primary),
+        );
+        let backend_label = match self.controller.panns_backend() {
+            crate::sample_sources::config::PannsBackendChoice::Wgpu => "WGPU (Vulkan)",
+            crate::sample_sources::config::PannsBackendChoice::Cuda => "CUDA",
+        };
+        ui.label(
+            RichText::new(format!("Backend: {}", backend_label)).color(palette.text_muted),
+        );
+        if ui
+            .add(buttons::action_button("Open GPU embedding options…"))
+            .clicked()
+        {
+            self.controller.ui.audio.panel_open = true;
+            self.controller.refresh_audio_options();
+        }
+    }
+
+    fn render_gpu_embeddings_panel(&mut self, ui: &mut egui::Ui) {
+        let palette = style::palette();
         ui.label(
             RichText::new("GPU embeddings")
                 .strong()
