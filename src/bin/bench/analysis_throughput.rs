@@ -31,11 +31,11 @@ pub(super) fn run(options: &BenchOptions) -> Result<AnalysisBenchResult, String>
             source_err(vec.len())?;
         }
         if options.analysis_full {
-            let processed = sempal::analysis::audio::preprocess_mono_for_embedding(
+            let processed = sempal::analysis::preprocess_mono_for_embedding(
                 &samples,
                 options.analysis_sample_rate,
             );
-            let embedding = sempal::analysis::embedding::infer_embedding(
+            let embedding = sempal::analysis::infer_embedding(
                 &processed,
                 options.analysis_sample_rate,
             )?;

@@ -63,6 +63,16 @@ pub fn compute_feature_vector_v1_for_mono_samples(
     Ok(vector::to_f32_vector_v1(&features))
 }
 
+/// Preprocess mono audio for embedding inference (silence trim + normalization).
+pub fn preprocess_mono_for_embedding(samples: &[f32], sample_rate: u32) -> Vec<f32> {
+    audio::preprocess_mono_for_embedding(samples, sample_rate)
+}
+
+/// Infer the embedding for a mono sample buffer.
+pub fn infer_embedding(samples: &[f32], sample_rate: u32) -> Result<Vec<f32>, String> {
+    embedding::infer_embedding(samples, sample_rate)
+}
+
 /// Extract the lightweight DSP vector from a full V1 feature vector.
 pub fn light_dsp_from_features_v1(features: &[f32]) -> Option<Vec<f32>> {
     if features.len() < LIGHT_DSP_VECTOR_LEN {
