@@ -1,5 +1,5 @@
 use super::types::ClaimedJob;
-use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params, params_from_iter};
+use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -89,11 +89,16 @@ pub(in crate::egui_app::controller::analysis_jobs) fn claim_next_jobs(
     {
         let mut stmt = tx
             .prepare(
-                "SELECT id, sample_id, content_hash, job_type
-                 FROM analysis_jobs
-                 WHERE status = 'pending' AND sample_id LIKE ?1
-                 ORDER BY created_at ASC, id ASC
-                 LIMIT ?2",
+                "UPDATE analysis_jobs
+                 SET status = 'running', attempts = attempts + 1
+                 WHERE id IN (
+                     SELECT id
+                     FROM analysis_jobs
+                     WHERE status = 'pending' AND sample_id LIKE ?1
+                     ORDER BY created_at ASC, id ASC
+                     LIMIT ?2
+                 )
+                 RETURNING id, sample_id, content_hash, job_type",
             )
             .map_err(|err| format!("Failed to prepare analysis job claim: {err}"))?;
         let mut rows = stmt
@@ -119,24 +124,6 @@ pub(in crate::egui_app::controller::analysis_jobs) fn claim_next_jobs(
     if jobs.is_empty() {
         tx.commit()
             .map_err(|err| format!("Failed to commit empty analysis claim transaction: {err}"))?;
-        return Ok(Vec::new());
-    }
-    let placeholders = std::iter::repeat("?")
-        .take(jobs.len())
-        .collect::<Vec<_>>()
-        .join(", ");
-    let sql = format!(
-        "UPDATE analysis_jobs
-         SET status = 'running', attempts = attempts + 1
-         WHERE status = 'pending' AND id IN ({placeholders})"
-    );
-    let params: Vec<i64> = jobs.iter().map(|job| job.id).collect();
-    let updated = tx
-        .execute(&sql, params_from_iter(params.iter()))
-        .map_err(|err| format!("Failed to claim analysis jobs: {err}"))?;
-    if updated == 0 {
-        tx.commit()
-            .map_err(|err| format!("Failed to commit analysis claim transaction: {err}"))?;
         return Ok(Vec::new());
     }
     tx.commit()
