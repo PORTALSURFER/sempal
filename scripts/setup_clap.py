@@ -255,10 +255,6 @@ def patch_layer_norm_weights(path: Path, fallback_dim: int | None) -> bool:
         if node.op_type != "LayerNormalization":
             continue
 
-        weight_name = node.input[1] if len(node.input) > 1 else ""
-        if weight_name and weight_name in initializer_names:
-            continue
-
         input_name = node.input[0] if node.input else ""
         dims = shape_map.get(input_name)
         if not dims or dims[-1] is None:
@@ -274,19 +270,38 @@ def patch_layer_norm_weights(path: Path, fallback_dim: int | None) -> bool:
             dims = [fallback_dim]
 
         num_features = dims[-1]
-        scale_name = weight_name or (f"{node.name}_scale" if node.name else "layernorm_scale")
-        scale_init = numpy_helper.from_array(
-            np.ones((num_features,), dtype=np.float32), name=scale_name
-        )
-        model.graph.initializer.append(scale_init)
-        initializer_names.add(scale_name)
 
-        if len(node.input) > 1:
-            node.input[1] = scale_name
-        else:
-            node.input.append(scale_name)
+        weight_name = node.input[1] if len(node.input) > 1 else ""
+        if not weight_name or weight_name not in initializer_names:
+            scale_name = weight_name or (f"{node.name}_scale" if node.name else "layernorm_scale")
+            scale_init = numpy_helper.from_array(
+                np.ones((num_features,), dtype=np.float32), name=scale_name
+            )
+            model.graph.initializer.append(scale_init)
+            initializer_names.add(scale_name)
 
-        patched = True
+            if len(node.input) > 1:
+                node.input[1] = scale_name
+            else:
+                node.input.append(scale_name)
+            patched = True
+
+        bias_name = node.input[2] if len(node.input) > 2 else ""
+        if not bias_name or bias_name not in initializer_names:
+            shift_name = bias_name or (f"{node.name}_bias" if node.name else "layernorm_bias")
+            shift_init = numpy_helper.from_array(
+                np.zeros((num_features,), dtype=np.float32), name=shift_name
+            )
+            model.graph.initializer.append(shift_init)
+            initializer_names.add(shift_name)
+
+            if len(node.input) > 2:
+                node.input[2] = shift_name
+            else:
+                while len(node.input) < 2:
+                    node.input.append("")
+                node.input.append(shift_name)
+            patched = True
 
     if patched:
         onnx.save(model, path)
