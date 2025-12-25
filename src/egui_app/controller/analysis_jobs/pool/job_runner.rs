@@ -222,7 +222,7 @@ fn run_embedding_backfill_job(
                         batch_input.extend_from_slice(logmel);
                     }
                     match crate::analysis::embedding::infer_embeddings_from_logmel_batch(
-                        batch_input.as_slice(),
+                        batch_input,
                         logmels.len(),
                     ) {
                         Ok(embeddings) => {
@@ -614,7 +614,7 @@ pub(super) fn run_analysis_jobs_with_decoded_batch(
     if !input_indices.is_empty() {
         let batch_result = std::panic::catch_unwind(|| {
             crate::analysis::embedding::infer_embeddings_from_logmel_batch(
-                batch_input.as_slice(),
+                batch_input,
                 input_indices.len(),
             )
         })

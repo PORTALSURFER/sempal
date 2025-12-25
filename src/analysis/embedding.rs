@@ -207,7 +207,7 @@ pub(crate) fn infer_embedding_from_logmel(logmel: &[f32]) -> Result<Vec<f32>, St
 }
 
 pub(crate) fn infer_embeddings_from_logmel_batch(
-    logmel: &[f32],
+    logmel: Vec<f32>,
     batch: usize,
 ) -> Result<Vec<Vec<f32>>, String> {
     if batch == 0 {
@@ -220,7 +220,13 @@ pub(crate) fn infer_embeddings_from_logmel_batch(
             logmel.len()
         ));
     }
-    with_panns_model(|model| run_panns_inference(&model.model, &model.device, logmel, batch))
+    with_panns_model(|model| {
+        let data = TensorData::new(
+            logmel,
+            [batch, 1, PANNS_INPUT_FRAMES, PANNS_MEL_BANDS],
+        );
+        run_panns_inference_from_data(&model.model, &model.device, data, batch)
+    })
 }
 
 pub(crate) fn warmup_panns() -> Result<(), String> {
@@ -336,6 +342,15 @@ fn run_panns_inference(
         input.to_vec(),
         [batch, 1, PANNS_INPUT_FRAMES, PANNS_MEL_BANDS],
     );
+    run_panns_inference_from_data(model, device, data, batch)
+}
+
+fn run_panns_inference_from_data(
+    model: &panns_burn::Model<PannsBackend>,
+    device: &WgpuDevice,
+    data: TensorData,
+    batch: usize,
+) -> Result<Vec<Vec<f32>>, String> {
     let input_tensor = Tensor::<PannsBackend, 4>::from_data(data, device);
     let output = model.forward(input_tensor);
     extract_embeddings_from_data(output.into_data(), batch)
