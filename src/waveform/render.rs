@@ -238,8 +238,8 @@ impl WaveformRenderer {
         let half_height = (height.saturating_sub(1)) as f32 / 2.0;
         let mid = half_height;
         let limit = height.saturating_sub(1) as f32;
-        let thickness = band_thickness(frames_per_column, height);
-        let density_boost = density_alpha_boost(frames_per_column);
+        let thickness = Self::band_thickness(frames_per_column, height);
+        let density_boost = Self::density_alpha_boost(frames_per_column);
         let fg = (
             foreground.r(),
             foreground.g(),

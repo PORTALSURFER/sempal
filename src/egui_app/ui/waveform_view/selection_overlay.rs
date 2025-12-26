@@ -200,10 +200,10 @@ fn draw_bpm_guides(
                     let bottom_left = egui::pos2(prev_x, line_bottom);
                     let top_right = egui::pos2(x, line_top);
                     let bottom_right = egui::pos2(x, line_bottom);
-                    let left = mesh.add_colored_vertex(top_left, triage_gradient_left);
-                    let left_bottom = mesh.add_colored_vertex(bottom_left, triage_gradient_left);
-                    let right = mesh.add_colored_vertex(top_right, triage_gradient_right);
-                    let right_bottom = mesh.add_colored_vertex(bottom_right, triage_gradient_right);
+                    let left = mesh.colored_vertex(top_left, triage_gradient_left);
+                    let left_bottom = mesh.colored_vertex(bottom_left, triage_gradient_left);
+                    let right = mesh.colored_vertex(top_right, triage_gradient_right);
+                    let right_bottom = mesh.colored_vertex(bottom_right, triage_gradient_right);
                     mesh.add_triangle(left, left_bottom, right);
                     mesh.add_triangle(right, left_bottom, right_bottom);
                     painter.add(egui::Shape::mesh(mesh));
