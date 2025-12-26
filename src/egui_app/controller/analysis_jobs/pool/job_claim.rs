@@ -324,8 +324,14 @@ pub(super) fn spawn_compute_worker(
                 };
                 let jobs_for_failure: Vec<db::ClaimedJob> =
                     jobs.iter().map(|(job, _)| job.clone()).collect();
+                let analysis_context = super::job_execution::AnalysisContext {
+                    use_cache,
+                    max_analysis_duration_seconds,
+                    analysis_sample_rate,
+                    analysis_version: analysis_version.as_str(),
+                };
                 let batch_outcomes = catch_unwind(AssertUnwindSafe(|| {
-                    run_analysis_jobs_with_decoded_batch(conn, jobs, use_cache, &analysis_version)
+                    run_analysis_jobs_with_decoded_batch(conn, jobs, &analysis_context)
                 }))
                 .unwrap_or_else(|payload| {
                     let err = logging::panic_to_string(payload);

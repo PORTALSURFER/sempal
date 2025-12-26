@@ -3,11 +3,14 @@ the idea to to have contexts chromes, like the sample browser or waveform etc, t
 navigation inside these contexts, like for example, navigating the browser list, the user can use plain arrow keys.
 
 ..
-  - TODO 4: Extract the core analysis job runner pipeline (src/egui_app/controller/
-    analysis_jobs/pool/job_runner.rs) into a “job execution” module and isolate error
-    aggregation/reporting. Add tests for backfill retry behavior and job status
-    updates to ensure correctness under failures.
-  - TODO 5: Tighten up and document the embedding inference pipeline (src/analysis/
-    embedding/infer.rs at 456 lines). Split into preprocessing, batch scheduling, and
-    backend IO; add doc comments for the public inference entry points and tests for
-    batch sizing + fallback behavior.
+
+  - TODO 3: Break up src/sample_sources/scanner/scan.rs into phases (walk, diff, db_sync) and introduce a ScanContext
+    struct for the shared state (existing entries, stats, mode). This will simplify scan() and make it easier to unit
+    test individual steps.
+  - TODO 4: Extract I/O vs. signal processing in src/analysis/audio/decode.rs. Create decode_io.rs (file probing/
+    decoding) and analysis_prep.rs (mono prep, trimming, normalization). This isolates failure modes and makes
+    testing the pure DSP steps simpler.
+  - TODO 5: Reduce test duplication in src/egui_app/controller/tests/waveform.rs and src/egui_app/controller/tests/
+    browser_actions.rs by creating focused fixtures in src/egui_app/controller/test_support.rs (e.g.,
+    “prepare_with_source_and_wav_entries” and “load_waveform_selection”). This will shorten tests, reduce setup
+    variance, and make changes safer.
