@@ -193,7 +193,6 @@ impl eframe::App for InstallerApp {
                             }
                         }
                     });
-                    ui.label(format!("Bundle source: {}", self.bundle_dir.display()));
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         if ui.button("Install").clicked() {
                             self.start_install();
