@@ -45,6 +45,12 @@ jobs:
         with:
           lfs: true
       - uses: dtolnay/rust-toolchain@stable
+      - name: Fetch ASIO SDK (Windows)
+        if: ${{ matrix.platform == 'windows' }}
+        shell: pwsh
+        run: |
+          git clone --depth 1 https://github.com/audiosdk/asio "$env:GITHUB_WORKSPACE/asio"
+          "CPAL_ASIO_DIR=$env:GITHUB_WORKSPACE/asio/ASIOSDK" >> $env:GITHUB_ENV
       - name: Install cross
         if: ${{ matrix.use_cross }}
         run: cargo install cross --locked
