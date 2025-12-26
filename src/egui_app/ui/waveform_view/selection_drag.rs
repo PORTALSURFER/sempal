@@ -39,11 +39,12 @@ pub(super) fn handle_selection_slide_drag(
     selection: SelectionRange,
     response: &egui::Response,
 ) {
+    let primary_down = ui.input(|i| i.pointer.button_down(egui::PointerButton::Primary));
     let to_wave_pos = |pos: egui::Pos2| {
         let normalized = ((pos.x - rect.left()) / rect.width()).clamp(0.0, 1.0);
         normalized.mul_add(view_width, view.start).clamp(0.0, 1.0)
     };
-    if response.drag_started() {
+    if response.drag_started() && primary_down {
         if let Some(pos) = response.interact_pointer_pos() {
             let anchor = to_wave_pos(pos);
             app.selection_slide = Some(super::SelectionSlide {
@@ -52,7 +53,7 @@ pub(super) fn handle_selection_slide_drag(
             });
             app.controller.cancel_active_drag();
         }
-    } else if response.dragged() {
+    } else if response.dragged_by(egui::PointerButton::Primary) {
         if let Some(pos) = response.interact_pointer_pos() {
             if app.selection_slide.is_none() {
                 let anchor = to_wave_pos(pos);
@@ -78,13 +79,13 @@ pub(super) fn handle_selection_slide_drag(
                     .set_selection_range(slide.range.shift(adjusted_delta));
             }
         }
-    } else if response.drag_stopped() {
+    } else if response.drag_stopped() && !primary_down {
         if app.selection_slide.take().is_some() {
             app.controller.finish_selection_drag();
         }
     }
 
-    if response.dragged() {
+    if response.dragged_by(egui::PointerButton::Primary) {
         ui.output_mut(|o| o.cursor_icon = CursorIcon::Grabbing);
     } else if response.hovered() {
         ui.output_mut(|o| o.cursor_icon = CursorIcon::Grab);
