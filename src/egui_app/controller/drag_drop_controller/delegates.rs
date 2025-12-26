@@ -52,6 +52,11 @@ impl EguiController {
         self.drag_drop().finish_active_drag();
     }
 
+    /// Cancel the active drag gesture without applying any drop action.
+    pub fn cancel_active_drag(&mut self) {
+        self.drag_drop().reset_drag();
+    }
+
     #[cfg(target_os = "windows")]
     /// Attempt to start an OS-level drag out of the app window (Windows-only).
     pub fn maybe_launch_external_drag(&mut self, pointer_outside: bool, pointer_left: bool) {

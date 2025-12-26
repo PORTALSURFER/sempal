@@ -33,6 +33,15 @@ pub(super) fn handle_selection_handle_drag(
         }
     } else if handle_response.dragged() {
         if let Some(pos) = handle_response.interact_pointer_pos() {
+            let alt = ui.input(|i| i.modifiers.alt);
+            if alt && app.selection_slide.is_none() {
+                let anchor = to_wave_pos(pos);
+                app.selection_slide = Some(super::SelectionSlide {
+                    anchor,
+                    range: selection,
+                });
+                app.controller.cancel_active_drag();
+            }
             if let Some(slide) = app.selection_slide {
                 let cursor = to_wave_pos(pos);
                 let delta = cursor - slide.anchor;
