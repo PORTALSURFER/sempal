@@ -223,9 +223,16 @@ impl eframe::App for InstallerApp {
                     }
                     ui.separator();
                     ui.label("Install log");
+                    let log_width = ui.available_width();
+                    let log_color = if self.install_finished {
+                        style::palette().success
+                    } else {
+                        style::palette().warning
+                    };
                     ScrollArea::vertical().max_height(140.0).show(ui, |ui| {
+                        ui.set_min_width(log_width);
                         for line in &self.logs {
-                            ui.label(line);
+                            ui.label(RichText::new(line).color(log_color));
                         }
                     });
                     if self.install_finished {
@@ -259,6 +266,16 @@ impl eframe::App for InstallerApp {
                     if let Some(error) = &self.error {
                         ui.label(error);
                     }
+                    ui.separator();
+                    ui.label("Install log");
+                    let log_width = ui.available_width();
+                    let log_color = style::semantic_palette().destructive;
+                    ScrollArea::vertical().max_height(140.0).show(ui, |ui| {
+                        ui.set_min_width(log_width);
+                        for line in &self.logs {
+                            ui.label(RichText::new(line).color(log_color));
+                        }
+                    });
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         if ui.button("Close").clicked() {
                             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
