@@ -1,6 +1,7 @@
 use super::selection_drag;
 use super::selection_geometry::{
-    paint_selection_edge_bracket, selection_edge_handle_rect, selection_handle_rect,
+    paint_selection_edge_bracket, selection_edge_handle_rect, selection_handle_height,
+    selection_handle_rect,
 };
 use super::selection_menu;
 use super::style;
@@ -79,7 +80,19 @@ pub(super) fn render_selection_overlay(
         painter.galley(text_pos, galley, text_color);
     }
 
-    draw_bpm_guides(app, ui, rect, selection, view, view_width, highlight);
+    let top_cut = super::overlays::LOOP_BAR_HEIGHT;
+    let bottom_cut = selection_handle_height(selection_rect);
+    draw_bpm_guides(
+        app,
+        ui,
+        rect,
+        selection,
+        view,
+        view_width,
+        highlight,
+        top_cut,
+        bottom_cut,
+    );
 
     let start_edge_rect = selection_edge_handle_rect(selection_rect, SelectionEdge::Start);
     let end_edge_rect = selection_edge_handle_rect(selection_rect, SelectionEdge::End);
@@ -142,6 +155,8 @@ fn draw_bpm_guides(
     view: WaveformView,
     view_width: f32,
     highlight: Color32,
+    top_cut: f32,
+    bottom_cut: f32,
 ) {
     if !app.controller.ui.waveform.bpm_snap_enabled {
         return;
@@ -162,6 +177,8 @@ fn draw_bpm_guides(
     let stroke = egui::Stroke::new(1.0, style::with_alpha(highlight, 140));
     let triage_red = style::with_alpha(style::semantic_palette().triage_trash, 200);
     let triage_stroke = egui::Stroke::new(1.0, triage_red);
+    let line_top = (rect.top() + top_cut).min(rect.bottom());
+    let line_bottom = (rect.bottom() - bottom_cut).max(line_top);
     let mut beat = selection.start() + step;
     let end = selection.end();
     let mut beat_index = 1usize;
@@ -174,7 +191,7 @@ fn draw_bpm_guides(
             stroke
         };
         painter.line_segment(
-            [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
+            [egui::pos2(x, line_top), egui::pos2(x, line_bottom)],
             line_stroke,
         );
         beat += step;

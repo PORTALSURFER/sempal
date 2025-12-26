@@ -3,6 +3,8 @@ use super::*;
 use eframe::egui::{self, Color32, Stroke};
 use std::time::{Duration, Instant};
 
+pub(super) const LOOP_BAR_HEIGHT: f32 = 12.0;
+
 fn to_screen_x_unclamped(
     position: f32,
     rect: egui::Rect,
@@ -270,16 +272,21 @@ pub(super) fn render_overlays(
         let width = (end_norm - start_norm).max(0.0) * rect.width();
         let bar_rect = egui::Rect::from_min_size(
             egui::pos2(rect.left() + rect.width() * start_norm, rect.top()),
-            egui::vec2(width.max(2.0), 12.0),
+            egui::vec2(width.max(2.0), LOOP_BAR_HEIGHT),
         );
-        ui.painter()
-            .rect_filled(bar_rect, 0.0, style::with_alpha(highlight, loop_bar_alpha));
         if let Some(selection) = app.controller.ui.waveform.selection {
             let response = ui.interact(
                 bar_rect,
                 ui.id().with("loop_bar_drag"),
                 egui::Sense::click_and_drag(),
             );
+            let hover_alpha = if response.hovered() || response.dragged() {
+                (loop_bar_alpha + 50).min(255)
+            } else {
+                loop_bar_alpha
+            };
+            ui.painter()
+                .rect_filled(bar_rect, 0.0, style::with_alpha(highlight, hover_alpha));
             selection_drag::handle_selection_slide_drag(
                 app,
                 ui,
@@ -289,6 +296,9 @@ pub(super) fn render_overlays(
                 selection,
                 &response,
             );
+        } else {
+            ui.painter()
+                .rect_filled(bar_rect, 0.0, style::with_alpha(highlight, loop_bar_alpha));
         }
     }
 
