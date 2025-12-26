@@ -72,22 +72,25 @@ impl WaveformRenderer {
         if decoded.samples.is_empty() {
             if let Some(peaks) = decoded.peaks.as_deref() {
                 let columns = peaks.sample_columns_for_view(start, end, width, view);
+                let frames_per_column = (frame_count as f32 * fraction / width as f32).max(1.0);
                 return match columns {
-                    WaveformColumnView::Mono(cols) => Self::paint_color_image_for_size(
+                    WaveformColumnView::Mono(cols) => Self::paint_color_image_for_size_with_density(
                         &cols,
                         width,
                         height,
                         self.foreground,
                         self.background,
+                        frames_per_column,
                     ),
                     WaveformColumnView::SplitStereo { left, right } => {
-                        Self::paint_split_color_image(
+                        Self::paint_split_color_image_with_density(
                             &left,
                             &right,
                             width,
                             height,
                             self.foreground,
                             self.background,
+                            frames_per_column,
                         )
                     }
                 };
@@ -110,22 +113,27 @@ impl WaveformRenderer {
                 view,
                 full_width,
             );
+            let frames_per_column = (frame_count as f32 / full_width as f32).max(1.0);
             return match cached {
-                super::zoom_cache::CachedColumns::Mono(cols) => Self::paint_color_image_for_size(
-                    &cols[start_col..end_col],
-                    width,
-                    height,
-                    self.foreground,
-                    self.background,
-                ),
+                super::zoom_cache::CachedColumns::Mono(cols) => {
+                    Self::paint_color_image_for_size_with_density(
+                        &cols[start_col..end_col],
+                        width,
+                        height,
+                        self.foreground,
+                        self.background,
+                        frames_per_column,
+                    )
+                }
                 super::zoom_cache::CachedColumns::SplitStereo { left, right } => {
-                    Self::paint_split_color_image(
+                    Self::paint_split_color_image_with_density(
                         &left[start_col..end_col],
                         &right[start_col..end_col],
                         width,
                         height,
                         self.foreground,
                         self.background,
+                        frames_per_column,
                     )
                 }
             };
@@ -164,22 +172,28 @@ impl WaveformRenderer {
         let width = width.max(1);
         let height = height.max(1);
         let columns = Self::sample_columns_for_width(samples, channels, width, view);
+        let frame_count = samples.len() / channels.max(1);
+        let frames_per_column = (frame_count as f32 / width as f32).max(1.0);
         match columns {
-            WaveformColumnView::Mono(cols) => Self::paint_color_image_for_size(
+            WaveformColumnView::Mono(cols) => Self::paint_color_image_for_size_with_density(
                 &cols,
                 width,
                 height,
                 self.foreground,
                 self.background,
+                frames_per_column,
             ),
-            WaveformColumnView::SplitStereo { left, right } => Self::paint_split_color_image(
+            WaveformColumnView::SplitStereo { left, right } => {
+                Self::paint_split_color_image_with_density(
                 &left,
                 &right,
                 width,
                 height,
                 self.foreground,
                 self.background,
-            ),
+                frames_per_column,
+            )
+            }
         }
     }
 
@@ -206,12 +220,13 @@ impl WaveformRenderer {
         Some((start, start + width))
     }
 
-    fn paint_color_image_for_size(
+    fn paint_color_image_for_size_with_density(
         columns: &[(f32, f32)],
         width: u32,
         height: u32,
         foreground: Color32,
         background: Color32,
+        frames_per_column: f32,
     ) -> ColorImage {
         let fill =
             Color32::from_rgba_unmultiplied(background.r(), background.g(), background.b(), 0);
@@ -223,7 +238,8 @@ impl WaveformRenderer {
         let half_height = (height.saturating_sub(1)) as f32 / 2.0;
         let mid = half_height;
         let limit = height.saturating_sub(1) as f32;
-        let thickness: f32 = 2.2;
+        let thickness = band_thickness(frames_per_column, height);
+        let density_boost = density_alpha_boost(frames_per_column);
         let fg = (
             foreground.r(),
             foreground.g(),
@@ -247,7 +263,7 @@ impl WaveformRenderer {
                     continue;
                 }
                 let coverage = (overlap / span).clamp(0.0, 1.0);
-                let boosted = coverage.sqrt().max(0.45);
+                let boosted = (coverage.sqrt() + density_boost).clamp(0.45, 1.0);
                 let alpha = ((fg.3 as f32) * boosted).round() as u8;
                 let idx = y as usize * stride + x;
                 if let Some(pixel) = image.pixels.get_mut(idx) {
@@ -258,22 +274,36 @@ impl WaveformRenderer {
         image
     }
 
-    fn paint_split_color_image(
+    fn paint_split_color_image_with_density(
         left: &[(f32, f32)],
         right: &[(f32, f32)],
         width: u32,
         height: u32,
         foreground: Color32,
         background: Color32,
+        frames_per_column: f32,
     ) -> ColorImage {
         let gap = if height >= 3 { 2 } else { 0 };
         let split_height = height.saturating_sub(gap);
         let top_height = (split_height / 2).max(1);
         let bottom_height = split_height.saturating_sub(top_height).max(1);
 
-        let top = Self::paint_color_image_for_size(left, width, top_height, foreground, background);
-        let bottom =
-            Self::paint_color_image_for_size(right, width, bottom_height, foreground, background);
+        let top = Self::paint_color_image_for_size_with_density(
+            left,
+            width,
+            top_height,
+            foreground,
+            background,
+            frames_per_column,
+        );
+        let bottom = Self::paint_color_image_for_size_with_density(
+            right,
+            width,
+            bottom_height,
+            foreground,
+            background,
+            frames_per_column,
+        );
 
         let fill =
             Color32::from_rgba_unmultiplied(background.r(), background.g(), background.b(), 0);
@@ -286,6 +316,22 @@ impl WaveformRenderer {
         let clamped_offset = bottom_offset.min(image.size[1]);
         Self::blit_image(&mut image, &bottom, clamped_offset);
         image
+    }
+
+    fn band_thickness(frames_per_column: f32, height: u32) -> f32 {
+        if !frames_per_column.is_finite() || frames_per_column <= 1.0 {
+            return 2.2;
+        }
+        let boost = (frames_per_column.log2().max(0.0) * 1.2).min(6.0);
+        let max_thickness = (height as f32 * 0.7).max(2.2);
+        (2.2 + boost).min(max_thickness)
+    }
+
+    fn density_alpha_boost(frames_per_column: f32) -> f32 {
+        if !frames_per_column.is_finite() || frames_per_column <= 1.0 {
+            return 0.0;
+        }
+        (frames_per_column.log2().max(0.0) * 0.08).min(0.35)
     }
 
     fn blit_image(target: &mut ColorImage, source: &ColorImage, y_offset: usize) {
