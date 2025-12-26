@@ -179,7 +179,7 @@ fn bpm_snap_step(controller: &EguiController) -> Option<f32> {
 }
 
 fn selection_scale_beats(controller: &EguiController) -> Option<f32> {
-    if !controller.ui.waveform.loop_enabled || !controller.ui.waveform.bpm_snap_enabled {
+    if !controller.ui.waveform.bpm_snap_enabled {
         return None;
     }
     let bpm = controller.ui.waveform.bpm_value?;
