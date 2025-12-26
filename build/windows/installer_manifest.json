@@ -6,6 +6,7 @@
   "entries": [
     "sempal.exe",
     "sempal-installer.exe",
-    "sempal.ico"
+    "sempal.ico",
+    "models/panns_cnn14_16k.bpk"
   ]
 }

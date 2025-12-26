@@ -73,37 +73,6 @@ case "$CHANNEL" in
     ;;
 esac
 
-resolve_python() {
-  if command -v python3 >/dev/null 2>&1; then
-    echo "python3"
-    return 0
-  fi
-  if command -v python >/dev/null 2>&1; then
-    echo "python"
-    return 0
-  fi
-  return 1
-}
-
-ensure_onnx() {
-  if [[ -n "${SEMPAL_PANNS_ONNX_PATH:-}" ]]; then
-    return 0
-  fi
-  local python_bin
-  if ! python_bin="$(resolve_python)"; then
-    echo "Python is required to export PANNs ONNX. Set SEMPAL_PANNS_ONNX_PATH instead." >&2
-    exit 1
-  fi
-  local onnx_dir="${REPO_ROOT}/.tmp/panns_onnx"
-  local onnx_path="${onnx_dir}/panns_cnn14_16k.onnx"
-  if [[ ! -f "$onnx_path" ]]; then
-    echo "Generating PANNs ONNX from checkpoint..."
-    "$python_bin" "${REPO_ROOT}/tools/export_panns_onnx.py" --out-dir "$onnx_dir"
-  fi
-  export SEMPAL_PANNS_ONNX_PATH="$onnx_path"
-}
-
-ensure_onnx
 "$BUILD_CARGO_BIN" build --release --bin "$APP_NAME" --target "$TARGET"
 
 WORK_DIR="$(mktemp -d)"
@@ -114,9 +83,9 @@ mkdir -p "$ROOT_DIR"
 cp "target/${TARGET}/release/${APP_NAME}" "${ROOT_DIR}/${APP_NAME}"
 MODEL_DIR="${ROOT_DIR}/models"
 mkdir -p "$MODEL_DIR"
-BURNPACK_PATH="$(find "target/${TARGET}/release/build" -name "panns_cnn14_16k.bpk" | head -n 1)"
-if [[ -z "$BURNPACK_PATH" ]]; then
-  echo "Burnpack not found in target/${TARGET}/release/build; ensure the ONNX model is available for the build." >&2
+BURNPACK_PATH="${REPO_ROOT}/assets/ml/panns_cnn14_16k/panns_cnn14_16k.bpk"
+if [[ ! -f "$BURNPACK_PATH" ]]; then
+  echo "Burnpack not found at ${BURNPACK_PATH}. Add the bundled model to assets/ml/panns_cnn14_16k." >&2
   exit 1
 fi
 cp "$BURNPACK_PATH" "${MODEL_DIR}/panns_cnn14_16k.bpk"

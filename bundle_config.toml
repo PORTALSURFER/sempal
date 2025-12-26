@@ -18,5 +18,13 @@ source = "assets/logo3.ico"
 dest = "bundle/{APP_NAME}.ico"
 
 [[entries]]
+source = "assets/ml/panns_cnn14_16k/panns_cnn14_16k.bpk"
+dest = "bundle/models/panns_cnn14_16k.bpk"
+
+[[entries]]
+source = "target/{TARGET}/release/{APP_NAME}-installer.exe"
+dest = "bundle/{APP_NAME}-installer.exe"
+
+[[entries]]
 source = "build/windows/installer_manifest.json"
 dest = "installer_manifest.json"

@@ -2,12 +2,12 @@
 
 ## Build
 - Update local `main` before running release tooling (e.g. `git fetch origin main` and `git reset --hard origin/main`).
-- Run `scripts/build_installer.ps1` (requires Python + PANNs export deps unless `SEMPAL_PANNS_ONNX_PATH` is already set).
+- Run `scripts/build_installer.ps1` (requires `assets/ml/panns_cnn14_16k/panns_cnn14_16k.bpk` to be present).
 - Confirm `dist/windows/bundle` contains `sempal.exe` and `sempal.ico`.
 - Verify `dist/windows/sempal-installer.exe` launches and shows the SemPal installer UI.
 
 ## macOS/Linux installers
-- Ensure Python + PANNs export deps are available for macOS/Linux builds unless `SEMPAL_PANNS_ONNX_PATH` is already set.
+- Ensure `assets/ml/panns_cnn14_16k/panns_cnn14_16k.bpk` is present before macOS/Linux builds.
 - Confirm release assets include `sempal-*-macos-*.pkg` and `sempal-*-linux-*.tar.gz`.
 
 ## Install Verification
