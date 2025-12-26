@@ -13,7 +13,7 @@ mod backend_io;
 mod preprocess;
 mod schedule;
 
-pub(super) use backend_io::run_panns_inference_for_model;
+pub(in crate::analysis::embedding) use backend_io::run_panns_inference_for_model;
 
 /// Input metadata for batch embedding inference.
 pub(crate) struct EmbeddingBatchInput<'a> {

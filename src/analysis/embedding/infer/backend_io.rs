@@ -87,7 +87,7 @@ pub(super) fn infer_embeddings_from_logmel_batch_pipelined_with_backend<B: Backe
         .collect()
 }
 
-pub(super) fn run_panns_inference_for_model(
+pub(in crate::analysis::embedding) fn run_panns_inference_for_model(
     model: &PannsModel,
     input: &[f32],
     batch: usize,
