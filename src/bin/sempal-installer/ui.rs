@@ -6,7 +6,10 @@ use sempal::egui_app::ui::style;
 use crate::{install, paths, APP_NAME};
 
 pub(crate) fn run_installer_app() -> eframe::Result<()> {
-    let native_options = eframe::NativeOptions::default();
+    let native_options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default().with_inner_size([600.0, 300.0]),
+        ..Default::default()
+    };
     eframe::run_native(
         "SemPal Installer",
         native_options,
