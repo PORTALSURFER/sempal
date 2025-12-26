@@ -319,6 +319,44 @@ hr {
   gap: 12px;
 }
 
+.download-hero {
+  margin: 18px 0 24px;
+  padding: 18px 20px;
+  background: linear-gradient(130deg, rgba(152, 172, 158, 0.28), rgba(20, 18, 16, 0.9));
+  border: 2px solid rgba(152, 172, 158, 0.9);
+  box-shadow: inset 0 0 0 1px rgba(186, 148, 108, 0.2), var(--shadow-strong);
+  display: grid;
+  gap: 12px;
+}
+
+.download-copy {
+  color: var(--text-primary);
+  font-size: 16px;
+  letter-spacing: 0.03em;
+}
+
+.download-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 18px;
+  border: 2px solid rgba(186, 148, 108, 0.9);
+  background: linear-gradient(90deg, rgba(186, 148, 108, 0.85), rgba(152, 172, 158, 0.85));
+  color: #12100e;
+  text-decoration: none;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-weight: 600;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.55);
+  transition: transform 0.15s ease, filter 0.15s ease, box-shadow 0.15s ease;
+}
+
+.download-link:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.08);
+  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.6);
+}
+
 .support-copy {
   color: var(--text-primary);
   font-size: 15px;

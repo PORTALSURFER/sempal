@@ -124,6 +124,30 @@ fn apply_wav_entries_updates_missing_lookup() {
         .browser
         .analysis_failures
         .insert(source.id.clone(), HashMap::new());
+    controller.cache_db(&source).unwrap();
+    let db = controller.database_for(&source).unwrap();
+    let mut batch = db.write_batch().unwrap();
+    batch
+        .upsert_file_with_hash_and_tag(
+            Path::new("alive.wav"),
+            1,
+            1,
+            "h1",
+            SampleTag::Neutral,
+            false,
+        )
+        .unwrap();
+    batch
+        .upsert_file_with_hash_and_tag(
+            Path::new("gone.wav"),
+            1,
+            1,
+            "h2",
+            SampleTag::Neutral,
+            true,
+        )
+        .unwrap();
+    batch.commit().unwrap();
     let entries = vec![
         WavEntry {
             relative_path: PathBuf::from("alive.wav"),

@@ -6829,7 +6829,7 @@ dependencies = [
 
 [[package]]
 name = "sempal"
-version = "0.368.0"
+version = "0.369.0"
 dependencies = [
  "blake3",
  "burn",

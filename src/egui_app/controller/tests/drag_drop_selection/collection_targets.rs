@@ -59,14 +59,12 @@ fn selection_drop_adds_clip_to_collection() {
         .unwrap();
     assert_eq!(collection.members.len(), 1);
     let member = &collection.members[0];
-    let member_path = &member.relative_path;
+    let member_path = member.relative_path.clone();
     let clip_root = member.clip_root.as_ref().expect("clip root set");
-    assert!(clip_root.join(member_path).exists());
-    assert!(!root.join(member_path).exists());
-    let entries = controller.wav_entries.pages.get(&0).expect("entries");
-    assert!(entries
-        .iter()
-        .all(|entry| &entry.relative_path != member_path));
+    assert!(clip_root.join(&member_path).exists());
+    assert!(!root.join(&member_path).exists());
+    let member_path_lookup = member_path.clone();
+    assert!(controller.wav_index_for_path(&member_path_lookup).is_none());
     assert!(controller.ui.browser.visible.len() == 0);
     assert!(
         controller
@@ -74,7 +72,7 @@ fn selection_drop_adds_clip_to_collection() {
             .collections
             .samples
             .iter()
-            .any(|sample| sample.path == *member_path)
+            .any(|sample| sample.path == member_path)
     );
 
     // Selecting the new collection clip should queue audio successfully.

@@ -119,10 +119,32 @@ impl EguiController {
 
     #[cfg(test)]
     pub(crate) fn set_wav_entries_for_tests(&mut self, entries: Vec<WavEntry>) {
+        let entries_for_db = entries.clone();
         self.wav_entries.clear();
         self.wav_entries.total = entries.len();
         self.wav_entries.insert_page(0, entries);
         self.rebuild_wav_lookup();
+        if let Some(source) = self.current_source() {
+            if let Ok(conn) = crate::sample_sources::SourceDatabase::open_connection(&source.root) {
+                let _ = conn.execute("DELETE FROM wav_files", []);
+            }
+            if let Ok(db) = self.database_for(&source)
+                && let Ok(mut batch) = db.write_batch()
+            {
+                for entry in &entries_for_db {
+                    let hash = entry.content_hash.as_deref().unwrap_or("test");
+                    let _ = batch.upsert_file_with_hash_and_tag(
+                        &entry.relative_path,
+                        entry.file_size,
+                        entry.modified_ns,
+                        hash,
+                        entry.tag,
+                        entry.missing,
+                    );
+                }
+                let _ = batch.commit();
+            }
+        }
     }
 
     // Audio load queueing/polling moved to `audio_loading` submodule.

@@ -255,6 +255,13 @@ impl EguiController {
         backup.capture_after(&context.absolute_path)?;
         let (file_size, modified_ns) = file_metadata(&context.absolute_path)?;
         let tag = self.sample_tag_for(&context.source, &context.relative_path)?;
+        let db = self
+            .database_for(&context.source)
+            .map_err(|err| format!("Database unavailable: {err}"))?;
+        db.upsert_file(&context.relative_path, file_size, modified_ns)
+            .map_err(|err| format!("Failed to sync database entry: {err}"))?;
+        db.set_tag(&context.relative_path, tag)
+            .map_err(|err| format!("Failed to sync tag: {err}"))?;
         let entry = WavEntry {
             relative_path: context.relative_path.clone(),
             file_size,

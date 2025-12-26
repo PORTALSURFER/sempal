@@ -40,10 +40,8 @@ fn enqueue_embedding_backfill(
     {
         let mut stmt = conn
             .prepare(
-                "SELECT t.sample_id
+                "SELECT s.sample_id
                  FROM samples s
-                 JOIN features f
-                   ON f.sample_id = s.sample_id AND f.feat_version = 1
                  LEFT JOIN embeddings e
                    ON e.sample_id = s.sample_id AND e.model_id = ?1
                  WHERE s.sample_id LIKE ?2

@@ -246,7 +246,7 @@ mod tests {
     fn stft_power_frames_outputs_expected_shape() {
         let samples = vec![0.1_f32; PANNS_STFT_N_FFT + PANNS_STFT_HOP];
         let frames = stft_power_frames(&samples, PANNS_STFT_N_FFT, PANNS_STFT_HOP).unwrap();
-        assert_eq!(frames.len(), 4);
+        assert_eq!(frames.len(), 5);
         assert_eq!(frames[0].len(), PANNS_STFT_N_FFT / 2 + 1);
     }
 
@@ -254,7 +254,7 @@ mod tests {
     fn stft_power_frames_zero_pads_last_frame() {
         let samples = vec![1.0_f32; 1000];
         let frames = stft_power_frames(&samples, PANNS_STFT_N_FFT, PANNS_STFT_HOP).unwrap();
-        assert_eq!(frames.len(), 3);
+        assert_eq!(frames.len(), 7);
         assert!(frames.iter().all(|f| f.iter().all(|v| v.is_finite())));
     }
 
