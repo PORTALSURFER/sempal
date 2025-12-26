@@ -75,7 +75,7 @@ pub fn find_similar(
         }
         let ef = state.params.ef_search.max(k + 1);
         let neighbours = state.hnsw.search(&embedding, k + 1, ef);
-        let mut results = Vec::with_capacity(k);
+        let mut results = Vec::with_capacity(neighbours.len());
         for neighbour in neighbours {
             if let Some(candidate) = state.id_map.get(neighbour.d_id) {
                 if candidate == sample_id {
@@ -85,11 +85,14 @@ pub fn find_similar(
                     sample_id: candidate.clone(),
                     distance: neighbour.distance,
                 });
-                if results.len() >= k {
-                    break;
-                }
             }
         }
+        results.sort_by(|a, b| {
+            a.distance
+                .partial_cmp(&b.distance)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        results.truncate(k);
         Ok(results)
     })
 }
@@ -115,18 +118,21 @@ pub fn find_similar_for_embedding(
         }
         let ef = state.params.ef_search.max(k);
         let neighbours = state.hnsw.search(embedding, k, ef);
-        let mut results = Vec::with_capacity(k);
+        let mut results = Vec::with_capacity(neighbours.len());
         for neighbour in neighbours {
             if let Some(candidate) = state.id_map.get(neighbour.d_id) {
                 results.push(SimilarNeighbor {
                     sample_id: candidate.clone(),
                     distance: neighbour.distance,
                 });
-                if results.len() >= k {
-                    break;
-                }
             }
         }
+        results.sort_by(|a, b| {
+            a.distance
+                .partial_cmp(&b.distance)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        results.truncate(k);
         Ok(results)
     })
 }
