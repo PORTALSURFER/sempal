@@ -62,6 +62,29 @@ jobs:
             --channel "${RELEASE_CHANNEL}" \
             ${RELEASE_VERSION:+--version "${RELEASE_VERSION}"} \
             --out-dir dist/release
+      - name: Build macOS pkg
+        if: ${{ matrix.platform == 'macos' }}
+        run: |
+          scripts/build_macos_pkg.sh \
+            --target "${{ matrix.target }}" \
+            --arch "${{ matrix.arch }}" \
+            --channel "${RELEASE_CHANNEL}" \
+            ${RELEASE_VERSION:+--version "${RELEASE_VERSION}"} \
+            --onnx-url "${SEMPAL_PANNS_ONNX_URL}" \
+            --out-dir dist/release
+        env:
+          SEMPAL_PANNS_ONNX_URL: ${{ secrets.SEMPAL_PANNS_ONNX_URL }}
+      - name: Build Linux tar.gz
+        if: ${{ matrix.platform == 'linux' }}
+        env:
+          SEMPAL_CARGO_BIN: ${{ matrix.use_cross && 'cross' || 'cargo' }}
+        run: |
+          scripts/build_linux_tar.sh \
+            --target "${{ matrix.target }}" \
+            --arch "${{ matrix.arch }}" \
+            --channel "${RELEASE_CHANNEL}" \
+            ${RELEASE_VERSION:+--version "${RELEASE_VERSION}"} \
+            --out-dir dist/release
       - uses: actions/upload-artifact@v4
         with:
           name: release-${{ matrix.platform }}

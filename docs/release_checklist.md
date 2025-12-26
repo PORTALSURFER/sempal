@@ -5,6 +5,10 @@
 - Confirm `dist/windows/bundle` contains `sempal.exe` and `sempal.ico`.
 - Verify `dist/windows/sempal-installer.exe` launches and shows the SemPal installer UI.
 
+## macOS/Linux installers
+- Ensure `SEMPAL_PANNS_ONNX_URL` is set for macOS pkg builds.
+- Confirm release assets include `sempal-*-macos-*.pkg` and `sempal-*-linux-*.tar.gz`.
+
 ## Install Verification
 - Install into a clean directory (e.g. `C:\Program Files\SemPal`).
 - Confirm `%APPDATA%\.sempal\models\panns_cnn14_16k.onnx` exists after install.
