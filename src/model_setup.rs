@@ -58,6 +58,35 @@ pub fn ensure_panns_burnpack(options: PannsSetupOptions) -> Result<PathBuf, Stri
     Ok(burnpack_path)
 }
 
+pub fn sync_bundled_burnpack() -> Result<bool, String> {
+    let models_dir = resolve_models_dir(None)?;
+    let target = models_dir.join(PANNS_BURNPACK_NAME);
+    if target.exists() {
+        return Ok(false);
+    }
+    let Some(source) = bundled_burnpack_path() else {
+        return Ok(false);
+    };
+    fs::copy(&source, &target).map_err(|err| {
+        format!(
+            "Failed to copy bundled burnpack from {}: {err}",
+            source.display()
+        )
+    })?;
+    Ok(true)
+}
+
+fn bundled_burnpack_path() -> Option<PathBuf> {
+    let exe = env::current_exe().ok()?;
+    let exe_dir = exe.parent()?;
+    let bundled = exe_dir.join("models").join(PANNS_BURNPACK_NAME);
+    if bundled.exists() {
+        Some(bundled)
+    } else {
+        None
+    }
+}
+
 fn resolve_models_dir(override_dir: Option<PathBuf>) -> Result<PathBuf, String> {
     let root = match override_dir {
         Some(path) => path,

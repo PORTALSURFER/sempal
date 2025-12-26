@@ -1,17 +1,13 @@
-# Release Checklist (Windows)
+# Release Checklist (Portable Bundles)
 
 ## Build
 - Update local `main` before running release tooling (e.g. `git fetch origin main` and `git reset --hard origin/main`).
-- Run `scripts/build_installer.ps1` (requires `assets/ml/panns_cnn14_16k/panns_cnn14_16k.bpk` to be present).
-- Confirm `dist/windows/bundle` contains `sempal.exe` and `sempal.ico`.
-- Verify `dist/windows/sempal-installer.exe` launches and shows the SemPal installer UI.
+- Ensure `assets/ml/panns_cnn14_16k/panns_cnn14_16k.bpk` is present before builds.
+- Run the release workflow or `scripts/build_release_zip.sh` per target.
+- Confirm the zip includes the app binary, `models/panns_cnn14_16k.bpk`, and `update-manifest.json`.
 
-## macOS/Linux installers
-- Ensure `assets/ml/panns_cnn14_16k/panns_cnn14_16k.bpk` is present before macOS/Linux builds.
-- Confirm release assets include `sempal-*-macos-*.pkg` and `sempal-*-linux-*.tar.gz`.
-
-## Install Verification
-- Install into a clean directory (e.g. `C:\Program Files\SemPal`).
+## Portable Verification
+- Extract the zip into a clean directory.
 - Confirm `%APPDATA%\.sempal\models\panns_cnn14_16k.bpk` exists after install.
 - Launch SemPal and run analysis on a sample pack; ensure embeddings are created.
 
@@ -19,11 +15,5 @@
 - Gating precision/coverage curve matches expected ranges (no regression in margins).
 - Golden tests pass (mel, embedding) with no drift.
 
-## Uninstall Verification
-- Check SemPal appears in Add/Remove Programs.
-- Run uninstall from Add/Remove Programs or `sempal-installer.exe --uninstall`.
-- Confirm install directory is removed and uninstall entry disappears.
-
-## Signing (Optional)
-- Set `SIGNTOOL_PATH` and `SIGN_CERT_PATH` and rerun `scripts/build_installer.ps1 -Sign`.
-- Verify signatures on `sempal-installer.exe` and `sempal.exe`.
+## Cleanup Verification
+- Delete the extracted directory and ensure no files remain there.

@@ -78,6 +78,7 @@ pub(super) struct AppSettingsState {
     pub(super) feature_flags: crate::sample_sources::config::FeatureFlags,
     pub(super) analysis: crate::sample_sources::config::AnalysisSettings,
     pub(super) updates: crate::sample_sources::config::UpdateSettings,
+    pub(super) app_data_dir: Option<std::path::PathBuf>,
     pub(super) audio_output: AudioOutputConfig,
     pub(super) controls: crate::sample_sources::config::InteractionOptions,
     pub(super) trash_folder: Option<std::path::PathBuf>,

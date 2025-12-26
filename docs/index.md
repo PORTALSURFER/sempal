@@ -10,9 +10,9 @@ description: Sample manager with fast waveform review and destructive edits.
 Sempal is a sample manager with fast waveform preview, destructive edits. Tuned for music producers.
 
 <div class="download-hero">
-  <div class="download-copy">Download the latest build bundle for Windows.</div>
-  <a class="download-link" href="https://github.com/portalsurfer/sempal/releases/latest/download/sempal-installer-bundle.zip">
-    Download latest
+  <div class="download-copy">Download the latest portable bundle.</div>
+  <a class="download-link" href="https://github.com/portalsurfer/sempal/releases/latest">
+    View latest releases
   </a>
 </div>
 

@@ -19,6 +19,7 @@ use thiserror::Error;
 pub const APP_DIR_NAME: &str = ".sempal";
 
 static CONFIG_BASE_OVERRIDE: LazyLock<Mutex<Option<PathBuf>>> = LazyLock::new(|| Mutex::new(None));
+static APP_ROOT_OVERRIDE: LazyLock<Mutex<Option<PathBuf>>> = LazyLock::new(|| Mutex::new(None));
 #[cfg(test)]
 static TEST_CONFIG_BASE: LazyLock<PathBuf> = LazyLock::new(|| {
     let dir = tempfile::tempdir().expect("create test config dir");
@@ -63,6 +64,17 @@ pub enum AppDirError {
 pub fn app_root_dir() -> Result<PathBuf, AppDirError> {
     #[cfg(test)]
     ensure_test_config_base();
+    if let Some(path) = APP_ROOT_OVERRIDE
+        .lock()
+        .expect("app root override mutex poisoned")
+        .clone()
+    {
+        std::fs::create_dir_all(&path).map_err(|source| AppDirError::CreateDir {
+            path: path.clone(),
+            source,
+        })?;
+        return Ok(path);
+    }
     let base = config_base_dir().ok_or(AppDirError::NoBaseDir)?;
     let path = base.join(APP_DIR_NAME);
     std::fs::create_dir_all(&path).map_err(|source| AppDirError::CreateDir {
@@ -70,6 +82,19 @@ pub fn app_root_dir() -> Result<PathBuf, AppDirError> {
         source,
     })?;
     Ok(path)
+}
+
+/// Override the resolved application root directory (the `.sempal` folder).
+pub fn set_app_root_override(path: PathBuf) -> Result<(), AppDirError> {
+    std::fs::create_dir_all(&path).map_err(|source| AppDirError::CreateDir {
+        path: path.clone(),
+        source,
+    })?;
+    let mut guard = APP_ROOT_OVERRIDE
+        .lock()
+        .expect("app root override mutex poisoned");
+    *guard = Some(path);
+    Ok(())
 }
 
 /// Return the logs directory inside the `.sempal` root, creating it if needed.
