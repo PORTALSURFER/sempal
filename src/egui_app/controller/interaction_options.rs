@@ -143,6 +143,29 @@ impl EguiController {
         self.persist_controls();
     }
 
+    /// Enable/disable BPM snapping and persist the setting.
+    pub fn set_bpm_snap_enabled(&mut self, enabled: bool) {
+        if self.settings.controls.bpm_snap_enabled == enabled {
+            return;
+        }
+        self.settings.controls.bpm_snap_enabled = enabled;
+        self.ui.waveform.bpm_snap_enabled = enabled;
+        self.persist_controls();
+    }
+
+    /// Update and persist the BPM snap value when valid.
+    pub fn set_bpm_value(&mut self, value: f32) {
+        if !value.is_finite() || value <= 0.0 {
+            return;
+        }
+        if (self.settings.controls.bpm_value - value).abs() < f32::EPSILON {
+            return;
+        }
+        self.settings.controls.bpm_value = value;
+        self.ui.waveform.bpm_value = Some(value);
+        self.persist_controls();
+    }
+
     fn persist_controls(&mut self) {
         if let Err(err) = self.persist_config("Failed to save options") {
             self.set_status(err, StatusTone::Warning);

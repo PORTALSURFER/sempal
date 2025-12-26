@@ -10,6 +10,7 @@ use super::config_defaults::{
     default_anti_clip_fade_ms, default_audio_output, default_keyboard_zoom_factor,
     default_fast_similarity_prep_sample_rate, default_false, default_max_analysis_duration_seconds,
     default_scroll_speed, default_true, default_volume, default_wheel_zoom_factor,
+    default_bpm_value,
 };
 use crate::sample_sources::{Collection, SampleSource, SourceId};
 
@@ -237,7 +238,8 @@ impl Default for UpdateChannel {
 ///
 /// Config keys: `invert_waveform_scroll`, `waveform_scroll_speed`,
 /// `wheel_zoom_factor`, `keyboard_zoom_factor`, `anti_clip_fade_enabled`,
-/// `anti_clip_fade_ms`, `destructive_yolo_mode`, `waveform_channel_view`.
+/// `anti_clip_fade_ms`, `destructive_yolo_mode`, `waveform_channel_view`,
+/// `bpm_snap_enabled`, `bpm_value`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InteractionOptions {
     #[serde(default = "default_true")]
@@ -256,6 +258,10 @@ pub struct InteractionOptions {
     pub destructive_yolo_mode: bool,
     #[serde(default)]
     pub waveform_channel_view: WaveformChannelView,
+    #[serde(default = "default_false")]
+    pub bpm_snap_enabled: bool,
+    #[serde(default = "default_bpm_value")]
+    pub bpm_value: f32,
 }
 
 impl Default for InteractionOptions {
@@ -269,6 +275,8 @@ impl Default for InteractionOptions {
             anti_clip_fade_ms: default_anti_clip_fade_ms(),
             destructive_yolo_mode: false,
             waveform_channel_view: WaveformChannelView::Mono,
+            bpm_snap_enabled: default_false(),
+            bpm_value: default_bpm_value(),
         }
     }
 }

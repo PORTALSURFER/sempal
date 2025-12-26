@@ -39,6 +39,18 @@ impl EguiController {
             waveform_channel_view: self.settings.controls.waveform_channel_view,
         };
         self.ui.waveform.channel_view = self.settings.controls.waveform_channel_view;
+        self.ui.waveform.bpm_snap_enabled = self.settings.controls.bpm_snap_enabled;
+        self.ui.waveform.bpm_value = normalize_bpm_value(self.settings.controls.bpm_value);
+        if let Some(value) = self.ui.waveform.bpm_value {
+            let rounded = value.round();
+            if (value - rounded).abs() < 0.01 {
+                self.ui.waveform.bpm_input = format!("{rounded:.0}");
+            } else {
+                self.ui.waveform.bpm_input = format!("{value:.2}");
+            }
+        } else {
+            self.ui.waveform.bpm_input.clear();
+        }
         self.refresh_audio_options();
         self.apply_volume(cfg.volume);
         self.ui.trash_folder = cfg.trash_folder.clone();
@@ -171,5 +183,13 @@ impl EguiController {
                 );
             }
         }
+    }
+}
+
+fn normalize_bpm_value(value: f32) -> Option<f32> {
+    if value.is_finite() && value > 0.0 {
+        Some(value)
+    } else {
+        None
     }
 }

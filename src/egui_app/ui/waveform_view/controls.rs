@@ -35,10 +35,12 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
         let waveform = &mut app.controller.ui.waveform;
         let mut bpm_enabled = waveform.bpm_snap_enabled;
         if ui.checkbox(&mut bpm_enabled, "BPM snap").clicked() {
-            waveform.bpm_snap_enabled = bpm_enabled;
+            app.controller.set_bpm_snap_enabled(bpm_enabled);
             if bpm_enabled && waveform.bpm_value.is_none() {
-                waveform.bpm_value = Some(120.0);
-                waveform.bpm_input = "120".to_string();
+                let fallback = app.controller.settings.controls.bpm_value;
+                app.controller.set_bpm_value(fallback);
+                waveform.bpm_value = Some(fallback);
+                waveform.bpm_input = format!("{fallback:.0}");
             }
         }
         let bpm_edit = ui.add_enabled(
@@ -48,7 +50,11 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
                 .hint_text("120"),
         );
         if bpm_edit.changed() {
-            waveform.bpm_value = parse_bpm_input(&waveform.bpm_input);
+            let parsed = parse_bpm_input(&waveform.bpm_input);
+            waveform.bpm_value = parsed;
+            if let Some(value) = parsed {
+                app.controller.set_bpm_value(value);
+            }
         }
     });
     if view_mode != app.controller.ui.waveform.channel_view {
