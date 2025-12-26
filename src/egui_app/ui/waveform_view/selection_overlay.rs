@@ -138,7 +138,13 @@ pub(super) fn render_selection_overlay(
             || edge_response.is_pointer_button_down_on()
             || edge_response.dragged();
         if edge_hovered {
-            let color = highlight;
+            let scale_active =
+                alt_down && (edge_response.drag_started() || edge_response.dragged());
+            let color = if scale_active {
+                style::palette().accent_mint
+            } else {
+                highlight
+            };
             paint_selection_edge_bracket(ui.painter(), edge_rect, edge, color);
             ui.output_mut(|o| o.cursor_icon = CursorIcon::ResizeHorizontal);
         }
