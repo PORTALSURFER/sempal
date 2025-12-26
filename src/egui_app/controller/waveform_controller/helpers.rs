@@ -224,6 +224,7 @@ impl WaveformController<'_> {
         if !self.waveform_ready() {
             return false;
         }
+        self.ui.waveform.suppress_hover_cursor = true;
         let default_factor = self.ui.controls.keyboard_zoom_factor.max(0.01);
         let base = factor_override.unwrap_or(default_factor).max(0.01);
         let factor = if zoom_in { base } else { 1.0 / base };
