@@ -1,4 +1,6 @@
-use super::job_runner::{run_analysis_jobs_with_decoded_batch, run_job};
+use super::job_execution::{
+    run_analysis_jobs_with_decoded_batch, run_job, update_job_status_with_retry,
+};
 use crate::egui_app::controller::analysis_jobs::db;
 use crate::egui_app::controller::analysis_jobs::types::AnalysisJobMessage;
 use crate::egui_app::controller::jobs::JobMessage;
@@ -454,25 +456,6 @@ fn decode_analysis_job(
     match crate::analysis::audio::decode_for_analysis_with_rate(&absolute, sample_rate) {
         Ok(decoded) => DecodeOutcome::Decoded(decoded),
         Err(err) => DecodeOutcome::Failed(err),
-    }
-}
-
-fn update_job_status_with_retry<F>(mut update: F)
-where
-    F: FnMut() -> Result<(), String>,
-{
-    const RETRIES: usize = 5;
-    for attempt in 0..RETRIES {
-        match update() {
-            Ok(()) => return,
-            Err(_) if attempt + 1 < RETRIES => {
-                sleep(Duration::from_millis(50));
-            }
-            Err(err) => {
-                tracing::warn!("Failed to update analysis job status: {err}");
-                return;
-            }
-        }
     }
 }
 

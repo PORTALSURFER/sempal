@@ -2,9 +2,12 @@ use crate::egui_app::controller::analysis_jobs::db;
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::{mpsc::channel, Arc, Mutex};
+use std::thread::sleep;
+use std::time::Duration;
 use tracing::warn;
 
-use super::{load_embedding_vec_optional, now_epoch_seconds};
+use super::errors::ErrorCollector;
+use super::support::{load_embedding_vec_optional, now_epoch_seconds};
 
 struct EmbeddingWork {
     sample_id: String,
@@ -243,18 +246,14 @@ fn collect_results(
     rx: std::sync::mpsc::Receiver<Result<EmbeddingResult, String>>,
 ) -> (Vec<EmbeddingResult>, Vec<String>) {
     let mut results = Vec::new();
-    let mut errors = Vec::new();
+    let mut errors = ErrorCollector::new(3);
     while let Ok(result) = rx.recv() {
         match result {
             Ok(result) => results.push(result),
-            Err(err) => {
-                if errors.len() < 3 {
-                    errors.push(err);
-                }
-            }
+            Err(err) => errors.push(err),
         }
     }
-    (results, errors)
+    (results, errors.into_vec())
 }
 
 fn write_backfill_results(
@@ -264,58 +263,89 @@ fn write_backfill_results(
 ) -> Result<(), String> {
     const INSERT_BATCH: usize = 128;
     for chunk in results.chunks(INSERT_BATCH) {
-        let created_at = now_epoch_seconds();
-        conn.execute_batch("BEGIN IMMEDIATE")
-            .map_err(|err| format!("Begin embedding backfill tx failed: {err}"))?;
-        for result in chunk {
-            let embedding_blob = crate::analysis::vector::encode_f32_le_blob(&result.embedding);
-            let insert = conn.execute(
-                "INSERT INTO embeddings (sample_id, model_id, dim, dtype, l2_normed, vec, created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
-                 ON CONFLICT(sample_id) DO UPDATE SET
-                    model_id = excluded.model_id,
-                    dim = excluded.dim,
-                    dtype = excluded.dtype,
-                    l2_normed = excluded.l2_normed,
-                    vec = excluded.vec,
-                    created_at = excluded.created_at",
-                rusqlite::params![
-                    result.sample_id,
-                    crate::analysis::embedding::EMBEDDING_MODEL_ID,
-                    crate::analysis::embedding::EMBEDDING_DIM as i64,
-                    crate::analysis::embedding::EMBEDDING_DTYPE_F32,
-                    true,
-                    &embedding_blob,
-                    created_at
-                ],
-            );
-            if let Err(err) = insert {
-                let _ = conn.execute_batch("ROLLBACK");
-                return Err(format!("Embedding backfill insert failed: {err}"));
-            }
-            db::upsert_cached_embedding(
-                conn,
-                &result.content_hash,
-                analysis_version,
+        retry_backfill_write_with(
+            || write_backfill_chunk(conn, chunk, analysis_version),
+            3,
+            Duration::from_millis(50),
+        )?;
+    }
+    Ok(())
+}
+
+fn write_backfill_chunk(
+    conn: &rusqlite::Connection,
+    chunk: &[EmbeddingResult],
+    analysis_version: &str,
+) -> Result<(), String> {
+    let created_at = now_epoch_seconds();
+    conn.execute_batch("BEGIN IMMEDIATE")
+        .map_err(|err| format!("Begin embedding backfill tx failed: {err}"))?;
+    for result in chunk {
+        let embedding_blob = crate::analysis::vector::encode_f32_le_blob(&result.embedding);
+        let insert = conn.execute(
+            "INSERT INTO embeddings (sample_id, model_id, dim, dtype, l2_normed, vec, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+             ON CONFLICT(sample_id) DO UPDATE SET
+                model_id = excluded.model_id,
+                dim = excluded.dim,
+                dtype = excluded.dtype,
+                l2_normed = excluded.l2_normed,
+                vec = excluded.vec,
+                created_at = excluded.created_at",
+            rusqlite::params![
+                result.sample_id,
                 crate::analysis::embedding::EMBEDDING_MODEL_ID,
                 crate::analysis::embedding::EMBEDDING_DIM as i64,
                 crate::analysis::embedding::EMBEDDING_DTYPE_F32,
                 true,
                 &embedding_blob,
-                created_at,
-            )?;
+                created_at
+            ],
+        );
+        if let Err(err) = insert {
+            let _ = conn.execute_batch("ROLLBACK");
+            return Err(format!("Embedding backfill insert failed: {err}"));
         }
-        conn.execute_batch("COMMIT")
-            .map_err(|err| format!("Commit embedding backfill tx failed: {err}"))?;
-        if let Err(err) = crate::analysis::ann_index::upsert_embeddings_batch(
+        db::upsert_cached_embedding(
             conn,
-            chunk.iter()
-                .map(|result| (result.sample_id.as_str(), result.embedding.as_slice())),
-        ) {
-            warn!("ANN index batch update failed: {err}");
-        }
+            &result.content_hash,
+            analysis_version,
+            crate::analysis::embedding::EMBEDDING_MODEL_ID,
+            crate::analysis::embedding::EMBEDDING_DIM as i64,
+            crate::analysis::embedding::EMBEDDING_DTYPE_F32,
+            true,
+            &embedding_blob,
+            created_at,
+        )?;
+    }
+    conn.execute_batch("COMMIT")
+        .map_err(|err| format!("Commit embedding backfill tx failed: {err}"))?;
+    if let Err(err) = crate::analysis::ann_index::upsert_embeddings_batch(
+        conn,
+        chunk.iter()
+            .map(|result| (result.sample_id.as_str(), result.embedding.as_slice())),
+    ) {
+        warn!("ANN index batch update failed: {err}");
     }
     Ok(())
+}
+
+fn retry_backfill_write_with<F>(mut op: F, retries: usize, delay: Duration) -> Result<(), String>
+where
+    F: FnMut() -> Result<(), String>,
+{
+    for attempt in 0..retries {
+        match op() {
+            Ok(()) => return Ok(()),
+            Err(_err) if attempt + 1 < retries => {
+                if !delay.is_zero() {
+                    sleep(delay);
+                }
+            }
+            Err(err) => return Err(err),
+        }
+    }
+    Err("Embedding backfill retries exhausted".to_string())
 }
 
 #[cfg(test)]
@@ -363,5 +393,39 @@ mod tests {
         assert_eq!(errors.len(), 3);
         assert_eq!(errors[0], "err-1");
         assert_eq!(errors[2], "err-3");
+    }
+
+    #[test]
+    fn backfill_retry_succeeds_after_failures() {
+        let mut attempts = 0;
+        let result = retry_backfill_write_with(
+            || {
+                attempts += 1;
+                if attempts < 3 {
+                    Err("nope".to_string())
+                } else {
+                    Ok(())
+                }
+            },
+            4,
+            Duration::from_millis(0),
+        );
+        assert!(result.is_ok());
+        assert_eq!(attempts, 3);
+    }
+
+    #[test]
+    fn backfill_retry_stops_after_limit() {
+        let mut attempts = 0;
+        let result = retry_backfill_write_with(
+            || {
+                attempts += 1;
+                Err("nope".to_string())
+            },
+            3,
+            Duration::from_millis(0),
+        );
+        assert!(result.is_err());
+        assert_eq!(attempts, 3);
     }
 }

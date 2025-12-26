@@ -1,7 +1,7 @@
 mod job_claim;
 mod job_cleanup;
+mod job_execution;
 mod job_progress;
-mod job_runner;
 
 use crate::sample_sources::SourceId;
 use std::collections::HashSet;
