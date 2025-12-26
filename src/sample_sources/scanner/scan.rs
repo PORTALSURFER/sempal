@@ -110,8 +110,8 @@ fn scan(
     let root = ensure_root_dir(db)?;
     let mut context = ScanContext::new(db, mode)?;
     let mut batch = db.write_batch()?;
-    walk_phase(&root, cancel, on_progress.as_deref_mut(), &mut context, &mut batch)?;
-    db_sync_phase(db, &mut batch, &mut context)?;
+    walk_phase(&root, cancel, &mut on_progress, &mut context, &mut batch)?;
+    db_sync_phase(db, batch, &mut context)?;
     Ok(context.stats)
 }
 

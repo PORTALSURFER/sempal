@@ -12,7 +12,7 @@ use super::scan_fs::visit_dir;
 pub(super) fn walk_phase(
     root: &Path,
     cancel: Option<&AtomicBool>,
-    mut on_progress: Option<&mut dyn FnMut(usize, &Path)>,
+    on_progress: &mut Option<&mut dyn FnMut(usize, &Path)>,
     context: &mut ScanContext,
     batch: &mut SourceWriteBatch<'_>,
 ) -> Result<(), ScanError> {

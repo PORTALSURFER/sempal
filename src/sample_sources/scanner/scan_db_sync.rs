@@ -9,7 +9,7 @@ use super::scan_diff::mark_missing;
 
 pub(super) fn db_sync_phase(
     db: &SourceDatabase,
-    batch: &mut SourceWriteBatch<'_>,
+    batch: SourceWriteBatch<'_>,
     context: &mut ScanContext,
 ) -> Result<(), ScanError> {
     let existing = std::mem::take(&mut context.existing);
