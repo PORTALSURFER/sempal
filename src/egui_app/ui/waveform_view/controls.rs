@@ -37,7 +37,7 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
         if ui.checkbox(&mut bpm_enabled, "BPM snap").clicked() {
             app.controller.set_bpm_snap_enabled(bpm_enabled);
             if bpm_enabled && waveform.bpm_value.is_none() {
-                let fallback = app.controller.settings.controls.bpm_value;
+                let fallback = 142.0;
                 app.controller.set_bpm_value(fallback);
                 waveform.bpm_value = Some(fallback);
                 waveform.bpm_input = format!("{fallback:.0}");
