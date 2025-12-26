@@ -6,10 +6,10 @@ use super::analysis_db::{apply_cached_embedding, apply_cached_features_and_embed
 use super::analysis_decode::{build_logmel_for_embedding, decode_for_analysis, infer_embedding_from_logmel, DecodeOutcome};
 
 pub(in crate::egui_app::controller::analysis_jobs::pool) struct AnalysisContext<'a> {
-    pub(super) use_cache: bool,
-    pub(super) max_analysis_duration_seconds: f32,
-    pub(super) analysis_sample_rate: u32,
-    pub(super) analysis_version: &'a str,
+    pub(in crate::egui_app::controller::analysis_jobs::pool) use_cache: bool,
+    pub(in crate::egui_app::controller::analysis_jobs::pool) max_analysis_duration_seconds: f32,
+    pub(in crate::egui_app::controller::analysis_jobs::pool) analysis_sample_rate: u32,
+    pub(in crate::egui_app::controller::analysis_jobs::pool) analysis_version: &'a str,
 }
 
 pub(super) fn run_analysis_job(
