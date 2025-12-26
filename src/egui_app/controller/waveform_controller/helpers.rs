@@ -233,6 +233,7 @@ impl WaveformController<'_> {
         } else {
             focus.unwrap_or_else(|| self.waveform_focus_point())
         };
+        let focus = self.ui.waveform.cursor.unwrap_or(focus);
         let min_width = self.min_view_width();
         let original = self.ui.waveform.view;
         let width = (original.width() * factor).clamp(min_width, 1.0);
