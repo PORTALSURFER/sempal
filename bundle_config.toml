@@ -1,0 +1,23 @@
+zip_name = "dist/{APP_NAME}-installer-bundle.zip"
+targets = ["x86_64-pc-windows-msvc"]
+
+[[entries]]
+source = "target/release/{APP_NAME}.exe"
+dest = "bundle/{APP_NAME}.exe"
+
+[[entries]]
+source = "target/release/{APP_NAME}-installer.exe"
+dest = "{APP_NAME}-installer.exe"
+
+[[entries]]
+source = "assets/logo3.ico"
+dest = "bundle/{APP_NAME}.ico"
+
+[[entries]]
+file_name = "panns_cnn14_16k.bpk"
+search_dirs = ["target/release/build", "$APPDATA/.sempal/models"]
+dest = "bundle/models/panns_cnn14_16k.bpk"
+
+[[entries]]
+source = "build/windows/installer_manifest.json"
+dest = "installer_manifest.json"
