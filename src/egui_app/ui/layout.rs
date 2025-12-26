@@ -110,6 +110,22 @@ impl EguiApp {
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     self.render_status_controls(ui);
+                    let palette = style::palette();
+                    const APP_VERSION: &str = concat!("v", env!("CARGO_PKG_VERSION"));
+                    ui.allocate_ui_with_layout(
+                        ui.available_size(),
+                        egui::Layout::right_to_left(egui::Align::Center),
+                        |ui| {
+                            if !matches!(
+                                self.controller.ui.update.status,
+                                crate::egui_app::state::UpdateStatus::UpdateAvailable
+                            ) {
+                                ui.label(
+                                    egui::RichText::new(APP_VERSION).color(palette.text_muted),
+                                );
+                            }
+                        },
+                    );
                 });
             });
     }

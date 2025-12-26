@@ -155,12 +155,6 @@ impl EguiApp {
             }
             crate::egui_app::state::UpdateStatus::Idle => {}
         }
-        if !matches!(
-            self.controller.ui.update.status,
-            crate::egui_app::state::UpdateStatus::UpdateAvailable
-        ) {
-            ui.label(RichText::new(APP_VERSION).color(palette.text_muted));
-        }
         ui.add_space(10.0);
         let mut volume = self.controller.ui.volume;
         let slider = egui::Slider::new(&mut volume, 0.0..=1.0)
