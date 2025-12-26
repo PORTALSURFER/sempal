@@ -59,6 +59,7 @@ The zip expands to exactly one root folder:
 ```
 sempal/
   sempal(.exe)
+  sempal-model-setup(.exe)
   update-manifest.json
   resources/            (optional)
 ```
@@ -83,6 +84,6 @@ Minimal example:
   "target": "x86_64-pc-windows-msvc",
   "platform": "windows",
   "arch": "x86_64",
-  "files": ["sempal.exe", "update-manifest.json"]
+  "files": ["sempal.exe", "sempal-model-setup.exe", "update-manifest.json"]
 }
 ```

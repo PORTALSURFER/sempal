@@ -44,7 +44,7 @@ impl PannsModel {
         let model_path = panns_burnpack_path()?;
         if !model_path.exists() {
             return Err(format!(
-                "PANNs burnpack model not found at {}",
+                "PANNs burnpack model not found at {}. Run sempal-model-setup to download it.",
                 model_path.to_string_lossy()
             ));
         }

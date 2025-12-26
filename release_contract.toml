@@ -24,5 +24,5 @@ nightly_checksums = "checksums-nightly.txt"
 
 [archive_layout]
 root_dir = "{APP_NAME}"
-files = ["{APP_NAME}.exe", "update-manifest.json"]
+files = ["{APP_NAME}.exe", "{APP_NAME}-model-setup.exe", "update-manifest.json"]
 optional_dirs = ["resources"]

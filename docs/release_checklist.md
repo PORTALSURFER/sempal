@@ -1,14 +1,14 @@
 # Release Checklist (Windows)
 
 ## Build
-- Run `scripts/build_installer.ps1` with access to the latest `panns_cnn14_16k.onnx` and `onnxruntime.dll`.
-- Confirm `dist/windows/bundle` contains `sempal.exe`, `sempal.ico`, and `models/` payloads.
+- Run `scripts/build_installer.ps1` after setting `SEMPAL_PANNS_ONNX_URL` for the installer.
+- Confirm `dist/windows/bundle` contains `sempal.exe`, `sempal-model-setup.exe`, and `sempal.ico`.
 - Verify `dist/windows/sempal-installer.exe` launches and shows the SemPal installer UI.
 
 ## Install Verification
 - Install into a clean directory (e.g. `C:\Program Files\SemPal`).
 - Confirm `%APPDATA%\.sempal\models\panns_cnn14_16k.onnx` exists after install.
-- Confirm `%APPDATA%\.sempal\models\onnxruntime\onnxruntime.dll` exists after install.
+- Confirm `%APPDATA%\.sempal\models\panns_cnn14_16k.bpk` exists after install.
 - Launch SemPal and run analysis on a sample pack; ensure embeddings are created.
 
 ## ML Release Criteria
