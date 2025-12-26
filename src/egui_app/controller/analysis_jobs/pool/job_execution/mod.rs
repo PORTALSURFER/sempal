@@ -6,8 +6,8 @@ mod errors;
 mod status;
 mod support;
 
-pub(super) use analysis::run_analysis_jobs_with_decoded_batch;
-pub(super) use status::update_job_status_with_retry;
+pub(in crate::egui_app::controller::analysis_jobs::pool) use analysis::run_analysis_jobs_with_decoded_batch;
+pub(in crate::egui_app::controller::analysis_jobs::pool) use status::update_job_status_with_retry;
 
 pub(super) fn run_job(
     conn: &rusqlite::Connection,

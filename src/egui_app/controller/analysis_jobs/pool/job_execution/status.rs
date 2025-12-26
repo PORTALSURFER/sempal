@@ -1,7 +1,7 @@
 use std::thread::sleep;
 use std::time::Duration;
 
-pub(super) fn update_job_status_with_retry<F>(update: F)
+pub(in crate::egui_app::controller::analysis_jobs::pool) fn update_job_status_with_retry<F>(update: F)
 where
     F: FnMut() -> Result<(), String>,
 {

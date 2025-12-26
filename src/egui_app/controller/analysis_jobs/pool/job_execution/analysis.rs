@@ -176,7 +176,7 @@ pub(super) fn run_analysis_job_with_decoded(
     )
 }
 
-pub(super) fn run_analysis_jobs_with_decoded_batch(
+pub(in crate::egui_app::controller::analysis_jobs::pool) fn run_analysis_jobs_with_decoded_batch(
     conn: &rusqlite::Connection,
     jobs: Vec<(db::ClaimedJob, crate::analysis::audio::AnalysisAudio)>,
     use_cache: bool,

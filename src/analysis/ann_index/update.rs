@@ -1,5 +1,6 @@
 use super::state::AnnIndexState;
 use super::storage::{save_id_map, upsert_meta};
+use hnsw_rs::api::AnnT;
 use rusqlite::Connection;
 use std::time::Duration;
 
