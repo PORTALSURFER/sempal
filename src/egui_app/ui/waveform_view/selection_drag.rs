@@ -65,7 +65,17 @@ pub(super) fn handle_selection_slide_drag(
             if let Some(slide) = app.selection_slide {
                 let cursor = to_wave_pos(pos);
                 let delta = cursor - slide.anchor;
-                app.controller.set_selection_range(slide.range.shift(delta));
+                let snap_step = if ui.input(|i| i.modifiers.shift) {
+                    bpm_snap_step(app)
+                } else {
+                    None
+                };
+                let adjusted_delta = snap_step
+                    .filter(|step| step.is_finite() && *step > 0.0)
+                    .map(|step| snap_delta(delta, step))
+                    .unwrap_or(delta);
+                app.controller
+                    .set_selection_range(slide.range.shift(adjusted_delta));
             }
         }
     } else if response.drag_stopped() {
@@ -79,6 +89,30 @@ pub(super) fn handle_selection_slide_drag(
     } else if response.hovered() {
         ui.output_mut(|o| o.cursor_icon = CursorIcon::Grab);
     }
+}
+
+fn bpm_snap_step(app: &EguiApp) -> Option<f32> {
+    let bpm = app.controller.ui.waveform.bpm_value?;
+    if !bpm.is_finite() || bpm <= 0.0 {
+        return None;
+    }
+    let duration = app.controller.loaded_audio_duration_seconds()?;
+    if !duration.is_finite() || duration <= 0.0 {
+        return None;
+    }
+    let step = 60.0 / bpm / duration;
+    if step.is_finite() && step > 0.0 {
+        Some(step)
+    } else {
+        None
+    }
+}
+
+fn snap_delta(delta: f32, step: f32) -> f32 {
+    if !delta.is_finite() || !step.is_finite() || step <= 0.0 {
+        return delta;
+    }
+    (delta / step).round() * step
 }
 
 pub(super) fn handle_selection_edge_drag(
