@@ -242,7 +242,7 @@ impl WaveformController<'_> {
         let min_width = self.min_view_width();
         let width = (original.width() * factor).clamp(min_width, 1.0);
         let mut view = self.ui.waveform.view;
-        if focus_override.is_some() {
+        if focus_from_pointer {
             let ratio = ((focus - original.start) / original.width()).clamp(0.0, 1.0);
             view.start = focus - width * ratio;
             view.end = view.start + width;
