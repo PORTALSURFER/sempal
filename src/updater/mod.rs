@@ -104,6 +104,7 @@ fn expected_zip_asset_name(
     };
     let arch = match identity.arch.as_str() {
         "x86_64" => "x86_64",
+        "aarch64" => "aarch64",
         _ => {
             return Err(UpdateError::Invalid(format!(
                 "Unsupported platform/arch {}/{}",

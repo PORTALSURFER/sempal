@@ -19,13 +19,28 @@ jobs:
             target: x86_64-unknown-linux-gnu
             platform: linux
             arch: x86_64
+            use_cross: false
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            platform: linux
+            arch: aarch64
+            use_cross: true
           - os: macos-13
             target: x86_64-apple-darwin
             platform: macos
             arch: x86_64
+            use_cross: false
+          - os: macos-14
+            target: aarch64-apple-darwin
+            platform: macos
+            arch: aarch64
+            use_cross: false
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - name: Install cross
+        if: ${{ matrix.use_cross }}
+        run: cargo install cross --locked
       - name: Set release metadata
         run: |
           TAG="${{ github.event.release.tag_name }}"
@@ -37,6 +52,8 @@ jobs:
             echo "RELEASE_VERSION=${TAG#v}" >> "$GITHUB_ENV"
           fi
       - name: Build release zip
+        env:
+          SEMPAL_CARGO_BIN: ${{ matrix.use_cross && 'cross' || 'cargo' }}
         run: |
           scripts/build_release_zip.sh \
             --target "${{ matrix.target }}" \

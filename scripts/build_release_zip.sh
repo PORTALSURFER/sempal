@@ -3,6 +3,7 @@ set -euo pipefail
 
 APP_NAME="sempal"
 REPO_ROOT="$(pwd)"
+BUILD_CARGO_BIN="${SEMPAL_CARGO_BIN:-cargo}"
 OUT_DIR="dist/release"
 TARGET=""
 PLATFORM=""
@@ -76,7 +77,7 @@ case "$CHANNEL" in
     ;;
 esac
 
-cargo build --release --bin "$APP_NAME" --target "$TARGET"
+"$BUILD_CARGO_BIN" build --release --bin "$APP_NAME" --target "$TARGET"
 
 BIN_NAME="$APP_NAME"
 if [[ "$TARGET" == *windows* ]]; then
