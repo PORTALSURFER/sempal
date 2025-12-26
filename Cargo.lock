@@ -2306,6 +2306,7 @@ dependencies = [
  "cfg_aliases",
  "cubecl-common",
  "cubecl-core",
+ "cubecl-cpp",
  "cubecl-runtime",
  "cubecl-spirv",
  "derive-new",
@@ -6829,7 +6830,7 @@ dependencies = [
 
 [[package]]
 name = "sempal"
-version = "0.372.0"
+version = "0.373.0"
 dependencies = [
  "blake3",
  "burn",
