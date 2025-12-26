@@ -1,5 +1,6 @@
-use super::analysis_jobs;
-use super::{db, SampleSource, SourceId};
+use super::db;
+use crate::egui_app::controller::analysis_jobs;
+use crate::sample_sources::{SampleSource, SourceId};
 
 pub(super) trait SimilarityPrepStore {
     fn read_scan_timestamp(&self, source: &SampleSource) -> Option<i64>;

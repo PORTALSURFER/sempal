@@ -1,10 +1,10 @@
-use super::analysis_jobs;
-use super::jobs;
 use super::state;
 use super::store::{DbSimilarityPrepStore, SimilarityPrepStore};
-use super::*;
 use crate::analysis::hdbscan::{HdbscanConfig, HdbscanMethod};
+use crate::egui_app::controller::{analysis_jobs, jobs, EguiController, SimilarityPrepStage, SimilarityPrepState, StatusMessage};
 use crate::egui_app::state::ProgressTaskKind;
+use crate::egui_app::ui::style::StatusTone;
+use crate::sample_sources::{SampleSource, SourceId};
 use std::thread;
 
 struct SimilarityPrepStartPlan {

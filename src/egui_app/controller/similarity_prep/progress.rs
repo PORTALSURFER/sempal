@@ -1,6 +1,5 @@
-use super::analysis_jobs;
 use super::store::{DbSimilarityPrepStore, SimilarityPrepStore};
-use super::*;
+use crate::egui_app::controller::{analysis_jobs, EguiController, SimilarityPrepStage};
 
 impl EguiController {
     pub(super) fn refresh_similarity_prep_progress(&mut self) {

@@ -1,5 +1,5 @@
-use super::analysis_jobs;
-use super::{SampleSource, SourceId, SourceDatabase};
+use crate::egui_app::controller::analysis_jobs;
+use crate::sample_sources::{SampleSource, SourceDatabase, SourceId};
 
 pub(super) fn read_source_scan_timestamp(source: &SampleSource) -> Option<i64> {
     let db = SourceDatabase::open(&source.root).ok()?;
