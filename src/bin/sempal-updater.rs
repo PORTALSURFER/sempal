@@ -118,6 +118,14 @@ fn default_target() -> Option<String> {
     {
         return Some("x86_64-pc-windows-msvc".to_string());
     }
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    {
+        return Some("x86_64-unknown-linux-gnu".to_string());
+    }
+    #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+    {
+        return Some("x86_64-apple-darwin".to_string());
+    }
     #[allow(unreachable_code)]
     None
 }
@@ -126,6 +134,14 @@ fn default_platform() -> Option<String> {
     #[cfg(target_os = "windows")]
     {
         return Some("windows".to_string());
+    }
+    #[cfg(target_os = "linux")]
+    {
+        return Some("linux".to_string());
+    }
+    #[cfg(target_os = "macos")]
+    {
+        return Some("macos".to_string());
     }
     #[allow(unreachable_code)]
     None
