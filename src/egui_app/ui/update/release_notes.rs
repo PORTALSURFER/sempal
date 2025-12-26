@@ -206,6 +206,11 @@ impl EguiApp {
         let was_playing = self.controller.is_playing();
         let has_selection = self.controller.ui.waveform.selection.is_some();
         if input.shift {
+            if input.alt && has_selection {
+                let step = if move_right { 1 } else { -1 };
+                self.controller.nudge_selection_range(step, true);
+                return;
+            }
             self.adjust_waveform_selection(
                 input,
                 ctrl_or_command,

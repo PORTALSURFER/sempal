@@ -15,6 +15,7 @@ pub(crate) trait WaveformActions {
     );
     fn create_selection_from_playhead(&mut self, to_left: bool, resume_playback: bool, fine: bool);
     fn nudge_selection_edge(&mut self, edge: SelectionEdge, outward: bool, fine: bool);
+    fn nudge_selection_range(&mut self, steps: isize, fine: bool);
     fn scroll_waveform_view(&mut self, center: f32);
 }
 
@@ -117,6 +118,29 @@ impl WaveformActions for WaveformController<'_> {
         }
         let (clamped_start, clamped_end) = helpers::clamp_selection_bounds(start, end);
         let range = SelectionRange::new(clamped_start, clamped_end);
+        self.selection_state.range.set_range(Some(range));
+        self.apply_selection(Some(range));
+    }
+
+    fn nudge_selection_range(&mut self, steps: isize, fine: bool) {
+        if !self.waveform_ready() {
+            return;
+        }
+        let step = self.waveform_step_size(fine);
+        if step <= 0.0 {
+            return;
+        }
+        let Some(selection) = self
+            .selection_state
+            .range
+            .range()
+            .or(self.ui.waveform.selection)
+        else {
+            self.set_status("Create a selection first", StatusTone::Info);
+            return;
+        };
+        let delta = step * steps as f32;
+        let range = selection.shift(delta);
         self.selection_state.range.set_range(Some(range));
         self.apply_selection(Some(range));
     }
