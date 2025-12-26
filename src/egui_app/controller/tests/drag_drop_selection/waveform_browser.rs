@@ -51,13 +51,10 @@ fn selection_drop_to_browser_ignores_active_collection() {
         .find(|c| c.id == collection_id)
         .unwrap();
     assert!(collection.members.is_empty());
-    assert!(
-        controller
-            .wav_entries
-            .entries
-            .iter()
-            .any(|entry| entry.relative_path == PathBuf::from("clip_sel.wav"))
-    );
+    let entries = controller.wav_entries.pages.get(&0).expect("entries");
+    assert!(entries
+        .iter()
+        .any(|entry| entry.relative_path == PathBuf::from("clip_sel.wav")));
     assert_eq!(
         controller.sample_view.wav.selected_wav.as_deref(),
         Some(Path::new("clip_sel.wav"))
@@ -169,13 +166,10 @@ fn selection_drop_to_browser_creates_clip_in_focused_folder() {
     controller.finish_active_drag();
 
     assert!(root.join("sub").join("clip_sel.wav").is_file());
-    assert!(
-        controller
-            .wav_entries
-            .entries
-            .iter()
-            .any(|entry| entry.relative_path == PathBuf::from("sub/clip_sel.wav"))
-    );
+    let entries = controller.wav_entries.pages.get(&0).expect("entries");
+    assert!(entries
+        .iter()
+        .any(|entry| entry.relative_path == PathBuf::from("sub/clip_sel.wav")));
 }
 
 #[test]
@@ -216,13 +210,10 @@ fn selection_drop_to_browser_respects_shift_pressed_mid_drag() {
     );
     controller.finish_active_drag();
 
-    assert!(
-        controller
-            .wav_entries
-            .entries
-            .iter()
-            .any(|entry| entry.relative_path == PathBuf::from("clip_sel.wav"))
-    );
+    let entries = controller.wav_entries.pages.get(&0).expect("entries");
+    assert!(entries
+        .iter()
+        .any(|entry| entry.relative_path == PathBuf::from("clip_sel.wav")));
     assert_eq!(
         controller.sample_view.wav.selected_wav.as_deref(),
         Some(Path::new("clip.wav"))
@@ -266,11 +257,8 @@ fn selection_drop_to_folder_panel_creates_clip_in_folder() {
     controller.finish_active_drag();
 
     assert!(root.join("sub").join("clip_sel.wav").is_file());
-    assert!(
-        controller
-            .wav_entries
-            .entries
-            .iter()
-            .any(|entry| entry.relative_path == PathBuf::from("sub/clip_sel.wav"))
-    );
+    let entries = controller.wav_entries.pages.get(&0).expect("entries");
+    assert!(entries
+        .iter()
+        .any(|entry| entry.relative_path == PathBuf::from("sub/clip_sel.wav")));
 }

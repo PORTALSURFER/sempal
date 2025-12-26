@@ -222,13 +222,10 @@ fn remove_dead_links_rebuilds_missing_state() -> Result<(), String> {
             .get(&source.id)
             .is_some_and(|set| set.contains(&PathBuf::from("gone.wav")))
     );
-    assert!(
-        controller
-            .wav_entries
-            .entries
-            .iter()
-            .all(|entry| entry.relative_path != PathBuf::from("gone.wav"))
-    );
+    let entries = controller.wav_entries.pages.get(&0).expect("entries");
+    assert!(entries
+        .iter()
+        .all(|entry| entry.relative_path != PathBuf::from("gone.wav")));
     Ok(())
 }
 
@@ -278,7 +275,7 @@ fn mark_missing_updates_cache_db_and_missing_set_when_inactive() {
             .wav
             .entries
             .get(&source.id)
-            .is_some_and(|entries| entries[0].missing)
+            .is_some_and(|entries| entries.entry(0).is_some_and(|entry| entry.missing))
     );
     assert!(
         controller

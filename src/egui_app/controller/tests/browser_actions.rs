@@ -172,20 +172,9 @@ fn normalize_actions_apply_to_all_selected_rows() {
 
     controller.normalize_browser_samples(&rows).unwrap();
 
-    assert!(
-        controller
-            .wav_entries
-            .entries
-            .iter()
-            .all(|e| e.modified_ns > 0)
-    );
-    assert!(
-        controller
-            .wav_entries
-            .entries
-            .iter()
-            .all(|e| e.file_size > 0)
-    );
+    let entries = controller.wav_entries.pages.get(&0).expect("entries");
+    assert!(entries.iter().all(|e| e.modified_ns > 0));
+    assert!(entries.iter().all(|e| e.file_size > 0));
 }
 
 #[test]
