@@ -30,7 +30,7 @@ impl EguiApp {
                 let cuda_enabled = cfg!(feature = "panns-cuda");
                 ui.add_enabled(
                     cuda_enabled,
-                    egui::SelectableLabel::new(
+                    egui::Button::selectable(
                         backend == crate::sample_sources::config::PannsBackendChoice::Cuda,
                         "CUDA",
                     ),
