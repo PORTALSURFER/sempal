@@ -17,11 +17,15 @@ impl EguiApp {
         if ctx.wants_keyboard_input() {
             return;
         }
-        if input.alt && self.handle_alt_focus_navigation(ctx, input) {
-            return;
-        }
         let browser_has_selection = self.controller.ui.browser.selected.is_some();
         let ctrl_or_command = input.ctrl_or_command();
+        if input.alt
+            && !input.shift
+            && !ctrl_or_command
+            && self.handle_alt_focus_navigation(ctx, input)
+        {
+            return;
+        }
         self.handle_arrow_down(ctx, focus, input);
         self.handle_arrow_up(ctx, focus, input);
         self.handle_arrow_right(ctx, focus, input, browser_has_selection, ctrl_or_command);
