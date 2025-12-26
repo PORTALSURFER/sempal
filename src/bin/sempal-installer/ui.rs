@@ -6,8 +6,12 @@ use sempal::egui_app::ui::style;
 use crate::{install, paths, APP_NAME};
 
 pub(crate) fn run_installer_app() -> eframe::Result<()> {
+    let mut viewport = egui::ViewportBuilder::default().with_inner_size([600.0, 300.0]);
+    if let Some(icon) = load_installer_icon() {
+        viewport = viewport.with_icon(icon);
+    }
     let native_options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size([600.0, 300.0]),
+        viewport,
         ..Default::default()
     };
     eframe::run_native(
@@ -15,6 +19,26 @@ pub(crate) fn run_installer_app() -> eframe::Result<()> {
         native_options,
         Box::new(|cc| Ok(Box::new(InstallerApp::new(cc)))),
     )
+}
+
+fn load_installer_icon() -> Option<egui::IconData> {
+    decode_icon(include_bytes!("../../../assets/logo3.ico")).or_else(|| {
+        let fallback = decode_icon(include_bytes!("../../../assets/logo3.png"));
+        if fallback.is_none() {
+            eprintln!("Failed to decode installer icon assets.");
+        }
+        fallback
+    })
+}
+
+fn decode_icon(bytes: &[u8]) -> Option<egui::IconData> {
+    let image = image::load_from_memory(bytes).ok()?.to_rgba8();
+    let (width, height) = image.dimensions();
+    Some(egui::IconData {
+        rgba: image.into_raw(),
+        width,
+        height,
+    })
 }
 
 #[derive(Clone, Copy, PartialEq)]
