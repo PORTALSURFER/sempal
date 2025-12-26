@@ -322,8 +322,8 @@ impl WaveformRenderer {
         if !frames_per_column.is_finite() || frames_per_column <= 1.0 {
             return 2.2;
         }
-        let boost = (frames_per_column.log2().max(0.0) * 1.2).min(6.0);
-        let max_thickness = (height as f32 * 0.7).max(2.2);
+        let boost = (frames_per_column.log2().max(0.0) * 1.8).min(10.0);
+        let max_thickness = (height as f32 * 0.78).max(2.2);
         (2.2 + boost).min(max_thickness)
     }
 
@@ -331,7 +331,7 @@ impl WaveformRenderer {
         if !frames_per_column.is_finite() || frames_per_column <= 1.0 {
             return 0.0;
         }
-        (frames_per_column.log2().max(0.0) * 0.08).min(0.35)
+        (frames_per_column.log2().max(0.0) * 0.12).min(0.5)
     }
 
     fn blit_image(target: &mut ColorImage, source: &ColorImage, y_offset: usize) {
