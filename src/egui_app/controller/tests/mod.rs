@@ -6,6 +6,7 @@ mod browser_selection;
 mod collections;
 mod common;
 mod drag_drop_folders;
+mod drag_drop_waveform;
 mod drag_drop_selection;
 mod focus_random;
 mod folders_core;
