@@ -2,19 +2,19 @@ app_name = "sempal"
 repo_slug = "PORTALSURFER/sempal"
 channels = ["nightly", "stable"]
 targets = [
-  "x86_64-pc-windows-msvc",
-  "x86_64-unknown-linux-gnu",
-  "aarch64-unknown-linux-gnu",
-  "x86_64-apple-darwin",
-  "aarch64-apple-darwin",
+  "x86_64-pc-windows-msvc"
+  # "x86_64-unknown-linux-gnu",
+  # "aarch64-unknown-linux-gnu",
+  # "x86_64-apple-darwin",
+  # "aarch64-apple-darwin",
 ]
 
 [platform_labels]
 windows = "windows"
-linux = "linux"
-macos = "macos"
-x86_64 = "x86_64"
-aarch64 = "aarch64"
+# linux = "linux"
+# macos = "macos"
+# x86_64 = "x86_64"
+# aarch64 = "aarch64"
 
 [templates]
 stable_asset = "{app_name}-v{version}-{platform}-{arch}.zip"
