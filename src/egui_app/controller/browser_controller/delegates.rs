@@ -56,9 +56,18 @@ impl EguiController {
         &mut self,
         row: usize,
     ) -> Result<helpers::TriageSampleContext, String> {
-        let source = self
-            .current_source()
-            .ok_or_else(|| "Select a source first".to_string())?;
+        let source = if let Some(source) = self.current_source() {
+            source
+        } else {
+            let fallback = self
+                .selection_state
+                .ctx
+                .last_selected_browsable_source
+                .as_ref()
+                .and_then(|id| self.library.sources.iter().find(|s| &s.id == id))
+                .cloned();
+            fallback.ok_or_else(|| "Select a source first".to_string())?
+        };
         let index = self
             .visible_browser_index(row)
             .ok_or_else(|| "Sample not found".to_string())?;
