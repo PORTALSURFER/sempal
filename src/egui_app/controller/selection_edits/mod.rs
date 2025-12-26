@@ -179,9 +179,18 @@ impl EguiController {
 
     /// Normalize the active selection and apply short fades at the edges.
     pub(crate) fn normalize_waveform_selection(&mut self) -> Result<(), String> {
+        let preserved_view = self.ui.waveform.view;
+        let preserved_selection = self.ui.waveform.selection;
+        let preserved_cursor = self.ui.waveform.cursor;
         let result = self.apply_selection_edit("Normalized selection", |buffer| {
             normalize_selection(buffer, Duration::from_millis(5))
         });
+        if result.is_ok() {
+            self.ui.waveform.view = preserved_view.clamp();
+            self.ui.waveform.cursor = preserved_cursor;
+            self.selection_state.range.set_range(preserved_selection);
+            self.apply_selection(preserved_selection);
+        }
         if let Err(err) = &result {
             self.set_status(err.clone(), StatusTone::Error);
         }
