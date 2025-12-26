@@ -134,7 +134,7 @@ impl AudioPlayer {
     ) -> Result<(), String> {
         let (bounded_start, bounded_end, duration) = self.normalized_span(start, end)?;
         let clamped_offset = offset.clamp(start.min(end), start.max(end));
-        let offset_seconds = (clamped_offset * duration).saturating_sub(bounded_start);
+        let offset_seconds = (clamped_offset * duration - bounded_start).max(0.0);
         self.start_with_looped_span_offset(
             bounded_start,
             bounded_end,
