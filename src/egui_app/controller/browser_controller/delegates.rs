@@ -1,4 +1,5 @@
 use super::*;
+use tracing::warn;
 
 impl EguiController {
     /// Apply a keep/trash/neutral tag to a single visible browser row.
@@ -66,15 +67,24 @@ impl EguiController {
                 .as_ref()
                 .and_then(|id| self.library.sources.iter().find(|s| &s.id == id))
                 .cloned();
-            fallback.ok_or_else(|| "Select a source first".to_string())?
+            fallback.ok_or_else(|| {
+                warn!(row, "triage tag: no current source and no fallback");
+                "Select a source first".to_string()
+            })?
         };
         let index = self
             .visible_browser_index(row)
-            .ok_or_else(|| "Sample not found".to_string())?;
+            .ok_or_else(|| {
+                warn!(row, "triage tag: visible row missing");
+                "Sample not found".to_string()
+            })?;
         let entry = self
             .wav_entry(index)
             .cloned()
-            .ok_or_else(|| "Sample not found".to_string())?;
+            .ok_or_else(|| {
+                warn!(row, index, "triage tag: wav entry missing");
+                "Sample not found".to_string()
+            })?;
         let absolute_path = source.root.join(&entry.relative_path);
         Ok(helpers::TriageSampleContext {
             source,

@@ -1,5 +1,6 @@
 use super::helpers::TriageSampleContext;
 use super::*;
+use tracing::{info, warn};
 use std::collections::HashSet;
 
 pub(crate) trait BrowserActions {
@@ -20,6 +21,7 @@ pub(crate) trait BrowserActions {
 
 impl BrowserActions for BrowserController<'_> {
     fn tag_browser_sample(&mut self, row: usize, tag: SampleTag) -> Result<(), String> {
+        info!(row, ?tag, "triage tag: single row");
         let result: Result<(), String> = (|| {
             let ctx = self.resolve_browser_sample(row)?;
             self.set_sample_tag_for_source(&ctx.source, &ctx.entry.relative_path, tag, true)?;
@@ -30,6 +32,7 @@ impl BrowserActions for BrowserController<'_> {
             Ok(())
         })();
         if let Err(err) = &result {
+            warn!(row, ?tag, error = %err, "triage tag failed");
             self.set_status(err.clone(), StatusTone::Error);
         }
         result
@@ -41,7 +44,9 @@ impl BrowserActions for BrowserController<'_> {
         tag: SampleTag,
         primary_visible_row: usize,
     ) -> Result<(), String> {
+        info!(?rows, ?tag, primary_visible_row, "triage tag: multi row");
         let (contexts, mut last_error) = self.resolve_unique_browser_contexts(rows);
+        info!(count = contexts.len(), "triage tag: resolved contexts");
         for ctx in contexts {
             if let Err(err) =
                 self.set_sample_tag_for_source(&ctx.source, &ctx.entry.relative_path, tag, true)
@@ -56,6 +61,7 @@ impl BrowserActions for BrowserController<'_> {
         }
         self.refocus_after_filtered_removal(primary_visible_row);
         if let Some(err) = last_error {
+            warn!(?rows, ?tag, error = %err, "triage tag failed for multi row");
             Err(err)
         } else {
             Ok(())
