@@ -1,7 +1,7 @@
 use super::backend_io::run_panns_inference_for_model;
 use super::EmbeddingBatchInput;
 use super::PANNS_LOGMEL_LEN;
-use super::PannsModel;
+use crate::analysis::embedding::PannsModel;
 use crate::analysis::embedding::logmel::prepare_panns_logmel;
 
 pub(super) fn infer_embedding_with_model(
