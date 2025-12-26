@@ -2,6 +2,7 @@ use super::*;
 use crate::selection::SelectionEdge;
 
 pub(super) fn start_selection_drag(controller: &mut EguiController, position: f32) {
+    controller.begin_selection_undo("Selection");
     let range = controller.selection_state.range.begin_new(position);
     controller.apply_selection(Some(range));
 }
@@ -13,6 +14,7 @@ pub(super) fn start_selection_edge_drag(
     if !controller.selection_state.range.begin_edge_drag(edge) {
         return false;
     }
+    controller.begin_selection_undo("Selection");
     controller.apply_selection(controller.selection_state.range.range());
     true
 }
@@ -33,6 +35,7 @@ pub(super) fn update_selection_drag(controller: &mut EguiController, position: f
 
 pub(super) fn finish_selection_drag(controller: &mut EguiController) {
     controller.selection_state.range.finish_drag();
+    controller.commit_selection_undo();
     let is_playing = controller
         .audio
         .player
@@ -71,9 +74,15 @@ pub(super) fn is_selection_dragging(controller: &EguiController) -> bool {
 }
 
 pub(super) fn clear_selection(controller: &mut EguiController) {
+    let before = controller
+        .selection_state
+        .range
+        .range()
+        .or(controller.ui.waveform.selection);
     let cleared = controller.selection_state.range.clear();
     if cleared || controller.ui.waveform.selection.is_some() {
         controller.apply_selection(None);
+        controller.push_selection_undo("Selection", before, None);
     }
 }
 

@@ -167,6 +167,7 @@ impl EguiController {
                     selected_collection: None,
                 },
                 range: SelectionState::new(),
+                pending_undo: None,
                 suppress_autoplay_once: false,
             },
             settings: AppSettingsState {
@@ -328,6 +329,58 @@ impl EguiController {
 
     pub(crate) fn push_undo_entry(&mut self, entry: undo::UndoEntry<EguiController>) {
         self.history.undo_stack.push(entry);
+    }
+
+    pub(crate) fn begin_selection_undo(&mut self, label: impl Into<String>) {
+        if self.selection_state.pending_undo.is_some() {
+            return;
+        }
+        let before = self
+            .selection_state
+            .range
+            .range()
+            .or(self.ui.waveform.selection);
+        self.selection_state.pending_undo = Some(SelectionUndoState {
+            label: label.into(),
+            before,
+        });
+    }
+
+    pub(crate) fn commit_selection_undo(&mut self) {
+        let Some(pending) = self.selection_state.pending_undo.take() else {
+            return;
+        };
+        let after = self
+            .selection_state
+            .range
+            .range()
+            .or(self.ui.waveform.selection);
+        self.push_selection_undo(pending.label, pending.before, after);
+    }
+
+    pub(crate) fn push_selection_undo(
+        &mut self,
+        label: impl Into<String>,
+        before: Option<SelectionRange>,
+        after: Option<SelectionRange>,
+    ) {
+        if before == after {
+            return;
+        }
+        let label = label.into();
+        self.push_undo_entry(undo::UndoEntry::<EguiController>::new(
+            label,
+            move |controller| {
+                controller.selection_state.range.set_range(before);
+                controller.apply_selection(before);
+                Ok(())
+            },
+            move |controller| {
+                controller.selection_state.range.set_range(after);
+                controller.apply_selection(after);
+                Ok(())
+            },
+        ));
     }
 
     pub(crate) fn browser(&mut self) -> browser_controller::BrowserController<'_> {

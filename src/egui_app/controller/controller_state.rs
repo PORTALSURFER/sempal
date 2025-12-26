@@ -1,7 +1,7 @@
 use super::{
     AudioOutputConfig, AudioPlayer, Collection, CollectionId, DecodedWaveform, SampleSource,
-    ScanMode, SelectionState, SourceDatabase, SourceDbError, SourceId, WavEntry, WaveformRenderer,
-    audio_cache::AudioCache, jobs, source_folders, undo, wavs,
+    ScanMode, SelectionRange, SelectionState, SourceDatabase, SourceDbError, SourceId, WavEntry,
+    WaveformRenderer, audio_cache::AudioCache, jobs, source_folders, undo, wavs,
 };
 use std::{
     cell::RefCell,
@@ -67,6 +67,11 @@ pub(super) struct SelectionContextState {
     pub(super) selected_source: Option<SourceId>,
     pub(super) last_selected_browsable_source: Option<SourceId>,
     pub(super) selected_collection: Option<CollectionId>,
+}
+
+pub(super) struct SelectionUndoState {
+    pub(super) label: String,
+    pub(super) before: Option<SelectionRange>,
 }
 
 pub(super) struct AppSettingsState {
@@ -140,6 +145,7 @@ pub(super) struct ControllerUiCacheState {
 pub(super) struct ControllerSelectionState {
     pub(super) ctx: SelectionContextState,
     pub(super) range: SelectionState,
+    pub(super) pending_undo: Option<SelectionUndoState>,
     pub(super) suppress_autoplay_once: bool,
 }
 

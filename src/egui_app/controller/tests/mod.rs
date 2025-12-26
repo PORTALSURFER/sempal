@@ -13,6 +13,7 @@ mod folders_core;
 mod folders_search;
 mod missing;
 mod playback_loop;
+mod selection_undo;
 mod trash;
 mod waveform;
 mod waveform_nav_cursor;

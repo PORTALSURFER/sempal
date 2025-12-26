@@ -51,6 +51,7 @@ pub(super) fn handle_selection_slide_drag(
                 anchor,
                 range: selection,
             });
+            app.controller.begin_selection_undo("Selection");
             app.controller.cancel_active_drag();
         }
     } else if response.dragged_by(egui::PointerButton::Primary) {
@@ -61,6 +62,7 @@ pub(super) fn handle_selection_slide_drag(
                     anchor,
                     range: selection,
                 });
+                app.controller.begin_selection_undo("Selection");
                 app.controller.cancel_active_drag();
             }
             if let Some(slide) = app.selection_slide {
