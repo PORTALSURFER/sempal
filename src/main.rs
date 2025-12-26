@@ -8,10 +8,16 @@ use egui::viewport::IconData;
 use sempal::audio::AudioPlayer;
 use sempal::egui_app::ui::{EguiApp, MIN_VIEWPORT_SIZE};
 use sempal::logging;
+use sempal::model_setup::{PannsSetupOptions, ensure_panns_burnpack};
 use sempal::waveform::WaveformRenderer;
 
 /// Launch the egui UI.
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(options) = parse_model_setup_args() {
+        ensure_panns_burnpack(options)?;
+        return Ok(());
+    }
+
     #[cfg(all(target_os = "windows", not(debug_assertions)))]
     if log_console_requested() {
         enable_windows_console();
@@ -48,6 +54,34 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ),
     )?;
     Ok(())
+}
+
+fn parse_model_setup_args() -> Option<PannsSetupOptions> {
+    let mut args = std::env::args().skip(1);
+    let mut options = PannsSetupOptions::default();
+    let mut run = false;
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--prepare-models" => run = true,
+            "--onnx-url" => {
+                if let Some(value) = args.next() {
+                    options.onnx_url = Some(value);
+                }
+            }
+            "--models-dir" => {
+                if let Some(value) = args.next() {
+                    options.models_dir = Some(std::path::PathBuf::from(value));
+                }
+            }
+            "--force-models" => options.force = true,
+            _ => {}
+        }
+    }
+    if run {
+        Some(options)
+    } else {
+        None
+    }
 }
 
 #[cfg(all(target_os = "windows", not(debug_assertions)))]

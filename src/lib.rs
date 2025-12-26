@@ -16,6 +16,8 @@ pub mod external_drag;
 pub mod issue_gateway;
 /// Logging setup helpers.
 pub mod logging;
+/// Model download + conversion helpers.
+pub mod model_setup;
 /// Sample source management.
 pub mod sample_sources;
 /// Selection math utilities.

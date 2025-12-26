@@ -17,12 +17,12 @@ x86_64 = "x86_64"
 aarch64 = "aarch64"
 
 [templates]
-stable_asset = "{APP_NAME}-v{VERSION}-{PLATFORM}-{ARCH}.zip"
-nightly_asset = "{APP_NAME}-nightly-{PLATFORM}-{ARCH}.zip"
-stable_checksums = "checksums-v{VERSION}.txt"
+stable_asset = "{app_name}-v{version}-{platform}-{arch}.zip"
+nightly_asset = "{app_name}-nightly-{platform}-{arch}.zip"
+stable_checksums = "checksums-v{version}.txt"
 nightly_checksums = "checksums-nightly.txt"
 
 [archive_layout]
-root_dir = "{APP_NAME}"
-files = ["{APP_NAME}.exe", "update-manifest.json"]
+root_dir = "{app_name}"
+files = ["{app_name}.exe", "update-manifest.json"]
 optional_dirs = ["resources"]

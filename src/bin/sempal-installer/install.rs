@@ -18,16 +18,23 @@ pub(crate) fn run_install(
     install_dir: &Path,
     sender: ui::InstallerSender,
 ) -> Result<(), String> {
-    download::ensure_downloads()?;
+    send_log(&sender, "Starting installer")?;
+    download::ensure_downloads(&sender)?;
+    send_log(&sender, "Collecting bundle entries")?;
     let entries = collect_bundle_entries(bundle_dir)?;
     ui::send_started(&sender, entries.len())?;
 
+    send_log(&sender, "Creating install directory")?;
     fs::create_dir_all(install_dir)
         .map_err(|err| format!("Failed to create install dir: {err}"))?;
 
     for (idx, (source, relative)) in entries.iter().enumerate() {
         let target = install_dir.join(relative);
         ensure_parent_dir(&target)?;
+        send_log(
+            &sender,
+            &format!("Copying {} to {}", source.display(), target.display()),
+        )?;
         fs::copy(source, &target)
             .map_err(|err| format!("Failed to copy {}: {err}", source.display()))?;
         ui::send_file_copied(
@@ -37,9 +44,13 @@ pub(crate) fn run_install(
         )?;
     }
 
+    send_log(&sender, "Syncing model cache")?;
     ensure_app_data_models(bundle_dir)?;
+    send_log(&sender, "Registering uninstall entry")?;
     registry::register_uninstall_entry(install_dir)?;
+    send_log(&sender, "Creating Start Menu shortcut")?;
     shortcuts::create_start_menu_shortcut(install_dir)?;
+    send_log(&sender, "Finishing install")?;
     ui::send_finished(&sender)?;
     Ok(())
 }
@@ -93,6 +104,12 @@ fn ensure_parent_dir(target: &Path) -> Result<(), String> {
             .map_err(|err| format!("Failed to create folder {}: {err}", parent.display()))?;
     }
     Ok(())
+}
+
+fn send_log(sender: &ui::InstallerSender, message: &str) -> Result<(), String> {
+    sender
+        .send(ui::InstallerEvent::Log(message.to_string()))
+        .map_err(|err| format!("Failed to send log update: {err}"))
 }
 
 pub(crate) fn collect_bundle_entries(bundle_dir: &Path) -> Result<Vec<(PathBuf, PathBuf)>, String> {

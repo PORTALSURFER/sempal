@@ -6,12 +6,39 @@ use sempal::egui_app::ui::style;
 use crate::{install, paths, APP_NAME};
 
 pub(crate) fn run_installer_app() -> eframe::Result<()> {
-    let native_options = eframe::NativeOptions::default();
+    let mut viewport = egui::ViewportBuilder::default().with_inner_size([600.0, 300.0]);
+    if let Some(icon) = load_installer_icon() {
+        viewport = viewport.with_icon(icon);
+    }
+    let native_options = eframe::NativeOptions {
+        viewport,
+        ..Default::default()
+    };
     eframe::run_native(
         "SemPal Installer",
         native_options,
         Box::new(|cc| Ok(Box::new(InstallerApp::new(cc)))),
     )
+}
+
+fn load_installer_icon() -> Option<egui::IconData> {
+    decode_icon(include_bytes!("../../../assets/logo3.ico")).or_else(|| {
+        let fallback = decode_icon(include_bytes!("../../../assets/logo3.png"));
+        if fallback.is_none() {
+            eprintln!("Failed to decode installer icon assets.");
+        }
+        fallback
+    })
+}
+
+fn decode_icon(bytes: &[u8]) -> Option<egui::IconData> {
+    let image = image::load_from_memory(bytes).ok()?.to_rgba8();
+    let (width, height) = image.dimensions();
+    Some(egui::IconData {
+        rgba: image.into_raw(),
+        width,
+        height,
+    })
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -43,6 +70,7 @@ impl Default for InstallProgress {
 pub(crate) enum InstallerEvent {
     Started { total_files: usize },
     FileCopied { copied_files: usize, name: String },
+    Log(String),
     Finished,
     Failed(String),
 }
@@ -57,6 +85,8 @@ struct InstallerApp {
     error: Option<String>,
     open_folder_on_finish: bool,
     launch_on_finish: bool,
+    logs: Vec<String>,
+    install_finished: bool,
 }
 
 impl InstallerApp {
@@ -75,6 +105,8 @@ impl InstallerApp {
             error: None,
             open_folder_on_finish: true,
             launch_on_finish: true,
+            logs: Vec::new(),
+            install_finished: false,
         }
     }
 
@@ -85,6 +117,8 @@ impl InstallerApp {
         self.receiver = Some(rx);
         self.progress = InstallProgress::default();
         self.step = InstallStep::Installing;
+        self.install_finished = false;
+        self.logs.clear();
         thread::spawn(move || {
             if let Err(err) = install::run_install(&bundle_dir, &install_dir, tx.clone()) {
                 let _ = tx.send(InstallerEvent::Failed(err));
@@ -105,8 +139,11 @@ impl InstallerApp {
                     self.progress.copied_files = copied_files;
                     self.progress.current = Some(name);
                 }
+                InstallerEvent::Log(message) => {
+                    self.logs.push(message);
+                }
                 InstallerEvent::Finished => {
-                    self.step = InstallStep::Done;
+                    self.install_finished = true;
                 }
                 InstallerEvent::Failed(err) => {
                     self.error = Some(err);
@@ -137,10 +174,12 @@ impl eframe::App for InstallerApp {
                 }
                 InstallStep::License => {
                     ui.label("License");
-                    ScrollArea::vertical().max_height(280.0).show(ui, |ui| {
+                    let scroll_height = (ui.available_height() - 64.0).max(160.0);
+                    ScrollArea::vertical().max_height(scroll_height).show(ui, |ui| {
                         ui.add(
                             egui::TextEdit::multiline(&mut self.license_text)
                                 .desired_rows(16)
+                                .desired_width(ui.available_width())
                                 .font(egui::TextStyle::Monospace)
                                 .interactive(false),
                         );
@@ -164,7 +203,6 @@ impl eframe::App for InstallerApp {
                             }
                         }
                     });
-                    ui.label(format!("Bundle source: {}", self.bundle_dir.display()));
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         if ui.button("Install").clicked() {
                             self.start_install();
@@ -182,6 +220,28 @@ impl eframe::App for InstallerApp {
                     ui.add(egui::ProgressBar::new(progress).show_percentage());
                     if let Some(current) = &self.progress.current {
                         ui.label(format!("Copying {current}"));
+                    }
+                    ui.separator();
+                    ui.label("Install log");
+                    let log_width = ui.available_width();
+                    let log_color = if self.install_finished {
+                        style::palette().success
+                    } else {
+                        style::palette().warning
+                    };
+                    ScrollArea::vertical().max_height(140.0).show(ui, |ui| {
+                        ui.set_min_width(log_width);
+                        for line in &self.logs {
+                            ui.label(RichText::new(line).color(log_color));
+                        }
+                    });
+                    if self.install_finished {
+                        ui.add_space(8.0);
+                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            if ui.button("Continue").clicked() {
+                                self.step = InstallStep::Done;
+                            }
+                        });
                     }
                 }
                 InstallStep::Done => {
@@ -206,6 +266,16 @@ impl eframe::App for InstallerApp {
                     if let Some(error) = &self.error {
                         ui.label(error);
                     }
+                    ui.separator();
+                    ui.label("Install log");
+                    let log_width = ui.available_width();
+                    let log_color = style::semantic_palette().destructive;
+                    ScrollArea::vertical().max_height(140.0).show(ui, |ui| {
+                        ui.set_min_width(log_width);
+                        for line in &self.logs {
+                            ui.label(RichText::new(line).color(log_color));
+                        }
+                    });
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         if ui.button("Close").clicked() {
                             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
