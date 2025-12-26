@@ -55,14 +55,39 @@ pub(super) fn play_audio(
         .range
         .range()
         .filter(|range| range.width() >= MIN_SELECTION_WIDTH);
-    let start = start_override
-        .or_else(|| selection.as_ref().map(|range| range.start()))
-        .unwrap_or(0.0);
     let span_end = selection.as_ref().map(|r| r.end()).unwrap_or(1.0);
-    if looped && selection.is_none() && start_override.is_some() {
-        player.borrow_mut().play_full_wrapped_from(start)?;
+    let mut start = 0.0;
+    if looped {
+        if let Some(range) = selection {
+            if let Some(start_pos) = start_override {
+                if start_pos >= range.start() && start_pos <= range.end() {
+                    start = start_pos;
+                    player
+                        .borrow_mut()
+                        .play_looped_range_from(range.start(), range.end(), start_pos)?;
+                } else {
+                    start = range.start();
+                    player
+                        .borrow_mut()
+                        .play_range(range.start(), range.end(), true)?;
+                }
+            } else {
+                start = range.start();
+                player
+                    .borrow_mut()
+                    .play_range(range.start(), range.end(), true)?;
+            }
+        } else if let Some(start_pos) = start_override {
+            start = start_pos;
+            player.borrow_mut().play_full_wrapped_from(start_pos)?;
+        } else {
+            player.borrow_mut().play_range(0.0, 1.0, true)?;
+        }
     } else {
-        player.borrow_mut().play_range(start, span_end, looped)?;
+        start = start_override
+            .or_else(|| selection.as_ref().map(|range| range.start()))
+            .unwrap_or(0.0);
+        player.borrow_mut().play_range(start, span_end, false)?;
     }
     controller.ui.waveform.playhead.active_span_end = Some(span_end.clamp(0.0, 1.0));
     controller.ui.waveform.playhead.visible = true;

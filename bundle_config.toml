@@ -6,6 +6,10 @@ source = "target/{TARGET}/release/{APP_NAME}.exe"
 dest = "bundle/{APP_NAME}.exe"
 
 [[entries]]
+source = "target/{TARGET}/release/{APP_NAME}-updater.exe"
+dest = "bundle/{APP_NAME}-updater.exe"
+
+[[entries]]
 source = "target/{TARGET}/release/{APP_NAME}-installer.exe"
 dest = "{APP_NAME}-installer.exe"
 

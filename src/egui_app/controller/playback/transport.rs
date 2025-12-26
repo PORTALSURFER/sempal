@@ -39,10 +39,24 @@ pub(super) fn finish_selection_drag(controller: &mut EguiController) {
         .as_ref()
         .map(|p| p.borrow().is_playing())
         .unwrap_or(false);
-    if is_playing
-        && controller.ui.waveform.loop_enabled
-        && let Err(err) = controller.play_audio(true, None)
-    {
+    if !is_playing || !controller.ui.waveform.loop_enabled {
+        return;
+    }
+    let Some(selection) = controller
+        .selection_state
+        .range
+        .range()
+        .filter(|range| range.width() >= MIN_SELECTION_WIDTH)
+    else {
+        return;
+    };
+    let playhead = controller.ui.waveform.playhead.position;
+    let start_override = if playhead >= selection.start() && playhead <= selection.end() {
+        Some(playhead)
+    } else {
+        Some(selection.start())
+    };
+    if let Err(err) = controller.play_audio(true, start_override) {
         controller.set_status(err, StatusTone::Error);
     }
 }

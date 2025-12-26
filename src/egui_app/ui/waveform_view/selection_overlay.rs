@@ -184,31 +184,31 @@ fn draw_bpm_guides(
     let line_bottom = (rect.bottom() - bottom_cut).max(line_top);
     let mut beat = selection.start() + step;
     let end = selection.end();
+    let eps = (step * 1.0e-3).max(1.0e-6);
     let mut beat_index = 1usize;
-    while beat < end {
-        let normalized = ((beat - view.start) / view_width).clamp(0.0, 1.0);
+    while beat <= end + eps {
+        let beat_pos = if beat > end { end } else { beat };
+        let normalized = ((beat_pos - view.start) / view_width).clamp(0.0, 1.0);
         let x = rect.left() + rect.width() * normalized;
         let is_emphasis = beat_index % 4 == 0;
         if is_emphasis {
-            let prev = beat - step;
-            if prev >= selection.start() {
-                let prev_norm = ((prev - view.start) / view_width).clamp(0.0, 1.0);
-                let prev_x = rect.left() + rect.width() * prev_norm;
-                if x > prev_x {
-                    let mut mesh = egui::epaint::Mesh::default();
-                    let top_left = egui::pos2(prev_x, line_top);
-                    let bottom_left = egui::pos2(prev_x, line_bottom);
-                    let top_right = egui::pos2(x, line_top);
-                    let bottom_right = egui::pos2(x, line_bottom);
-                    let base = mesh.vertices.len() as u32;
-                    mesh.colored_vertex(top_left, triage_gradient_left);
-                    mesh.colored_vertex(bottom_left, triage_gradient_left);
-                    mesh.colored_vertex(top_right, triage_gradient_right);
-                    mesh.colored_vertex(bottom_right, triage_gradient_right);
-                    mesh.add_triangle(base, base + 1, base + 2);
-                    mesh.add_triangle(base + 2, base + 1, base + 3);
-                    painter.add(egui::Shape::mesh(mesh));
-                }
+            let prev = (beat_pos - step).max(selection.start());
+            let prev_norm = ((prev - view.start) / view_width).clamp(0.0, 1.0);
+            let prev_x = rect.left() + rect.width() * prev_norm;
+            if x > prev_x {
+                let mut mesh = egui::epaint::Mesh::default();
+                let top_left = egui::pos2(prev_x, line_top);
+                let bottom_left = egui::pos2(prev_x, line_bottom);
+                let top_right = egui::pos2(x, line_top);
+                let bottom_right = egui::pos2(x, line_bottom);
+                let base = mesh.vertices.len() as u32;
+                mesh.colored_vertex(top_left, triage_gradient_left);
+                mesh.colored_vertex(bottom_left, triage_gradient_left);
+                mesh.colored_vertex(top_right, triage_gradient_right);
+                mesh.colored_vertex(bottom_right, triage_gradient_right);
+                mesh.add_triangle(base, base + 1, base + 2);
+                mesh.add_triangle(base + 2, base + 1, base + 3);
+                painter.add(egui::Shape::mesh(mesh));
             }
         }
         let line_stroke = if is_emphasis { triage_stroke } else { stroke };

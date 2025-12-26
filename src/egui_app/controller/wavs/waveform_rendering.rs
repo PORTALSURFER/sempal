@@ -8,6 +8,8 @@ use std::path::Path;
 const MIN_VIEW_WIDTH_BASE: f32 = 0.001;
 const MIN_SAMPLES_PER_PIXEL: f32 = 1.0;
 const MAX_ZOOM_MULTIPLIER: f32 = 64.0;
+// Cap oversampling to avoid subpixel waveform columns that shimmer when downscaled.
+const MAX_COLUMNS_PER_PIXEL: f32 = 1.0;
 
 fn min_view_width_for_frames(frame_count: usize, width_px: u32) -> f32 {
     if frame_count == 0 {
@@ -102,7 +104,11 @@ impl EguiController {
         let view = view;
         let max_zoom = (1.0 / min_view_width).min(MAX_ZOOM_MULTIPLIER);
         let zoom_scale = (1.0 / width_clamped).min(max_zoom).max(1.0);
+        let max_target = (width as f32 * MAX_COLUMNS_PER_PIXEL)
+            .ceil()
+            .max(width as f32) as usize;
         let target = (width as f32 * zoom_scale).ceil().max(width as f32) as usize;
+        let target = target.min(max_target);
 
         if (decoded.samples.is_empty() && decoded.peaks.is_none()) || total_frames == 0 {
             self.ui.waveform.image = None;

@@ -6,8 +6,10 @@ use super::super::*;
 use super::common::max_sample_amplitude;
 use crate::egui_app::state::{DestructiveSelectionEdit, FocusContext};
 use hound::WavReader;
+use std::cell::RefCell;
 use std::mem;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use tempfile::tempdir;
 
 #[test]
@@ -399,6 +401,34 @@ fn n_hotkey_normalizes_whole_loaded_sample_when_no_selection() {
     assert!(controller.ui.waveform.pending_destructive.is_none());
     let peak = max_sample_amplitude(&wav_path);
     assert!((peak - 1.0).abs() < 1e-4, "peak={peak}");
+}
+
+#[test]
+fn normalize_selection_resumes_playback_when_playing() {
+    let Some(player) = crate::audio::AudioPlayer::playing_for_tests() else {
+        return;
+    };
+    let (mut controller, source) = prepare_with_source_and_wav_entries(vec![sample_entry(
+        "normalize_resume.wav",
+        SampleTag::Neutral,
+    )]);
+    controller.audio.player = Some(Rc::new(RefCell::new(player)));
+    load_waveform_selection(
+        &mut controller,
+        &source,
+        "normalize_resume.wav",
+        &[0.0, 0.2, -0.6, 0.3],
+        SelectionRange::new(0.25, 0.75),
+    );
+    if controller.play_audio(false, None).is_err() || !controller.is_playing() {
+        return;
+    }
+    controller.ui.waveform.playhead.position = 0.5;
+
+    assert!(controller.normalize_waveform_selection().is_ok());
+
+    assert!(controller.is_playing());
+    assert!((controller.ui.waveform.playhead.position - 0.5).abs() < 1e-6);
 }
 
 #[test]
