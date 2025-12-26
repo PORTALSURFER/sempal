@@ -205,11 +205,12 @@ pub(super) fn set_sample_tag_for_source(
     }
     let _ = db.set_tag(path, target_tag);
     let mut updated_active = false;
-    if let Some(index) = controller.wav_index_for_path(path)
-        && let Some(entry) = controller.wav_entries.entry_mut(index)
-    {
-        entry.tag = target_tag;
-        updated_active = true;
+    if let Some(index) = controller.wav_index_for_path(path) {
+        let _ = controller.ensure_wav_page_loaded(index);
+        if let Some(entry) = controller.wav_entries.entry_mut(index) {
+            entry.tag = target_tag;
+            updated_active = true;
+        }
     }
     if let Some(cache) = controller.cache.wav.entries.get_mut(&source.id)
         && let Some(index) = cache.lookup.get(path).copied()
