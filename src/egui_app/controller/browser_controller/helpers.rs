@@ -40,6 +40,28 @@ impl BrowserController<'_> {
         &mut self,
         ctx: &TriageSampleContext,
     ) -> Result<(), String> {
+        let was_loaded = self
+            .sample_view
+            .wav
+            .loaded_audio
+            .as_ref()
+            .is_some_and(|audio| {
+                audio.source_id == ctx.source.id && audio.relative_path == ctx.entry.relative_path
+            });
+        let was_playing = was_loaded && self.is_playing();
+        let was_looping = self.ui.waveform.loop_enabled;
+        let playhead_position = self.ui.waveform.playhead.position;
+        let preserved_view = was_loaded.then_some(self.ui.waveform.view);
+        let preserved_cursor = if was_loaded {
+            self.ui.waveform.cursor
+        } else {
+            None
+        };
+        let preserved_selection = if was_loaded {
+            self.ui.waveform.selection
+        } else {
+            None
+        };
         let (file_size, modified_ns, tag) = self.normalize_and_save_for_path(
             &ctx.source,
             &ctx.entry.relative_path,
@@ -65,6 +87,33 @@ impl BrowserController<'_> {
         }
         self.refresh_waveform_for_sample(&ctx.source, &ctx.entry.relative_path);
         self.reexport_collections_for_sample(&ctx.source.id, &ctx.entry.relative_path);
+        if was_loaded {
+            if let Some(view) = preserved_view {
+                self.ui.waveform.view = view.clamp();
+            }
+            self.ui.waveform.cursor = preserved_cursor;
+            self.selection_state.range.set_range(preserved_selection);
+            self.apply_selection(preserved_selection);
+            let loaded_matches = self
+                .sample_view
+                .wav
+                .loaded_audio
+                .as_ref()
+                .is_some_and(|audio| {
+                    audio.source_id == ctx.source.id
+                        && audio.relative_path == ctx.entry.relative_path
+                });
+            if was_playing && loaded_matches {
+                let start_override = if playhead_position.is_finite() {
+                    Some(playhead_position.clamp(0.0, 1.0))
+                } else {
+                    None
+                };
+                if let Err(err) = self.play_audio(was_looping, start_override) {
+                    self.set_status(err, StatusTone::Error);
+                }
+            }
+        }
         self.set_status(
             format!("Normalized {}", ctx.entry.relative_path.display()),
             StatusTone::Info,
