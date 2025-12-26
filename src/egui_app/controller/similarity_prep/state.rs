@@ -127,8 +127,8 @@ mod tests {
         assert_eq!(state.stage, SimilarityPrepStage::AwaitScan);
 
         let mut state = build_initial_state(build_init(true, false, false));
-        let request = start_finalize_if_ready(&mut state).expect(\"finalize request\");
+        let request = start_finalize_if_ready(&mut state).expect("finalize request");
         assert_eq!(state.stage, SimilarityPrepStage::Finalizing);
-        assert_eq!(request.umap_version, \"v1\");
+        assert_eq!(request.umap_version, "v1");
     }
 }
