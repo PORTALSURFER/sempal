@@ -257,6 +257,12 @@ impl HotkeysController<'_> {
     }
 
     fn normalize_loaded_sample_like_browser(&mut self) -> Result<(), String> {
+        let preserved_view = self.ui.waveform.view;
+        let preserved_cursor = self.ui.waveform.cursor;
+        let preserved_selection = self.ui.waveform.selection;
+        let was_playing = self.is_playing();
+        let was_looping = self.ui.waveform.loop_enabled;
+        let playhead_position = self.ui.waveform.playhead.position;
         let audio = self
             .sample_view
             .wav
@@ -289,6 +295,20 @@ impl HotkeysController<'_> {
         }
         self.refresh_waveform_for_sample(&source, &relative_path);
         self.reexport_collections_for_sample(&source.id, &relative_path);
+        self.ui.waveform.view = preserved_view.clamp();
+        self.ui.waveform.cursor = preserved_cursor;
+        self.selection_state.range.set_range(preserved_selection);
+        self.apply_selection(preserved_selection);
+        if was_playing {
+            let start_override = if playhead_position.is_finite() {
+                Some(playhead_position.clamp(0.0, 1.0))
+            } else {
+                None
+            };
+            if let Err(err) = self.play_audio(was_looping, start_override) {
+                self.set_status(err, StatusTone::Error);
+            }
+        }
         self.set_status(
             format!("Normalized {}", relative_path.display()),
             StatusTone::Info,

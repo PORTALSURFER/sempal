@@ -194,11 +194,11 @@ impl EguiController {
             self.selection_state.range.set_range(preserved_selection);
             self.apply_selection(preserved_selection);
             if was_playing {
-                let start_override = preserved_selection
-                    .filter(|range| {
-                        playhead_position >= range.start() && playhead_position <= range.end()
-                    })
-                    .map(|_| playhead_position);
+                let start_override = if playhead_position.is_finite() {
+                    Some(playhead_position.clamp(0.0, 1.0))
+                } else {
+                    None
+                };
                 if let Err(err) = self.play_audio(was_looping, start_override) {
                     self.set_status(err, StatusTone::Error);
                 }
