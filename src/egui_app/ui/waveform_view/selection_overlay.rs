@@ -50,9 +50,6 @@ pub(super) fn render_selection_overlay(
     selection_drag::handle_selection_handle_drag(
         app,
         ui,
-        rect,
-        view,
-        view_width,
         selection,
         &handle_response,
     );

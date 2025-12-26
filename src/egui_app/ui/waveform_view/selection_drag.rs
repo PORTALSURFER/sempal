@@ -6,35 +6,55 @@ use eframe::egui::{self, CursorIcon};
 pub(super) fn handle_selection_handle_drag(
     app: &mut EguiApp,
     ui: &mut egui::Ui,
+    selection: SelectionRange,
+    handle_response: &egui::Response,
+) {
+    if handle_response.drag_started() {
+        if let Some(pos) = handle_response.interact_pointer_pos() {
+            app.controller
+                .start_selection_drag_payload(selection, pos, true);
+            app.controller.ui.drag.origin_source = Some(DragSource::Waveform);
+        }
+    } else if handle_response.dragged() {
+        if let Some(pos) = handle_response.interact_pointer_pos() {
+            app.controller.refresh_drag_position(pos, false);
+        }
+    } else if handle_response.drag_stopped() {
+        app.controller.finish_active_drag();
+    }
+
+    if handle_response.dragged() {
+        ui.output_mut(|o| o.cursor_icon = CursorIcon::Grabbing);
+    } else if handle_response.hovered() {
+        ui.output_mut(|o| o.cursor_icon = CursorIcon::Grab);
+    }
+}
+
+pub(super) fn handle_selection_slide_drag(
+    app: &mut EguiApp,
+    ui: &mut egui::Ui,
     rect: egui::Rect,
     view: WaveformView,
     view_width: f32,
     selection: SelectionRange,
-    handle_response: &egui::Response,
+    response: &egui::Response,
 ) {
     let to_wave_pos = |pos: egui::Pos2| {
         let normalized = ((pos.x - rect.left()) / rect.width()).clamp(0.0, 1.0);
         normalized.mul_add(view_width, view.start).clamp(0.0, 1.0)
     };
-    if handle_response.drag_started() {
-        if let Some(pos) = handle_response.interact_pointer_pos() {
-            let alt = ui.input(|i| i.modifiers.alt);
-            if alt {
-                let anchor = to_wave_pos(pos);
-                app.selection_slide = Some(super::SelectionSlide {
-                    anchor,
-                    range: selection,
-                });
-            } else {
-                app.controller
-                    .start_selection_drag_payload(selection, pos, true);
-                app.controller.ui.drag.origin_source = Some(DragSource::Waveform);
-            }
+    if response.drag_started() {
+        if let Some(pos) = response.interact_pointer_pos() {
+            let anchor = to_wave_pos(pos);
+            app.selection_slide = Some(super::SelectionSlide {
+                anchor,
+                range: selection,
+            });
+            app.controller.cancel_active_drag();
         }
-    } else if handle_response.dragged() {
-        if let Some(pos) = handle_response.interact_pointer_pos() {
-            let alt = ui.input(|i| i.modifiers.alt);
-            if alt && app.selection_slide.is_none() {
+    } else if response.dragged() {
+        if let Some(pos) = response.interact_pointer_pos() {
+            if app.selection_slide.is_none() {
                 let anchor = to_wave_pos(pos);
                 app.selection_slide = Some(super::SelectionSlide {
                     anchor,
@@ -46,21 +66,17 @@ pub(super) fn handle_selection_handle_drag(
                 let cursor = to_wave_pos(pos);
                 let delta = cursor - slide.anchor;
                 app.controller.set_selection_range(slide.range.shift(delta));
-            } else {
-                app.controller.refresh_drag_position(pos, false);
             }
         }
-    } else if handle_response.drag_stopped() {
+    } else if response.drag_stopped() {
         if app.selection_slide.take().is_some() {
             app.controller.finish_selection_drag();
-        } else {
-            app.controller.finish_active_drag();
         }
     }
 
-    if handle_response.dragged() {
+    if response.dragged() {
         ui.output_mut(|o| o.cursor_icon = CursorIcon::Grabbing);
-    } else if handle_response.hovered() {
+    } else if response.hovered() {
         ui.output_mut(|o| o.cursor_icon = CursorIcon::Grab);
     }
 }

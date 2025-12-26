@@ -270,10 +270,26 @@ pub(super) fn render_overlays(
         let width = (end_norm - start_norm).max(0.0) * rect.width();
         let bar_rect = egui::Rect::from_min_size(
             egui::pos2(rect.left() + rect.width() * start_norm, rect.top()),
-            egui::vec2(width.max(2.0), 6.0),
+            egui::vec2(width.max(2.0), 12.0),
         );
         ui.painter()
             .rect_filled(bar_rect, 0.0, style::with_alpha(highlight, loop_bar_alpha));
+        if let Some(selection) = app.controller.ui.waveform.selection {
+            let response = ui.interact(
+                bar_rect,
+                ui.id().with("loop_bar_drag"),
+                egui::Sense::click_and_drag(),
+            );
+            selection_drag::handle_selection_slide_drag(
+                app,
+                ui,
+                rect,
+                view,
+                view_width,
+                selection,
+                &response,
+            );
+        }
     }
 
     let playhead = &mut app.controller.ui.waveform.playhead;
