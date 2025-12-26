@@ -62,9 +62,9 @@ fn waveform_refresh_respects_view_slice_and_caps_width() {
         .expect("waveform image");
     assert!((image.view_start - 0.25).abs() < 1e-6);
     assert!((image.view_end - 0.5).abs() < 1e-6);
-    let expected_width = (controller.sample_view.waveform.size[0] as f32
-        * (1.0f32 / 0.25).min(64.0f32))
-    .ceil() as usize;
+    let expected_width = (controller.sample_view.waveform.size[0] as f32)
+        .min(crate::egui_app::controller::wavs::MAX_TEXTURE_WIDTH as f32)
+        .ceil() as usize;
     let samples_in_view = (0.5 - 0.25) * 1000.0;
     let upper = (samples_in_view as usize)
         .min(crate::egui_app::controller::wavs::MAX_TEXTURE_WIDTH as usize)
