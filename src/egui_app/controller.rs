@@ -349,6 +349,15 @@ impl EguiController {
     pub(crate) fn hotkeys_ctrl(&mut self) -> hotkeys_controller::HotkeysController<'_> {
         hotkeys_controller::HotkeysController::new(self)
     }
+
+    /// Returns the duration in seconds for the currently loaded audio, if any.
+    pub(crate) fn loaded_audio_duration_seconds(&self) -> Option<f32> {
+        self.sample_view
+            .wav
+            .loaded_audio
+            .as_ref()
+            .map(|audio| audio.duration_seconds)
+    }
 }
 
 fn append_status_log_line(entry: &str) {
