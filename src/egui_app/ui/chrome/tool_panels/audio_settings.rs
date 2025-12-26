@@ -5,7 +5,7 @@ use crate::egui_app::ui::style;
 use super::section_label;
 
 impl EguiApp {
-    pub(in crate::egui_app::ui::chrome) fn render_audio_settings_window(
+    pub(in crate::egui_app::ui) fn render_audio_settings_window(
         &mut self,
         ctx: &egui::Context,
     ) {
