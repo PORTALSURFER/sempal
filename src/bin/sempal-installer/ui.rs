@@ -164,10 +164,12 @@ impl eframe::App for InstallerApp {
                 }
                 InstallStep::License => {
                     ui.label("License");
-                    ScrollArea::vertical().max_height(280.0).show(ui, |ui| {
+                    let scroll_height = (ui.available_height() - 64.0).max(160.0);
+                    ScrollArea::vertical().max_height(scroll_height).show(ui, |ui| {
                         ui.add(
                             egui::TextEdit::multiline(&mut self.license_text)
                                 .desired_rows(16)
+                                .desired_width(ui.available_width())
                                 .font(egui::TextStyle::Monospace)
                                 .interactive(false),
                         );
