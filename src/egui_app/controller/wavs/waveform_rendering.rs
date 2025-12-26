@@ -38,7 +38,8 @@ impl WaveformRenderMeta {
             .abs()
             .max((other.view_end - other.view_start).abs())
             .max(1e-6);
-        let eps = (width * 0.01).max(1e-5);
+        let pixels = self.size[0].max(1) as f32;
+        let eps = (width / pixels).max(1e-6);
         self.samples_len == other.samples_len
             && self.size == other.size
             && self.texture_width == other.texture_width
