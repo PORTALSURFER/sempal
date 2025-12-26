@@ -86,6 +86,7 @@ struct InstallerApp {
     open_folder_on_finish: bool,
     launch_on_finish: bool,
     logs: Vec<String>,
+    install_finished: bool,
 }
 
 impl InstallerApp {
@@ -105,6 +106,7 @@ impl InstallerApp {
             open_folder_on_finish: true,
             launch_on_finish: true,
             logs: Vec::new(),
+            install_finished: false,
         }
     }
 
@@ -115,6 +117,7 @@ impl InstallerApp {
         self.receiver = Some(rx);
         self.progress = InstallProgress::default();
         self.step = InstallStep::Installing;
+        self.install_finished = false;
         self.logs.clear();
         thread::spawn(move || {
             if let Err(err) = install::run_install(&bundle_dir, &install_dir, tx.clone()) {
@@ -140,7 +143,7 @@ impl InstallerApp {
                     self.logs.push(message);
                 }
                 InstallerEvent::Finished => {
-                    self.step = InstallStep::Done;
+                    self.install_finished = true;
                 }
                 InstallerEvent::Failed(err) => {
                     self.error = Some(err);
@@ -225,6 +228,14 @@ impl eframe::App for InstallerApp {
                             ui.label(line);
                         }
                     });
+                    if self.install_finished {
+                        ui.add_space(8.0);
+                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            if ui.button("Continue").clicked() {
+                                self.step = InstallStep::Done;
+                            }
+                        });
+                    }
                 }
                 InstallStep::Done => {
                     ui.label(RichText::new("Installation complete.").strong());
