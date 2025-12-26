@@ -1,40 +1,9 @@
 use crate::egui_app::controller::analysis_jobs::db;
-use rusqlite::OptionalExtension;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tracing::warn;
 
-mod backfill;
+use super::support::{load_embedding_vec_optional, now_epoch_seconds};
 
-pub(super) fn run_job(
-    conn: &rusqlite::Connection,
-    job: &db::ClaimedJob,
-    use_cache: bool,
-    max_analysis_duration_seconds: f32,
-    analysis_sample_rate: u32,
-    analysis_version: &str,
-) -> Result<(), String> {
-    match job.job_type.as_str() {
-        db::ANALYZE_SAMPLE_JOB_TYPE => run_analysis_job(
-            conn,
-            job,
-            use_cache,
-            max_analysis_duration_seconds,
-            analysis_sample_rate,
-            analysis_version,
-        ),
-        db::EMBEDDING_BACKFILL_JOB_TYPE => backfill::run_embedding_backfill_job(
-            conn,
-            job,
-            use_cache,
-            analysis_sample_rate,
-            analysis_version,
-        ),
-        db::REBUILD_INDEX_JOB_TYPE => Err("Rebuild index job not implemented yet".to_string()),
-        _ => Err(format!("Unknown job type: {}", job.job_type)),
-    }
-}
-
-fn run_analysis_job(
+pub(super) fn run_analysis_job(
     conn: &rusqlite::Connection,
     job: &db::ClaimedJob,
     use_cache: bool,
@@ -167,10 +136,8 @@ pub(super) fn run_analysis_job_with_decoded(
                 &decoded.mono,
                 decoded.sample_rate_used,
             );
-            let mut logmel =
-                vec![0.0_f32; crate::analysis::embedding::PANNS_LOGMEL_LEN];
-            let mut logmel_scratch =
-                crate::analysis::embedding::PannsLogMelScratch::default();
+            let mut logmel = vec![0.0_f32; crate::analysis::embedding::PANNS_LOGMEL_LEN];
+            let mut logmel_scratch = crate::analysis::embedding::PannsLogMelScratch::default();
             crate::analysis::embedding::build_panns_logmel_into(
                 &processed,
                 decoded.sample_rate_used,
@@ -186,10 +153,8 @@ pub(super) fn run_analysis_job_with_decoded(
             &decoded.mono,
             decoded.sample_rate_used,
         );
-        let mut logmel =
-            vec![0.0_f32; crate::analysis::embedding::PANNS_LOGMEL_LEN];
-        let mut logmel_scratch =
-            crate::analysis::embedding::PannsLogMelScratch::default();
+        let mut logmel = vec![0.0_f32; crate::analysis::embedding::PANNS_LOGMEL_LEN];
+        let mut logmel_scratch = crate::analysis::embedding::PannsLogMelScratch::default();
         crate::analysis::embedding::build_panns_logmel_into(
             &processed,
             decoded.sample_rate_used,
@@ -211,7 +176,7 @@ pub(super) fn run_analysis_job_with_decoded(
     )
 }
 
-pub(super) fn run_analysis_jobs_with_decoded_batch(
+pub(in crate::egui_app::controller::analysis_jobs::pool) fn run_analysis_jobs_with_decoded_batch(
     conn: &rusqlite::Connection,
     jobs: Vec<(db::ClaimedJob, crate::analysis::audio::AnalysisAudio)>,
     use_cache: bool,
@@ -262,8 +227,7 @@ pub(super) fn run_analysis_jobs_with_decoded_batch(
                         &item.decoded.mono,
                         sample_rate_used,
                     );
-                    let mut logmel =
-                        vec![0.0_f32; crate::analysis::embedding::PANNS_LOGMEL_LEN];
+                    let mut logmel = vec![0.0_f32; crate::analysis::embedding::PANNS_LOGMEL_LEN];
                     match crate::analysis::embedding::build_panns_logmel_into(
                         &processed,
                         sample_rate_used,
@@ -346,9 +310,7 @@ pub(super) fn run_analysis_jobs_with_decoded_batch(
                     };
                     let fallback = match logmel {
                         Some(logmel) => std::panic::catch_unwind(|| {
-                            crate::analysis::embedding::infer_embedding_from_logmel(
-                                logmel.as_slice(),
-                            )
+                            crate::analysis::embedding::infer_embedding_from_logmel(logmel.as_slice())
                         })
                         .unwrap_or_else(|_| Err("PANNs single inference panicked".to_string())),
                         None => Err("Missing log-mel for fallback".to_string()),
@@ -492,35 +454,4 @@ fn finalize_analysis_job(
         now_epoch_seconds(),
     )?;
     Ok(())
-}
-
-fn load_embedding_vec_optional(
-    conn: &rusqlite::Connection,
-    sample_id: &str,
-    model_id: &str,
-    expected_dim: usize,
-) -> Result<Option<Vec<f32>>, String> {
-    let row: Option<Vec<u8>> = conn
-        .query_row(
-            "SELECT vec FROM embeddings WHERE sample_id = ?1 AND model_id = ?2",
-            rusqlite::params![sample_id, model_id],
-            |row| row.get::<_, Vec<u8>>(0),
-        )
-        .optional()
-        .map_err(|err| format!("Failed to load embedding blob for {sample_id}: {err}"))?;
-    let Some(blob) = row else {
-        return Ok(None);
-    };
-    let vec = crate::analysis::decode_f32_le_blob(&blob)?;
-    if vec.len() != expected_dim {
-        return Ok(None);
-    }
-    Ok(Some(vec))
-}
-
-fn now_epoch_seconds() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_else(|_| Duration::from_secs(0))
-        .as_secs() as i64
 }

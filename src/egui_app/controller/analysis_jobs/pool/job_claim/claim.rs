@@ -139,4 +139,16 @@ mod tests {
         }
         assert_eq!(value, 7);
     }
+
+    #[test]
+    fn claim_batch_size_defaults_when_invalid() {
+        unsafe {
+            std::env::set_var("SEMPAL_ANALYSIS_CLAIM_BATCH", "0");
+        }
+        let value = claim_batch_size();
+        unsafe {
+            std::env::remove_var("SEMPAL_ANALYSIS_CLAIM_BATCH");
+        }
+        assert_eq!(value, 64);
+    }
 }

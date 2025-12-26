@@ -2,11 +2,11 @@ zip_name = "dist/{APP_NAME}-installer-bundle.zip"
 targets = ["x86_64-pc-windows-msvc"]
 
 [[entries]]
-source = "target/release/{APP_NAME}.exe"
+source = "target/{TARGET}/release/{APP_NAME}.exe"
 dest = "bundle/{APP_NAME}.exe"
 
 [[entries]]
-source = "target/release/{APP_NAME}-installer.exe"
+source = "target/{TARGET}/release/{APP_NAME}-installer.exe"
 dest = "{APP_NAME}-installer.exe"
 
 [[entries]]

@@ -399,8 +399,7 @@ fn browser_selection_is_retained_when_waveform_focused() {
         controller.sample_view.wav.selected_wav.as_deref(),
         Some(Path::new("one.wav"))
     );
-    assert_eq!(
-        controller.ui.browser.selected_visible,
-        controller.visible_row_for_path(Path::new("one.wav"))
-    );
+    let visible_row = controller.visible_row_for_path(Path::new("one.wav"));
+    let selected_visible = controller.ui.browser.selected_visible;
+    assert_eq!(selected_visible, visible_row);
 }

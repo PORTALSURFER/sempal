@@ -1,4 +1,4 @@
-use super::controller_state::{SimilarityPrepStage, SimilarityPrepState};
+use crate::egui_app::controller::controller_state::{SimilarityPrepStage, SimilarityPrepState};
 use crate::sample_sources::SourceId;
 
 pub(super) struct SimilarityPrepInit {
@@ -118,5 +118,17 @@ mod tests {
         assert_eq!(state.stage, SimilarityPrepStage::AwaitEmbeddings);
         assert!(!state.skip_backfill);
         assert!(transition.should_enqueue_embeddings);
+    }
+
+    #[test]
+    fn finalize_only_starts_from_embeddings_stage() {
+        let mut state = build_initial_state(build_init(false, false, false));
+        assert!(start_finalize_if_ready(&mut state).is_none());
+        assert_eq!(state.stage, SimilarityPrepStage::AwaitScan);
+
+        let mut state = build_initial_state(build_init(true, false, false));
+        let request = start_finalize_if_ready(&mut state).expect("finalize request");
+        assert_eq!(state.stage, SimilarityPrepStage::Finalizing);
+        assert_eq!(request.umap_version, "v1");
     }
 }

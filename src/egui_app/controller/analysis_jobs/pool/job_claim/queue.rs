@@ -1,5 +1,6 @@
 use crate::egui_app::controller::analysis_jobs::db;
-use std::collections::{HashSet, VecDeque};
+use super::dedup::DedupTracker;
+use std::collections::VecDeque;
 use std::sync::{Condvar, Mutex};
 use std::sync::{atomic::AtomicBool, atomic::AtomicUsize, atomic::Ordering};
 use std::time::Duration;
@@ -8,8 +9,7 @@ pub(in crate::egui_app::controller::analysis_jobs) struct DecodedQueue {
     queue: Mutex<VecDeque<DecodedWork>>,
     ready: Condvar,
     len: AtomicUsize,
-    pending_jobs: Mutex<HashSet<i64>>,
-    inflight_jobs: Mutex<HashSet<i64>>,
+    dedup: DedupTracker,
 }
 
 impl DecodedQueue {
@@ -18,33 +18,24 @@ impl DecodedQueue {
             queue: Mutex::new(VecDeque::new()),
             ready: Condvar::new(),
             len: AtomicUsize::new(0),
-            pending_jobs: Mutex::new(HashSet::new()),
-            inflight_jobs: Mutex::new(HashSet::new()),
+            dedup: DedupTracker::new(),
         }
     }
 
     pub(super) fn try_mark_inflight(&self, job_id: i64) -> bool {
-        let mut inflight = self.inflight_jobs.lock().expect("decoded queue inflight lock");
-        if inflight.contains(&job_id) {
-            return false;
-        }
-        inflight.insert(job_id);
-        true
+        self.dedup.try_mark_inflight(job_id)
     }
 
     pub(super) fn clear_inflight(&self, job_id: i64) {
-        let mut inflight = self.inflight_jobs.lock().expect("decoded queue inflight lock");
-        inflight.remove(&job_id);
+        self.dedup.clear_inflight(job_id);
     }
 
     pub(super) fn push(&self, work: DecodedWork) -> bool {
         let mut guard = self.queue.lock().expect("decoded queue lock");
         if work.job.job_type == db::ANALYZE_SAMPLE_JOB_TYPE {
-            let mut pending = self.pending_jobs.lock().expect("decoded queue pending lock");
-            if pending.contains(&work.job.id) {
+            if !self.dedup.mark_pending(work.job.id) {
                 return false;
             }
-            pending.insert(work.job.id);
         }
         guard.push_back(work);
         self.len.fetch_add(1, Ordering::Relaxed);
@@ -60,9 +51,7 @@ impl DecodedQueue {
             }
             if let Some(work) = guard.pop_front() {
                 if work.job.job_type == db::ANALYZE_SAMPLE_JOB_TYPE {
-                    let mut pending =
-                        self.pending_jobs.lock().expect("decoded queue pending lock");
-                    pending.remove(&work.job.id);
+                    self.dedup.clear_pending(work.job.id);
                 }
                 self.len.fetch_sub(1, Ordering::Relaxed);
                 return Some(work);
@@ -99,11 +88,9 @@ impl DecodedQueue {
                     }
                 }
                 {
-                    let mut pending =
-                        self.pending_jobs.lock().expect("decoded queue pending lock");
                     for item in &batch {
                         if item.job.job_type == db::ANALYZE_SAMPLE_JOB_TYPE {
-                            pending.remove(&item.job.id);
+                            self.dedup.clear_pending(item.job.id);
                         }
                     }
                 }

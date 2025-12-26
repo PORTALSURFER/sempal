@@ -62,13 +62,10 @@ fn selection_drop_adds_clip_to_collection() {
     let clip_root = member.clip_root.as_ref().expect("clip root set");
     assert!(clip_root.join(member_path).exists());
     assert!(!root.join(member_path).exists());
-    assert!(
-        controller
-            .wav_entries
-            .entries
-            .iter()
-            .all(|entry| &entry.relative_path != member_path)
-    );
+    let entries = controller.wav_entries.pages.get(&0).expect("entries");
+    assert!(entries
+        .iter()
+        .all(|entry| &entry.relative_path != member_path));
     assert!(controller.ui.browser.visible.len() == 0);
     assert!(
         controller
@@ -123,13 +120,10 @@ fn sample_drop_to_folder_moves_and_updates_state() {
 
     assert!(!root.join("one.wav").exists());
     assert!(root.join("dest").join("one.wav").is_file());
-    assert!(
-        controller
-            .wav_entries
-            .entries
-            .iter()
-            .any(|entry| entry.relative_path == PathBuf::from("dest").join("one.wav"))
-    );
+    let entries = controller.wav_entries.pages.get(&0).expect("entries");
+    assert!(entries
+        .iter()
+        .any(|entry| entry.relative_path == PathBuf::from("dest").join("one.wav")));
     let collection = controller
         .library
         .collections
@@ -178,11 +172,8 @@ fn sample_drop_to_folder_rejects_conflicts() {
 
     assert!(root.join("one.wav").is_file());
     assert!(dest.join("one.wav").is_file());
-    assert!(
-        controller
-            .wav_entries
-            .entries
-            .iter()
-            .any(|entry| entry.relative_path == PathBuf::from("one.wav"))
-    );
+    let entries = controller.wav_entries.pages.get(&0).expect("entries");
+    assert!(entries
+        .iter()
+        .any(|entry| entry.relative_path == PathBuf::from("one.wav")));
 }

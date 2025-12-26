@@ -11,8 +11,8 @@ Sempal is an audio sample triage and collection builder with fast waveform previ
 
 <div class="support-callout">
   <div class="support-copy">
-    I hate to ask for money. Sempal stays free, but it costs real time and resources to build. If you feel like it, a small donation goes a long way.
-  </div>
+    It costs me a lot of time and effort to build this thing. You can use this link to show some appreciation if you enjoy the app.
+      </div>
   <a class="support-link" href="https://buymeacoffee.com/portalsurfm">
     <span class="support-icon" aria-hidden="true">
       <svg viewBox="0 0 24 24" role="img" aria-hidden="true">

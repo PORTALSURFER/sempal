@@ -144,6 +144,12 @@ fn downmix_to_mono_into(out: &mut Vec<f32>, samples: &[f32], channels: u16) {
     }
 }
 
+fn downmix_to_mono(samples: &[f32], channels: u16) -> Vec<f32> {
+    let mut out = Vec::new();
+    downmix_to_mono_into(&mut out, samples, channels);
+    out
+}
+
 struct DecodeScratch {
     mono: Vec<f32>,
     resampled: Vec<f32>,

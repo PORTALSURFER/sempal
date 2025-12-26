@@ -44,13 +44,10 @@ fn moving_trashed_samples_moves_and_prunes_state() -> Result<(), String> {
     assert_eq!(rows[0].relative_path, PathBuf::from("keep.wav"));
     assert_eq!(rows[0].tag, SampleTag::Keep);
     assert_eq!(controller.wav_entries_len(), 1);
-    assert!(
-        controller
-            .wav_entries
-            .entries
-            .iter()
-            .all(|entry| entry.relative_path != PathBuf::from("trash.wav"))
-    );
+    let entries = controller.wav_entries.pages.get(&0).expect("entries");
+    assert!(entries
+        .iter()
+        .all(|entry| entry.relative_path != PathBuf::from("trash.wav")));
     assert!(controller.ui.browser.trash.is_empty());
     Ok(())
 }
