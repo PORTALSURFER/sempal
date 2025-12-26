@@ -11,6 +11,11 @@ use crate::app_dirs;
 
 const PANNS_ONNX_NAME: &str = "panns_cnn14_16k.onnx";
 const PANNS_BURNPACK_NAME: &str = "panns_cnn14_16k.bpk";
+const PANNS_CHECKPOINT_NAME: &str = "Cnn14_16k_mAP=0.438.pth";
+const DEFAULT_PANNS_CHECKPOINT_URL: &str =
+    "https://zenodo.org/api/records/3987831/files/Cnn14_16k_mAP=0.438.pth/content";
+const EXPORT_PANNS_SCRIPT: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tools/export_panns_onnx.py"));
 
 #[derive(Debug, Clone)]
 pub struct PannsSetupOptions {
@@ -33,18 +38,23 @@ pub fn ensure_panns_burnpack(options: PannsSetupOptions) -> Result<PathBuf, Stri
     let models_dir = resolve_models_dir(options.models_dir)?;
     let onnx_path = models_dir.join(PANNS_ONNX_NAME);
     let burnpack_path = models_dir.join(PANNS_BURNPACK_NAME);
+    let checkpoint_path = models_dir.join(PANNS_CHECKPOINT_NAME);
 
     if burnpack_path.exists() && !options.force {
         return Ok(burnpack_path);
     }
 
     if !onnx_path.exists() || options.force {
-        let url = resolve_onnx_url(options.onnx_url.as_deref())
-            .ok_or_else(|| "Missing PANNs ONNX URL; set SEMPAL_PANNS_ONNX_URL.".to_string())?;
-        download_to_path(&url, &onnx_path)?;
-        let data_url = format!("{url}.data");
-        let data_path = PathBuf::from(format!("{}.data", onnx_path.display()));
-        let _ = download_optional(&data_url, &data_path);
+        if let Some(url) = resolve_onnx_url(options.onnx_url.as_deref()) {
+            download_to_path(&url, &onnx_path)?;
+            let data_url = format!("{url}.data");
+            let data_path = PathBuf::from(format!("{}.data", onnx_path.display()));
+            let _ = download_optional(&data_url, &data_path);
+        } else {
+            let checkpoint_url = resolve_checkpoint_url();
+            download_to_path(&checkpoint_url, &checkpoint_path)?;
+            export_onnx_from_checkpoint(&checkpoint_path, &models_dir)?;
+        }
     }
 
     generate_burnpack(&onnx_path, &models_dir)?;
@@ -85,6 +95,61 @@ fn resolve_onnx_url(explicit: Option<&str>) -> Option<String> {
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(str::to_string)
+}
+
+fn resolve_checkpoint_url() -> String {
+    if let Ok(value) = env::var("SEMPAL_PANNS_CHECKPOINT_URL") {
+        let value = value.trim().to_string();
+        if !value.is_empty() {
+            return value;
+        }
+    }
+    DEFAULT_PANNS_CHECKPOINT_URL.to_string()
+}
+
+fn export_onnx_from_checkpoint(checkpoint: &Path, models_dir: &Path) -> Result<(), String> {
+    let python = resolve_python_exe().ok_or_else(|| {
+        "Python not found. Install Python and set SEMPAL_PYTHON if needed.".to_string()
+    })?;
+    let tmp_dir = env::temp_dir().join("sempal_panns_export");
+    fs::create_dir_all(&tmp_dir)
+        .map_err(|err| format!("Failed to create temp dir {}: {err}", tmp_dir.display()))?;
+    let script_path = tmp_dir.join("export_panns_onnx.py");
+    fs::write(&script_path, EXPORT_PANNS_SCRIPT)
+        .map_err(|err| format!("Failed to write export script: {err}"))?;
+    let status = std::process::Command::new(python)
+        .arg(script_path)
+        .arg("--checkpoint")
+        .arg(checkpoint)
+        .arg("--out-dir")
+        .arg(models_dir)
+        .arg("--onnx-name")
+        .arg(PANNS_ONNX_NAME)
+        .status()
+        .map_err(|err| format!("Failed to run ONNX export: {err}"))?;
+    if !status.success() {
+        return Err("Failed to export PANNs ONNX from checkpoint".to_string());
+    }
+    Ok(())
+}
+
+fn resolve_python_exe() -> Option<String> {
+    if let Ok(value) = env::var("SEMPAL_PYTHON") {
+        let value = value.trim();
+        if !value.is_empty() {
+            return Some(value.to_string());
+        }
+    }
+    for candidate in ["python3", "python"] {
+        if std::process::Command::new(candidate)
+            .arg("--version")
+            .status()
+            .is_ok()
+        {
+            return Some(candidate.to_string());
+        }
+    }
+    None
 }
 
 fn download_to_path(url: &str, dest: &Path) -> Result<(), String> {
@@ -191,11 +256,28 @@ mod tests {
         restore_env(prev);
     }
 
+    #[test]
+    fn resolve_checkpoint_url_uses_default() {
+        let prev = std::env::var("SEMPAL_PANNS_CHECKPOINT_URL").ok();
+        std::env::remove_var("SEMPAL_PANNS_CHECKPOINT_URL");
+        let url = resolve_checkpoint_url();
+        assert_eq!(url, super::DEFAULT_PANNS_CHECKPOINT_URL);
+        restore_checkpoint_env(prev);
+    }
+
     fn restore_env(previous: Option<String>) {
         if let Some(value) = previous {
             std::env::set_var("SEMPAL_PANNS_ONNX_URL", value);
         } else {
             std::env::remove_var("SEMPAL_PANNS_ONNX_URL");
+        }
+    }
+
+    fn restore_checkpoint_env(previous: Option<String>) {
+        if let Some(value) = previous {
+            std::env::set_var("SEMPAL_PANNS_CHECKPOINT_URL", value);
+        } else {
+            std::env::remove_var("SEMPAL_PANNS_CHECKPOINT_URL");
         }
     }
 }
