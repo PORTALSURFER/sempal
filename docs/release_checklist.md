@@ -1,6 +1,7 @@
 # Release Checklist (Windows)
 
 ## Build
+- Update local `main` before running release tooling (e.g. `git fetch origin main` and `git reset --hard origin/main`).
 - Run `scripts/build_installer.ps1` after setting `SEMPAL_PANNS_ONNX_URL` for the installer.
 - Confirm `dist/windows/bundle` contains `sempal.exe` and `sempal.ico`.
 - Verify `dist/windows/sempal-installer.exe` launches and shows the SemPal installer UI.
