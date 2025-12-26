@@ -13,7 +13,8 @@ pub(super) fn db_sync_phase(
     context: &mut ScanContext,
 ) -> Result<(), ScanError> {
     let existing = std::mem::take(&mut context.existing);
-    mark_missing(batch, existing, &mut context.stats, context.mode)?;
+    let mut batch = batch;
+    mark_missing(&mut batch, existing, &mut context.stats, context.mode)?;
     batch.commit()?;
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
