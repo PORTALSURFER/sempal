@@ -241,7 +241,7 @@ impl WaveformController<'_> {
         view.start = focus - width * 0.5;
         view.end = focus + width * 0.5;
         self.ui.waveform.view = view.clamp();
-        if keep_playhead_visible {
+        if keep_playhead_visible && self.ui.waveform.cursor.is_none() {
             self.ensure_playhead_visible_in_view();
         }
         views_differ(original, self.ui.waveform.view)
