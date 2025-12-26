@@ -16,9 +16,9 @@ use crate::sample_sources::{Collection, SampleSource, SourceId};
 
 /// Aggregate application state loaded from disk.
 ///
-/// Config keys (TOML): `feature_flags`, `analysis`, `updates`, `trash_folder`,
-/// `collection_export_root`, `last_selected_source`, `volume`, `audio_output`,
-/// `controls`.
+/// Config keys (TOML): `feature_flags`, `analysis`, `updates`, `app_data_dir`,
+/// `trash_folder`, `collection_export_root`, `last_selected_source`, `volume`,
+/// `audio_output`, `controls`.
 ///
 /// `sources` and `collections` are stored in the library database.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -30,6 +30,9 @@ pub struct AppConfig {
     pub analysis: AnalysisSettings,
     #[serde(default)]
     pub updates: UpdateSettings,
+    /// Optional override for the `.sempal` data folder.
+    #[serde(default)]
+    pub app_data_dir: Option<PathBuf>,
     pub trash_folder: Option<PathBuf>,
     /// Optional default root used when creating collection export folders.
     #[serde(default)]
@@ -51,6 +54,8 @@ pub(super) struct AppSettings {
     pub analysis: AnalysisSettings,
     #[serde(default)]
     pub updates: UpdateSettings,
+    #[serde(default)]
+    pub app_data_dir: Option<PathBuf>,
     #[serde(default)]
     pub trash_folder: Option<PathBuf>,
     #[serde(default)]
@@ -301,6 +306,7 @@ impl Default for AppConfig {
             feature_flags: FeatureFlags::default(),
             analysis: AnalysisSettings::default(),
             updates: UpdateSettings::default(),
+            app_data_dir: None,
             trash_folder: None,
             collection_export_root: None,
             last_selected_source: None,
@@ -317,6 +323,7 @@ impl Default for AppSettings {
             feature_flags: FeatureFlags::default(),
             analysis: AnalysisSettings::default(),
             updates: UpdateSettings::default(),
+            app_data_dir: None,
             trash_folder: None,
             collection_export_root: None,
             last_selected_source: None,

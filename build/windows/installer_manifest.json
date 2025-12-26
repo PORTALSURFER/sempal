@@ -5,6 +5,8 @@
   "payload_dir": "bundle",
   "entries": [
     "sempal.exe",
-    "sempal.ico"
+    "sempal-installer.exe",
+    "sempal.ico",
+    "models/panns_cnn14_16k.bpk"
   ]
 }

@@ -80,6 +80,14 @@ trap 'rm -rf "$WORK_DIR"' EXIT
 ROOT_DIR="${WORK_DIR}/${APP_NAME}"
 mkdir -p "$ROOT_DIR"
 cp "target/${TARGET}/release/${APP_NAME}" "${ROOT_DIR}/${APP_NAME}"
+MODEL_DIR="${ROOT_DIR}/models"
+mkdir -p "$MODEL_DIR"
+BURNPACK_PATH="${REPO_ROOT}/assets/ml/panns_cnn14_16k/panns_cnn14_16k.bpk"
+if [[ ! -f "$BURNPACK_PATH" ]]; then
+  echo "Burnpack not found at ${BURNPACK_PATH}. Add the bundled model to assets/ml/panns_cnn14_16k." >&2
+  exit 1
+fi
+cp "$BURNPACK_PATH" "${MODEL_DIR}/panns_cnn14_16k.bpk"
 
 cat > "${ROOT_DIR}/install.sh" <<'EOF'
 #!/usr/bin/env bash
@@ -91,11 +99,17 @@ mkdir -p "$BIN_DIR"
 cp sempal "${BIN_DIR}/sempal"
 chmod +x "${BIN_DIR}/sempal"
 
-if [ -n "${SEMPAL_PANNS_ONNX_URL:-}" ]; then
-  "${BIN_DIR}/sempal" --prepare-models
+if [ -n "${SEMPAL_CONFIG_HOME:-}" ]; then
+  CONFIG_ROOT="${SEMPAL_CONFIG_HOME}"
+elif [ -n "${XDG_CONFIG_HOME:-}" ]; then
+  CONFIG_ROOT="${XDG_CONFIG_HOME}"
 else
-  echo "SEMPAL_PANNS_ONNX_URL not set; run 'SEMPAL_PANNS_ONNX_URL=... sempal --prepare-models' later."
+  CONFIG_ROOT="${HOME}/.config"
 fi
+
+MODELS_DIR="${CONFIG_ROOT}/.sempal/models"
+mkdir -p "${MODELS_DIR}"
+cp "models/panns_cnn14_16k.bpk" "${MODELS_DIR}/panns_cnn14_16k.bpk"
 
 echo "Installed to ${BIN_DIR}/sempal"
 EOF

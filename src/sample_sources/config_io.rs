@@ -26,11 +26,12 @@ pub fn config_path() -> Result<PathBuf, ConfigError> {
 pub fn load_or_default() -> Result<AppConfig, ConfigError> {
     let settings_path = config_path()?;
     let legacy_path = legacy_config_path()?;
-    let settings = if settings_path.exists() {
+    let mut settings = if settings_path.exists() {
         load_settings_from(&settings_path)?
     } else {
         migrate_legacy_config(&legacy_path, &settings_path)?
     };
+    apply_app_data_dir(&settings_path, &mut settings)?;
 
     let library = crate::sample_sources::library::load()?;
     Ok(AppConfig {
@@ -39,6 +40,7 @@ pub fn load_or_default() -> Result<AppConfig, ConfigError> {
         feature_flags: settings.feature_flags,
         analysis: settings.analysis,
         updates: settings.updates,
+        app_data_dir: settings.app_data_dir,
         trash_folder: settings.trash_folder,
         collection_export_root: settings.collection_export_root,
         last_selected_source: settings.last_selected_source,
@@ -69,6 +71,7 @@ pub fn save_to_path(config: &AppConfig, path: &Path) -> Result<(), ConfigError> 
             feature_flags: config.feature_flags.clone(),
             analysis: config.analysis.clone(),
             updates: config.updates.clone(),
+            app_data_dir: config.app_data_dir.clone(),
             trash_folder: config.trash_folder.clone(),
             collection_export_root: config.collection_export_root.clone(),
             last_selected_source: config.last_selected_source.clone(),
@@ -115,6 +118,24 @@ fn load_settings_from(path: &Path) -> Result<AppSettings, ConfigError> {
         .map(AppSettings::normalized)
 }
 
+fn apply_app_data_dir(
+    settings_path: &Path,
+    settings: &mut AppSettings,
+) -> Result<(), ConfigError> {
+    let Some(app_data_dir) = settings.app_data_dir.clone() else {
+        return Ok(());
+    };
+    let override_path = app_data_dir.join(CONFIG_FILE_NAME);
+    if override_path != settings_path && override_path.exists() {
+        *settings = load_settings_from(&override_path)?;
+    } else if override_path != settings_path && settings_path.exists() {
+        save_settings_to_path(settings, &override_path)?;
+    }
+    settings.app_data_dir = Some(app_data_dir.clone());
+    app_dirs::set_app_root_override(app_data_dir).map_err(map_app_dir_error)?;
+    Ok(())
+}
+
 fn migrate_legacy_config(legacy_path: &Path, new_path: &Path) -> Result<AppSettings, ConfigError> {
     if !legacy_path.exists() {
         return Ok(AppSettings::default());
@@ -131,6 +152,7 @@ fn migrate_legacy_config(legacy_path: &Path, new_path: &Path) -> Result<AppSetti
         feature_flags: legacy.feature_flags,
         analysis: AnalysisSettings::default(),
         updates: UpdateSettings::default(),
+        app_data_dir: None,
         trash_folder: legacy.trash_folder,
         collection_export_root: None,
         last_selected_source: legacy.last_selected_source,
@@ -239,6 +261,7 @@ mod tests {
                 feature_flags: FeatureFlags::default(),
                 analysis: AnalysisSettings::default(),
                 updates: UpdateSettings::default(),
+                app_data_dir: None,
                 trash_folder: Some(PathBuf::from("trash_here")),
                 collection_export_root: None,
                 last_selected_source: None,

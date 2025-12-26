@@ -5,6 +5,12 @@ impl EguiController {
     /// Load persisted configuration and populate initial UI state.
     pub fn load_configuration(&mut self) -> Result<(), crate::sample_sources::config::ConfigError> {
         let cfg = crate::sample_sources::config::load_or_default()?;
+        if let Err(err) = crate::model_setup::sync_bundled_burnpack() {
+            self.set_status(
+                format!("Bundled model sync failed: {err}"),
+                StatusTone::Warning,
+            );
+        }
         self.settings.feature_flags = cfg.feature_flags;
         self.settings.analysis = cfg.analysis;
         self.settings.analysis.max_analysis_duration_seconds =
@@ -12,6 +18,7 @@ impl EguiController {
                 self.settings.analysis.max_analysis_duration_seconds,
             );
         self.settings.updates = cfg.updates.clone();
+        self.settings.app_data_dir = cfg.app_data_dir.clone();
         self.settings.trash_folder = cfg.trash_folder.clone();
         self.settings.collection_export_root = cfg.collection_export_root.clone();
         self.ui.collections.enabled = self.settings.feature_flags.collections_enabled;
@@ -145,6 +152,7 @@ impl EguiController {
             feature_flags: self.settings.feature_flags.clone(),
             analysis: self.settings.analysis.clone(),
             updates: self.settings.updates.clone(),
+            app_data_dir: self.settings.app_data_dir.clone(),
             trash_folder: self.settings.trash_folder.clone(),
             collection_export_root: self.settings.collection_export_root.clone(),
             last_selected_source: self

@@ -10,11 +10,10 @@ TARGET=""
 ARCH=""
 CHANNEL=""
 VERSION=""
-ONNX_URL=""
 
 usage() {
   cat <<'EOF'
-Usage: build_macos_pkg.sh --target <triple> --arch <label> --channel <stable|nightly> [--version <x.y.z>] [--onnx-url <url>] [--out-dir <path>]
+Usage: build_macos_pkg.sh --target <triple> --arch <label> --channel <stable|nightly> [--version <x.y.z>] [--out-dir <path>]
 EOF
 }
 
@@ -34,10 +33,6 @@ while [[ $# -gt 0 ]]; do
       ;;
     --version)
       VERSION="$2"
-      shift 2
-      ;;
-    --onnx-url)
-      ONNX_URL="$2"
       shift 2
       ;;
     --out-dir)
@@ -78,12 +73,7 @@ case "$CHANNEL" in
     ;;
 esac
 
-if [[ -z "$ONNX_URL" ]]; then
-  echo "--onnx-url is required for the macOS installer." >&2
-  exit 1
-fi
-
-SEMPAL_PANNS_ONNX_URL="$ONNX_URL" "$BUILD_CARGO_BIN" build --release --bin "$APP_NAME" --target "$TARGET"
+"$BUILD_CARGO_BIN" build --release --bin "$APP_NAME" --target "$TARGET"
 
 WORK_DIR="$(mktemp -d)"
 trap 'rm -rf "$WORK_DIR"' EXIT
@@ -91,6 +81,14 @@ trap 'rm -rf "$WORK_DIR"' EXIT
 ROOT_DIR="${WORK_DIR}/root/Applications/${DISPLAY_NAME}"
 mkdir -p "$ROOT_DIR"
 cp "target/${TARGET}/release/${APP_NAME}" "${ROOT_DIR}/${APP_NAME}"
+MODEL_DIR="${ROOT_DIR}/models"
+mkdir -p "$MODEL_DIR"
+BURNPACK_PATH="${REPO_ROOT}/assets/ml/panns_cnn14_16k/panns_cnn14_16k.bpk"
+if [[ ! -f "$BURNPACK_PATH" ]]; then
+  echo "Burnpack not found at ${BURNPACK_PATH}. Add the bundled model to assets/ml/panns_cnn14_16k." >&2
+  exit 1
+fi
+cp "$BURNPACK_PATH" "${MODEL_DIR}/panns_cnn14_16k.bpk"
 
 SCRIPTS_DIR="${WORK_DIR}/scripts"
 mkdir -p "$SCRIPTS_DIR"
@@ -100,15 +98,27 @@ cat > "$POSTINSTALL" <<EOF
 #!/bin/sh
 set -e
 APP_PATH="/Applications/${DISPLAY_NAME}/${APP_NAME}"
-ONNX_URL="${ONNX_URL}"
-if [ ! -x "\$APP_PATH" ]; then
+MODEL_SOURCE="/Applications/${DISPLAY_NAME}/models/panns_cnn14_16k.bpk"
+if [ ! -x "\$APP_PATH" ] || [ ! -f "\$MODEL_SOURCE" ]; then
   exit 0
 fi
 CONSOLE_USER=\$(stat -f%Su /dev/console 2>/dev/null || echo "")
+copy_models() {
+  local user="\$1"
+  local home
+  home=\$(dscl . -read "/Users/\$user" NFSHomeDirectory 2>/dev/null | awk '{print \$2}')
+  if [ -z "\$home" ]; then
+    home=\$(eval echo "~\$user")
+  fi
+  local models_dir="\${home}/Library/Application Support/.sempal/models"
+  mkdir -p "\$models_dir"
+  cp "\$MODEL_SOURCE" "\$models_dir/panns_cnn14_16k.bpk"
+  chown "\$user" "\$models_dir" "\$models_dir/panns_cnn14_16k.bpk"
+}
 if [ -n "\$CONSOLE_USER" ] && [ "\$CONSOLE_USER" != "root" ]; then
-  su -l "\$CONSOLE_USER" -c "SEMPAL_PANNS_ONNX_URL=\$ONNX_URL \"\$APP_PATH\" --prepare-models"
+  copy_models "\$CONSOLE_USER"
 else
-  SEMPAL_PANNS_ONNX_URL="\$ONNX_URL" "\$APP_PATH" --prepare-models
+  copy_models "\$USER"
 fi
 exit 0
 EOF

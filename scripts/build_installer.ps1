@@ -19,8 +19,14 @@ if (Test-Path $OutDir) {
 
 New-Item -ItemType Directory -Force -Path $BundleDir | Out-Null
 Copy-Item "target/release/sempal.exe" $BundleDir -Force
+Copy-Item "target/release/sempal-installer.exe" $BundleDir -Force
 Copy-Item "target/release/sempal-installer.exe" $OutDir -Force
 Copy-Item "assets/logo3.ico" (Join-Path $BundleDir "sempal.ico") -Force
+$modelsDir = Join-Path $BundleDir "models"
+New-Item -ItemType Directory -Force -Path $modelsDir | Out-Null
+$burnpack = Join-Path $RepoRoot "assets\\ml\\panns_cnn14_16k\\panns_cnn14_16k.bpk"
+if (-not (Test-Path $burnpack)) { throw "Burnpack not found at $burnpack. Add the bundled model to assets/ml/panns_cnn14_16k." }
+Copy-Item $burnpack $modelsDir -Force
 
 Copy-Item "build/windows/installer_manifest.json" $OutDir -Force
 

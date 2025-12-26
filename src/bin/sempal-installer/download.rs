@@ -1,11 +1,7 @@
 use crate::ui;
 
 pub(crate) fn ensure_downloads(sender: &ui::InstallerSender) -> Result<(), String> {
-    send_log(sender, "Preparing ML model download")?;
-    sempal::model_setup::ensure_panns_burnpack(
-        sempal::model_setup::PannsSetupOptions::default(),
-    )?;
-    send_log(sender, "ML model ready")?;
+    send_log(sender, "Using bundled ML model")?;
     Ok(())
 }
 

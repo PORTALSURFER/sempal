@@ -39,8 +39,9 @@ pub fn ensure_panns_burnpack(options: PannsSetupOptions) -> Result<PathBuf, Stri
     }
 
     if !onnx_path.exists() || options.force {
-        let url = resolve_onnx_url(options.onnx_url.as_deref())
-            .ok_or_else(|| "Missing PANNs ONNX URL; set SEMPAL_PANNS_ONNX_URL.".to_string())?;
+        let url = resolve_onnx_url(options.onnx_url.as_deref()).ok_or_else(|| {
+            "Missing PANNs ONNX URL; set SEMPAL_PANNS_ONNX_URL.".to_string()
+        })?;
         download_to_path(&url, &onnx_path)?;
         let data_url = format!("{url}.data");
         let data_path = PathBuf::from(format!("{}.data", onnx_path.display()));
@@ -55,6 +56,35 @@ pub fn ensure_panns_burnpack(options: PannsSetupOptions) -> Result<PathBuf, Stri
         ));
     }
     Ok(burnpack_path)
+}
+
+pub fn sync_bundled_burnpack() -> Result<bool, String> {
+    let models_dir = resolve_models_dir(None)?;
+    let target = models_dir.join(PANNS_BURNPACK_NAME);
+    if target.exists() {
+        return Ok(false);
+    }
+    let Some(source) = bundled_burnpack_path() else {
+        return Ok(false);
+    };
+    fs::copy(&source, &target).map_err(|err| {
+        format!(
+            "Failed to copy bundled burnpack from {}: {err}",
+            source.display()
+        )
+    })?;
+    Ok(true)
+}
+
+fn bundled_burnpack_path() -> Option<PathBuf> {
+    let exe = env::current_exe().ok()?;
+    let exe_dir = exe.parent()?;
+    let bundled = exe_dir.join("models").join(PANNS_BURNPACK_NAME);
+    if bundled.exists() {
+        Some(bundled)
+    } else {
+        None
+    }
 }
 
 fn resolve_models_dir(override_dir: Option<PathBuf>) -> Result<PathBuf, String> {
@@ -191,6 +221,7 @@ mod tests {
         restore_env(prev);
     }
 
+
     fn restore_env(previous: Option<String>) {
         if let Some(value) = previous {
             std::env::set_var("SEMPAL_PANNS_ONNX_URL", value);
@@ -198,4 +229,5 @@ mod tests {
             std::env::remove_var("SEMPAL_PANNS_ONNX_URL");
         }
     }
+
 }
