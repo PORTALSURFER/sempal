@@ -204,11 +204,12 @@ pub(super) fn set_sample_tag_for_source(
         }
     }
     let _ = db.set_tag(path, target_tag);
-    if controller.selection_state.ctx.selected_source.as_ref() == Some(&source.id)
-        && let Some(index) = controller.wav_index_for_path(path)
+    let mut updated_active = false;
+    if let Some(index) = controller.wav_index_for_path(path)
         && let Some(entry) = controller.wav_entries.entry_mut(index)
     {
         entry.tag = target_tag;
+        updated_active = true;
     }
     if let Some(cache) = controller.cache.wav.entries.get_mut(&source.id)
         && let Some(index) = cache.lookup.get(path).copied()
@@ -216,7 +217,7 @@ pub(super) fn set_sample_tag_for_source(
     {
         entry.tag = target_tag;
     }
-    if controller.selection_state.ctx.selected_source.as_ref() == Some(&source.id) {
+    if updated_active {
         controller.rebuild_browser_lists();
     }
     Ok(())
