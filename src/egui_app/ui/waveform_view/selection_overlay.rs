@@ -175,8 +175,11 @@ fn draw_bpm_guides(
     }
     let painter = ui.painter();
     let stroke = egui::Stroke::new(1.0, style::with_alpha(highlight, 140));
-    let triage_red = style::with_alpha(style::semantic_palette().triage_trash, 200);
+    let triage_base = style::semantic_palette().triage_trash;
+    let triage_red = style::with_alpha(triage_base, 200);
     let triage_stroke = egui::Stroke::new(1.0, triage_red);
+    let triage_gradient_left = style::with_alpha(triage_base, 0);
+    let triage_gradient_right = style::with_alpha(triage_base, 90);
     let line_top = (rect.top() + top_cut).min(rect.bottom());
     let line_bottom = (rect.bottom() - bottom_cut).max(line_top);
     let mut beat = selection.start() + step;
@@ -185,11 +188,29 @@ fn draw_bpm_guides(
     while beat < end {
         let normalized = ((beat - view.start) / view_width).clamp(0.0, 1.0);
         let x = rect.left() + rect.width() * normalized;
-        let line_stroke = if beat_index % 4 == 0 {
-            triage_stroke
-        } else {
-            stroke
-        };
+        let is_emphasis = beat_index % 4 == 0;
+        if is_emphasis {
+            let prev = beat - step;
+            if prev >= selection.start() {
+                let prev_norm = ((prev - view.start) / view_width).clamp(0.0, 1.0);
+                let prev_x = rect.left() + rect.width() * prev_norm;
+                if x > prev_x {
+                    let mut mesh = egui::epaint::Mesh::default();
+                    let top_left = egui::pos2(prev_x, line_top);
+                    let bottom_left = egui::pos2(prev_x, line_bottom);
+                    let top_right = egui::pos2(x, line_top);
+                    let bottom_right = egui::pos2(x, line_bottom);
+                    let left = mesh.add_colored_vertex(top_left, triage_gradient_left);
+                    let left_bottom = mesh.add_colored_vertex(bottom_left, triage_gradient_left);
+                    let right = mesh.add_colored_vertex(top_right, triage_gradient_right);
+                    let right_bottom = mesh.add_colored_vertex(bottom_right, triage_gradient_right);
+                    mesh.add_triangle(left, left_bottom, right);
+                    mesh.add_triangle(right, left_bottom, right_bottom);
+                    painter.add(egui::Shape::mesh(mesh));
+                }
+            }
+        }
+        let line_stroke = if is_emphasis { triage_stroke } else { stroke };
         painter.line_segment(
             [egui::pos2(x, line_top), egui::pos2(x, line_bottom)],
             line_stroke,
