@@ -1,0 +1,141 @@
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+use rodio::{OutputStream, Sink, Source};
+
+use super::AudioPlayer;
+use super::super::DEFAULT_ANTI_CLIP_FADE;
+use super::super::fade::{
+    EdgeFade, FadeOutHandle, FadeOutOnRequest, fade_duration, fade_frames_for_duration,
+};
+use super::super::mixer::{decoder_from_bytes, map_seek_error};
+
+impl AudioPlayer {
+    pub(super) fn reset_playback_state(&mut self) {
+        self.started_at = None;
+        self.play_span = None;
+        self.looping = false;
+        self.loop_offset = None;
+        #[cfg(test)]
+        {
+            self.elapsed_override = None;
+        }
+    }
+
+    pub(super) fn build_sink_with_fade<S: Source<Item = f32> + Send + 'static>(
+        &self,
+        source: S,
+    ) -> (Sink, FadeOutHandle, (u32, u16)) {
+        Self::build_sink_with_fade_for_stream(&self.stream, self.volume, source)
+    }
+
+    pub(super) fn build_sink_with_fade_for_stream<S: Source<Item = f32> + Send + 'static>(
+        stream: &OutputStream,
+        volume: f32,
+        source: S,
+    ) -> (Sink, FadeOutHandle, (u32, u16)) {
+        let sink = Sink::connect_new(stream.mixer());
+        sink.set_volume(volume);
+        let format = (source.sample_rate(), source.channels());
+        let handle = FadeOutHandle::new();
+        sink.append(FadeOutOnRequest::new(source, handle.clone()));
+        sink.play();
+        (sink, handle, format)
+    }
+
+    pub(super) fn elapsed_since(&self, started_at: Instant) -> Duration {
+        #[cfg(test)]
+        if let Some(override_elapsed) = self.elapsed_override {
+            return override_elapsed;
+        }
+        started_at.elapsed()
+    }
+
+    pub(super) fn audio_bytes(&self) -> Result<Arc<[u8]>, String> {
+        self.current_audio
+            .as_ref()
+            .cloned()
+            .ok_or_else(|| "Load a .wav file first".to_string())
+    }
+
+    pub(super) fn anti_clip_fade(&self) -> Duration {
+        if self.anti_clip_enabled {
+            self.anti_clip_fade
+        } else {
+            Duration::ZERO
+        }
+    }
+
+    pub(super) fn normalized_span(&self, start: f32, end: f32) -> Result<(f32, f32, f32), String> {
+        let duration = self
+            .track_duration
+            .ok_or_else(|| "Load a .wav file first".to_string())?;
+        if duration <= 0.0 {
+            return Err("Load a .wav file first".into());
+        }
+        let (start, end) = if start <= end { (start, end) } else { (end, start) };
+        let clamped_start = start.clamp(0.0, 1.0) * duration;
+        let clamped_end = end.clamp(0.0, 1.0) * duration;
+        let mut bounded_start = clamped_start.min(duration);
+        let mut bounded_end = clamped_end.min(duration);
+        let min_span = (duration * 0.01).max(0.01);
+        if bounded_end <= bounded_start {
+            bounded_end = (bounded_start + min_span).min(duration);
+            if bounded_end <= bounded_start {
+                bounded_start = (duration - min_span).max(0.0);
+                bounded_end = duration.max(bounded_start + 0.001);
+            }
+        }
+        Ok((bounded_start, bounded_end, duration))
+    }
+
+    pub(super) fn fade_out_current_sink(&mut self, fade: Duration) {
+        let Some(sink) = self.sink.take() else {
+            return;
+        };
+        let handle = self.fade_out.take();
+        let format = self.sink_format.take();
+
+        let Some(handle) = handle else {
+            sink.stop();
+            return;
+        };
+        let Some((sample_rate, _channels)) = format else {
+            sink.stop();
+            return;
+        };
+        if fade.is_zero() {
+            sink.stop();
+            return;
+        }
+        let fade_frames = fade_frames_for_duration(sample_rate, fade);
+        handle.request_fade_out_frames(fade_frames);
+        sink.detach();
+    }
+
+    #[cfg(test)]
+    pub(crate) fn span_sample_count(
+        bytes: Arc<[u8]>,
+        start_seconds: f32,
+        end_seconds: f32,
+    ) -> Result<(usize, u32, u16), String> {
+        let mut source = decoder_from_bytes(bytes)?;
+        source
+            .try_seek(Duration::from_secs_f32(start_seconds))
+            .map_err(map_seek_error)?;
+        let span_length = (end_seconds - start_seconds).max(0.001);
+        let fade = fade_duration(span_length, DEFAULT_ANTI_CLIP_FADE);
+        let limited = source
+            .fade_in(fade)
+            .take_duration(Duration::from_secs_f32(span_length))
+            .buffered();
+        let mut faded = EdgeFade::new(limited, fade);
+        let sample_rate = faded.sample_rate();
+        let channels = faded.channels();
+        let mut count = 0usize;
+        while faded.next().is_some() {
+            count = count.saturating_add(1);
+        }
+        Ok((count, sample_rate, channels))
+    }
+}
