@@ -66,11 +66,14 @@ pub(super) fn handle_selection_slide_drag(
             if let Some(slide) = app.selection_slide {
                 let cursor = to_wave_pos(pos);
                 let delta = cursor - slide.anchor;
-                let snap_step = if ui.input(|i| i.modifiers.shift) {
-                    bpm_snap_step(app)
-                } else {
-                    None
-                };
+                let snap_step =
+                    if app.controller.ui.waveform.bpm_snap_enabled
+                        && !ui.input(|i| i.modifiers.shift)
+                    {
+                        bpm_snap_step(app)
+                    } else {
+                        None
+                    };
                 let adjusted_delta = snap_step
                     .filter(|step| step.is_finite() && *step > 0.0)
                     .map(|step| snap_delta(delta, step))
