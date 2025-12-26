@@ -136,6 +136,7 @@ pub(super) fn handle_selection_edge_drag(
         || (pointer_down && !app.controller.is_selection_dragging())
     {
         app.controller.start_selection_edge_drag(edge, alt_down);
+        app.selection_edge_alt_scale = alt_down;
         if app.selection_edge_offset.is_none() {
             if let Some(pos) = edge_response.interact_pointer_pos() {
                 app.selection_edge_offset = Some(pos.x - selection_edge_x);
@@ -155,6 +156,7 @@ pub(super) fn handle_selection_edge_drag(
     }
     if edge_response.drag_stopped() {
         app.selection_edge_offset = None;
+        app.selection_edge_alt_scale = false;
         app.controller.finish_selection_drag();
     }
 }
@@ -165,5 +167,6 @@ pub(super) fn sync_selection_edge_drag_release(app: &mut EguiApp, ctx: &egui::Co
             app.controller.finish_selection_drag();
         }
         app.selection_edge_offset = None;
+        app.selection_edge_alt_scale = false;
     }
 }

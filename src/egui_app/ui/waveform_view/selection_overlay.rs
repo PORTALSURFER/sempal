@@ -115,6 +115,7 @@ pub(super) fn render_selection_overlay(
         || end_edge_response.dragged()
         || end_edge_response.drag_started();
     let alt_down = ui.input(|i| i.modifiers.alt);
+    let scale_active = app.selection_edge_alt_scale && edge_dragging;
     for (edge, edge_rect, edge_response) in [
         (SelectionEdge::Start, start_edge_rect, start_edge_response),
         (SelectionEdge::End, end_edge_rect, end_edge_response),
@@ -138,8 +139,6 @@ pub(super) fn render_selection_overlay(
             || edge_response.is_pointer_button_down_on()
             || edge_response.dragged();
         if edge_hovered {
-            let scale_active =
-                alt_down && (edge_response.drag_started() || edge_response.dragged());
             let color = if scale_active {
                 style::palette().accent_mint
             } else {
