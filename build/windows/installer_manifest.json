@@ -5,6 +5,7 @@
   "payload_dir": "bundle",
   "entries": [
     "sempal.exe",
+    "sempal-installer.exe",
     "sempal.ico"
   ]
 }

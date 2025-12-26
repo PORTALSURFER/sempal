@@ -19,6 +19,7 @@ if (Test-Path $OutDir) {
 
 New-Item -ItemType Directory -Force -Path $BundleDir | Out-Null
 Copy-Item "target/release/sempal.exe" $BundleDir -Force
+Copy-Item "target/release/sempal-installer.exe" $BundleDir -Force
 Copy-Item "target/release/sempal-installer.exe" $OutDir -Force
 Copy-Item "assets/logo3.ico" (Join-Path $BundleDir "sempal.ico") -Force
 
