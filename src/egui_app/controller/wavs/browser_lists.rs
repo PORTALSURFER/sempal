@@ -127,6 +127,9 @@ impl EguiController {
         if let Some(path) = selected_wav
             && self.wav_index_for_path(&path).is_none()
         {
+            if self.runtime.jobs.pending_select_path().as_ref() == Some(&path) {
+                return;
+            }
             self.sample_view.wav.selected_wav = None;
             self.ui.browser.selected = None;
             self.ui.browser.selected_visible = None;
