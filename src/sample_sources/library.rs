@@ -7,7 +7,9 @@ use rusqlite::{Connection, Transaction, params};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-mod schema;
+mod migrations;
+mod schema_checks;
+mod schema_defs;
 
 use super::{Collection, CollectionId, SampleSource, SourceId};
 use crate::app_dirs;
