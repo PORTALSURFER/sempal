@@ -69,6 +69,7 @@ impl EguiController {
         if matches!(
             backend,
             crate::sample_sources::config::PannsBackendChoice::Cuda
+                | crate::sample_sources::config::PannsBackendChoice::Cpu
         ) {
             set_env_var(PANNS_BACKEND_ENV, backend.as_env());
         } else {

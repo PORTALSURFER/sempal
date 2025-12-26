@@ -138,6 +138,7 @@ impl Default for AnalysisSettings {
 #[serde(rename_all = "lowercase")]
 pub enum PannsBackendChoice {
     Wgpu,
+    Cpu,
     Cuda,
 }
 
@@ -151,13 +152,15 @@ impl PannsBackendChoice {
     pub fn as_env(&self) -> &'static str {
         match self {
             Self::Wgpu => "wgpu",
+            Self::Cpu => "cpu",
             Self::Cuda => "cuda",
         }
     }
 
     pub fn from_env(value: &str) -> Option<Self> {
         match value.trim().to_ascii_lowercase().as_str() {
-            "wgpu" | "vulkan" => Some(Self::Wgpu),
+            "wgpu" | "vulkan" | "metal" => Some(Self::Wgpu),
+            "cpu" | "ndarray" => Some(Self::Cpu),
             "cuda" => Some(Self::Cuda),
             _ => None,
         }

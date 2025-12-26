@@ -9,16 +9,23 @@ impl EguiApp {
         let palette = style::palette();
         section_label(ui, "GPU embeddings");
         let mut backend = self.controller.panns_backend();
+        let wgpu_label = wgpu_backend_label();
         egui::ComboBox::from_id_salt("panns_backend_combo")
             .selected_text(match backend {
-                crate::sample_sources::config::PannsBackendChoice::Wgpu => "WGPU (Vulkan)",
+                crate::sample_sources::config::PannsBackendChoice::Wgpu => wgpu_label,
+                crate::sample_sources::config::PannsBackendChoice::Cpu => "CPU",
                 crate::sample_sources::config::PannsBackendChoice::Cuda => "CUDA",
             })
             .show_ui(ui, |ui| {
                 ui.selectable_value(
                     &mut backend,
                     crate::sample_sources::config::PannsBackendChoice::Wgpu,
-                    "WGPU (Vulkan)",
+                    wgpu_label,
+                );
+                ui.selectable_value(
+                    &mut backend,
+                    crate::sample_sources::config::PannsBackendChoice::Cpu,
+                    "CPU",
                 );
                 let cuda_enabled = cfg!(feature = "panns-cuda");
                 ui.add_enabled(
@@ -115,5 +122,13 @@ impl EguiApp {
                 );
             }
         }
+    }
+}
+
+fn wgpu_backend_label() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "WGPU (Metal)"
+    } else {
+        "WGPU (Vulkan)"
     }
 }
