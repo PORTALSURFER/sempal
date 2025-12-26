@@ -6,7 +6,7 @@ use crate::sample_sources::{CollectionId, SampleTag, SourceId};
 use std::path::PathBuf;
 
 impl DragDropController<'_> {
-    pub(super) fn handle_sample_drop(
+    pub(in crate::egui_app::controller::drag_drop_controller) fn handle_sample_drop(
         &mut self,
         source_id: SourceId,
         relative_path: PathBuf,
@@ -56,7 +56,7 @@ impl DragDropController<'_> {
         }
     }
 
-    pub(super) fn handle_samples_drop(
+    pub(in crate::egui_app::controller::drag_drop_controller) fn handle_samples_drop(
         &mut self,
         samples: &[DragSample],
         collection_target: Option<CollectionId>,
