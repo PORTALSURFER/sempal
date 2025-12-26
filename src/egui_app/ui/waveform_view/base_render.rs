@@ -63,7 +63,7 @@ pub(super) fn render_waveform_base(
         ui.painter().rect_filled(rect, 0.0, loading_fill);
     }
 
-    let zero_line = style::with_alpha(palette.panel_outline, 40);
+    let zero_line = style::with_alpha(palette.accent_copper, 140);
     ui.painter().line_segment(
         [egui::pos2(rect.left(), rect.center().y), egui::pos2(rect.right(), rect.center().y)],
         egui::Stroke::new(1.0, zero_line),
