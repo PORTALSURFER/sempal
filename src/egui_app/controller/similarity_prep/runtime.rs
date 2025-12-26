@@ -1,4 +1,4 @@
-use super::store::DbSimilarityPrepStore;
+use super::store::{DbSimilarityPrepStore, SimilarityPrepStore};
 use super::DEFAULT_CLUSTER_MIN_SIZE;
 use crate::analysis::hdbscan::{HdbscanConfig, HdbscanMethod};
 use crate::egui_app::controller::{analysis_jobs, jobs, EguiController};

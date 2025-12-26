@@ -1,5 +1,5 @@
 use super::state;
-use super::store::DbSimilarityPrepStore;
+use super::store::{DbSimilarityPrepStore, SimilarityPrepStore};
 use crate::egui_app::controller::{analysis_jobs, jobs, EguiController, SimilarityPrepStage, SimilarityPrepState};
 use crate::egui_app::state::ProgressTaskKind;
 use crate::sample_sources::SourceId;
