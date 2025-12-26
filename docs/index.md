@@ -11,7 +11,7 @@ Sempal is an audio sample triage and collection builder with fast waveform previ
 
 <div class="download-hero">
   <div class="download-copy">Download the latest build bundle for Windows.</div>
-  <a class="download-link" href="https://github.com/portalsurfer/sempal/releases/latest/downloads/sempal-installer-bundle.zip">
+  <a class="download-link" href="https://github.com/portalsurfer/sempal/releases/latest/download/sempal-installer-bundle.zip">
     Download latest
   </a>
 </div>
