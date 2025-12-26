@@ -70,10 +70,7 @@ jobs:
             --arch "${{ matrix.arch }}" \
             --channel "${RELEASE_CHANNEL}" \
             ${RELEASE_VERSION:+--version "${RELEASE_VERSION}"} \
-            --onnx-url "${SEMPAL_PANNS_ONNX_URL}" \
             --out-dir dist/release
-        env:
-          SEMPAL_PANNS_ONNX_URL: ${{ secrets.SEMPAL_PANNS_ONNX_URL }}
       - name: Build Linux tar.gz
         if: ${{ matrix.platform == 'linux' }}
         env:

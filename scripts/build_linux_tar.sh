@@ -72,6 +72,37 @@ case "$CHANNEL" in
     ;;
 esac
 
+resolve_python() {
+  if command -v python3 >/dev/null 2>&1; then
+    echo "python3"
+    return 0
+  fi
+  if command -v python >/dev/null 2>&1; then
+    echo "python"
+    return 0
+  fi
+  return 1
+}
+
+ensure_onnx() {
+  if [[ -n "${SEMPAL_PANNS_ONNX_PATH:-}" ]]; then
+    return 0
+  fi
+  local python_bin
+  if ! python_bin="$(resolve_python)"; then
+    echo "Python is required to export PANNs ONNX. Set SEMPAL_PANNS_ONNX_PATH instead." >&2
+    exit 1
+  fi
+  local onnx_dir="${REPO_ROOT}/.tmp/panns_onnx"
+  local onnx_path="${onnx_dir}/panns_cnn14_16k.onnx"
+  if [[ ! -f "$onnx_path" ]]; then
+    echo "Generating PANNs ONNX from checkpoint..."
+    "$python_bin" "${REPO_ROOT}/tools/export_panns_onnx.py" --out-dir "$onnx_dir"
+  fi
+  export SEMPAL_PANNS_ONNX_PATH="$onnx_path"
+}
+
+ensure_onnx
 "$BUILD_CARGO_BIN" build --release --bin "$APP_NAME" --target "$TARGET"
 
 WORK_DIR="$(mktemp -d)"
@@ -80,6 +111,14 @@ trap 'rm -rf "$WORK_DIR"' EXIT
 ROOT_DIR="${WORK_DIR}/${APP_NAME}"
 mkdir -p "$ROOT_DIR"
 cp "target/${TARGET}/release/${APP_NAME}" "${ROOT_DIR}/${APP_NAME}"
+MODEL_DIR="${ROOT_DIR}/models"
+mkdir -p "$MODEL_DIR"
+BURNPACK_PATH="$(find "target/${TARGET}/release/build" -name "panns_cnn14_16k.bpk" | head -n 1)"
+if [[ -z "$BURNPACK_PATH" ]]; then
+  echo "Burnpack not found in target/${TARGET}/release/build; ensure the ONNX model is available for the build." >&2
+  exit 1
+fi
+cp "$BURNPACK_PATH" "${MODEL_DIR}/panns_cnn14_16k.bpk"
 
 cat > "${ROOT_DIR}/install.sh" <<'EOF'
 #!/usr/bin/env bash
@@ -91,11 +130,17 @@ mkdir -p "$BIN_DIR"
 cp sempal "${BIN_DIR}/sempal"
 chmod +x "${BIN_DIR}/sempal"
 
-if [ -n "${SEMPAL_PANNS_ONNX_URL:-}" ]; then
-  "${BIN_DIR}/sempal" --prepare-models
+if [ -n "${SEMPAL_CONFIG_HOME:-}" ]; then
+  CONFIG_ROOT="${SEMPAL_CONFIG_HOME}"
+elif [ -n "${XDG_CONFIG_HOME:-}" ]; then
+  CONFIG_ROOT="${XDG_CONFIG_HOME}"
 else
-  echo "SEMPAL_PANNS_ONNX_URL not set; run 'SEMPAL_PANNS_ONNX_URL=... sempal --prepare-models' later."
+  CONFIG_ROOT="${HOME}/.config"
 fi
+
+MODELS_DIR="${CONFIG_ROOT}/.sempal/models"
+mkdir -p "${MODELS_DIR}"
+cp "models/panns_cnn14_16k.bpk" "${MODELS_DIR}/panns_cnn14_16k.bpk"
 
 echo "Installed to ${BIN_DIR}/sempal"
 EOF
