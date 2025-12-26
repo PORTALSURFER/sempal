@@ -43,8 +43,10 @@ impl EguiApp {
         ui.add_space(ui.spacing().item_spacing.y);
         ui.separator();
         section_label(ui, "GPU embeddings");
+        let wgpu_label = wgpu_backend_label();
         let backend_label = match self.controller.panns_backend() {
-            crate::sample_sources::config::PannsBackendChoice::Wgpu => "WGPU (Vulkan)",
+            crate::sample_sources::config::PannsBackendChoice::Wgpu => wgpu_label,
+            crate::sample_sources::config::PannsBackendChoice::Cpu => "CPU",
             crate::sample_sources::config::PannsBackendChoice::Cuda => "CUDA",
         };
         ui.label(
@@ -57,5 +59,13 @@ impl EguiApp {
             self.controller.ui.audio.panel_open = true;
             self.controller.refresh_audio_options();
         }
+    }
+}
+
+fn wgpu_backend_label() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "WGPU (Metal)"
+    } else {
+        "WGPU (Vulkan)"
     }
 }

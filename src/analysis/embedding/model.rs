@@ -1,8 +1,8 @@
 use std::sync::{Mutex, OnceLock};
 
 use super::backend::{
-    init_cubecl_config, init_wgpu, panns_backend_kind, PannsBackendKind, PannsWgpuBackend,
-    PannsWgpuDevice,
+    init_cubecl_config, init_wgpu, panns_backend_kind, PannsBackendKind, PannsCpuBackend,
+    PannsCpuDevice, PannsWgpuBackend, PannsWgpuDevice,
 };
 #[cfg(feature = "panns-cuda")]
 use super::backend::{PannsCudaBackend, PannsCudaDevice};
@@ -14,6 +14,10 @@ pub(super) enum PannsModelInner {
     Wgpu {
         model: panns_burn::Model<PannsWgpuBackend>,
         device: PannsWgpuDevice,
+    },
+    Cpu {
+        model: panns_burn::Model<PannsCpuBackend>,
+        device: PannsCpuDevice,
     },
     #[cfg(feature = "panns-cuda")]
     Cuda {
@@ -56,6 +60,16 @@ impl PannsModel {
                     &device,
                 );
                 PannsModelInner::Wgpu { model, device }
+            }
+            PannsBackendKind::Cpu => {
+                let device = PannsCpuDevice::default();
+                let model = panns_burn::Model::<PannsCpuBackend>::from_file(
+                    model_path
+                        .to_str()
+                        .ok_or_else(|| "PANNs burnpack path contains invalid UTF-8".to_string())?,
+                    &device,
+                );
+                PannsModelInner::Cpu { model, device }
             }
             #[cfg(feature = "panns-cuda")]
             PannsBackendKind::Cuda => {

@@ -2,7 +2,11 @@ use std::env;
 use std::path::PathBuf;
 use std::sync::{LazyLock, OnceLock};
 
+#[cfg(target_os = "macos")]
+use burn::backend::wgpu::{self, graphics::Metal, WgpuDevice};
+#[cfg(not(target_os = "macos"))]
 use burn::backend::wgpu::{self, graphics::Vulkan, WgpuDevice};
+use burn::backend::ndarray::{NdArray, NdArrayDevice};
 #[cfg(feature = "panns-cuda")]
 use burn::backend::{cuda::CudaDevice, Cuda};
 use tracing::warn;
@@ -10,16 +14,19 @@ use tracing::warn;
 use super::panns_paths;
 
 pub(super) type PannsWgpuDevice = WgpuDevice;
+pub(super) type PannsCpuDevice = NdArrayDevice;
 #[cfg(feature = "panns-cuda")]
 pub(super) type PannsCudaDevice = CudaDevice;
 
 pub(super) type PannsWgpuBackend = wgpu::Wgpu;
+pub(super) type PannsCpuBackend = NdArray;
 #[cfg(feature = "panns-cuda")]
 pub(super) type PannsCudaBackend = Cuda;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum PannsBackendKind {
     Wgpu,
+    Cpu,
     #[cfg(feature = "panns-cuda")]
     Cuda,
 }
@@ -33,7 +40,8 @@ pub(super) fn panns_backend_kind() -> PannsBackendKind {
     match requested.as_deref() {
         #[cfg(feature = "panns-cuda")]
         Some("cuda") => PannsBackendKind::Cuda,
-        Some("wgpu") | Some("vulkan") | None => PannsBackendKind::Wgpu,
+        Some("cpu") | Some("ndarray") => PannsBackendKind::Cpu,
+        Some("wgpu") | Some("vulkan") | Some("metal") | None => PannsBackendKind::Wgpu,
         Some(other) => {
             warn!("Unknown PANNs backend '{other}', defaulting to WGPU.");
             PannsBackendKind::Wgpu
@@ -75,6 +83,9 @@ pub(crate) fn embedding_pipeline_enabled() -> bool {
 
 pub(super) fn init_wgpu(device: &WgpuDevice) {
     WGPU_INIT.get_or_init(|| {
+        #[cfg(target_os = "macos")]
+        wgpu::init_setup::<Metal>(device, Default::default());
+        #[cfg(not(target_os = "macos"))]
         wgpu::init_setup::<Vulkan>(device, Default::default());
     });
 }
