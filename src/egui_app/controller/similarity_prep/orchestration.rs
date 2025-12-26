@@ -1,5 +1,6 @@
 use super::state;
 use super::store::{DbSimilarityPrepStore, SimilarityPrepStore};
+use super::DEFAULT_CLUSTER_MIN_SIZE;
 use crate::analysis::hdbscan::{HdbscanConfig, HdbscanMethod};
 use crate::egui_app::controller::{analysis_jobs, jobs, EguiController, SimilarityPrepStage, SimilarityPrepState, StatusMessage};
 use crate::egui_app::state::ProgressTaskKind;
@@ -155,7 +156,7 @@ impl EguiController {
         out
     }
 
-    pub(super) fn handle_similarity_scan_finished(
+    pub(in crate::egui_app::controller) fn handle_similarity_scan_finished(
         &mut self,
         source_id: &SourceId,
         scan_changed: bool,
@@ -185,7 +186,7 @@ impl EguiController {
         }
     }
 
-    pub(super) fn handle_similarity_analysis_progress(
+    pub(in crate::egui_app::controller) fn handle_similarity_analysis_progress(
         &mut self,
         progress: &analysis_jobs::AnalysisProgress,
     ) {
@@ -207,7 +208,10 @@ impl EguiController {
         self.start_similarity_finalize(source_id, umap_version);
     }
 
-    pub(super) fn handle_similarity_prep_result(&mut self, result: jobs::SimilarityPrepResult) {
+    pub(in crate::egui_app::controller) fn handle_similarity_prep_result(
+        &mut self,
+        result: jobs::SimilarityPrepResult,
+    ) {
         let state = self.runtime.similarity_prep.take();
         if state.as_ref().map(|s| &s.source_id) != Some(&result.source_id) {
             return;
@@ -243,7 +247,10 @@ impl EguiController {
         }
     }
 
-    pub(super) fn cancel_similarity_prep(&mut self, source_id: &SourceId) {
+    pub(in crate::egui_app::controller) fn cancel_similarity_prep(
+        &mut self,
+        source_id: &SourceId,
+    ) {
         let matches = self
             .runtime
             .similarity_prep
@@ -341,7 +348,11 @@ impl EguiController {
             .set_worker_count(self.settings.analysis.analysis_worker_count);
     }
 
-    fn enqueue_similarity_backfill(&mut self, source: SampleSource, force_full_analysis: bool) {
+    pub(super) fn enqueue_similarity_backfill(
+        &mut self,
+        source: SampleSource,
+        force_full_analysis: bool,
+    ) {
         let tx = self.runtime.jobs.message_sender();
         thread::spawn(move || {
             let analysis_result = if force_full_analysis {
@@ -405,7 +416,7 @@ impl EguiController {
         });
     }
 
-    fn find_source_by_id(&self, source_id: &SourceId) -> Option<SampleSource> {
+    pub(super) fn find_source_by_id(&self, source_id: &SourceId) -> Option<SampleSource> {
         self.library
             .sources
             .iter()
