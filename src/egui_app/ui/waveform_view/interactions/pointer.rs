@@ -34,6 +34,24 @@ pub(in super::super) fn handle_waveform_pointer_interactions(
         None
     };
     let normalized = pointer_pos.map(normalize_to_waveform);
+    let middle_down = ui.input(|i| i.pointer.button_down(egui::PointerButton::Middle));
+    if middle_down {
+        let Some(pos) = pointer_pos.or_else(|| response.interact_pointer_pos()) else {
+            app.controller.ui.waveform.pan_drag_pos = None;
+            return;
+        };
+        let last = app.controller.ui.waveform.pan_drag_pos.unwrap_or(pos);
+        let delta = pos - last;
+        app.controller.ui.waveform.pan_drag_pos = Some(pos);
+        if response.dragged_by(egui::PointerButton::Middle) && view_width < 1.0 {
+            let fraction_delta = (delta.x / rect.width()) * view_width;
+            let view_center = view.start + view_width * 0.5;
+            let target_center = (view_center - fraction_delta).clamp(0.0, 1.0);
+            app.controller.scroll_waveform_view(target_center);
+        }
+        return;
+    }
+    app.controller.ui.waveform.pan_drag_pos = None;
     if response.drag_started() {
         if let Some(value) = drag_start_normalized {
             app.controller.start_selection_drag(value);
