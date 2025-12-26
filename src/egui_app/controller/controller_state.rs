@@ -147,6 +147,7 @@ pub(super) struct ControllerSelectionState {
     pub(super) range: SelectionState,
     pub(super) pending_undo: Option<SelectionUndoState>,
     pub(super) suppress_autoplay_once: bool,
+    pub(super) bpm_scale_beats: Option<f32>,
 }
 
 pub(super) struct ControllerAudioState {

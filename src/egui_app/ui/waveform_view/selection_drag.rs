@@ -127,12 +127,15 @@ pub(super) fn handle_selection_edge_drag(
     view: WaveformView,
     view_width: f32,
     edge: SelectionEdge,
+    alt_down: bool,
     edge_response: &egui::Response,
     selection_edge_x: f32,
 ) {
     let pointer_down = edge_response.is_pointer_button_down_on();
-    if edge_response.drag_started() || pointer_down {
-        app.controller.start_selection_edge_drag(edge);
+    if edge_response.drag_started()
+        || (pointer_down && !app.controller.is_selection_dragging())
+    {
+        app.controller.start_selection_edge_drag(edge, alt_down);
         if app.selection_edge_offset.is_none() {
             if let Some(pos) = edge_response.interact_pointer_pos() {
                 app.selection_edge_offset = Some(pos.x - selection_edge_x);

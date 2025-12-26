@@ -169,6 +169,7 @@ impl EguiController {
                 range: SelectionState::new(),
                 pending_undo: None,
                 suppress_autoplay_once: false,
+                bpm_scale_beats: None,
             },
             settings: AppSettingsState {
                 feature_flags: crate::sample_sources::config::FeatureFlags::default(),

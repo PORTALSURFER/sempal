@@ -114,6 +114,7 @@ pub(super) fn render_selection_overlay(
         || start_edge_response.drag_started()
         || end_edge_response.dragged()
         || end_edge_response.drag_started();
+    let alt_down = ui.input(|i| i.modifiers.alt);
     for (edge, edge_rect, edge_response) in [
         (SelectionEdge::Start, start_edge_rect, start_edge_response),
         (SelectionEdge::End, end_edge_rect, end_edge_response),
@@ -128,6 +129,7 @@ pub(super) fn render_selection_overlay(
             view,
             view_width,
             edge,
+            alt_down,
             &edge_response,
             edge_pos,
         );

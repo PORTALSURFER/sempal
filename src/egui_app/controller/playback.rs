@@ -22,8 +22,12 @@ impl EguiController {
         transport::start_selection_drag(self, position);
     }
 
-    pub fn start_selection_edge_drag(&mut self, edge: crate::selection::SelectionEdge) -> bool {
-        transport::start_selection_edge_drag(self, edge)
+    pub fn start_selection_edge_drag(
+        &mut self,
+        edge: crate::selection::SelectionEdge,
+        bpm_scale: bool,
+    ) -> bool {
+        transport::start_selection_edge_drag(self, edge, bpm_scale)
     }
 
     pub fn update_selection_drag(&mut self, position: f32) {
