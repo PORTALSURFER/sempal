@@ -18,10 +18,5 @@ source = "assets/logo3.ico"
 dest = "bundle/{APP_NAME}.ico"
 
 [[entries]]
-file_name = "panns_cnn14_16k.bpk"
-search_dirs = ["target/release/build", "$APPDATA/.sempal/models"]
-dest = "bundle/models/panns_cnn14_16k.bpk"
-
-[[entries]]
 source = "build/windows/installer_manifest.json"
 dest = "installer_manifest.json"
