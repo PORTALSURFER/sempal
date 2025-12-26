@@ -70,6 +70,7 @@ impl Default for InstallProgress {
 pub(crate) enum InstallerEvent {
     Started { total_files: usize },
     FileCopied { copied_files: usize, name: String },
+    Log(String),
     Finished,
     Failed(String),
 }
@@ -84,6 +85,7 @@ struct InstallerApp {
     error: Option<String>,
     open_folder_on_finish: bool,
     launch_on_finish: bool,
+    logs: Vec<String>,
 }
 
 impl InstallerApp {
@@ -102,6 +104,7 @@ impl InstallerApp {
             error: None,
             open_folder_on_finish: true,
             launch_on_finish: true,
+            logs: Vec::new(),
         }
     }
 
@@ -112,6 +115,7 @@ impl InstallerApp {
         self.receiver = Some(rx);
         self.progress = InstallProgress::default();
         self.step = InstallStep::Installing;
+        self.logs.clear();
         thread::spawn(move || {
             if let Err(err) = install::run_install(&bundle_dir, &install_dir, tx.clone()) {
                 let _ = tx.send(InstallerEvent::Failed(err));
@@ -131,6 +135,9 @@ impl InstallerApp {
                 InstallerEvent::FileCopied { copied_files, name } => {
                     self.progress.copied_files = copied_files;
                     self.progress.current = Some(name);
+                }
+                InstallerEvent::Log(message) => {
+                    self.logs.push(message);
                 }
                 InstallerEvent::Finished => {
                     self.step = InstallStep::Done;
@@ -211,6 +218,13 @@ impl eframe::App for InstallerApp {
                     if let Some(current) = &self.progress.current {
                         ui.label(format!("Copying {current}"));
                     }
+                    ui.separator();
+                    ui.label("Install log");
+                    ScrollArea::vertical().max_height(140.0).show(ui, |ui| {
+                        for line in &self.logs {
+                            ui.label(line);
+                        }
+                    });
                 }
                 InstallStep::Done => {
                     ui.label(RichText::new("Installation complete.").strong());
