@@ -180,6 +180,15 @@ pub(crate) fn infer_embeddings_from_logmel_batch_pipelined(
                 inflight,
             ),
         ),
+        PannsModelInner::Cpu { model, device } => Ok(
+            backend_io::infer_embeddings_from_logmel_batch_pipelined_with_backend(
+                model,
+                device,
+                logmels,
+                micro_batch,
+                inflight,
+            ),
+        ),
         #[cfg(feature = "panns-cuda")]
         PannsModelInner::Cuda { model, device } => Ok(
             backend_io::infer_embeddings_from_logmel_batch_pipelined_with_backend(

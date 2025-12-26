@@ -94,6 +94,7 @@ pub(in crate::analysis::embedding) fn run_panns_inference_for_model(
 ) -> Result<Vec<Vec<f32>>, String> {
     match &model.inner {
         PannsModelInner::Wgpu { model, device } => run_panns_inference(model, device, input, batch),
+        PannsModelInner::Cpu { model, device } => run_panns_inference(model, device, input, batch),
         #[cfg(feature = "panns-cuda")]
         PannsModelInner::Cuda { model, device } => run_panns_inference(model, device, input, batch),
     }
@@ -106,6 +107,9 @@ pub(super) fn run_panns_inference_from_data_for_model(
 ) -> Result<Vec<Vec<f32>>, String> {
     match &model.inner {
         PannsModelInner::Wgpu { model, device } => {
+            run_panns_inference_from_data(model, device, data, batch)
+        }
+        PannsModelInner::Cpu { model, device } => {
             run_panns_inference_from_data(model, device, data, batch)
         }
         #[cfg(feature = "panns-cuda")]
