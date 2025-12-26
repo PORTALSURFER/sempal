@@ -83,6 +83,44 @@ fn progress_wraps_full_loop_from_offset() {
 }
 
 #[test]
+fn progress_uses_elapsed_override_for_looping() {
+    let Ok(stream) = rodio::OutputStreamBuilder::open_default_stream() else {
+        return;
+    };
+    let player = test_player(
+        stream,
+        Some(10.0),
+        Some(Instant::now()),
+        Some((2.0, 4.0)),
+        true,
+        Some(0.5),
+        Some(Duration::from_secs_f32(1.25)),
+    );
+
+    let progress = player.progress().unwrap();
+    assert!((progress - 0.375).abs() < 0.01);
+}
+
+#[test]
+fn remaining_loop_duration_uses_elapsed_override() {
+    let Ok(stream) = rodio::OutputStreamBuilder::open_default_stream() else {
+        return;
+    };
+    let player = test_player(
+        stream,
+        Some(8.0),
+        Some(Instant::now()),
+        Some((1.0, 3.0)),
+        true,
+        None,
+        Some(Duration::from_secs_f32(0.4)),
+    );
+
+    let remaining = player.remaining_loop_duration().unwrap();
+    assert!((remaining.as_secs_f32() - 1.6).abs() < 0.01);
+}
+
+#[test]
 fn play_range_at_track_end_expands_backwards() {
     let Ok(mut player) = AudioPlayer::new() else {
         return;

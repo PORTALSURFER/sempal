@@ -116,6 +116,7 @@ mod tests {
             sources_panel_drop_hovered: false,
             sources_panel_drop_armed: false,
             selection_edge_offset: None,
+            selection_edge_alt_scale: false,
             selection_slide: None,
             pending_chord: None,
             key_feedback: KeyFeedback::default(),

@@ -93,19 +93,32 @@ fn expected_zip_asset_name(
     identity: &RuntimeIdentity,
     version: Option<&str>,
 ) -> Result<String, UpdateError> {
-    if identity.platform != "windows" || identity.arch != "x86_64" {
-        return Err(UpdateError::Invalid(format!(
-            "Unsupported platform/arch {}/{}",
-            identity.platform, identity.arch
-        )));
-    }
+    let platform = match identity.platform.as_str() {
+        "windows" | "linux" | "macos" => identity.platform.as_str(),
+        _ => {
+            return Err(UpdateError::Invalid(format!(
+                "Unsupported platform/arch {}/{}",
+                identity.platform, identity.arch
+            )));
+        }
+    };
+    let arch = match identity.arch.as_str() {
+        "x86_64" => "x86_64",
+        "aarch64" => "aarch64",
+        _ => {
+            return Err(UpdateError::Invalid(format!(
+                "Unsupported platform/arch {}/{}",
+                identity.platform, identity.arch
+            )));
+        }
+    };
     let name = match identity.channel {
         UpdateChannel::Stable => {
             let version =
                 version.ok_or_else(|| UpdateError::Invalid("Missing stable version".into()))?;
-            format!("{APP_NAME}-v{version}-windows-x86_64.zip")
+            format!("{APP_NAME}-v{version}-{platform}-{arch}.zip")
         }
-        UpdateChannel::Nightly => format!("{APP_NAME}-nightly-windows-x86_64.zip"),
+        UpdateChannel::Nightly => format!("{APP_NAME}-nightly-{platform}-{arch}.zip"),
     };
     Ok(name)
 }

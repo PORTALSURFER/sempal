@@ -82,6 +82,11 @@ impl WaveformActions for WaveformController<'_> {
         if !self.waveform_ready() {
             return;
         }
+        let before = self
+            .selection_state
+            .range
+            .range()
+            .or(self.ui.waveform.selection);
         let step = self.waveform_step_size(fine).max(MIN_SELECTION_WIDTH);
         let anchor = self.waveform_focus_point();
         let range = if to_left {
@@ -91,6 +96,7 @@ impl WaveformActions for WaveformController<'_> {
         };
         self.selection_state.range.set_range(Some(range));
         self.apply_selection(Some(range));
+        self.push_selection_undo("Selection", before, Some(range));
         self.set_playhead_after_selection(anchor, resume_playback);
     }
 
@@ -108,6 +114,7 @@ impl WaveformActions for WaveformController<'_> {
             self.set_status("Create a selection first", StatusTone::Info);
             return;
         };
+        let before = Some(selection);
         let mut start = selection.start();
         let mut end = selection.end();
         match (edge, outward) {
@@ -120,6 +127,7 @@ impl WaveformActions for WaveformController<'_> {
         let range = SelectionRange::new(clamped_start, clamped_end);
         self.selection_state.range.set_range(Some(range));
         self.apply_selection(Some(range));
+        self.push_selection_undo("Selection", before, Some(range));
     }
 
     fn nudge_selection_range(&mut self, steps: isize, fine: bool) {
@@ -139,10 +147,12 @@ impl WaveformActions for WaveformController<'_> {
             self.set_status("Create a selection first", StatusTone::Info);
             return;
         };
+        let before = Some(selection);
         let delta = step * steps as f32;
         let range = selection.shift(delta);
         self.selection_state.range.set_range(Some(range));
         self.apply_selection(Some(range));
+        self.push_selection_undo("Selection", before, Some(range));
     }
 
     fn scroll_waveform_view(&mut self, center: f32) {

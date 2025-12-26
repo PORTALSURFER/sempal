@@ -18,6 +18,34 @@ For `windows` + `x86_64` (`x86_64-pc-windows-msvc`):
 - Stable checksums: `checksums-v{VERSION}.txt`
 - Nightly checksums: `checksums-nightly.txt`
 
+For `linux` + `x86_64` (`x86_64-unknown-linux-gnu`):
+
+- Stable zip: `sempal-v{VERSION}-linux-x86_64.zip`
+- Nightly zip: `sempal-nightly-linux-x86_64.zip`
+- Stable checksums: `checksums-v{VERSION}.txt`
+- Nightly checksums: `checksums-nightly.txt`
+
+For `linux` + `aarch64` (`aarch64-unknown-linux-gnu`):
+
+- Stable zip: `sempal-v{VERSION}-linux-aarch64.zip`
+- Nightly zip: `sempal-nightly-linux-aarch64.zip`
+- Stable checksums: `checksums-v{VERSION}.txt`
+- Nightly checksums: `checksums-nightly.txt`
+
+For `macos` + `x86_64` (`x86_64-apple-darwin`):
+
+- Stable zip: `sempal-v{VERSION}-macos-x86_64.zip`
+- Nightly zip: `sempal-nightly-macos-x86_64.zip`
+- Stable checksums: `checksums-v{VERSION}.txt`
+- Nightly checksums: `checksums-nightly.txt`
+
+For `macos` + `aarch64` (`aarch64-apple-darwin`):
+
+- Stable zip: `sempal-v{VERSION}-macos-aarch64.zip`
+- Nightly zip: `sempal-nightly-macos-aarch64.zip`
+- Stable checksums: `checksums-v{VERSION}.txt`
+- Nightly checksums: `checksums-nightly.txt`
+
 The checksums file is expected to include a SHA-256 entry for the zip asset:
 
 ```
@@ -30,7 +58,7 @@ The zip expands to exactly one root folder:
 
 ```
 sempal/
-  sempal.exe
+  sempal(.exe)
   update-manifest.json
   resources/            (optional)
 ```
@@ -58,4 +86,3 @@ Minimal example:
   "files": ["sempal.exe", "update-manifest.json"]
 }
 ```
-

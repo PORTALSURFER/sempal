@@ -51,6 +51,7 @@ pub(super) fn handle_selection_slide_drag(
                 anchor,
                 range: selection,
             });
+            app.controller.begin_selection_undo("Selection");
             app.controller.cancel_active_drag();
         }
     } else if response.dragged_by(egui::PointerButton::Primary) {
@@ -61,16 +62,20 @@ pub(super) fn handle_selection_slide_drag(
                     anchor,
                     range: selection,
                 });
+                app.controller.begin_selection_undo("Selection");
                 app.controller.cancel_active_drag();
             }
             if let Some(slide) = app.selection_slide {
                 let cursor = to_wave_pos(pos);
                 let delta = cursor - slide.anchor;
-                let snap_step = if ui.input(|i| i.modifiers.shift) {
-                    bpm_snap_step(app)
-                } else {
-                    None
-                };
+                let snap_step =
+                    if app.controller.ui.waveform.bpm_snap_enabled
+                        && !ui.input(|i| i.modifiers.shift)
+                    {
+                        bpm_snap_step(app)
+                    } else {
+                        None
+                    };
                 let adjusted_delta = snap_step
                     .filter(|step| step.is_finite() && *step > 0.0)
                     .map(|step| snap_delta(delta, step))
@@ -122,12 +127,16 @@ pub(super) fn handle_selection_edge_drag(
     view: WaveformView,
     view_width: f32,
     edge: SelectionEdge,
+    alt_down: bool,
     edge_response: &egui::Response,
     selection_edge_x: f32,
 ) {
     let pointer_down = edge_response.is_pointer_button_down_on();
-    if edge_response.drag_started() || pointer_down {
-        app.controller.start_selection_edge_drag(edge);
+    if edge_response.drag_started()
+        || (pointer_down && !app.controller.is_selection_dragging())
+    {
+        app.controller.start_selection_edge_drag(edge, alt_down);
+        app.selection_edge_alt_scale = alt_down;
         if app.selection_edge_offset.is_none() {
             if let Some(pos) = edge_response.interact_pointer_pos() {
                 app.selection_edge_offset = Some(pos.x - selection_edge_x);
@@ -147,6 +156,7 @@ pub(super) fn handle_selection_edge_drag(
     }
     if edge_response.drag_stopped() {
         app.selection_edge_offset = None;
+        app.selection_edge_alt_scale = false;
         app.controller.finish_selection_drag();
     }
 }
@@ -157,5 +167,6 @@ pub(super) fn sync_selection_edge_drag_release(app: &mut EguiApp, ctx: &egui::Co
             app.controller.finish_selection_drag();
         }
         app.selection_edge_offset = None;
+        app.selection_edge_alt_scale = false;
     }
 }

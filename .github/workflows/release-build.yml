@@ -1,0 +1,95 @@
+name: Build release assets
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.platform }} asset
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            platform: linux
+            arch: x86_64
+            use_cross: false
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            platform: linux
+            arch: aarch64
+            use_cross: true
+          - os: macos-13
+            target: x86_64-apple-darwin
+            platform: macos
+            arch: x86_64
+            use_cross: false
+          - os: macos-14
+            target: aarch64-apple-darwin
+            platform: macos
+            arch: aarch64
+            use_cross: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install cross
+        if: ${{ matrix.use_cross }}
+        run: cargo install cross --locked
+      - name: Set release metadata
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          if [[ "$TAG" == "nightly" ]]; then
+            echo "RELEASE_CHANNEL=nightly" >> "$GITHUB_ENV"
+            echo "RELEASE_VERSION=" >> "$GITHUB_ENV"
+          else
+            echo "RELEASE_CHANNEL=stable" >> "$GITHUB_ENV"
+            echo "RELEASE_VERSION=${TAG#v}" >> "$GITHUB_ENV"
+          fi
+      - name: Build release zip
+        env:
+          SEMPAL_CARGO_BIN: ${{ matrix.use_cross && 'cross' || 'cargo' }}
+        run: |
+          scripts/build_release_zip.sh \
+            --target "${{ matrix.target }}" \
+            --platform "${{ matrix.platform }}" \
+            --arch "${{ matrix.arch }}" \
+            --channel "${RELEASE_CHANNEL}" \
+            ${RELEASE_VERSION:+--version "${RELEASE_VERSION}"} \
+            --out-dir dist/release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.platform }}
+          path: dist/release
+          if-no-files-found: error
+
+  publish:
+    name: Publish release assets
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Set release metadata
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          if [[ "$TAG" == "nightly" ]]; then
+            echo "CHECKSUMS_NAME=checksums-nightly.txt" >> "$GITHUB_ENV"
+          else
+            echo "CHECKSUMS_NAME=checksums-v${TAG#v}.txt" >> "$GITHUB_ENV"
+          fi
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist/artifacts
+      - name: Assemble release files
+        run: |
+          mkdir -p dist/release
+          cp dist/artifacts/*/*.zip dist/release/
+          cat dist/artifacts/*/checksums-entry.txt > "dist/release/${CHECKSUMS_NAME}"
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v1
+        with:
+          files: dist/release/*

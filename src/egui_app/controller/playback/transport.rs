@@ -2,6 +2,8 @@ use super::*;
 use crate::selection::SelectionEdge;
 
 pub(super) fn start_selection_drag(controller: &mut EguiController, position: f32) {
+    controller.selection_state.bpm_scale_beats = None;
+    controller.begin_selection_undo("Selection");
     let range = controller.selection_state.range.begin_new(position);
     controller.apply_selection(Some(range));
 }
@@ -9,16 +11,25 @@ pub(super) fn start_selection_drag(controller: &mut EguiController, position: f3
 pub(super) fn start_selection_edge_drag(
     controller: &mut EguiController,
     edge: SelectionEdge,
+    bpm_scale: bool,
 ) -> bool {
     if !controller.selection_state.range.begin_edge_drag(edge) {
         return false;
     }
+    controller.begin_selection_undo("Selection");
+    controller.selection_state.bpm_scale_beats = if bpm_scale {
+        selection_scale_beats(controller)
+    } else {
+        None
+    };
     controller.apply_selection(controller.selection_state.range.range());
     true
 }
 
 pub(super) fn update_selection_drag(controller: &mut EguiController, position: f32) {
-    let range = if let Some(step) = bpm_snap_step(controller) {
+    let range = if controller.selection_state.bpm_scale_beats.is_some() {
+        controller.selection_state.range.update_drag(position)
+    } else if let Some(step) = bpm_snap_step(controller) {
         controller
             .selection_state
             .range
@@ -28,11 +39,16 @@ pub(super) fn update_selection_drag(controller: &mut EguiController, position: f
     };
     if let Some(range) = range {
         controller.apply_selection(Some(range));
+        if let Some(beats) = controller.selection_state.bpm_scale_beats {
+            apply_scaled_bpm(controller, beats, range);
+        }
     }
 }
 
 pub(super) fn finish_selection_drag(controller: &mut EguiController) {
     controller.selection_state.range.finish_drag();
+    controller.selection_state.bpm_scale_beats = None;
+    controller.commit_selection_undo();
     let is_playing = controller
         .audio
         .player
@@ -71,9 +87,15 @@ pub(super) fn is_selection_dragging(controller: &EguiController) -> bool {
 }
 
 pub(super) fn clear_selection(controller: &mut EguiController) {
+    let before = controller
+        .selection_state
+        .range
+        .range()
+        .or(controller.ui.waveform.selection);
     let cleared = controller.selection_state.range.clear();
     if cleared || controller.ui.waveform.selection.is_some() {
         controller.apply_selection(None);
+        controller.push_selection_undo("Selection", before, None);
     }
 }
 
@@ -153,6 +175,68 @@ fn bpm_snap_step(controller: &EguiController) -> Option<f32> {
         Some(step)
     } else {
         None
+    }
+}
+
+fn selection_scale_beats(controller: &EguiController) -> Option<f32> {
+    if !controller.ui.waveform.bpm_snap_enabled {
+        return None;
+    }
+    let bpm = controller.ui.waveform.bpm_value?;
+    if !bpm.is_finite() || bpm <= 0.0 {
+        return None;
+    }
+    let duration = controller.loaded_audio_duration_seconds()?;
+    if !duration.is_finite() || duration <= 0.0 {
+        return None;
+    }
+    let range = controller
+        .selection_state
+        .range
+        .range()
+        .or(controller.ui.waveform.selection)?;
+    let seconds = range.width() * duration;
+    if !seconds.is_finite() || seconds <= 0.0 {
+        return None;
+    }
+    let beats = seconds * bpm / 60.0;
+    if !beats.is_finite() || beats <= 0.0 {
+        return None;
+    }
+    let rounded = beats.round();
+    if (beats - rounded).abs() < 1.0e-3 {
+        Some(rounded)
+    } else {
+        Some(beats)
+    }
+}
+
+fn apply_scaled_bpm(controller: &mut EguiController, beats: f32, range: SelectionRange) {
+    if !beats.is_finite() || beats <= 0.0 {
+        return;
+    }
+    let duration = match controller.loaded_audio_duration_seconds() {
+        Some(duration) if duration.is_finite() && duration > 0.0 => duration,
+        _ => return,
+    };
+    let seconds = range.width() * duration;
+    if !seconds.is_finite() || seconds <= 0.0 {
+        return;
+    }
+    let bpm = beats * 60.0 / seconds;
+    if !bpm.is_finite() || bpm <= 0.0 {
+        return;
+    }
+    controller.set_bpm_value(bpm);
+    controller.ui.waveform.bpm_input = format_bpm_input(bpm);
+}
+
+fn format_bpm_input(value: f32) -> String {
+    let rounded = value.round();
+    if (value - rounded).abs() < 0.01 {
+        format!("{rounded:.0}")
+    } else {
+        format!("{value:.2}")
     }
 }
 

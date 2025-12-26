@@ -1,5 +1,6 @@
 use super::super::test_support::{
-    dummy_controller, prepare_with_source_and_wav_entries, sample_entry, write_test_wav,
+    dummy_controller, load_waveform_selection, prepare_with_source_and_wav_entries, sample_entry,
+    write_test_wav,
 };
 use super::super::*;
 use super::common::{max_sample_amplitude, visible_indices};
@@ -10,6 +11,8 @@ use crate::sample_sources::collections::CollectionMember;
 use hound::WavReader;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
+use std::cell::RefCell;
+use std::rc::Rc;
 use tempfile::tempdir;
 
 #[test]
@@ -296,6 +299,34 @@ fn browser_normalize_refreshes_exports() -> Result<(), String> {
         .fold(0.0, f32::max);
     assert!((max_loaded - 1.0).abs() < 1e-6);
     Ok(())
+}
+
+#[test]
+fn browser_normalize_resumes_playback_when_playing() {
+    let Some(player) = crate::audio::AudioPlayer::playing_for_tests() else {
+        return;
+    };
+    let (mut controller, source) = prepare_with_source_and_wav_entries(vec![sample_entry(
+        "normalize_resume_browser.wav",
+        SampleTag::Neutral,
+    )]);
+    controller.audio.player = Some(Rc::new(RefCell::new(player)));
+    load_waveform_selection(
+        &mut controller,
+        &source,
+        "normalize_resume_browser.wav",
+        &[0.0, 0.2, -0.6, 0.3],
+        SelectionRange::new(0.0, 1.0),
+    );
+    if controller.play_audio(false, None).is_err() || !controller.is_playing() {
+        return;
+    }
+    controller.ui.waveform.playhead.position = 0.5;
+
+    assert!(controller.normalize_browser_sample(0).is_ok());
+
+    assert!(controller.is_playing());
+    assert!((controller.ui.waveform.playhead.position - 0.5).abs() < 1e-6);
 }
 
 #[test]

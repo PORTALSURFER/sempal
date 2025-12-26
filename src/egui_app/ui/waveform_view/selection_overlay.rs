@@ -114,6 +114,8 @@ pub(super) fn render_selection_overlay(
         || start_edge_response.drag_started()
         || end_edge_response.dragged()
         || end_edge_response.drag_started();
+    let alt_down = ui.input(|i| i.modifiers.alt);
+    let scale_active = (app.selection_edge_alt_scale && edge_dragging) || alt_down;
     for (edge, edge_rect, edge_response) in [
         (SelectionEdge::Start, start_edge_rect, start_edge_response),
         (SelectionEdge::End, end_edge_rect, end_edge_response),
@@ -128,6 +130,7 @@ pub(super) fn render_selection_overlay(
             view,
             view_width,
             edge,
+            alt_down,
             &edge_response,
             edge_pos,
         );
@@ -136,7 +139,11 @@ pub(super) fn render_selection_overlay(
             || edge_response.is_pointer_button_down_on()
             || edge_response.dragged();
         if edge_hovered {
-            let color = highlight;
+            let color = if scale_active {
+                style::palette().accent_mint
+            } else {
+                highlight
+            };
             paint_selection_edge_bracket(ui.painter(), edge_rect, edge, color);
             ui.output_mut(|o| o.cursor_icon = CursorIcon::ResizeHorizontal);
         }
