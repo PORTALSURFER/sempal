@@ -31,6 +31,7 @@ description: How to set up Sempal, triage samples, edit waveforms, and manage co
   - macOS: `~/Library/Application Support/.sempal/`
 - App settings live in `config.toml`; sources and collections are stored in `library.db` in the same folder. Legacy `config.json` files migrate automatically.
 - Each source keeps `.sempal_samples.db` beside the audio. Logs live under `.sempal/logs`.
+- Model downloads live in `.sempal/models` (Windows: `%APPDATA%\\.sempal\\models\\`, macOS: `~/Library/Application Support/.sempal/models/`, Linux: `~/.config/.sempal/models/`).
 - Set `RUST_LOG=info` (or `debug`, etc.) to change log verbosity.
 - Windows release builds hide the console by default; launch with `-log` / `--log` to open a console window and show live log output.
 - Tip: Use **Options → Open config folder** to jump to the right place on disk.
