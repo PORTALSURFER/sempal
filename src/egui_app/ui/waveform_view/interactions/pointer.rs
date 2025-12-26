@@ -71,7 +71,8 @@ pub(in super::super) fn handle_waveform_pointer_interactions(
         }
         if app.controller.ui.waveform.selection.is_some() {
             app.controller.clear_selection();
-        } else if let Some(value) = normalized {
+        }
+        if let Some(value) = normalized {
             app.controller.seek_to(value);
         }
     }
