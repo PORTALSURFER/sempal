@@ -17,7 +17,7 @@ jobs:
       - name: Resolve version
         id: version
         run: |
-          VERSION=$(rg -n '^version = ' Cargo.toml | head -n 1 | sed -E 's/.*"([^"]+)".*/\1/')
+          VERSION=$(grep -E '^version = ' Cargo.toml | head -n 1 | sed -E 's/.*"([^"]+)".*/\1/')
           if [[ -z "$VERSION" ]]; then
             echo "Failed to resolve version from Cargo.toml" >&2
             exit 1
@@ -27,7 +27,7 @@ jobs:
         id: version_change
         run: |
           if git rev-parse HEAD^ >/dev/null 2>&1; then
-            PREV=$(git show HEAD^:Cargo.toml | rg -n '^version = ' | head -n 1 | sed -E 's/.*"([^"]+)".*/\1/')
+            PREV=$(git show HEAD^:Cargo.toml | grep -E '^version = ' | head -n 1 | sed -E 's/.*"([^"]+)".*/\1/')
             if [[ "$PREV" == "${{ steps.version.outputs.version }}" ]]; then
               echo "changed=false" >> "$GITHUB_OUTPUT"
               exit 0
