@@ -101,8 +101,8 @@ mod tests {
         )
         .unwrap();
         conn.execute(
-            "INSERT INTO samples (sample_id, analysis_version)
-             VALUES ('s1::Pack/a.wav', ?1)",
+            "INSERT INTO samples (sample_id, content_hash, size, mtime_ns, analysis_version)
+             VALUES ('s1::Pack/a.wav', 'h1', 1, 1, ?1)",
             params![crate::analysis::version::analysis_version()],
         )
         .unwrap();

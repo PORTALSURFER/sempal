@@ -63,10 +63,7 @@ fn selection_drop_adds_clip_to_collection() {
     let clip_root = member.clip_root.as_ref().expect("clip root set");
     assert!(clip_root.join(member_path).exists());
     assert!(!root.join(member_path).exists());
-    let entries = controller.wav_entries.pages.get(&0).expect("entries");
-    assert!(entries
-        .iter()
-        .all(|entry| &entry.relative_path != member_path));
+    assert!(controller.wav_index_for_path(member_path).is_none());
     assert!(controller.ui.browser.visible.len() == 0);
     assert!(
         controller

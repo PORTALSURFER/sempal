@@ -385,7 +385,9 @@ fn pruning_cached_sample_updates_wav_cache_lookup() {
 
     controller.prune_cached_sample(&source, Path::new("a.wav"));
 
-    assert!(controller.cache.wav.entries.get(&source.id).is_none());
+    let cache = controller.cache.wav.entries.get(&source.id).unwrap();
+    assert_eq!(cache.total, 0);
+    assert!(cache.lookup.is_empty());
 }
 
 #[test]
