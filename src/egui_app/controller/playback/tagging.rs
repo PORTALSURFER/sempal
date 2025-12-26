@@ -1,10 +1,7 @@
 use super::*;
 
 pub(super) fn tag_selected(controller: &mut EguiController, target: SampleTag) {
-    let selected_index = controller
-        .selected_row_index()
-        .or_else(|| controller.loaded_row_index());
-    let Some(selected_index) = selected_index else {
+    let Some(selected_index) = controller.selected_row_index() else {
         return;
     };
     let refocus_path = controller
