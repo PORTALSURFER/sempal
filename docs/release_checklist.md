@@ -2,7 +2,7 @@
 
 ## Build
 - Run `scripts/build_installer.ps1` after setting `SEMPAL_PANNS_ONNX_URL` for the installer.
-- Confirm `dist/windows/bundle` contains `sempal.exe`, `sempal-model-setup.exe`, and `sempal.ico`.
+- Confirm `dist/windows/bundle` contains `sempal.exe` and `sempal.ico`.
 - Verify `dist/windows/sempal-installer.exe` launches and shows the SemPal installer UI.
 
 ## Install Verification

@@ -77,15 +77,11 @@ case "$CHANNEL" in
     ;;
 esac
 
-"$BUILD_CARGO_BIN" build --release --bin "$APP_NAME" --bin "${APP_NAME}-model-setup" --target "$TARGET"
+"$BUILD_CARGO_BIN" build --release --bin "$APP_NAME" --target "$TARGET"
 
 BIN_NAME="$APP_NAME"
 if [[ "$TARGET" == *windows* ]]; then
   BIN_NAME="${APP_NAME}.exe"
-fi
-SETUP_BIN_NAME="${APP_NAME}-model-setup"
-if [[ "$TARGET" == *windows* ]]; then
-  SETUP_BIN_NAME="${APP_NAME}-model-setup.exe"
 fi
 
 WORK_DIR="$(mktemp -d)"
@@ -94,7 +90,6 @@ trap 'rm -rf "$WORK_DIR"' EXIT
 ROOT_DIR="${WORK_DIR}/${APP_NAME}"
 mkdir -p "$ROOT_DIR"
 cp "target/${TARGET}/release/${BIN_NAME}" "${ROOT_DIR}/${BIN_NAME}"
-cp "target/${TARGET}/release/${SETUP_BIN_NAME}" "${ROOT_DIR}/${SETUP_BIN_NAME}"
 
 cat > "${ROOT_DIR}/update-manifest.json" <<EOF
 {
@@ -103,7 +98,7 @@ cat > "${ROOT_DIR}/update-manifest.json" <<EOF
   "target": "${TARGET}",
   "platform": "${PLATFORM}",
   "arch": "${ARCH}",
-  "files": ["${BIN_NAME}", "${SETUP_BIN_NAME}", "update-manifest.json"]
+  "files": ["${BIN_NAME}", "update-manifest.json"]
 }
 EOF
 
