@@ -99,3 +99,7 @@ burn-import = "0.20.0-pre.6"
 [[bench]]
 name = "tagging"
 harness = false
+
+[[bench]]
+name = "ann_index"
+harness = false

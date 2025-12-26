@@ -62,6 +62,63 @@ fn ann_index_matches_bruteforce_neighbors_on_fixture() {
     assert_results_within_top_k("s1", &samples, 2, &result_ids);
 }
 
+#[test]
+fn ann_index_incremental_update_matches_full_rebuild() {
+    let _lock = ANN_TEST_LOCK.lock().expect("ann test lock poisoned");
+    let temp = tempdir().unwrap();
+    let _guard = ConfigBaseGuard::set(temp.path().to_path_buf());
+
+    let conn = Connection::open_in_memory().unwrap();
+    conn.execute_batch(
+        "CREATE TABLE embeddings (
+            sample_id TEXT PRIMARY KEY,
+            model_id TEXT NOT NULL,
+            dim INTEGER NOT NULL,
+            dtype TEXT NOT NULL,
+            l2_normed INTEGER NOT NULL,
+            vec BLOB NOT NULL,
+            created_at INTEGER NOT NULL
+        ) WITHOUT ROWID;
+         CREATE TABLE ann_index_meta (
+            model_id TEXT PRIMARY KEY,
+            index_path TEXT NOT NULL,
+            count INTEGER NOT NULL,
+            params_json TEXT NOT NULL,
+            updated_at INTEGER NOT NULL
+        ) WITHOUT ROWID;",
+    )
+    .unwrap();
+
+    let dim = embedding::EMBEDDING_DIM;
+    let base_samples = vec![
+        ("s1", normalize(unit_vec(dim, 0))),
+        ("s2", normalize(unit_vec(dim, 1))),
+        ("s3", normalize(unit_vec(dim, 2))),
+    ];
+    let extra_samples = vec![("s4", normalize(blend_unit(dim, 0, 1, 0.12)))];
+    insert_embeddings(&conn, dim, &base_samples);
+
+    ann_index::rebuild_index(&conn).expect("ANN rebuild");
+
+    insert_embeddings(&conn, dim, &extra_samples);
+    for (sample_id, vec) in &extra_samples {
+        ann_index::upsert_embedding(&conn, sample_id, vec).expect("ANN upsert");
+    }
+    let incremental = ann_index::find_similar(&conn, "s1", 2).expect("ANN search");
+    let mut incremental_ids: Vec<_> = incremental
+        .iter()
+        .map(|entry| entry.sample_id.clone())
+        .collect();
+    incremental_ids.sort();
+
+    ann_index::rebuild_index(&conn).expect("ANN rebuild");
+    let rebuilt = ann_index::find_similar(&conn, "s1", 2).expect("ANN search");
+    let mut rebuilt_ids: Vec<_> = rebuilt.iter().map(|entry| entry.sample_id.clone()).collect();
+    rebuilt_ids.sort();
+
+    assert_eq!(incremental_ids, rebuilt_ids);
+}
+
 fn unit_vec(dim: usize, idx: usize) -> Vec<f32> {
     let mut vec = vec![0.0; dim];
     if idx < dim {
@@ -86,6 +143,18 @@ fn normalize(mut vec: Vec<f32>) -> Vec<f32> {
         }
     }
     vec
+}
+
+fn insert_embeddings(conn: &Connection, dim: usize, samples: &[(&str, Vec<f32>)]) {
+    for (sample_id, vec) in samples {
+        let blob = encode_f32_le_blob(vec);
+        conn.execute(
+            "INSERT INTO embeddings (sample_id, model_id, dim, dtype, l2_normed, vec, created_at)
+             VALUES (?1, ?2, ?3, 'f32', 1, ?4, 0)",
+            params![sample_id, embedding::EMBEDDING_MODEL_ID, dim as i64, blob],
+        )
+        .unwrap();
+    }
 }
 
 fn brute_force_neighbors<'a>(
