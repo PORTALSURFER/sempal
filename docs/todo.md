@@ -4,5 +4,3 @@ navigation inside these contexts, like for example, navigating the browser list,
 
 ..
 
-- please scan the app for dependencies and their licenses, mark any I can't use with my own license style if any
-and generate a mentions.md file to mention all the dependencies used which have licenses requiring me to do so, if any
