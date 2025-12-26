@@ -40,7 +40,7 @@ impl Default for InstallProgress {
     }
 }
 
-enum InstallerEvent {
+pub(crate) enum InstallerEvent {
     Started { total_files: usize },
     FileCopied { copied_files: usize, name: String },
     Finished,

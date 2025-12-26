@@ -60,10 +60,9 @@ fn selection_drop_to_browser_ignores_active_collection() {
         Some(Path::new("clip_sel.wav"))
     );
     assert_eq!(controller.ui.focus.context, FocusContext::SampleBrowser);
-    assert_eq!(
-        controller.ui.browser.selected_visible,
-        controller.visible_row_for_path(Path::new("clip_sel.wav"))
-    );
+    let visible_row = controller.visible_row_for_path(Path::new("clip_sel.wav"));
+    let selected_visible = controller.ui.browser.selected_visible;
+    assert_eq!(selected_visible, visible_row);
 }
 
 #[test]
