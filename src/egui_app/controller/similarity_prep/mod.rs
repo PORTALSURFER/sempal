@@ -1,3 +1,6 @@
+mod db;
+mod state;
+
 use super::analysis_jobs;
 use super::jobs;
 use super::*;
@@ -40,23 +43,19 @@ impl EguiController {
             });
             return;
         };
-        let scan_completed_at = self.read_source_scan_timestamp(&source);
-        let prep_scan_at = self.read_source_prep_timestamp(&source);
+        let scan_completed_at = db::read_source_scan_timestamp(&source);
+        let prep_scan_at = db::read_source_prep_timestamp(&source);
         let skip_scan = scan_completed_at.is_some() && scan_completed_at == prep_scan_at;
-        let needs_embeddings = !self.source_has_embeddings(&source);
-        let stage = if skip_scan {
-            SimilarityPrepStage::AwaitEmbeddings
-        } else {
-            SimilarityPrepStage::AwaitScan
-        };
-        self.runtime.similarity_prep = Some(SimilarityPrepState {
+        let needs_embeddings = !db::source_has_embeddings(&source);
+        let prep_state = state::build_initial_state(state::SimilarityPrepInit {
             source_id: source.id.clone(),
-            stage,
             umap_version: self.ui.map.umap_version.clone(),
             scan_completed_at,
-            skip_backfill: skip_scan && !needs_embeddings && !force_full_analysis,
+            skip_scan,
+            needs_embeddings,
             force_full_analysis,
         });
+        self.runtime.similarity_prep = Some(prep_state);
         self.apply_similarity_prep_duration_cap();
         self.apply_similarity_prep_fast_mode();
         self.apply_similarity_prep_full_analysis(force_full_analysis);
@@ -135,19 +134,16 @@ impl EguiController {
             return;
         }
         if let Some(source) = self.find_source_by_id(source_id) {
-            let scan_completed_at = self.read_source_scan_timestamp(&source);
-            let force_full = if let Some(state) = self.runtime.similarity_prep.as_mut() {
-                state.stage = SimilarityPrepStage::AwaitEmbeddings;
-                state.scan_completed_at = scan_completed_at;
-                state.skip_backfill = !scan_changed && !state.force_full_analysis;
-                state.force_full_analysis
+            let scan_completed_at = db::read_source_scan_timestamp(&source);
+            let transition = if let Some(state) = self.runtime.similarity_prep.as_mut() {
+                state::apply_scan_finished(state, scan_completed_at, scan_changed)
             } else {
-                false
+                return;
             };
-            if scan_changed || force_full {
+            if transition.should_enqueue_embeddings {
                 self.ensure_similarity_prep_progress(0, true);
                 self.set_similarity_embedding_detail();
-                self.enqueue_similarity_backfill(source, force_full);
+                self.enqueue_similarity_backfill(source, transition.force_full);
             } else {
                 self.refresh_similarity_prep_progress();
             }
@@ -165,11 +161,10 @@ impl EguiController {
             let Some(state) = self.runtime.similarity_prep.as_mut() else {
                 return;
             };
-            if state.stage != SimilarityPrepStage::AwaitEmbeddings {
+            let Some(request) = state::start_finalize_if_ready(state) else {
                 return;
-            }
-            state.stage = SimilarityPrepStage::Finalizing;
-            (state.source_id.clone(), state.umap_version.clone())
+            };
+            (request.source_id, request.umap_version)
         };
         self.set_status_message(StatusMessage::FinalizingSimilarityPrep);
         self.show_similarity_finalize_progress();
@@ -191,8 +186,10 @@ impl EguiController {
         }
         match result.result {
             Ok(outcome) => {
-                if let Some(scan_completed_at) = state.and_then(|s| s.scan_completed_at) {
-                    self.record_similarity_prep_scan_timestamp(&result.source_id, scan_completed_at);
+                if let Some(scan_completed_at) = state.as_ref().and_then(|s| s.scan_completed_at) {
+                    if let Some(source) = self.find_source_by_id(&result.source_id) {
+                        db::record_similarity_prep_scan_timestamp(&source, scan_completed_at);
+                    }
                 }
                 self.ui.map.bounds = None;
                 self.ui.map.last_query = None;
@@ -241,34 +238,6 @@ fn matches_similarity_stage(
 }
 
 impl EguiController {
-    fn read_source_scan_timestamp(&self, source: &SampleSource) -> Option<i64> {
-        let db = SourceDatabase::open(&source.root).ok()?;
-        db.get_metadata(crate::sample_sources::db::META_LAST_SCAN_COMPLETED_AT)
-            .ok()
-            .flatten()
-            .and_then(|value| value.parse().ok())
-    }
-
-    fn read_source_prep_timestamp(&self, source: &SampleSource) -> Option<i64> {
-        let db = SourceDatabase::open(&source.root).ok()?;
-        db.get_metadata(crate::sample_sources::db::META_LAST_SIMILARITY_PREP_SCAN_AT)
-            .ok()
-            .flatten()
-            .and_then(|value| value.parse().ok())
-    }
-
-    fn record_similarity_prep_scan_timestamp(&self, source_id: &SourceId, scan_completed_at: i64) {
-        let Some(source) = self.find_source_by_id(source_id) else {
-            return;
-        };
-        if let Ok(db) = SourceDatabase::open(&source.root) {
-            let _ = db.set_metadata(
-                crate::sample_sources::db::META_LAST_SIMILARITY_PREP_SCAN_AT,
-                &scan_completed_at.to_string(),
-            );
-        }
-    }
-
     fn apply_similarity_prep_duration_cap(&mut self) {
         let max_duration = if self.similarity_prep_duration_cap_enabled() {
             self.settings.analysis.max_analysis_duration_seconds
@@ -440,7 +409,7 @@ impl EguiController {
                     }
                 };
                 if progress.pending == 0 && progress.running == 0 {
-                    if !self.source_has_embeddings(&source) {
+                    if !db::source_has_embeddings(&source) {
                         self.ensure_similarity_prep_progress(0, true);
                         self.set_similarity_embedding_detail();
                         self.enqueue_similarity_backfill(source, false);
@@ -471,25 +440,13 @@ impl EguiController {
         }
     }
 
-    fn source_has_embeddings(&self, source: &SampleSource) -> bool {
-        let Ok(conn) = analysis_jobs::open_source_db(&source.root) else {
-            return false;
-        };
-        let model_id = crate::analysis::embedding::EMBEDDING_MODEL_ID;
-        let count: Result<i64, _> = conn.query_row(
-            "SELECT COUNT(*) FROM embeddings WHERE model_id = ?1",
-            rusqlite::params![model_id],
-            |row| row.get(0),
-        );
-        count.map(|value| value > 0).unwrap_or(false)
-    }
 }
 
 fn run_similarity_finalize(
     source_id: &SourceId,
     umap_version: &str,
 ) -> Result<jobs::SimilarityPrepOutcome, String> {
-    let mut conn = open_source_db_for_similarity(source_id)?;
+    let mut conn = db::open_source_db_for_similarity(source_id)?;
     let sample_id_prefix = format!("{}::%", source_id.as_str());
     crate::analysis::umap::build_umap_layout(
         &mut conn,
@@ -498,7 +455,7 @@ fn run_similarity_finalize(
         0,
         0.95,
     )?;
-    let layout_rows = count_umap_layout_rows(
+    let layout_rows = db::count_umap_layout_rows(
         &conn,
         crate::analysis::embedding::EMBEDDING_MODEL_ID,
         umap_version,
@@ -527,29 +484,4 @@ fn run_similarity_finalize(
         cluster_stats,
         umap_version: umap_version.to_string(),
     })
-}
-
-fn count_umap_layout_rows(
-    conn: &rusqlite::Connection,
-    model_id: &str,
-    umap_version: &str,
-    sample_id_prefix: &str,
-) -> Result<i64, String> {
-    conn.query_row(
-        "SELECT COUNT(*) FROM layout_umap
-         WHERE model_id = ?1 AND umap_version = ?2 AND sample_id LIKE ?3",
-        rusqlite::params![model_id, umap_version, sample_id_prefix],
-        |row| row.get(0),
-    )
-    .map_err(|err| format!("Count layout rows failed: {err}"))
-}
-
-fn open_source_db_for_similarity(source_id: &SourceId) -> Result<rusqlite::Connection, String> {
-    let state = crate::sample_sources::library::load().map_err(|err| err.to_string())?;
-    let source = state
-        .sources
-        .iter()
-        .find(|source| &source.id == source_id)
-        .ok_or_else(|| "Source not found for similarity prep".to_string())?;
-    super::analysis_jobs::open_source_db(&source.root)
 }
