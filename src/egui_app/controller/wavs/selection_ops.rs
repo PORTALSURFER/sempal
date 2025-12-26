@@ -1,4 +1,5 @@
 use super::*;
+use tracing::{debug, warn};
 
 pub(super) fn select_wav_by_path(controller: &mut EguiController, path: &Path) {
     select_wav_by_path_with_rebuild(controller, path, true);
@@ -193,22 +194,54 @@ pub(super) fn set_sample_tag_for_source(
 ) -> Result<(), String> {
     let db = controller
         .database_for(source)
-        .map_err(|err| err.to_string())?;
+        .map_err(|err| {
+            warn!(source_id = %source.id, error = %err, "triage tag: database unavailable");
+            err.to_string()
+        })?;
     if require_present {
         let exists = db
             .index_for_path(path)
-            .map_err(|err| err.to_string())?
+            .map_err(|err| {
+                warn!(
+                    source_id = %source.id,
+                    path = %path.display(),
+                    error = %err,
+                    "triage tag: index lookup failed"
+                );
+                err.to_string()
+            })?
             .is_some();
         if !exists {
+            warn!(
+                source_id = %source.id,
+                path = %path.display(),
+                "triage tag: sample missing in db"
+            );
             return Err("Sample not found".into());
         }
     }
-    let _ = db.set_tag(path, target_tag);
-    if controller.selection_state.ctx.selected_source.as_ref() == Some(&source.id)
-        && let Some(index) = controller.wav_index_for_path(path)
-        && let Some(entry) = controller.wav_entries.entry_mut(index)
-    {
-        entry.tag = target_tag;
+    if let Err(err) = db.set_tag(path, target_tag) {
+        warn!(
+            source_id = %source.id,
+            path = %path.display(),
+            error = %err,
+            "triage tag: db set_tag failed"
+        );
+    } else {
+        debug!(
+            source_id = %source.id,
+            path = %path.display(),
+            ?target_tag,
+            "triage tag: db updated"
+        );
+    }
+    let mut updated_active = false;
+    if let Some(index) = controller.wav_index_for_path(path) {
+        let _ = controller.ensure_wav_page_loaded(index);
+        if let Some(entry) = controller.wav_entries.entry_mut(index) {
+            entry.tag = target_tag;
+            updated_active = true;
+        }
     }
     if let Some(cache) = controller.cache.wav.entries.get_mut(&source.id)
         && let Some(index) = cache.lookup.get(path).copied()
@@ -216,7 +249,12 @@ pub(super) fn set_sample_tag_for_source(
     {
         entry.tag = target_tag;
     }
-    if controller.selection_state.ctx.selected_source.as_ref() == Some(&source.id) {
+    if updated_active {
+        debug!(
+            source_id = %source.id,
+            path = %path.display(),
+            "triage tag: rebuilding browser list"
+        );
         controller.rebuild_browser_lists();
     }
     Ok(())

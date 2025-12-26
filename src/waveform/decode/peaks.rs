@@ -1,14 +1,10 @@
 use super::normalize::clamp_sample;
 use crate::waveform::{WaveformDecodeError, WaveformPeaks};
 
+const MAX_PEAK_BUCKETS: usize = 1_000_000;
+
 pub(super) fn peak_bucket_size(frames: usize) -> usize {
-    if frames >= 60_000_000 {
-        8_192
-    } else if frames >= 10_000_000 {
-        4_096
-    } else {
-        2_048
-    }
+    frames.div_ceil(MAX_PEAK_BUCKETS).max(1)
 }
 
 pub(super) fn build_peaks_from_float(

@@ -41,6 +41,10 @@ pub struct WaveformState {
     pub hover_pointer_pos: Option<egui::Pos2>,
     /// Timestamp of the last time the pointer moved over the waveform.
     pub hover_pointer_last_moved_at: Option<std::time::Instant>,
+    /// When true, hover should not override the cursor until the pointer moves.
+    pub suppress_hover_cursor: bool,
+    /// Last pointer position used for middle-button waveform panning.
+    pub pan_drag_pos: Option<egui::Pos2>,
 }
 
 impl Default for WaveformState {
@@ -55,8 +59,8 @@ impl Default for WaveformState {
             hover_time_label: None,
             channel_view: WaveformChannelView::Mono,
             bpm_snap_enabled: false,
-            bpm_input: String::new(),
-            bpm_value: None,
+            bpm_input: "142".to_string(),
+            bpm_value: Some(142.0),
             view: WaveformView::default(),
             loop_enabled: false,
             notice: None,
@@ -66,6 +70,8 @@ impl Default for WaveformState {
             cursor_last_navigation_at: None,
             hover_pointer_pos: None,
             hover_pointer_last_moved_at: None,
+            suppress_hover_cursor: false,
+            pan_drag_pos: None,
         }
     }
 }

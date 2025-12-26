@@ -104,7 +104,8 @@ impl DragDropActions for DragDropController<'_> {
             ..
         }) = self.ui.drag.payload.as_mut()
         {
-            *keep_source_focused = shift_down;
+            let _ = shift_down;
+            *keep_source_focused = true;
         }
     }
 
@@ -119,7 +120,8 @@ impl DragDropActions for DragDropController<'_> {
                 ..
             }) = self.ui.drag.payload.as_mut()
             {
-                *keep_source_focused = shift_down;
+                let _ = shift_down;
+                *keep_source_focused = true;
             }
         }
     }

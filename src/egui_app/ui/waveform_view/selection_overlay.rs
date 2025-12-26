@@ -82,6 +82,8 @@ pub(super) fn render_selection_overlay(
         painter.galley(text_pos, galley, text_color);
     }
 
+    draw_bpm_guides(app, ui, rect, selection, view, view_width, highlight);
+
     let start_edge_rect = selection_edge_handle_rect(selection_rect, SelectionEdge::Start);
     let end_edge_rect = selection_edge_handle_rect(selection_rect, SelectionEdge::End);
     let start_edge_response = ui.interact(
@@ -133,4 +135,43 @@ pub(super) fn render_selection_overlay(
     selection_menu::attach_selection_context_menu(app, ui, selection_rect);
 
     edge_dragging
+}
+
+fn draw_bpm_guides(
+    app: &mut EguiApp,
+    ui: &mut egui::Ui,
+    rect: egui::Rect,
+    selection: crate::selection::SelectionRange,
+    view: WaveformView,
+    view_width: f32,
+    highlight: Color32,
+) {
+    if !app.controller.ui.waveform.bpm_snap_enabled {
+        return;
+    }
+    let bpm = app.controller.ui.waveform.bpm_value.unwrap_or(0.0);
+    if !bpm.is_finite() || bpm <= 0.0 {
+        return;
+    }
+    let duration = app.controller.loaded_audio_duration_seconds().unwrap_or(0.0);
+    if !duration.is_finite() || duration <= 0.0 {
+        return;
+    }
+    let step = 60.0 / bpm / duration;
+    if !step.is_finite() || step <= 0.0 {
+        return;
+    }
+    let painter = ui.painter();
+    let stroke = egui::Stroke::new(1.0, style::with_alpha(highlight, 140));
+    let mut beat = selection.start() + step;
+    let end = selection.end();
+    while beat < end {
+        let normalized = ((beat - view.start) / view_width).clamp(0.0, 1.0);
+        let x = rect.left() + rect.width() * normalized;
+        painter.line_segment(
+            [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
+            stroke,
+        );
+        beat += step;
+    }
 }

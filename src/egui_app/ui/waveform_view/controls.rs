@@ -32,23 +32,29 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
             app.controller.toggle_loop();
         }
         ui.add_space(10.0);
-        let waveform = &mut app.controller.ui.waveform;
-        let mut bpm_enabled = waveform.bpm_snap_enabled;
+        let mut bpm_enabled = app.controller.ui.waveform.bpm_snap_enabled;
         if ui.checkbox(&mut bpm_enabled, "BPM snap").clicked() {
-            waveform.bpm_snap_enabled = bpm_enabled;
-            if bpm_enabled && waveform.bpm_value.is_none() {
-                waveform.bpm_value = Some(120.0);
-                waveform.bpm_input = "120".to_string();
+            let prev_value = app.controller.ui.waveform.bpm_value;
+            app.controller.set_bpm_snap_enabled(bpm_enabled);
+            if bpm_enabled && prev_value.is_none() {
+                let fallback = 142.0;
+                app.controller.set_bpm_value(fallback);
+                app.controller.ui.waveform.bpm_value = Some(fallback);
+                app.controller.ui.waveform.bpm_input = format!("{fallback:.0}");
             }
         }
         let bpm_edit = ui.add_enabled(
-            waveform.bpm_snap_enabled,
-            egui::TextEdit::singleline(&mut waveform.bpm_input)
+            app.controller.ui.waveform.bpm_snap_enabled,
+            egui::TextEdit::singleline(&mut app.controller.ui.waveform.bpm_input)
                 .desired_width(64.0)
                 .hint_text("120"),
         );
         if bpm_edit.changed() {
-            waveform.bpm_value = parse_bpm_input(&waveform.bpm_input);
+            let parsed = parse_bpm_input(&app.controller.ui.waveform.bpm_input);
+            app.controller.ui.waveform.bpm_value = parsed;
+            if let Some(value) = parsed {
+                app.controller.set_bpm_value(value);
+            }
         }
     });
     if view_mode != app.controller.ui.waveform.channel_view {

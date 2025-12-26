@@ -26,13 +26,18 @@ pub(super) fn render_hover_overlay(
         if moved {
             app.controller.ui.waveform.hover_pointer_pos = Some(pos);
             app.controller.ui.waveform.hover_pointer_last_moved_at = Some(now);
+            app.controller.ui.waveform.suppress_hover_cursor = false;
         }
 
         let normalized = ((pos.x - rect.left()) / rect.width())
             .mul_add(view_width, view.start)
             .clamp(0.0, 1.0);
         hovering = true;
-        let allow_hover_override = moved
+        let suppress_hover = app.controller.ui.waveform.suppress_hover_cursor
+            && !moved
+            && app.controller.ui.waveform.cursor.is_some();
+        let allow_hover_override = !suppress_hover
+            && (moved
             || app
                 .controller
                 .ui
@@ -44,7 +49,7 @@ pub(super) fn render_hover_overlay(
                         .waveform
                         .hover_pointer_last_moved_at
                         .is_none_or(|moved_at| nav <= moved_at)
-                });
+                }));
 
         if allow_hover_override {
             hover_x = Some(pos.x);

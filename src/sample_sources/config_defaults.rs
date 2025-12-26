@@ -53,3 +53,7 @@ pub(super) fn default_keyboard_zoom_factor() -> f32 {
 pub(super) fn default_anti_clip_fade_ms() -> f32 {
     2.0
 }
+
+pub(super) fn default_bpm_value() -> f32 {
+    142.0
+}

@@ -167,6 +167,11 @@ impl EguiController {
                     .map_err(|err| format!("Failed to tag clip: {err}"))?;
             }
             if add_to_browser {
+                if self.selection_state.ctx.selected_source.as_ref() == Some(&source.id)
+                    && let Some(selected) = self.sample_view.wav.selected_wav.clone()
+                {
+                    self.runtime.jobs.set_pending_select_path(Some(selected));
+                }
                 self.insert_new_wav_entry(source, entry.clone());
             }
         }

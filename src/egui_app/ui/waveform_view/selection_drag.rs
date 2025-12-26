@@ -26,21 +26,28 @@ pub(super) fn handle_selection_handle_drag(
                     range: selection,
                 });
             } else {
-                let keep_source_focused = ui.input(|i| i.modifiers.shift);
                 app.controller
-                    .start_selection_drag_payload(selection, pos, keep_source_focused);
+                    .start_selection_drag_payload(selection, pos, true);
                 app.controller.ui.drag.origin_source = Some(DragSource::Waveform);
             }
         }
     } else if handle_response.dragged() {
         if let Some(pos) = handle_response.interact_pointer_pos() {
+            let alt = ui.input(|i| i.modifiers.alt);
+            if alt && app.selection_slide.is_none() {
+                let anchor = to_wave_pos(pos);
+                app.selection_slide = Some(super::SelectionSlide {
+                    anchor,
+                    range: selection,
+                });
+                app.controller.cancel_active_drag();
+            }
             if let Some(slide) = app.selection_slide {
                 let cursor = to_wave_pos(pos);
                 let delta = cursor - slide.anchor;
                 app.controller.set_selection_range(slide.range.shift(delta));
             } else {
-                let shift_down = ui.input(|i| i.modifiers.shift);
-                app.controller.refresh_drag_position(pos, shift_down);
+                app.controller.refresh_drag_position(pos, false);
             }
         }
     } else if handle_response.drag_stopped() {

@@ -108,11 +108,14 @@ impl EguiController {
         self.wav_entries.insert_page(page_index, entries);
         self.sync_after_wav_entries_changed();
         let mut pending_applied = false;
-        if let Some(path) = self.runtime.jobs.take_pending_select_path()
-            && self.wav_index_for_path(&path).is_some()
-        {
-            self.select_wav_by_path(&path);
-            pending_applied = true;
+        if let Some(path) = self.runtime.jobs.take_pending_select_path() {
+            if self.sample_view.wav.selected_wav.as_ref() == Some(&path) {
+                // Preserve current selection without reloading audio.
+                pending_applied = true;
+            } else if self.wav_index_for_path(&path).is_some() {
+                self.select_wav_by_path(&path);
+                pending_applied = true;
+            }
         }
         if !pending_applied
             && self.sample_view.wav.selected_wav.is_none()
