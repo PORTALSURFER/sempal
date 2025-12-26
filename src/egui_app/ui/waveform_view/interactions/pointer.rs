@@ -64,7 +64,9 @@ pub(in super::super) fn handle_waveform_pointer_interactions(
             app.controller.update_selection_drag(value);
         }
     } else if response.drag_stopped() {
-        app.controller.finish_selection_drag();
+        if app.controller.is_selection_dragging() {
+            app.controller.finish_selection_drag();
+        }
     } else if response.clicked() {
         if app.controller.ui.waveform.image.is_some() {
             app.controller.focus_waveform_context();
