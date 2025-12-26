@@ -78,10 +78,15 @@ case "$CHANNEL" in
 esac
 
 "$BUILD_CARGO_BIN" build --release --bin "$APP_NAME" --target "$TARGET"
+if [[ "$TARGET" == *windows* ]]; then
+  "$BUILD_CARGO_BIN" build --release --bin "${APP_NAME}-updater" --target "$TARGET"
+fi
 
 BIN_NAME="$APP_NAME"
+UPDATER_NAME=""
 if [[ "$TARGET" == *windows* ]]; then
   BIN_NAME="${APP_NAME}.exe"
+  UPDATER_NAME="${APP_NAME}-updater.exe"
 fi
 
 WORK_DIR="$(mktemp -d)"
@@ -90,6 +95,9 @@ trap 'rm -rf "$WORK_DIR"' EXIT
 ROOT_DIR="${WORK_DIR}/${APP_NAME}"
 mkdir -p "$ROOT_DIR"
 cp "target/${TARGET}/release/${BIN_NAME}" "${ROOT_DIR}/${BIN_NAME}"
+if [[ -n "$UPDATER_NAME" ]]; then
+  cp "target/${TARGET}/release/${UPDATER_NAME}" "${ROOT_DIR}/${UPDATER_NAME}"
+fi
 MODEL_DIR="${ROOT_DIR}/models"
 mkdir -p "$MODEL_DIR"
 BURNPACK_PATH="${REPO_ROOT}/assets/ml/panns_cnn14_16k/panns_cnn14_16k.bpk"
@@ -106,7 +114,7 @@ cat > "${ROOT_DIR}/update-manifest.json" <<EOF
   "target": "${TARGET}",
   "platform": "${PLATFORM}",
   "arch": "${ARCH}",
-  "files": ["${BIN_NAME}", "models/panns_cnn14_16k.bpk", "update-manifest.json"]
+  "files": [${UPDATER_NAME:+"\"${UPDATER_NAME}\", "}\"${BIN_NAME}\", \"models/panns_cnn14_16k.bpk\", \"update-manifest.json\"]
 }
 EOF
 
