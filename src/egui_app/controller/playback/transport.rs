@@ -51,10 +51,12 @@ pub(super) fn finish_selection_drag(controller: &mut EguiController) {
         return;
     };
     let playhead = controller.ui.waveform.playhead.position;
-    if playhead >= selection.start() && playhead <= selection.end() {
-        return;
-    }
-    if let Err(err) = controller.play_audio(true, None) {
+    let start_override = if playhead >= selection.start() && playhead <= selection.end() {
+        Some(playhead)
+    } else {
+        Some(selection.start())
+    };
+    if let Err(err) = controller.play_audio(true, start_override) {
         controller.set_status(err, StatusTone::Error);
     }
 }

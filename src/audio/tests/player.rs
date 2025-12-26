@@ -99,6 +99,22 @@ fn play_range_at_track_end_expands_backwards() {
 }
 
 #[test]
+fn play_looped_range_from_keeps_full_span() {
+    let Ok(mut player) = AudioPlayer::new() else {
+        return;
+    };
+    let duration = 2.0;
+    player.set_audio(silent_wav_bytes(duration, 44_100, 1), duration);
+
+    assert!(player.play_looped_range_from(0.25, 0.75, 0.5).is_ok());
+    let (start, end) = player.play_span().expect("play span set");
+
+    assert!((start - 0.5).abs() < 0.01);
+    assert!((end - 1.5).abs() < 0.02);
+    assert!(player.is_looping());
+}
+
+#[test]
 fn set_audio_prefers_provided_duration() {
     let Ok(mut player) = AudioPlayer::new() else {
         return;
