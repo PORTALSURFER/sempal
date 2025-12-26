@@ -5,7 +5,7 @@ use crate::egui_app::controller::analysis_jobs::db;
 use crate::egui_app::controller::analysis_jobs::types::AnalysisJobMessage;
 use crate::egui_app::controller::jobs::JobMessage;
 use rusqlite::Connection;
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::{
     Arc,
@@ -24,8 +24,11 @@ use windows::Win32::System::Threading::{
 };
 
 mod claim;
+mod dedup;
+mod lease;
 mod logging;
 mod queue;
+mod selection;
 
 pub(in crate::egui_app::controller::analysis_jobs) use claim::{
     decode_queue_target, decode_worker_count_with_override, worker_count_with_override,
@@ -51,11 +54,7 @@ pub(super) fn spawn_decoder_worker(
     std::thread::spawn(move || {
         lower_worker_priority();
         let log_jobs = logging::analysis_log_enabled();
-        let mut sources = Vec::new();
-        let mut last_refresh = Instant::now() - claim::SOURCE_REFRESH_INTERVAL;
-        let mut next_source = 0usize;
-        let mut local_queue: VecDeque<db::ClaimedJob> = VecDeque::new();
-        let claim_batch = claim::claim_batch_size();
+        let mut selector = selection::ClaimSelector::new(reset_done);
         let decode_queue_target = decode_queue_target.max(1);
         loop {
             if shutdown.load(Ordering::Relaxed) {
@@ -77,54 +76,22 @@ pub(super) fn spawn_decoder_worker(
                 .read()
                 .ok()
                 .and_then(|guard| guard.clone());
-            claim::refresh_sources(
-                &mut sources,
-                &mut last_refresh,
-                &reset_done,
-                allowed.as_ref(),
-            );
-            if sources.is_empty() {
-                sleep(Duration::from_millis(200));
-                continue;
-            }
-            if local_queue.is_empty() {
-                for _ in 0..sources.len() {
-                    let idx = next_source % sources.len();
-                    next_source = next_source.wrapping_add(1);
-                    let source = &mut sources[idx];
-                    let jobs = match db::claim_next_jobs(
-                        &mut source.conn,
-                        &source.source.root,
-                        source.source.id.as_str(),
-                        claim_batch,
-                    ) {
-                        Ok(jobs) => jobs,
-                        Err(_) => continue,
-                    };
-                    if !jobs.is_empty() {
-                        local_queue.extend(jobs);
-                        break;
-                    }
+            let job = match selector.select_next(allowed.as_ref()) {
+                selection::ClaimSelection::Job(job) => job,
+                selection::ClaimSelection::NoSources => {
+                    sleep(Duration::from_millis(200));
+                    continue;
                 }
-                if local_queue.is_empty() {
+                selection::ClaimSelection::Idle => {
                     sleep(Duration::from_millis(25));
                     continue;
                 }
-            }
-            let Some(job) = local_queue.pop_front() else {
-                sleep(Duration::from_millis(25));
-                continue;
             };
-            if let Some(allowed) = allowed.as_ref() {
-                if let Ok((source_id, _)) = db::parse_sample_id(&job.sample_id) {
-                    let source_id = crate::sample_sources::SourceId::from_string(source_id);
-                    if !allowed.contains(&source_id) {
-                        if let Ok(conn) = db::open_source_db(&job.source_root) {
-                            let _ = db::mark_pending(&conn, job.id);
-                        }
-                        continue;
-                    }
+            if !lease::job_allowed(&job, allowed.as_ref()) {
+                if let Ok(conn) = db::open_source_db(&job.source_root) {
+                    lease::release_claim(&conn, job.id);
                 }
+                continue;
             }
             if !decode_queue.try_mark_inflight(job.id) {
                 if log_jobs {
@@ -230,30 +197,23 @@ pub(super) fn spawn_compute_worker(
                     .read()
                     .ok()
                     .and_then(|guard| guard.clone());
-                if let Some(allowed) = allowed.as_ref() {
-                    if let Ok((source_id, _)) = db::parse_sample_id(&work.job.sample_id) {
-                        let source_id = crate::sample_sources::SourceId::from_string(source_id);
-                        if !allowed.contains(&source_id) {
-                            let conn = match connections.entry(work.job.source_root.clone()) {
-                                std::collections::hash_map::Entry::Occupied(entry) => {
-                                    entry.into_mut()
-                                }
-                                std::collections::hash_map::Entry::Vacant(entry) => {
-                                    let conn = match db::open_source_db(&work.job.source_root) {
-                                        Ok(conn) => conn,
-                                        Err(_) => {
-                                            decode_queue.clear_inflight(work.job.id);
-                                            continue;
-                                        }
-                                    };
-                                    entry.insert(conn)
+                if !lease::job_allowed(&work.job, allowed.as_ref()) {
+                    let conn = match connections.entry(work.job.source_root.clone()) {
+                        std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+                        std::collections::hash_map::Entry::Vacant(entry) => {
+                            let conn = match db::open_source_db(&work.job.source_root) {
+                                Ok(conn) => conn,
+                                Err(_) => {
+                                    decode_queue.clear_inflight(work.job.id);
+                                    continue;
                                 }
                             };
-                            let _ = db::mark_pending(conn, work.job.id);
-                            decode_queue.clear_inflight(work.job.id);
-                            continue;
+                            entry.insert(conn)
                         }
-                    }
+                    };
+                    lease::release_claim(conn, work.job.id);
+                    decode_queue.clear_inflight(work.job.id);
+                    continue;
                 }
                 if log_jobs {
                     eprintln!("analysis run start: {} ({})", work.job.sample_id, work.job.job_type);
