@@ -37,6 +37,8 @@ jobs:
             use_cross: false
     steps:
       - uses: actions/checkout@v4
+        with:
+          lfs: true
       - uses: dtolnay/rust-toolchain@stable
       - name: Install cross
         if: ${{ matrix.use_cross }}
