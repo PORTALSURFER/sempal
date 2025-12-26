@@ -225,16 +225,6 @@ impl HotkeysActions for HotkeysController<'_> {
                     );
                 }
             }
-            HotkeyCommand::ReviewAssignCategory1
-            | HotkeyCommand::ReviewAssignCategory2
-            | HotkeyCommand::ReviewAssignCategory3
-            | HotkeyCommand::ReviewAssignCategory4
-            | HotkeyCommand::ReviewAssignCategory5
-            | HotkeyCommand::ReviewAssignCategory6
-            | HotkeyCommand::ReviewAssignCategory7
-            | HotkeyCommand::ReviewAssignCategory8
-            | HotkeyCommand::ReviewAssignCategory9
-            | HotkeyCommand::ReviewClearCategoryOverride => {}
         }
     }
 }
