@@ -142,6 +142,7 @@ impl EguiApp {
         focus_context: FocusContext,
     ) {
         self.render_drag_overlay(ctx);
+        self.render_audio_settings_window(ctx);
         progress_overlay::render_progress_overlay(ctx, &mut self.controller.ui.progress);
         self.render_feedback_issue_prompt(ctx);
         self.render_map_window(ctx);
