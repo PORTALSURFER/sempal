@@ -163,15 +163,24 @@ fn draw_bpm_guides(
     }
     let painter = ui.painter();
     let stroke = egui::Stroke::new(1.0, style::with_alpha(highlight, 140));
+    let triage_red = style::with_alpha(style::semantic_palette().triage_trash, 200);
+    let triage_stroke = egui::Stroke::new(1.0, triage_red);
     let mut beat = selection.start() + step;
     let end = selection.end();
+    let mut beat_index = 1usize;
     while beat < end {
         let normalized = ((beat - view.start) / view_width).clamp(0.0, 1.0);
         let x = rect.left() + rect.width() * normalized;
+        let line_stroke = if beat_index % 4 == 0 {
+            triage_stroke
+        } else {
+            stroke
+        };
         painter.line_segment(
             [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
-            stroke,
+            line_stroke,
         );
         beat += step;
+        beat_index += 1;
     }
 }
