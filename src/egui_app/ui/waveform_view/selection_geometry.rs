@@ -1,8 +1,8 @@
 use crate::selection::SelectionEdge;
 use eframe::egui::{self, Color32, Stroke};
 
-fn selection_handle_height(selection_rect: egui::Rect) -> f32 {
-    (selection_rect.height() / 6.0).max(10.0)
+pub(super) fn selection_handle_height(selection_rect: egui::Rect) -> f32 {
+    (selection_rect.height() / 7.0).max(8.0)
 }
 
 pub(super) fn selection_handle_rect(selection_rect: egui::Rect) -> egui::Rect {

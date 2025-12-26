@@ -144,7 +144,6 @@ impl AudioPlayer {
         let duration = self
             .track_duration
             .ok_or_else(|| "Load a .wav file first".to_string())?;
-        let offset = start.clamp(0.0, 1.0) * duration;
         let bytes = self.audio_bytes()?;
         if duration <= 0.0 {
             return Err("Load a .wav file first".into());
@@ -152,11 +151,13 @@ impl AudioPlayer {
 
         self.fade_out_current_sink(self.anti_clip_fade());
 
-        let fade = fade_duration(duration, self.anti_clip_fade());
         let source = decoder_from_bytes(bytes)?;
+        let aligned_duration = Self::aligned_span_seconds(duration, source.sample_rate());
+        let offset = (start.clamp(0.0, 1.0) * duration).min(aligned_duration);
+        let fade = fade_duration(aligned_duration, self.anti_clip_fade());
         let limited = source
             .fade_in(fade)
-            .take_duration(Duration::from_secs_f32(duration))
+            .take_duration(Duration::from_secs_f32(aligned_duration))
             .buffered();
         let faded = EdgeFade::new(limited, fade);
         let repeated = faded
@@ -171,7 +172,7 @@ impl AudioPlayer {
         sink.play();
 
         self.started_at = Some(Instant::now());
-        self.play_span = Some((0.0, duration));
+        self.play_span = Some((0.0, aligned_duration));
         self.looping = true;
         self.loop_offset = Some(offset);
         self.sink = Some(sink);
@@ -307,17 +308,22 @@ impl AudioPlayer {
         let bounded_start = start_seconds.clamp(0.0, duration);
         let bounded_end = end_seconds.clamp(bounded_start, duration);
         let span_length = (bounded_end - bounded_start).max(0.001);
-        let fade = fade_duration(span_length, self.anti_clip_fade());
 
         self.fade_out_current_sink(self.anti_clip_fade());
 
         let mut source = decoder_from_bytes(bytes)?;
+        let aligned_span = if looped {
+            Self::aligned_span_seconds(span_length, source.sample_rate())
+        } else {
+            span_length
+        };
         source
             .try_seek(Duration::from_secs_f32(bounded_start))
             .map_err(map_seek_error)?;
+        let fade = fade_duration(aligned_span, self.anti_clip_fade());
         let limited = source
             .fade_in(fade)
-            .take_duration(Duration::from_secs_f32(span_length))
+            .take_duration(Duration::from_secs_f32(aligned_span))
             .buffered();
         let faded = EdgeFade::new(limited, fade);
 
@@ -334,7 +340,7 @@ impl AudioPlayer {
         sink.append(FadeOutOnRequest::new(final_source, handle.clone()));
         sink.play();
         self.started_at = Some(Instant::now());
-        self.play_span = Some((bounded_start, bounded_start + span_length));
+        self.play_span = Some((bounded_start, bounded_start + aligned_span));
         self.looping = looped;
         self.sink = Some(sink);
         self.fade_out = Some(handle);
@@ -344,6 +350,20 @@ impl AudioPlayer {
             self.elapsed_override = None;
         }
         Ok(())
+    }
+
+    fn aligned_span_seconds(span_length: f32, sample_rate: u32) -> f32 {
+        if sample_rate == 0 {
+            return span_length;
+        }
+        let frames = (span_length * sample_rate as f32).floor();
+        let frames = if frames < 1.0 { 1.0 } else { frames };
+        frames / sample_rate as f32
+    }
+
+    #[cfg(test)]
+    pub(crate) fn aligned_span_seconds_for_tests(span_length: f32, sample_rate: u32) -> f32 {
+        Self::aligned_span_seconds(span_length, sample_rate)
     }
 
     fn audio_bytes(&self) -> Result<Arc<[u8]>, String> {

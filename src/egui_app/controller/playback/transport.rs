@@ -75,17 +75,27 @@ pub(super) fn toggle_loop(controller: &mut EguiController) {
                     (player_ref.is_playing(), player_ref.progress())
                 };
                 if is_playing {
-                    let start_override = progress.or_else(|| {
-                        if controller.ui.waveform.playhead.visible {
-                            Some(controller.ui.waveform.playhead.position)
-                        } else {
-                            controller
-                                .ui
-                                .waveform
-                                .cursor
-                                .or(controller.ui.waveform.last_start_marker)
-                        }
-                    });
+                    let has_selection = controller
+                        .selection_state
+                        .range
+                        .range()
+                        .filter(|range| range.width() >= MIN_SELECTION_WIDTH)
+                        .is_some();
+                    let start_override = if has_selection {
+                        None
+                    } else {
+                        progress.or_else(|| {
+                            if controller.ui.waveform.playhead.visible {
+                                Some(controller.ui.waveform.playhead.position)
+                            } else {
+                                controller
+                                    .ui
+                                    .waveform
+                                    .cursor
+                                    .or(controller.ui.waveform.last_start_marker)
+                            }
+                        })
+                    };
                     if let Err(err) = controller.play_audio(true, start_override) {
                         controller.set_status(err, StatusTone::Error);
                     }

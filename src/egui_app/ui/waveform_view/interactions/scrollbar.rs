@@ -6,16 +6,11 @@ use eframe::egui::{self, Ui};
 pub(in super::super) fn render_waveform_scrollbar(
     app: &mut EguiApp,
     ui: &mut Ui,
-    rect: egui::Rect,
+    scroll_rect: egui::Rect,
     view: WaveformView,
     view_width: f32,
 ) {
     let palette = style::palette();
-    let bar_height = 12.0;
-    let scroll_rect = egui::Rect::from_min_size(
-        egui::pos2(rect.left(), rect.bottom() - bar_height),
-        egui::vec2(rect.width(), bar_height),
-    );
     let scroll_resp = ui.interact(
         scroll_rect,
         ui.id().with("waveform_scrollbar"),

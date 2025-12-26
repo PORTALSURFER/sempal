@@ -1,4 +1,62 @@
-## [0.361.0] - 2025-12-15
+## [unreleased]
+
+### 🚀 Features
+
+- Highlight every fourth bpm guide
+- Nudge waveform selection with shift+alt arrows
+- Use loop bar for selection slide
+- Clip bpm guides under loop bar and handle
+- Move waveform scrollbar below view
+- Snap loop bar slide to bpm grid on shift
+- Add red bpm guide gradient
+- Thicken waveform bands when zoomed out
+- Add waveform zero line
+- Increase low-zoom waveform fill
+
+### 🐛 Bug Fixes
+
+- *(analysis-jobs)* Export cache types
+- *(analysis-jobs)* Expose context fields
+- *(scanner)* Adjust scan phase borrows
+- *(waveform)* Preserve selection on normalize
+- *(scanner)* Borrow batch for missing sync
+- Loop full selection when enabling loop mid-play
+- Play from click after clearing selection
+- Sort ann search results by distance
+- Prioritize waveform modifiers over alt focus nav
+- Align loop spans to frame boundaries
+- Resolve test fixture compile errors
+- Avoid loop restart on waveform pan
+- Resolve waveform render compile errors
+- Correct bpm gradient mesh vertices
+
+### 💼 Other
+
+- Integrate main into next
+
+### 🚜 Refactor
+
+- *(analysis-jobs)* Split analysis execution
+- *(scanner)* Split scan phases
+- *(audio)* Split decode io and prep
+
+### 📚 Documentation
+
+- Add third-party license mentions
+
+### 🧪 Testing
+
+- Add controller fixtures for waveform and browser tests
+
+### ⚙️ Miscellaneous Tasks
+
+- Update lockfile
+## [0.363.0] - 2025-12-17
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* V0.363.0 (#70)
+## [0.362.0] - 2025-12-17
 
 ### 🚀 Features
 

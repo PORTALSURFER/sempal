@@ -1,4 +1,6 @@
-use super::super::test_support::{dummy_controller, sample_entry, write_test_wav};
+use super::super::test_support::{
+    dummy_controller, prepare_with_source_and_wav_entries, sample_entry, write_test_wav,
+};
 use super::super::*;
 use super::common::{max_sample_amplitude, visible_indices};
 use crate::egui_app::controller::collection_export;
@@ -12,15 +14,10 @@ use tempfile::tempdir;
 
 #[test]
 fn hotkey_tagging_applies_to_all_selected_rows() {
-    let (mut controller, source) = dummy_controller();
-    controller.library.sources.push(source.clone());
-    controller.cache_db(&source).unwrap();
-    controller.set_wav_entries_for_tests( vec![
+    let (mut controller, source) = prepare_with_source_and_wav_entries(vec![
         sample_entry("one.wav", SampleTag::Neutral),
         sample_entry("two.wav", SampleTag::Neutral),
     ]);
-    controller.rebuild_wav_lookup();
-    controller.rebuild_browser_lists();
 
     controller.focus_browser_row_only(0);
     controller.toggle_browser_row_selection(1);
@@ -32,12 +29,11 @@ fn hotkey_tagging_applies_to_all_selected_rows() {
 
 #[test]
 fn focus_hotkey_does_not_autoplay_browser_sample() {
-    let (mut controller, source) = dummy_controller();
-    controller.library.sources.push(source.clone());
+    let (mut controller, source) = prepare_with_source_and_wav_entries(vec![sample_entry(
+        "one.wav",
+        SampleTag::Neutral,
+    )]);
     write_test_wav(&source.root.join("one.wav"), &[0.0, 0.1]);
-    controller.set_wav_entries_for_tests( vec![sample_entry("one.wav", SampleTag::Neutral)]);
-    controller.rebuild_wav_lookup();
-    controller.rebuild_browser_lists();
 
     assert!(controller.settings.feature_flags.autoplay_selection);
 
@@ -54,14 +50,10 @@ fn focus_hotkey_does_not_autoplay_browser_sample() {
 
 #[test]
 fn x_key_toggle_respects_focus() {
-    let (mut controller, source) = dummy_controller();
-    controller.library.sources.push(source);
-    controller.set_wav_entries_for_tests( vec![
+    let (mut controller, source) = prepare_with_source_and_wav_entries(vec![
         sample_entry("one.wav", SampleTag::Neutral),
         sample_entry("two.wav", SampleTag::Neutral),
     ]);
-    controller.rebuild_wav_lookup();
-    controller.rebuild_browser_lists();
 
     controller.focus_browser_row(0);
     controller.toggle_focused_selection();
@@ -82,15 +74,11 @@ fn x_key_toggle_respects_focus() {
 
 #[test]
 fn action_rows_include_selection_and_primary() {
-    let (mut controller, source) = dummy_controller();
-    controller.library.sources.push(source);
-    controller.set_wav_entries_for_tests( vec![
+    let (mut controller, source) = prepare_with_source_and_wav_entries(vec![
         sample_entry("one.wav", SampleTag::Neutral),
         sample_entry("two.wav", SampleTag::Neutral),
         sample_entry("three.wav", SampleTag::Neutral),
     ]);
-    controller.rebuild_wav_lookup();
-    controller.rebuild_browser_lists();
     controller.ui.browser.selected_paths =
         vec![PathBuf::from("one.wav"), PathBuf::from("three.wav")];
 
@@ -101,15 +89,10 @@ fn action_rows_include_selection_and_primary() {
 
 #[test]
 fn tag_actions_apply_to_all_selected_rows() {
-    let (mut controller, source) = dummy_controller();
-    controller.library.sources.push(source.clone());
-    controller.cache_db(&source).unwrap();
-    controller.set_wav_entries_for_tests( vec![
+    let (mut controller, source) = prepare_with_source_and_wav_entries(vec![
         sample_entry("one.wav", SampleTag::Neutral),
         sample_entry("two.wav", SampleTag::Neutral),
     ]);
-    controller.rebuild_wav_lookup();
-    controller.rebuild_browser_lists();
 
     controller.focus_browser_row(0);
     controller.toggle_browser_row_selection(1);
@@ -125,19 +108,14 @@ fn tag_actions_apply_to_all_selected_rows() {
 
 #[test]
 fn delete_actions_apply_to_all_selected_rows() {
-    let (mut controller, source) = dummy_controller();
-    controller.library.sources.push(source.clone());
-    controller.cache_db(&source).unwrap();
-    write_test_wav(&source.root.join("one.wav"), &[0.0, 0.1]);
-    write_test_wav(&source.root.join("two.wav"), &[0.0, 0.1]);
-    write_test_wav(&source.root.join("three.wav"), &[0.0, 0.1]);
-    controller.set_wav_entries_for_tests( vec![
+    let (mut controller, source) = prepare_with_source_and_wav_entries(vec![
         sample_entry("one.wav", SampleTag::Neutral),
         sample_entry("two.wav", SampleTag::Neutral),
         sample_entry("three.wav", SampleTag::Neutral),
     ]);
-    controller.rebuild_wav_lookup();
-    controller.rebuild_browser_lists();
+    write_test_wav(&source.root.join("one.wav"), &[0.0, 0.1]);
+    write_test_wav(&source.root.join("two.wav"), &[0.0, 0.1]);
+    write_test_wav(&source.root.join("three.wav"), &[0.0, 0.1]);
 
     controller.focus_browser_row_only(0);
     controller.toggle_browser_row_selection(1);
@@ -154,17 +132,12 @@ fn delete_actions_apply_to_all_selected_rows() {
 
 #[test]
 fn normalize_actions_apply_to_all_selected_rows() {
-    let (mut controller, source) = dummy_controller();
-    controller.library.sources.push(source.clone());
-    controller.cache_db(&source).unwrap();
-    write_test_wav(&source.root.join("one.wav"), &[0.0, 0.1]);
-    write_test_wav(&source.root.join("two.wav"), &[0.0, 0.1]);
-    controller.set_wav_entries_for_tests( vec![
+    let (mut controller, source) = prepare_with_source_and_wav_entries(vec![
         sample_entry("one.wav", SampleTag::Neutral),
         sample_entry("two.wav", SampleTag::Neutral),
     ]);
-    controller.rebuild_wav_lookup();
-    controller.rebuild_browser_lists();
+    write_test_wav(&source.root.join("one.wav"), &[0.0, 0.1]);
+    write_test_wav(&source.root.join("two.wav"), &[0.0, 0.1]);
 
     controller.focus_browser_row_only(0);
     controller.toggle_browser_row_selection(1);
@@ -179,16 +152,11 @@ fn normalize_actions_apply_to_all_selected_rows() {
 
 #[test]
 fn selection_persists_when_nudging_focus() {
-    let (mut controller, source) = dummy_controller();
-    controller.library.sources.push(source.clone());
-    controller.cache_db(&source).unwrap();
-    controller.set_wav_entries_for_tests( vec![
+    let (mut controller, _source) = prepare_with_source_and_wav_entries(vec![
         sample_entry("one.wav", SampleTag::Neutral),
         sample_entry("two.wav", SampleTag::Neutral),
         sample_entry("three.wav", SampleTag::Neutral),
     ]);
-    controller.rebuild_wav_lookup();
-    controller.rebuild_browser_lists();
 
     controller.focus_browser_row(0);
     controller.toggle_browser_row_selection(1);
@@ -203,15 +171,10 @@ fn selection_persists_when_nudging_focus() {
 
 #[test]
 fn focused_row_actions_work_without_explicit_selection() {
-    let (mut controller, source) = dummy_controller();
-    controller.library.sources.push(source.clone());
-    controller.cache_db(&source).unwrap();
-    controller.set_wav_entries_for_tests( vec![
+    let (mut controller, _source) = prepare_with_source_and_wav_entries(vec![
         sample_entry("one.wav", SampleTag::Neutral),
         sample_entry("two.wav", SampleTag::Neutral),
     ]);
-    controller.rebuild_wav_lookup();
-    controller.rebuild_browser_lists();
 
     controller.nudge_selection(0);
     assert!(controller.ui.browser.selected_paths.is_empty());

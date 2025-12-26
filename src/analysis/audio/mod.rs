@@ -1,4 +1,6 @@
 mod decode;
+mod decode_io;
+mod analysis_prep;
 mod normalize;
 mod resample;
 mod silence;

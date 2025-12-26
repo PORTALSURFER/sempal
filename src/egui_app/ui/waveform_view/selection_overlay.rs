@@ -1,6 +1,7 @@
 use super::selection_drag;
 use super::selection_geometry::{
-    paint_selection_edge_bracket, selection_edge_handle_rect, selection_handle_rect,
+    paint_selection_edge_bracket, selection_edge_handle_rect, selection_handle_height,
+    selection_handle_rect,
 };
 use super::selection_menu;
 use super::style;
@@ -50,9 +51,6 @@ pub(super) fn render_selection_overlay(
     selection_drag::handle_selection_handle_drag(
         app,
         ui,
-        rect,
-        view,
-        view_width,
         selection,
         &handle_response,
     );
@@ -82,7 +80,19 @@ pub(super) fn render_selection_overlay(
         painter.galley(text_pos, galley, text_color);
     }
 
-    draw_bpm_guides(app, ui, rect, selection, view, view_width, highlight);
+    let top_cut = super::overlays::LOOP_BAR_HEIGHT;
+    let bottom_cut = selection_handle_height(selection_rect);
+    draw_bpm_guides(
+        app,
+        ui,
+        rect,
+        selection,
+        view,
+        view_width,
+        highlight,
+        top_cut,
+        bottom_cut,
+    );
 
     let start_edge_rect = selection_edge_handle_rect(selection_rect, SelectionEdge::Start);
     let end_edge_rect = selection_edge_handle_rect(selection_rect, SelectionEdge::End);
@@ -145,6 +155,8 @@ fn draw_bpm_guides(
     view: WaveformView,
     view_width: f32,
     highlight: Color32,
+    top_cut: f32,
+    bottom_cut: f32,
 ) {
     if !app.controller.ui.waveform.bpm_snap_enabled {
         return;
@@ -163,15 +175,48 @@ fn draw_bpm_guides(
     }
     let painter = ui.painter();
     let stroke = egui::Stroke::new(1.0, style::with_alpha(highlight, 140));
+    let triage_base = style::semantic_palette().triage_trash;
+    let triage_red = style::with_alpha(triage_base, 200);
+    let triage_stroke = egui::Stroke::new(1.0, triage_red);
+    let triage_gradient_left = style::with_alpha(triage_base, 0);
+    let triage_gradient_right = style::with_alpha(triage_base, 90);
+    let line_top = (rect.top() + top_cut).min(rect.bottom());
+    let line_bottom = (rect.bottom() - bottom_cut).max(line_top);
     let mut beat = selection.start() + step;
     let end = selection.end();
+    let mut beat_index = 1usize;
     while beat < end {
         let normalized = ((beat - view.start) / view_width).clamp(0.0, 1.0);
         let x = rect.left() + rect.width() * normalized;
+        let is_emphasis = beat_index % 4 == 0;
+        if is_emphasis {
+            let prev = beat - step;
+            if prev >= selection.start() {
+                let prev_norm = ((prev - view.start) / view_width).clamp(0.0, 1.0);
+                let prev_x = rect.left() + rect.width() * prev_norm;
+                if x > prev_x {
+                    let mut mesh = egui::epaint::Mesh::default();
+                    let top_left = egui::pos2(prev_x, line_top);
+                    let bottom_left = egui::pos2(prev_x, line_bottom);
+                    let top_right = egui::pos2(x, line_top);
+                    let bottom_right = egui::pos2(x, line_bottom);
+                    let base = mesh.vertices.len() as u32;
+                    mesh.colored_vertex(top_left, triage_gradient_left);
+                    mesh.colored_vertex(bottom_left, triage_gradient_left);
+                    mesh.colored_vertex(top_right, triage_gradient_right);
+                    mesh.colored_vertex(bottom_right, triage_gradient_right);
+                    mesh.add_triangle(base, base + 1, base + 2);
+                    mesh.add_triangle(base + 2, base + 1, base + 3);
+                    painter.add(egui::Shape::mesh(mesh));
+                }
+            }
+        }
+        let line_stroke = if is_emphasis { triage_stroke } else { stroke };
         painter.line_segment(
-            [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
-            stroke,
+            [egui::pos2(x, line_top), egui::pos2(x, line_bottom)],
+            line_stroke,
         );
         beat += step;
+        beat_index += 1;
     }
 }

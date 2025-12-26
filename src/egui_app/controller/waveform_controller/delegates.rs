@@ -52,6 +52,10 @@ impl EguiController {
         self.waveform().nudge_selection_edge(edge, outward, fine);
     }
 
+    pub(crate) fn nudge_selection_range(&mut self, steps: isize, fine: bool) {
+        self.waveform().nudge_selection_range(steps, fine);
+    }
+
     pub(crate) fn waveform_ready(&self) -> bool {
         self.sample_view.waveform.decoded.is_some()
     }

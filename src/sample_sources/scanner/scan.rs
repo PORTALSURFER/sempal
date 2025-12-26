@@ -1,19 +1,19 @@
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
-    sync::atomic::{AtomicBool, Ordering},
+    sync::atomic::AtomicBool,
     thread,
-    time::{SystemTime, UNIX_EPOCH},
 };
 
 use thiserror::Error;
 
 use crate::sample_sources::db::WavEntry;
 use crate::sample_sources::{SourceDatabase, SourceDbError};
-use crate::sample_sources::db::META_LAST_SCAN_COMPLETED_AT;
 
-use super::scan_diff::{apply_diff, index_by_hash, mark_missing};
-use super::scan_fs::{ensure_root_dir, read_facts, visit_dir};
+use super::scan_db_sync::db_sync_phase;
+use super::scan_diff::index_by_hash;
+use super::scan_fs::ensure_root_dir;
+use super::scan_walk::walk_phase;
 
 /// Summary of a scan run.
 #[derive(Debug, Default, Clone)]
@@ -61,6 +61,26 @@ pub enum ScanError {
     Time { path: PathBuf },
 }
 
+pub(super) struct ScanContext {
+    pub(super) existing: HashMap<PathBuf, WavEntry>,
+    pub(super) existing_by_hash: HashMap<String, Vec<PathBuf>>,
+    pub(super) stats: ScanStats,
+    pub(super) mode: ScanMode,
+}
+
+impl ScanContext {
+    fn new(db: &SourceDatabase, mode: ScanMode) -> Result<Self, ScanError> {
+        let existing = index_existing(db)?;
+        let existing_by_hash = index_by_hash(&existing);
+        Ok(Self {
+            existing,
+            existing_by_hash,
+            stats: ScanStats::default(),
+            mode,
+        })
+    }
+}
+
 /// Recursively scan the source root, syncing supported audio files into the database.
 /// Returns counts of added/updated/removed rows.
 pub fn scan_once(db: &SourceDatabase) -> Result<ScanStats, ScanError> {
@@ -88,38 +108,11 @@ fn scan(
     mut on_progress: Option<&mut dyn FnMut(usize, &Path)>,
 ) -> Result<ScanStats, ScanError> {
     let root = ensure_root_dir(db)?;
-    let mut stats = ScanStats::default();
-    let mut existing = index_existing(db)?;
-    let mut existing_by_hash = index_by_hash(&existing);
+    let mut context = ScanContext::new(db, mode)?;
     let mut batch = db.write_batch()?;
-    visit_dir(&root, cancel, &mut |path| {
-        if let Some(cancel) = cancel
-            && cancel.load(Ordering::Relaxed)
-        {
-            return Err(ScanError::Canceled);
-        }
-        sync_file(
-            &mut batch,
-            &root,
-            path,
-            &mut existing,
-            &mut existing_by_hash,
-            &mut stats,
-        )?;
-        if let Some(on_progress) = on_progress.as_mut() {
-            on_progress(stats.total_files, path);
-        }
-        Ok(())
-    })?;
-    mark_missing(&mut batch, existing, &mut stats, mode)?;
-    batch.commit()?;
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs()
-        .to_string();
-    db.set_metadata(META_LAST_SCAN_COMPLETED_AT, &timestamp)?;
-    Ok(stats)
+    walk_phase(&root, cancel, &mut on_progress, &mut context, &mut batch)?;
+    db_sync_phase(db, batch, &mut context)?;
+    Ok(context.stats)
 }
 
 /// Spawn a background thread that opens the source database and performs one scan.
@@ -138,20 +131,6 @@ fn index_existing(db: &SourceDatabase) -> Result<HashMap<PathBuf, WavEntry>, Sca
         .into_iter()
         .map(|entry| (entry.relative_path.clone(), entry))
         .collect())
-}
-
-fn sync_file(
-    batch: &mut crate::sample_sources::db::SourceWriteBatch<'_>,
-    root: &Path,
-    path: &Path,
-    existing: &mut HashMap<PathBuf, WavEntry>,
-    existing_by_hash: &mut HashMap<String, Vec<PathBuf>>,
-    stats: &mut ScanStats,
-) -> Result<(), ScanError> {
-    let facts = read_facts(root, path)?;
-    apply_diff(batch, facts, existing, existing_by_hash, stats, root)?;
-    stats.total_files += 1;
-    Ok(())
 }
 
 #[cfg(test)]

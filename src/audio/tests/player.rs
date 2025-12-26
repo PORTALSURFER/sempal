@@ -168,3 +168,15 @@ fn span_sample_count_tracks_requested_window() {
         "count {count}, expected {expected_samples} (frames {expected_frames})"
     );
 }
+
+#[test]
+fn aligned_span_seconds_snaps_to_frames() {
+    let span_length = 0.3333;
+    let sample_rate = 48_000;
+    let aligned = AudioPlayer::aligned_span_seconds_for_tests(span_length, sample_rate);
+    let frames = aligned * sample_rate as f32;
+    let rounded = frames.round();
+    assert!((frames - rounded).abs() < 1e-3);
+    assert!(aligned <= span_length);
+    assert!(aligned > 0.0);
+}
