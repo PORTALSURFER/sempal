@@ -95,7 +95,7 @@ impl SourceDatabase {
             .query_row(
                 "SELECT
                     (SELECT COUNT(*) FROM wav_files WHERE path < ?1) AS offset,
-                    EXISTS(SELECT 1 FROM wav_files WHERE path = ?1) AS exists",
+                    EXISTS(SELECT 1 FROM wav_files WHERE path = ?1) AS path_exists",
                 rusqlite::params![path_str.as_ref()],
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
