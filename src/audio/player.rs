@@ -152,7 +152,7 @@ impl AudioPlayer {
         self.fade_out_current_sink(self.anti_clip_fade());
 
         let source = decoder_from_bytes(bytes)?;
-        let aligned_duration = aligned_span_seconds(duration, source.sample_rate());
+        let aligned_duration = Self::aligned_span_seconds(duration, source.sample_rate());
         let offset = (start.clamp(0.0, 1.0) * duration).min(aligned_duration);
         let fade = fade_duration(aligned_duration, self.anti_clip_fade());
         let limited = source
@@ -313,7 +313,7 @@ impl AudioPlayer {
 
         let mut source = decoder_from_bytes(bytes)?;
         let aligned_span = if looped {
-            aligned_span_seconds(span_length, source.sample_rate())
+            Self::aligned_span_seconds(span_length, source.sample_rate())
         } else {
             span_length
         };

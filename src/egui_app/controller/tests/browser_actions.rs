@@ -14,7 +14,7 @@ use tempfile::tempdir;
 
 #[test]
 fn hotkey_tagging_applies_to_all_selected_rows() {
-    let (mut controller, _source) = prepare_with_source_and_wav_entries(vec![
+    let (mut controller, source) = prepare_with_source_and_wav_entries(vec![
         sample_entry("one.wav", SampleTag::Neutral),
         sample_entry("two.wav", SampleTag::Neutral),
     ]);
@@ -50,7 +50,7 @@ fn focus_hotkey_does_not_autoplay_browser_sample() {
 
 #[test]
 fn x_key_toggle_respects_focus() {
-    let (mut controller, _source) = prepare_with_source_and_wav_entries(vec![
+    let (mut controller, source) = prepare_with_source_and_wav_entries(vec![
         sample_entry("one.wav", SampleTag::Neutral),
         sample_entry("two.wav", SampleTag::Neutral),
     ]);
@@ -74,7 +74,7 @@ fn x_key_toggle_respects_focus() {
 
 #[test]
 fn action_rows_include_selection_and_primary() {
-    let (mut controller, _source) = prepare_with_source_and_wav_entries(vec![
+    let (mut controller, source) = prepare_with_source_and_wav_entries(vec![
         sample_entry("one.wav", SampleTag::Neutral),
         sample_entry("two.wav", SampleTag::Neutral),
         sample_entry("three.wav", SampleTag::Neutral),
@@ -89,7 +89,7 @@ fn action_rows_include_selection_and_primary() {
 
 #[test]
 fn tag_actions_apply_to_all_selected_rows() {
-    let (mut controller, _source) = prepare_with_source_and_wav_entries(vec![
+    let (mut controller, source) = prepare_with_source_and_wav_entries(vec![
         sample_entry("one.wav", SampleTag::Neutral),
         sample_entry("two.wav", SampleTag::Neutral),
     ]);
@@ -108,7 +108,7 @@ fn tag_actions_apply_to_all_selected_rows() {
 
 #[test]
 fn delete_actions_apply_to_all_selected_rows() {
-    let (mut controller, _source) = prepare_with_source_and_wav_entries(vec![
+    let (mut controller, source) = prepare_with_source_and_wav_entries(vec![
         sample_entry("one.wav", SampleTag::Neutral),
         sample_entry("two.wav", SampleTag::Neutral),
         sample_entry("three.wav", SampleTag::Neutral),
@@ -132,7 +132,7 @@ fn delete_actions_apply_to_all_selected_rows() {
 
 #[test]
 fn normalize_actions_apply_to_all_selected_rows() {
-    let (mut controller, _source) = prepare_with_source_and_wav_entries(vec![
+    let (mut controller, source) = prepare_with_source_and_wav_entries(vec![
         sample_entry("one.wav", SampleTag::Neutral),
         sample_entry("two.wav", SampleTag::Neutral),
     ]);
@@ -152,7 +152,7 @@ fn normalize_actions_apply_to_all_selected_rows() {
 
 #[test]
 fn selection_persists_when_nudging_focus() {
-    let (mut controller, source) = prepare_with_source_and_wav_entries(vec![
+    let (mut controller, _source) = prepare_with_source_and_wav_entries(vec![
         sample_entry("one.wav", SampleTag::Neutral),
         sample_entry("two.wav", SampleTag::Neutral),
         sample_entry("three.wav", SampleTag::Neutral),
@@ -171,7 +171,7 @@ fn selection_persists_when_nudging_focus() {
 
 #[test]
 fn focused_row_actions_work_without_explicit_selection() {
-    let (mut controller, source) = prepare_with_source_and_wav_entries(vec![
+    let (mut controller, _source) = prepare_with_source_and_wav_entries(vec![
         sample_entry("one.wav", SampleTag::Neutral),
         sample_entry("two.wav", SampleTag::Neutral),
     ]);
