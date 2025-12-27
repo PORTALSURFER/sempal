@@ -1,7 +1,7 @@
 use super::DecodedWaveform;
 
 const MAX_TRANSIENT_WINDOWS: usize = 4096;
-const MIN_TRANSIENT_SPACING_SECONDS: f32 = 0.02;
+const MIN_TRANSIENT_SPACING_SECONDS: f32 = 0.03;
 const SMOOTH_RADIUS: usize = 1;
 const MIN_THRESHOLD_WINDOW: usize = 8;
 const MAX_THRESHOLD_WINDOW: usize = 32;
@@ -24,7 +24,7 @@ pub fn detect_transients(decoded: &DecodedWaveform, sensitivity: f32) -> Vec<f32
         .collect::<Vec<f32>>();
     let deltas = build_positive_deltas(&log_energy);
     let threshold_window = (windows.len() / 64).clamp(MIN_THRESHOLD_WINDOW, MAX_THRESHOLD_WINDOW);
-    let (delta_thresholds, energy_thresholds) =
+    let (delta_thresholds, energy_thresholds, global_delta_floor) =
         adaptive_thresholds(&deltas, &log_energy, threshold_window, sensitivity);
     let min_gap_frames = min_spacing_frames(decoded, total_frames);
     let mut transients = Vec::new();
@@ -32,10 +32,16 @@ pub fn detect_transients(decoded: &DecodedWaveform, sensitivity: f32) -> Vec<f32
     let mut last_strength = 0.0f32;
     for i in 1..deltas.len().saturating_sub(1) {
         let strength = deltas[i];
-        if strength < delta_thresholds[i] || log_energy[i] < energy_thresholds[i] {
+        if strength < delta_thresholds[i]
+            || strength < global_delta_floor
+            || log_energy[i] < energy_thresholds[i]
+        {
             continue;
         }
         if strength < deltas[i - 1] || strength < deltas[i + 1] {
+            continue;
+        }
+        if log_energy[i] < log_energy[i - 1] || log_energy[i] < log_energy[i + 1] {
             continue;
         }
         let frame = windows[i].frame;
@@ -175,14 +181,15 @@ fn adaptive_thresholds(
     energy: &[f32],
     window: usize,
     sensitivity: f32,
-) -> (Vec<f32>, Vec<f32>) {
+) -> (Vec<f32>, Vec<f32>, f32) {
     let sensitivity = sensitivity.clamp(0.0, 1.0);
     let (global_delta_mean, global_delta_std) = mean_std_dev(deltas);
     let (global_energy_mean, global_energy_std) = mean_std_dev(energy);
     let mut delta_thresholds = Vec::with_capacity(deltas.len());
     let mut energy_thresholds = Vec::with_capacity(energy.len());
-    let delta_k = 0.9 + (1.0 - sensitivity) * 2.6;
-    let energy_k = 0.4 + (1.0 - sensitivity) * 1.6;
+    let delta_k = 1.4 + (1.0 - sensitivity) * 2.6;
+    let energy_k = 0.9 + (1.0 - sensitivity) * 1.6;
+    let global_delta_floor = global_delta_mean + global_delta_std * (1.6 - sensitivity * 0.6);
     for i in 0..deltas.len() {
         let start = i.saturating_sub(window);
         let delta_slice = &deltas[start..i];
@@ -210,7 +217,7 @@ fn adaptive_thresholds(
             global_energy_mean
         });
     }
-    (delta_thresholds, energy_thresholds)
+    (delta_thresholds, energy_thresholds, global_delta_floor)
 }
 
 fn median_mad(values: &[f32]) -> (f32, f32) {
