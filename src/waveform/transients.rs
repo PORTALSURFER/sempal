@@ -19,7 +19,10 @@ pub fn detect_transients(decoded: &DecodedWaveform, sensitivity: f32) -> Vec<f32
     let sensitivity = sensitivity.clamp(0.0, 1.0);
     let sample_rate = decoded.sample_rate.max(1) as f32;
     let (fft_len, hop) = stft_params(decoded.sample_rate);
-    let novelty = complex_domain_novelty(decoded, fft_len, hop);
+    let mono = mono_samples(decoded);
+    let complex_novelty = complex_domain_novelty(&mono, fft_len, hop);
+    let energy_novelty = energy_novelty(&mono, fft_len, hop);
+    let novelty = combine_novelties(&complex_novelty, &energy_novelty);
     if novelty.len() < 3 {
         return Vec::new();
     }
@@ -73,7 +76,7 @@ fn stft_params(sample_rate: u32) -> (usize, usize) {
     }
 }
 
-fn complex_domain_novelty(decoded: &DecodedWaveform, fft_len: usize, hop: usize) -> Vec<f32> {
+fn mono_samples(decoded: &DecodedWaveform) -> Vec<f32> {
     let channels = decoded.channel_count().max(1);
     let frames = decoded.frame_count();
     let mut mono = Vec::with_capacity(frames);
@@ -87,8 +90,13 @@ fn complex_domain_novelty(decoded: &DecodedWaveform, fft_len: usize, hop: usize)
         }
         mono.push(sum / channels as f32);
     }
-    for i in (1..mono.len()).rev() {
-        mono[i] = mono[i] - PREEMPHASIS * mono[i - 1];
+    mono
+}
+
+fn complex_domain_novelty(mono: &[f32], fft_len: usize, hop: usize) -> Vec<f32> {
+    let mut preemphasis = mono.to_vec();
+    for i in (1..preemphasis.len()).rev() {
+        preemphasis[i] = preemphasis[i] - PREEMPHASIS * preemphasis[i - 1];
     }
     let window = hann_window(fft_len);
     let plan = match FftPlan::new(fft_len) {
@@ -102,9 +110,9 @@ fn complex_domain_novelty(decoded: &DecodedWaveform, fft_len: usize, hop: usize)
     let mut buf = vec![Complex32::default(); fft_len];
     let mut novelty = Vec::new();
     let mut start = 0usize;
-    while start < mono.len() {
+    while start < preemphasis.len() {
         for i in 0..fft_len {
-            let sample = mono.get(start + i).copied().unwrap_or(0.0);
+            let sample = preemphasis.get(start + i).copied().unwrap_or(0.0);
             buf[i].re = sample * window[i];
             buf[i].im = 0.0;
         }
@@ -129,6 +137,47 @@ fn complex_domain_novelty(decoded: &DecodedWaveform, fft_len: usize, hop: usize)
         start += hop;
     }
     novelty
+}
+
+fn energy_novelty(mono: &[f32], fft_len: usize, hop: usize) -> Vec<f32> {
+    if mono.is_empty() {
+        return Vec::new();
+    }
+    let mut novelty = Vec::new();
+    let mut prev_energy = 0.0f32;
+    let mut start = 0usize;
+    while start < mono.len() {
+        let mut sum = 0.0f32;
+        for i in 0..fft_len {
+            let sample = mono.get(start + i).copied().unwrap_or(0.0);
+            sum += sample * sample;
+        }
+        let energy = (sum / fft_len as f32).sqrt();
+        let delta = (energy - prev_energy).max(0.0);
+        novelty.push(delta);
+        prev_energy = energy;
+        start += hop;
+    }
+    novelty
+}
+
+fn combine_novelties(complex: &[f32], energy: &[f32]) -> Vec<f32> {
+    if complex.is_empty() {
+        return energy.to_vec();
+    }
+    if energy.is_empty() {
+        return complex.to_vec();
+    }
+    let len = complex.len().min(energy.len());
+    let complex_scale = percentile(complex, 0.95).max(1.0e-6);
+    let energy_scale = percentile(energy, 0.95).max(1.0e-6);
+    let mut combined = Vec::with_capacity(len);
+    for i in 0..len {
+        let c = (complex[i] / complex_scale).min(5.0);
+        let e = (energy[i] / energy_scale).min(5.0);
+        combined.push(c * 0.7 + e * 0.3);
+    }
+    combined
 }
 
 fn smooth_values(values: &[f32], radius: usize) -> Vec<f32> {
