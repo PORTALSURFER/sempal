@@ -127,6 +127,7 @@ impl WaveformActions for WaveformController<'_> {
         let range = SelectionRange::new(clamped_start, clamped_end);
         self.selection_state.range.set_range(Some(range));
         self.apply_selection(Some(range));
+        self.refresh_loop_after_selection_change(range);
         self.push_selection_undo("Selection", before, Some(range));
     }
 
@@ -157,6 +158,7 @@ impl WaveformActions for WaveformController<'_> {
         let range = selection.shift(delta);
         self.selection_state.range.set_range(Some(range));
         self.apply_selection(Some(range));
+        self.refresh_loop_after_selection_change(range);
         self.push_selection_undo("Selection", before, Some(range));
     }
 

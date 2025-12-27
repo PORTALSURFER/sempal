@@ -76,6 +76,24 @@ impl WaveformController<'_> {
         }
     }
 
+    pub(super) fn refresh_loop_after_selection_change(&mut self, selection: SelectionRange) {
+        if !self.ui.waveform.loop_enabled || !self.is_playing() {
+            return;
+        }
+        if selection.width() < MIN_SELECTION_WIDTH {
+            return;
+        }
+        let playhead = self.ui.waveform.playhead.position;
+        let start_override = if playhead >= selection.start() && playhead <= selection.end() {
+            Some(playhead)
+        } else {
+            Some(selection.start())
+        };
+        if let Err(err) = self.play_audio(true, start_override) {
+            self.set_status(err, StatusTone::Error);
+        }
+    }
+
     pub(crate) fn set_waveform_cursor(&mut self, position: f32) {
         self.set_waveform_cursor_with_source(position, CursorUpdateSource::Navigation);
     }
