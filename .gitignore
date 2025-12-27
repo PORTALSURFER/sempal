@@ -6,3 +6,7 @@ profile.json.gz
 profile.json.gz
 profile.json.gz
 bundle-staging
+assets/ml/panns_cnn14_16k/*.bpk
+assets/ml/panns_cnn14_16k/*.onnx
+assets/ml/panns_cnn14_16k/*.onnx.data
+assets/ml/panns_cnn14_16k/*.pth

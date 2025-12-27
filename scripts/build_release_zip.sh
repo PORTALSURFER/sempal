@@ -101,8 +101,9 @@ fi
 MODEL_DIR="${ROOT_DIR}/models"
 mkdir -p "$MODEL_DIR"
 BURNPACK_PATH="${REPO_ROOT}/assets/ml/panns_cnn14_16k/panns_cnn14_16k.bpk"
+scripts/fetch_burnpack.sh --dest "$BURNPACK_PATH"
 if [[ ! -f "$BURNPACK_PATH" ]]; then
-  echo "Burnpack not found at ${BURNPACK_PATH}. Add the bundled model to assets/ml/panns_cnn14_16k." >&2
+  echo "Burnpack not found at ${BURNPACK_PATH} after download." >&2
   exit 1
 fi
 cp "$BURNPACK_PATH" "${MODEL_DIR}/panns_cnn14_16k.bpk"

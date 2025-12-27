@@ -25,7 +25,8 @@ Copy-Item "assets/logo3.ico" (Join-Path $BundleDir "sempal.ico") -Force
 $modelsDir = Join-Path $BundleDir "models"
 New-Item -ItemType Directory -Force -Path $modelsDir | Out-Null
 $burnpack = Join-Path $RepoRoot "assets\\ml\\panns_cnn14_16k\\panns_cnn14_16k.bpk"
-if (-not (Test-Path $burnpack)) { throw "Burnpack not found at $burnpack. Add the bundled model to assets/ml/panns_cnn14_16k." }
+& "$RepoRoot\\scripts\\fetch_burnpack.ps1" -Dest $burnpack
+if (-not (Test-Path $burnpack)) { throw "Burnpack not found at $burnpack after download." }
 Copy-Item $burnpack $modelsDir -Force
 
 Copy-Item "build/windows/installer_manifest.json" $OutDir -Force
