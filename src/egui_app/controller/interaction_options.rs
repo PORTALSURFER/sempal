@@ -9,14 +9,6 @@ const MIN_WHEEL_ZOOM_SPEED: f32 = 0.1;
 const MAX_WHEEL_ZOOM_SPEED: f32 = 20.0;
 const MIN_ANTI_CLIP_FADE_MS: f32 = 0.0;
 const MAX_ANTI_CLIP_FADE_MS: f32 = 20.0;
-const MIN_TRANSIENT_K_HIGH: f32 = 1.0;
-const MAX_TRANSIENT_K_HIGH: f32 = 12.0;
-const MIN_TRANSIENT_K_LOW: f32 = 0.5;
-const MAX_TRANSIENT_K_LOW: f32 = 8.0;
-const MIN_TRANSIENT_FLOOR_QUANTILE: f32 = 0.1;
-const MAX_TRANSIENT_FLOOR_QUANTILE: f32 = 0.9;
-const MIN_TRANSIENT_GAP_SECONDS: f32 = 0.02;
-const MAX_TRANSIENT_GAP_SECONDS: f32 = 0.2;
 
 pub(super) fn clamp_scroll_speed(speed: f32) -> f32 {
     speed.clamp(MIN_SCROLL_SPEED, MAX_SCROLL_SPEED)
@@ -30,25 +22,6 @@ pub(super) fn clamp_anti_clip_fade_ms(fade_ms: f32) -> f32 {
     fade_ms.clamp(MIN_ANTI_CLIP_FADE_MS, MAX_ANTI_CLIP_FADE_MS)
 }
 
-pub(super) fn clamp_transient_sensitivity(value: f32) -> f32 {
-    value.clamp(0.0, 1.0)
-}
-
-pub(super) fn clamp_transient_k_high(value: f32) -> f32 {
-    value.clamp(MIN_TRANSIENT_K_HIGH, MAX_TRANSIENT_K_HIGH)
-}
-
-pub(super) fn clamp_transient_k_low(value: f32) -> f32 {
-    value.clamp(MIN_TRANSIENT_K_LOW, MAX_TRANSIENT_K_LOW)
-}
-
-pub(super) fn clamp_transient_floor_quantile(value: f32) -> f32 {
-    value.clamp(MIN_TRANSIENT_FLOOR_QUANTILE, MAX_TRANSIENT_FLOOR_QUANTILE)
-}
-
-pub(super) fn clamp_transient_min_gap_seconds(value: f32) -> f32 {
-    value.clamp(MIN_TRANSIENT_GAP_SECONDS, MAX_TRANSIENT_GAP_SECONDS)
-}
 
 fn clamp_wheel_zoom_speed(speed: f32) -> f32 {
     speed.clamp(MIN_WHEEL_ZOOM_SPEED, MAX_WHEEL_ZOOM_SPEED)
@@ -214,106 +187,6 @@ impl EguiController {
         if !enabled {
             self.settings.controls.transient_snap_enabled = false;
             self.ui.waveform.transient_snap_enabled = false;
-        }
-        self.persist_controls();
-    }
-
-    /// Enable/disable realtime transient updates and persist the setting.
-    pub fn set_transient_realtime_enabled(&mut self, enabled: bool) {
-        if self.settings.controls.transient_realtime_enabled == enabled {
-            return;
-        }
-        self.settings.controls.transient_realtime_enabled = enabled;
-        self.ui.waveform.transient_realtime_enabled = enabled;
-        if enabled
-            && (self.ui.waveform.transient_sensitivity
-                - self.ui.waveform.transient_sensitivity_draft)
-                .abs()
-                > f32::EPSILON
-        {
-            let value = self.ui.waveform.transient_sensitivity_draft;
-            self.apply_transient_sensitivity(value);
-            return;
-        }
-        self.persist_controls();
-    }
-
-    /// Update and persist the transient detection sensitivity, then recompute.
-    pub fn apply_transient_sensitivity(&mut self, value: f32) {
-        let clamped = clamp_transient_sensitivity(value);
-        if (self.settings.controls.transient_sensitivity - clamped).abs() < f32::EPSILON {
-            return;
-        }
-        self.settings.controls.transient_sensitivity = clamped;
-        self.ui.waveform.transient_sensitivity = clamped;
-        self.ui.waveform.transient_sensitivity_draft = clamped;
-        self.refresh_waveform_transients();
-        self.persist_controls();
-    }
-
-    /// Enable/disable custom transient tuning and refresh markers.
-    pub fn set_transient_use_custom_tuning(&mut self, enabled: bool) {
-        if self.settings.controls.transient_use_custom_tuning == enabled {
-            return;
-        }
-        self.settings.controls.transient_use_custom_tuning = enabled;
-        self.ui.waveform.transient_use_custom_tuning = enabled;
-        self.refresh_waveform_transients();
-        self.persist_controls();
-    }
-
-    /// Update and persist the transient high threshold multiplier.
-    pub fn set_transient_k_high(&mut self, value: f32) {
-        let clamped = clamp_transient_k_high(value);
-        if (self.settings.controls.transient_k_high - clamped).abs() < f32::EPSILON {
-            return;
-        }
-        self.settings.controls.transient_k_high = clamped;
-        self.ui.waveform.transient_k_high = clamped;
-        if self.settings.controls.transient_use_custom_tuning {
-            self.refresh_waveform_transients();
-        }
-        self.persist_controls();
-    }
-
-    /// Update and persist the transient low threshold multiplier.
-    pub fn set_transient_k_low(&mut self, value: f32) {
-        let clamped = clamp_transient_k_low(value);
-        if (self.settings.controls.transient_k_low - clamped).abs() < f32::EPSILON {
-            return;
-        }
-        self.settings.controls.transient_k_low = clamped;
-        self.ui.waveform.transient_k_low = clamped;
-        if self.settings.controls.transient_use_custom_tuning {
-            self.refresh_waveform_transients();
-        }
-        self.persist_controls();
-    }
-
-    /// Update and persist the transient floor quantile.
-    pub fn set_transient_floor_quantile(&mut self, value: f32) {
-        let clamped = clamp_transient_floor_quantile(value);
-        if (self.settings.controls.transient_floor_quantile - clamped).abs() < f32::EPSILON {
-            return;
-        }
-        self.settings.controls.transient_floor_quantile = clamped;
-        self.ui.waveform.transient_floor_quantile = clamped;
-        if self.settings.controls.transient_use_custom_tuning {
-            self.refresh_waveform_transients();
-        }
-        self.persist_controls();
-    }
-
-    /// Update and persist the transient minimum gap in seconds.
-    pub fn set_transient_min_gap_seconds(&mut self, value: f32) {
-        let clamped = clamp_transient_min_gap_seconds(value);
-        if (self.settings.controls.transient_min_gap_seconds - clamped).abs() < f32::EPSILON {
-            return;
-        }
-        self.settings.controls.transient_min_gap_seconds = clamped;
-        self.ui.waveform.transient_min_gap_seconds = clamped;
-        if self.settings.controls.transient_use_custom_tuning {
-            self.refresh_waveform_transients();
         }
         self.persist_controls();
     }

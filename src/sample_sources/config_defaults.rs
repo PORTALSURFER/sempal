@@ -57,27 +57,3 @@ pub(super) fn default_anti_clip_fade_ms() -> f32 {
 pub(super) fn default_bpm_value() -> f32 {
     142.0
 }
-
-pub(super) fn default_transient_sensitivity() -> f32 {
-    0.6
-}
-
-pub(super) fn default_transient_use_custom_tuning() -> bool {
-    false
-}
-
-pub(super) fn default_transient_k_high() -> f32 {
-    4.2
-}
-
-pub(super) fn default_transient_k_low() -> f32 {
-    2.1
-}
-
-pub(super) fn default_transient_floor_quantile() -> f32 {
-    0.58
-}
-
-pub(super) fn default_transient_min_gap_seconds() -> f32 {
-    0.084
-}

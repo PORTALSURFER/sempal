@@ -36,26 +36,6 @@ impl EguiController {
             super::interaction_options::clamp_anti_clip_fade_ms(
                 self.settings.controls.anti_clip_fade_ms,
             );
-        self.settings.controls.transient_sensitivity =
-            super::interaction_options::clamp_transient_sensitivity(
-                self.settings.controls.transient_sensitivity,
-            );
-        self.settings.controls.transient_k_high =
-            super::interaction_options::clamp_transient_k_high(
-                self.settings.controls.transient_k_high,
-            );
-        self.settings.controls.transient_k_low =
-            super::interaction_options::clamp_transient_k_low(
-                self.settings.controls.transient_k_low,
-            );
-        self.settings.controls.transient_floor_quantile =
-            super::interaction_options::clamp_transient_floor_quantile(
-                self.settings.controls.transient_floor_quantile,
-            );
-        self.settings.controls.transient_min_gap_seconds =
-            super::interaction_options::clamp_transient_min_gap_seconds(
-                self.settings.controls.transient_min_gap_seconds,
-            );
         self.ui.controls = crate::egui_app::state::InteractionOptionsState {
             invert_waveform_scroll: self.settings.controls.invert_waveform_scroll,
             waveform_scroll_speed: self.settings.controls.waveform_scroll_speed,
@@ -72,18 +52,6 @@ impl EguiController {
         self.ui.waveform.transient_markers_enabled =
             self.settings.controls.transient_markers_enabled;
         self.ui.waveform.transient_snap_enabled = self.settings.controls.transient_snap_enabled;
-        self.ui.waveform.transient_sensitivity = self.settings.controls.transient_sensitivity;
-        self.ui.waveform.transient_sensitivity_draft = self.ui.waveform.transient_sensitivity;
-        self.ui.waveform.transient_realtime_enabled =
-            self.settings.controls.transient_realtime_enabled;
-        self.ui.waveform.transient_cache_sensitivity = self.ui.waveform.transient_sensitivity;
-        self.ui.waveform.transient_use_custom_tuning =
-            self.settings.controls.transient_use_custom_tuning;
-        self.ui.waveform.transient_k_high = self.settings.controls.transient_k_high;
-        self.ui.waveform.transient_k_low = self.settings.controls.transient_k_low;
-        self.ui.waveform.transient_floor_quantile = self.settings.controls.transient_floor_quantile;
-        self.ui.waveform.transient_min_gap_seconds =
-            self.settings.controls.transient_min_gap_seconds;
         if let Some(value) = self.ui.waveform.bpm_value {
             let rounded = value.round();
             if (value - rounded).abs() < 0.01 {

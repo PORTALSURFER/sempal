@@ -10,6 +10,7 @@ const MIN_SAMPLES_PER_PIXEL: f32 = 1.0;
 const MAX_ZOOM_MULTIPLIER: f32 = 64.0;
 // Cap oversampling to avoid subpixel waveform columns that shimmer when downscaled.
 const MAX_COLUMNS_PER_PIXEL: f32 = 1.0;
+const DEFAULT_TRANSIENT_SENSITIVITY: f32 = 0.6;
 
 fn min_view_width_for_frames(frame_count: usize, width_px: u32) -> f32 {
     if frame_count == 0 {
@@ -169,50 +170,16 @@ impl EguiController {
         let Some(decoded) = self.sample_view.waveform.decoded.as_ref() else {
             self.ui.waveform.transients.clear();
             self.ui.waveform.transient_cache_token = None;
-            self.ui.waveform.transient_novelty = None;
             return;
         };
-        let sensitivity = self.ui.waveform.transient_sensitivity.clamp(0.0, 1.0);
-        if self.ui.waveform.transient_cache_token != Some(decoded.cache_token) {
-            self.ui.waveform.transient_novelty =
-                crate::waveform::transients::compute_transient_novelty(decoded);
-            self.ui.waveform.transient_cache_token = Some(decoded.cache_token);
-            self.ui.waveform.transient_cache_sensitivity = -1.0;
-            self.ui.waveform.transient_cache_tuning = None;
-        }
-        let tuning = crate::waveform::transients::TransientTuning {
-            use_custom: self.ui.waveform.transient_use_custom_tuning,
-            k_high: self.ui.waveform.transient_k_high,
-            k_low: self.ui.waveform.transient_k_low,
-            floor_quantile: self.ui.waveform.transient_floor_quantile,
-            min_gap_seconds: self.ui.waveform.transient_min_gap_seconds,
-        };
-        if (self.ui.waveform.transient_cache_sensitivity - sensitivity).abs() < f32::EPSILON
-            && self.ui.waveform.transient_cache_tuning == Some(tuning)
-        {
+        if self.ui.waveform.transient_cache_token == Some(decoded.cache_token) {
             return;
         }
-        if let Some(novelty) = self.ui.waveform.transient_novelty.as_ref() {
-            self.ui.waveform.transients =
-                crate::waveform::transients::pick_transients_with_tuning(
-                    novelty,
-                    sensitivity,
-                    decoded.duration_seconds,
-                    tuning,
-                );
-        } else if let Some(peaks) = decoded.peaks.as_deref() {
-            self.ui.waveform.transients =
-                crate::waveform::transients::detect_transients_from_peaks_with_tuning(
-                    peaks,
-                    decoded,
-                    sensitivity,
-                    tuning,
-                );
-        } else {
-            self.ui.waveform.transients.clear();
-        }
-        self.ui.waveform.transient_cache_sensitivity = sensitivity;
-        self.ui.waveform.transient_cache_tuning = Some(tuning);
+        self.ui.waveform.transients = crate::waveform::transients::detect_transients(
+            decoded,
+            DEFAULT_TRANSIENT_SENSITIVITY,
+        );
+        self.ui.waveform.transient_cache_token = Some(decoded.cache_token);
     }
 
     pub(in crate::egui_app::controller::wavs) fn read_waveform_bytes(

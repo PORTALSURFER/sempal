@@ -10,9 +10,7 @@ use super::config_defaults::{
     default_anti_clip_fade_ms, default_audio_output, default_keyboard_zoom_factor,
     default_fast_similarity_prep_sample_rate, default_false, default_max_analysis_duration_seconds,
     default_scroll_speed, default_true, default_volume, default_wheel_zoom_factor,
-    default_bpm_value, default_transient_floor_quantile, default_transient_k_high,
-    default_transient_k_low, default_transient_min_gap_seconds, default_transient_sensitivity,
-    default_transient_use_custom_tuning,
+    default_bpm_value,
 };
 use crate::sample_sources::{Collection, SampleSource, SourceId};
 
@@ -270,10 +268,7 @@ impl Default for UpdateChannel {
 /// Config keys: `invert_waveform_scroll`, `waveform_scroll_speed`,
 /// `wheel_zoom_factor`, `keyboard_zoom_factor`, `anti_clip_fade_enabled`,
 /// `anti_clip_fade_ms`, `destructive_yolo_mode`, `waveform_channel_view`,
-/// `bpm_snap_enabled`, `bpm_value`, `transient_markers_enabled`, `transient_snap_enabled`,
-/// `transient_sensitivity`, `transient_realtime_enabled`, `transient_use_custom_tuning`,
-/// `transient_k_high`, `transient_k_low`, `transient_floor_quantile`,
-/// `transient_min_gap_seconds`.
+/// `bpm_snap_enabled`, `bpm_value`, `transient_markers_enabled`, `transient_snap_enabled`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InteractionOptions {
     #[serde(default = "default_true")]
@@ -300,20 +295,6 @@ pub struct InteractionOptions {
     pub transient_snap_enabled: bool,
     #[serde(default = "default_true")]
     pub transient_markers_enabled: bool,
-    #[serde(default = "default_transient_sensitivity")]
-    pub transient_sensitivity: f32,
-    #[serde(default = "default_false")]
-    pub transient_realtime_enabled: bool,
-    #[serde(default = "default_transient_use_custom_tuning")]
-    pub transient_use_custom_tuning: bool,
-    #[serde(default = "default_transient_k_high")]
-    pub transient_k_high: f32,
-    #[serde(default = "default_transient_k_low")]
-    pub transient_k_low: f32,
-    #[serde(default = "default_transient_floor_quantile")]
-    pub transient_floor_quantile: f32,
-    #[serde(default = "default_transient_min_gap_seconds")]
-    pub transient_min_gap_seconds: f32,
 }
 
 impl Default for InteractionOptions {
@@ -331,13 +312,6 @@ impl Default for InteractionOptions {
             bpm_value: default_bpm_value(),
             transient_snap_enabled: default_false(),
             transient_markers_enabled: default_true(),
-            transient_sensitivity: default_transient_sensitivity(),
-            transient_realtime_enabled: default_false(),
-            transient_use_custom_tuning: default_transient_use_custom_tuning(),
-            transient_k_high: default_transient_k_high(),
-            transient_k_low: default_transient_k_low(),
-            transient_floor_quantile: default_transient_floor_quantile(),
-            transient_min_gap_seconds: default_transient_min_gap_seconds(),
         }
     }
 }

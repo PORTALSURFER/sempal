@@ -1,7 +1,6 @@
 use super::controls::DestructiveEditPrompt;
 use crate::selection::SelectionRange;
 use crate::waveform::WaveformChannelView;
-use crate::waveform::transients::{TransientNovelty, TransientTuning};
 use egui;
 use std::collections::VecDeque;
 use std::path::PathBuf;
@@ -32,30 +31,8 @@ pub struct WaveformState {
     pub transient_markers_enabled: bool,
     /// When true, selection drags snap to nearby transient markers.
     pub transient_snap_enabled: bool,
-    /// Sensitivity used when detecting transient markers.
-    pub transient_sensitivity: f32,
-    /// Pending sensitivity value before applying to the detector.
-    pub transient_sensitivity_draft: f32,
-    /// When true, recompute transients as soon as sensitivity changes.
-    pub transient_realtime_enabled: bool,
     /// Cache token for the waveform transients.
     pub transient_cache_token: Option<u64>,
-    /// Cached sensitivity for the current transient set.
-    pub transient_cache_sensitivity: f32,
-    /// Cached tuning configuration for the current transient set.
-    pub transient_cache_tuning: Option<TransientTuning>,
-    /// Cached novelty curve for transient peak-picking.
-    pub transient_novelty: Option<TransientNovelty>,
-    /// When true, use custom transient tuning overrides instead of sensitivity defaults.
-    pub transient_use_custom_tuning: bool,
-    /// Custom transient threshold multiplier (high).
-    pub transient_k_high: f32,
-    /// Custom transient threshold multiplier (low).
-    pub transient_k_low: f32,
-    /// Custom transient floor quantile for the novelty curve.
-    pub transient_floor_quantile: f32,
-    /// Custom minimum gap between transients, in seconds.
-    pub transient_min_gap_seconds: f32,
     /// Current visible viewport within the waveform (0.0-1.0 normalized).
     pub view: WaveformView,
     pub loop_enabled: bool,
@@ -95,18 +72,7 @@ impl Default for WaveformState {
             transients: Vec::new(),
             transient_markers_enabled: true,
             transient_snap_enabled: false,
-            transient_sensitivity: 0.6,
-            transient_sensitivity_draft: 0.6,
-            transient_realtime_enabled: false,
             transient_cache_token: None,
-            transient_cache_sensitivity: 0.6,
-            transient_cache_tuning: None,
-            transient_novelty: None,
-            transient_use_custom_tuning: false,
-            transient_k_high: 4.2,
-            transient_k_low: 2.1,
-            transient_floor_quantile: 0.58,
-            transient_min_gap_seconds: 0.084,
             view: WaveformView::default(),
             loop_enabled: false,
             notice: None,
