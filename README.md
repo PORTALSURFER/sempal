@@ -5,6 +5,8 @@
 
 Audio sample triage and collection building tool built with Rust and egui.
 
+[![Build release assets](https://github.com/PORTALSURFER/sempal/actions/workflows/release-build.yml/badge.svg)](https://github.com/PORTALSURFER/sempal/actions/workflows/release-build.yml)
+
 ---
 
 [![Sample workflow preview](assets/example.gif)](assets/example.gif)
