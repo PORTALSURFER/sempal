@@ -1,4 +1,4 @@
-use rand::seq::SliceRandom;
+use rand::prelude::SliceRandom;
 
 #[derive(Clone, Copy, Debug)]
 pub struct HintItem {

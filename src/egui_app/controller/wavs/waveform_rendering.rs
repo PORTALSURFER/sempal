@@ -165,7 +165,7 @@ impl EguiController {
         self.sample_view.waveform.render_meta = Some(desired_meta);
     }
 
-    pub(super) fn refresh_waveform_transients(&mut self) {
+    pub(in crate::egui_app::controller) fn refresh_waveform_transients(&mut self) {
         let Some(decoded) = self.sample_view.waveform.decoded.as_ref() else {
             self.ui.waveform.transients.clear();
             self.ui.waveform.transient_cache_token = None;
