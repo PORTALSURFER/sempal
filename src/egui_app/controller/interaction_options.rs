@@ -22,6 +22,10 @@ pub(super) fn clamp_anti_clip_fade_ms(fade_ms: f32) -> f32 {
     fade_ms.clamp(MIN_ANTI_CLIP_FADE_MS, MAX_ANTI_CLIP_FADE_MS)
 }
 
+pub(super) fn clamp_transient_sensitivity(value: f32) -> f32 {
+    value.clamp(0.0, 1.0)
+}
+
 fn clamp_wheel_zoom_speed(speed: f32) -> f32 {
     speed.clamp(MIN_WHEEL_ZOOM_SPEED, MAX_WHEEL_ZOOM_SPEED)
 }
@@ -163,6 +167,28 @@ impl EguiController {
         }
         self.settings.controls.bpm_value = value;
         self.ui.waveform.bpm_value = Some(value);
+        self.persist_controls();
+    }
+
+    /// Enable/disable transient snapping and persist the setting.
+    pub fn set_transient_snap_enabled(&mut self, enabled: bool) {
+        if self.settings.controls.transient_snap_enabled == enabled {
+            return;
+        }
+        self.settings.controls.transient_snap_enabled = enabled;
+        self.ui.waveform.transient_snap_enabled = enabled;
+        self.persist_controls();
+    }
+
+    /// Update and persist the transient detection sensitivity.
+    pub fn set_transient_sensitivity(&mut self, value: f32) {
+        let clamped = clamp_transient_sensitivity(value);
+        if (self.settings.controls.transient_sensitivity - clamped).abs() < f32::EPSILON {
+            return;
+        }
+        self.settings.controls.transient_sensitivity = clamped;
+        self.ui.waveform.transient_sensitivity = clamped;
+        self.refresh_waveform_transients();
         self.persist_controls();
     }
 

@@ -2,6 +2,7 @@ mod decode;
 mod error;
 mod render;
 mod sampling;
+pub(crate) mod transients;
 mod zoom_cache;
 
 use egui::Color32;

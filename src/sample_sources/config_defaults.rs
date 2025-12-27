@@ -57,3 +57,7 @@ pub(super) fn default_anti_clip_fade_ms() -> f32 {
 pub(super) fn default_bpm_value() -> f32 {
     142.0
 }
+
+pub(super) fn default_transient_sensitivity() -> f32 {
+    0.6
+}

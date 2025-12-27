@@ -35,6 +35,10 @@ impl EguiController {
             super::interaction_options::clamp_anti_clip_fade_ms(
                 self.settings.controls.anti_clip_fade_ms,
             );
+        self.settings.controls.transient_sensitivity =
+            super::interaction_options::clamp_transient_sensitivity(
+                self.settings.controls.transient_sensitivity,
+            );
         self.ui.controls = crate::egui_app::state::InteractionOptionsState {
             invert_waveform_scroll: self.settings.controls.invert_waveform_scroll,
             waveform_scroll_speed: self.settings.controls.waveform_scroll_speed,
@@ -48,6 +52,9 @@ impl EguiController {
         self.ui.waveform.channel_view = self.settings.controls.waveform_channel_view;
         self.ui.waveform.bpm_snap_enabled = self.settings.controls.bpm_snap_enabled;
         self.ui.waveform.bpm_value = normalize_bpm_value(self.settings.controls.bpm_value);
+        self.ui.waveform.transient_snap_enabled = self.settings.controls.transient_snap_enabled;
+        self.ui.waveform.transient_sensitivity = self.settings.controls.transient_sensitivity;
+        self.ui.waveform.transient_cache_sensitivity = self.ui.waveform.transient_sensitivity;
         if let Some(value) = self.ui.waveform.bpm_value {
             let rounded = value.round();
             if (value - rounded).abs() < 0.01 {

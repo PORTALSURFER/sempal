@@ -252,6 +252,8 @@ pub(super) fn render_overlays(
         }
     }
 
+    draw_transient_markers(app, ui, rect, view, to_screen_x);
+
     let loop_bar_alpha = if app.controller.ui.waveform.loop_enabled {
         180
     } else {
@@ -350,6 +352,47 @@ pub(super) fn render_overlays(
             [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
             Stroke::new(2.0, highlight),
         );
+    }
+}
+
+fn draw_transient_markers(
+    app: &EguiApp,
+    ui: &mut egui::Ui,
+    rect: egui::Rect,
+    view: crate::egui_app::state::WaveformView,
+    to_screen_x: &impl Fn(f32, egui::Rect) -> f32,
+) {
+    let transients = &app.controller.ui.waveform.transients;
+    if transients.is_empty() {
+        return;
+    }
+    let palette = style::palette();
+    let stroke = Stroke::new(1.0, style::with_alpha(palette.accent_mint, 150));
+    let triangle_fill = style::with_alpha(palette.accent_mint, 200);
+    let triangle_height = 6.0;
+    let triangle_half = 4.0;
+    let top = rect.top() + LOOP_BAR_HEIGHT;
+    for &marker in transients {
+        if marker < view.start || marker > view.end {
+            continue;
+        }
+        let x = to_screen_x(marker, rect);
+        ui.painter().line_segment(
+            [egui::pos2(x, top), egui::pos2(x, rect.bottom())],
+            stroke,
+        );
+        let base_y = rect.top() + 1.0;
+        let tip_y = base_y + triangle_height;
+        let points = vec![
+            egui::pos2(x - triangle_half, base_y),
+            egui::pos2(x + triangle_half, base_y),
+            egui::pos2(x, tip_y),
+        ];
+        ui.painter().add(egui::Shape::convex_polygon(
+            points,
+            triangle_fill,
+            Stroke::NONE,
+        ));
     }
 }
 

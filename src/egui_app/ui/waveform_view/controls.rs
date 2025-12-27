@@ -57,6 +57,20 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
             }
         }
     });
+    ui.horizontal(|ui| {
+        let mut transient_snap = app.controller.ui.waveform.transient_snap_enabled;
+        if ui.checkbox(&mut transient_snap, "Transient snap").clicked() {
+            app.controller.set_transient_snap_enabled(transient_snap);
+        }
+        let mut sensitivity = app.controller.ui.waveform.transient_sensitivity;
+        let slider = egui::Slider::new(&mut sensitivity, 0.0..=1.0)
+            .text("Sensitivity")
+            .fixed_decimals(2)
+            .step_by(0.01);
+        if ui.add(slider).changed() {
+            app.controller.set_transient_sensitivity(sensitivity);
+        }
+    });
     if view_mode != app.controller.ui.waveform.channel_view {
         app.controller.set_waveform_channel_view(view_mode);
     }

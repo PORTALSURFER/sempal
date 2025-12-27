@@ -77,6 +77,7 @@ impl EguiController {
         // identical to the previous render.
         self.sample_view.waveform.render_meta = None;
         self.sample_view.waveform.decoded = Some(decoded);
+        self.refresh_waveform_transients();
         self.refresh_waveform_image();
     }
 
@@ -162,6 +163,24 @@ impl EguiController {
         });
         self.ui.waveform.view = view;
         self.sample_view.waveform.render_meta = Some(desired_meta);
+    }
+
+    pub(super) fn refresh_waveform_transients(&mut self) {
+        let Some(decoded) = self.sample_view.waveform.decoded.as_ref() else {
+            self.ui.waveform.transients.clear();
+            self.ui.waveform.transient_cache_token = None;
+            return;
+        };
+        let sensitivity = self.ui.waveform.transient_sensitivity.clamp(0.0, 1.0);
+        if self.ui.waveform.transient_cache_token == Some(decoded.cache_token)
+            && (self.ui.waveform.transient_cache_sensitivity - sensitivity).abs() < f32::EPSILON
+        {
+            return;
+        }
+        self.ui.waveform.transients =
+            crate::waveform::transients::detect_transients(decoded, sensitivity);
+        self.ui.waveform.transient_cache_token = Some(decoded.cache_token);
+        self.ui.waveform.transient_cache_sensitivity = sensitivity;
     }
 
     pub(in crate::egui_app::controller::wavs) fn read_waveform_bytes(

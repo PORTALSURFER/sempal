@@ -1,10 +1,13 @@
 use super::*;
 use crate::selection::SelectionEdge;
 
+const TRANSIENT_SNAP_RADIUS: f32 = 0.01;
+
 pub(super) fn start_selection_drag(controller: &mut EguiController, position: f32) {
     controller.selection_state.bpm_scale_beats = None;
     controller.begin_selection_undo("Selection");
-    let range = controller.selection_state.range.begin_new(position);
+    let start = snap_to_transient(controller, position).unwrap_or(position);
+    let range = controller.selection_state.range.begin_new(start);
     controller.apply_selection(Some(range));
 }
 
@@ -35,7 +38,8 @@ pub(super) fn update_selection_drag(controller: &mut EguiController, position: f
             .range
             .update_drag_snapped(position, step)
     } else {
-        controller.selection_state.range.update_drag(position)
+        let snapped = snap_to_transient(controller, position).unwrap_or(position);
+        controller.selection_state.range.update_drag(snapped)
     };
     if let Some(range) = range {
         controller.apply_selection(Some(range));
@@ -176,6 +180,22 @@ fn bpm_snap_step(controller: &EguiController) -> Option<f32> {
     } else {
         None
     }
+}
+
+fn snap_to_transient(controller: &EguiController, position: f32) -> Option<f32> {
+    if !controller.ui.waveform.transient_snap_enabled {
+        return None;
+    }
+    let mut closest = None;
+    let mut best_distance = TRANSIENT_SNAP_RADIUS;
+    for &marker in &controller.ui.waveform.transients {
+        let distance = (marker - position).abs();
+        if distance <= best_distance {
+            best_distance = distance;
+            closest = Some(marker);
+        }
+    }
+    closest
 }
 
 fn selection_scale_beats(controller: &EguiController) -> Option<f32> {
