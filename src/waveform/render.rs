@@ -250,9 +250,12 @@ impl WaveformRenderer {
         for (x, (min, max)) in columns.iter().enumerate() {
             let top = (mid - max * half_height).clamp(0.0, limit);
             let bottom = (mid - min * half_height).clamp(0.0, limit);
-            let band_min = top.min(bottom) - thickness * 0.5;
-            let band_max = top.max(bottom) + thickness * 0.5;
-            let span = (band_max - band_min).max(thickness);
+            let amp_span = (max - min).abs();
+            let amp_scale = (amp_span * 12.0).clamp(0.0, 1.0);
+            let column_thickness = 0.8 + (thickness - 0.8) * amp_scale;
+            let band_min = top.min(bottom) - column_thickness * 0.5;
+            let band_max = top.max(bottom) + column_thickness * 0.5;
+            let span = (band_max - band_min).max(column_thickness);
             let start_y = band_min.floor().clamp(0.0, limit) as u32;
             let end_y = band_max.ceil().clamp(0.0, limit) as u32;
             for y in start_y..=end_y {
