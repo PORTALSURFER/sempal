@@ -1,10 +1,15 @@
-use rand::prelude::SliceRandom;
+use rand::Rng;
 
 #[derive(Clone, Copy, Debug)]
 pub struct HintItem {
     pub title: &'static str,
     pub body: &'static str,
 }
+
+const DEFAULT_HINT: HintItem = HintItem {
+    title: "Drag-drop folders",
+    body: "Drop a folder onto Sources to add it to the library.",
+};
 
 const HINTS: &[HintItem] = &[
     HintItem {
@@ -71,7 +76,9 @@ const HINTS: &[HintItem] = &[
 
 pub fn random_hint() -> &'static HintItem {
     let mut rng = rand::rng();
-    HINTS
-        .choose(&mut rng)
-        .unwrap_or_else(|| &HINTS[0])
+    if HINTS.is_empty() {
+        return &DEFAULT_HINT;
+    }
+    let idx = rng.random_range(0..HINTS.len());
+    &HINTS[idx]
 }
