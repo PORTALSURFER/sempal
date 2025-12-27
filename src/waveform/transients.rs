@@ -29,46 +29,32 @@ pub fn detect_transients(decoded: &DecodedWaveform, sensitivity: f32) -> Vec<f32
     let thresholds = adaptive_thresholds(&novelty_smoothed, window, sensitivity);
     let global_floor = percentile(
         &novelty_smoothed,
-        0.7 + (1.0 - sensitivity) * 0.2,
+        0.6 + (1.0 - sensitivity) * 0.15,
     );
     let min_gap_frames = ((MIN_TRANSIENT_SPACING_SECONDS * sample_rate) / hop as f32)
         .round()
         .max(1.0) as usize;
-    let mut peaks: Vec<(usize, f32)> = Vec::new();
-    let mut last_frame: Option<usize> = None;
-    let mut last_strength = 0.0f32;
-    for i in 1..novelty_smoothed.len().saturating_sub(1) {
-        let strength = novelty_smoothed[i];
-        if strength < thresholds[i] || strength < global_floor {
-            continue;
-        }
-        if strength < novelty_smoothed[i - 1] || strength < novelty_smoothed[i + 1] {
-            continue;
-        }
-        let frame = i;
-        if let Some(prev_frame) = last_frame {
-            let distance = frame.saturating_sub(prev_frame);
-            if distance < min_gap_frames {
-                if strength > last_strength {
-                    if let Some((last_frame, last_strength)) = peaks.last_mut() {
-                        *last_frame = frame;
-                        *last_strength = strength;
-                    }
-                    last_frame = Some(frame);
-                    last_strength = strength;
-                }
-                continue;
-            }
-        }
-        peaks.push((frame, strength));
-        last_frame = Some(frame);
-        last_strength = strength;
-    }
     let max_transients = max_transients(decoded, sensitivity);
-    if peaks.len() > max_transients {
-        peaks.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-        peaks.truncate(max_transients);
-        peaks.sort_by_key(|(frame, _)| *frame);
+    let mut peaks = pick_peaks(
+        &novelty_smoothed,
+        &thresholds,
+        global_floor,
+        min_gap_frames,
+        max_transients,
+    );
+    if peaks.is_empty() {
+        let fallback_sensitivity = 1.0;
+        let fallback_thresholds =
+            adaptive_thresholds(&novelty_smoothed, window, fallback_sensitivity);
+        let fallback_floor = percentile(&novelty_smoothed, 0.55);
+        let fallback_cap = max_transients(decoded, 0.8);
+        peaks = pick_peaks(
+            &novelty_smoothed,
+            &fallback_thresholds,
+            fallback_floor,
+            min_gap_frames,
+            fallback_cap,
+        );
     }
     peaks
         .into_iter()
@@ -169,7 +155,7 @@ fn smooth_values(values: &[f32], radius: usize) -> Vec<f32> {
 fn adaptive_thresholds(values: &[f32], window: usize, sensitivity: f32) -> Vec<f32> {
     let (global_mean, global_std) = mean_std_dev(values);
     let mut thresholds = Vec::with_capacity(values.len());
-    let k = 2.5 + (1.0 - sensitivity.clamp(0.0, 1.0)) * 4.0;
+    let k = 2.0 + (1.0 - sensitivity.clamp(0.0, 1.0)) * 3.0;
     for i in 0..values.len() {
         let start = i.saturating_sub(window);
         let slice = &values[start..i];
@@ -206,6 +192,51 @@ fn max_transients(decoded: &DecodedWaveform, sensitivity: f32) -> usize {
     let duration = decoded.duration_seconds.max(0.01);
     let per_second = 1.5 + sensitivity.clamp(0.0, 1.0) * 2.0;
     (duration * per_second).round().max(1.0) as usize
+}
+
+fn pick_peaks(
+    novelty_smoothed: &[f32],
+    thresholds: &[f32],
+    global_floor: f32,
+    min_gap_frames: usize,
+    max_transients: usize,
+) -> Vec<(usize, f32)> {
+    let mut peaks: Vec<(usize, f32)> = Vec::new();
+    let mut last_frame: Option<usize> = None;
+    let mut last_strength = 0.0f32;
+    for i in 1..novelty_smoothed.len().saturating_sub(1) {
+        let strength = novelty_smoothed[i];
+        if strength < thresholds[i] || strength < global_floor {
+            continue;
+        }
+        if strength < novelty_smoothed[i - 1] || strength < novelty_smoothed[i + 1] {
+            continue;
+        }
+        let frame = i;
+        if let Some(prev_frame) = last_frame {
+            let distance = frame.saturating_sub(prev_frame);
+            if distance < min_gap_frames {
+                if strength > last_strength {
+                    if let Some((last_frame, last_strength)) = peaks.last_mut() {
+                        *last_frame = frame;
+                        *last_strength = strength;
+                    }
+                    last_frame = Some(frame);
+                    last_strength = strength;
+                }
+                continue;
+            }
+        }
+        peaks.push((frame, strength));
+        last_frame = Some(frame);
+        last_strength = strength;
+    }
+    if peaks.len() > max_transients {
+        peaks.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        peaks.truncate(max_transients);
+        peaks.sort_by_key(|(frame, _)| *frame);
+    }
+    peaks
 }
 
 fn median_mad(values: &[f32]) -> (f32, f32) {
