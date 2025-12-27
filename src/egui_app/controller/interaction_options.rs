@@ -194,14 +194,15 @@ impl EguiController {
         self.persist_controls();
     }
 
-    /// Update and persist the transient detection sensitivity.
-    pub fn set_transient_sensitivity(&mut self, value: f32) {
+    /// Update and persist the transient detection sensitivity, then recompute.
+    pub fn apply_transient_sensitivity(&mut self, value: f32) {
         let clamped = clamp_transient_sensitivity(value);
         if (self.settings.controls.transient_sensitivity - clamped).abs() < f32::EPSILON {
             return;
         }
         self.settings.controls.transient_sensitivity = clamped;
         self.ui.waveform.transient_sensitivity = clamped;
+        self.ui.waveform.transient_sensitivity_draft = clamped;
         self.refresh_waveform_transients();
         self.persist_controls();
     }

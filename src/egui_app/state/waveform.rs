@@ -33,6 +33,8 @@ pub struct WaveformState {
     pub transient_snap_enabled: bool,
     /// Sensitivity used when detecting transient markers.
     pub transient_sensitivity: f32,
+    /// Pending sensitivity value before applying to the detector.
+    pub transient_sensitivity_draft: f32,
     /// Cache token for the waveform transients.
     pub transient_cache_token: Option<u64>,
     /// Cached sensitivity for the current transient set.
@@ -77,6 +79,7 @@ impl Default for WaveformState {
             transient_markers_enabled: true,
             transient_snap_enabled: false,
             transient_sensitivity: 0.6,
+            transient_sensitivity_draft: 0.6,
             transient_cache_token: None,
             transient_cache_sensitivity: 0.6,
             view: WaveformView::default(),

@@ -73,13 +73,22 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
         if snap_toggle.clicked() {
             app.controller.set_transient_snap_enabled(transient_snap);
         }
-        let mut sensitivity = app.controller.ui.waveform.transient_sensitivity;
+        let mut sensitivity = app.controller.ui.waveform.transient_sensitivity_draft;
         let slider = egui::Slider::new(&mut sensitivity, 0.0..=1.0)
             .text("Sensitivity")
             .fixed_decimals(2)
             .step_by(0.01);
         if ui.add(slider).changed() {
-            app.controller.set_transient_sensitivity(sensitivity);
+            app.controller.ui.waveform.transient_sensitivity_draft = sensitivity;
+        }
+        let can_apply = (app.controller.ui.waveform.transient_sensitivity
+            - app.controller.ui.waveform.transient_sensitivity_draft)
+            .abs()
+            > f32::EPSILON;
+        let apply = ui.add_enabled(can_apply, egui::Button::new("Apply"));
+        if apply.clicked() {
+            let value = app.controller.ui.waveform.transient_sensitivity_draft;
+            app.controller.apply_transient_sensitivity(value);
         }
     });
     if view_mode != app.controller.ui.waveform.channel_view {
