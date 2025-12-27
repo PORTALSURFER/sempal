@@ -16,6 +16,8 @@ jobs:
   semver:
     name: Semver checks
     runs-on: ubuntu-latest
+    outputs:
+      requires_major: ${{ steps.semver_result.outputs.requires_major }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -28,15 +30,26 @@ jobs:
       - name: Fetch main
         run: git fetch origin main
       - uses: obi1kenobi/cargo-semver-checks-action@v2
+        id: semver_check
+        continue-on-error: true
         with:
           manifest-path: Cargo.toml
           package: sempal
           baseline-rev: origin/main
+      - name: Record semver result
+        id: semver_result
+        run: |
+          if [[ "${{ steps.semver_check.outcome }}" == "failure" ]]; then
+            echo "requires_major=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "requires_major=false" >> "$GITHUB_OUTPUT"
+          fi
 
   bump_version:
     name: Bump version if unchanged
     runs-on: ubuntu-latest
     needs: semver
+    if: always()
     steps:
       - uses: actions/checkout@v4
         with:
@@ -44,9 +57,10 @@ jobs:
           ref: ${{ inputs.next_branch }}
       - name: Fetch main
         run: git fetch origin main
-      - name: Bump minor version when unchanged
+      - name: Bump version when unchanged
         env:
           NEXT_BRANCH: ${{ inputs.next_branch }}
+          SEMVER_MAJOR: ${{ needs.semver.outputs.requires_major }}
         run: |
           set -euo pipefail
           NEXT_VERSION=$(grep -E '^version = ' Cargo.toml | head -n 1 | sed -E 's/.*"([^"]+)".*/\1/')
@@ -60,6 +74,7 @@ jobs:
             exit 0
           fi
           python - <<'PY'
+          import os
           import re
 
           path = "Cargo.toml"
@@ -71,9 +86,15 @@ jobs:
               raise SystemExit("Failed to find version in Cargo.toml")
 
           major, minor, patch = map(int, match.groups())
-          minor += 1
-          patch = 0
-          new_version = f'{major}.{minor}.{patch}'
+          requires_major = os.environ.get("SEMVER_MAJOR", "false").lower() == "true"
+          if requires_major:
+              major += 1
+              minor = 0
+              patch = 0
+          else:
+              minor += 1
+              patch = 0
+          new_version = f"{major}.{minor}.{patch}"
 
           updated = re.sub(
               r'^version\s*=\s*"[0-9]+\.[0-9]+\.[0-9]+"',
