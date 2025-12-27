@@ -123,6 +123,16 @@ fn enqueue_source_backfill(
 
     let mut staged_samples = Vec::with_capacity(entries.len());
     for entry in entries {
+        let absolute = request.source.root.join(&entry.relative_path);
+        if !absolute.exists() {
+            if !entry.missing {
+                let _ = source_db.set_missing(&entry.relative_path, true);
+            }
+            continue;
+        }
+        if entry.missing {
+            let _ = source_db.set_missing(&entry.relative_path, false);
+        }
         if let Some(metadata) = sample_metadata_from_entry(
             request.source.id.as_str(),
             &entry.relative_path,

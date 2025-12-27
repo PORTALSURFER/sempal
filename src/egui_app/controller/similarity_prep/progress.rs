@@ -35,6 +35,24 @@ impl EguiController {
                     }
                 };
                 if progress.pending == 0 && progress.running == 0 {
+                    let embed_progress = store
+                        .current_embedding_backfill_progress(&source)
+                        .unwrap_or_default();
+                    if embed_progress.pending > 0 || embed_progress.running > 0 {
+                        self.ensure_similarity_prep_progress(embed_progress.total(), true);
+                        self.set_similarity_embedding_detail();
+                        self.ui.progress.total = embed_progress.total();
+                        self.ui.progress.completed = embed_progress.completed();
+                        let jobs_completed = embed_progress.completed();
+                        let jobs_total = embed_progress.total();
+                        let mut detail =
+                            format!("Embedding backfill… Jobs {jobs_completed}/{jobs_total}");
+                        if embed_progress.failed > 0 {
+                            detail.push_str(&format!(" • {} failed", embed_progress.failed));
+                        }
+                        self.ui.progress.detail = Some(detail);
+                        return;
+                    }
                     if !store.source_has_embeddings(&source) {
                         self.ensure_similarity_prep_progress(0, true);
                         self.set_similarity_embedding_detail();
@@ -52,8 +70,11 @@ impl EguiController {
                 let samples_completed = progress.samples_completed();
                 let samples_total = progress.samples_total;
                 let mut detail = format!(
-                    "Analyzing… Jobs {jobs_completed}/{jobs_total} • Samples {samples_completed}/{samples_total}"
+                    "Analyzing audio features… Jobs {jobs_completed}/{jobs_total} • Samples {samples_completed}/{samples_total}"
                 );
+                if progress.running == 0 && progress.pending > 0 {
+                    detail.push_str(" • Waiting for workers");
+                }
                 if progress.failed > 0 {
                     detail.push_str(&format!(" • {} failed", progress.failed));
                 }

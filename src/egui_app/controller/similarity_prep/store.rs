@@ -11,6 +11,10 @@ pub(super) trait SimilarityPrepStore {
         &self,
         source: &SampleSource,
     ) -> Result<analysis_jobs::AnalysisProgress, String>;
+    fn current_embedding_backfill_progress(
+        &self,
+        source: &SampleSource,
+    ) -> Result<analysis_jobs::AnalysisProgress, String>;
     fn open_source_db_for_similarity(
         &self,
         source_id: &SourceId,
@@ -48,6 +52,14 @@ impl SimilarityPrepStore for DbSimilarityPrepStore {
         source: &SampleSource,
     ) -> Result<analysis_jobs::AnalysisProgress, String> {
         analysis_jobs::current_progress_for_source(source).map_err(|err| err.to_string())
+    }
+
+    fn current_embedding_backfill_progress(
+        &self,
+        source: &SampleSource,
+    ) -> Result<analysis_jobs::AnalysisProgress, String> {
+        analysis_jobs::current_embedding_backfill_progress_for_source(source)
+            .map_err(|err| err.to_string())
     }
 
     fn open_source_db_for_similarity(

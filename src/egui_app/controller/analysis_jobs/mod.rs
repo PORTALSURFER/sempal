@@ -25,3 +25,10 @@ pub(in crate::egui_app::controller) fn current_progress_for_source(
     let conn = db::open_source_db(&source.root)?;
     db::current_progress(&conn)
 }
+
+pub(in crate::egui_app::controller) fn current_embedding_backfill_progress_for_source(
+    source: &crate::sample_sources::SampleSource,
+) -> Result<AnalysisProgress, String> {
+    let conn = db::open_source_db(&source.root)?;
+    db::current_embedding_backfill_progress(&conn)
+}
