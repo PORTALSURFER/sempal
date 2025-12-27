@@ -182,17 +182,15 @@ pub(in crate::egui_app::controller) fn run_update_check(
 }
 
 fn runtime_identity(channel: UpdateChannel) -> RuntimeIdentity {
-    let platform_raw = std::env::var("CARGO_CFG_TARGET_OS")
-        .unwrap_or_else(|_| "unknown".to_string());
-    let platform = match platform_raw.as_str() {
+    let platform_raw = std::env::consts::OS;
+    let platform = match platform_raw {
         "windows" => "windows",
         "linux" => "linux",
         "macos" => "macos",
         other => other,
     };
-    let arch_raw = std::env::var("CARGO_CFG_TARGET_ARCH")
-        .unwrap_or_else(|_| "unknown".to_string());
-    let arch = match arch_raw.as_str() {
+    let arch_raw = std::env::consts::ARCH;
+    let arch = match arch_raw {
         "x86_64" => "x86_64",
         "aarch64" => "aarch64",
         other => other,

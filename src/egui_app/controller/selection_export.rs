@@ -1,6 +1,7 @@
 use super::*;
 use crate::sample_sources::SampleTag;
 use hound::SampleFormat;
+use std::fs;
 use std::io::Cursor;
 use std::time::SystemTime;
 
