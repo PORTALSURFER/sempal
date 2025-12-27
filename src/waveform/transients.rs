@@ -128,6 +128,12 @@ pub fn detect_transients(decoded: &DecodedWaveform, sensitivity: f32) -> Vec<f32
         let raw_cap = max_transients(decoded, 1.0);
         peaks = pick_peaks_loose(&raw_smoothed, min_gap_frames, raw_cap, 0.15);
     }
+    if peaks.is_empty() && long_sample {
+        let energy = energy_novelty(&mono, hop);
+        let energy_smoothed = smooth_values(&energy, SMOOTH_RADIUS);
+        let energy_cap = max_transients(decoded, 1.0);
+        peaks = pick_peaks_loose(&energy_smoothed, min_gap_frames, energy_cap, 0.2);
+    }
     peaks
         .into_iter()
         .map(|(frame, _)| {
@@ -268,6 +274,30 @@ fn spectral_flux_raw(mono: &[f32], fft_len: usize, hop: usize) -> Vec<f32> {
             sum += delta;
         }
         novelty.push(sum);
+        start += hop;
+    }
+    novelty
+}
+
+fn energy_novelty(mono: &[f32], hop: usize) -> Vec<f32> {
+    if mono.is_empty() || hop == 0 {
+        return Vec::new();
+    }
+    let mut novelty = Vec::new();
+    let mut start = 0usize;
+    let mut prev = 0.0f32;
+    while start < mono.len() {
+        let end = (start + hop).min(mono.len());
+        let mut sum = 0.0f32;
+        let mut count = 0.0f32;
+        for sample in &mono[start..end] {
+            sum += sample * sample;
+            count += 1.0;
+        }
+        let rms = if count > 0.0 { (sum / count).sqrt() } else { 0.0 };
+        let delta = (rms - prev).max(0.0);
+        novelty.push(delta);
+        prev = rms;
         start += hop;
     }
     novelty
