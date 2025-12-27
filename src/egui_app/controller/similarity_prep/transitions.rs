@@ -118,6 +118,7 @@ impl EguiController {
             return;
         }
         clear_similarity_prep_state(&mut self.runtime.similarity_prep);
+        self.runtime.similarity_prep_last_error = None;
         self.restore_similarity_prep_duration_cap();
         self.restore_similarity_prep_fast_mode();
         self.restore_similarity_prep_full_analysis();

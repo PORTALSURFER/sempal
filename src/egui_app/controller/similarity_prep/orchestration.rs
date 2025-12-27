@@ -14,6 +14,7 @@ impl EguiController {
         &mut self,
         force_full_analysis: bool,
     ) {
+        self.runtime.similarity_prep_last_error = None;
         if let Err(err) = crate::analysis::embedding::warmup_panns() {
             tracing::warn!("PANNs warmup failed: {err}");
         }
@@ -77,6 +78,10 @@ impl EguiController {
             || self.runtime.jobs.scan_in_progress()
             || self.runtime.jobs.umap_build_in_progress()
             || self.runtime.jobs.umap_cluster_build_in_progress()
+    }
+
+    pub fn similarity_prep_has_error(&self) -> bool {
+        self.runtime.similarity_prep_last_error.is_some()
     }
 
     pub fn similarity_prep_is_finalizing(&self) -> bool {

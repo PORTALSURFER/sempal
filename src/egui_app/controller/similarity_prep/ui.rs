@@ -3,6 +3,7 @@ use crate::sample_sources::SampleSource;
 
 impl EguiController {
     pub(super) fn show_similarity_prep_start(&mut self, source: &SampleSource) {
+        self.runtime.similarity_prep_last_error = None;
         self.set_status_message(StatusMessage::PreparingSimilarity {
             source: source.root.display().to_string(),
         });
@@ -16,6 +17,7 @@ impl EguiController {
     }
 
     pub(super) fn show_similarity_prep_ready(&mut self, outcome: &jobs::SimilarityPrepOutcome) {
+        self.runtime.similarity_prep_last_error = None;
         self.ui.map.bounds = None;
         self.ui.map.last_query = None;
         self.ui.map.cached_cluster_centroids_key = None;
@@ -28,6 +30,7 @@ impl EguiController {
     }
 
     pub(super) fn show_similarity_prep_failed(&mut self, err: String) {
+        self.runtime.similarity_prep_last_error = Some(err.clone());
         self.set_status_message(StatusMessage::SimilarityPrepFailed { err });
     }
 }

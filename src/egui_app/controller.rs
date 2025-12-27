@@ -192,6 +192,7 @@ impl EguiController {
                     idle_worker_override: None,
                 },
                 similarity_prep: None,
+                similarity_prep_last_error: None,
                 similarity_prep_force_full_analysis_next: false,
                 #[cfg(test)]
                 progress_cancel_after: None,

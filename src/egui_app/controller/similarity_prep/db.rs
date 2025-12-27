@@ -31,9 +31,10 @@ pub(super) fn source_has_embeddings(source: &SampleSource) -> bool {
         return false;
     };
     let model_id = crate::analysis::embedding::EMBEDDING_MODEL_ID;
+    let sample_id_prefix = format!("{}::%", source.id.as_str());
     let count: Result<i64, _> = conn.query_row(
-        "SELECT COUNT(*) FROM embeddings WHERE model_id = ?1",
-        rusqlite::params![model_id],
+        "SELECT COUNT(*) FROM embeddings WHERE model_id = ?1 AND sample_id LIKE ?2",
+        rusqlite::params![model_id, sample_id_prefix],
         |row| row.get(0),
     );
     count.map(|value| value > 0).unwrap_or(false)

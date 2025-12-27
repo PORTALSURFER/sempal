@@ -162,6 +162,7 @@ pub(super) struct ControllerRuntimeState {
     pub(super) analysis: super::analysis_jobs::AnalysisWorkerPool,
     pub(super) performance: PerformanceGovernorState,
     pub(super) similarity_prep: Option<SimilarityPrepState>,
+    pub(super) similarity_prep_last_error: Option<String>,
     pub(super) similarity_prep_force_full_analysis_next: bool,
     #[cfg(test)]
     pub(super) progress_cancel_after: Option<usize>,
