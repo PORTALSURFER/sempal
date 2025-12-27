@@ -20,6 +20,9 @@ pub(super) fn handle_issue_gateway_created(
             if outcome.ok {
                 controller.ui.feedback_issue.last_error = None;
                 controller.ui.feedback_issue.last_success_url = Some(outcome.issue_url.clone());
+                controller.ui.feedback_issue.title.clear();
+                controller.ui.feedback_issue.body.clear();
+                controller.ui.feedback_issue.focus_title_requested = true;
                 controller.set_status(
                     format!("Created GitHub issue #{}", outcome.number),
                     crate::egui_app::ui::style::StatusTone::Info,
