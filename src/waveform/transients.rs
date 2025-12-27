@@ -5,8 +5,9 @@ const MIN_TRANSIENT_SPACING_SECONDS: f32 = 0.05;
 const SMOOTH_RADIUS: usize = 1;
 const MIN_THRESHOLD_WINDOW: usize = 8;
 const MAX_THRESHOLD_WINDOW: usize = 64;
-const PREEMPHASIS: f32 = 0.97;
 const BASELINE_SECONDS: f32 = 0.15;
+const BAND_COUNT: usize = 24;
+const MIN_BAND_HZ: f32 = 40.0;
 
 pub fn detect_transients(decoded: &DecodedWaveform, sensitivity: f32) -> Vec<f32> {
     let total_frames = decoded.frame_count();
@@ -20,9 +21,7 @@ pub fn detect_transients(decoded: &DecodedWaveform, sensitivity: f32) -> Vec<f32
     let sample_rate = decoded.sample_rate.max(1) as f32;
     let (fft_len, hop) = stft_params(decoded.sample_rate);
     let mono = mono_samples(decoded);
-    let complex_novelty = complex_domain_novelty(&mono, fft_len, hop);
-    let energy_novelty = energy_novelty(&mono, fft_len, hop);
-    let novelty = combine_novelties(&complex_novelty, &energy_novelty);
+    let novelty = spectral_flux_novelty(&mono, fft_len, hop, decoded.sample_rate);
     if novelty.len() < 3 {
         return Vec::new();
     }
@@ -93,10 +92,14 @@ fn mono_samples(decoded: &DecodedWaveform) -> Vec<f32> {
     mono
 }
 
-fn complex_domain_novelty(mono: &[f32], fft_len: usize, hop: usize) -> Vec<f32> {
-    let mut preemphasis = mono.to_vec();
-    for i in (1..preemphasis.len()).rev() {
-        preemphasis[i] = preemphasis[i] - PREEMPHASIS * preemphasis[i - 1];
+fn spectral_flux_novelty(
+    mono: &[f32],
+    fft_len: usize,
+    hop: usize,
+    sample_rate: u32,
+) -> Vec<f32> {
+    if mono.is_empty() {
+        return Vec::new();
     }
     let window = hann_window(fft_len);
     let plan = match FftPlan::new(fft_len) {
@@ -104,15 +107,21 @@ fn complex_domain_novelty(mono: &[f32], fft_len: usize, hop: usize) -> Vec<f32> 
         Err(_) => return Vec::new(),
     };
     let bins = fft_len / 2 + 1;
-    let mut prev_phase = vec![0.0f32; bins];
-    let mut prev2_phase = vec![0.0f32; bins];
-    let mut prev_mag = vec![0.0f32; bins];
+    let bands = band_edges(bins, sample_rate, BAND_COUNT);
+    if bands.is_empty() {
+        return Vec::new();
+    }
+    let mut band_means = vec![0.0f32; bands.len()];
+    let mut prev_band = vec![0.0f32; bands.len()];
     let mut buf = vec![Complex32::default(); fft_len];
     let mut novelty = Vec::new();
     let mut start = 0usize;
-    while start < preemphasis.len() {
+    let hop_seconds = hop as f32 / sample_rate.max(1) as f32;
+    let tau = BASELINE_SECONDS.max(0.05);
+    let alpha = (hop_seconds / (tau + hop_seconds)).clamp(0.01, 0.2);
+    while start < mono.len() {
         for i in 0..fft_len {
-            let sample = preemphasis.get(start + i).copied().unwrap_or(0.0);
+            let sample = mono.get(start + i).copied().unwrap_or(0.0);
             buf[i].re = sample * window[i];
             buf[i].im = 0.0;
         }
@@ -120,18 +129,35 @@ fn complex_domain_novelty(mono: &[f32], fft_len: usize, hop: usize) -> Vec<f32> 
             return Vec::new();
         }
         let mut sum = 0.0f32;
-        for bin in 1..bins {
-            let c = buf[bin];
-            let mag = (c.re * c.re + c.im * c.im).sqrt();
-            let mag_log = (1.0 + mag).ln();
-            let phase = c.im.atan2(c.re);
-            let predicted = 2.0 * prev_phase[bin] - prev2_phase[bin];
-            let expected = Complex32::from_polar(prev_mag[bin], predicted);
-            let actual = Complex32::from_polar(mag_log, phase);
-            sum += (actual - expected).norm();
-            prev2_phase[bin] = prev_phase[bin];
-            prev_phase[bin] = phase;
-            prev_mag[bin] = mag_log;
+        for (band_index, (start_bin, end_bin)) in bands.iter().enumerate() {
+            if *start_bin >= *end_bin || *start_bin >= bins {
+                continue;
+            }
+            let mut band_sum = 0.0f32;
+            let mut count = 0.0f32;
+            for bin in *start_bin..(*end_bin).min(bins) {
+                let c = buf[bin];
+                let mag = (c.re * c.re + c.im * c.im).sqrt();
+                let mag_log = (1.0 + 10.0 * mag).ln();
+                band_sum += mag_log;
+                count += 1.0;
+            }
+            if count == 0.0 {
+                continue;
+            }
+            let band_value = band_sum / count;
+            let mean = band_means[band_index];
+            let updated_mean = if mean == 0.0 {
+                band_value
+            } else {
+                mean + alpha * (band_value - mean)
+            };
+            band_means[band_index] = updated_mean;
+            let normalized = band_value / (updated_mean + 1.0e-6);
+            let delta = (normalized - prev_band[band_index]).max(0.0);
+            prev_band[band_index] = normalized;
+            let weight = ((band_index + 1) as f32 / bands.len() as f32).sqrt();
+            sum += delta * weight;
         }
         novelty.push(sum);
         start += hop;
@@ -139,45 +165,34 @@ fn complex_domain_novelty(mono: &[f32], fft_len: usize, hop: usize) -> Vec<f32> 
     novelty
 }
 
-fn energy_novelty(mono: &[f32], fft_len: usize, hop: usize) -> Vec<f32> {
-    if mono.is_empty() {
+fn band_edges(bins: usize, sample_rate: u32, bands: usize) -> Vec<(usize, usize)> {
+    if bins < 4 || bands == 0 {
         return Vec::new();
     }
-    let mut novelty = Vec::new();
-    let mut prev_energy = 0.0f32;
-    let mut start = 0usize;
-    while start < mono.len() {
-        let mut sum = 0.0f32;
-        for i in 0..fft_len {
-            let sample = mono.get(start + i).copied().unwrap_or(0.0);
-            sum += sample * sample;
+    let nyquist = sample_rate as f32 * 0.5;
+    let min_hz = MIN_BAND_HZ.min(nyquist * 0.5);
+    let max_hz = nyquist.max(min_hz + 1.0);
+    let log_min = min_hz.ln();
+    let log_max = max_hz.ln();
+    let mut edges = Vec::with_capacity(bands);
+    let mut last_bin = 1usize;
+    for band in 0..bands {
+        let t0 = band as f32 / bands as f32;
+        let t1 = (band + 1) as f32 / bands as f32;
+        let hz0 = (log_min + (log_max - log_min) * t0).exp();
+        let hz1 = (log_min + (log_max - log_min) * t1).exp();
+        let bin0 = ((hz0 / nyquist) * (bins as f32 - 1.0)).round() as usize;
+        let bin1 = ((hz1 / nyquist) * (bins as f32 - 1.0)).round() as usize;
+        let start = bin0.clamp(1, bins.saturating_sub(1));
+        let end = bin1.clamp(start + 1, bins);
+        let start = start.max(last_bin);
+        let end = end.max(start + 1).min(bins);
+        if start < end {
+            edges.push((start, end));
+            last_bin = end;
         }
-        let energy = (sum / fft_len as f32).sqrt();
-        let delta = (energy - prev_energy).max(0.0);
-        novelty.push(delta);
-        prev_energy = energy;
-        start += hop;
     }
-    novelty
-}
-
-fn combine_novelties(complex: &[f32], energy: &[f32]) -> Vec<f32> {
-    if complex.is_empty() {
-        return energy.to_vec();
-    }
-    if energy.is_empty() {
-        return complex.to_vec();
-    }
-    let len = complex.len().min(energy.len());
-    let complex_scale = percentile(complex, 0.95).max(1.0e-6);
-    let energy_scale = percentile(energy, 0.95).max(1.0e-6);
-    let mut combined = Vec::with_capacity(len);
-    for i in 0..len {
-        let c = (complex[i] / complex_scale).min(5.0);
-        let e = (energy[i] / energy_scale).min(5.0);
-        combined.push(c * 0.7 + e * 0.3);
-    }
-    combined
+    edges
 }
 
 fn smooth_values(values: &[f32], radius: usize) -> Vec<f32> {
