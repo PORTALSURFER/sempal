@@ -296,7 +296,7 @@ pub(super) fn render_overlays(
                 ui.painter().circle_filled(
                     egui::pos2(x, y),
                     radius,
-                    style::with_alpha(style::high_contrast_text(), 220),
+                    style::with_alpha(egui::Color32::BLACK, 220),
                 );
             }
             selection_drag::handle_selection_slide_drag(
