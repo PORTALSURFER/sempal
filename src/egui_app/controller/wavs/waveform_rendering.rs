@@ -169,17 +169,29 @@ impl EguiController {
         let Some(decoded) = self.sample_view.waveform.decoded.as_ref() else {
             self.ui.waveform.transients.clear();
             self.ui.waveform.transient_cache_token = None;
+            self.ui.waveform.transient_novelty = None;
             return;
         };
         let sensitivity = self.ui.waveform.transient_sensitivity.clamp(0.0, 1.0);
-        if self.ui.waveform.transient_cache_token == Some(decoded.cache_token)
-            && (self.ui.waveform.transient_cache_sensitivity - sensitivity).abs() < f32::EPSILON
-        {
+        if self.ui.waveform.transient_cache_token != Some(decoded.cache_token) {
+            self.ui.waveform.transient_novelty =
+                crate::waveform::transients::compute_transient_novelty(decoded);
+            self.ui.waveform.transient_cache_token = Some(decoded.cache_token);
+            self.ui.waveform.transient_cache_sensitivity = -1.0;
+        }
+        if (self.ui.waveform.transient_cache_sensitivity - sensitivity).abs() < f32::EPSILON {
             return;
         }
-        self.ui.waveform.transients =
-            crate::waveform::transients::detect_transients(decoded, sensitivity);
-        self.ui.waveform.transient_cache_token = Some(decoded.cache_token);
+        let Some(novelty) = self.ui.waveform.transient_novelty.as_ref() else {
+            self.ui.waveform.transients.clear();
+            self.ui.waveform.transient_cache_sensitivity = sensitivity;
+            return;
+        };
+        self.ui.waveform.transients = crate::waveform::transients::pick_transients_from_novelty(
+            novelty,
+            sensitivity,
+            decoded.duration_seconds,
+        );
         self.ui.waveform.transient_cache_sensitivity = sensitivity;
     }
 

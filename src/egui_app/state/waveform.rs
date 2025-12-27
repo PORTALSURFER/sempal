@@ -1,6 +1,7 @@
 use super::controls::DestructiveEditPrompt;
 use crate::selection::SelectionRange;
 use crate::waveform::WaveformChannelView;
+use crate::waveform::transients::TransientNovelty;
 use egui;
 use std::collections::VecDeque;
 use std::path::PathBuf;
@@ -41,6 +42,8 @@ pub struct WaveformState {
     pub transient_cache_token: Option<u64>,
     /// Cached sensitivity for the current transient set.
     pub transient_cache_sensitivity: f32,
+    /// Cached novelty curve for transient peak-picking.
+    pub transient_novelty: Option<TransientNovelty>,
     /// Current visible viewport within the waveform (0.0-1.0 normalized).
     pub view: WaveformView,
     pub loop_enabled: bool,
@@ -85,6 +88,7 @@ impl Default for WaveformState {
             transient_realtime_enabled: false,
             transient_cache_token: None,
             transient_cache_sensitivity: 0.6,
+            transient_novelty: None,
             view: WaveformView::default(),
             loop_enabled: false,
             notice: None,

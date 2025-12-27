@@ -7,6 +7,7 @@ pub(super) fn clear_waveform_view(controller: &mut EguiController) {
     controller.ui.waveform.loading = None;
     controller.ui.waveform.transients.clear();
     controller.ui.waveform.transient_cache_token = None;
+    controller.ui.waveform.transient_novelty = None;
     controller.sample_view.waveform.decoded = None;
     controller.ui.waveform.playhead = PlayheadState::default();
     controller.ui.waveform.last_start_marker = None;
