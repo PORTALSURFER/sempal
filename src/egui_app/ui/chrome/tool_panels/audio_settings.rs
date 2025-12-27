@@ -114,6 +114,19 @@ impl EguiApp {
                 );
                 ui.add_space(6.0);
                 ui.separator();
+                section_label(ui, "Hints");
+                let mut show_hints = self.controller.ui.hints.show_on_startup;
+                if ui
+                    .checkbox(&mut show_hints, "Show hint of the day on launch")
+                    .changed()
+                {
+                    self.controller.set_hint_on_startup(show_hints);
+                }
+                if ui.button("Show hint now").clicked() {
+                    self.controller.show_hint_of_day();
+                }
+                ui.add_space(6.0);
+                ui.separator();
                 self.render_gpu_embeddings_panel(ui);
             });
         self.controller.ui.audio.panel_open = open;

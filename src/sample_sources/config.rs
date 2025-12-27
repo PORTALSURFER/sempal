@@ -10,6 +10,6 @@ pub use config_io::{
     save_to_path,
 };
 pub use config_types::{
-    AnalysisSettings, AppConfig, ConfigError, FeatureFlags, InteractionOptions, PannsBackendChoice,
-    UpdateChannel, UpdateSettings, WgpuPowerPreference,
+    AnalysisSettings, AppConfig, ConfigError, FeatureFlags, HintSettings, InteractionOptions,
+    PannsBackendChoice, UpdateChannel, UpdateSettings, WgpuPowerPreference,
 };

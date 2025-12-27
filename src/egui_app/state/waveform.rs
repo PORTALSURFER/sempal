@@ -25,6 +25,14 @@ pub struct WaveformState {
     pub bpm_input: String,
     /// Parsed bpm value used for snapping, when valid.
     pub bpm_value: Option<f32>,
+    /// Cached transient positions (normalized 0-1) for the loaded waveform.
+    pub transients: Vec<f32>,
+    /// When true, transient markers are rendered on the waveform.
+    pub transient_markers_enabled: bool,
+    /// When true, selection drags snap to nearby transient markers.
+    pub transient_snap_enabled: bool,
+    /// Cache token for the waveform transients.
+    pub transient_cache_token: Option<u64>,
     /// Current visible viewport within the waveform (0.0-1.0 normalized).
     pub view: WaveformView,
     pub loop_enabled: bool,
@@ -61,6 +69,10 @@ impl Default for WaveformState {
             bpm_snap_enabled: false,
             bpm_input: "142".to_string(),
             bpm_value: Some(142.0),
+            transients: Vec::new(),
+            transient_markers_enabled: true,
+            transient_snap_enabled: false,
+            transient_cache_token: None,
             view: WaveformView::default(),
             loop_enabled: false,
             notice: None,

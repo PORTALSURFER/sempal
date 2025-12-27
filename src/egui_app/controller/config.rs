@@ -18,6 +18,7 @@ impl EguiController {
                 self.settings.analysis.max_analysis_duration_seconds,
             );
         self.settings.updates = cfg.updates.clone();
+        self.settings.hints = cfg.hints.clone();
         self.settings.app_data_dir = cfg.app_data_dir.clone();
         self.settings.trash_folder = cfg.trash_folder.clone();
         self.settings.collection_export_root = cfg.collection_export_root.clone();
@@ -48,6 +49,9 @@ impl EguiController {
         self.ui.waveform.channel_view = self.settings.controls.waveform_channel_view;
         self.ui.waveform.bpm_snap_enabled = self.settings.controls.bpm_snap_enabled;
         self.ui.waveform.bpm_value = normalize_bpm_value(self.settings.controls.bpm_value);
+        self.ui.waveform.transient_markers_enabled =
+            self.settings.controls.transient_markers_enabled;
+        self.ui.waveform.transient_snap_enabled = self.settings.controls.transient_snap_enabled;
         if let Some(value) = self.ui.waveform.bpm_value {
             let rounded = value.round();
             if (value - rounded).abs() < 0.01 {
@@ -64,6 +68,7 @@ impl EguiController {
         self.ui.collection_export_root = cfg.collection_export_root.clone();
         self.ui.update.last_seen_nightly_published_at =
             cfg.updates.last_seen_nightly_published_at.clone();
+        self.ui.hints.show_on_startup = self.settings.hints.show_on_startup;
         self.library.sources = cfg.sources.clone();
         self.rebuild_missing_sources();
         if !self.library.missing.sources.is_empty() {
@@ -124,6 +129,7 @@ impl EguiController {
             let _ = self.refresh_wavs();
         }
         self.maybe_check_for_updates_on_startup();
+        self.maybe_open_hint_of_day();
         self.runtime.analysis.set_max_analysis_duration_seconds(
             self.settings.analysis.max_analysis_duration_seconds,
         );
@@ -152,6 +158,7 @@ impl EguiController {
             feature_flags: self.settings.feature_flags.clone(),
             analysis: self.settings.analysis.clone(),
             updates: self.settings.updates.clone(),
+            hints: self.settings.hints.clone(),
             app_data_dir: self.settings.app_data_dir.clone(),
             trash_folder: self.settings.trash_folder.clone(),
             collection_export_root: self.settings.collection_export_root.clone(),

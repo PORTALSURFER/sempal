@@ -21,6 +21,7 @@ mod drag_drop_controller;
 mod feedback_issue;
 mod focus;
 pub(crate) mod hotkeys;
+mod hints;
 mod hotkeys_controller;
 mod interaction_options;
 mod jobs;
@@ -74,11 +75,9 @@ pub(crate) use status_message::StatusMessage;
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet, VecDeque},
-    fs,
-    io::Write,
     path::{Path, PathBuf},
     rc::Rc,
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant},
 };
 
 /// Minimum selection width used to decide when to play a looped region.
@@ -175,6 +174,7 @@ impl EguiController {
                 feature_flags: crate::sample_sources::config::FeatureFlags::default(),
                 analysis: crate::sample_sources::config::AnalysisSettings::default(),
                 updates: crate::sample_sources::config::UpdateSettings::default(),
+                hints: crate::sample_sources::config::HintSettings::default(),
                 app_data_dir: None,
                 audio_output: AudioOutputConfig::default(),
                 controls: crate::sample_sources::config::InteractionOptions::default(),
@@ -284,7 +284,7 @@ impl EguiController {
             let overflow = self.ui.status.log.len() - STATUS_LOG_LIMIT;
             self.ui.status.log.drain(0..overflow);
         }
-        append_status_log_line(self.ui.status.log.last().expect("just pushed"));
+        log_status_entry(tone, self.ui.status.log.last().expect("just pushed"));
     }
 
     pub(crate) fn set_status_message(&mut self, message: StatusMessage) {
@@ -416,20 +416,12 @@ impl EguiController {
     }
 }
 
-fn append_status_log_line(entry: &str) {
-    let Ok(dir) = crate::app_dirs::logs_dir() else {
-        return;
-    };
-    let path = dir.join("status.log");
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-    let line = format!("{timestamp} {entry}\n");
-    let Ok(mut file) = fs::OpenOptions::new().create(true).append(true).open(&path) else {
-        return;
-    };
-    let _ = file.write_all(line.as_bytes());
+fn log_status_entry(tone: StatusTone, entry: &str) {
+    match tone {
+        StatusTone::Warning => tracing::warn!("{entry}"),
+        StatusTone::Error => tracing::error!("{entry}"),
+        StatusTone::Info | StatusTone::Busy | StatusTone::Idle => tracing::info!("{entry}"),
+    }
 }
 
 /// UI status tone for badge coloring.

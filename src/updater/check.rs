@@ -1,13 +1,14 @@
 use semver::Version;
 
 use super::github;
-use super::{UpdateChannel, UpdateError};
+use super::{RuntimeIdentity, UpdateChannel, UpdateError};
 
 /// Input for checking whether an update is available.
 #[derive(Debug, Clone)]
 pub struct UpdateCheckRequest {
     pub repo: String,
     pub channel: UpdateChannel,
+    pub identity: RuntimeIdentity,
     /// Current app version (stable channel only).
     pub current_version: Version,
     /// Last nightly release timestamp that was already shown to the user (RFC3339).
@@ -28,7 +29,19 @@ pub enum UpdateCheckOutcome {
 pub(super) fn check_for_updates(
     request: UpdateCheckRequest,
 ) -> Result<UpdateCheckOutcome, UpdateError> {
-    let release = github::fetch_release(&request.repo, request.channel)?;
+    let release = match github::fetch_release_with_assets(
+        &request.repo,
+        request.channel,
+        &request.identity,
+    ) {
+        Ok(release) => release,
+        Err(UpdateError::Invalid(message))
+            if message.ends_with("release with required assets found") =>
+        {
+            return Ok(UpdateCheckOutcome::UpToDate);
+        }
+        Err(err) => return Err(err),
+    };
 
     match request.channel {
         UpdateChannel::Stable => stable_outcome(&request.current_version, release),

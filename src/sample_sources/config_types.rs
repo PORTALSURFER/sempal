@@ -16,7 +16,7 @@ use crate::sample_sources::{Collection, SampleSource, SourceId};
 
 /// Aggregate application state loaded from disk.
 ///
-/// Config keys (TOML): `feature_flags`, `analysis`, `updates`, `app_data_dir`,
+/// Config keys (TOML): `feature_flags`, `analysis`, `updates`, `hints`, `app_data_dir`,
 /// `trash_folder`, `collection_export_root`, `last_selected_source`, `volume`,
 /// `audio_output`, `controls`.
 ///
@@ -30,6 +30,8 @@ pub struct AppConfig {
     pub analysis: AnalysisSettings,
     #[serde(default)]
     pub updates: UpdateSettings,
+    #[serde(default)]
+    pub hints: HintSettings,
     /// Optional override for the `.sempal` data folder.
     #[serde(default)]
     pub app_data_dir: Option<PathBuf>,
@@ -54,6 +56,8 @@ pub(super) struct AppSettings {
     pub analysis: AnalysisSettings,
     #[serde(default)]
     pub updates: UpdateSettings,
+    #[serde(default)]
+    pub hints: HintSettings,
     #[serde(default)]
     pub app_data_dir: Option<PathBuf>,
     #[serde(default)]
@@ -218,6 +222,23 @@ pub struct UpdateSettings {
     pub last_seen_nightly_published_at: Option<String>,
 }
 
+/// Persisted preferences for the hint-of-the-day popup.
+///
+/// Config keys: `show_on_startup`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HintSettings {
+    #[serde(default = "default_true")]
+    pub show_on_startup: bool,
+}
+
+impl Default for HintSettings {
+    fn default() -> Self {
+        Self {
+            show_on_startup: true,
+        }
+    }
+}
+
 impl Default for UpdateSettings {
     fn default() -> Self {
         Self {
@@ -247,7 +268,7 @@ impl Default for UpdateChannel {
 /// Config keys: `invert_waveform_scroll`, `waveform_scroll_speed`,
 /// `wheel_zoom_factor`, `keyboard_zoom_factor`, `anti_clip_fade_enabled`,
 /// `anti_clip_fade_ms`, `destructive_yolo_mode`, `waveform_channel_view`,
-/// `bpm_snap_enabled`, `bpm_value`.
+/// `bpm_snap_enabled`, `bpm_value`, `transient_markers_enabled`, `transient_snap_enabled`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InteractionOptions {
     #[serde(default = "default_true")]
@@ -270,6 +291,10 @@ pub struct InteractionOptions {
     pub bpm_snap_enabled: bool,
     #[serde(default = "default_bpm_value")]
     pub bpm_value: f32,
+    #[serde(default = "default_false")]
+    pub transient_snap_enabled: bool,
+    #[serde(default = "default_true")]
+    pub transient_markers_enabled: bool,
 }
 
 impl Default for InteractionOptions {
@@ -285,6 +310,8 @@ impl Default for InteractionOptions {
             waveform_channel_view: WaveformChannelView::Mono,
             bpm_snap_enabled: default_false(),
             bpm_value: default_bpm_value(),
+            transient_snap_enabled: default_false(),
+            transient_markers_enabled: default_true(),
         }
     }
 }
@@ -306,6 +333,7 @@ impl Default for AppConfig {
             feature_flags: FeatureFlags::default(),
             analysis: AnalysisSettings::default(),
             updates: UpdateSettings::default(),
+            hints: HintSettings::default(),
             app_data_dir: None,
             trash_folder: None,
             collection_export_root: None,
@@ -323,6 +351,7 @@ impl Default for AppSettings {
             feature_flags: FeatureFlags::default(),
             analysis: AnalysisSettings::default(),
             updates: UpdateSettings::default(),
+            hints: HintSettings::default(),
             app_data_dir: None,
             trash_folder: None,
             collection_export_root: None,

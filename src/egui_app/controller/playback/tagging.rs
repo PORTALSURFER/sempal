@@ -17,19 +17,30 @@ pub(super) fn tag_selected(controller: &mut EguiController, target: SampleTag) {
     controller.ui.browser.autoscroll = true;
     let mut last_error = None;
     let mut applied: Vec<(SourceId, PathBuf, SampleTag)> = Vec::new();
+    let mut contexts = Vec::with_capacity(rows.len());
+    let mut seen = std::collections::HashSet::new();
     for row in rows {
-        let before = match controller.resolve_browser_sample(row) {
-            Ok(ctx) => (
-                ctx.source.id.clone(),
-                ctx.entry.relative_path.clone(),
-                ctx.entry.tag,
-            ),
-            Err(err) => {
-                last_error = Some(err);
-                continue;
+        match controller.resolve_browser_sample(row) {
+            Ok(ctx) => {
+                if seen.insert(ctx.entry.relative_path.clone()) {
+                    contexts.push(ctx);
+                }
             }
-        };
-        match controller.tag_browser_sample(row, target) {
+            Err(err) => last_error = Some(err),
+        }
+    }
+    for ctx in contexts {
+        let before = (
+            ctx.source.id.clone(),
+            ctx.entry.relative_path.clone(),
+            ctx.entry.tag,
+        );
+        match controller.set_sample_tag_for_source(
+            &ctx.source,
+            &ctx.entry.relative_path,
+            target,
+            true,
+        ) {
             Ok(()) => applied.push(before),
             Err(err) => last_error = Some(err),
         }

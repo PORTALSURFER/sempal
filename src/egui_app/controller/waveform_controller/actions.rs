@@ -104,7 +104,13 @@ impl WaveformActions for WaveformController<'_> {
         if !self.waveform_ready() {
             return;
         }
-        let step = self.waveform_step_size(fine).max(MIN_SELECTION_WIDTH);
+        let step = if fine {
+            self.waveform_step_size(true)
+        } else {
+            self.bpm_snap_step()
+                .unwrap_or_else(|| self.waveform_step_size(false))
+        }
+        .max(MIN_SELECTION_WIDTH);
         let Some(selection) = self
             .selection_state
             .range
@@ -127,6 +133,8 @@ impl WaveformActions for WaveformController<'_> {
         let range = SelectionRange::new(clamped_start, clamped_end);
         self.selection_state.range.set_range(Some(range));
         self.apply_selection(Some(range));
+        self.ensure_selection_visible_in_view(range);
+        self.refresh_loop_after_selection_change(range);
         self.push_selection_undo("Selection", before, Some(range));
     }
 
@@ -134,7 +142,12 @@ impl WaveformActions for WaveformController<'_> {
         if !self.waveform_ready() {
             return;
         }
-        let step = self.waveform_step_size(fine);
+        let step = if fine {
+            self.waveform_step_size(true)
+        } else {
+            self.bpm_snap_step()
+                .unwrap_or_else(|| self.waveform_step_size(false))
+        };
         if step <= 0.0 {
             return;
         }
@@ -152,6 +165,8 @@ impl WaveformActions for WaveformController<'_> {
         let range = selection.shift(delta);
         self.selection_state.range.set_range(Some(range));
         self.apply_selection(Some(range));
+        self.ensure_selection_visible_in_view(range);
+        self.refresh_loop_after_selection_change(range);
         self.push_selection_undo("Selection", before, Some(range));
     }
 

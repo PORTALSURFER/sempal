@@ -1,6 +1,8 @@
 use super::*;
 
-use crate::updater::{UpdateChannel, UpdateCheckOutcome, UpdateCheckRequest, check_for_updates};
+use crate::updater::{
+    RuntimeIdentity, UpdateChannel, UpdateCheckOutcome, UpdateCheckRequest, check_for_updates,
+};
 
 impl EguiController {
     pub(super) fn maybe_check_for_updates_on_startup(&mut self) {
@@ -129,6 +131,14 @@ impl EguiController {
     }
 
     pub(in crate::egui_app::controller) fn apply_update_check_error(&mut self, err: String) {
+        if err.contains("release with required assets found") {
+            self.ui.update.status = crate::egui_app::state::UpdateStatus::Idle;
+            self.ui.update.last_error = None;
+            self.ui.update.available_tag = None;
+            self.ui.update.available_url = None;
+            self.ui.update.available_published_at = None;
+            return;
+        }
         self.ui.update.status = crate::egui_app::state::UpdateStatus::Error;
         self.ui.update.last_error = Some(err.clone());
         self.ui.update.available_tag = None;
@@ -148,6 +158,7 @@ impl EguiController {
         let request = UpdateCheckRequest {
             repo: crate::updater::REPO_SLUG.to_string(),
             channel: map_channel(self.settings.updates.channel),
+            identity: runtime_identity(map_channel(self.settings.updates.channel)),
             current_version,
             last_seen_nightly_published_at: self.ui.update.last_seen_nightly_published_at.clone(),
         };
@@ -168,4 +179,36 @@ pub(in crate::egui_app::controller) fn run_update_check(
     request: UpdateCheckRequest,
 ) -> Result<UpdateCheckOutcome, String> {
     check_for_updates(request).map_err(|err| err.to_string())
+}
+
+fn runtime_identity(channel: UpdateChannel) -> RuntimeIdentity {
+    let platform_raw = std::env::consts::OS;
+    let platform = match platform_raw {
+        "windows" => "windows",
+        "linux" => "linux",
+        "macos" => "macos",
+        other => other,
+    };
+    let arch_raw = std::env::consts::ARCH;
+    let arch = match arch_raw {
+        "x86_64" => "x86_64",
+        "aarch64" => "aarch64",
+        other => other,
+    };
+    let target = match (platform, arch) {
+        ("windows", "x86_64") => "x86_64-pc-windows-msvc",
+        ("windows", "aarch64") => "aarch64-pc-windows-msvc",
+        ("linux", "x86_64") => "x86_64-unknown-linux-gnu",
+        ("linux", "aarch64") => "aarch64-unknown-linux-gnu",
+        ("macos", "x86_64") => "x86_64-apple-darwin",
+        ("macos", "aarch64") => "aarch64-apple-darwin",
+        _ => "unknown",
+    };
+    RuntimeIdentity {
+        app: crate::updater::APP_NAME.to_string(),
+        channel,
+        target: target.to_string(),
+        platform: platform.to_string(),
+        arch: arch.to_string(),
+    }
 }

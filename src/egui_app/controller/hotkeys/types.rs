@@ -139,6 +139,7 @@ pub(crate) enum HotkeyCommand {
     NormalizeWaveform,
     CropSelection,
     CropSelectionNewSample,
+    SaveSelectionToBrowser,
     OpenFeedbackIssuePrompt,
     CopyStatusLog,
     SelectAllBrowser,

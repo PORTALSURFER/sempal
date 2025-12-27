@@ -1,6 +1,8 @@
 use serde::Deserialize;
 
-use super::{UpdateChannel, UpdateError};
+use super::{
+    RuntimeIdentity, UpdateChannel, UpdateError, expected_checksums_name, expected_zip_asset_name,
+};
 
 #[derive(Debug, Clone, Deserialize)]
 pub(super) struct ReleaseAsset {
@@ -18,13 +20,17 @@ pub(super) struct Release {
     pub(super) assets: Vec<ReleaseAsset>,
 }
 
-pub(super) fn fetch_release(repo: &str, channel: UpdateChannel) -> Result<Release, UpdateError> {
-    let url = match channel {
-        UpdateChannel::Stable => format!("https://api.github.com/repos/{repo}/releases/latest"),
-        UpdateChannel::Nightly => {
-            format!("https://api.github.com/repos/{repo}/releases/tags/nightly")
-        }
-    };
+pub(super) fn fetch_release_with_assets(
+    repo: &str,
+    channel: UpdateChannel,
+    identity: &RuntimeIdentity,
+) -> Result<Release, UpdateError> {
+    let releases = fetch_releases(repo)?;
+    select_release_with_assets(releases, channel, identity)
+}
+
+fn fetch_releases(repo: &str) -> Result<Vec<Release>, UpdateError> {
+    let url = format!("https://api.github.com/repos/{repo}/releases?per_page=20");
     get_json(&url)
 }
 
@@ -41,6 +47,49 @@ fn get_json<T: for<'de> Deserialize<'de>>(url: &str) -> Result<T, UpdateError> {
 
 pub(super) fn find_asset<'a>(release: &'a Release, name: &str) -> Option<&'a ReleaseAsset> {
     release.assets.iter().find(|asset| asset.name == name)
+}
+
+fn select_release_with_assets(
+    releases: Vec<Release>,
+    channel: UpdateChannel,
+    identity: &RuntimeIdentity,
+) -> Result<Release, UpdateError> {
+    for release in releases.into_iter() {
+        if channel == UpdateChannel::Stable && release.prerelease {
+            continue;
+        }
+        match channel {
+            UpdateChannel::Stable => {
+                let Some(version_text) = release.tag_name.strip_prefix('v') else {
+                    continue;
+                };
+                let zip_name = expected_zip_asset_name(identity, Some(version_text))?;
+                let checksums_name = expected_checksums_name(identity, Some(version_text))?;
+                if has_assets(&release, &[zip_name, checksums_name]) {
+                    return Ok(release);
+                }
+            }
+            UpdateChannel::Nightly => {
+                if release.tag_name != "nightly" {
+                    continue;
+                }
+                let zip_name = expected_zip_asset_name(identity, None)?;
+                let checksums_name = expected_checksums_name(identity, None)?;
+                if has_assets(&release, &[zip_name, checksums_name]) {
+                    return Ok(release);
+                }
+            }
+        }
+    }
+    Err(UpdateError::Invalid(format!(
+        "No {channel:?} release with required assets found"
+    )))
+}
+
+fn has_assets(release: &Release, required: &[String]) -> bool {
+    required
+        .iter()
+        .all(|name| find_asset(release, name).is_some())
 }
 
 #[cfg(test)]

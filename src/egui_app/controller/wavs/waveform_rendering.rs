@@ -10,6 +10,7 @@ const MIN_SAMPLES_PER_PIXEL: f32 = 1.0;
 const MAX_ZOOM_MULTIPLIER: f32 = 64.0;
 // Cap oversampling to avoid subpixel waveform columns that shimmer when downscaled.
 const MAX_COLUMNS_PER_PIXEL: f32 = 1.0;
+const DEFAULT_TRANSIENT_SENSITIVITY: f32 = 0.6;
 
 fn min_view_width_for_frames(frame_count: usize, width_px: u32) -> f32 {
     if frame_count == 0 {
@@ -77,6 +78,7 @@ impl EguiController {
         // identical to the previous render.
         self.sample_view.waveform.render_meta = None;
         self.sample_view.waveform.decoded = Some(decoded);
+        self.refresh_waveform_transients();
         self.refresh_waveform_image();
     }
 
@@ -162,6 +164,22 @@ impl EguiController {
         });
         self.ui.waveform.view = view;
         self.sample_view.waveform.render_meta = Some(desired_meta);
+    }
+
+    pub(in crate::egui_app::controller) fn refresh_waveform_transients(&mut self) {
+        let Some(decoded) = self.sample_view.waveform.decoded.as_ref() else {
+            self.ui.waveform.transients.clear();
+            self.ui.waveform.transient_cache_token = None;
+            return;
+        };
+        if self.ui.waveform.transient_cache_token == Some(decoded.cache_token) {
+            return;
+        }
+        self.ui.waveform.transients = crate::waveform::transients::detect_transients(
+            decoded,
+            DEFAULT_TRANSIENT_SENSITIVITY,
+        );
+        self.ui.waveform.transient_cache_token = Some(decoded.cache_token);
     }
 
     pub(in crate::egui_app::controller::wavs) fn read_waveform_bytes(

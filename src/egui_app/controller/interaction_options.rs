@@ -22,6 +22,7 @@ pub(super) fn clamp_anti_clip_fade_ms(fade_ms: f32) -> f32 {
     fade_ms.clamp(MIN_ANTI_CLIP_FADE_MS, MAX_ANTI_CLIP_FADE_MS)
 }
 
+
 fn clamp_wheel_zoom_speed(speed: f32) -> f32 {
     speed.clamp(MIN_WHEEL_ZOOM_SPEED, MAX_WHEEL_ZOOM_SPEED)
 }
@@ -163,6 +164,30 @@ impl EguiController {
         }
         self.settings.controls.bpm_value = value;
         self.ui.waveform.bpm_value = Some(value);
+        self.persist_controls();
+    }
+
+    /// Enable/disable transient snapping and persist the setting.
+    pub fn set_transient_snap_enabled(&mut self, enabled: bool) {
+        if self.settings.controls.transient_snap_enabled == enabled {
+            return;
+        }
+        self.settings.controls.transient_snap_enabled = enabled;
+        self.ui.waveform.transient_snap_enabled = enabled;
+        self.persist_controls();
+    }
+
+    /// Enable/disable transient marker rendering and persist the setting.
+    pub fn set_transient_markers_enabled(&mut self, enabled: bool) {
+        if self.settings.controls.transient_markers_enabled == enabled {
+            return;
+        }
+        self.settings.controls.transient_markers_enabled = enabled;
+        self.ui.waveform.transient_markers_enabled = enabled;
+        if !enabled {
+            self.settings.controls.transient_snap_enabled = false;
+            self.ui.waveform.transient_snap_enabled = false;
+        }
         self.persist_controls();
     }
 

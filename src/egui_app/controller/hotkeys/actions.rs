@@ -165,6 +165,13 @@ pub(super) const HOTKEY_ACTIONS: &[HotkeyAction] = &[
         command: HotkeyCommand::CropSelectionNewSample,
     },
     HotkeyAction {
+        id: "save-selection-to-browser",
+        label: "Save selection to browser",
+        gesture: HotkeyGesture::new(Key::Enter),
+        scope: HotkeyScope::Focus(FocusContext::Waveform),
+        command: HotkeyCommand::SaveSelectionToBrowser,
+    },
+    HotkeyAction {
         id: "show-hotkeys",
         label: "Show hotkeys",
         gesture: HotkeyGesture::with_command(Key::Slash),

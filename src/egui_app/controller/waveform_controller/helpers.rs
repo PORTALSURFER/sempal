@@ -56,6 +56,72 @@ impl WaveformController<'_> {
         self.ui.waveform.view.width() * px_fraction
     }
 
+    pub(super) fn bpm_snap_step(&self) -> Option<f32> {
+        if !self.ui.waveform.bpm_snap_enabled {
+            return None;
+        }
+        let bpm = self.ui.waveform.bpm_value?;
+        if !bpm.is_finite() || bpm <= 0.0 {
+            return None;
+        }
+        let duration = self.loaded_audio_duration_seconds()?;
+        if !duration.is_finite() || duration <= 0.0 {
+            return None;
+        }
+        let step = 60.0 / bpm / duration;
+        if step.is_finite() && step > 0.0 {
+            Some(step)
+        } else {
+            None
+        }
+    }
+
+    pub(super) fn refresh_loop_after_selection_change(&mut self, selection: SelectionRange) {
+        if !self.ui.waveform.loop_enabled || !self.is_playing() {
+            return;
+        }
+        if selection.width() < MIN_SELECTION_WIDTH {
+            return;
+        }
+        let playhead = self.ui.waveform.playhead.position;
+        let start_override = if playhead >= selection.start() && playhead <= selection.end() {
+            Some(playhead)
+        } else {
+            Some(selection.start())
+        };
+        if let Err(err) = self.play_audio(true, start_override) {
+            self.set_status(err, StatusTone::Error);
+        }
+    }
+
+    pub(super) fn ensure_selection_visible_in_view(&mut self, selection: SelectionRange) {
+        if !self.waveform_ready() {
+            return;
+        }
+        let mut view = self.ui.waveform.view;
+        let width = view.width().max(self.min_view_width());
+        if width >= 1.0 {
+            return;
+        }
+        if selection.width() >= width {
+            let center = (selection.start() + selection.end()) * 0.5;
+            let start = (center - width * 0.5).clamp(0.0, 1.0 - width);
+            view.start = start;
+            view.end = start + width;
+        } else if selection.start() < view.start {
+            view.start = selection.start();
+            view.end = (view.start + width).min(1.0);
+        } else if selection.end() > view.end {
+            view.end = selection.end();
+            view.start = (view.end - width).max(0.0);
+        }
+        let clamped = view.clamp();
+        if views_differ(self.ui.waveform.view, clamped) {
+            self.ui.waveform.view = clamped;
+            self.refresh_waveform_image();
+        }
+    }
+
     pub(crate) fn set_waveform_cursor(&mut self, position: f32) {
         self.set_waveform_cursor_with_source(position, CursorUpdateSource::Navigation);
     }

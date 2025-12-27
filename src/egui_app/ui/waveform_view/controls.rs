@@ -57,6 +57,25 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
             }
         }
     });
+    ui.horizontal(|ui| {
+        let mut show_transients = app.controller.ui.waveform.transient_markers_enabled;
+        if ui
+            .checkbox(&mut show_transients, "Show transients")
+            .clicked()
+        {
+            app.controller.set_transient_markers_enabled(show_transients);
+        }
+        let mut transient_snap = app.controller.ui.waveform.transient_snap_enabled;
+        let snap_toggle = ui.add_enabled(
+            app.controller.ui.waveform.transient_markers_enabled,
+            egui::Checkbox::new(&mut transient_snap, "Transient snap"),
+        );
+        if snap_toggle.clicked() {
+            app.controller.set_transient_snap_enabled(transient_snap);
+        }
+        let transient_count = app.controller.ui.waveform.transients.len();
+        ui.label(format!("Transients: {transient_count}"));
+    });
     if view_mode != app.controller.ui.waveform.channel_view {
         app.controller.set_waveform_channel_view(view_mode);
     }
