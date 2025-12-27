@@ -1,4 +1,4 @@
-use super::DecodedWaveform;
+use super::{DecodedWaveform, WaveformPeaks};
 use crate::analysis::fft::{Complex32, FftPlan, fft_radix2_inplace_with_plan, hann_window};
 
 const MIN_TRANSIENT_SPACING_SECONDS: f32 = 0.05;
@@ -15,6 +15,9 @@ pub fn detect_transients(decoded: &DecodedWaveform, sensitivity: f32) -> Vec<f32
         return Vec::new();
     }
     if decoded.samples.is_empty() {
+        if let Some(peaks) = decoded.peaks.as_deref() {
+            return detect_transients_from_peaks(peaks, decoded, sensitivity);
+        }
         return Vec::new();
     }
     let sensitivity = sensitivity.clamp(0.0, 1.0);
@@ -138,6 +141,63 @@ pub fn detect_transients(decoded: &DecodedWaveform, sensitivity: f32) -> Vec<f32
         .into_iter()
         .map(|(frame, _)| {
             let position = ((frame * hop + fft_len / 2) as f32) / total_frames as f32;
+            position.clamp(0.0, 1.0)
+        })
+        .collect()
+}
+
+fn detect_transients_from_peaks(
+    peaks: &WaveformPeaks,
+    decoded: &DecodedWaveform,
+    sensitivity: f32,
+) -> Vec<f32> {
+    if peaks.mono.is_empty() {
+        return Vec::new();
+    }
+    let bucket = peaks.bucket_size_frames.max(1) as f32;
+    let sample_rate = decoded.sample_rate.max(1) as f32;
+    let mut envelope = Vec::with_capacity(peaks.mono.len());
+    for (min, max) in &peaks.mono {
+        let amp = min.abs().max(max.abs());
+        envelope.push((1.0 + 10.0 * amp).ln());
+    }
+    if envelope.len() < 3 {
+        return Vec::new();
+    }
+    let mut novelty = Vec::with_capacity(envelope.len());
+    let mut prev = envelope[0];
+    novelty.push(0.0);
+    for &value in &envelope[1..] {
+        let delta = (value - prev).max(0.0);
+        novelty.push(delta);
+        prev = value;
+    }
+    let novelty_smoothed = smooth_values(&novelty, SMOOTH_RADIUS);
+    let window = ((BASELINE_SECONDS * sample_rate / bucket).round() as usize)
+        .clamp(MIN_THRESHOLD_WINDOW, MAX_THRESHOLD_WINDOW);
+    let min_gap_frames = ((MIN_TRANSIENT_SPACING_SECONDS * sample_rate) / bucket)
+        .round()
+        .max(1.0) as usize;
+    let max_transients_cap = max_transients(decoded, sensitivity);
+    let floor_quantile = 0.3 + (1.0 - sensitivity) * 0.1;
+    let mut peaks = pick_peaks_windowed(
+        &novelty_smoothed,
+        window,
+        sensitivity,
+        min_gap_frames,
+        max_transients_cap,
+        sample_rate,
+        bucket as usize,
+        floor_quantile,
+    );
+    if peaks.is_empty() {
+        peaks = pick_peaks_loose(&novelty_smoothed, min_gap_frames, max_transients_cap, 0.2);
+    }
+    peaks
+        .into_iter()
+        .map(|(bucket_index, _)| {
+            let frame = (bucket_index as f32) * bucket;
+            let position = frame / decoded.frame_count().max(1) as f32;
             position.clamp(0.0, 1.0)
         })
         .collect()
