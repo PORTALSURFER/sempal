@@ -44,6 +44,16 @@ pub struct WaveformState {
     pub transient_cache_sensitivity: f32,
     /// Cached novelty curve for transient peak-picking.
     pub transient_novelty: Option<TransientNovelty>,
+    /// When true, use custom transient tuning overrides instead of sensitivity defaults.
+    pub transient_use_custom_tuning: bool,
+    /// Custom transient threshold multiplier (high).
+    pub transient_k_high: f32,
+    /// Custom transient threshold multiplier (low).
+    pub transient_k_low: f32,
+    /// Custom transient floor quantile for the novelty curve.
+    pub transient_floor_quantile: f32,
+    /// Custom minimum gap between transients, in seconds.
+    pub transient_min_gap_seconds: f32,
     /// Current visible viewport within the waveform (0.0-1.0 normalized).
     pub view: WaveformView,
     pub loop_enabled: bool,
@@ -89,6 +99,11 @@ impl Default for WaveformState {
             transient_cache_token: None,
             transient_cache_sensitivity: 0.6,
             transient_novelty: None,
+            transient_use_custom_tuning: false,
+            transient_k_high: 4.2,
+            transient_k_low: 2.1,
+            transient_floor_quantile: 0.58,
+            transient_min_gap_seconds: 0.084,
             view: WaveformView::default(),
             loop_enabled: false,
             notice: None,

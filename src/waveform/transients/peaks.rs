@@ -23,6 +23,20 @@ impl SensitivityParams {
         }
     }
 
+    pub(crate) fn from_overrides(
+        k_high: f32,
+        k_low: f32,
+        floor_quantile: f32,
+        min_gap_seconds: f32,
+    ) -> Self {
+        Self {
+            k_high,
+            k_low,
+            floor_quantile,
+            min_gap_seconds,
+        }
+    }
+
     pub(crate) fn relaxed(self) -> Self {
         Self {
             k_high: (self.k_high * 0.75).max(1.0),

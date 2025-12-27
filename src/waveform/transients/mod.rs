@@ -22,11 +22,37 @@ pub struct TransientNovelty {
     pub total_frames: usize,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct TransientTuning {
+    pub use_custom: bool,
+    pub k_high: f32,
+    pub k_low: f32,
+    pub floor_quantile: f32,
+    pub min_gap_seconds: f32,
+}
+
+impl Default for TransientTuning {
+    fn default() -> Self {
+        Self {
+            use_custom: false,
+            k_high: 4.2,
+            k_low: 2.1,
+            floor_quantile: 0.58,
+            min_gap_seconds: 0.084,
+        }
+    }
+}
+
 pub fn detect_transients(decoded: &DecodedWaveform, sensitivity: f32) -> Vec<f32> {
     let Some(novelty) = compute_transient_novelty(decoded) else {
         if decoded.samples.is_empty() {
             if let Some(peaks) = decoded.peaks.as_deref() {
-                return detect_transients_from_peaks(peaks, decoded, sensitivity);
+                return detect_transients_from_peaks_with_tuning(
+                    peaks,
+                    decoded,
+                    sensitivity,
+                    TransientTuning::default(),
+                );
             }
         }
         return Vec::new();
@@ -59,8 +85,27 @@ pub fn pick_transients_from_novelty(
     sensitivity: f32,
     duration_seconds: f32,
 ) -> Vec<f32> {
+    let tuning = TransientTuning::default();
+    pick_transients_with_tuning(novelty, sensitivity, duration_seconds, tuning)
+}
+
+pub fn pick_transients_with_tuning(
+    novelty: &TransientNovelty,
+    sensitivity: f32,
+    duration_seconds: f32,
+    tuning: TransientTuning,
+) -> Vec<f32> {
     let sensitivity = sensitivity.clamp(0.0, 1.0);
-    let params = SensitivityParams::from_sensitivity(sensitivity);
+    let params = if tuning.use_custom {
+        SensitivityParams::from_overrides(
+            tuning.k_high,
+            tuning.k_low,
+            tuning.floor_quantile,
+            tuning.min_gap_seconds,
+        )
+    } else {
+        SensitivityParams::from_sensitivity(sensitivity)
+    };
     let novelty_smoothed = smooth_values(&novelty.novelty, SMOOTH_RADIUS);
     let window = ((BASELINE_SECONDS * novelty.sample_rate as f32 / novelty.hop as f32).round()
         as usize)
@@ -125,17 +170,27 @@ pub fn pick_transients_from_novelty(
     positions
 }
 
-fn detect_transients_from_peaks(
+pub fn detect_transients_from_peaks_with_tuning(
     peaks: &WaveformPeaks,
     decoded: &DecodedWaveform,
     sensitivity: f32,
+    tuning: TransientTuning,
 ) -> Vec<f32> {
     if peaks.mono.is_empty() {
         return Vec::new();
     }
     let bucket = peaks.bucket_size_frames.max(1) as f32;
     let sample_rate = decoded.sample_rate.max(1) as f32;
-    let params = SensitivityParams::from_sensitivity(sensitivity);
+    let params = if tuning.use_custom {
+        SensitivityParams::from_overrides(
+            tuning.k_high,
+            tuning.k_low,
+            tuning.floor_quantile,
+            tuning.min_gap_seconds,
+        )
+    } else {
+        SensitivityParams::from_sensitivity(sensitivity)
+    };
     let mut envelope = Vec::with_capacity(peaks.mono.len());
     for (min, max) in &peaks.mono {
         let amp = min.abs().max(max.abs());

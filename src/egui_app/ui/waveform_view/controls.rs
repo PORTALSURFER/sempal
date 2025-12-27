@@ -103,6 +103,63 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
         let transient_count = app.controller.ui.waveform.transients.len();
         ui.label(format!("Transients: {transient_count}"));
     });
+    ui.collapsing("Transient tuning", |ui| {
+        let mut use_custom = app.controller.ui.waveform.transient_use_custom_tuning;
+        if ui.checkbox(&mut use_custom, "Use custom tuning").clicked() {
+            app.controller.set_transient_use_custom_tuning(use_custom);
+        }
+        let slider_enabled = app.controller.ui.waveform.transient_use_custom_tuning;
+        ui.add_enabled_ui(slider_enabled, |ui| {
+            let mut k_high = app.controller.ui.waveform.transient_k_high;
+            if ui
+                .add(
+                    egui::Slider::new(&mut k_high, 1.0..=12.0)
+                        .text("k high")
+                        .fixed_decimals(2)
+                        .step_by(0.05),
+                )
+                .changed()
+            {
+                app.controller.set_transient_k_high(k_high);
+            }
+            let mut k_low = app.controller.ui.waveform.transient_k_low;
+            if ui
+                .add(
+                    egui::Slider::new(&mut k_low, 0.5..=8.0)
+                        .text("k low")
+                        .fixed_decimals(2)
+                        .step_by(0.05),
+                )
+                .changed()
+            {
+                app.controller.set_transient_k_low(k_low);
+            }
+            let mut floor = app.controller.ui.waveform.transient_floor_quantile;
+            if ui
+                .add(
+                    egui::Slider::new(&mut floor, 0.1..=0.9)
+                        .text("floor quantile")
+                        .fixed_decimals(2)
+                        .step_by(0.01),
+                )
+                .changed()
+            {
+                app.controller.set_transient_floor_quantile(floor);
+            }
+            let mut min_gap = app.controller.ui.waveform.transient_min_gap_seconds;
+            if ui
+                .add(
+                    egui::Slider::new(&mut min_gap, 0.02..=0.2)
+                        .text("min gap (s)")
+                        .fixed_decimals(3)
+                        .step_by(0.005),
+                )
+                .changed()
+            {
+                app.controller.set_transient_min_gap_seconds(min_gap);
+            }
+        });
+    });
     if view_mode != app.controller.ui.waveform.channel_view {
         app.controller.set_waveform_channel_view(view_mode);
     }

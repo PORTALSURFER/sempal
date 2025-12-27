@@ -182,16 +182,32 @@ impl EguiController {
         if (self.ui.waveform.transient_cache_sensitivity - sensitivity).abs() < f32::EPSILON {
             return;
         }
-        let Some(novelty) = self.ui.waveform.transient_novelty.as_ref() else {
-            self.ui.waveform.transients.clear();
-            self.ui.waveform.transient_cache_sensitivity = sensitivity;
-            return;
+        let tuning = crate::waveform::transients::TransientTuning {
+            use_custom: self.ui.waveform.transient_use_custom_tuning,
+            k_high: self.ui.waveform.transient_k_high,
+            k_low: self.ui.waveform.transient_k_low,
+            floor_quantile: self.ui.waveform.transient_floor_quantile,
+            min_gap_seconds: self.ui.waveform.transient_min_gap_seconds,
         };
-        self.ui.waveform.transients = crate::waveform::transients::pick_transients_from_novelty(
-            novelty,
-            sensitivity,
-            decoded.duration_seconds,
-        );
+        if let Some(novelty) = self.ui.waveform.transient_novelty.as_ref() {
+            self.ui.waveform.transients =
+                crate::waveform::transients::pick_transients_with_tuning(
+                    novelty,
+                    sensitivity,
+                    decoded.duration_seconds,
+                    tuning,
+                );
+        } else if let Some(peaks) = decoded.peaks.as_deref() {
+            self.ui.waveform.transients =
+                crate::waveform::transients::detect_transients_from_peaks_with_tuning(
+                    peaks,
+                    decoded,
+                    sensitivity,
+                    tuning,
+                );
+        } else {
+            self.ui.waveform.transients.clear();
+        }
         self.ui.waveform.transient_cache_sensitivity = sensitivity;
     }
 
