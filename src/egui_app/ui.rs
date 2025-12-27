@@ -6,6 +6,7 @@ mod collections_render;
 mod drag_overlay;
 mod drag_targets;
 mod feedback_issue;
+mod hints;
 mod flat_items_list;
 mod helpers;
 mod hotkey_overlay;

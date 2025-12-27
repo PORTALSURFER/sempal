@@ -21,6 +21,7 @@ mod drag_drop_controller;
 mod feedback_issue;
 mod focus;
 pub(crate) mod hotkeys;
+mod hints;
 mod hotkeys_controller;
 mod interaction_options;
 mod jobs;
@@ -173,6 +174,7 @@ impl EguiController {
                 feature_flags: crate::sample_sources::config::FeatureFlags::default(),
                 analysis: crate::sample_sources::config::AnalysisSettings::default(),
                 updates: crate::sample_sources::config::UpdateSettings::default(),
+                hints: crate::sample_sources::config::HintSettings::default(),
                 app_data_dir: None,
                 audio_output: AudioOutputConfig::default(),
                 controls: crate::sample_sources::config::InteractionOptions::default(),

@@ -40,6 +40,7 @@ pub fn load_or_default() -> Result<AppConfig, ConfigError> {
         feature_flags: settings.feature_flags,
         analysis: settings.analysis,
         updates: settings.updates,
+        hints: settings.hints,
         app_data_dir: settings.app_data_dir,
         trash_folder: settings.trash_folder,
         collection_export_root: settings.collection_export_root,
@@ -71,6 +72,7 @@ pub fn save_to_path(config: &AppConfig, path: &Path) -> Result<(), ConfigError> 
             feature_flags: config.feature_flags.clone(),
             analysis: config.analysis.clone(),
             updates: config.updates.clone(),
+            hints: config.hints.clone(),
             app_data_dir: config.app_data_dir.clone(),
             trash_folder: config.trash_folder.clone(),
             collection_export_root: config.collection_export_root.clone(),
@@ -152,6 +154,7 @@ fn migrate_legacy_config(legacy_path: &Path, new_path: &Path) -> Result<AppSetti
         feature_flags: legacy.feature_flags,
         analysis: AnalysisSettings::default(),
         updates: UpdateSettings::default(),
+        hints: super::config_types::HintSettings::default(),
         app_data_dir: None,
         trash_folder: legacy.trash_folder,
         collection_export_root: None,
@@ -217,7 +220,7 @@ fn map_app_dir_error(error: app_dirs::AppDirError) -> ConfigError {
 mod tests {
     use super::super::config_defaults::MAX_ANALYSIS_WORKER_COUNT;
     use super::super::config_types::{
-        AnalysisSettings, FeatureFlags, InteractionOptions, UpdateSettings,
+        AnalysisSettings, FeatureFlags, HintSettings, InteractionOptions, UpdateSettings,
     };
     use super::*;
     use crate::audio::AudioOutputConfig;
@@ -261,6 +264,7 @@ mod tests {
                 feature_flags: FeatureFlags::default(),
                 analysis: AnalysisSettings::default(),
                 updates: UpdateSettings::default(),
+                hints: HintSettings::default(),
                 app_data_dir: None,
                 trash_folder: Some(PathBuf::from("trash_here")),
                 collection_export_root: None,
