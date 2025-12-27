@@ -404,7 +404,7 @@ fn draw_transient_markers(
     to_screen_x: &impl Fn(f32, egui::Rect) -> f32,
 ) {
     let transients = &app.controller.ui.waveform.transients;
-    if transients.is_empty() {
+    if !app.controller.ui.waveform.transient_markers_enabled || transients.is_empty() {
         return;
     }
     let palette = style::palette();

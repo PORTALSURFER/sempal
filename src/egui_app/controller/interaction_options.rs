@@ -180,6 +180,16 @@ impl EguiController {
         self.persist_controls();
     }
 
+    /// Enable/disable transient marker rendering and persist the setting.
+    pub fn set_transient_markers_enabled(&mut self, enabled: bool) {
+        if self.settings.controls.transient_markers_enabled == enabled {
+            return;
+        }
+        self.settings.controls.transient_markers_enabled = enabled;
+        self.ui.waveform.transient_markers_enabled = enabled;
+        self.persist_controls();
+    }
+
     /// Update and persist the transient detection sensitivity.
     pub fn set_transient_sensitivity(&mut self, value: f32) {
         let clamped = clamp_transient_sensitivity(value);

@@ -27,6 +27,8 @@ pub struct WaveformState {
     pub bpm_value: Option<f32>,
     /// Cached transient positions (normalized 0-1) for the loaded waveform.
     pub transients: Vec<f32>,
+    /// When true, transient markers are rendered on the waveform.
+    pub transient_markers_enabled: bool,
     /// When true, selection drags snap to nearby transient markers.
     pub transient_snap_enabled: bool,
     /// Sensitivity used when detecting transient markers.
@@ -72,6 +74,7 @@ impl Default for WaveformState {
             bpm_input: "142".to_string(),
             bpm_value: Some(142.0),
             transients: Vec::new(),
+            transient_markers_enabled: true,
             transient_snap_enabled: false,
             transient_sensitivity: 0.6,
             transient_cache_token: None,

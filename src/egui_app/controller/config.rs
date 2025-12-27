@@ -53,6 +53,8 @@ impl EguiController {
         self.ui.waveform.channel_view = self.settings.controls.waveform_channel_view;
         self.ui.waveform.bpm_snap_enabled = self.settings.controls.bpm_snap_enabled;
         self.ui.waveform.bpm_value = normalize_bpm_value(self.settings.controls.bpm_value);
+        self.ui.waveform.transient_markers_enabled =
+            self.settings.controls.transient_markers_enabled;
         self.ui.waveform.transient_snap_enabled = self.settings.controls.transient_snap_enabled;
         self.ui.waveform.transient_sensitivity = self.settings.controls.transient_sensitivity;
         self.ui.waveform.transient_cache_sensitivity = self.ui.waveform.transient_sensitivity;

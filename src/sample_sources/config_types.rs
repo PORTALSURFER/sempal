@@ -268,7 +268,8 @@ impl Default for UpdateChannel {
 /// Config keys: `invert_waveform_scroll`, `waveform_scroll_speed`,
 /// `wheel_zoom_factor`, `keyboard_zoom_factor`, `anti_clip_fade_enabled`,
 /// `anti_clip_fade_ms`, `destructive_yolo_mode`, `waveform_channel_view`,
-/// `bpm_snap_enabled`, `bpm_value`, `transient_snap_enabled`, `transient_sensitivity`.
+/// `bpm_snap_enabled`, `bpm_value`, `transient_markers_enabled`, `transient_snap_enabled`,
+/// `transient_sensitivity`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InteractionOptions {
     #[serde(default = "default_true")]
@@ -293,6 +294,8 @@ pub struct InteractionOptions {
     pub bpm_value: f32,
     #[serde(default = "default_false")]
     pub transient_snap_enabled: bool,
+    #[serde(default = "default_true")]
+    pub transient_markers_enabled: bool,
     #[serde(default = "default_transient_sensitivity")]
     pub transient_sensitivity: f32,
 }
@@ -311,6 +314,7 @@ impl Default for InteractionOptions {
             bpm_snap_enabled: default_false(),
             bpm_value: default_bpm_value(),
             transient_snap_enabled: default_false(),
+            transient_markers_enabled: default_true(),
             transient_sensitivity: default_transient_sensitivity(),
         }
     }
