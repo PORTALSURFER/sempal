@@ -72,7 +72,8 @@ pub struct ApplyPlan {
 }
 
 pub(super) fn apply_update(args: UpdaterRunArgs) -> Result<ApplyPlan, UpdateError> {
-    let release = github::fetch_release(&args.repo, args.identity.channel)?;
+    let release =
+        github::fetch_release_with_assets(&args.repo, args.identity.channel, &args.identity)?;
     let version = match args.identity.channel {
         UpdateChannel::Stable => Some(
             release
