@@ -60,7 +60,9 @@ jobs:
         if: ${{ matrix.platform == 'windows' }}
         shell: pwsh
         run: |
-          git clone --depth 1 https://github.com/audiosdk/asio "$env:GITHUB_WORKSPACE/asio"
+          git lfs install --local
+          git clone --depth 1 --recurse-submodules --shallow-submodules https://github.com/audiosdk/asio "$env:GITHUB_WORKSPACE/asio"
+          git -C "$env:GITHUB_WORKSPACE/asio" lfs pull
           "CPAL_ASIO_DIR=$env:GITHUB_WORKSPACE/asio/ASIOSDK" >> $env:GITHUB_ENV
       - name: Install cross
         if: ${{ matrix.use_cross }}
