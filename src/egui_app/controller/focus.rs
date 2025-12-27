@@ -172,7 +172,7 @@ impl EguiController {
         }
     }
 
-    /// Focus a UI surface from UI-driven navigation (e.g. alt+arrow switching).
+    /// Focus a UI surface from UI-driven navigation.
     pub(crate) fn focus_context_from_ui(&mut self, context: FocusContext) {
         match context {
             FocusContext::SampleBrowser => self.focus_browser_list(),
