@@ -100,6 +100,8 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
             let value = app.controller.ui.waveform.transient_sensitivity_draft;
             app.controller.apply_transient_sensitivity(value);
         }
+        let transient_count = app.controller.ui.waveform.transients.len();
+        ui.label(format!("Transients: {transient_count}"));
     });
     if view_mode != app.controller.ui.waveform.channel_view {
         app.controller.set_waveform_channel_view(view_mode);
