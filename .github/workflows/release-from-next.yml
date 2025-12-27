@@ -60,34 +60,34 @@ jobs:
             exit 0
           fi
           python - <<'PY'
-import re
+          import re
 
-path = "Cargo.toml"
-with open(path, "r", encoding="utf-8") as f:
-    content = f.read()
+          path = "Cargo.toml"
+          with open(path, "r", encoding="utf-8") as f:
+              content = f.read()
 
-match = re.search(r'^version\\s*=\\s*"([0-9]+)\\.([0-9]+)\\.([0-9]+)"', content, re.M)
-if not match:
-    raise SystemExit("Failed to find version in Cargo.toml")
+          match = re.search(r'^version\\s*=\\s*"([0-9]+)\\.([0-9]+)\\.([0-9]+)"', content, re.M)
+          if not match:
+              raise SystemExit("Failed to find version in Cargo.toml")
 
-major, minor, patch = map(int, match.groups())
-minor += 1
-patch = 0
-new_version = f'{major}.{minor}.{patch}'
+          major, minor, patch = map(int, match.groups())
+          minor += 1
+          patch = 0
+          new_version = f'{major}.{minor}.{patch}'
 
-updated = re.sub(
-    r'^version\\s*=\\s*"[0-9]+\\.[0-9]+\\.[0-9]+"',
-    f'version = "{new_version}"',
-    content,
-    count=1,
-    flags=re.M,
-)
+          updated = re.sub(
+              r'^version\\s*=\\s*"[0-9]+\\.[0-9]+\\.[0-9]+"',
+              f'version = "{new_version}"',
+              content,
+              count=1,
+              flags=re.M,
+          )
 
-with open(path, "w", encoding="utf-8") as f:
-    f.write(updated)
+          with open(path, "w", encoding="utf-8") as f:
+              f.write(updated)
 
-print(new_version)
-PY
+          print(new_version)
+          PY
           NEW_VERSION=$(grep -E '^version = ' Cargo.toml | head -n 1 | sed -E 's/.*"([^"]+)".*/\1/')
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
