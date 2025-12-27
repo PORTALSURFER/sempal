@@ -102,7 +102,10 @@ pub fn detect_transients(decoded: &DecodedWaveform, sensitivity: f32) -> Vec<f32
         );
     }
     if peaks.is_empty() {
-        let raw_flux = raw_flux.unwrap_or_else(|| spectral_flux_raw(&mono, fft_len, hop));
+        let raw_flux = raw_flux
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(|| spectral_flux_raw(&mono, fft_len, hop));
         let raw_smoothed = smooth_values(&raw_flux, SMOOTH_RADIUS);
         let raw_window = (window / 2).max(4);
         let raw_thresholds = adaptive_thresholds(&raw_smoothed, raw_window, 1.0);
@@ -117,7 +120,10 @@ pub fn detect_transients(decoded: &DecodedWaveform, sensitivity: f32) -> Vec<f32
         );
     }
     if peaks.is_empty() && long_sample {
-        let raw_flux = raw_flux.unwrap_or_else(|| spectral_flux_raw(&mono, fft_len, hop));
+        let raw_flux = raw_flux
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(|| spectral_flux_raw(&mono, fft_len, hop));
         let raw_smoothed = smooth_values(&raw_flux, SMOOTH_RADIUS);
         let raw_cap = max_transients(decoded, 1.0);
         peaks = pick_peaks_loose(&raw_smoothed, min_gap_frames, raw_cap, 0.15);
