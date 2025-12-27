@@ -1,4 +1,7 @@
 *.bpk filter=lfs diff=lfs merge=lfs -text
+assets/ml/panns_cnn14_16k/panns_cnn14_16k.onnx filter=lfs diff=lfs merge=lfs -text
+assets/ml/panns_cnn14_16k/panns_cnn14_16k.onnx.data filter=lfs diff=lfs merge=lfs -text
+assets/ml/panns_cnn14_16k/Cnn14_16k_mAP=0.438.pth filter=lfs diff=lfs merge=lfs -text
 *.onnx.data filter=lfs diff=lfs merge=lfs -text
 *.onnx filter=lfs diff=lfs merge=lfs -text
 *.pth filter=lfs diff=lfs merge=lfs -text
