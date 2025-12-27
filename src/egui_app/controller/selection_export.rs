@@ -73,6 +73,80 @@ impl EguiController {
         )
     }
 
+    pub(crate) fn save_waveform_selection_to_browser(
+        &mut self,
+        keep_source_focused: bool,
+    ) -> Result<(), String> {
+        let selection = self
+            .selection_state
+            .range
+            .range()
+            .or(self.ui.waveform.selection)
+            .filter(|range| range.width() >= MIN_SELECTION_WIDTH)
+            .ok_or_else(|| "Create a selection first".to_string())?;
+        let audio = self
+            .sample_view
+            .wav
+            .loaded_audio
+            .as_ref()
+            .ok_or_else(|| "Load a sample first".to_string())?;
+        let source_id = audio.source_id.clone();
+        let relative_path = audio.relative_path.clone();
+        let folder_override = self
+            .selection_state
+            .ctx
+            .selected_source
+            .as_ref()
+            .is_some_and(|selected| selected == &source_id)
+            .then(|| {
+                self.ui.sources.folders.focused.and_then(|idx| {
+                    self.ui
+                        .sources
+                        .folders
+                        .rows
+                        .get(idx)
+                        .map(|row| row.path.clone())
+                })
+            })
+            .flatten()
+            .filter(|path| !path.as_os_str().is_empty());
+        let export = if let Some(folder) = folder_override.as_deref() {
+            self.export_selection_clip_in_folder(
+                &source_id,
+                &relative_path,
+                selection,
+                None,
+                true,
+                true,
+                folder,
+            )
+        } else {
+            self.export_selection_clip(
+                &source_id,
+                &relative_path,
+                selection,
+                None,
+                true,
+                true,
+            )
+        };
+        match export {
+            Ok(entry) => {
+                if !keep_source_focused {
+                    self.ui.browser.autoscroll = true;
+                    self.selection_state.suppress_autoplay_once = true;
+                    self.select_from_browser(&entry.relative_path);
+                }
+                self.set_status(
+                    format!("Saved clip {}", entry.relative_path.display()),
+                    StatusTone::Info,
+                );
+                Ok(())
+            }
+            Err(err) => Err(err),
+        }
+    }
+
     pub(super) fn export_selection_clip_to_root(
         &mut self,
         source_id: &SourceId,
