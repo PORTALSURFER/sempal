@@ -13,7 +13,7 @@ Sempal is a sample manager with fast waveform preview, destructive edits. Tuned 
 
 <div class="download-hero">
   <div class="download-copy">Download the latest portable bundle.</div>
-  <a class="download-link" href="https://github.com/portalsurfer/sempal/releases/latest">
+  <a class="download-link" href="https://github.com/portalsurfer/sempal/releases/latest" id="release-link">
     View latest releases
   </a>
 </div>
@@ -40,3 +40,45 @@ Sempal is a sample manager with fast waveform preview, destructive edits. Tuned 
 - [Changelog](https://github.com/portalsurfer/sempal/blob/main/CHANGELOG.md)
 - [Latest downloads](https://github.com/portalsurfer/sempal/releases)
 - [Source on GitHub](https://github.com/portalsurfer/sempal)
+
+<script>
+  (function () {
+    var link = document.getElementById("release-link");
+    if (!link) {
+      return;
+    }
+    fetch("https://api.github.com/repos/PORTALSURFER/sempal/releases?per_page=10")
+      .then(function (response) {
+        if (!response.ok) {
+          throw new Error("release fetch failed");
+        }
+        return response.json();
+      })
+      .then(function (releases) {
+        if (!Array.isArray(releases)) {
+          return;
+        }
+        var match = null;
+        var assetPattern =
+          /^sempal-v\d+\.\d+\.\d+-(windows|linux|macos)-(x86_64|aarch64)\.zip$/i;
+        for (var i = 0; i < releases.length; i += 1) {
+          var release = releases[i];
+          if (!release || release.draft) {
+            continue;
+          }
+          var assets = Array.isArray(release.assets) ? release.assets : [];
+          var hasBundle = assets.some(function (asset) {
+            return asset && asset.name && assetPattern.test(asset.name);
+          });
+          if (hasBundle) {
+            match = release;
+            break;
+          }
+        }
+        if (match && match.html_url) {
+          link.href = match.html_url;
+        }
+      })
+      .catch(function () {});
+  })();
+</script>
