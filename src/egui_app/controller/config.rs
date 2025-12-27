@@ -58,6 +58,8 @@ impl EguiController {
         self.ui.waveform.transient_snap_enabled = self.settings.controls.transient_snap_enabled;
         self.ui.waveform.transient_sensitivity = self.settings.controls.transient_sensitivity;
         self.ui.waveform.transient_sensitivity_draft = self.ui.waveform.transient_sensitivity;
+        self.ui.waveform.transient_realtime_enabled =
+            self.settings.controls.transient_realtime_enabled;
         self.ui.waveform.transient_cache_sensitivity = self.ui.waveform.transient_sensitivity;
         if let Some(value) = self.ui.waveform.bpm_value {
             let rounded = value.round();

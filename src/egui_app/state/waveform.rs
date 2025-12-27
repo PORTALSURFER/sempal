@@ -35,6 +35,8 @@ pub struct WaveformState {
     pub transient_sensitivity: f32,
     /// Pending sensitivity value before applying to the detector.
     pub transient_sensitivity_draft: f32,
+    /// When true, recompute transients as soon as sensitivity changes.
+    pub transient_realtime_enabled: bool,
     /// Cache token for the waveform transients.
     pub transient_cache_token: Option<u64>,
     /// Cached sensitivity for the current transient set.
@@ -80,6 +82,7 @@ impl Default for WaveformState {
             transient_snap_enabled: false,
             transient_sensitivity: 0.6,
             transient_sensitivity_draft: 0.6,
+            transient_realtime_enabled: false,
             transient_cache_token: None,
             transient_cache_sensitivity: 0.6,
             view: WaveformView::default(),

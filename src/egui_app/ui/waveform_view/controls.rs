@@ -80,12 +80,22 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
             .step_by(0.01);
         if ui.add(slider).changed() {
             app.controller.ui.waveform.transient_sensitivity_draft = sensitivity;
+            if app.controller.ui.waveform.transient_realtime_enabled {
+                app.controller.apply_transient_sensitivity(sensitivity);
+            }
+        }
+        let mut realtime = app.controller.ui.waveform.transient_realtime_enabled;
+        if ui.checkbox(&mut realtime, "Realtime").clicked() {
+            app.controller.set_transient_realtime_enabled(realtime);
         }
         let can_apply = (app.controller.ui.waveform.transient_sensitivity
             - app.controller.ui.waveform.transient_sensitivity_draft)
             .abs()
             > f32::EPSILON;
-        let apply = ui.add_enabled(can_apply, egui::Button::new("Apply"));
+        let apply = ui.add_enabled(
+            can_apply && !app.controller.ui.waveform.transient_realtime_enabled,
+            egui::Button::new("Apply"),
+        );
         if apply.clicked() {
             let value = app.controller.ui.waveform.transient_sensitivity_draft;
             app.controller.apply_transient_sensitivity(value);

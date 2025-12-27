@@ -194,6 +194,26 @@ impl EguiController {
         self.persist_controls();
     }
 
+    /// Enable/disable realtime transient updates and persist the setting.
+    pub fn set_transient_realtime_enabled(&mut self, enabled: bool) {
+        if self.settings.controls.transient_realtime_enabled == enabled {
+            return;
+        }
+        self.settings.controls.transient_realtime_enabled = enabled;
+        self.ui.waveform.transient_realtime_enabled = enabled;
+        if enabled
+            && (self.ui.waveform.transient_sensitivity
+                - self.ui.waveform.transient_sensitivity_draft)
+                .abs()
+                > f32::EPSILON
+        {
+            let value = self.ui.waveform.transient_sensitivity_draft;
+            self.apply_transient_sensitivity(value);
+            return;
+        }
+        self.persist_controls();
+    }
+
     /// Update and persist the transient detection sensitivity, then recompute.
     pub fn apply_transient_sensitivity(&mut self, value: f32) {
         let clamped = clamp_transient_sensitivity(value);

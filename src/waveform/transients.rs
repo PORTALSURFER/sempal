@@ -32,7 +32,8 @@ pub fn detect_transients(decoded: &DecodedWaveform, sensitivity: f32) -> Vec<f32
         .round()
         .max(1.0) as usize;
     let max_transients_cap = max_transients(decoded, sensitivity);
-    let mut peaks = if decoded.duration_seconds > 30.0 {
+    let long_sample = decoded.duration_seconds > 30.0;
+    let mut peaks = if long_sample {
         pick_peaks_windowed(
             &novelty_smoothed,
             window,
@@ -41,6 +42,7 @@ pub fn detect_transients(decoded: &DecodedWaveform, sensitivity: f32) -> Vec<f32
             max_transients_cap,
             sample_rate,
             hop,
+            0.6 + (1.0 - sensitivity) * 0.15,
         )
     } else {
         let thresholds = adaptive_thresholds(&novelty_smoothed, window, sensitivity);
@@ -56,6 +58,25 @@ pub fn detect_transients(decoded: &DecodedWaveform, sensitivity: f32) -> Vec<f32
             max_transients_cap,
         )
     };
+    let mut raw_flux = None;
+    if long_sample {
+        raw_flux = Some(spectral_flux_raw(&mono, fft_len, hop));
+        if let Some(raw_flux) = &raw_flux {
+            let raw_smoothed = smooth_values(raw_flux, SMOOTH_RADIUS);
+            let raw_window = (window / 2).max(4);
+            let raw_peaks = pick_peaks_windowed(
+                &raw_smoothed,
+                raw_window,
+                1.0,
+                min_gap_frames,
+                max_transients_cap,
+                sample_rate,
+                hop,
+                0.45,
+            );
+            peaks = merge_peaks(peaks, raw_peaks, min_gap_frames, max_transients_cap);
+        }
+    }
     if peaks.is_empty() {
         let fallback_sensitivity = 1.0;
         let fallback_thresholds =
@@ -71,7 +92,7 @@ pub fn detect_transients(decoded: &DecodedWaveform, sensitivity: f32) -> Vec<f32
         );
     }
     if peaks.is_empty() {
-        let raw_flux = spectral_flux_raw(&mono, fft_len, hop);
+        let raw_flux = raw_flux.unwrap_or_else(|| spectral_flux_raw(&mono, fft_len, hop));
         let raw_smoothed = smooth_values(&raw_flux, SMOOTH_RADIUS);
         let raw_window = (window / 2).max(4);
         let raw_thresholds = adaptive_thresholds(&raw_smoothed, raw_window, 1.0);
@@ -331,6 +352,7 @@ fn pick_peaks_windowed(
     max_transients: usize,
     sample_rate: f32,
     hop: usize,
+    floor_quantile: f32,
 ) -> Vec<(usize, f32)> {
     let hop_seconds = hop as f32 / sample_rate.max(1.0);
     let window_seconds = 12.0;
@@ -347,7 +369,7 @@ fn pick_peaks_windowed(
         let slice = &novelty_smoothed[start..end];
         if slice.len() >= 3 {
             let thresholds = adaptive_thresholds(slice, window, sensitivity);
-            let floor = percentile(slice, 0.6 + (1.0 - sensitivity) * 0.15);
+            let floor = percentile(slice, floor_quantile);
             let mut local = pick_peaks(slice, &thresholds, floor, min_gap_frames, max_transients);
             for (frame, strength) in local.drain(..) {
                 peaks.push((frame + start, strength));
@@ -358,9 +380,27 @@ fn pick_peaks_windowed(
         }
         start = start.saturating_add(step);
     }
+    peaks = merge_peaks(Vec::new(), peaks, min_gap_frames, max_transients);
+    if peaks.len() > max_transients {
+        peaks.truncate(max_transients);
+    }
     peaks.sort_by_key(|(frame, _)| *frame);
-    let mut merged: Vec<(usize, f32)> = Vec::with_capacity(peaks.len());
-    for (frame, strength) in peaks {
+    peaks
+}
+
+fn merge_peaks(
+    mut primary: Vec<(usize, f32)>,
+    mut extra: Vec<(usize, f32)>,
+    min_gap_frames: usize,
+    max_transients: usize,
+) -> Vec<(usize, f32)> {
+    primary.append(&mut extra);
+    if primary.is_empty() {
+        return primary;
+    }
+    primary.sort_by_key(|(frame, _)| *frame);
+    let mut merged: Vec<(usize, f32)> = Vec::with_capacity(primary.len());
+    for (frame, strength) in primary {
         if let Some((last_frame, last_strength)) = merged.last_mut() {
             if frame.abs_diff(*last_frame) <= min_gap_frames {
                 if strength > *last_strength {
@@ -372,12 +412,12 @@ fn pick_peaks_windowed(
         }
         merged.push((frame, strength));
     }
-    peaks = merged;
-    if peaks.len() > max_transients {
-        peaks.truncate(max_transients);
+    if merged.len() > max_transients {
+        merged.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        merged.truncate(max_transients);
+        merged.sort_by_key(|(frame, _)| *frame);
     }
-    peaks.sort_by_key(|(frame, _)| *frame);
-    peaks
+    merged
 }
 
 fn pick_peaks(
