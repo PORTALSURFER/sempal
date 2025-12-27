@@ -2,6 +2,9 @@ use super::DecodedWaveform;
 
 const MAX_TRANSIENT_WINDOWS: usize = 4096;
 const MIN_TRANSIENT_SPACING_SECONDS: f32 = 0.02;
+const SMOOTH_RADIUS: usize = 1;
+const MIN_THRESHOLD_WINDOW: usize = 8;
+const MAX_THRESHOLD_WINDOW: usize = 32;
 
 pub fn detect_transients(decoded: &DecodedWaveform, sensitivity: f32) -> Vec<f32> {
     let total_frames = decoded.frame_count();
@@ -13,19 +16,22 @@ pub fn detect_transients(decoded: &DecodedWaveform, sensitivity: f32) -> Vec<f32
     if windows.len() < 3 {
         return Vec::new();
     }
-    let deltas = build_positive_deltas(&windows);
-    let (mean, std_dev) = mean_std_dev(&deltas);
-    let threshold = mean + (1.0 - sensitivity) * std_dev * 2.0;
-    if !threshold.is_finite() {
-        return Vec::new();
-    }
+    let energies = build_energy_series(&windows);
+    let smoothed = smooth_values(&energies, SMOOTH_RADIUS);
+    let log_energy = smoothed
+        .iter()
+        .map(|value| (1.0 + value.max(0.0)).ln())
+        .collect::<Vec<f32>>();
+    let deltas = build_positive_deltas(&log_energy);
+    let threshold_window = (windows.len() / 64).clamp(MIN_THRESHOLD_WINDOW, MAX_THRESHOLD_WINDOW);
+    let thresholds = adaptive_thresholds(&deltas, threshold_window, sensitivity);
     let min_gap_frames = min_spacing_frames(decoded, total_frames);
     let mut transients = Vec::new();
     let mut last_frame: Option<usize> = None;
     let mut last_strength = 0.0f32;
     for i in 1..deltas.len().saturating_sub(1) {
         let strength = deltas[i];
-        if strength < threshold {
+        if strength < thresholds[i] {
             continue;
         }
         if strength < deltas[i - 1] || strength < deltas[i + 1] {
@@ -80,24 +86,31 @@ fn build_windows_from_samples(
 ) -> Vec<EnergyWindow> {
     let channels = decoded.channel_count().max(1);
     let mut windows = Vec::new();
+    let mut prev_samples = vec![0.0f32; channels];
     let mut start = 0usize;
     while start < total_frames {
         let end = (start + bucket_size).min(total_frames);
-        let mut max_amp = 0.0f32;
+        let mut sum_diff = 0.0f32;
+        let mut count = 0u32;
         for frame in start..end {
             let idx = frame.saturating_mul(channels);
-            let mut frame_max = 0.0f32;
             for ch in 0..channels {
                 if let Some(sample) = decoded.samples.get(idx + ch) {
-                    frame_max = frame_max.max(sample.abs());
+                    let diff = (*sample - prev_samples[ch]).abs();
+                    prev_samples[ch] = *sample;
+                    sum_diff += diff;
+                    count += 1;
                 }
             }
-            max_amp = max_amp.max(frame_max);
         }
         let frame_center = start + (end - start) / 2;
         windows.push(EnergyWindow {
             frame: frame_center,
-            energy: max_amp,
+            energy: if count > 0 {
+                sum_diff / count as f32
+            } else {
+                0.0
+            },
         });
         start = end;
     }
@@ -121,14 +134,57 @@ fn build_windows_from_peaks(
         .collect()
 }
 
-fn build_positive_deltas(windows: &[EnergyWindow]) -> Vec<f32> {
-    let mut deltas = Vec::with_capacity(windows.len());
+fn build_positive_deltas(values: &[f32]) -> Vec<f32> {
+    let mut deltas = Vec::with_capacity(values.len());
     deltas.push(0.0);
-    for i in 1..windows.len() {
-        let delta = (windows[i].energy - windows[i - 1].energy).max(0.0);
+    for i in 1..values.len() {
+        let delta = (values[i] - values[i - 1]).max(0.0);
         deltas.push(delta);
     }
     deltas
+}
+
+fn build_energy_series(windows: &[EnergyWindow]) -> Vec<f32> {
+    windows.iter().map(|window| window.energy).collect()
+}
+
+fn smooth_values(values: &[f32], radius: usize) -> Vec<f32> {
+    if values.is_empty() || radius == 0 {
+        return values.to_vec();
+    }
+    let mut out = Vec::with_capacity(values.len());
+    for i in 0..values.len() {
+        let start = i.saturating_sub(radius);
+        let end = (i + radius + 1).min(values.len());
+        let mut sum = 0.0f32;
+        let mut count = 0.0f32;
+        for value in &values[start..end] {
+            if value.is_finite() {
+                sum += *value;
+                count += 1.0;
+            }
+        }
+        out.push(if count > 0.0 { sum / count } else { 0.0 });
+    }
+    out
+}
+
+fn adaptive_thresholds(values: &[f32], window: usize, sensitivity: f32) -> Vec<f32> {
+    let (global_mean, global_std) = mean_std_dev(values);
+    let mut thresholds = Vec::with_capacity(values.len());
+    let k = 0.6 + (1.0 - sensitivity.clamp(0.0, 1.0)) * 2.4;
+    for i in 0..values.len() {
+        let start = i.saturating_sub(window);
+        let slice = &values[start..i];
+        let (mean, std_dev) = if slice.is_empty() {
+            (global_mean, global_std)
+        } else {
+            mean_std_dev(slice)
+        };
+        let threshold = mean + std_dev * k;
+        thresholds.push(if threshold.is_finite() { threshold } else { global_mean });
+    }
+    thresholds
 }
 
 fn mean_std_dev(values: &[f32]) -> (f32, f32) {
