@@ -3,6 +3,7 @@ name: Create release on main
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: write

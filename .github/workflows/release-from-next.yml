@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   semver:
@@ -51,3 +52,12 @@ jobs:
           git checkout main
           git merge --no-edit "origin/$NEXT_BRANCH"
           git push origin main
+      - name: Trigger release workflow on main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          curl -sS -X POST \
+            -H "Authorization: token ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/release-on-main.yml/dispatches" \
+            -d "{\"ref\":\"main\"}"
