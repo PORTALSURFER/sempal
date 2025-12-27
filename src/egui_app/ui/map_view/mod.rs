@@ -56,7 +56,8 @@ impl EguiApp {
             map_state::ensure_bounds(self, model_id, &umap_version, source_id.as_ref())
         else {
             let prep_active = self.controller.similarity_prep_in_progress();
-            if !prep_active {
+            let prep_failed = self.controller.similarity_prep_has_error();
+            if !prep_active && !prep_failed {
                 self.controller.prepare_similarity_for_selected_source();
             }
             let busy = prep_active || self.controller.ui.progress.visible;
