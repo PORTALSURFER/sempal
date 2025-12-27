@@ -60,8 +60,17 @@ jobs:
         if: ${{ matrix.platform == 'windows' }}
         shell: pwsh
         run: |
-          git clone --depth 1 https://github.com/audiosdk/asio "$env:GITHUB_WORKSPACE/asio"
-          "CPAL_ASIO_DIR=$env:GITHUB_WORKSPACE/asio/ASIOSDK" >> $env:GITHUB_ENV
+          git lfs install --local
+          git clone --depth 1 --recurse-submodules --shallow-submodules https://github.com/audiosdk/asio "$env:GITHUB_WORKSPACE/asio"
+          git -C "$env:GITHUB_WORKSPACE/asio" lfs pull
+          $asioRoot = Join-Path $env:GITHUB_WORKSPACE "asio"
+          $sdkCandidate = Get-ChildItem -Path $asioRoot -Directory -Recurse |
+            Where-Object { (Test-Path (Join-Path $_.FullName "host")) -and (Test-Path (Join-Path $_.FullName "common")) } |
+            Select-Object -First 1
+          if (-not $sdkCandidate) {
+            throw "ASIO SDK directory not found under $asioRoot"
+          }
+          "CPAL_ASIO_DIR=$($sdkCandidate.FullName)" >> $env:GITHUB_ENV
       - name: Install cross
         if: ${{ matrix.use_cross }}
         run: cargo install cross --locked
