@@ -24,14 +24,15 @@ pub fn detect_transients(decoded: &DecodedWaveform, sensitivity: f32) -> Vec<f32
         .collect::<Vec<f32>>();
     let deltas = build_positive_deltas(&log_energy);
     let threshold_window = (windows.len() / 64).clamp(MIN_THRESHOLD_WINDOW, MAX_THRESHOLD_WINDOW);
-    let thresholds = adaptive_thresholds(&deltas, threshold_window, sensitivity);
+    let (delta_thresholds, energy_thresholds) =
+        adaptive_thresholds(&deltas, &log_energy, threshold_window, sensitivity);
     let min_gap_frames = min_spacing_frames(decoded, total_frames);
     let mut transients = Vec::new();
     let mut last_frame: Option<usize> = None;
     let mut last_strength = 0.0f32;
     for i in 1..deltas.len().saturating_sub(1) {
         let strength = deltas[i];
-        if strength < thresholds[i] {
+        if strength < delta_thresholds[i] || log_energy[i] < energy_thresholds[i] {
             continue;
         }
         if strength < deltas[i - 1] || strength < deltas[i + 1] {
@@ -169,22 +170,70 @@ fn smooth_values(values: &[f32], radius: usize) -> Vec<f32> {
     out
 }
 
-fn adaptive_thresholds(values: &[f32], window: usize, sensitivity: f32) -> Vec<f32> {
-    let (global_mean, global_std) = mean_std_dev(values);
-    let mut thresholds = Vec::with_capacity(values.len());
-    let k = 0.6 + (1.0 - sensitivity.clamp(0.0, 1.0)) * 2.4;
-    for i in 0..values.len() {
+fn adaptive_thresholds(
+    deltas: &[f32],
+    energy: &[f32],
+    window: usize,
+    sensitivity: f32,
+) -> (Vec<f32>, Vec<f32>) {
+    let sensitivity = sensitivity.clamp(0.0, 1.0);
+    let (global_delta_mean, global_delta_std) = mean_std_dev(deltas);
+    let (global_energy_mean, global_energy_std) = mean_std_dev(energy);
+    let mut delta_thresholds = Vec::with_capacity(deltas.len());
+    let mut energy_thresholds = Vec::with_capacity(energy.len());
+    let delta_k = 0.9 + (1.0 - sensitivity) * 2.6;
+    let energy_k = 0.4 + (1.0 - sensitivity) * 1.6;
+    for i in 0..deltas.len() {
         let start = i.saturating_sub(window);
-        let slice = &values[start..i];
-        let (mean, std_dev) = if slice.is_empty() {
-            (global_mean, global_std)
+        let delta_slice = &deltas[start..i];
+        let energy_slice = &energy[start..i];
+        let (delta_median, delta_mad) = if delta_slice.is_empty() {
+            (global_delta_mean, global_delta_std)
         } else {
-            mean_std_dev(slice)
+            median_mad(delta_slice)
         };
-        let threshold = mean + std_dev * k;
-        thresholds.push(if threshold.is_finite() { threshold } else { global_mean });
+        let (energy_median, energy_mad) = if energy_slice.is_empty() {
+            (global_energy_mean, global_energy_std)
+        } else {
+            median_mad(energy_slice)
+        };
+        let delta_threshold = delta_median + delta_mad * delta_k;
+        let energy_threshold = energy_median + energy_mad * energy_k;
+        delta_thresholds.push(if delta_threshold.is_finite() {
+            delta_threshold
+        } else {
+            global_delta_mean
+        });
+        energy_thresholds.push(if energy_threshold.is_finite() {
+            energy_threshold
+        } else {
+            global_energy_mean
+        });
     }
-    thresholds
+    (delta_thresholds, energy_thresholds)
+}
+
+fn median_mad(values: &[f32]) -> (f32, f32) {
+    if values.is_empty() {
+        return (0.0, 0.0);
+    }
+    let mut sorted = values
+        .iter()
+        .copied()
+        .filter(|value| value.is_finite())
+        .collect::<Vec<f32>>();
+    if sorted.is_empty() {
+        return (0.0, 0.0);
+    }
+    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let median = sorted[sorted.len() / 2];
+    let mut deviations = sorted
+        .iter()
+        .map(|value| (*value - median).abs())
+        .collect::<Vec<f32>>();
+    deviations.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let mad = deviations[deviations.len() / 2];
+    (median, mad.max(1.0e-6))
 }
 
 fn mean_std_dev(values: &[f32]) -> (f32, f32) {
