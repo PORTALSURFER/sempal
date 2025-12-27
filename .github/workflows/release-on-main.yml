@@ -46,6 +46,7 @@ jobs:
         env:
           TAG: ${{ steps.tag.outputs.tag }}
         run: |
+          git tag "$TAG" 2>/dev/null || true
           git cliff --config cliff.toml --tag "$TAG" --latest > release-notes.md
       - name: Publish release
         if: ${{ steps.tag.outputs.tag != '' }}
