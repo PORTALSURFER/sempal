@@ -123,7 +123,10 @@ ZIP_PATH="${REPO_ROOT}/${OUT_DIR}/${ZIP_NAME}"
 if command -v zip >/dev/null 2>&1; then
   (cd "$WORK_DIR" && zip -r "$ZIP_PATH" "$APP_NAME" >/dev/null)
 elif command -v powershell.exe >/dev/null 2>&1; then
-  powershell.exe -NoProfile -Command "Compress-Archive -Path \"$WORK_DIR\\$APP_NAME\\*\" -DestinationPath \"$ZIP_PATH\" -Force"
+  mkdir -p "$OUT_DIR"
+  POWERSHELL_OUT_DIR=$(powershell.exe -NoProfile -Command "[System.IO.Path]::GetFullPath('$OUT_DIR')")
+  POWERSHELL_ZIP_PATH="$POWERSHELL_OUT_DIR\\${ZIP_NAME}"
+  powershell.exe -NoProfile -Command "Compress-Archive -Path \"$WORK_DIR\\$APP_NAME\\*\" -DestinationPath \"$POWERSHELL_ZIP_PATH\" -Force"
 else
   echo "No zip tool found (zip or powershell Compress-Archive required)." >&2
   exit 1
