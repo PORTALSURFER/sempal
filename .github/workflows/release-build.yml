@@ -3,6 +3,12 @@ name: Build release assets
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to build (e.g. v0.378.0 or nightly)
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -30,7 +36,7 @@ jobs:
             platform: linux
             arch: aarch64
             use_cross: true
-          - os: macos-13
+          - os: macos-15-intel
             target: x86_64-apple-darwin
             platform: macos
             arch: x86_64
@@ -45,24 +51,44 @@ jobs:
         with:
           lfs: true
       - uses: dtolnay/rust-toolchain@stable
+      - name: Install Linux audio deps
+        if: ${{ matrix.platform == 'linux' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev pkg-config
       - name: Fetch ASIO SDK (Windows)
         if: ${{ matrix.platform == 'windows' }}
         shell: pwsh
         run: |
-          git clone --depth 1 https://github.com/audiosdk/asio "$env:GITHUB_WORKSPACE/asio"
-          "CPAL_ASIO_DIR=$env:GITHUB_WORKSPACE/asio/ASIOSDK" >> $env:GITHUB_ENV
+          git lfs install --local
+          git clone --depth 1 --recurse-submodules --shallow-submodules https://github.com/audiosdk/asio "$env:GITHUB_WORKSPACE/asio"
+          git -C "$env:GITHUB_WORKSPACE/asio" submodule update --init --recursive
+          git -C "$env:GITHUB_WORKSPACE/asio" lfs pull
+          $asioRoot = Join-Path $env:GITHUB_WORKSPACE "asio"
+          $asioHeader = Get-ChildItem -Path $asioRoot -Recurse -Filter "asiodrivers.h" -File | Select-Object -First 1
+          if (-not $asioHeader) {
+            throw "ASIO header not found under $asioRoot"
+          }
+          $sdkDir = Split-Path -Parent (Split-Path -Parent $asioHeader.FullName)
+          if (-not (Test-Path (Join-Path $sdkDir "host")) -or -not (Test-Path (Join-Path $sdkDir "common"))) {
+            throw "ASIO SDK directory not found for $($asioHeader.FullName)"
+          }
+          "CPAL_ASIO_DIR=$sdkDir" >> $env:GITHUB_ENV
       - name: Install cross
         if: ${{ matrix.use_cross }}
         run: cargo install cross --locked
       - name: Set release metadata
+        shell: bash
         run: |
-          TAG="${{ github.event.release.tag_name }}"
+          TAG="${{ github.event.release.tag_name || inputs.tag }}"
           if [[ "$TAG" == "nightly" ]]; then
             echo "RELEASE_CHANNEL=nightly" >> "$GITHUB_ENV"
             echo "RELEASE_VERSION=" >> "$GITHUB_ENV"
+            echo "RELEASE_TAG=nightly" >> "$GITHUB_ENV"
           else
             echo "RELEASE_CHANNEL=stable" >> "$GITHUB_ENV"
             echo "RELEASE_VERSION=${TAG#v}" >> "$GITHUB_ENV"
+            echo "RELEASE_TAG=$TAG" >> "$GITHUB_ENV"
           fi
       - name: Build release zip
         env:
@@ -78,7 +104,7 @@ jobs:
             --out-dir dist/release
       - uses: actions/upload-artifact@v4
         with:
-          name: release-${{ matrix.platform }}
+          name: release-${{ matrix.platform }}-${{ matrix.arch }}
           path: dist/release
           if-no-files-found: error
 
@@ -89,21 +115,26 @@ jobs:
     steps:
       - name: Set release metadata
         run: |
-          TAG="${{ github.event.release.tag_name }}"
+          TAG="${{ github.event.release.tag_name || inputs.tag }}"
           if [[ "$TAG" == "nightly" ]]; then
             echo "CHECKSUMS_NAME=checksums-nightly.txt" >> "$GITHUB_ENV"
+            echo "RELEASE_TAG=nightly" >> "$GITHUB_ENV"
           else
             echo "CHECKSUMS_NAME=checksums-v${TAG#v}.txt" >> "$GITHUB_ENV"
+            echo "RELEASE_TAG=$TAG" >> "$GITHUB_ENV"
           fi
       - uses: actions/download-artifact@v4
         with:
           path: dist/artifacts
+          pattern: release-*
+          merge-multiple: true
       - name: Assemble release files
         run: |
           mkdir -p dist/release
-          cp dist/artifacts/*/*.zip dist/release/
-          cat dist/artifacts/*/checksums-entry.txt > "dist/release/${CHECKSUMS_NAME}"
+          cp dist/artifacts/*.zip dist/release/
+          cat dist/artifacts/checksums-entry.txt > "dist/release/${CHECKSUMS_NAME}"
       - name: Upload release assets
         uses: softprops/action-gh-release@v1
         with:
+          tag_name: ${{ env.RELEASE_TAG }}
           files: dist/release/*
