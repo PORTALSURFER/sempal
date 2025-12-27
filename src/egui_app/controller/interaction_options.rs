@@ -187,6 +187,10 @@ impl EguiController {
         }
         self.settings.controls.transient_markers_enabled = enabled;
         self.ui.waveform.transient_markers_enabled = enabled;
+        if !enabled {
+            self.settings.controls.transient_snap_enabled = false;
+            self.ui.waveform.transient_snap_enabled = false;
+        }
         self.persist_controls();
     }
 

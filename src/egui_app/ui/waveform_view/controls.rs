@@ -66,7 +66,11 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
             app.controller.set_transient_markers_enabled(show_transients);
         }
         let mut transient_snap = app.controller.ui.waveform.transient_snap_enabled;
-        if ui.checkbox(&mut transient_snap, "Transient snap").clicked() {
+        let snap_toggle = ui.add_enabled(
+            app.controller.ui.waveform.transient_markers_enabled,
+            egui::Checkbox::new(&mut transient_snap, "Transient snap"),
+        );
+        if snap_toggle.clicked() {
             app.controller.set_transient_snap_enabled(transient_snap);
         }
         let mut sensitivity = app.controller.ui.waveform.transient_sensitivity;

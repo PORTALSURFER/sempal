@@ -183,7 +183,9 @@ fn bpm_snap_step(controller: &EguiController) -> Option<f32> {
 }
 
 fn snap_to_transient(controller: &EguiController, position: f32) -> Option<f32> {
-    if !controller.ui.waveform.transient_snap_enabled {
+    if !controller.ui.waveform.transient_markers_enabled
+        || !controller.ui.waveform.transient_snap_enabled
+    {
         return None;
     }
     let mut closest = None;
