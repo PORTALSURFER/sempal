@@ -36,7 +36,7 @@ jobs:
             platform: linux
             arch: aarch64
             use_cross: true
-          - os: macos-13
+          - os: macos-15-intel
             target: x86_64-apple-darwin
             platform: macos
             arch: x86_64
@@ -61,6 +61,7 @@ jobs:
         if: ${{ matrix.use_cross }}
         run: cargo install cross --locked
       - name: Set release metadata
+        shell: bash
         run: |
           TAG="${{ github.event.release.tag_name || inputs.tag }}"
           if [[ "$TAG" == "nightly" ]]; then
