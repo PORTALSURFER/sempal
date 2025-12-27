@@ -58,6 +58,21 @@ pub fn detect_transients(decoded: &DecodedWaveform, sensitivity: f32) -> Vec<f32
             fallback_cap,
         );
     }
+    if peaks.is_empty() {
+        let raw_flux = spectral_flux_raw(&mono, fft_len, hop);
+        let raw_smoothed = smooth_values(&raw_flux, SMOOTH_RADIUS);
+        let raw_window = (window / 2).max(4);
+        let raw_thresholds = adaptive_thresholds(&raw_smoothed, raw_window, 1.0);
+        let raw_floor = percentile(&raw_smoothed, 0.4);
+        let raw_cap = max_transients(decoded, 1.0);
+        peaks = pick_peaks(
+            &raw_smoothed,
+            &raw_thresholds,
+            raw_floor,
+            min_gap_frames,
+            raw_cap,
+        );
+    }
     peaks
         .into_iter()
         .map(|(frame, _)| {
@@ -158,6 +173,44 @@ fn spectral_flux_novelty(
             prev_band[band_index] = normalized;
             let weight = ((band_index + 1) as f32 / bands.len() as f32).sqrt();
             sum += delta * weight;
+        }
+        novelty.push(sum);
+        start += hop;
+    }
+    novelty
+}
+
+fn spectral_flux_raw(mono: &[f32], fft_len: usize, hop: usize) -> Vec<f32> {
+    if mono.is_empty() {
+        return Vec::new();
+    }
+    let window = hann_window(fft_len);
+    let plan = match FftPlan::new(fft_len) {
+        Ok(plan) => plan,
+        Err(_) => return Vec::new(),
+    };
+    let bins = fft_len / 2 + 1;
+    let mut prev_mag = vec![0.0f32; bins];
+    let mut buf = vec![Complex32::default(); fft_len];
+    let mut novelty = Vec::new();
+    let mut start = 0usize;
+    while start < mono.len() {
+        for i in 0..fft_len {
+            let sample = mono.get(start + i).copied().unwrap_or(0.0);
+            buf[i].re = sample * window[i];
+            buf[i].im = 0.0;
+        }
+        if fft_radix2_inplace_with_plan(&mut buf, &plan).is_err() {
+            return Vec::new();
+        }
+        let mut sum = 0.0f32;
+        for bin in 1..bins {
+            let c = buf[bin];
+            let mag = (c.re * c.re + c.im * c.im).sqrt();
+            let mag_log = (1.0 + 10.0 * mag).ln();
+            let delta = (mag_log - prev_mag[bin]).max(0.0);
+            prev_mag[bin] = mag_log;
+            sum += delta;
         }
         novelty.push(sum);
         start += hop;
