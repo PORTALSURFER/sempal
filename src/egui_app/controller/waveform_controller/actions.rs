@@ -104,7 +104,13 @@ impl WaveformActions for WaveformController<'_> {
         if !self.waveform_ready() {
             return;
         }
-        let step = self.waveform_step_size(fine).max(MIN_SELECTION_WIDTH);
+        let step = if fine {
+            self.waveform_step_size(true)
+        } else {
+            self.bpm_snap_step()
+                .unwrap_or_else(|| self.waveform_step_size(false))
+        }
+        .max(MIN_SELECTION_WIDTH);
         let Some(selection) = self
             .selection_state
             .range
