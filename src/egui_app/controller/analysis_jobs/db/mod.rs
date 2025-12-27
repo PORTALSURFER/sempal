@@ -32,5 +32,7 @@ pub(in crate::egui_app::controller::analysis_jobs) use jobs::{
     claim_next_job, claim_next_jobs, mark_done, mark_failed, mark_pending,
     sample_analysis_states, sample_content_hash,
 };
-pub(in crate::egui_app::controller::analysis_jobs) use progress::current_progress;
+pub(in crate::egui_app::controller::analysis_jobs) use progress::{
+    current_embedding_backfill_progress, current_progress,
+};
 pub(in crate::egui_app::controller::analysis_jobs) use types::{ClaimedJob, SampleMetadata};
