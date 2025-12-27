@@ -3,7 +3,11 @@ name: Update changelog on release
 on:
   release:
     types: [published]
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to generate (e.g. v0.380.11). Defaults to latest tag.
+        required: false
 
 env:
   BASE_BRANCH: ${{ github.event_name == 'release' && github.event.release.target_commitish || 'main' }}
@@ -31,8 +35,21 @@ jobs:
         with:
           tool: git-cliff
 
+      - name: Resolve release tag
+        id: tag
+        run: |
+          TAG="${{ github.event.release.tag_name || inputs.tag }}"
+          if [[ -z "$TAG" ]]; then
+            TAG=$(git describe --tags --abbrev=0)
+          fi
+          if [[ -z "$TAG" ]]; then
+            echo "Failed to resolve release tag." >&2
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
       - name: Generate CHANGELOG.md
-        run: git cliff --config cliff.toml --output CHANGELOG.md
+        run: git cliff --config cliff.toml --tag "${{ steps.tag.outputs.tag }}" --prepend CHANGELOG.md
 
       - name: Create pull request
         id: cpr
