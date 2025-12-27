@@ -107,6 +107,11 @@ pub fn logs_dir() -> Result<PathBuf, AppDirError> {
     Ok(path)
 }
 
+/// Return the base directory used for `.sempal` when no override is set.
+pub fn config_base_dir_path() -> Option<PathBuf> {
+    config_base_dir()
+}
+
 fn config_base_dir() -> Option<PathBuf> {
     #[cfg(test)]
     if let Some(path) = TEST_CONFIG_OVERRIDE.with(|override_path| override_path.borrow().clone()) {
