@@ -20,6 +20,10 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ inputs.next_branch }}
+      - name: Install Linux audio deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev pkg-config
       - name: Fetch main
         run: git fetch origin main
       - uses: obi1kenobi/cargo-semver-checks-action@v2

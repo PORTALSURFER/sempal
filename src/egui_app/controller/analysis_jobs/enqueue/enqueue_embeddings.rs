@@ -21,13 +21,22 @@ fn enqueue_embedding_backfill(
 
     let mut conn = db::open_source_db(&request.source.root)?;
 
+    let _ = conn.execute(
+        "DELETE FROM analysis_jobs
+         WHERE job_type = ?1 AND sample_id LIKE ?2",
+        params![
+            db::EMBEDDING_BACKFILL_JOB_TYPE,
+            format!("embed_backfill::{}::%", request.source.id)
+        ],
+    );
+
     let active_jobs: i64 = conn
         .query_row(
             "SELECT COUNT(*) FROM analysis_jobs
              WHERE job_type = ?1 AND sample_id LIKE ?2 AND status IN ('pending','running')",
             params![
                 db::EMBEDDING_BACKFILL_JOB_TYPE,
-                format!("embed_backfill::{}::%", request.source.id)
+                format!("{}::embed_backfill::%", request.source.id)
             ],
             |row| row.get(0),
         )
@@ -71,7 +80,7 @@ fn enqueue_embedding_backfill(
     let created_at = now_epoch_seconds();
     let mut jobs = Vec::new();
     for (idx, chunk) in sample_ids.chunks(BATCH_SIZE).enumerate() {
-        let job_id = format!("embed_backfill::{}::{}", request.source.id.as_str(), idx);
+        let job_id = format!("{}::embed_backfill::{}", request.source.id.as_str(), idx);
         let payload = serde_json::to_string(chunk)
             .map_err(|err| format!("Encode backfill payload: {err}"))?;
         jobs.push((job_id, payload));
