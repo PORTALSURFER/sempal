@@ -28,22 +28,34 @@ pub fn detect_transients(decoded: &DecodedWaveform, sensitivity: f32) -> Vec<f32
     let novelty_smoothed = smooth_values(&novelty, SMOOTH_RADIUS);
     let window = ((BASELINE_SECONDS * sample_rate / hop as f32).round() as usize)
         .clamp(MIN_THRESHOLD_WINDOW, MAX_THRESHOLD_WINDOW);
-    let thresholds = adaptive_thresholds(&novelty_smoothed, window, sensitivity);
-    let global_floor = percentile(
-        &novelty_smoothed,
-        0.6 + (1.0 - sensitivity) * 0.15,
-    );
     let min_gap_frames = ((MIN_TRANSIENT_SPACING_SECONDS * sample_rate) / hop as f32)
         .round()
         .max(1.0) as usize;
     let max_transients_cap = max_transients(decoded, sensitivity);
-    let mut peaks = pick_peaks(
-        &novelty_smoothed,
-        &thresholds,
-        global_floor,
-        min_gap_frames,
-        max_transients_cap,
-    );
+    let mut peaks = if decoded.duration_seconds > 30.0 {
+        pick_peaks_windowed(
+            &novelty_smoothed,
+            window,
+            sensitivity,
+            min_gap_frames,
+            max_transients_cap,
+            sample_rate,
+            hop,
+        )
+    } else {
+        let thresholds = adaptive_thresholds(&novelty_smoothed, window, sensitivity);
+        let global_floor = percentile(
+            &novelty_smoothed,
+            0.6 + (1.0 - sensitivity) * 0.15,
+        );
+        pick_peaks(
+            &novelty_smoothed,
+            &thresholds,
+            global_floor,
+            min_gap_frames,
+            max_transients_cap,
+        )
+    };
     if peaks.is_empty() {
         let fallback_sensitivity = 1.0;
         let fallback_thresholds =
@@ -309,6 +321,63 @@ fn max_transients(decoded: &DecodedWaveform, sensitivity: f32) -> usize {
     let duration = decoded.duration_seconds.max(0.01);
     let per_second = 1.5 + sensitivity.clamp(0.0, 1.0) * 2.0;
     (duration * per_second).round().max(1.0) as usize
+}
+
+fn pick_peaks_windowed(
+    novelty_smoothed: &[f32],
+    window: usize,
+    sensitivity: f32,
+    min_gap_frames: usize,
+    max_transients: usize,
+    sample_rate: f32,
+    hop: usize,
+) -> Vec<(usize, f32)> {
+    let hop_seconds = hop as f32 / sample_rate.max(1.0);
+    let window_seconds = 12.0;
+    let overlap_seconds = 2.0;
+    let window_frames =
+        ((window_seconds / hop_seconds).round() as usize).max(window * 2).min(4096);
+    let overlap_frames =
+        ((overlap_seconds / hop_seconds).round() as usize).min(window_frames.saturating_sub(1));
+    let step = window_frames.saturating_sub(overlap_frames).max(1);
+    let mut peaks = Vec::new();
+    let mut start = 0usize;
+    while start < novelty_smoothed.len() {
+        let end = (start + window_frames).min(novelty_smoothed.len());
+        let slice = &novelty_smoothed[start..end];
+        if slice.len() >= 3 {
+            let thresholds = adaptive_thresholds(slice, window, sensitivity);
+            let floor = percentile(slice, 0.6 + (1.0 - sensitivity) * 0.15);
+            let mut local = pick_peaks(slice, &thresholds, floor, min_gap_frames, max_transients);
+            for (frame, strength) in local.drain(..) {
+                peaks.push((frame + start, strength));
+            }
+        }
+        if end == novelty_smoothed.len() {
+            break;
+        }
+        start = start.saturating_add(step);
+    }
+    peaks.sort_by_key(|(frame, _)| *frame);
+    let mut merged: Vec<(usize, f32)> = Vec::with_capacity(peaks.len());
+    for (frame, strength) in peaks {
+        if let Some((last_frame, last_strength)) = merged.last_mut() {
+            if frame.abs_diff(*last_frame) <= min_gap_frames {
+                if strength > *last_strength {
+                    *last_frame = frame;
+                    *last_strength = strength;
+                }
+                continue;
+            }
+        }
+        merged.push((frame, strength));
+    }
+    peaks = merged;
+    if peaks.len() > max_transients {
+        peaks.truncate(max_transients);
+    }
+    peaks.sort_by_key(|(frame, _)| *frame);
+    peaks
 }
 
 fn pick_peaks(
