@@ -100,8 +100,10 @@ jobs:
           TAG="${{ github.event.release.tag_name || inputs.tag }}"
           if [[ "$TAG" == "nightly" ]]; then
             echo "CHECKSUMS_NAME=checksums-nightly.txt" >> "$GITHUB_ENV"
+            echo "RELEASE_TAG=nightly" >> "$GITHUB_ENV"
           else
             echo "CHECKSUMS_NAME=checksums-v${TAG#v}.txt" >> "$GITHUB_ENV"
+            echo "RELEASE_TAG=$TAG" >> "$GITHUB_ENV"
           fi
       - uses: actions/download-artifact@v4
         with:
