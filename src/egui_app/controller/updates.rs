@@ -131,6 +131,14 @@ impl EguiController {
     }
 
     pub(in crate::egui_app::controller) fn apply_update_check_error(&mut self, err: String) {
+        if err.contains("release with required assets found") {
+            self.ui.update.status = crate::egui_app::state::UpdateStatus::Idle;
+            self.ui.update.last_error = None;
+            self.ui.update.available_tag = None;
+            self.ui.update.available_url = None;
+            self.ui.update.available_published_at = None;
+            return;
+        }
         self.ui.update.status = crate::egui_app::state::UpdateStatus::Error;
         self.ui.update.last_error = Some(err.clone());
         self.ui.update.available_tag = None;
