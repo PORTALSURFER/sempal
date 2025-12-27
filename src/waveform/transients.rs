@@ -1,7 +1,7 @@
 use super::DecodedWaveform;
 
 const MAX_TRANSIENT_WINDOWS: usize = 4096;
-const MIN_TRANSIENT_SPACING_SECONDS: f32 = 0.03;
+const MIN_TRANSIENT_SPACING_SECONDS: f32 = 0.05;
 const SMOOTH_RADIUS: usize = 1;
 const MIN_THRESHOLD_WINDOW: usize = 8;
 const MAX_THRESHOLD_WINDOW: usize = 32;
@@ -26,8 +26,12 @@ pub fn detect_transients(decoded: &DecodedWaveform, sensitivity: f32) -> Vec<f32
     let threshold_window = (windows.len() / 64).clamp(MIN_THRESHOLD_WINDOW, MAX_THRESHOLD_WINDOW);
     let (delta_thresholds, energy_thresholds, global_delta_floor) =
         adaptive_thresholds(&deltas, &log_energy, threshold_window, sensitivity);
+    let energy_floor = percentile(
+        &log_energy,
+        0.65 + (1.0 - sensitivity.clamp(0.0, 1.0)) * 0.25,
+    );
     let min_gap_frames = min_spacing_frames(decoded, total_frames);
-    let mut transients = Vec::new();
+    let mut candidates: Vec<(usize, f32)> = Vec::new();
     let mut last_frame: Option<usize> = None;
     let mut last_strength = 0.0f32;
     for i in 1..deltas.len().saturating_sub(1) {
@@ -35,6 +39,7 @@ pub fn detect_transients(decoded: &DecodedWaveform, sensitivity: f32) -> Vec<f32
         if strength < delta_thresholds[i]
             || strength < global_delta_floor
             || log_energy[i] < energy_thresholds[i]
+            || log_energy[i] < energy_floor
         {
             continue;
         }
@@ -49,8 +54,9 @@ pub fn detect_transients(decoded: &DecodedWaveform, sensitivity: f32) -> Vec<f32
             let distance = frame.saturating_sub(prev_frame);
             if distance < min_gap_frames {
                 if strength > last_strength {
-                    if let Some(last_pos) = transients.last_mut() {
-                        *last_pos = frame as f32 / total_frames as f32;
+                    if let Some((last_frame, last_strength)) = candidates.last_mut() {
+                        *last_frame = frame;
+                        *last_strength = strength;
                     }
                     last_frame = Some(frame);
                     last_strength = strength;
@@ -58,13 +64,19 @@ pub fn detect_transients(decoded: &DecodedWaveform, sensitivity: f32) -> Vec<f32
                 continue;
             }
         }
-        transients.push(frame as f32 / total_frames as f32);
+        candidates.push((frame, strength));
         last_frame = Some(frame);
         last_strength = strength;
     }
-    transients
+    let max_transients = max_transients(decoded, sensitivity);
+    if candidates.len() > max_transients {
+        candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        candidates.truncate(max_transients);
+        candidates.sort_by_key(|(frame, _)| *frame);
+    }
+    candidates
         .into_iter()
-        .map(|pos| pos.clamp(0.0, 1.0))
+        .map(|(frame, _)| (frame as f32 / total_frames as f32).clamp(0.0, 1.0))
         .collect()
 }
 
@@ -218,6 +230,30 @@ fn adaptive_thresholds(
         });
     }
     (delta_thresholds, energy_thresholds, global_delta_floor)
+}
+
+fn percentile(values: &[f32], quantile: f32) -> f32 {
+    if values.is_empty() {
+        return 0.0;
+    }
+    let mut sorted = values
+        .iter()
+        .copied()
+        .filter(|value| value.is_finite())
+        .collect::<Vec<f32>>();
+    if sorted.is_empty() {
+        return 0.0;
+    }
+    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let q = quantile.clamp(0.0, 1.0);
+    let idx = ((sorted.len() - 1) as f32 * q).round() as usize;
+    sorted[idx]
+}
+
+fn max_transients(decoded: &DecodedWaveform, sensitivity: f32) -> usize {
+    let duration = decoded.duration_seconds.max(0.01);
+    let per_second = 2.0 + sensitivity.clamp(0.0, 1.0) * 2.0;
+    (duration * per_second).round().max(1.0) as usize
 }
 
 fn median_mad(values: &[f32]) -> (f32, f32) {
