@@ -34,13 +34,13 @@ pub fn detect_transients(decoded: &DecodedWaveform, sensitivity: f32) -> Vec<f32
     let min_gap_frames = ((MIN_TRANSIENT_SPACING_SECONDS * sample_rate) / hop as f32)
         .round()
         .max(1.0) as usize;
-    let max_transients = max_transients(decoded, sensitivity);
+    let max_transients_cap = max_transients(decoded, sensitivity);
     let mut peaks = pick_peaks(
         &novelty_smoothed,
         &thresholds,
         global_floor,
         min_gap_frames,
-        max_transients,
+        max_transients_cap,
     );
     if peaks.is_empty() {
         let fallback_sensitivity = 1.0;
