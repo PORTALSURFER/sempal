@@ -33,6 +33,11 @@ pub fn detect_transients(decoded: &DecodedWaveform, sensitivity: f32) -> Vec<f32
         .max(1.0) as usize;
     let max_transients_cap = max_transients(decoded, sensitivity);
     let long_sample = decoded.duration_seconds > 30.0;
+    let floor_quantile = if long_sample {
+        0.4 + (1.0 - sensitivity) * 0.1
+    } else {
+        0.6 + (1.0 - sensitivity) * 0.15
+    };
     let mut peaks = if long_sample {
         pick_peaks_windowed(
             &novelty_smoothed,
@@ -42,14 +47,11 @@ pub fn detect_transients(decoded: &DecodedWaveform, sensitivity: f32) -> Vec<f32
             max_transients_cap,
             sample_rate,
             hop,
-            0.6 + (1.0 - sensitivity) * 0.15,
+            floor_quantile,
         )
     } else {
         let thresholds = adaptive_thresholds(&novelty_smoothed, window, sensitivity);
-        let global_floor = percentile(
-            &novelty_smoothed,
-            0.6 + (1.0 - sensitivity) * 0.15,
-        );
+        let global_floor = percentile(&novelty_smoothed, floor_quantile);
         pick_peaks(
             &novelty_smoothed,
             &thresholds,
@@ -72,10 +74,18 @@ pub fn detect_transients(decoded: &DecodedWaveform, sensitivity: f32) -> Vec<f32
                 max_transients_cap,
                 sample_rate,
                 hop,
-                0.45,
+                0.35,
             );
             peaks = merge_peaks(peaks, raw_peaks, min_gap_frames, max_transients_cap);
         }
+    }
+    if peaks.is_empty() && long_sample {
+        peaks = pick_peaks_loose(
+            &novelty_smoothed,
+            min_gap_frames,
+            max_transients_cap,
+            0.2,
+        );
     }
     if peaks.is_empty() {
         let fallback_sensitivity = 1.0;
@@ -105,6 +115,12 @@ pub fn detect_transients(decoded: &DecodedWaveform, sensitivity: f32) -> Vec<f32
             min_gap_frames,
             raw_cap,
         );
+    }
+    if peaks.is_empty() && long_sample {
+        let raw_flux = raw_flux.unwrap_or_else(|| spectral_flux_raw(&mono, fft_len, hop));
+        let raw_smoothed = smooth_values(&raw_flux, SMOOTH_RADIUS);
+        let raw_cap = max_transients(decoded, 1.0);
+        peaks = pick_peaks_loose(&raw_smoothed, min_gap_frames, raw_cap, 0.15);
     }
     peaks
         .into_iter()
@@ -463,6 +479,30 @@ fn pick_peaks(
         peaks.sort_by_key(|(frame, _)| *frame);
     }
     peaks
+}
+
+fn pick_peaks_loose(
+    novelty_smoothed: &[f32],
+    min_gap_frames: usize,
+    max_transients: usize,
+    floor_quantile: f32,
+) -> Vec<(usize, f32)> {
+    if novelty_smoothed.len() < 3 {
+        return Vec::new();
+    }
+    let floor = percentile(novelty_smoothed, floor_quantile);
+    let mut peaks: Vec<(usize, f32)> = Vec::new();
+    for i in 1..novelty_smoothed.len().saturating_sub(1) {
+        let strength = novelty_smoothed[i];
+        if strength < floor {
+            continue;
+        }
+        if strength < novelty_smoothed[i - 1] || strength < novelty_smoothed[i + 1] {
+            continue;
+        }
+        peaks.push((i, strength));
+    }
+    merge_peaks(Vec::new(), peaks, min_gap_frames, max_transients)
 }
 
 fn median_mad(values: &[f32]) -> (f32, f32) {
