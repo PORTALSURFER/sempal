@@ -51,6 +51,11 @@ jobs:
         with:
           lfs: true
       - uses: dtolnay/rust-toolchain@stable
+      - name: Install Linux audio deps
+        if: ${{ matrix.platform == 'linux' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev pkg-config
       - name: Fetch ASIO SDK (Windows)
         if: ${{ matrix.platform == 'windows' }}
         shell: pwsh
