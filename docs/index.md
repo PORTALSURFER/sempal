@@ -59,12 +59,18 @@ Sempal is a sample manager with fast waveform preview, destructive edits. Tuned 
           return;
         }
         var match = null;
+        var assetPattern =
+          /^sempal-v\d+\.\d+\.\d+-(windows|linux|macos)-(x86_64|aarch64)\.zip$/i;
         for (var i = 0; i < releases.length; i += 1) {
           var release = releases[i];
           if (!release || release.draft) {
             continue;
           }
-          if (Array.isArray(release.assets) && release.assets.length > 0) {
+          var assets = Array.isArray(release.assets) ? release.assets : [];
+          var hasBundle = assets.some(function (asset) {
+            return asset && asset.name && assetPattern.test(asset.name);
+          });
+          if (hasBundle) {
             match = release;
             break;
           }
