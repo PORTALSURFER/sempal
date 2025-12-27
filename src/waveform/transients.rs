@@ -8,6 +8,7 @@ const MAX_THRESHOLD_WINDOW: usize = 64;
 const BASELINE_SECONDS: f32 = 0.15;
 const BAND_COUNT: usize = 24;
 const MIN_BAND_HZ: f32 = 40.0;
+const MAX_PEAK_ENVELOPE_SAMPLES: usize = 200_000;
 
 pub fn detect_transients(decoded: &DecodedWaveform, sensitivity: f32) -> Vec<f32> {
     let total_frames = decoded.frame_count();
@@ -161,6 +162,25 @@ fn detect_transients_from_peaks(
         let amp = min.abs().max(max.abs());
         envelope.push((1.0 + 10.0 * amp).ln());
     }
+    let (envelope, stride) = if envelope.len() > MAX_PEAK_ENVELOPE_SAMPLES {
+        let stride = envelope.len().div_ceil(MAX_PEAK_ENVELOPE_SAMPLES).max(1);
+        let mut reduced = Vec::with_capacity(envelope.len().div_ceil(stride));
+        let mut start = 0usize;
+        while start < envelope.len() {
+            let end = (start + stride).min(envelope.len());
+            let mut max_value = 0.0f32;
+            for value in &envelope[start..end] {
+                if value.is_finite() {
+                    max_value = max_value.max(*value);
+                }
+            }
+            reduced.push(max_value);
+            start = end;
+        }
+        (reduced, stride)
+    } else {
+        (envelope, 1)
+    };
     if envelope.len() < 3 {
         return Vec::new();
     }
@@ -173,30 +193,21 @@ fn detect_transients_from_peaks(
         prev = value;
     }
     let novelty_smoothed = smooth_values(&novelty, SMOOTH_RADIUS);
-    let window = ((BASELINE_SECONDS * sample_rate / bucket).round() as usize)
-        .clamp(MIN_THRESHOLD_WINDOW, MAX_THRESHOLD_WINDOW);
-    let min_gap_frames = ((MIN_TRANSIENT_SPACING_SECONDS * sample_rate) / bucket)
+    let bucket_stride = bucket * stride as f32;
+    let min_gap_frames = ((MIN_TRANSIENT_SPACING_SECONDS * sample_rate) / bucket_stride)
         .round()
         .max(1.0) as usize;
     let max_transients_cap = max_transients(decoded, sensitivity);
-    let floor_quantile = 0.3 + (1.0 - sensitivity) * 0.1;
-    let mut peaks = pick_peaks_windowed(
-        &novelty_smoothed,
-        window,
-        sensitivity,
-        min_gap_frames,
-        max_transients_cap,
-        sample_rate,
-        bucket as usize,
-        floor_quantile,
-    );
+    let floor_quantile = 0.25 + (1.0 - sensitivity) * 0.2;
+    let mut peaks =
+        pick_peaks_loose(&novelty_smoothed, min_gap_frames, max_transients_cap, floor_quantile);
     if peaks.is_empty() {
-        peaks = pick_peaks_loose(&novelty_smoothed, min_gap_frames, max_transients_cap, 0.2);
+        peaks = pick_peaks_loose(&novelty_smoothed, min_gap_frames, max_transients_cap, 0.1);
     }
     peaks
         .into_iter()
         .map(|(bucket_index, _)| {
-            let frame = (bucket_index as f32) * bucket;
+            let frame = (bucket_index as f32) * bucket_stride;
             let position = frame / decoded.frame_count().max(1) as f32;
             position.clamp(0.0, 1.0)
         })
