@@ -119,7 +119,15 @@ cat > "${ROOT_DIR}/update-manifest.json" <<EOF
 EOF
 
 mkdir -p "$OUT_DIR"
-(cd "$WORK_DIR" && zip -r "${REPO_ROOT}/${OUT_DIR}/${ZIP_NAME}" "$APP_NAME" >/dev/null)
+ZIP_PATH="${REPO_ROOT}/${OUT_DIR}/${ZIP_NAME}"
+if command -v zip >/dev/null 2>&1; then
+  (cd "$WORK_DIR" && zip -r "$ZIP_PATH" "$APP_NAME" >/dev/null)
+elif command -v powershell.exe >/dev/null 2>&1; then
+  powershell.exe -NoProfile -Command "Compress-Archive -Path \"$WORK_DIR\\$APP_NAME\\*\" -DestinationPath \"$ZIP_PATH\" -Force"
+else
+  echo "No zip tool found (zip or powershell Compress-Archive required)." >&2
+  exit 1
+fi
 
 if command -v sha256sum >/dev/null 2>&1; then
   SHA=$(sha256sum "${OUT_DIR}/${ZIP_NAME}" | awk '{print $1}')
