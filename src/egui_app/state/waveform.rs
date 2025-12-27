@@ -1,7 +1,7 @@
 use super::controls::DestructiveEditPrompt;
 use crate::selection::SelectionRange;
 use crate::waveform::WaveformChannelView;
-use crate::waveform::transients::TransientNovelty;
+use crate::waveform::transients::{TransientNovelty, TransientTuning};
 use egui;
 use std::collections::VecDeque;
 use std::path::PathBuf;
@@ -42,6 +42,8 @@ pub struct WaveformState {
     pub transient_cache_token: Option<u64>,
     /// Cached sensitivity for the current transient set.
     pub transient_cache_sensitivity: f32,
+    /// Cached tuning configuration for the current transient set.
+    pub transient_cache_tuning: Option<TransientTuning>,
     /// Cached novelty curve for transient peak-picking.
     pub transient_novelty: Option<TransientNovelty>,
     /// When true, use custom transient tuning overrides instead of sensitivity defaults.
@@ -98,6 +100,7 @@ impl Default for WaveformState {
             transient_realtime_enabled: false,
             transient_cache_token: None,
             transient_cache_sensitivity: 0.6,
+            transient_cache_tuning: None,
             transient_novelty: None,
             transient_use_custom_tuning: false,
             transient_k_high: 4.2,

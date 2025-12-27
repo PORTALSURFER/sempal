@@ -73,32 +73,38 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
         if snap_toggle.clicked() {
             app.controller.set_transient_snap_enabled(transient_snap);
         }
-        let mut sensitivity = app.controller.ui.waveform.transient_sensitivity_draft;
-        let slider = egui::Slider::new(&mut sensitivity, 0.0..=1.0)
-            .text("Sensitivity")
-            .fixed_decimals(2)
-            .step_by(0.01);
-        if ui.add(slider).changed() {
-            app.controller.ui.waveform.transient_sensitivity_draft = sensitivity;
-            if app.controller.ui.waveform.transient_realtime_enabled {
-                app.controller.apply_transient_sensitivity(sensitivity);
+        let custom_tuning = app.controller.ui.waveform.transient_use_custom_tuning;
+        ui.add_enabled_ui(!custom_tuning, |ui| {
+            let mut sensitivity = app.controller.ui.waveform.transient_sensitivity_draft;
+            let slider = egui::Slider::new(&mut sensitivity, 0.0..=1.0)
+                .text("Sensitivity")
+                .fixed_decimals(2)
+                .step_by(0.01);
+            if ui.add(slider).changed() {
+                app.controller.ui.waveform.transient_sensitivity_draft = sensitivity;
+                if app.controller.ui.waveform.transient_realtime_enabled {
+                    app.controller.apply_transient_sensitivity(sensitivity);
+                }
             }
-        }
-        let mut realtime = app.controller.ui.waveform.transient_realtime_enabled;
-        if ui.checkbox(&mut realtime, "Realtime").clicked() {
-            app.controller.set_transient_realtime_enabled(realtime);
-        }
-        let can_apply = (app.controller.ui.waveform.transient_sensitivity
-            - app.controller.ui.waveform.transient_sensitivity_draft)
-            .abs()
-            > f32::EPSILON;
-        let apply = ui.add_enabled(
-            can_apply && !app.controller.ui.waveform.transient_realtime_enabled,
-            egui::Button::new("Apply"),
-        );
-        if apply.clicked() {
-            let value = app.controller.ui.waveform.transient_sensitivity_draft;
-            app.controller.apply_transient_sensitivity(value);
+            let mut realtime = app.controller.ui.waveform.transient_realtime_enabled;
+            if ui.checkbox(&mut realtime, "Realtime").clicked() {
+                app.controller.set_transient_realtime_enabled(realtime);
+            }
+            let can_apply = (app.controller.ui.waveform.transient_sensitivity
+                - app.controller.ui.waveform.transient_sensitivity_draft)
+                .abs()
+                > f32::EPSILON;
+            let apply = ui.add_enabled(
+                can_apply && !app.controller.ui.waveform.transient_realtime_enabled,
+                egui::Button::new("Apply"),
+            );
+            if apply.clicked() {
+                let value = app.controller.ui.waveform.transient_sensitivity_draft;
+                app.controller.apply_transient_sensitivity(value);
+            }
+        });
+        if custom_tuning {
+            ui.label("Sensitivity disabled while custom tuning is enabled.");
         }
         let transient_count = app.controller.ui.waveform.transients.len();
         ui.label(format!("Transients: {transient_count}"));

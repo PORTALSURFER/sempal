@@ -178,9 +178,7 @@ impl EguiController {
                 crate::waveform::transients::compute_transient_novelty(decoded);
             self.ui.waveform.transient_cache_token = Some(decoded.cache_token);
             self.ui.waveform.transient_cache_sensitivity = -1.0;
-        }
-        if (self.ui.waveform.transient_cache_sensitivity - sensitivity).abs() < f32::EPSILON {
-            return;
+            self.ui.waveform.transient_cache_tuning = None;
         }
         let tuning = crate::waveform::transients::TransientTuning {
             use_custom: self.ui.waveform.transient_use_custom_tuning,
@@ -189,6 +187,11 @@ impl EguiController {
             floor_quantile: self.ui.waveform.transient_floor_quantile,
             min_gap_seconds: self.ui.waveform.transient_min_gap_seconds,
         };
+        if (self.ui.waveform.transient_cache_sensitivity - sensitivity).abs() < f32::EPSILON
+            && self.ui.waveform.transient_cache_tuning == Some(tuning)
+        {
+            return;
+        }
         if let Some(novelty) = self.ui.waveform.transient_novelty.as_ref() {
             self.ui.waveform.transients =
                 crate::waveform::transients::pick_transients_with_tuning(
@@ -209,6 +212,7 @@ impl EguiController {
             self.ui.waveform.transients.clear();
         }
         self.ui.waveform.transient_cache_sensitivity = sensitivity;
+        self.ui.waveform.transient_cache_tuning = Some(tuning);
     }
 
     pub(in crate::egui_app::controller::wavs) fn read_waveform_bytes(

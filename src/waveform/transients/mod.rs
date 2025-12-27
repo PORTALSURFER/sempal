@@ -22,7 +22,7 @@ pub struct TransientNovelty {
     pub total_frames: usize,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct TransientTuning {
     pub use_custom: bool,
     pub k_high: f32,
