@@ -94,6 +94,34 @@ impl WaveformController<'_> {
         }
     }
 
+    pub(super) fn ensure_selection_visible_in_view(&mut self, selection: SelectionRange) {
+        if !self.waveform_ready() {
+            return;
+        }
+        let mut view = self.ui.waveform.view;
+        let width = view.width().max(self.min_view_width());
+        if width >= 1.0 {
+            return;
+        }
+        if selection.width() >= width {
+            let center = (selection.start() + selection.end()) * 0.5;
+            let start = (center - width * 0.5).clamp(0.0, 1.0 - width);
+            view.start = start;
+            view.end = start + width;
+        } else if selection.start() < view.start {
+            view.start = selection.start();
+            view.end = (view.start + width).min(1.0);
+        } else if selection.end() > view.end {
+            view.end = selection.end();
+            view.start = (view.end - width).max(0.0);
+        }
+        let clamped = view.clamp();
+        if views_differ(self.ui.waveform.view, clamped) {
+            self.ui.waveform.view = clamped;
+            self.refresh_waveform_image();
+        }
+    }
+
     pub(crate) fn set_waveform_cursor(&mut self, position: f32) {
         self.set_waveform_cursor_with_source(position, CursorUpdateSource::Navigation);
     }
