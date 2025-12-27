@@ -76,7 +76,7 @@ impl HotkeysActions for HotkeysController<'_> {
             }
             HotkeyCommand::SaveSelectionToBrowser => {
                 if matches!(focus, FocusContext::Waveform) {
-                    if let Err(err) = self.save_waveform_selection_to_browser(false) {
+                    if let Err(err) = self.save_waveform_selection_to_browser(true) {
                         self.set_status(err, StatusTone::Error);
                     }
                 }
