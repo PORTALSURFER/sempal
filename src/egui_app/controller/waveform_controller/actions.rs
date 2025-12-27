@@ -134,7 +134,12 @@ impl WaveformActions for WaveformController<'_> {
         if !self.waveform_ready() {
             return;
         }
-        let step = self.waveform_step_size(fine);
+        let step = if fine {
+            self.waveform_step_size(true)
+        } else {
+            self.bpm_snap_step()
+                .unwrap_or_else(|| self.waveform_step_size(false))
+        };
         if step <= 0.0 {
             return;
         }

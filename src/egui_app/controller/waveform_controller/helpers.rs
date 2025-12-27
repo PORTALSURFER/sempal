@@ -56,6 +56,26 @@ impl WaveformController<'_> {
         self.ui.waveform.view.width() * px_fraction
     }
 
+    pub(super) fn bpm_snap_step(&self) -> Option<f32> {
+        if !self.ui.waveform.bpm_snap_enabled {
+            return None;
+        }
+        let bpm = self.ui.waveform.bpm_value?;
+        if !bpm.is_finite() || bpm <= 0.0 {
+            return None;
+        }
+        let duration = self.loaded_audio_duration_seconds()?;
+        if !duration.is_finite() || duration <= 0.0 {
+            return None;
+        }
+        let step = 60.0 / bpm / duration;
+        if step.is_finite() && step > 0.0 {
+            Some(step)
+        } else {
+            None
+        }
+    }
+
     pub(crate) fn set_waveform_cursor(&mut self, position: f32) {
         self.set_waveform_cursor_with_source(position, CursorUpdateSource::Navigation);
     }
