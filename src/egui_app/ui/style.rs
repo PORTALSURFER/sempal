@@ -131,6 +131,16 @@ pub fn warning_soft_text() -> Color32 {
     semantic_palette().warning_soft
 }
 
+/// Fill used for the "missing similarity data" indicator dot.
+pub fn similarity_missing_dot_fill() -> Color32 {
+    semantic_palette().destructive
+}
+
+/// Radius for the "missing similarity data" indicator dot.
+pub fn similarity_missing_dot_radius() -> f32 {
+    3.5
+}
+
 /// Fill used when hovering a duplicate drop target.
 pub fn duplicate_hover_fill() -> Color32 {
     semantic_palette().duplicate_hover_fill

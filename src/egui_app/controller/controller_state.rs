@@ -210,6 +210,7 @@ pub(crate) enum AnalysisJobStatus {
 #[derive(Clone, Debug)]
 pub(crate) struct FeatureStatus {
     pub(crate) has_features_v1: bool,
+    pub(crate) has_embedding: bool,
     pub(crate) duration_seconds: Option<f32>,
     pub(crate) sr_used: Option<i64>,
     pub(crate) analysis_status: Option<AnalysisJobStatus>,

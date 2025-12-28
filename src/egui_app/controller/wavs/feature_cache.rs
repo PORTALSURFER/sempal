@@ -62,15 +62,22 @@ impl EguiController {
                             s.duration_seconds,
                             s.sr_used,
                             CASE WHEN f.sample_id IS NULL THEN 0 ELSE 1 END AS has_features_v1,
+                            CASE WHEN e.sample_id IS NULL THEN 0 ELSE 1 END AS has_embedding,
                             j.status
                      FROM samples s
                      LEFT JOIN features f ON f.sample_id = s.sample_id AND f.feat_version = 1
+                     LEFT JOIN embeddings e ON e.sample_id = s.sample_id AND e.model_id = ?2
                      LEFT JOIN analysis_jobs j ON j.sample_id = s.sample_id AND j.job_type = ?1
-                     WHERE s.sample_id >= ?2 AND s.sample_id < ?3",
+                     WHERE s.sample_id >= ?3 AND s.sample_id < ?4",
                 )
                 .map_err(|err| format!("Prepare feature cache query failed: {err}"))?;
             let mut rows = stmt
-                .query(params![ANALYSIS_JOB_TYPE, prefix, prefix_end])
+                .query(params![
+                    ANALYSIS_JOB_TYPE,
+                    crate::analysis::embedding::EMBEDDING_MODEL_ID,
+                    prefix,
+                    prefix_end
+                ])
                 .map_err(|err| format!("Query feature cache failed: {err}"))?;
             while let Some(row) = rows
                 .next()
@@ -80,7 +87,8 @@ impl EguiController {
                 let duration_seconds: Option<f64> = row.get(1).map_err(|err| err.to_string())?;
                 let sr_used: Option<i64> = row.get(2).map_err(|err| err.to_string())?;
                 let has_features_v1: i64 = row.get(3).map_err(|err| err.to_string())?;
-                let status: Option<String> = row.get(4).map_err(|err| err.to_string())?;
+                let has_embedding: i64 = row.get(4).map_err(|err| err.to_string())?;
+                let status: Option<String> = row.get(5).map_err(|err| err.to_string())?;
                 let analysis_status = status.as_deref().and_then(parse_job_status);
                 let Some(relative_path) = sample_id.split_once("::").map(|(_, p)| p) else {
                     continue;
@@ -89,6 +97,7 @@ impl EguiController {
                     normalize_relative_key(relative_path),
                     FeatureStatus {
                         has_features_v1: has_features_v1 != 0,
+                        has_embedding: has_embedding != 0,
                         duration_seconds: duration_seconds.map(|s| s as f32),
                         sr_used,
                         analysis_status,
@@ -104,6 +113,7 @@ impl EguiController {
             let key = normalize_relative_key(&entry.relative_path.to_string_lossy());
             let status = sample_map.remove(&key).unwrap_or(FeatureStatus {
                 has_features_v1: false,
+                has_embedding: false,
                 duration_seconds: None,
                 sr_used: None,
                 analysis_status: None,

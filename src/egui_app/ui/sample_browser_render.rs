@@ -101,9 +101,24 @@ impl EguiApp {
                     width: style::triage_marker_width(),
                     color,
                 });
-                let trailing_space = triage_marker_width
-                    .map(|width| width + metrics.padding * 0.5)
-                    .unwrap_or(0.0);
+                let needs_similarity_data = self
+                    .controller
+                    .cached_feature_status_for_entry(entry_index)
+                    .is_some_and(|status| !status.has_embedding);
+                let indicator_radius = if needs_similarity_data {
+                    style::similarity_missing_dot_radius()
+                } else {
+                    0.0
+                };
+                let indicator_space = if needs_similarity_data {
+                    indicator_radius * 2.0 + metrics.padding * 0.5
+                } else {
+                    0.0
+                };
+                let trailing_space = indicator_space
+                    + triage_marker_width
+                        .map(|width| width + metrics.padding * 0.5)
+                        .unwrap_or(0.0);
 
                 let mut base_label = self
                     .controller
@@ -193,6 +208,20 @@ impl EguiApp {
                         );
                         ui.painter()
                             .rect_filled(marker_rect, 0.0, style::selection_marker_fill());
+                    }
+                    if needs_similarity_data {
+                        let dot_center = egui::pos2(
+                            response.rect.right()
+                                - triage_marker_width.unwrap_or(0.0)
+                                - metrics.padding * 0.5
+                                - indicator_radius,
+                            response.rect.center().y,
+                        );
+                        ui.painter().circle_filled(
+                            dot_center,
+                            indicator_radius,
+                            style::similarity_missing_dot_fill(),
+                        );
                     }
                     self.handle_browser_row_click(ui, &response, row);
                     if is_focused {
