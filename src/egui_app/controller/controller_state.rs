@@ -96,6 +96,7 @@ impl WavSelectionState {
 pub(super) struct ControllerSampleViewState {
     pub(super) renderer: WaveformRenderer,
     pub(super) waveform: WaveformState,
+    pub(super) waveform_slide: Option<WaveformSlideState>,
     pub(super) wav: WavSelectionState,
 }
 
@@ -109,9 +110,23 @@ impl ControllerSampleViewState {
                 decoded: None,
                 render_meta: None,
             },
+            waveform_slide: None,
             wav: WavSelectionState::new(),
         }
     }
+}
+
+/// Cached state for a circular waveform slide drag.
+pub(super) struct WaveformSlideState {
+    pub(super) source: SampleSource,
+    pub(super) relative_path: PathBuf,
+    pub(super) absolute_path: PathBuf,
+    pub(super) original_samples: Vec<f32>,
+    pub(super) channels: usize,
+    pub(super) spec_channels: u16,
+    pub(super) sample_rate: u32,
+    pub(super) start_normalized: f32,
+    pub(super) last_offset_frames: isize,
 }
 
 pub(super) struct SelectionContextState {

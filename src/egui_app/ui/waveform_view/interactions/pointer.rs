@@ -1,5 +1,6 @@
 use super::super::*;
 use crate::egui_app::state::WaveformView;
+use crate::egui_app::ui::style::StatusTone;
 use eframe::egui::{self, Ui};
 
 pub(in super::super) fn handle_waveform_pointer_interactions(
@@ -35,6 +36,8 @@ pub(in super::super) fn handle_waveform_pointer_interactions(
     };
     let normalized = pointer_pos.map(normalize_to_waveform);
     let middle_down = ui.input(|i| i.pointer.button_down(egui::PointerButton::Middle));
+    let modifiers = ui.input(|i| i.modifiers);
+    let slide_modifiers = modifiers.ctrl && modifiers.shift && modifiers.alt;
     if middle_down {
         let Some(pos) = pointer_pos.or_else(|| response.interact_pointer_pos()) else {
             app.controller.ui.waveform.pan_drag_pos = None;
@@ -52,6 +55,29 @@ pub(in super::super) fn handle_waveform_pointer_interactions(
         return;
     }
     app.controller.ui.waveform.pan_drag_pos = None;
+    if response.drag_started() && slide_modifiers {
+        if let Some(value) = drag_start_normalized.or(normalized) {
+            if app.controller.ui.waveform.image.is_some() {
+                app.controller.focus_waveform_context();
+            }
+            if let Err(err) = app.controller.start_waveform_circular_slide(value) {
+                app.controller.set_status(err, StatusTone::Error);
+            }
+        }
+        return;
+    }
+    if response.dragged() && app.controller.is_waveform_circular_slide_active() {
+        if let Some(value) = normalized {
+            app.controller.update_waveform_circular_slide(value);
+        }
+        return;
+    }
+    if response.drag_stopped() && app.controller.is_waveform_circular_slide_active() {
+        if let Err(err) = app.controller.finish_waveform_circular_slide() {
+            app.controller.set_status(err, StatusTone::Error);
+        }
+        return;
+    }
     if response.drag_started() {
         if let Some(value) = drag_start_normalized {
             app.controller.start_selection_drag(value);

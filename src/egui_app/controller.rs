@@ -48,6 +48,7 @@ mod undo;
 mod updates;
 mod wav_entries_loader;
 mod waveform_controller;
+mod waveform_slide;
 mod wavs;
 
 use crate::{
