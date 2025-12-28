@@ -95,6 +95,9 @@ impl EguiApp {
                 let similarity_strength = similar_score
                     .map(|score| ((score + 1.0) * 0.5).clamp(0.0, 1.0));
                 let marker_color = style::triage_marker_color(tag);
+                let triage_marker_width = marker_color
+                    .as_ref()
+                    .map(|_| style::triage_marker_width());
                 let triage_marker = marker_color.map(|color| RowMarker {
                     width: style::triage_marker_width(),
                     color,
@@ -109,9 +112,8 @@ impl EguiApp {
                     .as_ref()
                     .map(|text| metrics.padding + text.len() as f32 * 7.0)
                     .unwrap_or(0.0);
-                let trailing_space = triage_marker
-                    .as_ref()
-                    .map(|marker| marker.width + metrics.padding * 0.5)
+                let trailing_space = triage_marker_width
+                    .map(|width| width + metrics.padding * 0.5)
                     .unwrap_or(0.0)
                     + rating_space;
 
@@ -214,10 +216,7 @@ impl EguiApp {
                         );
                     }
                     if let Some(text) = rating_text.as_deref() {
-                        let marker_space = triage_marker
-                            .as_ref()
-                            .map(|marker| marker.width)
-                            .unwrap_or(0.0);
+                        let marker_space = triage_marker_width.unwrap_or(0.0);
                         let rating_x = response.rect.right() - metrics.padding - marker_space;
                         let rating_color = if is_anchor {
                             style::palette().accent_ice
