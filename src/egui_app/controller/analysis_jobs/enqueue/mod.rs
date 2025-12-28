@@ -14,14 +14,15 @@ pub(in crate::egui_app::controller) use enqueue_samples::enqueue_jobs_for_source
 mod tests {
     use super::enqueue_embeddings::enqueue_jobs_for_embedding_backfill;
     use super::enqueue_samples::{
-        enqueue_jobs_for_source_backfill, enqueue_jobs_for_source_backfill_full,
-        enqueue_jobs_for_source_missing_features,
+        enqueue_jobs_for_source, enqueue_jobs_for_source_backfill,
+        enqueue_jobs_for_source_backfill_full, enqueue_jobs_for_source_missing_features,
     };
     use crate::app_dirs::ConfigBaseGuard;
     use crate::egui_app::controller::analysis_jobs::db;
+    use crate::sample_sources::scanner::ChangedSample;
     use crate::sample_sources::SampleSource;
     use rusqlite::params;
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
     use tempfile::tempdir;
 
     #[test]
@@ -266,6 +267,158 @@ mod tests {
             .find(|entry| entry.relative_path == Path::new("Pack/missing.wav"))
             .unwrap();
         assert!(missing_entry.missing);
+    }
+
+    #[test]
+    fn enqueue_invalidates_when_analysis_version_stale() {
+        let config_dir = tempdir().unwrap();
+        let _guard = ConfigBaseGuard::set(config_dir.path().to_path_buf());
+
+        let source_root = tempdir().unwrap();
+        let source = SampleSource::new(source_root.path().to_path_buf());
+        let _ =
+            crate::sample_sources::library::save(&crate::sample_sources::library::LibraryState {
+                sources: vec![source.clone()],
+                collections: vec![],
+            })
+            .unwrap();
+
+        let conn = db::open_source_db(&source.root).unwrap();
+        conn.execute_batch(
+            "DELETE FROM analysis_jobs;
+             DELETE FROM samples;
+             DELETE FROM features;
+             DELETE FROM embeddings;",
+        )
+        .unwrap();
+
+        let sample_id = format!("{}::Pack/a.wav", source.id.as_str());
+        conn.execute(
+            "INSERT INTO samples (sample_id, content_hash, size, mtime_ns, duration_seconds, sr_used, analysis_version)
+             VALUES (?1, ?2, 1, 1, 1.0, 1, ?3)",
+            params![&sample_id, "ha", "stale_version"],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO features (sample_id, feat_version, vec_blob, computed_at)
+             VALUES (?1, 1, X'01020304', 1)",
+            params![&sample_id],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO embeddings (sample_id, model_id, dim, dtype, l2_normed, vec, created_at)
+             VALUES (?1, ?2, ?3, ?4, 1, X'01020304', 0)",
+            params![
+                &sample_id,
+                crate::analysis::embedding::EMBEDDING_MODEL_ID,
+                crate::analysis::embedding::EMBEDDING_DIM as i64,
+                crate::analysis::embedding::EMBEDDING_DTYPE_F32
+            ],
+        )
+        .unwrap();
+
+        let changed_samples = vec![ChangedSample {
+            relative_path: PathBuf::from("Pack/a.wav"),
+            file_size: 1,
+            modified_ns: 1,
+            content_hash: "ha".to_string(),
+        }];
+
+        let (_inserted, _progress) = enqueue_jobs_for_source(&source, &changed_samples).unwrap();
+
+        let feature_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM features WHERE sample_id = ?1",
+                params![&sample_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let embedding_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM embeddings WHERE sample_id = ?1",
+                params![&sample_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        assert_eq!(feature_count, 0);
+        assert_eq!(embedding_count, 0);
+    }
+
+    #[test]
+    fn enqueue_invalidates_when_content_hash_changes() {
+        let config_dir = tempdir().unwrap();
+        let _guard = ConfigBaseGuard::set(config_dir.path().to_path_buf());
+
+        let source_root = tempdir().unwrap();
+        let source = SampleSource::new(source_root.path().to_path_buf());
+        let _ =
+            crate::sample_sources::library::save(&crate::sample_sources::library::LibraryState {
+                sources: vec![source.clone()],
+                collections: vec![],
+            })
+            .unwrap();
+
+        let conn = db::open_source_db(&source.root).unwrap();
+        conn.execute_batch(
+            "DELETE FROM analysis_jobs;
+             DELETE FROM samples;
+             DELETE FROM features;
+             DELETE FROM embeddings;",
+        )
+        .unwrap();
+
+        let sample_id = format!("{}::Pack/a.wav", source.id.as_str());
+        conn.execute(
+            "INSERT INTO samples (sample_id, content_hash, size, mtime_ns, duration_seconds, sr_used, analysis_version)
+             VALUES (?1, ?2, 1, 1, 1.0, 1, ?3)",
+            params![&sample_id, "old_hash", crate::analysis::version::analysis_version()],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO features (sample_id, feat_version, vec_blob, computed_at)
+             VALUES (?1, 1, X'01020304', 1)",
+            params![&sample_id],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO embeddings (sample_id, model_id, dim, dtype, l2_normed, vec, created_at)
+             VALUES (?1, ?2, ?3, ?4, 1, X'01020304', 0)",
+            params![
+                &sample_id,
+                crate::analysis::embedding::EMBEDDING_MODEL_ID,
+                crate::analysis::embedding::EMBEDDING_DIM as i64,
+                crate::analysis::embedding::EMBEDDING_DTYPE_F32
+            ],
+        )
+        .unwrap();
+
+        let changed_samples = vec![ChangedSample {
+            relative_path: PathBuf::from("Pack/a.wav"),
+            file_size: 1,
+            modified_ns: 1,
+            content_hash: "new_hash".to_string(),
+        }];
+
+        let (_inserted, _progress) = enqueue_jobs_for_source(&source, &changed_samples).unwrap();
+
+        let feature_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM features WHERE sample_id = ?1",
+                params![&sample_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let embedding_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM embeddings WHERE sample_id = ?1",
+                params![&sample_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        assert_eq!(feature_count, 0);
+        assert_eq!(embedding_count, 0);
     }
 
     #[test]

@@ -121,28 +121,7 @@ fn enqueue_source_backfill(
         return Ok((0, db::current_progress(&conn)?));
     }
 
-    let mut staged_samples = Vec::with_capacity(entries.len());
-    for entry in entries {
-        let absolute = request.source.root.join(&entry.relative_path);
-        if !absolute.exists() {
-            if !entry.missing {
-                let _ = source_db.set_missing(&entry.relative_path, true);
-            }
-            continue;
-        }
-        if entry.missing {
-            let _ = source_db.set_missing(&entry.relative_path, false);
-        }
-        if let Some(metadata) = sample_metadata_from_entry(
-            request.source.id.as_str(),
-            &entry.relative_path,
-            entry.content_hash,
-            entry.file_size,
-            entry.modified_ns,
-        ) {
-            staged_samples.push(metadata);
-        }
-    }
+    let staged_samples = stage_samples_from_entries(request.source, &source_db, &entries);
     if staged_samples.is_empty() {
         return Ok((0, db::current_progress(&conn)?));
     }
@@ -179,28 +158,7 @@ fn enqueue_missing_features(
         return Ok((0, db::current_progress(&conn)?));
     }
 
-    let mut staged_samples = Vec::new();
-    for entry in entries {
-        let absolute = request.source.root.join(&entry.relative_path);
-        if !absolute.exists() {
-            if !entry.missing {
-                let _ = source_db.set_missing(&entry.relative_path, true);
-            }
-            continue;
-        }
-        if entry.missing {
-            let _ = source_db.set_missing(&entry.relative_path, false);
-        }
-        if let Some(metadata) = sample_metadata_from_entry(
-            request.source.id.as_str(),
-            &entry.relative_path,
-            entry.content_hash,
-            entry.file_size,
-            entry.modified_ns,
-        ) {
-            staged_samples.push(metadata);
-        }
-    }
+    let staged_samples = stage_samples_from_entries(request.source, &source_db, &entries);
     if staged_samples.is_empty() {
         return Ok((0, db::current_progress(&conn)?));
     }
@@ -261,6 +219,36 @@ fn sample_metadata_from_entry(
         size: file_size,
         mtime_ns: modified_ns,
     })
+}
+
+fn stage_samples_from_entries(
+    source: &crate::sample_sources::SampleSource,
+    source_db: &crate::sample_sources::SourceDatabase,
+    entries: &[crate::sample_sources::WavEntry],
+) -> Vec<db::SampleMetadata> {
+    let mut staged_samples = Vec::with_capacity(entries.len());
+    for entry in entries {
+        let absolute = source.root.join(&entry.relative_path);
+        if !absolute.exists() {
+            if !entry.missing {
+                let _ = source_db.set_missing(&entry.relative_path, true);
+            }
+            continue;
+        }
+        if entry.missing {
+            let _ = source_db.set_missing(&entry.relative_path, false);
+        }
+        if let Some(metadata) = sample_metadata_from_entry(
+            source.id.as_str(),
+            &entry.relative_path,
+            entry.content_hash.clone(),
+            entry.file_size,
+            entry.modified_ns,
+        ) {
+            staged_samples.push(metadata);
+        }
+    }
+    staged_samples
 }
 
 fn stage_backfill_samples(
