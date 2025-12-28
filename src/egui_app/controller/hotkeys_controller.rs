@@ -359,11 +359,27 @@ impl HotkeysController<'_> {
     fn delete_focused_sample(&mut self, focus: FocusContext) {
         match focus {
             FocusContext::SampleBrowser => {
+                let mut rows: Vec<usize> = self
+                    .ui
+                    .browser
+                    .selected_paths
+                    .iter()
+                    .filter_map(|path| self.visible_row_for_path(path))
+                    .collect();
                 if let Some(row) = self.focused_browser_row() {
-                    let _ = self.delete_browser_sample(row);
-                } else {
-                    self.set_status("Focus a sample to delete it", StatusTone::Info);
+                    if rows.is_empty() {
+                        rows = self.action_rows_from_primary(row);
+                    } else if !rows.contains(&row) {
+                        rows.push(row);
+                    }
                 }
+                if rows.is_empty() {
+                    self.set_status("Focus a sample to delete it", StatusTone::Info);
+                    return;
+                }
+                rows.sort_unstable();
+                rows.dedup();
+                let _ = self.delete_browser_samples(&rows);
             }
             FocusContext::CollectionSample => {
                 if let Some(row) = self.ui.collections.selected_sample {

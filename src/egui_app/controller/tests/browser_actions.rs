@@ -5,6 +5,7 @@ use super::super::test_support::{
 use super::super::*;
 use super::common::{max_sample_amplitude, visible_indices};
 use crate::egui_app::controller::collection_export;
+use crate::egui_app::controller::hotkeys;
 use crate::egui_app::state::FocusContext;
 use crate::sample_sources::Collection;
 use crate::sample_sources::collections::CollectionMember;
@@ -126,6 +127,32 @@ fn delete_actions_apply_to_all_selected_rows() {
     let rows = controller.action_rows_from_primary(0);
 
     controller.delete_browser_samples(&rows).unwrap();
+
+    assert_eq!(controller.wav_entries_len(), 0);
+    assert!(!source.root.join("one.wav").exists());
+    assert!(!source.root.join("two.wav").exists());
+    assert!(!source.root.join("three.wav").exists());
+}
+
+#[test]
+fn delete_hotkey_applies_to_all_selected_rows() {
+    let (mut controller, source) = prepare_with_source_and_wav_entries(vec![
+        sample_entry("one.wav", SampleTag::Neutral),
+        sample_entry("two.wav", SampleTag::Neutral),
+        sample_entry("three.wav", SampleTag::Neutral),
+    ]);
+    write_test_wav(&source.root.join("one.wav"), &[0.0, 0.1]);
+    write_test_wav(&source.root.join("two.wav"), &[0.0, 0.1]);
+    write_test_wav(&source.root.join("three.wav"), &[0.0, 0.1]);
+
+    controller.focus_browser_row_only(0);
+    controller.toggle_browser_row_selection(1);
+    controller.toggle_browser_row_selection(2);
+    let action = hotkeys::iter_actions()
+        .find(|a| a.id == "delete-browser")
+        .expect("delete-browser hotkey");
+
+    controller.handle_hotkey(action, FocusContext::SampleBrowser);
 
     assert_eq!(controller.wav_entries_len(), 0);
     assert!(!source.root.join("one.wav").exists());
