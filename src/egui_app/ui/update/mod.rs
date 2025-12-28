@@ -21,6 +21,7 @@ impl eframe::App for EguiApp {
         if !feedback_modal_open {
             self.handle_space_shortcut(ctx, &input);
             self.handle_copy_shortcut(ctx);
+            self.handle_paste_shortcut(ctx);
             self.handle_escape_shortcut(ctx, &input);
             self.handle_window_shortcuts(ctx);
             self.handle_arrow_keys(ctx, &focus_flags, &input);

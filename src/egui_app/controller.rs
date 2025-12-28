@@ -11,6 +11,7 @@ mod audio_options;
 mod background_jobs;
 mod browser_controller;
 mod clipboard;
+mod clipboard_paste;
 mod collection_export;
 mod collection_items;
 mod collection_items_helpers;

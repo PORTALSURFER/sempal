@@ -51,6 +51,22 @@ pub(super) fn copy_shortcut_pressed(ctx: &egui::Context) -> bool {
     })
 }
 
+#[inline]
+pub(super) fn paste_shortcut_pressed(ctx: &egui::Context) -> bool {
+    let events = ctx.input(|i| i.events.clone());
+    events.into_iter().any(|event| match event {
+        egui::Event::Paste(_) => true,
+        egui::Event::Key {
+            key: egui::Key::V,
+            pressed: true,
+            repeat: false,
+            modifiers,
+            ..
+        } if (modifiers.command || modifiers.ctrl) && !modifiers.alt => true,
+        _ => false,
+    })
+}
+
 pub(super) fn user_activity_detected(ctx: &egui::Context) -> bool {
     ctx.input(|i| {
         !i.events.is_empty()

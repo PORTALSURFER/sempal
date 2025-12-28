@@ -2,7 +2,7 @@ use crate::egui_app::state::FocusContext;
 use eframe::egui;
 
 use super::super::EguiApp;
-use super::super::input::{InputSnapshot, copy_shortcut_pressed};
+use super::super::input::{InputSnapshot, copy_shortcut_pressed, paste_shortcut_pressed};
 use super::consume_keypress;
 
 pub(super) struct FocusFlags {
@@ -64,6 +64,28 @@ impl EguiApp {
     pub(super) fn handle_copy_shortcut(&mut self, ctx: &egui::Context) {
         if copy_shortcut_pressed(ctx) {
             self.controller.copy_selection_to_clipboard();
+        }
+    }
+
+    pub(super) fn handle_paste_shortcut(&mut self, ctx: &egui::Context) {
+        if !paste_shortcut_pressed(ctx) {
+            return;
+        }
+        if ctx.wants_keyboard_input() {
+            return;
+        }
+        let handled = self.controller.paste_files_from_clipboard();
+        if handled {
+            ctx.input_mut(|state| {
+                let mut modifiers = egui::Modifiers::default();
+                if cfg!(target_os = "macos") {
+                    modifiers.command = true;
+                } else {
+                    modifiers.ctrl = true;
+                }
+                state.consume_key(modifiers, egui::Key::V);
+                state.events.retain(|event| !matches!(event, egui::Event::Paste(_)));
+            });
         }
     }
 

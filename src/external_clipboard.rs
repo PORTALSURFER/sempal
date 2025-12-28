@@ -21,6 +21,11 @@ pub fn copy_text(text: &str) -> Result<(), String> {
     platform::copy_text(text)
 }
 
+/// Read file paths from the system clipboard (if available).
+pub fn read_file_paths() -> Result<Vec<PathBuf>, String> {
+    platform::read_file_paths()
+}
+
 #[cfg(not(target_os = "windows"))]
 mod platform {
     use super::*;
@@ -32,23 +37,29 @@ mod platform {
     pub fn copy_text(_text: &str) -> Result<(), String> {
         Err("Clipboard text copy is only implemented on Windows in this build".into())
     }
+
+    pub fn read_file_paths() -> Result<Vec<PathBuf>, String> {
+        Err("Clipboard file paste is only implemented on Windows in this build".into())
+    }
 }
 
 #[cfg(target_os = "windows")]
 mod platform {
     use super::*;
     use std::os::windows::ffi::OsStrExt;
+    use std::ffi::OsString;
     use std::ptr::copy_nonoverlapping;
     use std::sync::OnceLock;
     use windows::Win32::Foundation::{GlobalFree, HANDLE, HGLOBAL};
     use windows::Win32::System::DataExchange::{
-        CloseClipboard, EmptyClipboard, OpenClipboard, RegisterClipboardFormatW, SetClipboardData,
+        CloseClipboard, EmptyClipboard, GetClipboardData, IsClipboardFormatAvailable,
+        OpenClipboard, RegisterClipboardFormatW, SetClipboardData,
     };
     use windows::Win32::System::Memory::{
         GMEM_MOVEABLE, GMEM_ZEROINIT, GlobalAlloc, GlobalLock, GlobalUnlock,
     };
     use windows::Win32::System::Ole::{CF_HDROP, DROPEFFECT_COPY};
-    use windows::Win32::UI::Shell::DROPFILES;
+    use windows::Win32::UI::Shell::{DragQueryFileW, DROPFILES, HDROP};
     use windows::core::w;
 
     struct Clipboard;
@@ -62,6 +73,23 @@ mod platform {
     }
 
     impl Drop for Clipboard {
+        fn drop(&mut self) {
+            unsafe {
+                let _ = CloseClipboard();
+            }
+        }
+    }
+
+    struct ClipboardReader;
+
+    impl ClipboardReader {
+        fn new() -> Result<Self, String> {
+            unsafe { OpenClipboard(None) }.map_err(|err| format!("OpenClipboard failed: {err}"))?;
+            Ok(Self)
+        }
+    }
+
+    impl Drop for ClipboardReader {
         fn drop(&mut self) {
             unsafe {
                 let _ = CloseClipboard();
@@ -167,6 +195,38 @@ mod platform {
             .map_err(|err| format!("SetClipboardData(text) failed: {err}"))?;
         let _ = owned.release();
         Ok(())
+    }
+
+    pub fn read_file_paths() -> Result<Vec<PathBuf>, String> {
+        if unsafe { IsClipboardFormatAvailable(CF_HDROP.0 as u32) }.as_bool() == false {
+            return Ok(Vec::new());
+        }
+        let _clipboard = ClipboardReader::new()?;
+        let handle =
+            unsafe { GetClipboardData(CF_HDROP.0 as u32) }.map_err(|err| {
+                format!("GetClipboardData(CF_HDROP) failed: {err}")
+            })?;
+        let hdrop = HDROP(handle.0);
+        let count = unsafe { DragQueryFileW(hdrop, 0xFFFFFFFF, None) };
+        if count == 0 {
+            return Ok(Vec::new());
+        }
+        let mut paths = Vec::with_capacity(count as usize);
+        for index in 0..count {
+            let len = unsafe { DragQueryFileW(hdrop, index, None) } as usize;
+            if len == 0 {
+                continue;
+            }
+            let mut buffer = vec![0u16; len + 1];
+            let written = unsafe { DragQueryFileW(hdrop, index, Some(&mut buffer)) } as usize;
+            if written == 0 {
+                continue;
+            }
+            buffer.truncate(written);
+            let path = PathBuf::from(OsString::from_wide(&buffer));
+            paths.push(path);
+        }
+        Ok(paths)
     }
 
     fn preferred_drop_effect_format() -> Result<u16, String> {
