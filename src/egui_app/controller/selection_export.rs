@@ -191,6 +191,7 @@ impl EguiController {
             .and_then(|s| s.to_str())
             .filter(|s| !s.is_empty())
             .unwrap_or("selection");
+        let stem = Self::strip_selection_suffix(stem);
         let mut counter = 1;
         loop {
             let suffix = if counter == 1 {
@@ -205,6 +206,22 @@ impl EguiController {
             }
             counter += 1;
         }
+    }
+
+    fn strip_selection_suffix(stem: &str) -> &str {
+        if let Some((prefix, suffix)) = stem.rsplit_once("_sel_")
+            && !prefix.is_empty()
+            && !suffix.is_empty()
+            && suffix.chars().all(|c| c.is_ascii_digit())
+        {
+            return prefix;
+        }
+        if let Some(prefix) = stem.strip_suffix("_sel")
+            && !prefix.is_empty()
+        {
+            return prefix;
+        }
+        stem
     }
 
     fn record_selection_entry(
@@ -361,49 +378,4 @@ fn write_selection_wav(target: &Path, samples: &[f32], spec: hound::WavSpec) -> 
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::egui_app::controller::test_support::write_test_wav;
-    use std::path::Path;
-    use tempfile::tempdir;
-
-    #[test]
-    fn export_selection_clip_to_root_can_flatten_name_hint() {
-        let temp = tempdir().unwrap();
-        let source_root = temp.path().join("source");
-        let clip_root = temp.path().join("export");
-        std::fs::create_dir_all(source_root.join("drums")).unwrap();
-        std::fs::create_dir_all(&clip_root).unwrap();
-
-        let renderer = crate::waveform::WaveformRenderer::new(12, 12);
-        let mut controller = EguiController::new(renderer, None);
-        let source = SampleSource::new(source_root.clone());
-        controller.library.sources.push(source.clone());
-
-        let orig = source_root.join("drums").join("clip.wav");
-        write_test_wav(&orig, &[0.1, 0.2, 0.3, 0.4]);
-        controller
-            .load_waveform_for_selection(&source, Path::new("drums/clip.wav"))
-            .unwrap();
-
-        let entry = controller
-            .export_selection_clip_to_root(
-                &source.id,
-                Path::new("drums/clip.wav"),
-                SelectionRange::new(0.25, 0.75),
-                None,
-                &clip_root,
-                Path::new("clip.wav"),
-            )
-            .unwrap();
-
-        assert!(
-            entry
-                .relative_path
-                .parent()
-                .is_none_or(|p| p.as_os_str().is_empty())
-        );
-        assert!(clip_root.join(&entry.relative_path).is_file());
-        assert!(!clip_root.join("drums").join(&entry.relative_path).exists());
-    }
-}
+mod selection_export_tests;
