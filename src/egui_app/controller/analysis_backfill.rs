@@ -124,7 +124,7 @@ impl EguiController {
                 modified_ns: entry.modified_ns,
                 content_hash: fast_content_hash(entry.file_size, entry.modified_ns),
             });
-            sample_ids.push(super::analysis_jobs::db::build_sample_id(
+            sample_ids.push(super::analysis_jobs::build_sample_id(
                 source.id.as_str(),
                 &entry.relative_path,
             ));
