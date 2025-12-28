@@ -3,6 +3,7 @@
 //! The main `sempal` app can spawn this executable and exit so that the helper can
 //! safely replace the installed binaries.
 
+#[path = "sempal-updater/ui.rs"]
 mod ui;
 
 use std::path::PathBuf;
