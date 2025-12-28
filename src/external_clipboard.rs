@@ -48,6 +48,7 @@ mod platform {
     use super::*;
     use std::os::windows::ffi::OsStrExt;
     use std::ffi::OsString;
+    use std::os::windows::ffi::OsStringExt;
     use std::ptr::copy_nonoverlapping;
     use std::sync::OnceLock;
     use windows::Win32::Foundation::{GlobalFree, HANDLE, HGLOBAL};
@@ -198,7 +199,7 @@ mod platform {
     }
 
     pub fn read_file_paths() -> Result<Vec<PathBuf>, String> {
-        if unsafe { IsClipboardFormatAvailable(CF_HDROP.0 as u32) }.as_bool() == false {
+        if unsafe { IsClipboardFormatAvailable(CF_HDROP.0 as u32) }.is_err() {
             return Ok(Vec::new());
         }
         let _clipboard = ClipboardReader::new()?;
