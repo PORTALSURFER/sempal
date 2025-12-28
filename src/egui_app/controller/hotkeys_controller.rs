@@ -336,7 +336,6 @@ impl HotkeysController<'_> {
             | FocusContext::Waveform
             | FocusContext::SourceFolders
             | FocusContext::SourcesList
-            | FocusContext::SelectedFolders
             | FocusContext::CollectionsList => {}
         }
     }
@@ -361,7 +360,6 @@ impl HotkeysController<'_> {
             | FocusContext::Waveform
             | FocusContext::SourceFolders
             | FocusContext::SourcesList
-            | FocusContext::SelectedFolders
             | FocusContext::CollectionsList => {}
         }
     }
