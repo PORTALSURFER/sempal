@@ -1,4 +1,5 @@
 use rusqlite::Connection;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use super::SourceDbError;
 use super::util::map_sql_error;
@@ -25,6 +26,7 @@ pub(super) fn apply_schema(connection: &Connection) -> Result<(), SourceDbError>
                 status TEXT NOT NULL,
                 attempts INTEGER NOT NULL DEFAULT 0,
                 created_at INTEGER NOT NULL,
+                running_at INTEGER,
                 last_error TEXT,
                 UNIQUE(sample_id, job_type)
              );
@@ -131,6 +133,12 @@ pub(super) fn apply_schema(connection: &Connection) -> Result<(), SourceDbError>
 }
 
 fn ensure_optional_columns(connection: &Connection) -> Result<(), SourceDbError> {
+    ensure_wav_files_optional_columns(connection)?;
+    ensure_analysis_jobs_optional_columns(connection)?;
+    Ok(())
+}
+
+fn ensure_wav_files_optional_columns(connection: &Connection) -> Result<(), SourceDbError> {
     let mut stmt = connection
         .prepare("PRAGMA table_info(wav_files)")
         .map_err(map_sql_error)?;
@@ -161,4 +169,35 @@ fn ensure_optional_columns(connection: &Connection) -> Result<(), SourceDbError>
             .map_err(map_sql_error)?;
     }
     Ok(())
+}
+
+fn ensure_analysis_jobs_optional_columns(connection: &Connection) -> Result<(), SourceDbError> {
+    let mut stmt = connection
+        .prepare("PRAGMA table_info(analysis_jobs)")
+        .map_err(map_sql_error)?;
+    let columns: std::collections::HashSet<String> = stmt
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(map_sql_error)?
+        .filter_map(Result::ok)
+        .collect();
+    if !columns.contains("running_at") {
+        connection
+            .execute("ALTER TABLE analysis_jobs ADD COLUMN running_at INTEGER", [])
+            .map_err(map_sql_error)?;
+        let now = now_epoch_seconds();
+        connection
+            .execute(
+                "UPDATE analysis_jobs SET running_at = ?1 WHERE status = 'running'",
+                [now],
+            )
+            .map_err(map_sql_error)?;
+    }
+    Ok(())
+}
+
+fn now_epoch_seconds() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_else(|_| Duration::from_secs(0))
+        .as_secs() as i64
 }

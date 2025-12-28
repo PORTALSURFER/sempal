@@ -12,6 +12,7 @@ fn conn_with_schema() -> Connection {
             status TEXT NOT NULL,
             attempts INTEGER NOT NULL DEFAULT 0,
             created_at INTEGER NOT NULL,
+            running_at INTEGER,
             last_error TEXT,
             UNIQUE(sample_id, job_type)
         );
@@ -151,21 +152,57 @@ fn mark_failed_updates_status_and_error() {
 fn reset_running_to_pending_updates_rows() {
     let conn = conn_with_schema();
     conn.execute(
-        "INSERT INTO analysis_jobs (sample_id, job_type, status, attempts, created_at)
-         VALUES ('s::a.wav', 'x', 'running', 1, 0)",
+        "INSERT INTO analysis_jobs (sample_id, job_type, status, attempts, created_at, running_at)
+         VALUES ('s::a.wav', 'x', 'running', 1, 0, 5)",
         [],
     )
     .unwrap();
     let changed = reset_running_to_pending(&conn).unwrap();
     assert_eq!(changed, 1);
-    let status: String = conn
+    let (status, running_at): (String, Option<i64>) = conn
         .query_row(
-            "SELECT status FROM analysis_jobs WHERE sample_id = 's::a.wav'",
+            "SELECT status, running_at FROM analysis_jobs WHERE sample_id = 's::a.wav'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(status, "pending");
+    assert_eq!(running_at, None);
+}
+
+#[test]
+fn reset_stale_running_jobs_ignores_recent_claims() {
+    let conn = conn_with_schema();
+    conn.execute(
+        "INSERT INTO analysis_jobs (sample_id, job_type, status, attempts, created_at, running_at)
+         VALUES ('s::old.wav', 'x', 'running', 1, 0, 10)",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO analysis_jobs (sample_id, job_type, status, attempts, created_at, running_at)
+         VALUES ('s::fresh.wav', 'x', 'running', 1, 0, 100)",
+        [],
+    )
+    .unwrap();
+    let changed = reset_stale_running_jobs(&conn, 50).unwrap();
+    assert_eq!(changed, 1);
+    let status_old: String = conn
+        .query_row(
+            "SELECT status FROM analysis_jobs WHERE sample_id = 's::old.wav'",
             [],
             |row| row.get(0),
         )
         .unwrap();
-    assert_eq!(status, "pending");
+    let status_fresh: String = conn
+        .query_row(
+            "SELECT status FROM analysis_jobs WHERE sample_id = 's::fresh.wav'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(status_old, "pending");
+    assert_eq!(status_fresh, "running");
 }
 
 #[test]

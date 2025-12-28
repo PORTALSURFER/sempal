@@ -57,6 +57,7 @@ fn enqueue_jobs_tx(
                 status = 'pending',
                 attempts = 0,
                 created_at = excluded.created_at,
+                running_at = NULL,
                 last_error = NULL",
         );
         let changed = tx

@@ -2,6 +2,7 @@ use super::types::ClaimedJob;
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params, params_from_iter};
 use std::collections::HashMap;
 use std::path::Path;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 /// Cached analysis state for a sample row.
 pub(in crate::egui_app::controller::analysis_jobs) struct SampleAnalysisState {
@@ -85,6 +86,7 @@ pub(in crate::egui_app::controller::analysis_jobs) fn claim_next_jobs(
     let tx = conn
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|err| format!("Failed to start analysis claim transaction: {err}"))?;
+    let running_at = now_epoch_seconds();
     let mut jobs = Vec::new();
     {
         let mut stmt = tx
@@ -119,13 +121,13 @@ pub(in crate::egui_app::controller::analysis_jobs) fn claim_next_jobs(
                      LIMIT ?2
                  )
                  UPDATE analysis_jobs
-                 SET status = 'running', attempts = attempts + 1
+                 SET status = 'running', attempts = attempts + 1, running_at = ?3
                  WHERE id IN (SELECT id FROM to_claim)
                  RETURNING id, sample_id, content_hash, job_type",
             )
             .map_err(|err| format!("Failed to prepare analysis job claim: {err}"))?;
         let mut rows = stmt
-            .query(params![format!("{source_id}::%"), limit as i64])
+            .query(params![format!("{source_id}::%"), limit as i64, running_at])
             .map_err(|err| format!("Failed to query analysis jobs: {err}"))?;
         while let Some(row) = rows
             .next()
@@ -161,7 +163,7 @@ pub(in crate::egui_app::controller::analysis_jobs) fn mark_done(
 ) -> Result<(), String> {
     conn.execute(
         "UPDATE analysis_jobs
-         SET status = 'done', last_error = NULL
+         SET status = 'done', last_error = NULL, running_at = NULL
          WHERE id = ?1",
         params![job_id],
     )
@@ -177,7 +179,7 @@ pub(in crate::egui_app::controller::analysis_jobs) fn mark_failed(
 ) -> Result<(), String> {
     conn.execute(
         "UPDATE analysis_jobs
-         SET status = 'failed', last_error = ?2
+         SET status = 'failed', last_error = ?2, running_at = NULL
          WHERE id = ?1",
         params![job_id, error],
     )
@@ -191,10 +193,17 @@ pub(in crate::egui_app::controller::analysis_jobs) fn mark_pending(
 ) -> Result<(), String> {
     conn.execute(
         "UPDATE analysis_jobs
-         SET status = 'pending'
+         SET status = 'pending', running_at = NULL
          WHERE id = ?1",
         params![job_id],
     )
     .map_err(|err| format!("Failed to mark analysis job pending: {err}"))?;
     Ok(())
+}
+
+fn now_epoch_seconds() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_else(|_| Duration::from_secs(0))
+        .as_secs() as i64
 }
