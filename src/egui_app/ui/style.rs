@@ -169,17 +169,12 @@ pub fn similarity_display_strength(score: f32) -> f32 {
     normalized.powf(2.0)
 }
 
-/// Smooth map gradient from similar (blue) to mid (purple) to dissimilar (orange).
+/// Smooth map gradient from similar (green) to dissimilar (yellow).
 pub fn similarity_map_color(t: f32) -> Color32 {
     let t = smoothstep(t.clamp(0.0, 1.0));
-    let blue = Color32::from_rgb(72, 128, 224);
-    let purple = Color32::from_rgb(160, 96, 216);
-    let orange = Color32::from_rgb(220, 150, 112);
-    if t <= 0.5 {
-        blend_rgb(blue, purple, t * 2.0)
-    } else {
-        blend_rgb(purple, orange, (t - 0.5) * 2.0)
-    }
+    let green = Color32::from_rgb(92, 184, 124);
+    let yellow = Color32::from_rgb(224, 196, 112);
+    blend_rgb(green, yellow, t)
 }
 
 fn smoothstep(t: f32) -> f32 {
