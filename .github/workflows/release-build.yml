@@ -102,6 +102,11 @@ jobs:
             --channel "${RELEASE_CHANNEL}" \
             ${RELEASE_VERSION:+--version "${RELEASE_VERSION}"} \
             --out-dir dist/release
+      - name: Uniquify checksums entry
+        shell: bash
+        run: |
+          mv dist/release/checksums-entry.txt \
+            "dist/release/checksums-entry-${{ matrix.platform }}-${{ matrix.arch }}.txt"
       - uses: actions/upload-artifact@v4
         with:
           name: release-${{ matrix.platform }}-${{ matrix.arch }}
@@ -132,7 +137,13 @@ jobs:
         run: |
           mkdir -p dist/release
           cp dist/artifacts/*.zip dist/release/
-          cat dist/artifacts/checksums-entry.txt > "dist/release/${CHECKSUMS_NAME}"
+          shopt -s nullglob
+          entries=(dist/artifacts/checksums-entry-*.txt)
+          if [[ ${#entries[@]} -eq 0 ]]; then
+            echo "No checksums entry files found." >&2
+            exit 1
+          fi
+          cat "${entries[@]}" > "dist/release/${CHECKSUMS_NAME}"
       - name: Upload release assets
         uses: softprops/action-gh-release@v1
         with:
