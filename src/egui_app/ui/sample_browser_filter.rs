@@ -68,7 +68,7 @@ impl EguiApp {
             ui.add_space(ui.spacing().item_spacing.x);
             let random_mode_enabled = self.controller.random_navigation_mode_enabled();
             let dice_label = RichText::new("🎲").color(if random_mode_enabled {
-                palette.text_primary
+                style::destructive_text()
             } else {
                 palette.text_muted
             });
