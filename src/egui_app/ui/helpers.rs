@@ -94,24 +94,25 @@ pub(super) fn render_list_row(ui: &mut Ui, row: ListRow<'_>) -> egui::Response {
         RowBackground::Gradient { left, right } => {
             let mut mesh = egui::epaint::Mesh::default();
             let idx = mesh.vertices.len() as u32;
+            let uv = egui::epaint::WHITE_UV;
             mesh.vertices.push(egui::epaint::Vertex {
                 pos: rect.left_top(),
-                uv: egui::pos2(0.0, 0.0),
+                uv,
                 color: left,
             });
             mesh.vertices.push(egui::epaint::Vertex {
                 pos: rect.right_top(),
-                uv: egui::pos2(1.0, 0.0),
+                uv,
                 color: right,
             });
             mesh.vertices.push(egui::epaint::Vertex {
                 pos: rect.right_bottom(),
-                uv: egui::pos2(1.0, 1.0),
+                uv,
                 color: right,
             });
             mesh.vertices.push(egui::epaint::Vertex {
                 pos: rect.left_bottom(),
-                uv: egui::pos2(0.0, 1.0),
+                uv,
                 color: left,
             });
             mesh.indices
