@@ -13,6 +13,7 @@ mod hotkey_overlay;
 mod hotkey_runtime;
 mod input;
 mod layout;
+mod loop_crossfade_prompt;
 mod map_clusters;
 mod map_empty;
 mod map_interactions;

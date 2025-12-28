@@ -27,6 +27,7 @@ mod hotkeys_controller;
 mod interaction_options;
 mod jobs;
 mod loading;
+mod loop_crossfade;
 mod map_view;
 mod missing_samples;
 mod os_explorer;

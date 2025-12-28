@@ -182,6 +182,30 @@ impl EguiApp {
             {
                 close_menu = true;
             }
+            let crossfade_btn = ui
+                .button("Apply Seamless Loop Crossfade")
+                .on_hover_text("Alt-click to customize the crossfade depth");
+            if crossfade_btn.clicked() {
+                let alt_click = ui.input(|i| i.modifiers.alt);
+                if alt_click {
+                    if let Err(err) = self
+                        .controller
+                        .request_loop_crossfade_prompt_for_browser_row(row)
+                    {
+                        self.controller.set_status(err, StatusTone::Error);
+                    } else {
+                        close_menu = true;
+                    }
+                } else if let Err(err) = self.controller.loop_crossfade_browser_samples(
+                    &action_rows,
+                    crate::egui_app::state::LoopCrossfadeSettings::default(),
+                    row,
+                ) {
+                    self.controller.set_status(err, StatusTone::Error);
+                } else {
+                    close_menu = true;
+                }
+            }
             let default_name = view_model::sample_display_label(path);
             let rename_id = ui.make_persistent_id(format!("rename:triage:{}", path.display()));
             if self.sample_rename_controls(ui, rename_id, default_name.as_str(), |app, value| {

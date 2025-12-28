@@ -10,6 +10,7 @@ mod feedback_issue;
 mod focus;
 mod hints;
 mod hotkeys;
+mod loop_crossfade;
 mod map;
 mod progress;
 mod sources;
@@ -26,6 +27,7 @@ pub use feedback_issue::*;
 pub use focus::*;
 pub use hints::*;
 pub use hotkeys::*;
+pub use loop_crossfade::*;
 pub use map::*;
 pub use progress::*;
 pub use sources::*;
@@ -60,6 +62,8 @@ pub struct UiState {
     pub map: MapUiState,
     /// Interaction and navigation tuning options.
     pub controls: InteractionOptionsState,
+    /// Pending loop crossfade prompt state.
+    pub loop_crossfade_prompt: Option<LoopCrossfadePrompt>,
     /// Master output volume (0.0-1.0).
     pub volume: f32,
     /// Release update status / notification state.
@@ -88,6 +92,7 @@ impl Default for UiState {
             audio: AudioOptionsState::default(),
             map: MapUiState::default(),
             controls: InteractionOptionsState::default(),
+            loop_crossfade_prompt: None,
             volume: 1.0,
             update: UpdateUiState::default(),
             loaded_wav: None,

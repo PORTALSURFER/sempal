@@ -1,5 +1,6 @@
 use super::helpers::TriageSampleContext;
 use super::*;
+use crate::egui_app::state::LoopCrossfadeSettings;
 use tracing::{info, warn};
 use std::collections::HashSet;
 
@@ -13,6 +14,12 @@ pub(crate) trait BrowserActions {
     ) -> Result<(), String>;
     fn normalize_browser_sample(&mut self, row: usize) -> Result<(), String>;
     fn normalize_browser_samples(&mut self, rows: &[usize]) -> Result<(), String>;
+    fn loop_crossfade_browser_samples(
+        &mut self,
+        rows: &[usize],
+        settings: LoopCrossfadeSettings,
+        primary_visible_row: usize,
+    ) -> Result<(), String>;
     fn rename_browser_sample(&mut self, row: usize, new_name: &str) -> Result<(), String>;
     fn delete_browser_sample(&mut self, row: usize) -> Result<(), String>;
     fn delete_browser_samples(&mut self, rows: &[usize]) -> Result<(), String>;
@@ -82,6 +89,46 @@ impl BrowserActions for BrowserController<'_> {
             if let Err(err) = self.try_normalize_browser_sample_ctx(&ctx) {
                 last_error = Some(err);
             }
+        }
+        if let Some(err) = last_error {
+            Err(err)
+        } else {
+            Ok(())
+        }
+    }
+
+    fn loop_crossfade_browser_samples(
+        &mut self,
+        rows: &[usize],
+        settings: LoopCrossfadeSettings,
+        primary_visible_row: usize,
+    ) -> Result<(), String> {
+        let (contexts, mut last_error) = self.resolve_unique_browser_contexts(rows);
+        let primary_path = self
+            .resolve_browser_sample(primary_visible_row)
+            .ok()
+            .map(|ctx| ctx.entry.relative_path);
+        let mut primary_new = None;
+        for ctx in contexts {
+            match self.apply_loop_crossfade_for_sample(
+                &ctx.source,
+                &ctx.entry.relative_path,
+                &ctx.absolute_path,
+                &settings,
+            ) {
+                Ok(new_relative) => {
+                    if primary_path
+                        .as_ref()
+                        .is_some_and(|path| path == &ctx.entry.relative_path)
+                    {
+                        primary_new = Some(new_relative);
+                    }
+                }
+                Err(err) => last_error = Some(err),
+            }
+        }
+        if let Some(path) = primary_new {
+            self.select_from_browser(&path);
         }
         if let Some(err) = last_error {
             Err(err)

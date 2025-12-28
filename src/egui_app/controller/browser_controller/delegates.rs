@@ -1,4 +1,5 @@
 use super::*;
+use crate::egui_app::state::LoopCrossfadeSettings;
 use tracing::warn;
 
 impl EguiController {
@@ -26,6 +27,17 @@ impl EguiController {
     /// Normalize multiple visible browser rows in-place (overwrites audio).
     pub fn normalize_browser_samples(&mut self, rows: &[usize]) -> Result<(), String> {
         self.browser().normalize_browser_samples(rows)
+    }
+
+    /// Create loop-crossfaded copies of browser rows and select the primary result.
+    pub fn loop_crossfade_browser_samples(
+        &mut self,
+        rows: &[usize],
+        settings: LoopCrossfadeSettings,
+        primary_visible_row: usize,
+    ) -> Result<(), String> {
+        self.browser()
+            .loop_crossfade_browser_samples(rows, settings, primary_visible_row)
     }
 
     /// Rename a single visible browser row on disk and refresh dependent state.
