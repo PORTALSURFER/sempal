@@ -2,6 +2,7 @@
 mod config_defaults;
 #[path = "config_io.rs"]
 mod config_io;
+#[path = "config_types/mod.rs"]
 mod config_types;
 
 pub use config_io::{

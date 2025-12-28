@@ -95,6 +95,7 @@ impl EguiApp {
         let cluster_overlay = self.controller.ui.map.cluster_overlay;
         let similarity_blend = self.controller.ui.map.similarity_blend;
         let blend_threshold = self.controller.ui.map.similarity_blend_threshold;
+        let focused_sample_id = self.controller.ui.map.selected_sample_id.clone();
         let centroids_arc = map_state::prepare_cluster_centroids(
             self,
             model_id,
@@ -106,8 +107,7 @@ impl EguiApp {
         let blend_enabled = cluster_overlay && similarity_blend;
         let map_diagonal =
             ((bounds.max_x - bounds.min_x).powi(2) + (bounds.max_y - bounds.min_y).powi(2)).sqrt();
-        let focused_sample_id = self.controller.ui.map.selected_sample_id.as_deref();
-        let focused_point = focused_sample_id.and_then(|id| {
+        let focused_point = focused_sample_id.as_deref().and_then(|id| {
             self.controller
                 .ui
                 .map
@@ -185,14 +185,14 @@ impl EguiApp {
             scale,
             self.controller.ui.map.pan,
             self.controller.ui.map.zoom,
-            focused_sample_id,
+            focused_sample_id.as_deref(),
             cluster_overlay,
             MAP_HEATMAP_BINS,
             point_color,
         );
         self.controller.ui.map.last_render_mode = render_mode;
 
-        let focused_pos = focused_sample_id.and_then(|id| {
+        let focused_pos = focused_sample_id.as_deref().and_then(|id| {
             let display_points = &self.controller.ui.map.cached_filtered_points;
             display_points
                 .iter()
