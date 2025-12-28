@@ -49,7 +49,7 @@ mod waveform_controller;
 mod wavs;
 
 use crate::{
-    audio::{AudioOutputConfig, AudioPlayer},
+    audio::AudioPlayer,
     egui_app::state::{
         FolderBrowserUiState, PlayheadState, ProgressOverlayState, SampleBrowserState,
         TriageFlagColumn, TriageFlagFilter, UiState, WaveformImage,
@@ -60,12 +60,11 @@ use crate::{
         Collection, CollectionId, SampleSource, SampleTag, SourceDatabase, SourceDbError, SourceId,
         WavEntry,
     },
-    selection::{SelectionRange, SelectionState},
+    selection::SelectionRange,
     waveform::{DecodedWaveform, WaveformRenderer},
 };
 pub(in crate::egui_app::controller) use analysis_jobs::AnalysisJobMessage;
 use analysis_jobs::AnalysisWorkerPool;
-use audio_cache::AudioCache;
 use audio_loader::{AudioLoadError, AudioLoadJob, AudioLoadOutcome, AudioLoadResult};
 pub(in crate::egui_app::controller) use controller_state::*;
 use egui::Color32;
@@ -74,7 +73,6 @@ use rfd::FileDialog;
 pub(crate) use status_message::StatusMessage;
 use std::{
     cell::RefCell,
-    collections::{HashMap, HashSet, VecDeque},
     path::{Path, PathBuf},
     rc::Rc,
     time::{Duration, Instant},
@@ -110,100 +108,20 @@ impl EguiController {
     pub fn new(renderer: WaveformRenderer, player: Option<Rc<RefCell<AudioPlayer>>>) -> Self {
         let (wav_job_tx, wav_job_rx) = wav_entries_loader::spawn_wav_loader();
         let (audio_job_tx, audio_job_rx) = audio_loader::spawn_audio_loader(renderer.clone());
-        let (waveform_width, waveform_height) = renderer.dimensions();
         let jobs = jobs::ControllerJobs::new(wav_job_tx, wav_job_rx, audio_job_tx, audio_job_rx);
         let analysis = AnalysisWorkerPool::new();
         Self {
             ui: UiState::default(),
-            audio: ControllerAudioState {
-                player,
-                cache: AudioCache::new(AUDIO_CACHE_CAPACITY, AUDIO_HISTORY_LIMIT),
-                pending_loop_disable_at: None,
-            },
-            sample_view: ControllerSampleViewState {
-                renderer,
-                waveform: WaveformState {
-                    size: [waveform_width, waveform_height],
-                    decoded: None,
-                    render_meta: None,
-                },
-                wav: WavSelectionState {
-                    selected_wav: None,
-                    loaded_wav: None,
-                    loaded_audio: None,
-                },
-            },
-            library: LibraryState {
-                sources: Vec::new(),
-                collections: Vec::new(),
-                missing: MissingState {
-                    sources: HashSet::new(),
-                    wavs: HashMap::new(),
-                },
-            },
-            cache: LibraryCacheState {
-                db: HashMap::new(),
-                wav: WavCacheState {
-                    entries: HashMap::new(),
-                },
-            },
-            ui_cache: ControllerUiCacheState {
-                browser: BrowserCacheState {
-                    labels: HashMap::new(),
-                    analysis_failures: HashMap::new(),
-                    search: wavs::BrowserSearchCache::default(),
-                    features: HashMap::new(),
-                },
-                folders: FolderBrowsersState {
-                    models: HashMap::new(),
-                },
-            },
+            audio: ControllerAudioState::new(player, AUDIO_CACHE_CAPACITY, AUDIO_HISTORY_LIMIT),
+            sample_view: ControllerSampleViewState::new(renderer),
+            library: LibraryState::new(),
+            cache: LibraryCacheState::new(),
+            ui_cache: ControllerUiCacheState::new(),
             wav_entries: WavEntriesState::new(0, 1024),
-            selection_state: ControllerSelectionState {
-                ctx: SelectionContextState {
-                    selected_source: None,
-                    last_selected_browsable_source: None,
-                    selected_collection: None,
-                },
-                range: SelectionState::new(),
-                pending_undo: None,
-                suppress_autoplay_once: false,
-                bpm_scale_beats: None,
-            },
-            settings: AppSettingsState {
-                feature_flags: crate::sample_sources::config::FeatureFlags::default(),
-                analysis: crate::sample_sources::config::AnalysisSettings::default(),
-                updates: crate::sample_sources::config::UpdateSettings::default(),
-                hints: crate::sample_sources::config::HintSettings::default(),
-                app_data_dir: None,
-                audio_output: AudioOutputConfig::default(),
-                controls: crate::sample_sources::config::InteractionOptions::default(),
-                trash_folder: None,
-                collection_export_root: None,
-            },
-            runtime: ControllerRuntimeState {
-                jobs,
-                analysis,
-                performance: PerformanceGovernorState {
-                    last_user_activity_at: None,
-                    last_slow_frame_at: None,
-                    last_frame_at: None,
-                    last_worker_count: None,
-                    idle_worker_override: None,
-                },
-                similarity_prep: None,
-                similarity_prep_last_error: None,
-                similarity_prep_force_full_analysis_next: false,
-                #[cfg(test)]
-                progress_cancel_after: None,
-            },
-            history: ControllerHistoryState {
-                undo_stack: undo::UndoStack::new(UNDO_LIMIT),
-                random_history: RandomHistoryState {
-                    entries: VecDeque::new(),
-                    cursor: None,
-                },
-            },
+            selection_state: ControllerSelectionState::new(),
+            settings: AppSettingsState::new(),
+            runtime: ControllerRuntimeState::new(jobs, analysis),
+            history: ControllerHistoryState::new(UNDO_LIMIT),
             #[cfg(target_os = "windows")]
             drag_hwnd: None,
         }

@@ -22,10 +22,29 @@ pub(super) struct MissingState {
     pub(super) wavs: HashMap<SourceId, HashSet<PathBuf>>,
 }
 
+impl MissingState {
+    pub(super) fn new() -> Self {
+        Self {
+            sources: HashSet::new(),
+            wavs: HashMap::new(),
+        }
+    }
+}
+
 pub(super) struct LibraryState {
     pub(super) sources: Vec<SampleSource>,
     pub(super) collections: Vec<Collection>,
     pub(super) missing: MissingState,
+}
+
+impl LibraryState {
+    pub(super) fn new() -> Self {
+        Self {
+            sources: Vec::new(),
+            collections: Vec::new(),
+            missing: MissingState::new(),
+        }
+    }
 }
 
 pub(super) struct WavCacheState {
@@ -33,6 +52,12 @@ pub(super) struct WavCacheState {
 }
 
 impl WavCacheState {
+    pub(super) fn new() -> Self {
+        Self {
+            entries: HashMap::new(),
+        }
+    }
+
     pub(super) fn insert_page(
         &mut self,
         source_id: SourceId,
@@ -57,16 +82,51 @@ pub(super) struct WavSelectionState {
     pub(super) loaded_audio: Option<LoadedAudio>,
 }
 
+impl WavSelectionState {
+    pub(super) fn new() -> Self {
+        Self {
+            selected_wav: None,
+            loaded_wav: None,
+            loaded_audio: None,
+        }
+    }
+}
+
 pub(super) struct ControllerSampleViewState {
     pub(super) renderer: WaveformRenderer,
     pub(super) waveform: WaveformState,
     pub(super) wav: WavSelectionState,
 }
 
+impl ControllerSampleViewState {
+    pub(super) fn new(renderer: WaveformRenderer) -> Self {
+        let (waveform_width, waveform_height) = renderer.dimensions();
+        Self {
+            renderer,
+            waveform: WaveformState {
+                size: [waveform_width, waveform_height],
+                decoded: None,
+                render_meta: None,
+            },
+            wav: WavSelectionState::new(),
+        }
+    }
+}
+
 pub(super) struct SelectionContextState {
     pub(super) selected_source: Option<SourceId>,
     pub(super) last_selected_browsable_source: Option<SourceId>,
     pub(super) selected_collection: Option<CollectionId>,
+}
+
+impl SelectionContextState {
+    pub(super) fn new() -> Self {
+        Self {
+            selected_source: None,
+            last_selected_browsable_source: None,
+            selected_collection: None,
+        }
+    }
 }
 
 pub(super) struct SelectionUndoState {
@@ -86,12 +146,35 @@ pub(super) struct AppSettingsState {
     pub(super) collection_export_root: Option<PathBuf>,
 }
 
+impl AppSettingsState {
+    pub(super) fn new() -> Self {
+        Self {
+            feature_flags: crate::sample_sources::config::FeatureFlags::default(),
+            analysis: crate::sample_sources::config::AnalysisSettings::default(),
+            updates: crate::sample_sources::config::UpdateSettings::default(),
+            hints: crate::sample_sources::config::HintSettings::default(),
+            app_data_dir: None,
+            audio_output: AudioOutputConfig::default(),
+            controls: crate::sample_sources::config::InteractionOptions::default(),
+            trash_folder: None,
+            collection_export_root: None,
+        }
+    }
+}
+
 pub(super) struct LibraryCacheState {
     pub(super) db: HashMap<SourceId, Rc<SourceDatabase>>,
     pub(super) wav: WavCacheState,
 }
 
 impl LibraryCacheState {
+    pub(super) fn new() -> Self {
+        Self {
+            db: HashMap::new(),
+            wav: WavCacheState::new(),
+        }
+    }
+
     /// Resolve or open the database for `source`, caching the handle.
     pub(super) fn database_for(
         &mut self,
@@ -144,6 +227,22 @@ pub(super) struct ControllerUiCacheState {
     pub(super) folders: FolderBrowsersState,
 }
 
+impl ControllerUiCacheState {
+    pub(super) fn new() -> Self {
+        Self {
+            browser: BrowserCacheState {
+                labels: HashMap::new(),
+                analysis_failures: HashMap::new(),
+                search: wavs::BrowserSearchCache::default(),
+                features: HashMap::new(),
+            },
+            folders: FolderBrowsersState {
+                models: HashMap::new(),
+            },
+        }
+    }
+}
+
 pub(super) struct ControllerSelectionState {
     pub(super) ctx: SelectionContextState,
     pub(super) range: SelectionState,
@@ -152,10 +251,36 @@ pub(super) struct ControllerSelectionState {
     pub(super) bpm_scale_beats: Option<f32>,
 }
 
+impl ControllerSelectionState {
+    pub(super) fn new() -> Self {
+        Self {
+            ctx: SelectionContextState::new(),
+            range: SelectionState::new(),
+            pending_undo: None,
+            suppress_autoplay_once: false,
+            bpm_scale_beats: None,
+        }
+    }
+}
+
 pub(super) struct ControllerAudioState {
     pub(super) player: Option<Rc<RefCell<AudioPlayer>>>,
     pub(super) cache: AudioCache,
     pub(super) pending_loop_disable_at: Option<Instant>,
+}
+
+impl ControllerAudioState {
+    pub(super) fn new(
+        player: Option<Rc<RefCell<AudioPlayer>>>,
+        cache_capacity: usize,
+        history_limit: usize,
+    ) -> Self {
+        Self {
+            player,
+            cache: AudioCache::new(cache_capacity, history_limit),
+            pending_loop_disable_at: None,
+        }
+    }
 }
 
 pub(super) struct ControllerRuntimeState {
@@ -169,12 +294,42 @@ pub(super) struct ControllerRuntimeState {
     pub(super) progress_cancel_after: Option<usize>,
 }
 
+impl ControllerRuntimeState {
+    pub(super) fn new(
+        jobs: jobs::ControllerJobs,
+        analysis: super::analysis_jobs::AnalysisWorkerPool,
+    ) -> Self {
+        Self {
+            jobs,
+            analysis,
+            performance: PerformanceGovernorState::new(),
+            similarity_prep: None,
+            similarity_prep_last_error: None,
+            similarity_prep_force_full_analysis_next: false,
+            #[cfg(test)]
+            progress_cancel_after: None,
+        }
+    }
+}
+
 pub(super) struct PerformanceGovernorState {
     pub(super) last_user_activity_at: Option<Instant>,
     pub(super) last_slow_frame_at: Option<Instant>,
     pub(super) last_frame_at: Option<Instant>,
     pub(super) last_worker_count: Option<u32>,
     pub(super) idle_worker_override: Option<u32>,
+}
+
+impl PerformanceGovernorState {
+    pub(super) fn new() -> Self {
+        Self {
+            last_user_activity_at: None,
+            last_slow_frame_at: None,
+            last_frame_at: None,
+            last_worker_count: None,
+            idle_worker_override: None,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -197,6 +352,15 @@ pub(super) enum SimilarityPrepStage {
 pub(super) struct ControllerHistoryState {
     pub(super) undo_stack: undo::UndoStack<super::EguiController>,
     pub(super) random_history: RandomHistoryState,
+}
+
+impl ControllerHistoryState {
+    pub(super) fn new(undo_limit: usize) -> Self {
+        Self {
+            undo_stack: undo::UndoStack::new(undo_limit),
+            random_history: RandomHistoryState::new(),
+        }
+    }
 }
 
 pub(super) struct WavEntriesState {
@@ -277,6 +441,15 @@ pub(super) struct RandomHistoryEntry {
 pub(super) struct RandomHistoryState {
     pub(super) entries: VecDeque<RandomHistoryEntry>,
     pub(super) cursor: Option<usize>,
+}
+
+impl RandomHistoryState {
+    pub(super) fn new() -> Self {
+        Self {
+            entries: VecDeque::new(),
+            cursor: None,
+        }
+    }
 }
 
 pub(super) struct WavLoadJob {
