@@ -30,8 +30,8 @@ impl EguiController {
         transport::start_selection_edge_drag(self, edge, bpm_scale)
     }
 
-    pub fn update_selection_drag(&mut self, position: f32) {
-        transport::update_selection_drag(self, position);
+    pub fn update_selection_drag(&mut self, position: f32, snap_override: bool) {
+        transport::update_selection_drag(self, position, snap_override);
     }
 
     pub fn finish_selection_drag(&mut self) {

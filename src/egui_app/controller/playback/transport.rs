@@ -30,8 +30,14 @@ pub(super) fn start_selection_edge_drag(
     true
 }
 
-pub(super) fn update_selection_drag(controller: &mut EguiController, position: f32) {
+pub(super) fn update_selection_drag(
+    controller: &mut EguiController,
+    position: f32,
+    snap_override: bool,
+) {
     let range = if controller.selection_state.bpm_scale_beats.is_some() {
+        controller.selection_state.range.update_drag(position)
+    } else if snap_override {
         controller.selection_state.range.update_drag(position)
     } else if let Some(step) = bpm_snap_step(controller) {
         controller

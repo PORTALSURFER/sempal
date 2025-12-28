@@ -128,6 +128,7 @@ pub(super) fn handle_selection_edge_drag(
     view_width: f32,
     edge: SelectionEdge,
     alt_down: bool,
+    shift_down: bool,
     edge_response: &egui::Response,
     selection_edge_x: f32,
 ) {
@@ -152,7 +153,7 @@ pub(super) fn handle_selection_edge_drag(
         let view_fraction = ((pos.x - offset - rect.left()) / rect.width()).clamp(0.0, 1.0);
         let absolute = view.start + view_width.max(f32::EPSILON) * view_fraction;
         let clamped = absolute.clamp(0.0, 1.0);
-        app.controller.update_selection_drag(clamped);
+        app.controller.update_selection_drag(clamped, shift_down);
     }
     if edge_response.drag_stopped() {
         app.selection_edge_offset = None;

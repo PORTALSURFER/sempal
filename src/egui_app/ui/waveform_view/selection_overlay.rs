@@ -115,6 +115,7 @@ pub(super) fn render_selection_overlay(
         || end_edge_response.dragged()
         || end_edge_response.drag_started();
     let alt_down = ui.input(|i| i.modifiers.alt);
+    let shift_down = ui.input(|i| i.modifiers.shift);
     let scale_active = (app.selection_edge_alt_scale && edge_dragging) || alt_down;
     for (edge, edge_rect, edge_response) in [
         (SelectionEdge::Start, start_edge_rect, start_edge_response),
@@ -131,6 +132,7 @@ pub(super) fn render_selection_overlay(
             view_width,
             edge,
             alt_down,
+            shift_down,
             &edge_response,
             edge_pos,
         );

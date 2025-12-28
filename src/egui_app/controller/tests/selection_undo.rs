@@ -6,7 +6,7 @@ fn undo_redo_selection_drag() {
     let (mut controller, _source) = dummy_controller();
 
     controller.start_selection_drag(0.2);
-    controller.update_selection_drag(0.6);
+    controller.update_selection_drag(0.6, false);
     controller.finish_selection_drag();
 
     let expected = SelectionRange::new(0.2, 0.6);
