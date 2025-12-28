@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+mod audio_support;
 pub mod collections;
 pub mod config;
 pub mod db;
@@ -14,6 +15,7 @@ pub use collections::{Collection, CollectionId};
 pub use db::{DB_FILE_NAME, SampleTag, SourceDatabase, SourceDbError, WavEntry};
 pub use scan_state::ScanTracker;
 pub use scanner::{ScanError, ScanMode, ScanStats};
+pub(crate) use audio_support::{is_supported_audio, supported_audio_where_clause};
 
 /// Identifier for a configured sample source.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]

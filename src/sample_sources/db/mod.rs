@@ -241,6 +241,20 @@ mod tests {
     }
 
     #[test]
+    fn list_and_count_only_show_supported_audio() {
+        let dir = tempdir().unwrap();
+        let db = SourceDatabase::open(dir.path()).unwrap();
+        db.upsert_file(Path::new("one.wav"), 10, 5).unwrap();
+        db.upsert_file(Path::new("notes.txt"), 1, 1).unwrap();
+
+        let rows = db.list_files().unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].relative_path, PathBuf::from("one.wav"));
+        assert_eq!(db.count_files().unwrap(), 1);
+        assert!(db.index_for_path(Path::new("notes.txt")).unwrap().is_none());
+    }
+
+    #[test]
     fn applies_workload_pragmas_and_indices() {
         let dir = tempdir().unwrap();
         let _db = SourceDatabase::open(dir.path()).unwrap();

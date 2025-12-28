@@ -7,9 +7,14 @@ use rusqlite::OptionalExtension;
 impl SourceDatabase {
     /// Fetch all tracked wav files for this source.
     pub fn list_files(&self) -> Result<Vec<WavEntry>, SourceDbError> {
-        let mut stmt = self.connection.prepare(
-            "SELECT path, file_size, modified_ns, content_hash, tag, missing FROM wav_files ORDER BY path ASC",
-        ).map_err(map_sql_error)?;
+        let filter = crate::sample_sources::supported_audio_where_clause();
+        let sql = format!(
+            "SELECT path, file_size, modified_ns, content_hash, tag, missing
+             FROM wav_files
+             WHERE {filter}
+             ORDER BY path ASC"
+        );
+        let mut stmt = self.connection.prepare(&sql).map_err(map_sql_error)?;
         let rows = stmt
             .query_map([], |row| {
                 let path: String = row.get(0)?;
@@ -44,9 +49,11 @@ impl SourceDatabase {
 
     /// Count all tracked wav files for this source.
     pub fn count_files(&self) -> Result<usize, SourceDbError> {
+        let filter = crate::sample_sources::supported_audio_where_clause();
+        let sql = format!("SELECT COUNT(*) FROM wav_files WHERE {filter}");
         let count: i64 = self
             .connection
-            .query_row("SELECT COUNT(*) FROM wav_files", [], |row| row.get(0))
+            .query_row(&sql, [], |row| row.get(0))
             .map_err(map_sql_error)?;
         Ok(count.max(0) as usize)
     }
@@ -57,15 +64,15 @@ impl SourceDatabase {
         limit: usize,
         offset: usize,
     ) -> Result<Vec<WavEntry>, SourceDbError> {
-        let mut stmt = self
-            .connection
-            .prepare(
-                "SELECT path, file_size, modified_ns, content_hash, tag, missing
-                 FROM wav_files
-                 ORDER BY path ASC
-                 LIMIT ?1 OFFSET ?2",
-            )
-            .map_err(map_sql_error)?;
+        let filter = crate::sample_sources::supported_audio_where_clause();
+        let sql = format!(
+            "SELECT path, file_size, modified_ns, content_hash, tag, missing
+             FROM wav_files
+             WHERE {filter}
+             ORDER BY path ASC
+             LIMIT ?1 OFFSET ?2"
+        );
+        let mut stmt = self.connection.prepare(&sql).map_err(map_sql_error)?;
         let rows = stmt
             .query_map(
                 rusqlite::params![limit as i64, offset as i64],
@@ -89,6 +96,9 @@ impl SourceDatabase {
 
     /// Find the sorted index for a tracked wav path.
     pub fn index_for_path(&self, path: &Path) -> Result<Option<usize>, SourceDbError> {
+        if !crate::sample_sources::is_supported_audio(path) {
+            return Ok(None);
+        }
         let path_str = path.to_string_lossy();
         let (offset, exists): (i64, i64) = self
             .connection
@@ -108,6 +118,9 @@ impl SourceDatabase {
 
     /// Fetch the tag for a specific wav path.
     pub fn tag_for_path(&self, path: &Path) -> Result<Option<super::SampleTag>, SourceDbError> {
+        if !crate::sample_sources::is_supported_audio(path) {
+            return Ok(None);
+        }
         let path_str = path.to_string_lossy();
         let value: Option<i64> = self
             .connection

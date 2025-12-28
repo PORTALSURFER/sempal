@@ -8,7 +8,7 @@ use std::{
 
 use tracing::warn;
 
-use crate::sample_sources::SourceDatabase;
+use crate::sample_sources::{is_supported_audio, SourceDatabase};
 
 use super::scan::ScanError;
 
@@ -135,16 +135,6 @@ pub(super) fn compute_content_hash(path: &Path) -> Result<String, ScanError> {
         hasher.update(&buffer[..read]);
     }
     Ok(hasher.finalize().to_hex().to_string())
-}
-
-pub(super) fn is_supported_audio(path: &Path) -> bool {
-    let Some(ext) = path.extension().and_then(|ext| ext.to_str()) else {
-        return false;
-    };
-    match ext.to_ascii_lowercase().as_str() {
-        "wav" | "aif" | "aiff" | "flac" | "mp3" => true,
-        _ => false,
-    }
 }
 
 fn strip_relative(root: &Path, path: &Path) -> Result<PathBuf, ScanError> {
