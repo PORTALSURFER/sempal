@@ -5,7 +5,8 @@ use serde::de::Error as SerdeDeError;
 use crate::app_dirs;
 
 use super::config_types::{
-    AnalysisSettings, AppConfig, AppSettings, ConfigError, InteractionOptions, UpdateSettings,
+    AnalysisSettings, AppConfig, AppSettings, AppSettingsCore, ConfigError, InteractionOptions,
+    UpdateSettings,
 };
 
 /// Default filename used to store the app configuration.
@@ -37,17 +38,7 @@ pub fn load_or_default() -> Result<AppConfig, ConfigError> {
     Ok(AppConfig {
         sources: library.sources,
         collections: library.collections,
-        feature_flags: settings.feature_flags,
-        analysis: settings.analysis,
-        updates: settings.updates,
-        hints: settings.hints,
-        app_data_dir: settings.app_data_dir,
-        trash_folder: settings.trash_folder,
-        collection_export_root: settings.collection_export_root,
-        last_selected_source: settings.last_selected_source,
-        audio_output: settings.audio_output,
-        volume: settings.volume,
-        controls: settings.controls,
+        core: settings.core,
     })
 }
 
@@ -67,22 +58,9 @@ pub fn save_to_path(config: &AppConfig, path: &Path) -> Result<(), ConfigError> 
             source,
         })?;
     }
-    save_settings_to_path(
-        &AppSettings {
-            feature_flags: config.feature_flags.clone(),
-            analysis: config.analysis.clone(),
-            updates: config.updates.clone(),
-            hints: config.hints.clone(),
-            app_data_dir: config.app_data_dir.clone(),
-            trash_folder: config.trash_folder.clone(),
-            collection_export_root: config.collection_export_root.clone(),
-            last_selected_source: config.last_selected_source.clone(),
-            volume: config.volume,
-            audio_output: config.audio_output.clone(),
-            controls: config.controls.clone(),
-        },
-        path,
-    )?;
+    save_settings_to_path(&AppSettings {
+        core: config.core.clone(),
+    }, path)?;
     crate::sample_sources::library::save(&crate::sample_sources::library::LibraryState {
         sources: config.sources.clone(),
         collections: config.collections.clone(),
@@ -124,7 +102,7 @@ fn apply_app_data_dir(
     settings_path: &Path,
     settings: &mut AppSettings,
 ) -> Result<(), ConfigError> {
-    let Some(app_data_dir) = settings.app_data_dir.clone() else {
+    let Some(app_data_dir) = settings.core.app_data_dir.clone() else {
         return Ok(());
     };
     let override_path = app_data_dir.join(CONFIG_FILE_NAME);
@@ -133,7 +111,7 @@ fn apply_app_data_dir(
     } else if override_path != settings_path && settings_path.exists() {
         save_settings_to_path(settings, &override_path)?;
     }
-    settings.app_data_dir = Some(app_data_dir.clone());
+    settings.core.app_data_dir = Some(app_data_dir.clone());
     app_dirs::set_app_root_override(app_data_dir).map_err(map_app_dir_error)?;
     Ok(())
 }
@@ -151,17 +129,19 @@ fn migrate_legacy_config(legacy_path: &Path, new_path: &Path) -> Result<AppSetti
         collections: legacy.collections.clone(),
     })?;
     let settings = AppSettings {
-        feature_flags: legacy.feature_flags,
-        analysis: AnalysisSettings::default(),
-        updates: UpdateSettings::default(),
-        hints: super::config_types::HintSettings::default(),
-        app_data_dir: None,
-        trash_folder: legacy.trash_folder,
-        collection_export_root: None,
-        last_selected_source: legacy.last_selected_source,
-        audio_output: legacy.audio_output,
-        volume: legacy.volume,
-        controls: InteractionOptions::default(),
+        core: AppSettingsCore {
+            feature_flags: legacy.core.feature_flags,
+            analysis: AnalysisSettings::default(),
+            updates: UpdateSettings::default(),
+            hints: super::config_types::HintSettings::default(),
+            app_data_dir: None,
+            trash_folder: legacy.core.trash_folder,
+            collection_export_root: None,
+            last_selected_source: legacy.core.last_selected_source,
+            audio_output: legacy.core.audio_output,
+            volume: legacy.core.volume,
+            controls: InteractionOptions::default(),
+        },
     }
     .normalized();
     save_settings_to_path(&settings, new_path)?;
@@ -220,7 +200,8 @@ fn map_app_dir_error(error: app_dirs::AppDirError) -> ConfigError {
 mod tests {
     use super::super::config_defaults::MAX_ANALYSIS_WORKER_COUNT;
     use super::super::config_types::{
-        AnalysisSettings, FeatureFlags, HintSettings, InteractionOptions, UpdateSettings,
+        AnalysisSettings, AppSettingsCore, FeatureFlags, HintSettings, InteractionOptions,
+        UpdateSettings,
     };
     use super::*;
     use crate::audio::AudioOutputConfig;
@@ -238,14 +219,20 @@ mod tests {
         with_config_home(dir.path(), || {
             let path = dir.path().join("cfg.toml");
             let cfg = AppConfig {
-                volume: 0.42,
-                trash_folder: Some(PathBuf::from("trash")),
+                core: AppSettingsCore {
+                    volume: 0.42,
+                    trash_folder: Some(PathBuf::from("trash")),
+                    ..AppSettingsCore::default()
+                },
                 ..AppConfig::default()
             };
             save_to_path(&cfg, &path).unwrap();
             let loaded = super::load_settings_from(&path).unwrap();
-            assert!((loaded.volume - 0.42).abs() < f32::EPSILON);
-            assert_eq!(loaded.trash_folder, Some(PathBuf::from("trash")));
+            assert!((loaded.core.volume - 0.42).abs() < f32::EPSILON);
+            assert_eq!(
+                loaded.core.trash_folder,
+                Some(PathBuf::from("trash"))
+            );
         });
     }
 
@@ -261,17 +248,19 @@ mod tests {
             let legacy = AppConfig {
                 sources: vec![SampleSource::new(PathBuf::from("old_source"))],
                 collections: vec![Collection::new("Old Collection")],
-                feature_flags: FeatureFlags::default(),
-                analysis: AnalysisSettings::default(),
-                updates: UpdateSettings::default(),
-                hints: HintSettings::default(),
-                app_data_dir: None,
-                trash_folder: Some(PathBuf::from("trash_here")),
-                collection_export_root: None,
-                last_selected_source: None,
-                audio_output: AudioOutputConfig::default(),
-                volume: 0.9,
-                controls: InteractionOptions::default(),
+                core: AppSettingsCore {
+                    feature_flags: FeatureFlags::default(),
+                    analysis: AnalysisSettings::default(),
+                    updates: UpdateSettings::default(),
+                    hints: HintSettings::default(),
+                    app_data_dir: None,
+                    trash_folder: Some(PathBuf::from("trash_here")),
+                    collection_export_root: None,
+                    last_selected_source: None,
+                    audio_output: AudioOutputConfig::default(),
+                    volume: 0.9,
+                    controls: InteractionOptions::default(),
+                },
             };
             let data = serde_json::to_vec_pretty(&legacy).unwrap();
             std::fs::write(&legacy_path, data).unwrap();
@@ -279,7 +268,7 @@ mod tests {
             let loaded = load_or_default().unwrap();
             assert_eq!(loaded.sources.len(), 1);
             assert_eq!(loaded.collections.len(), 1);
-            assert_eq!(loaded.trash_folder, Some(PathBuf::from("trash_here")));
+            assert_eq!(loaded.core.trash_folder, Some(PathBuf::from("trash_here")));
 
             let backup = legacy_path.with_extension("json.bak");
             assert!(backup.exists(), "expected backup file {}", backup.display());
@@ -292,11 +281,11 @@ mod tests {
         with_config_home(dir.path(), || {
             let path = dir.path().join("cfg.toml");
             let mut cfg = AppConfig::default();
-            assert_eq!(cfg.volume, 1.0);
-            cfg.volume = 0.42;
+            assert_eq!(cfg.core.volume, 1.0);
+            cfg.core.volume = 0.42;
             save_to_path(&cfg, &path).unwrap();
             let loaded = super::load_settings_from(&path).unwrap();
-            assert!((loaded.volume - 0.42).abs() < f32::EPSILON);
+            assert!((loaded.core.volume - 0.42).abs() < f32::EPSILON);
         });
     }
 
@@ -306,24 +295,27 @@ mod tests {
         with_config_home(dir.path(), || {
             let path = dir.path().join("cfg.toml");
             let cfg = AppConfig {
-                audio_output: AudioOutputConfig {
-                    host: Some("asio".into()),
-                    device: Some("Test Interface".into()),
-                    sample_rate: Some(48_000),
-                    buffer_size: Some(512),
+                core: AppSettingsCore {
+                    audio_output: AudioOutputConfig {
+                        host: Some("asio".into()),
+                        device: Some("Test Interface".into()),
+                        sample_rate: Some(48_000),
+                        buffer_size: Some(512),
+                    },
+                    ..AppSettingsCore::default()
                 },
                 ..AppConfig::default()
             };
 
             save_to_path(&cfg, &path).unwrap();
             let loaded = super::load_settings_from(&path).unwrap();
-            assert_eq!(loaded.audio_output.host.as_deref(), Some("asio"));
+            assert_eq!(loaded.core.audio_output.host.as_deref(), Some("asio"));
             assert_eq!(
-                loaded.audio_output.device.as_deref(),
+                loaded.core.audio_output.device.as_deref(),
                 Some("Test Interface")
             );
-            assert_eq!(loaded.audio_output.sample_rate, Some(48_000));
-            assert_eq!(loaded.audio_output.buffer_size, Some(512));
+            assert_eq!(loaded.core.audio_output.sample_rate, Some(48_000));
+            assert_eq!(loaded.core.audio_output.buffer_size, Some(512));
         });
     }
 
@@ -334,12 +326,15 @@ mod tests {
             let path = dir.path().join("cfg.toml");
             let trash = PathBuf::from("trash_bin");
             let cfg = AppConfig {
-                trash_folder: Some(trash.clone()),
+                core: AppSettingsCore {
+                    trash_folder: Some(trash.clone()),
+                    ..AppSettingsCore::default()
+                },
                 ..AppConfig::default()
             };
             save_to_path(&cfg, &path).unwrap();
             let loaded = super::load_settings_from(&path).unwrap();
-            assert_eq!(loaded.trash_folder, Some(trash));
+            assert_eq!(loaded.core.trash_folder, Some(trash));
         });
     }
 
@@ -350,12 +345,15 @@ mod tests {
             let path = dir.path().join("cfg.toml");
             let root = PathBuf::from("exports");
             let cfg = AppConfig {
-                collection_export_root: Some(root.clone()),
+                core: AppSettingsCore {
+                    collection_export_root: Some(root.clone()),
+                    ..AppSettingsCore::default()
+                },
                 ..AppConfig::default()
             };
             save_to_path(&cfg, &path).unwrap();
             let loaded = super::load_settings_from(&path).unwrap();
-            assert_eq!(loaded.collection_export_root, Some(root));
+            assert_eq!(loaded.core.collection_export_root, Some(root));
         });
     }
 
@@ -372,9 +370,9 @@ analysis_worker_count = 999
 "#;
             std::fs::write(&path, data).unwrap();
             let loaded = super::load_settings_from(&path).unwrap();
-            assert!((loaded.volume - 1.0).abs() < f32::EPSILON);
+            assert!((loaded.core.volume - 1.0).abs() < f32::EPSILON);
             assert_eq!(
-                loaded.analysis.analysis_worker_count,
+                loaded.core.analysis.analysis_worker_count,
                 MAX_ANALYSIS_WORKER_COUNT
             );
         });

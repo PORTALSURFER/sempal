@@ -11,21 +11,21 @@ impl EguiController {
                 StatusTone::Warning,
             );
         }
-        self.settings.feature_flags = cfg.feature_flags;
-        self.settings.analysis = cfg.analysis;
+        self.settings.feature_flags = cfg.core.feature_flags;
+        self.settings.analysis = cfg.core.analysis;
         self.settings.analysis.max_analysis_duration_seconds =
             super::analysis_options::clamp_max_analysis_duration_seconds(
                 self.settings.analysis.max_analysis_duration_seconds,
             );
-        self.settings.updates = cfg.updates.clone();
-        self.settings.hints = cfg.hints.clone();
-        self.settings.app_data_dir = cfg.app_data_dir.clone();
-        self.settings.trash_folder = cfg.trash_folder.clone();
-        self.settings.collection_export_root = cfg.collection_export_root.clone();
+        self.settings.updates = cfg.core.updates.clone();
+        self.settings.hints = cfg.core.hints.clone();
+        self.settings.app_data_dir = cfg.core.app_data_dir.clone();
+        self.settings.trash_folder = cfg.core.trash_folder.clone();
+        self.settings.collection_export_root = cfg.core.collection_export_root.clone();
         self.ui.collections.enabled = self.settings.feature_flags.collections_enabled;
-        self.settings.audio_output = cfg.audio_output.clone();
+        self.settings.audio_output = cfg.core.audio_output.clone();
         self.ui.audio.selected = self.settings.audio_output.clone();
-        self.settings.controls = cfg.controls.clone();
+        self.settings.controls = cfg.core.controls.clone();
         self.settings.controls.waveform_scroll_speed =
             clamp_scroll_speed(self.settings.controls.waveform_scroll_speed);
         self.settings.controls.wheel_zoom_factor =
@@ -63,11 +63,11 @@ impl EguiController {
             self.ui.waveform.bpm_input.clear();
         }
         self.refresh_audio_options();
-        self.apply_volume(cfg.volume);
-        self.ui.trash_folder = cfg.trash_folder.clone();
-        self.ui.collection_export_root = cfg.collection_export_root.clone();
+        self.apply_volume(cfg.core.volume);
+        self.ui.trash_folder = cfg.core.trash_folder.clone();
+        self.ui.collection_export_root = cfg.core.collection_export_root.clone();
         self.ui.update.last_seen_nightly_published_at =
-            cfg.updates.last_seen_nightly_published_at.clone();
+            cfg.core.updates.last_seen_nightly_published_at.clone();
         self.ui.hints.show_on_startup = self.settings.hints.show_on_startup;
         self.library.sources = cfg.sources.clone();
         self.rebuild_missing_sources();
@@ -118,6 +118,7 @@ impl EguiController {
             }
         }
         self.selection_state.ctx.selected_source = cfg
+            .core
             .last_selected_source
             .filter(|id| self.library.sources.iter().any(|s| &s.id == id));
         self.selection_state.ctx.last_selected_browsable_source =
@@ -155,28 +156,30 @@ impl EguiController {
         crate::sample_sources::config::save(&crate::sample_sources::config::AppConfig {
             sources: self.library.sources.clone(),
             collections: self.library.collections.clone(),
-            feature_flags: self.settings.feature_flags.clone(),
-            analysis: self.settings.analysis.clone(),
-            updates: self.settings.updates.clone(),
-            hints: self.settings.hints.clone(),
-            app_data_dir: self.settings.app_data_dir.clone(),
-            trash_folder: self.settings.trash_folder.clone(),
-            collection_export_root: self.settings.collection_export_root.clone(),
-            last_selected_source: self
-                .selection_state
-                .ctx
-                .selected_source
-                .clone()
-                .filter(|id| self.library.sources.iter().any(|s| &s.id == id))
-                .or_else(|| {
-                    self.selection_state
-                        .ctx
-                        .last_selected_browsable_source
-                        .clone()
-                }),
-            audio_output: self.settings.audio_output.clone(),
-            volume: self.ui.volume,
-            controls: self.settings.controls.clone(),
+            core: crate::sample_sources::config::AppSettingsCore {
+                feature_flags: self.settings.feature_flags.clone(),
+                analysis: self.settings.analysis.clone(),
+                updates: self.settings.updates.clone(),
+                hints: self.settings.hints.clone(),
+                app_data_dir: self.settings.app_data_dir.clone(),
+                trash_folder: self.settings.trash_folder.clone(),
+                collection_export_root: self.settings.collection_export_root.clone(),
+                last_selected_source: self
+                    .selection_state
+                    .ctx
+                    .selected_source
+                    .clone()
+                    .filter(|id| self.library.sources.iter().any(|s| &s.id == id))
+                    .or_else(|| {
+                        self.selection_state
+                            .ctx
+                            .last_selected_browsable_source
+                            .clone()
+                    }),
+                audio_output: self.settings.audio_output.clone(),
+                volume: self.ui.volume,
+                controls: self.settings.controls.clone(),
+            },
         })
     }
 

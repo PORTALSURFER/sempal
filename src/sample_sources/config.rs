@@ -2,7 +2,6 @@
 mod config_defaults;
 #[path = "config_io.rs"]
 mod config_io;
-#[path = "config_types.rs"]
 mod config_types;
 
 pub use config_io::{
@@ -10,6 +9,6 @@ pub use config_io::{
     save_to_path,
 };
 pub use config_types::{
-    AnalysisSettings, AppConfig, ConfigError, FeatureFlags, HintSettings, InteractionOptions,
-    PannsBackendChoice, UpdateChannel, UpdateSettings, WgpuPowerPreference,
+    AnalysisSettings, AppConfig, AppSettingsCore, ConfigError, FeatureFlags, HintSettings,
+    InteractionOptions, PannsBackendChoice, UpdateChannel, UpdateSettings, WgpuPowerPreference,
 };
