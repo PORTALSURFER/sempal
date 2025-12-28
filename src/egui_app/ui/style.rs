@@ -163,8 +163,8 @@ pub fn similarity_display_strength(score: f32) -> f32 {
 pub fn similarity_map_color(t: f32) -> Color32 {
     let t = smoothstep(t.clamp(0.0, 1.0));
     let blue = Color32::from_rgb(72, 128, 224);
-    let purple = Color32::from_rgb(150, 92, 208);
-    let orange = Color32::from_rgb(232, 142, 76);
+    let purple = Color32::from_rgb(160, 96, 216);
+    let orange = Color32::from_rgb(220, 150, 112);
     if t <= 0.5 {
         blend_rgb(blue, purple, t * 2.0)
     } else {
