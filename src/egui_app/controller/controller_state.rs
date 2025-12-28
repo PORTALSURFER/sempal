@@ -7,7 +7,7 @@ use crate::{audio::AudioOutputConfig, selection::SelectionState};
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet, VecDeque},
-    path::PathBuf,
+    path::{Path, PathBuf},
     rc::Rc,
     time::{Duration, Instant},
 };
@@ -408,6 +408,17 @@ impl WavEntriesState {
         self.pages
             .get_mut(&page_index)
             .and_then(|page| page.get_mut(in_page))
+    }
+
+    pub(super) fn update_entry(&mut self, path: &Path, entry: WavEntry) -> bool {
+        let Some(index) = self.lookup.get(path).copied() else {
+            return false;
+        };
+        let Some(slot) = self.entry_mut(index) else {
+            return false;
+        };
+        *slot = entry;
+        true
     }
 
     pub(super) fn insert_lookup(&mut self, path: PathBuf, index: usize) {

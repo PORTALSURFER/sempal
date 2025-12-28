@@ -88,9 +88,24 @@ impl EguiController {
         old_path: &Path,
         new_entry: WavEntry,
     ) {
-        self.invalidate_wav_entries_for_source(source);
         self.update_selection_paths(source, old_path, &new_entry.relative_path);
         self.invalidate_cached_audio(&source.id, old_path);
+        if old_path == new_entry.relative_path {
+            let mut updated = false;
+            if self.selection_state.ctx.selected_source.as_ref() == Some(&source.id) {
+                updated |= self
+                    .wav_entries
+                    .update_entry(old_path, new_entry.clone());
+            }
+            if let Some(cache) = self.cache.wav.entries.get_mut(&source.id) {
+                updated |= cache.update_entry(old_path, new_entry.clone());
+            }
+            if updated && self.selection_state.ctx.selected_source.as_ref() == Some(&source.id) {
+                self.rebuild_browser_lists();
+            }
+            return;
+        }
+        self.invalidate_wav_entries_for_source(source);
         if old_path != new_entry.relative_path {
             self.invalidate_cached_audio(&source.id, &new_entry.relative_path);
         }
