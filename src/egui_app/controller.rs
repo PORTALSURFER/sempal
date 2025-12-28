@@ -41,6 +41,7 @@ mod similarity_prep;
 mod source_cache_invalidator;
 mod source_folders;
 mod sources;
+mod state;
 mod status_message;
 mod trash;
 mod trash_move;
