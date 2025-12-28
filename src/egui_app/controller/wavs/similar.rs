@@ -32,47 +32,15 @@ pub(super) fn find_similar_for_visible_row(
     let entry_path = entry.relative_path.clone();
     let sample_id =
         super::super::analysis_jobs::build_sample_id(source_id.as_str(), &entry_path);
-    let mut conn = open_source_db_for_id(controller, &source_id)?;
-    if let Err(err) = maybe_enqueue_full_analysis(controller, &mut conn, &sample_id) {
-        tracing::debug!("Fast prep refine enqueue failed: {err}");
-    }
-    let neighbours =
-        crate::analysis::ann_index::find_similar(&conn, &sample_id, SIMILAR_RE_RANK_CANDIDATES)?;
-    let query_embedding = load_embedding_for_sample(&conn, &sample_id)?;
-    let query_dsp = load_light_dsp_for_sample(&conn, &sample_id)?;
-    let ranked = rerank_with_dsp(
-        &conn,
-        neighbours,
-        query_embedding.as_deref(),
-        query_dsp.as_deref(),
+    let query = build_similar_query_for_sample_id(
+        controller,
+        &sample_id,
+        None,
+        |path| view_model::sample_display_label(path),
+        Some(entry_index),
+        "No similar samples found in the current source",
     )?;
-
-    let mut indices = Vec::new();
-    let mut scores = Vec::new();
-    for (candidate_id, score) in ranked {
-        let (candidate_source, relative_path) =
-            super::super::analysis_jobs::parse_sample_id(&candidate_id)?;
-        if candidate_source.as_str() != source_id.as_str() {
-            continue;
-        }
-        if let Some(index) = controller.wav_index_for_path(&relative_path) {
-            indices.push(index);
-            scores.push(score);
-            if indices.len() >= DEFAULT_SIMILAR_COUNT {
-                break;
-            }
-        }
-    }
-    if indices.is_empty() {
-        return Err("No similar samples found in the current source".to_string());
-    }
-    controller.ui.browser.similar_query = Some(crate::egui_app::state::SimilarQuery {
-        sample_id,
-        label: view_model::sample_display_label(&entry_path),
-        indices,
-        scores,
-        anchor_index: Some(entry_index),
-    });
+    controller.ui.browser.similar_query = Some(query);
     controller.ui.browser.search_query.clear();
     controller.ui.browser.search_focus_requested = false;
     controller.rebuild_browser_lists();
@@ -101,60 +69,15 @@ pub(super) fn find_duplicates_for_visible_row(
     let entry_path = entry.relative_path.clone();
     let sample_id =
         super::super::analysis_jobs::build_sample_id(source_id.as_str(), &entry_path);
-    let mut conn = open_source_db_for_id(controller, &source_id)?;
-    if let Err(err) = maybe_enqueue_full_analysis(controller, &mut conn, &sample_id) {
-        tracing::debug!("Fast prep refine enqueue failed: {err}");
-    }
-    if let Some(rms) = load_rms_for_sample(&conn, &sample_id)? {
-        if is_effectively_silent(rms) {
-            return Err("Selected sample is effectively silent".to_string());
-        }
-    }
-    let neighbours =
-        crate::analysis::ann_index::find_similar(&conn, &sample_id, SIMILAR_RE_RANK_CANDIDATES)?;
-    let query_embedding = load_embedding_for_sample(&conn, &sample_id)?;
-    let query_dsp = load_light_dsp_for_sample(&conn, &sample_id)?;
-    let ranked = rerank_with_dsp(
-        &conn,
-        neighbours,
-        query_embedding.as_deref(),
-        query_dsp.as_deref(),
+    let query = build_similar_query_for_sample_id(
+        controller,
+        &sample_id,
+        Some(DUPLICATE_SCORE_THRESHOLD),
+        |path| format!("Duplicates of {}", view_model::sample_display_label(path)),
+        Some(entry_index),
+        "No duplicates found in the current source",
     )?;
-
-    let mut indices = Vec::new();
-    let mut scores = Vec::new();
-    for (candidate_id, score) in ranked {
-        if score < DUPLICATE_SCORE_THRESHOLD {
-            break;
-        }
-        let (candidate_source, relative_path) =
-            super::super::analysis_jobs::parse_sample_id(&candidate_id)?;
-        if candidate_source.as_str() != source_id.as_str() {
-            continue;
-        }
-        if let Some(rms) = load_rms_for_sample(&conn, &candidate_id)? {
-            if is_effectively_silent(rms) {
-                continue;
-            }
-        }
-        if let Some(index) = controller.wav_index_for_path(&relative_path) {
-            indices.push(index);
-            scores.push(score);
-            if indices.len() >= DEFAULT_SIMILAR_COUNT {
-                break;
-            }
-        }
-    }
-    if indices.is_empty() {
-        return Err("No duplicates found in the current source".to_string());
-    }
-    controller.ui.browser.similar_query = Some(crate::egui_app::state::SimilarQuery {
-        sample_id,
-        label: format!("Duplicates of {}", view_model::sample_display_label(&entry_path)),
-        indices,
-        scores,
-        anchor_index: Some(entry_index),
-    });
+    controller.ui.browser.similar_query = Some(query);
     controller.ui.browser.search_query.clear();
     controller.ui.browser.search_focus_requested = false;
     controller.rebuild_browser_lists();
@@ -165,52 +88,15 @@ pub(super) fn find_similar_for_sample_id(
     controller: &mut EguiController,
     sample_id: &str,
 ) -> Result<(), String> {
-    let (source_id, relative_path) = super::super::analysis_jobs::parse_sample_id(sample_id)?;
-    let source_id = SourceId::from_string(source_id);
-    if controller.selection_state.ctx.selected_source.as_ref() != Some(&source_id) {
-        controller.select_source(Some(source_id.clone()));
-    }
-    let mut conn = open_source_db_for_id(controller, &source_id)?;
-    if let Err(err) = maybe_enqueue_full_analysis(controller, &mut conn, sample_id) {
-        tracing::debug!("Fast prep refine enqueue failed: {err}");
-    }
-    let neighbours =
-        crate::analysis::ann_index::find_similar(&conn, sample_id, SIMILAR_RE_RANK_CANDIDATES)?;
-    let query_embedding = load_embedding_for_sample(&conn, sample_id)?;
-    let query_dsp = load_light_dsp_for_sample(&conn, sample_id)?;
-    let ranked = rerank_with_dsp(
-        &conn,
-        neighbours,
-        query_embedding.as_deref(),
-        query_dsp.as_deref(),
+    let query = build_similar_query_for_sample_id(
+        controller,
+        sample_id,
+        None,
+        |path| view_model::sample_display_label(path),
+        None,
+        "No similar samples found in the current source",
     )?;
-
-    let mut indices = Vec::new();
-    let mut scores = Vec::new();
-    for (candidate_id, score) in ranked {
-        let (candidate_source, candidate_path) =
-            super::super::analysis_jobs::parse_sample_id(&candidate_id)?;
-        if candidate_source.as_str() != source_id.as_str() {
-            continue;
-        }
-        if let Some(index) = controller.wav_index_for_path(&candidate_path) {
-            indices.push(index);
-            scores.push(score);
-            if indices.len() >= DEFAULT_SIMILAR_COUNT {
-                break;
-            }
-        }
-    }
-    if indices.is_empty() {
-        return Err("No similar samples found in the current source".to_string());
-    }
-    controller.ui.browser.similar_query = Some(crate::egui_app::state::SimilarQuery {
-        sample_id: sample_id.to_string(),
-        label: view_model::sample_display_label(&relative_path),
-        indices,
-        scores,
-        anchor_index: controller.wav_index_for_path(&relative_path),
-    });
+    controller.ui.browser.similar_query = Some(query);
     controller.ui.browser.search_query.clear();
     controller.ui.browser.search_focus_requested = false;
     controller.rebuild_browser_lists();
@@ -337,6 +223,98 @@ fn rerank_with_dsp(
     }
     scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
     Ok(scored)
+}
+
+fn build_similar_query_for_sample_id(
+    controller: &mut EguiController,
+    sample_id: &str,
+    score_cutoff: Option<f32>,
+    label_builder: impl FnOnce(&Path) -> String,
+    anchor_override: Option<usize>,
+    empty_error: &str,
+) -> Result<crate::egui_app::state::SimilarQuery, String> {
+    let (source_id, relative_path) = super::super::analysis_jobs::parse_sample_id(sample_id)?;
+    let source_id = SourceId::from_string(source_id);
+    if controller.selection_state.ctx.selected_source.as_ref() != Some(&source_id) {
+        controller.select_source(Some(source_id.clone()));
+    }
+    let mut conn = open_source_db_for_id(controller, &source_id)?;
+    if let Err(err) = maybe_enqueue_full_analysis(controller, &mut conn, sample_id) {
+        tracing::debug!("Fast prep refine enqueue failed: {err}");
+    }
+    if score_cutoff.is_some() {
+        if let Some(rms) = load_rms_for_sample(&conn, sample_id)? {
+            if is_effectively_silent(rms) {
+                return Err("Selected sample is effectively silent".to_string());
+            }
+        }
+    }
+    let neighbours =
+        crate::analysis::ann_index::find_similar(&conn, sample_id, SIMILAR_RE_RANK_CANDIDATES)?;
+    let query_embedding = load_embedding_for_sample(&conn, sample_id)?;
+    let query_dsp = load_light_dsp_for_sample(&conn, sample_id)?;
+    let ranked = rerank_with_dsp(
+        &conn,
+        neighbours,
+        query_embedding.as_deref(),
+        query_dsp.as_deref(),
+    )?;
+    let (indices, scores) = filter_ranked_candidates(
+        &conn,
+        ranked,
+        &source_id,
+        score_cutoff,
+        |path| controller.wav_index_for_path(path),
+    )?;
+    if indices.is_empty() {
+        return Err(empty_error.to_string());
+    }
+    Ok(crate::egui_app::state::SimilarQuery {
+        sample_id: sample_id.to_string(),
+        label: label_builder(&relative_path),
+        indices,
+        scores,
+        anchor_index: anchor_override.or_else(|| controller.wav_index_for_path(&relative_path)),
+    })
+}
+
+fn filter_ranked_candidates(
+    conn: &rusqlite::Connection,
+    ranked: impl IntoIterator<Item = (String, f32)>,
+    source_id: &SourceId,
+    score_cutoff: Option<f32>,
+    mut resolve_index: impl FnMut(&Path) -> Option<usize>,
+) -> Result<(Vec<usize>, Vec<f32>), String> {
+    let mut indices = Vec::new();
+    let mut scores = Vec::new();
+    let apply_duplicate_filters = score_cutoff.is_some();
+    for (candidate_id, score) in ranked {
+        if let Some(cutoff) = score_cutoff {
+            if score < cutoff {
+                break;
+            }
+        }
+        let (candidate_source, relative_path) =
+            super::super::analysis_jobs::parse_sample_id(&candidate_id)?;
+        if candidate_source.as_str() != source_id.as_str() {
+            continue;
+        }
+        if apply_duplicate_filters {
+            if let Some(rms) = load_rms_for_sample(conn, &candidate_id)? {
+                if is_effectively_silent(rms) {
+                    continue;
+                }
+            }
+        }
+        if let Some(index) = resolve_index(&relative_path) {
+            indices.push(index);
+            scores.push(score);
+            if indices.len() >= DEFAULT_SIMILAR_COUNT {
+                break;
+            }
+        }
+    }
+    Ok((indices, scores))
 }
 
 fn load_light_dsp_for_sample(
@@ -491,4 +469,137 @@ fn now_epoch_seconds() -> i64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs() as i64
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::analysis::vector::encode_f32_le_blob;
+    use rusqlite::{Connection, params};
+    use std::collections::HashMap;
+    use std::path::PathBuf;
+
+    fn in_memory_conn() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE features (
+                sample_id TEXT PRIMARY KEY,
+                feat_version INTEGER NOT NULL,
+                vec_blob BLOB NOT NULL,
+                computed_at INTEGER NOT NULL
+             ) WITHOUT ROWID;",
+        )
+        .unwrap();
+        conn
+    }
+
+    fn insert_rms(conn: &Connection, sample_id: &str, rms: f32) {
+        let mut values = vec![0.0_f32; FEATURE_RMS_INDEX + 1];
+        values[FEATURE_RMS_INDEX] = rms;
+        let blob = encode_f32_le_blob(&values);
+        conn.execute(
+            "INSERT INTO features (sample_id, feat_version, vec_blob, computed_at)
+             VALUES (?1, 1, ?2, 0)",
+            params![sample_id, blob],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn duplicate_filter_respects_score_cutoff() {
+        let conn = in_memory_conn();
+        let source_id = SourceId::from_string("source-a");
+        let sample_id = super::super::analysis_jobs::build_sample_id(
+            source_id.as_str(),
+            Path::new("a.wav"),
+        );
+        let lower_id = super::super::analysis_jobs::build_sample_id(
+            source_id.as_str(),
+            Path::new("b.wav"),
+        );
+        let ranked = vec![
+            (sample_id.clone(), DUPLICATE_SCORE_THRESHOLD + 0.002),
+            (lower_id.clone(), DUPLICATE_SCORE_THRESHOLD - 0.001),
+        ];
+        let mut lookup = HashMap::new();
+        lookup.insert(PathBuf::from("a.wav"), 0);
+        lookup.insert(PathBuf::from("b.wav"), 1);
+        let (indices, scores) = filter_ranked_candidates(
+            &conn,
+            ranked,
+            &source_id,
+            Some(DUPLICATE_SCORE_THRESHOLD),
+            |path| lookup.get(path).copied(),
+        )
+        .unwrap();
+        assert_eq!(indices, vec![0]);
+        assert_eq!(scores.len(), 1);
+    }
+
+    #[test]
+    fn duplicate_filter_skips_silent_rms_candidates() {
+        let conn = in_memory_conn();
+        let source_id = SourceId::from_string("source-a");
+        let silent_id = super::super::analysis_jobs::build_sample_id(
+            source_id.as_str(),
+            Path::new("silent.wav"),
+        );
+        let loud_id = super::super::analysis_jobs::build_sample_id(
+            source_id.as_str(),
+            Path::new("loud.wav"),
+        );
+        insert_rms(&conn, &silent_id, DUPLICATE_RMS_MIN * 0.5);
+        insert_rms(&conn, &loud_id, DUPLICATE_RMS_MIN * 10.0);
+        let ranked = vec![
+            (silent_id.clone(), DUPLICATE_SCORE_THRESHOLD + 0.01),
+            (loud_id.clone(), DUPLICATE_SCORE_THRESHOLD + 0.01),
+        ];
+        let mut lookup = HashMap::new();
+        lookup.insert(PathBuf::from("silent.wav"), 0);
+        lookup.insert(PathBuf::from("loud.wav"), 1);
+        let (indices, scores) = filter_ranked_candidates(
+            &conn,
+            ranked,
+            &source_id,
+            Some(DUPLICATE_SCORE_THRESHOLD),
+            |path| lookup.get(path).copied(),
+        )
+        .unwrap();
+        assert_eq!(indices, vec![1]);
+        assert_eq!(scores.len(), 1);
+    }
+
+    #[test]
+    fn duplicate_filter_skips_cross_source_candidates() {
+        let conn = in_memory_conn();
+        let source_id = SourceId::from_string("source-a");
+        let other_source = SourceId::from_string("source-b");
+        let own_id = super::super::analysis_jobs::build_sample_id(
+            source_id.as_str(),
+            Path::new("keep.wav"),
+        );
+        let other_id = super::super::analysis_jobs::build_sample_id(
+            other_source.as_str(),
+            Path::new("skip.wav"),
+        );
+        insert_rms(&conn, &own_id, DUPLICATE_RMS_MIN * 10.0);
+        insert_rms(&conn, &other_id, DUPLICATE_RMS_MIN * 10.0);
+        let ranked = vec![
+            (other_id.clone(), DUPLICATE_SCORE_THRESHOLD + 0.01),
+            (own_id.clone(), DUPLICATE_SCORE_THRESHOLD + 0.01),
+        ];
+        let mut lookup = HashMap::new();
+        lookup.insert(PathBuf::from("keep.wav"), 0);
+        lookup.insert(PathBuf::from("skip.wav"), 1);
+        let (indices, scores) = filter_ranked_candidates(
+            &conn,
+            ranked,
+            &source_id,
+            Some(DUPLICATE_SCORE_THRESHOLD),
+            |path| lookup.get(path).copied(),
+        )
+        .unwrap();
+        assert_eq!(indices, vec![0]);
+        assert_eq!(scores.len(), 1);
+    }
 }
