@@ -291,7 +291,7 @@ impl UpdateUiApp {
                             .clone()
                             .unwrap_or_else(|| options[0].tag.clone());
                         egui::ComboBox::from_id_source("version_select")
-                            .selected_text(selected_label(options, &selected))
+                            .selected_text(selected_label(&options, &selected))
                             .show_ui(ui, |ui| {
                                 for option in options.iter() {
                                     ui.selectable_value(
