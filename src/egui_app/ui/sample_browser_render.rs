@@ -91,7 +91,8 @@ impl EguiApp {
                 let row_width = metrics.row_width;
                 let similar_query = self.controller.ui.browser.similar_query.as_ref();
                 let is_anchor = similar_query.and_then(|sim| sim.anchor_index) == Some(entry_index);
-                let similar_score = similar_query.and_then(|sim| sim.score_for_index(entry_index));
+                let similar_strength = similar_query
+                    .and_then(|sim| sim.display_strength_for_index(entry_index));
                 let marker_color = style::triage_marker_color(tag);
                 let triage_marker_width = marker_color
                     .as_ref()
@@ -134,7 +135,7 @@ impl EguiApp {
                 } else {
                     clamp_label_for_width(&status_label.label, row_label_width)
                 };
-                let mut row_bg = similar_score.map(style::similar_score_fill);
+                let mut row_bg = similar_strength.map(style::similar_score_fill);
                 if drag_active
                     && pointer_pos
                         .as_ref()

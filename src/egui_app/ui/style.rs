@@ -146,9 +146,9 @@ pub fn similar_anchor_fill() -> Color32 {
     Color32::from_rgb(88, 110, 148)
 }
 
-/// Fill used for similarity-ranked rows.
-pub fn similar_score_fill(score: f32) -> Color32 {
-    let similarity = similarity_display_strength(score);
+/// Fill used for similarity-ranked rows (expects 0.0 = least similar, 1.0 = most similar).
+pub fn similar_score_fill(strength: f32) -> Color32 {
+    let similarity = strength.clamp(0.0, 1.0);
     let color = similarity_map_color(1.0 - similarity);
     with_alpha(color, 160)
 }
