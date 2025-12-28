@@ -71,6 +71,13 @@ mod tests {
             Err("not needed".to_string())
         }
 
+        fn current_embedding_backfill_progress(
+            &self,
+            _source: &SampleSource,
+        ) -> Result<analysis_jobs::AnalysisProgress, String> {
+            Err("not needed".to_string())
+        }
+
         fn open_source_db_for_similarity(
             &self,
             _source_id: &SourceId,

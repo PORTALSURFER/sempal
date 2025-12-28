@@ -206,7 +206,7 @@ mod tests {
     #[test]
     fn resolve_onnx_url_prefers_explicit() {
         let prev = std::env::var("SEMPAL_PANNS_ONNX_URL").ok();
-        std::env::set_var("SEMPAL_PANNS_ONNX_URL", "env");
+        unsafe { std::env::set_var("SEMPAL_PANNS_ONNX_URL", "env") };
         let url = resolve_onnx_url(Some("explicit"));
         assert_eq!(url.as_deref(), Some("explicit"));
         restore_env(prev);
@@ -215,7 +215,7 @@ mod tests {
     #[test]
     fn resolve_onnx_url_uses_env() {
         let prev = std::env::var("SEMPAL_PANNS_ONNX_URL").ok();
-        std::env::set_var("SEMPAL_PANNS_ONNX_URL", "env");
+        unsafe { std::env::set_var("SEMPAL_PANNS_ONNX_URL", "env") };
         let url = resolve_onnx_url(None);
         assert_eq!(url.as_deref(), Some("env"));
         restore_env(prev);
@@ -224,9 +224,9 @@ mod tests {
 
     fn restore_env(previous: Option<String>) {
         if let Some(value) = previous {
-            std::env::set_var("SEMPAL_PANNS_ONNX_URL", value);
+            unsafe { std::env::set_var("SEMPAL_PANNS_ONNX_URL", value) };
         } else {
-            std::env::remove_var("SEMPAL_PANNS_ONNX_URL");
+            unsafe { std::env::remove_var("SEMPAL_PANNS_ONNX_URL") };
         }
     }
 
