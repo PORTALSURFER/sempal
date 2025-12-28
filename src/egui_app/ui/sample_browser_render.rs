@@ -8,7 +8,7 @@ use crate::egui_app::state::{
     DragSource, FocusContext, SampleBrowserActionPrompt, SampleBrowserTab,
 };
 use crate::egui_app::view_model;
-use eframe::egui::{self, StrokeKind, Ui};
+use eframe::egui::{self, Align2, StrokeKind, TextStyle, Ui};
 
 impl EguiApp {
     pub(super) fn render_sample_browser(&mut self, ui: &mut Ui) {
@@ -89,23 +89,31 @@ impl EguiApp {
                     .any(|p| p == &path);
                 let is_loaded = loaded_row == Some(row);
                 let row_width = metrics.row_width;
-                let is_anchor = self
-                    .controller
-                    .ui
-                    .browser
-                    .similar_query
-                    .as_ref()
-                    .and_then(|sim| sim.anchor_index)
-                    == Some(entry_index);
+                let similar_query = self.controller.ui.browser.similar_query.as_ref();
+                let is_anchor = similar_query.and_then(|sim| sim.anchor_index) == Some(entry_index);
+                let similar_score = similar_query.and_then(|sim| sim.score_for_index(entry_index));
+                let similarity_strength = similar_score
+                    .map(|score| ((score + 1.0) * 0.5).clamp(0.0, 1.0));
                 let marker_color = style::triage_marker_color(tag);
                 let triage_marker = marker_color.map(|color| RowMarker {
                     width: style::triage_marker_width(),
                     color,
                 });
+                let rating_text = if is_anchor {
+                    Some("Anchor".to_string())
+                } else {
+                    similarity_strength
+                        .map(|score| format!("{:.0}%", (score * 100.0).clamp(0.0, 100.0)))
+                };
+                let rating_space = rating_text
+                    .as_ref()
+                    .map(|text| metrics.padding + text.len() as f32 * 7.0)
+                    .unwrap_or(0.0);
                 let trailing_space = triage_marker
                     .as_ref()
                     .map(|marker| marker.width + metrics.padding * 0.5)
-                    .unwrap_or(0.0);
+                    .unwrap_or(0.0)
+                    + rating_space;
 
                 let mut base_label = self
                     .controller
@@ -137,20 +145,19 @@ impl EguiApp {
                 } else {
                     clamp_label_for_width(&status_label.label, row_label_width)
                 };
-                let mut row_bg = if drag_active
+                let mut row_bg = similarity_strength.map(style::similar_score_fill);
+                if drag_active
                     && pointer_pos
                         .as_ref()
                         .is_some_and(|pos| ui.cursor().contains(*pos))
                     && is_selected
                 {
-                    Some(style::duplicate_hover_fill())
+                    row_bg = Some(style::duplicate_hover_fill());
                 } else if is_focused {
-                    Some(style::row_selected_fill())
+                    row_bg = Some(style::row_selected_fill());
                 } else if is_selected {
-                    Some(style::row_multi_selected_fill())
-                } else {
-                    None
-                };
+                    row_bg = Some(style::row_multi_selected_fill());
+                }
                 let skip_hover = is_anchor;
                 if is_anchor {
                     row_bg = Some(style::similar_anchor_fill());
@@ -204,6 +211,27 @@ impl EguiApp {
                             0.0,
                             style::focused_row_stroke(),
                             StrokeKind::Inside,
+                        );
+                    }
+                    if let Some(text) = rating_text.as_deref() {
+                        let marker_space = triage_marker
+                            .as_ref()
+                            .map(|marker| marker.width)
+                            .unwrap_or(0.0);
+                        let rating_x = response.rect.right() - metrics.padding - marker_space;
+                        let rating_color = if is_anchor {
+                            style::palette().accent_ice
+                        } else if similarity_strength.is_some_and(|score| score >= 0.75) {
+                            style::palette().text_primary
+                        } else {
+                            style::palette().text_muted
+                        };
+                        ui.painter().text(
+                            egui::pos2(rating_x, response.rect.center().y),
+                            Align2::RIGHT_CENTER,
+                            text,
+                            TextStyle::Button.resolve(ui.style()),
+                            rating_color,
                         );
                     }
 

@@ -146,6 +146,14 @@ pub fn similar_anchor_fill() -> Color32 {
     Color32::from_rgb(88, 110, 148)
 }
 
+/// Fill used for similarity-ranked rows.
+pub fn similar_score_fill(score: f32) -> Color32 {
+    let palette = palette();
+    let t = score.clamp(0.0, 1.0);
+    let blended = blend_rgb(palette.bg_tertiary, palette.accent_mint, t);
+    with_alpha(blended, 160)
+}
+
 /// Stroke used to indicate drag targets.
 pub fn drag_target_stroke() -> Stroke {
     Stroke::new(2.0, with_alpha(semantic_palette().drag_highlight, 180))
@@ -206,6 +214,16 @@ fn set_rectilinear(vis: &mut WidgetVisuals, palette: Palette) {
     vis.weak_bg_fill = palette.grid_soft;
     vis.bg_stroke = Stroke::new(1.0, palette.panel_outline);
     vis.fg_stroke = Stroke::new(1.0, palette.text_primary);
+}
+
+fn blend_rgb(a: Color32, b: Color32, t: f32) -> Color32 {
+    let t = t.clamp(0.0, 1.0);
+    let lerp = |from: u8, to: u8| -> u8 {
+        let from = from as f32;
+        let to = to as f32;
+        (from + (to - from) * t).round().clamp(0.0, 255.0) as u8
+    };
+    Color32::from_rgb(lerp(a.r(), b.r()), lerp(a.g(), b.g()), lerp(a.b(), b.b()))
 }
 
 /// Border stroke for outer panels and frames.

@@ -72,7 +72,16 @@ pub struct SimilarQuery {
     pub sample_id: String,
     pub label: String,
     pub indices: Vec<usize>,
+    /// Similarity scores aligned with `indices` (0.0 = least similar, 1.0 = most similar).
+    pub scores: Vec<f32>,
     pub anchor_index: Option<usize>,
+}
+
+impl SimilarQuery {
+    pub fn score_for_index(&self, entry_index: usize) -> Option<f32> {
+        let position = self.indices.iter().position(|idx| *idx == entry_index)?;
+        self.scores.get(position).copied()
+    }
 }
 
 /// Visible list representation for the sample browser.

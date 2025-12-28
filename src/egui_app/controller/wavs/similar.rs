@@ -45,7 +45,8 @@ pub(super) fn find_similar_for_visible_row(
     )?;
 
     let mut indices = Vec::new();
-    for candidate_id in ranked {
+    let mut scores = Vec::new();
+    for (candidate_id, score) in ranked {
         let (candidate_source, relative_path) =
             super::super::analysis_jobs::parse_sample_id(&candidate_id)?;
         if candidate_source.as_str() != source_id.as_str() {
@@ -53,6 +54,7 @@ pub(super) fn find_similar_for_visible_row(
         }
         if let Some(index) = controller.wav_index_for_path(&relative_path) {
             indices.push(index);
+            scores.push(score);
             if indices.len() >= DEFAULT_SIMILAR_COUNT {
                 break;
             }
@@ -65,6 +67,7 @@ pub(super) fn find_similar_for_visible_row(
         sample_id,
         label: view_model::sample_display_label(&entry_path),
         indices,
+        scores,
         anchor_index: Some(entry_index),
     });
     controller.ui.browser.search_query.clear();
@@ -98,7 +101,8 @@ pub(super) fn find_similar_for_sample_id(
     )?;
 
     let mut indices = Vec::new();
-    for candidate_id in ranked {
+    let mut scores = Vec::new();
+    for (candidate_id, score) in ranked {
         let (candidate_source, candidate_path) =
             super::super::analysis_jobs::parse_sample_id(&candidate_id)?;
         if candidate_source.as_str() != source_id.as_str() {
@@ -106,6 +110,7 @@ pub(super) fn find_similar_for_sample_id(
         }
         if let Some(index) = controller.wav_index_for_path(&candidate_path) {
             indices.push(index);
+            scores.push(score);
             if indices.len() >= DEFAULT_SIMILAR_COUNT {
                 break;
             }
@@ -118,6 +123,7 @@ pub(super) fn find_similar_for_sample_id(
         sample_id: sample_id.to_string(),
         label: view_model::sample_display_label(&relative_path),
         indices,
+        scores,
         anchor_index: controller.wav_index_for_path(&relative_path),
     });
     controller.ui.browser.search_query.clear();
@@ -175,7 +181,8 @@ pub(super) fn find_similar_for_audio_path(
     let ranked = rerank_with_dsp(&conn, neighbours, Some(&embedding), query_dsp.as_deref())?;
 
     let mut indices = Vec::new();
-    for candidate_id in ranked {
+    let mut scores = Vec::new();
+    for (candidate_id, score) in ranked {
         let (candidate_source, relative_path) =
             super::super::analysis_jobs::parse_sample_id(&candidate_id)?;
         if candidate_source.as_str() != source_id.as_str() {
@@ -183,6 +190,7 @@ pub(super) fn find_similar_for_audio_path(
         }
         if let Some(index) = controller.wav_index_for_path(&relative_path) {
             indices.push(index);
+            scores.push(score);
             if indices.len() >= DEFAULT_SIMILAR_COUNT {
                 break;
             }
@@ -200,6 +208,7 @@ pub(super) fn find_similar_for_audio_path(
         sample_id: format!("clip::{}", path.display()),
         label,
         indices,
+        scores,
         anchor_index: None,
     });
     controller.ui.browser.search_query.clear();
@@ -213,7 +222,7 @@ fn rerank_with_dsp(
     neighbours: Vec<crate::analysis::ann_index::SimilarNeighbor>,
     query_embedding: Option<&[f32]>,
     query_dsp: Option<&[f32]>,
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<(String, f32)>, String> {
     let mut scored = Vec::with_capacity(neighbours.len());
     for neighbour in neighbours {
         if neighbour.sample_id.is_empty() {
@@ -242,7 +251,7 @@ fn rerank_with_dsp(
         scored.push((neighbour.sample_id, score));
     }
     scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-    Ok(scored.into_iter().map(|(id, _)| id).collect())
+    Ok(scored)
 }
 
 fn load_light_dsp_for_sample(
