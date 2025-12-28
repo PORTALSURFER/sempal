@@ -34,12 +34,16 @@ pub(super) fn reconcile_collection_export(
         ));
     }
     let files = collect_exported_files(&collection_dir)?;
+    let file_names: HashSet<PathBuf> = files
+        .iter()
+        .filter_map(|path| path.file_name().map(PathBuf::from))
+        .collect();
     let members = controller.collection_members(collection_id);
     let member_paths: HashSet<PathBuf> = members
         .iter()
         .filter_map(|m| m.relative_path.file_name().map(PathBuf::from))
         .collect();
-    let (seen, removed) = remove_missing_exports(controller, collection_id, &members, &files);
+    let (seen, removed) = remove_missing_exports(controller, collection_id, &members, &file_names);
     let added =
         add_new_exports(controller, collection_id, &collection_dir, &files, &member_paths, &seen)?;
     controller.persist_config("Failed to save collection")?;
@@ -51,17 +55,16 @@ fn remove_missing_exports(
     controller: &mut EguiController,
     collection_id: &CollectionId,
     members: &[CollectionMember],
-    files: &[PathBuf],
+    file_names: &HashSet<PathBuf>,
 ) -> (HashSet<PathBuf>, usize) {
     let mut seen = HashSet::new();
     let mut removed = 0;
-    let file_set: HashSet<PathBuf> = files.iter().cloned().collect();
     for member in members {
         let name = match member.relative_path.file_name() {
             Some(name) => PathBuf::from(name),
             None => continue,
         };
-        if file_set.contains(&name) {
+        if file_names.contains(&name) {
             seen.insert(name);
             continue;
         }
@@ -87,7 +90,10 @@ fn add_new_exports(
         root: collection_dir.to_path_buf(),
     };
     for rel_path in files {
-        if seen.contains(rel_path) || member_paths.contains(rel_path) {
+        let Some(file_name) = rel_path.file_name().map(PathBuf::from) else {
+            continue;
+        };
+        if seen.contains(&file_name) || member_paths.contains(&file_name) {
             continue;
         }
         if collection_contains_member(controller, collection_id, &clip_source_id, rel_path) {

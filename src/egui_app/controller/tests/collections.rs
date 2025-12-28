@@ -53,7 +53,11 @@ fn export_path_copies_and_refreshes_members() -> Result<(), String> {
         .iter()
         .map(|m| m.relative_path.to_string_lossy().to_string())
         .collect();
-    assert_eq!(labels, vec!["extra.wav"]);
+    let expected = PathBuf::from("nested")
+        .join("extra.wav")
+        .to_string_lossy()
+        .to_string();
+    assert_eq!(labels, vec![expected]);
     Ok(())
 }
 

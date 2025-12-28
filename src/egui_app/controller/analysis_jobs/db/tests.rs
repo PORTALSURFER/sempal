@@ -60,6 +60,12 @@ fn conn_with_schema() -> Connection {
 #[test]
 fn enqueue_jobs_dedupes_by_sample_and_type() {
     let mut conn = conn_with_schema();
+    conn.execute(
+        "INSERT INTO wav_files (path, file_size, modified_ns, tag, missing)
+         VALUES (?1, ?2, ?3, 0, 0)",
+        params!["a.wav", 1, 1],
+    )
+    .unwrap();
     let jobs = vec![
         ("s::a.wav".to_string(), "h1".to_string()),
         ("s::a.wav".to_string(), "h1".to_string()),

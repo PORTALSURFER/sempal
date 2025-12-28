@@ -46,11 +46,19 @@ pub(super) fn collect_exported_files(root: &Path) -> Result<Vec<PathBuf>, String
             let path = entry.path();
             if path.is_dir() {
                 stack.push(path);
-            } else if path.is_file()
-                && let Some(name) = path.file_name()
-                && seen.insert(name.to_os_string())
-            {
-                files.push(PathBuf::from(name));
+                continue;
+            }
+            if !path.is_file() {
+                continue;
+            }
+            let Some(rel_path) = path.strip_prefix(root).ok().map(PathBuf::from) else {
+                continue;
+            };
+            let Some(name) = rel_path.file_name() else {
+                continue;
+            };
+            if seen.insert(name.to_os_string()) {
+                files.push(rel_path);
             }
         }
     }
