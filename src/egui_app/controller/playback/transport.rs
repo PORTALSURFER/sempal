@@ -1,4 +1,5 @@
 use super::*;
+use crate::egui_app::state::FocusContext;
 use crate::selection::SelectionEdge;
 
 const TRANSIENT_SNAP_RADIUS: f32 = 0.01;
@@ -361,5 +362,7 @@ pub(super) fn handle_escape(controller: &mut EguiController) {
     if !controller.ui.browser.selected_paths.is_empty() {
         controller.clear_browser_selection();
     }
-    controller.clear_folder_selection();
+    if matches!(controller.ui.focus.context, FocusContext::SourceFolders) {
+        controller.clear_folder_selection();
+    }
 }

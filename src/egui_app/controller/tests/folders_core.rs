@@ -1,6 +1,7 @@
 use super::super::test_support::{dummy_controller, sample_entry, write_test_wav};
 use super::super::*;
 use super::common::visible_indices;
+use crate::egui_app::state::FocusContext;
 use std::path::{Path, PathBuf};
 
 #[test]
@@ -360,5 +361,33 @@ fn clearing_folder_selection_shows_all_samples() -> Result<(), String> {
 
     assert!(controller.selected_folder_paths().is_empty());
     assert_eq!(visible_indices(&controller), vec![0, 1]);
+    Ok(())
+}
+
+#[test]
+fn escape_does_not_clear_folder_filter_without_folder_focus() -> Result<(), String> {
+    let (mut controller, source) = dummy_controller();
+    controller.library.sources.push(source.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
+    std::fs::create_dir_all(source.root.join("a")).unwrap();
+    controller.set_wav_entries_for_tests(vec![sample_entry("a/one.wav", SampleTag::Neutral)]);
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+    controller.refresh_folder_browser();
+
+    let folder_a = controller
+        .ui
+        .sources
+        .folders
+        .rows
+        .iter()
+        .position(|row| row.path == PathBuf::from("a"))
+        .unwrap();
+    controller.replace_folder_selection(folder_a);
+    controller.ui.focus.context = FocusContext::SampleBrowser;
+
+    controller.handle_escape();
+
+    assert_eq!(controller.selected_folder_paths(), vec![PathBuf::from("a")]);
     Ok(())
 }
