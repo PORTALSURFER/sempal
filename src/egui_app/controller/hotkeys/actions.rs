@@ -103,7 +103,7 @@ pub(super) const HOTKEY_ACTIONS: &[HotkeyAction] = &[
     },
     HotkeyAction {
         id: "find-similar",
-        label: "Find similar",
+        label: "Toggle find similar",
         gesture: HotkeyGesture::with_shift(Key::F),
         scope: HotkeyScope::Focus(FocusContext::SampleBrowser),
         command: HotkeyCommand::FindSimilarFocusedSample,

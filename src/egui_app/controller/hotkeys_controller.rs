@@ -128,7 +128,9 @@ impl HotkeysActions for HotkeysController<'_> {
             }
             HotkeyCommand::FindSimilarFocusedSample => {
                 if matches!(focus, FocusContext::SampleBrowser) {
-                    if let Some(row) = self.focused_browser_row() {
+                    if self.ui.browser.similar_query.is_some() {
+                        self.clear_similar_filter();
+                    } else if let Some(row) = self.focused_browser_row() {
                         if let Err(err) = self.find_similar_for_visible_row(row) {
                             self.set_status(format!("Find similar failed: {err}"), StatusTone::Error);
                         }
