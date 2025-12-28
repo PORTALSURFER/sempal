@@ -41,7 +41,7 @@ fn find_similar_hotkey_is_registered() {
         .find(|a| a.id == "find-similar")
         .expect("find-similar hotkey");
     assert_eq!(action.label, "Toggle find similar");
-    assert!(!action.is_global());
+    assert!(action.is_global());
     assert_eq!(action.gesture.first.key, Key::F);
     assert!(action.gesture.first.shift);
     assert!(!action.gesture.first.command);
