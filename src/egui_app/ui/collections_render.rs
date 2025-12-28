@@ -1,7 +1,8 @@
 use super::drag_targets;
 use super::flat_items_list::{FlatItemsListConfig, render_flat_items_list};
 use super::helpers::{
-    NumberColumn, RowMarker, clamp_label_for_width, list_row_height, render_list_row,
+    NumberColumn, RowBackground, RowMarker, clamp_label_for_width, list_row_height,
+    render_list_row,
 };
 use super::status_badges;
 use super::style;
@@ -66,14 +67,15 @@ impl EguiApp {
                             } else {
                                 clamp_label_for_width(&label, row_width - padding)
                             };
-                            let bg = selected.then_some(style::row_selected_fill());
+                            let bg =
+                                RowBackground::from_option(selected.then_some(style::row_selected_fill()));
                             let response = render_list_row(
                                 ui,
                                 super::helpers::ListRow {
                                     label: &label,
                                     row_width,
                                     row_height,
-                                    bg,
+                                    background: bg,
                                     skip_hover: false,
                                     text_color,
                                     sense: if rename_match {
@@ -240,13 +242,13 @@ impl EguiApp {
                     .as_ref()
                     .map(|marker| marker.width + metrics.padding * 0.5)
                     .unwrap_or(0.0);
-                let bg = if is_duplicate_hover {
+                let bg = RowBackground::from_option(if is_duplicate_hover {
                     Some(style::duplicate_hover_fill())
                 } else if is_focused {
                     Some(style::row_selected_fill())
                 } else {
                     None
-                };
+                });
                 ui.push_id(
                     format!("{}:{}:{}", sample.source_id, sample.source, sample.label),
                     |ui| {
@@ -270,7 +272,7 @@ impl EguiApp {
                                 label: &clamped_label,
                                 row_width,
                                 row_height: metrics.row_height,
-                                bg,
+                                background: bg,
                                 skip_hover: false,
                                 text_color,
                                 sense: egui::Sense::click_and_drag(),

@@ -1,5 +1,5 @@
 use super::EguiApp;
-use super::helpers::{clamp_label_for_width, list_row_height, render_list_row};
+use super::helpers::{RowBackground, clamp_label_for_width, list_row_height, render_list_row};
 use super::style;
 use crate::egui_app::state::FocusContext;
 use eframe::egui::{self, RichText, Ui};
@@ -29,14 +29,16 @@ impl EguiApp {
                         } else {
                             style::high_contrast_text()
                         };
-                        let bg = is_selected.then_some(style::row_selected_fill());
+                        let bg = RowBackground::from_option(
+                            is_selected.then_some(style::row_selected_fill()),
+                        );
                         let response = render_list_row(
                             ui,
                             super::helpers::ListRow {
                                 label: &label,
                                 row_width,
                                 row_height,
-                                bg,
+                                background: bg,
                                 skip_hover: false,
                                 text_color,
                                 sense: egui::Sense::click(),

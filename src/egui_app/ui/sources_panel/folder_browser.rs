@@ -1,5 +1,5 @@
 use super::EguiApp;
-use super::helpers::{list_row_height, render_list_row};
+use super::helpers::{RowBackground, list_row_height, render_list_row};
 use super::style;
 use super::utils::{folder_row_label, sample_housing_folders};
 use crate::egui_app::state::{DragSource, DragTarget, FocusContext};
@@ -84,11 +84,11 @@ impl EguiApp {
             if let Some(root_row) = root_row.clone() {
                 let row_width = ui.available_width();
                 let is_focused = self.controller.ui.sources.folders.focused == Some(0);
-                let bg = if is_focused {
+                let bg = RowBackground::from_option(if is_focused {
                     Some(style::row_selected_fill())
                 } else {
                     None
-                };
+                });
                 let label = folder_row_label(&root_row, row_width, ui);
                 let response = render_list_row(
                     ui,
@@ -96,7 +96,7 @@ impl EguiApp {
                         label: &label,
                         row_width,
                         row_height,
-                        bg,
+                        background: bg,
                         skip_hover: false,
                         text_color: style::high_contrast_text(),
                         sense: egui::Sense::click(),
@@ -212,11 +212,11 @@ impl EguiApp {
                             ..
                         }) if target == &row.path
                     );
-                    let bg = if row.selected || is_focused {
+                    let bg = RowBackground::from_option(if row.selected || is_focused {
                         Some(style::row_selected_fill())
                     } else {
                         None
-                    };
+                    });
                     let row_width = ui.available_width();
                     let label = if rename_match {
                         String::new()
@@ -234,7 +234,7 @@ impl EguiApp {
                             label: &label,
                             row_width,
                             row_height,
-                            bg,
+                            background: bg,
                             skip_hover: false,
                             text_color: style::high_contrast_text(),
                             sense,

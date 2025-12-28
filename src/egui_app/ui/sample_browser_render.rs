@@ -1,6 +1,8 @@
 use super::drag_targets;
 use super::flat_items_list::{FlatItemsListConfig, render_flat_items_list};
-use super::helpers::{NumberColumn, RowMarker, clamp_label_for_width, render_list_row};
+use super::helpers::{
+    NumberColumn, RowBackground, RowMarker, clamp_label_for_width, render_list_row,
+};
 use super::status_badges;
 use super::style;
 use super::*;
@@ -150,7 +152,7 @@ impl EguiApp {
                 } else {
                     clamp_label_for_width(&status_label.label, row_label_width)
                 };
-                let mut row_bg = similar_strength.map(style::similar_score_fill);
+                let mut row_bg = None;
                 if drag_active
                     && pointer_pos
                         .as_ref()
@@ -167,6 +169,15 @@ impl EguiApp {
                 if is_anchor {
                     row_bg = Some(style::similar_anchor_fill());
                 }
+                let row_background = if let Some(strength) = similar_strength.filter(|_| !is_anchor)
+                {
+                    RowBackground::Gradient {
+                        left: style::similar_score_fill(strength),
+                        right: row_bg.unwrap_or_else(style::compartment_fill),
+                    }
+                } else {
+                    RowBackground::from_option(row_bg)
+                };
                 let number_text = format!("{}", row + 1);
                 let text_color = status_label.text_color;
 
@@ -182,7 +193,7 @@ impl EguiApp {
                             label: &row_label,
                             row_width,
                             row_height: metrics.row_height,
-                            bg: row_bg,
+                            background: row_background,
                             skip_hover,
                             text_color,
                             sense,

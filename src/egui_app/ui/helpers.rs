@@ -14,6 +14,19 @@ pub(super) struct RowMarker {
     pub color: Color32,
 }
 
+#[derive(Clone, Copy)]
+pub(super) enum RowBackground {
+    None,
+    Solid(Color32),
+    Gradient { left: Color32, right: Color32 },
+}
+
+impl RowBackground {
+    pub fn from_option(color: Option<Color32>) -> Self {
+        color.map_or(Self::None, Self::Solid)
+    }
+}
+
 /// Estimate a width that comfortably fits numbering for the given row count.
 pub(super) fn number_column_width(total_rows: usize, ui: &Ui) -> f32 {
     let digits = total_rows.max(1).to_string().len() as f32;
@@ -62,7 +75,7 @@ pub(super) struct ListRow<'a> {
     pub label: &'a str,
     pub row_width: f32,
     pub row_height: f32,
-    pub bg: Option<Color32>,
+    pub background: RowBackground,
     pub skip_hover: bool,
     pub text_color: Color32,
     pub sense: egui::Sense,
@@ -73,8 +86,38 @@ pub(super) struct ListRow<'a> {
 pub(super) fn render_list_row(ui: &mut Ui, row: ListRow<'_>) -> egui::Response {
     let (rect, response) =
         ui.allocate_exact_size(egui::vec2(row.row_width, row.row_height), row.sense);
-    if let Some(color) = row.bg {
-        ui.painter().rect_filled(rect, 0.0, color);
+    match row.background {
+        RowBackground::None => {}
+        RowBackground::Solid(color) => {
+            ui.painter().rect_filled(rect, 0.0, color);
+        }
+        RowBackground::Gradient { left, right } => {
+            let mut mesh = egui::epaint::Mesh::default();
+            let idx = mesh.vertices.len() as u32;
+            mesh.vertices.push(egui::epaint::Vertex {
+                pos: rect.left_top(),
+                uv: egui::pos2(0.0, 0.0),
+                color: left,
+            });
+            mesh.vertices.push(egui::epaint::Vertex {
+                pos: rect.right_top(),
+                uv: egui::pos2(1.0, 0.0),
+                color: right,
+            });
+            mesh.vertices.push(egui::epaint::Vertex {
+                pos: rect.right_bottom(),
+                uv: egui::pos2(1.0, 1.0),
+                color: right,
+            });
+            mesh.vertices.push(egui::epaint::Vertex {
+                pos: rect.left_bottom(),
+                uv: egui::pos2(0.0, 1.0),
+                color: left,
+            });
+            mesh.indices
+                .extend_from_slice(&[idx, idx + 1, idx + 2, idx, idx + 2, idx + 3]);
+            ui.painter().add(egui::Shape::mesh(mesh));
+        }
     }
     if let Some(marker) = row.marker {
         let width = marker.width.max(0.0);

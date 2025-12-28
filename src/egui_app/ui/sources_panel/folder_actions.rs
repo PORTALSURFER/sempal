@@ -1,5 +1,7 @@
 use super::EguiApp;
-use super::helpers::{InlineTextEditAction, render_inline_text_edit, render_list_row};
+use super::helpers::{
+    InlineTextEditAction, RowBackground, render_inline_text_edit, render_list_row,
+};
 use super::style;
 use eframe::egui::{self, RichText, Ui};
 use std::path::Path;
@@ -53,7 +55,7 @@ impl EguiApp {
                 label: "",
                 row_width,
                 row_height,
-                bg: Some(style::row_selected_fill()),
+                background: RowBackground::Solid(style::row_selected_fill()),
                 skip_hover: false,
                 text_color: style::high_contrast_text(),
                 sense: egui::Sense::hover(),
