@@ -152,11 +152,11 @@ fn apply_loop_crossfade(
         };
         let (from_gain, to_gain) = equal_power_gains(progress);
         for ch in 0..channels {
-            let idx = frame * channels + ch;
             let tail_idx = (total_frames - fade_frames + frame) * channels + ch;
-            let head = output[idx];
+            let head_idx = frame * channels + ch;
+            let head = output[head_idx];
             let tail = output[tail_idx];
-            output[idx] = tail * from_gain + head * to_gain;
+            output[tail_idx] = tail * from_gain + head * to_gain;
         }
     }
     samples.copy_from_slice(&output);
@@ -419,7 +419,7 @@ mod tests {
     fn loop_crossfade_moves_cut_to_front() {
         let mut samples = vec![0.0, 1.0, 2.0, 2.1, 2.2, 10.0];
         apply_loop_crossfade(&mut samples, 1, 6, 2).unwrap();
-        let expected = [1.0, 2.2, 10.0, 0.0, 1.0, 2.0];
+        let expected = [2.1, 2.2, 10.0, 0.0, 1.0, 2.2];
         for (actual, expected) in samples.iter().zip(expected.iter()) {
             assert!((actual - expected).abs() < 1.0e-6);
         }
