@@ -35,7 +35,7 @@ pub(crate) struct AppSettings {
 }
 
 impl AppSettings {
-    pub(super) fn normalized(self) -> Self {
+    pub(crate) fn normalized(self) -> Self {
         Self {
             core: self.core.normalized(),
         }
