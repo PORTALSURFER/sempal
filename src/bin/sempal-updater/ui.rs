@@ -150,12 +150,17 @@ impl UpdateUiApp {
         let Some(rx) = &self.progress_rx else {
             return;
         };
-        let mut updated = false;
-        for progress in rx.try_iter() {
-            self.push_log(progress.message);
-            updated = true;
+        let messages: Vec<String> = rx
+            .try_iter()
+            .map(|progress| progress.message)
+            .collect();
+        if messages.is_empty() {
+            return;
         }
-        if updated {
+        for message in messages {
+            self.push_log(message);
+        }
+        if !self.log.is_empty() {
             ctx.request_repaint();
         }
     }
@@ -258,14 +263,16 @@ impl UpdateUiApp {
     fn render_version_selector(&mut self, ui: &mut egui::Ui, palette: &style::Palette) {
         ui.horizontal(|ui| {
             ui.label(RichText::new("Version:").color(palette.text_muted));
-            match &self.release_state {
+            let mut refresh_clicked = false;
+            let mut ensure_selected = false;
+            match self.release_state.clone() {
                 ReleaseState::Loading => {
                     ui.label(RichText::new("Loading...").color(palette.text_muted));
                 }
                 ReleaseState::Error(message) => {
                     ui.label(RichText::new("Unavailable").color(palette.warning));
                     if ui.button("Retry").clicked() {
-                        self.refresh_release_list();
+                        refresh_clicked = true;
                     }
                     ui.label(RichText::new(message).color(palette.text_muted).small());
                 }
@@ -273,10 +280,12 @@ impl UpdateUiApp {
                     if options.is_empty() {
                         ui.label(RichText::new("No releases found").color(palette.warning));
                         if ui.button("Refresh").clicked() {
-                            self.refresh_release_list();
+                            refresh_clicked = true;
                         }
                     } else {
-                        self.ensure_selected_tag();
+                        if self.selected_tag.is_none() {
+                            ensure_selected = true;
+                        }
                         let selected = self
                             .selected_tag
                             .clone()
@@ -293,13 +302,19 @@ impl UpdateUiApp {
                                 }
                             });
                         if ui.button("Refresh").clicked() {
-                            self.refresh_release_list();
+                            refresh_clicked = true;
                         }
                     }
                 }
                 ReleaseState::Idle => {
                     ui.label(RichText::new("Waiting...").color(palette.text_muted));
                 }
+            }
+            if ensure_selected {
+                self.ensure_selected_tag();
+            }
+            if refresh_clicked {
+                self.refresh_release_list();
             }
         });
         ui.add_space(8.0);
