@@ -163,7 +163,12 @@ pub fn similarity_display_strength(score: f32) -> f32 {
 pub fn similarity_percent_bucket(score: f32) -> u8 {
     let strength = similarity_display_strength(score);
     let percent = (strength * 100.0).floor() as i32;
-    let bucket = (percent / 10) * 10;
+    let mut bucket = (percent / 10) * 10;
+    if score < 0.9999 {
+        bucket = bucket.min(90);
+    } else {
+        bucket = 100;
+    }
     bucket.clamp(0, 100) as u8
 }
 
