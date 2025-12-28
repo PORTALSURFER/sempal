@@ -14,21 +14,60 @@ pub(crate) fn stft_power_frames(
 ) -> Result<Vec<Vec<f32>>, String> {
     let n_fft = n_fft.max(1);
     let hop = hop.max(1);
-    let window = hann_window(n_fft);
-    let plan = FftPlan::new(n_fft)?;
-    let mut frames = Vec::new();
-    let mut buf = vec![Complex32::default(); n_fft];
-    let mut start = 0usize;
-    while start < samples.len() {
-        fill_windowed(&mut buf, samples, start, &window);
-        fft_radix2_inplace_with_plan(&mut buf, &plan)?;
-        frames.push(power_spectrum(&buf));
-        start = start.saturating_add(hop);
-    }
-    if frames.is_empty() {
-        frames.push(vec![0.0_f32; n_fft / 2 + 1]);
+    let frame_len = n_fft / 2 + 1;
+    let frames_len = if samples.is_empty() {
+        1
+    } else {
+        (samples.len().saturating_sub(1) / hop).saturating_add(1)
+    };
+    let mut flat = vec![0.0_f32; frames_len * frame_len];
+    let written = stft_power_frames_into_flat(samples, n_fft, hop, &mut flat, frames_len)?;
+    let mut frames = Vec::with_capacity(written);
+    for frame in flat[..written * frame_len].chunks(frame_len) {
+        frames.push(frame.to_vec());
     }
     Ok(frames)
+}
+
+/// Compute power spectra (0..=Nyquist) into a flat buffer.
+pub(crate) fn stft_power_frames_into_flat(
+    samples: &[f32],
+    n_fft: usize,
+    hop: usize,
+    out: &mut [f32],
+    max_frames: usize,
+) -> Result<usize, String> {
+    if max_frames == 0 {
+        return Ok(0);
+    }
+    let n_fft = n_fft.max(1);
+    let hop = hop.max(1);
+    let frame_len = n_fft / 2 + 1;
+    let needed = max_frames.saturating_mul(frame_len);
+    if out.len() < needed {
+        return Err(format!(
+            "stft power output buffer too small: need {needed}, got {}",
+            out.len()
+        ));
+    }
+    let window = hann_window(n_fft);
+    let plan = FftPlan::new(n_fft)?;
+    let mut buf = vec![Complex32::default(); n_fft];
+    if samples.is_empty() {
+        out[..frame_len].fill(0.0);
+        return Ok(1);
+    }
+    let mut start = 0usize;
+    let mut frame_idx = 0usize;
+    while start < samples.len() && frame_idx < max_frames {
+        let offset = frame_idx * frame_len;
+        fill_windowed(&mut buf, samples, start, &window);
+        fft_radix2_inplace_with_plan(&mut buf, &plan)?;
+        power_spectrum_into(&buf, &mut out[offset..offset + frame_len]);
+        start = start.saturating_add(hop);
+        frame_idx += 1;
+    }
+    Ok(frame_idx)
 }
 
 pub(crate) struct PannsMelBank {
@@ -171,15 +210,18 @@ impl PannsPreprocessor {
 
 /// Compute log-mel frames using PANNs defaults (log10 with epsilon).
 pub(crate) fn log_mel_frames(samples: &[f32], sample_rate: u32) -> Result<Vec<Vec<f32>>, String> {
-    let frames = stft_power_frames(samples, PANNS_STFT_N_FFT, PANNS_STFT_HOP)?;
-    let mel_bank = PannsMelBank::new(sample_rate, PANNS_STFT_N_FFT);
-    let mut out = Vec::with_capacity(frames.len());
-    for power in frames {
-        let mut mel = mel_bank.mel_from_power(&power);
-        for value in &mut mel {
-            *value = log_mel(*value);
-        }
-        out.push(mel);
+    let mut preprocessor =
+        PannsPreprocessor::new(sample_rate, PANNS_STFT_N_FFT, PANNS_STFT_HOP)?;
+    let frames_len = if samples.is_empty() {
+        1
+    } else {
+        (samples.len().saturating_sub(1) / PANNS_STFT_HOP.max(1)).saturating_add(1)
+    };
+    let mut flat = vec![0.0_f32; frames_len * PANNS_MEL_BANDS];
+    let written = preprocessor.log_mel_frames_into_flat(samples, &mut flat, frames_len)?;
+    let mut out = Vec::with_capacity(written);
+    for frame in flat[..written * PANNS_MEL_BANDS].chunks(PANNS_MEL_BANDS) {
+        out.push(frame.to_vec());
     }
     Ok(out)
 }
@@ -356,6 +398,14 @@ mod tests {
     }
 
     #[test]
+    fn stft_power_frames_empty_input_is_silence() {
+        let frames = stft_power_frames(&[], PANNS_STFT_N_FFT, PANNS_STFT_HOP).unwrap();
+        assert_eq!(frames.len(), 1);
+        assert_eq!(frames[0].len(), PANNS_STFT_N_FFT / 2 + 1);
+        assert!(frames[0].iter().all(|&v| v == 0.0));
+    }
+
+    #[test]
     fn panns_mel_bank_outputs_expected_length() {
         let bank = PannsMelBank::new(16_000, PANNS_STFT_N_FFT);
         let power = vec![0.0_f32; PANNS_STFT_N_FFT / 2 + 1];
@@ -369,6 +419,42 @@ mod tests {
         let frames = log_mel_frames(&samples, 16_000).unwrap();
         assert!(!frames.is_empty());
         assert!(frames.iter().all(|f| f.iter().all(|v| v.is_finite())));
+    }
+
+    #[test]
+    fn log_mel_frames_empty_input_is_silence() {
+        let frames = log_mel_frames(&[], 16_000).unwrap();
+        assert_eq!(frames.len(), 1);
+        assert_eq!(frames[0].len(), PANNS_MEL_BANDS);
+        assert!(frames[0].iter().all(|v| v.is_finite()));
+    }
+
+    #[test]
+    fn log_mel_frames_sanitizes_non_finite_samples() {
+        let samples = vec![f32::NAN, f32::INFINITY, f32::NEG_INFINITY, 0.25];
+        let frames = log_mel_frames(&samples, 16_000).unwrap();
+        assert!(!frames.is_empty());
+        assert!(frames.iter().all(|f| f.iter().all(|v| v.is_finite())));
+    }
+
+    #[test]
+    fn preprocessor_respects_config_changes() {
+        let samples = vec![0.1_f32; 320];
+        let mut preprocessor =
+            PannsPreprocessor::new(16_000, PANNS_STFT_N_FFT, PANNS_STFT_HOP).unwrap();
+        let mut flat = vec![0.0_f32; 10 * PANNS_MEL_BANDS];
+        let frames_default = preprocessor
+            .log_mel_frames_into_flat(&samples, &mut flat, 10)
+            .unwrap();
+        assert_eq!(frames_default, 2);
+
+        preprocessor
+            .set_config(16_000, PANNS_STFT_N_FFT, PANNS_STFT_HOP / 2)
+            .unwrap();
+        let frames_faster = preprocessor
+            .log_mel_frames_into_flat(&samples, &mut flat, 10)
+            .unwrap();
+        assert_eq!(frames_faster, 4);
     }
 
     #[test]
