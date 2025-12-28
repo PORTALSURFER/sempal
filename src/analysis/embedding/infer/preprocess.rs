@@ -13,7 +13,7 @@ pub(super) fn infer_embedding_with_model(
     prepare_panns_logmel(
         &mut model.resample_scratch,
         &mut model.wave_scratch,
-        &mut model.preprocess_scratch,
+        &mut model.preprocess,
         input_slice,
         samples,
         sample_rate,
@@ -39,7 +39,7 @@ pub(super) fn infer_embeddings_with_model(
         prepare_panns_logmel(
             &mut model.resample_scratch,
             &mut model.wave_scratch,
-            &mut model.preprocess_scratch,
+            &mut model.preprocess,
             out,
             input.samples,
             input.sample_rate,

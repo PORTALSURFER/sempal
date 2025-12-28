@@ -1,6 +1,6 @@
 use crate::analysis::audio;
 use crate::analysis::panns_preprocess::{
-    log_mel_frames_with_scratch, PannsPreprocessScratch, PANNS_MEL_BANDS, PANNS_STFT_HOP,
+    PannsPreprocessor, PANNS_MEL_BANDS, PANNS_STFT_HOP, PANNS_STFT_N_FFT,
 };
 
 /// Target sample rate for PANNs inference.
@@ -19,7 +19,7 @@ pub(crate) const PANNS_LOGMEL_LEN: usize = PANNS_MEL_BANDS * PANNS_INPUT_FRAMES;
 pub(crate) struct PannsLogMelScratch {
     pub(super) resample_scratch: Vec<f32>,
     pub(super) wave_scratch: Vec<f32>,
-    pub(super) preprocess_scratch: PannsPreprocessScratch,
+    pub(super) preprocess: PannsPreprocessor,
 }
 
 impl Default for PannsLogMelScratch {
@@ -27,7 +27,12 @@ impl Default for PannsLogMelScratch {
         Self {
             resample_scratch: Vec::new(),
             wave_scratch: Vec::new(),
-            preprocess_scratch: PannsPreprocessScratch::new(),
+            preprocess: PannsPreprocessor::new(
+                PANNS_SAMPLE_RATE,
+                PANNS_STFT_N_FFT,
+                PANNS_STFT_HOP,
+            )
+            .expect("panns preprocess init"),
         }
     }
 }
@@ -48,7 +53,7 @@ pub(crate) fn build_panns_logmel_into(
     prepare_panns_logmel(
         &mut scratch.resample_scratch,
         &mut scratch.wave_scratch,
-        &mut scratch.preprocess_scratch,
+        &mut scratch.preprocess,
         out,
         samples,
         sample_rate,
@@ -58,7 +63,7 @@ pub(crate) fn build_panns_logmel_into(
 pub(super) fn prepare_panns_logmel(
     resample_scratch: &mut Vec<f32>,
     wave_scratch: &mut Vec<f32>,
-    preprocess_scratch: &mut PannsPreprocessScratch,
+    preprocess: &mut PannsPreprocessor,
     out: &mut [f32],
     samples: &[f32],
     sample_rate: u32,
@@ -71,14 +76,8 @@ pub(super) fn prepare_panns_logmel(
         repeat_pad_into(wave_scratch, samples, PANNS_INPUT_SAMPLES);
         audio::sanitize_samples_in_place(wave_scratch.as_mut_slice());
     }
-    let frames = log_mel_frames_with_scratch(wave_scratch, PANNS_SAMPLE_RATE, preprocess_scratch)?;
     out.fill(0.0);
-    for (frame_idx, frame) in frames.iter().take(PANNS_INPUT_FRAMES).enumerate() {
-        for (mel_idx, value) in frame.iter().enumerate().take(PANNS_MEL_BANDS) {
-            let idx = frame_idx * PANNS_MEL_BANDS + mel_idx;
-            out[idx] = *value;
-        }
-    }
+    let _ = preprocess.log_mel_frames_into_flat(wave_scratch, out, PANNS_INPUT_FRAMES)?;
     Ok(())
 }
 

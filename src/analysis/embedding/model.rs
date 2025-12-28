@@ -6,9 +6,10 @@ use super::backend::{
 };
 #[cfg(feature = "panns-cuda")]
 use super::backend::{PannsCudaBackend, PannsCudaDevice};
-use super::logmel::PANNS_LOGMEL_LEN;
+use super::logmel::{PANNS_LOGMEL_LEN, PANNS_SAMPLE_RATE};
 use super::panns_burn;
 use super::panns_burnpack_path;
+use crate::analysis::panns_preprocess::{PannsPreprocessor, PANNS_STFT_HOP, PANNS_STFT_N_FFT};
 
 pub(super) enum PannsModelInner {
     Wgpu {
@@ -33,7 +34,7 @@ pub(crate) struct PannsModel {
     pub(super) input_batch_scratch: Vec<f32>,
     pub(super) resample_scratch: Vec<f32>,
     pub(super) wave_scratch: Vec<f32>,
-    pub(super) preprocess_scratch: crate::analysis::panns_preprocess::PannsPreprocessScratch,
+    pub(super) preprocess: PannsPreprocessor,
 }
 
 static PANNS_MODEL: OnceLock<Mutex<Option<PannsModel>>> = OnceLock::new();
@@ -89,7 +90,11 @@ impl PannsModel {
             input_batch_scratch: Vec::new(),
             resample_scratch: Vec::new(),
             wave_scratch: Vec::new(),
-            preprocess_scratch: crate::analysis::panns_preprocess::PannsPreprocessScratch::new(),
+            preprocess: PannsPreprocessor::new(
+                PANNS_SAMPLE_RATE,
+                PANNS_STFT_N_FFT,
+                PANNS_STFT_HOP,
+            )?,
         })
     }
 }
