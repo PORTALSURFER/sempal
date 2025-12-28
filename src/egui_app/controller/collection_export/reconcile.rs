@@ -40,7 +40,8 @@ pub(super) fn reconcile_collection_export(
         .filter_map(|m| m.relative_path.file_name().map(PathBuf::from))
         .collect();
     let (seen, removed) = remove_missing_exports(controller, collection_id, &members, &files);
-    let added = add_new_exports(controller, collection_id, &files, &member_paths, &seen)?;
+    let added =
+        add_new_exports(controller, collection_id, &collection_dir, &files, &member_paths, &seen)?;
     controller.persist_config("Failed to save collection")?;
     controller.refresh_collections_ui();
     Ok((added, removed))
@@ -74,30 +75,44 @@ fn remove_missing_exports(
 fn add_new_exports(
     controller: &mut EguiController,
     collection_id: &CollectionId,
+    collection_dir: &Path,
     files: &[PathBuf],
     member_paths: &HashSet<PathBuf>,
     seen: &HashSet<PathBuf>,
 ) -> Result<usize, String> {
     let mut added = 0;
+    let clip_source_id = SourceId::from_string(format!("collection-{}", collection_id.as_str()));
+    let clip_source = SampleSource {
+        id: clip_source_id.clone(),
+        root: collection_dir.to_path_buf(),
+    };
     for rel_path in files {
         if seen.contains(rel_path) || member_paths.contains(rel_path) {
             continue;
         }
-        if let Some(source) = resolve_source_for_relative_path(controller, rel_path) {
-            controller.ensure_sample_db_entry(&source, rel_path)?;
-            if add_member_from_refresh(controller, collection_id, &source, rel_path) {
-                added += 1;
-            }
+        if collection_contains_member(controller, collection_id, &clip_source_id, rel_path) {
+            continue;
+        }
+        controller.ensure_sample_db_entry(&clip_source, rel_path)?;
+        if add_clip_member_from_export(
+            controller,
+            collection_id,
+            &clip_source_id,
+            rel_path,
+            collection_dir,
+        ) {
+            added += 1;
         }
     }
     Ok(added)
 }
 
-fn add_member_from_refresh(
+fn add_clip_member_from_export(
     controller: &mut EguiController,
     collection_id: &CollectionId,
-    source: &SampleSource,
+    source_id: &SourceId,
     relative_path: &Path,
+    clip_root: &Path,
 ) -> bool {
     let Some(collection) = controller
         .library
@@ -107,15 +122,27 @@ fn add_member_from_refresh(
     else {
         return false;
     };
-    collection.add_member(source.id.clone(), relative_path.to_path_buf())
+    if collection.contains(source_id, &relative_path.to_path_buf()) {
+        return false;
+    }
+    collection.members.push(CollectionMember {
+        source_id: source_id.clone(),
+        relative_path: relative_path.to_path_buf(),
+        clip_root: Some(clip_root.to_path_buf()),
+    });
+    true
 }
 
-fn resolve_source_for_relative_path(
+fn collection_contains_member(
     controller: &EguiController,
+    collection_id: &CollectionId,
+    source_id: &SourceId,
     relative_path: &Path,
-) -> Option<SampleSource> {
-    controller.library.sources.iter().find_map(|source| {
-        let candidate = source.root.join(relative_path);
-        candidate.is_file().then(|| source.clone())
-    })
+) -> bool {
+    controller
+        .library
+        .collections
+        .iter()
+        .find(|c| &c.id == collection_id)
+        .is_some_and(|collection| collection.contains(source_id, &relative_path.to_path_buf()))
 }

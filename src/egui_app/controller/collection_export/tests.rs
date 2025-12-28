@@ -1,6 +1,7 @@
 use super::super::*;
 use super::resolved_export_dir;
 use crate::app_dirs::ConfigBaseGuard;
+use crate::egui_app::controller::test_support::write_test_wav;
 use crate::sample_sources::Collection;
 use std::path::{Path, PathBuf};
 use tempfile::tempdir;
@@ -123,4 +124,33 @@ fn sync_updates_existing_collection_export_path_by_name() {
         controller.library.collections[0].export_path.as_ref(),
         Some(&expected)
     );
+}
+
+#[test]
+fn sync_export_adds_files_as_clip_members() {
+    let temp = tempdir().unwrap();
+    let export_dir = temp.path().join("exports");
+    std::fs::create_dir_all(&export_dir).unwrap();
+    write_test_wav(&export_dir.join("clip.wav"), &[0.1, -0.1]);
+
+    let renderer = crate::waveform::WaveformRenderer::new(4, 4);
+    let mut controller = EguiController::new(renderer, None);
+    let mut collection = Collection::new("Sync");
+    collection.export_path = Some(export_dir.clone());
+    let id = collection.id.clone();
+    controller.library.collections.push(collection);
+
+    controller.sync_collection_export(&id);
+
+    let collection = controller
+        .library
+        .collections
+        .iter()
+        .find(|c| c.id == id)
+        .expect("collection present");
+    assert_eq!(collection.members.len(), 1);
+    let member = &collection.members[0];
+    assert_eq!(member.relative_path, PathBuf::from("clip.wav"));
+    assert_eq!(member.clip_root.as_ref(), Some(&export_dir));
+    assert!(export_dir.join(&member.relative_path).is_file());
 }
