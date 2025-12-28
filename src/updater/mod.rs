@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 
 pub use apply::{ApplyPlan, UpdateManifest};
 pub use check::{UpdateCheckOutcome, UpdateCheckRequest};
+pub use github::ReleaseSummary;
 
 /// Canonical app name used by the release contract.
 pub const APP_NAME: &str = "sempal";
@@ -52,6 +53,22 @@ pub struct UpdaterRunArgs {
     pub identity: RuntimeIdentity,
     pub install_dir: PathBuf,
     pub relaunch: bool,
+    /// Optional release tag override (e.g. `v0.384.0` or `nightly`).
+    pub requested_tag: Option<String>,
+}
+
+/// Progress update emitted during apply steps.
+#[derive(Debug, Clone)]
+pub struct UpdateProgress {
+    pub message: String,
+}
+
+impl UpdateProgress {
+    pub fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+        }
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -76,12 +93,33 @@ pub enum UpdateError {
 
 /// Apply an update for `args.identity` into `args.install_dir`.
 pub fn apply_update(args: UpdaterRunArgs) -> Result<ApplyPlan, UpdateError> {
-    apply::apply_update(args)
+    apply::apply_update_with_progress(args, |_| {})
+}
+
+/// Apply an update while reporting progress.
+pub fn apply_update_with_progress<F>(
+    args: UpdaterRunArgs,
+    progress: F,
+) -> Result<ApplyPlan, UpdateError>
+where
+    F: FnMut(UpdateProgress),
+{
+    apply::apply_update_with_progress(args, progress)
 }
 
 /// Check GitHub releases and report whether an update is available.
 pub fn check_for_updates(request: UpdateCheckRequest) -> Result<UpdateCheckOutcome, UpdateError> {
     check::check_for_updates(request)
+}
+
+/// List recent releases that match the runtime identity and channel.
+pub fn list_recent_releases(
+    repo: &str,
+    channel: UpdateChannel,
+    identity: &RuntimeIdentity,
+    limit: usize,
+) -> Result<Vec<ReleaseSummary>, UpdateError> {
+    github::list_releases_with_assets(repo, channel, identity, limit)
 }
 
 /// Best-effort open the release page.

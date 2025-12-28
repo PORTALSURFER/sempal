@@ -3,6 +3,8 @@
 //! The main `sempal` app can spawn this executable and exit so that the helper can
 //! safely replace the installed binaries.
 
+mod ui;
+
 use std::path::PathBuf;
 
 use sempal::updater::{
@@ -17,7 +19,14 @@ fn main() {
 }
 
 fn try_main() -> Result<(), String> {
-    let args = parse_args(std::env::args().skip(1).collect())?;
+    let (args, headless) = parse_args(std::env::args().skip(1).collect())?;
+    if headless {
+        return run_headless(args);
+    }
+    ui::run_gui(args)
+}
+
+fn run_headless(args: UpdaterRunArgs) -> Result<(), String> {
     let plan = apply_update(args).map_err(|err| err.to_string())?;
     eprintln!(
         "Updated {} from {} into {}",
@@ -28,67 +37,107 @@ fn try_main() -> Result<(), String> {
     Ok(())
 }
 
-fn parse_args(args: Vec<String>) -> Result<UpdaterRunArgs, String> {
+fn parse_args(args: Vec<String>) -> Result<(UpdaterRunArgs, bool), String> {
     if args.iter().any(|a| a == "-h" || a == "--help") {
         return Err(help_text());
     }
-    let mut repo = REPO_SLUG.to_string();
-    let mut channel = UpdateChannel::Stable;
-    let mut install_dir: Option<PathBuf> = None;
-    let mut relaunch = true;
-    let mut target = default_target().ok_or_else(|| "Unsupported target".to_string())?;
-    let mut platform = default_platform().ok_or_else(|| "Unsupported platform".to_string())?;
-    let mut arch = default_arch().ok_or_else(|| "Unsupported arch".to_string())?;
-
+    let mut state = ArgState::new()?;
     let mut i = 0;
     while i < args.len() {
-        let arg = &args[i];
+        state.apply_arg(&args, &mut i)?;
+        i += 1;
+    }
+    state.finish()
+}
+
+struct ArgState {
+    repo: String,
+    channel: UpdateChannel,
+    install_dir: Option<PathBuf>,
+    relaunch: bool,
+    target: String,
+    platform: String,
+    arch: String,
+    requested_tag: Option<String>,
+    headless: bool,
+}
+
+impl ArgState {
+    fn new() -> Result<Self, String> {
+        Ok(Self {
+            repo: REPO_SLUG.to_string(),
+            channel: UpdateChannel::Stable,
+            install_dir: None,
+            relaunch: true,
+            target: default_target().ok_or_else(|| "Unsupported target".to_string())?,
+            platform: default_platform().ok_or_else(|| "Unsupported platform".to_string())?,
+            arch: default_arch().ok_or_else(|| "Unsupported arch".to_string())?,
+            requested_tag: None,
+            headless: false,
+        })
+    }
+
+    fn apply_arg(&mut self, args: &[String], i: &mut usize) -> Result<(), String> {
+        let arg = &args[*i];
         match arg.as_str() {
             "--repo" => {
-                repo = next_value(&args, &mut i, "--repo")?;
+                self.repo = next_value(args, i, "--repo")?;
             }
             "--channel" => {
-                let value = next_value(&args, &mut i, "--channel")?;
-                channel = match value.as_str() {
+                let value = next_value(args, i, "--channel")?;
+                self.channel = match value.as_str() {
                     "stable" => UpdateChannel::Stable,
                     "nightly" => UpdateChannel::Nightly,
                     other => return Err(format!("Unknown channel '{other}'")),
                 };
             }
             "--install-dir" => {
-                install_dir = Some(PathBuf::from(next_value(&args, &mut i, "--install-dir")?));
+                self.install_dir = Some(PathBuf::from(next_value(args, i, "--install-dir")?));
             }
             "--no-relaunch" => {
-                relaunch = false;
+                self.relaunch = false;
+            }
+            "--tag" => {
+                self.requested_tag = Some(next_value(args, i, "--tag")?);
+            }
+            "--headless" => {
+                self.headless = true;
             }
             "--target" => {
-                target = next_value(&args, &mut i, "--target")?;
+                self.target = next_value(args, i, "--target")?;
             }
             "--platform" => {
-                platform = next_value(&args, &mut i, "--platform")?;
+                self.platform = next_value(args, i, "--platform")?;
             }
             "--arch" => {
-                arch = next_value(&args, &mut i, "--arch")?;
+                self.arch = next_value(args, i, "--arch")?;
             }
             unknown => return Err(format!("Unknown argument '{unknown}'\n\n{}", help_text())),
         }
-        i += 1;
+        Ok(())
     }
 
-    let install_dir =
-        install_dir.ok_or_else(|| format!("Missing --install-dir\n\n{}", help_text()))?;
-    Ok(UpdaterRunArgs {
-        repo,
-        identity: RuntimeIdentity {
-            app: APP_NAME.to_string(),
-            channel,
-            target,
-            platform,
-            arch,
-        },
-        install_dir,
-        relaunch,
-    })
+    fn finish(self) -> Result<(UpdaterRunArgs, bool), String> {
+        let install_dir =
+            self.install_dir
+                .ok_or_else(|| format!("Missing --install-dir\n\n{}", help_text()))?;
+        Ok((
+            UpdaterRunArgs {
+                repo: self.repo,
+                identity: RuntimeIdentity {
+                    app: APP_NAME.to_string(),
+                    channel: self.channel,
+                    target: self.target,
+                    platform: self.platform,
+                    arch: self.arch,
+                },
+                install_dir,
+                relaunch: self.relaunch,
+                requested_tag: self.requested_tag,
+            },
+            self.headless,
+        ))
+    }
 }
 
 fn next_value(args: &[String], i: &mut usize, name: &str) -> Result<String, String> {
@@ -108,7 +157,9 @@ Options:\n\
   --target <TRIPLE>            Target triple (default: detected)\n\
   --platform <LABEL>           Platform label (default: detected)\n\
   --arch <LABEL>               Arch label (default: detected)\n\
+  --tag <TAG>                  Install a specific release tag\n\
   --no-relaunch                Do not relaunch the app after update\n\
+  --headless                   Run without GUI output\n\
   -h, --help                   Show help\n"
     )
 }

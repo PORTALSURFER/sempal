@@ -7,7 +7,7 @@ use std::{
 use serde::Deserialize;
 
 use super::{
-    UpdateChannel, UpdateError, UpdaterRunArgs, archive, ensure_child_path,
+    UpdateChannel, UpdateError, UpdateProgress, UpdaterRunArgs, archive, ensure_child_path,
     expected_checksums_name, expected_zip_asset_name, fs_ops, github,
 };
 
@@ -71,9 +71,28 @@ pub struct ApplyPlan {
     pub replaced_dirs: Vec<String>,
 }
 
-pub(super) fn apply_update(args: UpdaterRunArgs) -> Result<ApplyPlan, UpdateError> {
-    let release =
-        github::fetch_release_with_assets(&args.repo, args.identity.channel, &args.identity)?;
+pub(super) fn apply_update_with_progress<F>(
+    args: UpdaterRunArgs,
+    mut progress: F,
+) -> Result<ApplyPlan, UpdateError>
+where
+    F: FnMut(UpdateProgress),
+{
+    let release = match args.requested_tag.as_deref() {
+        Some(tag) => {
+            report(&mut progress, format!("Fetching release {tag}..."));
+            github::fetch_release_by_tag_with_assets(
+                &args.repo,
+                tag,
+                args.identity.channel,
+                &args.identity,
+            )?
+        }
+        None => {
+            report(&mut progress, "Fetching latest release...");
+            github::fetch_release_with_assets(&args.repo, args.identity.channel, &args.identity)?
+        }
+    };
     let version = match args.identity.channel {
         UpdateChannel::Stable => Some(
             release
@@ -90,15 +109,20 @@ pub(super) fn apply_update(args: UpdaterRunArgs) -> Result<ApplyPlan, UpdateErro
 
     let tmp = tempfile::tempdir()?;
     let zip_path = tmp.path().join(&zip_name);
+    report(&mut progress, format!("Downloading {checksums_name}..."));
     let checksums_bytes = archive::download_release_asset_bytes(&release, &checksums_name)?;
     let expected = archive::parse_checksums_for_asset(&checksums_bytes, &zip_name)?;
+    report(&mut progress, format!("Downloading {zip_name}..."));
     archive::download_release_asset(&release, &zip_name, &zip_path)?;
+    report(&mut progress, "Verifying checksum...");
     archive::verify_zip_checksum(&zip_path, &expected)?;
 
     let unpack_dir = tmp.path().join("unpacked");
     fs_ops::ensure_empty_dir(&unpack_dir)?;
+    report(&mut progress, "Unpacking update...");
     archive::unzip_to_dir(&zip_path, &unpack_dir)?;
 
+    report(&mut progress, "Validating update manifest...");
     let root_dir = validate_root_dir(&unpack_dir, &args.identity.app)?;
     let manifest_path = root_dir.join("update-manifest.json");
     let manifest_bytes = fs::read(&manifest_path)?;
@@ -112,10 +136,12 @@ pub(super) fn apply_update(args: UpdaterRunArgs) -> Result<ApplyPlan, UpdateErro
         }
     }
 
+    report(&mut progress, "Copying updated files...");
     let (copied_files, replaced_dirs) =
         apply_files_and_dirs(&args.install_dir, &root_dir, &manifest)?;
 
     if args.relaunch {
+        report(&mut progress, "Relaunching app...");
         relaunch_app(&args.install_dir, &args.identity.app, &manifest)?;
     }
 
@@ -126,6 +152,10 @@ pub(super) fn apply_update(args: UpdaterRunArgs) -> Result<ApplyPlan, UpdateErro
         copied_files,
         replaced_dirs,
     })
+}
+
+fn report(progress: &mut impl FnMut(UpdateProgress), message: impl Into<String>) {
+    progress(UpdateProgress::new(message));
 }
 
 fn validate_root_dir(unpack_dir: &Path, expected: &str) -> Result<PathBuf, UpdateError> {

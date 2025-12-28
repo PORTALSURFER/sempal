@@ -20,6 +20,17 @@ pub(super) struct Release {
     pub(super) assets: Vec<ReleaseAsset>,
 }
 
+/// Public-facing release metadata for the updater UI.
+#[derive(Debug, Clone)]
+pub struct ReleaseSummary {
+    /// Git tag name (e.g. `v0.384.0` or `nightly`).
+    pub tag: String,
+    /// HTML URL for the release page.
+    pub html_url: String,
+    /// Publication timestamp (RFC3339), if present.
+    pub published_at: Option<String>,
+}
+
 pub(super) fn fetch_release_with_assets(
     repo: &str,
     channel: UpdateChannel,
@@ -31,6 +42,11 @@ pub(super) fn fetch_release_with_assets(
 
 fn fetch_releases(repo: &str) -> Result<Vec<Release>, UpdateError> {
     let url = format!("https://api.github.com/repos/{repo}/releases?per_page=20");
+    get_json(&url)
+}
+
+fn fetch_release_by_tag(repo: &str, tag: &str) -> Result<Release, UpdateError> {
+    let url = format!("https://api.github.com/repos/{repo}/releases/tags/{tag}");
     get_json(&url)
 }
 
@@ -47,6 +63,92 @@ fn get_json<T: for<'de> Deserialize<'de>>(url: &str) -> Result<T, UpdateError> {
 
 pub(super) fn find_asset<'a>(release: &'a Release, name: &str) -> Option<&'a ReleaseAsset> {
     release.assets.iter().find(|asset| asset.name == name)
+}
+
+pub(super) fn list_releases_with_assets(
+    repo: &str,
+    channel: UpdateChannel,
+    identity: &RuntimeIdentity,
+    limit: usize,
+) -> Result<Vec<ReleaseSummary>, UpdateError> {
+    let releases = fetch_releases(repo)?;
+    let mut matches = Vec::new();
+    for release in releases.into_iter() {
+        if channel == UpdateChannel::Stable && release.prerelease {
+            continue;
+        }
+        match channel {
+            UpdateChannel::Stable => {
+                let Some(version_text) = release.tag_name.strip_prefix('v') else {
+                    continue;
+                };
+                let zip_name = expected_zip_asset_name(identity, Some(version_text))?;
+                let checksums_name = expected_checksums_name(identity, Some(version_text))?;
+                if has_assets(&release, &[zip_name, checksums_name]) {
+                    matches.push(ReleaseSummary {
+                        tag: release.tag_name,
+                        html_url: release.html_url,
+                        published_at: release.published_at,
+                    });
+                }
+            }
+            UpdateChannel::Nightly => {
+                if release.tag_name != "nightly" {
+                    continue;
+                }
+                let zip_name = expected_zip_asset_name(identity, None)?;
+                let checksums_name = expected_checksums_name(identity, None)?;
+                if has_assets(&release, &[zip_name, checksums_name]) {
+                    matches.push(ReleaseSummary {
+                        tag: release.tag_name,
+                        html_url: release.html_url,
+                        published_at: release.published_at,
+                    });
+                }
+            }
+        }
+        if matches.len() >= limit {
+            break;
+        }
+    }
+    Ok(matches)
+}
+
+pub(super) fn fetch_release_by_tag_with_assets(
+    repo: &str,
+    tag: &str,
+    channel: UpdateChannel,
+    identity: &RuntimeIdentity,
+) -> Result<Release, UpdateError> {
+    let release = fetch_release_by_tag(repo, tag)?;
+    let (zip_name, checksums_name) = match channel {
+        UpdateChannel::Stable => {
+            let version_text = tag.strip_prefix('v').ok_or_else(|| {
+                UpdateError::Invalid(format!("Stable tag must start with 'v', got '{tag}'"))
+            })?;
+            (
+                expected_zip_asset_name(identity, Some(version_text))?,
+                expected_checksums_name(identity, Some(version_text))?,
+            )
+        }
+        UpdateChannel::Nightly => {
+            if tag != "nightly" {
+                return Err(UpdateError::Invalid(format!(
+                    "Nightly tag must be 'nightly', got '{tag}'"
+                )));
+            }
+            (
+                expected_zip_asset_name(identity, None)?,
+                expected_checksums_name(identity, None)?,
+            )
+        }
+    };
+    if !has_assets(&release, &[zip_name, checksums_name]) {
+        return Err(UpdateError::Invalid(format!(
+            "Release '{tag}' missing required assets"
+        )));
+    }
+    Ok(release)
 }
 
 fn select_release_with_assets(
