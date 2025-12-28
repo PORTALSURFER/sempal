@@ -6,6 +6,9 @@ const DEFAULT_SIMILAR_COUNT: usize = 40;
 const SIMILAR_RE_RANK_CANDIDATES: usize = 200;
 const EMBED_WEIGHT: f32 = 0.8;
 const DSP_WEIGHT: f32 = 0.2;
+const DUPLICATE_SCORE_THRESHOLD: f32 = 0.985;
+const DUPLICATE_RMS_MIN: f32 = 1.0e-4;
+const FEATURE_RMS_INDEX: usize = 2;
 
 pub(super) fn find_similar_for_visible_row(
     controller: &mut EguiController,
@@ -66,6 +69,88 @@ pub(super) fn find_similar_for_visible_row(
     controller.ui.browser.similar_query = Some(crate::egui_app::state::SimilarQuery {
         sample_id,
         label: view_model::sample_display_label(&entry_path),
+        indices,
+        scores,
+        anchor_index: Some(entry_index),
+    });
+    controller.ui.browser.search_query.clear();
+    controller.ui.browser.search_focus_requested = false;
+    controller.rebuild_browser_lists();
+    Ok(())
+}
+
+pub(super) fn find_duplicates_for_visible_row(
+    controller: &mut EguiController,
+    visible_row: usize,
+) -> Result<(), String> {
+    let source_id = controller
+        .selection_state
+        .ctx
+        .selected_source
+        .clone()
+        .ok_or_else(|| "No active source selected".to_string())?;
+    let entry_index = controller
+        .ui
+        .browser
+        .visible
+        .get(visible_row)
+        .ok_or_else(|| "Selected row is out of range".to_string())?;
+    let entry = controller
+        .wav_entry(entry_index)
+        .ok_or_else(|| "Sample entry missing".to_string())?;
+    let entry_path = entry.relative_path.clone();
+    let sample_id =
+        super::super::analysis_jobs::build_sample_id(source_id.as_str(), &entry_path);
+    let mut conn = open_source_db_for_id(controller, &source_id)?;
+    if let Err(err) = maybe_enqueue_full_analysis(controller, &mut conn, &sample_id) {
+        tracing::debug!("Fast prep refine enqueue failed: {err}");
+    }
+    if let Some(rms) = load_rms_for_sample(&conn, &sample_id)? {
+        if is_effectively_silent(rms) {
+            return Err("Selected sample is effectively silent".to_string());
+        }
+    }
+    let neighbours =
+        crate::analysis::ann_index::find_similar(&conn, &sample_id, SIMILAR_RE_RANK_CANDIDATES)?;
+    let query_embedding = load_embedding_for_sample(&conn, &sample_id)?;
+    let query_dsp = load_light_dsp_for_sample(&conn, &sample_id)?;
+    let ranked = rerank_with_dsp(
+        &conn,
+        neighbours,
+        query_embedding.as_deref(),
+        query_dsp.as_deref(),
+    )?;
+
+    let mut indices = Vec::new();
+    let mut scores = Vec::new();
+    for (candidate_id, score) in ranked {
+        if score < DUPLICATE_SCORE_THRESHOLD {
+            break;
+        }
+        let (candidate_source, relative_path) =
+            super::super::analysis_jobs::parse_sample_id(&candidate_id)?;
+        if candidate_source.as_str() != source_id.as_str() {
+            continue;
+        }
+        if let Some(rms) = load_rms_for_sample(&conn, &candidate_id)? {
+            if is_effectively_silent(rms) {
+                continue;
+            }
+        }
+        if let Some(index) = controller.wav_index_for_path(&relative_path) {
+            indices.push(index);
+            scores.push(score);
+            if indices.len() >= DEFAULT_SIMILAR_COUNT {
+                break;
+            }
+        }
+    }
+    if indices.is_empty() {
+        return Err("No duplicates found in the current source".to_string());
+    }
+    controller.ui.browser.similar_query = Some(crate::egui_app::state::SimilarQuery {
+        sample_id,
+        label: format!("Duplicates of {}", view_model::sample_display_label(&entry_path)),
         indices,
         scores,
         anchor_index: Some(entry_index),
@@ -274,6 +359,28 @@ fn load_light_dsp_for_sample(
     Ok(light.map(normalize_l2))
 }
 
+fn load_rms_for_sample(
+    conn: &rusqlite::Connection,
+    sample_id: &str,
+) -> Result<Option<f32>, String> {
+    let blob: Option<Vec<u8>> = conn
+        .query_row(
+            "SELECT vec_blob FROM features WHERE sample_id = ?1",
+            [sample_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|err| format!("Load features failed: {err}"))?;
+    let Some(blob) = blob else {
+        return Ok(None);
+    };
+    let features = crate::analysis::decode_f32_le_blob(&blob)?;
+    if features.len() <= FEATURE_RMS_INDEX {
+        return Ok(None);
+    }
+    Ok(Some(features[FEATURE_RMS_INDEX]))
+}
+
 fn load_embedding_for_sample(
     conn: &rusqlite::Connection,
     sample_id: &str,
@@ -316,6 +423,10 @@ fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
         sum += a[i] * b[i];
     }
     sum
+}
+
+fn is_effectively_silent(rms: f32) -> bool {
+    !rms.is_finite() || rms <= DUPLICATE_RMS_MIN
 }
 
 fn maybe_enqueue_full_analysis(

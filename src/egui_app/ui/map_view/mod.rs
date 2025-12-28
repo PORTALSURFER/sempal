@@ -106,7 +106,26 @@ impl EguiApp {
         let blend_enabled = cluster_overlay && similarity_blend;
         let map_diagonal =
             ((bounds.max_x - bounds.min_x).powi(2) + (bounds.max_y - bounds.min_y).powi(2)).sqrt();
+        let focused_sample_id = self.controller.ui.map.selected_sample_id.as_deref();
+        let focused_point = focused_sample_id.and_then(|id| {
+            self.controller
+                .ui
+                .map
+                .cached_filtered_points
+                .iter()
+                .find(|point| point.sample_id == id)
+                .map(|point| (point.x, point.y))
+        });
         let point_color = |point: &crate::egui_app::state::MapPoint, alpha: u8| {
+            if let Some((fx, fy)) = focused_point {
+                let dist = ((point.x - fx).powi(2) + (point.y - fy).powi(2)).sqrt();
+                let t = if map_diagonal > 0.0 {
+                    (dist / map_diagonal).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                return style::with_alpha(style::similarity_map_color(t), alpha);
+            }
             if cluster_overlay {
                 if blend_enabled {
                     map_clusters::blended_cluster_color(
@@ -158,8 +177,6 @@ impl EguiApp {
         if response.clicked() {
             map_input::handle_click(self, hovered.as_ref());
         }
-
-        let focused_sample_id = self.controller.ui.map.selected_sample_id.as_deref();
         let (draw_calls, points_rendered, render_mode) = map_render::render_points(
             &painter,
             rect,

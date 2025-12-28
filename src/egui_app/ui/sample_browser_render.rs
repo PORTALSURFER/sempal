@@ -8,7 +8,7 @@ use crate::egui_app::state::{
     DragSource, FocusContext, SampleBrowserActionPrompt, SampleBrowserTab,
 };
 use crate::egui_app::view_model;
-use eframe::egui::{self, Align2, StrokeKind, TextStyle, Ui};
+use eframe::egui::{self, StrokeKind, Ui};
 
 impl EguiApp {
     pub(super) fn render_sample_browser(&mut self, ui: &mut Ui) {
@@ -92,9 +92,6 @@ impl EguiApp {
                 let similar_query = self.controller.ui.browser.similar_query.as_ref();
                 let is_anchor = similar_query.and_then(|sim| sim.anchor_index) == Some(entry_index);
                 let similar_score = similar_query.and_then(|sim| sim.score_for_index(entry_index));
-                let _similarity_strength =
-                    similar_score.map(style::similarity_display_strength);
-                let similarity_percent = similar_score.map(style::similarity_percent_bucket);
                 let marker_color = style::triage_marker_color(tag);
                 let triage_marker_width = marker_color
                     .as_ref()
@@ -103,19 +100,9 @@ impl EguiApp {
                     width: style::triage_marker_width(),
                     color,
                 });
-                let rating_text = if is_anchor {
-                    Some("Anchor".to_string())
-                } else {
-                    similarity_percent.map(|percent| format!("{percent}%"))
-                };
-                let rating_space = rating_text
-                    .as_ref()
-                    .map(|text| metrics.padding + text.len() as f32 * 7.0)
-                    .unwrap_or(0.0);
                 let trailing_space = triage_marker_width
                     .map(|width| width + metrics.padding * 0.5)
-                    .unwrap_or(0.0)
-                    + rating_space;
+                    .unwrap_or(0.0);
 
                 let mut base_label = self
                     .controller
@@ -215,25 +202,6 @@ impl EguiApp {
                             StrokeKind::Inside,
                         );
                     }
-                    if let Some(text) = rating_text.as_deref() {
-                        let marker_space = triage_marker_width.unwrap_or(0.0);
-                        let rating_x = response.rect.right() - metrics.padding - marker_space;
-                        let rating_color = if is_anchor {
-                            style::palette().accent_ice
-                        } else if similarity_percent.is_some_and(|score| score >= 70) {
-                            style::palette().text_primary
-                        } else {
-                            style::palette().text_muted
-                        };
-                        ui.painter().text(
-                            egui::pos2(rating_x, response.rect.center().y),
-                            Align2::RIGHT_CENTER,
-                            text,
-                            TextStyle::Button.resolve(ui.style()),
-                            rating_color,
-                        );
-                    }
-
                     if rename_match {
                         self.render_browser_rename_editor(
                             ui,

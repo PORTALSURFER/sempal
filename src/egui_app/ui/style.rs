@@ -148,44 +148,32 @@ pub fn similar_anchor_fill() -> Color32 {
 
 /// Fill used for similarity-ranked rows.
 pub fn similar_score_fill(score: f32) -> Color32 {
-    let bucket = similarity_percent_bucket(score);
-    let color = heatmap_color(bucket);
+    let similarity = similarity_display_strength(score);
+    let color = similarity_map_color(1.0 - similarity);
     with_alpha(color, 160)
 }
 
 /// Convert similarity scores into a conservative 0.0-1.0 display strength.
 pub fn similarity_display_strength(score: f32) -> f32 {
     let normalized = ((score.clamp(-1.0, 1.0) + 1.0) * 0.5).clamp(0.0, 1.0);
-    normalized.powf(2.4)
+    normalized.powf(2.0)
 }
 
-/// Bucket the display similarity into 10-point steps (0..=100).
-pub fn similarity_percent_bucket(score: f32) -> u8 {
-    let strength = similarity_display_strength(score);
-    let percent = (strength * 100.0).floor() as i32;
-    let mut bucket = (percent / 10) * 10;
-    if score < 0.9999 {
-        bucket = bucket.min(90);
+/// Smooth map gradient from similar (blue) to mid (purple) to dissimilar (orange).
+pub fn similarity_map_color(t: f32) -> Color32 {
+    let t = smoothstep(t.clamp(0.0, 1.0));
+    let blue = Color32::from_rgb(72, 128, 224);
+    let purple = Color32::from_rgb(150, 92, 208);
+    let orange = Color32::from_rgb(232, 142, 76);
+    if t <= 0.5 {
+        blend_rgb(blue, purple, t * 2.0)
     } else {
-        bucket = 100;
+        blend_rgb(purple, orange, (t - 0.5) * 2.0)
     }
-    bucket.clamp(0, 100) as u8
 }
 
-fn heatmap_color(bucket: u8) -> Color32 {
-    match bucket {
-        0 => Color32::from_rgb(32, 72, 160),
-        10 => Color32::from_rgb(36, 122, 192),
-        20 => Color32::from_rgb(38, 170, 196),
-        30 => Color32::from_rgb(56, 196, 150),
-        40 => Color32::from_rgb(96, 210, 92),
-        50 => Color32::from_rgb(150, 220, 64),
-        60 => Color32::from_rgb(210, 220, 64),
-        70 => Color32::from_rgb(232, 182, 64),
-        80 => Color32::from_rgb(232, 128, 64),
-        90 => Color32::from_rgb(220, 80, 60),
-        _ => Color32::from_rgb(192, 44, 44),
-    }
+fn smoothstep(t: f32) -> f32 {
+    t * t * (3.0 - 2.0 * t)
 }
 
 /// Stroke used to indicate drag targets.

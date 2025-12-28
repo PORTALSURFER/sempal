@@ -189,6 +189,11 @@ impl EguiController {
         similar::find_similar_for_visible_row(self, row)
     }
 
+    /// Filter the browser to show near-duplicate samples for the chosen visible row.
+    pub fn find_duplicates_for_visible_row(&mut self, row: usize) -> Result<(), String> {
+        similar::find_duplicates_for_visible_row(self, row)
+    }
+
     /// Filter the browser to show similar samples for a specific library sample_id.
     pub fn find_similar_for_sample_id(&mut self, sample_id: &str) -> Result<(), String> {
         similar::find_similar_for_sample_id(self, sample_id)

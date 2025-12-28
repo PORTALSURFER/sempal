@@ -142,6 +142,15 @@ impl EguiApp {
                     ui.close();
                 }
             }
+            if ui.button("Find duplicates").clicked() {
+                if let Err(err) = self.controller.find_duplicates_for_visible_row(row) {
+                    self.controller
+                        .set_status(format!("Find duplicates failed: {err}"), StatusTone::Error);
+                } else {
+                    close_menu = true;
+                    ui.close();
+                }
+            }
             ui.separator();
             self.sample_tag_menu(ui, &mut close_menu, |app, tag| {
                 app.controller
