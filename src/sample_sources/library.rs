@@ -1,5 +1,6 @@
 //! Global SQLite storage for sources and collections that should not live in the config file.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{LazyLock, Mutex};
 
@@ -156,12 +157,14 @@ impl LibraryDatabase {
 
     fn load_collections(&self) -> Result<Vec<Collection>, LibraryError> {
         let mut collections = self.fetch_collections()?;
+        let mut collection_index = HashMap::with_capacity(collections.len());
+        for (idx, collection) in collections.iter().enumerate() {
+            collection_index.insert(collection.id.as_str().to_string(), idx);
+        }
         let members = self.fetch_collection_members()?;
         for (collection_id, member) in members {
-            if let Some(collection) = collections
-                .iter_mut()
-                .find(|collection| collection.id.as_str() == collection_id)
-            {
+            if let Some(idx) = collection_index.get(&collection_id) {
+                let collection = &mut collections[*idx];
                 collection.members.push(member);
             }
         }

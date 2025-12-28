@@ -128,6 +128,68 @@ fn saves_and_loads_sources_and_collections() {
 }
 
 #[test]
+fn preserves_collection_and_member_order() {
+    let temp = tempdir().unwrap();
+    with_config_home(temp.path(), || {
+        let collection_one_id = CollectionId::new();
+        let collection_two_id = CollectionId::new();
+        let state = LibraryState {
+            sources: vec![],
+            collections: vec![
+                Collection {
+                    id: collection_one_id.clone(),
+                    name: "First".into(),
+                    members: vec![
+                        CollectionMember {
+                            source_id: SourceId::new(),
+                            relative_path: PathBuf::from("alpha.wav"),
+                            clip_root: None,
+                        },
+                        CollectionMember {
+                            source_id: SourceId::new(),
+                            relative_path: PathBuf::from("beta.wav"),
+                            clip_root: None,
+                        },
+                    ],
+                    export_path: None,
+                },
+                Collection {
+                    id: collection_two_id.clone(),
+                    name: "Second".into(),
+                    members: vec![CollectionMember {
+                        source_id: SourceId::new(),
+                        relative_path: PathBuf::from("gamma.wav"),
+                        clip_root: None,
+                    }],
+                    export_path: None,
+                },
+            ],
+        };
+
+        save(&state).unwrap();
+        let loaded = load().unwrap();
+
+        assert_eq!(loaded.collections.len(), 2);
+        assert_eq!(loaded.collections[0].id.as_str(), collection_one_id.as_str());
+        assert_eq!(loaded.collections[1].id.as_str(), collection_two_id.as_str());
+        assert_eq!(loaded.collections[0].members.len(), 2);
+        assert_eq!(
+            loaded.collections[0].members[0].relative_path,
+            PathBuf::from("alpha.wav")
+        );
+        assert_eq!(
+            loaded.collections[0].members[1].relative_path,
+            PathBuf::from("beta.wav")
+        );
+        assert_eq!(loaded.collections[1].members.len(), 1);
+        assert_eq!(
+            loaded.collections[1].members[0].relative_path,
+            PathBuf::from("gamma.wav")
+        );
+    });
+}
+
+#[test]
 fn database_lives_under_app_root() {
     let temp = tempdir().unwrap();
     with_config_home(temp.path(), || {
