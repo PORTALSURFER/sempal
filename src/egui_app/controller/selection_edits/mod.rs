@@ -122,6 +122,12 @@ impl EguiController {
                 missing: false,
             },
         );
+        self.enqueue_similarity_for_new_sample(
+            &context.source,
+            &new_relative,
+            file_size,
+            modified_ns,
+        );
         self.refresh_waveform_for_sample(&context.source, &context.relative_path);
         self.reexport_collections_for_sample(&context.source.id, &new_relative);
 

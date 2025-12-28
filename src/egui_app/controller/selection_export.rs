@@ -249,6 +249,12 @@ impl EguiController {
                 }
                 self.insert_new_wav_entry(source, entry.clone());
             }
+            self.enqueue_similarity_for_new_sample(
+                source,
+                &entry.relative_path,
+                entry.file_size,
+                entry.modified_ns,
+            );
         }
         Ok(entry)
     }

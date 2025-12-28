@@ -117,6 +117,7 @@ impl DragDropController<'_> {
             self.set_status(format!("Failed to register copy: {err}"), StatusTone::Error);
             return;
         }
+        self.enqueue_similarity_for_new_sample(&source, &copy_relative, file_size, modified_ns);
         self.runtime
             .jobs
             .set_pending_select_path(Some(copy_relative.clone()));
