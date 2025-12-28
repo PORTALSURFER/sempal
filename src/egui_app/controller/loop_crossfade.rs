@@ -133,7 +133,16 @@ fn apply_loop_crossfade(
         return Err("Crossfade depth is too short for this sample".into());
     }
     let channels = channels.max(1);
+    let cut_frame = find_crossfade_cut_frame(samples, channels, total_frames, fade_frames);
     let mut output = vec![0.0; samples.len()];
+    for frame in 0..total_frames {
+        let src_frame = (cut_frame + frame) % total_frames;
+        for ch in 0..channels {
+            let out_idx = frame * channels + ch;
+            let src_idx = src_frame * channels + ch;
+            output[out_idx] = samples[src_idx];
+        }
+    }
     let denom = (fade_frames.saturating_sub(1)).max(1) as f32;
     for frame in 0..fade_frames {
         let progress = if fade_frames == 1 {
@@ -142,20 +151,12 @@ fn apply_loop_crossfade(
             frame as f32 / denom
         };
         let (from_gain, to_gain) = equal_power_gains(progress);
-        let tail_frame = total_frames - fade_frames + frame;
         for ch in 0..channels {
             let idx = frame * channels + ch;
-            let tail_idx = tail_frame * channels + ch;
-            let head_idx = idx;
-            output[idx] = samples[tail_idx] * from_gain + samples[head_idx] * to_gain;
-        }
-    }
-    for frame in fade_frames..total_frames {
-        let src_frame = frame - fade_frames;
-        for ch in 0..channels {
-            let out_idx = frame * channels + ch;
-            let src_idx = src_frame * channels + ch;
-            output[out_idx] = samples[src_idx];
+            let tail_idx = (total_frames - fade_frames + frame) * channels + ch;
+            let head = output[idx];
+            let tail = output[tail_idx];
+            output[idx] = tail * from_gain + head * to_gain;
         }
     }
     samples.copy_from_slice(&output);
@@ -166,6 +167,34 @@ fn equal_power_gains(progress: f32) -> (f32, f32) {
     let t = progress.clamp(0.0, 1.0);
     let angle = t * std::f32::consts::FRAC_PI_2;
     (angle.cos(), angle.sin())
+}
+
+fn find_crossfade_cut_frame(
+    samples: &[f32],
+    channels: usize,
+    total_frames: usize,
+    fade_frames: usize,
+) -> usize {
+    let nominal = total_frames.saturating_sub(fade_frames);
+    let search_window = fade_frames.min(1024).min(nominal);
+    let min_cut = nominal.saturating_sub(search_window);
+    let max_cut = nominal.max(1);
+    let mut best_frame = nominal.max(1);
+    let mut best_score = f32::INFINITY;
+    for frame in min_cut.max(1)..=max_cut {
+        let prev = frame - 1;
+        let mut score = 0.0;
+        for ch in 0..channels {
+            let a = samples[prev * channels + ch];
+            let b = samples[frame * channels + ch];
+            score += (b - a).abs();
+        }
+        if score < best_score {
+            best_score = score;
+            best_frame = frame;
+        }
+    }
+    best_frame
 }
 
 fn loop_crossfade_suffix(settings: &LoopCrossfadeSettings) -> String {
@@ -377,13 +406,20 @@ fn redo_loop_crossfade(
 
 #[cfg(test)]
 mod tests {
-    use super::apply_loop_crossfade;
+    use super::{apply_loop_crossfade, find_crossfade_cut_frame};
 
     #[test]
-    fn loop_crossfade_moves_tail_to_front() {
-        let mut samples = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+    fn loop_crossfade_finds_low_delta_cut() {
+        let samples = vec![0.0, 1.0, 2.0, 2.1, 2.2, 10.0];
+        let cut = find_crossfade_cut_frame(&samples, 1, 6, 2);
+        assert_eq!(cut, 3);
+    }
+
+    #[test]
+    fn loop_crossfade_moves_cut_to_front() {
+        let mut samples = vec![0.0, 1.0, 2.0, 2.1, 2.2, 10.0];
         apply_loop_crossfade(&mut samples, 1, 6, 2).unwrap();
-        let expected = [5.0, 2.0, 1.0, 2.0, 3.0, 4.0];
+        let expected = [1.0, 2.2, 10.0, 0.0, 1.0, 2.0];
         for (actual, expected) in samples.iter().zip(expected.iter()) {
             assert!((actual - expected).abs() < 1.0e-6);
         }
