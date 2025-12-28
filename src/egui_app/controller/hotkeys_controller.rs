@@ -359,10 +359,8 @@ impl HotkeysController<'_> {
     fn delete_focused_sample(&mut self, focus: FocusContext) {
         match focus {
             FocusContext::SampleBrowser => {
-                let mut rows: Vec<usize> = self
-                    .ui
-                    .browser
-                    .selected_paths
+                let selected_paths = self.ui.browser.selected_paths.clone();
+                let mut rows: Vec<usize> = selected_paths
                     .iter()
                     .filter_map(|path| self.visible_row_for_path(path))
                     .collect();
