@@ -52,6 +52,10 @@ impl EguiController {
             self.set_status("Trash move already in progress", StatusTone::Warning);
             return;
         }
+        if self.settings.trash_folder.is_none() {
+            self.pick_trash_folder();
+            return;
+        }
         if !self.confirm_warning(
             "Move trashed samples?",
             "All samples tagged as Trash will be moved to the configured trash folder and removed from sources/collections. Continue?",
