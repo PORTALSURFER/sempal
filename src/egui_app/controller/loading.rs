@@ -185,4 +185,21 @@ impl EguiController {
         }
         self.rebuild_missing_lookup_for_source(&source.id);
     }
+
+    pub(super) fn invalidate_wav_entries_for_source_preserve_folders(
+        &mut self,
+        source: &SampleSource,
+    ) {
+        self.cache.wav.entries.remove(&source.id);
+        if self.selection_state.ctx.selected_source.as_ref() == Some(&source.id) {
+            self.wav_entries.clear();
+            self.rebuild_wav_lookup();
+            self.ui_cache.browser.search.invalidate();
+            self.rebuild_browser_lists();
+            self.queue_wav_load();
+        } else {
+            self.ui_cache.browser.labels.remove(&source.id);
+        }
+        self.rebuild_missing_lookup_for_source(&source.id);
+    }
 }

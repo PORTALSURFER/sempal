@@ -105,7 +105,7 @@ impl EguiController {
             }
             return;
         }
-        self.invalidate_wav_entries_for_source(source);
+        self.invalidate_wav_entries_for_source_preserve_folders(source);
         if old_path != new_entry.relative_path {
             self.invalidate_cached_audio(&source.id, &new_entry.relative_path);
         }
