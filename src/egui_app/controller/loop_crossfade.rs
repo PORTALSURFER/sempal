@@ -144,6 +144,15 @@ fn apply_loop_crossfade(
         }
     }
     let denom = (fade_frames.saturating_sub(1)).max(1) as f32;
+    let body_frames = total_frames.saturating_sub(fade_frames);
+    let mut blended = vec![0.0; samples.len()];
+    for frame in 0..body_frames {
+        for ch in 0..channels {
+            let out_idx = frame * channels + ch;
+            let src_idx = (frame + fade_frames) * channels + ch;
+            blended[out_idx] = output[src_idx];
+        }
+    }
     for frame in 0..fade_frames {
         let progress = if fade_frames == 1 {
             0.5
@@ -152,13 +161,13 @@ fn apply_loop_crossfade(
         };
         let (from_gain, to_gain) = equal_power_gains(progress);
         for ch in 0..channels {
-            let tail_idx = (total_frames - fade_frames + frame) * channels + ch;
             let head_idx = frame * channels + ch;
-            output[tail_idx] *= from_gain;
-            output[head_idx] *= to_gain;
+            let tail_idx = (total_frames - fade_frames + frame) * channels + ch;
+            let out_idx = (body_frames + frame) * channels + ch;
+            blended[out_idx] = output[tail_idx] * from_gain + output[head_idx] * to_gain;
         }
     }
-    samples.copy_from_slice(&output);
+    samples.copy_from_slice(&blended);
     Ok(())
 }
 
@@ -418,7 +427,7 @@ mod tests {
     fn loop_crossfade_moves_cut_to_front() {
         let mut samples = vec![0.0, 1.0, 2.0, 2.1, 2.2, 10.0];
         apply_loop_crossfade(&mut samples, 1, 6, 2).unwrap();
-        let expected = [0.0, 2.2, 10.0, 0.0, 1.0, 0.0];
+        let expected = [10.0, 0.0, 1.0, 2.0, 1.0, 2.2];
         for (actual, expected) in samples.iter().zip(expected.iter()) {
             assert!((actual - expected).abs() < 1.0e-6);
         }
