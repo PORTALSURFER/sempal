@@ -4,7 +4,7 @@ use super::super::*;
 use std::path::{Path, PathBuf};
 
 impl EguiController {
-    pub(super) fn selection_edit_undo_entry(
+    pub(crate) fn selection_edit_undo_entry(
         &self,
         label: String,
         source_id: SourceId,

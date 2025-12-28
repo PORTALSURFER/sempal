@@ -35,29 +35,35 @@ impl EguiController {
     }
 
     pub(crate) fn update_waveform_circular_slide(&mut self, position: f32) {
-        let Some(state) = self.sample_view.waveform_slide.as_mut() else {
+        let Some((rotated, spec_channels, sample_rate)) = self
+            .sample_view
+            .waveform_slide
+            .as_mut()
+            .and_then(|state| {
+                let total_frames = state.original_samples.len() / state.channels.max(1);
+                if total_frames == 0 {
+                    return None;
+                }
+                let delta = position - state.start_normalized;
+                let offset_frames = (delta * total_frames as f32).round() as isize;
+                if offset_frames == state.last_offset_frames {
+                    return None;
+                }
+                state.last_offset_frames = offset_frames;
+                Some((
+                    rotate_interleaved_samples(
+                        &state.original_samples,
+                        state.channels,
+                        offset_frames,
+                    ),
+                    state.spec_channels,
+                    state.sample_rate,
+                ))
+            })
+        else {
             return;
         };
-        let total_frames = state.original_samples.len() / state.channels.max(1);
-        if total_frames == 0 {
-            return;
-        }
-        let delta = position - state.start_normalized;
-        let offset_frames = (delta * total_frames as f32).round() as isize;
-        if offset_frames == state.last_offset_frames {
-            return;
-        }
-        state.last_offset_frames = offset_frames;
-        let rotated = rotate_interleaved_samples(
-            &state.original_samples,
-            state.channels,
-            offset_frames,
-        );
-        self.apply_waveform_slide_preview(
-            rotated,
-            state.spec_channels,
-            state.sample_rate,
-        );
+        self.apply_waveform_slide_preview(rotated, spec_channels, sample_rate);
     }
 
     pub(crate) fn finish_waveform_circular_slide(&mut self) -> Result<(), String> {
