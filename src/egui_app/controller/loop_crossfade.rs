@@ -133,11 +133,7 @@ fn apply_loop_crossfade(
         return Err("Crossfade depth is too short for this sample".into());
     }
     let channels = channels.max(1);
-    let fade_samples = fade_frames * channels;
-    let a = samples[..fade_samples].to_vec();
-    let b = samples[samples.len() - fade_samples..].to_vec();
-    let a_rev = reverse_frames(&a, channels);
-    let b_rev = reverse_frames(&b, channels);
+    let mut output = vec![0.0; samples.len()];
     let denom = (fade_frames.saturating_sub(1)).max(1) as f32;
     for frame in 0..fade_frames {
         let progress = if fade_frames == 1 {
@@ -146,27 +142,24 @@ fn apply_loop_crossfade(
             frame as f32 / denom
         };
         let (from_gain, to_gain) = equal_power_gains(progress);
+        let tail_frame = total_frames - fade_frames + frame;
         for ch in 0..channels {
             let idx = frame * channels + ch;
-            samples[idx] = b_rev[idx] * from_gain + a[idx] * to_gain;
-            let end_idx = (total_frames - fade_frames + frame) * channels + ch;
-            samples[end_idx] = a_rev[idx] * from_gain + b[idx] * to_gain;
+            let tail_idx = tail_frame * channels + ch;
+            let head_idx = idx;
+            output[idx] = samples[tail_idx] * from_gain + samples[head_idx] * to_gain;
         }
     }
-    Ok(())
-}
-
-fn reverse_frames(samples: &[f32], channels: usize) -> Vec<f32> {
-    let channels = channels.max(1);
-    let frames = samples.len() / channels;
-    let mut reversed = vec![0.0; samples.len()];
-    for frame in 0..frames {
-        let src_frame = frames - 1 - frame;
+    for frame in fade_frames..total_frames {
+        let src_frame = frame - fade_frames;
         for ch in 0..channels {
-            reversed[frame * channels + ch] = samples[src_frame * channels + ch];
+            let out_idx = frame * channels + ch;
+            let src_idx = src_frame * channels + ch;
+            output[out_idx] = samples[src_idx];
         }
     }
-    reversed
+    samples.copy_from_slice(&output);
+    Ok(())
 }
 
 fn equal_power_gains(progress: f32) -> (f32, f32) {
@@ -387,10 +380,10 @@ mod tests {
     use super::apply_loop_crossfade;
 
     #[test]
-    fn loop_crossfade_blends_reversed_edges() {
+    fn loop_crossfade_moves_tail_to_front() {
         let mut samples = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
         apply_loop_crossfade(&mut samples, 1, 6, 2).unwrap();
-        let expected = [6.0, 2.0, 3.0, 4.0, 2.0, 6.0];
+        let expected = [5.0, 2.0, 1.0, 2.0, 3.0, 4.0];
         for (actual, expected) in samples.iter().zip(expected.iter()) {
             assert!((actual - expected).abs() < 1.0e-6);
         }
