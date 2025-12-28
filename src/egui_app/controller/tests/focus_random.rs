@@ -2,6 +2,7 @@ use super::super::test_support::{dummy_controller, sample_entry, write_test_wav}
 use super::super::*;
 use super::common::{prepare_browser_sample, visible_indices};
 use crate::egui_app::controller::hotkeys;
+use crate::egui_app::state::SampleBrowserTab;
 use crate::egui_app::state::FocusContext;
 use crate::sample_sources::Collection;
 use crate::sample_sources::collections::CollectionMember;
@@ -47,6 +48,29 @@ fn find_similar_hotkey_is_registered() {
     assert!(!action.gesture.first.command);
     assert!(!action.gesture.first.alt);
     assert!(action.gesture.chord.is_none());
+}
+
+#[test]
+fn find_similar_from_map_switches_to_browser_list() {
+    let (mut controller, source) = dummy_controller();
+    prepare_browser_sample(&mut controller, &source, "map.wav");
+    controller.focus_browser_row(0);
+    controller.ui.browser.active_tab = SampleBrowserTab::Map;
+    controller.ui.browser.similar_query = Some(crate::egui_app::state::SimilarQuery {
+        sample_id: "test::map.wav".to_string(),
+        label: "map.wav".to_string(),
+        indices: vec![0],
+        scores: vec![1.0],
+        anchor_index: Some(0),
+    });
+    let action = hotkeys::iter_actions()
+        .find(|a| a.id == "find-similar")
+        .expect("find-similar hotkey");
+
+    controller.handle_hotkey(action, FocusContext::SampleBrowser);
+
+    assert_eq!(controller.ui.browser.active_tab, SampleBrowserTab::List);
+    assert!(controller.ui.browser.similar_query.is_none());
 }
 
 #[test]

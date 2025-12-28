@@ -128,6 +128,9 @@ impl HotkeysActions for HotkeysController<'_> {
             }
             HotkeyCommand::FindSimilarFocusedSample => {
                 if matches!(focus, FocusContext::SampleBrowser) {
+                    if matches!(self.ui.browser.active_tab, SampleBrowserTab::Map) {
+                        self.ui.browser.active_tab = SampleBrowserTab::List;
+                    }
                     if self.ui.browser.similar_query.is_some() {
                         self.clear_similar_filter();
                     } else if let Some(row) = self.focused_browser_row() {
