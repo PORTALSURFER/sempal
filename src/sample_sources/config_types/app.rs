@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     audio::AudioOutputConfig,
     sample_sources::{Collection, SampleSource, SourceId},
+    sample_sources::library::LibraryState,
 };
 
 use super::{AnalysisSettings, InteractionOptions, UpdateSettings};
@@ -38,6 +39,24 @@ impl AppSettings {
     pub(crate) fn normalized(self) -> Self {
         Self {
             core: self.core.normalized(),
+        }
+    }
+}
+
+impl From<&AppConfig> for AppSettings {
+    fn from(config: &AppConfig) -> Self {
+        Self {
+            core: config.core.clone(),
+        }
+    }
+}
+
+impl From<(AppSettings, LibraryState)> for AppConfig {
+    fn from((settings, library): (AppSettings, LibraryState)) -> Self {
+        Self {
+            sources: library.sources,
+            collections: library.collections,
+            core: settings.core,
         }
     }
 }
