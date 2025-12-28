@@ -14,6 +14,35 @@ pub(in crate::egui_app::controller) fn enqueue_jobs_for_embedding_backfill(
     enqueue_embedding_backfill(request)
 }
 
+pub(in crate::egui_app::controller) fn enqueue_jobs_for_embedding_samples(
+    source: &crate::sample_sources::SampleSource,
+    sample_ids: &[String],
+) -> Result<(usize, AnalysisProgress), String> {
+    if sample_ids.is_empty() {
+        let conn = db::open_source_db(&source.root)?;
+        return Ok((0, db::current_progress(&conn)?));
+    }
+
+    const BATCH_SIZE: usize = 32;
+    let mut conn = db::open_source_db(&source.root)?;
+    let created_at = now_epoch_seconds();
+    let mut jobs = Vec::new();
+    for (idx, chunk) in sample_ids.chunks(BATCH_SIZE).enumerate() {
+        let job_id = format!("{}::embed_backfill::manual::{}", source.id.as_str(), idx);
+        let payload = serde_json::to_string(chunk)
+            .map_err(|err| format!("Encode backfill payload: {err}"))?;
+        jobs.push((job_id, payload));
+    }
+    let inserted = db::enqueue_jobs(
+        &mut conn,
+        &jobs,
+        db::EMBEDDING_BACKFILL_JOB_TYPE,
+        created_at,
+    )?;
+    let progress = db::current_progress(&conn)?;
+    Ok((inserted, progress))
+}
+
 fn enqueue_embedding_backfill(
     request: EnqueueEmbeddingBackfillRequest<'_>,
 ) -> Result<(usize, AnalysisProgress), String> {

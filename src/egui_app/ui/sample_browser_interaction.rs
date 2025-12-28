@@ -151,6 +151,20 @@ impl EguiApp {
                     ui.close();
                 }
             }
+            if ui.button("Recalculate similarity").clicked() {
+                if let Err(err) = self
+                    .controller
+                    .recalc_similarity_for_browser_rows(&action_rows)
+                {
+                    self.controller.set_status(
+                        format!("Similarity prep failed: {err}"),
+                        StatusTone::Error,
+                    );
+                } else {
+                    close_menu = true;
+                    ui.close();
+                }
+            }
             ui.separator();
             self.sample_tag_menu(ui, &mut close_menu, |app, tag| {
                 app.controller

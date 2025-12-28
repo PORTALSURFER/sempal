@@ -9,7 +9,7 @@ mod types;
 pub(in crate::egui_app::controller) use db::open_source_db;
 pub(in crate::egui_app::controller) use db::purge_orphaned_samples;
 pub(in crate::egui_app::controller) use db::{build_sample_id, parse_sample_id};
-pub(super) use enqueue::enqueue_jobs_for_embedding_backfill;
+pub(super) use enqueue::{enqueue_jobs_for_embedding_backfill, enqueue_jobs_for_embedding_samples};
 pub(in crate::egui_app::controller) use enqueue::enqueue_jobs_for_source;
 pub(in crate::egui_app::controller) use enqueue::enqueue_jobs_for_source_backfill;
 pub(in crate::egui_app::controller) use enqueue::enqueue_jobs_for_source_backfill_full;
