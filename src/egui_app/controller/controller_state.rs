@@ -1,8 +1,9 @@
 use super::{
-    AudioOutputConfig, AudioPlayer, Collection, CollectionId, DecodedWaveform, SampleSource,
-    ScanMode, SelectionRange, SelectionState, SourceDatabase, SourceDbError, SourceId, WavEntry,
-    WaveformRenderer, audio_cache::AudioCache, jobs, source_folders, undo, wavs,
+    AudioPlayer, Collection, CollectionId, DecodedWaveform, SampleSource, ScanMode,
+    SelectionRange, SourceDatabase, SourceDbError, SourceId, WavEntry, WaveformRenderer,
+    audio_cache::AudioCache, jobs, source_folders, undo, wavs,
 };
+use crate::{audio::AudioOutputConfig, selection::SelectionState};
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet, VecDeque},

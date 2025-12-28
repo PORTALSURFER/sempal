@@ -92,7 +92,7 @@ impl EguiApp {
                 let similar_query = self.controller.ui.browser.similar_query.as_ref();
                 let is_anchor = similar_query.and_then(|sim| sim.anchor_index) == Some(entry_index);
                 let similar_score = similar_query.and_then(|sim| sim.score_for_index(entry_index));
-                let similarity_strength =
+                let _similarity_strength =
                     similar_score.map(style::similarity_display_strength);
                 let similarity_percent = similar_score.map(style::similarity_percent_bucket);
                 let marker_color = style::triage_marker_color(tag);
