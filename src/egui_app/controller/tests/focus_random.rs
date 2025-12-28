@@ -36,6 +36,20 @@ fn hotkey_search_browser_requests_focus() {
 }
 
 #[test]
+fn find_similar_hotkey_is_registered() {
+    let action = hotkeys::iter_actions()
+        .find(|a| a.id == "find-similar")
+        .expect("find-similar hotkey");
+    assert_eq!(action.label, "Find similar");
+    assert!(!action.is_global());
+    assert_eq!(action.gesture.first.key, Key::F);
+    assert!(action.gesture.first.shift);
+    assert!(!action.gesture.first.command);
+    assert!(!action.gesture.first.alt);
+    assert!(action.gesture.chord.is_none());
+}
+
+#[test]
 fn hotkey_focus_waveform_sets_context() {
     let (mut controller, source) = dummy_controller();
     prepare_browser_sample(&mut controller, &source, "wave.wav");

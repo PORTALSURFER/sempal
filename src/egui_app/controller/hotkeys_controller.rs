@@ -126,6 +126,17 @@ impl HotkeysActions for HotkeysController<'_> {
                     }
                 }
             }
+            HotkeyCommand::FindSimilarFocusedSample => {
+                if matches!(focus, FocusContext::SampleBrowser) {
+                    if let Some(row) = self.focused_browser_row() {
+                        if let Err(err) = self.find_similar_for_visible_row(row) {
+                            self.set_status(format!("Find similar failed: {err}"), StatusTone::Error);
+                        }
+                    } else {
+                        self.set_status("Focus a sample to find similar", StatusTone::Info);
+                    }
+                }
+            }
             HotkeyCommand::AddFocusedToCollection => {
                 if matches!(focus, FocusContext::SampleBrowser) {
                     self.add_focused_sample_to_collection();

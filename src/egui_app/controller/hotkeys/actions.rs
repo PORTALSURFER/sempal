@@ -102,6 +102,13 @@ pub(super) const HOTKEY_ACTIONS: &[HotkeyAction] = &[
         command: HotkeyCommand::FocusBrowserSearch,
     },
     HotkeyAction {
+        id: "find-similar",
+        label: "Find similar",
+        gesture: HotkeyGesture::with_shift(Key::F),
+        scope: HotkeyScope::Focus(FocusContext::SampleBrowser),
+        command: HotkeyCommand::FindSimilarFocusedSample,
+    },
+    HotkeyAction {
         id: "select-all-browser",
         label: "Select all samples",
         gesture: HotkeyGesture::with_command(Key::A),

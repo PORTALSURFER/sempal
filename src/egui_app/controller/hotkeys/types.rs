@@ -116,6 +116,7 @@ pub(crate) enum HotkeyCommand {
     CreateFolder,
     FocusFolderSearch,
     FocusBrowserSearch,
+    FindSimilarFocusedSample,
     AddFocusedToCollection,
     ToggleOverlay,
     ToggleLoop,
