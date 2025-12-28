@@ -92,8 +92,9 @@ impl EguiApp {
                 let similar_query = self.controller.ui.browser.similar_query.as_ref();
                 let is_anchor = similar_query.and_then(|sim| sim.anchor_index) == Some(entry_index);
                 let similar_score = similar_query.and_then(|sim| sim.score_for_index(entry_index));
-                let similarity_strength = similar_score
-                    .map(|score| ((score + 1.0) * 0.5).clamp(0.0, 1.0));
+                let similarity_strength =
+                    similar_score.map(style::similarity_display_strength);
+                let similarity_percent = similar_score.map(style::similarity_percent_bucket);
                 let marker_color = style::triage_marker_color(tag);
                 let triage_marker_width = marker_color
                     .as_ref()
@@ -105,8 +106,7 @@ impl EguiApp {
                 let rating_text = if is_anchor {
                     Some("Anchor".to_string())
                 } else {
-                    similarity_strength
-                        .map(|score| format!("{:.0}%", (score * 100.0).clamp(0.0, 100.0)))
+                    similarity_percent.map(|percent| format!("{percent}%"))
                 };
                 let rating_space = rating_text
                     .as_ref()
@@ -147,7 +147,7 @@ impl EguiApp {
                 } else {
                     clamp_label_for_width(&status_label.label, row_label_width)
                 };
-                let mut row_bg = similarity_strength.map(style::similar_score_fill);
+                let mut row_bg = similar_score.map(style::similar_score_fill);
                 if drag_active
                     && pointer_pos
                         .as_ref()
@@ -220,7 +220,7 @@ impl EguiApp {
                         let rating_x = response.rect.right() - metrics.padding - marker_space;
                         let rating_color = if is_anchor {
                             style::palette().accent_ice
-                        } else if similarity_strength.is_some_and(|score| score >= 0.75) {
+                        } else if similarity_percent.is_some_and(|score| score >= 70) {
                             style::palette().text_primary
                         } else {
                             style::palette().text_muted
