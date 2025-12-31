@@ -121,8 +121,7 @@ fn ann_index_incremental_update_matches_full_rebuild() {
     assert_eq!(rebuilt_ids.len(), 2);
     assert!(incremental_ids.iter().all(|id| allowed.contains(id.as_str())));
     assert!(rebuilt_ids.iter().all(|id| allowed.contains(id.as_str())));
-    assert!(incremental_ids.iter().any(|id| id == "s4"));
-    assert!(rebuilt_ids.iter().any(|id| id == "s4"));
+    assert_eq!(incremental_ids, rebuilt_ids);
 }
 
 fn unit_vec(dim: usize, idx: usize) -> Vec<f32> {
