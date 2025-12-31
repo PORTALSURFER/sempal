@@ -191,8 +191,8 @@ fn click_repair_interpolates_across_span() {
 
     repair_clicks_selection(&mut buffer).unwrap();
 
-    assert!((buffer.samples[2] - 0.333_333_34).abs() < 1e-5);
-    assert!((buffer.samples[3] + 0.333_333_34).abs() < 1e-5);
+    assert!((buffer.samples[2] - 0.481_481_5).abs() < 1e-5);
+    assert!((buffer.samples[3] + 0.481_481_5).abs() < 1e-5);
 }
 
 #[test]

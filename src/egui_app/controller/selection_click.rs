@@ -22,7 +22,7 @@ pub(super) fn repair_clicks_selection(
         for offset in 0..selection_len {
             let frame = bounds.start_frame + offset;
             let t = (offset + 1) as f32 / (selection_len + 1) as f32;
-            let value = left + (right - left) * t;
+            let value = left + (right - left) * smoothstep(t);
             let idx = frame * bounds.channels + channel;
             buffer.samples[idx] = value;
         }
@@ -55,4 +55,9 @@ fn ensure_neighbors(bounds: &ClickRepairBounds) -> Result<(), String> {
 
 fn sample_at(samples: &[f32], channels: usize, frame: usize, channel: usize) -> f32 {
     samples[frame * channels + channel]
+}
+
+fn smoothstep(t: f32) -> f32 {
+    let clamped = t.clamp(0.0, 1.0);
+    clamped * clamped * (3.0 - 2.0 * clamped)
 }
