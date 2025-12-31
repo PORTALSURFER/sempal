@@ -206,6 +206,44 @@ fn build_input_stream(
                 None,
             )
             .map_err(|source| AudioInputError::OpenStream { source }),
+        cpal::SampleFormat::I32 => device
+            .build_input_stream(
+                config,
+                move |data: &[i32], _| {
+                    let samples = extract_selected_samples(data, &selection, |sample| {
+                        *sample as f32 / i32::MAX as f32
+                    });
+                    let _ = sender.send(RecorderCommand::Samples(samples));
+                },
+                err_fn,
+                None,
+            )
+            .map_err(|source| AudioInputError::OpenStream { source }),
+        cpal::SampleFormat::U32 => device
+            .build_input_stream(
+                config,
+                move |data: &[u32], _| {
+                    let samples = extract_selected_samples(data, &selection, |sample| {
+                        (*sample as f32 - 2_147_483_648.0) / 2_147_483_648.0
+                    });
+                    let _ = sender.send(RecorderCommand::Samples(samples));
+                },
+                err_fn,
+                None,
+            )
+            .map_err(|source| AudioInputError::OpenStream { source }),
+        cpal::SampleFormat::F64 => device
+            .build_input_stream(
+                config,
+                move |data: &[f64], _| {
+                    let samples =
+                        extract_selected_samples(data, &selection, |sample| *sample as f32);
+                    let _ = sender.send(RecorderCommand::Samples(samples));
+                },
+                err_fn,
+                None,
+            )
+            .map_err(|source| AudioInputError::OpenStream { source }),
         format => Err(AudioInputError::RecordingFailed {
             detail: format!("Unsupported input sample format {format:?}"),
         }),
