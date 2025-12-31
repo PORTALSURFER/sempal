@@ -131,8 +131,9 @@ impl EguiController {
         self.settings.controls.input_monitoring_enabled = enabled;
         self.ui.controls.input_monitoring_enabled = enabled;
         if enabled && self.is_recording() {
-            if let Some(recorder) = self.audio.recorder.as_ref() {
-                self.start_input_monitor(recorder);
+            if let Some(recorder) = self.audio.recorder.take() {
+                self.start_input_monitor(&recorder);
+                self.audio.recorder = Some(recorder);
             }
         } else if !enabled {
             self.stop_input_monitor();
