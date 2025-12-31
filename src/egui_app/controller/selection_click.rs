@@ -15,12 +15,16 @@ pub(super) fn repair_clicks_selection(
     let bounds = selection_bounds(buffer)?;
     ensure_neighbors(&bounds)?;
     let original = buffer.samples.clone();
-    for frame in bounds.start_frame..bounds.end_frame {
-        for channel in 0..bounds.channels {
-            if should_repair_click(&original, &bounds, frame, channel) {
-                let idx = frame * bounds.channels + channel;
-                buffer.samples[idx] = replacement_sample(&original, &bounds, frame, channel);
-            }
+    let selection_len = bounds.end_frame - bounds.start_frame;
+    for channel in 0..bounds.channels {
+        let left = sample_at(&original, bounds.channels, bounds.start_frame - 1, channel);
+        let right = sample_at(&original, bounds.channels, bounds.end_frame, channel);
+        for offset in 0..selection_len {
+            let frame = bounds.start_frame + offset;
+            let t = (offset + 1) as f32 / (selection_len + 1) as f32;
+            let value = left + (right - left) * t;
+            let idx = frame * bounds.channels + channel;
+            buffer.samples[idx] = value;
         }
     }
     Ok(())
@@ -51,51 +55,4 @@ fn ensure_neighbors(bounds: &ClickRepairBounds) -> Result<(), String> {
 
 fn sample_at(samples: &[f32], channels: usize, frame: usize, channel: usize) -> f32 {
     samples[frame * channels + channel]
-}
-
-fn should_repair_click(
-    samples: &[f32],
-    bounds: &ClickRepairBounds,
-    frame: usize,
-    channel: usize,
-) -> bool {
-    let prev = sample_at(samples, bounds.channels, frame - 1, channel);
-    let current = sample_at(samples, bounds.channels, frame, channel);
-    let next = sample_at(samples, bounds.channels, frame + 1, channel);
-    let local = prev.abs().max(next.abs()).max(1e-3);
-    let diff_prev = (current - prev).abs();
-    let diff_next = (current - next).abs();
-    let neighbors_close = (prev - next).abs() <= local * 0.5;
-    if neighbors_close {
-        return diff_prev > local * 2.5 && diff_next > local * 2.5;
-    }
-    let interp = 0.5 * (prev + next);
-    let diff_interp = (current - interp).abs();
-    diff_interp > local * 3.0 && diff_prev > local * 2.5 && diff_next > local * 2.5
-}
-
-fn replacement_sample(
-    samples: &[f32],
-    bounds: &ClickRepairBounds,
-    frame: usize,
-    channel: usize,
-) -> f32 {
-    let prev = sample_at(samples, bounds.channels, frame - 1, channel);
-    let next = sample_at(samples, bounds.channels, frame + 1, channel);
-    if frame >= 2 && frame + 2 < bounds.total_frames {
-        let p0 = sample_at(samples, bounds.channels, frame - 2, channel);
-        let p3 = sample_at(samples, bounds.channels, frame + 2, channel);
-        return catmull_rom(p0, prev, next, p3, 0.5);
-    }
-    0.5 * (prev + next)
-}
-
-fn catmull_rom(p0: f32, p1: f32, p2: f32, p3: f32, t: f32) -> f32 {
-    let t2 = t * t;
-    let t3 = t2 * t;
-    0.5
-        * (2.0 * p1
-            + (-p0 + p2) * t
-            + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t2
-            + (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * t3)
 }

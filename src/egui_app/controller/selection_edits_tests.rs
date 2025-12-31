@@ -179,7 +179,24 @@ fn click_repair_interpolates_multichannel_linearly() {
 }
 
 #[test]
-fn click_repair_leaves_smooth_peak_untouched() {
+fn click_repair_interpolates_across_span() {
+    let mut buffer = SelectionEditBuffer {
+        samples: vec![0.0_f32, 1.0, 8.0, 8.0, -1.0, 0.0],
+        channels: 1,
+        sample_rate: 48_000,
+        spec_channels: 1,
+        start_frame: 2,
+        end_frame: 4,
+    };
+
+    repair_clicks_selection(&mut buffer).unwrap();
+
+    assert!((buffer.samples[2] - 0.333_333_34).abs() < 1e-5);
+    assert!((buffer.samples[3] + 0.333_333_34).abs() < 1e-5);
+}
+
+#[test]
+fn click_repair_matches_neighbor_blend() {
     let mut buffer = SelectionEditBuffer {
         samples: vec![0.0_f32, 0.5, 1.0, 0.5, 0.0],
         channels: 1,
@@ -191,7 +208,7 @@ fn click_repair_leaves_smooth_peak_untouched() {
 
     repair_clicks_selection(&mut buffer).unwrap();
 
-    assert!((buffer.samples[2] - 1.0).abs() < 1e-6);
+    assert!((buffer.samples[2] - 0.5).abs() < 1e-6);
 }
 
 #[test]
