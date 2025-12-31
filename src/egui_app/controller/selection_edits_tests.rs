@@ -157,6 +157,7 @@ fn click_repair_interpolates_single_sample_linearly() {
     assert!(buffer.samples[2].abs() < 1e-6);
 }
 
+#[test]
 fn click_repair_interpolates_multichannel_linearly() {
     let mut buffer = SelectionEditBuffer {
         samples: vec![

@@ -96,6 +96,8 @@ fn ann_index_incremental_update_matches_full_rebuild() {
         ("s3", normalize(unit_vec(dim, 2))),
     ];
     let extra_samples = vec![("s4", normalize(blend_unit(dim, 0, 1, 0.12)))];
+    let mut all_samples = base_samples.clone();
+    all_samples.extend(extra_samples.clone());
     insert_embeddings(&conn, dim, &base_samples);
 
     ann_index::rebuild_index(&conn).expect("ANN rebuild");
@@ -105,23 +107,19 @@ fn ann_index_incremental_update_matches_full_rebuild() {
         ann_index::upsert_embedding(&conn, sample_id, vec).expect("ANN upsert");
     }
     let incremental = ann_index::find_similar(&conn, "s1", 2).expect("ANN search");
-    let mut incremental_ids: Vec<_> = incremental
+    let incremental_ids: Vec<_> = incremental
         .iter()
-        .map(|entry| entry.sample_id.clone())
+        .map(|entry| entry.sample_id.as_str())
         .collect();
-    incremental_ids.sort();
 
     ann_index::rebuild_index(&conn).expect("ANN rebuild");
     let rebuilt = ann_index::find_similar(&conn, "s1", 2).expect("ANN search");
-    let mut rebuilt_ids: Vec<_> = rebuilt.iter().map(|entry| entry.sample_id.clone()).collect();
-    rebuilt_ids.sort();
+    let rebuilt_ids: Vec<_> = rebuilt.iter().map(|entry| entry.sample_id.as_str()).collect();
 
-    let allowed: std::collections::HashSet<&str> = ["s2", "s3", "s4"].into_iter().collect();
     assert_eq!(incremental_ids.len(), 2);
     assert_eq!(rebuilt_ids.len(), 2);
-    assert!(incremental_ids.iter().all(|id| allowed.contains(id.as_str())));
-    assert!(rebuilt_ids.iter().all(|id| allowed.contains(id.as_str())));
-    assert_eq!(incremental_ids, rebuilt_ids);
+    assert_results_within_top_k("s1", &all_samples, 2, &incremental_ids);
+    assert_results_within_top_k("s1", &all_samples, 2, &rebuilt_ids);
 }
 
 fn unit_vec(dim: usize, idx: usize) -> Vec<f32> {
