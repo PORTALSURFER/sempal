@@ -80,3 +80,18 @@ fn detect_waveform_slices_uses_transients_when_enabled() {
     assert!((first.start() - 0.0).abs() < 1.0e-6);
     assert!((last.end() - 1.0).abs() < 1.0e-6);
 }
+
+#[test]
+fn apply_painted_slice_cuts_existing_ranges() {
+    let renderer = crate::waveform::WaveformRenderer::new(12, 12);
+    let mut controller = EguiController::new(renderer, None);
+    controller.ui.waveform.slices = vec![SelectionRange::new(0.2, 0.8)];
+
+    let added = controller.apply_painted_slice(SelectionRange::new(0.4, 0.6));
+
+    assert!(added);
+    assert_eq!(controller.ui.waveform.slices.len(), 3);
+    assert_eq!(controller.ui.waveform.slices[0], SelectionRange::new(0.2, 0.4));
+    assert_eq!(controller.ui.waveform.slices[1], SelectionRange::new(0.4, 0.6));
+    assert_eq!(controller.ui.waveform.slices[2], SelectionRange::new(0.6, 0.8));
+}

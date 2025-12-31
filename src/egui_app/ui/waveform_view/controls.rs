@@ -142,6 +142,19 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
         ui.add_space(10.0);
         let slices_ready = !app.controller.ui.waveform.slices.is_empty();
         let has_audio = app.controller.ui.loaded_wav.is_some();
+        let slice_mode_enabled = app.controller.ui.waveform.slice_mode_enabled;
+        let slice_mode_label = if slice_mode_enabled {
+            RichText::new("Slice mode: On").color(palette.accent_mint)
+        } else {
+            RichText::new("Slice mode: Off").color(palette.text_muted)
+        };
+        let slice_mode_button = ui
+            .add(egui::Button::new(slice_mode_label))
+            .on_hover_text("Drag on the waveform to paint slice ranges");
+        if slice_mode_button.clicked() {
+            app.controller.ui.waveform.slice_mode_enabled = !slice_mode_enabled;
+            app.slice_paint = None;
+        }
         let detect_button = ui
             .add_enabled(has_audio, egui::Button::new("Detect slices"))
             .on_hover_text("Detect non-silent slices from the loaded sample");

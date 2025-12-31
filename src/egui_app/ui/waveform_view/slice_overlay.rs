@@ -41,7 +41,8 @@ pub(super) fn render_slice_overlays(
     view_width: f32,
     pointer_pos: Option<egui::Pos2>,
 ) -> bool {
-    if app.controller.ui.waveform.slices.is_empty() {
+    let has_slices = !app.controller.ui.waveform.slices.is_empty();
+    if !has_slices && app.slice_paint.is_none() {
         app.slice_drag = None;
         return false;
     }
@@ -67,6 +68,9 @@ pub(super) fn render_slice_overlays(
         .collect();
     for item in slices {
         dragging |= render_slice_overlay(app, ui, &env, item);
+    }
+    if let Some(state) = app.slice_paint {
+        render_slice_paint_preview(ui, &env, state.range);
     }
 
     sync_slice_drag_release(app, ui.ctx());
@@ -182,6 +186,15 @@ fn paint_slice(
     let painter = ui.painter();
     painter.rect_filled(slice_rect, 0.0, style::with_alpha(color, fill_alpha));
     painter.rect_filled(handle_rect, 0.0, style::with_alpha(color, handle_alpha));
+}
+
+fn render_slice_paint_preview(ui: &egui::Ui, env: &SliceOverlayEnv<'_>, range: SelectionRange) {
+    let Some(slice_rect) = slice_rect(env, range) else {
+        return;
+    };
+    let handle_rect = selection_handle_rect(slice_rect);
+    paint_slice(ui, slice_rect, handle_rect, env.slice_color, true);
+    draw_slice_bar(ui, slice_rect, env);
 }
 
 fn draw_slice_bar(ui: &egui::Ui, slice_rect: egui::Rect, env: &SliceOverlayEnv<'_>) {

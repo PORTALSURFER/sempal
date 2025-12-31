@@ -80,17 +80,27 @@ pub(in super::super) fn handle_waveform_pointer_interactions(
     }
     if response.drag_started() {
         if let Some(value) = drag_start_normalized {
-            app.controller.start_selection_drag(value);
+            if app.controller.ui.waveform.slice_mode_enabled {
+                start_slice_paint(app, value);
+            } else {
+                app.controller.start_selection_drag(value);
+            }
         }
     } else if response.dragged() {
         if let Some(value) = normalized {
             if app.controller.ui.waveform.image.is_some() {
                 app.controller.focus_waveform_context();
             }
-            app.controller.update_selection_drag(value, false);
+            if app.controller.ui.waveform.slice_mode_enabled {
+                update_slice_paint(app, value);
+            } else {
+                app.controller.update_selection_drag(value, false);
+            }
         }
     } else if response.drag_stopped() {
-        if app.controller.is_selection_dragging() {
+        if app.controller.ui.waveform.slice_mode_enabled {
+            finish_slice_paint(app);
+        } else if app.controller.is_selection_dragging() {
             app.controller.finish_selection_drag();
         }
     } else if response.clicked() {
@@ -104,4 +114,31 @@ pub(in super::super) fn handle_waveform_pointer_interactions(
             app.controller.seek_to(value);
         }
     }
+}
+
+fn start_slice_paint(app: &mut EguiApp, position: f32) {
+    let snapped = app
+        .controller
+        .snap_slice_paint_position(position, false);
+    app.slice_paint = Some(super::super::SlicePaintState {
+        anchor: snapped,
+        range: crate::selection::SelectionRange::new(snapped, snapped),
+    });
+}
+
+fn update_slice_paint(app: &mut EguiApp, position: f32) {
+    let Some(state) = app.slice_paint.as_mut() else {
+        return;
+    };
+    let snapped = app
+        .controller
+        .snap_slice_paint_position(position, false);
+    state.range = crate::selection::SelectionRange::new(state.anchor, snapped);
+}
+
+fn finish_slice_paint(app: &mut EguiApp) {
+    let Some(state) = app.slice_paint.take() else {
+        return;
+    };
+    app.controller.apply_painted_slice(state.range);
 }

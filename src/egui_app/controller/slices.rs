@@ -60,6 +60,51 @@ impl EguiController {
         self.ui.waveform.slices.clear();
     }
 
+    /// Apply a manually painted slice, cutting it out of any overlapping slices.
+    pub(crate) fn apply_painted_slice(&mut self, range: SelectionRange) -> bool {
+        let min_width = MIN_SELECTION_WIDTH;
+        if range.width() < min_width {
+            return false;
+        }
+        let mut updated = Vec::with_capacity(self.ui.waveform.slices.len() + 1);
+        for slice in self.ui.waveform.slices.iter().copied() {
+            if !ranges_overlap(slice, range) {
+                updated.push(slice);
+                continue;
+            }
+            if slice.start() < range.start() {
+                let left = SelectionRange::new(slice.start(), range.start());
+                if left.width() >= min_width {
+                    updated.push(left);
+                }
+            }
+            if slice.end() > range.end() {
+                let right = SelectionRange::new(range.end(), slice.end());
+                if right.width() >= min_width {
+                    updated.push(right);
+                }
+            }
+        }
+        updated.push(range);
+        updated.sort_by(|a, b| a.start().partial_cmp(&b.start()).unwrap_or(Ordering::Equal));
+        self.ui.waveform.slices = updated;
+        true
+    }
+
+    /// Snap a slice paint position to BPM or transient markers when enabled.
+    pub(crate) fn snap_slice_paint_position(&self, position: f32, snap_override: bool) -> f32 {
+        if snap_override {
+            return position;
+        }
+        if let Some(step) = slice_bpm_snap_step(self) {
+            return snap_to_step(position, step);
+        }
+        if let Some(snapped) = snap_to_transient(self, position) {
+            return snapped;
+        }
+        position
+    }
+
     /// Export detected slices to new audio files and register them in the browser.
     pub(super) fn accept_waveform_slices(&mut self) -> Result<usize, String> {
         if self.ui.waveform.slices.is_empty() {
@@ -151,6 +196,61 @@ impl EguiController {
             *counter = counter.saturating_add(1);
         }
     }
+}
+
+fn ranges_overlap(a: SelectionRange, b: SelectionRange) -> bool {
+    a.start() < b.end() && a.end() > b.start()
+}
+
+fn slice_bpm_snap_step(controller: &EguiController) -> Option<f32> {
+    if !controller.ui.waveform.bpm_snap_enabled {
+        return None;
+    }
+    let bpm = controller.ui.waveform.bpm_value?;
+    if !bpm.is_finite() || bpm <= 0.0 {
+        return None;
+    }
+    let duration = controller
+        .sample_view
+        .wav
+        .loaded_audio
+        .as_ref()
+        .map(|audio| audio.duration_seconds)?;
+    if !duration.is_finite() || duration <= 0.0 {
+        return None;
+    }
+    let step = 60.0 / bpm / duration;
+    if step.is_finite() && step > 0.0 {
+        Some(step)
+    } else {
+        None
+    }
+}
+
+fn snap_to_step(position: f32, step: f32) -> f32 {
+    if !position.is_finite() || !step.is_finite() || step <= 0.0 {
+        return position;
+    }
+    (position / step).round().mul_add(step, 0.0).clamp(0.0, 1.0)
+}
+
+fn snap_to_transient(controller: &EguiController, position: f32) -> Option<f32> {
+    const TRANSIENT_SNAP_RADIUS: f32 = 0.01;
+    if !controller.ui.waveform.transient_markers_enabled
+        || !controller.ui.waveform.transient_snap_enabled
+    {
+        return None;
+    }
+    let mut closest = None;
+    let mut best_distance = TRANSIENT_SNAP_RADIUS;
+    for &marker in &controller.ui.waveform.transients {
+        let distance = (marker - position).abs();
+        if distance <= best_distance {
+            best_distance = distance;
+            closest = Some(marker);
+        }
+    }
+    closest
 }
 
 fn strip_slice_suffix(stem: &str) -> &str {
