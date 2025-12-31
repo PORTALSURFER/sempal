@@ -4,7 +4,7 @@ use super::super::test_support::{
 };
 use super::super::*;
 use super::common::max_sample_amplitude;
-use crate::egui_app::state::{DestructiveSelectionEdit, FocusContext};
+use crate::egui_app::state::{DestructiveSelectionEdit, FocusContext, WaveformView};
 use hound::WavReader;
 use std::cell::RefCell;
 use std::mem;
@@ -158,13 +158,19 @@ fn click_removal_interpolates_selected_span() {
         "click.wav",
         SampleTag::Neutral,
     )]);
+    let selection = SelectionRange::new(0.4, 0.6);
     let wav_path = load_waveform_selection(
         &mut controller,
         &source,
         "click.wav",
         &[0.0, 1.0, 9.0, -1.0, 0.0],
-        SelectionRange::new(0.4, 0.6),
+        selection,
     );
+    let preserved_view = WaveformView {
+        start: 0.2,
+        end: 0.4,
+    };
+    controller.ui.waveform.view = preserved_view;
 
     controller.repair_clicks_selection().unwrap();
 
@@ -174,7 +180,9 @@ fn click_removal_interpolates_selected_span() {
         .map(|s| s.unwrap())
         .collect();
     assert!(samples[2].abs() < 1e-6);
-    assert!(controller.ui.waveform.selection.is_none());
+    assert_eq!(controller.ui.waveform.selection, Some(selection));
+    assert!((controller.ui.waveform.view.start - preserved_view.start).abs() < 1e-6);
+    assert!((controller.ui.waveform.view.end - preserved_view.end).abs() < 1e-6);
     assert_eq!(controller.ui.status.badge_label, "Info");
 }
 

@@ -218,8 +218,30 @@ impl EguiController {
 
     /// Repair clicks inside the selection by interpolating the span.
     pub(crate) fn repair_clicks_selection(&mut self) -> Result<(), String> {
+        let preserved_view = self.ui.waveform.view;
+        let preserved_selection = self.ui.waveform.selection;
+        let preserved_cursor = self.ui.waveform.cursor;
+        let was_playing = self.is_playing();
+        let was_looping = self.ui.waveform.loop_enabled;
+        let playhead_position = self.ui.waveform.playhead.position;
         let result =
             self.apply_selection_edit("Removed clicks", |buffer| repair_clicks_buffer(buffer));
+        if result.is_ok() {
+            self.ui.waveform.view = preserved_view.clamp();
+            self.ui.waveform.cursor = preserved_cursor;
+            self.selection_state.range.set_range(preserved_selection);
+            self.apply_selection(preserved_selection);
+            if was_playing {
+                let start_override = if playhead_position.is_finite() {
+                    Some(playhead_position.clamp(0.0, 1.0))
+                } else {
+                    None
+                };
+                if let Err(err) = self.play_audio(was_looping, start_override) {
+                    self.set_status(err, StatusTone::Error);
+                }
+            }
+        }
         if let Err(err) = &result {
             self.set_status(err.clone(), StatusTone::Error);
         }
