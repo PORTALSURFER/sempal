@@ -95,3 +95,31 @@ fn apply_painted_slice_cuts_existing_ranges() {
     assert_eq!(controller.ui.waveform.slices[1], SelectionRange::new(0.4, 0.6));
     assert_eq!(controller.ui.waveform.slices[2], SelectionRange::new(0.6, 0.8));
 }
+
+#[test]
+fn detect_waveform_slices_skips_silent_segments_with_transients() {
+    let temp = tempdir().unwrap();
+    let root = temp.path().join("source");
+    std::fs::create_dir_all(&root).unwrap();
+    let renderer = crate::waveform::WaveformRenderer::new(12, 12);
+    let mut controller = EguiController::new(renderer, None);
+    let source = SampleSource::new(root.clone());
+    controller.library.sources.push(source.clone());
+    controller.cache_db(&source).unwrap();
+
+    let wav_path = root.join("clip.wav");
+    write_test_wav(&wav_path, &[0.0, 0.0, 0.6, 0.6, 0.0, 0.0, 0.6, 0.6]);
+    controller
+        .load_waveform_for_selection(&source, Path::new("clip.wav"))
+        .unwrap();
+    controller.ui.waveform.transient_markers_enabled = true;
+    controller.ui.waveform.transient_snap_enabled = true;
+    controller.ui.waveform.transients = vec![0.25, 0.5, 0.75];
+
+    let count = controller.detect_waveform_slices_from_silence().unwrap();
+
+    assert_eq!(count, 2);
+    assert_eq!(controller.ui.waveform.slices.len(), 2);
+    assert_eq!(controller.ui.waveform.slices[0], SelectionRange::new(0.25, 0.5));
+    assert_eq!(controller.ui.waveform.slices[1], SelectionRange::new(0.75, 1.0));
+}

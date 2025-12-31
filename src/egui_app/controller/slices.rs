@@ -34,22 +34,19 @@ impl EguiController {
         } else {
             Vec::new()
         };
-        for (start, end) in detect_non_silent_ranges(&mono, decoded.sample_rate) {
-            let start_norm = start as f32 / total_frames as f32;
-            let end_norm = end as f32 / total_frames as f32;
-            if use_transients {
-                append_slices_from_transients(
-                    &mut slices,
-                    start_norm,
-                    end_norm,
-                    &transients,
-                );
-            } else {
-                let range = SelectionRange::new(start_norm, end_norm);
-                if range.width() >= MIN_SELECTION_WIDTH {
-                    slices.push(range);
-                }
-            }
+        let non_silent_ranges = detect_non_silent_ranges(&mono, decoded.sample_rate)
+            .into_iter()
+            .map(|(start, end)| {
+                let start_norm = start as f32 / total_frames as f32;
+                let end_norm = end as f32 / total_frames as f32;
+                SelectionRange::new(start_norm, end_norm)
+            })
+            .filter(|range| range.width() >= MIN_SELECTION_WIDTH)
+            .collect::<Vec<_>>();
+        if use_transients {
+            append_slices_from_transients(&mut slices, &non_silent_ranges, &transients);
+        } else {
+            slices.extend(non_silent_ranges);
         }
         self.ui.waveform.slices = slices;
         Ok(self.ui.waveform.slices.len())
@@ -266,35 +263,26 @@ fn strip_slice_suffix(stem: &str) -> &str {
 
 fn append_slices_from_transients(
     slices: &mut Vec<SelectionRange>,
-    start: f32,
-    end: f32,
+    non_silent_ranges: &[SelectionRange],
     transients: &[f32],
 ) {
-    let range = SelectionRange::new(start, end);
-    if range.width() < MIN_SELECTION_WIDTH {
+    if non_silent_ranges.is_empty() {
         return;
     }
-    if transients.is_empty() {
-        slices.push(range);
-        return;
-    }
-    let mut points = Vec::new();
-    points.push(range.start());
-    points.extend(
-        transients
-            .iter()
-            .copied()
-            .filter(|marker| *marker > range.start() && *marker < range.end()),
-    );
-    points.push(range.end());
-    if points.len() < 2 {
-        slices.push(range);
-        return;
-    }
+    let mut points = Vec::with_capacity(transients.len() + 2);
+    points.push(0.0);
+    points.extend(transients.iter().copied().filter(|marker| *marker > 0.0 && *marker < 1.0));
+    points.push(1.0);
     points.sort_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal));
     for pair in points.windows(2) {
         let slice = SelectionRange::new(pair[0], pair[1]);
-        if slice.width() >= MIN_SELECTION_WIDTH {
+        if slice.width() < MIN_SELECTION_WIDTH {
+            continue;
+        }
+        if non_silent_ranges
+            .iter()
+            .any(|range| ranges_overlap(*range, slice))
+        {
             slices.push(slice);
         }
     }
