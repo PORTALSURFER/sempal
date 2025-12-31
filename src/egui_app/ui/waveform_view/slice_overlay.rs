@@ -222,17 +222,17 @@ fn paint_slice(
     selected: bool,
 ) {
     let fill_color = if selected {
-        style::with_alpha(selected_color, 110)
+        style::with_alpha(selected_color, if hovered { 150 } else { 110 })
     } else {
         style::with_alpha(color, if hovered { 100 } else { 60 })
     };
     let handle_color = if selected {
-        style::with_alpha(selected_color, 235)
+        style::with_alpha(selected_color, if hovered { 255 } else { 235 })
     } else {
         style::with_alpha(color, if hovered { 235 } else { 180 })
     };
     let outline_color = if selected {
-        style::with_alpha(selected_color, 240)
+        style::with_alpha(selected_color, if hovered { 255 } else { 240 })
     } else if hovered {
         style::with_alpha(color, 220)
     } else {
