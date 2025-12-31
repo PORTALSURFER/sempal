@@ -311,7 +311,6 @@ impl WaveformRenderer {
         );
         let to_y = |sample: f32| -> f32 { (mid - sample * half_height).clamp(0.0, mid * 2.0) };
 
-        let mut prev_y = None;
         for x in 0..width as usize {
             let sample = Self::supersampled_frame(
                 samples,
@@ -322,44 +321,27 @@ impl WaveformRenderer {
                 channel_index,
             );
             let y = to_y(sample);
-            if let Some(prev) = prev_y {
-                let (start, end) = if prev <= y { (prev, y) } else { (y, prev) };
-                let start_y = start.floor().clamp(0.0, (height - 1) as f32) as usize;
-                let end_y = end.ceil().clamp(0.0, (height - 1) as f32) as usize;
-                for yy in start_y..=end_y {
+            let y_floor = y.floor();
+            let frac = (y - y_floor).clamp(0.0, 1.0);
+            let base = y_floor as isize;
+            for (offset, weight) in [
+                (0, 1.0 - frac),
+                (1, frac),
+                (-1, 0.2 * (1.0 - frac)),
+                (2, 0.2 * frac),
+            ] {
+                let yy = base + offset;
+                if yy >= 0 && (yy as u32) < height {
                     Self::blend_pixel(
                         &mut image,
                         stride,
                         x,
-                        yy,
+                        yy as usize,
                         fg,
-                        Self::coverage_for_line(yy as f32, start, end),
+                        weight,
                     );
-                    if yy + 1 < height as usize {
-                        Self::blend_pixel(
-                            &mut image,
-                            stride,
-                            x,
-                            yy + 1,
-                            fg,
-                            0.35 * Self::coverage_for_line(yy as f32 + 1.0, start, end),
-                        );
-                    }
-                    if yy > 0 {
-                        Self::blend_pixel(
-                            &mut image,
-                            stride,
-                            x,
-                            yy - 1,
-                            fg,
-                            0.35 * Self::coverage_for_line(yy as f32 - 1.0, start, end),
-                        );
-                    }
                 }
             }
-            let center_y = y.round().clamp(0.0, (height - 1) as f32) as usize;
-            Self::blend_pixel(&mut image, stride, x, center_y, fg, 1.0);
-            prev_y = Some(y);
         }
         image
     }
@@ -490,16 +472,6 @@ impl WaveformRenderer {
                 + (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * t3)
     }
 
-    fn coverage_for_line(y: f32, start: f32, end: f32) -> f32 {
-        if start > end {
-            return Self::coverage_for_line(y, end, start);
-        }
-        let span = (end - start).max(1.0);
-        let clamped = (y - start).clamp(0.0, span);
-        let dist = (clamped - span * 0.5).abs();
-        (1.0 - (dist / (span * 0.5)).min(1.0)).clamp(0.0, 1.0)
-    }
-
     fn blend_pixel(
         image: &mut ColorImage,
         stride: usize,
@@ -514,7 +486,9 @@ impl WaveformRenderer {
         let idx = y * stride + x;
         if let Some(pixel) = image.pixels.get_mut(idx) {
             let alpha = (fg.3 as f32 * coverage.clamp(0.0, 1.0)).round() as u8;
-            *pixel = Color32::from_rgba_unmultiplied(fg.0, fg.1, fg.2, alpha);
+            let existing = pixel.a();
+            let blended = existing.max(alpha);
+            *pixel = Color32::from_rgba_unmultiplied(fg.0, fg.1, fg.2, blended);
         }
     }
 
