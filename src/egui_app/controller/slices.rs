@@ -49,12 +49,14 @@ impl EguiController {
             slices.extend(non_silent_ranges);
         }
         self.ui.waveform.slices = slices;
+        self.ui.waveform.selected_slices.clear();
         Ok(self.ui.waveform.slices.len())
     }
 
     /// Clear any detected slice ranges from the waveform view.
     pub(crate) fn clear_waveform_slices(&mut self) {
         self.ui.waveform.slices.clear();
+        self.ui.waveform.selected_slices.clear();
     }
 
     /// Apply a manually painted slice, cutting it out of any overlapping slices.
@@ -85,6 +87,7 @@ impl EguiController {
         updated.push(range);
         updated.sort_by(|a, b| a.start().partial_cmp(&b.start()).unwrap_or(Ordering::Equal));
         self.ui.waveform.slices = updated;
+        self.ui.waveform.selected_slices.clear();
         true
     }
 
@@ -112,7 +115,94 @@ impl EguiController {
         let exported =
             self.export_slice_batch(&source, &relative_path, &decoded, &mut counter)?;
         self.ui.waveform.slices.clear();
+        self.ui.waveform.selected_slices.clear();
         Ok(exported)
+    }
+
+    /// Toggle the selection state for a slice index.
+    pub(crate) fn toggle_slice_selection(&mut self, index: usize) -> bool {
+        if index >= self.ui.waveform.slices.len() {
+            return false;
+        }
+        if let Some(pos) = self
+            .ui
+            .waveform
+            .selected_slices
+            .iter()
+            .position(|value| *value == index)
+        {
+            self.ui.waveform.selected_slices.swap_remove(pos);
+            return false;
+        }
+        self.ui.waveform.selected_slices.push(index);
+        self.ui
+            .waveform
+            .selected_slices
+            .sort_unstable();
+        true
+    }
+
+    /// Remove selected slice ranges from the waveform.
+    pub(crate) fn delete_selected_slices(&mut self) -> usize {
+        if self.ui.waveform.selected_slices.is_empty() {
+            return 0;
+        }
+        let mut indices = self.ui.waveform.selected_slices.clone();
+        indices.sort_unstable();
+        indices.dedup();
+        let mut removed = 0usize;
+        for index in indices.into_iter().rev() {
+            if index < self.ui.waveform.slices.len() {
+                self.ui.waveform.slices.remove(index);
+                removed += 1;
+            }
+        }
+        self.ui.waveform.selected_slices.clear();
+        removed
+    }
+
+    /// Merge selected slice ranges into a single range that spans them.
+    pub(crate) fn merge_selected_slices(&mut self) -> Option<SelectionRange> {
+        if self.ui.waveform.selected_slices.len() < 2 {
+            return None;
+        }
+        let mut indices = self.ui.waveform.selected_slices.clone();
+        indices.sort_unstable();
+        indices.dedup();
+        let mut min_start = 1.0;
+        let mut max_end = 0.0;
+        for &index in &indices {
+            if let Some(slice) = self.ui.waveform.slices.get(index) {
+                min_start = min_start.min(slice.start());
+                max_end = max_end.max(slice.end());
+            }
+        }
+        if max_end <= min_start {
+            return None;
+        }
+        let merged = SelectionRange::new(min_start, max_end);
+        self.ui.waveform.slices = self
+            .ui
+            .waveform
+            .slices
+            .iter()
+            .copied()
+            .filter(|slice| !ranges_overlap(*slice, merged))
+            .collect();
+        self.ui.waveform.slices.push(merged);
+        self.ui
+            .waveform
+            .slices
+            .sort_by(|a, b| a.start().partial_cmp(&b.start()).unwrap_or(Ordering::Equal));
+        let merged_index = self
+            .ui
+            .waveform
+            .slices
+            .iter()
+            .position(|slice| *slice == merged)
+            .unwrap_or(0);
+        self.ui.waveform.selected_slices = vec![merged_index];
+        Some(merged)
     }
 
     fn export_slice_batch(

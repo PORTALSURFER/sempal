@@ -19,6 +19,8 @@ pub struct WaveformState {
     pub selection_duration: Option<String>,
     /// Detected slice ranges for the current waveform.
     pub slices: Vec<SelectionRange>,
+    /// Indices of slice ranges currently selected for edits.
+    pub selected_slices: Vec<usize>,
     /// When true, waveform drags paint slice ranges instead of selection.
     pub slice_mode_enabled: bool,
     pub hover_time_label: Option<String>,
@@ -69,6 +71,7 @@ impl Default for WaveformState {
             selection: None,
             selection_duration: None,
             slices: Vec::new(),
+            selected_slices: Vec::new(),
             slice_mode_enabled: false,
             hover_time_label: None,
             channel_view: WaveformChannelView::Mono,

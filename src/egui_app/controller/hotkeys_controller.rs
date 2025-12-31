@@ -251,11 +251,34 @@ impl HotkeysActions for HotkeysController<'_> {
                     );
                 }
             }
+            HotkeyCommand::DeleteSliceMarkers => {
+                if matches!(focus, FocusContext::Waveform)
+                    && self.ui.waveform.slice_mode_enabled
+                {
+                    let removed = self.delete_selected_slices();
+                    if removed > 0 {
+                        self.set_status(format!("Deleted {removed} slices"), StatusTone::Info);
+                    } else {
+                        self.set_status("Select slices to delete", StatusTone::Info);
+                    }
+                }
+            }
             HotkeyCommand::MuteSelection => {
                 if matches!(focus, FocusContext::Waveform) {
-                    let _ = self.request_destructive_selection_edit(
-                        DestructiveSelectionEdit::MuteSelection,
-                    );
+                    if self.ui.waveform.slice_mode_enabled {
+                        let selected = self.ui.waveform.selected_slices.len();
+                        if selected < 2 {
+                            self.set_status("Select at least 2 slices to merge", StatusTone::Info);
+                        } else if self.merge_selected_slices().is_some() {
+                            self.set_status(format!("Merged {selected} slices"), StatusTone::Info);
+                        } else {
+                            self.set_status("No slices merged", StatusTone::Info);
+                        }
+                    } else {
+                        let _ = self.request_destructive_selection_edit(
+                            DestructiveSelectionEdit::MuteSelection,
+                        );
+                    }
                 }
             }
         }

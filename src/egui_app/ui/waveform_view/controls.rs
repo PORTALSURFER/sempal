@@ -156,6 +156,8 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
             app.slice_paint = None;
             if app.controller.ui.waveform.slice_mode_enabled {
                 app.controller.clear_selection();
+            } else {
+                app.controller.ui.waveform.selected_slices.clear();
             }
         }
         let detect_button = ui

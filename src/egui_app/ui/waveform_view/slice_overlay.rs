@@ -97,6 +97,7 @@ fn render_slice_overlay(
     let Some(slice_rect) = slice_rect(env, item.range) else {
         return SliceOverlayResult::default();
     };
+    let ctrl_down = ui.input(|i| i.modifiers.ctrl);
     let body_response = ui.interact(
         slice_rect,
         ui.id().with(("slice_body", item.index)),
@@ -109,18 +110,30 @@ fn render_slice_overlay(
         egui::Sense::click_and_drag(),
     );
     let hovered = body_response.hovered() || handle_response.hovered();
+    let selected = app
+        .controller
+        .ui
+        .waveform
+        .selected_slices
+        .contains(&item.index);
     paint_slice(
         ui,
         slice_rect,
         handle_rect,
         env.slice_color,
+        env.palette.accent_mint,
         hovered,
+        selected,
     );
     let mut result = SliceOverlayResult::default();
     result.dragging |= render_slice_handle(app, ui, env, item, &handle_response);
     result.dragging |= render_slice_edges(app, ui, env, slice_rect, item.index);
-    if body_response.clicked() {
-        play_slice_range(app, item.range);
+    if body_response.clicked() || handle_response.clicked() {
+        if ctrl_down && app.controller.ui.waveform.slice_mode_enabled {
+            app.controller.toggle_slice_selection(item.index);
+        } else {
+            play_slice_range(app, item.range);
+        }
         result.consumed_click = true;
     }
     draw_slice_bar(ui, slice_rect, env);
@@ -201,20 +214,23 @@ fn paint_slice(
     slice_rect: egui::Rect,
     handle_rect: egui::Rect,
     color: Color32,
+    selected_color: Color32,
     hovered: bool,
+    selected: bool,
 ) {
     let fill_alpha = if hovered { 100 } else { 60 };
     let handle_alpha = if hovered { 235 } else { 180 };
+    let outline_color = if selected {
+        style::with_alpha(selected_color, 230)
+    } else if hovered {
+        style::with_alpha(color, 220)
+    } else {
+        style::with_alpha(color, 0)
+    };
     let painter = ui.painter();
     painter.rect_filled(slice_rect, 0.0, style::with_alpha(color, fill_alpha));
     painter.rect_filled(handle_rect, 0.0, style::with_alpha(color, handle_alpha));
-    if hovered {
-        painter.rect_stroke(
-            slice_rect,
-            0.0,
-            egui::Stroke::new(1.2, style::with_alpha(color, 220)),
-        );
-    }
+    painter.rect_stroke(slice_rect, 0.0, egui::Stroke::new(1.4, outline_color));
 }
 
 fn render_slice_paint_preview(ui: &egui::Ui, env: &SliceOverlayEnv<'_>, range: SelectionRange) {

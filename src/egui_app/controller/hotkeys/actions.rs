@@ -355,8 +355,15 @@ pub(super) const HOTKEY_ACTIONS: &[HotkeyAction] = &[
         command: HotkeyCommand::FadeSelectionRightToLeft,
     },
     HotkeyAction {
+        id: "delete-slice-markers",
+        label: "Delete slice markers (Slice mode)",
+        gesture: HotkeyGesture::new(Key::D),
+        scope: HotkeyScope::Focus(FocusContext::Waveform),
+        command: HotkeyCommand::DeleteSliceMarkers,
+    },
+    HotkeyAction {
         id: "mute-selection",
-        label: "Mute selection",
+        label: "Mute selection / Merge slices (Slice mode)",
         gesture: HotkeyGesture::new(Key::M),
         scope: HotkeyScope::Focus(FocusContext::Waveform),
         command: HotkeyCommand::MuteSelection,

@@ -123,3 +123,41 @@ fn detect_waveform_slices_skips_silent_segments_with_transients() {
     assert_eq!(controller.ui.waveform.slices[0], SelectionRange::new(0.25, 0.5));
     assert_eq!(controller.ui.waveform.slices[1], SelectionRange::new(0.75, 1.0));
 }
+
+#[test]
+fn delete_selected_slices_removes_marked_ranges() {
+    let renderer = crate::waveform::WaveformRenderer::new(12, 12);
+    let mut controller = EguiController::new(renderer, None);
+    controller.ui.waveform.slices = vec![
+        SelectionRange::new(0.0, 0.2),
+        SelectionRange::new(0.3, 0.4),
+        SelectionRange::new(0.6, 0.7),
+    ];
+    controller.ui.waveform.selected_slices = vec![0, 2];
+
+    let removed = controller.delete_selected_slices();
+
+    assert_eq!(removed, 2);
+    assert_eq!(controller.ui.waveform.slices.len(), 1);
+    assert_eq!(controller.ui.waveform.slices[0], SelectionRange::new(0.3, 0.4));
+    assert!(controller.ui.waveform.selected_slices.is_empty());
+}
+
+#[test]
+fn merge_selected_slices_spans_between_markers() {
+    let renderer = crate::waveform::WaveformRenderer::new(12, 12);
+    let mut controller = EguiController::new(renderer, None);
+    controller.ui.waveform.slices = vec![
+        SelectionRange::new(0.1, 0.2),
+        SelectionRange::new(0.35, 0.45),
+        SelectionRange::new(0.7, 0.8),
+    ];
+    controller.ui.waveform.selected_slices = vec![0, 2];
+
+    let merged = controller.merge_selected_slices();
+
+    assert_eq!(merged, Some(SelectionRange::new(0.1, 0.8)));
+    assert_eq!(controller.ui.waveform.slices.len(), 1);
+    assert_eq!(controller.ui.waveform.slices[0], SelectionRange::new(0.1, 0.8));
+    assert_eq!(controller.ui.waveform.selected_slices, vec![0]);
+}
