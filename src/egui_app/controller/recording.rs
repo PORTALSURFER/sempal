@@ -21,6 +21,28 @@ impl EguiController {
             self.stop_playback_if_active();
         }
         let output_path = self.next_recording_path()?;
+        self.start_recording_with_path(output_path)
+    }
+
+    pub fn start_recording_to_path(&mut self, output_path: PathBuf) -> Result<(), String> {
+        if self.is_recording() {
+            return Ok(());
+        }
+        if self.is_playing() {
+            self.stop_playback_if_active();
+        }
+        let output_path = ensure_recording_path(output_path)?;
+        self.start_recording_with_path(output_path)
+    }
+
+    pub fn recording_filename_hint(&self) -> String {
+        format!(
+            "{RECORDING_FILE_PREFIX}{}.{RECORDING_FILE_EXT}",
+            formatted_timestamp()
+        )
+    }
+
+    fn start_recording_with_path(&mut self, output_path: PathBuf) -> Result<(), String> {
         let recorder = AudioRecorder::start(&self.settings.audio_input, output_path.clone())
             .map_err(|err| err.to_string())?;
         self.update_audio_input_status(recorder.resolved());
@@ -114,6 +136,22 @@ impl EguiController {
         );
         Ok(recordings.join(filename))
     }
+}
+
+fn ensure_recording_path(mut path: PathBuf) -> Result<PathBuf, String> {
+    if path.extension().is_none() {
+        path.set_extension(RECORDING_FILE_EXT);
+    }
+    let parent = path
+        .parent()
+        .ok_or_else(|| "Recording path missing parent".to_string())?;
+    std::fs::create_dir_all(parent).map_err(|err| {
+        format!(
+            "Failed to create recordings folder {}: {err}",
+            parent.display()
+        )
+    })?;
+    Ok(path)
 }
 
 fn formatted_timestamp() -> String {
