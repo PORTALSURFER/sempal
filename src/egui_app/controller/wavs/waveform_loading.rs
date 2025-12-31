@@ -241,10 +241,14 @@ impl EguiController {
             == Some(&source.id)
             && self.sample_view.wav.selected_wav.as_deref() == Some(relative_path);
         if selected_matches || loaded_matches {
+            let preserved_view = self.ui.waveform.view;
             self.sample_view.wav.loaded_wav = None;
             self.ui.loaded_wav = None;
             if let Err(err) = self.load_waveform_for_selection(source, relative_path) {
                 self.set_status(err, StatusTone::Warning);
+            } else {
+                self.ui.waveform.view = preserved_view;
+                self.refresh_waveform_image();
             }
         }
     }
