@@ -331,6 +331,23 @@ mod tests {
     }
 
     #[test]
+    fn audio_input_channels_accepts_single_value() {
+        let dir = tempdir().unwrap();
+        with_config_home(dir.path(), || {
+            let path = dir.path().join("cfg.toml");
+            let data = r#"
+[core.audio_input]
+host = "asio"
+device = "Test Mic"
+channels = 1
+"#;
+            std::fs::write(&path, data).unwrap();
+            let loaded = super::load_settings_from(&path).unwrap();
+            assert_eq!(loaded.core.audio_input.channels, vec![1]);
+        });
+    }
+
+    #[test]
     fn trash_folder_round_trips() {
         let dir = tempdir().unwrap();
         with_config_home(dir.path(), || {

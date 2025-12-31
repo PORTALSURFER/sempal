@@ -37,7 +37,7 @@ pub struct AudioInputConfig {
     pub sample_rate: Option<u32>,
     #[serde(default)]
     pub buffer_size: Option<u32>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_input_channels")]
     pub channels: Vec<u16>,
 }
 
@@ -387,6 +387,23 @@ fn default_input_channels(max_channels: u16) -> Vec<u16> {
         vec![1]
     } else {
         Vec::new()
+    }
+}
+
+fn deserialize_input_channels<'de, D>(deserializer: D) -> Result<Vec<u16>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum InputChannels {
+        Single(u16),
+        Multiple(Vec<u16>),
+    }
+
+    match InputChannels::deserialize(deserializer)? {
+        InputChannels::Single(channel) => Ok(vec![channel]),
+        InputChannels::Multiple(channels) => Ok(channels),
     }
 }
 
