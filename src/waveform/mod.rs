@@ -71,7 +71,7 @@ impl DecodedWaveform {
 /// Visual presentation mode for multi-channel audio.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum WaveformChannelView {
-    /// Collapse all channels into one envelope using per-frame min/max to avoid phase cancellation.
+    /// Downmix channels to mono by averaging each frame.
     #[default]
     Mono,
     /// Render the first two channels separately in a stacked stereo view.

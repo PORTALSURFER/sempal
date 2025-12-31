@@ -10,7 +10,7 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
             crate::waveform::WaveformChannelView::Mono,
             "Mono envelope",
         );
-        mono.on_hover_text("Show peak envelope across all channels");
+        mono.on_hover_text("Downmix channels to a single mono waveform");
         let split = ui.selectable_value(
             &mut view_mode,
             crate::waveform::WaveformChannelView::SplitStereo,
