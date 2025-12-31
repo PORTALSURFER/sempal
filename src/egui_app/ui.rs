@@ -44,6 +44,7 @@ pub struct EguiApp {
     controller: EguiController,
     visuals_set: bool,
     waveform_tex: Option<TextureHandle>,
+    #[allow(dead_code)]
     last_viewport_log: Option<(u32, u32, u32, u32, &'static str)>,
     sources_panel_rect: Option<egui::Rect>,
     sources_panel_drop_hovered: bool,

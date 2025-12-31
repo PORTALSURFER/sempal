@@ -62,6 +62,7 @@ impl AnalysisWorkerPool {
     }
 
     #[cfg_attr(test, allow(dead_code))]
+    #[allow(dead_code)]
     pub(in crate::egui_app::controller) fn set_decode_worker_count(&self, value: u32) {
         self.decode_worker_count_override
             .store(value, Ordering::Relaxed);
