@@ -73,16 +73,22 @@ impl WaveformRenderer {
             if let Some(peaks) = decoded.peaks.as_deref() {
                 let columns = peaks.sample_columns_for_view(start, end, width, view);
                 let frames_per_column = (frame_count as f32 * fraction / width as f32).max(1.0);
+                let smooth_radius = Self::smoothing_radius(frames_per_column, width);
                 return match columns {
-                    WaveformColumnView::Mono(cols) => Self::paint_color_image_for_size_with_density(
-                        &cols,
-                        width,
-                        height,
-                        self.foreground,
-                        self.background,
-                        frames_per_column,
-                    ),
+                    WaveformColumnView::Mono(cols) => {
+                        let cols = Self::smooth_columns(&cols, smooth_radius);
+                        Self::paint_color_image_for_size_with_density(
+                            &cols,
+                            width,
+                            height,
+                            self.foreground,
+                            self.background,
+                            frames_per_column,
+                        )
+                    }
                     WaveformColumnView::SplitStereo { left, right } => {
+                        let left = Self::smooth_columns(&left, smooth_radius);
+                        let right = Self::smooth_columns(&right, smooth_radius);
                         Self::paint_split_color_image_with_density(
                             &left,
                             &right,
@@ -114,10 +120,12 @@ impl WaveformRenderer {
                 full_width,
             );
             let frames_per_column = (frame_count as f32 / full_width as f32).max(1.0);
+            let smooth_radius = Self::smoothing_radius(frames_per_column, width);
             return match cached {
                 super::zoom_cache::CachedColumns::Mono(cols) => {
+                    let cols = Self::smooth_columns(&cols[start_col..end_col], smooth_radius);
                     Self::paint_color_image_for_size_with_density(
-                        &cols[start_col..end_col],
+                        &cols,
                         width,
                         height,
                         self.foreground,
@@ -126,9 +134,11 @@ impl WaveformRenderer {
                     )
                 }
                 super::zoom_cache::CachedColumns::SplitStereo { left, right } => {
+                    let left = Self::smooth_columns(&left[start_col..end_col], smooth_radius);
+                    let right = Self::smooth_columns(&right[start_col..end_col], smooth_radius);
                     Self::paint_split_color_image_with_density(
-                        &left[start_col..end_col],
-                        &right[start_col..end_col],
+                        &left,
+                        &right,
                         width,
                         height,
                         self.foreground,
@@ -174,25 +184,31 @@ impl WaveformRenderer {
         let columns = Self::sample_columns_for_width(samples, channels, width, view);
         let frame_count = samples.len() / channels.max(1);
         let frames_per_column = (frame_count as f32 / width as f32).max(1.0);
+        let smooth_radius = Self::smoothing_radius(frames_per_column, width);
         match columns {
-            WaveformColumnView::Mono(cols) => Self::paint_color_image_for_size_with_density(
-                &cols,
-                width,
-                height,
-                self.foreground,
-                self.background,
-                frames_per_column,
-            ),
+            WaveformColumnView::Mono(cols) => {
+                let cols = Self::smooth_columns(&cols, smooth_radius);
+                Self::paint_color_image_for_size_with_density(
+                    &cols,
+                    width,
+                    height,
+                    self.foreground,
+                    self.background,
+                    frames_per_column,
+                )
+            }
             WaveformColumnView::SplitStereo { left, right } => {
+                let left = Self::smooth_columns(&left, smooth_radius);
+                let right = Self::smooth_columns(&right, smooth_radius);
                 Self::paint_split_color_image_with_density(
-                &left,
-                &right,
-                width,
-                height,
-                self.foreground,
-                self.background,
-                frames_per_column,
-            )
+                    &left,
+                    &right,
+                    width,
+                    height,
+                    self.foreground,
+                    self.background,
+                    frames_per_column,
+                )
             }
         }
     }
@@ -202,6 +218,45 @@ impl WaveformRenderer {
         let desired = ((width as f32) / view_fraction).ceil().max(width as f32) as u32;
         let frame_cap = frame_count.min(u32::MAX as usize) as u32;
         desired.min(frame_cap).min(MAX_CACHED_FULL_WIDTH).max(width)
+    }
+
+    fn smoothing_radius(frames_per_column: f32, width: u32) -> usize {
+        if width < 3 {
+            return 0;
+        }
+        if frames_per_column > 8.0 {
+            2
+        } else if frames_per_column > 2.0 {
+            1
+        } else {
+            0
+        }
+    }
+
+    fn smooth_columns(columns: &[(f32, f32)], radius: usize) -> Vec<(f32, f32)> {
+        if radius == 0 || columns.len() < 2 {
+            return columns.to_vec();
+        }
+        let mut smoothed = Vec::with_capacity(columns.len());
+        let len = columns.len();
+        for idx in 0..len {
+            let start = idx.saturating_sub(radius);
+            let end = (idx + radius + 1).min(len);
+            let mut min_sum = 0.0_f32;
+            let mut max_sum = 0.0_f32;
+            let mut weight_sum = 0.0_f32;
+            for i in start..end {
+                let dist = idx.abs_diff(i) as f32;
+                let weight = (radius as f32 + 1.0 - dist).max(0.0);
+                let (min, max) = columns[i];
+                min_sum += min * weight;
+                max_sum += max * weight;
+                weight_sum += weight;
+            }
+            let denom = weight_sum.max(1.0);
+            smoothed.push((min_sum / denom, max_sum / denom));
+        }
+        smoothed
     }
 
     fn columns_window(
