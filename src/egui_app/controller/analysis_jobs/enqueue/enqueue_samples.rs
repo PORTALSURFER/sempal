@@ -114,14 +114,7 @@ fn enqueue_source_backfill(
             return Ok((0, db::current_progress(&conn)?));
         }
     }
-    let source_db = crate::sample_sources::SourceDatabase::open(&request.source.root)
-        .map_err(|err| err.to_string())?;
-    let entries = source_db.list_files().map_err(|err| err.to_string())?;
-    if entries.is_empty() {
-        return Ok((0, db::current_progress(&conn)?));
-    }
-
-    let staged_samples = stage_samples_from_entries(request.source, &source_db, &entries);
+    let staged_samples = stage_samples_for_source(request.source, true)?;
     if staged_samples.is_empty() {
         return Ok((0, db::current_progress(&conn)?));
     }
@@ -150,15 +143,7 @@ fn enqueue_missing_features(
 ) -> Result<(usize, AnalysisProgress), String> {
     let mut conn = db::open_source_db(&request.source.root)?;
 
-    let source_db = crate::sample_sources::SourceDatabase::open(&request.source.root)
-        .map_err(|err| err.to_string())?;
-    let mut entries = source_db.list_files().map_err(|err| err.to_string())?;
-    entries.retain(|entry| !entry.missing);
-    if entries.is_empty() {
-        return Ok((0, db::current_progress(&conn)?));
-    }
-
-    let staged_samples = stage_samples_from_entries(request.source, &source_db, &entries);
+    let staged_samples = stage_samples_for_source(request.source, false)?;
     if staged_samples.is_empty() {
         return Ok((0, db::current_progress(&conn)?));
     }
@@ -197,6 +182,22 @@ fn enqueue_from_staged_samples(
     let inserted = db::enqueue_jobs(conn, &jobs, job_type, created_at)?;
     let progress = db::current_progress(conn)?;
     Ok((inserted, progress))
+}
+
+fn stage_samples_for_source(
+    source: &crate::sample_sources::SampleSource,
+    include_missing_entries: bool,
+) -> Result<Vec<db::SampleMetadata>, String> {
+    let source_db = crate::sample_sources::SourceDatabase::open(&source.root)
+        .map_err(|err| err.to_string())?;
+    let mut entries = source_db.list_files().map_err(|err| err.to_string())?;
+    if !include_missing_entries {
+        entries.retain(|entry| !entry.missing);
+    }
+    if entries.is_empty() {
+        return Ok(Vec::new());
+    }
+    Ok(stage_samples_from_entries(source, &source_db, &entries))
 }
 
 fn sample_metadata_from_entry(
@@ -378,7 +379,11 @@ fn fetch_backfill_invalidations(
              FROM temp_backfill_samples t
              JOIN features f ON f.sample_id = t.sample_id AND f.feat_version = 1
              LEFT JOIN samples s ON s.sample_id = t.sample_id
-             WHERE s.analysis_version IS NULL OR s.analysis_version != ?1",
+             WHERE s.sample_id IS NULL
+                OR s.analysis_version IS NULL
+                OR s.analysis_version != ?1
+                OR s.content_hash IS NULL
+                OR s.content_hash != t.content_hash",
         )
         .map_err(|err| format!("Prepare invalidate backfill query failed: {err}"))?;
     let mut rows = stmt
@@ -409,7 +414,13 @@ fn fetch_backfill_jobs(
              LEFT JOIN features f ON f.sample_id = t.sample_id AND f.feat_version = 1
              LEFT JOIN embeddings e ON e.sample_id = t.sample_id AND e.model_id = ?3
              LEFT JOIN samples s ON s.sample_id = t.sample_id
-             WHERE (f.sample_id IS NULL OR e.sample_id IS NULL OR s.analysis_version IS NULL OR s.analysis_version != ?1)
+             WHERE (f.sample_id IS NULL
+                OR e.sample_id IS NULL
+                OR s.sample_id IS NULL
+                OR s.analysis_version IS NULL
+                OR s.analysis_version != ?1
+                OR s.content_hash IS NULL
+                OR s.content_hash != t.content_hash)
                AND NOT EXISTS (
                    SELECT 1
                    FROM analysis_jobs j
