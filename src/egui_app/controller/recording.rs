@@ -1,7 +1,9 @@
 use super::*;
 use crate::audio::{AudioRecorder, RecordingOutcome};
+use crate::waveform::{DecodedWaveform, WaveformPeaks};
 use super::state::audio::RecordingTarget;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use time::format_description::FormatItem;
 use time::macros::format_description;
@@ -9,6 +11,8 @@ use time::macros::format_description;
 const RECORDING_FILE_PREFIX: &str = "recording_";
 const RECORDING_FILE_EXT: &str = "wav";
 const RECORDING_REFRESH_INTERVAL: Duration = Duration::from_millis(250);
+const RECORDING_MAX_FULL_FRAMES: usize = 2_500_000;
+const RECORDING_MAX_PEAK_BUCKETS: usize = 1_000_000;
 
 impl EguiController {
     pub fn is_recording(&self) -> bool {
@@ -205,14 +209,19 @@ impl EguiController {
             Ok(bytes) => bytes,
             Err(_) => return,
         };
-        let decoded = match self.sample_view.renderer.decode_from_bytes(&bytes) {
-            Ok(decoded) => decoded,
-            Err(_) => {
-                if let Some(target) = self.audio.recording_target.as_mut() {
-                    target.last_refresh_at = Some(now);
-                }
-                return;
+        let recorder = self.audio.recorder.as_ref();
+        let decoded = recorder.and_then(|recorder| {
+            decode_recording_waveform(
+                &bytes,
+                recorder.resolved().sample_rate,
+                recorder.resolved().channel_count,
+            )
+        });
+        let Some(decoded) = decoded else {
+            if let Some(target) = self.audio.recording_target.as_mut() {
+                target.last_refresh_at = Some(now);
             }
+            return;
         };
         if let Some(source) = self.source_by_id(&source_id) {
             if loaded_once {
@@ -266,4 +275,146 @@ fn formatted_timestamp() -> String {
         format_description!("[year][month][day]_[hour][minute][second]");
     let now = time::OffsetDateTime::now_local().unwrap_or_else(|_| time::OffsetDateTime::now_utc());
     now.format(&FORMAT).unwrap_or_else(|_| "unknown".into())
+}
+
+fn decode_recording_waveform(
+    bytes: &[u8],
+    sample_rate: u32,
+    channels: u16,
+) -> Option<DecodedWaveform> {
+    let data_offset = find_wav_data_chunk(bytes)?;
+    if data_offset >= bytes.len() {
+        return None;
+    }
+    let data = &bytes[data_offset..];
+    let total_samples = data.len() / 4;
+    if total_samples == 0 {
+        return None;
+    }
+    let channels = channels.max(1) as usize;
+    let frames = total_samples / channels.max(1);
+    if frames == 0 {
+        return None;
+    }
+    let duration_seconds = frames as f32 / sample_rate.max(1) as f32;
+    if frames <= RECORDING_MAX_FULL_FRAMES {
+        let mut samples = Vec::with_capacity(total_samples);
+        for chunk in data.chunks_exact(4) {
+            samples.push(f32::from_le_bytes(chunk.try_into().ok()?));
+        }
+        return Some(DecodedWaveform {
+            cache_token: next_recording_cache_token(),
+            samples: Arc::from(samples),
+            peaks: None,
+            duration_seconds,
+            sample_rate,
+            channels: channels as u16,
+        });
+    }
+
+    let bucket_size_frames = peak_bucket_size(frames);
+    let bucket_count = frames.div_ceil(bucket_size_frames).max(1);
+    let mut mono = vec![(1.0_f32, -1.0_f32); bucket_count];
+    let mut left = if channels >= 2 {
+        Some(vec![(1.0_f32, -1.0_f32); bucket_count])
+    } else {
+        None
+    };
+    let mut right = if channels >= 2 {
+        Some(vec![(1.0_f32, -1.0_f32); bucket_count])
+    } else {
+        None
+    };
+
+    let mut sample_index = 0usize;
+    for frame in 0..frames {
+        let bucket = frame / bucket_size_frames;
+        let mut frame_sum = 0.0_f32;
+        for ch in 0..channels {
+            let offset = sample_index.saturating_mul(4);
+            let sample = if offset + 4 <= data.len() {
+                let raw = f32::from_le_bytes(data[offset..offset + 4].try_into().ok()?);
+                clamp_sample(raw)
+            } else {
+                0.0
+            };
+            sample_index = sample_index.saturating_add(1);
+            frame_sum += sample;
+            if ch == 0 {
+                if let Some(left_peaks) = left.as_mut() {
+                    let (min, max) = &mut left_peaks[bucket];
+                    *min = (*min).min(sample);
+                    *max = (*max).max(sample);
+                }
+            } else if ch == 1 {
+                if let Some(right_peaks) = right.as_mut() {
+                    let (min, max) = &mut right_peaks[bucket];
+                    *min = (*min).min(sample);
+                    *max = (*max).max(sample);
+                }
+            }
+        }
+        let frame_avg = frame_sum / channels as f32;
+        let (min, max) = &mut mono[bucket];
+        *min = (*min).min(frame_avg);
+        *max = (*max).max(frame_avg);
+    }
+
+    Some(DecodedWaveform {
+        cache_token: next_recording_cache_token(),
+        samples: Arc::from(Vec::new()),
+        peaks: Some(Arc::new(WaveformPeaks {
+            total_frames: frames,
+            channels: channels as u16,
+            bucket_size_frames,
+            mono,
+            left,
+            right,
+        })),
+        duration_seconds,
+        sample_rate,
+        channels: channels as u16,
+    })
+}
+
+fn find_wav_data_chunk(bytes: &[u8]) -> Option<usize> {
+    if bytes.len() < 12 {
+        return None;
+    }
+    if &bytes[0..4] != b"RIFF" || &bytes[8..12] != b"WAVE" {
+        return None;
+    }
+    let mut offset = 12usize;
+    while offset + 8 <= bytes.len() {
+        let id = &bytes[offset..offset + 4];
+        let chunk_size = u32::from_le_bytes(bytes[offset + 4..offset + 8].try_into().ok()?);
+        let data_start = offset + 8;
+        if id == b"data" {
+            return Some(data_start);
+        }
+        let mut next = data_start.saturating_add(chunk_size as usize);
+        if chunk_size % 2 == 1 {
+            next = next.saturating_add(1);
+        }
+        if next <= offset {
+            break;
+        }
+        offset = next;
+    }
+    None
+}
+
+fn peak_bucket_size(frames: usize) -> usize {
+    frames.div_ceil(RECORDING_MAX_PEAK_BUCKETS).max(1)
+}
+
+fn clamp_sample(sample: f32) -> f32 {
+    sample.clamp(-1.0, 1.0)
+}
+
+fn next_recording_cache_token() -> u64 {
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static NEXT_CACHE_TOKEN: AtomicU64 = AtomicU64::new(1);
+    NEXT_CACHE_TOKEN.fetch_add(1, Ordering::Relaxed)
 }
