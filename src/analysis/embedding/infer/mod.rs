@@ -2,6 +2,8 @@
 
 use burn::tensor::TensorData;
 
+#![allow(dead_code)]
+
 use super::backend::{embedding_batch_max, panns_batch_enabled};
 use super::logmel::{PANNS_INPUT_FRAMES, PANNS_LOGMEL_LEN};
 use super::model::{with_panns_model, PannsModelInner};

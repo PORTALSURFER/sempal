@@ -15,7 +15,9 @@ pub(crate) fn decode_for_analysis(path: &Path) -> Result<AnalysisAudio, String> 
 
 pub(crate) struct AudioProbe {
     pub(crate) duration_seconds: Option<f32>,
+    #[allow(dead_code)]
     pub(crate) sample_rate: Option<u32>,
+    #[allow(dead_code)]
     pub(crate) channels: Option<u16>,
 }
 
@@ -100,13 +102,11 @@ pub(crate) fn decode_for_analysis_with_rate_limit(
 
 struct DecodeScratch {
     mono: Vec<f32>,
-    resampled: Vec<f32>,
 }
 
 thread_local! {
     static DECODE_SCRATCH: RefCell<DecodeScratch> = RefCell::new(DecodeScratch {
         mono: Vec::new(),
-        resampled: Vec::new(),
     });
 }
 

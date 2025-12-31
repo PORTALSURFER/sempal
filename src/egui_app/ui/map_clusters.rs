@@ -4,53 +4,6 @@ use eframe::egui;
 use std::collections::HashMap;
 use std::f32::consts::PI;
 
-pub(crate) struct ClusterStats {
-    pub cluster_count: usize,
-    pub min_cluster_size: usize,
-    pub max_cluster_size: usize,
-    pub assigned_count: usize,
-    pub missing_count: usize,
-    pub total_count: usize,
-}
-
-pub(crate) fn compute_cluster_stats(
-    points: &[crate::egui_app::state::MapPoint],
-) -> Option<ClusterStats> {
-    let mut cluster_sizes: HashMap<i32, usize> = HashMap::new();
-    let mut assigned_count = 0usize;
-    let mut missing_count = 0usize;
-    for point in points {
-        let Some(cluster_id) = point.cluster_id else {
-            missing_count += 1;
-            continue;
-        };
-        assigned_count += 1;
-        *cluster_sizes.entry(cluster_id).or_insert(0) += 1;
-    }
-    if assigned_count == 0 {
-        return None;
-    }
-    let (min_cluster_size, max_cluster_size) = if cluster_sizes.is_empty() {
-        (0, 0)
-    } else {
-        let mut min_size = usize::MAX;
-        let mut max_size = 0usize;
-        for size in cluster_sizes.values() {
-            min_size = min_size.min(*size);
-            max_size = max_size.max(*size);
-        }
-        (min_size, max_size)
-    };
-    Some(ClusterStats {
-        cluster_count: cluster_sizes.len(),
-        min_cluster_size,
-        max_cluster_size,
-        assigned_count,
-        missing_count,
-        total_count: points.len(),
-    })
-}
-
 pub(crate) fn cluster_color(
     cluster_id: i32,
     centroids: &HashMap<i32, MapClusterCentroid>,

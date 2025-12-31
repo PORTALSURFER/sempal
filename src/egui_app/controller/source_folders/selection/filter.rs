@@ -13,6 +13,7 @@ impl EguiController {
             .map(|model| &model.selected)
     }
 
+    #[allow(dead_code)]
     pub(in crate::egui_app::controller) fn folder_filter_accepts(
         &self,
         relative_path: &Path,

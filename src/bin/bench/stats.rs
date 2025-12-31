@@ -1,5 +1,4 @@
 use super::options::BenchOptions;
-use rusqlite::Error as SqlError;
 use serde::Serialize;
 use std::time::Instant;
 
@@ -14,19 +13,6 @@ pub(super) struct LatencySummary {
     pub(super) mean_us: f64,
 }
 
-pub(super) fn bench_sql_query(
-    options: &BenchOptions,
-    mut f: impl FnMut() -> Result<(), SqlError>,
-) -> Result<LatencySummary, String> {
-    run_warmup(options.warmup_iters, &mut f)?;
-    let samples_us = run_measure(options.measure_iters, &mut f)?;
-    Ok(summarize(
-        options.warmup_iters,
-        options.measure_iters,
-        samples_us,
-    ))
-}
-
 pub(super) fn bench_action(
     options: &BenchOptions,
     mut f: impl FnMut() -> Result<(), String>,
@@ -38,30 +24,6 @@ pub(super) fn bench_action(
         options.measure_iters,
         samples_us,
     ))
-}
-
-fn run_warmup(
-    warmup_iters: usize,
-    f: &mut impl FnMut() -> Result<(), SqlError>,
-) -> Result<(), String> {
-    for _ in 0..warmup_iters.max(1) {
-        f().map_err(|err| format!("Warmup query failed: {err}"))?;
-    }
-    Ok(())
-}
-
-fn run_measure(
-    measure_iters: usize,
-    f: &mut impl FnMut() -> Result<(), SqlError>,
-) -> Result<Vec<u64>, String> {
-    let mut samples_us = Vec::with_capacity(measure_iters.max(1));
-    for _ in 0..measure_iters.max(1) {
-        let started = Instant::now();
-        f().map_err(|err| format!("Measured query failed: {err}"))?;
-        samples_us.push(started.elapsed().as_micros() as u64);
-    }
-    samples_us.sort_unstable();
-    Ok(samples_us)
 }
 
 fn run_warmup_action(

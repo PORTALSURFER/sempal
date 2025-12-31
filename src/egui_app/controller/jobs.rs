@@ -64,6 +64,7 @@ pub(super) struct UmapClusterBuildJob {
 
 #[derive(Debug)]
 pub(super) struct UmapClusterBuildResult {
+    #[allow(dead_code)]
     pub(super) umap_version: String,
     pub(super) source_id: Option<SourceId>,
     pub(super) result: Result<crate::analysis::hdbscan::HdbscanStats, String>,
@@ -72,6 +73,7 @@ pub(super) struct UmapClusterBuildResult {
 #[derive(Debug)]
 pub(super) struct SimilarityPrepOutcome {
     pub(super) cluster_stats: crate::analysis::hdbscan::HdbscanStats,
+    #[allow(dead_code)]
     pub(super) umap_version: String,
 }
 

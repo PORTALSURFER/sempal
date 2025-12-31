@@ -142,6 +142,7 @@ impl EguiController {
         )
     }
 
+    #[allow(dead_code)]
     fn browser_filter_accepts(&self, tag: SampleTag) -> bool {
         match self.ui.browser.filter {
             TriageFlagFilter::All => true,

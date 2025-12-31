@@ -18,7 +18,7 @@ use tempfile::tempdir;
 
 #[test]
 fn hotkey_tagging_applies_to_all_selected_rows() {
-    let (mut controller, source) = prepare_with_source_and_wav_entries(vec![
+    let (mut controller, _source) = prepare_with_source_and_wav_entries(vec![
         sample_entry("one.wav", SampleTag::Neutral),
         sample_entry("two.wav", SampleTag::Neutral),
     ]);
@@ -54,7 +54,7 @@ fn focus_hotkey_does_not_autoplay_browser_sample() {
 
 #[test]
 fn x_key_toggle_respects_focus() {
-    let (mut controller, source) = prepare_with_source_and_wav_entries(vec![
+    let (mut controller, _source) = prepare_with_source_and_wav_entries(vec![
         sample_entry("one.wav", SampleTag::Neutral),
         sample_entry("two.wav", SampleTag::Neutral),
     ]);
@@ -78,7 +78,7 @@ fn x_key_toggle_respects_focus() {
 
 #[test]
 fn action_rows_include_selection_and_primary() {
-    let (mut controller, source) = prepare_with_source_and_wav_entries(vec![
+    let (mut controller, _source) = prepare_with_source_and_wav_entries(vec![
         sample_entry("one.wav", SampleTag::Neutral),
         sample_entry("two.wav", SampleTag::Neutral),
         sample_entry("three.wav", SampleTag::Neutral),
@@ -93,7 +93,7 @@ fn action_rows_include_selection_and_primary() {
 
 #[test]
 fn tag_actions_apply_to_all_selected_rows() {
-    let (mut controller, source) = prepare_with_source_and_wav_entries(vec![
+    let (mut controller, _source) = prepare_with_source_and_wav_entries(vec![
         sample_entry("one.wav", SampleTag::Neutral),
         sample_entry("two.wav", SampleTag::Neutral),
     ]);

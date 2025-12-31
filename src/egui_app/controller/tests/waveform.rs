@@ -99,6 +99,7 @@ fn pruning_missing_selection_clears_waveform_view() {
     assert!(controller.sample_view.wav.loaded_wav.is_none());
 }
 
+#[test]
 fn cropping_selection_overwrites_file() {
     let (mut controller, source) = prepare_with_source_and_wav_entries(vec![sample_entry(
         "edit.wav",

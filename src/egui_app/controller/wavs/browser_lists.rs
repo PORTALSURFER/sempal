@@ -95,6 +95,7 @@ impl EguiController {
         self.ui.loaded_wav = None;
     }
 
+    #[allow(dead_code)]
     fn push_browser_row(&mut self, entry_index: usize, entry: &WavEntry, flags: RowFlags) {
         let target = match entry.tag {
             SampleTag::Trash => &mut self.ui.browser.trash,

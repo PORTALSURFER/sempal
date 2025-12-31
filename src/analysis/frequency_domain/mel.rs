@@ -23,6 +23,7 @@ impl MelBank {
         }
     }
 
+    #[cfg(test)]
     pub(super) fn mfcc_from_power(&self, power: &[f32]) -> Vec<f32> {
         let mut scratch = MelScratch::new(self.filters.len());
         let mut out = Vec::with_capacity(self.dct_size);

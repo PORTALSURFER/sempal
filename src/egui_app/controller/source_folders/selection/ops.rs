@@ -176,6 +176,7 @@ impl EguiController {
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn selected_folder_paths(&self) -> Vec<PathBuf> {
         let Some(id) = self.selection_state.ctx.selected_source.as_ref() else {
             return Vec::new();

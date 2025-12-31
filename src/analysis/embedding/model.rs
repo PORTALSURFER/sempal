@@ -31,6 +31,7 @@ pub(super) enum PannsModelInner {
 pub(crate) struct PannsModel {
     pub(super) inner: PannsModelInner,
     pub(super) input_scratch: Vec<f32>,
+    #[allow(dead_code)]
     pub(super) input_batch_scratch: Vec<f32>,
     pub(super) resample_scratch: Vec<f32>,
     pub(super) wave_scratch: Vec<f32>,

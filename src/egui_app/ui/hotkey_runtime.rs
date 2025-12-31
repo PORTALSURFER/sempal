@@ -19,14 +19,6 @@ pub(super) struct KeyFeedback {
     pub last_chord: Option<(hotkeys::KeyPress, hotkeys::KeyPress)>,
 }
 
-#[inline]
-pub(super) fn format_keypress(press: &Option<hotkeys::KeyPress>) -> String {
-    press
-        .as_ref()
-        .map(hotkeys::format_keypress)
-        .unwrap_or_else(|| "—".to_string())
-}
-
 impl EguiApp {
     pub(super) fn process_hotkeys(&mut self, ctx: &egui::Context, focus: FocusContext) {
         let overlay_open = self.controller.ui.hotkeys.overlay_visible;

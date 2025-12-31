@@ -4,13 +4,16 @@ mod job_execution;
 mod job_progress;
 
 use crate::sample_sources::SourceId;
+#[cfg(not(test))]
 use std::collections::HashSet;
 use std::sync::{
-    Arc, RwLock, Mutex,
+    Arc, RwLock,
     atomic::AtomicU32,
     atomic::{AtomicBool, Ordering},
     mpsc::Sender,
 };
+#[cfg(not(test))]
+use std::sync::Mutex;
 use std::thread::JoinHandle;
 
 /// Long-lived worker pool that claims and processes analysis jobs from the library database.
@@ -24,6 +27,7 @@ pub(in crate::egui_app::controller) struct AnalysisWorkerPool {
     analysis_sample_rate: Arc<AtomicU32>,
     analysis_version_override: Arc<RwLock<Option<String>>>,
     worker_count_override: Arc<AtomicU32>,
+    #[cfg_attr(test, allow(dead_code))]
     decode_worker_count_override: Arc<AtomicU32>,
     threads: Vec<JoinHandle<()>>,
 }
@@ -57,6 +61,7 @@ impl AnalysisWorkerPool {
         self.worker_count_override.store(value, Ordering::Relaxed);
     }
 
+    #[cfg_attr(test, allow(dead_code))]
     pub(in crate::egui_app::controller) fn set_decode_worker_count(&self, value: u32) {
         self.decode_worker_count_override
             .store(value, Ordering::Relaxed);

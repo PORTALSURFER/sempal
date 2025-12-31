@@ -9,8 +9,16 @@ pub(crate) struct InstallPlan {
 }
 
 pub(crate) enum PlanAction {
-    CreateDir { path: PathBuf },
-    Copy { source: PathBuf, target: PathBuf },
+    CreateDir {
+        #[allow(dead_code)]
+        path: PathBuf,
+    },
+    Copy {
+        #[allow(dead_code)]
+        source: PathBuf,
+        #[allow(dead_code)]
+        target: PathBuf,
+    },
 }
 
 pub(crate) fn run_install(

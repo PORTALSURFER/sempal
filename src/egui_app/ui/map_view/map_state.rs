@@ -253,11 +253,3 @@ pub(super) fn map_scale(rect: egui::Rect, bounds: MapBounds, zoom: f32) -> f32 {
     let base = scale_x.min(scale_y) * 0.9;
     base * zoom
 }
-
-pub(super) fn sample_label_from_id(sample_id: &str) -> String {
-    if let Some((_, rel)) = sample_id.split_once("::") {
-        let path = std::path::Path::new(rel);
-        return view_model::sample_display_label(path);
-    }
-    sample_id.to_string()
-}

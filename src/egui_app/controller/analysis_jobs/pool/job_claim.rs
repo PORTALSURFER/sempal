@@ -30,6 +30,7 @@ mod logging;
 mod queue;
 mod selection;
 
+#[allow(unused_imports)]
 pub(in crate::egui_app::controller::analysis_jobs) use claim::{
     decode_queue_target, decode_worker_count_with_override, worker_count_with_override,
 };

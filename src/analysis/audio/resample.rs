@@ -1,3 +1,4 @@
+#[cfg(test)]
 pub(crate) fn resample_linear(samples: &[f32], input_rate: u32, output_rate: u32) -> Vec<f32> {
     let mut out = Vec::new();
     resample_linear_into(&mut out, samples, input_rate, output_rate);

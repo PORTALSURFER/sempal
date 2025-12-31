@@ -50,7 +50,7 @@ fn render_loop_crossfade_body(
             LoopCrossfadeUnit::Milliseconds => {
                 let mut depth = prompt.settings.depth_ms.max(1);
                 let drag = egui::DragValue::new(&mut depth)
-                    .clamp_range(1..=5000)
+                    .range(1..=5000)
                     .suffix(" ms");
                 if ui.add(drag).changed() {
                     prompt.settings.depth_ms = depth;
@@ -59,7 +59,7 @@ fn render_loop_crossfade_body(
             LoopCrossfadeUnit::Samples => {
                 let mut depth = prompt.settings.depth_samples.max(1);
                 let drag = egui::DragValue::new(&mut depth)
-                    .clamp_range(1..=2_000_000)
+                    .range(1..=2_000_000)
                     .suffix(" samples");
                 if ui.add(drag).changed() {
                     prompt.settings.depth_samples = depth;

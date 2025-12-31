@@ -1,7 +1,7 @@
 use super::style;
 use super::*;
 use crate::egui_app::state::{DragPayload, DragSource, FocusContext};
-use eframe::egui::{self, Align2, RichText, StrokeKind, TextStyle, Ui};
+use eframe::egui::{Align2, RichText, StrokeKind, TextStyle, Ui};
 
 mod drag_drop;
 mod folder_actions;

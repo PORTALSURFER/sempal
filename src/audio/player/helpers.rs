@@ -4,10 +4,12 @@ use std::time::{Duration, Instant};
 use rodio::{OutputStream, Sink, Source};
 
 use super::AudioPlayer;
+use super::super::fade::{FadeOutHandle, FadeOutOnRequest, fade_frames_for_duration};
+#[cfg(test)]
 use super::super::DEFAULT_ANTI_CLIP_FADE;
-use super::super::fade::{
-    EdgeFade, FadeOutHandle, FadeOutOnRequest, fade_duration, fade_frames_for_duration,
-};
+#[cfg(test)]
+use super::super::fade::{EdgeFade, fade_duration};
+#[cfg(test)]
 use super::super::mixer::{decoder_from_bytes, map_seek_error};
 
 impl AudioPlayer {

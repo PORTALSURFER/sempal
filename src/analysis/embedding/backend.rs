@@ -100,6 +100,7 @@ pub(super) fn init_cubecl_config() {
     });
 }
 
+#[allow(dead_code)]
 pub(super) fn panns_batch_enabled() -> bool {
     static ENABLED: OnceLock<bool> = OnceLock::new();
     *ENABLED.get_or_init(|| {

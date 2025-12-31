@@ -65,6 +65,7 @@ pub(in crate::egui_app::controller::analysis_jobs) fn sample_analysis_states(
     Ok(states)
 }
 
+#[cfg(test)]
 pub(in crate::egui_app::controller::analysis_jobs) fn claim_next_job(
     conn: &mut Connection,
     source_root: &Path,

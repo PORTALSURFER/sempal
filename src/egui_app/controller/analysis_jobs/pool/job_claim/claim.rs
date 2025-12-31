@@ -113,6 +113,7 @@ pub(super) fn claim_batch_size() -> usize {
     64
 }
 
+#[cfg_attr(test, allow(dead_code))]
 pub(in crate::egui_app::controller::analysis_jobs) fn decode_queue_target(
     embedding_batch_max: usize,
     worker_count: usize,

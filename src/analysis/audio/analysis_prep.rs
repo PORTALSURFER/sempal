@@ -49,6 +49,7 @@ pub(crate) fn downmix_to_mono_into(out: &mut Vec<f32>, samples: &[f32], channels
     }
 }
 
+#[cfg(test)]
 fn downmix_to_mono(samples: &[f32], channels: u16) -> Vec<f32> {
     let mut out = Vec::new();
     downmix_to_mono_into(&mut out, samples, channels);

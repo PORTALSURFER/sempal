@@ -129,6 +129,7 @@ pub(super) fn rebuild_wav_lookup(controller: &mut EguiController) {
     }
 }
 
+#[allow(dead_code)]
 pub(super) fn sync_browser_after_wav_entries_mutation(
     controller: &mut EguiController,
     source_id: &SourceId,
@@ -140,6 +141,7 @@ pub(super) fn sync_browser_after_wav_entries_mutation(
     controller.ui_cache.browser.labels.remove(source_id);
 }
 
+#[allow(dead_code)]
 pub(super) fn sync_browser_after_wav_entries_mutation_keep_search_cache(
     controller: &mut EguiController,
     source_id: &SourceId,

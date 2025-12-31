@@ -43,6 +43,7 @@ impl DecodedQueue {
         true
     }
 
+    #[cfg(test)]
     pub(super) fn pop(&self, shutdown: &AtomicBool) -> Option<DecodedWork> {
         let mut guard = self.queue.lock().expect("decoded queue lock");
         loop {

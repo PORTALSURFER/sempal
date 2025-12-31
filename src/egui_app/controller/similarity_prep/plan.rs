@@ -4,7 +4,6 @@ use crate::egui_app::controller::SimilarityPrepState;
 use crate::sample_sources::SampleSource;
 
 pub(super) struct SimilarityPrepStartPlan {
-    pub(super) scan_completed_at: Option<i64>,
     pub(super) needs_embeddings: bool,
     pub(super) skip_scan: bool,
     pub(super) state: SimilarityPrepState,
@@ -29,7 +28,6 @@ pub(super) fn plan_similarity_prep_start(
         force_full_analysis,
     });
     SimilarityPrepStartPlan {
-        scan_completed_at,
         needs_embeddings,
         skip_scan,
         state,

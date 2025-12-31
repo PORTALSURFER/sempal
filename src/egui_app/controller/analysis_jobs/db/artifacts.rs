@@ -9,6 +9,7 @@ pub(in crate::egui_app::controller::analysis_jobs) struct CachedFeatures {
 }
 
 pub(in crate::egui_app::controller::analysis_jobs) struct CachedEmbedding {
+    #[allow(dead_code)]
     pub(in crate::egui_app::controller::analysis_jobs) analysis_version: String,
     pub(in crate::egui_app::controller::analysis_jobs) model_id: String,
     pub(in crate::egui_app::controller::analysis_jobs) dim: i64,

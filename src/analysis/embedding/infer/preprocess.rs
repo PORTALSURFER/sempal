@@ -1,4 +1,6 @@
 use super::backend_io::run_panns_inference_for_model;
+#![allow(dead_code)]
+
 use super::EmbeddingBatchInput;
 use super::PANNS_LOGMEL_LEN;
 use crate::analysis::embedding::PannsModel;

@@ -315,6 +315,7 @@ impl EguiController {
         selection_ops::rebuild_wav_lookup(self);
     }
 
+    #[allow(dead_code)]
     pub(in crate::egui_app::controller) fn sync_browser_after_wav_entries_mutation(
         &mut self,
         source_id: &SourceId,
@@ -322,6 +323,7 @@ impl EguiController {
         selection_ops::sync_browser_after_wav_entries_mutation(self, source_id);
     }
 
+    #[allow(dead_code)]
     pub(in crate::egui_app::controller) fn sync_browser_after_wav_entries_mutation_keep_search_cache(
         &mut self,
         source_id: &SourceId,

@@ -14,6 +14,7 @@ pub(crate) fn hann_window(length: usize) -> Vec<f32> {
         .collect()
 }
 
+#[cfg(test)]
 pub(crate) fn fft_radix2_inplace(buffer: &mut [Complex32]) -> Result<(), String> {
     let plan = FftPlan::new(buffer.len())?;
     fft_radix2_inplace_with_plan(buffer, &plan)

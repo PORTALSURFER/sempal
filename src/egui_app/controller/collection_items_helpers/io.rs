@@ -45,18 +45,6 @@ pub(super) fn write_normalized_wav(
         .map_err(|err| format!("Failed to finalize wav: {err}"))
 }
 
-pub(super) fn replace_entry(list: &mut Vec<WavEntry>, old_path: &Path, new_entry: &WavEntry) {
-    if let Some(pos) = list
-        .iter()
-        .position(|entry| entry.relative_path == old_path)
-    {
-        list[pos] = new_entry.clone();
-    } else {
-        list.push(new_entry.clone());
-    }
-    list.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
-}
-
 pub(super) fn file_metadata(path: &Path) -> Result<(u64, i64), String> {
     let metadata = std::fs::metadata(path)
         .map_err(|err| format!("Failed to read {}: {err}", path.display()))?;
