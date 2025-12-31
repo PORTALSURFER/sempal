@@ -76,6 +76,7 @@ impl EguiController {
                 StatusTone::Warning,
             );
         }
+        self.refresh_output_after_recording();
         Ok(Some(outcome))
     }
 
@@ -88,6 +89,27 @@ impl EguiController {
             self.resolve_recording_target(target.as_ref(), &outcome.path)?;
         self.load_waveform_for_selection(&source, &relative_path)?;
         Ok(())
+    }
+
+    fn refresh_output_after_recording(&mut self) {
+        let host_id = self
+            .audio
+            .player
+            .as_ref()
+            .map(|player| player.borrow().output_details().host_id.clone())
+            .or_else(|| self.settings.audio_output.host.clone());
+        let is_asio = host_id
+            .as_deref()
+            .is_some_and(|host| host.eq_ignore_ascii_case("asio"));
+        if !is_asio {
+            return;
+        }
+        if let Err(err) = self.rebuild_audio_player() {
+            self.set_status(
+                format!("Audio output restart failed after recording: {err}"),
+                StatusTone::Warning,
+            );
+        }
     }
 
     fn ensure_recordings_source(&mut self, recording_path: &PathBuf) -> Result<SampleSource, String> {

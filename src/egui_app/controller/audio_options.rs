@@ -320,7 +320,7 @@ impl EguiController {
         self.ui.audio.input_warning = self.audio_input_fallback_message(input);
     }
 
-    fn rebuild_audio_player(&mut self) -> Result<(), String> {
+    pub(crate) fn rebuild_audio_player(&mut self) -> Result<(), String> {
         let loaded_audio = self.sample_view.wav.loaded_audio.clone();
         self.audio.player = None;
         let Some(player_rc) = self.ensure_player()? else {
