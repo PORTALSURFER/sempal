@@ -7,12 +7,12 @@
 - Reuse existing selection processing pipeline (formerly “smooth edges”) to minimize new wiring and ensure consistent undo/redo behavior.
 
 ## Step-by-step plan
-1. [-] Audit current “smooth edges” selection pipeline (UI entry point, controller action, audio processing function, undo/redo flow) to identify replacement points and required data inputs.
-2. [-] Design the click-removal DSP algorithm and parameters: selection length limits, window size, edge handling, and chosen interpolation method(s).
-3. [-] Implement a shared click-repair function in the audio processing layer (pure Rust), with unit tests covering 1-sample and small multi-sample selections and edge cases.
-4. [-] Replace the “smooth edges” action wiring with “click removal” (UI label, controller command, analytics/telemetry if any), keeping selection behavior and undo/redo intact.
-5. [-] Add integration tests for selection processing to validate artifacts removal and ensure no regression in selection handling.
-6. [-] Update documentation/help text to describe the click removal tool and any limits (e.g., recommended selection size).
+1. [x] Audit current “smooth edges” selection pipeline (UI entry point, controller action, audio processing function, undo/redo flow) to identify replacement points and required data inputs.
+2. [x] Design the click-removal DSP algorithm and parameters: selection length limits, window size, edge handling, and chosen interpolation method(s).
+3. [x] Implement a shared click-repair function in the audio processing layer (pure Rust), with unit tests covering 1-sample and small multi-sample selections and edge cases.
+4. [x] Replace the “smooth edges” action wiring with “click removal” (UI label, controller command, analytics/telemetry if any), keeping selection behavior and undo/redo intact.
+5. [x] Add integration tests for selection processing to validate artifacts removal and ensure no regression in selection handling.
+6. [x] Update documentation/help text to describe the click removal tool and any limits (e.g., recommended selection size).
 
 ## Code Style & Architecture Rules Reminder
 - Keep files under 400 lines; split when necessary.

@@ -10,7 +10,7 @@ impl DestructiveSelectionEdit {
             DestructiveSelectionEdit::FadeRightToLeft => "Fade selection (right to left)",
             DestructiveSelectionEdit::MuteSelection => "Mute selection",
             DestructiveSelectionEdit::NormalizeSelection => "Normalize selection",
-            DestructiveSelectionEdit::SmoothSelection => "Smooth selection edges",
+            DestructiveSelectionEdit::ClickRemoval => "Remove clicks in selection",
         }
     }
 
@@ -37,8 +37,8 @@ impl DestructiveSelectionEdit {
             DestructiveSelectionEdit::NormalizeSelection => {
                 "This will overwrite the selection with a normalized version and short fades."
             }
-            DestructiveSelectionEdit::SmoothSelection => {
-                "This will overwrite the selection with softened edges to reduce clicks."
+            DestructiveSelectionEdit::ClickRemoval => {
+                "This will overwrite the selection with an interpolated repair to remove clicks."
             }
         }
     }

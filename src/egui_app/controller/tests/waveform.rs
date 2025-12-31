@@ -153,6 +153,32 @@ fn trimming_selection_removes_span() {
 }
 
 #[test]
+fn click_removal_interpolates_selected_span() {
+    let (mut controller, source) = prepare_with_source_and_wav_entries(vec![sample_entry(
+        "click.wav",
+        SampleTag::Neutral,
+    )]);
+    let wav_path = load_waveform_selection(
+        &mut controller,
+        &source,
+        "click.wav",
+        &[0.0, 1.0, 9.0, -1.0, 0.0],
+        SelectionRange::new(0.4, 0.6),
+    );
+
+    controller.repair_clicks_selection().unwrap();
+
+    let samples: Vec<f32> = WavReader::open(&wav_path)
+        .unwrap()
+        .samples::<f32>()
+        .map(|s| s.unwrap())
+        .collect();
+    assert!(samples[2].abs() < 1e-6);
+    assert!(controller.ui.waveform.selection.is_none());
+    assert_eq!(controller.ui.status.badge_label, "Info");
+}
+
+#[test]
 fn destructive_edit_request_prompts_without_yolo_mode() {
     let (mut controller, source) = prepare_with_source_and_wav_entries(vec![sample_entry(
         "warn.wav",

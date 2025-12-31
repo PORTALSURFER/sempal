@@ -1,5 +1,5 @@
 use super::*;
-use std::time::Duration;
+use super::selection_click::repair_clicks_selection;
 
 #[test]
 fn slice_frames_keeps_requested_range() {
@@ -142,47 +142,57 @@ fn mute_respects_selection_bounds() {
 }
 
 #[test]
-fn smooth_selection_crossfades_edges() {
+fn click_repair_interpolates_single_sample_linearly() {
     let mut buffer = SelectionEditBuffer {
-        samples: vec![0.0_f32, 0.2, 1.0, 1.0, 0.6, -0.4, -0.1, 0.0],
+        samples: vec![0.0_f32, 1.0, 8.0, -1.0, 0.0],
         channels: 1,
         sample_rate: 48_000,
         spec_channels: 1,
         start_frame: 2,
-        end_frame: 6,
+        end_frame: 3,
     };
 
-    smooth_selection(&mut buffer, Duration::from_millis(8)).unwrap();
+    repair_clicks_selection(&mut buffer).unwrap();
 
-    assert!((buffer.samples[2] - 0.2).abs() < 1e-6);
-    assert!((buffer.samples[3] - 1.0).abs() < 1e-6);
-    assert!((buffer.samples[4] - 0.6).abs() < 1e-6);
-    assert!((buffer.samples[5] + 0.1).abs() < 1e-6);
+    assert!(buffer.samples[2].abs() < 1e-6);
 }
 
 #[test]
-fn smooth_selection_blends_multichannel_edges() {
+fn click_repair_interpolates_with_cubic_curve() {
     let mut buffer = SelectionEditBuffer {
-        samples: vec![
-            0.0_f32, 0.0, // frame 0
-            0.5, -0.5, // frame 1 (before)
-            1.0, 1.0, // frame 2 (selection start)
-            -1.0, -1.0, // frame 3 (selection end)
-            -0.25, 0.25, // frame 4 (after)
-        ],
-        channels: 2,
-        sample_rate: 10_000,
-        spec_channels: 2,
+        samples: vec![0.0_f32, 0.0, 5.0, 5.0, 1.0, 1.0],
+        channels: 1,
+        sample_rate: 44_100,
+        spec_channels: 1,
         start_frame: 2,
         end_frame: 4,
     };
 
-    smooth_selection(&mut buffer, Duration::from_millis(5)).unwrap();
+    repair_clicks_selection(&mut buffer).unwrap();
 
-    assert!((buffer.samples[4] - 0.75).abs() < 1e-6);
-    assert!((buffer.samples[5] - 0.25).abs() < 1e-6);
-    assert!((buffer.samples[6] + 0.625).abs() < 1e-6);
-    assert!((buffer.samples[7] + 0.375).abs() < 1e-6);
+    assert!((buffer.samples[2] - 0.2962963).abs() < 1e-5);
+    assert!((buffer.samples[3] - 0.7037037).abs() < 1e-5);
+}
+
+#[test]
+fn click_repair_interpolates_multichannel_linearly() {
+    let mut buffer = SelectionEditBuffer {
+        samples: vec![
+            0.2_f32, -0.2, // frame 0 (before)
+            1.0, -1.0, // frame 1 (selection)
+            0.6, -0.6, // frame 2 (after)
+        ],
+        channels: 2,
+        sample_rate: 48_000,
+        spec_channels: 2,
+        start_frame: 1,
+        end_frame: 2,
+    };
+
+    repair_clicks_selection(&mut buffer).unwrap();
+
+    assert!((buffer.samples[2] - 0.4).abs() < 1e-6);
+    assert!((buffer.samples[3] + 0.4).abs() < 1e-6);
 }
 
 #[test]

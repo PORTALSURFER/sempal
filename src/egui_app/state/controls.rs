@@ -38,7 +38,7 @@ pub enum DestructiveSelectionEdit {
     FadeRightToLeft,
     MuteSelection,
     NormalizeSelection,
-    SmoothSelection,
+    ClickRemoval,
 }
 
 /// Confirmation prompt content for destructive edits.

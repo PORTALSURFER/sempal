@@ -64,7 +64,7 @@ description: How to set up Sempal, triage samples, edit waveforms, and manage co
 - **Loop on/off** uses the selection when present, otherwise the full file; a loop bar shows the active region and the playhead. Toggle via hotkey `L` or the **Loop: On/Off** button above the waveform.
 - Waveform controls: **Mono envelope** / **Split L/R**, **Loop: On/Off**, **BPM snap** with a BPM input.
 - Drag to create a selection; drag edge brackets to resize. Drag the loop bar to slide the selection (hold **Shift** to snap when BPM snap is enabled). Mouse wheel zooms; **Shift + wheel** pans when zoomed. The bottom handle supports drag-and-drop.
-- Right-click a selection for destructive edits (overwrites source): **Crop to selection**, **Trim selection out**, **Reverse selection**, **Fade to null** (L→R or R→L), **Mute selection**, **Smooth edges**, **Normalize selection** (adds 5 ms edge fades).
+- Right-click a selection for destructive edits (overwrites source): **Crop to selection**, **Trim selection out**, **Reverse selection**, **Fade to null** (L→R or R→L), **Mute selection**, **Remove clicks** (best for short selections with audio on both sides), **Normalize selection** (adds 5 ms edge fades).
 - Destructive edits prompt for confirmation; enable **Yolo mode** in **Options** to apply without prompting.
 - Drag the selection handle:
   - Onto the Samples list to save a trimmed clip tagged by the current filter (saved into the selected folder when applicable).

@@ -80,11 +80,11 @@ pub(super) fn render_selection_context_menu(app: &mut EguiApp, ui: &mut egui::Ui
         request_edit(DestructiveSelectionEdit::MuteSelection);
     }
     if ui
-        .button("Smooth edges")
-        .on_hover_text("Apply short raised-cosine crossfades at selection edges")
+        .button("Remove clicks")
+        .on_hover_text("Interpolate the selection to remove single-sample clicks")
         .clicked()
     {
-        request_edit(DestructiveSelectionEdit::SmoothSelection);
+        request_edit(DestructiveSelectionEdit::ClickRemoval);
     }
     if ui
         .button("Normalize selection")

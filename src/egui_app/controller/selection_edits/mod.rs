@@ -11,13 +11,13 @@ mod undo_entries;
 
 #[path = "../selection_normalize.rs"]
 mod selection_normalize;
-#[path = "../selection_smooth.rs"]
-mod selection_smooth;
+#[path = "../selection_click.rs"]
+mod selection_click;
 
 use buffer::write_selection_wav;
 use buffer::{SelectionEditBuffer, SelectionTarget};
 use selection_normalize::normalize_selection;
-use selection_smooth::smooth_selection;
+use selection_click::repair_clicks_selection as repair_clicks_buffer;
 
 use ops::{apply_directional_fade, crop_buffer, reverse_buffer, trim_buffer};
 
@@ -216,11 +216,10 @@ impl EguiController {
         result
     }
 
-    /// Smooth the selection edges with short raised-cosine crossfades.
-    pub(crate) fn smooth_waveform_selection(&mut self) -> Result<(), String> {
-        let result = self.apply_selection_edit("Smoothed selection", |buffer| {
-            smooth_selection(buffer, Duration::from_millis(8))
-        });
+    /// Repair clicks inside the selection by interpolating the span.
+    pub(crate) fn repair_clicks_selection(&mut self) -> Result<(), String> {
+        let result =
+            self.apply_selection_edit("Removed clicks", |buffer| repair_clicks_buffer(buffer));
         if let Err(err) = &result {
             self.set_status(err.clone(), StatusTone::Error);
         }
@@ -258,7 +257,7 @@ impl EguiController {
             }
             DestructiveSelectionEdit::MuteSelection => self.mute_waveform_selection(),
             DestructiveSelectionEdit::NormalizeSelection => self.normalize_waveform_selection(),
-            DestructiveSelectionEdit::SmoothSelection => self.smooth_waveform_selection(),
+            DestructiveSelectionEdit::ClickRemoval => self.repair_clicks_selection(),
         }
     }
 
