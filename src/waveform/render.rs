@@ -181,9 +181,30 @@ impl WaveformRenderer {
     ) -> ColorImage {
         let width = width.max(1);
         let height = height.max(1);
-        let columns = Self::sample_columns_for_width(samples, channels, width, view);
         let frame_count = samples.len() / channels.max(1);
         let frames_per_column = (frame_count as f32 / width as f32).max(1.0);
+        if frames_per_column <= 1.2 {
+            return match view {
+                WaveformChannelView::Mono => Self::paint_line_image(
+                    samples,
+                    channels,
+                    width,
+                    height,
+                    self.foreground,
+                    self.background,
+                    None,
+                ),
+                WaveformChannelView::SplitStereo => Self::paint_split_line_image(
+                    samples,
+                    channels,
+                    width,
+                    height,
+                    self.foreground,
+                    self.background,
+                ),
+            };
+        }
+        let columns = Self::sample_columns_for_width(samples, channels, width, view);
         let smooth_radius = Self::smoothing_radius(frames_per_column, width);
         match columns {
             WaveformColumnView::Mono(cols) => {
@@ -257,6 +278,154 @@ impl WaveformRenderer {
             smoothed.push((min_sum / denom, max_sum / denom));
         }
         smoothed
+    }
+
+    fn paint_line_image(
+        samples: &[f32],
+        channels: usize,
+        width: u32,
+        height: u32,
+        foreground: Color32,
+        background: Color32,
+        channel_index: Option<usize>,
+    ) -> ColorImage {
+        let fill =
+            Color32::from_rgba_unmultiplied(background.r(), background.g(), background.b(), 0);
+        let mut image = ColorImage::new(
+            [width as usize, height as usize],
+            vec![fill; (width as usize) * (height as usize)],
+        );
+        let stride = width as usize;
+        let channels = channels.max(1);
+        let frame_count = samples.len() / channels;
+        if frame_count == 0 || width == 0 || height == 0 {
+            return image;
+        }
+        let mid = (height.saturating_sub(1)) as f32 / 2.0;
+        let half_height = mid.max(1.0);
+        let fg = (
+            foreground.r(),
+            foreground.g(),
+            foreground.b(),
+            foreground.a(),
+        );
+        let to_y = |sample: f32| -> f32 { (mid - sample * half_height).clamp(0.0, mid * 2.0) };
+
+        let mut prev_y = None;
+        for x in 0..width as usize {
+            let t = if width <= 1 {
+                0.0
+            } else {
+                x as f32 / (width as f32 - 1.0)
+            };
+            let frame_pos = t * (frame_count.saturating_sub(1)) as f32;
+            let sample = Self::sample_at_frame(samples, channels, frame_pos, channel_index);
+            let y = to_y(sample);
+            if let Some(prev) = prev_y {
+                let (start, end) = if prev <= y { (prev, y) } else { (y, prev) };
+                let start_y = start.floor().clamp(0.0, (height - 1) as f32) as usize;
+                let end_y = end.ceil().clamp(0.0, (height - 1) as f32) as usize;
+                for yy in start_y..=end_y {
+                    let idx = yy * stride + x;
+                    if let Some(pixel) = image.pixels.get_mut(idx) {
+                        *pixel = Color32::from_rgba_unmultiplied(fg.0, fg.1, fg.2, fg.3);
+                    }
+                }
+            }
+            let idx = y.round().clamp(0.0, (height - 1) as f32) as usize * stride + x;
+            if let Some(pixel) = image.pixels.get_mut(idx) {
+                *pixel = Color32::from_rgba_unmultiplied(fg.0, fg.1, fg.2, fg.3);
+            }
+            prev_y = Some(y);
+        }
+        image
+    }
+
+    fn paint_split_line_image(
+        samples: &[f32],
+        channels: usize,
+        width: u32,
+        height: u32,
+        foreground: Color32,
+        background: Color32,
+    ) -> ColorImage {
+        let gap = if height >= 3 { 2 } else { 0 };
+        let split_height = height.saturating_sub(gap);
+        let top_height = (split_height / 2).max(1);
+        let bottom_height = split_height.saturating_sub(top_height).max(1);
+
+        let top = Self::paint_line_image(
+            samples,
+            channels,
+            width,
+            top_height,
+            foreground,
+            background,
+            Some(0),
+        );
+        let bottom = Self::paint_line_image(
+            samples,
+            channels,
+            width,
+            bottom_height,
+            foreground,
+            background,
+            Some(1),
+        );
+        let fill =
+            Color32::from_rgba_unmultiplied(background.r(), background.g(), background.b(), 0);
+        let mut image = ColorImage::new(
+            [width as usize, height as usize],
+            vec![fill; (width as usize) * (height as usize)],
+        );
+        Self::blit_image(&mut image, &top, 0);
+        let bottom_offset = top_height as usize + gap as usize;
+        let clamped_offset = bottom_offset.min(image.size[1]);
+        Self::blit_image(&mut image, &bottom, clamped_offset);
+        image
+    }
+
+    fn sample_at_frame(
+        samples: &[f32],
+        channels: usize,
+        frame_pos: f32,
+        channel_index: Option<usize>,
+    ) -> f32 {
+        let frame_count = samples.len() / channels.max(1);
+        if frame_count == 0 {
+            return 0.0;
+        }
+        let frame_pos = frame_pos.clamp(0.0, (frame_count - 1) as f32);
+        let i0 = frame_pos.floor() as usize;
+        let i1 = (i0 + 1).min(frame_count - 1);
+        let t = frame_pos - i0 as f32;
+        let sample_at = |frame: usize| -> f32 {
+            let base = frame * channels;
+            match channel_index {
+                Some(ch) => samples
+                    .get(base + ch.min(channels.saturating_sub(1)))
+                    .copied()
+                    .unwrap_or(0.0),
+                None => {
+                    let mut sum = 0.0_f32;
+                    let mut count = 0usize;
+                    for ch in 0..channels {
+                        if let Some(sample) = samples.get(base + ch) {
+                            sum += *sample;
+                            count += 1;
+                        }
+                    }
+                    if count == 0 {
+                        0.0
+                    } else {
+                        sum / count as f32
+                    }
+                }
+            }
+        };
+        let a = sample_at(i0);
+        let b = sample_at(i1);
+        a + (b - a) * t
     }
 
     fn columns_window(
