@@ -53,12 +53,15 @@ pub(super) fn update_selection_drag(
         if let Some(beats) = controller.selection_state.bpm_scale_beats {
             apply_scaled_bpm(controller, beats, range);
         }
+    } else if controller.selection_state.range.range().is_none() {
+        controller.apply_selection(None);
     }
 }
 
 pub(super) fn finish_selection_drag(controller: &mut EguiController) {
     controller.selection_state.range.finish_drag();
     controller.selection_state.bpm_scale_beats = None;
+    clear_too_small_bpm_selection(controller);
     controller.commit_selection_undo();
     let is_playing = controller
         .audio
@@ -187,6 +190,20 @@ fn bpm_snap_step(controller: &EguiController) -> Option<f32> {
     } else {
         None
     }
+}
+
+fn clear_too_small_bpm_selection(controller: &mut EguiController) {
+    let Some(step) = bpm_snap_step(controller) else {
+        return;
+    };
+    let Some(range) = controller.selection_state.range.range() else {
+        return;
+    };
+    if range.width() >= step {
+        return;
+    }
+    controller.selection_state.range.set_range(None);
+    controller.apply_selection(None);
 }
 
 fn snap_to_transient(controller: &EguiController, position: f32) -> Option<f32> {

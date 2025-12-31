@@ -173,6 +173,17 @@ impl SelectionState {
                 SelectionRange::new(range.start(), snapped)
             }
         };
+        let next_range = match drag {
+            DragKind::Create { .. } => {
+                if next_range.width() < step {
+                    self.range = None;
+                    return None;
+                }
+                next_range
+            }
+            DragKind::StartEdge => enforce_min_width(next_range, step, SelectionEdge::Start),
+            DragKind::EndEdge => enforce_min_width(next_range, step, SelectionEdge::End),
+        };
         self.range = Some(next_range);
         Some(next_range)
     }
@@ -206,6 +217,33 @@ fn snap_delta(delta: f32, step: f32) -> f32 {
         return delta;
     }
     (delta / step).round() * step
+}
+
+fn enforce_min_width(range: SelectionRange, min_width: f32, anchor: SelectionEdge) -> SelectionRange {
+    if range.width() >= min_width {
+        return range;
+    }
+    let step = min_width.clamp(0.0, 1.0);
+    match anchor {
+        SelectionEdge::Start => {
+            let mut end = range.end();
+            let mut start = (end - step).max(0.0);
+            if (end - start) < step {
+                end = (start + step).min(1.0);
+                start = (end - step).max(0.0);
+            }
+            SelectionRange::new(start, end)
+        }
+        SelectionEdge::End => {
+            let mut start = range.start();
+            let mut end = (start + step).min(1.0);
+            if (end - start) < step {
+                start = (end - step).max(0.0);
+                end = (start + step).min(1.0);
+            }
+            SelectionRange::new(start, end)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -290,6 +328,24 @@ mod tests {
         assert!(state.begin_edge_drag(SelectionEdge::Start));
         let updated = state.update_drag_snapped(0.1, 0.25).unwrap();
         assert_range_close(updated, SelectionRange::new(0.05, 0.8));
+    }
+
+    #[test]
+    fn drag_create_below_step_clears_range() {
+        let mut state = SelectionState::new();
+        state.begin_new(0.2);
+        let updated = state.update_drag_snapped(0.22, 0.25);
+        assert!(updated.is_none());
+        assert!(state.range().is_none());
+    }
+
+    #[test]
+    fn drag_edge_enforces_min_width() {
+        let mut state = SelectionState::new();
+        state.set_range(Some(SelectionRange::new(0.2, 0.8)));
+        assert!(state.begin_edge_drag(SelectionEdge::Start));
+        let updated = state.update_drag_snapped(0.75, 0.25).unwrap();
+        assert_range_close(updated, SelectionRange::new(0.55, 0.8));
     }
 
     #[test]
