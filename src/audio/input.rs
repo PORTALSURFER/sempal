@@ -146,7 +146,7 @@ pub fn available_input_channel_count(
         }
     })? {
         let channels = range.channels();
-        max_channels = Some(max_channels.map_or(channels, |max| max.max(channels)));
+        max_channels = Some(max_channels.map_or(channels, |max: u16| max.max(channels)));
     }
     if let Some(channels) = max_channels {
         return Ok(channels);
