@@ -171,6 +171,9 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
                 ),
                 Err(err) => app.controller.set_status(err, style::StatusTone::Error),
             }
+            app.controller.ui.waveform.slice_mode_enabled = true;
+            app.controller.clear_selection();
+            app.slice_paint = None;
         }
         let clear_button = ui
             .add_enabled(slices_ready, egui::Button::new("Clear slices"))
