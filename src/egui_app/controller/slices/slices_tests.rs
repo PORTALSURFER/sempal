@@ -50,3 +50,33 @@ fn accept_waveform_slices_exports_files() {
     assert!(root.join("clip_slice001.wav").exists());
     assert!(root.join("clip_slice002.wav").exists());
 }
+
+#[test]
+fn detect_waveform_slices_uses_transients_when_enabled() {
+    let temp = tempdir().unwrap();
+    let root = temp.path().join("source");
+    std::fs::create_dir_all(&root).unwrap();
+    let renderer = crate::waveform::WaveformRenderer::new(12, 12);
+    let mut controller = EguiController::new(renderer, None);
+    let source = SampleSource::new(root.clone());
+    controller.library.sources.push(source.clone());
+    controller.cache_db(&source).unwrap();
+
+    let wav_path = root.join("clip.wav");
+    write_test_wav(&wav_path, &vec![0.5_f32; 8]);
+    controller
+        .load_waveform_for_selection(&source, Path::new("clip.wav"))
+        .unwrap();
+    controller.ui.waveform.transient_markers_enabled = true;
+    controller.ui.waveform.transient_snap_enabled = true;
+    controller.ui.waveform.transients = vec![0.25, 0.5, 0.75];
+
+    let count = controller.detect_waveform_slices_from_silence().unwrap();
+
+    assert_eq!(count, 4);
+    assert_eq!(controller.ui.waveform.slices.len(), 4);
+    let first = controller.ui.waveform.slices[0];
+    let last = controller.ui.waveform.slices[3];
+    assert!((first.start() - 0.0).abs() < 1.0e-6);
+    assert!((last.end() - 1.0).abs() < 1.0e-6);
+}

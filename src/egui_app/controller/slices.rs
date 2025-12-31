@@ -4,6 +4,7 @@ use super::MIN_SELECTION_WIDTH;
 use crate::analysis::audio::{detect_non_silent_ranges, downmix_to_mono_into};
 use crate::selection::SelectionRange;
 use crate::sample_sources::SampleSource;
+use std::cmp::Ordering;
 use std::path::{Path, PathBuf};
 
 impl EguiController {
@@ -23,12 +24,31 @@ impl EguiController {
             return Err("No audio data to slice".into());
         }
         let mut slices = Vec::new();
+        let use_transients = self.ui.waveform.transient_markers_enabled
+            && self.ui.waveform.transient_snap_enabled
+            && !self.ui.waveform.transients.is_empty();
+        let transients = if use_transients {
+            let mut positions = self.ui.waveform.transients.clone();
+            positions.sort_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal));
+            positions
+        } else {
+            Vec::new()
+        };
         for (start, end) in detect_non_silent_ranges(&mono, decoded.sample_rate) {
             let start_norm = start as f32 / total_frames as f32;
             let end_norm = end as f32 / total_frames as f32;
-            let range = SelectionRange::new(start_norm, end_norm);
-            if range.width() >= MIN_SELECTION_WIDTH {
-                slices.push(range);
+            if use_transients {
+                append_slices_from_transients(
+                    &mut slices,
+                    start_norm,
+                    end_norm,
+                    &transients,
+                );
+            } else {
+                let range = SelectionRange::new(start_norm, end_norm);
+                if range.width() >= MIN_SELECTION_WIDTH {
+                    slices.push(range);
+                }
             }
         }
         self.ui.waveform.slices = slices;
@@ -142,6 +162,42 @@ fn strip_slice_suffix(stem: &str) -> &str {
         return prefix;
     }
     stem
+}
+
+fn append_slices_from_transients(
+    slices: &mut Vec<SelectionRange>,
+    start: f32,
+    end: f32,
+    transients: &[f32],
+) {
+    let range = SelectionRange::new(start, end);
+    if range.width() < MIN_SELECTION_WIDTH {
+        return;
+    }
+    if transients.is_empty() {
+        slices.push(range);
+        return;
+    }
+    let mut points = Vec::new();
+    points.push(range.start());
+    points.extend(
+        transients
+            .iter()
+            .copied()
+            .filter(|marker| *marker > range.start() && *marker < range.end()),
+    );
+    points.push(range.end());
+    if points.len() < 2 {
+        slices.push(range);
+        return;
+    }
+    points.sort_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal));
+    for pair in points.windows(2) {
+        let slice = SelectionRange::new(pair[0], pair[1]);
+        if slice.width() >= MIN_SELECTION_WIDTH {
+            slices.push(slice);
+        }
+    }
 }
 
 #[cfg(test)]
