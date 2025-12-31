@@ -1,4 +1,5 @@
 use super::audio_samples::{crop_samples, decode_samples_from_bytes, write_wav, DecodedSamples};
+use super::EguiController;
 use super::MIN_SELECTION_WIDTH;
 use crate::analysis::audio::{detect_non_silent_ranges, downmix_to_mono_into};
 use crate::selection::SelectionRange;

@@ -55,16 +55,18 @@ pub(super) fn render_slice_overlays(
         slice_color,
     };
     let mut dragging = app.slice_drag.is_some();
-    for (index, slice) in app.controller.ui.waveform.slices.iter().copied().enumerate() {
-        dragging |= render_slice_overlay(
-            app,
-            ui,
-            &env,
-            SliceItem {
-                range: slice,
-                index,
-            },
-        );
+    let slices: Vec<SliceItem> = app
+        .controller
+        .ui
+        .waveform
+        .slices
+        .iter()
+        .copied()
+        .enumerate()
+        .map(|(index, range)| SliceItem { range, index })
+        .collect();
+    for item in slices {
+        dragging |= render_slice_overlay(app, ui, &env, item);
     }
 
     sync_slice_drag_release(app, ui.ctx());
