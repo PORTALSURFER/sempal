@@ -87,6 +87,21 @@ impl EguiController {
                     StatusTone::Warning,
                 );
             }
+            if self.sample_view.wav.loaded_audio.is_none()
+                || self.sample_view.wav.loaded_wav.as_deref() != Some(relative_path.as_path())
+            {
+                self.sample_view.wav.loaded_wav = None;
+                self.ui.loaded_wav = None;
+                if let Err(err) = self.load_waveform_for_selection(&source, &relative_path) {
+                    self.set_status(
+                        format!(
+                            "Recorded {} (reload failed: {err})",
+                            relative_path.display()
+                        ),
+                        StatusTone::Warning,
+                    );
+                }
+            }
         }
         self.refresh_output_after_recording();
         Ok(Some(outcome))
@@ -299,6 +314,12 @@ impl EguiController {
                 );
                 if let Some(target) = self.audio.recording_target.as_mut() {
                     target.loaded_once = true;
+                }
+            }
+        }
+        if let Some(target) = self.audio.recording_target.as_mut() {
+            target.last_file_len = len;
+            target.last_refresh_at = Some(now);
         }
     }
 
@@ -333,12 +354,6 @@ impl EguiController {
         }
         if let Some(monitor) = self.audio.input_monitor.take() {
             monitor.stop();
-        }
-    }
-}
-        if let Some(target) = self.audio.recording_target.as_mut() {
-            target.last_file_len = len;
-            target.last_refresh_at = Some(now);
         }
     }
 
