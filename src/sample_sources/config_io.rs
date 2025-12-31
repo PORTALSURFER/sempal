@@ -183,7 +183,7 @@ mod tests {
         PannsBackendChoice, UpdateChannel, UpdateSettings, WgpuPowerPreference,
     };
     use super::*;
-    use crate::audio::AudioOutputConfig;
+    use crate::audio::{AudioInputConfig, AudioOutputConfig};
     use crate::sample_sources::library::LibraryState;
     use crate::sample_sources::{Collection, SampleSource, SourceId};
     use crate::waveform::WaveformChannelView;
@@ -297,6 +297,33 @@ mod tests {
             );
             assert_eq!(loaded.core.audio_output.sample_rate, Some(48_000));
             assert_eq!(loaded.core.audio_output.buffer_size, Some(512));
+        });
+    }
+
+    #[test]
+    fn audio_input_defaults_and_persists() {
+        let dir = tempdir().unwrap();
+        with_config_home(dir.path(), || {
+            let path = dir.path().join("cfg.toml");
+            let cfg = AppConfig {
+                core: AppSettingsCore {
+                    audio_input: AudioInputConfig {
+                        host: Some("asio".into()),
+                        device: Some("Test Mic".into()),
+                        sample_rate: Some(44_100),
+                        buffer_size: Some(256),
+                    },
+                    ..AppSettingsCore::default()
+                },
+                ..AppConfig::default()
+            };
+
+            save_to_path(&cfg, &path).unwrap();
+            let loaded = super::load_settings_from(&path).unwrap();
+            assert_eq!(loaded.core.audio_input.host.as_deref(), Some("asio"));
+            assert_eq!(loaded.core.audio_input.device.as_deref(), Some("Test Mic"));
+            assert_eq!(loaded.core.audio_input.sample_rate, Some(44_100));
+            assert_eq!(loaded.core.audio_input.buffer_size, Some(256));
         });
     }
 

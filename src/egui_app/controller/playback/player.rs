@@ -6,6 +6,9 @@ pub(super) fn play_audio(
     looped: bool,
     start_override: Option<f32>,
 ) -> Result<(), String> {
+    if controller.is_recording() {
+        return Err("Stop recording before playback".into());
+    }
     controller.audio.pending_loop_disable_at = None;
     if controller.sample_view.wav.loaded_audio.is_none() {
         if let Some(pending) = controller.runtime.jobs.pending_audio() {

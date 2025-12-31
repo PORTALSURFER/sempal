@@ -1,4 +1,4 @@
-use crate::audio::AudioOutputConfig;
+use crate::audio::{AudioInputConfig, AudioOutputConfig};
 
 pub(super) const MAX_ANALYSIS_WORKER_COUNT: u32 = 64;
 
@@ -16,6 +16,10 @@ pub(super) fn default_true() -> bool {
 
 pub(super) fn default_audio_output() -> AudioOutputConfig {
     AudioOutputConfig::default()
+}
+
+pub(super) fn default_audio_input() -> AudioInputConfig {
+    AudioInputConfig::default()
 }
 
 pub(super) fn default_max_analysis_duration_seconds() -> f32 {

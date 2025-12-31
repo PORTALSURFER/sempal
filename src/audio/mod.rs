@@ -1,6 +1,8 @@
 use std::time::Duration;
 
 pub mod output;
+pub mod input;
+pub mod recording;
 
 mod fade;
 mod mixer;
@@ -11,6 +13,12 @@ pub use output::{
     AudioDeviceSummary, AudioHostSummary, AudioOutputConfig, AudioOutputError, ResolvedOutput,
     available_devices, available_hosts, open_output_stream, supported_sample_rates,
 };
+pub use input::{
+    AudioInputConfig, AudioInputError, ResolvedInput, ResolvedInputConfig,
+    available_input_devices, available_input_hosts, resolve_input_stream_config,
+    supported_input_sample_rates,
+};
+pub use recording::{AudioRecorder, RecordingOutcome};
 pub use player::AudioPlayer;
 
 #[cfg(test)]

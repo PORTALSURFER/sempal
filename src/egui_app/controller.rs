@@ -32,6 +32,7 @@ mod map_view;
 mod missing_samples;
 mod os_explorer;
 mod playback;
+mod recording;
 mod progress;
 mod progress_messages;
 mod scans;

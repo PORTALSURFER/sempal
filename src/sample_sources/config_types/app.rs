@@ -3,21 +3,22 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    audio::AudioOutputConfig,
+    audio::{AudioInputConfig, AudioOutputConfig},
     sample_sources::{Collection, SampleSource, SourceId},
     sample_sources::library::LibraryState,
 };
 
 use super::{AnalysisSettings, InteractionOptions, UpdateSettings};
 use super::super::config_defaults::{
-    clamp_analysis_worker_count, clamp_volume, default_audio_output, default_true, default_volume,
+    clamp_analysis_worker_count, clamp_volume, default_audio_input, default_audio_output,
+    default_true, default_volume,
 };
 
 /// Aggregate application state loaded from disk.
 ///
 /// Config keys (TOML): `feature_flags`, `analysis`, `updates`, `hints`, `app_data_dir`,
 /// `trash_folder`, `collection_export_root`, `last_selected_source`, `volume`,
-/// `audio_output`, `controls`.
+/// `audio_output`, `audio_input`, `controls`.
 ///
 /// `sources` and `collections` are stored in the library database.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -84,6 +85,8 @@ pub struct AppSettingsCore {
     pub last_selected_source: Option<SourceId>,
     #[serde(default = "default_audio_output")]
     pub audio_output: AudioOutputConfig,
+    #[serde(default = "default_audio_input")]
+    pub audio_input: AudioInputConfig,
     #[serde(default = "default_volume")]
     pub volume: f32,
     #[serde(default)]
@@ -166,6 +169,7 @@ impl Default for AppSettingsCore {
             collection_export_root: None,
             last_selected_source: None,
             audio_output: default_audio_output(),
+            audio_input: default_audio_input(),
             volume: default_volume(),
             controls: InteractionOptions::default(),
         }

@@ -20,6 +20,35 @@ impl EguiApp {
             .default_width(320.0)
             .show(ctx, |ui| {
                 ui.set_min_width(300.0);
+                section_label(ui, "Audio input");
+                self.render_audio_input_host_combo(ui);
+                self.render_audio_input_device_combo(ui);
+                self.render_audio_input_sample_rate_combo(ui);
+                if let Some(applied) = &self.controller.ui.audio.input_applied {
+                    let buffer = applied
+                        .buffer_size_frames
+                        .map(|frames| format!(", buffer {frames}"))
+                        .unwrap_or_default();
+                    let host_label = applied.host_id.to_uppercase();
+                    ui.label(
+                        RichText::new(format!(
+                            "Active: {} via {} @ {} Hz ({} ch{buffer})",
+                            applied.device_name,
+                            host_label,
+                            applied.sample_rate,
+                            applied.channel_count
+                        ))
+                        .color(style::palette().text_muted),
+                    );
+                }
+                if let Some(current_warning) = self.controller.ui.audio.input_warning.as_ref() {
+                    ui.label(
+                        RichText::new(current_warning.clone())
+                            .color(style::status_badge_color(style::StatusTone::Warning)),
+                    );
+                }
+                ui.separator();
+                section_label(ui, "Audio output");
                 self.render_audio_host_combo(ui);
                 self.render_audio_device_combo(ui);
                 self.render_audio_sample_rate_combo(ui);
@@ -162,6 +191,7 @@ impl EguiApp {
         if ui.button("Open options…").clicked() {
             self.controller.ui.audio.panel_open = true;
             self.controller.refresh_audio_options();
+            self.controller.refresh_audio_input_options();
         }
         if let Some(warning) = &self.controller.ui.audio.warning {
             ui.label(

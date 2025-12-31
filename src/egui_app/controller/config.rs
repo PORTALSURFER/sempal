@@ -25,6 +25,8 @@ impl EguiController {
         self.ui.collections.enabled = self.settings.feature_flags.collections_enabled;
         self.settings.audio_output = cfg.core.audio_output.clone();
         self.ui.audio.selected = self.settings.audio_output.clone();
+        self.settings.audio_input = cfg.core.audio_input.clone();
+        self.ui.audio.input_selected = self.settings.audio_input.clone();
         self.settings.controls = cfg.core.controls.clone();
         self.settings.controls.waveform_scroll_speed =
             clamp_scroll_speed(self.settings.controls.waveform_scroll_speed);
@@ -63,6 +65,7 @@ impl EguiController {
             self.ui.waveform.bpm_input.clear();
         }
         self.refresh_audio_options();
+        self.refresh_audio_input_options();
         self.apply_volume(cfg.core.volume);
         self.ui.trash_folder = cfg.core.trash_folder.clone();
         self.ui.collection_export_root = cfg.core.collection_export_root.clone();
@@ -177,6 +180,7 @@ impl EguiController {
                             .clone()
                     }),
                 audio_output: self.settings.audio_output.clone(),
+                audio_input: self.settings.audio_input.clone(),
                 volume: self.ui.volume,
                 controls: self.settings.controls.clone(),
             },
