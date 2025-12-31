@@ -8,6 +8,13 @@ impl EguiController {
         self.ui.feedback_issue.last_success_url = None;
         self.ui.feedback_issue.token_autofill_last = None;
         self.ui.feedback_issue.connecting = false;
+        match crate::issue_gateway::IssueTokenStore::new().and_then(|store| store.get()) {
+            Ok(Some(_)) => {}
+            Ok(None) => self.connect_github_issue_reporting(),
+            Err(err) => {
+                self.ui.feedback_issue.last_error = Some(err.to_string());
+            }
+        }
     }
 
     pub(crate) fn close_feedback_issue_prompt(&mut self) {
