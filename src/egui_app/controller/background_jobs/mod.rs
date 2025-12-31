@@ -178,6 +178,9 @@ impl EguiController {
                 JobMessage::IssueGatewayCreated(message) => {
                     updates::handle_issue_gateway_created(self, message);
                 }
+                JobMessage::IssueGatewayAuthed(message) => {
+                    updates::handle_issue_gateway_authed(self, message);
+                }
             }
         }
     }

@@ -106,7 +106,7 @@ impl EguiApp {
         ui.set_min_width(520.0);
         ui.label(
             RichText::new(
-                "After authorizing in the browser, copy the token shown; Sempal will auto-detect it or you can paste it here.",
+                "If auto-connect fails, copy a token from the auth page and paste it here.",
             )
             .color(palette.text_primary),
         );
@@ -118,7 +118,7 @@ impl EguiApp {
             if state.token_input.trim().is_empty() {
                 if let Ok(clipboard_text) = crate::external_clipboard::read_text() {
                     let candidate = clipboard_text.trim();
-                    if looks_like_issue_token(candidate)
+                    if crate::issue_gateway::api::looks_like_issue_token(candidate)
                         && state.token_autofill_last.as_deref() != Some(candidate)
                     {
                         state.token_input = candidate.to_string();
@@ -178,7 +178,10 @@ impl EguiApp {
 
         ui.add_space(6.0);
         ui.horizontal(|ui| {
-            if ui.button("Connect GitHub").clicked() {
+            if ui
+                .add_enabled(!self.controller.ui.feedback_issue.connecting, egui::Button::new("Connect GitHub"))
+                .clicked()
+            {
                 self.controller.connect_github_issue_reporting();
             }
             if ui.button("Paste token…").clicked() {
@@ -189,17 +192,23 @@ impl EguiApp {
                 self.controller.disconnect_github_issue_reporting();
             }
         });
-        match crate::issue_gateway::IssueTokenStore::new().and_then(|store| store.get()) {
-            Ok(Some(_)) => ui.label(
-                RichText::new("Status: connected")
-                    .color(style::status_badge_color(style::StatusTone::Info)),
-            ),
-            Ok(None) => ui.label(RichText::new("Status: not connected").color(palette.text_muted)),
-            Err(err) => ui.label(
-                RichText::new(format!("Status: token store error ({err})"))
-                    .color(style::status_badge_color(style::StatusTone::Warning)),
-            ),
-        };
+        if self.controller.ui.feedback_issue.connecting {
+            ui.label(RichText::new("Status: connecting…").color(palette.text_muted));
+        } else {
+            match crate::issue_gateway::IssueTokenStore::new().and_then(|store| store.get()) {
+                Ok(Some(_)) => ui.label(
+                    RichText::new("Status: connected")
+                        .color(style::status_badge_color(style::StatusTone::Info)),
+                ),
+                Ok(None) => {
+                    ui.label(RichText::new("Status: not connected").color(palette.text_muted))
+                }
+                Err(err) => ui.label(
+                    RichText::new(format!("Status: token store error ({err})"))
+                        .color(style::status_badge_color(style::StatusTone::Warning)),
+                ),
+            };
+        }
 
         if let Some(err) = self.controller.ui.feedback_issue.last_error.as_ref() {
             ui.add_space(8.0);
@@ -287,32 +296,5 @@ impl EguiApp {
             }
         });
         action
-    }
-}
-
-fn looks_like_issue_token(token: &str) -> bool {
-    let trimmed = token.trim();
-    if trimmed.len() < 20 || trimmed.len() > 200 {
-        return false;
-    }
-    trimmed
-        .chars()
-        .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
-}
-
-#[cfg(test)]
-mod tests {
-    use super::looks_like_issue_token;
-
-    #[test]
-    fn accepts_tokenish_values() {
-        assert!(looks_like_issue_token("tok_abcdefghijklmnopqrstuvwxyz"));
-        assert!(looks_like_issue_token("gho_1234567890abcdefghij"));
-    }
-
-    #[test]
-    fn rejects_values_with_spaces_or_short_strings() {
-        assert!(!looks_like_issue_token("too short"));
-        assert!(!looks_like_issue_token("token with spaces and tabs"));
     }
 }

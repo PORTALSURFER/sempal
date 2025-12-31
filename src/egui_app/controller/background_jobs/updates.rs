@@ -1,5 +1,5 @@
 use super::*;
-use crate::egui_app::controller::jobs::IssueGatewayCreateResult;
+use crate::egui_app::controller::jobs::{IssueGatewayAuthResult, IssueGatewayCreateResult};
 
 pub(super) fn handle_update_checked(controller: &mut EguiController, message: UpdateCheckResult) {
     controller.runtime.jobs.clear_update_check();
@@ -57,4 +57,12 @@ pub(super) fn handle_issue_gateway_created(
             );
         }
     }
+}
+
+pub(super) fn handle_issue_gateway_authed(
+    controller: &mut EguiController,
+    message: IssueGatewayAuthResult,
+) {
+    controller.runtime.jobs.clear_issue_gateway_auth();
+    controller.complete_issue_gateway_auth(message.result);
 }

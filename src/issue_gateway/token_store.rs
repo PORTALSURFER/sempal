@@ -63,6 +63,21 @@ impl IssueTokenStore {
         self.fallback_set(token)
     }
 
+    /// Store the token and verify it can be read back.
+    pub fn set_and_verify(&self, token: &str) -> Result<(), IssueTokenStoreError> {
+        let token = token.trim();
+        if token.is_empty() {
+            return Ok(());
+        }
+        self.set(token)?;
+        match self.get()? {
+            Some(stored) if stored.trim() == token => Ok(()),
+            _ => Err(IssueTokenStoreError::Unavailable(
+                "Token saved, but could not be read back. Try again.".to_string(),
+            )),
+        }
+    }
+
     pub fn delete(&self) -> Result<(), IssueTokenStoreError> {
         let _ = self.try_keyring_delete();
         let _ = self.fallback_delete();

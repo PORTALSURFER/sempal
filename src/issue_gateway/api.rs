@@ -52,6 +52,35 @@ pub enum CreateIssueError {
     Json(String),
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum IssueAuthError {
+    #[error("Invalid auth response: {0}")]
+    InvalidResponse(String),
+    #[error("Server error: {0}")]
+    ServerError(String),
+    #[error("HTTP error: {0}")]
+    Transport(String),
+}
+
+/// Start an auth session and return the token produced by the gateway.
+pub fn fetch_issue_token() -> Result<String, IssueAuthError> {
+    let response = match ureq::get(AUTH_START_URL).call() {
+        Ok(response) => response,
+        Err(ureq::Error::Status(code, response)) => {
+            let body = response.into_string().unwrap_or_default();
+            return Err(IssueAuthError::ServerError(format!(
+                "HTTP {code}: {body}"
+            )));
+        }
+        Err(ureq::Error::Transport(err)) => {
+            return Err(IssueAuthError::Transport(err.to_string()));
+        }
+    };
+
+    let body = response.into_string().unwrap_or_default();
+    parse_issue_token(&body)
+}
+
 pub fn create_issue(
     token: &str,
     request: &CreateIssueRequest,
@@ -120,6 +149,35 @@ fn parse_create_issue_response(body: &str) -> Result<CreateIssueResponse, Create
     Err(CreateIssueError::Json(message))
 }
 
+pub(crate) fn looks_like_issue_token(token: &str) -> bool {
+    let trimmed = token.trim();
+    if trimmed.len() < 20 || trimmed.len() > 200 {
+        return false;
+    }
+    trimmed
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
+}
+
+fn parse_issue_token(body: &str) -> Result<String, IssueAuthError> {
+    let trimmed = body.trim();
+    if trimmed.is_empty() {
+        return Err(IssueAuthError::InvalidResponse(
+            "Empty response body".to_string(),
+        ));
+    }
+    let mut found = None;
+    for line in trimmed.lines() {
+        let candidate = line.trim();
+        if looks_like_issue_token(candidate) {
+            found = Some(candidate.to_string());
+        }
+    }
+    found.ok_or_else(|| {
+        IssueAuthError::InvalidResponse("Token not found in response".to_string())
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -142,5 +200,18 @@ mod tests {
     fn reports_error_field() {
         let err = parse_create_issue_response(r#"{ "error": "nope" }"#).unwrap_err();
         assert!(err.to_string().contains("nope"));
+    }
+
+    #[test]
+    fn parses_issue_token_from_auth_body() {
+        let body = "✅ GitHub connected\n\nCopy this token into the app:\n\nabcDEF123_-xyz000000\n\nYou can close this tab.";
+        let token = parse_issue_token(body).unwrap();
+        assert_eq!(token, "abcDEF123_-xyz000000");
+    }
+
+    #[test]
+    fn rejects_auth_body_without_token() {
+        let err = parse_issue_token("No token here").unwrap_err();
+        assert!(err.to_string().contains("Token not found"));
     }
 }

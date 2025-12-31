@@ -26,6 +26,7 @@ pub(super) enum JobMessage {
     SimilarityPrepared(SimilarityPrepResult),
     UpdateChecked(UpdateCheckResult),
     IssueGatewayCreated(IssueGatewayCreateResult),
+    IssueGatewayAuthed(IssueGatewayAuthResult),
 }
 
 #[derive(Debug)]
@@ -40,6 +41,11 @@ pub(super) struct IssueGatewayCreateResult {
         crate::issue_gateway::api::CreateIssueResponse,
         crate::issue_gateway::api::CreateIssueError,
     >,
+}
+
+#[derive(Debug)]
+pub(super) struct IssueGatewayAuthResult {
+    pub(super) result: Result<String, crate::issue_gateway::api::IssueAuthError>,
 }
 
 #[derive(Debug, Clone)]
@@ -101,6 +107,7 @@ pub(super) struct ControllerJobs {
     pub(super) umap_cluster_build_in_progress: bool,
     pub(super) update_check_in_progress: bool,
     pub(super) issue_gateway_in_progress: bool,
+    pub(super) issue_gateway_auth_in_progress: bool,
 }
 
 impl ControllerJobs {
@@ -129,6 +136,7 @@ impl ControllerJobs {
             umap_cluster_build_in_progress: false,
             update_check_in_progress: false,
             issue_gateway_in_progress: false,
+            issue_gateway_auth_in_progress: false,
         };
         jobs.forward_wav_results(wav_job_rx);
         jobs.forward_audio_results(audio_job_rx);
@@ -364,5 +372,23 @@ impl ControllerJobs {
 
     pub(super) fn clear_issue_gateway_create(&mut self) {
         self.issue_gateway_in_progress = false;
+    }
+
+    pub(super) fn begin_issue_gateway_auth(&mut self) {
+        if self.issue_gateway_auth_in_progress {
+            return;
+        }
+        self.issue_gateway_auth_in_progress = true;
+        let tx = self.message_tx.clone();
+        thread::spawn(move || {
+            let result = crate::issue_gateway::api::fetch_issue_token();
+            let _ = tx.send(JobMessage::IssueGatewayAuthed(IssueGatewayAuthResult {
+                result,
+            }));
+        });
+    }
+
+    pub(super) fn clear_issue_gateway_auth(&mut self) {
+        self.issue_gateway_auth_in_progress = false;
     }
 }
