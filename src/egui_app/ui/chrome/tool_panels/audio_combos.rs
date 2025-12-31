@@ -155,6 +155,41 @@ impl EguiApp {
             });
     }
 
+    pub(super) fn render_audio_input_channel_checkboxes(&mut self, ui: &mut egui::Ui) {
+        let channel_counts = self.controller.ui.audio.input_channel_counts.clone();
+        if channel_counts.is_empty() {
+            return;
+        }
+        let selected = self.controller.ui.audio.input_selected.channels;
+        let has_mono = channel_counts.contains(&1);
+        let has_stereo = channel_counts.contains(&2);
+        let stereo_selected = selected == Some(2);
+        ui.label("Input channels");
+        ui.horizontal(|ui| {
+            let mut mono_checked = selected == Some(1);
+            let mono_response = ui.add_enabled(
+                has_mono && !stereo_selected,
+                egui::Checkbox::new(&mut mono_checked, "Mono (1 input)"),
+            );
+            if mono_response.changed() && mono_checked {
+                self.controller.set_audio_input_channels(1);
+            }
+
+            let mut stereo_checked = stereo_selected;
+            let stereo_response = ui.add_enabled(
+                has_stereo,
+                egui::Checkbox::new(&mut stereo_checked, "Stereo (2 inputs)"),
+            );
+            if stereo_response.changed() {
+                if stereo_checked {
+                    self.controller.set_audio_input_channels(2);
+                } else if has_mono {
+                    self.controller.set_audio_input_channels(1);
+                }
+            }
+        });
+    }
+
     pub(super) fn render_audio_buffer_combo(&mut self, ui: &mut egui::Ui) {
         let selected_buffer = self.controller.ui.audio.selected.buffer_size;
         let selected = selected_buffer

@@ -24,6 +24,7 @@ impl EguiApp {
                 self.render_audio_input_host_combo(ui);
                 self.render_audio_input_device_combo(ui);
                 self.render_audio_input_sample_rate_combo(ui);
+                self.render_audio_input_channel_checkboxes(ui);
                 if let Some(applied) = &self.controller.ui.audio.input_applied {
                     let buffer = applied
                         .buffer_size_frames

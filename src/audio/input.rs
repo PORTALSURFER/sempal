@@ -37,6 +37,8 @@ pub struct AudioInputConfig {
     pub sample_rate: Option<u32>,
     #[serde(default)]
     pub buffer_size: Option<u32>,
+    #[serde(default)]
+    pub channels: Option<u16>,
 }
 
 /// Actual input parameters in use after opening a stream.
@@ -121,6 +123,37 @@ pub fn supported_input_sample_rates(
         && let Ok(default) = device.default_input_config()
     {
         supported.push(default.sample_rate().0);
+    }
+    supported.sort_unstable();
+    supported.dedup();
+    Ok(supported)
+}
+
+pub fn supported_input_channel_counts(
+    host_id: &str,
+    device_name: &str,
+) -> Result<Vec<u16>, AudioInputError> {
+    let (host, resolved_host, _) = resolve_host(Some(host_id))?;
+    let (device, _, _) = resolve_device(&host, Some(device_name))?;
+    let mut supported = Vec::new();
+    for range in device.supported_input_configs().map_err(|source| {
+        AudioInputError::SupportedInputConfigs {
+            host_id: resolved_host.clone(),
+            source,
+        }
+    })? {
+        let channels = range.channels();
+        if channels == 1 || channels == 2 {
+            supported.push(channels);
+        }
+    }
+    if supported.is_empty()
+        && let Ok(default) = device.default_input_config()
+    {
+        let channels = default.channels();
+        if channels == 1 || channels == 2 {
+            supported.push(channels);
+        }
     }
     supported.sort_unstable();
     supported.dedup();

@@ -11,7 +11,7 @@ use tracing::warn;
 
 use super::input::{AudioInputConfig, AudioInputError, ResolvedInput, resolve_input_stream_config};
 
-const DESIRED_CHANNELS: u16 = 2;
+const DEFAULT_INPUT_CHANNELS: u16 = 2;
 
 pub struct RecordingOutcome {
     pub path: PathBuf,
@@ -30,7 +30,8 @@ pub struct AudioRecorder {
 
 impl AudioRecorder {
     pub fn start(config: &AudioInputConfig, path: PathBuf) -> Result<Self, AudioInputError> {
-        let resolved = resolve_input_stream_config(config, DESIRED_CHANNELS)?;
+        let desired_channels = config.channels.unwrap_or(DEFAULT_INPUT_CHANNELS);
+        let resolved = resolve_input_stream_config(config, desired_channels)?;
         let (sender, receiver) = std::sync::mpsc::channel();
         let writer = RecorderWriter::spawn(
             path.clone(),

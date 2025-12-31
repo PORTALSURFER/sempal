@@ -16,7 +16,7 @@ pub use output::{
 pub use input::{
     AudioInputConfig, AudioInputError, ResolvedInput, ResolvedInputConfig,
     available_input_devices, available_input_hosts, resolve_input_stream_config,
-    supported_input_sample_rates,
+    supported_input_channel_counts, supported_input_sample_rates,
 };
 pub use recording::{AudioRecorder, RecordingOutcome};
 pub use player::AudioPlayer;

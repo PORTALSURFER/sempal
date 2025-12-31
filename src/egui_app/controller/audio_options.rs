@@ -180,6 +180,36 @@ impl EguiController {
             self.settings.audio_input.sample_rate = Some(sample_rates[0]);
         }
         self.ui.audio.input_sample_rates = sample_rates;
+
+        let channel_counts = match (host_id.as_deref(), device_name.as_deref()) {
+            (Some(host), Some(device)) => {
+                crate::audio::supported_input_channel_counts(host, device)
+                    .unwrap_or_else(|_| Vec::new())
+            }
+            _ => Vec::new(),
+        };
+        if let Some(channels) = self.settings.audio_input.channels
+            && !channel_counts.is_empty()
+            && !channel_counts.contains(&channels)
+        {
+            let fallback = if channel_counts.contains(&2) {
+                2
+            } else {
+                channel_counts[0]
+            };
+            warning.get_or_insert_with(|| {
+                format!("Input channels {channels} unsupported; using {fallback}")
+            });
+            self.settings.audio_input.channels = Some(fallback);
+        } else if self.settings.audio_input.channels.is_none() && !channel_counts.is_empty() {
+            let fallback = if channel_counts.contains(&2) {
+                2
+            } else {
+                channel_counts[0]
+            };
+            self.settings.audio_input.channels = Some(fallback);
+        }
+        self.ui.audio.input_channel_counts = channel_counts;
         self.ui.audio.input_selected = self.settings.audio_input.clone();
         self.ui.audio.input_warning = warning;
     }
@@ -241,6 +271,16 @@ impl EguiController {
         }
         self.settings.audio_input.sample_rate = sample_rate;
         self.ui.audio.input_selected.sample_rate = sample_rate;
+        let _ = self.persist_config("Failed to save audio input settings");
+    }
+
+    /// Update the selected input channel count and persist input settings.
+    pub fn set_audio_input_channels(&mut self, channels: u16) {
+        if self.settings.audio_input.channels == Some(channels) {
+            return;
+        }
+        self.settings.audio_input.channels = Some(channels);
+        self.ui.audio.input_selected.channels = Some(channels);
         let _ = self.persist_config("Failed to save audio input settings");
     }
 
@@ -354,6 +394,11 @@ impl EguiController {
             && rate != input.sample_rate
         {
             reasons.push(format!("sample rate {rate}"));
+        }
+        if let Some(channels) = self.settings.audio_input.channels
+            && channels != input.channel_count
+        {
+            reasons.push(format!("channels {channels}"));
         }
         let details = if reasons.is_empty() {
             "requested settings".to_string()
