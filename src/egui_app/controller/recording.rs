@@ -31,6 +31,11 @@ impl EguiController {
             self.stop_playback_if_active();
         }
         let (source, relative_path, output_path) = self.next_recording_path_in_source()?;
+        if self.settings.controls.input_monitoring_enabled && self.audio.player.is_none() {
+            if let Err(err) = self.ensure_player() {
+                self.set_status(err, StatusTone::Warning);
+            }
+        }
         self.sample_view.wav.selected_wav = Some(relative_path.clone());
         self.audio.recording_target = Some(RecordingTarget {
             source_id: source.id.clone(),
@@ -330,13 +335,9 @@ impl EguiController {
         if self.audio.input_monitor.is_some() {
             return;
         }
-        let player_rc = match self.ensure_player() {
-            Ok(Some(player)) => player,
-            Ok(None) => return,
-            Err(err) => {
-                self.set_status(err, StatusTone::Warning);
-                return;
-            }
+        let Some(player_rc) = self.audio.player.as_ref() else {
+            self.set_status("Audio output unavailable for monitoring".into(), StatusTone::Warning);
+            return;
         };
         let sink = player_rc.borrow().create_monitor_sink(self.ui.volume);
         let monitor = InputMonitor::start(
