@@ -313,29 +313,52 @@ impl WaveformRenderer {
 
         let mut prev_y = None;
         for x in 0..width as usize {
-            let t = if width <= 1 {
-                0.0
-            } else {
-                x as f32 / (width as f32 - 1.0)
-            };
-            let frame_pos = t * (frame_count.saturating_sub(1)) as f32;
-            let sample = Self::sample_at_frame(samples, channels, frame_pos, channel_index);
+            let sample = Self::supersampled_frame(
+                samples,
+                channels,
+                frame_count,
+                x,
+                width as usize,
+                channel_index,
+            );
             let y = to_y(sample);
             if let Some(prev) = prev_y {
                 let (start, end) = if prev <= y { (prev, y) } else { (y, prev) };
                 let start_y = start.floor().clamp(0.0, (height - 1) as f32) as usize;
                 let end_y = end.ceil().clamp(0.0, (height - 1) as f32) as usize;
                 for yy in start_y..=end_y {
-                    let idx = yy * stride + x;
-                    if let Some(pixel) = image.pixels.get_mut(idx) {
-                        *pixel = Color32::from_rgba_unmultiplied(fg.0, fg.1, fg.2, fg.3);
+                    Self::blend_pixel(
+                        &mut image,
+                        stride,
+                        x,
+                        yy,
+                        fg,
+                        Self::coverage_for_line(yy as f32, start, end),
+                    );
+                    if yy + 1 < height as usize {
+                        Self::blend_pixel(
+                            &mut image,
+                            stride,
+                            x,
+                            yy + 1,
+                            fg,
+                            0.35 * Self::coverage_for_line(yy as f32 + 1.0, start, end),
+                        );
+                    }
+                    if yy > 0 {
+                        Self::blend_pixel(
+                            &mut image,
+                            stride,
+                            x,
+                            yy - 1,
+                            fg,
+                            0.35 * Self::coverage_for_line(yy as f32 - 1.0, start, end),
+                        );
                     }
                 }
             }
-            let idx = y.round().clamp(0.0, (height - 1) as f32) as usize * stride + x;
-            if let Some(pixel) = image.pixels.get_mut(idx) {
-                *pixel = Color32::from_rgba_unmultiplied(fg.0, fg.1, fg.2, fg.3);
-            }
+            let center_y = y.round().clamp(0.0, (height - 1) as f32) as usize;
+            Self::blend_pixel(&mut image, stride, x, center_y, fg, 1.0);
             prev_y = Some(y);
         }
         image
@@ -423,9 +446,76 @@ impl WaveformRenderer {
                 }
             }
         };
+        if i0 >= 1 && i1 + 1 < frame_count {
+            let p0 = sample_at(i0 - 1);
+            let p1 = sample_at(i0);
+            let p2 = sample_at(i1);
+            let p3 = sample_at(i1 + 1);
+            return Self::catmull_rom(p0, p1, p2, p3, t);
+        }
         let a = sample_at(i0);
         let b = sample_at(i1);
         a + (b - a) * t
+    }
+
+    fn supersampled_frame(
+        samples: &[f32],
+        channels: usize,
+        frame_count: usize,
+        x: usize,
+        width: usize,
+        channel_index: Option<usize>,
+    ) -> f32 {
+        if width <= 1 || frame_count == 0 {
+            return Self::sample_at_frame(samples, channels, 0.0, channel_index);
+        }
+        let sub_samples = 4;
+        let mut sum = 0.0_f32;
+        for i in 0..sub_samples {
+            let offset = (i as f32 + 0.5) / sub_samples as f32;
+            let t = (x as f32 + offset) / (width as f32 - 1.0);
+            let frame_pos = t * (frame_count.saturating_sub(1)) as f32;
+            sum += Self::sample_at_frame(samples, channels, frame_pos, channel_index);
+        }
+        sum / sub_samples as f32
+    }
+
+    fn catmull_rom(p0: f32, p1: f32, p2: f32, p3: f32, t: f32) -> f32 {
+        let t2 = t * t;
+        let t3 = t2 * t;
+        0.5
+            * (2.0 * p1
+                + (-p0 + p2) * t
+                + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t2
+                + (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * t3)
+    }
+
+    fn coverage_for_line(y: f32, start: f32, end: f32) -> f32 {
+        if start > end {
+            return Self::coverage_for_line(y, end, start);
+        }
+        let span = (end - start).max(1.0);
+        let clamped = (y - start).clamp(0.0, span);
+        let dist = (clamped - span * 0.5).abs();
+        (1.0 - (dist / (span * 0.5)).min(1.0)).clamp(0.0, 1.0)
+    }
+
+    fn blend_pixel(
+        image: &mut ColorImage,
+        stride: usize,
+        x: usize,
+        y: usize,
+        fg: (u8, u8, u8, u8),
+        coverage: f32,
+    ) {
+        if coverage <= 0.0 {
+            return;
+        }
+        let idx = y * stride + x;
+        if let Some(pixel) = image.pixels.get_mut(idx) {
+            let alpha = (fg.3 as f32 * coverage.clamp(0.0, 1.0)).round() as u8;
+            *pixel = Color32::from_rgba_unmultiplied(fg.0, fg.1, fg.2, alpha);
+        }
     }
 
     fn columns_window(
