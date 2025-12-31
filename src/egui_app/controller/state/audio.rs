@@ -12,6 +12,7 @@ pub(in crate::egui_app::controller) struct ControllerAudioState {
     pub(in crate::egui_app::controller) cache: AudioCache,
     pub(in crate::egui_app::controller) pending_loop_disable_at: Option<Instant>,
     pub(in crate::egui_app::controller) recorder: Option<AudioRecorder>,
+    pub(in crate::egui_app::controller) recording_target: Option<RecordingTarget>,
 }
 
 impl ControllerAudioState {
@@ -25,8 +26,19 @@ impl ControllerAudioState {
             cache: AudioCache::new(cache_capacity, history_limit),
             pending_loop_disable_at: None,
             recorder: None,
+            recording_target: None,
         }
     }
+}
+
+#[derive(Clone)]
+pub(in crate::egui_app::controller) struct RecordingTarget {
+    pub(in crate::egui_app::controller) source_id: SourceId,
+    pub(in crate::egui_app::controller) relative_path: PathBuf,
+    pub(in crate::egui_app::controller) absolute_path: PathBuf,
+    pub(in crate::egui_app::controller) last_refresh_at: Option<Instant>,
+    pub(in crate::egui_app::controller) last_file_len: u64,
+    pub(in crate::egui_app::controller) loaded_once: bool,
 }
 
 #[derive(Clone)]

@@ -1,12 +1,14 @@
 use super::*;
 use crate::audio::{AudioRecorder, RecordingOutcome};
+use super::state::audio::RecordingTarget;
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 use time::format_description::FormatItem;
 use time::macros::format_description;
 
-const RECORDINGS_DIR_NAME: &str = "recordings";
 const RECORDING_FILE_PREFIX: &str = "recording_";
 const RECORDING_FILE_EXT: &str = "wav";
+const RECORDING_REFRESH_INTERVAL: Duration = Duration::from_millis(250);
 
 impl EguiController {
     pub fn is_recording(&self) -> bool {
@@ -14,35 +16,26 @@ impl EguiController {
     }
 
     pub fn start_recording(&mut self) -> Result<(), String> {
+        self.start_recording_in_current_source()
+    }
+
+    pub(super) fn start_recording_in_current_source(&mut self) -> Result<(), String> {
         if self.is_recording() {
             return Ok(());
         }
         if self.is_playing() {
             self.stop_playback_if_active();
         }
-        let output_path = self.next_recording_path()?;
-        self.start_recording_with_path(output_path)
-    }
-
-    pub fn start_recording_to_path(&mut self, output_path: PathBuf) -> Result<(), String> {
-        if self.is_recording() {
-            return Ok(());
-        }
-        if self.is_playing() {
-            self.stop_playback_if_active();
-        }
-        let output_path = ensure_recording_path(output_path)?;
-        self.start_recording_with_path(output_path)
-    }
-
-    pub fn recording_filename_hint(&self) -> String {
-        format!(
-            "{RECORDING_FILE_PREFIX}{}.{RECORDING_FILE_EXT}",
-            formatted_timestamp()
-        )
-    }
-
-    fn start_recording_with_path(&mut self, output_path: PathBuf) -> Result<(), String> {
+        let (source, relative_path, output_path) = self.next_recording_path_in_source()?;
+        self.sample_view.wav.selected_wav = Some(relative_path.clone());
+        self.audio.recording_target = Some(RecordingTarget {
+            source_id: source.id.clone(),
+            relative_path,
+            absolute_path: output_path.clone(),
+            last_refresh_at: None,
+            last_file_len: 0,
+            loaded_once: false,
+        });
         let recorder = AudioRecorder::start(&self.settings.audio_input, output_path.clone())
             .map_err(|err| err.to_string())?;
         self.update_audio_input_status(recorder.resolved());
@@ -59,6 +52,7 @@ impl EguiController {
             return Ok(None);
         };
         let outcome = recorder.stop().map_err(|err| err.to_string())?;
+        self.audio.recording_target = None;
         self.set_status(
             format!(
                 "Recorded {:.2}s to {}",
@@ -71,15 +65,11 @@ impl EguiController {
     }
 
     pub fn stop_recording_and_load(&mut self) -> Result<(), String> {
+        let target = self.audio.recording_target.clone();
         let Some(outcome) = self.stop_recording()? else {
             return Ok(());
         };
-        let source = self.ensure_recordings_source(&outcome.path)?;
-        let relative_path = outcome
-            .path
-            .strip_prefix(&source.root)
-            .map_err(|_| "Failed to resolve recording path".to_string())?
-            .to_path_buf();
+        let (source, relative_path) = self.resolve_recording_target(target.as_ref(), &outcome.path)?;
         self.load_waveform_for_selection(&source, &relative_path)?;
         Ok(())
     }
@@ -120,21 +110,115 @@ impl EguiController {
         Ok(source)
     }
 
-    fn next_recording_path(&mut self) -> Result<PathBuf, String> {
-        let root = crate::app_dirs::app_root_dir()
-            .map_err(|err| format!("Failed to resolve app folder: {err}"))?;
-        let recordings = root.join(RECORDINGS_DIR_NAME);
-        std::fs::create_dir_all(&recordings).map_err(|err| {
-            format!(
-                "Failed to create recordings folder {}: {err}",
-                recordings.display()
-            )
-        })?;
-        let filename = format!(
-            "{RECORDING_FILE_PREFIX}{}.{RECORDING_FILE_EXT}",
-            formatted_timestamp()
-        );
-        Ok(recordings.join(filename))
+    fn next_recording_path_in_source(
+        &mut self,
+    ) -> Result<(SampleSource, PathBuf, PathBuf), String> {
+        let source = self
+            .current_source()
+            .ok_or_else(|| "Select a source to record into".to_string())?;
+        let mut target_folder = self
+            .selected_folder_paths()
+            .into_iter()
+            .next()
+            .unwrap_or_default();
+        if target_folder.is_absolute() {
+            target_folder = target_folder
+                .strip_prefix(&source.root)
+                .map_err(|_| "Selected folder is outside the current source".to_string())?
+                .to_path_buf();
+        }
+        let base_name = format!("{RECORDING_FILE_PREFIX}{}", formatted_timestamp());
+        let mut counter = 0_u32;
+        let (relative_path, absolute_path) = loop {
+            let suffix = if counter == 0 {
+                String::new()
+            } else {
+                format!("_{counter}")
+            };
+            let filename = format!("{base_name}{suffix}.{RECORDING_FILE_EXT}");
+            let relative_path = target_folder.join(filename);
+            let absolute_path = source.root.join(&relative_path);
+            if !absolute_path.exists() {
+                break (relative_path, absolute_path);
+            }
+            counter += 1;
+        };
+        let absolute_path = ensure_recording_path(absolute_path)?;
+        Ok((source, relative_path, absolute_path))
+    }
+
+    fn resolve_recording_target(
+        &self,
+        target: Option<&RecordingTarget>,
+        recording_path: &PathBuf,
+    ) -> Result<(SampleSource, PathBuf), String> {
+        if let Some(target) = target
+            && &target.absolute_path == recording_path
+        {
+            let source = self
+                .find_source_by_id(&target.source_id)
+                .ok_or_else(|| "Recording source unavailable".to_string())?;
+            return Ok((source, target.relative_path.clone()));
+        }
+        let source = self.ensure_recordings_source(recording_path)?;
+        let relative_path = recording_path
+            .strip_prefix(&source.root)
+            .map_err(|_| "Failed to resolve recording path".to_string())?
+            .to_path_buf();
+        Ok((source, relative_path))
+    }
+
+    pub(super) fn refresh_recording_waveform(&mut self) {
+        if !self.is_recording() {
+            self.audio.recording_target = None;
+            return;
+        }
+        let Some(target) = self.audio.recording_target.as_mut() else {
+            return;
+        };
+        let now = Instant::now();
+        if target
+            .last_refresh_at
+            .is_some_and(|last| now.duration_since(last) < RECORDING_REFRESH_INTERVAL)
+        {
+            return;
+        }
+        let metadata = match std::fs::metadata(&target.absolute_path) {
+            Ok(metadata) => metadata,
+            Err(_) => return,
+        };
+        let len = metadata.len();
+        if len == 0 || len == target.last_file_len {
+            target.last_refresh_at = Some(now);
+            return;
+        }
+        let bytes = match std::fs::read(&target.absolute_path) {
+            Ok(bytes) => bytes,
+            Err(_) => return,
+        };
+        let decoded = match self.sample_view.renderer.decode_from_bytes(&bytes) {
+            Ok(decoded) => decoded,
+            Err(_) => {
+                target.last_refresh_at = Some(now);
+                return;
+            }
+        };
+        if let Some(source) = self.find_source_by_id(&target.source_id) {
+            if target.loaded_once {
+                self.apply_waveform_image(decoded);
+            } else {
+                let _ = self.finish_waveform_load(
+                    &source,
+                    &target.relative_path,
+                    decoded,
+                    bytes,
+                    AudioLoadIntent::Selection,
+                );
+                target.loaded_once = true;
+            }
+        }
+        target.last_file_len = len;
+        target.last_refresh_at = Some(now);
     }
 }
 

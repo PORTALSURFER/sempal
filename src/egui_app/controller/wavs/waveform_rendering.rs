@@ -70,7 +70,7 @@ impl EguiController {
         view
     }
 
-    pub(in crate::egui_app::controller::wavs) fn apply_waveform_image(
+    pub(in crate::egui_app::controller) fn apply_waveform_image(
         &mut self,
         decoded: DecodedWaveform,
     ) {

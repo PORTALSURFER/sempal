@@ -99,6 +99,7 @@ impl EguiApp {
         input: &InputSnapshot,
         focus_context: FocusContext,
     ) {
+        self.controller.refresh_recording_waveform();
         self.render_panels(ctx);
         self.render_overlays(ctx, input, focus_context);
         ctx.request_repaint();

@@ -1,7 +1,6 @@
 use super::style;
 use super::*;
 use eframe::egui::{self, RichText, Ui};
-use rfd::FileDialog;
 
 pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: &style::Palette) {
     let mut view_mode = app.controller.ui.waveform.channel_view;
@@ -41,7 +40,7 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
         };
         let record_button = ui
             .add(egui::Button::new(record_label))
-            .on_hover_text("Record a new stereo take into the recordings folder");
+            .on_hover_text("Record into the selected source folder");
         if record_button.clicked() {
             let result = if is_recording {
                 app.controller.stop_recording_and_load()
@@ -50,24 +49,6 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
             };
             if let Err(err) = result {
                 app.controller.set_status(err, style::StatusTone::Error);
-            }
-        }
-        let record_new_button = ui
-            .add_enabled(
-                !is_recording,
-                egui::Button::new(RichText::new("Record to file…").color(palette.text_muted)),
-            )
-            .on_hover_text("Choose a file and start recording");
-        if record_new_button.clicked() {
-            let file_name = app.controller.recording_filename_hint();
-            let path = FileDialog::new()
-                .add_filter("WAV audio", &["wav"])
-                .set_file_name(file_name)
-                .save_file();
-            if let Some(path) = path {
-                if let Err(err) = app.controller.start_recording_to_path(path) {
-                    app.controller.set_status(err, style::StatusTone::Error);
-                }
             }
         }
         let is_playing = app.controller.is_playing();
