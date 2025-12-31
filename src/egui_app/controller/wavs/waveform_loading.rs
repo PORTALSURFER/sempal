@@ -80,7 +80,7 @@ impl EguiController {
         )
     }
 
-    pub(super) fn finish_waveform_load(
+    pub(in crate::egui_app::controller) fn finish_waveform_load(
         &mut self,
         source: &SampleSource,
         relative_path: &Path,

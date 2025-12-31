@@ -69,7 +69,8 @@ impl EguiController {
         let Some(outcome) = self.stop_recording()? else {
             return Ok(());
         };
-        let (source, relative_path) = self.resolve_recording_target(target.as_ref(), &outcome.path)?;
+        let (source, relative_path) =
+            self.resolve_recording_target(target.as_ref(), &outcome.path)?;
         self.load_waveform_for_selection(&source, &relative_path)?;
         Ok(())
     }
@@ -156,7 +157,7 @@ impl EguiController {
             && &target.absolute_path == recording_path
         {
             let source = self
-                .find_source_by_id(&target.source_id)
+                .source_by_id(&target.source_id)
                 .ok_or_else(|| "Recording source unavailable".to_string())?;
             return Ok((source, target.relative_path.clone()));
         }
@@ -168,7 +169,7 @@ impl EguiController {
         Ok((source, relative_path))
     }
 
-    pub(super) fn refresh_recording_waveform(&mut self) {
+    pub(crate) fn refresh_recording_waveform(&mut self) {
         if !self.is_recording() {
             self.audio.recording_target = None;
             return;
@@ -203,7 +204,7 @@ impl EguiController {
                 return;
             }
         };
-        if let Some(source) = self.find_source_by_id(&target.source_id) {
+        if let Some(source) = self.source_by_id(&target.source_id) {
             if target.loaded_once {
                 self.apply_waveform_image(decoded);
             } else {
@@ -219,6 +220,14 @@ impl EguiController {
         }
         target.last_file_len = len;
         target.last_refresh_at = Some(now);
+    }
+
+    fn source_by_id(&self, source_id: &SourceId) -> Option<SampleSource> {
+        self.library
+            .sources
+            .iter()
+            .find(|source| &source.id == source_id)
+            .cloned()
     }
 }
 
