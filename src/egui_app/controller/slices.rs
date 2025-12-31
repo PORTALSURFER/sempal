@@ -169,8 +169,8 @@ impl EguiController {
         let mut indices = self.ui.waveform.selected_slices.clone();
         indices.sort_unstable();
         indices.dedup();
-        let mut min_start = 1.0;
-        let mut max_end = 0.0;
+        let mut min_start: f32 = 1.0;
+        let mut max_end: f32 = 0.0;
         for &index in &indices {
             if let Some(slice) = self.ui.waveform.slices.get(index) {
                 min_start = min_start.min(slice.start());

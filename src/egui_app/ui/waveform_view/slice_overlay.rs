@@ -230,7 +230,12 @@ fn paint_slice(
     let painter = ui.painter();
     painter.rect_filled(slice_rect, 0.0, style::with_alpha(color, fill_alpha));
     painter.rect_filled(handle_rect, 0.0, style::with_alpha(color, handle_alpha));
-    painter.rect_stroke(slice_rect, 0.0, egui::Stroke::new(1.4, outline_color));
+    painter.rect_stroke(
+        slice_rect,
+        0.0,
+        egui::Stroke::new(1.4, outline_color),
+        egui::StrokeKind::Inside,
+    );
 }
 
 fn render_slice_paint_preview(ui: &egui::Ui, env: &SliceOverlayEnv<'_>, range: SelectionRange) {
@@ -238,7 +243,15 @@ fn render_slice_paint_preview(ui: &egui::Ui, env: &SliceOverlayEnv<'_>, range: S
         return;
     };
     let handle_rect = selection_handle_rect(slice_rect);
-    paint_slice(ui, slice_rect, handle_rect, env.slice_color, true);
+    paint_slice(
+        ui,
+        slice_rect,
+        handle_rect,
+        env.slice_color,
+        env.palette.accent_mint,
+        true,
+        false,
+    );
     draw_slice_bar(ui, slice_rect, env);
 }
 
