@@ -14,6 +14,7 @@ mod selection_drag;
 mod selection_geometry;
 mod selection_menu;
 mod selection_overlay;
+mod slice_overlay;
 
 impl EguiApp {
     pub(super) fn render_waveform(&mut self, ui: &mut Ui) {
@@ -67,6 +68,15 @@ impl EguiApp {
                 &to_screen_x,
             );
 
+            let slice_dragging = slice_overlay::render_slice_overlays(
+                self,
+                ui,
+                waveform_rect,
+                &palette,
+                view,
+                view_width,
+                pointer_pos,
+            );
             let edge_dragging = selection_overlay::render_selection_overlay(
                 self,
                 ui,
@@ -97,7 +107,7 @@ impl EguiApp {
                 view,
                 view_width,
             );
-            if !edge_dragging {
+            if !edge_dragging && !slice_dragging {
                 interactions::handle_waveform_pointer_interactions(
                     self,
                     ui,

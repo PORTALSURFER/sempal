@@ -24,6 +24,7 @@ pub(crate) fn prepare_mono_for_analysis_from_slice(
     }
 }
 
+/// Downmix interleaved samples into mono, writing into the provided buffer.
 pub(crate) fn downmix_to_mono_into(out: &mut Vec<f32>, samples: &[f32], channels: u16) {
     let channels = channels.max(1) as usize;
     if channels == 1 {

@@ -76,7 +76,17 @@ impl HotkeysActions for HotkeysController<'_> {
             }
             HotkeyCommand::SaveSelectionToBrowser => {
                 if matches!(focus, FocusContext::Waveform) {
-                    if let Err(err) = self.save_waveform_selection_to_browser(true) {
+                    if !self.ui.waveform.slices.is_empty() {
+                        match self.accept_waveform_slices() {
+                            Ok(count) => {
+                                self.set_status(
+                                    format!("Saved {count} slices"),
+                                    StatusTone::Info,
+                                );
+                            }
+                            Err(err) => self.set_status(err, StatusTone::Error),
+                        }
+                    } else if let Err(err) = self.save_waveform_selection_to_browser(true) {
                         self.set_status(err, StatusTone::Error);
                     }
                 }

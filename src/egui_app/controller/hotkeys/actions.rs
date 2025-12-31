@@ -173,7 +173,7 @@ pub(super) const HOTKEY_ACTIONS: &[HotkeyAction] = &[
     },
     HotkeyAction {
         id: "save-selection-to-browser",
-        label: "Save selection to browser",
+        label: "Save selection/slices to browser",
         gesture: HotkeyGesture::new(Key::Enter),
         scope: HotkeyScope::Focus(FocusContext::Waveform),
         command: HotkeyCommand::SaveSelectionToBrowser,

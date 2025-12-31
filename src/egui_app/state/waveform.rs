@@ -17,6 +17,8 @@ pub struct WaveformState {
     pub cursor: Option<f32>,
     pub selection: Option<SelectionRange>,
     pub selection_duration: Option<String>,
+    /// Detected slice ranges for the current waveform.
+    pub slices: Vec<SelectionRange>,
     pub hover_time_label: Option<String>,
     pub channel_view: WaveformChannelView,
     /// When true, selection edits snap to beat-sized steps using the bpm value.
@@ -64,6 +66,7 @@ impl Default for WaveformState {
             cursor: None,
             selection: None,
             selection_duration: None,
+            slices: Vec::new(),
             hover_time_label: None,
             channel_view: WaveformChannelView::Mono,
             bpm_snap_enabled: false,

@@ -5,6 +5,7 @@
 mod analysis_backfill;
 mod analysis_jobs;
 mod analysis_options;
+mod audio_samples;
 mod audio_cache;
 mod audio_loader;
 mod audio_options;
@@ -38,6 +39,7 @@ mod progress_messages;
 mod scans;
 mod selection_edits;
 mod selection_export;
+mod slices;
 mod similarity_prep;
 mod source_cache_invalidator;
 mod source_folders;
@@ -84,7 +86,7 @@ use std::{
 };
 
 /// Minimum selection width used to decide when to play a looped region.
-const MIN_SELECTION_WIDTH: f32 = 0.001;
+pub(crate) const MIN_SELECTION_WIDTH: f32 = 0.001;
 const AUDIO_CACHE_CAPACITY: usize = 12;
 const AUDIO_HISTORY_LIMIT: usize = 8;
 const RANDOM_HISTORY_LIMIT: usize = 20;

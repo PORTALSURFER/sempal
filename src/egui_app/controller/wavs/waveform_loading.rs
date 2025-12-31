@@ -97,6 +97,7 @@ impl EguiController {
         self.ui.waveform.notice = None;
         self.ui.waveform.loading = None;
         self.clear_waveform_selection();
+        self.clear_waveform_slices();
         self.runtime.jobs.set_pending_audio(None);
         match intent {
             AudioLoadIntent::Selection => {
@@ -221,6 +222,7 @@ impl EguiController {
         self.ui.waveform.selection = None;
         self.ui.waveform.selection_duration = None;
         self.selection_state.range.clear();
+        self.clear_waveform_slices();
     }
 
     pub(in crate::egui_app::controller) fn reload_waveform_for_selection_if_active(

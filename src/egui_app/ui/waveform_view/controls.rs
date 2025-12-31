@@ -139,6 +139,30 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
         }
         let transient_count = app.controller.ui.waveform.transients.len();
         ui.label(format!("Transients: {transient_count}"));
+        ui.add_space(10.0);
+        let slices_ready = !app.controller.ui.waveform.slices.is_empty();
+        let has_audio = app.controller.ui.loaded_wav.is_some();
+        let detect_button = ui
+            .add_enabled(has_audio, egui::Button::new("Detect slices"))
+            .on_hover_text("Detect non-silent slices from the loaded sample");
+        if detect_button.clicked() {
+            match app.controller.detect_waveform_slices_from_silence() {
+                Ok(count) => app.controller.set_status(
+                    format!("Detected {count} slices"),
+                    style::StatusTone::Info,
+                ),
+                Err(err) => app.controller.set_status(err, style::StatusTone::Error),
+            }
+        }
+        let clear_button = ui
+            .add_enabled(slices_ready, egui::Button::new("Clear slices"))
+            .on_hover_text("Clear detected slice overlays");
+        if clear_button.clicked() {
+            app.controller.clear_waveform_slices();
+        }
+        if slices_ready {
+            ui.label(format!("Slices: {}", app.controller.ui.waveform.slices.len()));
+        }
     });
     if view_mode != app.controller.ui.waveform.channel_view {
         app.controller.set_waveform_channel_view(view_mode);

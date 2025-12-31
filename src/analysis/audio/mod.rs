@@ -17,12 +17,14 @@ pub(crate) const SILENCE_PRE_ROLL_SECONDS: f32 = 0.01;
 pub(crate) const SILENCE_POST_ROLL_SECONDS: f32 = 0.005;
 const EMBEDDING_TARGET_RMS_DB: f32 = -20.0;
 
+pub(crate) use analysis_prep::downmix_to_mono_into;
 pub(crate) use decode::{
     decode_for_analysis, decode_for_analysis_with_rate, decode_for_analysis_with_rate_limit,
     probe_metadata,
 };
 pub(crate) use normalize::sanitize_samples_in_place;
 pub(crate) use resample::resample_linear_into;
+pub(crate) use silence::detect_non_silent_ranges;
 
 /// Decoded mono audio ready for analysis.
 #[derive(Debug)]

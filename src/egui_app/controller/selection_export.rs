@@ -1,9 +1,9 @@
 use super::*;
 use crate::sample_sources::SampleTag;
-use hound::SampleFormat;
 use std::fs;
-use std::io::Cursor;
 use std::time::SystemTime;
+
+use super::audio_samples::{crop_samples, decode_samples_from_bytes, write_wav};
 
 impl EguiController {
     pub(super) fn export_selection_clip(
@@ -26,7 +26,7 @@ impl EguiController {
         let target_rel = self.next_selection_path_in_dir(&source.root, &audio.relative_path);
         let target_abs = source.root.join(&target_rel);
         let (samples, spec) = crop_selection_samples(&audio, bounds)?;
-        write_selection_wav(&target_abs, &samples, spec)?;
+        write_wav(&target_abs, &samples, spec.sample_rate, spec.channels)?;
         self.record_selection_entry(
             &source,
             target_rel,
@@ -64,7 +64,7 @@ impl EguiController {
         let target_rel = self.next_selection_path_in_dir(&source.root, &name_hint);
         let target_abs = source.root.join(&target_rel);
         let (samples, spec) = crop_selection_samples(&audio, bounds)?;
-        write_selection_wav(&target_abs, &samples, spec)?;
+        write_wav(&target_abs, &samples, spec.sample_rate, spec.channels)?;
         self.record_selection_entry(
             &source,
             target_rel,
@@ -161,7 +161,7 @@ impl EguiController {
         let target_rel = self.next_selection_path_in_dir(clip_root, name_hint);
         let target_abs = clip_root.join(&target_rel);
         let (samples, spec) = crop_selection_samples(&audio, bounds)?;
-        write_selection_wav(&target_abs, &samples, spec)?;
+        write_wav(&target_abs, &samples, spec.sample_rate, spec.channels)?;
         let source = SampleSource {
             id: SourceId::new(),
             root: clip_root.to_path_buf(),
@@ -224,7 +224,8 @@ impl EguiController {
         stem
     }
 
-    fn record_selection_entry(
+    /// Register a newly exported clip in the browser and source database.
+    pub(super) fn record_selection_entry(
         &mut self,
         source: &SampleSource,
         relative_path: PathBuf,
@@ -285,96 +286,15 @@ fn crop_selection_samples(
     audio: &LoadedAudio,
     bounds: SelectionRange,
 ) -> Result<(Vec<f32>, hound::WavSpec), String> {
-    let mut reader = hound::WavReader::new(Cursor::new(audio.bytes.as_slice()))
-        .map_err(|err| format!("Invalid wav: {err}"))?;
-    let spec = reader.spec();
-    let channels = audio.channels.max(1) as usize;
-    let samples = decode_samples(
-        &mut reader,
-        spec.sample_format,
-        spec.bits_per_sample,
-        channels,
-    )?;
-    let total_frames = samples.len() / channels;
-    if total_frames == 0 {
-        return Err("No audio data to export".into());
-    }
-    let (start_frame, end_frame) = frame_bounds(total_frames, bounds);
-    let cropped = slice_frames(&samples, channels, start_frame, end_frame);
+    let decoded = decode_samples_from_bytes(&audio.bytes)?;
+    let cropped = crop_samples(&decoded.samples, decoded.channels, bounds)?;
     let spec = hound::WavSpec {
-        channels: audio.channels.max(1),
-        sample_rate: audio.sample_rate.max(1),
+        channels: decoded.channels.max(1),
+        sample_rate: decoded.sample_rate.max(1),
         bits_per_sample: 32,
-        sample_format: SampleFormat::Float,
+        sample_format: hound::SampleFormat::Float,
     };
     Ok((cropped, spec))
-}
-
-fn decode_samples(
-    reader: &mut hound::WavReader<Cursor<&[u8]>>,
-    format: SampleFormat,
-    bits_per_sample: u16,
-    _channels: usize,
-) -> Result<Vec<f32>, String> {
-    match format {
-        SampleFormat::Float => reader
-            .samples::<f32>()
-            .map(|s| s.map_err(|err| format!("Sample error: {err}")))
-            .collect::<Result<Vec<_>, _>>(),
-        SampleFormat::Int => {
-            let scale = (1i64 << bits_per_sample.saturating_sub(1)).max(1) as f32;
-            reader
-                .samples::<i32>()
-                .map(|s| {
-                    s.map(|v| v as f32 / scale)
-                        .map_err(|err| format!("Sample error: {err}"))
-                })
-                .collect::<Result<Vec<_>, _>>()
-        }
-    }
-}
-
-fn frame_bounds(total_frames: usize, bounds: SelectionRange) -> (usize, usize) {
-    let start_frame = ((bounds.start() * total_frames as f32).floor() as usize)
-        .min(total_frames.saturating_sub(1));
-    let mut end_frame = ((bounds.end() * total_frames as f32).ceil() as usize).min(total_frames);
-    if end_frame <= start_frame {
-        end_frame = (start_frame + 1).min(total_frames);
-    }
-    (start_frame, end_frame)
-}
-
-fn slice_frames(
-    samples: &[f32],
-    channels: usize,
-    start_frame: usize,
-    end_frame: usize,
-) -> Vec<f32> {
-    let mut cropped = Vec::with_capacity((end_frame - start_frame) * channels);
-    for frame in start_frame..end_frame {
-        let offset = frame * channels;
-        cropped.extend_from_slice(&samples[offset..offset + channels]);
-    }
-    cropped
-}
-
-fn write_selection_wav(target: &Path, samples: &[f32], spec: hound::WavSpec) -> Result<(), String> {
-    if let Some(parent) = target.parent()
-        && !parent.exists()
-    {
-        fs::create_dir_all(parent)
-            .map_err(|err| format!("Failed to create folder {}: {err}", parent.display()))?;
-    }
-    let mut writer = hound::WavWriter::create(target, spec)
-        .map_err(|err| format!("Failed to create clip: {err}"))?;
-    for sample in samples {
-        writer
-            .write_sample(*sample)
-            .map_err(|err| format!("Failed to write clip: {err}"))?;
-    }
-    writer
-        .finalize()
-        .map_err(|err| format!("Failed to finalize clip: {err}"))
 }
 
 #[cfg(test)]

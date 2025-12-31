@@ -13,6 +13,7 @@ pub(super) fn clear_waveform_view(controller: &mut EguiController) {
     controller.ui.waveform.cursor = None;
     controller.ui.waveform.selection = None;
     controller.ui.waveform.selection_duration = None;
+    controller.ui.waveform.slices.clear();
     controller.ui.waveform.view = WaveformView::default();
     controller.selection_state.range.clear();
     controller.sample_view.wav.loaded_audio = None;

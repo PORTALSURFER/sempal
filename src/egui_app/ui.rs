@@ -52,6 +52,7 @@ pub struct EguiApp {
     selection_edge_offset: Option<f32>,
     selection_edge_alt_scale: bool,
     selection_slide: Option<SelectionSlide>,
+    slice_drag: Option<SliceDragState>,
     pending_chord: Option<hotkey_runtime::PendingChord>,
     key_feedback: hotkey_runtime::KeyFeedback,
     requested_initial_focus: bool,
@@ -61,6 +62,24 @@ pub struct EguiApp {
 struct SelectionSlide {
     anchor: f32,
     range: crate::selection::SelectionRange,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct SliceDragState {
+    index: usize,
+    kind: SliceDragKind,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum SliceDragKind {
+    Move {
+        anchor: f32,
+        range: crate::selection::SelectionRange,
+    },
+    Edge {
+        edge: crate::selection::SelectionEdge,
+        offset: f32,
+    },
 }
 
 impl EguiApp {
@@ -85,6 +104,7 @@ impl EguiApp {
             selection_edge_offset: None,
             selection_edge_alt_scale: false,
             selection_slide: None,
+            slice_drag: None,
             pending_chord: None,
             key_feedback: hotkey_runtime::KeyFeedback::default(),
             requested_initial_focus: false,
