@@ -129,6 +129,9 @@ fn render_slice_overlay(
     result.dragging |= render_slice_handle(app, ui, env, item, &handle_response);
     result.dragging |= render_slice_edges(app, ui, env, slice_rect, item.index);
     if body_response.clicked() || handle_response.clicked() {
+        if app.controller.ui.waveform.image.is_some() {
+            app.controller.focus_waveform_context();
+        }
         if ctrl_down && app.controller.ui.waveform.slice_mode_enabled {
             app.controller.toggle_slice_selection(item.index);
         } else {
