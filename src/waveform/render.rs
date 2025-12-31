@@ -311,6 +311,7 @@ impl WaveformRenderer {
         );
         let to_y = |sample: f32| -> f32 { (mid - sample * half_height).clamp(0.0, mid * 2.0) };
 
+        let mut prev_y = None;
         for x in 0..width as usize {
             let sample = Self::supersampled_frame(
                 samples,
@@ -321,27 +322,22 @@ impl WaveformRenderer {
                 channel_index,
             );
             let y = to_y(sample);
-            let y_floor = y.floor();
-            let frac = (y - y_floor).clamp(0.0, 1.0);
-            let base = y_floor as isize;
-            for (offset, weight) in [
-                (0, 1.0 - frac),
-                (1, frac),
-                (-1, 0.2 * (1.0 - frac)),
-                (2, 0.2 * frac),
-            ] {
-                let yy = base + offset;
-                if yy >= 0 && (yy as u32) < height {
-                    Self::blend_pixel(
-                        &mut image,
-                        stride,
-                        x,
-                        yy as usize,
-                        fg,
-                        weight,
-                    );
-                }
+            if let Some(prev) = prev_y {
+                Self::draw_line_aa(
+                    &mut image,
+                    stride,
+                    width as usize,
+                    height as usize,
+                    (x as f32) - 1.0,
+                    prev,
+                    x as f32,
+                    y,
+                    fg,
+                );
+            } else {
+                Self::blend_pixel(&mut image, stride, x, y.round() as usize, fg, 1.0);
             }
+            prev_y = Some(y);
         }
         image
     }
@@ -490,6 +486,108 @@ impl WaveformRenderer {
             let blended = existing.max(alpha);
             *pixel = Color32::from_rgba_unmultiplied(fg.0, fg.1, fg.2, blended);
         }
+    }
+
+    fn draw_line_aa(
+        image: &mut ColorImage,
+        stride: usize,
+        width: usize,
+        height: usize,
+        mut x0: f32,
+        mut y0: f32,
+        mut x1: f32,
+        mut y1: f32,
+        fg: (u8, u8, u8, u8),
+    ) {
+        let steep = (y1 - y0).abs() > (x1 - x0).abs();
+        if steep {
+            std::mem::swap(&mut x0, &mut y0);
+            std::mem::swap(&mut x1, &mut y1);
+        }
+        if x0 > x1 {
+            std::mem::swap(&mut x0, &mut x1);
+            std::mem::swap(&mut y0, &mut y1);
+        }
+        let dx = x1 - x0;
+        let dy = y1 - y0;
+        if dx.abs() < f32::EPSILON {
+            let x = x0.round() as isize;
+            let y = y0.round() as isize;
+            if steep {
+                if x >= 0 && (x as usize) < height && y >= 0 && (y as usize) < width {
+                    Self::blend_pixel(image, stride, y as usize, x as usize, fg, 1.0);
+                }
+            } else if x >= 0 && (x as usize) < width && y >= 0 && (y as usize) < height {
+                Self::blend_pixel(image, stride, x as usize, y as usize, fg, 1.0);
+            }
+            return;
+        }
+        let gradient = dy / dx;
+
+        let xend = x0.round();
+        let yend = y0 + gradient * (xend - x0);
+        let xgap = 1.0 - ((x0 + 0.5).fract());
+        let xpxl1 = xend as isize;
+        let ypxl1 = yend.floor() as isize;
+        if steep {
+            Self::plot_aa(image, stride, width, height, ypxl1, xpxl1, fg, (1.0 - (yend.fract())) * xgap);
+            Self::plot_aa(image, stride, width, height, ypxl1 + 1, xpxl1, fg, yend.fract() * xgap);
+        } else {
+            Self::plot_aa(image, stride, width, height, xpxl1, ypxl1, fg, (1.0 - (yend.fract())) * xgap);
+            Self::plot_aa(image, stride, width, height, xpxl1, ypxl1 + 1, fg, yend.fract() * xgap);
+        }
+        let mut intery = yend + gradient;
+
+        let xend = x1.round();
+        let yend = y1 + gradient * (xend - x1);
+        let xgap = (x1 + 0.5).fract();
+        let xpxl2 = xend as isize;
+        let ypxl2 = yend.floor() as isize;
+
+        for x in (xpxl1 + 1)..xpxl2 {
+            let y = intery.floor() as isize;
+            let frac = intery.fract();
+            if steep {
+                Self::plot_aa(image, stride, width, height, y, x, fg, 1.0 - frac);
+                Self::plot_aa(image, stride, width, height, y + 1, x, fg, frac);
+            } else {
+                Self::plot_aa(image, stride, width, height, x, y, fg, 1.0 - frac);
+                Self::plot_aa(image, stride, width, height, x, y + 1, fg, frac);
+            }
+            intery += gradient;
+        }
+
+        if steep {
+            Self::plot_aa(image, stride, width, height, ypxl2, xpxl2, fg, (1.0 - (yend.fract())) * xgap);
+            Self::plot_aa(image, stride, width, height, ypxl2 + 1, xpxl2, fg, yend.fract() * xgap);
+        } else {
+            Self::plot_aa(image, stride, width, height, xpxl2, ypxl2, fg, (1.0 - (yend.fract())) * xgap);
+            Self::plot_aa(image, stride, width, height, xpxl2, ypxl2 + 1, fg, yend.fract() * xgap);
+        }
+    }
+
+    fn plot_aa(
+        image: &mut ColorImage,
+        stride: usize,
+        width: usize,
+        height: usize,
+        x: isize,
+        y: isize,
+        fg: (u8, u8, u8, u8),
+        coverage: f32,
+    ) {
+        if coverage <= 0.0 {
+            return;
+        }
+        if x < 0 || y < 0 {
+            return;
+        }
+        let x = x as usize;
+        let y = y as usize;
+        if x >= width || y >= height {
+            return;
+        }
+        Self::blend_pixel(image, stride, x, y, fg, coverage);
     }
 
     fn columns_window(
