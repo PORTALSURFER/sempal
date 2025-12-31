@@ -1,18 +1,17 @@
 ## Goal
-- Replace the current “smooth edges” selection tool with a click removal tool that processes an audio selection to remove single-sample discontinuities (clicks/pops) using DSP-only methods.
+- Add a slice system that detects non-silent regions from the selected sample, shows blue resizable overlays in the waveform view, lets the user accept with Enter, and exports each slice to new audio files suffixed with `_slicexxx`.
 
 ## Proposed solutions
-- Implement a simple, high-quality interpolation repair (cubic by default with linear fallback) for short selections, keeping processing offline and selection-scoped.
-- Add an optional higher-quality AR/LPC repair path for longer selections if interpolation is insufficient, while keeping the UI and settings minimal.
-- Reuse existing selection processing pipeline (formerly “smooth edges”) to minimize new wiring and ensure consistent undo/redo behavior.
+- Reuse the existing silence hysteresis thresholds to derive non-silent intervals, then map them to normalized waveform ranges for UI overlays.
+- Introduce a dedicated slice model/state in the waveform controller and render overlays with selection-style handles, reusing selection drag logic where possible.
+- Implement a new export path that writes each slice as a WAV clip with a `_slicexxx` suffix and updates the browser/library entries.
 
 ## Step-by-step plan
-1. [x] Audit current “smooth edges” selection pipeline (UI entry point, controller action, audio processing function, undo/redo flow) to identify replacement points and required data inputs.
-2. [x] Design the click-removal DSP algorithm and parameters: selection length limits, window size, edge handling, and chosen interpolation method(s).
-3. [x] Implement a shared click-repair function in the audio processing layer (pure Rust), with unit tests covering 1-sample and small multi-sample selections and edge cases.
-4. [x] Replace the “smooth edges” action wiring with “click removal” (UI label, controller command, analytics/telemetry if any), keeping selection behavior and undo/redo intact.
-5. [x] Add integration tests for selection processing to validate artifacts removal and ensure no regression in selection handling.
-6. [x] Update documentation/help text to describe the click removal tool and any limits (e.g., recommended selection size).
+1. [-] Review current waveform selection/overlay and silence analysis code paths, then design a slice state struct (normalized bounds + edit state) stored with waveform UI/controller state.
+2. [-] Add silence segmentation that returns non-silent intervals from loaded audio (using hysteresis thresholds), with normalization to waveform space and tests around interval detection.
+3. [-] Implement waveform slice overlays (blue fill, selection-style handles) and drag interactions for resizing/moving slices without breaking selection behavior.
+4. [-] Add user actions to compute slices and accept with Enter, then export each slice to new WAV files with `_slicexxx` names and update the browser/library entries; add tests for naming/export.
+5. [-] Add UX polish and guardrails (clear/reset slices, error handling, selection conflicts), plus targeted tests for the slice workflow end-to-end.
 
 ## Code Style & Architecture Rules Reminder
 - Keep files under 400 lines; split when necessary.
