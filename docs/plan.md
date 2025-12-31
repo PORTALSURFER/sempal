@@ -1,21 +1,18 @@
 ## Goal
-- Add full stereo recording (including ASIO support on Windows) and expose record/play/stop controls in the waveform UI for normal playback.
+- Replace the current “smooth edges” selection tool with a click removal tool that processes an audio selection to remove single-sample discontinuities (clicks/pops) using DSP-only methods.
 
 ## Proposed solutions
-- Implement an audio input/recording pipeline using CPAL input streams (ASIO host on Windows), writing recorded buffers to WAV via `hound`.
-- Add input device/host selection alongside existing output options, persist choices, and default to stereo capture when available.
-- Reuse the existing waveform load + playback path by saving recordings to a known recordings folder and loading them as a normal sample.
-- Add waveform transport controls (Record/Play/Stop) in `src/egui_app/ui/waveform_view/controls.rs`, wiring them to controller actions with clear state handling.
+- Implement a simple, high-quality interpolation repair (cubic by default with linear fallback) for short selections, keeping processing offline and selection-scoped.
+- Add an optional higher-quality AR/LPC repair path for longer selections if interpolation is insufficient, while keeping the UI and settings minimal.
+- Reuse existing selection processing pipeline (formerly “smooth edges”) to minimize new wiring and ensure consistent undo/redo behavior.
 
 ## Step-by-step plan
-1. [x] Review current playback, waveform view controls, and audio output config to identify the best insertion points for input/recording state (`src/audio`, `src/egui_app/controller`, `src/egui_app/state`, `src/egui_app/ui/waveform_view`).
-2. [x] Add audio input discovery helpers (hosts/devices/sample rates) in `src/audio/input.rs`, mirroring output selection, and ensure ASIO host/device enumeration works on Windows.
-3. [x] Implement a `AudioRecorder` (new module under `src/audio`) that opens a CPAL input stream, captures interleaved stereo frames, and writes WAV files with correct sample rate/channel metadata.
-4. [x] Extend config/state for audio input selection and recording status in `src/egui_app/state/audio.rs` plus config persistence (likely `src/egui_app/controller/config.rs` and config types) to remember input host/device/sample rate.
-5. [x] Add controller APIs for recording lifecycle (start/stop/cancel), update status messaging, and prevent conflicting playback while recording; route finished recordings to a recordings folder under `app_root_dir()`.
-6. [x] Integrate recorded files into the existing waveform load path: create or reuse a “Recordings” source folder and call the existing `load_waveform_for_selection` flow to show the new take immediately.
-7. [x] Add Record/Play/Stop buttons to the waveform controls UI (`src/egui_app/ui/waveform_view/controls.rs`) and wire to controller actions; disable/guard controls based on playback/recording state.
-8. [x] Add focused tests for the recorder (WAV header + sample count), config persistence for input options, and controller behavior when starting/stopping recording.
+1. [-] Audit current “smooth edges” selection pipeline (UI entry point, controller action, audio processing function, undo/redo flow) to identify replacement points and required data inputs.
+2. [-] Design the click-removal DSP algorithm and parameters: selection length limits, window size, edge handling, and chosen interpolation method(s).
+3. [-] Implement a shared click-repair function in the audio processing layer (pure Rust), with unit tests covering 1-sample and small multi-sample selections and edge cases.
+4. [-] Replace the “smooth edges” action wiring with “click removal” (UI label, controller command, analytics/telemetry if any), keeping selection behavior and undo/redo intact.
+5. [-] Add integration tests for selection processing to validate artifacts removal and ensure no regression in selection handling.
+6. [-] Update documentation/help text to describe the click removal tool and any limits (e.g., recommended selection size).
 
 ## Code Style & Architecture Rules Reminder
 - Keep files under 400 lines; split when necessary.
