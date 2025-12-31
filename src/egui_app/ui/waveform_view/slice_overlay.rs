@@ -218,18 +218,26 @@ fn paint_slice(
     hovered: bool,
     selected: bool,
 ) {
-    let fill_alpha = if hovered { 100 } else { 60 };
-    let handle_alpha = if hovered { 235 } else { 180 };
+    let fill_color = if selected {
+        style::with_alpha(selected_color, 110)
+    } else {
+        style::with_alpha(color, if hovered { 100 } else { 60 })
+    };
+    let handle_color = if selected {
+        style::with_alpha(selected_color, 235)
+    } else {
+        style::with_alpha(color, if hovered { 235 } else { 180 })
+    };
     let outline_color = if selected {
-        style::with_alpha(selected_color, 230)
+        style::with_alpha(selected_color, 240)
     } else if hovered {
         style::with_alpha(color, 220)
     } else {
         style::with_alpha(color, 0)
     };
     let painter = ui.painter();
-    painter.rect_filled(slice_rect, 0.0, style::with_alpha(color, fill_alpha));
-    painter.rect_filled(handle_rect, 0.0, style::with_alpha(color, handle_alpha));
+    painter.rect_filled(slice_rect, 0.0, fill_color);
+    painter.rect_filled(handle_rect, 0.0, handle_color);
     painter.rect_stroke(
         slice_rect,
         0.0,
