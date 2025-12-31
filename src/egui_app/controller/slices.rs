@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 impl EguiController {
     /// Detect non-silent slice ranges for the loaded waveform and store them in UI state.
-    pub(super) fn detect_waveform_slices_from_silence(&mut self) -> Result<usize, String> {
+    pub(crate) fn detect_waveform_slices_from_silence(&mut self) -> Result<usize, String> {
         let audio = self
             .sample_view
             .wav
@@ -36,7 +36,7 @@ impl EguiController {
     }
 
     /// Clear any detected slice ranges from the waveform view.
-    pub(super) fn clear_waveform_slices(&mut self) {
+    pub(crate) fn clear_waveform_slices(&mut self) {
         self.ui.waveform.slices.clear();
     }
 
