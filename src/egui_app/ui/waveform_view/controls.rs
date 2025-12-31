@@ -161,7 +161,7 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
             }
         }
         let detect_button = ui
-            .add_enabled(has_audio, egui::Button::new("Slice Mode"))
+            .add_enabled(has_audio, egui::Button::new("Detect slices"))
             .on_hover_text("Detect non-silent slices from the loaded sample");
         if detect_button.clicked() {
             match app.controller.detect_waveform_slices_from_silence() {
