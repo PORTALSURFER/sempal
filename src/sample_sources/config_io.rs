@@ -472,6 +472,7 @@ analysis_worker_count = 999
                         bpm_value: 123.0,
                         transient_snap_enabled: true,
                         transient_markers_enabled: false,
+                        input_monitoring_enabled: false,
                     },
                 },
             };
@@ -593,6 +594,10 @@ analysis_worker_count = 999
             assert_eq!(
                 round_trip.core.controls.transient_markers_enabled,
                 cfg.core.controls.transient_markers_enabled
+            );
+            assert_eq!(
+                round_trip.core.controls.input_monitoring_enabled,
+                cfg.core.controls.input_monitoring_enabled
             );
         });
     }

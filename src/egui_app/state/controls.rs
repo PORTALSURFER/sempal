@@ -11,6 +11,7 @@ pub struct InteractionOptionsState {
     pub anti_clip_fade_ms: f32,
     pub destructive_yolo_mode: bool,
     pub waveform_channel_view: WaveformChannelView,
+    pub input_monitoring_enabled: bool,
 }
 
 impl Default for InteractionOptionsState {
@@ -24,6 +25,7 @@ impl Default for InteractionOptionsState {
             anti_clip_fade_ms: 2.0,
             destructive_yolo_mode: false,
             waveform_channel_view: WaveformChannelView::Mono,
+            input_monitoring_enabled: true,
         }
     }
 }

@@ -31,6 +31,13 @@ impl AudioPlayer {
         Self::build_sink_with_fade_for_stream(&self.stream, self.volume, source)
     }
 
+    pub fn create_monitor_sink(&self, volume: f32) -> Sink {
+        let sink = Sink::connect_new(self.stream.mixer());
+        sink.set_volume(volume);
+        sink.play();
+        sink
+    }
+
     pub(super) fn build_sink_with_fade_for_stream<S: Source<Item = f32> + Send + 'static>(
         stream: &OutputStream,
         volume: f32,

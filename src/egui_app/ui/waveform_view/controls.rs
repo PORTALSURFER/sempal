@@ -55,6 +55,19 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
                 app.controller.set_status(err, style::StatusTone::Error);
             }
         }
+        let mut monitor_enabled = app.controller.ui.controls.input_monitoring_enabled;
+        let monitor_label = if monitor_enabled {
+            RichText::new("Monitor: On").color(palette.accent_mint)
+        } else {
+            RichText::new("Monitor: Off").color(palette.text_muted)
+        };
+        let monitor_button = ui
+            .add(egui::Button::new(monitor_label))
+            .on_hover_text("Toggle live input monitoring while recording");
+        if monitor_button.clicked() {
+            monitor_enabled = !monitor_enabled;
+            app.controller.set_input_monitoring_enabled(monitor_enabled);
+        }
         let is_playing = app.controller.is_playing();
         let play_label = if is_playing {
             RichText::new("Play").color(palette.accent_mint)

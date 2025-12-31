@@ -1,7 +1,7 @@
 //! Audio playback and loading state for the controller.
 
 use super::super::{AudioPlayer, SourceId, audio_cache::AudioCache};
-use crate::audio::AudioRecorder;
+use crate::audio::{AudioRecorder, InputMonitor};
 use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -13,6 +13,7 @@ pub(in crate::egui_app::controller) struct ControllerAudioState {
     pub(in crate::egui_app::controller) pending_loop_disable_at: Option<Instant>,
     pub(in crate::egui_app::controller) recorder: Option<AudioRecorder>,
     pub(in crate::egui_app::controller) recording_target: Option<RecordingTarget>,
+    pub(in crate::egui_app::controller) input_monitor: Option<InputMonitor>,
 }
 
 impl ControllerAudioState {
@@ -27,6 +28,7 @@ impl ControllerAudioState {
             pending_loop_disable_at: None,
             recorder: None,
             recording_target: None,
+            input_monitor: None,
         }
     }
 }

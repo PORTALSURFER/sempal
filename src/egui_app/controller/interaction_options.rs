@@ -123,6 +123,23 @@ impl EguiController {
         self.persist_controls();
     }
 
+    /// Toggle and persist input monitoring during recording.
+    pub fn set_input_monitoring_enabled(&mut self, enabled: bool) {
+        if self.settings.controls.input_monitoring_enabled == enabled {
+            return;
+        }
+        self.settings.controls.input_monitoring_enabled = enabled;
+        self.ui.controls.input_monitoring_enabled = enabled;
+        if enabled && self.is_recording() {
+            if let Some(recorder) = self.audio.recorder.as_ref() {
+                self.start_input_monitor(recorder);
+            }
+        } else if !enabled {
+            self.stop_input_monitor();
+        }
+        self.persist_controls();
+    }
+
     fn apply_anti_clip_fade_settings(&mut self) {
         let fade_ms = self.settings.controls.anti_clip_fade_ms;
         let enabled = self.settings.controls.anti_clip_fade_enabled;

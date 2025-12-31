@@ -8,6 +8,8 @@ use std::time::Instant;
 
 use cpal::traits::{DeviceTrait, StreamTrait};
 use cpal::Stream;
+use rodio::buffer::SamplesBuffer;
+use rodio::Sink;
 use tracing::warn;
 
 use super::input::{AudioInputConfig, AudioInputError, ResolvedInput, resolve_input_stream_config};
@@ -25,6 +27,7 @@ pub struct AudioRecorder {
     resolved: ResolvedInput,
     path: PathBuf,
     started_at: Instant,
+    monitor_sender: Arc<std::sync::Mutex<Option<Sender<MonitorCommand>>>>,
 }
 
 impl AudioRecorder {
@@ -35,6 +38,7 @@ impl AudioRecorder {
             &resolved.selected_channels,
         );
         let (sender, receiver) = std::sync::mpsc::channel();
+        let monitor_sender = Arc::new(std::sync::Mutex::new(None));
         let writer = RecorderWriter::spawn(
             path.clone(),
             resolved.resolved.sample_rate,
@@ -48,6 +52,7 @@ impl AudioRecorder {
             resolved.sample_format,
             sender,
             selection,
+            monitor_sender.clone(),
         )?;
         stream
             .play()
@@ -58,6 +63,7 @@ impl AudioRecorder {
             resolved: resolved.resolved,
             path,
             started_at: Instant::now(),
+            monitor_sender,
         })
     }
 
@@ -88,6 +94,20 @@ impl AudioRecorder {
 
     pub fn output_path(&self) -> &Path {
         &self.path
+    }
+
+    pub fn attach_monitor(&self, monitor: &InputMonitor) {
+        self.set_monitor_sender(Some(monitor.sender()));
+    }
+
+    pub fn detach_monitor(&self) {
+        self.set_monitor_sender(None);
+    }
+
+    fn set_monitor_sender(&self, sender: Option<Sender<MonitorCommand>>) {
+        if let Ok(mut slot) = self.monitor_sender.lock() {
+            *slot = sender;
+        }
     }
 }
 
@@ -142,6 +162,38 @@ enum RecorderCommand {
     Stop,
 }
 
+pub enum MonitorCommand {
+    Samples(Vec<f32>),
+    Stop,
+}
+
+pub struct InputMonitor {
+    sender: Sender<MonitorCommand>,
+    join: Option<JoinHandle<()>>,
+}
+
+impl InputMonitor {
+    pub fn start(sink: Sink, channels: u16, sample_rate: u32) -> Self {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let join = thread::spawn(move || monitor_loop(sink, channels, sample_rate, receiver));
+        Self {
+            sender,
+            join: Some(join),
+        }
+    }
+
+    pub fn sender(&self) -> Sender<MonitorCommand> {
+        self.sender.clone()
+    }
+
+    pub fn stop(mut self) {
+        let _ = self.sender.send(MonitorCommand::Stop);
+        if let Some(join) = self.join.take() {
+            let _ = join.join();
+        }
+    }
+}
+
 fn writer_loop(
     mut writer: WavSampleWriter,
     receiver: Receiver<RecorderCommand>,
@@ -157,93 +209,160 @@ fn writer_loop(
     writer.finalize()
 }
 
+fn monitor_loop(
+    sink: Sink,
+    channels: u16,
+    sample_rate: u32,
+    receiver: Receiver<MonitorCommand>,
+) {
+    let channels = channels.max(1);
+    let sample_rate = sample_rate.max(1);
+    sink.play();
+    while let Ok(command) = receiver.recv() {
+        match command {
+            MonitorCommand::Samples(samples) => {
+                if samples.is_empty() {
+                    continue;
+                }
+                let source = SamplesBuffer::new(channels, sample_rate, samples);
+                sink.append(source);
+            }
+            MonitorCommand::Stop => break,
+        }
+    }
+    sink.stop();
+}
+
 fn build_input_stream(
     device: &cpal::Device,
     config: &cpal::StreamConfig,
     sample_format: cpal::SampleFormat,
     sender: Sender<RecorderCommand>,
     selection: StreamChannelSelection,
+    monitor_sender: Arc<std::sync::Mutex<Option<Sender<MonitorCommand>>>>,
 ) -> Result<Stream, AudioInputError> {
     let err_fn = move |err| {
         warn!("Audio input stream error: {err}");
     };
     let selection = Arc::new(selection);
     match sample_format {
-        cpal::SampleFormat::F32 => device
-            .build_input_stream(
+        cpal::SampleFormat::F32 => {
+            let monitor_sender = monitor_sender.clone();
+            device.build_input_stream(
                 config,
                 move |data: &[f32], _| {
                     let samples = extract_selected_samples(data, &selection, |sample| *sample);
+                    if let Ok(slot) = monitor_sender.lock()
+                        && let Some(monitor) = slot.as_ref()
+                    {
+                        let _ = monitor.send(MonitorCommand::Samples(samples.clone()));
+                    }
                     let _ = sender.send(RecorderCommand::Samples(samples));
                 },
                 err_fn,
                 None,
             )
-            .map_err(|source| AudioInputError::OpenStream { source }),
-        cpal::SampleFormat::I16 => device
-            .build_input_stream(
+            .map_err(|source| AudioInputError::OpenStream { source })
+        }
+        cpal::SampleFormat::I16 => {
+            let monitor_sender = monitor_sender.clone();
+            device.build_input_stream(
                 config,
                 move |data: &[i16], _| {
                     let samples = extract_selected_samples(data, &selection, |sample| {
                         *sample as f32 / i16::MAX as f32
                     });
+                    if let Ok(slot) = monitor_sender.lock()
+                        && let Some(monitor) = slot.as_ref()
+                    {
+                        let _ = monitor.send(MonitorCommand::Samples(samples.clone()));
+                    }
                     let _ = sender.send(RecorderCommand::Samples(samples));
                 },
                 err_fn,
                 None,
             )
-            .map_err(|source| AudioInputError::OpenStream { source }),
-        cpal::SampleFormat::U16 => device
-            .build_input_stream(
+            .map_err(|source| AudioInputError::OpenStream { source })
+        }
+        cpal::SampleFormat::U16 => {
+            let monitor_sender = monitor_sender.clone();
+            device.build_input_stream(
                 config,
                 move |data: &[u16], _| {
                     let samples = extract_selected_samples(data, &selection, |sample| {
                         (*sample as f32 - 32_768.0) / 32_768.0
                     });
+                    if let Ok(slot) = monitor_sender.lock()
+                        && let Some(monitor) = slot.as_ref()
+                    {
+                        let _ = monitor.send(MonitorCommand::Samples(samples.clone()));
+                    }
                     let _ = sender.send(RecorderCommand::Samples(samples));
                 },
                 err_fn,
                 None,
             )
-            .map_err(|source| AudioInputError::OpenStream { source }),
-        cpal::SampleFormat::I32 => device
-            .build_input_stream(
+            .map_err(|source| AudioInputError::OpenStream { source })
+        }
+        cpal::SampleFormat::I32 => {
+            let monitor_sender = monitor_sender.clone();
+            device.build_input_stream(
                 config,
                 move |data: &[i32], _| {
                     let samples = extract_selected_samples(data, &selection, |sample| {
                         *sample as f32 / i32::MAX as f32
                     });
+                    if let Ok(slot) = monitor_sender.lock()
+                        && let Some(monitor) = slot.as_ref()
+                    {
+                        let _ = monitor.send(MonitorCommand::Samples(samples.clone()));
+                    }
                     let _ = sender.send(RecorderCommand::Samples(samples));
                 },
                 err_fn,
                 None,
             )
-            .map_err(|source| AudioInputError::OpenStream { source }),
-        cpal::SampleFormat::U32 => device
-            .build_input_stream(
+            .map_err(|source| AudioInputError::OpenStream { source })
+        }
+        cpal::SampleFormat::U32 => {
+            let monitor_sender = monitor_sender.clone();
+            device.build_input_stream(
                 config,
                 move |data: &[u32], _| {
                     let samples = extract_selected_samples(data, &selection, |sample| {
                         (*sample as f32 - 2_147_483_648.0) / 2_147_483_648.0
                     });
+                    if let Ok(slot) = monitor_sender.lock()
+                        && let Some(monitor) = slot.as_ref()
+                    {
+                        let _ = monitor.send(MonitorCommand::Samples(samples.clone()));
+                    }
                     let _ = sender.send(RecorderCommand::Samples(samples));
                 },
                 err_fn,
                 None,
             )
-            .map_err(|source| AudioInputError::OpenStream { source }),
-        cpal::SampleFormat::F64 => device
-            .build_input_stream(
+            .map_err(|source| AudioInputError::OpenStream { source })
+        }
+        cpal::SampleFormat::F64 => {
+            let monitor_sender = monitor_sender.clone();
+            device.build_input_stream(
                 config,
                 move |data: &[f64], _| {
                     let samples =
                         extract_selected_samples(data, &selection, |sample| *sample as f32);
+                    if let Ok(slot) = monitor_sender.lock()
+                        && let Some(monitor) = slot.as_ref()
+                    {
+                        let _ = monitor.send(MonitorCommand::Samples(samples.clone()));
+                    }
                     let _ = sender.send(RecorderCommand::Samples(samples));
                 },
                 err_fn,
                 None,
             )
-            .map_err(|source| AudioInputError::OpenStream { source }),
+            .map_err(|source| AudioInputError::OpenStream { source })
+        }
         format => Err(AudioInputError::RecordingFailed {
             detail: format!("Unsupported input sample format {format:?}"),
         }),

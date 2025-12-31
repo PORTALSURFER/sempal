@@ -18,7 +18,7 @@ pub use input::{
     available_input_channel_count, available_input_devices, available_input_hosts,
     resolve_input_stream_config, supported_input_sample_rates,
 };
-pub use recording::{AudioRecorder, RecordingOutcome};
+pub use recording::{AudioRecorder, InputMonitor, RecordingOutcome};
 pub use player::AudioPlayer;
 
 #[cfg(test)]

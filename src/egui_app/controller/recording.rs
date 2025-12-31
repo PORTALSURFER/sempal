@@ -1,5 +1,5 @@
 use super::*;
-use crate::audio::{AudioRecorder, RecordingOutcome};
+use crate::audio::{AudioRecorder, InputMonitor, RecordingOutcome};
 use crate::waveform::{DecodedWaveform, WaveformPeaks};
 use super::state::audio::RecordingTarget;
 use std::path::PathBuf;
@@ -43,6 +43,7 @@ impl EguiController {
         let recorder = AudioRecorder::start(&self.settings.audio_input, output_path.clone())
             .map_err(|err| err.to_string())?;
         self.update_audio_input_status(recorder.resolved());
+        self.start_input_monitor(&recorder);
         self.audio.recorder = Some(recorder);
         self.set_status(
             format!("Recording to {}", output_path.display()),
@@ -53,6 +54,7 @@ impl EguiController {
 
     pub fn stop_recording(&mut self) -> Result<Option<RecordingOutcome>, String> {
         let target = self.audio.recording_target.clone();
+        self.stop_input_monitor();
         let Some(recorder) = self.audio.recorder.take() else {
             return Ok(None);
         };
@@ -297,9 +299,43 @@ impl EguiController {
                 );
                 if let Some(target) = self.audio.recording_target.as_mut() {
                     target.loaded_once = true;
-                }
-            }
         }
+    }
+
+    pub(super) fn start_input_monitor(&mut self, recorder: &AudioRecorder) {
+        if !self.settings.controls.input_monitoring_enabled {
+            return;
+        }
+        if self.audio.input_monitor.is_some() {
+            return;
+        }
+        let player_rc = match self.ensure_player() {
+            Ok(Some(player)) => player,
+            Ok(None) => return,
+            Err(err) => {
+                self.set_status(err, StatusTone::Warning);
+                return;
+            }
+        };
+        let sink = player_rc.borrow().create_monitor_sink(self.ui.volume);
+        let monitor = InputMonitor::start(
+            sink,
+            recorder.resolved().channel_count,
+            recorder.resolved().sample_rate,
+        );
+        recorder.attach_monitor(&monitor);
+        self.audio.input_monitor = Some(monitor);
+    }
+
+    pub(super) fn stop_input_monitor(&mut self) {
+        if let Some(recorder) = self.audio.recorder.as_ref() {
+            recorder.detach_monitor();
+        }
+        if let Some(monitor) = self.audio.input_monitor.take() {
+            monitor.stop();
+        }
+    }
+}
         if let Some(target) = self.audio.recording_target.as_mut() {
             target.last_file_len = len;
             target.last_refresh_at = Some(now);
