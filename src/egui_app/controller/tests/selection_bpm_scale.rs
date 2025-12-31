@@ -73,3 +73,26 @@ fn shift_resizedrag_overrides_bpm_snapping() {
     let updated = controller.ui.waveform.selection.unwrap();
     assert_eq!(updated, SelectionRange::new(0.0, 0.73));
 }
+
+#[test]
+fn start_drag_snaps_to_start_when_bpm_snap_enabled() {
+    let (mut controller, source) = dummy_controller();
+    let samples = vec![0.0; 32];
+    let selection = SelectionRange::new(0.2, 0.4);
+    load_waveform_selection(
+        &mut controller,
+        &source,
+        "start_snap.wav",
+        &samples,
+        selection,
+    );
+
+    controller.set_bpm_snap_enabled(true);
+    controller.set_bpm_value(120.0);
+    controller.ui.waveform.bpm_input = "120".to_string();
+
+    controller.start_selection_drag(0.005);
+
+    let updated = controller.ui.waveform.selection.unwrap();
+    assert!((updated.start() - 0.0).abs() < 1e-6);
+}

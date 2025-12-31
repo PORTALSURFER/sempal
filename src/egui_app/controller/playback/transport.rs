@@ -3,11 +3,14 @@ use crate::egui_app::state::FocusContext;
 use crate::selection::SelectionEdge;
 
 const TRANSIENT_SNAP_RADIUS: f32 = 0.01;
+const SELECTION_START_SNAP_RADIUS: f32 = 0.01;
 
 pub(super) fn start_selection_drag(controller: &mut EguiController, position: f32) {
     controller.selection_state.bpm_scale_beats = None;
     controller.begin_selection_undo("Selection");
-    let start = snap_to_transient(controller, position).unwrap_or(position);
+    let start = snap_selection_start(controller, position)
+        .or_else(|| snap_to_transient(controller, position))
+        .unwrap_or(position);
     let range = controller.selection_state.range.begin_new(start);
     controller.apply_selection(Some(range));
 }
@@ -222,6 +225,17 @@ fn snap_to_transient(controller: &EguiController, position: f32) -> Option<f32> 
         }
     }
     closest
+}
+
+fn snap_selection_start(controller: &EguiController, position: f32) -> Option<f32> {
+    if !controller.ui.waveform.bpm_snap_enabled {
+        return None;
+    }
+    if position.is_finite() && position <= SELECTION_START_SNAP_RADIUS {
+        Some(0.0)
+    } else {
+        None
+    }
 }
 
 fn selection_scale_beats(controller: &EguiController) -> Option<f32> {
