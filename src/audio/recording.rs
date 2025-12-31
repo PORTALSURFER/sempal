@@ -2,6 +2,7 @@ use std::fs::File;
 use std::io::BufWriter;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, Sender};
+use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::Instant;
 
@@ -10,8 +11,6 @@ use cpal::Stream;
 use tracing::warn;
 
 use super::input::{AudioInputConfig, AudioInputError, ResolvedInput, resolve_input_stream_config};
-
-const DEFAULT_INPUT_CHANNELS: u16 = 2;
 
 pub struct RecordingOutcome {
     pub path: PathBuf,
@@ -30,8 +29,11 @@ pub struct AudioRecorder {
 
 impl AudioRecorder {
     pub fn start(config: &AudioInputConfig, path: PathBuf) -> Result<Self, AudioInputError> {
-        let desired_channels = config.channels.unwrap_or(DEFAULT_INPUT_CHANNELS);
-        let resolved = resolve_input_stream_config(config, desired_channels)?;
+        let resolved = resolve_input_stream_config(config)?;
+        let selection = StreamChannelSelection::new(
+            resolved.stream_config.channels,
+            &resolved.selected_channels,
+        );
         let (sender, receiver) = std::sync::mpsc::channel();
         let writer = RecorderWriter::spawn(
             path.clone(),
@@ -45,6 +47,7 @@ impl AudioRecorder {
             &resolved.stream_config,
             resolved.sample_format,
             sender,
+            selection,
         )?;
         stream
             .play()
@@ -159,19 +162,18 @@ fn build_input_stream(
     config: &cpal::StreamConfig,
     sample_format: cpal::SampleFormat,
     sender: Sender<RecorderCommand>,
+    selection: StreamChannelSelection,
 ) -> Result<Stream, AudioInputError> {
     let err_fn = move |err| {
         warn!("Audio input stream error: {err}");
     };
+    let selection = Arc::new(selection);
     match sample_format {
         cpal::SampleFormat::F32 => device
             .build_input_stream(
                 config,
                 move |data: &[f32], _| {
-                    let mut samples = Vec::with_capacity(data.len());
-                    for sample in data {
-                        samples.push(*sample);
-                    }
+                    let samples = extract_selected_samples(data, &selection, |sample| *sample);
                     let _ = sender.send(RecorderCommand::Samples(samples));
                 },
                 err_fn,
@@ -182,10 +184,9 @@ fn build_input_stream(
             .build_input_stream(
                 config,
                 move |data: &[i16], _| {
-                    let mut samples = Vec::with_capacity(data.len());
-                    for sample in data {
-                        samples.push(*sample as f32 / i16::MAX as f32);
-                    }
+                    let samples = extract_selected_samples(data, &selection, |sample| {
+                        *sample as f32 / i16::MAX as f32
+                    });
                     let _ = sender.send(RecorderCommand::Samples(samples));
                 },
                 err_fn,
@@ -196,10 +197,9 @@ fn build_input_stream(
             .build_input_stream(
                 config,
                 move |data: &[u16], _| {
-                    let mut samples = Vec::with_capacity(data.len());
-                    for sample in data {
-                        samples.push((*sample as f32 - 32_768.0) / 32_768.0);
-                    }
+                    let samples = extract_selected_samples(data, &selection, |sample| {
+                        (*sample as f32 - 32_768.0) / 32_768.0
+                    });
                     let _ = sender.send(RecorderCommand::Samples(samples));
                 },
                 err_fn,
@@ -210,6 +210,49 @@ fn build_input_stream(
             detail: format!("Unsupported input sample format {format:?}"),
         }),
     }
+}
+
+#[derive(Clone)]
+struct StreamChannelSelection {
+    stream_channels: usize,
+    selected_channels: Vec<usize>,
+}
+
+impl StreamChannelSelection {
+    fn new(stream_channels: u16, selected_channels: &[u16]) -> Self {
+        let stream_channels = stream_channels.max(1) as usize;
+        let mut selected_channels: Vec<usize> = selected_channels
+            .iter()
+            .copied()
+            .filter(|channel| *channel >= 1)
+            .map(|channel| (channel - 1) as usize)
+            .collect();
+        if selected_channels.is_empty() && stream_channels > 0 {
+            selected_channels.push(0);
+        }
+        Self {
+            stream_channels,
+            selected_channels,
+        }
+    }
+}
+
+fn extract_selected_samples<T>(
+    data: &[T],
+    selection: &StreamChannelSelection,
+    mut convert: impl FnMut(&T) -> f32,
+) -> Vec<f32> {
+    let mut samples = Vec::with_capacity(
+        data.len() / selection.stream_channels.max(1) * selection.selected_channels.len(),
+    );
+    for frame in data.chunks(selection.stream_channels.max(1)) {
+        for &channel_idx in &selection.selected_channels {
+            if let Some(sample) = frame.get(channel_idx) {
+                samples.push(convert(sample));
+            }
+        }
+    }
+    samples
 }
 
 struct WavSampleWriter {

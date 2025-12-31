@@ -181,35 +181,33 @@ impl EguiController {
         }
         self.ui.audio.input_sample_rates = sample_rates;
 
-        let channel_counts = match (host_id.as_deref(), device_name.as_deref()) {
-            (Some(host), Some(device)) => {
-                crate::audio::supported_input_channel_counts(host, device)
-                    .unwrap_or_else(|_| Vec::new())
-            }
-            _ => Vec::new(),
+        let channel_count = match (host_id.as_deref(), device_name.as_deref()) {
+            (Some(host), Some(device)) => match crate::audio::available_input_channel_count(
+                host, device,
+            ) {
+                Ok(count) => count,
+                Err(err) => {
+                    warning.get_or_insert_with(|| err.to_string());
+                    0
+                }
+            },
+            _ => 0,
         };
-        if let Some(channels) = self.settings.audio_input.channels
-            && !channel_counts.is_empty()
-            && !channel_counts.contains(&channels)
+        let normalized =
+            Self::normalize_input_channel_selection(&self.settings.audio_input.channels, channel_count);
+        if !self.settings.audio_input.channels.is_empty()
+            && normalized != self.settings.audio_input.channels
         {
-            let fallback = if channel_counts.contains(&2) {
-                2
-            } else {
-                channel_counts[0]
-            };
             warning.get_or_insert_with(|| {
-                format!("Input channels {channels} unsupported; using {fallback}")
+                format!(
+                    "Input channels {} unavailable; using {}",
+                    format_channel_list(&self.settings.audio_input.channels),
+                    format_channel_list(&normalized)
+                )
             });
-            self.settings.audio_input.channels = Some(fallback);
-        } else if self.settings.audio_input.channels.is_none() && !channel_counts.is_empty() {
-            let fallback = if channel_counts.contains(&2) {
-                2
-            } else {
-                channel_counts[0]
-            };
-            self.settings.audio_input.channels = Some(fallback);
         }
-        self.ui.audio.input_channel_counts = channel_counts;
+        self.settings.audio_input.channels = normalized;
+        self.ui.audio.input_channel_count = channel_count;
         self.ui.audio.input_selected = self.settings.audio_input.clone();
         self.ui.audio.input_warning = warning;
     }
@@ -274,13 +272,15 @@ impl EguiController {
         let _ = self.persist_config("Failed to save audio input settings");
     }
 
-    /// Update the selected input channel count and persist input settings.
-    pub fn set_audio_input_channels(&mut self, channels: u16) {
-        if self.settings.audio_input.channels == Some(channels) {
+    /// Update the selected input channels and persist input settings.
+    pub fn set_audio_input_channels(&mut self, channels: Vec<u16>) {
+        let normalized =
+            Self::normalize_input_channel_selection(&channels, self.ui.audio.input_channel_count);
+        if self.settings.audio_input.channels == normalized {
             return;
         }
-        self.settings.audio_input.channels = Some(channels);
-        self.ui.audio.input_selected.channels = Some(channels);
+        self.settings.audio_input.channels = normalized.clone();
+        self.ui.audio.input_selected.channels = normalized;
         let _ = self.persist_config("Failed to save audio input settings");
     }
 
@@ -395,10 +395,11 @@ impl EguiController {
         {
             reasons.push(format!("sample rate {rate}"));
         }
-        if let Some(channels) = self.settings.audio_input.channels
-            && channels != input.channel_count
-        {
-            reasons.push(format!("channels {channels}"));
+        if self.settings.audio_input.channels != input.selected_channels {
+            reasons.push(format!(
+                "inputs {}",
+                format_channel_list(&self.settings.audio_input.channels)
+            ));
         }
         let details = if reasons.is_empty() {
             "requested settings".to_string()
@@ -410,4 +411,39 @@ impl EguiController {
             input.device_name, input.host_id
         ))
     }
+
+    fn normalize_input_channel_selection(requested: &[u16], max_channels: u16) -> Vec<u16> {
+        if max_channels == 0 {
+            return Vec::new();
+        }
+        let mut selected: Vec<u16> = requested
+            .iter()
+            .copied()
+            .filter(|channel| *channel >= 1 && *channel <= max_channels)
+            .collect();
+        selected.sort_unstable();
+        selected.dedup();
+        if selected.len() > 2 {
+            selected.truncate(2);
+        }
+        if selected.is_empty() {
+            if max_channels >= 2 {
+                selected = vec![1, 2];
+            } else {
+                selected = vec![1];
+            }
+        }
+        selected
+    }
+}
+
+fn format_channel_list(channels: &[u16]) -> String {
+    if channels.is_empty() {
+        return "none".to_string();
+    }
+    channels
+        .iter()
+        .map(|channel| channel.to_string())
+        .collect::<Vec<_>>()
+        .join(", ")
 }

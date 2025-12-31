@@ -313,7 +313,7 @@ mod tests {
                         device: Some("Test Mic".into()),
                         sample_rate: Some(44_100),
                         buffer_size: Some(256),
-                        channels: Some(2),
+                        channels: vec![1, 2],
                     },
                     ..AppSettingsCore::default()
                 },
@@ -326,7 +326,7 @@ mod tests {
             assert_eq!(loaded.core.audio_input.device.as_deref(), Some("Test Mic"));
             assert_eq!(loaded.core.audio_input.sample_rate, Some(44_100));
             assert_eq!(loaded.core.audio_input.buffer_size, Some(256));
-            assert_eq!(loaded.core.audio_input.channels, Some(2));
+            assert_eq!(loaded.core.audio_input.channels, vec![1, 2]);
         });
     }
 
@@ -439,7 +439,7 @@ analysis_worker_count = 999
                         device: Some("Test Mic".into()),
                         sample_rate: Some(44_100),
                         buffer_size: Some(256),
-                        channels: Some(1),
+                        channels: vec![1],
                     },
                     volume: 0.75,
                     controls: InteractionOptions {

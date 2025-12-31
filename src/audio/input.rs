@@ -38,7 +38,7 @@ pub struct AudioInputConfig {
     #[serde(default)]
     pub buffer_size: Option<u32>,
     #[serde(default)]
-    pub channels: Option<u16>,
+    pub channels: Vec<u16>,
 }
 
 /// Actual input parameters in use after opening a stream.
@@ -49,6 +49,7 @@ pub struct ResolvedInput {
     pub sample_rate: u32,
     pub buffer_size_frames: Option<u32>,
     pub channel_count: u16,
+    pub selected_channels: Vec<u16>,
     pub used_fallback: bool,
 }
 
@@ -57,6 +58,7 @@ pub struct ResolvedInputConfig {
     pub device: cpal::Device,
     pub stream_config: cpal::StreamConfig,
     pub sample_format: cpal::SampleFormat,
+    pub selected_channels: Vec<u16>,
     pub resolved: ResolvedInput,
 }
 
@@ -129,13 +131,14 @@ pub fn supported_input_sample_rates(
     Ok(supported)
 }
 
-pub fn supported_input_channel_counts(
+/// Maximum number of input channels available on the device.
+pub fn available_input_channel_count(
     host_id: &str,
     device_name: &str,
-) -> Result<Vec<u16>, AudioInputError> {
+) -> Result<u16, AudioInputError> {
     let (host, resolved_host, _) = resolve_host(Some(host_id))?;
     let (device, _, _) = resolve_device(&host, Some(device_name))?;
-    let mut supported = Vec::new();
+    let mut max_channels = None;
     for range in device.supported_input_configs().map_err(|source| {
         AudioInputError::SupportedInputConfigs {
             host_id: resolved_host.clone(),
@@ -143,35 +146,70 @@ pub fn supported_input_channel_counts(
         }
     })? {
         let channels = range.channels();
-        if channels == 1 || channels == 2 {
-            supported.push(channels);
-        }
+        max_channels = Some(max_channels.map_or(channels, |max| max.max(channels)));
     }
-    if supported.is_empty()
-        && let Ok(default) = device.default_input_config()
-    {
-        let channels = default.channels();
-        if channels == 1 || channels == 2 {
-            supported.push(channels);
-        }
+    if let Some(channels) = max_channels {
+        return Ok(channels);
     }
-    supported.sort_unstable();
-    supported.dedup();
-    Ok(supported)
+    let default = device
+        .default_input_config()
+        .map_err(|source| AudioInputError::DefaultInputConfig { source })?;
+    Ok(default.channels())
 }
 
 pub fn resolve_input_stream_config(
     config: &AudioInputConfig,
-    desired_channels: u16,
 ) -> Result<ResolvedInputConfig, AudioInputError> {
     let (host, host_id, host_fallback) = resolve_host(config.host.as_deref())?;
     let (device, device_name, device_fallback) = resolve_device(&host, config.device.as_deref())?;
+    let (default_config, supported) = load_input_configs(&device, &host_id)?;
+    let max_channels = max_supported_channels(&supported, default_config.channels());
+    let selection = resolve_selected_input_channels(&config.channels, max_channels);
+    let default_rate = default_config.sample_rate().0;
+    let requested_rate = config.sample_rate;
+    let mut used_fallback = host_fallback || device_fallback || selection.used_fallback;
+    let preferred_stream_channels = selection.output_channels.max(selection.min_stream_channels);
+    let (range, rate, _channel_count) = pick_stream_config(
+        &supported,
+        default_rate,
+        requested_rate,
+        preferred_stream_channels,
+        selection.min_stream_channels,
+        &mut used_fallback,
+    );
+    let (stream_config, applied_buffer) =
+        build_input_stream_config(range, rate, config.buffer_size);
+    if requested_rate.is_some_and(|rate| rate != stream_config.sample_rate.0) {
+        used_fallback = true;
+    }
+    let sample_rate = stream_config.sample_rate.0;
+    Ok(ResolvedInputConfig {
+        device,
+        stream_config,
+        sample_format: range.sample_format(),
+        selected_channels: selection.selected_channels.clone(),
+        resolved: ResolvedInput {
+            host_id,
+            device_name,
+            sample_rate,
+            buffer_size_frames: applied_buffer,
+            channel_count: selection.output_channels,
+            selected_channels: selection.selected_channels,
+            used_fallback,
+        },
+    })
+}
+
+fn load_input_configs(
+    device: &cpal::Device,
+    host_id: &str,
+) -> Result<(cpal::SupportedStreamConfig, Vec<cpal::SupportedStreamConfigRange>), AudioInputError> {
     let default_config = device
         .default_input_config()
         .map_err(|source| AudioInputError::DefaultInputConfig { source })?;
     let supported = device.supported_input_configs().map_err(|source| {
         AudioInputError::SupportedInputConfigs {
-            host_id: host_id.clone(),
+            host_id: host_id.to_string(),
             source,
         }
     })?;
@@ -179,58 +217,38 @@ pub fn resolve_input_stream_config(
     if supported.is_empty() {
         return Err(AudioInputError::NoInputDevices);
     }
-    let default_rate = default_config.sample_rate().0;
-    let requested_rate = config.sample_rate;
-    let mut used_fallback = host_fallback || device_fallback;
-    let (range, rate, channel_count) = pick_stream_config(
-        &supported,
-        default_rate,
-        requested_rate,
-        desired_channels,
-        &mut used_fallback,
-    );
+    Ok((default_config, supported))
+}
+
+fn build_input_stream_config(
+    range: &cpal::SupportedStreamConfigRange,
+    rate: u32,
+    buffer_size: Option<u32>,
+) -> (cpal::StreamConfig, Option<u32>) {
     let mut stream_config = range
         .with_sample_rate(cpal::SampleRate(rate))
         .config();
-    if let Some(size) = config.buffer_size.filter(|size| *size > 0) {
+    if let Some(size) = buffer_size.filter(|size| *size > 0) {
         stream_config.buffer_size = cpal::BufferSize::Fixed(size);
-    }
-    if requested_rate.is_some_and(|rate| rate != stream_config.sample_rate.0) {
-        used_fallback = true;
-    }
-    if channel_count != desired_channels {
-        used_fallback = true;
     }
     let applied_buffer = match stream_config.buffer_size {
         cpal::BufferSize::Default => None,
         cpal::BufferSize::Fixed(size) => Some(size),
     };
-    let sample_rate = stream_config.sample_rate.0;
-    Ok(ResolvedInputConfig {
-        device,
-        stream_config,
-        sample_format: range.sample_format(),
-        resolved: ResolvedInput {
-            host_id,
-            device_name,
-            sample_rate,
-            buffer_size_frames: applied_buffer,
-            channel_count,
-            used_fallback,
-        },
-    })
+    (stream_config, applied_buffer)
 }
 
 fn pick_stream_config<'a>(
     supported: &'a [cpal::SupportedStreamConfigRange],
     default_rate: u32,
     requested_rate: Option<u32>,
-    desired_channels: u16,
+    preferred_channels: u16,
+    min_channels: u16,
     used_fallback: &mut bool,
 ) -> (&'a cpal::SupportedStreamConfigRange, u32, u16) {
     let desired: Vec<&cpal::SupportedStreamConfigRange> = supported
         .iter()
-        .filter(|range| range.channels() == desired_channels)
+        .filter(|range| range.channels() >= min_channels)
         .collect();
     let using_desired = !desired.is_empty();
     let ranges: Vec<&cpal::SupportedStreamConfigRange> = if !using_desired {
@@ -238,6 +256,21 @@ fn pick_stream_config<'a>(
         supported.iter().collect()
     } else {
         desired
+    };
+    let ranges: Vec<&cpal::SupportedStreamConfigRange> = {
+        let exact: Vec<_> = ranges
+            .iter()
+            .copied()
+            .filter(|range| range.channels() == preferred_channels)
+            .collect();
+        if exact.is_empty() {
+            if using_desired {
+                *used_fallback = true;
+            }
+            ranges
+        } else {
+            exact
+        }
     };
     let mut picked = None;
     let mut rate = default_rate;
@@ -284,6 +317,77 @@ fn rate_in_range(rate: u32, range: &cpal::SupportedStreamConfigRange) -> bool {
     let min = range.min_sample_rate().0;
     let max = range.max_sample_rate().0;
     rate >= min && rate <= max
+}
+
+fn max_supported_channels(
+    supported: &[cpal::SupportedStreamConfigRange],
+    default_channels: u16,
+) -> u16 {
+    supported
+        .iter()
+        .map(|range| range.channels())
+        .max()
+        .unwrap_or(default_channels)
+}
+
+struct InputChannelSelection {
+    selected_channels: Vec<u16>,
+    output_channels: u16,
+    min_stream_channels: u16,
+    used_fallback: bool,
+}
+
+fn resolve_selected_input_channels(
+    requested: &[u16],
+    max_channels: u16,
+) -> InputChannelSelection {
+    let mut used_fallback = false;
+    let mut selected = normalize_selected_channels(requested, max_channels);
+    if !requested.is_empty() && selected.len() != requested.len() {
+        used_fallback = true;
+    }
+    if selected.is_empty() {
+        selected = default_input_channels(max_channels);
+    }
+    if !requested.is_empty() && selected.is_empty() {
+        used_fallback = true;
+    }
+    let output_channels = selected.len().clamp(1, 2) as u16;
+    let min_stream_channels = selected
+        .iter()
+        .copied()
+        .max()
+        .unwrap_or(output_channels);
+    InputChannelSelection {
+        selected_channels: selected,
+        output_channels,
+        min_stream_channels,
+        used_fallback,
+    }
+}
+
+fn normalize_selected_channels(requested: &[u16], max_channels: u16) -> Vec<u16> {
+    let mut selected: Vec<u16> = requested
+        .iter()
+        .copied()
+        .filter(|channel| *channel >= 1 && *channel <= max_channels)
+        .collect();
+    selected.sort_unstable();
+    selected.dedup();
+    if selected.len() > 2 {
+        selected.truncate(2);
+    }
+    selected
+}
+
+fn default_input_channels(max_channels: u16) -> Vec<u16> {
+    if max_channels >= 2 {
+        vec![1, 2]
+    } else if max_channels == 1 {
+        vec![1]
+    } else {
+        Vec::new()
+    }
 }
 
 fn resolve_host(id: Option<&str>) -> Result<(cpal::Host, String, bool), AudioInputError> {

@@ -156,38 +156,34 @@ impl EguiApp {
     }
 
     pub(super) fn render_audio_input_channel_checkboxes(&mut self, ui: &mut egui::Ui) {
-        let channel_counts = self.controller.ui.audio.input_channel_counts.clone();
-        if channel_counts.is_empty() {
+        let channel_count = self.controller.ui.audio.input_channel_count;
+        if channel_count == 0 {
             return;
         }
-        let selected = self.controller.ui.audio.input_selected.channels;
-        let has_mono = channel_counts.contains(&1);
-        let has_stereo = channel_counts.contains(&2);
-        let stereo_selected = selected == Some(2);
+        let mut selected = self.controller.ui.audio.input_selected.channels.clone();
         ui.label("Input channels");
-        ui.horizontal(|ui| {
-            let mut mono_checked = selected == Some(1);
-            let mono_response = ui.add_enabled(
-                has_mono && !stereo_selected,
-                egui::Checkbox::new(&mut mono_checked, "Mono (1 input)"),
-            );
-            if mono_response.changed() && mono_checked {
-                self.controller.set_audio_input_channels(1);
-            }
-
-            let mut stereo_checked = stereo_selected;
-            let stereo_response = ui.add_enabled(
-                has_stereo,
-                egui::Checkbox::new(&mut stereo_checked, "Stereo (2 inputs)"),
-            );
-            if stereo_response.changed() {
-                if stereo_checked {
-                    self.controller.set_audio_input_channels(2);
-                } else if has_mono {
-                    self.controller.set_audio_input_channels(1);
+        let mut updated = false;
+        ui.horizontal_wrapped(|ui| {
+            for channel in 1..=channel_count {
+                let mut checked = selected.contains(&channel);
+                let disable = selected.len() >= 2 && !checked;
+                let label = format!("In {channel}");
+                if ui
+                    .add_enabled(!disable, egui::Checkbox::new(&mut checked, label))
+                    .changed()
+                {
+                    updated = true;
+                    if checked {
+                        selected.push(channel);
+                    } else {
+                        selected.retain(|value| *value != channel);
+                    }
                 }
             }
         });
+        if updated {
+            self.controller.set_audio_input_channels(selected);
+        }
     }
 
     pub(super) fn render_audio_buffer_combo(&mut self, ui: &mut egui::Ui) {

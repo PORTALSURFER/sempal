@@ -12,7 +12,7 @@ pub struct AudioOptionsState {
     pub input_hosts: Vec<AudioHostView>,
     pub input_devices: Vec<AudioDeviceView>,
     pub input_sample_rates: Vec<u32>,
-    pub input_channel_counts: Vec<u16>,
+    pub input_channel_count: u16,
     pub input_selected: AudioInputConfig,
     pub input_applied: Option<ActiveAudioInput>,
     pub input_warning: Option<String>,
