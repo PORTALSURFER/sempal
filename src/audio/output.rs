@@ -3,6 +3,7 @@ use cpal::traits::{DeviceTrait, HostTrait};
 use rodio::{OutputStream, OutputStreamBuilder};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use tracing::info;
 
 #[derive(Debug, Error)]
 pub enum AudioOutputError {
@@ -205,16 +206,26 @@ pub fn open_output_stream(
         used_fallback = true;
     }
 
+    let resolved = ResolvedOutput {
+        host_id: resolved_host_id,
+        device_name: resolved_device_name,
+        sample_rate: resolved_config.sample_rate(),
+        buffer_size_frames: applied_buffer,
+        channel_count: resolved_config.channel_count() as u16,
+        used_fallback,
+    };
+    info!(
+        "Audio output ready: host={} device=\"{}\" rate={}Hz channels={} buffer={:?} fallback={}",
+        resolved.host_id,
+        resolved.device_name,
+        resolved.sample_rate,
+        resolved.channel_count,
+        resolved.buffer_size_frames,
+        resolved.used_fallback
+    );
     Ok(OpenStreamOutcome {
         stream,
-        resolved: ResolvedOutput {
-            host_id: resolved_host_id,
-            device_name: resolved_device_name,
-            sample_rate: resolved_config.sample_rate(),
-            buffer_size_frames: applied_buffer,
-            channel_count: resolved_config.channel_count() as u16,
-            used_fallback,
-        },
+        resolved,
     })
 }
 
