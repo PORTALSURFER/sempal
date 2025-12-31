@@ -127,7 +127,7 @@ pub fn supported_input_sample_rates(
     Ok(supported)
 }
 
-pub(crate) fn resolve_input_stream_config(
+pub fn resolve_input_stream_config(
     config: &AudioInputConfig,
     desired_channels: u16,
 ) -> Result<ResolvedInputConfig, AudioInputError> {
@@ -172,6 +172,7 @@ pub(crate) fn resolve_input_stream_config(
         cpal::BufferSize::Default => None,
         cpal::BufferSize::Fixed(size) => Some(size),
     };
+    let sample_rate = stream_config.sample_rate.0;
     Ok(ResolvedInputConfig {
         device,
         stream_config,
@@ -179,7 +180,7 @@ pub(crate) fn resolve_input_stream_config(
         resolved: ResolvedInput {
             host_id,
             device_name,
-            sample_rate: stream_config.sample_rate.0,
+            sample_rate,
             buffer_size_frames: applied_buffer,
             channel_count,
             used_fallback,
@@ -194,23 +195,23 @@ fn pick_stream_config<'a>(
     desired_channels: u16,
     used_fallback: &mut bool,
 ) -> (&'a cpal::SupportedStreamConfigRange, u32, u16) {
-    let desired: Vec<_> = supported
+    let desired: Vec<&cpal::SupportedStreamConfigRange> = supported
         .iter()
         .filter(|range| range.channels() == desired_channels)
         .collect();
     let using_desired = !desired.is_empty();
-    let ranges = if !using_desired {
+    let ranges: Vec<&cpal::SupportedStreamConfigRange> = if !using_desired {
         *used_fallback = true;
-        supported
+        supported.iter().collect()
     } else {
-        desired.as_slice()
+        desired
     };
     let mut picked = None;
     let mut rate = default_rate;
     if let Some(requested) = requested_rate {
         if let Some(range) = ranges
             .iter()
-            .find(|range| rate_in_range(requested, range))
+            .find(|range| rate_in_range(requested, *range))
         {
             picked = Some(*range);
             rate = requested;
@@ -218,7 +219,7 @@ fn pick_stream_config<'a>(
             *used_fallback = true;
             if let Some(range) = supported
                 .iter()
-                .find(|range| rate_in_range(requested, range))
+                .find(|range| rate_in_range(requested, *range))
             {
                 picked = Some(range);
                 rate = requested;
@@ -231,12 +232,12 @@ fn pick_stream_config<'a>(
     if picked.is_none() {
         if let Some(range) = ranges
             .iter()
-            .find(|range| rate_in_range(default_rate, range))
+            .find(|range| rate_in_range(default_rate, *range))
         {
             picked = Some(*range);
             rate = default_rate;
         } else {
-            let range = &ranges[0];
+            let range = ranges[0];
             picked = Some(range);
             rate = range.max_sample_rate().0;
             *used_fallback = true;

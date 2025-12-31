@@ -67,9 +67,15 @@ impl EguiController {
             .parent()
             .ok_or_else(|| "Recording path missing parent".to_string())?
             .to_path_buf();
-        if let Some(existing) = self.library.sources.iter().find(|s| s.root == root) {
+        if let Some(existing) = self
+            .library
+            .sources
+            .iter()
+            .find(|s| s.root == root)
+            .cloned()
+        {
             self.select_source(Some(existing.id.clone()));
-            return Ok(existing.clone());
+            return Ok(existing);
         }
         let source = match crate::sample_sources::library::lookup_source_id_for_root(&root) {
             Ok(Some(id)) => SampleSource::new_with_id(id, root.clone()),

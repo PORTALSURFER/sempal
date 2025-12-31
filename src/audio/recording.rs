@@ -5,8 +5,8 @@ use std::sync::mpsc::{Receiver, Sender};
 use std::thread::{self, JoinHandle};
 use std::time::Instant;
 
-use cpal::traits::DeviceTrait;
-use cpal::{Sample, Stream};
+use cpal::traits::{DeviceTrait, StreamTrait};
+use cpal::Stream;
 use tracing::warn;
 
 use super::input::{AudioInputConfig, AudioInputError, ResolvedInput, resolve_input_stream_config};
@@ -169,7 +169,7 @@ fn build_input_stream(
                 move |data: &[f32], _| {
                     let mut samples = Vec::with_capacity(data.len());
                     for sample in data {
-                        samples.push(sample.to_f32());
+                        samples.push(*sample);
                     }
                     let _ = sender.send(RecorderCommand::Samples(samples));
                 },
@@ -183,7 +183,7 @@ fn build_input_stream(
                 move |data: &[i16], _| {
                     let mut samples = Vec::with_capacity(data.len());
                     for sample in data {
-                        samples.push(sample.to_f32());
+                        samples.push(*sample as f32 / i16::MAX as f32);
                     }
                     let _ = sender.send(RecorderCommand::Samples(samples));
                 },
@@ -197,7 +197,7 @@ fn build_input_stream(
                 move |data: &[u16], _| {
                     let mut samples = Vec::with_capacity(data.len());
                     for sample in data {
-                        samples.push(sample.to_f32());
+                        samples.push((*sample as f32 - 32_768.0) / 32_768.0);
                     }
                     let _ = sender.send(RecorderCommand::Samples(samples));
                 },
@@ -252,7 +252,7 @@ impl WavSampleWriter {
         Ok(())
     }
 
-    fn finalize(mut self) -> Result<RecordingStats, AudioInputError> {
+    fn finalize(self) -> Result<RecordingStats, AudioInputError> {
         self.writer
             .finalize()
             .map_err(|err| AudioInputError::RecordingFailed {
