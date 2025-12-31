@@ -76,18 +76,22 @@ impl EguiController {
                 StatusTone::Warning,
             );
         }
+        if let Ok((source, relative_path)) =
+            self.resolve_recording_target(target.as_ref(), &outcome.path)
+        {
+            if let Err(err) = self.load_waveform_for_selection(&source, &relative_path) {
+                self.set_status(
+                    format!("Recorded {} (load failed: {err})", relative_path.display()),
+                    StatusTone::Warning,
+                );
+            }
+        }
         self.refresh_output_after_recording();
         Ok(Some(outcome))
     }
 
     pub fn stop_recording_and_load(&mut self) -> Result<(), String> {
-        let target = self.audio.recording_target.clone();
-        let Some(outcome) = self.stop_recording()? else {
-            return Ok(());
-        };
-        let (source, relative_path) =
-            self.resolve_recording_target(target.as_ref(), &outcome.path)?;
-        self.load_waveform_for_selection(&source, &relative_path)?;
+        let _ = self.stop_recording()?;
         Ok(())
     }
 
