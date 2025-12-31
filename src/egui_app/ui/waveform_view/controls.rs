@@ -33,13 +33,17 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
         }
         ui.add_space(10.0);
         let is_recording = app.controller.is_recording();
+        let has_source = app.controller.current_source().is_some();
         let record_label = if is_recording {
             RichText::new("Record: On").color(style::destructive_text())
         } else {
             RichText::new("Record").color(palette.text_muted)
         };
         let record_button = ui
-            .add(egui::Button::new(record_label))
+            .add_enabled(
+                is_recording || has_source,
+                egui::Button::new(record_label),
+            )
             .on_hover_text("Record into the selected source folder");
         if record_button.clicked() {
             let result = if is_recording {
@@ -52,11 +56,13 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
             }
         }
         let is_playing = app.controller.is_playing();
+        let play_label = if is_playing {
+            RichText::new("Play").color(palette.accent_mint)
+        } else {
+            RichText::new("Play").color(palette.text_muted)
+        };
         let play_button = ui
-            .add_enabled(
-                !is_recording,
-                egui::Button::new(RichText::new("Play").color(palette.text_muted)),
-            )
+            .add_enabled(!is_recording, egui::Button::new(play_label))
             .on_hover_text("Play from the current selection or cursor");
         if play_button.clicked() {
             if let Err(err) =
@@ -66,11 +72,12 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
                 app.controller.set_status(err, style::StatusTone::Error);
             }
         }
-        let stop_button = ui
-            .add_enabled(
-                is_playing,
-                egui::Button::new(RichText::new("Stop").color(palette.text_muted)),
-            )
+        let stop_label = if is_playing {
+            RichText::new("Stop").color(style::destructive_text())
+        } else {
+            RichText::new("Stop").color(palette.text_muted)
+        };
+        let stop_button = ui.add_enabled(is_playing, egui::Button::new(stop_label))
             .on_hover_text("Stop playback");
         if stop_button.clicked() {
             app.controller.stop_playback_if_active();
