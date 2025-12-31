@@ -23,9 +23,11 @@ impl WaveformRenderer {
         WAV_DECODE_COUNT.fetch_add(1, Ordering::Relaxed);
 
         let spec = reader.spec();
-        let channels = spec.channels.max(1) as usize;
+        let spec_channels = spec.channels.max(1);
+        let channels = spec_channels as usize;
+        let spec_sample_rate = spec.sample_rate.max(1);
         let frames = reader.duration() as usize;
-        let duration_seconds = frames as f32 / spec.sample_rate.max(1) as f32;
+        let duration_seconds = frames as f32 / spec_sample_rate as f32;
 
         if frames > max_frames {
             let peaks = match spec.sample_format {
@@ -39,8 +41,8 @@ impl WaveformRenderer {
                 samples: Arc::from(Vec::new()),
                 peaks: Some(Arc::new(peaks)),
                 duration_seconds,
-                sample_rate: spec.sample_rate,
-                channels: spec.channels,
+                sample_rate: spec_sample_rate,
+                channels: spec_channels,
             }));
         }
 
@@ -54,8 +56,8 @@ impl WaveformRenderer {
             samples: Arc::from(samples),
             peaks: None,
             duration_seconds,
-            sample_rate: spec.sample_rate,
-            channels: spec.channels,
+            sample_rate: spec_sample_rate,
+            channels: spec_channels,
         }))
     }
 }
