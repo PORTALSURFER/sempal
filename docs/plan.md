@@ -1,18 +1,21 @@
 ## Goal
-- Update the similarity map UX so panning only happens on right-click drag, and add a left-click drag “paint to play” interaction that scrubs/plays samples under the cursor as the user drags.
+- Add full stereo recording (including ASIO support on Windows) and expose record/play/stop controls in the waveform UI for normal playback.
 
 ## Proposed solutions
-- Add explicit mouse button handling in the map controller: gate pan logic to right button, leave left button free for playback gesture.
-- Implement a drag-to-play handler that tracks cursor over map coordinates, finds nearest sample(s), and streams short previews as the cursor moves.
-- Debounce/limit playback triggers (e.g., threshold movement distance or time) to avoid flooding audio playback while painting.
-- Keep existing zoom/hover/selection behavior intact; ensure new gestures don’t conflict with current shortcuts.
+- Implement an audio input/recording pipeline using CPAL input streams (ASIO host on Windows), writing recorded buffers to WAV via `hound`.
+- Add input device/host selection alongside existing output options, persist choices, and default to stereo capture when available.
+- Reuse the existing waveform load + playback path by saving recordings to a known recordings folder and loading them as a normal sample.
+- Add waveform transport controls (Record/Play/Stop) in `src/egui_app/ui/waveform_view/controls.rs`, wiring them to controller actions with clear state handling.
 
 ## Step-by-step plan
-1. [-] Inspect current similarity map input handling (controller + UI) to see how pan/zoom, hover, and playback are wired.
-2. [-] Gate panning to right-click drag only and confirm zoom/selection still work as before.
-3. [-] Add left-click drag “paint to play”: track cursor movement, find nearest samples under the path, and trigger audio playback.
-4. [-] Add throttling/debouncing so playback events don’t spam while dragging; ensure audio stop/cleanup on release.
-5. [-] Test the new interactions (right-click pan, left-click paint-to-play) and adjust any conflicting shortcuts or behaviors.
+1. [-] Review current playback, waveform view controls, and audio output config to identify the best insertion points for input/recording state (`src/audio`, `src/egui_app/controller`, `src/egui_app/state`, `src/egui_app/ui/waveform_view`).
+2. [-] Add audio input discovery helpers (hosts/devices/sample rates) in `src/audio/input.rs`, mirroring output selection, and ensure ASIO host/device enumeration works on Windows.
+3. [-] Implement a `AudioRecorder` (new module under `src/audio`) that opens a CPAL input stream, captures interleaved stereo frames, and writes WAV files with correct sample rate/channel metadata.
+4. [-] Extend config/state for audio input selection and recording status in `src/egui_app/state/audio.rs` plus config persistence (likely `src/egui_app/controller/config.rs` and config types) to remember input host/device/sample rate.
+5. [-] Add controller APIs for recording lifecycle (start/stop/cancel), update status messaging, and prevent conflicting playback while recording; route finished recordings to a recordings folder under `app_root_dir()`.
+6. [-] Integrate recorded files into the existing waveform load path: create or reuse a “Recordings” source folder and call the existing `load_waveform_for_selection` flow to show the new take immediately.
+7. [-] Add Record/Play/Stop buttons to the waveform controls UI (`src/egui_app/ui/waveform_view/controls.rs`) and wire to controller actions; disable/guard controls based on playback/recording state.
+8. [-] Add focused tests for the recorder (WAV header + sample count), config persistence for input options, and controller behavior when starting/stopping recording.
 
 ## Code Style & Architecture Rules Reminder
 - Keep files under 400 lines; split when necessary.
