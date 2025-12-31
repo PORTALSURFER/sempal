@@ -86,26 +86,15 @@ impl EguiController {
         if let Ok((source, relative_path)) =
             self.resolve_recording_target(target.as_ref(), &outcome.path)
         {
+            self.invalidate_cached_audio(&source.id, &relative_path);
+            self.sample_view.wav.loaded_audio = None;
+            self.sample_view.wav.loaded_wav = None;
+            self.ui.loaded_wav = None;
             if let Err(err) = self.load_waveform_for_selection(&source, &relative_path) {
                 self.set_status(
                     format!("Recorded {} (load failed: {err})", relative_path.display()),
                     StatusTone::Warning,
                 );
-            }
-            if self.sample_view.wav.loaded_audio.is_none()
-                || self.sample_view.wav.loaded_wav.as_deref() != Some(relative_path.as_path())
-            {
-                self.sample_view.wav.loaded_wav = None;
-                self.ui.loaded_wav = None;
-                if let Err(err) = self.load_waveform_for_selection(&source, &relative_path) {
-                    self.set_status(
-                        format!(
-                            "Recorded {} (reload failed: {err})",
-                            relative_path.display()
-                        ),
-                        StatusTone::Warning,
-                    );
-                }
             }
         }
         self.refresh_output_after_recording();
