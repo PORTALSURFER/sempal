@@ -52,6 +52,7 @@ impl EguiController {
     }
 
     pub fn stop_recording(&mut self) -> Result<Option<RecordingOutcome>, String> {
+        let target = self.audio.recording_target.clone();
         let Some(recorder) = self.audio.recorder.take() else {
             return Ok(None);
         };
@@ -65,6 +66,16 @@ impl EguiController {
             ),
             StatusTone::Info,
         );
+        if let Err(err) = self.register_recording_in_browser(target.as_ref(), &outcome.path) {
+            self.set_status(
+                format!(
+                    "Recorded {:.2}s to {} (indexing failed: {err})",
+                    outcome.duration_seconds,
+                    outcome.path.display()
+                ),
+                StatusTone::Warning,
+            );
+        }
         Ok(Some(outcome))
     }
 
@@ -171,6 +182,30 @@ impl EguiController {
             .map_err(|_| "Failed to resolve recording path".to_string())?
             .to_path_buf();
         Ok((source, relative_path))
+    }
+
+    fn register_recording_in_browser(
+        &mut self,
+        target: Option<&RecordingTarget>,
+        recording_path: &PathBuf,
+    ) -> Result<(), String> {
+        let (source, relative_path) = self.resolve_recording_target(target, recording_path)?;
+        let (file_size, modified_ns) =
+            super::collection_items_helpers::file_metadata(recording_path)?;
+        let db = self
+            .database_for(&source)
+            .map_err(|err| format!("Database unavailable: {err}"))?;
+        db.upsert_file(&relative_path, file_size, modified_ns)
+            .map_err(|err| format!("Failed to register recording: {err}"))?;
+        self.enqueue_similarity_for_new_sample(&source, &relative_path, file_size, modified_ns);
+        self.selection_state.suppress_autoplay_once = true;
+        self.ui.browser.autoscroll = true;
+        self.focus_browser_context();
+        self.runtime
+            .jobs
+            .set_pending_select_path(Some(relative_path));
+        self.invalidate_wav_entries_for_source(&source);
+        Ok(())
     }
 
     pub(crate) fn refresh_recording_waveform(&mut self) {
