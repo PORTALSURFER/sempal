@@ -76,10 +76,17 @@ pub(super) fn handle_selection_slide_drag(
                     } else {
                         None
                     };
-                let adjusted_delta = snap_step
+                let mut adjusted_delta = snap_step
                     .filter(|step| step.is_finite() && *step > 0.0)
                     .map(|step| snap_delta(delta, step))
                     .unwrap_or(delta);
+                if snap_step.is_none() {
+                    if let Some(snapped_start) =
+                        snap_selection_start_to_transient(app, slide.range.start() + adjusted_delta)
+                    {
+                        adjusted_delta = snapped_start - slide.range.start();
+                    }
+                }
                 app.controller
                     .set_selection_range(slide.range.shift(adjusted_delta));
             }
@@ -119,6 +126,25 @@ fn snap_delta(delta: f32, step: f32) -> f32 {
         return delta;
     }
     (delta / step).round() * step
+}
+
+fn snap_selection_start_to_transient(app: &EguiApp, start: f32) -> Option<f32> {
+    const TRANSIENT_SNAP_RADIUS: f32 = 0.01;
+    if !app.controller.ui.waveform.transient_markers_enabled
+        || !app.controller.ui.waveform.transient_snap_enabled
+    {
+        return None;
+    }
+    let mut closest = None;
+    let mut best_distance = TRANSIENT_SNAP_RADIUS;
+    for &marker in &app.controller.ui.waveform.transients {
+        let distance = (marker - start).abs();
+        if distance <= best_distance {
+            best_distance = distance;
+            closest = Some(marker);
+        }
+    }
+    closest
 }
 
 pub(super) fn handle_selection_edge_drag(
