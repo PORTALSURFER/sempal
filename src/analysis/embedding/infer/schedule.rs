@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct BatchSlice {
     pub(super) start: usize,
@@ -12,6 +10,7 @@ impl BatchSlice {
     }
 }
 
+#[allow(dead_code)]
 pub(super) fn plan_batch_slices(
     total: usize,
     max_batch: usize,

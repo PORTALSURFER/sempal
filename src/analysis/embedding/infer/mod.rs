@@ -2,8 +2,6 @@
 
 use burn::tensor::TensorData;
 
-#![allow(dead_code)]
-
 use super::backend::{embedding_batch_max, panns_batch_enabled};
 use super::logmel::{PANNS_INPUT_FRAMES, PANNS_LOGMEL_LEN};
 use super::model::{with_panns_model, PannsModelInner};
@@ -18,6 +16,7 @@ mod schedule;
 pub(in crate::analysis::embedding) use backend_io::run_panns_inference_for_model;
 
 /// Input metadata for batch embedding inference.
+#[allow(dead_code)]
 pub(crate) struct EmbeddingBatchInput<'a> {
     pub(crate) samples: &'a [f32],
     pub(crate) sample_rate: u32,
@@ -60,6 +59,7 @@ pub(crate) fn infer_embedding_query(samples: &[f32], sample_rate: u32) -> Result
 }
 
 /// Run PANNs inference for a batch of audio buffers.
+#[allow(dead_code)]
 pub(crate) fn infer_embeddings_batch(
     inputs: &[EmbeddingBatchInput<'_>],
 ) -> Result<Vec<Vec<f32>>, String> {

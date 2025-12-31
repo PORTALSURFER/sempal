@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 #[cfg(test)]
-use rodio::OutputStream;
+use rodio::{OutputStream, Source};
 
 use super::AudioPlayer;
 use super::super::DEFAULT_ANTI_CLIP_FADE;

@@ -1,4 +1,3 @@
-use super::super::*;
 use hound::SampleFormat;
 use std::path::Path;
 

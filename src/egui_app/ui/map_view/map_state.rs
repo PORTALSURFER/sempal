@@ -3,7 +3,6 @@ use super::map_clusters;
 use super::map_math;
 use super::style;
 use crate::egui_app::state::{MapBounds, MapFilterKey, MapQueryBounds};
-use crate::egui_app::view_model;
 use crate::sample_sources::SourceId;
 use eframe::egui;
 use std::sync::Arc;

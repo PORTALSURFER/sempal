@@ -1,5 +1,4 @@
 use super::backend_io::run_panns_inference_for_model;
-#![allow(dead_code)]
 
 use super::EmbeddingBatchInput;
 use super::PANNS_LOGMEL_LEN;
@@ -26,6 +25,7 @@ pub(super) fn infer_embedding_with_model(
         .ok_or_else(|| "PANNs embedding output missing".to_string())
 }
 
+#[allow(dead_code)]
 pub(super) fn infer_embeddings_with_model(
     model: &mut PannsModel,
     inputs: &[EmbeddingBatchInput<'_>],
