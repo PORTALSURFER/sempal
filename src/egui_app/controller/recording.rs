@@ -149,7 +149,7 @@ impl EguiController {
     }
 
     fn resolve_recording_target(
-        &self,
+        &mut self,
         target: Option<&RecordingTarget>,
         recording_path: &PathBuf,
     ) -> Result<(SampleSource, PathBuf), String> {
@@ -174,52 +174,66 @@ impl EguiController {
             self.audio.recording_target = None;
             return;
         }
-        let Some(target) = self.audio.recording_target.as_mut() else {
-            return;
-        };
+        let (source_id, relative_path, absolute_path, last_refresh_at, last_file_len, loaded_once) =
+            match self.audio.recording_target.as_ref() {
+                Some(target) => (
+                    target.source_id.clone(),
+                    target.relative_path.clone(),
+                    target.absolute_path.clone(),
+                    target.last_refresh_at,
+                    target.last_file_len,
+                    target.loaded_once,
+                ),
+                None => return,
+            };
         let now = Instant::now();
-        if target
-            .last_refresh_at
-            .is_some_and(|last| now.duration_since(last) < RECORDING_REFRESH_INTERVAL)
-        {
+        if last_refresh_at.is_some_and(|last| now.duration_since(last) < RECORDING_REFRESH_INTERVAL) {
             return;
         }
-        let metadata = match std::fs::metadata(&target.absolute_path) {
+        let metadata = match std::fs::metadata(&absolute_path) {
             Ok(metadata) => metadata,
             Err(_) => return,
         };
         let len = metadata.len();
-        if len == 0 || len == target.last_file_len {
-            target.last_refresh_at = Some(now);
+        if len == 0 || len == last_file_len {
+            if let Some(target) = self.audio.recording_target.as_mut() {
+                target.last_refresh_at = Some(now);
+            }
             return;
         }
-        let bytes = match std::fs::read(&target.absolute_path) {
+        let bytes = match std::fs::read(&absolute_path) {
             Ok(bytes) => bytes,
             Err(_) => return,
         };
         let decoded = match self.sample_view.renderer.decode_from_bytes(&bytes) {
             Ok(decoded) => decoded,
             Err(_) => {
-                target.last_refresh_at = Some(now);
+                if let Some(target) = self.audio.recording_target.as_mut() {
+                    target.last_refresh_at = Some(now);
+                }
                 return;
             }
         };
-        if let Some(source) = self.source_by_id(&target.source_id) {
-            if target.loaded_once {
+        if let Some(source) = self.source_by_id(&source_id) {
+            if loaded_once {
                 self.apply_waveform_image(decoded);
             } else {
                 let _ = self.finish_waveform_load(
                     &source,
-                    &target.relative_path,
+                    &relative_path,
                     decoded,
                     bytes,
                     AudioLoadIntent::Selection,
                 );
-                target.loaded_once = true;
+                if let Some(target) = self.audio.recording_target.as_mut() {
+                    target.loaded_once = true;
+                }
             }
         }
-        target.last_file_len = len;
-        target.last_refresh_at = Some(now);
+        if let Some(target) = self.audio.recording_target.as_mut() {
+            target.last_file_len = len;
+            target.last_refresh_at = Some(now);
+        }
     }
 
     fn source_by_id(&self, source_id: &SourceId) -> Option<SampleSource> {
