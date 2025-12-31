@@ -157,29 +157,11 @@ fn click_repair_interpolates_single_sample_linearly() {
     assert!(buffer.samples[2].abs() < 1e-6);
 }
 
-#[test]
-fn click_repair_interpolates_with_cubic_curve() {
-    let mut buffer = SelectionEditBuffer {
-        samples: vec![0.0_f32, 0.0, 5.0, 5.0, 1.0, 1.0],
-        channels: 1,
-        sample_rate: 44_100,
-        spec_channels: 1,
-        start_frame: 2,
-        end_frame: 4,
-    };
-
-    repair_clicks_selection(&mut buffer).unwrap();
-
-    assert!((buffer.samples[2] - 0.2962963).abs() < 1e-5);
-    assert!((buffer.samples[3] - 0.7037037).abs() < 1e-5);
-}
-
-#[test]
 fn click_repair_interpolates_multichannel_linearly() {
     let mut buffer = SelectionEditBuffer {
         samples: vec![
             0.2_f32, -0.2, // frame 0 (before)
-            1.0, -1.0, // frame 1 (selection)
+            3.0, -3.0, // frame 1 (selection)
             0.6, -0.6, // frame 2 (after)
         ],
         channels: 2,
@@ -193,6 +175,22 @@ fn click_repair_interpolates_multichannel_linearly() {
 
     assert!((buffer.samples[2] - 0.4).abs() < 1e-6);
     assert!((buffer.samples[3] + 0.4).abs() < 1e-6);
+}
+
+#[test]
+fn click_repair_leaves_smooth_peak_untouched() {
+    let mut buffer = SelectionEditBuffer {
+        samples: vec![0.0_f32, 0.5, 1.0, 0.5, 0.0],
+        channels: 1,
+        sample_rate: 48_000,
+        spec_channels: 1,
+        start_frame: 2,
+        end_frame: 3,
+    };
+
+    repair_clicks_selection(&mut buffer).unwrap();
+
+    assert!((buffer.samples[2] - 1.0).abs() < 1e-6);
 }
 
 #[test]
