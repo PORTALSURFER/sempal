@@ -68,7 +68,7 @@ impl EguiApp {
                 &to_screen_x,
             );
 
-            let slice_dragging = slice_overlay::render_slice_overlays(
+            let slice_result = slice_overlay::render_slice_overlays(
                 self,
                 ui,
                 waveform_rect,
@@ -77,6 +77,7 @@ impl EguiApp {
                 view_width,
                 pointer_pos,
             );
+            let slice_dragging = slice_result.dragging;
             let edge_dragging = selection_overlay::render_selection_overlay(
                 self,
                 ui,
@@ -107,7 +108,7 @@ impl EguiApp {
                 view,
                 view_width,
             );
-            if !edge_dragging && !slice_dragging {
+            if !edge_dragging && !slice_dragging && !slice_result.consumed_click {
                 interactions::handle_waveform_pointer_interactions(
                     self,
                     ui,

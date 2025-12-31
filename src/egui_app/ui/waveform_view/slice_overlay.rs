@@ -32,6 +32,12 @@ struct SliceEdgeSpec {
     index: usize,
 }
 
+#[derive(Clone, Copy, Default)]
+pub(super) struct SliceOverlayResult {
+    pub dragging: bool,
+    pub consumed_click: bool,
+}
+
 pub(super) fn render_slice_overlays(
     app: &mut EguiApp,
     ui: &mut egui::Ui,
@@ -40,11 +46,11 @@ pub(super) fn render_slice_overlays(
     view: WaveformView,
     view_width: f32,
     pointer_pos: Option<egui::Pos2>,
-) -> bool {
+) -> SliceOverlayResult {
     let has_slices = !app.controller.ui.waveform.slices.is_empty();
     if !has_slices && app.slice_paint.is_none() {
         app.slice_drag = None;
-        return false;
+        return SliceOverlayResult::default();
     }
     let slice_color = palette.accent_ice;
     let env = SliceOverlayEnv {
@@ -55,7 +61,10 @@ pub(super) fn render_slice_overlays(
         palette,
         slice_color,
     };
-    let mut dragging = app.slice_drag.is_some();
+    let mut result = SliceOverlayResult {
+        dragging: app.slice_drag.is_some(),
+        consumed_click: false,
+    };
     let slices: Vec<SliceItem> = app
         .controller
         .ui
@@ -67,14 +76,16 @@ pub(super) fn render_slice_overlays(
         .map(|(index, range)| SliceItem { range, index })
         .collect();
     for item in slices {
-        dragging |= render_slice_overlay(app, ui, &env, item);
+        let item_result = render_slice_overlay(app, ui, &env, item);
+        result.dragging |= item_result.dragging;
+        result.consumed_click |= item_result.consumed_click;
     }
     if let Some(state) = app.slice_paint {
         render_slice_paint_preview(ui, &env, state.range);
     }
 
     sync_slice_drag_release(app, ui.ctx());
-    dragging
+    result
 }
 
 fn render_slice_overlay(
@@ -82,27 +93,38 @@ fn render_slice_overlay(
     ui: &mut egui::Ui,
     env: &SliceOverlayEnv<'_>,
     item: SliceItem,
-) -> bool {
+) -> SliceOverlayResult {
     let Some(slice_rect) = slice_rect(env, item.range) else {
-        return false;
+        return SliceOverlayResult::default();
     };
+    let body_response = ui.interact(
+        slice_rect,
+        ui.id().with(("slice_body", item.index)),
+        egui::Sense::click(),
+    );
     let handle_rect = selection_handle_rect(slice_rect);
     let handle_response = ui.interact(
         handle_rect,
         ui.id().with(("slice_handle", item.index)),
         egui::Sense::click_and_drag(),
     );
+    let hovered = body_response.hovered() || handle_response.hovered();
     paint_slice(
         ui,
         slice_rect,
         handle_rect,
         env.slice_color,
-        handle_response.hovered(),
+        hovered,
     );
-    let mut dragging = render_slice_handle(app, ui, env, item, &handle_response);
-    dragging |= render_slice_edges(app, ui, env, slice_rect, item.index);
+    let mut result = SliceOverlayResult::default();
+    result.dragging |= render_slice_handle(app, ui, env, item, &handle_response);
+    result.dragging |= render_slice_edges(app, ui, env, slice_rect, item.index);
+    if body_response.clicked() {
+        play_slice_range(app, item.range);
+        result.consumed_click = true;
+    }
     draw_slice_bar(ui, slice_rect, env);
-    dragging
+    result
 }
 
 fn render_slice_handle(
@@ -181,11 +203,18 @@ fn paint_slice(
     color: Color32,
     hovered: bool,
 ) {
-    let fill_alpha = if hovered { 80 } else { 60 };
-    let handle_alpha = if hovered { 215 } else { 180 };
+    let fill_alpha = if hovered { 100 } else { 60 };
+    let handle_alpha = if hovered { 235 } else { 180 };
     let painter = ui.painter();
     painter.rect_filled(slice_rect, 0.0, style::with_alpha(color, fill_alpha));
     painter.rect_filled(handle_rect, 0.0, style::with_alpha(color, handle_alpha));
+    if hovered {
+        painter.rect_stroke(
+            slice_rect,
+            0.0,
+            egui::Stroke::new(1.2, style::with_alpha(color, 220)),
+        );
+    }
 }
 
 fn render_slice_paint_preview(ui: &egui::Ui, env: &SliceOverlayEnv<'_>, range: SelectionRange) {
@@ -195,6 +224,13 @@ fn render_slice_paint_preview(ui: &egui::Ui, env: &SliceOverlayEnv<'_>, range: S
     let handle_rect = selection_handle_rect(slice_rect);
     paint_slice(ui, slice_rect, handle_rect, env.slice_color, true);
     draw_slice_bar(ui, slice_rect, env);
+}
+
+fn play_slice_range(app: &mut EguiApp, range: SelectionRange) {
+    app.controller.set_selection_range(range);
+    if let Err(err) = app.controller.play_audio(false, Some(range.start())) {
+        app.controller.set_status(err, style::StatusTone::Error);
+    }
 }
 
 fn draw_slice_bar(ui: &egui::Ui, slice_rect: egui::Rect, env: &SliceOverlayEnv<'_>) {
