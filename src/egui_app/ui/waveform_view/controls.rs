@@ -154,6 +154,9 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
         if slice_mode_button.clicked() {
             app.controller.ui.waveform.slice_mode_enabled = !slice_mode_enabled;
             app.slice_paint = None;
+            if app.controller.ui.waveform.slice_mode_enabled {
+                app.controller.clear_selection();
+            }
         }
         let detect_button = ui
             .add_enabled(has_audio, egui::Button::new("Slice Mode"))

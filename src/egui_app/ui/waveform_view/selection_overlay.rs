@@ -20,6 +20,9 @@ pub(super) fn render_selection_overlay(
     highlight: Color32,
     pointer_pos: Option<egui::Pos2>,
 ) -> bool {
+    if app.controller.ui.waveform.slice_mode_enabled {
+        return false;
+    }
     let Some(selection) = app.controller.ui.waveform.selection else {
         return false;
     };
