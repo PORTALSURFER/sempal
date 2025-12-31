@@ -6,6 +6,7 @@ impl EguiController {
         self.ui.feedback_issue.focus_title_requested = true;
         self.ui.feedback_issue.last_error = None;
         self.ui.feedback_issue.last_success_url = None;
+        self.ui.feedback_issue.token_autofill_last = None;
     }
 
     pub(crate) fn close_feedback_issue_prompt(&mut self) {
@@ -14,6 +15,7 @@ impl EguiController {
         self.ui.feedback_issue.focus_title_requested = false;
         self.ui.feedback_issue.token_modal_open = false;
         self.ui.feedback_issue.focus_token_requested = false;
+        self.ui.feedback_issue.token_autofill_last = None;
         self.ui.feedback_issue.last_error = None;
         self.ui.feedback_issue.last_success_url = None;
     }

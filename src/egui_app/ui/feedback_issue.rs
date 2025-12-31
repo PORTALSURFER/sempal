@@ -97,6 +97,7 @@ impl EguiApp {
             self.controller.ui.feedback_issue.token_modal_open = false;
             self.controller.ui.feedback_issue.token_input.clear();
             self.controller.ui.feedback_issue.focus_token_requested = false;
+            self.controller.ui.feedback_issue.token_autofill_last = None;
         }
     }
 
@@ -105,14 +106,27 @@ impl EguiApp {
         ui.set_min_width(520.0);
         ui.label(
             RichText::new(
-                "After authorizing in the browser, copy the token shown and paste it here.",
+                "After authorizing in the browser, copy the token shown; Sempal will auto-detect it or you can paste it here.",
             )
             .color(palette.text_primary),
         );
         ui.add_space(8.0);
 
+        let mut auto_save_token = None;
         let (cancel_clicked, save_clicked, token_to_save) = {
             let state = &mut self.controller.ui.feedback_issue;
+            if state.token_input.trim().is_empty() {
+                if let Ok(clipboard_text) = crate::external_clipboard::read_text() {
+                    let candidate = clipboard_text.trim();
+                    if looks_like_issue_token(candidate)
+                        && state.token_autofill_last.as_deref() != Some(candidate)
+                    {
+                        state.token_input = candidate.to_string();
+                        state.token_autofill_last = Some(candidate.to_string());
+                        auto_save_token = Some(candidate.to_string());
+                    }
+                }
+            }
             let response = ui.add(
                 egui::TextEdit::singleline(&mut state.token_input)
                     .hint_text("Paste GitHub token")
@@ -145,9 +159,12 @@ impl EguiApp {
             self.controller.ui.feedback_issue.token_modal_open = false;
             self.controller.ui.feedback_issue.token_input.clear();
             self.controller.ui.feedback_issue.focus_token_requested = false;
+            self.controller.ui.feedback_issue.token_autofill_last = None;
         }
         if save_clicked {
             self.controller.save_github_issue_token(&token_to_save);
+        } else if let Some(token) = auto_save_token {
+            self.controller.save_github_issue_token(&token);
         }
     }
 
@@ -270,5 +287,32 @@ impl EguiApp {
             }
         });
         action
+    }
+}
+
+fn looks_like_issue_token(token: &str) -> bool {
+    let trimmed = token.trim();
+    if trimmed.len() < 20 || trimmed.len() > 200 {
+        return false;
+    }
+    trimmed
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
+}
+
+#[cfg(test)]
+mod tests {
+    use super::looks_like_issue_token;
+
+    #[test]
+    fn accepts_tokenish_values() {
+        assert!(looks_like_issue_token("tok_abcdefghijklmnopqrstuvwxyz"));
+        assert!(looks_like_issue_token("gho_1234567890abcdefghij"));
+    }
+
+    #[test]
+    fn rejects_values_with_spaces_or_short_strings() {
+        assert!(!looks_like_issue_token("too short"));
+        assert!(!looks_like_issue_token("token with spaces and tabs"));
     }
 }

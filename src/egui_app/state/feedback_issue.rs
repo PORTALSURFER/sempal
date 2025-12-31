@@ -8,6 +8,7 @@ pub struct FeedbackIssueUiState {
     pub token_modal_open: bool,
     pub token_input: String,
     pub focus_token_requested: bool,
+    pub token_autofill_last: Option<String>,
     pub submitting: bool,
     pub last_error: Option<String>,
     pub last_success_url: Option<String>,

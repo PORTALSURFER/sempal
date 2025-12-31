@@ -26,6 +26,11 @@ pub fn read_file_paths() -> Result<Vec<PathBuf>, String> {
     platform::read_file_paths()
 }
 
+/// Read plain text from the system clipboard.
+pub fn read_text() -> Result<String, String> {
+    platform::read_text()
+}
+
 #[cfg(not(target_os = "windows"))]
 mod platform {
     use super::*;
@@ -40,6 +45,10 @@ mod platform {
 
     pub fn read_file_paths() -> Result<Vec<PathBuf>, String> {
         Err("Clipboard file paste is only implemented on Windows in this build".into())
+    }
+
+    pub fn read_text() -> Result<String, String> {
+        Err("Clipboard text read is only implemented on Windows in this build".into())
     }
 }
 
@@ -62,6 +71,8 @@ mod platform {
     use windows::Win32::System::Ole::{CF_HDROP, DROPEFFECT_COPY};
     use windows::Win32::UI::Shell::{DragQueryFileW, DROPFILES, HDROP};
     use windows::core::w;
+
+    const CF_UNICODETEXT: u32 = 13;
 
     struct Clipboard;
 
@@ -181,7 +192,6 @@ mod platform {
     }
 
     pub fn copy_text(text: &str) -> Result<(), String> {
-        const CF_UNICODETEXT: u32 = 13;
         let _clipboard = Clipboard::new()?;
         let mut wide: Vec<u16> = text.encode_utf16().collect();
         wide.push(0);
@@ -228,6 +238,28 @@ mod platform {
             paths.push(path);
         }
         Ok(paths)
+    }
+
+    pub fn read_text() -> Result<String, String> {
+        if unsafe { IsClipboardFormatAvailable(CF_UNICODETEXT) }.is_err() {
+            return Ok(String::new());
+        }
+        let _clipboard = ClipboardReader::new()?;
+        let handle = unsafe { GetClipboardData(CF_UNICODETEXT) }
+            .map_err(|err| format!("GetClipboardData(CF_UNICODETEXT) failed: {err}"))?;
+        let lock = unsafe { GlobalLockGuard::new(HGLOBAL(handle.0)) }?;
+        let ptr = lock.ptr() as *const u16;
+        if ptr.is_null() {
+            return Ok(String::new());
+        }
+        let mut len = 0usize;
+        unsafe {
+            while *ptr.add(len) != 0 {
+                len += 1;
+            }
+            let slice = std::slice::from_raw_parts(ptr, len);
+            Ok(String::from_utf16_lossy(slice))
+        }
     }
 
     fn preferred_drop_effect_format() -> Result<u16, String> {
