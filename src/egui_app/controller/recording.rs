@@ -336,7 +336,10 @@ impl EguiController {
             return;
         }
         let Some(player_rc) = self.audio.player.as_ref() else {
-            self.set_status("Audio output unavailable for monitoring".into(), StatusTone::Warning);
+            self.set_status(
+                "Audio output unavailable for monitoring",
+                StatusTone::Warning,
+            );
             return;
         };
         let sink = player_rc.borrow().create_monitor_sink(self.ui.volume);
