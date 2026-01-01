@@ -146,6 +146,9 @@ fn parse_create_issue_response(body: &str) -> Result<CreateIssueResponse, Create
         .error
         .or(parsed.message)
         .unwrap_or_else(|| format!("Missing issue_url/number in response (ok={ok})"));
+    if is_session_expired_message(&message) {
+        return Err(CreateIssueError::Unauthorized);
+    }
     Err(CreateIssueError::Json(message))
 }
 
@@ -178,6 +181,11 @@ fn parse_issue_token(body: &str) -> Result<String, IssueAuthError> {
     })
 }
 
+fn is_session_expired_message(message: &str) -> bool {
+    let lowered = message.trim().to_ascii_lowercase();
+    lowered.contains("session") && lowered.contains("expired")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -200,6 +208,13 @@ mod tests {
     fn reports_error_field() {
         let err = parse_create_issue_response(r#"{ "error": "nope" }"#).unwrap_err();
         assert!(err.to_string().contains("nope"));
+    }
+
+    #[test]
+    fn maps_session_expired_to_unauthorized() {
+        let err =
+            parse_create_issue_response(r#"{ "error": "Session expired. Reconnect." }"#).unwrap_err();
+        assert!(matches!(err, CreateIssueError::Unauthorized));
     }
 
     #[test]
