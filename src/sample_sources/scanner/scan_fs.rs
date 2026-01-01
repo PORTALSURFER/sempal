@@ -138,9 +138,15 @@ pub(super) fn compute_content_hash(path: &Path) -> Result<String, ScanError> {
 }
 
 fn strip_relative(root: &Path, path: &Path) -> Result<PathBuf, ScanError> {
-    path.strip_prefix(root)
-        .map(PathBuf::from)
-        .map_err(|_| ScanError::InvalidRoot(path.to_path_buf()))
+    if let Ok(relative) = path.strip_prefix(root) {
+        return Ok(PathBuf::from(relative));
+    }
+    if let (Ok(canon_root), Ok(canon_path)) = (root.canonicalize(), path.canonicalize()) {
+        if let Ok(relative) = canon_path.strip_prefix(&canon_root) {
+            return Ok(PathBuf::from(relative));
+        }
+    }
+    Err(ScanError::InvalidRoot(path.to_path_buf()))
 }
 
 fn to_nanos(time: &SystemTime, path: &Path) -> Result<i64, ScanError> {
