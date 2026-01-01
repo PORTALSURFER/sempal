@@ -124,6 +124,10 @@ impl EguiApp {
                                 ui.label(
                                     egui::RichText::new(APP_VERSION).color(palette.text_muted),
                                 );
+                                ui.add_space(8.0);
+                                if ui.add(crate::egui_app::ui::chrome::buttons::action_button("Report issue")).clicked() {
+                                    self.controller.open_feedback_issue_prompt();
+                                }
                             }
                         },
                     );
