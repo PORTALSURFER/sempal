@@ -39,7 +39,12 @@ impl WaveformRenderer {
                 weight_sum += weight;
             }
             let denom = weight_sum.max(1.0);
-            smoothed.push((min_sum / denom, max_sum / denom));
+            let mut min = min_sum / denom;
+            let mut max = max_sum / denom;
+            let (orig_min, orig_max) = columns[idx];
+            min = min.min(orig_min);
+            max = max.max(orig_max);
+            smoothed.push((min, max));
         }
         smoothed
     }
