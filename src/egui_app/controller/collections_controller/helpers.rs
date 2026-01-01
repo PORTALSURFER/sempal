@@ -440,13 +440,14 @@ impl CollectionsController<'_> {
         let mut added = 0;
         let mut already = 0;
         let mut new_members = Vec::new();
-        let collection = &mut self.library.collections[collection_index];
         for ctx in contexts {
             if let Err(err) = self.ensure_sample_db_entry(&ctx.source, &ctx.entry.relative_path) {
                 last_error = Some(err);
                 continue;
             }
-            if collection.contains(&ctx.source.id, &ctx.entry.relative_path) {
+            let contains = self.library.collections[collection_index]
+                .contains(&ctx.source.id, &ctx.entry.relative_path);
+            if contains {
                 already += 1;
                 continue;
             }
@@ -455,7 +456,9 @@ impl CollectionsController<'_> {
                 relative_path: ctx.entry.relative_path.clone(),
                 clip_root: None,
             };
-            collection.members.push(member.clone());
+            self.library.collections[collection_index]
+                .members
+                .push(member.clone());
             new_members.push(member);
             added += 1;
         }

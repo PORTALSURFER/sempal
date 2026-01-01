@@ -1,5 +1,6 @@
 use super::super::test_support::{dummy_controller, sample_entry, write_test_wav};
 use super::super::*;
+use crate::egui_app::state::FocusContext;
 use crate::sample_sources::Collection;
 use std::path::PathBuf;
 use std::time::Instant;
