@@ -82,7 +82,7 @@ pub(super) fn finish_selection_drag(controller: &mut EguiController) {
         .range
         .range()
         .or(controller.ui.waveform.selection)
-        .filter(|range| range.width() >= super::selection_min_width(controller))
+        .filter(|range| super::selection_meets_bpm_min_for_playback(controller, *range))
     else {
         return;
     };
@@ -136,7 +136,7 @@ pub(super) fn toggle_loop(controller: &mut EguiController) {
                         .range
                         .range()
                         .or(controller.ui.waveform.selection)
-                        .filter(|range| range.width() >= super::selection_min_width(controller))
+                        .filter(|range| super::selection_meets_bpm_min_for_playback(controller, *range))
                         .is_some();
                     let start_override = if has_selection {
                         None
@@ -200,15 +200,10 @@ fn bpm_snap_step(controller: &EguiController) -> Option<f32> {
 }
 
 fn clear_too_small_bpm_selection(controller: &mut EguiController) {
-    let min_width = super::selection_min_width(controller);
-    if min_width <= 0.0 {
-        return;
-    };
     let Some(range) = controller.selection_state.range.range() else {
         return;
     };
-    let epsilon = min_width * 1.0e-3;
-    if range.width() + epsilon >= min_width {
+    if super::selection_meets_bpm_min_for_playback(controller, range) {
         return;
     }
     controller.selection_state.range.set_range(None);

@@ -17,7 +17,28 @@ const SHOULD_PLAY_RANDOM_SAMPLE: bool = false;
 const SHOULD_PLAY_RANDOM_SAMPLE: bool = true;
 const PLAYHEAD_COMPLETION_EPSILON: f32 = 0.001;
 
-pub(super) fn selection_min_width(controller: &EguiController) -> f32 {
+fn selection_meets_bpm_min(controller: &EguiController, range: SelectionRange) -> bool {
+    if !controller.ui.waveform.bpm_snap_enabled {
+        return true;
+    }
+    let Some(min_seconds) = bpm_min_selection_seconds(controller) else {
+        return true;
+    };
+    let Some(duration) = controller.loaded_audio_duration_seconds() else {
+        return true;
+    };
+    if !min_seconds.is_finite() || min_seconds <= 0.0 {
+        return true;
+    }
+    if !duration.is_finite() || duration <= 0.0 {
+        return true;
+    }
+    let selection_seconds = range.width() * duration;
+    let epsilon = min_seconds * 1.0e-3;
+    selection_seconds + epsilon >= min_seconds
+}
+
+fn selection_min_width(controller: &EguiController) -> f32 {
     if !controller.ui.waveform.bpm_snap_enabled {
         return 0.0;
     }
@@ -47,6 +68,13 @@ pub(super) fn bpm_min_selection_seconds(controller: &EguiController) -> Option<f
     } else {
         None
     }
+}
+
+pub(super) fn selection_meets_bpm_min_for_playback(
+    controller: &EguiController,
+    range: SelectionRange,
+) -> bool {
+    selection_meets_bpm_min(controller, range)
 }
 
 impl EguiController {

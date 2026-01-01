@@ -61,7 +61,7 @@ pub(super) fn play_audio(
         .range
         .range()
         .or(controller.ui.waveform.selection)
-        .filter(|range| range.width() >= super::selection_min_width(controller));
+        .filter(|range| super::selection_meets_bpm_min_for_playback(controller, *range));
     let span_end = selection.as_ref().map(|r| r.end()).unwrap_or(1.0);
     let (audition_start, audition_end) = if looped {
         selection
