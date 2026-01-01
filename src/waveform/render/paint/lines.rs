@@ -122,40 +122,41 @@ impl WaveformRenderer {
         let i0 = frame_pos.floor() as usize;
         let i1 = (i0 + 1).min(frame_count - 1);
         let t = frame_pos - i0 as f32;
-        let sample_at = |frame: usize| -> f32 {
+        let sample_at_channel = |frame: usize, channel: usize| -> f32 {
             let base = frame * channels;
-            match channel_index {
-                Some(ch) => samples
-                    .get(base + ch.min(channels.saturating_sub(1)))
-                    .copied()
-                    .unwrap_or(0.0),
-                None => {
-                    let mut sum = 0.0_f32;
-                    let mut count = 0usize;
-                    for ch in 0..channels {
-                        if let Some(sample) = samples.get(base + ch) {
-                            sum += *sample;
-                            count += 1;
-                        }
-                    }
-                    if count == 0 {
-                        0.0
-                    } else {
-                        sum / count as f32
+            samples
+                .get(base + channel.min(channels.saturating_sub(1)))
+                .copied()
+                .unwrap_or(0.0)
+        };
+        let interpolated_for_channel = |channel: usize| -> f32 {
+            if i0 >= 1 && i1 + 1 < frame_count {
+                let p0 = sample_at_channel(i0 - 1, channel);
+                let p1 = sample_at_channel(i0, channel);
+                let p2 = sample_at_channel(i1, channel);
+                let p3 = sample_at_channel(i1 + 1, channel);
+                return Self::catmull_rom(p0, p1, p2, p3, t);
+            }
+            let a = sample_at_channel(i0, channel);
+            let b = sample_at_channel(i1, channel);
+            a + (b - a) * t
+        };
+        match channel_index {
+            Some(channel) => interpolated_for_channel(channel),
+            None => {
+                let mut chosen = 0.0_f32;
+                let mut best = -1.0_f32;
+                for channel in 0..channels.max(1) {
+                    let sample = interpolated_for_channel(channel);
+                    let score = sample.abs();
+                    if score > best {
+                        best = score;
+                        chosen = sample;
                     }
                 }
+                chosen
             }
-        };
-        if i0 >= 1 && i1 + 1 < frame_count {
-            let p0 = sample_at(i0 - 1);
-            let p1 = sample_at(i0);
-            let p2 = sample_at(i1);
-            let p3 = sample_at(i1 + 1);
-            return Self::catmull_rom(p0, p1, p2, p3, t);
         }
-        let a = sample_at(i0);
-        let b = sample_at(i1);
-        a + (b - a) * t
     }
 
     fn supersampled_frame(

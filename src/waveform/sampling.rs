@@ -82,19 +82,21 @@ impl WaveformRenderer {
                     for frame in start..end {
                         let frame_start = frame.saturating_mul(channels);
                         let frame_end = frame_start + channels;
-                        let mut sum = 0.0_f32;
+                        let mut frame_min = 1.0_f32;
+                        let mut frame_max = -1.0_f32;
                         let mut count = 0usize;
                         for &sample in &samples[frame_start..frame_end.min(samples.len())] {
-                            sum += sample.clamp(-1.0, 1.0);
+                            let clamped = sample.clamp(-1.0, 1.0);
+                            frame_min = frame_min.min(clamped);
+                            frame_max = frame_max.max(clamped);
                             count += 1;
                         }
-                        let mono = if count == 0 {
-                            0.0
-                        } else {
-                            sum / count as f32
-                        };
-                        min = min.min(mono);
-                        max = max.max(mono);
+                        if count == 0 {
+                            frame_min = 0.0;
+                            frame_max = 0.0;
+                        }
+                        min = min.min(frame_min);
+                        max = max.max(frame_max);
                     }
                 }
             }
@@ -156,7 +158,7 @@ mod tests {
     }
 
     #[test]
-    fn mono_view_averages_channels() {
+    fn mono_view_uses_channel_extremes() {
         let samples = [1.0_f32, -1.0]; // L = 1.0, R = -1.0
 
         let columns =
@@ -165,7 +167,7 @@ mod tests {
         let WaveformColumnView::Mono(cols) = columns else {
             panic!("expected mono columns")
         };
-        assert_eq!(cols, vec![(0.0, 0.0)]);
+        assert_eq!(cols, vec![(-1.0, 1.0)]);
     }
 
     #[test]

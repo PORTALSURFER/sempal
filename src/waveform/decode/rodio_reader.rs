@@ -102,7 +102,8 @@ impl WaveformRenderer {
                     right_peaks.push((1.0, -1.0));
                 }
             }
-            let mut frame_sum = 0.0_f32;
+            let mut frame_min = 1.0_f32;
+            let mut frame_max = -1.0_f32;
             let mut frame_count = 0usize;
             for ch in 0..channels_usize {
                 let Some(sample) = samples.next() else {
@@ -132,7 +133,8 @@ impl WaveformRenderer {
                     });
                 };
                 let sample = clamp_sample(sample);
-                frame_sum += sample;
+                frame_min = frame_min.min(sample);
+                frame_max = frame_max.max(sample);
                 frame_count = frame_count.saturating_add(1);
                 if ch == 0 {
                     if let Some(left_peaks) = left.as_mut() {
@@ -148,14 +150,14 @@ impl WaveformRenderer {
                     }
                 }
             }
-            let mono_value = if frame_count == 0 {
-                0.0
-            } else {
-                frame_sum / frame_count as f32
-            };
             let (min, max) = &mut mono[bucket];
-            *min = (*min).min(mono_value);
-            *max = (*max).max(mono_value);
+            if frame_count == 0 {
+                *min = (*min).min(0.0);
+                *max = (*max).max(0.0);
+            } else {
+                *min = (*min).min(frame_min);
+                *max = (*max).max(frame_max);
+            }
             total_frames = total_frames.saturating_add(1);
         }
     }
