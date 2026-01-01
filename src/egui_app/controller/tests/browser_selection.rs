@@ -1,9 +1,12 @@
 use super::super::test_support::{dummy_controller, sample_entry, write_test_wav};
 use super::super::*;
+use crate::app_dirs::ConfigBaseGuard;
+use crate::egui_app::controller::collection_export;
 use crate::egui_app::state::FocusContext;
 use crate::sample_sources::Collection;
 use std::path::PathBuf;
 use std::time::Instant;
+use tempfile::tempdir;
 
 #[test]
 fn hotkey_tagging_applies_to_all_selected_rows() {
@@ -27,9 +30,15 @@ fn hotkey_tagging_applies_to_all_selected_rows() {
 
 #[test]
 fn collection_hotkey_moves_selected_samples() {
+    let temp = tempdir().unwrap();
+    let _guard = ConfigBaseGuard::set(temp.path().to_path_buf());
+    let export_root = temp.path().join("export");
+    std::fs::create_dir_all(&export_root).unwrap();
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source.clone());
     controller.cache_db(&source).unwrap();
+    controller.settings.collection_export_root = Some(export_root.clone());
+    controller.ui.collection_export_root = Some(export_root.clone());
     for name in ["one.wav", "two.wav"] {
         write_test_wav(&source.root.join(name), &[0.0]);
     }
@@ -42,6 +51,7 @@ fn collection_hotkey_moves_selected_samples() {
     let mut collection = Collection::new("Hotkey");
     collection.hotkey = Some(1);
     let collection_id = collection.id.clone();
+    let export_dir = export_root.join(collection_export::collection_folder_name(&collection));
     controller.library.collections.push(collection);
     controller.focus_browser_row_only(0);
     controller.toggle_browser_row_selection(1);
@@ -54,8 +64,12 @@ fn collection_hotkey_moves_selected_samples() {
         .find(|item| item.id == collection_id)
         .unwrap();
     assert_eq!(collection.members.len(), 2);
-    assert!(collection.contains(&source.id, &PathBuf::from("one.wav")));
-    assert!(collection.contains(&source.id, &PathBuf::from("two.wav")));
+    assert!(export_dir.join("one.wav").exists());
+    assert!(export_dir.join("two.wav").exists());
+    assert!(!source.root.join("one.wav").exists());
+    assert!(!source.root.join("two.wav").exists());
+    assert!(controller.wav_index_for_path(&PathBuf::from("one.wav")).is_none());
+    assert!(controller.wav_index_for_path(&PathBuf::from("two.wav")).is_none());
 }
 
 #[test]

@@ -293,13 +293,20 @@ impl CollectionsActions for CollectionsController<'_> {
         };
         let rows = self.browser_selection_rows_for_move();
         if rows.is_empty() {
-            self.set_status("Select samples to add to a collection", StatusTone::Info);
+            self.set_status("Select samples to move to a collection", StatusTone::Info);
             return true;
         }
-        self.add_browser_rows_to_collection(&collection_id, &rows);
+        let next_focus = self.next_browser_focus_path_after_move(&rows);
+        self.move_browser_rows_to_collection(&collection_id, &rows);
         self.clear_browser_selection();
-        if let Some(next_row) = self.next_browser_row_after_move(&rows) {
-            self.focus_browser_row_only(next_row);
+        if let Some(path) = next_focus
+            && self.wav_index_for_path(&path).is_some()
+        {
+            if let Some(row) = self.visible_row_for_path(&path) {
+                self.focus_browser_row_only(row);
+            } else {
+                self.select_wav_by_path_with_rebuild(&path, true);
+            }
         }
         true
     }
