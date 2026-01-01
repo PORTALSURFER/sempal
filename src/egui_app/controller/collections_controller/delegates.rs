@@ -1,4 +1,5 @@
 use super::*;
+use crate::egui_app::state::FocusContext;
 
 impl EguiController {
     /// Select a collection sample by index and load it into the waveform.

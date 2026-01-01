@@ -1,4 +1,5 @@
 use super::*;
+use crate::egui_app::state::FocusContext;
 
 pub(crate) trait CollectionsActions {
     fn select_collection_sample(&mut self, index: usize);

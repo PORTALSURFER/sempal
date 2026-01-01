@@ -1,5 +1,4 @@
 use super::*;
-use super::super::browser_controller::helpers::TriageSampleContext;
 use std::fs;
 use std::time::SystemTime;
 
@@ -412,7 +411,7 @@ impl CollectionsController<'_> {
     fn collect_browser_contexts(
         &mut self,
         rows: &[usize],
-    ) -> (Vec<TriageSampleContext>, Option<String>) {
+    ) -> (Vec<BrowserSampleContext>, Option<String>) {
         let mut contexts = Vec::new();
         let mut seen = std::collections::HashSet::new();
         let mut last_error = None;
@@ -420,7 +419,10 @@ impl CollectionsController<'_> {
             match self.resolve_browser_sample(*row) {
                 Ok(ctx) => {
                     if seen.insert(ctx.entry.relative_path.clone()) {
-                        contexts.push(ctx);
+                        contexts.push(BrowserSampleContext {
+                            source: ctx.source,
+                            entry: ctx.entry,
+                        });
                     }
                 }
                 Err(err) => last_error = Some(err),
@@ -432,7 +434,7 @@ impl CollectionsController<'_> {
     fn add_contexts_to_collection(
         &mut self,
         collection_index: usize,
-        contexts: Vec<TriageSampleContext>,
+        contexts: Vec<BrowserSampleContext>,
         mut last_error: Option<String>,
     ) -> (usize, usize, Vec<CollectionMember>, Option<String>) {
         let mut added = 0;
@@ -523,6 +525,11 @@ impl CollectionsController<'_> {
             index += 1;
         }
     }
+}
+
+struct BrowserSampleContext {
+    source: SampleSource,
+    entry: WavEntry,
 }
 
 fn source_label(sources: &[SampleSource], id: &SourceId) -> String {
