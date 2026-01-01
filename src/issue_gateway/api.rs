@@ -169,16 +169,34 @@ fn parse_issue_token(body: &str) -> Result<String, IssueAuthError> {
             "Empty response body".to_string(),
         ));
     }
-    let mut found = None;
-    for line in trimmed.lines() {
-        let candidate = line.trim();
-        if looks_like_issue_token(candidate) {
-            found = Some(candidate.to_string());
+    if looks_like_issue_token(trimmed) {
+        return Ok(trimmed.to_string());
+    }
+    if trimmed.starts_with('{') {
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(trimmed) {
+            if let Some(token) = value.get("token").and_then(|token| token.as_str()) {
+                if looks_like_issue_token(token) {
+                    return Ok(token.to_string());
+                }
+            }
         }
     }
-    found.ok_or_else(|| {
-        IssueAuthError::InvalidResponse("Token not found in response".to_string())
-    })
+
+    let mut saw_marker = false;
+    for line in trimmed.lines() {
+        let candidate = line.trim();
+        let lowered = candidate.to_ascii_lowercase();
+        if lowered.contains("copy this token") || lowered.contains("paste this token") {
+            saw_marker = true;
+            continue;
+        }
+        if saw_marker && looks_like_issue_token(candidate) {
+            return Ok(candidate.to_string());
+        }
+    }
+    Err(IssueAuthError::InvalidResponse(
+        "Token not found in response".to_string(),
+    ))
 }
 
 fn is_session_expired_message(message: &str) -> bool {

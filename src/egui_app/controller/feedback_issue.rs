@@ -35,8 +35,18 @@ impl EguiController {
         }
         self.ui.feedback_issue.connecting = true;
         self.ui.feedback_issue.last_error = None;
-        self.set_status("Connecting GitHub for issue reporting…", StatusTone::Info);
-        self.runtime.jobs.begin_issue_gateway_auth();
+        self.set_status("Opening GitHub auth page…", StatusTone::Info);
+        let auth_url = crate::issue_gateway::api::AUTH_START_URL;
+        if let Err(err) = open::that(auth_url) {
+            self.ui.feedback_issue.last_error = Some(format!(
+                "Failed to open auth URL. Open it manually and paste the token: {auth_url} ({err})"
+            ));
+            self.set_status("GitHub connect failed".to_string(), StatusTone::Error);
+        }
+        self.ui.feedback_issue.connecting = false;
+        self.ui.feedback_issue.token_modal_open = true;
+        self.ui.feedback_issue.focus_token_requested = true;
+        self.ui.feedback_issue.token_autofill_last = None;
     }
 
     pub(crate) fn save_github_issue_token(&mut self, token: &str) {
