@@ -91,6 +91,66 @@ impl EguiController {
         true
     }
 
+    /// Update an existing slice range, cutting it out of any overlapping slices.
+    pub(crate) fn update_slice_range(&mut self, index: usize, range: SelectionRange) -> Option<usize> {
+        if index >= self.ui.waveform.slices.len() {
+            return None;
+        }
+        let min_width = MIN_SELECTION_WIDTH;
+        if range.width() < min_width {
+            return None;
+        }
+        let was_selected = self.ui.waveform.selected_slices.contains(&index);
+        let selected_ranges: Vec<SelectionRange> = self
+            .ui
+            .waveform
+            .selected_slices
+            .iter()
+            .filter_map(|&selected| self.ui.waveform.slices.get(selected).copied())
+            .collect();
+        let mut updated = Vec::with_capacity(self.ui.waveform.slices.len() + 1);
+        for (current_index, slice) in self.ui.waveform.slices.iter().copied().enumerate() {
+            if current_index == index {
+                continue;
+            }
+            if !ranges_overlap(slice, range) {
+                updated.push(slice);
+                continue;
+            }
+            if slice.start() < range.start() {
+                let left = SelectionRange::new(slice.start(), range.start());
+                if left.width() >= min_width {
+                    updated.push(left);
+                }
+            }
+            if slice.end() > range.end() {
+                let right = SelectionRange::new(range.end(), slice.end());
+                if right.width() >= min_width {
+                    updated.push(right);
+                }
+            }
+        }
+        updated.push(range);
+        updated.sort_by(|a, b| a.start().partial_cmp(&b.start()).unwrap_or(Ordering::Equal));
+        let new_index = updated.iter().position(|slice| *slice == range);
+        let mut new_selected = Vec::new();
+        if was_selected {
+            if let Some(index) = new_index {
+                new_selected.push(index);
+            }
+        }
+        for selected in selected_ranges {
+            if let Some(index) = updated.iter().position(|slice| *slice == selected) {
+                new_selected.push(index);
+            }
+        }
+        new_selected.sort_unstable();
+        new_selected.dedup();
+        self.ui.waveform.slices = updated;
+        self.ui.waveform.selected_slices = new_selected;
+        new_index
+    }
+
     /// Snap a slice paint position to BPM or transient markers when enabled.
     pub(crate) fn snap_slice_paint_position(&self, position: f32, snap_override: bool) -> f32 {
         if snap_override {

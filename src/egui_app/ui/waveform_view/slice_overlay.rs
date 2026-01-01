@@ -343,8 +343,10 @@ fn update_slice_move_drag(
     {
         let delta = cursor - anchor;
         let shifted = range.shift(delta);
-        if let Some(slot) = app.controller.ui.waveform.slices.get_mut(active_index) {
-            *slot = shifted;
+        if let Some(new_index) = app.controller.update_slice_range(active_index, shifted) {
+            if let Some(state) = app.slice_drag.as_mut() {
+                state.index = new_index;
+            }
         }
     }
 }
@@ -404,8 +406,13 @@ fn update_slice_edge_drag(
             ((pos.x - offset - env.rect.left()) / env.rect.width()).clamp(0.0, 1.0);
         let absolute = env.view.start + env.view_width.max(f32::EPSILON) * view_fraction;
         let clamped = absolute.clamp(0.0, 1.0);
-        if let Some(slot) = app.controller.ui.waveform.slices.get_mut(active_index) {
-            *slot = update_slice_edge(*slot, edge, clamped);
+        if let Some(slice) = app.controller.ui.waveform.slices.get(active_index).copied() {
+            let updated = update_slice_edge(slice, edge, clamped);
+            if let Some(new_index) = app.controller.update_slice_range(active_index, updated) {
+                if let Some(state) = app.slice_drag.as_mut() {
+                    state.index = new_index;
+                }
+            }
         }
     }
 }
