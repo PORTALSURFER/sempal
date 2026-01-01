@@ -12,6 +12,7 @@ fn is_root_path(path: &Path) -> bool {
 #[derive(Clone, Default)]
 pub(in crate::egui_app::controller) struct FolderBrowserModel {
     pub(super) selected: BTreeSet<PathBuf>,
+    pub(super) negated: BTreeSet<PathBuf>,
     pub(super) expanded: BTreeSet<PathBuf>,
     pub(super) focused: Option<PathBuf>,
     pub(super) available: BTreeSet<PathBuf>,
@@ -66,6 +67,9 @@ impl EguiController {
                 model.available.insert(path);
             }
             model.selected.retain(|path| model.available.contains(path));
+            model
+                .negated
+                .retain(|path| is_root_path(path) || model.available.contains(path));
             model.expanded.retain(|path| model.available.contains(path));
             if model.expanded.is_empty() {
                 for dir in model
@@ -120,6 +124,7 @@ impl EguiController {
                 has_children,
                 expanded: true,
                 selected: false,
+                negated: model.negated.contains(Path::new("")),
                 is_root: true,
             });
         }
@@ -193,6 +198,7 @@ impl EguiController {
             let has_children = tree.contains_key(child);
             let is_expanded = expanded.contains(child);
             let selected = model.selected.contains(child);
+            let negated = model.negated.contains(child);
             let name = child
                 .file_name()
                 .and_then(|n| n.to_str())
@@ -205,6 +211,7 @@ impl EguiController {
                 has_children,
                 expanded: is_expanded,
                 selected,
+                negated,
                 is_root: false,
             };
             rows.push(row);

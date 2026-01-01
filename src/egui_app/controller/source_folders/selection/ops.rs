@@ -176,6 +176,36 @@ impl EguiController {
         }
     }
 
+    pub(crate) fn toggle_folder_row_negation(&mut self, row_index: usize) {
+        let Some(row) = self.ui.sources.folders.rows.get(row_index).cloned() else {
+            return;
+        };
+        let path = row.path.clone();
+        let (snapshot, negation_changed) = {
+            let Some(model) = self.current_folder_model_mut() else {
+                return;
+            };
+            if !row.is_root && !model.available.contains(&path) {
+                return;
+            }
+            let before = model.negated.clone();
+            if model.negated.contains(&path) {
+                model.negated.remove(&path);
+            } else {
+                model.negated.insert(path.clone());
+            }
+            model.focused = Some(path.clone());
+            (model.clone(), before != model.negated)
+        };
+        self.ui.sources.folders.focused = Some(row_index);
+        self.ui.sources.folders.scroll_to = Some(row_index);
+        self.focus_folder_context();
+        self.build_folder_rows(&snapshot);
+        if negation_changed {
+            self.rebuild_browser_lists();
+        }
+    }
+
     #[allow(dead_code)]
     pub(crate) fn selected_folder_paths(&self) -> Vec<PathBuf> {
         let Some(id) = self.selection_state.ctx.selected_source.as_ref() else {

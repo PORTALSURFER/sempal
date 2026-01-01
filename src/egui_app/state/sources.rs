@@ -43,6 +43,7 @@ pub struct FolderRowView {
     pub has_children: bool,
     pub expanded: bool,
     pub selected: bool,
+    pub negated: bool,
     pub is_root: bool,
 }
 

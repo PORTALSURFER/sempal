@@ -29,24 +29,13 @@ impl EguiController {
         loaded_index: Option<usize>,
     ) -> (crate::egui_app::state::VisibleRows, Option<usize>, Option<usize>) {
         let filter = self.ui.browser.filter;
-        let folder_filter = self.folder_selection_for_filter().cloned();
         let filter_accepts = |tag: SampleTag| match filter {
             TriageFlagFilter::All => true,
             TriageFlagFilter::Keep => matches!(tag, SampleTag::Keep),
             TriageFlagFilter::Trash => matches!(tag, SampleTag::Trash),
             TriageFlagFilter::Untagged => matches!(tag, SampleTag::Neutral),
         };
-        let folder_accepts = |relative_path: &Path| {
-            let Some(selection) = folder_filter.as_ref() else {
-                return true;
-            };
-            if selection.is_empty() {
-                return true;
-            }
-            selection
-                .iter()
-                .any(|folder| relative_path.starts_with(folder))
-        };
+        let folder_accepts = |relative_path: &Path| self.folder_filter_accepts(relative_path);
         if let Some(similar) = self.ui.browser.similar_query.clone() {
             let mut visible: Vec<usize> = Vec::new();
             for index in similar.indices.iter().copied() {
@@ -82,7 +71,8 @@ impl EguiController {
             );
         }
         let Some(query) = self.active_search_query().map(str::to_string) else {
-            if folder_filter.is_none()
+            if self.folder_selection_for_filter().is_none()
+                && self.folder_negation_for_filter().is_none()
                 && self.ui.browser.filter == TriageFlagFilter::All
                 && self.ui.browser.similar_query.is_none()
             {

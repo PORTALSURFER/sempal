@@ -105,7 +105,11 @@ impl EguiApp {
                     },
                 );
                 if sample_parent_folders.contains(&root_row.path) {
-                    paint_right_side_dot(ui, response.rect);
+                    let offset = if root_row.negated { 8.0 } else { 0.0 };
+                    paint_right_side_dot(ui, response.rect, offset);
+                }
+                if root_row.negated {
+                    paint_negation_marker(ui, response.rect);
                 }
                 if scroll_to == Some(0) {
                     ui.scroll_to_rect(response.rect, None);
@@ -141,8 +145,13 @@ impl EguiApp {
                     }
                 }
                 if response.clicked() {
-                    self.controller.focus_folder_row(0);
-                    self.controller.clear_folder_selection();
+                    let modifiers = ui.input(|i| i.modifiers);
+                    if modifiers.alt {
+                        self.controller.toggle_folder_row_negation(0);
+                    } else {
+                        self.controller.focus_folder_row(0);
+                        self.controller.clear_folder_selection();
+                    }
                 } else if response.secondary_clicked() {
                     self.controller.focus_folder_row(0);
                 }
@@ -243,7 +252,11 @@ impl EguiApp {
                         },
                     );
                     if sample_parent_folders.contains(&row.path) {
-                        paint_right_side_dot(ui, response.rect);
+                        let offset = if row.negated { 8.0 } else { 0.0 };
+                        paint_right_side_dot(ui, response.rect, offset);
+                    }
+                    if row.negated {
+                        paint_negation_marker(ui, response.rect);
                     }
                     if Some(index) == scroll_to {
                         ui.scroll_to_rect(response.rect, None);
@@ -297,17 +310,17 @@ impl EguiApp {
                                 let indent = row.depth as f32 * 12.0;
                                 pos.x <= response.rect.left() + padding + indent + 14.0
                             });
-                        if hit_expand {
+                        let modifiers = ui.input(|i| i.modifiers);
+                        if modifiers.alt {
+                            self.controller.toggle_folder_row_negation(index);
+                        } else if hit_expand {
                             self.controller.toggle_folder_expanded(index);
+                        } else if modifiers.shift {
+                            self.controller.select_folder_range(index);
+                        } else if modifiers.command || modifiers.ctrl {
+                            self.controller.toggle_folder_row_selection(index);
                         } else {
-                            let modifiers = ui.input(|i| i.modifiers);
-                            if modifiers.shift {
-                                self.controller.select_folder_range(index);
-                            } else if modifiers.command || modifiers.ctrl {
-                                self.controller.toggle_folder_row_selection(index);
-                            } else {
-                                self.controller.replace_folder_selection(index);
-                            }
+                            self.controller.replace_folder_selection(index);
                         }
                     } else if response.secondary_clicked() {
                         self.controller.focus_folder_row(index);
@@ -372,10 +385,24 @@ impl EguiApp {
     }
 }
 
-fn paint_right_side_dot(ui: &mut Ui, rect: egui::Rect) {
+fn paint_right_side_dot(ui: &mut Ui, rect: egui::Rect, offset_x: f32) {
     let padding = ui.spacing().button_padding.x;
     let radius = 3.0;
-    let center = egui::pos2(rect.right() - padding - radius, rect.center().y);
+    let center = egui::pos2(
+        rect.right() - padding - radius - offset_x,
+        rect.center().y,
+    );
     ui.painter()
         .circle_filled(center, radius, egui::Color32::WHITE);
+}
+
+fn paint_negation_marker(ui: &mut Ui, rect: egui::Rect) {
+    let padding = ui.spacing().button_padding.x;
+    let width = 4.0;
+    let marker_rect = egui::Rect::from_min_max(
+        egui::pos2(rect.right() - padding - width, rect.top() + 2.0),
+        egui::pos2(rect.right() - padding, rect.bottom() - 2.0),
+    );
+    ui.painter()
+        .rect_filled(marker_rect, 1.0, style::destructive_text());
 }

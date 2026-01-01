@@ -4,6 +4,12 @@ use super::common::visible_indices;
 use crate::egui_app::state::FocusContext;
 use std::path::{Path, PathBuf};
 
+fn visible_paths(controller: &mut EguiController) -> Vec<PathBuf> {
+    (0..controller.visible_browser_len())
+        .filter_map(|row| controller.browser_path_for_visible(row))
+        .collect()
+}
+
 #[test]
 fn creating_folder_tracks_manual_entry() -> Result<(), String> {
     let (mut controller, source) = dummy_controller();
@@ -361,6 +367,58 @@ fn clearing_folder_selection_shows_all_samples() -> Result<(), String> {
 
     assert!(controller.selected_folder_paths().is_empty());
     assert_eq!(visible_indices(&controller), vec![0, 1]);
+    Ok(())
+}
+
+#[test]
+fn negated_folder_hides_samples() -> Result<(), String> {
+    let (mut controller, source) = dummy_controller();
+    controller.library.sources.push(source.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
+    std::fs::create_dir_all(source.root.join("a")).unwrap();
+    std::fs::create_dir_all(source.root.join("b")).unwrap();
+    controller.set_wav_entries_for_tests(vec![
+        sample_entry("a/one.wav", SampleTag::Neutral),
+        sample_entry("b/two.wav", SampleTag::Neutral),
+    ]);
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+    controller.refresh_folder_browser();
+
+    let folder_a = controller
+        .ui
+        .sources
+        .folders
+        .rows
+        .iter()
+        .position(|row| row.path == PathBuf::from("a"))
+        .unwrap();
+    controller.toggle_folder_row_negation(folder_a);
+
+    assert_eq!(visible_paths(&mut controller), vec![PathBuf::from("b/two.wav")]);
+    Ok(())
+}
+
+#[test]
+fn negated_root_hides_only_root_samples() -> Result<(), String> {
+    let (mut controller, source) = dummy_controller();
+    controller.library.sources.push(source.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
+    std::fs::create_dir_all(source.root.join("sub")).unwrap();
+    controller.set_wav_entries_for_tests(vec![
+        sample_entry("root.wav", SampleTag::Neutral),
+        sample_entry("sub/child.wav", SampleTag::Neutral),
+    ]);
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+    controller.refresh_folder_browser();
+
+    controller.toggle_folder_row_negation(0);
+
+    assert_eq!(
+        visible_paths(&mut controller),
+        vec![PathBuf::from("sub/child.wav")]
+    );
     Ok(())
 }
 
