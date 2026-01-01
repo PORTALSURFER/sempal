@@ -209,6 +209,16 @@ impl EguiController {
         self.persist_controls();
     }
 
+    /// Enable/disable normalized audition playback and persist the setting.
+    pub fn set_normalized_audition_enabled(&mut self, enabled: bool) {
+        if self.settings.controls.normalized_audition_enabled == enabled {
+            return;
+        }
+        self.settings.controls.normalized_audition_enabled = enabled;
+        self.ui.waveform.normalized_audition_enabled = enabled;
+        self.persist_controls();
+    }
+
     fn persist_controls(&mut self) {
         if let Err(err) = self.persist_config("Failed to save options") {
             self.set_status(err, StatusTone::Warning);

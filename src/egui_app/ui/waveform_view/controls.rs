@@ -31,6 +31,20 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
         {
             app.controller.toggle_loop();
         }
+        let audition_enabled = app.controller.ui.waveform.normalized_audition_enabled;
+        let audition_label = if audition_enabled {
+            RichText::new("Audition: Norm").color(palette.accent_mint)
+        } else {
+            RichText::new("Audition: Raw").color(palette.text_muted)
+        };
+        if ui
+            .add(egui::Button::new(audition_label))
+            .on_hover_text("Normalize playback to full scale for the current span")
+            .clicked()
+        {
+            app.controller
+                .set_normalized_audition_enabled(!audition_enabled);
+        }
         ui.add_space(10.0);
         let is_recording = app.controller.is_recording();
         let has_source = app.controller.current_source().is_some();

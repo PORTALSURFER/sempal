@@ -66,6 +66,124 @@ impl DecodedWaveform {
             self.samples.len() / channels
         }
     }
+
+    pub(crate) fn max_abs_in_span(&self, start: f32, end: f32) -> Option<f32> {
+        if !start.is_finite() || !end.is_finite() {
+            return None;
+        }
+        let (start, end) = if start <= end { (start, end) } else { (end, start) };
+        let total_frames = self.frame_count();
+        if total_frames == 0 {
+            return None;
+        }
+        if let Some(peaks) = self.peaks.as_deref() {
+            return max_abs_from_peaks(peaks, start, end);
+        }
+        max_abs_from_samples(&self.samples, self.channel_count(), start, end)
+    }
+}
+
+fn max_abs_from_samples(
+    samples: &[f32],
+    channels: usize,
+    start: f32,
+    end: f32,
+) -> Option<f32> {
+    if samples.is_empty() {
+        return None;
+    }
+    let channels = channels.max(1);
+    let total_frames = samples.len() / channels;
+    if total_frames == 0 {
+        return None;
+    }
+    let start_frame = (start.clamp(0.0, 1.0) * total_frames as f32).floor() as usize;
+    let mut end_frame = (end.clamp(0.0, 1.0) * total_frames as f32).ceil() as usize;
+    if end_frame <= start_frame {
+        end_frame = (start_frame + 1).min(total_frames);
+    }
+    let start_idx = start_frame.saturating_mul(channels);
+    let end_idx = end_frame.saturating_mul(channels).min(samples.len());
+    if start_idx >= end_idx {
+        return None;
+    }
+    let peak = samples[start_idx..end_idx]
+        .iter()
+        .fold(0.0_f32, |acc, sample| acc.max(sample.abs()));
+    Some(peak)
+}
+
+fn max_abs_from_peaks(peaks: &WaveformPeaks, start: f32, end: f32) -> Option<f32> {
+    let total_frames = peaks.total_frames.max(1);
+    let bucket_size = peaks.bucket_size_frames.max(1);
+    let start_frame = (start.clamp(0.0, 1.0) * total_frames as f32).floor() as usize;
+    let mut end_frame = (end.clamp(0.0, 1.0) * total_frames as f32).ceil() as usize;
+    if end_frame <= start_frame {
+        end_frame = (start_frame + 1).min(total_frames);
+    }
+    let end_frame = end_frame.min(total_frames);
+    if start_frame >= end_frame {
+        return None;
+    }
+    let start_bucket = start_frame / bucket_size;
+    let end_bucket = end_frame.saturating_sub(1) / bucket_size;
+    if peaks.mono.is_empty() {
+        return None;
+    }
+    let mut peak = 0.0_f32;
+    let last_bucket = peaks.mono.len().saturating_sub(1);
+    for bucket in start_bucket..=end_bucket.min(last_bucket) {
+        let (min, max) = peaks.mono[bucket];
+        peak = peak.max(min.abs().max(max.abs()));
+    }
+    Some(peak)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+
+    #[test]
+    fn max_abs_in_span_uses_samples() {
+        let samples = Arc::from(vec![0.1, -0.2, 0.4, -0.5]);
+        let decoded = DecodedWaveform {
+            cache_token: 1,
+            samples,
+            peaks: None,
+            duration_seconds: 1.0,
+            sample_rate: 4,
+            channels: 2,
+        };
+        let peak_full = decoded.max_abs_in_span(0.0, 1.0).unwrap();
+        let peak_first_half = decoded.max_abs_in_span(0.0, 0.5).unwrap();
+        assert!((peak_full - 0.5).abs() < 1e-6);
+        assert!((peak_first_half - 0.2).abs() < 1e-6);
+    }
+
+    #[test]
+    fn max_abs_in_span_uses_peaks_when_samples_empty() {
+        let peaks = WaveformPeaks {
+            total_frames: 4,
+            channels: 2,
+            bucket_size_frames: 2,
+            mono: vec![(-0.2, 0.3), (-0.8, 0.6)],
+            left: None,
+            right: None,
+        };
+        let decoded = DecodedWaveform {
+            cache_token: 2,
+            samples: Arc::from(Vec::new()),
+            peaks: Some(Arc::new(peaks)),
+            duration_seconds: 1.0,
+            sample_rate: 4,
+            channels: 2,
+        };
+        let peak_first_bucket = decoded.max_abs_in_span(0.0, 0.5).unwrap();
+        let peak_full = decoded.max_abs_in_span(0.0, 1.0).unwrap();
+        assert!((peak_first_bucket - 0.3).abs() < 1e-6);
+        assert!((peak_full - 0.8).abs() < 1e-6);
+    }
 }
 
 /// Visual presentation mode for multi-channel audio.

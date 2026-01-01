@@ -32,6 +32,7 @@ impl AudioPlayer {
             looping: false,
             loop_offset: None,
             volume: 1.0,
+            playback_gain: 1.0,
             anti_clip_enabled: true,
             anti_clip_fade: DEFAULT_ANTI_CLIP_FADE,
             output: outcome.resolved,
@@ -57,7 +58,15 @@ impl AudioPlayer {
     pub fn set_volume(&mut self, volume: f32) {
         self.volume = volume.clamp(0.0, 1.0);
         if let Some(sink) = self.sink.as_mut() {
-            sink.set_volume(self.volume);
+            sink.set_volume(self.effective_volume());
+        }
+    }
+
+    /// Adjust normalized audition gain for current and future playback.
+    pub fn set_playback_gain(&mut self, gain: f32) {
+        self.playback_gain = if gain.is_finite() && gain > 0.0 { gain } else { 1.0 };
+        if let Some(sink) = self.sink.as_mut() {
+            sink.set_volume(self.effective_volume());
         }
     }
 
@@ -100,6 +109,7 @@ impl AudioPlayer {
             looping,
             loop_offset,
             volume: 1.0,
+            playback_gain: 1.0,
             anti_clip_enabled: true,
             anti_clip_fade: DEFAULT_ANTI_CLIP_FADE,
             output: ResolvedOutput::default(),
@@ -129,6 +139,7 @@ impl AudioPlayer {
             looping: true,
             loop_offset: Some(0.0),
             volume: 1.0,
+            playback_gain: 1.0,
             anti_clip_enabled: true,
             anti_clip_fade: DEFAULT_ANTI_CLIP_FADE,
             output: outcome.resolved,

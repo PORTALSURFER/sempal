@@ -42,6 +42,7 @@ pub struct WaveformState {
     /// Current visible viewport within the waveform (0.0-1.0 normalized).
     pub view: WaveformView,
     pub loop_enabled: bool,
+    pub normalized_audition_enabled: bool,
     pub notice: Option<String>,
     /// Optional path for the sample currently loading to drive UI affordances.
     pub loading: Option<PathBuf>,
@@ -84,6 +85,7 @@ impl Default for WaveformState {
             transient_cache_token: None,
             view: WaveformView::default(),
             loop_enabled: false,
+            normalized_audition_enabled: false,
             notice: None,
             loading: None,
             pending_destructive: None,

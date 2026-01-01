@@ -13,6 +13,11 @@ use super::super::fade::{EdgeFade, fade_duration};
 use super::super::mixer::{decoder_from_bytes, map_seek_error};
 
 impl AudioPlayer {
+    pub(super) fn effective_volume(&self) -> f32 {
+        let volume = self.volume * self.playback_gain;
+        if volume.is_finite() { volume.max(0.0) } else { 0.0 }
+    }
+
     pub(super) fn reset_playback_state(&mut self) {
         self.started_at = None;
         self.play_span = None;
@@ -28,7 +33,7 @@ impl AudioPlayer {
         &self,
         source: S,
     ) -> (Sink, FadeOutHandle, (u32, u16)) {
-        Self::build_sink_with_fade_for_stream(&self.stream, self.volume, source)
+        Self::build_sink_with_fade_for_stream(&self.stream, self.effective_volume(), source)
     }
 
     pub fn create_monitor_sink(&self, volume: f32) -> Sink {

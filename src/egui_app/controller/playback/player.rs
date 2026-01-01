@@ -59,6 +59,19 @@ pub(super) fn play_audio(
         .range()
         .filter(|range| range.width() >= MIN_SELECTION_WIDTH);
     let span_end = selection.as_ref().map(|r| r.end()).unwrap_or(1.0);
+    let (audition_start, audition_end) = if looped {
+        selection
+            .as_ref()
+            .map(|range| (range.start(), range.end()))
+            .unwrap_or((0.0, 1.0))
+    } else {
+        let span_start = start_override
+            .or_else(|| selection.as_ref().map(|range| range.start()))
+            .unwrap_or(0.0);
+        (span_start, span_end)
+    };
+    let audition_gain = normalized_audition_gain(controller, audition_start, audition_end);
+    player.borrow_mut().set_playback_gain(audition_gain);
     let mut start = 0.0;
     if looped {
         if let Some(range) = selection {
@@ -107,6 +120,22 @@ pub(super) fn play_audio(
         });
     }
     Ok(())
+}
+
+fn normalized_audition_gain(controller: &EguiController, start: f32, end: f32) -> f32 {
+    if !controller.ui.waveform.normalized_audition_enabled {
+        return 1.0;
+    }
+    let Some(decoded) = controller.sample_view.waveform.decoded.as_ref() else {
+        return 1.0;
+    };
+    let Some(peak) = decoded.max_abs_in_span(start, end) else {
+        return 1.0;
+    };
+    if peak <= f32::EPSILON {
+        return 1.0;
+    }
+    1.0 / peak
 }
 
 pub(super) fn is_playing(controller: &EguiController) -> bool {

@@ -490,6 +490,7 @@ analysis_worker_count = 999
                         transient_snap_enabled: true,
                         transient_markers_enabled: false,
                         input_monitoring_enabled: false,
+                        normalized_audition_enabled: true,
                     },
                 },
             };
@@ -615,6 +616,10 @@ analysis_worker_count = 999
             assert_eq!(
                 round_trip.core.controls.input_monitoring_enabled,
                 cfg.core.controls.input_monitoring_enabled
+            );
+            assert_eq!(
+                round_trip.core.controls.normalized_audition_enabled,
+                cfg.core.controls.normalized_audition_enabled
             );
         });
     }

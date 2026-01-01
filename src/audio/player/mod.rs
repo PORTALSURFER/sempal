@@ -24,6 +24,7 @@ pub struct AudioPlayer {
     looping: bool,
     loop_offset: Option<f32>,
     volume: f32,
+    playback_gain: f32,
     anti_clip_enabled: bool,
     anti_clip_fade: Duration,
     output: ResolvedOutput,
