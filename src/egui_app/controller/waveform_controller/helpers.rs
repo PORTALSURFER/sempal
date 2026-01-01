@@ -76,11 +76,17 @@ impl WaveformController<'_> {
         }
     }
 
+    pub(super) fn selection_min_width(&self) -> f32 {
+        self.bpm_snap_step()
+            .map(|step| MIN_SELECTION_WIDTH.min(step))
+            .unwrap_or(MIN_SELECTION_WIDTH)
+    }
+
     pub(super) fn refresh_loop_after_selection_change(&mut self, selection: SelectionRange) {
         if !self.ui.waveform.loop_enabled || !self.is_playing() {
             return;
         }
-        if selection.width() < MIN_SELECTION_WIDTH {
+        if selection.width() < self.selection_min_width() {
             return;
         }
         let playhead = self.ui.waveform.playhead.position;
@@ -324,15 +330,16 @@ impl WaveformController<'_> {
     }
 }
 
-pub(super) fn clamp_selection_bounds(start: f32, end: f32) -> (f32, f32) {
+pub(super) fn clamp_selection_bounds(start: f32, end: f32, min_width: f32) -> (f32, f32) {
     let mut a = start.clamp(0.0, 1.0);
     let mut b = end.clamp(0.0, 1.0);
     if a > b {
         std::mem::swap(&mut a, &mut b);
     }
-    if (b - a) < MIN_SELECTION_WIDTH {
-        b = (a + MIN_SELECTION_WIDTH).min(1.0);
-        a = (b - MIN_SELECTION_WIDTH).max(0.0);
+    let min_width = min_width.clamp(0.0, 1.0);
+    if (b - a) < min_width {
+        b = (a + min_width).min(1.0);
+        a = (b - min_width).max(0.0);
     }
     (a, b)
 }

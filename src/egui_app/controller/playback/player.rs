@@ -57,7 +57,7 @@ pub(super) fn play_audio(
         .selection_state
         .range
         .range()
-        .filter(|range| range.width() >= MIN_SELECTION_WIDTH);
+        .filter(|range| range.width() >= super::selection_min_width(controller));
     let span_end = selection.as_ref().map(|r| r.end()).unwrap_or(1.0);
     let (audition_start, audition_end) = if looped {
         selection

@@ -17,6 +17,24 @@ const SHOULD_PLAY_RANDOM_SAMPLE: bool = false;
 const SHOULD_PLAY_RANDOM_SAMPLE: bool = true;
 const PLAYHEAD_COMPLETION_EPSILON: f32 = 0.001;
 
+fn selection_min_width(controller: &EguiController) -> f32 {
+    let mut min_width = MIN_SELECTION_WIDTH;
+    if controller.ui.waveform.bpm_snap_enabled {
+        if let (Some(bpm), Some(duration)) = (
+            controller.ui.waveform.bpm_value,
+            controller.loaded_audio_duration_seconds(),
+        ) {
+            if bpm.is_finite() && bpm > 0.0 && duration.is_finite() && duration > 0.0 {
+                let step = 60.0 / bpm / duration;
+                if step.is_finite() && step > 0.0 {
+                    min_width = min_width.min(step);
+                }
+            }
+        }
+    }
+    min_width
+}
+
 impl EguiController {
     pub fn start_selection_drag(&mut self, position: f32) {
         transport::start_selection_drag(self, position);

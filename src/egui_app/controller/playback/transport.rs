@@ -81,7 +81,7 @@ pub(super) fn finish_selection_drag(controller: &mut EguiController) {
         .selection_state
         .range
         .range()
-        .filter(|range| range.width() >= MIN_SELECTION_WIDTH)
+        .filter(|range| range.width() >= super::selection_min_width(controller))
     else {
         return;
     };
@@ -134,7 +134,7 @@ pub(super) fn toggle_loop(controller: &mut EguiController) {
                         .selection_state
                         .range
                         .range()
-                        .filter(|range| range.width() >= MIN_SELECTION_WIDTH)
+                        .filter(|range| range.width() >= super::selection_min_width(controller))
                         .is_some();
                     let start_override = if has_selection {
                         None
@@ -204,7 +204,8 @@ fn clear_too_small_bpm_selection(controller: &mut EguiController) {
     let Some(range) = controller.selection_state.range.range() else {
         return;
     };
-    if range.width() >= step {
+    let epsilon = step * 1.0e-3;
+    if range.width() + epsilon >= step {
         return;
     }
     controller.selection_state.range.set_range(None);

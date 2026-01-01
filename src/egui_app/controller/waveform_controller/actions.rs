@@ -88,7 +88,9 @@ impl WaveformActions for WaveformController<'_> {
             .range
             .range()
             .or(self.ui.waveform.selection);
-        let step = self.waveform_step_size(fine).max(MIN_SELECTION_WIDTH);
+        let step = self
+            .waveform_step_size(fine)
+            .max(self.selection_min_width());
         let anchor = self.waveform_focus_point();
         let range = if to_left {
             SelectionRange::new((anchor - step).clamp(0.0, 1.0), anchor)
@@ -111,7 +113,7 @@ impl WaveformActions for WaveformController<'_> {
             self.bpm_snap_step()
                 .unwrap_or_else(|| self.waveform_step_size(false))
         }
-        .max(MIN_SELECTION_WIDTH);
+        .max(self.selection_min_width());
         let Some(selection) = self
             .selection_state
             .range
@@ -130,7 +132,8 @@ impl WaveformActions for WaveformController<'_> {
             (SelectionEdge::End, true) => end += step,
             (SelectionEdge::End, false) => end -= step,
         }
-        let (clamped_start, clamped_end) = helpers::clamp_selection_bounds(start, end);
+        let (clamped_start, clamped_end) =
+            helpers::clamp_selection_bounds(start, end, self.selection_min_width());
         let range = SelectionRange::new(clamped_start, clamped_end);
         self.selection_state.range.set_range(Some(range));
         self.apply_selection(Some(range));
