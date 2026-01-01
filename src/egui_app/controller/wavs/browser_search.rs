@@ -35,7 +35,21 @@ impl EguiController {
             TriageFlagFilter::Trash => matches!(tag, SampleTag::Trash),
             TriageFlagFilter::Untagged => matches!(tag, SampleTag::Neutral),
         };
-        let folder_accepts = |relative_path: &Path| self.folder_filter_accepts(relative_path);
+        let folder_selection = self.folder_selection_for_filter().cloned();
+        let folder_negated = self.folder_negation_for_filter().cloned();
+        let has_folder_filters = folder_selection
+            .as_ref()
+            .is_some_and(|selection| !selection.is_empty())
+            || folder_negated
+                .as_ref()
+                .is_some_and(|negated| !negated.is_empty());
+        let folder_accepts = |relative_path: &Path| {
+            crate::egui_app::controller::source_folders::selection::folder_filter_accepts(
+                relative_path,
+                folder_selection.as_ref(),
+                folder_negated.as_ref(),
+            )
+        };
         if let Some(similar) = self.ui.browser.similar_query.clone() {
             let mut visible: Vec<usize> = Vec::new();
             for index in similar.indices.iter().copied() {
@@ -71,8 +85,7 @@ impl EguiController {
             );
         }
         let Some(query) = self.active_search_query().map(str::to_string) else {
-            if self.folder_selection_for_filter().is_none()
-                && self.folder_negation_for_filter().is_none()
+            if !has_folder_filters
                 && self.ui.browser.filter == TriageFlagFilter::All
                 && self.ui.browser.similar_query.is_none()
             {
