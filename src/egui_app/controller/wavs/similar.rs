@@ -17,99 +17,44 @@ pub(super) fn find_similar_for_visible_row(
     controller: &mut EguiController,
     visible_row: usize,
 ) -> Result<(), String> {
-    let source_id = controller
-        .selection_state
-        .ctx
-        .selected_source
-        .clone()
-        .ok_or_else(|| "No active source selected".to_string())?;
-    let entry_index = controller
-        .ui
-        .browser
-        .visible
-        .get(visible_row)
-        .ok_or_else(|| "Selected row is out of range".to_string())?;
-    let entry = controller
-        .wav_entry(entry_index)
-        .ok_or_else(|| "Sample entry missing".to_string())?;
-    let entry_path = entry.relative_path.clone();
-    let sample_id =
-        super::super::analysis_jobs::build_sample_id(source_id.as_str(), &entry_path);
-    let query = build_similar_query_for_sample_id(
+    let (sample_id, entry_index) = resolve_sample_id_for_visible_row(controller, visible_row)?;
+    apply_similarity_for_sample_id(
         controller,
         &sample_id,
         None,
         |path| view_model::sample_display_label(path),
         Some(entry_index),
         "No similar samples found in the current source",
-    )?;
-    controller.ui.browser.similar_query = Some(query);
-    controller.ui.browser.sort = SampleBrowserSort::Similarity;
-    controller.ui.browser.similarity_sort_follow_loaded = false;
-    controller.ui.browser.search_query.clear();
-    controller.ui.browser.search_focus_requested = false;
-    controller.rebuild_browser_lists();
-    Ok(())
+    )
 }
 
 pub(super) fn find_duplicates_for_visible_row(
     controller: &mut EguiController,
     visible_row: usize,
 ) -> Result<(), String> {
-    let source_id = controller
-        .selection_state
-        .ctx
-        .selected_source
-        .clone()
-        .ok_or_else(|| "No active source selected".to_string())?;
-    let entry_index = controller
-        .ui
-        .browser
-        .visible
-        .get(visible_row)
-        .ok_or_else(|| "Selected row is out of range".to_string())?;
-    let entry = controller
-        .wav_entry(entry_index)
-        .ok_or_else(|| "Sample entry missing".to_string())?;
-    let entry_path = entry.relative_path.clone();
-    let sample_id =
-        super::super::analysis_jobs::build_sample_id(source_id.as_str(), &entry_path);
-    let query = build_similar_query_for_sample_id(
+    let (sample_id, entry_index) = resolve_sample_id_for_visible_row(controller, visible_row)?;
+    apply_similarity_for_sample_id(
         controller,
         &sample_id,
         Some(DUPLICATE_SCORE_THRESHOLD),
         |path| format!("Duplicates of {}", view_model::sample_display_label(path)),
         Some(entry_index),
         "No duplicates found in the current source",
-    )?;
-    controller.ui.browser.similar_query = Some(query);
-    controller.ui.browser.sort = SampleBrowserSort::Similarity;
-    controller.ui.browser.similarity_sort_follow_loaded = false;
-    controller.ui.browser.search_query.clear();
-    controller.ui.browser.search_focus_requested = false;
-    controller.rebuild_browser_lists();
-    Ok(())
+    )
 }
 
 pub(super) fn find_similar_for_sample_id(
     controller: &mut EguiController,
     sample_id: &str,
 ) -> Result<(), String> {
-    let query = build_similar_query_for_sample_id(
+    apply_similarity_for_sample_id(
         controller,
         sample_id,
         None,
         |path| view_model::sample_display_label(path),
         None,
         "No similar samples found in the current source",
-    )?;
-    controller.ui.browser.similar_query = Some(query);
-    controller.ui.browser.sort = SampleBrowserSort::Similarity;
-    controller.ui.browser.similarity_sort_follow_loaded = false;
-    controller.ui.browser.search_query.clear();
-    controller.ui.browser.search_focus_requested = false;
-    controller.rebuild_browser_lists();
-    Ok(())
+    )
 }
 
 pub(super) fn clear_similar_filter(controller: &mut EguiController) {
@@ -131,6 +76,64 @@ fn open_source_db_for_id(
         .find(|source| &source.id == source_id)
         .ok_or_else(|| "Source not found".to_string())?;
     super::super::analysis_jobs::open_source_db(&source.root)
+}
+
+fn resolve_sample_id_for_visible_row(
+    controller: &mut EguiController,
+    visible_row: usize,
+) -> Result<(String, usize), String> {
+    let source_id = controller
+        .selection_state
+        .ctx
+        .selected_source
+        .clone()
+        .ok_or_else(|| "No active source selected".to_string())?;
+    let entry_index = controller
+        .ui
+        .browser
+        .visible
+        .get(visible_row)
+        .ok_or_else(|| "Selected row is out of range".to_string())?;
+    let entry = controller
+        .wav_entry(entry_index)
+        .ok_or_else(|| "Sample entry missing".to_string())?;
+    let sample_id = super::super::analysis_jobs::build_sample_id(
+        source_id.as_str(),
+        &entry.relative_path,
+    );
+    Ok((sample_id, entry_index))
+}
+
+fn apply_similarity_for_sample_id(
+    controller: &mut EguiController,
+    sample_id: &str,
+    score_cutoff: Option<f32>,
+    label_builder: impl FnOnce(&Path) -> String,
+    anchor_override: Option<usize>,
+    empty_error: &str,
+) -> Result<(), String> {
+    let query = build_similar_query_for_sample_id(
+        controller,
+        sample_id,
+        score_cutoff,
+        label_builder,
+        anchor_override,
+        empty_error,
+    )?;
+    apply_similarity_query(controller, query);
+    Ok(())
+}
+
+fn apply_similarity_query(
+    controller: &mut EguiController,
+    query: crate::egui_app::state::SimilarQuery,
+) {
+    controller.ui.browser.similar_query = Some(query);
+    controller.ui.browser.sort = SampleBrowserSort::Similarity;
+    controller.ui.browser.similarity_sort_follow_loaded = false;
+    controller.ui.browser.search_query.clear();
+    controller.ui.browser.search_focus_requested = false;
+    controller.rebuild_browser_lists();
 }
 
 pub(super) fn find_similar_for_audio_path(
@@ -186,29 +189,21 @@ pub(super) fn find_similar_for_audio_path(
         .and_then(|name| name.to_str())
         .map(|name| format!("Clip: {name}"))
         .unwrap_or_else(|| "Clip".to_string());
-    controller.ui.browser.similar_query = Some(crate::egui_app::state::SimilarQuery {
+    let query = crate::egui_app::state::SimilarQuery {
         sample_id: format!("clip::{}", path.display()),
         label,
         indices,
         scores,
         anchor_index: None,
-    });
-    controller.ui.browser.sort = SampleBrowserSort::Similarity;
-    controller.ui.browser.similarity_sort_follow_loaded = false;
-    controller.ui.browser.search_query.clear();
-    controller.ui.browser.search_focus_requested = false;
-    controller.rebuild_browser_lists();
+    };
+    apply_similarity_query(controller, query);
     Ok(())
 }
 
 pub(super) fn enable_loaded_similarity_sort(controller: &mut EguiController) -> Result<(), String> {
     let query = build_similarity_query_for_loaded_sample(controller)?;
-    controller.ui.browser.similar_query = Some(query);
-    controller.ui.browser.sort = SampleBrowserSort::Similarity;
+    apply_similarity_query(controller, query);
     controller.ui.browser.similarity_sort_follow_loaded = true;
-    controller.ui.browser.search_query.clear();
-    controller.ui.browser.search_focus_requested = false;
-    controller.rebuild_browser_lists();
     Ok(())
 }
 
@@ -623,6 +618,7 @@ fn now_epoch_seconds() -> i64 {
 mod tests {
     use super::*;
     use crate::analysis::vector::encode_f32_le_blob;
+    use crate::egui_app::controller::test_support::dummy_controller;
     use rusqlite::{Connection, params};
     use std::collections::HashMap;
     use std::path::PathBuf;
@@ -749,5 +745,26 @@ mod tests {
         .unwrap();
         assert_eq!(indices, vec![0]);
         assert_eq!(scores.len(), 1);
+    }
+
+    #[test]
+    fn apply_similarity_query_resets_browser_state() {
+        let (mut controller, _source) = dummy_controller();
+        controller.ui.browser.search_query = "query".to_string();
+        controller.ui.browser.search_focus_requested = true;
+        controller.ui.browser.sort = SampleBrowserSort::ListOrder;
+        controller.ui.browser.similarity_sort_follow_loaded = true;
+        let query = crate::egui_app::state::SimilarQuery {
+            sample_id: "sample-id".to_string(),
+            label: "Sample".to_string(),
+            indices: vec![0],
+            scores: vec![0.5],
+            anchor_index: None,
+        };
+        apply_similarity_query(&mut controller, query);
+        assert_eq!(controller.ui.browser.sort, SampleBrowserSort::Similarity);
+        assert!(!controller.ui.browser.similarity_sort_follow_loaded);
+        assert!(controller.ui.browser.search_query.is_empty());
+        assert!(!controller.ui.browser.search_focus_requested);
     }
 }
