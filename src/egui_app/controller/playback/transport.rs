@@ -4,6 +4,8 @@ use crate::selection::SelectionEdge;
 
 const TRANSIENT_SNAP_RADIUS: f32 = 0.01;
 const SELECTION_START_SNAP_RADIUS: f32 = 0.01;
+const SELECTION_START_SNAP_VIEW_FRACTION: f32 = 0.03;
+const SELECTION_START_SNAP_SECONDS: f32 = 0.1;
 
 pub(super) fn start_selection_drag(controller: &mut EguiController, position: f32) {
     controller.selection_state.bpm_scale_beats = None;
@@ -231,11 +233,26 @@ fn snap_selection_start(controller: &EguiController, position: f32) -> Option<f3
     if !controller.ui.waveform.bpm_snap_enabled {
         return None;
     }
-    if position.is_finite() && position <= SELECTION_START_SNAP_RADIUS {
+    let radius = selection_start_snap_radius(controller);
+    if position.is_finite() && radius.is_finite() && radius > 0.0 && position <= radius {
         Some(0.0)
     } else {
         None
     }
+}
+
+fn selection_start_snap_radius(controller: &EguiController) -> f32 {
+    let mut radius = SELECTION_START_SNAP_RADIUS;
+    let view_width = controller.ui.waveform.view.width();
+    if view_width.is_finite() && view_width > 0.0 {
+        radius = radius.min(view_width * SELECTION_START_SNAP_VIEW_FRACTION);
+    }
+    if let Some(duration) = controller.loaded_audio_duration_seconds() {
+        if duration.is_finite() && duration > 0.0 {
+            radius = radius.min(SELECTION_START_SNAP_SECONDS / duration);
+        }
+    }
+    radius
 }
 
 fn selection_scale_beats(controller: &EguiController) -> Option<f32> {
