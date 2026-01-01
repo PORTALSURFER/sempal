@@ -72,6 +72,9 @@ impl EguiApp {
             ) {
                 continue;
             }
+            if self.try_handle_collection_hotkey(ctx, press, focus, key_event.repeat) {
+                continue;
+            }
             if let Some(action) = actions
                 .iter()
                 .find(|action| {
@@ -159,6 +162,26 @@ impl EguiApp {
         }
         false
     }
+
+    fn try_handle_collection_hotkey(
+        &mut self,
+        ctx: &egui::Context,
+        press: hotkeys::KeyPress,
+        focus: FocusContext,
+        repeat: bool,
+    ) -> bool {
+        if repeat || press.command || press.shift || press.alt {
+            return false;
+        }
+        let Some(hotkey) = hotkey_number_for_key(press.key) else {
+            return false;
+        };
+        if self.controller.apply_collection_hotkey(hotkey, focus) {
+            consume_press(ctx, press);
+            return true;
+        }
+        false
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -204,6 +227,16 @@ fn press_matches(press: &hotkeys::KeyPress, target: &hotkeys::KeyPress) -> bool 
 
 fn press_text_variants(press: &hotkeys::KeyPress) -> &'static [&'static str] {
     match press.key {
+        egui::Key::Num0 => &["0"],
+        egui::Key::Num1 => &["1"],
+        egui::Key::Num2 => &["2"],
+        egui::Key::Num3 => &["3"],
+        egui::Key::Num4 => &["4"],
+        egui::Key::Num5 => &["5"],
+        egui::Key::Num6 => &["6"],
+        egui::Key::Num7 => &["7"],
+        egui::Key::Num8 => &["8"],
+        egui::Key::Num9 => &["9"],
         egui::Key::X => &["x", "X"],
         egui::Key::N => &["n", "N"],
         egui::Key::D => &["d", "D"],
@@ -253,6 +286,21 @@ fn keypress_modifiers(press: &hotkeys::KeyPress) -> egui::Modifiers {
         modifiers.ctrl = press.command;
     }
     modifiers
+}
+
+fn hotkey_number_for_key(key: egui::Key) -> Option<u8> {
+    match key {
+        egui::Key::Num1 => Some(1),
+        egui::Key::Num2 => Some(2),
+        egui::Key::Num3 => Some(3),
+        egui::Key::Num4 => Some(4),
+        egui::Key::Num5 => Some(5),
+        egui::Key::Num6 => Some(6),
+        egui::Key::Num7 => Some(7),
+        egui::Key::Num8 => Some(8),
+        egui::Key::Num9 => Some(9),
+        _ => None,
+    }
 }
 
 #[cfg(test)]

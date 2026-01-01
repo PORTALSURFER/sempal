@@ -89,6 +89,7 @@ impl EguiApp {
         collection: &CollectionRowView,
     ) {
         response.context_menu(|ui| {
+            let mut close_menu = false;
             if ui.button("Set export folder…").clicked() {
                 self.controller.pick_collection_export_path(&collection.id);
                 ui.close();
@@ -121,6 +122,31 @@ impl EguiApp {
                 ui.small(format!("Current export: {}", path.display()));
             } else {
                 ui.small("No export folder set");
+            }
+            ui.separator();
+            ui.menu_button("Bind hotkey", |ui| {
+                for slot in 1..=9 {
+                    let bound = collection.hotkey == Some(slot);
+                    if ui
+                        .selectable_label(bound, format!("{slot}"))
+                        .clicked()
+                    {
+                        self.controller
+                            .bind_collection_hotkey(&collection.id, Some(slot));
+                        close_menu = true;
+                        ui.close();
+                    }
+                }
+                if collection.hotkey.is_some()
+                    && ui.button("Clear hotkey").clicked()
+                {
+                    self.controller.bind_collection_hotkey(&collection.id, None);
+                    close_menu = true;
+                    ui.close();
+                }
+            });
+            if close_menu {
+                ui.close();
             }
             ui.separator();
             ui.label("Rename collection");

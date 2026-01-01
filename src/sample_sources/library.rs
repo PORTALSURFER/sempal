@@ -31,6 +31,8 @@ const COLLECTION_EXPORT_PATHS_VERSION_KEY: &str = "collections_export_paths_vers
 const COLLECTION_EXPORT_PATHS_VERSION_V2: &str = "2";
 const COLLECTION_MEMBER_CLIP_ROOT_VERSION_KEY: &str = "collection_members_clip_root_version";
 const COLLECTION_MEMBER_CLIP_ROOT_VERSION_V1: &str = "1";
+const COLLECTION_HOTKEY_VERSION_KEY: &str = "collections_hotkey_version";
+const COLLECTION_HOTKEY_VERSION_V1: &str = "1";
 const KNOWN_SOURCES_KEY: &str = "known_sources_v1";
 
 static LIBRARY_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
@@ -97,6 +99,7 @@ impl LibraryDatabase {
         let mut db = Self { connection };
         db.apply_pragmas()?;
         db.apply_schema()?;
+        db.migrate_collection_hotkeys()?;
         db.migrate_collection_member_clip_roots()?;
         db.migrate_collection_export_paths()?;
         db.migrate_analysis_jobs_content_hash()?;
@@ -175,7 +178,7 @@ impl LibraryDatabase {
         let mut stmt = self
             .connection
             .prepare(
-                "SELECT id, name, export_path
+                "SELECT id, name, export_path, hotkey
                  FROM collections
                  ORDER BY sort_order ASC, id ASC",
             )
@@ -184,11 +187,15 @@ impl LibraryDatabase {
             let id: String = row.get(0)?;
             let name: String = row.get(1)?;
             let export_path: Option<String> = row.get(2)?;
+            let hotkey: Option<i64> = row.get(3)?;
             Ok(Collection {
                 id: CollectionId::from_string(id),
                 name,
                 members: Vec::new(),
                 export_path: export_path.map(PathBuf::from),
+                hotkey: hotkey
+                    .and_then(|value| u8::try_from(value).ok())
+                    .filter(|value| (1..=9).contains(value)),
             })
         })
         .map_err(map_sql_error)?
@@ -306,8 +313,8 @@ impl LibraryDatabase {
     ) -> Result<(), LibraryError> {
         let mut insert_collection = tx
             .prepare(
-                "INSERT INTO collections (id, name, export_path, sort_order)
-                 VALUES (?1, ?2, ?3, ?4)",
+                "INSERT INTO collections (id, name, export_path, hotkey, sort_order)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
             )
             .map_err(map_sql_error)?;
         for (collection_idx, collection) in collections.iter().enumerate() {
@@ -316,6 +323,7 @@ impl LibraryDatabase {
                     collection.id.as_str(),
                     &collection.name,
                     collection.export_path.as_ref().map(|p| p.to_string_lossy()),
+                    collection.hotkey.map(i64::from),
                     collection_idx as i64
                 ])
                 .map_err(map_sql_error)?;

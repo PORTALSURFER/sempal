@@ -129,6 +129,36 @@ fn cancelling_collection_rename_clears_prompt() {
 }
 
 #[test]
+fn binding_collection_hotkey_clears_previous_binding() {
+    let renderer = WaveformRenderer::new(10, 10);
+    let mut controller = EguiController::new(renderer, None);
+    let first = Collection::new("First");
+    let second = Collection::new("Second");
+    let first_id = first.id.clone();
+    let second_id = second.id.clone();
+    controller.library.collections.push(first);
+    controller.library.collections.push(second);
+
+    controller.bind_collection_hotkey(&first_id, Some(1));
+    controller.bind_collection_hotkey(&second_id, Some(1));
+
+    let first = controller
+        .library
+        .collections
+        .iter()
+        .find(|collection| collection.id == first_id)
+        .unwrap();
+    let second = controller
+        .library
+        .collections
+        .iter()
+        .find(|collection| collection.id == second_id)
+        .unwrap();
+    assert_eq!(first.hotkey, None);
+    assert_eq!(second.hotkey, Some(1));
+}
+
+#[test]
 fn applying_collection_rename_submits_and_clears_prompt() {
     let renderer = WaveformRenderer::new(10, 10);
     let mut controller = EguiController::new(renderer, None);

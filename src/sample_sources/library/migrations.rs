@@ -213,6 +213,32 @@ impl LibraryDatabase {
         )
     }
 
+    pub(super) fn migrate_collection_hotkeys(&mut self) -> Result<(), LibraryError> {
+        let current = self.get_metadata(super::COLLECTION_HOTKEY_VERSION_KEY)?;
+        if current.as_deref() == Some(super::COLLECTION_HOTKEY_VERSION_V1) {
+            return Ok(());
+        }
+        let tx = self.connection.transaction().map_err(map_sql_error)?;
+        let alter_result = tx.execute(
+            "ALTER TABLE collections ADD COLUMN hotkey INTEGER",
+            [],
+        );
+        match alter_result {
+            Ok(_) => {}
+            Err(err) => {
+                let message = err.to_string().to_ascii_lowercase();
+                if !message.contains("duplicate column") {
+                    return Err(map_sql_error(err));
+                }
+            }
+        }
+        tx.commit().map_err(map_sql_error)?;
+        self.set_metadata(
+            super::COLLECTION_HOTKEY_VERSION_KEY,
+            super::COLLECTION_HOTKEY_VERSION_V1,
+        )
+    }
+
     pub(super) fn migrate_collection_export_paths(&mut self) -> Result<(), LibraryError> {
         let current = self.get_metadata(super::COLLECTION_EXPORT_PATHS_VERSION_KEY)?;
         if current.as_deref() == Some(super::COLLECTION_EXPORT_PATHS_VERSION_V2) {

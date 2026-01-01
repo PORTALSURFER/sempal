@@ -2,7 +2,7 @@ use super::drag_targets;
 use super::flat_items_list::{FlatItemsListConfig, render_flat_items_list};
 use super::helpers::{
     NumberColumn, RowBackground, RowMarker, clamp_label_for_width, list_row_height,
-    render_list_row,
+    number_column_width, render_list_row,
 };
 use super::status_badges;
 use super::style;
@@ -32,6 +32,12 @@ impl EguiApp {
             });
             ui.add_space(6.0);
             let rows = self.controller.ui.collections.rows.clone();
+            let show_hotkey_column = rows.iter().any(|row| row.hotkey.is_some());
+            let hotkey_width = if show_hotkey_column {
+                number_column_width(9, ui)
+            } else {
+                0.0
+            };
             let list_height = (ui.available_height() * 0.35).max(140.0);
             let list_response = egui::ScrollArea::vertical()
                 .id_salt("collections_scroll")
@@ -62,13 +68,19 @@ impl EguiApp {
                         ui.push_id(&collection.id, |ui| {
                             let row_width = ui.available_width();
                             let padding = ui.spacing().button_padding.x * 2.0;
+                            let label_width = if show_hotkey_column {
+                                row_width - padding - hotkey_width
+                            } else {
+                                row_width - padding
+                            };
                             let label = if rename_match {
                                 String::new()
                             } else {
-                                clamp_label_for_width(&label, row_width - padding)
+                                clamp_label_for_width(&label, label_width)
                             };
                             let bg =
                                 RowBackground::from_option(selected.then_some(style::row_selected_fill()));
+                            let hotkey_text = collection.hotkey.map(|key| key.to_string()).unwrap_or_default();
                             let response = render_list_row(
                                 ui,
                                 super::helpers::ListRow {
@@ -83,7 +95,11 @@ impl EguiApp {
                                     } else {
                                         egui::Sense::click()
                                     },
-                                    number: None,
+                                    number: show_hotkey_column.then_some(NumberColumn {
+                                        text: hotkey_text.as_str(),
+                                        width: hotkey_width,
+                                        color: palette.text_muted,
+                                    }),
                                     marker: None,
                                 },
                             );

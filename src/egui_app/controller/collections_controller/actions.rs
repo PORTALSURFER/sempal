@@ -18,6 +18,8 @@ pub(crate) trait CollectionsActions {
         source: &SampleSource,
         relative_path: &Path,
     ) -> Result<(), String>;
+    fn bind_collection_hotkey(&mut self, collection_id: &CollectionId, hotkey: Option<u8>);
+    fn apply_collection_hotkey(&mut self, hotkey: u8, focus: FocusContext) -> bool;
     fn nudge_collection_sample(&mut self, offset: isize);
 }
 
@@ -248,6 +250,57 @@ impl CollectionsActions for CollectionsController<'_> {
             return Err("Collections are disabled".into());
         }
         self.add_sample_to_collection_inner(collection_id, source, relative_path)
+    }
+
+    fn bind_collection_hotkey(&mut self, collection_id: &CollectionId, hotkey: Option<u8>) {
+        let slot = match self.normalize_collection_hotkey(hotkey) {
+            Ok(slot) => slot,
+            Err(err) => {
+                self.set_status(err, StatusTone::Error);
+                return;
+            }
+        };
+        let name = match self.apply_collection_hotkey_binding(collection_id, slot) {
+            Ok(name) => name,
+            Err(err) => {
+                self.set_status(err, StatusTone::Error);
+                return;
+            }
+        };
+        if let Some(slot) = slot {
+            self.set_status(
+                format!("Bound hotkey {slot} to '{name}'"),
+                StatusTone::Info,
+            );
+        } else {
+            self.set_status(format!("Cleared hotkey for '{name}'"), StatusTone::Info);
+        }
+    }
+
+    fn apply_collection_hotkey(&mut self, hotkey: u8, focus: FocusContext) -> bool {
+        if !matches!(focus, FocusContext::SampleBrowser) {
+            return false;
+        }
+        let Some(collection_id) = self
+            .library
+            .collections
+            .iter()
+            .find(|collection| collection.hotkey == Some(hotkey))
+            .map(|collection| collection.id.clone())
+        else {
+            return false;
+        };
+        let Some(primary_row) = self.primary_visible_row_for_browser_selection() else {
+            self.set_status("Focus a sample to add it to a collection", StatusTone::Info);
+            return true;
+        };
+        let rows = self.action_rows_from_primary(primary_row);
+        if rows.is_empty() {
+            self.set_status("Select samples to add to a collection", StatusTone::Info);
+            return true;
+        }
+        self.add_browser_rows_to_collection(&collection_id, &rows);
+        true
     }
 
     fn nudge_collection_sample(&mut self, offset: isize) {

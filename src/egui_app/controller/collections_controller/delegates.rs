@@ -131,6 +131,18 @@ impl EguiController {
         )
     }
 
+    /// Bind or clear a number hotkey (1-9) for a collection.
+    pub fn bind_collection_hotkey(&mut self, collection_id: &CollectionId, hotkey: Option<u8>) {
+        self.collections_ctrl()
+            .bind_collection_hotkey(collection_id, hotkey);
+    }
+
+    /// Apply a collection hotkey in the given focus context.
+    pub fn apply_collection_hotkey(&mut self, hotkey: u8, focus: FocusContext) -> bool {
+        self.collections_ctrl()
+            .apply_collection_hotkey(hotkey, focus)
+    }
+
     pub(in crate::egui_app::controller) fn add_clip_to_collection(
         &mut self,
         collection_id: &CollectionId,

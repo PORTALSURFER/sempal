@@ -117,6 +117,7 @@ fn saves_and_loads_sources_and_collections() {
                     clip_root: None,
                 }],
                 export_path: None,
+                hotkey: Some(2),
             }],
         };
         save(&state).unwrap();
@@ -124,6 +125,7 @@ fn saves_and_loads_sources_and_collections() {
         assert_eq!(loaded.sources.len(), 2);
         assert_eq!(loaded.collections.len(), 1);
         assert_eq!(loaded.collections[0].members.len(), 1);
+        assert_eq!(loaded.collections[0].hotkey, Some(2));
     });
 }
 
@@ -152,6 +154,7 @@ fn preserves_collection_and_member_order() {
                         },
                     ],
                     export_path: None,
+                    hotkey: None,
                 },
                 Collection {
                     id: collection_two_id.clone(),
@@ -162,6 +165,7 @@ fn preserves_collection_and_member_order() {
                         clip_root: None,
                     }],
                     export_path: None,
+                    hotkey: None,
                 },
             ],
         };
@@ -355,6 +359,7 @@ fn migrates_legacy_schema_to_latest() {
             &["duration_seconds", "sr_used", "analysis_version"],
         );
         assert_has_columns(&conn, "collection_members", &["clip_root"]);
+        assert_has_columns(&conn, "collections", &["hotkey"]);
 
         let embedding_columns = table_columns(&conn, "embeddings");
         for column in ["vec", "dtype", "l2_normed", "created_at"] {

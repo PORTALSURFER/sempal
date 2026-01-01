@@ -35,6 +35,7 @@ impl LibraryDatabase {
                     id TEXT PRIMARY KEY,
                     name TEXT NOT NULL,
                     export_path TEXT,
+                    hotkey INTEGER,
                     sort_order INTEGER NOT NULL
                 );
                  CREATE TABLE IF NOT EXISTS collection_members (

@@ -41,6 +41,7 @@ pub fn collection_rows(
                 .export_path
                 .clone()
                 .or_else(|| export_root.map(|root| export_path_for(root, collection))),
+            hotkey: collection.hotkey,
             missing: missing_flags.get(index).copied().unwrap_or(false),
         })
         .collect()

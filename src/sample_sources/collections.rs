@@ -60,6 +60,9 @@ pub struct Collection {
     /// Optional folder where collection members are exported.
     #[serde(default)]
     pub export_path: Option<PathBuf>,
+    /// Optional number hotkey (1-9) bound to this collection.
+    #[serde(default)]
+    pub hotkey: Option<u8>,
 }
 
 impl Collection {
@@ -70,6 +73,7 @@ impl Collection {
             name: name.into(),
             members: Vec::new(),
             export_path: None,
+            hotkey: None,
         }
     }
 

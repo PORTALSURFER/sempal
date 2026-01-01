@@ -1,5 +1,6 @@
-use super::super::test_support::{dummy_controller, sample_entry};
+use super::super::test_support::{dummy_controller, sample_entry, write_test_wav};
 use super::super::*;
+use crate::sample_sources::Collection;
 use std::path::PathBuf;
 use std::time::Instant;
 
@@ -21,6 +22,39 @@ fn hotkey_tagging_applies_to_all_selected_rows() {
 
     assert_eq!(controller.wav_entry(0).unwrap().tag, SampleTag::Trash);
     assert_eq!(controller.wav_entry(1).unwrap().tag, SampleTag::Trash);
+}
+
+#[test]
+fn collection_hotkey_moves_selected_samples() {
+    let (mut controller, source) = dummy_controller();
+    controller.library.sources.push(source.clone());
+    controller.cache_db(&source).unwrap();
+    for name in ["one.wav", "two.wav"] {
+        write_test_wav(&source.root.join(name), &[0.0]);
+    }
+    controller.set_wav_entries_for_tests(vec![
+        sample_entry("one.wav", SampleTag::Neutral),
+        sample_entry("two.wav", SampleTag::Neutral),
+    ]);
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+    let mut collection = Collection::new("Hotkey");
+    collection.hotkey = Some(1);
+    let collection_id = collection.id.clone();
+    controller.library.collections.push(collection);
+    controller.focus_browser_row_only(0);
+    controller.toggle_browser_row_selection(1);
+    let handled = controller.apply_collection_hotkey(1, FocusContext::SampleBrowser);
+    assert!(handled);
+    let collection = controller
+        .library
+        .collections
+        .iter()
+        .find(|item| item.id == collection_id)
+        .unwrap();
+    assert_eq!(collection.members.len(), 2);
+    assert!(collection.contains(&source.id, &PathBuf::from("one.wav")));
+    assert!(collection.contains(&source.id, &PathBuf::from("two.wav")));
 }
 
 #[test]

@@ -1,4 +1,5 @@
 use super::*;
+use super::super::browser_controller::helpers::TriageSampleContext;
 use std::fs;
 use std::time::SystemTime;
 
@@ -335,6 +336,162 @@ impl CollectionsController<'_> {
             return Ok(());
         }
         self.finalize_collection_add(collection_id, &new_member, relative_path)
+    }
+
+    pub(super) fn primary_visible_row_for_browser_selection(&mut self) -> Option<usize> {
+        let selected_index = self.selected_row_index()?;
+        let path = self
+            .wav_entry(selected_index)
+            .map(|entry| entry.relative_path.clone())?;
+        self.visible_row_for_path(&path)
+    }
+
+    pub(super) fn add_browser_rows_to_collection(
+        &mut self,
+        collection_id: &CollectionId,
+        rows: &[usize],
+    ) {
+        if !self.settings.feature_flags.collections_enabled {
+            self.set_status("Collections are disabled", StatusTone::Warning);
+            return;
+        }
+        let Some(collection_index) = self
+            .library
+            .collections
+            .iter()
+            .position(|collection| &collection.id == collection_id)
+        else {
+            self.set_status("Collection not found", StatusTone::Error);
+            return;
+        };
+        let collection_name = self.library.collections[collection_index].name.clone();
+        let (contexts, last_error) = self.collect_browser_contexts(rows);
+        let (added, already, new_members, last_error) =
+            self.add_contexts_to_collection(collection_index, contexts, last_error);
+        self.finalize_browser_collection_add(
+            collection_id, &collection_name, added, already, new_members, last_error,
+        );
+    }
+
+    pub(super) fn normalize_collection_hotkey(
+        &self,
+        hotkey: Option<u8>,
+    ) -> Result<Option<u8>, String> {
+        match hotkey {
+            Some(slot) if (1..=9).contains(&slot) => Ok(Some(slot)),
+            Some(_) => Err("Hotkey must be between 1 and 9".into()),
+            None => Ok(None),
+        }
+    }
+
+    pub(super) fn apply_collection_hotkey_binding(
+        &mut self,
+        collection_id: &CollectionId,
+        hotkey: Option<u8>,
+    ) -> Result<String, String> {
+        if let Some(slot) = hotkey {
+            for collection in self.library.collections.iter_mut() {
+                if collection.hotkey == Some(slot) && &collection.id != collection_id {
+                    collection.hotkey = None;
+                }
+            }
+        }
+        let target = self
+            .library
+            .collections
+            .iter_mut()
+            .find(|collection| &collection.id == collection_id)
+            .ok_or_else(|| "Collection not found".to_string())?;
+        target.hotkey = hotkey;
+        let name = target.name.clone();
+        self.persist_config("Failed to save collection hotkey")?;
+        self.refresh_collections_ui();
+        Ok(name)
+    }
+
+    fn collect_browser_contexts(
+        &mut self,
+        rows: &[usize],
+    ) -> (Vec<TriageSampleContext>, Option<String>) {
+        let mut contexts = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        let mut last_error = None;
+        for row in rows {
+            match self.resolve_browser_sample(*row) {
+                Ok(ctx) => {
+                    if seen.insert(ctx.entry.relative_path.clone()) {
+                        contexts.push(ctx);
+                    }
+                }
+                Err(err) => last_error = Some(err),
+            }
+        }
+        (contexts, last_error)
+    }
+
+    fn add_contexts_to_collection(
+        &mut self,
+        collection_index: usize,
+        contexts: Vec<TriageSampleContext>,
+        mut last_error: Option<String>,
+    ) -> (usize, usize, Vec<CollectionMember>, Option<String>) {
+        let mut added = 0;
+        let mut already = 0;
+        let mut new_members = Vec::new();
+        let collection = &mut self.library.collections[collection_index];
+        for ctx in contexts {
+            if let Err(err) = self.ensure_sample_db_entry(&ctx.source, &ctx.entry.relative_path) {
+                last_error = Some(err);
+                continue;
+            }
+            if collection.contains(&ctx.source.id, &ctx.entry.relative_path) {
+                already += 1;
+                continue;
+            }
+            let member = CollectionMember {
+                source_id: ctx.source.id.clone(),
+                relative_path: ctx.entry.relative_path.clone(),
+                clip_root: None,
+            };
+            collection.members.push(member.clone());
+            new_members.push(member);
+            added += 1;
+        }
+        (added, already, new_members, last_error)
+    }
+
+    fn finalize_browser_collection_add(
+        &mut self,
+        collection_id: &CollectionId,
+        collection_name: &str,
+        added: usize,
+        already: usize,
+        new_members: Vec<CollectionMember>,
+        last_error: Option<String>,
+    ) {
+        if added > 0 {
+            if let Err(err) = self.persist_config("Failed to save collection") {
+                self.set_status(err, StatusTone::Error);
+                return;
+            }
+            self.refresh_collections_ui();
+            for member in &new_members {
+                if let Err(err) = self.export_member_if_needed(collection_id, member) {
+                    self.set_status(err, StatusTone::Warning);
+                }
+            }
+        }
+        if added > 0 {
+            let mut message = format!("Added {added} sample(s) to '{collection_name}'");
+            if already > 0 {
+                message.push_str(&format!(" ({already} already there)"));
+            }
+            self.set_status(message, StatusTone::Info);
+        } else if already > 0 {
+            self.set_status("Samples already in collection", StatusTone::Info);
+        } else if let Some(err) = last_error {
+            self.set_status(err, StatusTone::Error);
+        }
     }
 
     fn finalize_collection_add(

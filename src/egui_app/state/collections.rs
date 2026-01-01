@@ -51,6 +51,8 @@ pub struct CollectionRowView {
     pub selected: bool,
     pub count: usize,
     pub export_path: Option<PathBuf>,
+    /// Optional number hotkey (1-9) bound to this collection.
+    pub hotkey: Option<u8>,
     pub missing: bool,
 }
 
