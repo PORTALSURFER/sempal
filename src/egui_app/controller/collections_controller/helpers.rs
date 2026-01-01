@@ -395,7 +395,10 @@ impl CollectionsController<'_> {
         rows
     }
 
-    pub(super) fn next_browser_focus_path_after_move(&self, rows: &[usize]) -> Option<PathBuf> {
+    pub(super) fn next_browser_focus_path_after_move(
+        &mut self,
+        rows: &[usize],
+    ) -> Option<PathBuf> {
         if rows.is_empty() || self.ui.browser.visible.len() == 0 {
             return None;
         }
@@ -741,13 +744,25 @@ fn unique_destination_name(root: &Path, path: &Path) -> Result<PathBuf, String> 
 fn move_sample_file(source: &Path, destination: &Path) -> Result<(), String> {
     match fs::rename(source, destination) {
         Ok(()) => Ok(()),
-        Err(err) if err.kind() == ErrorKind::CrossDeviceLink => {
+        Err(err) if is_cross_device_link(&err) => {
             fs::copy(source, destination)
                 .map_err(|err| format!("Failed to move file: {err}"))?;
             fs::remove_file(source).map_err(|err| format!("Failed to remove file: {err}"))?;
             Ok(())
         }
         Err(err) => Err(format!("Failed to move file: {err}")),
+    }
+}
+
+fn is_cross_device_link(err: &std::io::Error) -> bool {
+    #[cfg(unix)]
+    {
+        err.kind() == ErrorKind::CrossDeviceLink
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = err;
+        false
     }
 }
 
