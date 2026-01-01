@@ -128,6 +128,9 @@ impl EguiApp {
                                 if ui.add(crate::egui_app::ui::chrome::buttons::action_button("Report issue")).clicked() {
                                     self.controller.open_feedback_issue_prompt();
                                 }
+                                if ui.add(crate::egui_app::ui::chrome::buttons::action_button("Donate")).clicked() {
+                                    let _ = open::that("https://www.buymeacoffee.com/portalsurfer");
+                                }
                             }
                         },
                     );
