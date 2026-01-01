@@ -159,6 +159,13 @@ fn report(progress: &mut impl FnMut(UpdateProgress), message: impl Into<String>)
 }
 
 fn validate_root_dir(unpack_dir: &Path, expected: &str) -> Result<PathBuf, UpdateError> {
+    let expected_root = unpack_dir.join(expected);
+    if expected_root.is_dir() {
+        return Ok(expected_root);
+    }
+    if unpack_dir.join("update-manifest.json").is_file() {
+        return Ok(unpack_dir.to_path_buf());
+    }
     let entries = fs_ops::list_root_entries(unpack_dir)?;
     let mut dirs = entries
         .into_iter()
