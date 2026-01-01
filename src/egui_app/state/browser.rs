@@ -92,10 +92,16 @@ impl SimilarQuery {
     pub fn display_strength_for_index(&self, entry_index: usize) -> Option<f32> {
         let position = self.indices.iter().position(|idx| *idx == entry_index)?;
         let score = *self.scores.get(position)?;
+        if score < -1.0 {
+            return Some(0.0);
+        }
         let mut min_score = f32::INFINITY;
         let mut max_score = f32::NEG_INFINITY;
         for &value in &self.scores {
             if !value.is_finite() {
+                continue;
+            }
+            if value < -1.0 {
                 continue;
             }
             min_score = min_score.min(value);
