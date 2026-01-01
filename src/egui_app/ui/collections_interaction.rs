@@ -172,7 +172,7 @@ impl EguiApp {
             }
             ui.separator();
             if ui
-                .button(RichText::new("Delete collection").color(style::destructive_text()))
+                .button(RichText::new("Detach collection").color(style::destructive_text()))
                 .clicked()
             {
                 let _ = self.controller.delete_collection(&collection.id);
