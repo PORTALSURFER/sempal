@@ -31,6 +31,8 @@ pub struct SampleBrowserState {
     pub random_navigation_mode: bool,
     /// Sorting mode for the sample browser list.
     pub sort: SampleBrowserSort,
+    /// True when similarity sorting should follow the loaded sample.
+    pub similarity_sort_follow_loaded: bool,
     /// Optional similar-sounds filter scoped to the current source.
     pub similar_query: Option<SimilarQuery>,
     /// Pending inline action for the sample browser rows.
@@ -61,6 +63,7 @@ impl Default for SampleBrowserState {
             search_focus_requested: false,
             random_navigation_mode: false,
             sort: SampleBrowserSort::ListOrder,
+            similarity_sort_follow_loaded: false,
             similar_query: None,
             pending_action: None,
             rename_focus_requested: false,

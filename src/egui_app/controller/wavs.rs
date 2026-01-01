@@ -195,6 +195,23 @@ impl EguiController {
         similar::find_similar_for_visible_row(self, row)
     }
 
+    pub(super) fn refresh_similarity_sort_for_loaded_sample(&mut self) {
+        if let Err(err) = similar::refresh_similarity_sort_for_loaded(self) {
+            similar::disable_similarity_sort(self);
+            self.set_status(err, StatusTone::Warning);
+        }
+    }
+
+    /// Sort the browser by similarity to the loaded sample.
+    pub fn enable_loaded_similarity_sort(&mut self) -> Result<(), String> {
+        similar::enable_loaded_similarity_sort(self)
+    }
+
+    /// Disable similarity-based sorting and restore list order.
+    pub fn disable_similarity_sort(&mut self) {
+        similar::disable_similarity_sort(self);
+    }
+
     /// Filter the browser to show near-duplicate samples for the chosen visible row.
     pub fn find_duplicates_for_visible_row(&mut self, row: usize) -> Result<(), String> {
         similar::find_duplicates_for_visible_row(self, row)

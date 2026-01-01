@@ -2,6 +2,7 @@ use super::*;
 use crate::egui_app::state::SampleBrowserSort;
 use crate::egui_app::view_model;
 use rusqlite::{OptionalExtension, params};
+use std::collections::HashMap;
 
 const DEFAULT_SIMILAR_COUNT: usize = 40;
 const SIMILAR_RE_RANK_CANDIDATES: usize = 200;
@@ -10,6 +11,7 @@ const DSP_WEIGHT: f32 = 0.2;
 const DUPLICATE_SCORE_THRESHOLD: f32 = 0.995;
 const DUPLICATE_RMS_MIN: f32 = 1.0e-4;
 const FEATURE_RMS_INDEX: usize = 2;
+const MISSING_SIMILARITY_SCORE: f32 = -2.0;
 
 pub(super) fn find_similar_for_visible_row(
     controller: &mut EguiController,
@@ -43,6 +45,7 @@ pub(super) fn find_similar_for_visible_row(
     )?;
     controller.ui.browser.similar_query = Some(query);
     controller.ui.browser.sort = SampleBrowserSort::Similarity;
+    controller.ui.browser.similarity_sort_follow_loaded = false;
     controller.ui.browser.search_query.clear();
     controller.ui.browser.search_focus_requested = false;
     controller.rebuild_browser_lists();
@@ -81,6 +84,7 @@ pub(super) fn find_duplicates_for_visible_row(
     )?;
     controller.ui.browser.similar_query = Some(query);
     controller.ui.browser.sort = SampleBrowserSort::Similarity;
+    controller.ui.browser.similarity_sort_follow_loaded = false;
     controller.ui.browser.search_query.clear();
     controller.ui.browser.search_focus_requested = false;
     controller.rebuild_browser_lists();
@@ -101,6 +105,7 @@ pub(super) fn find_similar_for_sample_id(
     )?;
     controller.ui.browser.similar_query = Some(query);
     controller.ui.browser.sort = SampleBrowserSort::Similarity;
+    controller.ui.browser.similarity_sort_follow_loaded = false;
     controller.ui.browser.search_query.clear();
     controller.ui.browser.search_focus_requested = false;
     controller.rebuild_browser_lists();
@@ -110,6 +115,7 @@ pub(super) fn find_similar_for_sample_id(
 pub(super) fn clear_similar_filter(controller: &mut EguiController) {
     if controller.ui.browser.similar_query.take().is_some() {
         controller.ui.browser.sort = SampleBrowserSort::ListOrder;
+        controller.ui.browser.similarity_sort_follow_loaded = false;
         controller.rebuild_browser_lists();
     }
 }
@@ -188,10 +194,125 @@ pub(super) fn find_similar_for_audio_path(
         anchor_index: None,
     });
     controller.ui.browser.sort = SampleBrowserSort::Similarity;
+    controller.ui.browser.similarity_sort_follow_loaded = false;
     controller.ui.browser.search_query.clear();
     controller.ui.browser.search_focus_requested = false;
     controller.rebuild_browser_lists();
     Ok(())
+}
+
+pub(super) fn enable_loaded_similarity_sort(controller: &mut EguiController) -> Result<(), String> {
+    let query = build_similarity_query_for_loaded_sample(controller)?;
+    controller.ui.browser.similar_query = Some(query);
+    controller.ui.browser.sort = SampleBrowserSort::Similarity;
+    controller.ui.browser.similarity_sort_follow_loaded = true;
+    controller.ui.browser.search_query.clear();
+    controller.ui.browser.search_focus_requested = false;
+    controller.rebuild_browser_lists();
+    Ok(())
+}
+
+pub(super) fn disable_similarity_sort(controller: &mut EguiController) {
+    controller.ui.browser.sort = SampleBrowserSort::ListOrder;
+    controller.ui.browser.similarity_sort_follow_loaded = false;
+    controller.ui.browser.similar_query = None;
+    controller.rebuild_browser_lists();
+}
+
+pub(super) fn refresh_similarity_sort_for_loaded(
+    controller: &mut EguiController,
+) -> Result<(), String> {
+    if !controller.ui.browser.similarity_sort_follow_loaded {
+        return Ok(());
+    }
+    if controller.ui.browser.sort != SampleBrowserSort::Similarity {
+        return Ok(());
+    }
+    let query = build_similarity_query_for_loaded_sample(controller)?;
+    controller.ui.browser.similar_query = Some(query);
+    controller.rebuild_browser_lists();
+    Ok(())
+}
+
+fn build_similarity_query_for_loaded_sample(
+    controller: &mut EguiController,
+) -> Result<crate::egui_app::state::SimilarQuery, String> {
+    let loaded_audio = controller
+        .sample_view
+        .wav
+        .loaded_audio
+        .as_ref()
+        .ok_or_else(|| "Load a sample to sort by similarity".to_string())?;
+    let source_id = loaded_audio.source_id.clone();
+    if controller.selection_state.ctx.selected_source.as_ref() != Some(&source_id) {
+        return Err("Select the loaded sample's source to sort by similarity".to_string());
+    }
+    let loaded_path = loaded_audio.relative_path.clone();
+    let sample_id =
+        super::super::analysis_jobs::build_sample_id(source_id.as_str(), &loaded_path);
+    let conn = open_source_db_for_id(controller, &source_id)?;
+    let query_embedding = load_embedding_for_sample(&conn, &sample_id)?
+        .ok_or_else(|| "Similarity data missing for the loaded sample".to_string())?;
+    let total = controller.wav_entries_len();
+    let mut indices = Vec::with_capacity(total);
+    let mut scores = Vec::with_capacity(total);
+    let mut has_embedding = vec![false; total];
+    let mut path_lookup = HashMap::new();
+    controller.for_each_wav_entry(|index, entry| {
+        path_lookup.insert(entry.relative_path.clone(), index);
+    })?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT sample_id, vec
+             FROM embeddings
+             WHERE model_id = ?1",
+        )
+        .map_err(|err| format!("Load similarity embeddings failed: {err}"))?;
+    let mut rows = stmt
+        .query(params![crate::analysis::embedding::EMBEDDING_MODEL_ID])
+        .map_err(|err| format!("Load similarity embeddings failed: {err}"))?;
+    while let Some(row) = rows.next().map_err(|err| format!("Load embeddings failed: {err}"))? {
+        let candidate_id: String = row
+            .get(0)
+            .map_err(|err| format!("Load embeddings failed: {err}"))?;
+        let blob: Vec<u8> = row
+            .get(1)
+            .map_err(|err| format!("Load embeddings failed: {err}"))?;
+        let (candidate_source, relative_path) =
+            super::super::analysis_jobs::parse_sample_id(&candidate_id)?;
+        if candidate_source.as_str() != source_id.as_str() {
+            continue;
+        }
+        let Some(index) = path_lookup.get(&relative_path).copied() else {
+            continue;
+        };
+        let candidate =
+            crate::analysis::decode_f32_le_blob(&blob).map_err(|err| err.to_string())?;
+        let score = cosine_similarity(&query_embedding, &candidate).clamp(-1.0, 1.0);
+        indices.push(index);
+        scores.push(score);
+        if index < has_embedding.len() {
+            has_embedding[index] = true;
+        }
+    }
+    for (index, has) in has_embedding.iter().enumerate() {
+        if !*has {
+            indices.push(index);
+            scores.push(MISSING_SIMILARITY_SCORE);
+        }
+    }
+    if indices.is_empty() {
+        return Err("No similarity data available for the current source".to_string());
+    }
+    let label = view_model::sample_display_label(&loaded_path);
+    let anchor_index = controller.wav_index_for_path(&loaded_path);
+    Ok(crate::egui_app::state::SimilarQuery {
+        sample_id,
+        label: format!("Loaded: {label}"),
+        indices,
+        scores,
+        anchor_index,
+    })
 }
 
 fn rerank_with_dsp(

@@ -70,9 +70,21 @@ impl EguiController {
                     visible.sort_unstable();
                 }
                 SampleBrowserSort::Similarity => {
+                    let mut score_lookup = vec![None; self.wav_entries_len()];
+                    for (&index, &score) in similar.indices.iter().zip(similar.scores.iter()) {
+                        if index < score_lookup.len() {
+                            score_lookup[index] = Some(score);
+                        }
+                    }
                     visible.sort_by(|a, b| {
-                        let a_score = similar.score_for_index(*a).unwrap_or(f32::NEG_INFINITY);
-                        let b_score = similar.score_for_index(*b).unwrap_or(f32::NEG_INFINITY);
+                        let a_score = score_lookup
+                            .get(*a)
+                            .and_then(|score| *score)
+                            .unwrap_or(f32::NEG_INFINITY);
+                        let b_score = score_lookup
+                            .get(*b)
+                            .and_then(|score| *score)
+                            .unwrap_or(f32::NEG_INFINITY);
                         b_score
                             .partial_cmp(&a_score)
                             .unwrap_or(Ordering::Equal)
@@ -272,6 +284,9 @@ pub(super) fn set_browser_filter(controller: &mut EguiController, filter: Triage
 pub(super) fn set_browser_sort(controller: &mut EguiController, sort: SampleBrowserSort) {
     if controller.ui.browser.sort != sort {
         controller.ui.browser.sort = sort;
+        if sort == SampleBrowserSort::ListOrder {
+            controller.ui.browser.similarity_sort_follow_loaded = false;
+        }
         controller.rebuild_browser_lists();
     }
 }
@@ -289,5 +304,6 @@ pub(super) fn set_browser_search(controller: &mut EguiController, query: impl In
     controller.ui.browser.search_query = query;
     controller.ui.browser.similar_query = None;
     controller.ui.browser.sort = SampleBrowserSort::ListOrder;
+    controller.ui.browser.similarity_sort_follow_loaded = false;
     controller.rebuild_browser_lists();
 }

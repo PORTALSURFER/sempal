@@ -37,6 +37,9 @@ impl EguiController {
         let message =
             Self::loaded_status_text(&pending.relative_path, duration_seconds, sample_rate);
         self.set_status(message, StatusTone::Info);
+        if matches!(pending.intent, AudioLoadIntent::Selection) {
+            self.refresh_similarity_sort_for_loaded_sample();
+        }
         self.maybe_trigger_pending_playback();
     }
 
@@ -157,6 +160,9 @@ impl EguiController {
         self.finish_waveform_load(source, relative_path, hit.decoded, hit.bytes, intent)?;
         let message = Self::loaded_status_text(relative_path, duration_seconds, sample_rate);
         self.set_status(message, StatusTone::Info);
+        if matches!(intent, AudioLoadIntent::Selection) {
+            self.refresh_similarity_sort_for_loaded_sample();
+        }
         Ok(true)
     }
 }

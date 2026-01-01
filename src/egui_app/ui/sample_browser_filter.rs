@@ -1,6 +1,6 @@
 use super::style;
 use super::*;
-use crate::egui_app::state::{SampleBrowserSort, TriageFlagFilter};
+use crate::egui_app::state::TriageFlagFilter;
 use eframe::egui::{self, RichText, Ui};
 
 impl EguiApp {
@@ -66,25 +66,24 @@ impl EguiApp {
                 ui.add_space(ui.spacing().item_spacing.x);
             }
             ui.add_space(ui.spacing().item_spacing.x);
-            ui.label(RichText::new("Sort").color(palette.text_primary));
-            let sort_mode = self.controller.ui.browser.sort;
-            if ui
-                .selectable_label(sort_mode == SampleBrowserSort::ListOrder, "List")
-                .clicked()
-            {
-                self.controller.set_browser_sort(SampleBrowserSort::ListOrder);
-            }
-            let similarity_available = self.controller.ui.browser.similar_query.is_some();
-            let similarity_button = egui::SelectableLabel::new(
-                sort_mode == SampleBrowserSort::Similarity,
-                "Similarity",
+            let loaded_available = self.controller.ui.loaded_wav.is_some();
+            let mut similarity_sort = self.controller.ui.browser.similarity_sort_follow_loaded;
+            let similarity_response = ui.add_enabled(
+                loaded_available,
+                egui::Checkbox::new(&mut similarity_sort, "Similarity sort"),
             );
-            let similarity_response = ui.add_enabled(similarity_available, similarity_button);
-            if similarity_response.clicked() {
-                self.controller.set_browser_sort(SampleBrowserSort::Similarity);
+            if !loaded_available {
+                similarity_response.on_disabled_hover_text("Load a sample to enable similarity sort");
             }
-            if !similarity_available {
-                similarity_response.on_disabled_hover_text("Find similar to enable");
+            if similarity_response.changed() {
+                if similarity_sort {
+                    if let Err(err) = self.controller.enable_loaded_similarity_sort() {
+                        self.controller
+                            .set_status(err, style::StatusTone::Error);
+                    }
+                } else {
+                    self.controller.disable_similarity_sort();
+                }
             }
             ui.add_space(ui.spacing().item_spacing.x);
             let random_mode_enabled = self.controller.random_navigation_mode_enabled();
