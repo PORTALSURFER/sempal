@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 
 mod audio_loading;
 mod browser_actions;
+mod browser_history;
 mod browser_lists;
 mod browser_search;
 mod feature_cache;

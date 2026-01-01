@@ -39,6 +39,20 @@ pub(super) const HOTKEY_ACTIONS: &[HotkeyAction] = &[
         command: HotkeyCommand::ToggleFocusedSelection,
     },
     HotkeyAction {
+        id: "focus-history-previous",
+        label: "Previous focused sample",
+        gesture: HotkeyGesture::new(Key::ArrowLeft),
+        scope: HotkeyScope::Focus(FocusContext::SampleBrowser),
+        command: HotkeyCommand::FocusHistoryPrevious,
+    },
+    HotkeyAction {
+        id: "focus-history-next",
+        label: "Next focused sample",
+        gesture: HotkeyGesture::new(Key::ArrowRight),
+        scope: HotkeyScope::Focus(FocusContext::SampleBrowser),
+        command: HotkeyCommand::FocusHistoryNext,
+    },
+    HotkeyAction {
         id: "toggle-folder-select",
         label: "Toggle folder selection",
         gesture: HotkeyGesture::new(Key::X),

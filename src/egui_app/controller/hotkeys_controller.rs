@@ -47,6 +47,16 @@ impl HotkeysActions for HotkeysController<'_> {
                     self.toggle_focused_selection();
                 }
             }
+            HotkeyCommand::FocusHistoryPrevious => {
+                if matches!(focus, FocusContext::SampleBrowser) {
+                    self.focus_previous_sample_history();
+                }
+            }
+            HotkeyCommand::FocusHistoryNext => {
+                if matches!(focus, FocusContext::SampleBrowser) {
+                    self.focus_next_sample_history();
+                }
+            }
             HotkeyCommand::ToggleFolderSelection => {
                 if matches!(focus, FocusContext::SourceFolders) {
                     self.toggle_focused_folder_selection();

@@ -39,6 +39,9 @@ pub(super) fn select_wav_by_path_with_rebuild(
     }
     controller.sample_view.wav.selected_wav = Some(path.to_path_buf());
     controller.ui.browser.last_focused_path = Some(path.to_path_buf());
+    if path_changed {
+        controller.record_focus_history(path);
+    }
     let missing = controller
         .wav_entries
         .entry(index)

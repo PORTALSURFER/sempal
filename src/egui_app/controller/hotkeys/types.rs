@@ -128,6 +128,8 @@ pub(crate) enum HotkeyCommand {
     PlayRandomSample,
     PlayPreviousRandomSample,
     ToggleRandomNavigationMode,
+    FocusHistoryPrevious,
+    FocusHistoryNext,
     MoveTrashedToFolder,
     TagKeepSelected,
     TagNeutralSelected,

@@ -8,7 +8,7 @@ pub(super) use super::state::cache::{
     ControllerUiCacheState, LibraryCacheState, WavEntriesState,
 };
 pub(super) use super::state::history::{
-    ControllerHistoryState, RandomHistoryEntry,
+    ControllerHistoryState, FocusHistoryEntry, RandomHistoryEntry,
 };
 pub(super) use super::state::library::{LibraryState, MissingState, RowFlags};
 pub(super) use super::state::runtime::{

@@ -90,6 +90,7 @@ pub(crate) const MIN_SELECTION_WIDTH: f32 = 0.001;
 const AUDIO_CACHE_CAPACITY: usize = 12;
 const AUDIO_HISTORY_LIMIT: usize = 8;
 const RANDOM_HISTORY_LIMIT: usize = 20;
+const FOCUS_HISTORY_LIMIT: usize = 100;
 const UNDO_LIMIT: usize = 20;
 const STATUS_LOG_LIMIT: usize = 200;
 
