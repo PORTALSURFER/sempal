@@ -291,16 +291,16 @@ impl CollectionsActions for CollectionsController<'_> {
         else {
             return false;
         };
-        let Some(primary_row) = self.primary_visible_row_for_browser_selection() else {
-            self.set_status("Focus a sample to add it to a collection", StatusTone::Info);
-            return true;
-        };
-        let rows = self.action_rows_from_primary(primary_row);
+        let rows = self.browser_selection_rows_for_move();
         if rows.is_empty() {
             self.set_status("Select samples to add to a collection", StatusTone::Info);
             return true;
         }
         self.add_browser_rows_to_collection(&collection_id, &rows);
+        self.clear_browser_selection();
+        if let Some(next_row) = self.next_browser_row_after_move(&rows) {
+            self.focus_browser_row_only(next_row);
+        }
         true
     }
 

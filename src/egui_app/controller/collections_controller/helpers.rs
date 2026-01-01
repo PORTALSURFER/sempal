@@ -372,6 +372,38 @@ impl CollectionsController<'_> {
         );
     }
 
+    pub(super) fn browser_selection_rows_for_move(&mut self) -> Vec<usize> {
+        let mut rows: Vec<usize> = self
+            .ui
+            .browser
+            .selected_paths
+            .clone()
+            .iter()
+            .filter_map(|path| self.visible_row_for_path(path))
+            .collect();
+        if rows.is_empty() {
+            if let Some(row) = self
+                .focused_browser_row()
+                .or_else(|| self.primary_visible_row_for_browser_selection())
+            {
+                rows.push(row);
+            }
+        }
+        rows.sort_unstable();
+        rows.dedup();
+        rows
+    }
+
+    pub(super) fn next_browser_row_after_move(&self, rows: &[usize]) -> Option<usize> {
+        let visible_len = self.ui.browser.visible.len();
+        let max_row = rows.iter().copied().max()?;
+        if visible_len == 0 {
+            return None;
+        }
+        let next = max_row + 1;
+        Some(next.min(visible_len.saturating_sub(1)))
+    }
+
     pub(super) fn normalize_collection_hotkey(
         &self,
         hotkey: Option<u8>,
