@@ -16,6 +16,7 @@ pub(crate) trait WaveformActions {
     fn create_selection_from_playhead(&mut self, to_left: bool, resume_playback: bool, fine: bool);
     fn nudge_selection_edge(&mut self, edge: SelectionEdge, outward: bool, fine: bool);
     fn nudge_selection_range(&mut self, steps: isize, fine: bool);
+    fn slide_selection_range(&mut self, steps: isize);
     fn scroll_waveform_view(&mut self, center: f32);
 }
 
@@ -162,6 +163,38 @@ impl WaveformActions for WaveformController<'_> {
         };
         let before = Some(selection);
         let delta = step * steps as f32;
+        let range = selection.shift(delta);
+        self.selection_state.range.set_range(Some(range));
+        self.apply_selection(Some(range));
+        self.ensure_selection_visible_in_view(range);
+        self.refresh_loop_after_selection_change(range);
+        self.push_selection_undo("Selection", before, Some(range));
+    }
+
+    fn slide_selection_range(&mut self, steps: isize) {
+        if !self.waveform_ready() {
+            return;
+        }
+        let Some(selection) = self
+            .selection_state
+            .range
+            .range()
+            .or(self.ui.waveform.selection)
+        else {
+            self.set_status("Create a selection first", StatusTone::Info);
+            return;
+        };
+        let before = Some(selection);
+        let width = selection.width();
+        let mut delta = width * steps as f32;
+        if let Some(step) = self.bpm_snap_step().filter(|step| step.is_finite() && *step > 0.0) {
+            let snapped = (delta / step).round() * step;
+            if snapped != 0.0 {
+                delta = snapped;
+            } else if steps != 0 {
+                delta = step * steps.signum() as f32;
+            }
+        }
         let range = selection.shift(delta);
         self.selection_state.range.set_range(Some(range));
         self.apply_selection(Some(range));

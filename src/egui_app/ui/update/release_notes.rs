@@ -1,4 +1,3 @@
-use crate::selection::SelectionEdge;
 use eframe::egui;
 
 use super::super::EguiApp;
@@ -94,7 +93,7 @@ impl EguiApp {
         }
         let mut handled = false;
         if focus.waveform {
-            self.handle_waveform_arrow(input, ctrl_or_command, true);
+            self.handle_waveform_arrow(input, true);
             handled = true;
         } else if focus.folder {
             self.controller.expand_focused_folder();
@@ -121,7 +120,7 @@ impl EguiApp {
         }
         let mut handled = false;
         if focus.waveform {
-            self.handle_waveform_arrow(input, ctrl_or_command, false);
+            self.handle_waveform_arrow(input, false);
             handled = true;
         } else if focus.folder {
             self.controller.collapse_focused_folder();
@@ -135,88 +134,19 @@ impl EguiApp {
         }
     }
 
-    fn handle_waveform_arrow(
-        &mut self,
-        input: &InputSnapshot,
-        ctrl_or_command: bool,
-        move_right: bool,
-    ) {
+    fn handle_waveform_arrow(&mut self, input: &InputSnapshot, move_right: bool) {
         let was_playing = self.controller.is_playing();
-        let has_selection = self.controller.ui.waveform.selection.is_some();
         if input.alt {
             let step = if move_right { 1 } else { -1 };
             self.controller.nudge_selection_range(step, input.shift);
             return;
         }
         if input.shift {
-            self.adjust_waveform_selection(
-                input,
-                ctrl_or_command,
-                move_right,
-                was_playing,
-                has_selection,
-            );
+            let step = if move_right { 1 } else { -1 };
+            self.controller.slide_selection_range(step);
             return;
         }
         self.move_waveform_playhead(input, move_right, was_playing);
-    }
-
-    fn adjust_waveform_selection(
-        &mut self,
-        input: &InputSnapshot,
-        ctrl_or_command: bool,
-        move_right: bool,
-        was_playing: bool,
-        has_selection: bool,
-    ) {
-        if ctrl_or_command {
-            self.handle_waveform_chord_selection(input, move_right, was_playing, has_selection);
-            return;
-        }
-        self.handle_waveform_shift_selection(input, move_right, was_playing, has_selection);
-    }
-
-    fn handle_waveform_chord_selection(
-        &mut self,
-        input: &InputSnapshot,
-        move_right: bool,
-        was_playing: bool,
-        has_selection: bool,
-    ) {
-        let start_direction_is_left = !move_right;
-        if has_selection {
-            self.controller.nudge_selection_edge(
-                SelectionEdge::Start,
-                start_direction_is_left,
-                input.alt,
-            );
-        } else {
-            self.controller.create_selection_from_playhead(
-                start_direction_is_left,
-                was_playing,
-                input.alt,
-            );
-        }
-    }
-
-    fn handle_waveform_shift_selection(
-        &mut self,
-        input: &InputSnapshot,
-        move_right: bool,
-        was_playing: bool,
-        has_selection: bool,
-    ) {
-        let start_direction_is_left = !move_right;
-        if has_selection {
-            self.controller
-                .nudge_selection_edge(SelectionEdge::End, move_right, input.alt);
-            return;
-        }
-        self.controller.create_selection_from_playhead(
-            start_direction_is_left,
-            was_playing,
-            input.alt,
-        );
     }
 
     fn move_waveform_playhead(
