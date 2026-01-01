@@ -151,6 +151,7 @@ impl AudioPlayer {
             playback_gain: 1.0,
             anti_clip_enabled: true,
             anti_clip_fade: DEFAULT_ANTI_CLIP_FADE,
+            min_span_seconds: None,
             output: outcome.resolved,
             elapsed_override: None,
         })
