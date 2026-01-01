@@ -81,6 +81,7 @@ pub(super) fn finish_selection_drag(controller: &mut EguiController) {
         .selection_state
         .range
         .range()
+        .or(controller.ui.waveform.selection)
         .filter(|range| range.width() >= super::selection_min_width(controller))
     else {
         return;
@@ -134,6 +135,7 @@ pub(super) fn toggle_loop(controller: &mut EguiController) {
                         .selection_state
                         .range
                         .range()
+                        .or(controller.ui.waveform.selection)
                         .filter(|range| range.width() >= super::selection_min_width(controller))
                         .is_some();
                     let start_override = if has_selection {
