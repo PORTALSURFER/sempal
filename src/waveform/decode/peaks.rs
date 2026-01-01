@@ -32,11 +32,13 @@ pub(super) fn build_peaks_from_float(
         .map(|s| s.map_err(|source| WaveformDecodeError::Sample { source }));
     for frame in 0..total_frames {
         let bucket = frame / bucket_size_frames;
-        let mut frame_sum = 0.0_f32;
+        let mut frame_min = 1.0_f32;
+        let mut frame_max = -1.0_f32;
         for ch in 0..channels {
             let sample = iter.next().transpose()?.unwrap_or(0.0);
             let sample = clamp_sample(sample);
-            frame_sum += sample;
+            frame_min = frame_min.min(sample);
+            frame_max = frame_max.max(sample);
             if ch == 0 {
                 if let Some(left_peaks) = left.as_mut() {
                     let (min, max) = &mut left_peaks[bucket];
@@ -51,10 +53,9 @@ pub(super) fn build_peaks_from_float(
                 }
             }
         }
-        let frame_avg = frame_sum / channels as f32;
         let (min, max) = &mut mono[bucket];
-        *min = (*min).min(frame_avg);
-        *max = (*max).max(frame_avg);
+        *min = (*min).min(frame_min);
+        *max = (*max).max(frame_max);
     }
 
     Ok(WaveformPeaks {
@@ -94,11 +95,13 @@ pub(super) fn build_peaks_from_int(
         .map(|s| s.map_err(|source| WaveformDecodeError::Sample { source }));
     for frame in 0..total_frames {
         let bucket = frame / bucket_size_frames;
-        let mut frame_sum = 0.0_f32;
+        let mut frame_min = 1.0_f32;
+        let mut frame_max = -1.0_f32;
         for ch in 0..channels {
             let sample = iter.next().transpose()?.unwrap_or(0) as f32 / scale;
             let sample = clamp_sample(sample);
-            frame_sum += sample;
+            frame_min = frame_min.min(sample);
+            frame_max = frame_max.max(sample);
             if ch == 0 {
                 if let Some(left_peaks) = left.as_mut() {
                     let (min, max) = &mut left_peaks[bucket];
@@ -113,10 +116,9 @@ pub(super) fn build_peaks_from_int(
                 }
             }
         }
-        let frame_avg = frame_sum / channels as f32;
         let (min, max) = &mut mono[bucket];
-        *min = (*min).min(frame_avg);
-        *max = (*max).max(frame_avg);
+        *min = (*min).min(frame_min);
+        *max = (*max).max(frame_max);
     }
 
     Ok(WaveformPeaks {
