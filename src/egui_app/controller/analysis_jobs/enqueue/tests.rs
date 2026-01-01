@@ -160,7 +160,7 @@ fn missing_features_only_enqueues_unanalyzed_samples() {
         &conn,
         &b,
         "hb",
-        Some(crate::analysis::version::analysis_version().as_str()),
+        Some(crate::analysis::version::analysis_version()),
     );
     insert_sample_row(&conn, &c, "hc", None);
     insert_features_row(&conn, &b);
@@ -194,7 +194,7 @@ fn backfill_full_enqueues_even_when_up_to_date() {
     let version = crate::analysis::version::analysis_version();
     for (rel, hash) in [("Pack/a.wav", "ha"), ("Pack/b.wav", "hb")] {
         let sample_id = sample_id(&env.source, rel);
-        insert_sample_row(&conn, &sample_id, hash, Some(version.as_str()));
+        insert_sample_row(&conn, &sample_id, hash, Some(version));
         insert_features_row(&conn, &sample_id);
         insert_embeddings_row(
             &conn,
