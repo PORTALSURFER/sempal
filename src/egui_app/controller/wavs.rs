@@ -175,6 +175,11 @@ impl EguiController {
         browser_search::set_browser_filter(self, filter);
     }
 
+    /// Apply a new sample browser sort mode and refresh visible rows.
+    pub fn set_browser_sort(&mut self, sort: SampleBrowserSort) {
+        browser_search::set_browser_sort(self, sort);
+    }
+
     /// Request focus for the browser search input while keeping the browser context active.
     pub(crate) fn focus_browser_search(&mut self) {
         browser_search::focus_browser_search(self);

@@ -1,4 +1,5 @@
 use super::*;
+use crate::egui_app::state::SampleBrowserSort;
 use crate::egui_app::view_model;
 use rusqlite::{OptionalExtension, params};
 
@@ -41,6 +42,7 @@ pub(super) fn find_similar_for_visible_row(
         "No similar samples found in the current source",
     )?;
     controller.ui.browser.similar_query = Some(query);
+    controller.ui.browser.sort = SampleBrowserSort::Similarity;
     controller.ui.browser.search_query.clear();
     controller.ui.browser.search_focus_requested = false;
     controller.rebuild_browser_lists();
@@ -78,6 +80,7 @@ pub(super) fn find_duplicates_for_visible_row(
         "No duplicates found in the current source",
     )?;
     controller.ui.browser.similar_query = Some(query);
+    controller.ui.browser.sort = SampleBrowserSort::Similarity;
     controller.ui.browser.search_query.clear();
     controller.ui.browser.search_focus_requested = false;
     controller.rebuild_browser_lists();
@@ -97,6 +100,7 @@ pub(super) fn find_similar_for_sample_id(
         "No similar samples found in the current source",
     )?;
     controller.ui.browser.similar_query = Some(query);
+    controller.ui.browser.sort = SampleBrowserSort::Similarity;
     controller.ui.browser.search_query.clear();
     controller.ui.browser.search_focus_requested = false;
     controller.rebuild_browser_lists();
@@ -105,6 +109,7 @@ pub(super) fn find_similar_for_sample_id(
 
 pub(super) fn clear_similar_filter(controller: &mut EguiController) {
     if controller.ui.browser.similar_query.take().is_some() {
+        controller.ui.browser.sort = SampleBrowserSort::ListOrder;
         controller.rebuild_browser_lists();
     }
 }
@@ -182,6 +187,7 @@ pub(super) fn find_similar_for_audio_path(
         scores,
         anchor_index: None,
     });
+    controller.ui.browser.sort = SampleBrowserSort::Similarity;
     controller.ui.browser.search_query.clear();
     controller.ui.browser.search_focus_requested = false;
     controller.rebuild_browser_lists();

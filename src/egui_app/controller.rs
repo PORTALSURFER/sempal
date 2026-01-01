@@ -58,8 +58,8 @@ mod wavs;
 use crate::{
     audio::AudioPlayer,
     egui_app::state::{
-        FolderBrowserUiState, PlayheadState, ProgressOverlayState, SampleBrowserState,
-        TriageFlagColumn, TriageFlagFilter, UiState, WaveformImage,
+        FolderBrowserUiState, PlayheadState, ProgressOverlayState, SampleBrowserSort,
+        SampleBrowserState, TriageFlagColumn, TriageFlagFilter, UiState, WaveformImage,
     },
     egui_app::{ui::style, ui::style::StatusTone, view_model},
     sample_sources::scanner::ScanMode,

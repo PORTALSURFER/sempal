@@ -1,7 +1,9 @@
 use super::*;
+use crate::egui_app::state::SampleBrowserSort;
 use crate::egui_app::view_model;
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
+use std::cmp::Ordering;
 use std::path::Path;
 
 #[derive(Default)]
@@ -51,6 +53,7 @@ impl EguiController {
             )
         };
         if let Some(similar) = self.ui.browser.similar_query.clone() {
+            let sort_mode = self.ui.browser.sort;
             let mut visible: Vec<usize> = Vec::new();
             for index in similar.indices.iter().copied() {
                 let Some(entry) = self.wav_entry(index) else {
@@ -62,15 +65,30 @@ impl EguiController {
                     visible.push(index);
                 }
             }
-            if let Some(anchor) = similar.anchor_index {
-                if let Some(entry) = self.wav_entry(anchor) {
-                    let tag = entry.tag;
-                    let path = entry.relative_path.clone();
-                    if filter_accepts(tag) && folder_accepts(&path) {
-                        if let Some(pos) = visible.iter().position(|i| *i == anchor) {
-                            visible.remove(pos);
+            match sort_mode {
+                SampleBrowserSort::ListOrder => {
+                    visible.sort_unstable();
+                }
+                SampleBrowserSort::Similarity => {
+                    visible.sort_by(|a, b| {
+                        let a_score = similar.score_for_index(*a).unwrap_or(f32::NEG_INFINITY);
+                        let b_score = similar.score_for_index(*b).unwrap_or(f32::NEG_INFINITY);
+                        b_score
+                            .partial_cmp(&a_score)
+                            .unwrap_or(Ordering::Equal)
+                            .then_with(|| a.cmp(b))
+                    });
+                    if let Some(anchor) = similar.anchor_index {
+                        if let Some(entry) = self.wav_entry(anchor) {
+                            let tag = entry.tag;
+                            let path = entry.relative_path.clone();
+                            if filter_accepts(tag) && folder_accepts(&path) {
+                                if let Some(pos) = visible.iter().position(|i| *i == anchor) {
+                                    visible.remove(pos);
+                                }
+                                visible.insert(0, anchor);
+                            }
                         }
-                        visible.insert(0, anchor);
                     }
                 }
             }
@@ -251,6 +269,13 @@ pub(super) fn set_browser_filter(controller: &mut EguiController, filter: Triage
     }
 }
 
+pub(super) fn set_browser_sort(controller: &mut EguiController, sort: SampleBrowserSort) {
+    if controller.ui.browser.sort != sort {
+        controller.ui.browser.sort = sort;
+        controller.rebuild_browser_lists();
+    }
+}
+
 pub(super) fn focus_browser_search(controller: &mut EguiController) {
     controller.ui.browser.search_focus_requested = true;
     controller.focus_browser_context();
@@ -263,5 +288,6 @@ pub(super) fn set_browser_search(controller: &mut EguiController, query: impl In
     }
     controller.ui.browser.search_query = query;
     controller.ui.browser.similar_query = None;
+    controller.ui.browser.sort = SampleBrowserSort::ListOrder;
     controller.rebuild_browser_lists();
 }

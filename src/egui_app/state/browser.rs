@@ -29,6 +29,8 @@ pub struct SampleBrowserState {
     pub search_focus_requested: bool,
     /// When enabled, Up/Down jump through random samples instead of list order.
     pub random_navigation_mode: bool,
+    /// Sorting mode for the sample browser list.
+    pub sort: SampleBrowserSort,
     /// Optional similar-sounds filter scoped to the current source.
     pub similar_query: Option<SimilarQuery>,
     /// Pending inline action for the sample browser rows.
@@ -58,6 +60,7 @@ impl Default for SampleBrowserState {
             search_query: String::new(),
             search_focus_requested: false,
             random_navigation_mode: false,
+            sort: SampleBrowserSort::ListOrder,
             similar_query: None,
             pending_action: None,
             rename_focus_requested: false,
@@ -156,6 +159,13 @@ pub enum TriageFlagFilter {
     Keep,
     Trash,
     Untagged,
+}
+
+/// Sort modes for the sample browser list.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SampleBrowserSort {
+    ListOrder,
+    Similarity,
 }
 
 /// Pending inline action for the sample browser.
