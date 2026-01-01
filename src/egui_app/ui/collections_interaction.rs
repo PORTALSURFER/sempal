@@ -152,11 +152,10 @@ impl EguiApp {
             ui.label("Rename collection");
             let rename_id = ui.make_persistent_id(format!("rename:{}", collection.id.as_str()));
             let mut rename_value = ui.ctx().data_mut(|data| {
-                let value = data.get_temp_mut_or_default::<String>(rename_id);
-                if value.is_empty() {
-                    *value = collection.name.clone();
-                }
-                value.clone()
+                let value = data.get_temp::<String>(rename_id);
+                let value = value.unwrap_or_else(|| collection.name.clone());
+                data.insert_temp(rename_id, value.clone());
+                value
             });
             let edit = ui.text_edit_singleline(&mut rename_value);
             ui.ctx()

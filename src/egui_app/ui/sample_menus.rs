@@ -35,11 +35,10 @@ impl EguiApp {
     {
         ui.label("Rename");
         let mut value = ui.ctx().data_mut(|data| {
-            let value = data.get_temp_mut_or_default::<String>(rename_id);
-            if value.is_empty() {
-                *value = default_name.to_string();
-            }
-            value.clone()
+            let value = data.get_temp::<String>(rename_id);
+            let value = value.unwrap_or_else(|| default_name.to_string());
+            data.insert_temp(rename_id, value.clone());
+            value
         });
         let edit = ui.text_edit_singleline(&mut value);
         ui.ctx()
