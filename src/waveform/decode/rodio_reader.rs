@@ -148,14 +148,14 @@ impl WaveformRenderer {
                     }
                 }
             }
-            let mono = if frame_count == 0 {
+            let mono_value = if frame_count == 0 {
                 0.0
             } else {
                 frame_sum / frame_count as f32
             };
             let (min, max) = &mut mono[bucket];
-            *min = (*min).min(mono);
-            *max = (*max).max(mono);
+            *min = (*min).min(mono_value);
+            *max = (*max).max(mono_value);
             total_frames = total_frames.saturating_add(1);
         }
     }

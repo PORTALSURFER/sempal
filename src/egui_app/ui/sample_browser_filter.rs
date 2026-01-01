@@ -72,9 +72,11 @@ impl EguiApp {
                 loaded_available,
                 egui::Checkbox::new(&mut similarity_sort, "Similarity sort"),
             );
-            if !loaded_available {
-                similarity_response.on_disabled_hover_text("Load a sample to enable similarity sort");
-            }
+            let similarity_response = if loaded_available {
+                similarity_response
+            } else {
+                similarity_response.on_disabled_hover_text("Load a sample to enable similarity sort")
+            };
             if similarity_response.changed() {
                 if similarity_sort {
                     if let Err(err) = self.controller.enable_loaded_similarity_sort() {
