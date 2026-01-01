@@ -92,14 +92,20 @@ impl EguiApp {
         if !input.arrow_right {
             return;
         }
+        let mut handled = false;
         if focus.waveform {
             self.handle_waveform_arrow(input, ctrl_or_command, true);
+            handled = true;
         } else if focus.folder {
             self.controller.expand_focused_folder();
+            handled = true;
         } else if ctrl_or_command && focus.browser && browser_has_selection {
             self.controller.move_selection_column(1);
+            handled = true;
         }
-        consume_keypress(ctx, input, egui::Key::ArrowRight);
+        if handled {
+            consume_keypress(ctx, input, egui::Key::ArrowRight);
+        }
     }
 
     fn handle_arrow_left(
@@ -113,14 +119,20 @@ impl EguiApp {
         if !input.arrow_left {
             return;
         }
+        let mut handled = false;
         if focus.waveform {
             self.handle_waveform_arrow(input, ctrl_or_command, false);
+            handled = true;
         } else if focus.folder {
             self.controller.collapse_focused_folder();
+            handled = true;
         } else if ctrl_or_command && focus.browser && browser_has_selection {
             self.controller.move_selection_column(-1);
+            handled = true;
         }
-        consume_keypress(ctx, input, egui::Key::ArrowLeft);
+        if handled {
+            consume_keypress(ctx, input, egui::Key::ArrowLeft);
+        }
     }
 
     fn handle_waveform_arrow(
