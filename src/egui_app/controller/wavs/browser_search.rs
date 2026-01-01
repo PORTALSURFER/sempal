@@ -44,7 +44,7 @@ impl EguiController {
                 .as_ref()
                 .is_some_and(|negated| !negated.is_empty());
         let folder_accepts = |relative_path: &Path| {
-            crate::egui_app::controller::source_folders::selection::folder_filter_accepts(
+            crate::egui_app::controller::source_folders::folder_filter_accepts(
                 relative_path,
                 folder_selection.as_ref(),
                 folder_negated.as_ref(),
