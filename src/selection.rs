@@ -158,7 +158,22 @@ impl SelectionState {
             DragKind::Create { anchor } => {
                 let delta = position - anchor;
                 let snapped = anchor + snap_delta(delta, step);
-                SelectionRange::new(anchor, snapped)
+                let clamped = clamp01(snapped);
+                let mut range = SelectionRange::new(anchor, clamped);
+                if range.width() < step {
+                    if snapped < 0.0 || snapped > 1.0 {
+                        if snapped >= anchor {
+                            let end = (anchor + step).min(1.0);
+                            let start = (end - step).max(0.0);
+                            range = SelectionRange::new(start, end);
+                        } else {
+                            let start = (anchor - step).max(0.0);
+                            let end = (start + step).min(1.0);
+                            range = SelectionRange::new(start, end);
+                        }
+                    }
+                }
+                range
             }
             DragKind::StartEdge => {
                 let range = self.range?;
