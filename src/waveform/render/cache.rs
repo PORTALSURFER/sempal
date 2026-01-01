@@ -1,4 +1,5 @@
 use super::{DecodedWaveform, WaveformChannelView, WaveformRenderer};
+use crate::waveform::zoom_cache::CachedColumns;
 use egui::ColorImage;
 
 impl WaveformRenderer {
@@ -25,7 +26,7 @@ impl WaveformRenderer {
         let frames_per_column = (frame_count as f32 / full_width as f32).max(1.0);
         let smooth_radius = Self::smoothing_radius(frames_per_column, width);
         let image = match cached {
-            super::zoom_cache::CachedColumns::Mono(cols) => {
+            CachedColumns::Mono(cols) => {
                 let cols = Self::smooth_columns(&cols[start_col..end_col], smooth_radius);
                 Self::paint_color_image_for_size_with_density(
                     &cols,
@@ -36,7 +37,7 @@ impl WaveformRenderer {
                     frames_per_column,
                 )
             }
-            super::zoom_cache::CachedColumns::SplitStereo { left, right } => {
+            CachedColumns::SplitStereo { left, right } => {
                 let left = Self::smooth_columns(&left[start_col..end_col], smooth_radius);
                 let right = Self::smooth_columns(&right[start_col..end_col], smooth_radius);
                 Self::paint_split_color_image_with_density(

@@ -2,7 +2,7 @@ use super::WaveformRenderer;
 use egui::{Color32, ColorImage};
 
 impl WaveformRenderer {
-    pub(super) fn paint_line_image(
+    pub(in crate::waveform::render) fn paint_line_image(
         samples: &[f32],
         channels: usize,
         width: u32,
@@ -64,7 +64,7 @@ impl WaveformRenderer {
         image
     }
 
-    pub(super) fn paint_split_line_image(
+    pub(in crate::waveform::render) fn paint_split_line_image(
         samples: &[f32],
         channels: usize,
         width: u32,

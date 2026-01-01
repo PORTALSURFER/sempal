@@ -2,7 +2,7 @@ use super::WaveformRenderer;
 use egui::{Color32, ColorImage};
 
 impl WaveformRenderer {
-    pub(super) fn paint_color_image_for_size_with_density(
+    pub(in crate::waveform::render) fn paint_color_image_for_size_with_density(
         columns: &[(f32, f32)],
         width: u32,
         height: u32,
@@ -59,7 +59,7 @@ impl WaveformRenderer {
         image
     }
 
-    pub(super) fn paint_split_color_image_with_density(
+    pub(in crate::waveform::render) fn paint_split_color_image_with_density(
         left: &[(f32, f32)],
         right: &[(f32, f32)],
         width: u32,
