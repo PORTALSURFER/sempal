@@ -151,6 +151,13 @@ pub(super) const HOTKEY_ACTIONS: &[HotkeyAction] = &[
         command: HotkeyCommand::NormalizeWaveform,
     },
     HotkeyAction {
+        id: "align-waveform-start",
+        label: "Set start to last play position",
+        gesture: HotkeyGesture::new(Key::S),
+        scope: HotkeyScope::Focus(FocusContext::Waveform),
+        command: HotkeyCommand::AlignWaveformStartToMarker,
+    },
+    HotkeyAction {
         id: "delete-browser",
         label: "Delete sample",
         gesture: HotkeyGesture::new(Key::D),

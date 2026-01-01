@@ -5,6 +5,30 @@ use hound::SampleFormat;
 use std::sync::Arc;
 
 impl EguiController {
+    pub(crate) fn align_waveform_start_to_last_marker(&mut self) -> Result<(), String> {
+        if self.is_waveform_circular_slide_active() {
+            return Err("Finish the current waveform slide first".to_string());
+        }
+        let marker = self
+            .ui
+            .waveform
+            .last_start_marker
+            .ok_or_else(|| "Play audio to set a start marker first".to_string())?
+            .clamp(0.0, 1.0);
+        if !marker.is_finite() {
+            return Err("Start marker is invalid".to_string());
+        }
+        if marker <= 0.0 {
+            self.set_status("Start already aligned", StatusTone::Info);
+            return Ok(());
+        }
+        self.start_waveform_circular_slide(marker)?;
+        self.update_waveform_circular_slide(0.0);
+        self.finish_waveform_circular_slide()?;
+        self.ui.waveform.last_start_marker = Some(0.0);
+        Ok(())
+    }
+
     pub(crate) fn start_waveform_circular_slide(&mut self, position: f32) -> Result<(), String> {
         if self.sample_view.waveform_slide.is_some() {
             return Ok(());

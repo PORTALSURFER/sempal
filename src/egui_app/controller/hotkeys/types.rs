@@ -141,6 +141,7 @@ pub(crate) enum HotkeyCommand {
     MuteSelection,
     DeleteSliceMarkers,
     NormalizeWaveform,
+    AlignWaveformStartToMarker,
     CropSelection,
     CropSelectionNewSample,
     SaveSelectionToBrowser,

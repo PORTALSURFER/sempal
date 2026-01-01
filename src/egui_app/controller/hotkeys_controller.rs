@@ -70,6 +70,13 @@ impl HotkeysActions for HotkeysController<'_> {
                     self.normalize_waveform_selection_or_sample();
                 }
             }
+            HotkeyCommand::AlignWaveformStartToMarker => {
+                if matches!(focus, FocusContext::Waveform) {
+                    if let Err(err) = self.align_waveform_start_to_last_marker() {
+                        self.set_status(err, StatusTone::Error);
+                    }
+                }
+            }
             HotkeyCommand::CropSelection => {
                 if matches!(focus, FocusContext::Waveform) {
                     let _ = self.request_destructive_selection_edit(
