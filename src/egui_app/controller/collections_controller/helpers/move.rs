@@ -5,7 +5,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 impl CollectionsController<'_> {
-    pub(super) fn primary_visible_row_for_browser_selection(&mut self) -> Option<usize> {
+    pub(in crate::egui_app::controller::collections_controller) fn primary_visible_row_for_browser_selection(
+        &mut self,
+    ) -> Option<usize> {
         let selected_index = self.selected_row_index()?;
         let path = self
             .wav_entry(selected_index)
@@ -13,7 +15,9 @@ impl CollectionsController<'_> {
         self.visible_row_for_path(&path)
     }
 
-    pub(super) fn browser_selection_rows_for_move(&mut self) -> Vec<usize> {
+    pub(in crate::egui_app::controller::collections_controller) fn browser_selection_rows_for_move(
+        &mut self,
+    ) -> Vec<usize> {
         let mut rows: Vec<usize> = self
             .ui
             .browser
@@ -35,11 +39,11 @@ impl CollectionsController<'_> {
         rows
     }
 
-    pub(super) fn next_browser_focus_path_after_move(
+    pub(in crate::egui_app::controller::collections_controller) fn next_browser_focus_path_after_move(
         &mut self,
         rows: &[usize],
     ) -> Option<PathBuf> {
-        if rows.is_empty() || self.ui.browser.visible.is_empty() {
+        if rows.is_empty() || self.ui.browser.visible.len() == 0 {
             return None;
         }
         let mut sorted = rows.to_vec();
@@ -61,7 +65,7 @@ impl CollectionsController<'_> {
             .map(|entry| entry.relative_path.clone())
     }
 
-    pub(super) fn move_browser_rows_to_collection(
+    pub(in crate::egui_app::controller::collections_controller) fn move_browser_rows_to_collection(
         &mut self,
         collection_id: &CollectionId,
         rows: &[usize],

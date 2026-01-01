@@ -57,16 +57,18 @@ impl AudioPlayer {
     /// Adjust master output volume for current and future playback.
     pub fn set_volume(&mut self, volume: f32) {
         self.volume = volume.clamp(0.0, 1.0);
+        let effective = self.effective_volume();
         if let Some(sink) = self.sink.as_mut() {
-            sink.set_volume(self.effective_volume());
+            sink.set_volume(effective);
         }
     }
 
     /// Adjust normalized audition gain for current and future playback.
     pub fn set_playback_gain(&mut self, gain: f32) {
         self.playback_gain = if gain.is_finite() && gain > 0.0 { gain } else { 1.0 };
+        let effective = self.effective_volume();
         if let Some(sink) = self.sink.as_mut() {
-            sink.set_volume(self.effective_volume());
+            sink.set_volume(effective);
         }
     }
 

@@ -1,15 +1,29 @@
 use super::super::*;
-use super::{collection_member_view, CollectionsController};
+use super::{collection_member_view_owned, CollectionMemberViewOwned, CollectionsController};
 use std::path::{Path, PathBuf};
 
 impl CollectionsController<'_> {
-    pub(super) fn refresh_collections_ui(&mut self) {
+    pub(in crate::egui_app::controller::collections_controller) fn refresh_collections_ui(
+        &mut self,
+    ) {
         let selected_id = self.selection_state.ctx.selected_collection.clone();
-        let mut collection_missing: Vec<bool> = Vec::with_capacity(self.library.collections.len());
-        for collection in &self.library.collections {
+        let collection_members: Vec<Vec<CollectionMemberViewOwned>> = self
+            .library
+            .collections
+            .iter()
+            .map(|collection| {
+                collection
+                    .members
+                    .iter()
+                    .map(collection_member_view_owned)
+                    .collect()
+            })
+            .collect();
+        let mut collection_missing = Vec::with_capacity(collection_members.len());
+        for members in &collection_members {
             let mut missing = false;
-            for member in &collection.members {
-                if self.collection_member_missing_view(&collection_member_view(member)) {
+            for member in members {
+                if self.collection_member_missing_view(&member.as_view()) {
                     missing = true;
                     break;
                 }
@@ -28,7 +42,9 @@ impl CollectionsController<'_> {
         self.refresh_collection_samples();
     }
 
-    pub(super) fn refresh_collection_selection_ui(&mut self) {
+    pub(in crate::egui_app::controller::collections_controller) fn refresh_collection_selection_ui(
+        &mut self,
+    ) {
         if self.ui.collections.rows.is_empty() {
             self.refresh_collections_ui();
             return;
@@ -42,7 +58,9 @@ impl CollectionsController<'_> {
             .and_then(|id| self.library.collections.iter().position(|c| &c.id == id));
     }
 
-    pub(super) fn refresh_collection_samples(&mut self) {
+    pub(in crate::egui_app::controller::collections_controller) fn refresh_collection_samples(
+        &mut self,
+    ) {
         let selected_index = self
             .selection_state
             .ctx
@@ -59,10 +77,14 @@ impl CollectionsController<'_> {
             return;
         };
 
-        let members_len = self.library.collections[selected_index].members.len();
-        let mut samples = Vec::with_capacity(members_len);
-        for member in &self.library.collections[selected_index].members {
-            let view = collection_member_view(member);
+        let member_views: Vec<CollectionMemberViewOwned> = self.library.collections[selected_index]
+            .members
+            .iter()
+            .map(collection_member_view_owned)
+            .collect();
+        let mut samples = Vec::with_capacity(member_views.len());
+        for member_view in &member_views {
+            let view = member_view.as_view();
             let missing = self.collection_member_missing_view(&view);
             let source_label = if view.clip_root.is_some() {
                 "Collection clip".to_string()
@@ -157,7 +179,9 @@ impl CollectionsController<'_> {
         }
     }
 
-    pub(super) fn ensure_collection_selection(&mut self) {
+    pub(in crate::egui_app::controller::collections_controller) fn ensure_collection_selection(
+        &mut self,
+    ) {
         if self.selection_state.ctx.selected_collection.is_some() {
             return;
         }
@@ -166,7 +190,7 @@ impl CollectionsController<'_> {
         }
     }
 
-    pub(super) fn finalize_browser_collection_add(
+    pub(in crate::egui_app::controller::collections_controller) fn finalize_browser_collection_add(
         &mut self,
         collection_id: &CollectionId,
         collection_name: &str,
