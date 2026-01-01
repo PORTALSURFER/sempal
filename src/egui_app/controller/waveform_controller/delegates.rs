@@ -56,6 +56,10 @@ impl EguiController {
         self.waveform().nudge_selection_range(steps, fine);
     }
 
+    pub(crate) fn slide_selection_range(&mut self, steps: isize) {
+        self.waveform().slide_selection_range(steps);
+    }
+
     pub(crate) fn waveform_ready(&self) -> bool {
         self.sample_view.waveform.decoded.is_some()
     }

@@ -2,7 +2,6 @@ use eframe::egui;
 
 use super::super::EguiApp;
 use super::super::input::InputSnapshot;
-use crate::egui_app::controller::waveform_controller::actions::WaveformActions;
 use super::consume_keypress;
 use super::update_prompt::FocusFlags;
 
