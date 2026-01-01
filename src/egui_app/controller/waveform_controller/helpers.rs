@@ -77,6 +77,9 @@ impl WaveformController<'_> {
     }
 
     pub(super) fn selection_min_width(&self) -> f32 {
+        if !self.ui.waveform.bpm_snap_enabled {
+            return 0.0;
+        }
         self.bpm_snap_step()
             .map(|step| MIN_SELECTION_WIDTH.min(step))
             .unwrap_or(MIN_SELECTION_WIDTH)
