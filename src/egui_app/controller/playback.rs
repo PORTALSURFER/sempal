@@ -17,23 +17,36 @@ const SHOULD_PLAY_RANDOM_SAMPLE: bool = false;
 const SHOULD_PLAY_RANDOM_SAMPLE: bool = true;
 const PLAYHEAD_COMPLETION_EPSILON: f32 = 0.001;
 
-fn selection_min_width(controller: &EguiController) -> f32 {
+pub(super) fn selection_min_width(controller: &EguiController) -> f32 {
     if !controller.ui.waveform.bpm_snap_enabled {
         return 0.0;
     }
-    let mut min_width = MIN_SELECTION_WIDTH;
-    if let (Some(bpm), Some(duration)) = (
-        controller.ui.waveform.bpm_value,
-        controller.loaded_audio_duration_seconds(),
-    ) {
-        if bpm.is_finite() && bpm > 0.0 && duration.is_finite() && duration > 0.0 {
-            let step = 60.0 / bpm / duration;
-            if step.is_finite() && step > 0.0 {
-                min_width = min_width.min(step);
-            }
-        }
+    let duration = match controller.loaded_audio_duration_seconds() {
+        Some(duration) if duration.is_finite() && duration > 0.0 => duration,
+        _ => return 0.0,
+    };
+    let min_seconds = bpm_min_selection_seconds(controller).unwrap_or(0.0);
+    if min_seconds <= 0.0 {
+        return 0.0;
     }
-    min_width
+    min_seconds / duration
+}
+
+pub(super) fn bpm_min_selection_seconds(controller: &EguiController) -> Option<f32> {
+    if !controller.ui.waveform.bpm_snap_enabled {
+        return None;
+    }
+    let bpm = controller.ui.waveform.bpm_value?;
+    if !bpm.is_finite() || bpm <= 0.0 {
+        return None;
+    }
+    let beat = 60.0 / bpm;
+    let min_seconds = beat / BPM_MIN_SELECTION_DIVISOR;
+    if min_seconds.is_finite() && min_seconds > 0.0 {
+        Some(min_seconds)
+    } else {
+        None
+    }
 }
 
 impl EguiController {

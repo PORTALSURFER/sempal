@@ -27,6 +27,7 @@ pub struct AudioPlayer {
     playback_gain: f32,
     anti_clip_enabled: bool,
     anti_clip_fade: Duration,
+    min_span_seconds: Option<f32>,
     output: ResolvedOutput,
     #[cfg(test)]
     elapsed_override: Option<Duration>,

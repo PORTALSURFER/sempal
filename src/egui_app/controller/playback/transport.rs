@@ -200,14 +200,15 @@ fn bpm_snap_step(controller: &EguiController) -> Option<f32> {
 }
 
 fn clear_too_small_bpm_selection(controller: &mut EguiController) {
-    let Some(step) = bpm_snap_step(controller) else {
+    let min_width = super::selection_min_width(controller);
+    if min_width <= 0.0 {
         return;
     };
     let Some(range) = controller.selection_state.range.range() else {
         return;
     };
-    let epsilon = step * 1.0e-3;
-    if range.width() + epsilon >= step {
+    let epsilon = min_width * 1.0e-3;
+    if range.width() + epsilon >= min_width {
         return;
     }
     controller.selection_state.range.set_range(None);

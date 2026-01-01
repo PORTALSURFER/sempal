@@ -92,7 +92,7 @@ impl AudioPlayer {
         let clamped_end = end.clamp(0.0, 1.0) * duration;
         let mut bounded_start = clamped_start.min(duration);
         let mut bounded_end = clamped_end.min(duration);
-        let min_span = (duration * 0.01).max(0.01);
+        let min_span = self.min_span_seconds.unwrap_or(0.0);
         if bounded_end <= bounded_start {
             bounded_end = (bounded_start + min_span).min(duration);
             if bounded_end <= bounded_start {

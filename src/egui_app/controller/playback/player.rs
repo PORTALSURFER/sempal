@@ -53,6 +53,9 @@ pub(super) fn play_audio(
     let Some(player) = player else {
         return Err("Audio unavailable".into());
     };
+    player
+        .borrow_mut()
+        .set_min_span_seconds(super::bpm_min_selection_seconds(controller));
     let selection = controller
         .selection_state
         .range

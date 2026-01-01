@@ -87,6 +87,7 @@ use std::{
 
 /// Minimum selection width used to decide when to play a looped region.
 pub(crate) const MIN_SELECTION_WIDTH: f32 = 0.001;
+pub(crate) const BPM_MIN_SELECTION_DIVISOR: f32 = 16.0;
 const AUDIO_CACHE_CAPACITY: usize = 12;
 const AUDIO_HISTORY_LIMIT: usize = 8;
 const RANDOM_HISTORY_LIMIT: usize = 20;

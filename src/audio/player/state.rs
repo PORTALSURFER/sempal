@@ -35,6 +35,7 @@ impl AudioPlayer {
             playback_gain: 1.0,
             anti_clip_enabled: true,
             anti_clip_fade: DEFAULT_ANTI_CLIP_FADE,
+            min_span_seconds: None,
             output: outcome.resolved,
             #[cfg(test)]
             elapsed_override: None,
@@ -70,6 +71,11 @@ impl AudioPlayer {
         if let Some(sink) = self.sink.as_mut() {
             sink.set_volume(effective);
         }
+    }
+
+    /// Set the minimum span length (in seconds) enforced for playback ranges.
+    pub fn set_min_span_seconds(&mut self, min_span: Option<f32>) {
+        self.min_span_seconds = min_span.filter(|value| value.is_finite() && *value > 0.0);
     }
 
     /// Configure the anti-click fade used for playback edges.
@@ -114,6 +120,7 @@ impl AudioPlayer {
             playback_gain: 1.0,
             anti_clip_enabled: true,
             anti_clip_fade: DEFAULT_ANTI_CLIP_FADE,
+            min_span_seconds: None,
             output: ResolvedOutput::default(),
             elapsed_override,
         }

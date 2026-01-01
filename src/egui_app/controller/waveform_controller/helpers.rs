@@ -81,8 +81,8 @@ impl WaveformController<'_> {
             return 0.0;
         }
         self.bpm_snap_step()
-            .map(|step| MIN_SELECTION_WIDTH.min(step))
-            .unwrap_or(MIN_SELECTION_WIDTH)
+            .map(|step| step / BPM_MIN_SELECTION_DIVISOR)
+            .unwrap_or(0.0)
     }
 
     pub(super) fn refresh_loop_after_selection_change(&mut self, selection: SelectionRange) {
