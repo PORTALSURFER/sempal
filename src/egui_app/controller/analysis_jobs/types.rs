@@ -16,7 +16,7 @@ pub(in crate::egui_app::controller) struct AnalysisProgress {
 #[derive(Clone, Debug)]
 pub(in crate::egui_app::controller) struct RunningJobInfo {
     pub(in crate::egui_app::controller) sample_id: String,
-    pub(in crate::egui_app::controller) running_at: Option<i64>,
+    pub(in crate::egui_app::controller) last_heartbeat_at: Option<i64>,
 }
 
 impl AnalysisProgress {

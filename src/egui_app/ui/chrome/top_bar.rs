@@ -226,7 +226,7 @@ impl EguiApp {
                         ui.label("Running jobs");
                         let now_epoch = now_epoch_seconds();
                         for job in &snapshot.running_jobs {
-                            let age = job.running_at.and_then(|ts| {
+                            let age = job.last_heartbeat_at.and_then(|ts| {
                                 now_epoch
                                     .and_then(|now| now.checked_sub(ts))
                                     .and_then(|delta| u64::try_from(delta).ok())
@@ -235,13 +235,10 @@ impl EguiApp {
                             let age_label = age
                                 .map(format_elapsed)
                                 .unwrap_or_else(|| "unknown".to_string());
-                            let mut line = format!("{} • {}", job.label, age_label);
-                            if let (Some(age), Some(stale_after)) =
-                                (age, snapshot.stale_after_secs)
-                            {
-                                if age.as_secs() as i64 >= stale_after {
-                                    line.push_str(" • stalled?");
-                                }
+                            let mut line =
+                                format!("{} • last heartbeat {}", job.label, age_label);
+                            if job.possibly_stalled {
+                                line.push_str(" • possibly stalled");
                             }
                             ui.label(line);
                             if let (Some(age), Some(stale_after)) =

@@ -42,7 +42,29 @@ pub struct AnalysisProgressSnapshot {
 #[derive(Clone, Debug)]
 pub struct RunningJobSnapshot {
     pub label: String,
-    pub running_at: Option<i64>,
+    pub last_heartbeat_at: Option<i64>,
+    pub possibly_stalled: bool,
+}
+
+impl RunningJobSnapshot {
+    pub fn from_heartbeat(
+        label: String,
+        last_heartbeat_at: Option<i64>,
+        stale_after_secs: Option<i64>,
+        now_epoch: Option<i64>,
+    ) -> Self {
+        let possibly_stalled = match (last_heartbeat_at, stale_after_secs, now_epoch) {
+            (Some(heartbeat), Some(stale_after), Some(now)) => {
+                now.saturating_sub(heartbeat) >= stale_after
+            }
+            _ => false,
+        };
+        Self {
+            label,
+            last_heartbeat_at,
+            possibly_stalled,
+        }
+    }
 }
 
 impl ProgressOverlayState {
@@ -106,7 +128,7 @@ impl ProgressOverlayState {
 
 #[cfg(test)]
 mod tests {
-    use super::{ProgressOverlayState, ProgressTaskKind};
+    use super::{ProgressOverlayState, ProgressTaskKind, RunningJobSnapshot};
 
     #[test]
     fn progress_fraction_handles_zero_total() {
@@ -124,5 +146,24 @@ mod tests {
         assert_eq!(progress.task, None);
         assert_eq!(progress.completed, 0);
         assert_eq!(progress.total, 0);
+    }
+
+    #[test]
+    fn running_job_marks_stale_heartbeat() {
+        let snapshot = RunningJobSnapshot::from_heartbeat(
+            "job".to_string(),
+            Some(10),
+            Some(5),
+            Some(20),
+        );
+        assert!(snapshot.possibly_stalled);
+
+        let snapshot = RunningJobSnapshot::from_heartbeat(
+            "job".to_string(),
+            Some(18),
+            Some(5),
+            Some(20),
+        );
+        assert!(!snapshot.possibly_stalled);
     }
 }

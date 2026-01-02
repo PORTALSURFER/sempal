@@ -46,7 +46,7 @@ pub(in crate::egui_app::controller::analysis_jobs) fn current_running_jobs(
         let running_at: Option<i64> = row.get(1).map_err(|err| err.to_string())?;
         out.push(RunningJobInfo {
             sample_id,
-            running_at,
+            last_heartbeat_at: running_at,
         });
     }
     Ok(out)

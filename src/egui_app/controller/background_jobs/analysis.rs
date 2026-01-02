@@ -2,6 +2,7 @@ use super::progress;
 use super::*;
 use crate::egui_app::state::ProgressTaskKind;
 use crate::egui_app::state::RunningJobSnapshot;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 pub(super) fn handle_analysis_message(
     controller: &mut EguiController,
@@ -100,6 +101,12 @@ pub(super) fn handle_analysis_message(
                     super::analysis_jobs::current_running_jobs_for_source(&source, 3)
                         .ok()
                         .map(|jobs| {
+                            let now_epoch = SystemTime::now()
+                                .duration_since(UNIX_EPOCH)
+                                .ok()
+                                .map(|duration| duration.as_secs() as i64);
+                            let stale_after =
+                                super::analysis_jobs::stale_running_job_seconds();
                             jobs.into_iter()
                                 .map(|job| {
                                     let label = super::analysis_jobs::parse_sample_id(
@@ -108,10 +115,12 @@ pub(super) fn handle_analysis_message(
                                     .ok()
                                     .map(|(_, path)| path.to_string_lossy().to_string())
                                     .unwrap_or(job.sample_id);
-                                    RunningJobSnapshot {
+                                    RunningJobSnapshot::from_heartbeat(
                                         label,
-                                        running_at: job.running_at,
-                                    }
+                                        job.last_heartbeat_at,
+                                        Some(stale_after),
+                                        now_epoch,
+                                    )
                                 })
                                 .collect::<Vec<_>>()
                         })
