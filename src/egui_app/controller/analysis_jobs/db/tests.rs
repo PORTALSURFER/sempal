@@ -171,7 +171,7 @@ fn reset_running_to_pending_updates_rows() {
 }
 
 #[test]
-fn reset_stale_running_jobs_ignores_recent_claims() {
+fn fail_stale_running_jobs_ignores_recent_claims() {
     let conn = conn_with_schema();
     conn.execute(
         "INSERT INTO analysis_jobs (sample_id, job_type, status, attempts, created_at, running_at)
@@ -185,7 +185,7 @@ fn reset_stale_running_jobs_ignores_recent_claims() {
         [],
     )
     .unwrap();
-    let changed = reset_stale_running_jobs(&conn, 50).unwrap();
+    let changed = fail_stale_running_jobs(&conn, 50).unwrap();
     assert_eq!(changed, 1);
     let status_old: String = conn
         .query_row(
@@ -201,7 +201,7 @@ fn reset_stale_running_jobs_ignores_recent_claims() {
             |row| row.get(0),
         )
         .unwrap();
-    assert_eq!(status_old, "pending");
+    assert_eq!(status_old, "failed");
     assert_eq!(status_fresh, "running");
 }
 
