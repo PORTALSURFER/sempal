@@ -49,5 +49,5 @@ pub(in crate::egui_app::controller) fn stale_running_job_seconds() -> i64 {
             }
         }
     }
-    10 * 60
+    2 * 60
 }
