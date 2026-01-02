@@ -6,6 +6,7 @@ use crate::egui_app::state::{DragSource, DragTarget, FocusContext};
 use eframe::egui::{self, Align, Align2, Layout, RichText, StrokeKind, TextStyle, Ui};
 use std::collections::HashSet;
 use std::path::PathBuf;
+use std::time::Duration;
 
 impl EguiApp {
     pub(super) fn render_folder_browser(
@@ -15,6 +16,8 @@ impl EguiApp {
         folder_drop_active: bool,
         pointer_pos: Option<egui::Pos2>,
     ) {
+        self.controller
+            .refresh_folder_browser_if_stale(Duration::from_millis(750));
         let mut sample_parent_folders = HashSet::<PathBuf>::new();
         for path in self.controller.ui.browser.selected_paths.iter() {
             sample_parent_folders.extend(sample_housing_folders(path));

@@ -2,8 +2,11 @@ use super::*;
 use crate::egui_app::state::FolderRowView;
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
+use std::fs;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
+use tracing::warn;
 
 fn is_root_path(path: &Path) -> bool {
     path.as_os_str().is_empty()
@@ -19,6 +22,7 @@ pub(in crate::egui_app::controller) struct FolderBrowserModel {
     pub(super) selection_anchor: Option<PathBuf>,
     pub(super) manual_folders: BTreeSet<PathBuf>,
     pub(super) search_query: String,
+    pub(super) last_disk_refresh: Option<Instant>,
 }
 
 impl FolderBrowserModel {
@@ -51,7 +55,7 @@ impl EguiController {
             self.ui.sources.folders = FolderBrowserUiState::default();
             return;
         };
-        let available = self.collect_folders();
+        let available = self.collect_folders(&source.root);
         let snapshot = {
             let model = self
                 .ui_cache
@@ -63,6 +67,7 @@ impl EguiController {
                 .manual_folders
                 .retain(|path| source.root.join(path).is_dir());
             model.available = available;
+            model.last_disk_refresh = Some(Instant::now());
             for path in model.manual_folders.iter().cloned() {
                 model.available.insert(path);
             }
@@ -93,6 +98,30 @@ impl EguiController {
         };
         self.ui.sources.folders.search_query = snapshot.search_query.clone();
         self.build_folder_rows(&snapshot);
+    }
+
+    pub(in crate::egui_app::controller) fn refresh_folder_browser_if_stale(
+        &mut self,
+        max_age: Duration,
+    ) {
+        let Some(source_id) = self.selection_state.ctx.selected_source.clone() else {
+            return;
+        };
+        let now = Instant::now();
+        let needs_refresh = {
+            let model = self
+                .ui_cache
+                .folders
+                .models
+                .entry(source_id)
+                .or_default();
+            model
+                .last_disk_refresh
+                .map_or(true, |last| now.duration_since(last) >= max_age)
+        };
+        if needs_refresh {
+            self.refresh_folder_browser();
+        }
     }
 
     pub(super) fn current_folder_model_mut(&mut self) -> Option<&mut FolderBrowserModel> {
@@ -138,7 +167,7 @@ impl EguiController {
         self.ui.sources.folders.scroll_to = focused;
     }
 
-    fn collect_folders(&mut self) -> BTreeSet<PathBuf> {
+    fn collect_folders(&mut self, source_root: &Path) -> BTreeSet<PathBuf> {
         let mut folders = BTreeSet::new();
         for index in 0..self.wav_entries_len() {
             let Some(entry) = self.wav_entry(index) else {
@@ -150,6 +179,52 @@ impl EguiController {
                     folders.insert(path.to_path_buf());
                 }
                 current = path.parent();
+            }
+        }
+        let mut stack = vec![source_root.to_path_buf()];
+        while let Some(dir) = stack.pop() {
+            let entries = match fs::read_dir(&dir) {
+                Ok(entries) => entries,
+                Err(err) => {
+                    warn!(
+                        dir = %dir.display(),
+                        error = %err,
+                        "Failed to read directory for folder browser"
+                    );
+                    continue;
+                }
+            };
+            for entry in entries {
+                let entry = match entry {
+                    Ok(entry) => entry,
+                    Err(err) => {
+                        warn!(error = %err, "Failed to read folder browser entry");
+                        continue;
+                    }
+                };
+                let path = entry.path();
+                let file_type = match entry.file_type() {
+                    Ok(file_type) => file_type,
+                    Err(err) => {
+                        warn!(
+                            path = %path.display(),
+                            error = %err,
+                            "Failed to read folder browser entry type"
+                        );
+                        continue;
+                    }
+                };
+                if file_type.is_symlink() {
+                    continue;
+                }
+                if file_type.is_dir() {
+                    if let Ok(relative) = path.strip_prefix(source_root)
+                        && !relative.as_os_str().is_empty()
+                    {
+                        folders.insert(relative.to_path_buf());
+                    }
+                    stack.push(path);
+                }
             }
         }
         folders

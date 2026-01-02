@@ -47,6 +47,26 @@ fn folder_browser_includes_root_entry() {
 }
 
 #[test]
+fn folder_browser_lists_empty_folders() {
+    let (mut controller, source) = dummy_controller();
+    controller.library.sources.push(source.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
+    let empty = source.root.join("empty");
+    std::fs::create_dir_all(&empty).unwrap();
+    controller.refresh_folder_browser();
+
+    assert!(
+        controller
+            .ui
+            .sources
+            .folders
+            .rows
+            .iter()
+            .any(|row| row.path == PathBuf::from("empty"))
+    );
+}
+
+#[test]
 fn root_entry_stays_above_real_folders() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source.clone());
