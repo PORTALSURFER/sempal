@@ -3,6 +3,7 @@ use std::time::Duration;
 pub mod output;
 pub mod input;
 pub mod recording;
+mod device;
 
 mod fade;
 mod mixer;

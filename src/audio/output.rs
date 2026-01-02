@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::info;
 
+use super::device::{device_label, host_label};
 #[derive(Debug, Error)]
 pub enum AudioOutputError {
     #[error("No audio output devices found")]
@@ -272,21 +273,6 @@ fn resolve_device(
     let resolved_name = device_label(&resolved).unwrap_or_else(|| default_name.clone());
     let used_fallback = resolved_name != requested_name;
     Ok((resolved, resolved_name, used_fallback))
-}
-
-fn device_label(device: &cpal::Device) -> Option<String> {
-    device.name().ok()
-}
-
-fn host_label(id: &str) -> String {
-    match id.to_ascii_lowercase().as_str() {
-        "asio" => "ASIO".into(),
-        "wasapi" => "WASAPI".into(),
-        "coreaudio" => "Core Audio".into(),
-        "alsa" => "ALSA".into(),
-        "jack" => "JACK".into(),
-        _ => id.to_uppercase(),
-    }
 }
 
 const COMMON_SAMPLE_RATES: &[u32] = &[32_000, 44_100, 48_000, 88_200, 96_000, 176_400, 192_000];
