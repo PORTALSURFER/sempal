@@ -1,6 +1,7 @@
 use super::enqueue_helpers::{fast_content_hash, now_epoch_seconds};
 use crate::egui_app::controller::analysis_jobs::db;
 use crate::egui_app::controller::analysis_jobs::types::AnalysisProgress;
+use log::info;
 use rusqlite::params;
 use std::path::Path;
 
@@ -183,6 +184,7 @@ fn enqueue_from_staged_samples(
     let (mut sample_metadata, mut jobs, mut invalidate) =
         collect_backfill_updates(conn, job_type, force_full)?;
     let failed_jobs = fetch_failed_backfill_jobs(conn, job_type, source_id)?;
+    let failed_count = failed_jobs.len();
     if !failed_jobs.is_empty() {
         let mut job_ids: std::collections::HashSet<String> =
             jobs.iter().map(|(id, _)| id.clone()).collect();
@@ -210,12 +212,39 @@ fn enqueue_from_staged_samples(
         db::invalidate_analysis_artifacts(conn, &invalidate)?;
     }
     if skip_when_no_jobs && jobs.is_empty() {
+        info!(
+            "Analysis backfill: no jobs to enqueue (staged={}, failed_requeued={}, source_id={}, job_type={}, force_full={})",
+            staged_samples.len(),
+            failed_count,
+            source_id,
+            job_type,
+            force_full
+        );
         return Ok((0, db::current_progress(conn)?));
     }
+    info!(
+        "Analysis backfill prepared (staged={}, jobs={}, failed_requeued={}, invalidate={}, source_id={}, job_type={}, force_full={})",
+        staged_samples.len(),
+        jobs.len(),
+        failed_count,
+        invalidate.len(),
+        source_id,
+        job_type,
+        force_full
+    );
     db::upsert_samples(conn, &sample_metadata)?;
 
     let created_at = now_epoch_seconds();
     let inserted = db::enqueue_jobs(conn, &jobs, job_type, created_at, source_id)?;
+    info!(
+        "Analysis backfill enqueued (inserted={}, staged={}, jobs={}, failed_requeued={}, source_id={}, job_type={})",
+        inserted,
+        staged_samples.len(),
+        jobs.len(),
+        failed_count,
+        source_id,
+        job_type
+    );
     let progress = db::current_progress(conn)?;
     Ok((inserted, progress))
 }
