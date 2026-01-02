@@ -473,6 +473,7 @@ fn spawn_decode_heartbeat(
                 return;
             }
         };
+        let _ = db::touch_running_at(&conn, &[job_id]);
         let mut last_touch = Instant::now() - interval;
         let poll = Duration::from_millis(200);
         loop {
