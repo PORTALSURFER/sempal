@@ -169,12 +169,23 @@ pub fn similarity_display_strength(score: f32) -> f32 {
     normalized.powf(2.0)
 }
 
-/// Smooth map gradient from similar (green) to dissimilar (yellow).
+/// Smooth map gradient from similar (green) to dissimilar (red).
 pub fn similarity_map_color(t: f32) -> Color32 {
     let t = smoothstep(t.clamp(0.0, 1.0));
+    let blue = Color32::from_rgb(76, 122, 218);
     let green = Color32::from_rgb(92, 184, 124);
     let yellow = Color32::from_rgb(224, 196, 112);
-    blend_rgb(green, yellow, t)
+    let red = Color32::from_rgb(214, 92, 92);
+    if t <= 0.33 {
+        let local = smoothstep((t / 0.33).clamp(0.0, 1.0));
+        blend_rgb(blue, green, local)
+    } else if t <= 0.66 {
+        let local = smoothstep(((t - 0.33) / 0.33).clamp(0.0, 1.0));
+        blend_rgb(green, yellow, local)
+    } else {
+        let local = smoothstep(((t - 0.66) / 0.34).clamp(0.0, 1.0));
+        blend_rgb(yellow, red, local)
+    }
 }
 
 fn smoothstep(t: f32) -> f32 {
