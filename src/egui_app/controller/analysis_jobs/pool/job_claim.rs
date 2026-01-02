@@ -346,51 +346,90 @@ pub(super) fn spawn_compute_worker(
             }
 
             for (job, outcome) in immediate_jobs {
-                if log_jobs {
-                    match &outcome {
-                        Ok(()) => {
-                            eprintln!("analysis run done: {}", job.sample_id);
-                        }
-                        Err(err) => {
-                            eprintln!("analysis run failed: {} ({})", job.sample_id, err);
-                        }
-                    }
-                }
-                let conn = match connections.entry(job.source_root.clone()) {
-                    std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
-                    std::collections::hash_map::Entry::Vacant(entry) => {
-                        let conn = match db::open_source_db(&job.source_root) {
-                            Ok(conn) => conn,
-                            Err(_) => {
-                                continue;
-                            }
-                        };
-                        entry.insert(conn)
-                    }
-                };
-                match outcome {
-                    Ok(()) => {
-                        update_job_status_with_retry(|| db::mark_done(conn, job.id));
-                    }
-                    Err(err) => {
-                        update_job_status_with_retry(|| db::mark_failed(conn, job.id, &err));
-                    }
-                }
-                decode_queue.clear_inflight(job.id);
-                if let Ok(progress) = db::current_progress(conn) {
-                    let source_id = db::parse_sample_id(&job.sample_id)
-                        .ok()
-                        .map(|(source_id, _)| {
-                            crate::sample_sources::SourceId::from_string(source_id)
-                        });
-                    let _ = tx.send(JobMessage::Analysis(AnalysisJobMessage::Progress {
-                        source_id,
-                        progress,
-                    }));
-                }
+                finalize_immediate_job(
+                    &mut connections,
+                    &decode_queue,
+                    &tx,
+                    job,
+                    outcome,
+                    log_jobs,
+                );
             }
         }
     })
+}
+
+fn finalize_immediate_job(
+    connections: &mut HashMap<std::path::PathBuf, Connection>,
+    decode_queue: &DecodedQueue,
+    tx: &Sender<JobMessage>,
+    job: db::ClaimedJob,
+    outcome: Result<(), String>,
+    log_jobs: bool,
+) {
+    if log_jobs {
+        match &outcome {
+            Ok(()) => {
+                eprintln!("analysis run done: {}", job.sample_id);
+            }
+            Err(err) => {
+                eprintln!("analysis run failed: {} ({})", job.sample_id, err);
+            }
+        }
+    }
+    let conn = match open_connection_with_retry(connections, &job.source_root) {
+        Ok(conn) => conn,
+        Err(err) => {
+            tracing::warn!(
+                "Analysis job DB open failed for {}: {err}",
+                job.sample_id
+            );
+            decode_queue.clear_inflight(job.id);
+            return;
+        }
+    };
+    match outcome {
+        Ok(()) => {
+            update_job_status_with_retry(|| db::mark_done(conn, job.id));
+        }
+        Err(err) => {
+            update_job_status_with_retry(|| db::mark_failed(conn, job.id, &err));
+        }
+    }
+    decode_queue.clear_inflight(job.id);
+    if let Ok(progress) = db::current_progress(conn) {
+        let source_id = db::parse_sample_id(&job.sample_id)
+            .ok()
+            .map(|(source_id, _)| crate::sample_sources::SourceId::from_string(source_id));
+        let _ = tx.send(JobMessage::Analysis(AnalysisJobMessage::Progress {
+            source_id,
+            progress,
+        }));
+    }
+}
+
+fn open_connection_with_retry(
+    connections: &mut HashMap<std::path::PathBuf, Connection>,
+    source_root: &std::path::PathBuf,
+) -> Result<&mut Connection, String> {
+    match connections.entry(source_root.clone()) {
+        std::collections::hash_map::Entry::Occupied(entry) => Ok(entry.into_mut()),
+        std::collections::hash_map::Entry::Vacant(entry) => {
+            let mut last_err = None;
+            for attempt in 0..=1 {
+                match db::open_source_db(source_root) {
+                    Ok(conn) => return Ok(entry.insert(conn)),
+                    Err(err) => {
+                        last_err = Some(err);
+                        if attempt == 0 {
+                            sleep(Duration::from_millis(50));
+                        }
+                    }
+                }
+            }
+            Err(last_err.unwrap_or_else(|| "Failed to open source DB".to_string()))
+        }
+    }
 }
 
 fn decode_analysis_job(
@@ -430,5 +469,42 @@ fn lower_worker_priority() {
     #[cfg(target_os = "windows")]
     unsafe {
         let _ = SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+    use std::sync::mpsc;
+    use tempfile::NamedTempFile;
+
+    #[test]
+    fn clears_inflight_when_db_open_fails() {
+        let file = NamedTempFile::new().unwrap();
+        let source_root = file.path().to_path_buf();
+        let job = db::ClaimedJob {
+            id: 42,
+            sample_id: "source::missing.wav".to_string(),
+            content_hash: None,
+            job_type: db::ANALYZE_SAMPLE_JOB_TYPE.to_string(),
+            source_root: source_root.clone(),
+        };
+        let queue = DecodedQueue::new();
+        assert!(queue.try_mark_inflight(job.id));
+        let (tx, _rx) = mpsc::channel::<JobMessage>();
+        let mut connections = HashMap::new();
+
+        finalize_immediate_job(
+            &mut connections,
+            &queue,
+            &tx,
+            job,
+            Err("failed".to_string()),
+            false,
+        );
+
+        assert!(queue.try_mark_inflight(42));
+        assert!(connections.is_empty());
     }
 }
