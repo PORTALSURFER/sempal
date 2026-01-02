@@ -693,6 +693,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
+        drop(conn);
         let job = db::ClaimedJob {
             id: job_id,
             sample_id: "source::a.wav".to_string(),
