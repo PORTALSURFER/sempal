@@ -1,6 +1,6 @@
 use std::{collections::HashSet, fs, path::{Path, PathBuf}};
 
-use sempal::app_dirs;
+use ::sempal::app_dirs;
 
 use crate::{download, registry, shortcuts, ui, paths};
 
