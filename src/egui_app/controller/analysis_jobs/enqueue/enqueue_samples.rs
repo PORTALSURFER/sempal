@@ -175,9 +175,36 @@ fn enqueue_from_staged_samples(
     if staged_samples.is_empty() {
         return Ok((0, db::current_progress(conn)?));
     }
+    let staged_index: std::collections::HashMap<String, db::SampleMetadata> = staged_samples
+        .iter()
+        .map(|sample| (sample.sample_id.clone(), sample.clone()))
+        .collect();
     stage_backfill_samples(conn, &staged_samples)?;
-    let (sample_metadata, jobs, invalidate) =
+    let (mut sample_metadata, mut jobs, mut invalidate) =
         collect_backfill_updates(conn, job_type, force_full)?;
+    let failed_jobs = fetch_failed_backfill_jobs(conn, job_type)?;
+    if !failed_jobs.is_empty() {
+        let mut job_ids: std::collections::HashSet<String> =
+            jobs.iter().map(|(id, _)| id.clone()).collect();
+        let mut sample_ids: std::collections::HashSet<String> =
+            sample_metadata.iter().map(|sample| sample.sample_id.clone()).collect();
+        for sample_id in failed_jobs {
+            let Some(sample) = staged_index.get(&sample_id) else {
+                continue;
+            };
+            if job_ids.insert(sample_id.clone()) {
+                jobs.push((sample_id.clone(), sample.content_hash.clone()));
+            }
+            if sample_ids.insert(sample_id.clone()) {
+                sample_metadata.push(sample.clone());
+            }
+            invalidate.push(sample_id);
+        }
+    }
+    if !invalidate.is_empty() {
+        invalidate.sort();
+        invalidate.dedup();
+    }
 
     if !invalidate.is_empty() {
         db::invalidate_analysis_artifacts(conn, &invalidate)?;
@@ -191,6 +218,33 @@ fn enqueue_from_staged_samples(
     let inserted = db::enqueue_jobs(conn, &jobs, job_type, created_at, source_id)?;
     let progress = db::current_progress(conn)?;
     Ok((inserted, progress))
+}
+
+fn fetch_failed_backfill_jobs(
+    conn: &mut rusqlite::Connection,
+    job_type: &str,
+) -> Result<Vec<String>, String> {
+    let mut failed = Vec::new();
+    let mut stmt = conn
+        .prepare(
+            "SELECT j.sample_id
+             FROM analysis_jobs j
+             JOIN temp_backfill_samples t ON t.sample_id = j.sample_id
+             WHERE j.job_type = ?1
+               AND j.status = 'failed'",
+        )
+        .map_err(|err| format!("Prepare failed backfill job query failed: {err}"))?;
+    let mut rows = stmt
+        .query(params![job_type])
+        .map_err(|err| format!("Query failed backfill job rows failed: {err}"))?;
+    while let Some(row) = rows
+        .next()
+        .map_err(|err| format!("Query failed backfill job rows failed: {err}"))?
+    {
+        let sample_id: String = row.get(0).map_err(|err| err.to_string())?;
+        failed.push(sample_id);
+    }
+    Ok(failed)
 }
 
 fn stage_samples_for_source(
