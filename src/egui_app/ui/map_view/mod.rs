@@ -116,10 +116,27 @@ impl EguiApp {
                 .find(|point| point.sample_id == id)
                 .map(|point| (point.x, point.y))
         });
+        let distance_range = focused_point.map(|(fx, fy)| {
+            let mut min_dist = f32::INFINITY;
+            let mut max_dist = 0.0f32;
+            for point in &self.controller.ui.map.cached_filtered_points {
+                let dist = ((point.x - fx).powi(2) + (point.y - fy).powi(2)).sqrt();
+                min_dist = min_dist.min(dist);
+                max_dist = max_dist.max(dist);
+            }
+            if min_dist.is_finite() {
+                Some((min_dist, max_dist))
+            } else {
+                None
+            }
+        }).flatten();
         let point_color = |point: &crate::egui_app::state::MapPoint, alpha: u8| {
             if let Some((fx, fy)) = focused_point {
                 let dist = ((point.x - fx).powi(2) + (point.y - fy).powi(2)).sqrt();
-                let t = if map_diagonal > 0.0 {
+                let t = if let Some((min_dist, max_dist)) = distance_range {
+                    let denom = (max_dist - min_dist).max(f32::EPSILON);
+                    ((dist - min_dist) / denom).clamp(0.0, 1.0)
+                } else if map_diagonal > 0.0 {
                     (dist / map_diagonal).clamp(0.0, 1.0)
                 } else {
                     0.0
