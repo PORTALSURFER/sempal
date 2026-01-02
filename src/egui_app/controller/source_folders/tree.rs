@@ -100,7 +100,7 @@ impl EguiController {
         self.build_folder_rows(&snapshot);
     }
 
-    pub(in crate::egui_app::controller) fn refresh_folder_browser_if_stale(
+    pub(in crate::egui_app) fn refresh_folder_browser_if_stale(
         &mut self,
         max_age: Duration,
     ) {
