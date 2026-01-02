@@ -40,7 +40,7 @@ impl AudioRecorder {
             &resolved.selected_channels,
         );
         let (sender, receiver) = std::sync::mpsc::channel();
-        let monitor_sender = Arc::new(std::sync::Mutex::new(None));
+        let monitor_sender = Arc::new(std::sync::Mutex::new(None::<Sender<MonitorCommand>>));
         let writer = RecorderWriter::spawn(
             path.clone(),
             resolved.resolved.sample_rate,

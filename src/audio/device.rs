@@ -1,3 +1,5 @@
+use cpal::traits::DeviceTrait;
+
 pub(crate) fn device_label(device: &cpal::Device) -> Option<String> {
     device.name().ok()
 }
