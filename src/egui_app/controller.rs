@@ -162,6 +162,7 @@ impl EguiController {
             .last_slow_frame_at
             .is_some_and(|time| now.saturating_duration_since(time) <= ACTIVE_WINDOW);
         let busy = self.is_playing() || recent_input || recent_slow_frame;
+        let pause_claiming = self.is_playing() || recent_input;
         let last_activity_at = match (
             self.runtime.performance.last_user_activity_at,
             self.runtime.performance.last_slow_frame_at,
@@ -185,7 +186,7 @@ impl EguiController {
             .idle_worker_override
             .unwrap_or(base_worker_count);
         let target = if busy || !idle { 1 } else { idle_target };
-        if busy {
+        if pause_claiming {
             self.runtime.analysis.pause_claiming();
         } else {
             self.runtime.analysis.resume_claiming();
