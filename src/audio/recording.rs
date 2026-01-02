@@ -49,14 +49,14 @@ impl AudioRecorder {
             sender.clone(),
         )?;
         let sender_clone = sender.clone();
-        let monitor_sender = monitor_sender.clone();
+        let monitor_sender_clone = monitor_sender.clone();
         let stream = build_input_stream(
             &resolved.device,
             &resolved.stream_config,
             resolved.sample_format,
             selection,
             move |samples| {
-                if let Ok(slot) = monitor_sender.lock()
+                if let Ok(slot) = monitor_sender_clone.lock()
                     && let Some(monitor) = slot.as_ref()
                 {
                     let _ = monitor.send(MonitorCommand::Samples(samples.clone()));
