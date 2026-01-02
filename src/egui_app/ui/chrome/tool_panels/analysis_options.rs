@@ -32,7 +32,6 @@ impl EguiApp {
         ui.label(RichText::new("Analysis workers (0 = auto):").color(palette.text_muted));
         let mut workers = self.controller.analysis_worker_count() as i64;
         let auto_workers = self.controller.analysis_auto_worker_count();
-        let drag = egui::DragValue::new(&mut workers).range(0..=64);
         let hover_text = if workers == 0 {
             format!(
                 "Limit background CPU usage (change takes effect on next start). Auto = {} workers.",
@@ -41,6 +40,7 @@ impl EguiApp {
         } else {
             "Limit background CPU usage (change takes effect on next start).".to_string()
         };
+        let drag = egui::DragValue::new(&mut workers).range(0..=64);
         let response = ui
             .add(drag)
             .on_hover_text(hover_text);
