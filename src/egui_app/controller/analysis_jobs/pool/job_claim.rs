@@ -103,11 +103,24 @@ pub(super) fn spawn_decoder_worker(
             if log_jobs {
                 eprintln!("analysis decode start: {} ({})", job.sample_id, job.job_type);
             }
+            let heartbeat = if job.job_type == db::ANALYZE_SAMPLE_JOB_TYPE {
+                Some(spawn_decode_heartbeat(
+                    job.source_root.clone(),
+                    job.id,
+                    Duration::from_secs(4),
+                ))
+            } else {
+                None
+            };
             let outcome = if job.job_type == db::ANALYZE_SAMPLE_JOB_TYPE {
                 decode_analysis_job(&job, &max_duration_bits, &analysis_sample_rate)
             } else {
                 DecodeOutcome::NotNeeded
             };
+            if let Some((stop, handle)) = heartbeat {
+                stop.store(true, Ordering::Relaxed);
+                let _ = handle.join();
+            }
             if log_jobs {
                 match &outcome {
                     DecodeOutcome::Decoded(_) => {
@@ -432,6 +445,40 @@ fn open_connection_with_retry<'a>(
     }
 }
 
+fn spawn_decode_heartbeat(
+    source_root: std::path::PathBuf,
+    job_id: i64,
+    interval: Duration,
+) -> (Arc<AtomicBool>, JoinHandle<()>) {
+    let stop = Arc::new(AtomicBool::new(false));
+    let stop_worker = Arc::clone(&stop);
+    let handle = std::thread::spawn(move || {
+        let conn = match db::open_source_db(&source_root) {
+            Ok(conn) => conn,
+            Err(err) => {
+                tracing::warn!(
+                    "Analysis decode heartbeat failed to open DB for {}: {err}",
+                    source_root.display()
+                );
+                return;
+            }
+        };
+        let mut last_touch = Instant::now() - interval;
+        let poll = Duration::from_millis(200);
+        loop {
+            if stop_worker.load(Ordering::Relaxed) {
+                break;
+            }
+            if last_touch.elapsed() >= interval {
+                let _ = db::touch_running_at(&conn, &[job_id]);
+                last_touch = Instant::now();
+            }
+            sleep(poll);
+        }
+    });
+    (stop, handle)
+}
+
 fn decode_analysis_job(
     job: &db::ClaimedJob,
     max_duration_bits: &AtomicU32,
@@ -477,7 +524,9 @@ mod tests {
     use super::*;
     use std::collections::HashMap;
     use std::sync::mpsc;
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
     use tempfile::NamedTempFile;
+    use tempfile::TempDir;
 
     #[test]
     fn clears_inflight_when_db_open_fails() {
@@ -506,5 +555,43 @@ mod tests {
 
         assert!(queue.try_mark_inflight(42));
         assert!(connections.is_empty());
+    }
+
+    #[test]
+    fn decode_heartbeat_keeps_running_job_fresh() {
+        let dir = TempDir::new().unwrap();
+        let conn = db::open_source_db(dir.path()).unwrap();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_else(|_| Duration::from_secs(0))
+            .as_secs() as i64;
+        conn.execute(
+            "INSERT INTO analysis_jobs (sample_id, job_type, status, attempts, created_at, running_at)
+             VALUES (?1, ?2, 'running', 1, ?3, ?4)",
+            rusqlite::params![
+                "source::long.wav",
+                db::ANALYZE_SAMPLE_JOB_TYPE,
+                now,
+                now - 120
+            ],
+        )
+        .unwrap();
+        let job_id: i64 = conn
+            .query_row(
+                "SELECT id FROM analysis_jobs WHERE sample_id = ?1",
+                rusqlite::params!["source::long.wav"],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        let (stop, handle) =
+            spawn_decode_heartbeat(dir.path().to_path_buf(), job_id, Duration::from_millis(10));
+        sleep(Duration::from_millis(50));
+        let stale_before = now - 1;
+        let changed = db::fail_stale_running_jobs(&conn, stale_before).unwrap();
+        stop.store(true, Ordering::Relaxed);
+        let _ = handle.join();
+
+        assert_eq!(changed, 0);
     }
 }
