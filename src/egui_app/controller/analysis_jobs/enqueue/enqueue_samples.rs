@@ -118,11 +118,23 @@ fn enqueue_source_backfill(
             )
             .unwrap_or(0);
         if active_jobs > 0 {
+            info!(
+                "Analysis backfill skipped: active jobs exist (active={}, total={}, source_id={}, force_full={})",
+                active_jobs,
+                existing_jobs_total,
+                request.source.id.as_str(),
+                force_full
+            );
             return Ok((0, db::current_progress(&conn)?));
         }
     }
     let staged_samples = stage_samples_for_source(request.source, true)?;
     if staged_samples.is_empty() {
+        info!(
+            "Analysis backfill skipped: no staged samples (source_id={}, force_full={})",
+            request.source.id.as_str(),
+            force_full
+        );
         return Ok((0, db::current_progress(&conn)?));
     }
     enqueue_from_staged_samples(
