@@ -1,30 +1,49 @@
 use super::store::{DbSimilarityPrepStore, SimilarityPrepStore};
 use crate::egui_app::controller::{EguiController, SimilarityPrepStage};
 use crate::egui_app::state::AnalysisProgressSnapshot;
+use tracing::info;
 
 impl EguiController {
     pub(super) fn refresh_similarity_prep_progress(&mut self) {
         let Some(state) = self.runtime.similarity_prep.as_ref() else {
             return;
         };
+        info!(
+            "Similarity prep progress refresh (stage={:?}, source_id={})",
+            state.stage,
+            state.source_id.as_str()
+        );
         let store = DbSimilarityPrepStore;
         match state.stage {
             SimilarityPrepStage::AwaitScan => {
                 if self.runtime.jobs.scan_in_progress() {
+                    info!("Similarity prep waiting for scan (source_id={})", state.source_id.as_str());
                     self.ensure_similarity_prep_progress(0, false);
                     self.set_similarity_scan_detail();
                     return;
                 }
+                info!(
+                    "Similarity prep requesting hard sync (source_id={})",
+                    state.source_id.as_str()
+                );
                 self.request_hard_sync();
                 return;
             }
             SimilarityPrepStage::AwaitEmbeddings => {
                 let Some(source) = self.find_source_by_id(&state.source_id) else {
+                    info!(
+                        "Similarity prep missing source (source_id={})",
+                        state.source_id.as_str()
+                    );
                     return;
                 };
                 let progress = match store.current_analysis_progress(&source) {
                     Ok(progress) => progress,
                     Err(_) => {
+                        info!(
+                            "Similarity prep analysis progress unavailable (source_id={})",
+                            source.id.as_str()
+                        );
                         if !self.ui.progress.visible {
                             self.show_similarity_prep_progress(0, false);
                             self.set_similarity_analysis_detail();
@@ -32,10 +51,28 @@ impl EguiController {
                         return;
                     }
                 };
+                info!(
+                    "Similarity prep analysis progress (pending={}, running={}, failed={}, completed={}, total={}, source_id={})",
+                    progress.pending,
+                    progress.running,
+                    progress.failed,
+                    progress.completed(),
+                    progress.total(),
+                    source.id.as_str()
+                );
                 if progress.pending == 0 && progress.running == 0 {
                     let embed_progress = store
                         .current_embedding_backfill_progress(&source)
                         .unwrap_or_default();
+                    info!(
+                        "Similarity prep embedding progress (pending={}, running={}, failed={}, completed={}, total={}, source_id={})",
+                        embed_progress.pending,
+                        embed_progress.running,
+                        embed_progress.failed,
+                        embed_progress.completed(),
+                        embed_progress.total(),
+                        source.id.as_str()
+                    );
                     if embed_progress.pending > 0 || embed_progress.running > 0 {
                         self.ensure_similarity_prep_progress(embed_progress.total(), true);
                         self.set_similarity_embedding_detail();
@@ -55,6 +92,10 @@ impl EguiController {
                         return;
                     }
                     if !store.source_has_embeddings(&source) {
+                        info!(
+                            "Similarity prep enqueueing embedding backfill (source_id={})",
+                            source.id.as_str()
+                        );
                         self.ensure_similarity_prep_progress(0, true);
                         self.set_similarity_embedding_detail();
                         self.enqueue_similarity_backfill(source, false);
@@ -93,6 +134,10 @@ impl EguiController {
             }));
         }
         SimilarityPrepStage::Finalizing => {
+            info!(
+                "Similarity prep finalizing (source_id={})",
+                state.source_id.as_str()
+            );
             self.ensure_similarity_finalize_progress();
             self.set_similarity_finalize_detail();
             }
