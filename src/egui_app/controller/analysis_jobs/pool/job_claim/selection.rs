@@ -74,7 +74,6 @@ impl ClaimSelector {
             let jobs = match db::claim_next_jobs(
                 &mut source.conn,
                 &source.source.root,
-                source.source.id.as_str(),
                 self.claim_batch,
             ) {
                 Ok(jobs) => jobs,
