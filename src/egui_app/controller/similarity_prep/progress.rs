@@ -15,11 +15,8 @@ impl EguiController {
                     self.set_similarity_scan_detail();
                     return;
                 }
-                if self.ui.progress.visible {
-                    return;
-                }
-                self.show_similarity_prep_progress(0, false);
-                self.set_similarity_scan_detail();
+                self.request_hard_sync();
+                return;
             }
             SimilarityPrepStage::AwaitEmbeddings => {
                 let Some(source) = self.find_source_by_id(&state.source_id) else {
