@@ -94,6 +94,7 @@ mod tests {
 
     #[derive(Deserialize)]
     struct ChannelsConfig {
+        #[serde(deserialize_with = "deserialize_input_channels")]
         channels: Vec<u16>,
     }
 
