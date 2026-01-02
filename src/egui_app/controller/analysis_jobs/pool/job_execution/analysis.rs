@@ -2,8 +2,14 @@ use crate::egui_app::controller::analysis_jobs::db;
 use tracing::warn;
 
 use super::analysis_cache::{load_existing_embedding, lookup_cache_by_hash};
-use super::analysis_db::{apply_cached_embedding, apply_cached_features_and_embedding, finalize_analysis_job, update_metadata_for_skip};
-use super::analysis_decode::{build_logmel_for_embedding, decode_for_analysis, infer_embedding_from_logmel, DecodeOutcome};
+use super::analysis_db::{
+    apply_cached_embedding, apply_cached_features_and_embedding, finalize_analysis_job,
+    update_metadata_for_skip,
+};
+use super::analysis_decode::{
+    build_logmel_for_embedding, decode_for_analysis, infer_embedding_from_logmel, DecodeOutcome,
+};
+use super::support::JobHeartbeat;
 
 pub(in crate::egui_app::controller::analysis_jobs::pool) struct AnalysisContext<'a> {
     pub(in crate::egui_app::controller::analysis_jobs::pool) use_cache: bool,
@@ -17,6 +23,9 @@ pub(super) fn run_analysis_job(
     job: &db::ClaimedJob,
     context: &AnalysisContext<'_>,
 ) -> Result<(), String> {
+    let mut heartbeat = JobHeartbeat::new(std::time::Duration::from_secs(4));
+    let job_ids = [job.id];
+    heartbeat.touch_jobs(conn, &job_ids)?;
     let content_hash = job
         .content_hash
         .as_deref()
@@ -46,18 +55,25 @@ pub(super) fn run_analysis_job(
         }
     }
 
+    heartbeat.touch_jobs(conn, &job_ids)?;
     match decode_for_analysis(job, context)? {
-        DecodeOutcome::Decoded(decoded) => run_analysis_job_with_decoded(conn, job, decoded, context),
+        DecodeOutcome::Decoded(decoded) => {
+            heartbeat.touch_jobs(conn, &job_ids)?;
+            run_analysis_job_with_decoded(conn, job, decoded, context)
+        }
         DecodeOutcome::Skipped {
             duration_seconds,
             sample_rate,
-        } => update_metadata_for_skip(
-            conn,
-            job,
-            duration_seconds,
-            sample_rate,
-            context.analysis_version,
-        ),
+        } => {
+            heartbeat.touch_jobs(conn, &job_ids)?;
+            update_metadata_for_skip(
+                conn,
+                job,
+                duration_seconds,
+                sample_rate,
+                context.analysis_version,
+            )
+        }
     }
 }
 
@@ -106,8 +122,11 @@ pub(in crate::egui_app::controller::analysis_jobs::pool) fn run_analysis_jobs_wi
         error: Option<String>,
     }
 
+    let job_ids: Vec<i64> = jobs.iter().map(|(job, _)| job.id).collect();
+    let mut heartbeat = JobHeartbeat::new(std::time::Duration::from_secs(4));
     let mut batch_jobs = Vec::with_capacity(jobs.len());
     let mut logmel_scratch = crate::analysis::embedding::PannsLogMelScratch::default();
+    let _ = heartbeat.touch_jobs(conn, &job_ids);
     for (job, decoded) in jobs {
         let sample_id = job.sample_id.clone();
         let sample_rate_used = decoded.sample_rate_used;
@@ -166,6 +185,7 @@ pub(in crate::egui_app::controller::analysis_jobs::pool) fn run_analysis_jobs_wi
         }
         batch_jobs.push(item);
     }
+    let _ = heartbeat.touch_jobs(conn, &job_ids);
 
     let mut input_indices = Vec::new();
     let mut logmel_inputs = Vec::new();
@@ -177,6 +197,7 @@ pub(in crate::egui_app::controller::analysis_jobs::pool) fn run_analysis_jobs_wi
     }
 
     if !input_indices.is_empty() {
+        let _ = heartbeat.touch_jobs(conn, &job_ids);
         let results = if crate::analysis::embedding::embedding_pipeline_enabled() {
             let inflight = crate::analysis::embedding::embedding_inflight_max();
             let micro_batch = crate::analysis::embedding::embedding_batch_max();
@@ -192,6 +213,7 @@ pub(in crate::egui_app::controller::analysis_jobs::pool) fn run_analysis_jobs_wi
                 micro_batch,
             )
         };
+        let _ = heartbeat.touch_jobs(conn, &job_ids);
         for (idx, result) in input_indices.iter().copied().zip(results.into_iter()) {
             match result {
                 Ok(embedding) => {
@@ -231,6 +253,7 @@ pub(in crate::egui_app::controller::analysis_jobs::pool) fn run_analysis_jobs_wi
     let mut ann_batch: Vec<(String, Vec<f32>)> = Vec::new();
     let mut outcomes = Vec::with_capacity(batch_jobs.len());
     for item in batch_jobs {
+        let _ = heartbeat.touch_jobs(conn, &job_ids);
         let result = if let Some(err) = item.error {
             Err(err)
         } else if let Some(embedding) = item.embedding {

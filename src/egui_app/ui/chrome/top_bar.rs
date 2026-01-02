@@ -1,5 +1,5 @@
 use eframe::egui::{self, RichText, SliderClamping};
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use super::super::EguiApp;
 use super::super::style;
@@ -221,6 +221,41 @@ impl EguiApp {
                             .desired_width(180.0)
                             .text(samples_label),
                     );
+                    if !snapshot.running_jobs.is_empty() {
+                        ui.add_space(4.0);
+                        ui.label("Running jobs");
+                        let now_epoch = now_epoch_seconds();
+                        for job in &snapshot.running_jobs {
+                            let age = job.running_at.and_then(|ts| {
+                                now_epoch
+                                    .and_then(|now| now.checked_sub(ts))
+                                    .map(Duration::from_secs)
+                            });
+                            let age_label = age
+                                .map(format_elapsed)
+                                .unwrap_or_else(|| "unknown".to_string());
+                            let mut line = format!("{} • {}", job.label, age_label);
+                            if let (Some(age), Some(stale_after)) =
+                                (age, snapshot.stale_after_secs)
+                            {
+                                if age.as_secs() as i64 >= stale_after {
+                                    line.push_str(" • stalled?");
+                                }
+                            }
+                            ui.label(line);
+                            if let (Some(age), Some(stale_after)) =
+                                (age, snapshot.stale_after_secs)
+                            {
+                                let fraction =
+                                    (age.as_secs_f32() / stale_after as f32).clamp(0.0, 1.0);
+                                ui.add(
+                                    egui::ProgressBar::new(fraction)
+                                        .desired_width(180.0)
+                                        .text(format!("{}s timeout", stale_after)),
+                                );
+                            }
+                        }
+                    }
                 }
                 ui.add_space(4.0);
                 let heartbeat = heartbeat_frame(ui.input(|i| i.time));
@@ -275,4 +310,11 @@ fn format_elapsed(elapsed: Duration) -> String {
         let rem = secs % 60;
         format!("{}m {:02}s", minutes, rem)
     }
+}
+
+fn now_epoch_seconds() -> Option<i64> {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .map(|duration| duration.as_secs() as i64)
 }

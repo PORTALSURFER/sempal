@@ -1,6 +1,7 @@
 use super::progress;
 use super::*;
 use crate::egui_app::state::ProgressTaskKind;
+use crate::egui_app::state::RunningJobSnapshot;
 
 pub(super) fn handle_analysis_message(
     controller: &mut EguiController,
@@ -95,16 +96,40 @@ pub(super) fn handle_analysis_message(
                 if progress.failed > 0 {
                     detail.push_str(&format!(" • {} failed", progress.failed));
                 }
-                controller
-                    .ui
-                    .progress
-                    .set_analysis_snapshot(Some(crate::egui_app::state::AnalysisProgressSnapshot {
+                let running_jobs = if let Some(source) = controller.current_source() {
+                    super::analysis_jobs::current_running_jobs_for_source(&source, 3)
+                        .ok()
+                        .map(|jobs| {
+                            jobs.into_iter()
+                                .map(|job| {
+                                    let label = super::analysis_jobs::parse_sample_id(
+                                        job.sample_id.as_str(),
+                                    )
+                                    .ok()
+                                    .map(|(_, path)| path.to_string_lossy().to_string())
+                                    .unwrap_or(job.sample_id);
+                                    RunningJobSnapshot {
+                                        label,
+                                        running_at: job.running_at,
+                                    }
+                                })
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default()
+                } else {
+                    Vec::new()
+                };
+                controller.ui.progress.set_analysis_snapshot(Some(
+                    crate::egui_app::state::AnalysisProgressSnapshot {
                         pending: progress.pending,
                         running: progress.running,
                         failed: progress.failed,
                         samples_completed,
                         samples_total,
-                    }));
+                        running_jobs,
+                        stale_after_secs: Some(super::analysis_jobs::stale_running_job_seconds()),
+                    },
+                ));
                 progress::update_progress_totals(
                     controller,
                     ProgressTaskKind::Analysis,

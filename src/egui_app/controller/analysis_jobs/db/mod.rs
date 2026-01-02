@@ -18,7 +18,8 @@ pub(in crate::egui_app::controller::analysis_jobs) use artifacts::{
 };
 pub(in crate::egui_app::controller) use cleanup::purge_orphaned_samples;
 pub(in crate::egui_app::controller::analysis_jobs) use cleanup::{
-    prune_jobs_for_missing_sources, reset_running_to_pending, reset_stale_running_jobs,
+    fail_stale_running_jobs, prune_jobs_for_missing_sources, reset_running_to_pending,
+    reset_stale_running_jobs,
 };
 pub(in crate::egui_app::controller) use connection::open_source_db;
 #[cfg(test)]
@@ -32,9 +33,9 @@ pub(in crate::egui_app::controller) use ids::{build_sample_id, parse_sample_id};
 pub(in crate::egui_app::controller::analysis_jobs) use jobs::claim_next_job;
 pub(in crate::egui_app::controller::analysis_jobs) use jobs::{
     claim_next_jobs, mark_done, mark_failed, mark_pending, sample_analysis_states,
-    sample_content_hash,
+    sample_content_hash, touch_running_at,
 };
 pub(in crate::egui_app::controller::analysis_jobs) use progress::{
-    current_embedding_backfill_progress, current_progress,
+    current_embedding_backfill_progress, current_progress, current_running_jobs,
 };
 pub(in crate::egui_app::controller::analysis_jobs) use types::{ClaimedJob, SampleMetadata};

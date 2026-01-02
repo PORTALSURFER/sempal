@@ -165,7 +165,7 @@ pub(in crate::egui_app::controller::analysis_jobs) fn mark_done(
     conn.execute(
         "UPDATE analysis_jobs
          SET status = 'done', last_error = NULL, running_at = NULL
-         WHERE id = ?1",
+         WHERE id = ?1 AND status = 'running'",
         params![job_id],
     )
     .map_err(|err| format!("Failed to mark analysis job done: {err}"))?;
@@ -181,7 +181,7 @@ pub(in crate::egui_app::controller::analysis_jobs) fn mark_failed(
     conn.execute(
         "UPDATE analysis_jobs
          SET status = 'failed', last_error = ?2, running_at = NULL
-         WHERE id = ?1",
+         WHERE id = ?1 AND status = 'running'",
         params![job_id, error],
     )
     .map_err(|err| format!("Failed to mark analysis job failed: {err}"))?;
@@ -199,6 +199,32 @@ pub(in crate::egui_app::controller::analysis_jobs) fn mark_pending(
         params![job_id],
     )
     .map_err(|err| format!("Failed to mark analysis job pending: {err}"))?;
+    Ok(())
+}
+
+pub(in crate::egui_app::controller::analysis_jobs) fn touch_running_at(
+    conn: &Connection,
+    job_ids: &[i64],
+) -> Result<(), String> {
+    if job_ids.is_empty() {
+        return Ok(());
+    }
+    let now = now_epoch_seconds();
+    let placeholders = std::iter::repeat("?")
+        .take(job_ids.len())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let sql = format!(
+        "UPDATE analysis_jobs
+         SET running_at = ?1
+         WHERE status = 'running'
+           AND id IN ({placeholders})"
+    );
+    let mut params_vec = Vec::with_capacity(job_ids.len() + 1);
+    params_vec.push(rusqlite::types::Value::from(now));
+    params_vec.extend(job_ids.iter().map(|id| rusqlite::types::Value::from(*id)));
+    conn.execute(&sql, params_from_iter(params_vec))
+        .map_err(|err| format!("Failed to touch analysis job heartbeat: {err}"))?;
     Ok(())
 }
 

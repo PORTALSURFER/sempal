@@ -1,4 +1,5 @@
 use crate::egui_app::controller::analysis_jobs::db;
+use crate::egui_app::controller::analysis_jobs::stale_running_job_seconds;
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -10,7 +11,6 @@ pub(in crate::egui_app::controller::analysis_jobs) struct SourceClaimDb {
 
 pub(in crate::egui_app::controller::analysis_jobs) const SOURCE_REFRESH_INTERVAL: Duration =
     Duration::from_secs(5);
-const STALE_RUNNING_JOB_SECS: i64 = 10 * 60;
 
 pub(in crate::egui_app::controller::analysis_jobs) fn refresh_sources(
     sources: &mut Vec<SourceClaimDb>,
@@ -45,8 +45,8 @@ pub(in crate::egui_app::controller::analysis_jobs) fn refresh_sources(
                 continue;
             }
         };
-        let stale_before = now_epoch_seconds().saturating_sub(STALE_RUNNING_JOB_SECS);
-        let _ = db::reset_stale_running_jobs(&conn, stale_before);
+        let stale_before = now_epoch_seconds().saturating_sub(stale_running_job_seconds());
+        let _ = db::fail_stale_running_jobs(&conn, stale_before);
         let should_reset = match reset_done.lock() {
             Ok(mut guard) => guard.insert(source.root.clone()),
             Err(mut guard) => guard.get_mut().insert(source.root.clone()),

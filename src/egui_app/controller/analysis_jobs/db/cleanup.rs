@@ -27,6 +27,23 @@ pub(in crate::egui_app::controller::analysis_jobs) fn reset_stale_running_jobs(
     .map_err(|err| format!("Failed to reset stale analysis jobs: {err}"))
 }
 
+pub(in crate::egui_app::controller::analysis_jobs) fn fail_stale_running_jobs(
+    conn: &Connection,
+    stale_before_epoch: i64,
+) -> Result<usize, String> {
+    conn.execute(
+        "UPDATE analysis_jobs
+         SET status = 'failed',
+             last_error = 'Timed out while running',
+             running_at = NULL
+         WHERE status = 'running'
+           AND running_at IS NOT NULL
+           AND running_at <= ?1",
+        rusqlite::params![stale_before_epoch],
+    )
+    .map_err(|err| format!("Failed to fail stale analysis jobs: {err}"))
+}
+
 pub(in crate::egui_app::controller::analysis_jobs) fn prune_jobs_for_missing_sources(
     conn: &Connection,
 ) -> Result<usize, String> {

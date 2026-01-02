@@ -206,6 +206,28 @@ fn reset_stale_running_jobs_ignores_recent_claims() {
 }
 
 #[test]
+fn fail_stale_running_jobs_marks_failed() {
+    let conn = conn_with_schema();
+    conn.execute(
+        "INSERT INTO analysis_jobs (sample_id, job_type, status, attempts, created_at, running_at)
+         VALUES ('s::a.wav', 'x', 'running', 1, 0, 10)",
+        [],
+    )
+    .unwrap();
+    let changed = fail_stale_running_jobs(&conn, 20).unwrap();
+    assert_eq!(changed, 1);
+    let (status, last_error): (String, Option<String>) = conn
+        .query_row(
+            "SELECT status, last_error FROM analysis_jobs WHERE sample_id = 's::a.wav'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(status, "failed");
+    assert!(last_error.unwrap_or_default().contains("Timed out"));
+}
+
+#[test]
 fn prune_jobs_for_missing_sources_removes_orphans() {
     let conn = conn_with_schema();
     conn.execute(

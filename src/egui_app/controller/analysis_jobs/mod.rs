@@ -32,3 +32,22 @@ pub(in crate::egui_app::controller) fn current_embedding_backfill_progress_for_s
     let conn = db::open_source_db(&source.root)?;
     db::current_embedding_backfill_progress(&conn)
 }
+
+pub(in crate::egui_app::controller) fn current_running_jobs_for_source(
+    source: &crate::sample_sources::SampleSource,
+    limit: usize,
+) -> Result<Vec<types::RunningJobInfo>, String> {
+    let conn = db::open_source_db(&source.root)?;
+    db::current_running_jobs(&conn, limit)
+}
+
+pub(in crate::egui_app::controller) fn stale_running_job_seconds() -> i64 {
+    if let Ok(value) = std::env::var("SEMPAL_ANALYSIS_STALE_SECS") {
+        if let Ok(parsed) = value.trim().parse::<i64>() {
+            if parsed >= 60 {
+                return parsed;
+            }
+        }
+    }
+    10 * 60
+}

@@ -89,6 +89,10 @@ impl EguiController {
                 failed: progress.failed,
                 samples_completed,
                 samples_total,
+                running_jobs: Vec::new(),
+                stale_after_secs: Some(
+                    crate::egui_app::controller::analysis_jobs::stale_running_job_seconds(),
+                ),
             }));
         }
         SimilarityPrepStage::Finalizing => {

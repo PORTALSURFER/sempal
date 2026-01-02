@@ -35,6 +35,14 @@ pub struct AnalysisProgressSnapshot {
     pub failed: usize,
     pub samples_completed: usize,
     pub samples_total: usize,
+    pub running_jobs: Vec<RunningJobSnapshot>,
+    pub stale_after_secs: Option<i64>,
+}
+
+#[derive(Clone, Debug)]
+pub struct RunningJobSnapshot {
+    pub label: String,
+    pub running_at: Option<i64>,
 }
 
 impl ProgressOverlayState {
