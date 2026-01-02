@@ -26,6 +26,7 @@ pub(super) struct ClaimSelector {
     local_queue: VecDeque<db::ClaimedJob>,
     claim_batch: usize,
     reset_done: Arc<Mutex<HashSet<PathBuf>>>,
+    last_source_count: usize,
 }
 
 impl ClaimSelector {
@@ -38,6 +39,7 @@ impl ClaimSelector {
             local_queue: VecDeque::new(),
             claim_batch: claim_batch_size(),
             reset_done,
+            last_source_count: 0,
         }
     }
 
@@ -63,6 +65,13 @@ impl ClaimSelector {
             &self.reset_done,
             allowed_source_ids,
         );
+        if self.sources.len() != self.last_source_count {
+            self.last_source_count = self.sources.len();
+            tracing::info!(
+                "Analysis claim sources refreshed: {} source(s) available",
+                self.last_source_count
+            );
+        }
     }
 
     fn fill_local_queue(&mut self) -> bool {

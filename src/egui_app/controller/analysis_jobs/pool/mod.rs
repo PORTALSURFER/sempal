@@ -15,6 +15,7 @@ use std::sync::{
 #[cfg(not(test))]
 use std::sync::Mutex;
 use std::thread::JoinHandle;
+use tracing::info;
 
 /// Long-lived worker pool that claims and processes analysis jobs from the library database.
 pub(in crate::egui_app::controller) struct AnalysisWorkerPool {
@@ -58,7 +59,10 @@ impl AnalysisWorkerPool {
     }
 
     pub(in crate::egui_app::controller) fn set_worker_count(&self, value: u32) {
-        self.worker_count_override.store(value, Ordering::Relaxed);
+        let previous = self.worker_count_override.swap(value, Ordering::Relaxed);
+        if previous != value {
+            info!("Analysis worker count override set to {}", value);
+        }
     }
 
     #[cfg_attr(test, allow(dead_code))]
@@ -91,16 +95,29 @@ impl AnalysisWorkerPool {
         sources: Option<Vec<SourceId>>,
     ) {
         if let Ok(mut guard) = self.allowed_source_ids.write() {
-            *guard = sources.map(|ids| ids.into_iter().collect());
+            let next = sources.map(|ids| ids.into_iter().collect::<std::collections::HashSet<_>>());
+            let count = next.as_ref().map(|ids| ids.len()).unwrap_or(0);
+            *guard = next;
+            if count == 0 {
+                info!("Analysis sources set to all available sources");
+            } else {
+                info!("Analysis sources restricted to {} source(s)", count);
+            }
         }
     }
 
     pub(in crate::egui_app::controller) fn pause_claiming(&self) {
-        self.pause_claiming.store(true, Ordering::Relaxed);
+        let previous = self.pause_claiming.swap(true, Ordering::Relaxed);
+        if !previous {
+            info!("Analysis job claiming paused");
+        }
     }
 
     pub(in crate::egui_app::controller) fn resume_claiming(&self) {
-        self.pause_claiming.store(false, Ordering::Relaxed);
+        let previous = self.pause_claiming.swap(false, Ordering::Relaxed);
+        if previous {
+            info!("Analysis job claiming resumed");
+        }
     }
 
     pub(in crate::egui_app::controller) fn start(
@@ -125,6 +142,10 @@ impl AnalysisWorkerPool {
                 job_claim::decode_queue_target(embedding_batch_max, worker_count);
             let queue = std::sync::Arc::new(job_claim::DecodedQueue::new());
             let reset_done = Arc::new(Mutex::new(HashSet::new()));
+            info!(
+                "Analysis workers starting: compute={}, decode={}, queue_target={}",
+                worker_count, decode_workers, decode_queue_target
+            );
             for worker_index in 0..decode_workers {
                 self.threads.push(job_claim::spawn_decoder_worker(
                     worker_index,

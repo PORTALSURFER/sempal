@@ -79,6 +79,7 @@ pub(super) fn spawn_progress_poller(
         let mut last: Option<AnalysisProgress> = None;
         let mut last_heartbeat = Instant::now() - HEARTBEAT_INTERVAL;
         let mut idle_polls = 0u32;
+        let mut last_sources_empty = None;
         loop {
             if shutdown.load(Ordering::Relaxed) {
                 break;
@@ -92,6 +93,18 @@ pub(super) fn spawn_progress_poller(
                 .ok()
                 .and_then(|guard| guard.clone());
             refresh_sources(&mut sources, &mut last_refresh, allowed.as_ref());
+            let sources_empty = sources.is_empty();
+            if last_sources_empty != Some(sources_empty) {
+                last_sources_empty = Some(sources_empty);
+                if sources_empty {
+                    tracing::info!("Analysis progress poller has no sources to inspect");
+                } else {
+                    tracing::info!(
+                        "Analysis progress poller inspecting {} source(s)",
+                        sources.len()
+                    );
+                }
+            }
             let progress = current_progress_all(&mut sources);
             let unchanged = last == Some(progress);
             let should_heartbeat = unchanged
