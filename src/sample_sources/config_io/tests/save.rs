@@ -1,9 +1,9 @@
 use super::TestConfigEnv;
 use crate::audio::{AudioInputConfig, AudioOutputConfig};
 use crate::sample_sources::config::AppConfig;
-use crate::sample_sources::config_io::save::save_to_path;
-use crate::sample_sources::config_io::load::load_settings_from;
-use crate::sample_sources::config_types::{
+use super::super::load::load_settings_from;
+use super::super::save::save_to_path;
+use super::super::super::config_types::{
     AnalysisSettings, AppSettingsCore, FeatureFlags, HintSettings, InteractionOptions,
     PannsBackendChoice, UpdateChannel, UpdateSettings, WgpuPowerPreference,
 };

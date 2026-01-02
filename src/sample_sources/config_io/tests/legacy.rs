@@ -1,9 +1,9 @@
 use super::TestConfigEnv;
 use crate::audio::{AudioInputConfig, AudioOutputConfig};
 use crate::sample_sources::config::AppConfig;
-use crate::sample_sources::config_io::LEGACY_CONFIG_FILE_NAME;
-use crate::sample_sources::config_io::load::load_or_default;
-use crate::sample_sources::config_types::{
+use super::super::load::load_or_default;
+use super::super::LEGACY_CONFIG_FILE_NAME;
+use super::super::super::config_types::{
     AnalysisSettings, AppSettingsCore, FeatureFlags, HintSettings, InteractionOptions,
     UpdateSettings,
 };
