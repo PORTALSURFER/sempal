@@ -11,13 +11,17 @@ use std::sync::{
 use std::thread::{JoinHandle, sleep};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use super::progress_cache::ProgressCache;
+
 const POLL_INTERVAL_ACTIVE: Duration = Duration::from_millis(500);
 const POLL_INTERVAL_IDLE: Duration = Duration::from_millis(1500);
 const SOURCE_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(2);
 const STALE_CLEANUP_INTERVAL: Duration = Duration::from_secs(10);
+const DB_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
 
 struct ProgressSourceDb {
+    source_id: crate::sample_sources::SourceId,
     conn: Connection,
 }
 
@@ -47,24 +51,42 @@ fn refresh_sources(
             Ok(conn) => conn,
             Err(_) => continue,
         };
-        next.push(ProgressSourceDb { conn });
+        next.push(ProgressSourceDb {
+            source_id: source.id.clone(),
+            conn,
+        });
     }
     *sources = next;
 }
 
-fn current_progress_all(sources: &mut [ProgressSourceDb]) -> AnalysisProgress {
-    let mut total = AnalysisProgress::default();
-    for source in sources {
-        if let Ok(progress) = db::current_progress(&source.conn) {
-            total.pending += progress.pending;
-            total.running += progress.running;
-            total.done += progress.done;
-            total.failed += progress.failed;
-            total.samples_total += progress.samples_total;
-            total.samples_pending_or_running += progress.samples_pending_or_running;
+fn current_progress_all(
+    sources: &mut [ProgressSourceDb],
+    progress_cache: &Arc<RwLock<ProgressCache>>,
+    refresh_cache: bool,
+) -> AnalysisProgress {
+    if refresh_cache || progress_cache.read().map(|cache| cache.is_empty()).unwrap_or(true) {
+        let mut total = AnalysisProgress::default();
+        let mut updates = Vec::new();
+        for source in sources {
+            if let Ok(progress) = db::current_progress(&source.conn) {
+                total.pending += progress.pending;
+                total.running += progress.running;
+                total.done += progress.done;
+                total.failed += progress.failed;
+                total.samples_total += progress.samples_total;
+                total.samples_pending_or_running += progress.samples_pending_or_running;
+                updates.push((source.source_id.clone(), progress));
+            }
         }
+        if let Ok(mut cache) = progress_cache.write() {
+            cache.update_many(updates);
+        }
+        return total;
     }
-    total
+    if let Ok(cache) = progress_cache.read() {
+        return cache.total_for_sources(sources.iter().map(|source| &source.source_id));
+    }
+    AnalysisProgress::default()
 }
 
 fn cleanup_stale_jobs(sources: &mut [ProgressSourceDb], stale_before: i64) -> usize {
@@ -90,12 +112,14 @@ pub(super) fn spawn_progress_poller(
     cancel: Arc<AtomicBool>,
     shutdown: Arc<AtomicBool>,
     allowed_source_ids: Arc<RwLock<Option<std::collections::HashSet<crate::sample_sources::SourceId>>>>,
+    progress_cache: Arc<RwLock<ProgressCache>>,
 ) -> JoinHandle<()> {
     std::thread::spawn(move || {
         let mut sources = Vec::new();
         let mut last_refresh = Instant::now() - SOURCE_REFRESH_INTERVAL;
         let mut last: Option<AnalysisProgress> = None;
         let mut last_heartbeat = Instant::now() - HEARTBEAT_INTERVAL;
+        let mut last_db_refresh = Instant::now() - DB_REFRESH_INTERVAL;
         let mut last_cleanup = Instant::now() - STALE_CLEANUP_INTERVAL;
         let mut idle_polls = 0u32;
         let mut last_sources_empty = None;
@@ -131,7 +155,11 @@ pub(super) fn spawn_progress_poller(
                     );
                 }
             }
-            let progress = current_progress_all(&mut sources);
+            let refresh_cache = should_refresh_db(last_db_refresh, &progress_cache);
+            if refresh_cache {
+                last_db_refresh = Instant::now();
+            }
+            let progress = current_progress_all(&mut sources, &progress_cache, refresh_cache);
             let unchanged = last == Some(progress);
             let should_heartbeat = unchanged
                 && (progress.pending > 0 || progress.running > 0)
@@ -158,6 +186,16 @@ pub(super) fn spawn_progress_poller(
             sleep(interval);
         }
     })
+}
+
+fn should_refresh_db(last_db_refresh: Instant, progress_cache: &Arc<RwLock<ProgressCache>>) -> bool {
+    if last_db_refresh.elapsed() >= DB_REFRESH_INTERVAL {
+        return true;
+    }
+    progress_cache
+        .read()
+        .map(|cache| cache.is_empty())
+        .unwrap_or(true)
 }
 
 #[cfg(test)]
@@ -196,5 +234,30 @@ mod tests {
             .unwrap();
         assert_eq!(changed, 1);
         assert_eq!(status, "failed");
+    }
+
+    #[test]
+    fn should_refresh_db_when_cache_empty_or_stale() {
+        let cache = Arc::new(RwLock::new(ProgressCache::default()));
+        assert!(should_refresh_db(
+            Instant::now(),
+            &cache
+        ));
+
+        let mut cache_guard = cache.write().unwrap();
+        cache_guard.update(
+            crate::sample_sources::SourceId::from_string("source".to_string()),
+            AnalysisProgress::default(),
+        );
+        drop(cache_guard);
+
+        assert!(!should_refresh_db(
+            Instant::now(),
+            &cache
+        ));
+        assert!(should_refresh_db(
+            Instant::now() - DB_REFRESH_INTERVAL - Duration::from_millis(1),
+            &cache
+        ));
     }
 }

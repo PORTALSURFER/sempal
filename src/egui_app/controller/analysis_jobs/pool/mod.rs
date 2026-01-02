@@ -2,6 +2,7 @@ mod job_claim;
 mod job_cleanup;
 mod job_execution;
 mod job_progress;
+mod progress_cache;
 
 use crate::sample_sources::SourceId;
 #[cfg(not(test))]
@@ -16,6 +17,7 @@ use std::sync::{
 use std::sync::Mutex;
 use std::thread::JoinHandle;
 use tracing::info;
+use progress_cache::ProgressCache;
 
 /// Long-lived worker pool that claims and processes analysis jobs from the library database.
 pub(in crate::egui_app::controller) struct AnalysisWorkerPool {
@@ -30,6 +32,7 @@ pub(in crate::egui_app::controller) struct AnalysisWorkerPool {
     worker_count_override: Arc<AtomicU32>,
     #[cfg_attr(test, allow(dead_code))]
     decode_worker_count_override: Arc<AtomicU32>,
+    progress_cache: Arc<RwLock<ProgressCache>>,
     threads: Vec<JoinHandle<()>>,
 }
 
@@ -48,6 +51,7 @@ impl AnalysisWorkerPool {
             analysis_version_override: Arc::new(RwLock::new(None)),
             worker_count_override: Arc::new(AtomicU32::new(0)),
             decode_worker_count_override: Arc::new(AtomicU32::new(0)),
+            progress_cache: Arc::new(RwLock::new(ProgressCache::default())),
             threads: Vec::new(),
         }
     }
@@ -172,6 +176,7 @@ impl AnalysisWorkerPool {
                     self.max_duration_bits.clone(),
                     self.analysis_sample_rate.clone(),
                     self.analysis_version_override.clone(),
+                    self.progress_cache.clone(),
                 ));
             }
             self.threads.push(job_progress::spawn_progress_poller(
@@ -179,6 +184,7 @@ impl AnalysisWorkerPool {
                 self.cancel.clone(),
                 self.shutdown.clone(),
                 self.allowed_source_ids.clone(),
+                self.progress_cache.clone(),
             ));
         }
     }

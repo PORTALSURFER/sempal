@@ -18,6 +18,8 @@ use std::sync::{
 use std::thread::{JoinHandle, sleep};
 use std::time::{Duration, Instant};
 
+use super::progress_cache::ProgressCache;
+
 #[cfg(target_os = "windows")]
 use windows::Win32::System::Threading::{
     GetCurrentThread, SetThreadPriority, THREAD_PRIORITY_BELOW_NORMAL,
@@ -162,6 +164,7 @@ pub(super) fn spawn_compute_worker(
     max_duration_bits: Arc<AtomicU32>,
     analysis_sample_rate: Arc<AtomicU32>,
     analysis_version_override: Arc<std::sync::RwLock<Option<String>>>,
+    progress_cache: Arc<RwLock<ProgressCache>>,
 ) -> JoinHandle<()> {
     std::thread::spawn(move || {
         lower_worker_priority();
@@ -366,6 +369,7 @@ pub(super) fn spawn_compute_worker(
                     job,
                     outcome,
                     log_jobs,
+                    &progress_cache,
                 );
             }
         }
@@ -379,6 +383,7 @@ fn finalize_immediate_job(
     job: db::ClaimedJob,
     outcome: Result<(), String>,
     log_jobs: bool,
+    progress_cache: &Arc<RwLock<ProgressCache>>,
 ) {
     if log_jobs {
         match &outcome {
@@ -414,6 +419,11 @@ fn finalize_immediate_job(
         let source_id = db::parse_sample_id(&job.sample_id)
             .ok()
             .map(|(source_id, _)| crate::sample_sources::SourceId::from_string(source_id));
+        if let Some(source_id) = source_id.as_ref() {
+            if let Ok(mut cache) = progress_cache.write() {
+                cache.update(source_id.clone(), progress);
+            }
+        }
         let _ = tx.send(JobMessage::Analysis(AnalysisJobMessage::Progress {
             source_id,
             progress,
