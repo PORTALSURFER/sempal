@@ -182,7 +182,7 @@ fn enqueue_from_staged_samples(
     stage_backfill_samples(conn, &staged_samples)?;
     let (mut sample_metadata, mut jobs, mut invalidate) =
         collect_backfill_updates(conn, job_type, force_full)?;
-    let failed_jobs = fetch_failed_backfill_jobs(conn, job_type)?;
+    let failed_jobs = fetch_failed_backfill_jobs(conn, job_type, source_id)?;
     if !failed_jobs.is_empty() {
         let mut job_ids: std::collections::HashSet<String> =
             jobs.iter().map(|(id, _)| id.clone()).collect();
@@ -223,19 +223,21 @@ fn enqueue_from_staged_samples(
 fn fetch_failed_backfill_jobs(
     conn: &mut rusqlite::Connection,
     job_type: &str,
+    source_id: &str,
 ) -> Result<Vec<String>, String> {
     let mut failed = Vec::new();
     let mut stmt = conn
         .prepare(
             "SELECT j.sample_id
              FROM analysis_jobs j
-             JOIN temp_backfill_samples t ON t.sample_id = j.sample_id
+             JOIN wav_files w ON w.path = j.relative_path AND w.missing = 0
              WHERE j.job_type = ?1
-               AND j.status = 'failed'",
+               AND j.status = 'failed'
+               AND j.source_id = ?2",
         )
         .map_err(|err| format!("Prepare failed backfill job query failed: {err}"))?;
     let mut rows = stmt
-        .query(params![job_type])
+        .query(params![job_type, source_id])
         .map_err(|err| format!("Query failed backfill job rows failed: {err}"))?;
     while let Some(row) = rows
         .next()
