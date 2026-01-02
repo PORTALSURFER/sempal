@@ -8,6 +8,7 @@ use super::load::{apply_app_data_dir, load_settings_from};
 use super::save::save_settings_to_path;
 use super::*;
 use crate::audio::{AudioInputConfig, AudioOutputConfig};
+use crate::sample_sources::config::AppConfig;
 use crate::sample_sources::library::LibraryState;
 use crate::sample_sources::{Collection, SampleSource, SourceId};
 use crate::waveform::WaveformChannelView;
