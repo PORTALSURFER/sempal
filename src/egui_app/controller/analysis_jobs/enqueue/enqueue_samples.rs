@@ -1,9 +1,9 @@
 use super::enqueue_helpers::{fast_content_hash, now_epoch_seconds};
 use crate::egui_app::controller::analysis_jobs::db;
 use crate::egui_app::controller::analysis_jobs::types::AnalysisProgress;
-use log::info;
 use rusqlite::params;
 use std::path::Path;
+use tracing::info;
 
 struct EnqueueSamplesRequest<'a> {
     source: &'a crate::sample_sources::SampleSource,
