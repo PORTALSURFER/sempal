@@ -534,6 +534,7 @@ mod tests {
     use super::*;
     use std::collections::HashMap;
     use std::sync::mpsc;
+    use std::sync::{Arc, RwLock};
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
     use tempfile::NamedTempFile;
     use tempfile::TempDir;
@@ -553,6 +554,7 @@ mod tests {
         assert!(queue.try_mark_inflight(job.id));
         let (tx, _rx) = mpsc::channel::<JobMessage>();
         let mut connections = HashMap::new();
+        let progress_cache = Arc::new(RwLock::new(ProgressCache::default()));
 
         finalize_immediate_job(
             &mut connections,
@@ -561,6 +563,7 @@ mod tests {
             job,
             Err("failed".to_string()),
             false,
+            &progress_cache,
         );
 
         assert!(queue.try_mark_inflight(42));

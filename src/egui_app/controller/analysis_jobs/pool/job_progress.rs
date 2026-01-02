@@ -219,7 +219,10 @@ mod tests {
             ],
         )
         .unwrap();
-        let mut sources = vec![ProgressSourceDb { conn }];
+        let mut sources = vec![ProgressSourceDb {
+            source_id: crate::sample_sources::SourceId::from_string("source".to_string()),
+            conn,
+        }];
         let stale_before = now - 10;
 
         let changed = cleanup_stale_jobs(&mut sources, stale_before);
