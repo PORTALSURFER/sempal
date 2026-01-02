@@ -97,7 +97,7 @@ fn cleanup_stale_jobs(
 ) -> usize {
     let mut changed = 0;
     let mut touched_sources = std::collections::HashSet::new();
-    for source in sources {
+    for source in &mut *sources {
         if let Ok((updated, source_ids)) =
             db::fail_stale_running_jobs_with_sources(&source.conn, stale_before)
         {
@@ -113,7 +113,7 @@ fn cleanup_stale_jobs(
         return changed;
     }
     let mut updates = Vec::new();
-    for source in sources {
+    for source in &mut *sources {
         if !touched_sources.contains(&source.source_id) {
             continue;
         }
