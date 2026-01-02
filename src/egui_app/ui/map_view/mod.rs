@@ -95,7 +95,7 @@ impl EguiApp {
         let cluster_overlay = self.controller.ui.map.cluster_overlay;
         let similarity_blend = self.controller.ui.map.similarity_blend;
         let blend_threshold = self.controller.ui.map.similarity_blend_threshold;
-        let focused_sample_id = self.controller.ui.map.selected_sample_id.clone();
+        let focused_sample_id = self.controller.ui.map.similarity_anchor_sample_id.clone();
         let centroids_arc = map_state::prepare_cluster_centroids(
             self,
             model_id,
@@ -108,13 +108,38 @@ impl EguiApp {
         let map_diagonal =
             ((bounds.max_x - bounds.min_x).powi(2) + (bounds.max_y - bounds.min_y).powi(2)).sqrt();
         let focused_point = focused_sample_id.as_deref().and_then(|id| {
-            self.controller
+            if let Some(point) = self.controller.ui.map.similarity_anchor_point {
+                return Some(point);
+            }
+            if let Some(point) = self
+                .controller
                 .ui
                 .map
-                .cached_filtered_points
+                .cached_points
                 .iter()
                 .find(|point| point.sample_id == id)
                 .map(|point| (point.x, point.y))
+            {
+                self.controller.ui.map.similarity_anchor_point = Some(point);
+                return Some(point);
+            }
+            match self
+                .controller
+                .umap_point_for_sample(model_id, &umap_version, id)
+            {
+                Ok(Some(point)) => {
+                    self.controller.ui.map.similarity_anchor_point = Some(point);
+                    Some(point)
+                }
+                Ok(None) => None,
+                Err(err) => {
+                    self.controller.set_status(
+                        format!("Map anchor lookup failed: {err}"),
+                        style::StatusTone::Error,
+                    );
+                    None
+                }
+            }
         });
         let distance_range = focused_point.map(|(fx, fy)| {
             let mut min_dist = f32::INFINITY;

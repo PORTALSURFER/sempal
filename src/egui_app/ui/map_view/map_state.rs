@@ -82,8 +82,9 @@ pub(super) fn ensure_bounds(
 
 pub(super) fn sync_selected_sample(app: &mut EguiApp) {
     let focused_sample_id = app.controller.selected_sample_id();
-    if app.controller.ui.map.selected_sample_id.is_none() {
-        app.controller.ui.map.selected_sample_id = focused_sample_id;
+    if app.controller.ui.map.similarity_anchor_sample_id.is_none() {
+        app.controller.ui.map.similarity_anchor_sample_id = focused_sample_id;
+        app.controller.ui.map.similarity_anchor_point = None;
     }
 }
 
