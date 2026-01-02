@@ -4,6 +4,7 @@ use crate::analysis::hdbscan::{HdbscanConfig, HdbscanMethod};
 use crate::egui_app::controller::{analysis_jobs, jobs, EguiController};
 use crate::sample_sources::{SampleSource, SourceId};
 use std::thread;
+use tracing::info;
 
 impl EguiController {
     pub(super) fn apply_similarity_prep_duration_cap(&mut self) {
@@ -80,6 +81,11 @@ impl EguiController {
     ) {
         let tx = self.runtime.jobs.message_sender();
         thread::spawn(move || {
+            info!(
+                "Similarity backfill enqueue starting (source_id={}, force_full={})",
+                source.id.as_str(),
+                force_full_analysis
+            );
             let analysis_result = if force_full_analysis {
                 analysis_jobs::enqueue_jobs_for_source_backfill_full(&source)
             } else {
@@ -87,6 +93,11 @@ impl EguiController {
             };
             match analysis_result {
                 Ok((inserted, progress)) => {
+                    info!(
+                        "Similarity analysis backfill complete (inserted={}, source_id={})",
+                        inserted,
+                        source.id.as_str()
+                    );
                     if inserted > 0 {
                         let _ = tx.send(jobs::JobMessage::Analysis(
                             analysis_jobs::AnalysisJobMessage::EnqueueFinished {
@@ -103,9 +114,18 @@ impl EguiController {
                 }
             }
 
+            info!(
+                "Similarity embedding backfill enqueue starting (source_id={})",
+                source.id.as_str()
+            );
             let embed_result = analysis_jobs::enqueue_jobs_for_embedding_backfill(&source);
             match embed_result {
                 Ok((inserted, progress)) => {
+                    info!(
+                        "Similarity embedding backfill complete (inserted={}, source_id={})",
+                        inserted,
+                        source.id.as_str()
+                    );
                     if inserted > 0 {
                         let _ = tx.send(jobs::JobMessage::Analysis(
                             analysis_jobs::AnalysisJobMessage::EmbeddingBackfillEnqueueFinished {
