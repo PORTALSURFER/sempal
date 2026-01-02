@@ -147,6 +147,10 @@ impl DragDropActions for DragDropController<'_> {
             origin_source, active_target, payload
         );
 
+        let source_target = match &active_target {
+            DragTarget::SourcesRow(id) => Some(id.clone()),
+            _ => None,
+        };
         let (triage_target, folder_target, over_folder_panel) = match &active_target {
             DragTarget::BrowserTriage(column) => (Some(*column), None, false),
             DragTarget::FolderPanel { folder } => {
@@ -192,12 +196,12 @@ impl DragDropActions for DragDropController<'_> {
             _ => None,
         };
 
-        let drop_in_collections_panel =
-            matches!(active_target, DragTarget::CollectionsDropZone { .. })
+        let drop_in_collections_panel = source_target.is_none()
+            && (matches!(active_target, DragTarget::CollectionsDropZone { .. })
                 || matches!(active_target, DragTarget::CollectionsRow(_))
                 || (self.library.collections.is_empty()
                     && triage_target.is_none()
-                    && folder_target.is_none());
+                    && folder_target.is_none()));
 
         debug!(
             "Collection drop context: drop_in_panel={} current_collection_id={:?} collection_target={:?} folder_target={:?} triage_target={:?} pointer_at={:?}",
@@ -246,6 +250,8 @@ impl DragDropActions for DragDropController<'_> {
                     && matches!(active_target, DragTarget::BrowserTriage(_))
                 {
                     self.handle_waveform_sample_drop_to_browser(source_id, relative_path);
+                } else if let Some(target) = source_target {
+                    self.handle_sample_drop_to_source(source_id, relative_path, target);
                 } else if let Some(folder) = folder_target {
                     self.handle_sample_drop_to_folder(source_id, relative_path, &folder);
                 } else {
@@ -258,7 +264,9 @@ impl DragDropActions for DragDropController<'_> {
                 }
             }
             DragPayload::Samples { samples } => {
-                if let Some(folder) = folder_target {
+                if let Some(target) = source_target {
+                    self.handle_samples_drop_to_source(&samples, target);
+                } else if let Some(folder) = folder_target {
                     self.handle_samples_drop_to_folder(&samples, &folder);
                 } else {
                     self.handle_samples_drop(&samples, collection_target, triage_target);
@@ -270,6 +278,13 @@ impl DragDropActions for DragDropController<'_> {
                 bounds,
                 keep_source_focused,
             } => {
+                if source_target.is_some() {
+                    self.set_status(
+                        "Drop samples onto a source to move them",
+                        StatusTone::Warning,
+                    );
+                    return;
+                }
                 if collection_target.is_none() && triage_target.is_none() && folder_target.is_none()
                 {
                     return;

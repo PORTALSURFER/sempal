@@ -1,11 +1,16 @@
 use super::EguiApp;
 use super::helpers::{RowBackground, clamp_label_for_width, list_row_height, render_list_row};
 use super::style;
-use crate::egui_app::state::FocusContext;
+use crate::egui_app::state::{DragPayload, DragSource, DragTarget, FocusContext};
+use crate::egui_app::ui::drag_targets::{handle_drop_zone, pointer_pos_for_drag};
 use eframe::egui::{self, RichText, Ui};
 
 impl EguiApp {
     pub(super) fn render_sources_list(&mut self, ui: &mut Ui, height: f32) -> egui::Rect {
+        let drag_payload = self.controller.ui.drag.payload.clone();
+        let drag_active =
+            matches!(drag_payload, Some(DragPayload::Sample { .. } | DragPayload::Samples { .. }));
+        let pointer_pos = pointer_pos_for_drag(ui, self.controller.ui.drag.position);
         let output = egui::ScrollArea::vertical()
             .id_salt("sources_scroll")
             .max_height(height)
@@ -52,6 +57,17 @@ impl EguiApp {
                             self.controller
                                 .focus_context_from_ui(FocusContext::SourcesList);
                         }
+                        handle_drop_zone(
+                            ui,
+                            &mut self.controller,
+                            drag_active,
+                            pointer_pos,
+                            response.rect,
+                            DragSource::Sources,
+                            DragTarget::SourcesRow(row.id.clone()),
+                            style::drag_target_stroke(),
+                            egui::StrokeKind::Inside,
+                        );
                         self.source_row_menu(&response, index, row);
                     });
                 }

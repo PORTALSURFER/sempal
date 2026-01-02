@@ -37,6 +37,7 @@ pub enum DragPayload {
 pub enum DragSource {
     Collections,
     Browser,
+    Sources,
     Folders,
     Waveform,
     External,
@@ -49,6 +50,7 @@ pub enum DragTarget {
     CollectionsRow(CollectionId),
     CollectionsDropZone { collection_id: Option<CollectionId> },
     BrowserTriage(TriageFlagColumn),
+    SourcesRow(SourceId),
     FolderPanel { folder: Option<PathBuf> },
     External,
 }
@@ -59,7 +61,8 @@ impl DragTarget {
             DragTarget::External => 6,
             DragTarget::CollectionsDropZone { .. } => 5,
             DragTarget::CollectionsRow(_) => 4,
-            DragTarget::FolderPanel { .. } => 3,
+            DragTarget::SourcesRow(_) => 3,
+            DragTarget::FolderPanel { .. } => 2,
             DragTarget::BrowserTriage(_) => 2,
             DragTarget::None => 0,
         }

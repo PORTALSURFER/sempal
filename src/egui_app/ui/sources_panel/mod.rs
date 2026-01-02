@@ -44,11 +44,18 @@ impl EguiApp {
                         | DragPayload::Selection { .. }
                 )
             );
+            let source_drop_active = matches!(
+                drag_payload,
+                Some(DragPayload::Sample { .. } | DragPayload::Samples { .. })
+            );
             if drag_payload.is_some() && !folder_drop_active {
                 self.controller
                     .ui
                     .drag
                     .clear_targets_from(DragSource::Folders);
+            }
+            if drag_payload.is_some() && !source_drop_active {
+                self.controller.ui.drag.clear_targets_from(DragSource::Sources);
             }
             let pointer_pos = ui
                 .input(|i| i.pointer.hover_pos().or_else(|| i.pointer.interact_pos()))
