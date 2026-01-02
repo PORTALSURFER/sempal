@@ -51,15 +51,6 @@ fn enqueue_embedding_backfill(
 
     let mut conn = db::open_source_db(&request.source.root)?;
 
-    let _ = conn.execute(
-        "DELETE FROM analysis_jobs
-         WHERE job_type = ?1 AND source_id = ?2",
-        params![
-            db::EMBEDDING_BACKFILL_JOB_TYPE,
-            request.source.id.as_str(),
-        ],
-    );
-
     let active_jobs: i64 = conn
         .query_row(
             "SELECT COUNT(*) FROM analysis_jobs
