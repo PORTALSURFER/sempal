@@ -315,12 +315,10 @@ mod tests {
         ));
         assert_eq!(cached.failed, 1);
         let message = rx.recv_timeout(Duration::from_millis(50)).unwrap();
-        match message {
-            JobMessage::Analysis(AnalysisJobMessage::Progress { progress, .. }) => {
-                assert_eq!(progress.failed, 1);
-            }
-            other => panic!("unexpected message: {other:?}"),
-        }
+        let JobMessage::Analysis(AnalysisJobMessage::Progress { progress, .. }) = message else {
+            panic!("unexpected message");
+        };
+        assert_eq!(progress.failed, 1);
     }
 
     #[test]
