@@ -9,12 +9,13 @@ use std::sync::{
     mpsc::Sender,
 };
 use std::thread::{JoinHandle, sleep};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const POLL_INTERVAL_ACTIVE: Duration = Duration::from_millis(500);
 const POLL_INTERVAL_IDLE: Duration = Duration::from_millis(1500);
 const SOURCE_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(2);
+const STALE_CLEANUP_INTERVAL: Duration = Duration::from_secs(10);
 
 struct ProgressSourceDb {
     conn: Connection,
@@ -66,6 +67,23 @@ fn current_progress_all(sources: &mut [ProgressSourceDb]) -> AnalysisProgress {
     total
 }
 
+fn cleanup_stale_jobs(sources: &mut [ProgressSourceDb], stale_before: i64) -> usize {
+    let mut changed = 0;
+    for source in sources {
+        if let Ok(updated) = db::fail_stale_running_jobs(&source.conn, stale_before) {
+            changed += updated;
+        }
+    }
+    changed
+}
+
+fn now_epoch_seconds() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_else(|_| Duration::from_secs(0))
+        .as_secs() as i64
+}
+
 #[cfg_attr(test, allow(dead_code))]
 pub(super) fn spawn_progress_poller(
     tx: Sender<JobMessage>,
@@ -78,21 +96,29 @@ pub(super) fn spawn_progress_poller(
         let mut last_refresh = Instant::now() - SOURCE_REFRESH_INTERVAL;
         let mut last: Option<AnalysisProgress> = None;
         let mut last_heartbeat = Instant::now() - HEARTBEAT_INTERVAL;
+        let mut last_cleanup = Instant::now() - STALE_CLEANUP_INTERVAL;
         let mut idle_polls = 0u32;
         let mut last_sources_empty = None;
         loop {
             if shutdown.load(Ordering::Relaxed) {
                 break;
             }
-            if cancel.load(Ordering::Relaxed) {
-                sleep(POLL_INTERVAL_IDLE);
-                continue;
-            }
             let allowed = allowed_source_ids
                 .read()
                 .ok()
                 .and_then(|guard| guard.clone());
             refresh_sources(&mut sources, &mut last_refresh, allowed.as_ref());
+            if last_cleanup.elapsed() >= STALE_CLEANUP_INTERVAL {
+                last_cleanup = Instant::now();
+                let stale_before = now_epoch_seconds().saturating_sub(
+                    crate::egui_app::controller::analysis_jobs::stale_running_job_seconds(),
+                );
+                let _ = cleanup_stale_jobs(&mut sources, stale_before);
+            }
+            if cancel.load(Ordering::Relaxed) {
+                sleep(POLL_INTERVAL_IDLE);
+                continue;
+            }
             let sources_empty = sources.is_empty();
             if last_sources_empty != Some(sources_empty) {
                 last_sources_empty = Some(sources_empty);
@@ -132,4 +158,43 @@ pub(super) fn spawn_progress_poller(
             sleep(interval);
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn cleanup_runs_without_workers() {
+        let dir = TempDir::new().unwrap();
+        let conn = db::open_source_db(dir.path()).unwrap();
+        let now = now_epoch_seconds();
+        conn.execute(
+            "INSERT INTO analysis_jobs (sample_id, job_type, status, attempts, created_at, running_at)
+             VALUES (?1, ?2, 'running', 1, ?3, ?4)",
+            rusqlite::params![
+                "source::stale.wav",
+                db::ANALYZE_SAMPLE_JOB_TYPE,
+                now,
+                now - 120
+            ],
+        )
+        .unwrap();
+        let mut sources = vec![ProgressSourceDb { conn }];
+        let stale_before = now - 10;
+
+        let changed = cleanup_stale_jobs(&mut sources, stale_before);
+
+        let status: String = sources[0]
+            .conn
+            .query_row(
+                "SELECT status FROM analysis_jobs WHERE sample_id = ?1",
+                rusqlite::params!["source::stale.wav"],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(changed, 1);
+        assert_eq!(status, "failed");
+    }
 }
