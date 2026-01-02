@@ -31,10 +31,19 @@ impl EguiApp {
         ui.add_space(ui.spacing().item_spacing.y);
         ui.label(RichText::new("Analysis workers (0 = auto):").color(palette.text_muted));
         let mut workers = self.controller.analysis_worker_count() as i64;
+        let auto_workers = self.controller.analysis_auto_worker_count();
         let drag = egui::DragValue::new(&mut workers).range(0..=64);
+        let hover_text = if workers == 0 {
+            format!(
+                "Limit background CPU usage (change takes effect on next start). Auto = {} workers.",
+                auto_workers
+            )
+        } else {
+            "Limit background CPU usage (change takes effect on next start).".to_string()
+        };
         let response = ui
             .add(drag)
-            .on_hover_text("Limit background CPU usage (change takes effect on next start)");
+            .on_hover_text(hover_text);
         if response.changed() {
             self.controller
                 .set_analysis_worker_count(workers.max(0) as u32);

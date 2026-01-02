@@ -125,6 +125,10 @@ impl EguiController {
         self.settings.analysis.analysis_worker_count
     }
 
+    pub fn analysis_auto_worker_count(&self) -> u32 {
+        crate::egui_app::controller::analysis_jobs::default_worker_count()
+    }
+
     pub fn similarity_prep_fast_mode_enabled(&self) -> bool {
         self.settings.analysis.fast_similarity_prep
     }
