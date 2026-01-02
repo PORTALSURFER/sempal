@@ -134,7 +134,16 @@ impl EguiController {
     pub(super) fn start_similarity_finalize(&mut self, source_id: SourceId, umap_version: String) {
         let tx = self.runtime.jobs.message_sender();
         thread::spawn(move || {
-            let result = run_similarity_finalize(&source_id, &umap_version);
+            let started_at = std::time::Instant::now();
+            let result = std::panic::catch_unwind(|| run_similarity_finalize(&source_id, &umap_version))
+                .unwrap_or_else(|_| {
+                    Err("Similarity finalize panicked".to_string())
+                });
+            tracing::info!(
+                "Similarity finalize finished in {:.2?} (source_id={})",
+                started_at.elapsed(),
+                source_id.as_str()
+            );
             let _ = tx.send(jobs::JobMessage::SimilarityPrepared(
                 jobs::SimilarityPrepResult { source_id, result },
             ));
