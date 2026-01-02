@@ -1,7 +1,7 @@
 use super::selection_drag;
 use super::selection_geometry::{
     paint_selection_edge_bracket, selection_edge_handle_rect, selection_handle_height,
-    selection_handle_rect,
+    selection_handle_rect, selection_rect_for_view,
 };
 use super::selection_menu;
 use super::style;
@@ -27,12 +27,7 @@ pub(super) fn render_selection_overlay(
         return false;
     };
 
-    let start_norm = ((selection.start() - view.start) / view_width).clamp(0.0, 1.0);
-    let end_norm = ((selection.end() - view.start) / view_width).clamp(0.0, 1.0);
-    let width = rect.width() * (end_norm - start_norm).max(0.0);
-    let x = rect.left() + rect.width() * start_norm;
-    let selection_rect =
-        egui::Rect::from_min_size(egui::pos2(x, rect.top()), egui::vec2(width, rect.height()));
+    let selection_rect = selection_rect_for_view(selection, rect, view, view_width);
 
     let handle_rect = selection_handle_rect(selection_rect);
     let handle_response = ui.interact(

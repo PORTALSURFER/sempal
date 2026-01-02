@@ -3,7 +3,65 @@ use super::*;
 use eframe::egui::{self, Color32, Stroke};
 use std::time::{Duration, Instant};
 
-pub(super) const LOOP_BAR_HEIGHT: f32 = 12.0;
+pub(super) fn render_playhead(
+    app: &mut EguiApp,
+    ui: &mut egui::Ui,
+    rect: egui::Rect,
+    view: crate::egui_app::state::WaveformView,
+    view_width: f32,
+    highlight: Color32,
+    to_screen_x: &impl Fn(f32, egui::Rect) -> f32,
+) {
+    let playhead = &mut app.controller.ui.waveform.playhead;
+    let now = Instant::now();
+    const TRAIL_DURATION: Duration = Duration::from_millis(1250);
+    const TRAIL_FADE: Duration = Duration::from_millis(450);
+
+    for fading in playhead.fading_trails.iter() {
+        let age = now.saturating_duration_since(fading.started_at);
+        if age >= TRAIL_FADE {
+            continue;
+        }
+        let fade_t = 1.0 - (age.as_secs_f32() / TRAIL_FADE.as_secs_f32()).clamp(0.0, 1.0);
+        let fade_strength = fade_t * fade_t;
+        let Some(last_time) = fading.samples.back().map(|sample| sample.time) else {
+            continue;
+        };
+        let cutoff = last_time.checked_sub(TRAIL_DURATION).unwrap_or(last_time);
+        let window = trail_samples_in_window(&fading.samples, cutoff);
+        if window.len() < 2 {
+            continue;
+        }
+        let stops = gradient_stops_from_trail_window(&window, rect, view, view_width, |time| {
+            let base_age = last_time.saturating_duration_since(time);
+            let t = 1.0 - (base_age.as_secs_f32() / TRAIL_DURATION.as_secs_f32()).clamp(0.0, 1.0);
+            ((t * t) * 105.0 * fade_strength).round().clamp(0.0, 255.0) as u8
+        });
+        paint_playhead_trail_mesh(ui, rect, &stops, highlight);
+    }
+
+    if playhead.visible && playhead.trail.len() >= 2 {
+        let cutoff = now.checked_sub(TRAIL_DURATION).unwrap_or(now);
+        let window = trail_samples_in_window(&playhead.trail, cutoff);
+        if window.len() >= 2 {
+            let stops = gradient_stops_from_trail_window(&window, rect, view, view_width, |time| {
+                let age = now.saturating_duration_since(time);
+                let t = 1.0 - (age.as_secs_f32() / TRAIL_DURATION.as_secs_f32()).clamp(0.0, 1.0);
+                ((t * t) * 119.0).round().clamp(0.0, 255.0) as u8
+            });
+            paint_playhead_trail_mesh(ui, rect, &stops, highlight);
+        }
+    }
+
+    if playhead.visible {
+        let position = playhead.position.clamp(0.0, 1.0);
+        let x = to_screen_x(position, rect);
+        ui.painter().line_segment(
+            [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
+            Stroke::new(2.0, highlight),
+        );
+    }
+}
 
 fn to_screen_x_unclamped(
     position: f32,
@@ -222,219 +280,6 @@ fn gradient_stops_from_trail_window(
     }
 
     stops
-}
-
-pub(super) fn render_overlays(
-    app: &mut EguiApp,
-    ui: &mut egui::Ui,
-    rect: egui::Rect,
-    view: crate::egui_app::state::WaveformView,
-    view_width: f32,
-    highlight: Color32,
-    start_marker_color: Color32,
-    to_screen_x: &impl Fn(f32, egui::Rect) -> f32,
-) {
-    if let Some(marker_pos) = app.controller.ui.waveform.last_start_marker
-        && marker_pos >= view.start
-        && marker_pos <= view.end
-    {
-        let x = to_screen_x(marker_pos, rect);
-        let stroke = Stroke::new(1.5, style::with_alpha(start_marker_color, 230));
-        let mut y = rect.top();
-        let bottom = rect.bottom();
-        let dash = 6.0;
-        let gap = 4.0;
-        while y < bottom {
-            let end = (y + dash).min(bottom);
-            ui.painter()
-                .line_segment([egui::pos2(x, y), egui::pos2(x, end)], stroke);
-            y += dash + gap;
-        }
-    }
-
-    draw_transient_markers(app, ui, rect, view, to_screen_x);
-
-    let loop_bar_alpha = if app.controller.ui.waveform.loop_enabled {
-        180
-    } else {
-        25
-    };
-    if loop_bar_alpha > 0 {
-        let (loop_start, loop_end) = app
-            .controller
-            .ui
-            .waveform
-            .selection
-            .map(|range| (range.start(), range.end()))
-            .unwrap_or((0.0, 1.0));
-        let clamped_start = loop_start.clamp(0.0, 1.0);
-        let clamped_end = loop_end.clamp(clamped_start, 1.0);
-        let start_norm = ((clamped_start - view.start) / view_width).clamp(0.0, 1.0);
-        let end_norm = ((clamped_end - view.start) / view_width).clamp(0.0, 1.0);
-        let width = (end_norm - start_norm).max(0.0) * rect.width();
-        let bar_rect = egui::Rect::from_min_size(
-            egui::pos2(rect.left() + rect.width() * start_norm, rect.top()),
-            egui::vec2(width.max(2.0), LOOP_BAR_HEIGHT),
-        );
-        if let Some(selection) = app.controller.ui.waveform.selection {
-            let response = ui.interact(
-                bar_rect,
-                ui.id().with("loop_bar_drag"),
-                egui::Sense::click_and_drag(),
-            );
-            let hover_alpha = if response.hovered() || response.dragged() {
-                (loop_bar_alpha + 50).min(255)
-            } else {
-                loop_bar_alpha
-            };
-            ui.painter()
-                .rect_filled(bar_rect, 0.0, style::with_alpha(highlight, hover_alpha));
-            if selection_is_power_of_two_beats(app, selection) {
-                let radius = 2.0;
-                let x = (bar_rect.right() - 4.0).max(bar_rect.left() + radius + 0.5);
-                let y = bar_rect.center().y;
-                ui.painter().circle_filled(
-                    egui::pos2(x, y),
-                    radius,
-                    style::with_alpha(egui::Color32::BLACK, 220),
-                );
-            }
-            selection_drag::handle_selection_slide_drag(
-                app,
-                ui,
-                rect,
-                view,
-                view_width,
-                selection,
-                &response,
-            );
-        } else {
-            ui.painter()
-                .rect_filled(bar_rect, 0.0, style::with_alpha(highlight, loop_bar_alpha));
-        }
-    }
-
-    let playhead = &mut app.controller.ui.waveform.playhead;
-    let now = Instant::now();
-    const TRAIL_DURATION: Duration = Duration::from_millis(1250);
-    const TRAIL_FADE: Duration = Duration::from_millis(450);
-
-    for fading in playhead.fading_trails.iter() {
-        let age = now.saturating_duration_since(fading.started_at);
-        if age >= TRAIL_FADE {
-            continue;
-        }
-        let fade_t = 1.0 - (age.as_secs_f32() / TRAIL_FADE.as_secs_f32()).clamp(0.0, 1.0);
-        let fade_strength = fade_t * fade_t;
-        let Some(last_time) = fading.samples.back().map(|sample| sample.time) else {
-            continue;
-        };
-        let cutoff = last_time.checked_sub(TRAIL_DURATION).unwrap_or(last_time);
-        let window = trail_samples_in_window(&fading.samples, cutoff);
-        if window.len() < 2 {
-            continue;
-        }
-        let stops = gradient_stops_from_trail_window(&window, rect, view, view_width, |time| {
-            let base_age = last_time.saturating_duration_since(time);
-            let t = 1.0 - (base_age.as_secs_f32() / TRAIL_DURATION.as_secs_f32()).clamp(0.0, 1.0);
-            ((t * t) * 105.0 * fade_strength).round().clamp(0.0, 255.0) as u8
-        });
-        paint_playhead_trail_mesh(ui, rect, &stops, highlight);
-    }
-
-    if playhead.visible && playhead.trail.len() >= 2 {
-        let cutoff = now.checked_sub(TRAIL_DURATION).unwrap_or(now);
-        let window = trail_samples_in_window(&playhead.trail, cutoff);
-        if window.len() >= 2 {
-            let stops = gradient_stops_from_trail_window(&window, rect, view, view_width, |time| {
-                let age = now.saturating_duration_since(time);
-                let t = 1.0 - (age.as_secs_f32() / TRAIL_DURATION.as_secs_f32()).clamp(0.0, 1.0);
-                ((t * t) * 119.0).round().clamp(0.0, 255.0) as u8
-            });
-            paint_playhead_trail_mesh(ui, rect, &stops, highlight);
-        }
-    }
-
-    if playhead.visible {
-        let position = playhead.position.clamp(0.0, 1.0);
-        let x = to_screen_x(position, rect);
-        ui.painter().line_segment(
-            [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
-            Stroke::new(2.0, highlight),
-        );
-    }
-}
-
-fn selection_is_power_of_two_beats(
-    app: &EguiApp,
-    selection: crate::selection::SelectionRange,
-) -> bool {
-    if !app.controller.ui.waveform.bpm_snap_enabled {
-        return false;
-    }
-    let bpm = app.controller.ui.waveform.bpm_value.unwrap_or(0.0);
-    if !bpm.is_finite() || bpm <= 0.0 {
-        return false;
-    }
-    let duration = app.controller.loaded_audio_duration_seconds().unwrap_or(0.0);
-    if !duration.is_finite() || duration <= 0.0 {
-        return false;
-    }
-    let seconds = selection.width() * duration;
-    if !seconds.is_finite() || seconds <= 0.0 {
-        return false;
-    }
-    let beats = seconds * bpm / 60.0;
-    if !beats.is_finite() || beats < 2.0 {
-        return false;
-    }
-    let rounded = beats.round();
-    if (beats - rounded).abs() > 1.0e-3 {
-        return false;
-    }
-    let count = rounded as u32;
-    count.is_power_of_two()
-}
-
-fn draw_transient_markers(
-    app: &EguiApp,
-    ui: &mut egui::Ui,
-    rect: egui::Rect,
-    view: crate::egui_app::state::WaveformView,
-    to_screen_x: &impl Fn(f32, egui::Rect) -> f32,
-) {
-    let transients = &app.controller.ui.waveform.transients;
-    if !app.controller.ui.waveform.transient_markers_enabled || transients.is_empty() {
-        return;
-    }
-    let palette = style::palette();
-    let stroke = Stroke::new(1.0, style::with_alpha(palette.accent_mint, 150));
-    let triangle_fill = style::with_alpha(palette.accent_mint, 200);
-    let triangle_height = 6.0;
-    let triangle_half = 4.0;
-    let top = rect.top() + LOOP_BAR_HEIGHT;
-    for &marker in transients {
-        if marker < view.start || marker > view.end {
-            continue;
-        }
-        let x = to_screen_x(marker, rect);
-        ui.painter().line_segment(
-            [egui::pos2(x, top), egui::pos2(x, rect.bottom())],
-            stroke,
-        );
-        let base_y = rect.top() + 1.0;
-        let tip_y = base_y + triangle_height;
-        let points = vec![
-            egui::pos2(x - triangle_half, base_y),
-            egui::pos2(x + triangle_half, base_y),
-            egui::pos2(x, tip_y),
-        ];
-        ui.painter().add(egui::Shape::convex_polygon(
-            points,
-            triangle_fill,
-            Stroke::NONE,
-        ));
-    }
 }
 
 #[cfg(test)]
