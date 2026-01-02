@@ -19,7 +19,6 @@ pub(in crate::egui_app::controller::analysis_jobs) use artifacts::{
 pub(in crate::egui_app::controller) use cleanup::purge_orphaned_samples;
 pub(in crate::egui_app::controller::analysis_jobs) use cleanup::{
     fail_stale_running_jobs, prune_jobs_for_missing_sources, reset_running_to_pending,
-    reset_stale_running_jobs,
 };
 pub(in crate::egui_app::controller) use connection::open_source_db;
 #[cfg(test)]

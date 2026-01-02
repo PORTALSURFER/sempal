@@ -229,6 +229,7 @@ impl EguiApp {
                             let age = job.running_at.and_then(|ts| {
                                 now_epoch
                                     .and_then(|now| now.checked_sub(ts))
+                                    .and_then(|delta| u64::try_from(delta).ok())
                                     .map(Duration::from_secs)
                             });
                             let age_label = age
