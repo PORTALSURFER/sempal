@@ -27,6 +27,15 @@ pub(super) fn record_similarity_prep_scan_timestamp(source: &SampleSource, scan_
 }
 
 pub(super) fn source_has_embeddings(source: &SampleSource) -> bool {
+    let Ok(source_db) = SourceDatabase::open(&source.root) else {
+        return false;
+    };
+    let Ok(expected) = source_db.count_present_files() else {
+        return false;
+    };
+    if expected == 0 {
+        return true;
+    }
     let Ok(conn) = analysis_jobs::open_source_db(&source.root) else {
         return false;
     };
@@ -37,7 +46,9 @@ pub(super) fn source_has_embeddings(source: &SampleSource) -> bool {
         rusqlite::params![model_id, sample_id_prefix],
         |row| row.get(0),
     );
-    count.map(|value| value > 0).unwrap_or(false)
+    count
+        .map(|value| value.max(0) as usize >= expected)
+        .unwrap_or(false)
 }
 
 pub(super) fn count_umap_layout_rows(

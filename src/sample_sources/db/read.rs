@@ -58,6 +58,17 @@ impl SourceDatabase {
         Ok(count.max(0) as usize)
     }
 
+    /// Count all tracked wav files that are not marked missing.
+    pub fn count_present_files(&self) -> Result<usize, SourceDbError> {
+        let filter = crate::sample_sources::supported_audio_where_clause();
+        let sql = format!("SELECT COUNT(*) FROM wav_files WHERE {filter} AND missing = 0");
+        let count: i64 = self
+            .connection
+            .query_row(&sql, [], |row| row.get(0))
+            .map_err(map_sql_error)?;
+        Ok(count.max(0) as usize)
+    }
+
     /// Fetch a page of tracked wav files ordered by path.
     pub fn list_files_page(
         &self,
