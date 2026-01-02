@@ -66,7 +66,13 @@ fn enqueue_samples(
     }
 
     let created_at = now_epoch_seconds();
-    let inserted = db::enqueue_jobs(&mut conn, &jobs, db::ANALYZE_SAMPLE_JOB_TYPE, created_at)?;
+    let inserted = db::enqueue_jobs(
+        &mut conn,
+        &jobs,
+        db::ANALYZE_SAMPLE_JOB_TYPE,
+        created_at,
+        request.source.id.as_str(),
+    )?;
     let progress = db::current_progress(&conn)?;
     Ok((inserted, progress))
 }
@@ -94,19 +100,19 @@ fn enqueue_source_backfill(
     force_full: bool,
 ) -> Result<(usize, AnalysisProgress), String> {
     let mut conn = db::open_source_db(&request.source.root)?;
-    let prefix = format!("{}::%", request.source.id.as_str());
     let existing_jobs_total: i64 = conn
         .query_row(
-            "SELECT COUNT(*) FROM analysis_jobs WHERE sample_id LIKE ?1",
-            params![&prefix],
+            "SELECT COUNT(*) FROM analysis_jobs WHERE source_id = ?1",
+            params![request.source.id.as_str()],
             |row| row.get(0),
         )
         .unwrap_or(0);
     if existing_jobs_total > 0 {
         let active_jobs: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM analysis_jobs WHERE sample_id LIKE ?1 AND status IN ('pending','running')",
-                params![&prefix],
+                "SELECT COUNT(*) FROM analysis_jobs
+                 WHERE source_id = ?1 AND status IN ('pending','running')",
+                params![request.source.id.as_str()],
                 |row| row.get(0),
             )
             .unwrap_or(0);
@@ -124,6 +130,7 @@ fn enqueue_source_backfill(
         db::ANALYZE_SAMPLE_JOB_TYPE,
         force_full,
         false,
+        request.source.id.as_str(),
     )
 }
 
@@ -153,6 +160,7 @@ fn enqueue_missing_features(
         db::ANALYZE_SAMPLE_JOB_TYPE,
         false,
         true,
+        request.source.id.as_str(),
     )
 }
 
@@ -162,6 +170,7 @@ fn enqueue_from_staged_samples(
     job_type: &str,
     force_full: bool,
     skip_when_no_jobs: bool,
+    source_id: &str,
 ) -> Result<(usize, AnalysisProgress), String> {
     if staged_samples.is_empty() {
         return Ok((0, db::current_progress(conn)?));
@@ -179,7 +188,7 @@ fn enqueue_from_staged_samples(
     db::upsert_samples(conn, &sample_metadata)?;
 
     let created_at = now_epoch_seconds();
-    let inserted = db::enqueue_jobs(conn, &jobs, job_type, created_at)?;
+    let inserted = db::enqueue_jobs(conn, &jobs, job_type, created_at, source_id)?;
     let progress = db::current_progress(conn)?;
     Ok((inserted, progress))
 }

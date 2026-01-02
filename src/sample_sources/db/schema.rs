@@ -21,6 +21,7 @@ pub(super) fn apply_schema(connection: &Connection) -> Result<(), SourceDbError>
              CREATE TABLE IF NOT EXISTS analysis_jobs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 sample_id TEXT NOT NULL,
+                source_id TEXT NOT NULL DEFAULT '',
                 job_type TEXT NOT NULL,
                 content_hash TEXT,
                 status TEXT NOT NULL,
@@ -126,7 +127,11 @@ pub(super) fn apply_schema(connection: &Connection) -> Result<(), SourceDbError>
     connection
         .execute_batch(
             "CREATE INDEX IF NOT EXISTS idx_wav_files_missing
-                 ON wav_files(path) WHERE missing != 0;",
+                 ON wav_files(path) WHERE missing != 0;
+             CREATE INDEX IF NOT EXISTS idx_analysis_jobs_source_job_status_created
+                 ON analysis_jobs (source_id, job_type, status, created_at);
+             CREATE INDEX IF NOT EXISTS idx_analysis_jobs_job_status
+                 ON analysis_jobs (job_type, status);",
         )
         .map_err(map_sql_error)?;
     Ok(())
@@ -189,6 +194,26 @@ fn ensure_analysis_jobs_optional_columns(connection: &Connection) -> Result<(), 
             .execute(
                 "UPDATE analysis_jobs SET running_at = ?1 WHERE status = 'running'",
                 [now],
+            )
+            .map_err(map_sql_error)?;
+    }
+    if !columns.contains("source_id") {
+        connection
+            .execute(
+                "ALTER TABLE analysis_jobs ADD COLUMN source_id TEXT NOT NULL DEFAULT ''",
+                [],
+            )
+            .map_err(map_sql_error)?;
+        connection
+            .execute(
+                "UPDATE analysis_jobs
+                 SET source_id = CASE
+                     WHEN instr(sample_id, '::') > 0
+                     THEN substr(sample_id, 1, instr(sample_id, '::') - 1)
+                     ELSE source_id
+                 END
+                 WHERE source_id = '' OR source_id IS NULL",
+                [],
             )
             .map_err(map_sql_error)?;
     }

@@ -38,6 +38,7 @@ pub(in crate::egui_app::controller) fn enqueue_jobs_for_embedding_samples(
         &jobs,
         db::EMBEDDING_BACKFILL_JOB_TYPE,
         created_at,
+        source.id.as_str(),
     )?;
     let progress = db::current_progress(&conn)?;
     Ok((inserted, progress))
@@ -52,20 +53,20 @@ fn enqueue_embedding_backfill(
 
     let _ = conn.execute(
         "DELETE FROM analysis_jobs
-         WHERE job_type = ?1 AND sample_id LIKE ?2",
+         WHERE job_type = ?1 AND source_id = ?2",
         params![
             db::EMBEDDING_BACKFILL_JOB_TYPE,
-            format!("embed_backfill::{}::%", request.source.id)
+            request.source.id.as_str(),
         ],
     );
 
     let active_jobs: i64 = conn
         .query_row(
             "SELECT COUNT(*) FROM analysis_jobs
-             WHERE job_type = ?1 AND sample_id LIKE ?2 AND status IN ('pending','running')",
+             WHERE job_type = ?1 AND source_id = ?2 AND status IN ('pending','running')",
             params![
                 db::EMBEDDING_BACKFILL_JOB_TYPE,
-                format!("{}::embed_backfill::%", request.source.id)
+                request.source.id.as_str()
             ],
             |row| row.get(0),
         )
@@ -119,6 +120,7 @@ fn enqueue_embedding_backfill(
         &jobs,
         db::EMBEDDING_BACKFILL_JOB_TYPE,
         created_at,
+        request.source.id.as_str(),
     )?;
     let progress = db::current_progress(&conn)?;
     Ok((inserted, progress))

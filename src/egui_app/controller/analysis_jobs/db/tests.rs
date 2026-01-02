@@ -7,6 +7,7 @@ fn conn_with_schema() -> Connection {
         "CREATE TABLE analysis_jobs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             sample_id TEXT NOT NULL,
+            source_id TEXT NOT NULL DEFAULT '',
             job_type TEXT NOT NULL,
             content_hash TEXT,
             status TEXT NOT NULL,
@@ -71,7 +72,7 @@ fn enqueue_jobs_dedupes_by_sample_and_type() {
         ("s::a.wav".to_string(), "h1".to_string()),
         ("s::a.wav".to_string(), "h1".to_string()),
     ];
-    let inserted = enqueue_jobs(&mut conn, &jobs, DEFAULT_JOB_TYPE, 123).unwrap();
+    let inserted = enqueue_jobs(&mut conn, &jobs, DEFAULT_JOB_TYPE, 123, "s").unwrap();
     assert_eq!(inserted, 2);
     let progress = current_progress(&conn).unwrap();
     assert_eq!(progress.pending, 1);
@@ -82,7 +83,7 @@ fn enqueue_jobs_dedupes_by_sample_and_type() {
 fn claim_next_job_marks_running_and_increments_attempts() {
     let mut conn = conn_with_schema();
     let jobs = vec![("s::a.wav".to_string(), "h1".to_string())];
-    enqueue_jobs(&mut conn, &jobs, DEFAULT_JOB_TYPE, 123).unwrap();
+    enqueue_jobs(&mut conn, &jobs, DEFAULT_JOB_TYPE, 123, "s").unwrap();
         let job = claim_next_job(&mut conn, std::path::Path::new("/tmp"))
         .unwrap()
         .expect("job claimed");

@@ -8,6 +8,7 @@ pub(in crate::egui_app::controller::analysis_jobs) fn enqueue_jobs(
     jobs: &[(String, String)],
     job_type: &str,
     created_at: i64,
+    source_id: &str,
 ) -> Result<usize, String> {
     if jobs.is_empty() {
         return Ok(0);
@@ -15,7 +16,7 @@ pub(in crate::egui_app::controller::analysis_jobs) fn enqueue_jobs(
     let tx = conn
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|err| format!("Failed to start analysis enqueue transaction: {err}"))?;
-    let inserted = enqueue_jobs_tx(&tx, jobs, job_type, created_at)?;
+    let inserted = enqueue_jobs_tx(&tx, jobs, job_type, created_at, source_id)?;
     tx.commit()
         .map_err(|err| format!("Failed to commit analysis enqueue transaction: {err}"))?;
     Ok(inserted)
@@ -26,33 +27,37 @@ fn enqueue_jobs_tx(
     jobs: &[(String, String)],
     job_type: &str,
     created_at: i64,
+    source_id: &str,
 ) -> Result<usize, String> {
     let mut inserted = 0usize;
     const BATCH_SIZE: usize = 200;
     for chunk in jobs.chunks(BATCH_SIZE) {
         let mut sql = String::from(
-            "INSERT INTO analysis_jobs (sample_id, job_type, content_hash, status, attempts, created_at) VALUES ",
+            "INSERT INTO analysis_jobs (sample_id, source_id, job_type, content_hash, status, attempts, created_at) VALUES ",
         );
-        let mut params: Vec<Value> = Vec::with_capacity(chunk.len() * 4);
+        let mut params: Vec<Value> = Vec::with_capacity(chunk.len() * 5);
         for (idx, (sample_id, content_hash)) in chunk.iter().enumerate() {
             if idx > 0 {
                 sql.push_str(", ");
             }
-            let base = idx * 4;
+            let base = idx * 5;
             sql.push_str(&format!(
-                "(?{}, ?{}, ?{}, 'pending', 0, ?{})",
+                "(?{}, ?{}, ?{}, ?{}, 'pending', 0, ?{})",
                 base + 1,
                 base + 2,
                 base + 3,
-                base + 4
+                base + 4,
+                base + 5
             ));
             params.push(Value::from(sample_id.clone()));
+            params.push(Value::from(source_id.to_string()));
             params.push(Value::from(job_type.to_string()));
             params.push(Value::from(content_hash.clone()));
             params.push(Value::from(created_at));
         }
         sql.push_str(
             " ON CONFLICT(sample_id, job_type) DO UPDATE SET
+                source_id = excluded.source_id,
                 content_hash = excluded.content_hash,
                 status = 'pending',
                 attempts = 0,
