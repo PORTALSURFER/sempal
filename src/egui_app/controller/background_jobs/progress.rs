@@ -20,8 +20,8 @@ pub(super) fn update_progress_detail(
     detail: Option<String>,
 ) {
     if controller.ui.progress.task == Some(task) {
-        controller.ui.progress.completed = completed;
-        controller.ui.progress.detail = detail;
+        controller.ui.progress.set_counts(controller.ui.progress.total, completed);
+        controller.ui.progress.set_detail(detail);
     }
 }
 
@@ -33,8 +33,7 @@ pub(super) fn update_progress_totals(
     detail: Option<String>,
 ) {
     if controller.ui.progress.task == Some(task) {
-        controller.ui.progress.total = total;
-        controller.ui.progress.completed = completed;
-        controller.ui.progress.detail = detail;
+        controller.ui.progress.set_counts(total, completed);
+        controller.ui.progress.set_detail(detail);
     }
 }

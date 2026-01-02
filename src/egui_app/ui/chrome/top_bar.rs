@@ -1,4 +1,5 @@
 use eframe::egui::{self, RichText, SliderClamping};
+use std::time::Duration;
 
 use super::super::EguiApp;
 use super::super::style;
@@ -184,11 +185,61 @@ impl EguiApp {
             } else {
                 bar.text("Working…")
             };
-            let tooltip = match progress.detail.as_deref() {
-                Some(detail) => format!("{}\n{}", progress.title, detail),
-                None => progress.title.clone(),
-            };
-            ui.add(bar).on_hover_text(tooltip);
+            ui.add(bar).on_hover_ui(|ui| {
+                ui.label(&progress.title);
+                if let Some(detail) = progress.detail.as_deref() {
+                    ui.label(detail);
+                }
+                if let Some(snapshot) = progress.analysis.as_ref() {
+                    ui.add_space(4.0);
+                    let jobs_fraction = progress.fraction();
+                    let jobs_label = format!(
+                        "Jobs {}/{}",
+                        progress.completed.min(progress.total),
+                        progress.total
+                    );
+                    ui.label(format!(
+                        "Queue: {} pending • {} running • {} failed",
+                        snapshot.pending, snapshot.running, snapshot.failed
+                    ));
+                    ui.add(
+                        egui::ProgressBar::new(jobs_fraction)
+                            .desired_width(180.0)
+                            .text(jobs_label),
+                    );
+                    let samples_fraction = if snapshot.samples_total == 0 {
+                        0.0
+                    } else {
+                        snapshot.samples_completed as f32 / snapshot.samples_total as f32
+                    };
+                    let samples_label = format!(
+                        "Samples {}/{}",
+                        snapshot.samples_completed, snapshot.samples_total
+                    );
+                    ui.add(
+                        egui::ProgressBar::new(samples_fraction.clamp(0.0, 1.0))
+                            .desired_width(180.0)
+                            .text(samples_label),
+                    );
+                }
+                ui.add_space(4.0);
+                let heartbeat = heartbeat_frame(ui.input(|i| i.time));
+                if let Some(last_update) = progress.last_update_at {
+                    ui.label(format!(
+                        "Heartbeat {} • last update {} ago",
+                        heartbeat,
+                        format_elapsed(last_update.elapsed())
+                    ));
+                } else {
+                    ui.label(format!("Heartbeat {}", heartbeat));
+                }
+                if let Some(last_progress) = progress.last_progress_at {
+                    ui.label(format!(
+                        "Last progress {} ago",
+                        format_elapsed(last_progress.elapsed())
+                    ));
+                }
+            });
             if progress.cancelable {
                 let label = if progress.cancel_requested {
                     "Canceling…"
@@ -203,5 +254,25 @@ impl EguiApp {
                 }
             }
         }
+    }
+}
+
+fn heartbeat_frame(time: f64) -> &'static str {
+    const FRAMES: [&str; 4] = ["|", "/", "-", "\\"];
+    let idx = ((time * 4.0) as usize) % FRAMES.len();
+    FRAMES[idx]
+}
+
+fn format_elapsed(elapsed: Duration) -> String {
+    let millis = elapsed.as_millis();
+    if millis < 1000 {
+        format!("{}ms", millis)
+    } else if millis < 60_000 {
+        format!("{:.1}s", elapsed.as_secs_f32())
+    } else {
+        let secs = elapsed.as_secs();
+        let minutes = secs / 60;
+        let rem = secs % 60;
+        format!("{}m {:02}s", minutes, rem)
     }
 }

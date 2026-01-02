@@ -8,6 +8,8 @@ pub enum ProgressTaskKind {
     Analysis,
 }
 
+use std::time::Instant;
+
 #[derive(Clone, Debug, Default)]
 pub struct ProgressOverlayState {
     pub visible: bool,
@@ -21,6 +23,18 @@ pub struct ProgressOverlayState {
     pub total: usize,
     pub cancelable: bool,
     pub cancel_requested: bool,
+    pub last_update_at: Option<Instant>,
+    pub last_progress_at: Option<Instant>,
+    pub analysis: Option<AnalysisProgressSnapshot>,
+}
+
+#[derive(Clone, Debug)]
+pub struct AnalysisProgressSnapshot {
+    pub pending: usize,
+    pub running: usize,
+    pub failed: usize,
+    pub samples_completed: usize,
+    pub samples_total: usize,
 }
 
 impl ProgressOverlayState {
@@ -31,6 +45,7 @@ impl ProgressOverlayState {
         total: usize,
         cancelable: bool,
     ) -> Self {
+        let now = Instant::now();
         Self {
             visible: true,
             modal: true,
@@ -41,12 +56,34 @@ impl ProgressOverlayState {
             total,
             cancelable,
             cancel_requested: false,
+            last_update_at: Some(now),
+            last_progress_at: Some(now),
+            analysis: None,
         }
     }
 
     /// Reset the overlay back to its default (hidden) state.
     pub fn reset(&mut self) {
         *self = Self::default();
+    }
+
+    pub fn set_detail(&mut self, detail: Option<String>) {
+        self.detail = detail;
+        self.last_update_at = Some(Instant::now());
+    }
+
+    pub fn set_counts(&mut self, total: usize, completed: usize) {
+        if self.total != total || self.completed != completed {
+            self.last_progress_at = Some(Instant::now());
+        }
+        self.total = total;
+        self.completed = completed;
+        self.last_update_at = Some(Instant::now());
+    }
+
+    pub fn set_analysis_snapshot(&mut self, snapshot: Option<AnalysisProgressSnapshot>) {
+        self.analysis = snapshot;
+        self.last_update_at = Some(Instant::now());
     }
 
     /// Return completion in the range `[0.0, 1.0]`.

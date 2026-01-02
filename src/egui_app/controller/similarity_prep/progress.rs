@@ -1,5 +1,6 @@
 use super::store::{DbSimilarityPrepStore, SimilarityPrepStore};
 use crate::egui_app::controller::{EguiController, SimilarityPrepStage};
+use crate::egui_app::state::AnalysisProgressSnapshot;
 
 impl EguiController {
     pub(super) fn refresh_similarity_prep_progress(&mut self) {
@@ -41,8 +42,10 @@ impl EguiController {
                     if embed_progress.pending > 0 || embed_progress.running > 0 {
                         self.ensure_similarity_prep_progress(embed_progress.total(), true);
                         self.set_similarity_embedding_detail();
-                        self.ui.progress.total = embed_progress.total();
-                        self.ui.progress.completed = embed_progress.completed();
+                        self.ui.progress.set_counts(
+                            embed_progress.total(),
+                            embed_progress.completed(),
+                        );
                         let jobs_completed = embed_progress.completed();
                         let jobs_total = embed_progress.total();
                         let mut detail =
@@ -50,7 +53,8 @@ impl EguiController {
                         if embed_progress.failed > 0 {
                             detail.push_str(&format!(" • {} failed", embed_progress.failed));
                         }
-                        self.ui.progress.detail = Some(detail);
+                        self.ui.progress.set_detail(Some(detail));
+                        self.ui.progress.set_analysis_snapshot(None);
                         return;
                     }
                     if !store.source_has_embeddings(&source) {
@@ -59,30 +63,37 @@ impl EguiController {
                         self.enqueue_similarity_backfill(source, false);
                         return;
                     }
-                    self.handle_similarity_analysis_progress(&progress);
-                    return;
-                }
-                self.ensure_similarity_prep_progress(progress.total(), true);
-                self.ui.progress.total = progress.total();
-                self.ui.progress.completed = progress.completed();
-                let jobs_completed = progress.completed();
-                let jobs_total = progress.total();
-                let samples_completed = progress.samples_completed();
-                let samples_total = progress.samples_total;
-                let mut detail = format!(
-                    "Analyzing audio features… Jobs {jobs_completed}/{jobs_total} • Samples {samples_completed}/{samples_total}"
-                );
-                if progress.running == 0 && progress.pending > 0 {
-                    detail.push_str(" • Waiting for workers");
-                }
-                if progress.failed > 0 {
-                    detail.push_str(&format!(" • {} failed", progress.failed));
-                }
-                self.ui.progress.detail = Some(detail);
+                self.handle_similarity_analysis_progress(&progress);
+                return;
             }
-            SimilarityPrepStage::Finalizing => {
-                self.ensure_similarity_finalize_progress();
-                self.set_similarity_finalize_detail();
+            self.ensure_similarity_prep_progress(progress.total(), true);
+            self.ui.progress
+                .set_counts(progress.total(), progress.completed());
+            let jobs_completed = progress.completed();
+            let jobs_total = progress.total();
+            let samples_completed = progress.samples_completed();
+            let samples_total = progress.samples_total;
+            let mut detail = format!(
+                "Analyzing audio features… Jobs {jobs_completed}/{jobs_total} • Samples {samples_completed}/{samples_total}"
+            );
+            if progress.running == 0 && progress.pending > 0 {
+                detail.push_str(" • Waiting for workers");
+            }
+            if progress.failed > 0 {
+                detail.push_str(&format!(" • {} failed", progress.failed));
+            }
+            self.ui.progress.set_detail(Some(detail));
+            self.ui.progress.set_analysis_snapshot(Some(AnalysisProgressSnapshot {
+                pending: progress.pending,
+                running: progress.running,
+                failed: progress.failed,
+                samples_completed,
+                samples_total,
+            }));
+        }
+        SimilarityPrepStage::Finalizing => {
+            self.ensure_similarity_finalize_progress();
+            self.set_similarity_finalize_detail();
             }
         }
     }

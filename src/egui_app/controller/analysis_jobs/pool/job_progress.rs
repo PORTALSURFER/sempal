@@ -14,6 +14,7 @@ use std::time::{Duration, Instant};
 const POLL_INTERVAL_ACTIVE: Duration = Duration::from_millis(500);
 const POLL_INTERVAL_IDLE: Duration = Duration::from_millis(1500);
 const SOURCE_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
+const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(2);
 
 struct ProgressSourceDb {
     conn: Connection,
@@ -76,6 +77,7 @@ pub(super) fn spawn_progress_poller(
         let mut sources = Vec::new();
         let mut last_refresh = Instant::now() - SOURCE_REFRESH_INTERVAL;
         let mut last: Option<AnalysisProgress> = None;
+        let mut last_heartbeat = Instant::now() - HEARTBEAT_INTERVAL;
         let mut idle_polls = 0u32;
         loop {
             if shutdown.load(Ordering::Relaxed) {
@@ -91,9 +93,14 @@ pub(super) fn spawn_progress_poller(
                 .and_then(|guard| guard.clone());
             refresh_sources(&mut sources, &mut last_refresh, allowed.as_ref());
             let progress = current_progress_all(&mut sources);
-            if last != Some(progress) {
+            let unchanged = last == Some(progress);
+            let should_heartbeat = unchanged
+                && (progress.pending > 0 || progress.running > 0)
+                && last_heartbeat.elapsed() >= HEARTBEAT_INTERVAL;
+            if !unchanged || should_heartbeat {
                 last = Some(progress);
                 idle_polls = 0;
+                last_heartbeat = Instant::now();
                 let _ = tx.send(JobMessage::Analysis(AnalysisJobMessage::Progress {
                     source_id: None,
                     progress,

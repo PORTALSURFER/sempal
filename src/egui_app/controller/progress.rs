@@ -17,7 +17,7 @@ impl EguiController {
     /// Update the current progress detail label without changing counts.
     pub(crate) fn update_progress_detail(&mut self, detail: impl Into<String>) {
         if self.ui.progress.visible {
-            self.ui.progress.detail = Some(detail.into());
+            self.ui.progress.set_detail(Some(detail.into()));
         }
     }
 

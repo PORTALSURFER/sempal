@@ -95,6 +95,16 @@ pub(super) fn handle_analysis_message(
                 if progress.failed > 0 {
                     detail.push_str(&format!(" • {} failed", progress.failed));
                 }
+                controller
+                    .ui
+                    .progress
+                    .set_analysis_snapshot(Some(crate::egui_app::state::AnalysisProgressSnapshot {
+                        pending: progress.pending,
+                        running: progress.running,
+                        failed: progress.failed,
+                        samples_completed,
+                        samples_total,
+                    }));
                 progress::update_progress_totals(
                     controller,
                     ProgressTaskKind::Analysis,
