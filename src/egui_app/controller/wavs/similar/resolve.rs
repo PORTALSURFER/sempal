@@ -299,17 +299,28 @@ fn maybe_enqueue_full_analysis(
     if active > 0 {
         return Ok(());
     }
+    let (source_id, relative_path) = super::super::analysis_jobs::parse_sample_id(sample_id)?;
+    let relative_path = relative_path.to_string_lossy().replace('\\', "/");
     let created_at = now_epoch_seconds();
     conn.execute(
-        "INSERT INTO analysis_jobs (sample_id, job_type, content_hash, status, attempts, created_at)
-         VALUES (?1, ?2, ?3, 'pending', 0, ?4)
+        "INSERT INTO analysis_jobs (sample_id, source_id, relative_path, job_type, content_hash, status, attempts, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, 'pending', 0, ?6)
          ON CONFLICT(sample_id, job_type) DO UPDATE SET
+            source_id = excluded.source_id,
+            relative_path = excluded.relative_path,
             content_hash = excluded.content_hash,
             status = 'pending',
             attempts = 0,
             created_at = excluded.created_at,
             last_error = NULL",
-        params![sample_id, "wav_metadata_v1", content_hash, created_at],
+        params![
+            sample_id,
+            source_id,
+            relative_path,
+            "wav_metadata_v1",
+            content_hash,
+            created_at
+        ],
     )
     .map_err(|err| format!("Enqueue analysis job failed: {err}"))?;
     Ok(())

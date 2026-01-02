@@ -26,7 +26,7 @@ pub(in crate::egui_app::controller::analysis_jobs) fn current_running_jobs(
             "SELECT aj.sample_id, aj.running_at
              FROM analysis_jobs aj
              JOIN wav_files wf
-               ON wf.path = substr(aj.sample_id, instr(aj.sample_id, '::') + 2)
+              ON wf.path = aj.relative_path
               AND wf.missing = 0
              WHERE aj.job_type = ?1
                AND aj.status = 'running'
@@ -62,20 +62,20 @@ fn current_progress_for_job_type(
             "SELECT aj.status, COUNT(*)
              FROM analysis_jobs aj
              JOIN wav_files wf
-               ON wf.path = substr(aj.sample_id, instr(aj.sample_id, '::') + 2)
+               ON wf.path = aj.relative_path
               AND wf.missing = 0
              WHERE aj.job_type = ?1
              GROUP BY aj.status",
             "SELECT COUNT(DISTINCT aj.sample_id)
              FROM analysis_jobs aj
              JOIN wav_files wf
-               ON wf.path = substr(aj.sample_id, instr(aj.sample_id, '::') + 2)
+               ON wf.path = aj.relative_path
               AND wf.missing = 0
              WHERE aj.job_type = ?1",
             "SELECT COUNT(DISTINCT aj.sample_id)
              FROM analysis_jobs aj
              JOIN wav_files wf
-               ON wf.path = substr(aj.sample_id, instr(aj.sample_id, '::') + 2)
+               ON wf.path = aj.relative_path
               AND wf.missing = 0
              WHERE aj.job_type = ?1
                AND aj.status IN ('pending','running')",

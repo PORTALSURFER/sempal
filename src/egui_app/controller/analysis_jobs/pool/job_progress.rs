@@ -288,11 +288,12 @@ mod tests {
         .unwrap();
         let now = now_epoch_seconds();
         conn.execute(
-            "INSERT INTO analysis_jobs (sample_id, source_id, job_type, status, attempts, created_at, running_at)
-             VALUES (?1, ?2, ?3, 'running', 1, ?4, ?5)",
+            "INSERT INTO analysis_jobs (sample_id, source_id, relative_path, job_type, status, attempts, created_at, running_at)
+             VALUES (?1, ?2, ?3, ?4, 'running', 1, ?5, ?6)",
             rusqlite::params![
                 "source::a.wav",
                 "source",
+                "a.wav",
                 db::ANALYZE_SAMPLE_JOB_TYPE,
                 now,
                 now - 120

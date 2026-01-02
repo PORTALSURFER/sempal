@@ -8,6 +8,7 @@ fn conn_with_schema() -> Connection {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             sample_id TEXT NOT NULL,
             source_id TEXT NOT NULL DEFAULT '',
+            relative_path TEXT NOT NULL DEFAULT '',
             job_type TEXT NOT NULL,
             content_hash TEXT,
             status TEXT NOT NULL,
@@ -77,6 +78,26 @@ fn enqueue_jobs_dedupes_by_sample_and_type() {
     let progress = current_progress(&conn).unwrap();
     assert_eq!(progress.pending, 1);
     assert_eq!(progress.total(), 1);
+}
+
+#[test]
+fn progress_uses_relative_path_over_sample_id() {
+    let conn = conn_with_schema();
+    conn.execute(
+        "INSERT INTO wav_files (path, file_size, modified_ns, tag, missing)
+         VALUES (?1, ?2, ?3, 0, 0)",
+        params!["a.wav", 1, 1],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO analysis_jobs (sample_id, source_id, relative_path, job_type, status, attempts, created_at)
+         VALUES (?1, ?2, ?3, ?4, 'pending', 0, 0)",
+        params!["s::wrong.wav", "s", "a.wav", DEFAULT_JOB_TYPE],
+    )
+    .unwrap();
+    let progress = current_progress(&conn).unwrap();
+    assert_eq!(progress.total(), 1);
+    assert_eq!(progress.pending, 1);
 }
 
 #[test]

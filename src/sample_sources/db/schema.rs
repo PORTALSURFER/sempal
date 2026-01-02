@@ -22,6 +22,7 @@ pub(super) fn apply_schema(connection: &Connection) -> Result<(), SourceDbError>
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 sample_id TEXT NOT NULL,
                 source_id TEXT NOT NULL DEFAULT '',
+                relative_path TEXT NOT NULL DEFAULT '',
                 job_type TEXT NOT NULL,
                 content_hash TEXT,
                 status TEXT NOT NULL,
@@ -213,6 +214,26 @@ fn ensure_analysis_jobs_optional_columns(connection: &Connection) -> Result<(), 
                      ELSE source_id
                  END
                  WHERE source_id = '' OR source_id IS NULL",
+                [],
+            )
+            .map_err(map_sql_error)?;
+    }
+    if !columns.contains("relative_path") {
+        connection
+            .execute(
+                "ALTER TABLE analysis_jobs ADD COLUMN relative_path TEXT NOT NULL DEFAULT ''",
+                [],
+            )
+            .map_err(map_sql_error)?;
+        connection
+            .execute(
+                "UPDATE analysis_jobs
+                 SET relative_path = CASE
+                     WHEN instr(sample_id, '::') > 0
+                     THEN substr(sample_id, instr(sample_id, '::') + 2)
+                     ELSE relative_path
+                 END
+                 WHERE relative_path = '' OR relative_path IS NULL",
                 [],
             )
             .map_err(map_sql_error)?;
