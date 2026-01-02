@@ -408,11 +408,11 @@ fn finalize_immediate_job(
     }
 }
 
-fn open_connection_with_retry(
-    connections: &mut HashMap<std::path::PathBuf, Connection>,
-    source_root: &std::path::PathBuf,
-) -> Result<&mut Connection, String> {
-    match connections.entry(source_root.clone()) {
+fn open_connection_with_retry<'a>(
+    connections: &'a mut HashMap<std::path::PathBuf, Connection>,
+    source_root: &std::path::Path,
+) -> Result<&'a mut Connection, String> {
+    match connections.entry(source_root.to_path_buf()) {
         std::collections::hash_map::Entry::Occupied(entry) => Ok(entry.into_mut()),
         std::collections::hash_map::Entry::Vacant(entry) => {
             let mut last_err = None;
