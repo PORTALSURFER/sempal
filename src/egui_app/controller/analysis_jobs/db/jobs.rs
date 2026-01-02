@@ -185,6 +185,21 @@ pub(in crate::egui_app::controller::analysis_jobs) fn mark_failed(
     Ok(())
 }
 
+pub(in crate::egui_app::controller::analysis_jobs) fn mark_failed_with_reason(
+    conn: &Connection,
+    job_id: i64,
+    error: &str,
+) -> Result<(), String> {
+    conn.execute(
+        "UPDATE analysis_jobs
+         SET status = 'failed', last_error = ?2, running_at = NULL
+         WHERE id = ?1 AND status IN ('running','pending')",
+        params![job_id, error],
+    )
+    .map_err(|err| format!("Failed to mark analysis job failed: {err}"))?;
+    Ok(())
+}
+
 pub(in crate::egui_app::controller::analysis_jobs) fn mark_pending(
     conn: &Connection,
     job_id: i64,

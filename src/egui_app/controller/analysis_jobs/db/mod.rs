@@ -32,8 +32,8 @@ pub(in crate::egui_app::controller) use ids::{build_sample_id, parse_sample_id};
 #[cfg(test)]
 pub(in crate::egui_app::controller::analysis_jobs) use jobs::claim_next_job;
 pub(in crate::egui_app::controller::analysis_jobs) use jobs::{
-    claim_next_jobs, mark_done, mark_failed, mark_pending, sample_analysis_states,
-    sample_content_hash, touch_running_at,
+    claim_next_jobs, mark_done, mark_failed, mark_failed_with_reason, mark_pending,
+    sample_analysis_states, sample_content_hash, touch_running_at,
 };
 pub(in crate::egui_app::controller::analysis_jobs) use progress::{
     current_embedding_backfill_progress, current_progress, current_running_jobs,

@@ -59,6 +59,7 @@ pub(super) fn spawn_decoder_worker(
         let log_jobs = logging::analysis_log_enabled();
         let mut selector = selection::ClaimSelector::new(reset_done);
         let decode_queue_target = decode_queue_target.max(1);
+        let mut connections: HashMap<std::path::PathBuf, Connection> = HashMap::new();
         loop {
             if shutdown.load(Ordering::Relaxed) {
                 break;
@@ -91,8 +92,8 @@ pub(super) fn spawn_decoder_worker(
                 }
             };
             if !lease::job_allowed(&job, allowed.as_ref()) {
-                if let Ok(conn) = db::open_source_db(&job.source_root) {
-                    lease::release_claim(&conn, job.id);
+                if let Ok(conn) = open_connection_with_retry(&mut connections, &job.source_root) {
+                    lease::release_claim(conn, job.id);
                 }
                 continue;
             }
@@ -172,6 +173,7 @@ pub(super) fn spawn_compute_worker(
         let log_queue = logging::analysis_log_queue_enabled();
         let mut last_queue_log = Instant::now();
         let mut connections: HashMap<std::path::PathBuf, Connection> = HashMap::new();
+        let mut deferred_updates: Vec<DeferredJobUpdate> = Vec::new();
         let embedding_batch_max = crate::analysis::embedding::embedding_batch_max();
         loop {
             if shutdown.load(Ordering::Relaxed) {
@@ -183,6 +185,14 @@ pub(super) fn spawn_compute_worker(
             }
             let (batch, wait_ms) = decode_queue.pop_batch(&shutdown, embedding_batch_max);
             if batch.is_empty() {
+                flush_deferred_updates(
+                    &mut connections,
+                    &decode_queue,
+                    &tx,
+                    &progress_cache,
+                    &mut deferred_updates,
+                    log_jobs,
+                );
                 continue;
             }
             if log_queue && last_queue_log.elapsed() >= Duration::from_secs(2) {
@@ -215,20 +225,17 @@ pub(super) fn spawn_compute_worker(
                     .ok()
                     .and_then(|guard| guard.clone());
                 if !lease::job_allowed(&work.job, allowed.as_ref()) {
-                    let conn = match connections.entry(work.job.source_root.clone()) {
-                        std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
-                        std::collections::hash_map::Entry::Vacant(entry) => {
-                            let conn = match db::open_source_db(&work.job.source_root) {
-                                Ok(conn) => conn,
-                                Err(_) => {
-                                    decode_queue.clear_inflight(work.job.id);
-                                    continue;
-                                }
-                            };
-                            entry.insert(conn)
+                    match open_connection_with_retry(&mut connections, &work.job.source_root) {
+                        Ok(conn) => lease::release_claim(conn, work.job.id),
+                        Err(err) => {
+                            if log_jobs {
+                                eprintln!(
+                                    "analysis release failed: {} ({})",
+                                    work.job.sample_id, err
+                                );
+                            }
                         }
-                    };
-                    lease::release_claim(conn, work.job.id);
+                    }
                     decode_queue.clear_inflight(work.job.id);
                     continue;
                 }
@@ -241,22 +248,14 @@ pub(super) fn spawn_compute_worker(
                 let mut immediate_job: Option<(db::ClaimedJob, Result<(), String>)> = None;
 
                 let outcome = catch_unwind(AssertUnwindSafe(|| {
-                    let conn = match connections.entry(work.job.source_root.clone()) {
-                        std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
-                        std::collections::hash_map::Entry::Vacant(entry) => {
-                            let conn = match db::open_source_db(&work.job.source_root) {
-                                Ok(conn) => conn,
-                                Err(_) => {
-                                    immediate_job = Some((
-                                        work.job,
-                                        Err("Failed to open source DB".to_string()),
-                                    ));
-                                    return Ok(());
-                                }
-                            };
-                            entry.insert(conn)
-                        }
-                    };
+                    let conn =
+                        match open_connection_with_retry(&mut connections, &work.job.source_root) {
+                            Ok(conn) => conn,
+                            Err(err) => {
+                                immediate_job = Some((work.job, Err(err)));
+                                return Ok(());
+                            }
+                        };
                     match work.job.job_type.as_str() {
                         db::ANALYZE_SAMPLE_JOB_TYPE => match work.outcome {
                             DecodeOutcome::Decoded(decoded) => {
@@ -321,22 +320,13 @@ pub(super) fn spawn_compute_worker(
             }
 
             for (source_root, jobs) in decoded_batches {
-                let conn = match connections.entry(source_root.clone()) {
-                    std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
-                    std::collections::hash_map::Entry::Vacant(entry) => {
-                        let conn = match db::open_source_db(&source_root) {
-                            Ok(conn) => conn,
-                            Err(_) => {
-                                for (job, _) in jobs {
-                                    immediate_jobs.push((
-                                        job,
-                                        Err("Failed to open source DB".to_string()),
-                                    ));
-                                }
-                                continue;
-                            }
-                        };
-                        entry.insert(conn)
+                let conn = match open_connection_with_retry(&mut connections, &source_root) {
+                    Ok(conn) => conn,
+                    Err(err) => {
+                        for (job, _) in jobs {
+                            immediate_jobs.push((job, Err(err.clone())));
+                        }
+                        continue;
                     }
                 };
                 let jobs_for_failure: Vec<db::ClaimedJob> =
@@ -362,7 +352,7 @@ pub(super) fn spawn_compute_worker(
             }
 
             for (job, outcome) in immediate_jobs {
-                finalize_immediate_job(
+                if let Some(deferred) = finalize_immediate_job(
                     &mut connections,
                     &decode_queue,
                     &tx,
@@ -370,10 +360,25 @@ pub(super) fn spawn_compute_worker(
                     outcome,
                     log_jobs,
                     &progress_cache,
-                );
+                ) {
+                    deferred_updates.push(deferred);
+                }
             }
+            flush_deferred_updates(
+                &mut connections,
+                &decode_queue,
+                &tx,
+                &progress_cache,
+                &mut deferred_updates,
+                log_jobs,
+            );
         }
     })
+}
+
+struct DeferredJobUpdate {
+    job: db::ClaimedJob,
+    error: String,
 }
 
 fn finalize_immediate_job(
@@ -384,7 +389,7 @@ fn finalize_immediate_job(
     outcome: Result<(), String>,
     log_jobs: bool,
     progress_cache: &Arc<RwLock<ProgressCache>>,
-) {
+) -> Option<DeferredJobUpdate> {
     if log_jobs {
         match &outcome {
             Ok(()) => {
@@ -395,6 +400,11 @@ fn finalize_immediate_job(
             }
         }
     }
+    let error_for_open = outcome
+        .as_ref()
+        .err()
+        .cloned()
+        .unwrap_or_else(|| "Failed to open source DB".to_string());
     let conn = match open_connection_with_retry(connections, &job.source_root) {
         Ok(conn) => conn,
         Err(err) => {
@@ -403,7 +413,10 @@ fn finalize_immediate_job(
                 job.sample_id
             );
             decode_queue.clear_inflight(job.id);
-            return;
+            return Some(DeferredJobUpdate {
+                job,
+                error: error_for_open,
+            });
         }
     };
     match outcome {
@@ -411,7 +424,7 @@ fn finalize_immediate_job(
             update_job_status_with_retry(|| db::mark_done(conn, job.id));
         }
         Err(err) => {
-            update_job_status_with_retry(|| db::mark_failed(conn, job.id, &err));
+            update_job_status_with_retry(|| db::mark_failed_with_reason(conn, job.id, &err));
         }
     }
     decode_queue.clear_inflight(job.id);
@@ -429,6 +442,7 @@ fn finalize_immediate_job(
             progress,
         }));
     }
+    None
 }
 
 fn open_connection_with_retry<'a>(
@@ -455,6 +469,34 @@ fn open_connection_with_retry<'a>(
     }
 }
 
+fn flush_deferred_updates(
+    connections: &mut HashMap<std::path::PathBuf, Connection>,
+    decode_queue: &DecodedQueue,
+    tx: &Sender<JobMessage>,
+    progress_cache: &Arc<RwLock<ProgressCache>>,
+    deferred_updates: &mut Vec<DeferredJobUpdate>,
+    log_jobs: bool,
+) {
+    if deferred_updates.is_empty() {
+        return;
+    }
+    let mut remaining = Vec::new();
+    for deferred in deferred_updates.drain(..) {
+        if let Some(next) = finalize_immediate_job(
+            connections,
+            decode_queue,
+            tx,
+            deferred.job,
+            Err(deferred.error),
+            log_jobs,
+            progress_cache,
+        ) {
+            remaining.push(next);
+        }
+    }
+    *deferred_updates = remaining;
+}
+
 fn spawn_decode_heartbeat(
     source_root: std::path::PathBuf,
     job_id: i64,
@@ -463,7 +505,8 @@ fn spawn_decode_heartbeat(
     let stop = Arc::new(AtomicBool::new(false));
     let stop_worker = Arc::clone(&stop);
     let handle = std::thread::spawn(move || {
-        let conn = match db::open_source_db(&source_root) {
+        let mut connections = HashMap::new();
+        let conn = match open_connection_with_retry(&mut connections, &source_root) {
             Ok(conn) => conn,
             Err(err) => {
                 tracing::warn!(
@@ -557,7 +600,7 @@ mod tests {
         let mut connections = HashMap::new();
         let progress_cache = Arc::new(RwLock::new(ProgressCache::default()));
 
-        finalize_immediate_job(
+        let deferred = finalize_immediate_job(
             &mut connections,
             &queue,
             &tx,
@@ -567,6 +610,7 @@ mod tests {
             &progress_cache,
         );
 
+        assert!(deferred.is_some());
         assert!(queue.try_mark_inflight(42));
         assert!(connections.is_empty());
     }
@@ -623,5 +667,79 @@ mod tests {
         let _ = handle.join();
 
         assert_eq!(changed, 0);
+    }
+
+    #[test]
+    fn mid_loop_db_open_failure_clears_inflight_and_marks_failed() {
+        let dir = TempDir::new().unwrap();
+        let source_root = dir.path().join("source");
+        std::fs::create_dir_all(&source_root).unwrap();
+        let conn = db::open_source_db(&source_root).unwrap();
+        conn.execute(
+            "INSERT INTO analysis_jobs (sample_id, source_id, relative_path, job_type, status, attempts, created_at, running_at)
+             VALUES (?1, ?2, ?3, ?4, 'running', 1, 0, 0)",
+            rusqlite::params![
+                "source::a.wav",
+                "source",
+                "a.wav",
+                db::ANALYZE_SAMPLE_JOB_TYPE
+            ],
+        )
+        .unwrap();
+        let job_id: i64 = conn
+            .query_row(
+                "SELECT id FROM analysis_jobs WHERE sample_id = ?1",
+                rusqlite::params!["source::a.wav"],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let job = db::ClaimedJob {
+            id: job_id,
+            sample_id: "source::a.wav".to_string(),
+            content_hash: None,
+            job_type: db::ANALYZE_SAMPLE_JOB_TYPE.to_string(),
+            source_root: source_root.clone(),
+        };
+        let queue = DecodedQueue::new();
+        assert!(queue.try_mark_inflight(job.id));
+        let (tx, _rx) = mpsc::channel::<JobMessage>();
+        let progress_cache = Arc::new(RwLock::new(ProgressCache::default()));
+        let mut connections = HashMap::new();
+
+        let backup_root = dir.path().join("source_backup");
+        std::fs::rename(&source_root, &backup_root).unwrap();
+        let deferred = finalize_immediate_job(
+            &mut connections,
+            &queue,
+            &tx,
+            job.clone(),
+            Err("Failed to open source DB".to_string()),
+            false,
+            &progress_cache,
+        );
+        assert!(queue.try_mark_inflight(job.id));
+        assert!(deferred.is_some());
+
+        std::fs::rename(&backup_root, &source_root).unwrap();
+        let mut deferred_updates = vec![deferred.unwrap()];
+        flush_deferred_updates(
+            &mut connections,
+            &queue,
+            &tx,
+            &progress_cache,
+            &mut deferred_updates,
+            false,
+        );
+        assert!(deferred_updates.is_empty());
+        let conn = db::open_source_db(&source_root).unwrap();
+        let (status, last_error): (String, Option<String>) = conn
+            .query_row(
+                "SELECT status, last_error FROM analysis_jobs WHERE id = ?1",
+                rusqlite::params![job_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(status, "failed");
+        assert_eq!(last_error.as_deref(), Some("Failed to open source DB"));
     }
 }
