@@ -29,6 +29,35 @@ pub(in crate::egui_app::controller::analysis_jobs) fn fail_stale_running_jobs(
     .map_err(|err| format!("Failed to fail stale analysis jobs: {err}"))
 }
 
+pub(in crate::egui_app::controller::analysis_jobs) fn fail_stale_running_jobs_with_sources(
+    conn: &Connection,
+    stale_before_epoch: i64,
+) -> Result<(usize, Vec<crate::sample_sources::SourceId>), String> {
+    let mut sources = Vec::new();
+    let mut stmt = conn
+        .prepare(
+            "SELECT DISTINCT source_id
+             FROM analysis_jobs
+             WHERE status = 'running'
+               AND running_at IS NOT NULL
+               AND running_at <= ?1
+               AND source_id != ''",
+        )
+        .map_err(|err| format!("Failed to query stale analysis job sources: {err}"))?;
+    let mut rows = stmt
+        .query(rusqlite::params![stale_before_epoch])
+        .map_err(|err| format!("Failed to query stale analysis job sources: {err}"))?;
+    while let Some(row) = rows
+        .next()
+        .map_err(|err| format!("Failed to query stale analysis job sources: {err}"))?
+    {
+        let source_id: String = row.get(0).map_err(|err| err.to_string())?;
+        sources.push(crate::sample_sources::SourceId::from_string(source_id));
+    }
+    let changed = fail_stale_running_jobs(conn, stale_before_epoch)?;
+    Ok((changed, sources))
+}
+
 pub(in crate::egui_app::controller::analysis_jobs) fn prune_jobs_for_missing_sources(
     conn: &Connection,
 ) -> Result<usize, String> {

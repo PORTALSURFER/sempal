@@ -89,12 +89,47 @@ fn current_progress_all(
     AnalysisProgress::default()
 }
 
-fn cleanup_stale_jobs(sources: &mut [ProgressSourceDb], stale_before: i64) -> usize {
+fn cleanup_stale_jobs(
+    sources: &mut [ProgressSourceDb],
+    stale_before: i64,
+    progress_cache: &Arc<RwLock<ProgressCache>>,
+    tx: &Sender<JobMessage>,
+) -> usize {
     let mut changed = 0;
+    let mut touched_sources = std::collections::HashSet::new();
     for source in sources {
-        if let Ok(updated) = db::fail_stale_running_jobs(&source.conn, stale_before) {
-            changed += updated;
+        if let Ok((updated, source_ids)) =
+            db::fail_stale_running_jobs_with_sources(&source.conn, stale_before)
+        {
+            if updated > 0 {
+                changed += updated;
+                for source_id in source_ids {
+                    touched_sources.insert(source_id);
+                }
+            }
         }
+    }
+    if touched_sources.is_empty() {
+        return changed;
+    }
+    let mut updates = Vec::new();
+    for source in sources {
+        if !touched_sources.contains(&source.source_id) {
+            continue;
+        }
+        if let Ok(progress) = db::current_progress(&source.conn) {
+            updates.push((source.source_id.clone(), progress));
+        }
+    }
+    if let Ok(mut cache) = progress_cache.write() {
+        cache.update_many(updates);
+    }
+    if let Ok(cache) = progress_cache.read() {
+        let total = cache.total_for_sources(sources.iter().map(|source| &source.source_id));
+        let _ = tx.send(JobMessage::Analysis(AnalysisJobMessage::Progress {
+            source_id: None,
+            progress: total,
+        }));
     }
     changed
 }
@@ -137,7 +172,7 @@ pub(super) fn spawn_progress_poller(
                 let stale_before = now_epoch_seconds().saturating_sub(
                     crate::egui_app::controller::analysis_jobs::stale_running_job_seconds(),
                 );
-                let _ = cleanup_stale_jobs(&mut sources, stale_before);
+                let _ = cleanup_stale_jobs(&mut sources, stale_before, &progress_cache, &tx);
             }
             if cancel.load(Ordering::Relaxed) {
                 sleep(POLL_INTERVAL_IDLE);
@@ -223,9 +258,11 @@ mod tests {
             source_id: crate::sample_sources::SourceId::from_string("source".to_string()),
             conn,
         }];
+        let cache = Arc::new(RwLock::new(ProgressCache::default()));
+        let (tx, _rx) = std::sync::mpsc::channel();
         let stale_before = now - 10;
 
-        let changed = cleanup_stale_jobs(&mut sources, stale_before);
+        let changed = cleanup_stale_jobs(&mut sources, stale_before, &cache, &tx);
 
         let status: String = sources[0]
             .conn
@@ -237,6 +274,53 @@ mod tests {
             .unwrap();
         assert_eq!(changed, 1);
         assert_eq!(status, "failed");
+    }
+
+    #[test]
+    fn cleanup_updates_cache_and_emits_message() {
+        let dir = TempDir::new().unwrap();
+        let conn = db::open_source_db(dir.path()).unwrap();
+        conn.execute(
+            "INSERT INTO wav_files (path, file_size, modified_ns, missing)
+             VALUES (?1, 1, 0, 0)",
+            rusqlite::params!["a.wav"],
+        )
+        .unwrap();
+        let now = now_epoch_seconds();
+        conn.execute(
+            "INSERT INTO analysis_jobs (sample_id, source_id, job_type, status, attempts, created_at, running_at)
+             VALUES (?1, ?2, ?3, 'running', 1, ?4, ?5)",
+            rusqlite::params![
+                "source::a.wav",
+                "source",
+                db::ANALYZE_SAMPLE_JOB_TYPE,
+                now,
+                now - 120
+            ],
+        )
+        .unwrap();
+        let mut sources = vec![ProgressSourceDb {
+            source_id: crate::sample_sources::SourceId::from_string("source".to_string()),
+            conn,
+        }];
+        let cache = Arc::new(RwLock::new(ProgressCache::default()));
+        let (tx, rx) = std::sync::mpsc::channel();
+        let stale_before = now - 10;
+
+        let changed = cleanup_stale_jobs(&mut sources, stale_before, &cache, &tx);
+
+        assert_eq!(changed, 1);
+        let cached = cache.read().unwrap().total_for_sources(std::iter::once(
+            &crate::sample_sources::SourceId::from_string("source".to_string()),
+        ));
+        assert_eq!(cached.failed, 1);
+        let message = rx.recv_timeout(Duration::from_millis(50)).unwrap();
+        match message {
+            JobMessage::Analysis(AnalysisJobMessage::Progress { progress, .. }) => {
+                assert_eq!(progress.failed, 1);
+            }
+            other => panic!("unexpected message: {other:?}"),
+        }
     }
 
     #[test]
