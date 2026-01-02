@@ -116,10 +116,10 @@ pub(in crate::egui_app::controller::analysis_jobs) fn claim_next_jobs(
                      FROM ranked
                      WHERE rn = 1
                      ORDER BY created_at ASC, id ASC
-                     LIMIT ?2
+                     LIMIT ?1
                  )
                  UPDATE analysis_jobs
-                 SET status = 'running', attempts = attempts + 1, running_at = ?3
+                 SET status = 'running', attempts = attempts + 1, running_at = ?2
                  WHERE id IN (SELECT id FROM to_claim)
                  RETURNING id, sample_id, content_hash, job_type",
             )
