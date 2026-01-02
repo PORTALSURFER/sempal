@@ -600,7 +600,23 @@ mod tests {
 
         let (stop, handle) =
             spawn_decode_heartbeat(dir.path().to_path_buf(), job_id, Duration::from_millis(10));
-        sleep(Duration::from_millis(50));
+        let deadline = Instant::now() + Duration::from_millis(500);
+        loop {
+            let running_at: Option<i64> = conn
+                .query_row(
+                    "SELECT running_at FROM analysis_jobs WHERE id = ?1",
+                    rusqlite::params![job_id],
+                    |row| row.get(0),
+                )
+                .unwrap_or(None);
+            if running_at.is_some_and(|ts| ts >= now - 1) {
+                break;
+            }
+            if Instant::now() >= deadline {
+                break;
+            }
+            sleep(Duration::from_millis(10));
+        }
         let stale_before = now - 1;
         let changed = db::fail_stale_running_jobs(&conn, stale_before).unwrap();
         stop.store(true, Ordering::Relaxed);
