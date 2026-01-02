@@ -2,6 +2,7 @@ use super::enqueue_helpers::now_epoch_seconds;
 use crate::egui_app::controller::analysis_jobs::db;
 use crate::egui_app::controller::analysis_jobs::types::AnalysisProgress;
 use rusqlite::params;
+use tracing::info;
 
 struct EnqueueEmbeddingBackfillRequest<'a> {
     source: &'a crate::sample_sources::SampleSource,
@@ -20,6 +21,10 @@ pub(in crate::egui_app::controller) fn enqueue_jobs_for_embedding_samples(
 ) -> Result<(usize, AnalysisProgress), String> {
     if sample_ids.is_empty() {
         let conn = db::open_source_db(&source.root)?;
+        info!(
+            "Embedding backfill skipped: no sample ids provided (source_id={})",
+            source.id.as_str()
+        );
         return Ok((0, db::current_progress(&conn)?));
     }
 
@@ -41,6 +46,12 @@ pub(in crate::egui_app::controller) fn enqueue_jobs_for_embedding_samples(
         source.id.as_str(),
     )?;
     let progress = db::current_progress(&conn)?;
+    info!(
+        "Embedding backfill enqueued (inserted={}, jobs={}, source_id={})",
+        inserted,
+        jobs.len(),
+        source.id.as_str()
+    );
     Ok((inserted, progress))
 }
 
@@ -63,6 +74,11 @@ fn enqueue_embedding_backfill(
         )
         .unwrap_or(0);
     if active_jobs > 0 {
+        info!(
+            "Embedding backfill skipped: active jobs exist (active={}, source_id={})",
+            active_jobs,
+            request.source.id.as_str()
+        );
         return Ok((0, db::current_progress(&conn)?));
     }
 
@@ -95,6 +111,10 @@ fn enqueue_embedding_backfill(
     }
 
     if sample_ids.is_empty() {
+        info!(
+            "Embedding backfill skipped: no missing embeddings (source_id={})",
+            request.source.id.as_str()
+        );
         return Ok((0, db::current_progress(&conn)?));
     }
 
@@ -114,5 +134,12 @@ fn enqueue_embedding_backfill(
         request.source.id.as_str(),
     )?;
     let progress = db::current_progress(&conn)?;
+    info!(
+        "Embedding backfill enqueued (inserted={}, jobs={}, sample_ids={}, source_id={})",
+        inserted,
+        jobs.len(),
+        sample_ids.len(),
+        request.source.id.as_str()
+    );
     Ok((inserted, progress))
 }

@@ -26,6 +26,10 @@ fn enqueue_samples(
 ) -> Result<(usize, AnalysisProgress), String> {
     if request.changed_samples.is_empty() {
         let conn = db::open_source_db(&request.source.root)?;
+        info!(
+            "Analysis enqueue skipped: no changed samples (source_id={})",
+            request.source.id.as_str()
+        );
         return Ok((0, db::current_progress(&conn)?));
     }
     let sample_metadata: Vec<db::SampleMetadata> = request
