@@ -174,11 +174,16 @@ impl EguiController {
         let idle = !self.is_playing()
             && last_activity_at
                 .is_some_and(|time| now.saturating_duration_since(time) >= IDLE_WINDOW);
+        let base_worker_count = if self.settings.analysis.analysis_worker_count == 0 {
+            crate::egui_app::controller::analysis_jobs::default_worker_count()
+        } else {
+            self.settings.analysis.analysis_worker_count
+        };
         let idle_target = self
             .runtime
             .performance
             .idle_worker_override
-            .unwrap_or(self.settings.analysis.analysis_worker_count);
+            .unwrap_or(base_worker_count);
         let target = if busy || !idle { 1 } else { idle_target };
         if busy {
             self.runtime.analysis.pause_claiming();

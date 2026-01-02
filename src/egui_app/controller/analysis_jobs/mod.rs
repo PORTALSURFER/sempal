@@ -41,6 +41,10 @@ pub(in crate::egui_app::controller) fn current_running_jobs_for_source(
     db::current_running_jobs(&conn, limit)
 }
 
+pub(in crate::egui_app::controller) fn default_worker_count() -> u32 {
+    pool::default_worker_count().max(1) as u32
+}
+
 pub(in crate::egui_app::controller) fn stale_running_job_seconds() -> i64 {
     if let Ok(value) = std::env::var("SEMPAL_ANALYSIS_STALE_SECS") {
         if let Ok(parsed) = value.trim().parse::<i64>() {

@@ -181,6 +181,10 @@ impl AnalysisWorkerPool {
     }
 }
 
+pub(in crate::egui_app::controller) fn default_worker_count() -> usize {
+    job_claim::worker_count_with_override(0)
+}
+
 impl Drop for AnalysisWorkerPool {
     fn drop(&mut self) {
         self.shutdown();
