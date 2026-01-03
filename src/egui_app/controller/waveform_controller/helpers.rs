@@ -36,7 +36,7 @@ pub(super) enum CursorUpdateSource {
 }
 
 impl WaveformController<'_> {
-    fn display_view(&self) -> WaveformView {
+    pub(super) fn display_view(&self) -> WaveformView {
         self.ui
             .waveform
             .image
