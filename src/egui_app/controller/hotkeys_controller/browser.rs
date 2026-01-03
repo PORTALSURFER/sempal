@@ -2,7 +2,6 @@ use super::HotkeysController;
 use crate::egui_app::controller::hotkeys::HotkeyCommand;
 use crate::egui_app::controller::StatusTone;
 use crate::egui_app::state::{DestructiveSelectionEdit, SampleBrowserTab};
-use crate::sample_sources::SampleTag;
 
 pub(super) fn handle_browser_command(
     controller: &mut HotkeysController<'_>,
@@ -65,18 +64,6 @@ pub(super) fn handle_browser_command(
         }
         HotkeyCommand::DeleteFocusedSample => {
             controller.delete_focused_browser_sample();
-            true
-        }
-        HotkeyCommand::TagKeepSelected => {
-            controller.tag_selected(SampleTag::Keep);
-            true
-        }
-        HotkeyCommand::TagNeutralSelected => {
-            controller.tag_selected(SampleTag::Neutral);
-            true
-        }
-        HotkeyCommand::TagTrashSelected => {
-            controller.tag_selected(SampleTag::Trash);
             true
         }
         HotkeyCommand::ReverseSelection => {

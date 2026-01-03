@@ -40,6 +40,9 @@ impl HotkeysActions for HotkeysController<'_> {
         if self.handle_global_command(command) {
             return;
         }
+        if self.handle_tagging_command(command, focus) {
+            return;
+        }
         match focus {
             FocusContext::SampleBrowser => {
                 let _ = browser::handle_browser_command(self, command);
@@ -146,6 +149,36 @@ impl HotkeysController<'_> {
             }
             HotkeyCommand::FocusFolderSearch => {
                 self.focus_folder_search();
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn handle_tagging_command(&mut self, command: HotkeyCommand, focus: FocusContext) -> bool {
+        match command {
+            HotkeyCommand::TagKeepSelected => {
+                if matches!(focus, FocusContext::CollectionSample) {
+                    self.tag_selected_collection_sample(SampleTag::Keep);
+                } else {
+                    self.tag_selected(SampleTag::Keep);
+                }
+                true
+            }
+            HotkeyCommand::TagNeutralSelected => {
+                if matches!(focus, FocusContext::CollectionSample) {
+                    self.tag_selected_collection_sample(SampleTag::Neutral);
+                } else {
+                    self.tag_selected(SampleTag::Neutral);
+                }
+                true
+            }
+            HotkeyCommand::TagTrashSelected => {
+                if matches!(focus, FocusContext::CollectionSample) {
+                    self.tag_selected_collection_sample(SampleTag::Trash);
+                } else {
+                    self.tag_selected(SampleTag::Trash);
+                }
                 true
             }
             _ => false,
