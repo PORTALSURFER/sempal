@@ -139,6 +139,17 @@ mod tests {
     }
 
     #[test]
+    fn stft_power_frames_into_flat_empty_input_writes_one_frame() {
+        let frame_len = PANNS_STFT_N_FFT / 2 + 1;
+        let mut out = vec![1.0_f32; frame_len * 3];
+        let written =
+            stft_power_frames_into_flat(&[], PANNS_STFT_N_FFT, PANNS_STFT_HOP, &mut out, 3)
+                .unwrap();
+        assert_eq!(written, 1);
+        assert!(out[..frame_len].iter().all(|&v| v == 0.0));
+    }
+
+    #[test]
     fn power_spectrum_matches_bins() {
         let fft = vec![Complex32::default(); PANNS_STFT_N_FFT];
         let spectrum = power_spectrum(&fft);

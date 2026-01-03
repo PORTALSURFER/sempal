@@ -140,4 +140,12 @@ mod tests {
         let bins = mel_bins(16_000, 512, 8, 10_000.0, 1_000.0);
         assert!(bins.iter().all(|&bin| bin <= 512 / 2));
     }
+
+    #[test]
+    fn mel_bins_clamps_min_above_nyquist() {
+        let bins = mel_bins(16_000, 512, 8, 20_000.0, 30_000.0);
+        assert!(bins.iter().all(|&bin| bin <= 512 / 2));
+        assert_eq!(bins.first().copied(), Some(512 / 2));
+        assert_eq!(bins.last().copied(), Some(512 / 2));
+    }
 }
