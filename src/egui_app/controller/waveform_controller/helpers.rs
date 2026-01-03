@@ -36,6 +36,18 @@ pub(super) enum CursorUpdateSource {
 }
 
 impl WaveformController<'_> {
+    fn display_view(&self) -> WaveformView {
+        self.ui
+            .waveform
+            .image
+            .as_ref()
+            .map(|image| WaveformView {
+                start: image.view_start,
+                end: image.view_end,
+            })
+            .unwrap_or(self.ui.waveform.view)
+    }
+
     pub(crate) fn waveform_ready(&self) -> bool {
         self.sample_view.waveform.decoded.is_some()
     }
@@ -304,7 +316,7 @@ impl WaveformController<'_> {
         let default_factor = self.ui.controls.keyboard_zoom_factor.max(0.01);
         let base = factor_override.unwrap_or(default_factor).max(0.01);
         let factor = if zoom_in { base } else { 1.0 / base };
-        let original = self.ui.waveform.view;
+        let original = self.display_view();
         let focus = if playhead_focus_when_playing && self.is_playing() {
             self.ui.waveform.playhead.visible = true;
             self.ui.waveform.playhead.position
@@ -316,7 +328,7 @@ impl WaveformController<'_> {
         }
         let min_width = self.min_view_width();
         let width = (original.width() * factor).clamp(min_width, 1.0);
-        let mut view = self.ui.waveform.view;
+        let mut view = original;
         if focus_from_pointer {
             let ratio = ((focus - original.start) / original.width()).clamp(0.0, 1.0);
             view.start = focus - width * ratio;

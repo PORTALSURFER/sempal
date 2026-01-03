@@ -207,7 +207,7 @@ impl WaveformActions for WaveformController<'_> {
     }
 
     fn scroll_waveform_view(&mut self, center: f32) {
-        let mut view = self.ui.waveform.view;
+        let mut view = self.display_view();
         let min_width = self.min_view_width();
         let width = view.width().max(min_width);
         if width >= 1.0 {
