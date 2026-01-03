@@ -99,6 +99,11 @@ pub(super) fn handle_sample_row_drag<StartDrag, BuildPending, PendingMatch>(
             controller.update_active_drag(pos, drag_source, drag_target, shift_down);
         }
     } else if response.drag_stopped() {
+        let keep_drag_active = controller.ui.drag.payload.is_some()
+            && (controller.ui.drag.pointer_left_window || controller.ui.drag.os_left_mouse_down);
+        if keep_drag_active {
+            return;
+        }
         controller.finish_active_drag();
     }
 }

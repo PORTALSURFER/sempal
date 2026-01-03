@@ -99,6 +99,13 @@ impl EguiApp {
             });
             self.controller
                 .maybe_launch_external_drag(pointer_outside, pointer_left);
+            if self.controller.ui.drag.payload.is_some()
+                && self.controller.ui.drag.pointer_left_window
+                && self.controller.ui.drag.os_left_mouse_released
+                && !self.controller.ui.drag.external_started
+            {
+                self.controller.cancel_active_drag();
+            }
         }
     }
 }
