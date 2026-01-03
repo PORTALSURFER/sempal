@@ -89,6 +89,16 @@ fn sample_drop_to_folder_moves_and_updates_state() {
     controller.cache_db(&source).unwrap();
 
     write_test_wav(&root.join("one.wav"), &[0.1, 0.2]);
+    let metadata = std::fs::metadata(root.join("one.wav")).unwrap();
+    let modified_ns = metadata
+        .modified()
+        .unwrap()
+        .duration_since(std::time::SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos() as i64;
+    let db = controller.database_for(&source).unwrap();
+    db.upsert_file(Path::new("one.wav"), metadata.len(), modified_ns)
+        .unwrap();
     controller.set_wav_entries_for_tests( vec![sample_entry("one.wav", SampleTag::Neutral)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
