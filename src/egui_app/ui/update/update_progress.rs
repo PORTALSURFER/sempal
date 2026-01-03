@@ -38,6 +38,7 @@ impl EguiApp {
         }
         #[cfg(target_os = "windows")]
         if !feedback_modal_open {
+            let window_focused = ctx.input(|i| i.viewport().focused.unwrap_or(true));
             if self.controller.ui.drag.payload.is_some() {
                 ctx.request_repaint();
             }
@@ -49,7 +50,8 @@ impl EguiApp {
                 .is_some()
                 .then(|| platform::hwnd_from_frame(_frame))
                 .flatten()
-                .and_then(platform::cursor_inside_hwnd);
+                .and_then(platform::cursor_inside_hwnd)
+                .map(|inside| inside && window_focused);
 
             if self.controller.ui.drag.payload.is_some()
                 && matches!(window_inside, Some(false))
