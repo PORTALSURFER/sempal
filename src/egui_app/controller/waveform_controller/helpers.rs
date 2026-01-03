@@ -311,6 +311,7 @@ impl WaveformController<'_> {
         if !self.waveform_ready() {
             return false;
         }
+        let focus_from_pointer = focus.is_some();
         let original = self.display_view();
         let default_factor = self.ui.controls.keyboard_zoom_factor.max(0.01);
         let base = factor_override.unwrap_or(default_factor).max(0.01);
@@ -326,7 +327,6 @@ impl WaveformController<'_> {
         if (width - original.width()).abs() <= VIEW_EPSILON {
             return false;
         }
-        let focus_from_pointer = focus.is_some();
         self.ui.waveform.suppress_hover_cursor = !focus_from_pointer;
         if focus.is_finite() && focus_from_pointer {
             self.set_waveform_cursor_with_source(focus, CursorUpdateSource::Hover);
