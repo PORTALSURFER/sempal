@@ -115,10 +115,6 @@ fn sample_drop_to_folder_moves_and_updates_state() {
         relative_path: PathBuf::from("one.wav"),
     });
     controller.ui.drag.set_target(
-        DragSource::Browser,
-        DragTarget::BrowserTriage(TriageFlagColumn::Keep),
-    );
-    controller.ui.drag.set_target(
         DragSource::Folders,
         DragTarget::FolderPanel {
             folder: Some(PathBuf::from("dest")),
