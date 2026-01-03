@@ -14,6 +14,7 @@ mod selection_ops;
 mod similar;
 mod waveform_loading;
 mod waveform_rendering;
+pub(crate) use waveform_rendering::MAX_ZOOM_MULTIPLIER;
 mod waveform_view;
 
 pub(super) use browser_search::BrowserSearchCache;
