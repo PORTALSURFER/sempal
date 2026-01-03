@@ -58,9 +58,9 @@ Audio sample triage and collection building tool built with Rust and egui.
 
 - Each source folder gets a hidden `.sempal_samples.db` that tracks indexed `.wav` files and their tags.
 - App files live in a single `.sempal` folder inside your OS config directory:
-  - Linux: `$HOME/.config/.sempal/config.json`
-  - Windows: `%APPDATA%\\.sempal\\config.json`
-  - macOS: `~/Library/Application Support/.sempal/config.json`
+  - Linux: `$HOME/.config/.sempal/config.toml`
+  - Windows: `%APPDATA%\\.sempal\\config.toml`
+  - macOS: `~/Library/Application Support/.sempal/config.toml`
 
 ## Logging
 
