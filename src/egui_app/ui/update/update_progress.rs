@@ -65,6 +65,9 @@ impl EguiApp {
 
             let (pointer_outside, pointer_left) = ctx.input(|i| {
                 if self.controller.ui.drag.payload.is_some() {
+                    if !i.viewport().focused.unwrap_or(true) {
+                        self.controller.ui.drag.pointer_left_window = true;
+                    }
                     if matches!(window_inside, Some(false)) {
                         // Once the pointer leaves the window during a drag, permanently disable
                         // in-app dragging until the gesture completes (external-only).
