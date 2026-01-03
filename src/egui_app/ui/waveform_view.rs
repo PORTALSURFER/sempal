@@ -27,7 +27,18 @@ impl EguiApp {
         let frame = style::section_frame();
         let frame_response = frame.show(ui, |ui| {
             let view = self.controller.ui.waveform.view;
-            let view_width = view.width();
+            let display_view = self
+                .controller
+                .ui
+                .waveform
+                .image
+                .as_ref()
+                .map(|image| crate::egui_app::state::WaveformView {
+                    start: image.view_start,
+                    end: image.view_end,
+                })
+                .unwrap_or(view);
+            let view_width = display_view.width();
             let scrollbar_height = if view_width < 1.0 {
                 WAVEFORM_SCROLLBAR_HEIGHT
             } else {
@@ -50,7 +61,7 @@ impl EguiApp {
                 .update_waveform_size(target_width, target_height);
             let pointer_pos = response.hover_pos();
             let to_screen_x = |position: f32, rect: egui::Rect| {
-                let normalized = ((position - view.start) / view_width).clamp(0.0, 1.0);
+                let normalized = ((position - display_view.start) / view_width).clamp(0.0, 1.0);
                 rect.left() + rect.width() * normalized
             };
             if !base_render::render_waveform_base(self, ui, waveform_rect, &palette, is_loading) {
@@ -62,7 +73,7 @@ impl EguiApp {
                 ui,
                 waveform_rect,
                 pointer_pos,
-                view,
+                display_view,
                 view_width,
                 cursor_color,
                 &to_screen_x,
@@ -73,7 +84,7 @@ impl EguiApp {
                 ui,
                 waveform_rect,
                 &palette,
-                view,
+                display_view,
                 view_width,
                 pointer_pos,
             );
@@ -83,7 +94,7 @@ impl EguiApp {
                 ui,
                 waveform_rect,
                 &palette,
-                view,
+                display_view,
                 view_width,
                 highlight,
                 pointer_pos,
@@ -92,7 +103,7 @@ impl EguiApp {
                 self,
                 ui,
                 waveform_rect,
-                view,
+                display_view,
                 view_width,
                 highlight,
                 start_marker_color,
@@ -105,7 +116,7 @@ impl EguiApp {
                 ui,
                 waveform_rect,
                 &response,
-                view,
+                display_view,
                 view_width,
             );
             if !edge_dragging && !slice_dragging && !slice_result.consumed_click {
@@ -114,7 +125,7 @@ impl EguiApp {
                     ui,
                     waveform_rect,
                     &response,
-                    view,
+                    display_view,
                     view_width,
                 );
             }
@@ -128,7 +139,7 @@ impl EguiApp {
                     self,
                     ui,
                     scroll_rect,
-                    view,
+                    display_view,
                     view_width,
                 );
             }
