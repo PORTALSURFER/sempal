@@ -323,6 +323,12 @@ impl WaveformController<'_> {
             focus.unwrap_or_else(|| self.waveform_focus_point())
         };
         let min_width = self.min_view_width();
+        let max_zoom = (1.0 / min_width)
+            .min(crate::egui_app::controller::wavs::waveform_rendering::MAX_ZOOM_MULTIPLIER);
+        let min_render_width = (1.0 / max_zoom).max(min_width);
+        if zoom_in && original.width() <= min_render_width + VIEW_EPSILON {
+            return false;
+        }
         let width = (original.width() * factor).clamp(min_width, 1.0);
         if (width - original.width()).abs() <= VIEW_EPSILON {
             return false;

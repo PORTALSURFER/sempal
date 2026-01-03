@@ -7,7 +7,7 @@ use std::path::Path;
 
 const MIN_VIEW_WIDTH_BASE: f32 = 0.001;
 const MIN_SAMPLES_PER_PIXEL: f32 = 1.0;
-const MAX_ZOOM_MULTIPLIER: f32 = 64.0;
+pub(crate) const MAX_ZOOM_MULTIPLIER: f32 = 64.0;
 // Cap oversampling to avoid subpixel waveform columns that shimmer when downscaled.
 const MAX_COLUMNS_PER_PIXEL: f32 = 1.0;
 const DEFAULT_TRANSIENT_SENSITIVITY: f32 = 0.6;
