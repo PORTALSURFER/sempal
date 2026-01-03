@@ -328,6 +328,9 @@ impl WaveformController<'_> {
         }
         let min_width = self.min_view_width();
         let width = (original.width() * factor).clamp(min_width, 1.0);
+        if (width - original.width()).abs() <= VIEW_EPSILON {
+            return false;
+        }
         let mut view = original;
         if focus_from_pointer {
             let ratio = ((focus - original.start) / original.width()).clamp(0.0, 1.0);
