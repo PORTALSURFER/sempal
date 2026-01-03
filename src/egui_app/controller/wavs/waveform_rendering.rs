@@ -157,10 +157,15 @@ impl EguiController {
                 effective_width,
                 height,
             );
+        let (view_start, view_end) = self
+            .sample_view
+            .renderer
+            .cached_view_window(decoded, view.start, view.end, effective_width)
+            .unwrap_or((view.start, view.end));
         self.ui.waveform.image = Some(WaveformImage {
             image: color_image,
-            view_start: view.start,
-            view_end: view.end,
+            view_start,
+            view_end,
         });
         self.ui.waveform.view = view;
         self.sample_view.waveform.render_meta = Some(desired_meta);

@@ -3,6 +3,26 @@ use crate::waveform::zoom_cache::CachedColumns;
 use egui::ColorImage;
 
 impl WaveformRenderer {
+    pub(crate) fn cached_view_window(
+        &self,
+        decoded: &DecodedWaveform,
+        view_start: f32,
+        view_end: f32,
+        width: u32,
+    ) -> Option<(f32, f32)> {
+        let frame_count = decoded.frame_count();
+        if frame_count == 0 {
+            return None;
+        }
+        let fraction = (view_end - view_start).max(0.000_001);
+        let full_width = self.cached_full_width(width, fraction, frame_count);
+        let (start_col, end_col) = self.columns_window(view_start, full_width, width)?;
+        let full_width = full_width as f32;
+        let start = (start_col as f32 / full_width).clamp(0.0, 1.0);
+        let end = (end_col as f32 / full_width).clamp(start, 1.0);
+        Some((start, end))
+    }
+
     pub(super) fn render_cached_view(
         &self,
         decoded: &DecodedWaveform,
