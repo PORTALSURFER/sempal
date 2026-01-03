@@ -162,12 +162,16 @@ impl EguiController {
             .renderer
             .cached_view_window(decoded, view.start, view.end, effective_width)
             .unwrap_or((view.start, view.end));
+        let snapped_view = WaveformView {
+            start: view_start,
+            end: view_end,
+        };
         self.ui.waveform.image = Some(WaveformImage {
             image: color_image,
             view_start,
             view_end,
         });
-        self.ui.waveform.view = view;
+        self.ui.waveform.view = snapped_view;
         self.sample_view.waveform.render_meta = Some(desired_meta);
     }
 
