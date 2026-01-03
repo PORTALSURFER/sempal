@@ -311,25 +311,25 @@ impl WaveformController<'_> {
         if !self.waveform_ready() {
             return false;
         }
-        let focus_from_pointer = focus.is_some();
-        self.ui.waveform.suppress_hover_cursor = !focus_from_pointer;
+        let original = self.display_view();
         let default_factor = self.ui.controls.keyboard_zoom_factor.max(0.01);
         let base = factor_override.unwrap_or(default_factor).max(0.01);
         let factor = if zoom_in { base } else { 1.0 / base };
-        let original = self.display_view();
         let focus = if playhead_focus_when_playing && self.is_playing() {
             self.ui.waveform.playhead.visible = true;
             self.ui.waveform.playhead.position
         } else {
             focus.unwrap_or_else(|| self.waveform_focus_point())
         };
-        if focus.is_finite() && focus_from_pointer {
-            self.set_waveform_cursor_with_source(focus, CursorUpdateSource::Hover);
-        }
         let min_width = self.min_view_width();
         let width = (original.width() * factor).clamp(min_width, 1.0);
         if (width - original.width()).abs() <= VIEW_EPSILON {
             return false;
+        }
+        let focus_from_pointer = focus.is_some();
+        self.ui.waveform.suppress_hover_cursor = !focus_from_pointer;
+        if focus.is_finite() && focus_from_pointer {
+            self.set_waveform_cursor_with_source(focus, CursorUpdateSource::Hover);
         }
         let mut view = original;
         if focus_from_pointer {
