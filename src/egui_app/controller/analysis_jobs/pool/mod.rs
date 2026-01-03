@@ -13,6 +13,7 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
     mpsc::Sender,
 };
+use std::mem;
 #[cfg(not(test))]
 use std::sync::Mutex;
 use std::thread::JoinHandle;
@@ -193,14 +194,23 @@ impl AnalysisWorkerPool {
         &mut self,
         message_tx: Sender<crate::egui_app::controller::jobs::JobMessage>,
     ) {
+        if self.threads.is_empty() {
+            self.start(message_tx);
+            return;
+        }
         self.shutdown.store(true, Ordering::Relaxed);
         self.cancel.store(true, Ordering::Relaxed);
         self.pause_claiming.store(false, Ordering::Relaxed);
-        for handle in self.threads.drain(..) {
-            let _ = handle.join();
-        }
-        self.shutdown.store(false, Ordering::Relaxed);
-        self.cancel.store(false, Ordering::Relaxed);
+        let _ = job_cleanup::reset_running_jobs();
+        let old_threads = mem::take(&mut self.threads);
+        std::thread::spawn(move || {
+            for handle in old_threads {
+                let _ = handle.join();
+            }
+        });
+        self.shutdown = Arc::new(AtomicBool::new(false));
+        self.cancel = Arc::new(AtomicBool::new(false));
+        self.pause_claiming = Arc::new(AtomicBool::new(false));
         self.start(message_tx);
     }
 
