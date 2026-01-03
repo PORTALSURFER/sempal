@@ -193,6 +193,10 @@ impl EguiController {
         }
         self.settings.analysis.panns_backend = backend;
         self.apply_analysis_backend_env();
+        crate::analysis::embedding::reset_panns_model();
+        self.runtime
+            .analysis
+            .restart(self.runtime.jobs.message_sender());
         if let Err(err) = self.persist_config("Failed to save options") {
             self.set_status(err, StatusTone::Warning);
         }

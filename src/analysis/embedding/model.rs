@@ -112,6 +112,13 @@ pub(super) fn with_panns_model<T>(f: impl FnOnce(&mut PannsModel) -> Result<T, S
     f(model)
 }
 
+pub(crate) fn reset_panns_model() {
+    let mutex = PANNS_MODEL.get_or_init(|| Mutex::new(None));
+    if let Ok(mut guard) = mutex.lock() {
+        *guard = None;
+    }
+}
+
 /// Run a warm-up inference to compile kernels before measuring performance.
 pub(crate) fn warmup_panns() -> Result<(), String> {
     if PANNS_WARMED.get().is_some() {

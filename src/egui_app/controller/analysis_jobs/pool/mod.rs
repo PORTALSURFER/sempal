@@ -189,6 +189,21 @@ impl AnalysisWorkerPool {
         }
     }
 
+    pub(in crate::egui_app::controller) fn restart(
+        &mut self,
+        message_tx: Sender<crate::egui_app::controller::jobs::JobMessage>,
+    ) {
+        self.shutdown.store(true, Ordering::Relaxed);
+        self.cancel.store(true, Ordering::Relaxed);
+        self.pause_claiming.store(false, Ordering::Relaxed);
+        for handle in self.threads.drain(..) {
+            let _ = handle.join();
+        }
+        self.shutdown.store(false, Ordering::Relaxed);
+        self.cancel.store(false, Ordering::Relaxed);
+        self.start(message_tx);
+    }
+
     pub(in crate::egui_app::controller) fn cancel(&self) {
         self.cancel.store(true, Ordering::Relaxed);
         let _ = job_cleanup::reset_running_jobs();
