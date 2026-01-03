@@ -162,7 +162,13 @@ impl EguiController {
             .last_slow_frame_at
             .is_some_and(|time| now.saturating_duration_since(time) <= ACTIVE_WINDOW);
         let busy = self.is_playing() || recent_input || recent_slow_frame;
-        let pause_claiming = self.is_playing() || recent_input;
+        let analysis_active = self
+            .ui
+            .progress
+            .analysis
+            .as_ref()
+            .is_some_and(|snapshot| snapshot.pending > 0 || snapshot.running > 0);
+        let pause_claiming = (self.is_playing() || recent_input) && !analysis_active;
         let last_activity_at = match (
             self.runtime.performance.last_user_activity_at,
             self.runtime.performance.last_slow_frame_at,
