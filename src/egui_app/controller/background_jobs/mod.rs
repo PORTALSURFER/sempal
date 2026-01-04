@@ -117,6 +117,10 @@ impl EguiController {
                         self.apply_trash_move_finished(result);
                     }
                 },
+                JobMessage::CollectionMove(message) => {
+                    self.runtime.jobs.clear_collection_move();
+                    self.apply_collection_move_result(message);
+                }
                 JobMessage::Analysis(message) => {
                     analysis::handle_analysis_message(self, message);
                 }

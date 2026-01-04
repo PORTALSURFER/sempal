@@ -179,6 +179,13 @@ impl EguiController {
         self.collections_ctrl().refresh_collections_ui();
     }
 
+    pub(in crate::egui_app::controller) fn apply_collection_move_result(
+        &mut self,
+        result: crate::egui_app::controller::jobs::CollectionMoveResult,
+    ) {
+        self.collections_ctrl().apply_collection_move_result(result);
+    }
+
     pub(in crate::egui_app::controller) fn ensure_collection_selection(&mut self) {
         self.collections_ctrl().ensure_collection_selection();
     }

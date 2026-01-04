@@ -20,6 +20,7 @@ pub(super) enum JobMessage {
     AudioLoaded(AudioLoadResult),
     Scan(ScanJobMessage),
     TrashMove(trash_move::TrashMoveMessage),
+    CollectionMove(CollectionMoveResult),
     Analysis(AnalysisJobMessage),
     UmapBuilt(UmapBuildResult),
     UmapClustersBuilt(UmapClusterBuildResult),
@@ -89,6 +90,21 @@ pub(super) struct SimilarityPrepResult {
     pub(super) result: Result<SimilarityPrepOutcome, String>,
 }
 
+#[derive(Debug)]
+pub(super) struct CollectionMoveSuccess {
+    pub(super) source_id: SourceId,
+    pub(super) relative_path: PathBuf,
+    pub(super) clip_root: PathBuf,
+    pub(super) clip_relative: PathBuf,
+}
+
+#[derive(Debug)]
+pub(super) struct CollectionMoveResult {
+    pub(super) collection_id: crate::sample_sources::CollectionId,
+    pub(super) moved: Vec<CollectionMoveSuccess>,
+    pub(super) errors: Vec<String>,
+}
+
 pub(super) struct ControllerJobs {
     pub(super) wav_job_tx: Sender<WavLoadJob>,
     pub(super) audio_job_tx: Sender<AudioLoadJob>,
@@ -103,6 +119,7 @@ pub(super) struct ControllerJobs {
     pub(super) scan_cancel: Option<Arc<std::sync::atomic::AtomicBool>>,
     pub(super) trash_move_in_progress: bool,
     pub(super) trash_move_cancel: Option<Arc<std::sync::atomic::AtomicBool>>,
+    pub(super) collection_move_in_progress: bool,
     pub(super) umap_build_in_progress: bool,
     pub(super) umap_cluster_build_in_progress: bool,
     pub(super) update_check_in_progress: bool,
@@ -132,6 +149,7 @@ impl ControllerJobs {
             scan_cancel: None,
             trash_move_in_progress: false,
             trash_move_cancel: None,
+            collection_move_in_progress: false,
             umap_build_in_progress: false,
             umap_cluster_build_in_progress: false,
             update_check_in_progress: false,
@@ -282,6 +300,28 @@ impl ControllerJobs {
     pub(super) fn clear_trash_move(&mut self) {
         self.trash_move_in_progress = false;
         self.trash_move_cancel = None;
+    }
+
+    pub(super) fn collection_move_in_progress(&self) -> bool {
+        self.collection_move_in_progress
+    }
+
+    pub(super) fn start_collection_move(
+        &mut self,
+        rx: Receiver<CollectionMoveResult>,
+    ) {
+        self.collection_move_in_progress = true;
+        let tx = self.message_tx.clone();
+        thread::spawn(move || {
+            while let Ok(message) = rx.recv() {
+                let _ = tx.send(JobMessage::CollectionMove(message));
+                break;
+            }
+        });
+    }
+
+    pub(super) fn clear_collection_move(&mut self) {
+        self.collection_move_in_progress = false;
     }
 
     pub(super) fn update_check_in_progress(&self) -> bool {
