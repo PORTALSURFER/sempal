@@ -3,6 +3,7 @@ use super::members::BrowserSampleContext;
 use super::CollectionsController;
 use std::fs;
 use std::path::{Path, PathBuf};
+use crate::sample_sources::SourceDatabase;
 
 impl CollectionsController<'_> {
     pub(in crate::egui_app::controller::collections_controller) fn primary_visible_row_for_browser_selection(
@@ -253,11 +254,23 @@ impl CollectionsController<'_> {
         source: &SampleSource,
         relative_path: &Path,
     ) -> Result<(), String> {
-        let db = self
-            .database_for(source)
-            .map_err(|err| format!("Database unavailable: {err}"))?;
-        db.remove_file(relative_path)
-            .map_err(|err| format!("Failed to drop database row: {err}"))?;
+        let mut removal_error = None;
+        match self.database_for(source) {
+            Ok(db) => {
+                if let Err(err) = db.remove_file(relative_path) {
+                    removal_error = Some(format!("Failed to drop database row: {err}"));
+                }
+            }
+            Err(err) => {
+                removal_error = Some(format!("Database unavailable: {err}"));
+            }
+        }
+        if let Some(primary_error) = removal_error {
+            let _ = primary_error;
+            SourceDatabase::open(&source.root)
+                .and_then(|db| db.remove_file(relative_path))
+                .map_err(|err| format!("Fallback database removal failed: {err}"))?;
+        }
         self.prune_cached_sample(source, relative_path);
         let collections_changed = self.remove_sample_from_collections(&source.id, relative_path);
         if collections_changed {
