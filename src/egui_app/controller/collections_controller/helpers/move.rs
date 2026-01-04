@@ -92,6 +92,7 @@ impl CollectionsController<'_> {
         };
         let collection_name = self.library.collections[collection_index].name.clone();
         let (contexts, mut last_error) = self.collect_browser_contexts(rows);
+        let total_contexts = contexts.len();
         let mut moved = 0usize;
         for ctx in contexts {
             let source = ctx.source.clone();
@@ -129,11 +130,24 @@ impl CollectionsController<'_> {
             moved += 1;
         }
         if moved > 0 {
-            self.set_status(
-                format!("Moved {moved} sample(s) to '{collection_name}'"),
-                StatusTone::Info,
-            );
-        } else if let Some(err) = last_error {
+            let failed = total_contexts.saturating_sub(moved);
+            if failed > 0 {
+                let suffix = last_error
+                    .as_deref()
+                    .map(|err| format!(" {failed} failed: {err}"))
+                    .unwrap_or_else(|| format!(" {failed} failed."));
+                self.set_status(
+                    format!("Moved {moved} sample(s) to '{collection_name}'.{suffix}"),
+                    StatusTone::Warning,
+                );
+            } else {
+                self.set_status(
+                    format!("Moved {moved} sample(s) to '{collection_name}'"),
+                    StatusTone::Info,
+                );
+            }
+            self.rebuild_browser_lists();
+        } else if let Some(err) = last_error.take() {
             self.set_status(err, StatusTone::Error);
         }
     }
@@ -171,6 +185,7 @@ impl CollectionsController<'_> {
             return Err(err);
         }
         self.remove_source_sample(source, relative_path)?;
+        self.rebuild_browser_lists();
         Ok(collection_name)
     }
 
