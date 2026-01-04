@@ -2,11 +2,9 @@ use super::*;
 use crate::egui_app::state::FolderRowView;
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
-use std::fs;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
-use tracing::warn;
 
 fn is_root_path(path: &Path) -> bool {
     path.as_os_str().is_empty()
@@ -168,63 +166,24 @@ impl EguiController {
     }
 
     fn collect_folders(&mut self, source_root: &Path) -> BTreeSet<PathBuf> {
-        let mut folders = BTreeSet::new();
+        let mut candidates = BTreeSet::new();
         for index in 0..self.wav_entries_len() {
             let Some(entry) = self.wav_entry(index) else {
                 continue;
             };
             let mut current = entry.relative_path.parent();
             while let Some(path) = current {
-                if !path.as_os_str().is_empty() && source_root.join(path).is_dir() {
-                    folders.insert(path.to_path_buf());
+                if !path.as_os_str().is_empty() {
+                    candidates.insert(path.to_path_buf());
                 }
                 current = path.parent();
             }
         }
-        let mut stack = vec![source_root.to_path_buf()];
-        while let Some(dir) = stack.pop() {
-            let entries = match fs::read_dir(&dir) {
-                Ok(entries) => entries,
-                Err(err) => {
-                    warn!(
-                        dir = %dir.display(),
-                        error = %err,
-                        "Failed to read directory for folder browser"
-                    );
-                    continue;
-                }
-            };
-            for entry in entries {
-                let entry = match entry {
-                    Ok(entry) => entry,
-                    Err(err) => {
-                        warn!(error = %err, "Failed to read folder browser entry");
-                        continue;
-                    }
-                };
-                let path = entry.path();
-                let file_type = match entry.file_type() {
-                    Ok(file_type) => file_type,
-                    Err(err) => {
-                        warn!(
-                            path = %path.display(),
-                            error = %err,
-                            "Failed to read folder browser entry type"
-                        );
-                        continue;
-                    }
-                };
-                if file_type.is_symlink() {
-                    continue;
-                }
-                if file_type.is_dir() {
-                    if let Ok(relative) = path.strip_prefix(source_root)
-                        && !relative.as_os_str().is_empty()
-                    {
-                        folders.insert(relative.to_path_buf());
-                    }
-                    stack.push(path);
-                }
+
+        let mut folders = BTreeSet::new();
+        for path in candidates {
+            if source_root.join(&path).is_dir() {
+                folders.insert(path);
             }
         }
         folders
