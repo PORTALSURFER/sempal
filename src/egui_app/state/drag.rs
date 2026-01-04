@@ -190,12 +190,21 @@ impl DragState {
     }
 
     fn recompute_active_target(&mut self, source: DragSource, incoming: DragTarget) {
-        let new_active = self
+        let max_priority = self
             .targets
             .values()
-            .max_by_key(|target| target.priority())
-            .cloned()
-            .unwrap_or(DragTarget::None);
+            .map(|target| target.priority())
+            .max()
+            .unwrap_or(0);
+        let new_active = if incoming.priority() == max_priority {
+            incoming.clone()
+        } else {
+            self.targets
+                .values()
+                .max_by_key(|target| target.priority())
+                .cloned()
+                .unwrap_or(DragTarget::None)
+        };
         if self.active_target != new_active {
             self.active_target = new_active.clone();
             self.record_transition(source, new_active);
