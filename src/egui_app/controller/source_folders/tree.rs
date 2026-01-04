@@ -54,7 +54,6 @@ impl EguiController {
             self.ui.sources.folders = FolderBrowserUiState::default();
             return;
         };
-        let available = self.collect_folders(&source.root);
         let snapshot = {
             let model = self
                 .ui_cache
@@ -62,6 +61,12 @@ impl EguiController {
                 .models
                 .entry(source_id.clone())
                 .or_default();
+            let pending_load = self.runtime.jobs.wav_load_pending_for(&source.id);
+            let available = if pending_load && self.wav_entries_len() == 0 {
+                model.available.clone()
+            } else {
+                self.collect_folders(&source.root)
+            };
             model
                 .manual_folders
                 .retain(|path| source.root.join(path).is_dir());

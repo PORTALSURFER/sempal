@@ -560,6 +560,7 @@ impl EguiController {
         remap_path_set(&mut model.selected, old, new);
         remap_path_set(&mut model.negated, old, new);
         remap_path_set(&mut model.expanded, old, new);
+        remap_path_set(&mut model.available, old, new);
         remap_path_map(&mut model.hotkeys, old, new);
         model.focused = remap_path_option(model.focused.take(), old, new);
         model.selection_anchor = remap_path_option(model.selection_anchor.take(), old, new);
