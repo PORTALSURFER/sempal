@@ -4,6 +4,7 @@ use super::CollectionsController;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
+use std::time::SystemTime;
 use crate::sample_sources::SourceDatabase;
 
 impl CollectionsController<'_> {
@@ -172,16 +173,24 @@ impl CollectionsController<'_> {
         &mut self,
         result: crate::egui_app::controller::jobs::CollectionMoveResult,
     ) {
-        let collection_name = self
+        let Some(collection) = self
             .library
             .collections
-            .iter()
+            .iter_mut()
             .find(|collection| collection.id == result.collection_id)
-            .map(|collection| collection.name.clone())
-            .unwrap_or_else(|| "collection".to_string());
+        else {
+            self.set_status("Collection not found", StatusTone::Error);
+            return;
+        };
+        let collection_name = collection.name.clone();
         let total_moved = result.moved.len();
         let mut moved = 0usize;
         let mut last_error = result.errors.last().cloned();
+        let mut added_members = Vec::new();
+        let mut affected_sources = std::collections::HashMap::new();
+        let mut collections_changed = false;
+        let clip_source_id =
+            SourceId::from_string(format!("collection-{}", result.collection_id.as_str()));
         for entry in &result.moved {
             let Some(source) = self
                 .library
@@ -193,23 +202,41 @@ impl CollectionsController<'_> {
                 last_error = Some("Source not available for move".to_string());
                 continue;
             };
-            if let Err(err) = self.add_clip_to_collection(
-                &result.collection_id,
-                entry.clip_root.clone(),
-                entry.clip_relative.clone(),
-            ) {
-                let _ = fs::rename(
-                    entry.clip_root.join(&entry.clip_relative),
-                    source.root.join(&entry.relative_path),
-                );
-                last_error = Some(err);
-                continue;
+            let new_member = CollectionMember {
+                source_id: clip_source_id.clone(),
+                relative_path: entry.clip_relative.clone(),
+                clip_root: Some(entry.clip_root.clone()),
+            };
+            let already_present =
+                collection.contains(&new_member.source_id, &new_member.relative_path);
+            if !already_present {
+                collection.members.push(new_member.clone());
+                added_members.push(new_member);
             }
-            if let Err(err) = self.remove_source_sample(&source, &entry.relative_path) {
-                last_error = Some(err);
-                continue;
+            if self.remove_sample_from_collections(&entry.source_id, &entry.relative_path) {
+                collections_changed = true;
             }
+            self.clear_loaded_sample_if(&source, &entry.relative_path);
+            affected_sources.entry(source.id.clone()).or_insert(source);
             moved += 1;
+        }
+        if collections_changed {
+            let _ = self.persist_config("Failed to save collection after move");
+        }
+        if !added_members.is_empty() {
+            if let Err(err) = self.persist_config("Failed to save collection") {
+                self.set_status(err, StatusTone::Error);
+                return;
+            }
+            self.refresh_collections_ui();
+            for member in &added_members {
+                if let Err(err) = self.export_member_if_needed(&result.collection_id, member) {
+                    self.set_status(err, StatusTone::Warning);
+                }
+            }
+        }
+        for source in affected_sources.values() {
+            self.invalidate_wav_entries_for_source_preserve_folders(source);
         }
         if moved > 0 {
             let failed = result
@@ -388,6 +415,19 @@ fn run_collection_move_task(
 ) -> crate::egui_app::controller::jobs::CollectionMoveResult {
     let mut moved = Vec::new();
     let mut errors = Vec::new();
+    let clip_db = match SourceDatabase::open(&clip_root) {
+        Ok(db) => db,
+        Err(err) => {
+            errors.push(format!("Failed to open collection database: {err}"));
+            return crate::egui_app::controller::jobs::CollectionMoveResult {
+                collection_id,
+                moved,
+                errors,
+            };
+        }
+    };
+    let mut source_dbs: std::collections::HashMap<PathBuf, SourceDatabase> =
+        std::collections::HashMap::new();
     for request in requests {
         let absolute = request.source_root.join(&request.relative_path);
         if !absolute.is_file() {
@@ -407,6 +447,52 @@ fn run_collection_move_task(
         let clip_absolute = clip_root.join(&clip_relative);
         if let Err(err) = move_sample_file(&absolute, &clip_absolute) {
             errors.push(err);
+            continue;
+        }
+        let clip_metadata = match fs::metadata(&clip_absolute) {
+            Ok(metadata) => metadata,
+            Err(err) => {
+                let _ = move_sample_file(&clip_absolute, &absolute);
+                errors.push(format!("Missing clip metadata: {err}"));
+                continue;
+            }
+        };
+        let modified_ns = match clip_metadata
+            .modified()
+            .and_then(|modified| modified.duration_since(SystemTime::UNIX_EPOCH))
+        {
+            Ok(duration) => duration.as_nanos() as i64,
+            Err(_) => {
+                let _ = move_sample_file(&clip_absolute, &absolute);
+                errors.push("File modified time is before epoch".to_string());
+                continue;
+            }
+        };
+        if let Err(err) = clip_db.upsert_file(
+            &clip_relative,
+            clip_metadata.len(),
+            modified_ns,
+        ) {
+            let _ = move_sample_file(&clip_absolute, &absolute);
+            errors.push(format!("Failed to sync collection entry: {err}"));
+            continue;
+        }
+        let db = match source_dbs.entry(request.source_root.clone()) {
+            std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::hash_map::Entry::Vacant(entry) => match SourceDatabase::open(&request.source_root) {
+                Ok(db) => entry.insert(db),
+                Err(err) => {
+                    let _ = clip_db.remove_file(&clip_relative);
+                    let _ = move_sample_file(&clip_absolute, &absolute);
+                    errors.push(format!("Failed to open source database: {err}"));
+                    continue;
+                }
+            },
+        };
+        if let Err(err) = db.remove_file(&request.relative_path) {
+            let _ = clip_db.remove_file(&clip_relative);
+            let _ = move_sample_file(&clip_absolute, &absolute);
+            errors.push(format!("Failed to drop source database row: {err}"));
             continue;
         }
         moved.push(crate::egui_app::controller::jobs::CollectionMoveSuccess {
