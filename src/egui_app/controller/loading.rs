@@ -132,8 +132,14 @@ impl EguiController {
             let needs_failures =
                 !from_cache || !self.ui_cache.browser.analysis_failures.contains_key(id);
             if needs_failures {
-                if let Some(source) = self.library.sources.iter().find(|s| &s.id == id) {
-                    self.queue_analysis_failures_refresh(source);
+                let source = self
+                    .library
+                    .sources
+                    .iter()
+                    .find(|s| &s.id == id)
+                    .cloned();
+                if let Some(source) = source {
+                    self.queue_analysis_failures_refresh(&source);
                 } else {
                     self.ui_cache.browser.analysis_failures.remove(id);
                 }
