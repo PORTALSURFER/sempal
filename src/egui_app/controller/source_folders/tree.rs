@@ -69,7 +69,9 @@ impl EguiController {
             for path in model.manual_folders.iter().cloned() {
                 model.available.insert(path);
             }
-            model.selected.retain(|path| model.available.contains(path));
+            model
+                .selected
+                .retain(|path| is_root_path(path) || model.available.contains(path));
             model
                 .negated
                 .retain(|path| is_root_path(path) || model.available.contains(path));
