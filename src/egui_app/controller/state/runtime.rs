@@ -1,6 +1,9 @@
 //! Runtime state and job coordination for the controller.
 
-use super::super::{ScanMode, SourceDbError, SourceId, WavEntry, analysis_jobs, jobs};
+use super::super::{
+    ScanMode, SourceDbError, SourceId, WavEntry, analysis_jobs, jobs,
+};
+use crate::sample_sources::config::PannsBackendChoice;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -8,6 +11,7 @@ pub(in crate::egui_app::controller) struct ControllerRuntimeState {
     pub(in crate::egui_app::controller) jobs: jobs::ControllerJobs,
     pub(in crate::egui_app::controller) analysis: analysis_jobs::AnalysisWorkerPool,
     pub(in crate::egui_app::controller) performance: PerformanceGovernorState,
+    pub(in crate::egui_app::controller) pending_backend_switch: Option<PannsBackendChoice>,
     pub(in crate::egui_app::controller) similarity_prep: Option<SimilarityPrepState>,
     pub(in crate::egui_app::controller) similarity_prep_last_error: Option<String>,
     pub(in crate::egui_app::controller) similarity_prep_force_full_analysis_next: bool,
@@ -24,6 +28,7 @@ impl ControllerRuntimeState {
             jobs,
             analysis,
             performance: PerformanceGovernorState::new(),
+            pending_backend_switch: None,
             similarity_prep: None,
             similarity_prep_last_error: None,
             similarity_prep_force_full_analysis_next: false,

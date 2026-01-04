@@ -192,11 +192,20 @@ impl EguiController {
             return;
         }
         self.settings.analysis.panns_backend = backend;
-        self.apply_analysis_backend_env();
-        crate::analysis::embedding::reset_panns_model();
-        self.runtime
-            .analysis
-            .restart(self.runtime.jobs.message_sender());
+        if self.analysis_jobs_active() {
+            self.runtime.pending_backend_switch = Some(backend);
+            self.set_status(
+                "Backend switch queued until analysis completes".to_string(),
+                StatusTone::Info,
+            );
+        } else {
+            self.apply_analysis_backend_env();
+            crate::analysis::embedding::reset_panns_model();
+            self.runtime
+                .analysis
+                .restart(self.runtime.jobs.message_sender());
+            self.runtime.pending_backend_switch = None;
+        }
         if let Err(err) = self.persist_config("Failed to save options") {
             self.set_status(err, StatusTone::Warning);
         }
@@ -239,5 +248,24 @@ impl EguiController {
         if let Err(err) = self.persist_config("Failed to save options") {
             self.set_status(err, StatusTone::Warning);
         }
+    }
+
+    pub(super) fn apply_pending_backend_switch(&mut self) {
+        let Some(_backend) = self.runtime.pending_backend_switch.take() else {
+            return;
+        };
+        self.apply_analysis_backend_env();
+        crate::analysis::embedding::reset_panns_model();
+        self.runtime
+            .analysis
+            .restart(self.runtime.jobs.message_sender());
+    }
+
+    fn analysis_jobs_active(&self) -> bool {
+        self.ui
+            .progress
+            .analysis
+            .as_ref()
+            .is_some_and(|snapshot| snapshot.pending > 0 || snapshot.running > 0)
     }
 }
