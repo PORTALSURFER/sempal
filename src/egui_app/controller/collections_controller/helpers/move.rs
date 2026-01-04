@@ -182,7 +182,7 @@ impl CollectionsController<'_> {
         let total_moved = result.moved.len();
         let mut moved = 0usize;
         let mut last_error = result.errors.last().cloned();
-        for entry in result.moved {
+        for entry in &result.moved {
             let Some(source) = self
                 .library
                 .sources
