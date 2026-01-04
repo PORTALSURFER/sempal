@@ -287,7 +287,7 @@ pub fn row_selected_fill() -> Color32 {
         palette.accent_mint.r(),
         palette.accent_mint.g(),
         palette.accent_mint.b(),
-        90,
+        140,
     )
 }
 
