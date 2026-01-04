@@ -111,6 +111,18 @@ impl EguiController {
             }
             return;
         }
+        if let Ok(db) = self.database_for(source)
+            && matches!(db.index_for_path(old_path), Ok(Some(_)))
+        {
+            let _ = self.rewrite_db_entry_for_source(
+                source,
+                old_path,
+                &new_entry.relative_path,
+                new_entry.file_size,
+                new_entry.modified_ns,
+                new_entry.tag,
+            );
+        }
         let mut updated = false;
         if self.selection_state.ctx.selected_source.as_ref() == Some(&source.id) {
             if let Some(index) = self.wav_entries.lookup.get(old_path).copied()
