@@ -173,16 +173,16 @@ impl CollectionsController<'_> {
         &mut self,
         result: crate::egui_app::controller::jobs::CollectionMoveResult,
     ) {
-        let Some(collection) = self
+        let Some(collection_index) = self
             .library
             .collections
-            .iter_mut()
-            .find(|collection| collection.id == result.collection_id)
+            .iter()
+            .position(|collection| collection.id == result.collection_id)
         else {
             self.set_status("Collection not found", StatusTone::Error);
             return;
         };
-        let collection_name = collection.name.clone();
+        let collection_name = self.library.collections[collection_index].name.clone();
         let total_moved = result.moved.len();
         let mut moved = 0usize;
         let mut last_error = result.errors.last().cloned();
@@ -191,6 +191,7 @@ impl CollectionsController<'_> {
         let mut collections_changed = false;
         let clip_source_id =
             SourceId::from_string(format!("collection-{}", result.collection_id.as_str()));
+        let mut collection_removals = Vec::new();
         for entry in &result.moved {
             let Some(source) = self
                 .library
@@ -207,18 +208,23 @@ impl CollectionsController<'_> {
                 relative_path: entry.clip_relative.clone(),
                 clip_root: Some(entry.clip_root.clone()),
             };
-            let already_present =
-                collection.contains(&new_member.source_id, &new_member.relative_path);
+            let already_present = self.library.collections[collection_index]
+                .contains(&new_member.source_id, &new_member.relative_path);
             if !already_present {
-                collection.members.push(new_member.clone());
+                self.library.collections[collection_index]
+                    .members
+                    .push(new_member.clone());
                 added_members.push(new_member);
             }
-            if self.remove_sample_from_collections(&entry.source_id, &entry.relative_path) {
-                collections_changed = true;
-            }
+            collection_removals.push((entry.source_id.clone(), entry.relative_path.clone()));
             self.clear_loaded_sample_if(&source, &entry.relative_path);
             affected_sources.entry(source.id.clone()).or_insert(source);
             moved += 1;
+        }
+        for (source_id, relative_path) in collection_removals {
+            if self.remove_sample_from_collections(&source_id, &relative_path) {
+                collections_changed = true;
+            }
         }
         if collections_changed {
             let _ = self.persist_config("Failed to save collection after move");
@@ -457,14 +463,18 @@ fn run_collection_move_task(
                 continue;
             }
         };
-        let modified_ns = match clip_metadata
-            .modified()
-            .and_then(|modified| modified.duration_since(SystemTime::UNIX_EPOCH))
-        {
-            Ok(duration) => duration.as_nanos() as i64,
-            Err(_) => {
+        let modified_ns = match clip_metadata.modified() {
+            Ok(modified) => match modified.duration_since(SystemTime::UNIX_EPOCH) {
+                Ok(duration) => duration.as_nanos() as i64,
+                Err(_) => {
+                    let _ = move_sample_file(&clip_absolute, &absolute);
+                    errors.push("File modified time is before epoch".to_string());
+                    continue;
+                }
+            },
+            Err(err) => {
                 let _ = move_sample_file(&clip_absolute, &absolute);
-                errors.push("File modified time is before epoch".to_string());
+                errors.push(format!("Missing mtime for collection: {err}"));
                 continue;
             }
         };
