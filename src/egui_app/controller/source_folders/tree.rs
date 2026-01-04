@@ -62,7 +62,9 @@ impl EguiController {
                 .entry(source_id.clone())
                 .or_default();
             let pending_load = self.runtime.jobs.wav_load_pending_for(&source.id);
-            let available = if pending_load && self.wav_entries_len() == 0 {
+            let empty_entries = self.wav_entries_len() == 0;
+            let reuse_available = empty_entries && !model.available.is_empty();
+            let available = if reuse_available || (pending_load && empty_entries) {
                 model.available.clone()
             } else {
                 self.collect_folders(&source.root)
