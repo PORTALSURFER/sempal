@@ -132,13 +132,8 @@ impl EguiController {
             let needs_failures =
                 !from_cache || !self.ui_cache.browser.analysis_failures.contains_key(id);
             if needs_failures {
-                if let Some(source) = self.library.sources.iter().find(|s| &s.id == id)
-                    && let Ok(failures) = super::analysis_jobs::failed_samples_for_source(source)
-                {
-                    self.ui_cache
-                        .browser
-                        .analysis_failures
-                        .insert(id.clone(), failures);
+                if let Some(source) = self.library.sources.iter().find(|s| &s.id == id) {
+                    self.queue_analysis_failures_refresh(source);
                 } else {
                     self.ui_cache.browser.analysis_failures.remove(id);
                 }
@@ -172,6 +167,32 @@ impl EguiController {
             return;
         }
         let _ = crate::sample_sources::scanner::scan_in_background(source.root.clone());
+    }
+
+    pub(super) fn queue_analysis_failures_refresh(&mut self, source: &SampleSource) {
+        if self
+            .ui_cache
+            .browser
+            .analysis_failures_pending
+            .contains(&source.id)
+        {
+            return;
+        }
+        self.ui_cache
+            .browser
+            .analysis_failures_pending
+            .insert(source.id.clone());
+        let tx = self.runtime.jobs.message_sender();
+        let source = source.clone();
+        std::thread::spawn(move || {
+            let result = super::analysis_jobs::failed_samples_for_source(&source);
+            let _ = tx.send(super::jobs::JobMessage::AnalysisFailuresLoaded(
+                super::jobs::AnalysisFailuresResult {
+                    source_id: source.id.clone(),
+                    result,
+                },
+            ));
+        });
     }
 
     pub(super) fn invalidate_wav_entries_for_source(&mut self, source: &SampleSource) {

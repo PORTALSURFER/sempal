@@ -22,6 +22,7 @@ pub(super) enum JobMessage {
     TrashMove(trash_move::TrashMoveMessage),
     CollectionMove(CollectionMoveResult),
     Analysis(AnalysisJobMessage),
+    AnalysisFailuresLoaded(AnalysisFailuresResult),
     UmapBuilt(UmapBuildResult),
     UmapClustersBuilt(UmapClusterBuildResult),
     SimilarityPrepared(SimilarityPrepResult),
@@ -103,6 +104,12 @@ pub(super) struct CollectionMoveResult {
     pub(super) collection_id: crate::sample_sources::CollectionId,
     pub(super) moved: Vec<CollectionMoveSuccess>,
     pub(super) errors: Vec<String>,
+}
+
+#[derive(Debug)]
+pub(super) struct AnalysisFailuresResult {
+    pub(super) source_id: SourceId,
+    pub(super) result: Result<std::collections::HashMap<PathBuf, String>, String>,
 }
 
 pub(super) struct ControllerJobs {

@@ -1,7 +1,7 @@
 //! Cached data for the controller, including databases and UI caches.
 
 use super::super::{SampleSource, SourceDatabase, SourceDbError, SourceId, WavEntry, source_folders, wavs};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
@@ -64,6 +64,7 @@ impl LibraryCacheState {
 pub(in crate::egui_app::controller) struct BrowserCacheState {
     pub(in crate::egui_app::controller) labels: HashMap<SourceId, Vec<String>>,
     pub(in crate::egui_app::controller) analysis_failures: HashMap<SourceId, HashMap<PathBuf, String>>,
+    pub(in crate::egui_app::controller) analysis_failures_pending: HashSet<SourceId>,
     pub(in crate::egui_app::controller) search: wavs::BrowserSearchCache,
     pub(in crate::egui_app::controller) features: HashMap<SourceId, FeatureCache>,
 }
@@ -106,6 +107,7 @@ impl ControllerUiCacheState {
             browser: BrowserCacheState {
                 labels: HashMap::new(),
                 analysis_failures: HashMap::new(),
+                analysis_failures_pending: HashSet::new(),
                 search: wavs::BrowserSearchCache::default(),
                 features: HashMap::new(),
             },

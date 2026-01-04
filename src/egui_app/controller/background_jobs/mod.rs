@@ -124,6 +124,37 @@ impl EguiController {
                 JobMessage::Analysis(message) => {
                     analysis::handle_analysis_message(self, message);
                 }
+                JobMessage::AnalysisFailuresLoaded(message) => {
+                    self.ui_cache
+                        .browser
+                        .analysis_failures_pending
+                        .remove(&message.source_id);
+                    match message.result {
+                        Ok(failures) => {
+                            if failures.is_empty() {
+                                self.ui_cache
+                                    .browser
+                                    .analysis_failures
+                                    .remove(&message.source_id);
+                            } else {
+                                self.ui_cache
+                                    .browser
+                                    .analysis_failures
+                                    .insert(message.source_id, failures);
+                            }
+                        }
+                        Err(err) => {
+                            self.ui_cache
+                                .browser
+                                .analysis_failures
+                                .remove(&message.source_id);
+                            self.set_status(
+                                format!("Failed to load analysis failures: {err}"),
+                                StatusTone::Warning,
+                            );
+                        }
+                    }
+                }
                 JobMessage::UmapBuilt(message) => {
                     self.runtime.jobs.clear_umap_build();
                     match message.result {

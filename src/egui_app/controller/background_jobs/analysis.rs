@@ -61,15 +61,7 @@ pub(super) fn handle_analysis_message(
             }
             if progress.pending == 0 && progress.running == 0 {
                 if let Some(source) = controller.current_source() {
-                    if let Ok(failures) =
-                        super::analysis_jobs::failed_samples_for_source(&source)
-                    {
-                        controller
-                            .ui_cache
-                            .browser
-                            .analysis_failures
-                            .insert(source.id.clone(), failures);
-                    }
+                    controller.queue_analysis_failures_refresh(&source);
                     controller.ui_cache.browser.features.remove(&source.id);
                 }
                 if controller.ui.progress.task == Some(ProgressTaskKind::Analysis) {
