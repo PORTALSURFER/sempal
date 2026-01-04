@@ -37,7 +37,7 @@ pub(crate) use infer::{
 #[allow(unused_imports)]
 pub(crate) use logmel::{build_panns_logmel_into, PannsLogMelScratch, PANNS_LOGMEL_LEN};
 #[allow(unused_imports)]
-pub(crate) use model::{reset_panns_model, warmup_panns, PannsModel};
+pub(crate) use model::{reset_panns_model, try_reset_panns_model, warmup_panns, PannsModel};
 
 #[cfg(test)]
 mod tests {

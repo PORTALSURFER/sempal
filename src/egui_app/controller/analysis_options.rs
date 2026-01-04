@@ -192,19 +192,13 @@ impl EguiController {
             return;
         }
         self.settings.analysis.panns_backend = backend;
-        if self.analysis_jobs_active() {
-            self.runtime.pending_backend_switch = Some(backend);
+        self.runtime.pending_backend_switch = Some(backend);
+        let applied = self.apply_pending_backend_switch();
+        if !applied {
             self.set_status(
-                "Backend switch queued until analysis completes".to_string(),
+                "Backend switch queued until analysis is idle".to_string(),
                 StatusTone::Info,
             );
-        } else {
-            self.apply_analysis_backend_env();
-            crate::analysis::embedding::reset_panns_model();
-            self.runtime
-                .analysis
-                .restart(self.runtime.jobs.message_sender());
-            self.runtime.pending_backend_switch = None;
         }
         if let Err(err) = self.persist_config("Failed to save options") {
             self.set_status(err, StatusTone::Warning);
@@ -250,15 +244,23 @@ impl EguiController {
         }
     }
 
-    pub(super) fn apply_pending_backend_switch(&mut self) {
-        let Some(_backend) = self.runtime.pending_backend_switch.take() else {
-            return;
+    pub(super) fn apply_pending_backend_switch(&mut self) -> bool {
+        let Some(backend) = self.runtime.pending_backend_switch.take() else {
+            return false;
         };
+        if self.analysis_jobs_active() {
+            self.runtime.pending_backend_switch = Some(backend);
+            return false;
+        }
+        if !crate::analysis::embedding::try_reset_panns_model() {
+            self.runtime.pending_backend_switch = Some(backend);
+            return false;
+        }
         self.apply_analysis_backend_env();
-        crate::analysis::embedding::reset_panns_model();
         self.runtime
             .analysis
             .restart(self.runtime.jobs.message_sender());
+        true
     }
 
     fn analysis_jobs_active(&self) -> bool {
