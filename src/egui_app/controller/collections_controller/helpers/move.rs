@@ -188,6 +188,8 @@ impl CollectionsController<'_> {
         let mut last_error = result.errors.last().cloned();
         let mut added_members = Vec::new();
         let mut affected_sources = std::collections::HashMap::new();
+        let mut moved_by_source: std::collections::HashMap<SourceId, Vec<PathBuf>> =
+            std::collections::HashMap::new();
         let mut collections_changed = false;
         let clip_source_id =
             SourceId::from_string(format!("collection-{}", result.collection_id.as_str()));
@@ -217,6 +219,10 @@ impl CollectionsController<'_> {
                 added_members.push(new_member);
             }
             collection_removals.push((entry.source_id.clone(), entry.relative_path.clone()));
+            moved_by_source
+                .entry(entry.source_id.clone())
+                .or_default()
+                .push(entry.relative_path.clone());
             self.clear_loaded_sample_if(&source, &entry.relative_path);
             affected_sources.entry(source.id.clone()).or_insert(source);
             moved += 1;
@@ -239,6 +245,38 @@ impl CollectionsController<'_> {
                 if let Err(err) = self.export_member_if_needed(&result.collection_id, member) {
                     self.set_status(err, StatusTone::Warning);
                 }
+            }
+        }
+        if !moved_by_source.is_empty() {
+            let mut cleanup_error = None;
+            for (source_id, relative_paths) in moved_by_source {
+                let Some(source) = affected_sources.get(&source_id) else {
+                    continue;
+                };
+                let db = match self.database_for(source) {
+                    Ok(db) => db,
+                    Err(err) => match SourceDatabase::open(&source.root) {
+                        Ok(db) => db,
+                        Err(open_err) => {
+                            cleanup_error =
+                                Some(format!("Failed to open source database: {open_err}"));
+                            let _ = err;
+                            continue;
+                        }
+                    },
+                };
+                for relative_path in relative_paths {
+                    if source.root.join(&relative_path).is_file() {
+                        continue;
+                    }
+                    if let Err(err) = db.remove_file(&relative_path) {
+                        cleanup_error =
+                            Some(format!("Failed to remove moved entry: {err}"));
+                    }
+                }
+            }
+            if last_error.is_none() {
+                last_error = cleanup_error;
             }
         }
         for source in affected_sources.values() {
