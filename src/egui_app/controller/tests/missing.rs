@@ -254,6 +254,42 @@ fn remove_dead_links_rebuilds_missing_state() -> Result<(), String> {
 }
 
 #[test]
+fn remove_dead_links_prunes_collections() -> Result<(), String> {
+    let temp = tempdir().unwrap();
+    let root = temp.path().join("source");
+    std::fs::create_dir_all(&root).unwrap();
+    let renderer = WaveformRenderer::new(10, 10);
+    let mut controller = EguiController::new(renderer, None);
+    let source = SampleSource::new(root.clone());
+    controller.library.sources.push(source.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
+    controller.cache_db(&source).unwrap();
+
+    let db = SourceDatabase::open(&root).unwrap();
+    db.upsert_file(Path::new("alive.wav"), 1, 1).unwrap();
+    db.upsert_file(Path::new("gone.wav"), 1, 1).unwrap();
+    db.set_missing(Path::new("gone.wav"), true).unwrap();
+
+    let mut collection = Collection::new("Test");
+    collection.add_member(source.id.clone(), PathBuf::from("alive.wav"));
+    collection.add_member(source.id.clone(), PathBuf::from("gone.wav"));
+    controller.library.collections.push(collection);
+    controller.refresh_collections_ui();
+
+    let removed = controller.remove_dead_links_for_source_entries(&source)?;
+    assert_eq!(removed, 1);
+
+    let collection = controller
+        .library
+        .collections
+        .first()
+        .expect("collection");
+    assert_eq!(collection.members.len(), 1);
+    assert_eq!(collection.members[0].relative_path, PathBuf::from("alive.wav"));
+    Ok(())
+}
+
+#[test]
 fn mark_missing_updates_cache_db_and_missing_set_when_inactive() {
     let temp = tempdir().unwrap();
     let root = temp.path().join("source");

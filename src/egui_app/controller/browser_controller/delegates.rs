@@ -267,6 +267,42 @@ impl EguiController {
         changed
     }
 
+    pub(in crate::egui_app::controller) fn remove_samples_from_collections(
+        &mut self,
+        source_id: &SourceId,
+        relative_paths: &[PathBuf],
+    ) -> bool {
+        if relative_paths.is_empty() {
+            return false;
+        }
+        let mut changed = false;
+        for collection in self.library.collections.iter_mut() {
+            let export_dir = collection_export::resolved_export_dir(
+                collection,
+                self.settings.collection_export_root.as_deref(),
+            );
+            let mut collection_changed = false;
+            for relative_path in relative_paths {
+                if collection.remove_member(source_id, relative_path) {
+                    collection_changed = true;
+                    let member = CollectionMember {
+                        source_id: source_id.clone(),
+                        relative_path: relative_path.clone(),
+                        clip_root: None,
+                    };
+                    collection_export::delete_exported_file(export_dir.clone(), &member);
+                }
+            }
+            if collection_changed {
+                changed = true;
+            }
+        }
+        if changed {
+            self.refresh_collections_ui();
+        }
+        changed
+    }
+
     pub(in crate::egui_app::controller) fn refocus_after_filtered_removal(
         &mut self,
         primary_visible_row: usize,

@@ -206,16 +206,12 @@ impl EguiController {
         let db = self
             .database_for(source)
             .map_err(|err| format!("Database unavailable: {err}"))?;
-        let mut collections_changed = false;
         for path in &missing_paths {
             db.remove_file(path)
                 .map_err(|err| format!("Failed to drop database row: {err}"))?;
             self.prune_cached_sample(source, path);
-            if self.remove_sample_from_collections(&source.id, path) {
-                collections_changed = true;
-            }
         }
-        if collections_changed {
+        if self.remove_samples_from_collections(&source.id, &missing_paths) {
             self.persist_config("Failed to save collection after removing dead links")?;
         }
         Ok(missing_paths.len())
