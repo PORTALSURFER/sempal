@@ -179,6 +179,7 @@ impl CollectionsController<'_> {
             .find(|collection| collection.id == result.collection_id)
             .map(|collection| collection.name.clone())
             .unwrap_or_else(|| "collection".to_string());
+        let total_moved = result.moved.len();
         let mut moved = 0usize;
         let mut last_error = result.errors.last().cloned();
         for entry in result.moved {
@@ -214,7 +215,7 @@ impl CollectionsController<'_> {
             let failed = result
                 .errors
                 .len()
-                .saturating_add(result.moved.len().saturating_sub(moved));
+                .saturating_add(total_moved.saturating_sub(moved));
             if failed > 0 {
                 let suffix = last_error
                     .as_deref()
