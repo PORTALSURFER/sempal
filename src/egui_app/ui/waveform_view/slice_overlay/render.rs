@@ -6,7 +6,7 @@ use super::super::selection_geometry::{
     paint_selection_edge_bracket, selection_edge_handle_rect, selection_handle_height,
     selection_handle_rect,
 };
-use super::super::super::style;
+use crate::egui_app::ui::style;
 use super::super::super::{EguiApp, SliceDragKind, SliceDragState};
 use super::{SliceEdgeSpec, SliceItem, SliceOverlayEnv, SliceOverlayResult};
 

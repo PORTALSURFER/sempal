@@ -5,7 +5,7 @@ use crate::egui_app::state::WaveformView;
 use crate::selection::{SelectionEdge, SelectionRange};
 use eframe::egui::{self, Color32};
 
-use super::super::super::style;
+use crate::egui_app::ui::style;
 
 struct SliceOverlayEnv<'a> {
     rect: egui::Rect,
@@ -36,4 +36,22 @@ pub(super) struct SliceOverlayResult {
     pub consumed_click: bool,
 }
 
-pub(super) use render::render_slice_overlays;
+pub(super) fn render_slice_overlays(
+    app: &mut EguiApp,
+    ui: &mut egui::Ui,
+    rect: egui::Rect,
+    palette: &style::Palette,
+    view: WaveformView,
+    view_width: f32,
+    pointer_pos: Option<egui::Pos2>,
+) -> SliceOverlayResult {
+    render::render_slice_overlays(
+        app,
+        ui,
+        rect,
+        palette,
+        view,
+        view_width,
+        pointer_pos,
+    )
+}
