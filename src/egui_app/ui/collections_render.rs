@@ -46,6 +46,11 @@ impl EguiApp {
                     let row_height = list_row_height(ui);
                     for (index, collection) in rows.iter().enumerate() {
                         let selected = collection.selected;
+                        let is_drag_hover = drag_active
+                            && matches!(
+                                self.controller.ui.drag.active_target,
+                                DragTarget::CollectionsRow(ref id) if id == &collection.id
+                            );
                         let mut label = format!("{} ({})", collection.name, collection.count);
                         let (text_color, indicator) = if collection.missing {
                             (
@@ -103,6 +108,14 @@ impl EguiApp {
                                     marker: None,
                                 },
                             );
+                            if is_drag_hover {
+                                ui.painter().rect_stroke(
+                                    response.rect.expand(1.0),
+                                    0.0,
+                                    style::drag_target_stroke(),
+                                    StrokeKind::Inside,
+                                );
+                            }
                             if response.clicked() && !rename_match {
                                 if selected {
                                     self.controller.select_collection_by_index(None);
