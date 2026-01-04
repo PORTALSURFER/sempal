@@ -201,7 +201,9 @@ impl AnalysisWorkerPool {
         self.shutdown.store(true, Ordering::Relaxed);
         self.cancel.store(true, Ordering::Relaxed);
         self.pause_claiming.store(false, Ordering::Relaxed);
-        let _ = job_cleanup::reset_running_jobs();
+        std::thread::spawn(|| {
+            let _ = job_cleanup::reset_running_jobs();
+        });
         let old_threads = mem::take(&mut self.threads);
         std::thread::spawn(move || {
             for handle in old_threads {
