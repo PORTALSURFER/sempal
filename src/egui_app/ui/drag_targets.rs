@@ -129,6 +129,10 @@ fn start_drag_from_pending(
         DragPayload::Samples { samples } => {
             controller.start_samples_drag(samples, pending.label, pos)
         }
+        DragPayload::Folder {
+            source_id,
+            relative_path,
+        } => controller.start_folder_drag(source_id, relative_path, pending.label, pos),
         DragPayload::Selection { .. } => {}
     }
 }

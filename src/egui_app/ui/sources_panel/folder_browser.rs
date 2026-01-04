@@ -102,7 +102,7 @@ impl EguiApp {
                         background: bg,
                         skip_hover: false,
                         text_color: style::high_contrast_text(),
-                        sense: egui::Sense::click(),
+                        sense: egui::Sense::click_and_drag(),
                         number: None,
                         marker: None,
                     },
@@ -241,7 +241,7 @@ impl EguiApp {
                     let sense = if rename_match {
                         egui::Sense::hover()
                     } else {
-                        egui::Sense::click()
+                        egui::Sense::click_and_drag()
                     };
                     let response = render_list_row(
                         ui,
@@ -257,6 +257,30 @@ impl EguiApp {
                             marker: None,
                         },
                     );
+                    let started_drag = if !rename_match
+                        && self.controller.ui.drag.payload.is_none()
+                        && (response.drag_started() || response.dragged())
+                    {
+                        if let Some(pos) = response.interact_pointer_pos() {
+                            if let Some(source) = self.controller.current_source() {
+                                self.controller.ui.drag.pending_os_drag = None;
+                                self.controller.start_folder_drag(
+                                    source.id.clone(),
+                                    row.path.clone(),
+                                    row.name.clone(),
+                                    pos,
+                                );
+                            } else {
+                                self.controller.set_status(
+                                    "Select a source before dragging",
+                                    style::StatusTone::Warning,
+                                );
+                            }
+                        }
+                        true
+                    } else {
+                        false
+                    };
                     if sample_parent_folders.contains(&row.path) {
                         let offset = if row.negated { 8.0 } else { 0.0 };
                         paint_right_side_dot(ui, response.rect, offset);
@@ -308,7 +332,7 @@ impl EguiApp {
                     }
                     if rename_match {
                         self.render_folder_rename_editor(ui, &response, row);
-                    } else if response.clicked() {
+                    } else if !started_drag && response.clicked() {
                         let pointer = response.interact_pointer_pos();
                         let hit_expand = row.has_children
                             && pointer.is_some_and(|pos| {

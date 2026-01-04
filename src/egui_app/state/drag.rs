@@ -23,6 +23,10 @@ pub enum DragPayload {
     Samples {
         samples: Vec<DragSample>,
     },
+    Folder {
+        source_id: SourceId,
+        relative_path: PathBuf,
+    },
     Selection {
         source_id: SourceId,
         relative_path: PathBuf,

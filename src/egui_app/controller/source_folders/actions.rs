@@ -201,6 +201,59 @@ impl EguiController {
         Ok(())
     }
 
+    pub(crate) fn move_folder_to_parent(
+        &mut self,
+        folder: &Path,
+        target_folder: &Path,
+    ) -> Result<PathBuf, String> {
+        if folder.as_os_str().is_empty() {
+            return Err("Root folder cannot be moved".into());
+        }
+        if target_folder.starts_with(folder) {
+            return Err("Cannot move a folder into itself".into());
+        }
+        let source = self
+            .current_source()
+            .ok_or_else(|| "Select a source first".to_string())?;
+        let name = folder
+            .file_name()
+            .ok_or_else(|| "Folder name unavailable for move".to_string())?;
+        let new_relative = if target_folder.as_os_str().is_empty() {
+            PathBuf::from(name)
+        } else {
+            target_folder.join(name)
+        };
+        let absolute_old = source.root.join(folder);
+        if !absolute_old.is_dir() {
+            return Err(format!("Folder not found: {}", folder.display()));
+        }
+        if !target_folder.as_os_str().is_empty() {
+            let destination_dir = source.root.join(target_folder);
+            if !destination_dir.is_dir() {
+                return Err(format!("Folder not found: {}", target_folder.display()));
+            }
+        }
+        let absolute_new = source.root.join(&new_relative);
+        if absolute_new.exists() {
+            return Err(format!(
+                "Folder already exists: {}",
+                new_relative.display()
+            ));
+        }
+        let affected = self.folder_entries(folder);
+        fs::rename(&absolute_old, &absolute_new)
+            .map_err(|err| format!("Failed to move folder: {err}"))?;
+        if let Err(err) = self.rewrite_entries_for_folder(&source, folder, &new_relative, &affected)
+        {
+            let _ = fs::rename(&absolute_new, &absolute_old);
+            return Err(err);
+        }
+        self.remap_manual_folders(folder, &new_relative);
+        self.refresh_folder_browser();
+        self.focus_folder_by_path(&new_relative);
+        Ok(new_relative)
+    }
+
     pub(crate) fn create_folder(&mut self, parent: &Path, name: &str) -> Result<(), String> {
         let folder_name = normalize_folder_name(name)?;
         let source = self

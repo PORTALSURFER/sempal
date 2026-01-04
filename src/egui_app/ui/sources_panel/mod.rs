@@ -41,6 +41,7 @@ impl EguiApp {
                 Some(
                     DragPayload::Sample { .. }
                         | DragPayload::Samples { .. }
+                        | DragPayload::Folder { .. }
                         | DragPayload::Selection { .. }
                 )
             );

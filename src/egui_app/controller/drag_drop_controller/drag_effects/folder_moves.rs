@@ -190,4 +190,75 @@ impl DragDropController<'_> {
             );
         }
     }
+
+    pub(in crate::egui_app::controller::drag_drop_controller) fn handle_folder_drop_to_folder(
+        &mut self,
+        source_id: SourceId,
+        folder: PathBuf,
+        target_folder: &Path,
+    ) {
+        info!(
+            "Folder drag requested: source_id={:?} folder={} target={}",
+            source_id,
+            folder.display(),
+            target_folder.display()
+        );
+        let Some(source) = self
+            .library
+            .sources
+            .iter()
+            .find(|s| s.id == source_id)
+            .cloned()
+        else {
+            warn!("Folder drag: missing source {:?}", source_id);
+            self.set_status("Source not available for move", StatusTone::Error);
+            return;
+        };
+        if folder.as_os_str().is_empty() {
+            self.set_status("Root folder cannot be moved", StatusTone::Warning);
+            return;
+        }
+        if target_folder == folder {
+            self.set_status("Folder is already there", StatusTone::Info);
+            return;
+        }
+        if target_folder.starts_with(&folder) {
+            self.set_status("Cannot move a folder into itself", StatusTone::Warning);
+            return;
+        }
+        if self
+            .selection_state
+            .ctx
+            .selected_source
+            .as_ref()
+            .is_some_and(|selected| selected != &source.id)
+        {
+            warn!(
+                "Folder drag blocked: selected source {:?} differs from folder source {:?}",
+                self.selection_state.ctx.selected_source, source.id
+            );
+            self.set_status(
+                "Switch to the folder's source before moving it",
+                StatusTone::Warning,
+            );
+            return;
+        }
+        match self.move_folder_to_parent(&folder, target_folder) {
+            Ok(new_relative) => {
+                self.set_status(
+                    format!("Moved folder to {}", new_relative.display()),
+                    StatusTone::Info,
+                );
+            }
+            Err(err) => {
+                warn!(
+                    "Folder drag aborted: move failed {} -> {} : {}",
+                    folder.display(),
+                    target_folder.display(),
+                    err
+                );
+                self.set_status(err, StatusTone::Error);
+            }
+        }
+    }
 }

@@ -429,6 +429,7 @@ impl EguiApp {
                                     sample.source_id == match_source_id
                                         && sample.relative_path == match_path
                                 }),
+                                DragPayload::Folder { .. } => false,
                                 DragPayload::Selection { .. } => false,
                             },
                         );

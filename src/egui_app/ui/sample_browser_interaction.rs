@@ -111,6 +111,7 @@ impl EguiApp {
                 DragPayload::Samples { samples } => samples
                     .iter()
                     .any(|sample| sample.relative_path == match_path),
+                DragPayload::Folder { .. } => false,
                 DragPayload::Selection { .. } => false,
             },
         );

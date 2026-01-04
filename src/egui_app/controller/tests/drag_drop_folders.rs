@@ -179,3 +179,41 @@ fn sample_drop_to_folder_rejects_conflicts() {
     assert!(dest.join("one.wav").is_file());
     assert!(controller.wav_index_for_path(Path::new("one.wav")).is_some());
 }
+
+#[test]
+fn folder_drop_to_folder_moves_tree() {
+    let (mut controller, source) = dummy_controller();
+    controller.library.sources.push(source.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
+    controller.cache_db(&source).unwrap();
+
+    let src_folder = source.root.join("one");
+    let dest_folder = source.root.join("dest");
+    std::fs::create_dir_all(&src_folder).unwrap();
+    std::fs::create_dir_all(&dest_folder).unwrap();
+    write_test_wav(&src_folder.join("clip.wav"), &[0.1, 0.2]);
+
+    controller.set_wav_entries_for_tests(vec![sample_entry("one/clip.wav", SampleTag::Neutral)]);
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+    controller.refresh_folder_browser();
+
+    controller.ui.drag.payload = Some(DragPayload::Folder {
+        source_id: source.id.clone(),
+        relative_path: PathBuf::from("one"),
+    });
+    controller.ui.drag.set_target(
+        DragSource::Folders,
+        DragTarget::FolderPanel {
+            folder: Some(PathBuf::from("dest")),
+        },
+    );
+    controller.finish_active_drag();
+
+    assert!(!src_folder.exists());
+    assert!(source.root.join("dest/one/clip.wav").is_file());
+    assert_eq!(
+        controller.wav_entry(0).unwrap().relative_path,
+        PathBuf::from("dest/one/clip.wav")
+    );
+}

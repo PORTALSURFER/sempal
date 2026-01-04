@@ -12,6 +12,13 @@ pub(crate) trait DragDropActions {
         pos: Pos2,
     );
     fn start_samples_drag(&mut self, samples: Vec<DragSample>, label: String, pos: Pos2);
+    fn start_folder_drag(
+        &mut self,
+        source_id: SourceId,
+        relative_path: PathBuf,
+        label: String,
+        pos: Pos2,
+    );
     fn start_selection_drag_payload(
         &mut self,
         bounds: SelectionRange,
@@ -49,6 +56,23 @@ impl DragDropActions for DragDropController<'_> {
 
     fn start_samples_drag(&mut self, samples: Vec<DragSample>, label: String, pos: Pos2) {
         self.begin_drag(DragPayload::Samples { samples }, label, pos);
+    }
+
+    fn start_folder_drag(
+        &mut self,
+        source_id: SourceId,
+        relative_path: PathBuf,
+        label: String,
+        pos: Pos2,
+    ) {
+        self.begin_drag(
+            DragPayload::Folder {
+                source_id,
+                relative_path,
+            },
+            label,
+            pos,
+        );
     }
 
     fn start_selection_drag_payload(
@@ -166,9 +190,15 @@ impl DragDropActions for DragDropController<'_> {
             payload,
             DragPayload::Sample { .. } | DragPayload::Samples { .. }
         );
+        let is_folder_payload = matches!(payload, DragPayload::Folder { .. });
         if is_sample_payload && over_folder_panel && folder_target.is_none() {
             self.reset_drag();
             self.set_status("Drop onto a folder to move the sample", StatusTone::Warning);
+            return;
+        }
+        if is_folder_payload && over_folder_panel && folder_target.is_none() {
+            self.reset_drag();
+            self.set_status("Drop onto a folder to move it", StatusTone::Warning);
             return;
         }
 
@@ -282,6 +312,16 @@ impl DragDropActions for DragDropController<'_> {
                     );
                 }
             }
+            DragPayload::Folder {
+                source_id,
+                relative_path,
+            } => {
+                if let Some(folder) = folder_target {
+                    self.handle_folder_drop_to_folder(source_id, relative_path, &folder);
+                } else {
+                    self.set_status("Drop onto a folder to move it", StatusTone::Warning);
+                }
+            }
             DragPayload::Selection {
                 source_id,
                 relative_path,
@@ -324,6 +364,18 @@ impl DragDropController<'_> {
         pointer_left: bool,
         now: Instant,
     ) -> bool {
+        let should_consider = matches!(
+            self.ui.drag.payload,
+            Some(
+                DragPayload::Sample { .. }
+                    | DragPayload::Samples { .. }
+                    | DragPayload::Selection { .. }
+            )
+        );
+        if !should_consider {
+            self.ui.drag.external_arm_at = None;
+            return false;
+        }
         if self.ui.drag.payload.is_none() {
             self.ui.drag.external_arm_at = None;
             return false;
@@ -374,6 +426,7 @@ impl DragDropController<'_> {
                     self.start_external_drag(&[absolute])?;
                     Ok(label)
                 }),
+            Some(DragPayload::Folder { .. }) => return,
             None => return,
         };
         match status {
