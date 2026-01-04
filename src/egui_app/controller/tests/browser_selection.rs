@@ -130,6 +130,28 @@ fn update_selection_paths_rewrites_browser_selected_paths() {
 }
 
 #[test]
+fn update_cached_entry_replaces_old_path_in_lookup() {
+    let (mut controller, source) = dummy_controller();
+    controller.library.sources.push(source.clone());
+    controller.set_wav_entries_for_tests(vec![sample_entry("old.wav", SampleTag::Neutral)]);
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+    controller.ui.browser.selected_paths = vec![PathBuf::from("old.wav")];
+
+    let mut updated = sample_entry("new.wav", SampleTag::Neutral);
+    updated.file_size = 10;
+    updated.modified_ns = 7;
+    controller.update_cached_entry(&source, Path::new("old.wav"), updated);
+
+    assert!(controller.wav_index_for_path(Path::new("old.wav")).is_none());
+    assert!(controller.wav_index_for_path(Path::new("new.wav")).is_some());
+    assert_eq!(
+        controller.ui.browser.selected_paths,
+        vec![PathBuf::from("new.wav")]
+    );
+}
+
+#[test]
 fn select_all_populates_visible_browser_paths() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source);

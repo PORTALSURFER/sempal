@@ -90,6 +90,12 @@ impl EguiController {
     ) {
         self.update_selection_paths(source, old_path, &new_entry.relative_path);
         self.invalidate_cached_audio(&source.id, old_path);
+        if let Some(missing) = self.library.missing.wavs.get_mut(&source.id) {
+            let removed = missing.remove(old_path);
+            if removed && new_entry.missing {
+                missing.insert(new_entry.relative_path.clone());
+            }
+        }
         if old_path == new_entry.relative_path {
             let mut updated = false;
             if self.selection_state.ctx.selected_source.as_ref() == Some(&source.id) {
@@ -105,10 +111,40 @@ impl EguiController {
             }
             return;
         }
-        self.invalidate_wav_entries_for_source_preserve_folders(source);
-        if old_path != new_entry.relative_path {
-            self.invalidate_cached_audio(&source.id, &new_entry.relative_path);
+        let mut updated = false;
+        if self.selection_state.ctx.selected_source.as_ref() == Some(&source.id) {
+            if let Some(index) = self.wav_entries.lookup.get(old_path).copied()
+                && let Some(slot) = self.wav_entries.entry_mut(index)
+            {
+                *slot = new_entry.clone();
+                self.wav_entries.lookup.remove(old_path);
+                self.wav_entries
+                    .insert_lookup(new_entry.relative_path.clone(), index);
+                updated = true;
+            }
+            if self.ui.browser.last_focused_path.as_deref() == Some(old_path) {
+                self.ui.browser.last_focused_path = Some(new_entry.relative_path.clone());
+            }
         }
+        if let Some(cache) = self.cache.wav.entries.get_mut(&source.id) {
+            if let Some(index) = cache.lookup.get(old_path).copied()
+                && let Some(slot) = cache.entry_mut(index)
+            {
+                *slot = new_entry.clone();
+                cache.lookup.remove(old_path);
+                cache.insert_lookup(new_entry.relative_path.clone(), index);
+                updated = true;
+            }
+        }
+        if updated {
+            if self.selection_state.ctx.selected_source.as_ref() == Some(&source.id) {
+                self.ui_cache.browser.search.invalidate();
+                self.rebuild_browser_lists();
+            }
+        } else {
+            self.invalidate_wav_entries_for_source_preserve_folders(source);
+        }
+        self.invalidate_cached_audio(&source.id, &new_entry.relative_path);
     }
 
     pub(in crate::egui_app::controller) fn insert_cached_entry(
