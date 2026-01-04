@@ -298,7 +298,7 @@ pub fn row_multi_selected_fill() -> Color32 {
         palette.text_muted.r(),
         palette.text_muted.g(),
         palette.text_muted.b(),
-        12,
+        80,
     )
 }
 
