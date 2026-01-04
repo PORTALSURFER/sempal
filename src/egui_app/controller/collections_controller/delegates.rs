@@ -132,6 +132,17 @@ impl EguiController {
         )
     }
 
+    /// Move a sample from a source into a collection export folder.
+    pub fn move_sample_to_collection_for_source(
+        &mut self,
+        collection_id: &CollectionId,
+        source: &SampleSource,
+        relative_path: &Path,
+    ) -> Result<String, String> {
+        self.collections_ctrl()
+            .move_sample_to_collection(collection_id, source, relative_path)
+    }
+
     /// Bind or clear a number hotkey (1-9) for a collection.
     pub fn bind_collection_hotkey(&mut self, collection_id: &CollectionId, hotkey: Option<u8>) {
         self.collections_ctrl()

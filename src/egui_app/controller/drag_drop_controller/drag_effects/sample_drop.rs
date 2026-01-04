@@ -12,9 +12,30 @@ impl DragDropController<'_> {
         relative_path: PathBuf,
         collection_target: Option<CollectionId>,
         triage_target: Option<TriageFlagColumn>,
+        move_to_collection: bool,
     ) {
         if let Some(collection_id) = collection_target {
-            if let Some(source) = self
+            if move_to_collection {
+                let Some(source) = self
+                    .library
+                    .sources
+                    .iter()
+                    .find(|s| s.id == source_id)
+                    .cloned()
+                else {
+                    self.set_status("Source not available for move", StatusTone::Error);
+                    return;
+                };
+                match self.move_sample_to_collection_for_source(
+                    &collection_id,
+                    &source,
+                    &relative_path,
+                ) {
+                    Ok(name) => self
+                        .set_status(format!("Moved sample to '{name}'"), StatusTone::Info),
+                    Err(err) => self.set_status(err, StatusTone::Error),
+                }
+            } else if let Some(source) = self
                 .library
                 .sources
                 .iter()
@@ -28,9 +49,7 @@ impl DragDropController<'_> {
                 ) {
                     self.set_status(err, StatusTone::Error);
                 }
-            } else if let Err(err) =
-                self.add_sample_to_collection(&collection_id, &relative_path.clone())
-            {
+            } else if let Err(err) = self.add_sample_to_collection(&collection_id, &relative_path) {
                 self.set_status(err, StatusTone::Error);
             }
             return;
@@ -61,6 +80,7 @@ impl DragDropController<'_> {
         samples: &[DragSample],
         collection_target: Option<CollectionId>,
         triage_target: Option<TriageFlagColumn>,
+        move_to_collection: bool,
     ) {
         for sample in samples {
             self.handle_sample_drop(
@@ -68,6 +88,7 @@ impl DragDropController<'_> {
                 sample.relative_path.clone(),
                 collection_target.clone(),
                 triage_target,
+                move_to_collection,
             );
         }
     }

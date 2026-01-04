@@ -138,6 +138,42 @@ impl CollectionsController<'_> {
         }
     }
 
+    pub(in crate::egui_app::controller) fn move_sample_to_collection(
+        &mut self,
+        collection_id: &CollectionId,
+        source: &SampleSource,
+        relative_path: &Path,
+    ) -> Result<String, String> {
+        if !self.settings.feature_flags.collections_enabled {
+            return Err("Collections are disabled".into());
+        }
+        let clip_root = self.resolve_collection_clip_root(collection_id)?;
+        let collection_name = self
+            .library
+            .collections
+            .iter()
+            .find(|collection| &collection.id == collection_id)
+            .map(|collection| collection.name.clone())
+            .ok_or_else(|| "Collection not found".to_string())?;
+        let absolute = source.root.join(relative_path);
+        if !absolute.is_file() {
+            return Err(format!("File missing: {}", relative_path.display()));
+        }
+        let clip_relative = unique_destination_name(&clip_root, relative_path)?;
+        let clip_absolute = clip_root.join(&clip_relative);
+        move_sample_file(&absolute, &clip_absolute)?;
+        if let Err(err) = self.add_clip_to_collection(
+            collection_id,
+            clip_root.clone(),
+            clip_relative.clone(),
+        ) {
+            let _ = fs::rename(&clip_absolute, &absolute);
+            return Err(err);
+        }
+        self.remove_source_sample(source, relative_path)?;
+        Ok(collection_name)
+    }
+
     pub(super) fn collect_browser_contexts(
         &mut self,
         rows: &[usize],

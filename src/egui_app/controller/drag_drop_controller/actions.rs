@@ -246,6 +246,8 @@ impl DragDropActions for DragDropController<'_> {
                 source_id,
                 relative_path,
             } => {
+                let move_to_collection =
+                    collection_target.is_some() && origin_source != Some(DragSource::Collections);
                 if origin_source == Some(DragSource::Waveform)
                     && matches!(active_target, DragTarget::BrowserTriage(_))
                 {
@@ -260,16 +262,24 @@ impl DragDropActions for DragDropController<'_> {
                         relative_path,
                         collection_target,
                         triage_target,
+                        move_to_collection,
                     );
                 }
             }
             DragPayload::Samples { samples } => {
+                let move_to_collection =
+                    collection_target.is_some() && origin_source != Some(DragSource::Collections);
                 if let Some(target) = source_target {
                     self.handle_samples_drop_to_source(&samples, target);
                 } else if let Some(folder) = folder_target {
                     self.handle_samples_drop_to_folder(&samples, &folder);
                 } else {
-                    self.handle_samples_drop(&samples, collection_target, triage_target);
+                    self.handle_samples_drop(
+                        &samples,
+                        collection_target,
+                        triage_target,
+                        move_to_collection,
+                    );
                 }
             }
             DragPayload::Selection {

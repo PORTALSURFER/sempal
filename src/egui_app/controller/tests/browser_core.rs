@@ -76,15 +76,17 @@ fn sample_browser_indices_track_tags() {
 }
 
 #[test]
-fn dropping_sample_adds_to_collection_and_db() {
+fn dropping_sample_moves_to_collection_export() {
     let temp = tempdir().unwrap();
     let root = temp.path().join("source");
+    let export_root = temp.path().join("exports");
     std::fs::create_dir_all(&root).unwrap();
     let renderer = WaveformRenderer::new(10, 10);
     let mut controller = EguiController::new(renderer, None);
     let source = SampleSource::new(root.clone());
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
     controller.library.sources.push(source.clone());
+    controller.settings.collection_export_root = Some(export_root.clone());
 
     let file_path = root.join("sample.wav");
     std::fs::write(&file_path, b"data").unwrap();
@@ -112,14 +114,11 @@ fn dropping_sample_adds_to_collection_and_db() {
         .find(|c| c.id == collection_id)
         .unwrap();
     assert_eq!(collection.members.len(), 1);
-    assert_eq!(collection.members[0].relative_path, Path::new("sample.wav"));
-
-    let db = controller.database_for(&source).unwrap();
-    let rows = db.list_files().unwrap();
-    assert!(
-        rows.iter()
-            .any(|row| row.relative_path == Path::new("sample.wav"))
-    );
+    let member = &collection.members[0];
+    let expected_root = export_root.join(collection.export_folder_name());
+    assert_eq!(member.clip_root.as_ref(), Some(&expected_root));
+    assert!(expected_root.join(&member.relative_path).exists());
+    assert!(!file_path.exists());
 }
 
 #[test]
