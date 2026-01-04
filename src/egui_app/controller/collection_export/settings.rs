@@ -183,14 +183,15 @@ impl EguiController {
     }
 
     pub(in crate::egui_app::controller) fn sync_collection_exports_on_startup(&mut self) {
-        let Some(root) = self.settings.collection_export_root.as_deref() else {
-            return;
+        let root = match self.settings.collection_export_root.as_deref() {
+            Some(root) => root.to_path_buf(),
+            None => return,
         };
         let mut errors = Vec::new();
-        if let Err(err) = self.sync_collections_from_export_root_path(root) {
+        if let Err(err) = self.sync_collections_from_export_root_path(&root) {
             errors.push(err);
         }
-        let export_root = self.settings.collection_export_root.as_deref();
+        let export_root = Some(root.as_path());
         let collection_ids: Vec<_> = self
             .library
             .collections
