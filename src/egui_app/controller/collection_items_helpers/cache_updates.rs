@@ -127,6 +127,23 @@ impl EguiController {
         new_path: &Path,
     ) {
         if self.selection_state.ctx.selected_source.as_ref() == Some(&source.id) {
+            if !self.ui.browser.selected_paths.is_empty() {
+                let mut updated = Vec::with_capacity(self.ui.browser.selected_paths.len());
+                let mut replaced = false;
+                for path in self.ui.browser.selected_paths.iter() {
+                    if path == old_path {
+                        replaced = true;
+                        if !updated.iter().any(|candidate| candidate == new_path) {
+                            updated.push(new_path.to_path_buf());
+                        }
+                    } else {
+                        updated.push(path.clone());
+                    }
+                }
+                if replaced {
+                    self.ui.browser.selected_paths = updated;
+                }
+            }
             if self.sample_view.wav.selected_wav.as_deref() == Some(old_path) {
                 self.sample_view.wav.selected_wav = Some(new_path.to_path_buf());
             }

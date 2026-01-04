@@ -4,7 +4,7 @@ use crate::app_dirs::ConfigBaseGuard;
 use crate::egui_app::controller::collection_export;
 use crate::egui_app::state::FocusContext;
 use crate::sample_sources::Collection;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use tempfile::tempdir;
 
@@ -106,6 +106,27 @@ fn escape_clears_selection() {
 
     assert!(controller.ui.browser.selected_paths.is_empty());
     assert!(controller.ui.browser.selection_anchor_visible.is_none());
+}
+
+#[test]
+fn update_selection_paths_rewrites_browser_selected_paths() {
+    let (mut controller, source) = dummy_controller();
+    controller.library.sources.push(source.clone());
+    controller.ui.browser.selected_paths = vec![
+        PathBuf::from("old.wav"),
+        PathBuf::from("keep.wav"),
+    ];
+
+    controller.update_selection_paths(
+        &source,
+        Path::new("old.wav"),
+        Path::new("new.wav"),
+    );
+
+    assert_eq!(
+        controller.ui.browser.selected_paths,
+        vec![PathBuf::from("new.wav"), PathBuf::from("keep.wav")]
+    );
 }
 
 #[test]
