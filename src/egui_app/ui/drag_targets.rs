@@ -55,7 +55,11 @@ pub(super) fn handle_sample_row_drag<StartDrag, BuildPending, PendingMatch>(
     let should_start_drag = response.drag_started() || (!drag_active && response.dragged());
     if should_start_drag {
         controller.ui.drag.pending_os_drag = None;
-        if let Some(pos) = response.interact_pointer_pos() {
+        let start_pos = response
+            .interact_pointer_pos()
+            .or_else(|| pointer_pos_for_drag(ui, controller.ui.drag.position))
+            .or_else(|| Some(response.rect.center()));
+        if let Some(pos) = start_pos {
             start_drag(pos, controller);
         }
         return;
@@ -94,7 +98,11 @@ pub(super) fn handle_sample_row_drag<StartDrag, BuildPending, PendingMatch>(
         return;
     }
     if drag_active && response.dragged() {
-        if let Some(pos) = response.interact_pointer_pos() {
+        if let Some(pos) =
+            response
+                .interact_pointer_pos()
+                .or_else(|| pointer_pos_for_drag(ui, controller.ui.drag.position))
+        {
             let shift_down = ui.input(|i| i.modifiers.shift);
             controller.update_active_drag(pos, drag_source, drag_target, shift_down);
         }
