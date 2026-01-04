@@ -44,6 +44,7 @@ pub struct FolderRowView {
     pub expanded: bool,
     pub selected: bool,
     pub negated: bool,
+    pub hotkey: Option<u8>,
     pub is_root: bool,
 }
 

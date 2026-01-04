@@ -1,12 +1,7 @@
 use super::super::test_support::{dummy_controller, sample_entry, write_test_wav};
 use super::super::*;
-use crate::app_dirs::ConfigBaseGuard;
-use crate::egui_app::controller::collection_export;
 use crate::egui_app::state::FocusContext;
-use crate::sample_sources::Collection;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
-use tempfile::tempdir;
 
 #[test]
 fn hotkey_tagging_applies_to_all_selected_rows() {
@@ -29,61 +24,39 @@ fn hotkey_tagging_applies_to_all_selected_rows() {
 }
 
 #[test]
-fn collection_hotkey_moves_selected_samples() {
-    let temp = tempdir().unwrap();
-    let _guard = ConfigBaseGuard::set(temp.path().to_path_buf());
-    let export_root = temp.path().join("export");
-    std::fs::create_dir_all(&export_root).unwrap();
+fn folder_hotkey_moves_selected_samples() {
     let (mut controller, source) = dummy_controller();
+    let destination = source.root.join("dest");
+    std::fs::create_dir_all(&destination).unwrap();
     controller.library.sources.push(source.clone());
+    controller.select_source_by_index(0);
     controller.cache_db(&source).unwrap();
-    controller.settings.collection_export_root = Some(export_root.clone());
-    controller.ui.collection_export_root = Some(export_root.clone());
     for name in ["one.wav", "two.wav"] {
         write_test_wav(&source.root.join(name), &[0.0]);
     }
+    write_test_wav(&destination.join("existing.wav"), &[0.0]);
     controller.set_wav_entries_for_tests(vec![
         sample_entry("one.wav", SampleTag::Neutral),
         sample_entry("two.wav", SampleTag::Neutral),
+        sample_entry("dest/existing.wav", SampleTag::Neutral),
     ]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
-    let mut collection = Collection::new("Hotkey");
-    collection.hotkey = Some(1);
-    let collection_id = collection.id.clone();
-    let export_dir = export_root.join(collection_export::collection_folder_name(&collection));
-    controller.library.collections.push(collection);
+    controller.bind_folder_hotkey(Path::new("dest"), Some(1));
     controller.focus_browser_row_only(0);
     controller.toggle_browser_row_selection(1);
-    let handled = controller.apply_collection_hotkey(1, FocusContext::SampleBrowser);
+    let handled = controller.apply_folder_hotkey(1, FocusContext::SampleBrowser);
     assert!(handled);
-    await_collection_move(&mut controller);
-    let collection = controller
-        .library
-        .collections
-        .iter()
-        .find(|item| item.id == collection_id)
-        .unwrap();
-    assert_eq!(collection.members.len(), 2);
-    assert!(export_dir.join("one.wav").exists());
-    assert!(export_dir.join("two.wav").exists());
+    assert!(destination.join("one.wav").exists());
+    assert!(destination.join("two.wav").exists());
     assert!(!source.root.join("one.wav").exists());
     assert!(!source.root.join("two.wav").exists());
-    assert!(controller.wav_index_for_path(&PathBuf::from("one.wav")).is_none());
-    assert!(controller.wav_index_for_path(&PathBuf::from("two.wav")).is_none());
-}
-
-fn await_collection_move(controller: &mut EguiController) {
-    let deadline = Instant::now() + Duration::from_secs(2);
-    while controller.runtime.jobs.collection_move_in_progress() && Instant::now() < deadline {
-        controller.poll_background_jobs();
-        std::thread::sleep(Duration::from_millis(5));
-    }
-    controller.poll_background_jobs();
-    assert!(
-        !controller.runtime.jobs.collection_move_in_progress(),
-        "collection move job did not finish"
-    );
+    assert!(controller
+        .wav_index_for_path(&PathBuf::from("dest/one.wav"))
+        .is_some());
+    assert!(controller
+        .wav_index_for_path(&PathBuf::from("dest/two.wav"))
+        .is_some());
 }
 
 #[test]

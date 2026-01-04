@@ -72,7 +72,7 @@ impl EguiApp {
             ) {
                 continue;
             }
-            if self.try_handle_collection_hotkey(ctx, press, focus, key_event.repeat) {
+            if self.try_handle_folder_hotkey(ctx, press, focus, key_event.repeat) {
                 continue;
             }
             if let Some(action) = actions
@@ -163,7 +163,7 @@ impl EguiApp {
         false
     }
 
-    fn try_handle_collection_hotkey(
+    fn try_handle_folder_hotkey(
         &mut self,
         ctx: &egui::Context,
         press: hotkeys::KeyPress,
@@ -176,7 +176,7 @@ impl EguiApp {
         let Some(hotkey) = hotkey_number_for_key(press.key) else {
             return false;
         };
-        if self.controller.apply_collection_hotkey(hotkey, focus) {
+        if self.controller.apply_folder_hotkey(hotkey, focus) {
             consume_press(ctx, press);
             return true;
         }
@@ -290,6 +290,7 @@ fn keypress_modifiers(press: &hotkeys::KeyPress) -> egui::Modifiers {
 
 fn hotkey_number_for_key(key: egui::Key) -> Option<u8> {
     match key {
+        egui::Key::Num0 => Some(0),
         egui::Key::Num1 => Some(1),
         egui::Key::Num2 => Some(2),
         egui::Key::Num3 => Some(3),

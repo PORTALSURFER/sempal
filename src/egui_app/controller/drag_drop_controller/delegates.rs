@@ -19,6 +19,12 @@ impl EguiController {
         self.drag_drop().start_samples_drag(samples, label, pos);
     }
 
+    /// Move sample rows into a target folder (used by folder hotkeys).
+    pub fn move_samples_to_folder(&mut self, samples: Vec<DragSample>, target_folder: PathBuf) {
+        self.drag_drop()
+            .handle_samples_drop_to_folder(&samples, &target_folder);
+    }
+
     /// Begin dragging a folder row from the UI.
     pub fn start_folder_drag(
         &mut self,

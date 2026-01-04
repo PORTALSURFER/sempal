@@ -116,6 +116,7 @@ impl EguiApp {
             ui.label(RichText::new(row.name.clone()).color(palette.text_primary));
             ui.separator();
             let mut close_menu = false;
+            self.folder_hotkey_menu(ui, &row.path, row.hotkey);
             if ui.button("Open in Explorer").clicked() {
                 self.controller.open_folder_in_file_explorer(&row.path);
                 close_menu = true;
@@ -151,6 +152,15 @@ impl EguiApp {
             let palette = style::palette();
             ui.label(RichText::new(".").color(palette.text_primary));
             ui.separator();
+            let root_hotkey = self
+                .controller
+                .ui
+                .sources
+                .folders
+                .rows
+                .first()
+                .and_then(|row| row.hotkey);
+            self.folder_hotkey_menu(ui, Path::new(""), root_hotkey);
             if ui.button("Open in Explorer").clicked() {
                 self.controller.open_folder_in_file_explorer(Path::new(""));
                 ui.close();
@@ -159,6 +169,28 @@ impl EguiApp {
             if ui.button("New folder at root").clicked() {
                 self.controller.start_new_folder_at_root();
                 ui.close();
+            }
+        });
+    }
+
+    fn folder_hotkey_menu(&mut self, ui: &mut Ui, path: &Path, current: Option<u8>) {
+        ui.menu_button("Bind hotkey", |ui| {
+            for slot in 0..=9 {
+                let bound = current == Some(slot);
+                if ui
+                    .selectable_label(bound, slot.to_string())
+                    .clicked()
+                {
+                    self.controller.bind_folder_hotkey(path, Some(slot));
+                    ui.close_menu();
+                }
+            }
+            if current.is_some() {
+                ui.separator();
+                if ui.button("Clear hotkey").clicked() {
+                    self.controller.bind_folder_hotkey(path, None);
+                    ui.close_menu();
+                }
             }
         });
     }

@@ -21,6 +21,7 @@ pub(in crate::egui_app::controller) struct FolderBrowserModel {
     pub(super) manual_folders: BTreeSet<PathBuf>,
     pub(super) search_query: String,
     pub(super) last_disk_refresh: Option<Instant>,
+    pub(super) hotkeys: BTreeMap<u8, PathBuf>,
 }
 
 impl FolderBrowserModel {
@@ -64,6 +65,9 @@ impl EguiController {
             model
                 .manual_folders
                 .retain(|path| source.root.join(path).is_dir());
+            model
+                .hotkeys
+                .retain(|_, path| is_root_path(path) || source.root.join(path).is_dir());
             model.available = available;
             model.last_disk_refresh = Some(Instant::now());
             for path in model.manual_folders.iter().cloned() {
@@ -129,8 +133,18 @@ impl EguiController {
         Some(self.ui_cache.folders.models.entry(id).or_default())
     }
 
+    pub(super) fn current_folder_model(&self) -> Option<&FolderBrowserModel> {
+        let id = self.selection_state.ctx.selected_source.as_ref()?;
+        self.ui_cache.folders.models.get(id)
+    }
+
     pub(super) fn build_folder_rows(&mut self, model: &FolderBrowserModel) {
         self.ui.sources.folders.search_query = model.search_query.clone();
+        let hotkey_lookup: BTreeMap<PathBuf, u8> = model
+            .hotkeys
+            .iter()
+            .map(|(slot, path)| (path.clone(), *slot))
+            .collect();
         let tree = self.build_folder_tree(&model.available);
         let searching = !model.search_query.trim().is_empty();
         let mut folder_rows = Vec::new();
@@ -139,13 +153,22 @@ impl EguiController {
         } else {
             model.expanded.clone()
         };
-        Self::flatten_folder_tree(Path::new(""), 0, &tree, model, &expanded, &mut folder_rows);
+        Self::flatten_folder_tree(
+            Path::new(""),
+            0,
+            &tree,
+            model,
+            &expanded,
+            &hotkey_lookup,
+            &mut folder_rows,
+        );
         if searching {
             folder_rows = self.filter_folder_rows(folder_rows, &model.search_query);
         }
         let mut rows = Vec::new();
         if self.selection_state.ctx.selected_source.is_some() && !searching {
             let has_children = !folder_rows.is_empty();
+            let hotkey = hotkey_lookup.get(Path::new("")).copied();
             rows.push(FolderRowView {
                 path: PathBuf::new(),
                 name: ".".into(),
@@ -154,6 +177,7 @@ impl EguiController {
                 expanded: true,
                 selected: model.selected.contains(Path::new("")),
                 negated: model.negated.contains(Path::new("")),
+                hotkey,
                 is_root: true,
             });
         }
@@ -225,6 +249,7 @@ impl EguiController {
         tree: &BTreeMap<PathBuf, Vec<PathBuf>>,
         model: &FolderBrowserModel,
         expanded: &BTreeSet<PathBuf>,
+        hotkeys: &BTreeMap<PathBuf, u8>,
         rows: &mut Vec<FolderRowView>,
     ) {
         let Some(children) = tree.get(parent) else {
@@ -235,6 +260,7 @@ impl EguiController {
             let is_expanded = expanded.contains(child);
             let selected = model.selected.contains(child);
             let negated = model.negated.contains(child);
+            let hotkey = hotkeys.get(child).copied();
             let name = child
                 .file_name()
                 .and_then(|n| n.to_str())
@@ -248,11 +274,20 @@ impl EguiController {
                 expanded: is_expanded,
                 selected,
                 negated,
+                hotkey,
                 is_root: false,
             };
             rows.push(row);
             if has_children && is_expanded {
-                Self::flatten_folder_tree(child, depth + 1, tree, model, expanded, rows);
+                Self::flatten_folder_tree(
+                    child,
+                    depth + 1,
+                    tree,
+                    model,
+                    expanded,
+                    hotkeys,
+                    rows,
+                );
             }
         }
     }

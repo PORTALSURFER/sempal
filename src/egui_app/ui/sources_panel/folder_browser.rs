@@ -1,5 +1,5 @@
 use super::EguiApp;
-use super::helpers::{RowBackground, list_row_height, render_list_row};
+use super::helpers::{NumberColumn, RowBackground, list_row_height, number_column_width, render_list_row};
 use super::style;
 use super::utils::{folder_row_label, sample_housing_folders};
 use crate::egui_app::state::{DragSource, DragTarget, FocusContext};
@@ -59,6 +59,7 @@ impl EguiApp {
         let rows = self.controller.ui.sources.folders.rows.clone();
         let root_row = rows.first().filter(|row| row.is_root).cloned();
         let has_folder_rows = rows.iter().any(|row| !row.is_root);
+        let show_hotkey_column = rows.iter().any(|row| row.hotkey.is_some());
         let mut inline_parent = self
             .controller
             .ui
@@ -78,6 +79,11 @@ impl EguiApp {
             ui.set_min_height(height);
             ui.set_max_height(height);
             let row_height = list_row_height(ui);
+            let hotkey_width = if show_hotkey_column {
+                number_column_width(10, ui)
+            } else {
+                0.0
+            };
             let active_folder_target = match &self.controller.ui.drag.active_target {
                 DragTarget::FolderPanel { folder } => folder
                     .clone()
@@ -86,6 +92,11 @@ impl EguiApp {
             };
             if let Some(root_row) = root_row.clone() {
                 let row_width = ui.available_width();
+                let label_width = if show_hotkey_column {
+                    row_width - hotkey_width
+                } else {
+                    row_width
+                };
                 let is_focused = self.controller.ui.sources.folders.focused == Some(0);
                 let is_selected = root_row.selected;
                 let bg = RowBackground::from_option(if is_focused || is_selected {
@@ -93,7 +104,8 @@ impl EguiApp {
                 } else {
                     None
                 });
-                let label = folder_row_label(&root_row, row_width, ui);
+                let label = folder_row_label(&root_row, label_width, ui);
+                let hotkey_text = root_row.hotkey.map(|key| key.to_string()).unwrap_or_default();
                 let response = render_list_row(
                     ui,
                     super::helpers::ListRow {
@@ -104,7 +116,11 @@ impl EguiApp {
                         skip_hover: false,
                         text_color: style::high_contrast_text(),
                         sense: egui::Sense::click_and_drag(),
-                        number: None,
+                        number: show_hotkey_column.then_some(NumberColumn {
+                            text: hotkey_text.as_str(),
+                            width: hotkey_width,
+                            color: style::palette().text_muted,
+                        }),
                         marker: None,
                     },
                 );
@@ -183,7 +199,7 @@ impl EguiApp {
                 ui.add_space(2.0);
             }
             let inline_parent = inline_parent_for_rows.clone();
-            let scroll = egui::ScrollArea::vertical()
+                let scroll = egui::ScrollArea::vertical()
                 .id_salt("folder_browser_scroll")
                 .max_height(height);
             scroll.show(ui, |ui| {
@@ -243,16 +259,22 @@ impl EguiApp {
                         None
                     });
                     let row_width = ui.available_width();
+                    let label_width = if show_hotkey_column {
+                        row_width - hotkey_width
+                    } else {
+                        row_width
+                    };
                     let label = if rename_match {
                         String::new()
                     } else {
-                        folder_row_label(row, row_width, ui)
+                        folder_row_label(row, label_width, ui)
                     };
                     let sense = if rename_match {
                         egui::Sense::hover()
                     } else {
                         egui::Sense::click_and_drag()
                     };
+                    let hotkey_text = row.hotkey.map(|key| key.to_string()).unwrap_or_default();
                     let response = render_list_row(
                         ui,
                         super::helpers::ListRow {
@@ -263,7 +285,11 @@ impl EguiApp {
                             skip_hover: false,
                             text_color: style::high_contrast_text(),
                             sense,
-                            number: None,
+                            number: show_hotkey_column.then_some(NumberColumn {
+                                text: hotkey_text.as_str(),
+                                width: hotkey_width,
+                                color: style::palette().text_muted,
+                            }),
                             marker: None,
                         },
                     );

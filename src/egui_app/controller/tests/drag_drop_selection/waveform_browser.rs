@@ -138,6 +138,7 @@ fn selection_drop_to_browser_creates_clip_in_focused_folder() {
             expanded: true,
             selected: false,
             negated: false,
+            hotkey: None,
             is_root: true,
         },
         crate::egui_app::state::FolderRowView {
@@ -148,6 +149,7 @@ fn selection_drop_to_browser_creates_clip_in_focused_folder() {
             expanded: false,
             selected: false,
             negated: false,
+            hotkey: None,
             is_root: false,
         },
     ];
