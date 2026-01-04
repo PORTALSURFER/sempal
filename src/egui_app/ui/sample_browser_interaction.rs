@@ -40,8 +40,7 @@ impl EguiApp {
         let drag_path = path.to_path_buf();
         let drag_label = view_model::sample_display_label(path);
         let selected_paths = self.controller.ui.browser.selected_paths.clone();
-        let is_multi_drag =
-            selected_paths.len() > 1 && selected_paths.iter().any(|p| p == &drag_path);
+        let is_multi_drag = selected_paths.len() > 1;
         let pending_path = drag_path.clone();
         let pending_label = drag_label.clone();
         let match_path = drag_path.clone();
@@ -77,9 +76,7 @@ impl EguiApp {
             },
             move |pos, controller| {
                 let source = controller.current_source()?;
-                let payload = if pending_selected.len() > 1
-                    && pending_selected.iter().any(|path| path == &pending_path)
-                {
+                let payload = if pending_selected.len() > 1 {
                     DragPayload::Samples {
                         samples: pending_selected
                             .iter()
