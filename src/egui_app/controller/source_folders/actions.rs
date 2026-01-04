@@ -1,6 +1,7 @@
 use super::*;
 use crate::egui_app::state::{DragSample, FocusContext, FolderActionPrompt, InlineFolderCreation};
 use rfd::{MessageButtons, MessageDialog, MessageDialogResult, MessageLevel};
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -192,6 +193,7 @@ impl EguiController {
         fs::rename(&absolute_old, &absolute_new)
             .map_err(|err| format!("Failed to rename folder: {err}"))?;
         self.rewrite_entries_for_folder(&source, target, &new_relative, &affected)?;
+        self.remap_folder_state(target, &new_relative);
         self.remap_manual_folders(target, &new_relative);
         self.refresh_folder_browser();
         self.set_status(
@@ -248,6 +250,7 @@ impl EguiController {
             let _ = fs::rename(&absolute_new, &absolute_old);
             return Err(err);
         }
+        self.remap_folder_state(folder, &new_relative);
         self.remap_manual_folders(folder, &new_relative);
         self.refresh_folder_browser();
         self.focus_folder_by_path(&new_relative);
@@ -551,6 +554,20 @@ impl EguiController {
         self.clear_browser_selection();
         self.apply_folder_move_focus(next_focus);
     }
+
+    fn remap_folder_state(&mut self, old: &Path, new: &Path) {
+        let Some(model) = self.current_folder_model_mut() else {
+            return;
+        };
+        remap_path_set(&mut model.selected, old, new);
+        remap_path_set(&mut model.negated, old, new);
+        remap_path_set(&mut model.expanded, old, new);
+        remap_path_map(&mut model.hotkeys, old, new);
+        model.focused = remap_path_option(model.focused.take(), old, new);
+        model.selection_anchor = remap_path_option(model.selection_anchor.take(), old, new);
+        self.ui.sources.folders.last_focused_path =
+            remap_path_option(self.ui.sources.folders.last_focused_path.take(), old, new);
+    }
 }
 
 enum FolderHotkeyTarget {
@@ -564,4 +581,43 @@ fn normalize_folder_hotkey(hotkey: Option<u8>) -> Result<Option<u8>, String> {
         Some(slot) if slot <= 9 => Ok(Some(slot)),
         Some(_) => Err("Folder hotkey must be between 0 and 9".into()),
     }
+}
+
+fn remap_path_set(set: &mut BTreeSet<PathBuf>, old: &Path, new: &Path) {
+    let descendants: Vec<PathBuf> = set
+        .iter()
+        .filter(|path| path.starts_with(old))
+        .cloned()
+        .collect();
+    if descendants.is_empty() {
+        return;
+    }
+    set.retain(|path| !path.starts_with(old));
+    for path in descendants {
+        let suffix = path.strip_prefix(old).unwrap_or_else(|_| Path::new(""));
+        set.insert(new.join(suffix));
+    }
+}
+
+fn remap_path_map(map: &mut BTreeMap<u8, PathBuf>, old: &Path, new: &Path) {
+    let updates: Vec<(u8, PathBuf)> = map
+        .iter()
+        .filter(|(_, path)| path.starts_with(old))
+        .map(|(slot, path)| {
+            let suffix = path.strip_prefix(old).unwrap_or_else(|_| Path::new(""));
+            (*slot, new.join(suffix))
+        })
+        .collect();
+    for (slot, path) in updates {
+        map.insert(slot, path);
+    }
+}
+
+fn remap_path_option(value: Option<PathBuf>, old: &Path, new: &Path) -> Option<PathBuf> {
+    let value = value?;
+    if !value.starts_with(old) {
+        return Some(value);
+    }
+    let suffix = value.strip_prefix(old).unwrap_or_else(|_| Path::new(""));
+    Some(new.join(suffix))
 }
