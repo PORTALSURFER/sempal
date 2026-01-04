@@ -1,8 +1,8 @@
-use super::enqueue_helpers::{fast_content_hash, now_epoch_seconds};
+use super::enqueue_helpers::now_epoch_seconds;
+use super::{invalidate, persist, scan};
 use crate::egui_app::controller::analysis_jobs::db;
 use crate::egui_app::controller::analysis_jobs::types::AnalysisProgress;
 use rusqlite::params;
-use std::path::Path;
 use tracing::info;
 
 struct EnqueueSamplesRequest<'a> {
@@ -32,16 +32,9 @@ fn enqueue_samples(
         );
         return Ok((0, db::current_progress(&conn)?));
     }
-    let sample_metadata: Vec<db::SampleMetadata> = request
-        .changed_samples
-        .iter()
-        .map(|sample| db::SampleMetadata {
-            sample_id: db::build_sample_id(request.source.id.as_str(), &sample.relative_path),
-            content_hash: sample.content_hash.clone(),
-            size: sample.file_size,
-            mtime_ns: sample.modified_ns,
-        })
-        .collect();
+
+    let sample_metadata =
+        scan::sample_metadata_for_changed_samples(request.source, request.changed_samples);
     let mut conn = db::open_source_db(&request.source.root)?;
     let sample_ids: Vec<String> = sample_metadata
         .iter()
@@ -49,37 +42,21 @@ fn enqueue_samples(
         .collect();
     let current_version = crate::analysis::version::analysis_version();
     let existing_states = db::sample_analysis_states(&conn, &sample_ids)?;
-    db::upsert_samples(&mut conn, &sample_metadata)?;
-    let mut invalidate = Vec::new();
-    let mut jobs = Vec::new();
-    for sample in &sample_metadata {
-        let state = existing_states.get(&sample.sample_id);
-        let hash_changed = state
-            .map(|state| state.content_hash != sample.content_hash)
-            .unwrap_or(true);
-        let analysis_stale = state
-            .and_then(|state| state.analysis_version.as_deref())
-            .map(|version| version != current_version)
-            .unwrap_or(true);
-        if hash_changed || analysis_stale {
-            invalidate.push(sample.sample_id.clone());
-            jobs.push((sample.sample_id.clone(), sample.content_hash.clone()));
-        }
-    }
-    if !invalidate.is_empty() {
-        db::invalidate_analysis_artifacts(&mut conn, &invalidate)?;
-    }
+    let (invalidate, jobs) = invalidate::collect_changed_sample_updates(
+        &sample_metadata,
+        &existing_states,
+        current_version,
+    );
 
     let created_at = now_epoch_seconds();
-    let inserted = db::enqueue_jobs(
+    persist::write_changed_samples(
         &mut conn,
+        &sample_metadata,
+        &invalidate,
         &jobs,
-        db::ANALYZE_SAMPLE_JOB_TYPE,
-        created_at,
         request.source.id.as_str(),
-    )?;
-    let progress = db::current_progress(&conn)?;
-    Ok((inserted, progress))
+        created_at,
+    )
 }
 
 struct EnqueueSourceRequest<'a> {
@@ -132,7 +109,7 @@ fn enqueue_source_backfill(
             return Ok((0, db::current_progress(&conn)?));
         }
     }
-    let staged_samples = stage_samples_for_source(request.source, true)?;
+    let staged_samples = scan::stage_samples_for_source(request.source, true)?;
     if staged_samples.is_empty() {
         info!(
             "Analysis backfill skipped: no staged samples (source_id={}, force_full={})",
@@ -167,7 +144,7 @@ fn enqueue_missing_features(
 ) -> Result<(usize, AnalysisProgress), String> {
     let mut conn = db::open_source_db(&request.source.root)?;
 
-    let staged_samples = stage_samples_for_source(request.source, false)?;
+    let staged_samples = scan::stage_samples_for_source(request.source, false)?;
     if staged_samples.is_empty() {
         return Ok((0, db::current_progress(&conn)?));
     }
@@ -196,37 +173,27 @@ fn enqueue_from_staged_samples(
         .iter()
         .map(|sample| (sample.sample_id.clone(), sample.clone()))
         .collect();
-    stage_backfill_samples(conn, &staged_samples)?;
+    persist::stage_backfill_samples(conn, &staged_samples)?;
     let (mut sample_metadata, mut jobs, mut invalidate) =
-        collect_backfill_updates(conn, job_type, force_full)?;
-    let failed_jobs = fetch_failed_backfill_jobs(conn, job_type, source_id)?;
-    let failed_count = failed_jobs.len();
-    if !failed_jobs.is_empty() {
-        let mut job_ids: std::collections::HashSet<String> =
-            jobs.iter().map(|(id, _)| id.clone()).collect();
-        let mut sample_ids: std::collections::HashSet<String> =
-            sample_metadata.iter().map(|sample| sample.sample_id.clone()).collect();
-        for sample_id in failed_jobs {
-            let Some(sample) = staged_index.get(&sample_id) else {
-                continue;
-            };
-            if job_ids.insert(sample_id.clone()) {
-                jobs.push((sample_id.clone(), sample.content_hash.clone()));
-            }
-            if sample_ids.insert(sample_id.clone()) {
-                sample_metadata.push(sample.clone());
-            }
-            invalidate.push(sample_id);
-        }
-    }
+        invalidate::collect_backfill_updates(conn, job_type, force_full)?;
+    let include_failed = force_full;
+    let failed_jobs = if include_failed {
+        invalidate::fetch_failed_backfill_jobs(conn, job_type, source_id)?
+    } else {
+        Vec::new()
+    };
+    let failed_count = invalidate::merge_failed_backfill_jobs(
+        &staged_index,
+        &mut sample_metadata,
+        &mut jobs,
+        &mut invalidate,
+        &failed_jobs,
+    );
     if !invalidate.is_empty() {
         invalidate.sort();
         invalidate.dedup();
     }
 
-    if !invalidate.is_empty() {
-        db::invalidate_analysis_artifacts(conn, &invalidate)?;
-    }
     if skip_when_no_jobs && jobs.is_empty() {
         info!(
             "Analysis backfill: no jobs to enqueue (staged={}, failed_requeued={}, source_id={}, job_type={}, force_full={})",
@@ -248,10 +215,16 @@ fn enqueue_from_staged_samples(
         job_type,
         force_full
     );
-    db::upsert_samples(conn, &sample_metadata)?;
-
     let created_at = now_epoch_seconds();
-    let inserted = db::enqueue_jobs(conn, &jobs, job_type, created_at, source_id)?;
+    let (inserted, progress) = persist::write_backfill_samples(
+        conn,
+        &sample_metadata,
+        &invalidate,
+        &jobs,
+        job_type,
+        source_id,
+        created_at,
+    )?;
     info!(
         "Analysis backfill enqueued (inserted={}, staged={}, jobs={}, failed_requeued={}, source_id={}, job_type={})",
         inserted,
@@ -261,308 +234,5 @@ fn enqueue_from_staged_samples(
         source_id,
         job_type
     );
-    let progress = db::current_progress(conn)?;
     Ok((inserted, progress))
-}
-
-fn fetch_failed_backfill_jobs(
-    conn: &mut rusqlite::Connection,
-    job_type: &str,
-    source_id: &str,
-) -> Result<Vec<String>, String> {
-    let mut failed = Vec::new();
-    let mut stmt = conn
-        .prepare(
-            "SELECT j.sample_id
-             FROM analysis_jobs j
-             JOIN wav_files w ON w.path = j.relative_path AND w.missing = 0
-             WHERE j.job_type = ?1
-               AND j.status = 'failed'
-               AND j.source_id = ?2",
-        )
-        .map_err(|err| format!("Prepare failed backfill job query failed: {err}"))?;
-    let mut rows = stmt
-        .query(params![job_type, source_id])
-        .map_err(|err| format!("Query failed backfill job rows failed: {err}"))?;
-    while let Some(row) = rows
-        .next()
-        .map_err(|err| format!("Query failed backfill job rows failed: {err}"))?
-    {
-        let sample_id: String = row.get(0).map_err(|err| err.to_string())?;
-        failed.push(sample_id);
-    }
-    Ok(failed)
-}
-
-fn stage_samples_for_source(
-    source: &crate::sample_sources::SampleSource,
-    include_missing_entries: bool,
-) -> Result<Vec<db::SampleMetadata>, String> {
-    let source_db = crate::sample_sources::SourceDatabase::open(&source.root)
-        .map_err(|err| err.to_string())?;
-    let mut entries = source_db.list_files().map_err(|err| err.to_string())?;
-    if !include_missing_entries {
-        entries.retain(|entry| !entry.missing);
-    }
-    if entries.is_empty() {
-        return Ok(Vec::new());
-    }
-    Ok(stage_samples_from_entries(source, &source_db, &entries))
-}
-
-fn sample_metadata_from_entry(
-    source_id: &str,
-    relative_path: &Path,
-    content_hash: Option<String>,
-    file_size: u64,
-    modified_ns: i64,
-) -> Option<db::SampleMetadata> {
-    let content_hash = match content_hash {
-        Some(hash) if !hash.trim().is_empty() => hash,
-        _ => fast_content_hash(file_size, modified_ns),
-    };
-    if content_hash.trim().is_empty() {
-        return None;
-    }
-    Some(db::SampleMetadata {
-        sample_id: db::build_sample_id(source_id, relative_path),
-        content_hash,
-        size: file_size,
-        mtime_ns: modified_ns,
-    })
-}
-
-fn stage_samples_from_entries(
-    source: &crate::sample_sources::SampleSource,
-    source_db: &crate::sample_sources::SourceDatabase,
-    entries: &[crate::sample_sources::WavEntry],
-) -> Vec<db::SampleMetadata> {
-    let mut staged_samples = Vec::with_capacity(entries.len());
-    for entry in entries {
-        let absolute = source.root.join(&entry.relative_path);
-        if !absolute.exists() {
-            if !entry.missing {
-                let _ = source_db.set_missing(&entry.relative_path, true);
-            }
-            continue;
-        }
-        if entry.missing {
-            let _ = source_db.set_missing(&entry.relative_path, false);
-        }
-        if let Some(metadata) = sample_metadata_from_entry(
-            source.id.as_str(),
-            &entry.relative_path,
-            entry.content_hash.clone(),
-            entry.file_size,
-            entry.modified_ns,
-        ) {
-            staged_samples.push(metadata);
-        }
-    }
-    staged_samples
-}
-
-fn stage_backfill_samples(
-    conn: &mut rusqlite::Connection,
-    samples: &[db::SampleMetadata],
-) -> Result<(), String> {
-    prepare_backfill_staging(conn)?;
-    const BATCH_SIZE: usize = 400;
-    for chunk in samples.chunks(BATCH_SIZE) {
-        let mut sql = String::from(
-            "INSERT INTO temp_backfill_samples (sample_id, content_hash, size, mtime_ns) VALUES ",
-        );
-        let mut params: Vec<rusqlite::types::Value> = Vec::with_capacity(chunk.len() * 4);
-        for (idx, sample) in chunk.iter().enumerate() {
-            if idx > 0 {
-                sql.push_str(", ");
-            }
-            let size = i64::try_from(sample.size)
-                .map_err(|_| "Sample size exceeds storage limits".to_string())?;
-            let base = idx * 4;
-            sql.push_str(&format!(
-                "(?{}, ?{}, ?{}, ?{})",
-                base + 1,
-                base + 2,
-                base + 3,
-                base + 4
-            ));
-            params.push(rusqlite::types::Value::from(sample.sample_id.clone()));
-            params.push(rusqlite::types::Value::from(sample.content_hash.clone()));
-            params.push(rusqlite::types::Value::from(size));
-            params.push(rusqlite::types::Value::from(sample.mtime_ns));
-        }
-        conn.execute(&sql, rusqlite::params_from_iter(params))
-            .map_err(|err| format!("Insert backfill staging rows failed: {err}"))?;
-    }
-    Ok(())
-}
-
-fn collect_backfill_updates(
-    conn: &mut rusqlite::Connection,
-    job_type: &str,
-    force_full: bool,
-) -> Result<(Vec<db::SampleMetadata>, Vec<(String, String)>, Vec<String>), String> {
-    if force_full {
-        let (sample_metadata, jobs) = fetch_force_backfill_jobs(conn, job_type)?;
-        return Ok((sample_metadata, jobs, Vec::new()));
-    }
-    let current_version = crate::analysis::version::analysis_version();
-    let invalidate = fetch_backfill_invalidations(conn, current_version)?;
-    let (sample_metadata, jobs) = fetch_backfill_jobs(
-        conn,
-        current_version,
-        job_type,
-        crate::analysis::embedding::EMBEDDING_MODEL_ID,
-    )?;
-    Ok((sample_metadata, jobs, invalidate))
-}
-
-fn fetch_force_backfill_jobs(
-    conn: &mut rusqlite::Connection,
-    job_type: &str,
-) -> Result<(Vec<db::SampleMetadata>, Vec<(String, String)>), String> {
-    let mut sample_metadata = Vec::new();
-    let mut jobs = Vec::new();
-    let mut stmt = conn
-        .prepare(
-            "SELECT t.sample_id, t.content_hash, t.size, t.mtime_ns
-             FROM temp_backfill_samples t
-             WHERE NOT EXISTS (
-                 SELECT 1
-                 FROM analysis_jobs j
-                 WHERE j.sample_id = t.sample_id
-                   AND j.job_type = ?1
-                   AND j.status IN ('pending','running')
-             )",
-        )
-        .map_err(|err| format!("Prepare full backfill job query failed: {err}"))?;
-    let mut rows = stmt
-        .query(params![job_type])
-        .map_err(|err| format!("Query full backfill job rows failed: {err}"))?;
-    while let Some(row) = rows
-        .next()
-        .map_err(|err| format!("Query full backfill job rows failed: {err}"))?
-    {
-        let sample_id: String = row.get(0).map_err(|err| err.to_string())?;
-        let content_hash: String = row.get(1).map_err(|err| err.to_string())?;
-        if content_hash.trim().is_empty() {
-            continue;
-        }
-        let size: i64 = row.get(2).map_err(|err| err.to_string())?;
-        let size = u64::try_from(size)
-            .map_err(|_| "Sample size exceeds storage limits".to_string())?;
-        let mtime_ns: i64 = row.get(3).map_err(|err| err.to_string())?;
-        sample_metadata.push(db::SampleMetadata {
-            sample_id: sample_id.clone(),
-            content_hash: content_hash.clone(),
-            size,
-            mtime_ns,
-        });
-        jobs.push((sample_id, content_hash));
-    }
-    Ok((sample_metadata, jobs))
-}
-
-fn prepare_backfill_staging(conn: &mut rusqlite::Connection) -> Result<(), String> {
-    conn.execute_batch(
-        "CREATE TEMP TABLE IF NOT EXISTS temp_backfill_samples (
-            sample_id TEXT PRIMARY KEY,
-            content_hash TEXT NOT NULL,
-            size INTEGER NOT NULL,
-            mtime_ns INTEGER NOT NULL
-        );
-        DELETE FROM temp_backfill_samples;",
-    )
-    .map_err(|err| format!("Prepare backfill staging table failed: {err}"))?;
-    Ok(())
-}
-
-fn fetch_backfill_invalidations(
-    conn: &mut rusqlite::Connection,
-    current_version: &str,
-) -> Result<Vec<String>, String> {
-    let mut invalidate = Vec::new();
-    let mut stmt = conn
-        .prepare(
-            "SELECT t.sample_id
-             FROM temp_backfill_samples t
-             JOIN features f ON f.sample_id = t.sample_id AND f.feat_version = 1
-             LEFT JOIN samples s ON s.sample_id = t.sample_id
-             WHERE s.sample_id IS NULL
-                OR s.analysis_version IS NULL
-                OR s.analysis_version != ?1
-                OR s.content_hash IS NULL
-                OR s.content_hash != t.content_hash",
-        )
-        .map_err(|err| format!("Prepare invalidate backfill query failed: {err}"))?;
-    let mut rows = stmt
-        .query(params![current_version])
-        .map_err(|err| format!("Query invalidate backfill rows failed: {err}"))?;
-    while let Some(row) = rows
-        .next()
-        .map_err(|err| format!("Query invalidate backfill rows failed: {err}"))?
-    {
-        let sample_id: String = row.get(0).map_err(|err| err.to_string())?;
-        invalidate.push(sample_id);
-    }
-    Ok(invalidate)
-}
-
-fn fetch_backfill_jobs(
-    conn: &mut rusqlite::Connection,
-    current_version: &str,
-    job_type: &str,
-    model_id: &str,
-) -> Result<(Vec<db::SampleMetadata>, Vec<(String, String)>), String> {
-    let mut sample_metadata = Vec::new();
-    let mut jobs = Vec::new();
-    let mut stmt = conn
-        .prepare(
-            "SELECT t.sample_id, t.content_hash, t.size, t.mtime_ns
-             FROM temp_backfill_samples t
-             LEFT JOIN features f ON f.sample_id = t.sample_id AND f.feat_version = 1
-             LEFT JOIN embeddings e ON e.sample_id = t.sample_id AND e.model_id = ?3
-             LEFT JOIN samples s ON s.sample_id = t.sample_id
-             WHERE (f.sample_id IS NULL
-                OR e.sample_id IS NULL
-                OR s.sample_id IS NULL
-                OR s.analysis_version IS NULL
-                OR s.analysis_version != ?1
-                OR s.content_hash IS NULL
-                OR s.content_hash != t.content_hash)
-               AND NOT EXISTS (
-                   SELECT 1
-                   FROM analysis_jobs j
-                   WHERE j.sample_id = t.sample_id
-                     AND j.job_type = ?2
-                     AND j.status IN ('pending','running')
-               )",
-        )
-        .map_err(|err| format!("Prepare backfill job query failed: {err}"))?;
-    let mut rows = stmt
-        .query(params![current_version, job_type, model_id])
-        .map_err(|err| format!("Query backfill job rows failed: {err}"))?;
-    while let Some(row) = rows
-        .next()
-        .map_err(|err| format!("Query backfill job rows failed: {err}"))?
-    {
-        let sample_id: String = row.get(0).map_err(|err| err.to_string())?;
-        let content_hash: String = row.get(1).map_err(|err| err.to_string())?;
-        if content_hash.trim().is_empty() {
-            continue;
-        }
-        let size: i64 = row.get(2).map_err(|err| err.to_string())?;
-        let size = u64::try_from(size)
-            .map_err(|_| "Sample size exceeds storage limits".to_string())?;
-        let mtime_ns: i64 = row.get(3).map_err(|err| err.to_string())?;
-        sample_metadata.push(db::SampleMetadata {
-            sample_id: sample_id.clone(),
-            content_hash: content_hash.clone(),
-            size,
-            mtime_ns,
-        });
-        jobs.push((sample_id, content_hash));
-    }
-    Ok((sample_metadata, jobs))
 }

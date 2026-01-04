@@ -211,7 +211,7 @@ fn backfill_full_enqueues_even_when_up_to_date() {
 }
 
 #[test]
-fn backfill_retries_failed_jobs() {
+fn backfill_skips_failed_jobs_when_not_forced() {
     let env = TestEnv::new();
     env.create_files(&["Pack/a.wav"]);
     seed_source_db(&env.source, &[("Pack/a.wav", "ha")]);
@@ -241,6 +241,49 @@ fn backfill_retries_failed_jobs() {
     .unwrap();
 
     let (inserted, _progress) = enqueue_jobs_for_source_backfill(&env.source).unwrap();
+    assert_eq!(inserted, 0);
+    let (status, last_error): (String, Option<String>) = conn
+        .query_row(
+            "SELECT status, last_error FROM analysis_jobs WHERE sample_id = ?1",
+            params![&sample_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(status, "failed");
+    assert!(last_error.is_some());
+}
+
+#[test]
+fn backfill_retries_failed_jobs_when_forced() {
+    let env = TestEnv::new();
+    env.create_files(&["Pack/a.wav"]);
+    seed_source_db(&env.source, &[("Pack/a.wav", "ha")]);
+
+    let conn = db::open_source_db(&env.source.root).unwrap();
+    clear_analysis_tables(&conn);
+    let version = crate::analysis::version::analysis_version();
+    let sample_id = sample_id(&env.source, "Pack/a.wav");
+    insert_sample_row(&conn, &sample_id, "ha", Some(version));
+    insert_features_row(&conn, &sample_id);
+    insert_embeddings_row(
+        &conn,
+        &sample_id,
+        crate::analysis::embedding::EMBEDDING_MODEL_ID,
+    );
+    conn.execute(
+        "INSERT INTO analysis_jobs (sample_id, source_id, relative_path, job_type, content_hash, status, attempts, created_at, last_error)
+         VALUES (?1, ?2, ?3, ?4, ?5, 'failed', 1, 0, 'boom')",
+        params![
+            &sample_id,
+            env.source.id.as_str(),
+            "Pack/a.wav",
+            db::ANALYZE_SAMPLE_JOB_TYPE,
+            "ha"
+        ],
+    )
+    .unwrap();
+
+    let (inserted, _progress) = enqueue_jobs_for_source_backfill_full(&env.source).unwrap();
     assert_eq!(inserted, 1);
     let (status, last_error): (String, Option<String>) = conn
         .query_row(

@@ -1,6 +1,9 @@
 mod enqueue_embeddings;
 mod enqueue_helpers;
+mod invalidate;
 mod enqueue_samples;
+mod persist;
+mod scan;
 
 pub(in crate::egui_app::controller) use enqueue_embeddings::{
     enqueue_jobs_for_embedding_backfill, enqueue_jobs_for_embedding_samples,
