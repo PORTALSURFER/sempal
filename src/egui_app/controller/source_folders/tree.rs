@@ -152,7 +152,7 @@ impl EguiController {
                 depth: 0,
                 has_children,
                 expanded: true,
-                selected: false,
+                selected: model.selected.contains(Path::new("")),
                 negated: model.negated.contains(Path::new("")),
                 is_root: true,
             });

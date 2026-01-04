@@ -53,7 +53,7 @@ impl EguiController {
             return;
         }
         if rows.get(row_index).is_some_and(|row| row.is_root) {
-            self.focus_folder_row(row_index);
+            self.replace_folder_selection(row_index);
             return;
         }
         let Some(anchor_idx) = self.folder_anchor_index(&rows) else {
@@ -146,8 +146,25 @@ impl EguiController {
             return;
         };
         if row.is_root {
-            self.focus_folder_row(row_index);
-            self.clear_folder_selection();
+            let (snapshot, selection_changed) = {
+                let Some(model) = self.current_folder_model_mut() else {
+                    return;
+                };
+                let before = model.selected.clone();
+                model.selected.insert(PathBuf::new());
+                if model.selection_anchor.is_none() {
+                    model.selection_anchor = Some(PathBuf::new());
+                }
+                model.focused = Some(PathBuf::new());
+                (model.clone(), before != model.selected)
+            };
+            self.ui.sources.folders.focused = Some(row_index);
+            self.ui.sources.folders.scroll_to = Some(row_index);
+            self.focus_folder_context();
+            self.build_folder_rows(&snapshot);
+            if selection_changed {
+                self.rebuild_browser_lists();
+            }
             return;
         }
         let path = row.path.clone();
@@ -234,8 +251,48 @@ impl EguiController {
             return;
         };
         if row.is_root {
-            self.focus_folder_row(row_index);
-            self.clear_folder_selection();
+            let (snapshot, selection_changed) = {
+                let Some(model) = self.current_folder_model_mut() else {
+                    return;
+                };
+                let before = model.selected.clone();
+                let root_path = PathBuf::new();
+                match mode {
+                    FolderSelectMode::Replace => {
+                        model.selected.clear();
+                        model.selected.insert(root_path.clone());
+                        model.selection_anchor = Some(root_path.clone());
+                    }
+                    FolderSelectMode::Toggle => {
+                        if model.selected.contains(&root_path) {
+                            model.selected.remove(&root_path);
+                            if model.selection_anchor.as_ref() == Some(&root_path) {
+                                model.selection_anchor = None;
+                            }
+                        } else {
+                            model.selected.insert(root_path.clone());
+                            if model.selection_anchor.is_none() {
+                                model.selection_anchor = Some(root_path.clone());
+                            }
+                        }
+                    }
+                }
+                if model.selected.is_empty() {
+                    model.selection_anchor = None;
+                }
+                let changed = before != model.selected;
+                if changed {
+                    model.focused = Some(root_path);
+                }
+                (model.clone(), changed)
+            };
+            self.ui.sources.folders.focused = Some(row_index);
+            self.ui.sources.folders.scroll_to = Some(row_index);
+            self.focus_folder_context();
+            self.build_folder_rows(&snapshot);
+            if selection_changed {
+                self.rebuild_browser_lists();
+            }
             return;
         }
         let path = row.path.clone();

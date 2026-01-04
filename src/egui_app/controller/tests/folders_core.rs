@@ -159,14 +159,18 @@ fn cancelling_new_folder_creation_clears_state() {
 }
 
 #[test]
-fn selecting_root_clears_folder_selection() -> Result<(), String> {
+fn selecting_root_filters_to_root_files() -> Result<(), String> {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source.clone());
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
     let folder = source.root.join("rooted");
     std::fs::create_dir_all(&folder).unwrap();
+    write_test_wav(&source.root.join("root.wav"), &[0.2, -0.2]);
     write_test_wav(&folder.join("clip.wav"), &[0.2, -0.2]);
-    controller.set_wav_entries_for_tests( vec![sample_entry("rooted/clip.wav", SampleTag::Neutral)]);
+    controller.set_wav_entries_for_tests(vec![
+        sample_entry("root.wav", SampleTag::Neutral),
+        sample_entry("rooted/clip.wav", SampleTag::Neutral),
+    ]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
     controller.refresh_folder_browser();
@@ -180,12 +184,20 @@ fn selecting_root_clears_folder_selection() -> Result<(), String> {
         .unwrap();
 
     controller.replace_folder_selection(folder_index);
-    assert!(!controller.selected_folder_paths().is_empty());
+    assert_eq!(
+        visible_paths(&mut controller),
+        vec![PathBuf::from("rooted/clip.wav")]
+    );
 
     controller.replace_folder_selection(0);
-
-    assert!(controller.selected_folder_paths().is_empty());
+    assert_eq!(visible_paths(&mut controller), vec![PathBuf::from("root.wav")]);
     assert_eq!(controller.ui.sources.folders.focused, Some(0));
+
+    controller.toggle_folder_row_selection(folder_index);
+    assert_eq!(
+        visible_paths(&mut controller),
+        vec![PathBuf::from("root.wav"), PathBuf::from("rooted/clip.wav")]
+    );
     Ok(())
 }
 

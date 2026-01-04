@@ -40,12 +40,30 @@ pub(in crate::egui_app::controller) fn folder_filter_accepts(
     selection: Option<&BTreeSet<PathBuf>>,
     negated: Option<&BTreeSet<PathBuf>>,
 ) -> bool {
-    let selected = selection
-        .map(|set| set.iter().any(|folder| relative_path.starts_with(folder)))
-        .unwrap_or(true);
     let has_selection = selection.is_some_and(|set| !set.is_empty());
-    if has_selection && !selected {
-        return false;
+    if has_selection {
+        let selection = selection.expect("checked above");
+        let root_selected = selection.contains(Path::new(""));
+        let selected = if root_selected {
+            let in_root = relative_path
+                .parent()
+                .unwrap_or(Path::new(""))
+                .as_os_str()
+                .is_empty();
+            let in_selected_folder = selection
+                .iter()
+                .filter(|folder| !folder.as_os_str().is_empty())
+                .any(|folder| relative_path.starts_with(folder));
+            in_root || in_selected_folder
+        } else {
+            selection
+                .iter()
+                .filter(|folder| !folder.as_os_str().is_empty())
+                .any(|folder| relative_path.starts_with(folder))
+        };
+        if !selected {
+            return false;
+        }
     }
     let excluded = negated
         .map(|set| is_negated_relative_path(relative_path, set))

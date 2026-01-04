@@ -151,9 +151,12 @@ impl EguiApp {
                     let modifiers = ui.input(|i| i.modifiers);
                     if modifiers.alt {
                         self.controller.toggle_folder_row_negation(0);
+                    } else if modifiers.shift {
+                        self.controller.select_folder_range(0);
+                    } else if modifiers.command || modifiers.ctrl {
+                        self.controller.toggle_folder_row_selection(0);
                     } else {
-                        self.controller.focus_folder_row(0);
-                        self.controller.clear_folder_selection();
+                        self.controller.replace_folder_selection(0);
                     }
                 } else if response.secondary_clicked() {
                     self.controller.focus_folder_row(0);
