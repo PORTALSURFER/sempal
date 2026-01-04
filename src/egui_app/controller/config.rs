@@ -123,6 +123,7 @@ impl EguiController {
                 }
             }
         }
+        self.sync_collection_exports_on_startup();
         self.selection_state.ctx.selected_source = cfg
             .core
             .last_selected_source

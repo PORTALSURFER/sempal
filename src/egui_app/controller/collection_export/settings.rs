@@ -181,4 +181,33 @@ impl EguiController {
         }
         self.persist_config("Failed to save collection export root")
     }
+
+    pub(in crate::egui_app::controller) fn sync_collection_exports_on_startup(&mut self) {
+        let Some(root) = self.settings.collection_export_root.as_deref() else {
+            return;
+        };
+        let mut errors = Vec::new();
+        if let Err(err) = self.sync_collections_from_export_root_path(root) {
+            errors.push(err);
+        }
+        let export_root = self.settings.collection_export_root.as_deref();
+        let collection_ids: Vec<_> = self
+            .library
+            .collections
+            .iter()
+            .filter(|collection| super::resolved_export_dir(collection, export_root).is_some())
+            .map(|collection| collection.id.clone())
+            .collect();
+        for collection_id in collection_ids {
+            if let Err(err) = super::reconcile::reconcile_collection_export(self, &collection_id) {
+                errors.push(err);
+            }
+        }
+        if !errors.is_empty() {
+            self.set_status(
+                format!("Collection export sync warnings: {}", errors.join("; ")),
+                StatusTone::Warning,
+            );
+        }
+    }
 }
