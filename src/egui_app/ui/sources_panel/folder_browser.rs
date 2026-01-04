@@ -87,7 +87,8 @@ impl EguiApp {
             if let Some(root_row) = root_row.clone() {
                 let row_width = ui.available_width();
                 let is_focused = self.controller.ui.sources.folders.focused == Some(0);
-                let bg = RowBackground::from_option(if is_focused {
+                let is_selected = root_row.selected;
+                let bg = RowBackground::from_option(if is_focused || is_selected {
                     Some(style::row_selected_fill())
                 } else {
                     None
@@ -113,6 +114,15 @@ impl EguiApp {
                 }
                 if root_row.negated {
                     paint_negation_marker(ui, response.rect);
+                }
+                if is_selected {
+                    let marker_width = 4.0;
+                    let marker_rect = egui::Rect::from_min_max(
+                        response.rect.left_top(),
+                        response.rect.left_top() + egui::vec2(marker_width, row_height),
+                    );
+                    ui.painter()
+                        .rect_filled(marker_rect, 0.0, style::selection_marker_fill());
                 }
                 if scroll_to == Some(0) {
                     ui.scroll_to_rect(response.rect, None);
