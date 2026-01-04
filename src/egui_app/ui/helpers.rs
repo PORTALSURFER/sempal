@@ -188,7 +188,9 @@ pub(super) fn render_inline_text_edit(
     }
     let enter_pressed = ui.input(|i| i.key_pressed(egui::Key::Enter));
     let escape_pressed = ui.input(|i| i.key_pressed(egui::Key::Escape));
-    if enter_pressed && (response.has_focus() || response.lost_focus()) {
+    let submit = (response.has_focus() && enter_pressed)
+        || (response.lost_focus() && enter_pressed);
+    if submit {
         InlineTextEditAction::Submit
     } else if escape_pressed && (response.has_focus() || response.lost_focus()) {
         InlineTextEditAction::Cancel
