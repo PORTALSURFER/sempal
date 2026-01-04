@@ -147,12 +147,6 @@ impl EguiApp {
             .max_width(520.0)
             .show(ctx, |ui| self.render_sources_panel(ui));
         self.consume_source_panel_drops(ctx);
-        egui::SidePanel::right("collections")
-            .resizable(true)
-            .default_width(260.0)
-            .min_width(220.0)
-            .max_width(560.0)
-            .show(ctx, |ui| self.render_collections_panel(ui));
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.set_min_height(ui.available_height());
             self.render_center(ui);
