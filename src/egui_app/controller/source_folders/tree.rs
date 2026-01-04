@@ -3,6 +3,7 @@ use crate::egui_app::state::FolderRowView;
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -56,20 +57,23 @@ impl EguiController {
         };
         let pending_load = self.runtime.jobs.wav_load_pending_for(&source.id);
         let empty_entries = self.wav_entries_len() == 0;
-        let cached_available = {
+        let now = Instant::now();
+        let (cached_available, last_disk_refresh) = {
             let model = self
                 .ui_cache
                 .folders
                 .models
                 .entry(source_id.clone())
                 .or_default();
-            model.available.clone()
+            (model.available.clone(), model.last_disk_refresh)
         };
-        let reuse_available = empty_entries && !cached_available.is_empty();
-        let available = if reuse_available || (pending_load && empty_entries) {
+        let disk_refresh_due = last_disk_refresh
+            .map_or(true, |last| now.duration_since(last) >= Duration::from_secs(2));
+        let reuse_available = empty_entries && !cached_available.is_empty() && !disk_refresh_due;
+        let available = if reuse_available || (pending_load && empty_entries && !disk_refresh_due) {
             cached_available
         } else {
-            self.collect_folders(&source.root)
+            self.collect_folders(&source.root, disk_refresh_due)
         };
         let snapshot = {
             let model = self
@@ -85,7 +89,9 @@ impl EguiController {
                 .hotkeys
                 .retain(|_, path| is_root_path(path) || source.root.join(path).is_dir());
             model.available = available;
-            model.last_disk_refresh = Some(Instant::now());
+            if disk_refresh_due {
+                model.last_disk_refresh = Some(now);
+            }
             for path in model.manual_folders.iter().cloned() {
                 model.available.insert(path);
             }
@@ -207,7 +213,7 @@ impl EguiController {
         self.ui.sources.folders.scroll_to = focused;
     }
 
-    fn collect_folders(&mut self, source_root: &Path) -> BTreeSet<PathBuf> {
+    fn collect_folders(&mut self, source_root: &Path, include_disk: bool) -> BTreeSet<PathBuf> {
         let mut candidates = BTreeSet::new();
         for index in 0..self.wav_entries_len() {
             let Some(entry) = self.wav_entry(index) else {
@@ -227,6 +233,9 @@ impl EguiController {
             if source_root.join(&path).is_dir() {
                 folders.insert(path);
             }
+        }
+        if include_disk {
+            Self::collect_disk_folders(source_root, PathBuf::new(), &mut folders);
         }
         folders
     }
@@ -305,6 +314,31 @@ impl EguiController {
                     rows,
                 );
             }
+        }
+    }
+
+    fn collect_disk_folders(root: &Path, parent: PathBuf, folders: &mut BTreeSet<PathBuf>) {
+        let Ok(entries) = fs::read_dir(root) else {
+            return;
+        };
+        for entry in entries {
+            let Ok(entry) = entry else {
+                continue;
+            };
+            let Ok(file_type) = entry.file_type() else {
+                continue;
+            };
+            if !file_type.is_dir() {
+                continue;
+            }
+            let name = entry.file_name();
+            let relative = if parent.as_os_str().is_empty() {
+                PathBuf::from(name)
+            } else {
+                parent.join(&name)
+            };
+            folders.insert(relative.clone());
+            Self::collect_disk_folders(&entry.path(), relative, folders);
         }
     }
 }

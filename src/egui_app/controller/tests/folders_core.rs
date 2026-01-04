@@ -339,6 +339,9 @@ fn folder_focus_clears_when_context_changes() -> Result<(), String> {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source.clone());
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
+    let folder = source.root.join("one");
+    std::fs::create_dir_all(&folder).unwrap();
+    write_test_wav(&folder.join("sample.wav"), &[0.2, -0.2]);
     controller.set_wav_entries_for_tests( vec![sample_entry("one/sample.wav", SampleTag::Neutral)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();

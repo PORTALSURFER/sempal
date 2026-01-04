@@ -328,6 +328,7 @@ impl EguiController {
         self.update_manual_folders(|set| {
             set.retain(|path| !path.starts_with(target));
         });
+        self.prune_folder_state(target);
         self.refresh_folder_browser();
         if let Some(path) = next_focus {
             self.focus_folder_by_path(&path);
@@ -566,6 +567,41 @@ impl EguiController {
         model.selection_anchor = remap_path_option(model.selection_anchor.take(), old, new);
         self.ui.sources.folders.last_focused_path =
             remap_path_option(self.ui.sources.folders.last_focused_path.take(), old, new);
+    }
+
+    fn prune_folder_state(&mut self, target: &Path) {
+        let Some(model) = self.current_folder_model_mut() else {
+            return;
+        };
+        model.selected.retain(|path| !path.starts_with(target));
+        model.negated.retain(|path| !path.starts_with(target));
+        model.expanded.retain(|path| !path.starts_with(target));
+        model.available.retain(|path| !path.starts_with(target));
+        model.hotkeys.retain(|_, path| !path.starts_with(target));
+        if model
+            .focused
+            .as_ref()
+            .is_some_and(|path| path.starts_with(target))
+        {
+            model.focused = None;
+        }
+        if model
+            .selection_anchor
+            .as_ref()
+            .is_some_and(|path| path.starts_with(target))
+        {
+            model.selection_anchor = None;
+        }
+        if self
+            .ui
+            .sources
+            .folders
+            .last_focused_path
+            .as_ref()
+            .is_some_and(|path| path.starts_with(target))
+        {
+            self.ui.sources.folders.last_focused_path = None;
+        }
     }
 }
 
