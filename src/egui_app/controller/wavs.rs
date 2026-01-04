@@ -112,7 +112,13 @@ impl EguiController {
             let entries = db
                 .list_files_page(page_size, offset)
                 .map_err(|err| err.to_string())?;
-            for (idx, entry) in entries.iter().enumerate() {
+            self.wav_entries.insert_page(page_index, entries);
+            let page = self
+                .wav_entries
+                .pages
+                .get(&page_index)
+                .ok_or_else(|| "Failed to cache wav entries page".to_string())?;
+            for (idx, entry) in page.iter().enumerate() {
                 visit(offset + idx, entry);
             }
         }
