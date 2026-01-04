@@ -23,7 +23,7 @@ pub(super) fn default_audio_input() -> AudioInputConfig {
 }
 
 pub(super) fn default_max_analysis_duration_seconds() -> f32 {
-    30.0
+    300.0
 }
 
 pub(super) fn default_analysis_worker_count() -> u32 {
