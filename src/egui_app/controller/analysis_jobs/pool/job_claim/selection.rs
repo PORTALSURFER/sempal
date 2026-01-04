@@ -43,6 +43,23 @@ impl ClaimSelector {
         }
     }
 
+    #[cfg(test)]
+    pub(super) fn with_sources_for_tests(
+        sources: Vec<SourceClaimDb>,
+        claim_batch: usize,
+        reset_done: Arc<Mutex<HashSet<PathBuf>>>,
+    ) -> Self {
+        Self {
+            last_source_count: sources.len(),
+            sources,
+            last_refresh: Instant::now(),
+            next_source: 0,
+            local_queue: VecDeque::new(),
+            claim_batch: claim_batch.max(1),
+            reset_done,
+        }
+    }
+
     /// Selects the next job if one is available.
     pub(super) fn select_next(
         &mut self,
