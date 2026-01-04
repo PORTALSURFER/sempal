@@ -2,6 +2,7 @@ mod geometry;
 mod render;
 
 use crate::egui_app::state::WaveformView;
+use crate::egui_app::ui::EguiApp;
 use crate::selection::{SelectionEdge, SelectionRange};
 use eframe::egui::{self, Color32};
 
