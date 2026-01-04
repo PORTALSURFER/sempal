@@ -228,8 +228,8 @@ fn backfill_skips_failed_jobs_when_not_forced() {
         crate::analysis::embedding::EMBEDDING_MODEL_ID,
     );
     conn.execute(
-        "INSERT INTO analysis_jobs (sample_id, source_id, relative_path, job_type, content_hash, status, attempts, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, 'failed', 1, 0)",
+        "INSERT INTO analysis_jobs (sample_id, source_id, relative_path, job_type, content_hash, status, attempts, created_at, last_error)
+         VALUES (?1, ?2, ?3, ?4, ?5, 'failed', 1, 0, 'boom')",
         params![
             &sample_id,
             env.source.id.as_str(),
