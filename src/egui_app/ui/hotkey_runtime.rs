@@ -26,7 +26,16 @@ impl EguiApp {
             self.controller.ui.collections.pending_action,
             Some(crate::egui_app::state::CollectionActionPrompt::Rename { .. })
         );
-        if collection_rename_active {
+        let folder_rename_active = matches!(
+            self.controller.ui.sources.folders.pending_action,
+            Some(crate::egui_app::state::FolderActionPrompt::Rename { .. })
+        );
+        let folder_create_active = self.controller.ui.sources.folders.new_folder.is_some();
+        let browser_rename_active = matches!(
+            self.controller.ui.browser.pending_action,
+            Some(crate::egui_app::state::SampleBrowserActionPrompt::Rename { .. })
+        );
+        if collection_rename_active || folder_rename_active || folder_create_active || browser_rename_active {
             return;
         }
         let wants_text_input = ctx.wants_keyboard_input();
