@@ -180,13 +180,26 @@ impl EguiController {
             return Err("Source folder missing; remap source before removing dead links".into());
         }
         self.ensure_missing_lookup_for_source(source)?;
-        let missing_paths: Vec<PathBuf> = self
+        let mut missing_paths: Vec<PathBuf> = self
             .library
             .missing
             .wavs
             .get(&source.id)
             .map(|paths| paths.iter().cloned().collect())
             .unwrap_or_default();
+        if missing_paths.is_empty()
+            && self.selection_state.ctx.selected_source.as_ref() == Some(&source.id)
+        {
+            for page in self.wav_entries.pages.values() {
+                for entry in page {
+                    if entry.missing {
+                        missing_paths.push(entry.relative_path.clone());
+                    }
+                }
+            }
+            missing_paths.sort();
+            missing_paths.dedup();
+        }
         if missing_paths.is_empty() {
             return Ok(0);
         }

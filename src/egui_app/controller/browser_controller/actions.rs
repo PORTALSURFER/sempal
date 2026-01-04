@@ -176,6 +176,7 @@ impl BrowserActions for BrowserController<'_> {
     fn remove_dead_link_browser_samples(&mut self, rows: &[usize]) -> Result<(), String> {
         let next_focus = self.next_browser_focus_after_delete(rows);
         let (contexts, mut last_error) = self.resolve_unique_browser_contexts(rows);
+        let mut removed = 0;
         for ctx in contexts {
             let is_dead_link = ctx.entry.missing || !ctx.absolute_path.exists();
             if !is_dead_link {
@@ -183,6 +184,8 @@ impl BrowserActions for BrowserController<'_> {
             }
             if let Err(err) = self.try_remove_dead_link_browser_sample_ctx(&ctx) {
                 last_error = Some(err);
+            } else {
+                removed += 1;
             }
         }
         if let Some(path) = next_focus
@@ -195,10 +198,13 @@ impl BrowserActions for BrowserController<'_> {
             }
         }
         if let Some(err) = last_error {
-            Err(err)
-        } else {
-            Ok(())
+            self.set_status(err.clone(), StatusTone::Error);
+            return Err(err);
         }
+        if removed == 0 {
+            self.set_status("No dead links removed", StatusTone::Info);
+        }
+        Ok(())
     }
 }
 
