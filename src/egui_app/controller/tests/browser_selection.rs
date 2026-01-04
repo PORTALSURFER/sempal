@@ -5,7 +5,7 @@ use crate::egui_app::controller::collection_export;
 use crate::egui_app::state::FocusContext;
 use crate::sample_sources::Collection;
 use std::path::PathBuf;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tempfile::tempdir;
 
 #[test]
@@ -57,6 +57,7 @@ fn collection_hotkey_moves_selected_samples() {
     controller.toggle_browser_row_selection(1);
     let handled = controller.apply_collection_hotkey(1, FocusContext::SampleBrowser);
     assert!(handled);
+    await_collection_move(&mut controller);
     let collection = controller
         .library
         .collections
@@ -70,6 +71,19 @@ fn collection_hotkey_moves_selected_samples() {
     assert!(!source.root.join("two.wav").exists());
     assert!(controller.wav_index_for_path(&PathBuf::from("one.wav")).is_none());
     assert!(controller.wav_index_for_path(&PathBuf::from("two.wav")).is_none());
+}
+
+fn await_collection_move(controller: &mut EguiController) {
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while controller.runtime.jobs.collection_move_in_progress() && Instant::now() < deadline {
+        controller.poll_background_jobs();
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    controller.poll_background_jobs();
+    assert!(
+        !controller.runtime.jobs.collection_move_in_progress(),
+        "collection move job did not finish"
+    );
 }
 
 #[test]
