@@ -1,49 +1,21 @@
-use super::selection_geometry::{
-    paint_selection_edge_bracket, selection_edge_handle_rect, selection_handle_height,
-    selection_handle_rect,
-};
-use super::style;
-use super::*;
-use super::super::{SliceDragKind, SliceDragState};
-use crate::egui_app::state::WaveformView;
 use crate::selection::{SelectionEdge, SelectionRange};
 use eframe::egui::{self, Color32, CursorIcon};
 
-struct SliceOverlayEnv<'a> {
-    rect: egui::Rect,
-    view: WaveformView,
-    view_width: f32,
-    pointer_pos: Option<egui::Pos2>,
-    palette: &'a style::Palette,
-    slice_color: Color32,
-}
-
-#[derive(Clone, Copy)]
-struct SliceItem {
-    range: SelectionRange,
-    index: usize,
-}
-
-struct SliceEdgeSpec {
-    edge: SelectionEdge,
-    edge_rect: egui::Rect,
-    edge_id: &'static str,
-    slice_rect: egui::Rect,
-    index: usize,
-}
-
-#[derive(Clone, Copy, Default)]
-pub(super) struct SliceOverlayResult {
-    pub dragging: bool,
-    pub consumed_click: bool,
-}
+use super::geometry::{edge_position_px, slice_rect, to_wave_pos, update_slice_edge};
+use super::super::selection_geometry::{
+    paint_selection_edge_bracket, selection_edge_handle_rect, selection_handle_height,
+    selection_handle_rect,
+};
+use super::super::super::style;
+use super::super::super::{EguiApp, SliceDragKind, SliceDragState};
+use super::{SliceEdgeSpec, SliceItem, SliceOverlayEnv, SliceOverlayResult};
 
 pub(super) fn render_slice_overlays(
     app: &mut EguiApp,
     ui: &mut egui::Ui,
     rect: egui::Rect,
     palette: &style::Palette,
-    view: WaveformView,
+    view: crate::egui_app::state::WaveformView,
     view_width: f32,
     pointer_pos: Option<egui::Pos2>,
 ) -> SliceOverlayResult {
@@ -187,7 +159,12 @@ fn render_slice_edges(
     dragging
 }
 
-fn render_slice_edge(app: &mut EguiApp, ui: &mut egui::Ui, env: &SliceOverlayEnv<'_>, spec: SliceEdgeSpec) -> bool {
+fn render_slice_edge(
+    app: &mut EguiApp,
+    ui: &mut egui::Ui,
+    env: &SliceOverlayEnv<'_>,
+    spec: SliceEdgeSpec,
+) -> bool {
     let edge_response = ui.interact(
         spec.edge_rect,
         ui.id().with((spec.edge_id, spec.index)),
@@ -196,20 +173,6 @@ fn render_slice_edge(app: &mut EguiApp, ui: &mut egui::Ui, env: &SliceOverlayEnv
     handle_slice_edge_drag(app, env, &spec, &edge_response);
     apply_edge_hover(ui, env, spec.edge_rect, spec.edge, &edge_response);
     edge_response.dragged()
-}
-
-fn slice_rect(env: &SliceOverlayEnv<'_>, slice: SelectionRange) -> Option<egui::Rect> {
-    let start_norm = ((slice.start() - env.view.start) / env.view_width).clamp(0.0, 1.0);
-    let end_norm = ((slice.end() - env.view.start) / env.view_width).clamp(0.0, 1.0);
-    let width = env.rect.width() * (end_norm - start_norm).max(0.0);
-    if width <= 0.0 {
-        return None;
-    }
-    let x = env.rect.left() + env.rect.width() * start_norm;
-    Some(egui::Rect::from_min_size(
-        egui::pos2(x, env.rect.top()),
-        egui::vec2(width, env.rect.height()),
-    ))
 }
 
 fn paint_slice(
@@ -417,27 +380,6 @@ fn update_slice_edge_drag(
     }
 }
 
-fn update_slice_edge(range: SelectionRange, edge: SelectionEdge, position: f32) -> SelectionRange {
-    let min_width = crate::egui_app::controller::MIN_SELECTION_WIDTH;
-    match edge {
-        SelectionEdge::Start => {
-            let max_start = (range.end() - min_width).max(0.0);
-            SelectionRange::new(position.min(max_start), range.end())
-        }
-        SelectionEdge::End => {
-            let min_end = (range.start() + min_width).min(1.0);
-            SelectionRange::new(range.start(), position.max(min_end))
-        }
-    }
-}
-
-fn edge_position_px(edge: SelectionEdge, slice_rect: egui::Rect) -> f32 {
-    match edge {
-        SelectionEdge::Start => slice_rect.left(),
-        SelectionEdge::End => slice_rect.right(),
-    }
-}
-
 fn apply_edge_hover(
     ui: &mut egui::Ui,
     env: &SliceOverlayEnv<'_>,
@@ -467,12 +409,4 @@ fn finish_slice_drag(app: &mut EguiApp, index: usize) {
     {
         app.slice_drag = None;
     }
-}
-
-fn to_wave_pos(
-    env: &SliceOverlayEnv<'_>,
-    pos: egui::Pos2,
-) -> f32 {
-    let normalized = ((pos.x - env.rect.left()) / env.rect.width()).clamp(0.0, 1.0);
-    normalized.mul_add(env.view_width, env.view.start).clamp(0.0, 1.0)
 }
