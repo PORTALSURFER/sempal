@@ -256,7 +256,7 @@ impl CollectionsController<'_> {
                 let db = match self.database_for(source) {
                     Ok(db) => db,
                     Err(err) => match SourceDatabase::open(&source.root) {
-                        Ok(db) => db,
+                        Ok(db) => std::rc::Rc::new(db),
                         Err(open_err) => {
                             cleanup_error =
                                 Some(format!("Failed to open source database: {open_err}"));
