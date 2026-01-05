@@ -46,6 +46,30 @@ fn label_cache_builds_on_first_lookup() {
 }
 
 #[test]
+fn label_cache_clears_after_rename() {
+    let (mut controller, source) = dummy_controller();
+    controller.library.sources.push(source.clone());
+    controller.cache_db(&source).unwrap();
+    controller.set_wav_entries_for_tests(vec![
+        sample_entry("a.wav", SampleTag::Neutral),
+        sample_entry("b.wav", SampleTag::Neutral),
+    ]);
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+
+    assert_eq!(controller.wav_label(0).unwrap(), "a");
+    assert!(controller.ui_cache.browser.labels.contains_key(&source.id));
+
+    controller.update_cached_entry(
+        &source,
+        Path::new("a.wav"),
+        sample_entry("renamed.wav", SampleTag::Neutral),
+    );
+
+    assert!(!controller.ui_cache.browser.labels.contains_key(&source.id));
+}
+
+#[test]
 fn sample_browser_indices_track_tags() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source);

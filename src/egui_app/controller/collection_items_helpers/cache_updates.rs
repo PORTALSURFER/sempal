@@ -153,6 +153,9 @@ impl EguiController {
                 self.ui_cache.browser.search.invalidate();
                 self.rebuild_browser_lists();
             }
+            if old_path != new_entry.relative_path {
+                self.ui_cache.browser.labels.remove(&source.id);
+            }
         } else {
             self.invalidate_wav_entries_for_source_preserve_folders(source);
         }
