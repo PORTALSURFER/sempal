@@ -3,28 +3,112 @@ use crate::egui_app::state::{
     ActiveAudioInput, ActiveAudioOutput, AudioDeviceView, AudioHostView,
 };
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct NormalizedAudioOptions {
+    pub(super) host_id: Option<String>,
+    pub(super) device_name: Option<String>,
+    pub(super) sample_rate: Option<u32>,
+    pub(super) devices: Vec<crate::audio::AudioDeviceSummary>,
+    pub(super) sample_rates: Vec<u32>,
+    pub(super) warning: Option<String>,
+}
+
+pub(super) fn normalize_audio_options(
+    current_host: Option<String>,
+    current_device: Option<String>,
+    current_sample_rate: Option<u32>,
+    hosts: &[crate::audio::AudioHostSummary],
+    devices_for_host: impl FnOnce(&str) -> Result<Vec<crate::audio::AudioDeviceSummary>, String>,
+    sample_rates_for: impl FnOnce(&str, &str) -> Vec<u32>,
+    default_device_label: &str,
+) -> NormalizedAudioOptions {
+    let mut warning = None;
+    let default_host = hosts
+        .iter()
+        .find(|host| host.is_default)
+        .map(|host| host.id.clone());
+    let mut host_id = current_host.or(default_host.clone());
+    if let Some(id) = host_id.as_ref()
+        && !hosts.iter().any(|host| &host.id == id)
+    {
+        warning = Some(format!("Host {id} unavailable; using system default"));
+        host_id = default_host;
+    }
+
+    let devices = if let Some(host) = host_id.as_deref() {
+        match devices_for_host(host) {
+            Ok(list) => list,
+            Err(err) => {
+                warning = Some(err);
+                Vec::new()
+            }
+        }
+    } else {
+        Vec::new()
+    };
+    let default_device = devices
+        .iter()
+        .find(|d| d.is_default)
+        .map(|d| d.name.clone())
+        .or_else(|| devices.first().map(|d| d.name.clone()));
+    let mut device_name = current_device;
+    if let Some(name) = device_name.as_ref() {
+        if !devices.iter().any(|d| &d.name == name) {
+            warning.get_or_insert_with(|| {
+                format!(
+                    "Device {name} unavailable; using {}",
+                    default_device.as_deref().unwrap_or(default_device_label)
+                )
+            });
+            device_name = default_device.clone();
+        }
+    } else {
+        device_name = default_device.clone();
+    }
+
+    let sample_rates = match (host_id.as_deref(), device_name.as_deref()) {
+        (Some(host), Some(device)) => sample_rates_for(host, device),
+        _ => Vec::new(),
+    };
+    let mut sample_rate = current_sample_rate;
+    if let Some(rate) = sample_rate
+        && !sample_rates.contains(&rate)
+        && !sample_rates.is_empty()
+    {
+        warning.get_or_insert_with(|| {
+            format!("Sample rate {rate} unsupported; using {}", sample_rates[0])
+        });
+        sample_rate = Some(sample_rates[0]);
+    }
+
+    NormalizedAudioOptions {
+        host_id,
+        device_name,
+        sample_rate,
+        devices,
+        sample_rates,
+        warning,
+    }
+}
+
 impl EguiController {
     /// Refresh available audio hosts/devices and normalize the selected configuration.
     pub(crate) fn refresh_audio_options(&mut self) {
-        let mut warning = None;
         let hosts = crate::audio::available_hosts();
-        let default_host = hosts
-            .iter()
-            .find(|host| host.is_default)
-            .map(|host| host.id.clone());
-        let mut host_id = self
-            .settings
-            .audio_output
-            .host
-            .clone()
-            .or(default_host.clone());
-        if let Some(id) = host_id.as_ref()
-            && !hosts.iter().any(|host| &host.id == id)
-        {
-            warning = Some(format!("Host {id} unavailable; using system default"));
-            host_id = default_host;
-        }
-        self.settings.audio_output.host = host_id.clone();
+        let normalized = normalize_audio_options(
+            self.settings.audio_output.host.clone(),
+            self.settings.audio_output.device.clone(),
+            self.settings.audio_output.sample_rate,
+            &hosts,
+            |host| crate::audio::available_devices(host).map_err(|err| err.to_string()),
+            |host, device| {
+                crate::audio::supported_sample_rates(host, device).unwrap_or_else(|_| Vec::new())
+            },
+            "system default output",
+        );
+        self.settings.audio_output.host = normalized.host_id.clone();
+        self.settings.audio_output.device = normalized.device_name.clone();
+        self.settings.audio_output.sample_rate = normalized.sample_rate;
         self.ui.audio.hosts = hosts
             .iter()
             .map(|host| AudioHostView {
@@ -34,38 +118,8 @@ impl EguiController {
             })
             .collect();
 
-        let devices = if let Some(host) = host_id.as_deref() {
-            match crate::audio::available_devices(host) {
-                Ok(list) => list,
-                Err(err) => {
-                    warning = Some(err.to_string());
-                    Vec::new()
-                }
-            }
-        } else {
-            Vec::new()
-        };
-        let default_device = devices
-            .iter()
-            .find(|d| d.is_default)
-            .map(|d| d.name.clone())
-            .or_else(|| devices.first().map(|d| d.name.clone()));
-        let mut device_name = self.settings.audio_output.device.clone();
-        if let Some(name) = device_name.as_ref() {
-            if !devices.iter().any(|d| &d.name == name) {
-                warning.get_or_insert_with(|| {
-                    format!(
-                        "Device {name} unavailable; using {}",
-                        default_device.as_deref().unwrap_or("system default output")
-                    )
-                });
-                device_name = default_device.clone();
-            }
-        } else {
-            device_name = default_device.clone();
-        }
-        self.settings.audio_output.device = device_name.clone();
-        self.ui.audio.devices = devices
+        self.ui.audio.devices = normalized
+            .devices
             .iter()
             .map(|device| AudioDeviceView {
                 host_id: device.host_id.clone(),
@@ -74,46 +128,28 @@ impl EguiController {
             })
             .collect();
 
-        let sample_rates = match (host_id.as_deref(), device_name.as_deref()) {
-            (Some(host), Some(device)) => {
-                crate::audio::supported_sample_rates(host, device).unwrap_or_else(|_| Vec::new())
-            }
-            _ => Vec::new(),
-        };
-        if let Some(rate) = self.settings.audio_output.sample_rate
-            && !sample_rates.contains(&rate)
-            && !sample_rates.is_empty()
-        {
-            warning.get_or_insert_with(|| {
-                format!("Sample rate {rate} unsupported; using {}", sample_rates[0])
-            });
-            self.settings.audio_output.sample_rate = Some(sample_rates[0]);
-        }
-        self.ui.audio.sample_rates = sample_rates;
+        self.ui.audio.sample_rates = normalized.sample_rates;
         self.ui.audio.selected = self.settings.audio_output.clone();
-        self.ui.audio.warning = warning;
+        self.ui.audio.warning = normalized.warning;
     }
 
     pub(crate) fn refresh_audio_input_options(&mut self) {
-        let mut warning = None;
         let hosts = crate::audio::available_input_hosts();
-        let default_host = hosts
-            .iter()
-            .find(|host| host.is_default)
-            .map(|host| host.id.clone());
-        let mut host_id = self
-            .settings
-            .audio_input
-            .host
-            .clone()
-            .or(default_host.clone());
-        if let Some(id) = host_id.as_ref()
-            && !hosts.iter().any(|host| &host.id == id)
-        {
-            warning = Some(format!("Host {id} unavailable; using system default"));
-            host_id = default_host;
-        }
-        self.settings.audio_input.host = host_id.clone();
+        let normalized = normalize_audio_options(
+            self.settings.audio_input.host.clone(),
+            self.settings.audio_input.device.clone(),
+            self.settings.audio_input.sample_rate,
+            &hosts,
+            |host| crate::audio::available_input_devices(host).map_err(|err| err.to_string()),
+            |host, device| {
+                crate::audio::supported_input_sample_rates(host, device)
+                    .unwrap_or_else(|_| Vec::new())
+            },
+            "system default input",
+        );
+        self.settings.audio_input.host = normalized.host_id.clone();
+        self.settings.audio_input.device = normalized.device_name.clone();
+        self.settings.audio_input.sample_rate = normalized.sample_rate;
         self.ui.audio.input_hosts = hosts
             .iter()
             .map(|host| AudioHostView {
@@ -123,38 +159,8 @@ impl EguiController {
             })
             .collect();
 
-        let devices = if let Some(host) = host_id.as_deref() {
-            match crate::audio::available_input_devices(host) {
-                Ok(list) => list,
-                Err(err) => {
-                    warning = Some(err.to_string());
-                    Vec::new()
-                }
-            }
-        } else {
-            Vec::new()
-        };
-        let default_device = devices
-            .iter()
-            .find(|d| d.is_default)
-            .map(|d| d.name.clone())
-            .or_else(|| devices.first().map(|d| d.name.clone()));
-        let mut device_name = self.settings.audio_input.device.clone();
-        if let Some(name) = device_name.as_ref() {
-            if !devices.iter().any(|d| &d.name == name) {
-                warning.get_or_insert_with(|| {
-                    format!(
-                        "Device {name} unavailable; using {}",
-                        default_device.as_deref().unwrap_or("system default input")
-                    )
-                });
-                device_name = default_device.clone();
-            }
-        } else {
-            device_name = default_device.clone();
-        }
-        self.settings.audio_input.device = device_name.clone();
-        self.ui.audio.input_devices = devices
+        self.ui.audio.input_devices = normalized
+            .devices
             .iter()
             .map(|device| AudioDeviceView {
                 host_id: device.host_id.clone(),
@@ -163,25 +169,13 @@ impl EguiController {
             })
             .collect();
 
-        let sample_rates = match (host_id.as_deref(), device_name.as_deref()) {
-            (Some(host), Some(device)) => {
-                crate::audio::supported_input_sample_rates(host, device)
-                    .unwrap_or_else(|_| Vec::new())
-            }
-            _ => Vec::new(),
-        };
-        if let Some(rate) = self.settings.audio_input.sample_rate
-            && !sample_rates.contains(&rate)
-            && !sample_rates.is_empty()
-        {
-            warning.get_or_insert_with(|| {
-                format!("Sample rate {rate} unsupported; using {}", sample_rates[0])
-            });
-            self.settings.audio_input.sample_rate = Some(sample_rates[0]);
-        }
-        self.ui.audio.input_sample_rates = sample_rates;
+        self.ui.audio.input_sample_rates = normalized.sample_rates.clone();
 
-        let channel_count = match (host_id.as_deref(), device_name.as_deref()) {
+        let mut warning = normalized.warning;
+        let channel_count = match (
+            self.settings.audio_input.host.as_deref(),
+            self.settings.audio_input.device.as_deref(),
+        ) {
             (Some(host), Some(device)) => match crate::audio::available_input_channel_count(
                 host, device,
             ) {
