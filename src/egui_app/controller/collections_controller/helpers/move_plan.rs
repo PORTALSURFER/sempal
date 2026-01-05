@@ -4,14 +4,14 @@ use std::path::PathBuf;
 
 /// Shared move selection, validation, and focus data for collection moves.
 pub(super) struct MovePlan {
-    pub(super) rows: Vec<usize>,
-    pub(super) contexts: Vec<BrowserSampleContext>,
-    pub(super) last_error: Option<String>,
-    pub(super) next_focus: Option<PathBuf>,
+    pub(in crate::egui_app::controller::collections_controller) rows: Vec<usize>,
+    pub(in crate::egui_app::controller::collections_controller) contexts: Vec<BrowserSampleContext>,
+    pub(in crate::egui_app::controller::collections_controller) last_error: Option<String>,
+    pub(in crate::egui_app::controller::collections_controller) next_focus: Option<PathBuf>,
 }
 
 impl MovePlan {
-    pub(super) fn is_empty(&self) -> bool {
+    pub(in crate::egui_app::controller::collections_controller) fn is_empty(&self) -> bool {
         self.rows.is_empty()
     }
 }
@@ -109,7 +109,6 @@ impl CollectionsController<'_> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::egui_app::controller::test_support::{prepare_with_source_and_wav_entries, sample_entry};
     use crate::sample_sources::SampleTag;
 
