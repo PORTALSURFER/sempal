@@ -3,7 +3,7 @@ use super::CollectionsController;
 use std::path::PathBuf;
 
 /// Shared move selection, validation, and focus data for collection moves.
-pub(super) struct MovePlan {
+pub(in crate::egui_app::controller::collections_controller) struct MovePlan {
     pub(in crate::egui_app::controller::collections_controller) rows: Vec<usize>,
     pub(in crate::egui_app::controller::collections_controller) contexts: Vec<BrowserSampleContext>,
     pub(in crate::egui_app::controller::collections_controller) last_error: Option<String>,
