@@ -1,17 +1,23 @@
 ## Goal
-- Add a slice system that detects non-silent regions from the selected sample, shows blue resizable overlays in the waveform view, lets the user accept with Enter, and exports each slice to new audio files suffixed with `_slicexxx`.
+- Plan a shift from the current PANNs-heavy similarity pipeline toward a faster, descriptor-first system inspired by Sononym/Ableton, while preserving existing functionality and compatibility.
 
 ## Proposed solutions
-- Reuse the existing silence hysteresis thresholds to derive non-silent intervals, then map them to normalized waveform ranges for UI overlays.
-- Introduce a dedicated slice model/state in the waveform controller and render overlays with selection-style handles, reusing selection drag logic where possible.
-- Implement a new export path that writes each slice as a WAV clip with a `_slicexxx` suffix and updates the browser/library entries.
+- Replace or supplement PANNs embeddings with a lightweight descriptor vector (spectral, temporal, pitch, timbre) and a weighted similarity metric.
+- Add a small learned projection (e.g., PCA) over descriptors to reduce dimensionality without introducing large neural nets.
+- Shorten analysis windows and optimize preprocessing (batching, caching) to reduce per-sample compute time.
+- Keep PANNs as an optional backend during transition for A/B comparisons and fallback.
 
 ## Step-by-step plan
-1. [-] Review current waveform selection/overlay and silence analysis code paths, then design a slice state struct (normalized bounds + edit state) stored with waveform UI/controller state.
-2. [-] Add silence segmentation that returns non-silent intervals from loaded audio (using hysteresis thresholds), with normalization to waveform space and tests around interval detection.
-3. [-] Implement waveform slice overlays (blue fill, selection-style handles) and drag interactions for resizing/moving slices without breaking selection behavior.
-4. [-] Add user actions to compute slices and accept with Enter, then export each slice to new WAV files with `_slicexxx` names and update the browser/library entries; add tests for naming/export.
-5. [-] Add UX polish and guardrails (clear/reset slices, error handling, selection conflicts), plus targeted tests for the slice workflow end-to-end.
+1. [-] Audit current embedding pipeline (PANNs preprocessing, model ID contract, storage, ANN index) to identify integration points and constraints.
+2. [-] Define a descriptor feature set aligned with Sononym/Ableton-style aspects (timbre/MFCC stats, spectral shape, envelope/attack-decay, pitch stats, duration), including normalization strategy and target dimensionality.
+3. [-] Design storage/schema updates for descriptor vectors (tables, model IDs, versioning) without breaking existing embeddings.
+4. [-] Implement descriptor extraction modules and unit tests, reusing existing FFT/mel utilities where possible.
+5. [-] Add similarity scoring for descriptor vectors (weighted cosine/L2) and expose tunable weights in config/UI if appropriate.
+6. [-] Implement optional dimensionality reduction (PCA/offline projection) and integrate into indexing/search.
+7. [-] Update indexing/search pipeline to handle multiple embedding backends (PANNs vs descriptors) and ensure smooth migration.
+8. [-] Benchmark extraction and query performance on representative sample sets; tune weights/window lengths for quality vs speed.
+9. [-] Add regression tests/fixtures for descriptor extraction, similarity ranking, and DB migrations.
+10. [-] Document the new similarity pipeline, configuration knobs, and migration guidance.
 
 ## Code Style & Architecture Rules Reminder
 - Keep files under 400 lines; split when necessary.
