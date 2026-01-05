@@ -188,8 +188,17 @@ impl EguiApp {
         ui.label(RichText::new(summary).color(palette.text_muted));
         if ui.button("Open options…").clicked() {
             self.controller.ui.audio.panel_open = true;
-            self.controller.refresh_audio_options(false);
-            self.controller.refresh_audio_input_options(false);
+            let is_asio = self
+                .controller
+                .ui
+                .audio
+                .applied
+                .as_ref()
+                .is_some_and(|applied| applied.host_id.eq_ignore_ascii_case("asio"));
+            if !is_asio {
+                self.controller.refresh_audio_options(false);
+                self.controller.refresh_audio_input_options(false);
+            }
         }
         if let Some(warning) = &self.controller.ui.audio.warning {
             ui.label(
