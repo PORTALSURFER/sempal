@@ -60,7 +60,6 @@ impl AudioPlayer {
         let offset = (start.clamp(0.0, 1.0) * duration).min(aligned_duration);
         let fade = fade_duration(aligned_duration, self.anti_clip_fade());
         let limited = source
-            .fade_in(fade)
             .take_duration(Duration::from_secs_f32(aligned_duration))
             .buffered();
         let faded = EdgeFade::new(limited, fade);
@@ -111,7 +110,6 @@ impl AudioPlayer {
             .map_err(map_seek_error)?;
         let fade = fade_duration(aligned_span, self.anti_clip_fade());
         let limited = source
-            .fade_in(fade)
             .take_duration(Duration::from_secs_f32(aligned_span))
             .buffered();
         let faded = EdgeFade::new(limited, fade);
@@ -155,7 +153,6 @@ impl AudioPlayer {
         let aligned_span = Self::aligned_span_seconds(span_length, source.sample_rate());
         let fade = fade_duration(aligned_span, self.anti_clip_fade());
         let limited = source
-            .fade_in(fade)
             .take_duration(Duration::from_secs_f32(aligned_span))
             .buffered();
         let faded = EdgeFade::new(limited, fade);
