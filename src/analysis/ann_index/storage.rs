@@ -3,10 +3,12 @@ use crate::app_dirs;
 use rusqlite::{Connection, OptionalExtension, params};
 use std::path::{Path, PathBuf};
 
-const ANN_DIR: &str = "ann";
-const ANN_BASENAME: &str = "similarity_hnsw";
-const ANN_ID_MAP_SUFFIX: &str = "idmap.json";
+const ANN_CONTAINER_NAME: &str = "similarity_hnsw.ann";
+const LEGACY_ANN_DIR: &str = "ann";
+const LEGACY_ANN_BASENAME: &str = "similarity_hnsw";
+const LEGACY_ANN_ID_MAP_SUFFIX: &str = "idmap.json";
 
+/// Load ANN metadata for the given model id, if present.
 pub(crate) fn read_meta(
     conn: &Connection,
     model_id: &str,
@@ -32,6 +34,7 @@ pub(crate) fn read_meta(
     Ok(Some(AnnIndexMetaRow { index_path, params }))
 }
 
+/// Insert or update ANN metadata for the current state.
 pub(crate) fn upsert_meta(conn: &Connection, state: &AnnIndexState) -> Result<(), String> {
     let params_json =
         serde_json::to_string(&state.params).map_err(|err| format!("{err}"))?;
@@ -56,25 +59,24 @@ pub(crate) fn upsert_meta(conn: &Connection, state: &AnnIndexState) -> Result<()
     Ok(())
 }
 
+/// Produce a stable cache key for ANN state keyed by the source database.
 pub(crate) fn index_key(conn: &Connection) -> Result<String, String> {
-    let params = super::state::default_params();
-    let meta = read_meta(conn, &params.model_id)?;
-    let index_path = meta
-        .map(|meta| meta.index_path)
-        .unwrap_or(default_index_path(conn)?);
+    let index_path = default_index_path(conn)?;
     Ok(index_path.to_string_lossy().to_string())
 }
 
-pub(crate) fn id_map_path_for(index_path: &Path) -> PathBuf {
+/// Return the legacy id map path for a legacy ANN index base path.
+pub(crate) fn legacy_id_map_path_for(index_path: &Path) -> PathBuf {
     let basename = index_path
         .file_name()
         .and_then(|name| name.to_str())
-        .unwrap_or(ANN_BASENAME);
+        .unwrap_or(LEGACY_ANN_BASENAME);
     let parent = index_path.parent().unwrap_or_else(|| Path::new("."));
-    parent.join(format!("{basename}.{ANN_ID_MAP_SUFFIX}"))
+    parent.join(format!("{basename}.{LEGACY_ANN_ID_MAP_SUFFIX}"))
 }
 
-pub(crate) fn save_id_map(path: &Path, id_map: &[String]) -> Result<(), String> {
+/// Persist the legacy id map JSON alongside legacy ANN files.
+pub(crate) fn save_legacy_id_map(path: &Path, id_map: &[String]) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|err| format!("Failed to create ANN dir: {err}"))?;
@@ -85,21 +87,32 @@ pub(crate) fn save_id_map(path: &Path, id_map: &[String]) -> Result<(), String> 
     Ok(())
 }
 
-pub(crate) fn load_id_map(path: &Path) -> Result<Vec<String>, String> {
+/// Load the legacy id map JSON from legacy ANN files.
+pub(crate) fn load_legacy_id_map(path: &Path) -> Result<Vec<String>, String> {
     let bytes = std::fs::read(path).map_err(|err| format!("Failed to read id map: {err}"))?;
     serde_json::from_slice(&bytes).map_err(|err| format!("Failed to decode id map: {err}"))
 }
 
+/// Resolve the current ANN container path for a source database.
 pub(crate) fn default_index_path(conn: &Connection) -> Result<PathBuf, String> {
     let root = match database_root_dir(conn) {
         Ok(dir) => dir,
         Err(_) => app_dirs::app_root_dir().map_err(|err| err.to_string())?,
     };
-    let dir = root.join(ANN_DIR);
-    std::fs::create_dir_all(&dir).map_err(|err| format!("Failed to create ANN dir: {err}"))?;
-    Ok(dir.join(ANN_BASENAME))
+    std::fs::create_dir_all(&root).map_err(|err| format!("Failed to create ANN dir: {err}"))?;
+    Ok(root.join(ANN_CONTAINER_NAME))
 }
 
+/// Resolve the legacy ANN index base path for migration checks.
+pub(crate) fn legacy_index_path(conn: &Connection) -> Result<PathBuf, String> {
+    let root = match database_root_dir(conn) {
+        Ok(dir) => dir,
+        Err(_) => app_dirs::app_root_dir().map_err(|err| err.to_string())?,
+    };
+    Ok(root.join(LEGACY_ANN_DIR).join(LEGACY_ANN_BASENAME))
+}
+
+/// Return the directory that contains the source database file.
 pub(crate) fn database_root_dir(conn: &Connection) -> Result<PathBuf, String> {
     let mut stmt = conn
         .prepare("PRAGMA database_list")
@@ -123,6 +136,7 @@ pub(crate) fn database_root_dir(conn: &Connection) -> Result<PathBuf, String> {
     Ok(root.to_path_buf())
 }
 
+/// Return the graph/data paths for a given HNSW dump basename.
 pub(crate) fn hnsw_dump_paths(index_path: &Path) -> Result<(PathBuf, PathBuf), String> {
     let basename = index_path
         .file_name()

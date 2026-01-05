@@ -1,4 +1,5 @@
 mod build;
+mod container;
 mod state;
 mod storage;
 mod update;
@@ -139,9 +140,7 @@ pub fn find_similar_for_embedding(
 
 pub fn rebuild_index(conn: &Connection) -> Result<(), String> {
     let params = state::default_params();
-    let index_path = storage::read_meta(conn, &params.model_id)?
-        .map(|meta| meta.index_path)
-        .unwrap_or(storage::default_index_path(conn)?);
+    let index_path = storage::default_index_path(conn)?;
     let mut state = build::build_index_from_db(conn, params, index_path)?;
     update::flush_index(conn, &mut state)?;
     let key = storage::index_key(conn)?;

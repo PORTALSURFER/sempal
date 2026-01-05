@@ -1,12 +1,16 @@
+use super::container;
 use super::state::AnnIndexState;
-use super::storage::{save_id_map, upsert_meta};
+use super::storage::{hnsw_dump_paths, upsert_meta};
 use hnsw_rs::api::AnnT;
 use rusqlite::Connection;
 use std::time::Duration;
+use tempfile::Builder;
 
 const ANN_FLUSH_INTERVAL: Duration = Duration::from_secs(30);
 const ANN_FLUSH_MIN_INSERTS: usize = 64;
+const ANN_TEMP_DUMP_BASENAME: &str = "ann_dump";
 
+/// Insert a single embedding into the ANN index, flushing if needed.
 pub(crate) fn upsert_embedding(
     conn: &Connection,
     state: &mut AnnIndexState,
@@ -32,6 +36,7 @@ pub(crate) fn upsert_embedding(
     Ok(())
 }
 
+/// Insert a batch of embeddings into the ANN index.
 pub(crate) fn upsert_embeddings_batch<'a, I>(
     conn: &Connection,
     state: &mut AnnIndexState,
@@ -61,6 +66,7 @@ where
     Ok(())
 }
 
+/// Force a flush of pending ANN inserts to disk.
 pub(crate) fn flush_pending_inserts(
     conn: &Connection,
     state: &mut AnnIndexState,
@@ -71,6 +77,7 @@ pub(crate) fn flush_pending_inserts(
     flush_index(conn, state)
 }
 
+/// Flush the ANN index if time or insert thresholds are exceeded.
 pub(crate) fn maybe_flush(conn: &Connection, state: &mut AnnIndexState) -> Result<(), String> {
     let elapsed = state.last_flush.elapsed();
     if state.dirty_inserts == 0 {
@@ -82,6 +89,7 @@ pub(crate) fn maybe_flush(conn: &Connection, state: &mut AnnIndexState) -> Resul
     flush_index(conn, state)
 }
 
+/// Persist the ANN index to the single-file container format.
 pub(crate) fn flush_index(conn: &Connection, state: &mut AnnIndexState) -> Result<(), String> {
     if state.id_map.is_empty() {
         upsert_meta(conn, state)?;
@@ -94,17 +102,30 @@ pub(crate) fn flush_index(conn: &Connection, state: &mut AnnIndexState) -> Resul
         .parent()
         .ok_or_else(|| "Index path missing parent".to_string())?;
     std::fs::create_dir_all(dir).map_err(|err| format!("Failed to create ANN dir: {err}"))?;
-    let basename = index_path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .ok_or_else(|| "Index path missing basename".to_string())?;
-    state
-        .hnsw
-        .file_dump(dir, basename)
-        .map_err(|err| format!("Failed to save ANN index: {err}"))?;
-    save_id_map(&state.id_map_path, &state.id_map)?;
+    let temp_dir = Builder::new()
+        .prefix("ann_dump")
+        .tempdir_in(dir)
+        .map_err(|err| format!("Failed to create ANN dump dir: {err}"))?;
+    dump_hnsw(state, temp_dir.path())?;
+    let (graph_path, data_path) =
+        hnsw_dump_paths(&temp_dir.path().join(ANN_TEMP_DUMP_BASENAME))?;
+    container::write_container(
+        &index_path,
+        &state.params.model_id,
+        &graph_path,
+        &data_path,
+        &state.id_map,
+    )?;
     upsert_meta(conn, state)?;
     state.last_flush = std::time::Instant::now();
     state.dirty_inserts = 0;
+    Ok(())
+}
+
+fn dump_hnsw(state: &AnnIndexState, dir: &std::path::Path) -> Result<(), String> {
+    state
+        .hnsw
+        .file_dump(dir, ANN_TEMP_DUMP_BASENAME)
+        .map_err(|err| format!("Failed to save ANN index: {err}"))?;
     Ok(())
 }
