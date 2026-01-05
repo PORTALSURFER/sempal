@@ -108,16 +108,46 @@ if [[ ! -f "$BURNPACK_PATH" ]]; then
 fi
 cp "$BURNPACK_PATH" "${MODEL_DIR}/panns_cnn14_16k.bpk"
 
-cat > "${ROOT_DIR}/update-manifest.json" <<EOF
-{
-  "app": "${APP_NAME}",
-  "channel": "${CHANNEL}",
-  "target": "${TARGET}",
-  "platform": "${PLATFORM}",
-  "arch": "${ARCH}",
-  "files": [${UPDATER_NAME:+"\"${UPDATER_NAME}\", "}\"${BIN_NAME}\", \"models/panns_cnn14_16k.bpk\", \"update-manifest.json\"]
-}
-EOF
+MANIFEST_PATH="${ROOT_DIR}/update-manifest.json"
+FILES=()
+if [[ -n "$UPDATER_NAME" ]]; then
+  FILES+=("$UPDATER_NAME")
+fi
+FILES+=("$BIN_NAME" "models/panns_cnn14_16k.bpk" "update-manifest.json")
+
+PYTHON_BIN="python3"
+if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
+  PYTHON_BIN="python"
+fi
+if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
+  echo "python is required to write update-manifest.json" >&2
+  exit 1
+fi
+
+"$PYTHON_BIN" - "$MANIFEST_PATH" "$APP_NAME" "$CHANNEL" "$TARGET" "$PLATFORM" "$ARCH" "${FILES[@]}" <<'PY'
+import json
+import sys
+
+manifest_path = sys.argv[1]
+app, channel, target, platform, arch = sys.argv[2:7]
+files = sys.argv[7:]
+
+with open(manifest_path, "w", encoding="utf-8") as handle:
+    json.dump(
+        {
+            "app": app,
+            "channel": channel,
+            "target": target,
+            "platform": platform,
+            "arch": arch,
+            "files": files,
+        },
+        handle,
+        indent=2,
+        sort_keys=False,
+    )
+    handle.write("\n")
+PY
 
 mkdir -p "$OUT_DIR"
 ZIP_PATH="${REPO_ROOT}/${OUT_DIR}/${ZIP_NAME}"
