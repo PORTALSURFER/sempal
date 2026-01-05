@@ -1,6 +1,6 @@
 use crate::egui_app::controller::analysis_jobs::db;
 use rusqlite::{OptionalExtension, params};
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::{mpsc::channel, Arc, Mutex};
 use std::thread::sleep;
@@ -11,15 +11,48 @@ use super::errors::ErrorCollector;
 use super::support::{load_embedding_vec_optional, now_epoch_seconds};
 
 struct EmbeddingWork {
-    sample_id: String,
-    absolute_path: PathBuf,
     content_hash: String,
+    absolute_path: PathBuf,
+    sample_ids: Vec<String>,
+}
+
+struct EmbeddingComputation {
+    content_hash: String,
+    sample_ids: Vec<String>,
+    embedding: Vec<f32>,
+    created_at: i64,
 }
 
 struct EmbeddingResult {
     sample_id: String,
     content_hash: String,
     embedding: Vec<f32>,
+    created_at: i64,
+}
+
+#[derive(Clone)]
+struct EmbeddingData {
+    embedding: Vec<f32>,
+    created_at: i64,
+}
+
+struct BackfillPlan {
+    ready: Vec<EmbeddingResult>,
+    work: Vec<EmbeddingWork>,
+}
+
+struct WorkEntry {
+    absolute_path: PathBuf,
+    sample_ids: Vec<String>,
+}
+
+impl WorkEntry {
+    fn new(absolute_path: PathBuf) -> Self {
+        Self {
+            absolute_path,
+            sample_ids: Vec::new(),
+        }
+    }
 }
 
 pub(super) fn run_embedding_backfill_job(
@@ -29,22 +62,55 @@ pub(super) fn run_embedding_backfill_job(
     analysis_sample_rate: u32,
     analysis_version: &str,
 ) -> Result<(), String> {
-    let payload = job
-        .content_hash
-        .as_deref()
-        .ok_or_else(|| "Embedding backfill payload missing".to_string())?;
-    let sample_ids: Vec<String> = serde_json::from_str(payload)
-        .map_err(|err| format!("Invalid embedding backfill payload: {err}"))?;
+    let sample_ids = parse_backfill_payload(job)?;
     if sample_ids.is_empty() {
         return Ok(());
     }
 
-    let mut items = Vec::new();
-    let mut precomputed = Vec::new();
+    let plan = build_backfill_plan(conn, job, &sample_ids, use_cache, analysis_version)?;
+    let (computed, errors) = run_embedding_workers(plan.work, analysis_sample_rate);
+    let mut results = plan.ready;
+    results.extend(expand_computations(computed));
+    if results.is_empty() {
+        if !errors.is_empty() {
+            return Err(format!("Embedding backfill failed: {:?}", errors));
+        }
+        return Ok(());
+    }
+
+    write_backfill_results(conn, &results, analysis_version)?;
+
+    if !errors.is_empty() {
+        warn!("Embedding backfill had errors: {:?}", errors);
+    }
+
+    Ok(())
+}
+
+fn parse_backfill_payload(job: &db::ClaimedJob) -> Result<Vec<String>, String> {
+    let payload = job
+        .content_hash
+        .as_deref()
+        .ok_or_else(|| "Embedding backfill payload missing".to_string())?;
+    serde_json::from_str(payload)
+        .map_err(|err| format!("Invalid embedding backfill payload: {err}"))
+}
+
+fn build_backfill_plan(
+    conn: &rusqlite::Connection,
+    job: &db::ClaimedJob,
+    sample_ids: &[String],
+    use_cache: bool,
+    analysis_version: &str,
+) -> Result<BackfillPlan, String> {
+    let mut ready = Vec::new();
+    let mut work_by_hash: HashMap<String, WorkEntry> = HashMap::new();
+    let mut embedding_cache: HashMap<String, EmbeddingData> = HashMap::new();
+
     for sample_id in sample_ids {
         if load_embedding_vec_optional(
             conn,
-            &sample_id,
+            sample_id,
             crate::analysis::similarity::SIMILARITY_MODEL_ID,
             crate::analysis::similarity::SIMILARITY_DIM,
         )?
@@ -52,97 +118,160 @@ pub(super) fn run_embedding_backfill_job(
         {
             continue;
         }
-        let Some(content_hash) = db::sample_content_hash(conn, &sample_id)? else {
+        let Some(content_hash) = db::sample_content_hash(conn, sample_id)? else {
             continue;
         };
+        if let Some(data) = embedding_cache.get(&content_hash) {
+            ready.push(materialize_result(sample_id, &content_hash, data));
+            continue;
+        }
         if use_cache {
-            if let Some(cached) = db::cached_embedding_by_hash(
-                conn,
-                &content_hash,
-                analysis_version,
-                crate::analysis::similarity::SIMILARITY_MODEL_ID,
-            )? {
-                if let Ok(vec) = crate::analysis::decode_f32_le_blob(&cached.vec_blob) {
-                    if vec.len() == crate::analysis::similarity::SIMILARITY_DIM {
-                        db::upsert_embedding(
-                            conn,
-                            &sample_id,
-                            &cached.model_id,
-                            cached.dim,
-                            &cached.dtype,
-                            cached.l2_normed,
-                            &cached.vec_blob,
-                            cached.created_at,
-                        )?;
-                        crate::analysis::ann_index::upsert_embedding(conn, &sample_id, &vec)?;
-                        continue;
-                    }
-                }
+            if let Some(data) =
+                cached_embedding_data(conn, &content_hash, analysis_version)?
+            {
+                embedding_cache.insert(content_hash.clone(), data.clone());
+                ready.push(materialize_result(sample_id, &content_hash, &data));
+                continue;
             }
         }
-        if let Some(features) = load_features_vec_optional(conn, &sample_id)? {
-            if let Ok(embedding) = crate::analysis::similarity::embedding_from_features(&features) {
-                precomputed.push(EmbeddingResult {
-                    sample_id,
-                    content_hash,
-                    embedding,
-                });
+        if let Some(features) = load_features_vec_optional(conn, sample_id)? {
+            if let Ok(data) = embedding_data_from_features(&features) {
+                embedding_cache.insert(content_hash.clone(), data.clone());
+                ready.push(materialize_result(sample_id, &content_hash, &data));
                 continue;
             }
         }
         if use_cache {
-            if let Some(cached) = db::cached_features_by_hash(
-                conn,
-                &content_hash,
-                analysis_version,
-                crate::analysis::vector::FEATURE_VERSION_V1,
-            )? {
-                if let Ok(features) = crate::analysis::decode_f32_le_blob(&cached.vec_blob) {
-                    if let Ok(embedding) =
-                        crate::analysis::similarity::embedding_from_features(&features)
-                    {
-                        precomputed.push(EmbeddingResult {
-                            sample_id,
-                            content_hash,
-                            embedding,
-                        });
-                        continue;
-                    }
-                }
-            }
-        }
-        let (_source_id, relative_path) = match db::parse_sample_id(&sample_id) {
-            Ok(parsed) => parsed,
-            Err(err) => {
-                warn!("Skipping embed backfill sample_id={sample_id}: {err}");
+            if let Some(data) =
+                cached_feature_embedding_data(conn, &content_hash, analysis_version)?
+            {
+                embedding_cache.insert(content_hash.clone(), data.clone());
+                ready.push(materialize_result(sample_id, &content_hash, &data));
                 continue;
             }
-        };
-        let absolute_path = job.source_root.join(&relative_path);
-        if !absolute_path.exists() {
-            warn!(
-                "Missing file for embed backfill: {}",
-                absolute_path.display()
-            );
-            continue;
         }
-        items.push(EmbeddingWork {
-            sample_id,
-            absolute_path,
+
+        let Some(absolute_path) = resolve_backfill_path(job, sample_id) else {
+            continue;
+        };
+        let entry = work_by_hash
+            .entry(content_hash.clone())
+            .or_insert_with(|| WorkEntry::new(absolute_path.clone()));
+        entry.sample_ids.push(sample_id.clone());
+    }
+
+    let work = work_by_hash
+        .into_iter()
+        .map(|(content_hash, entry)| EmbeddingWork {
             content_hash,
-        });
-    }
+            absolute_path: entry.absolute_path,
+            sample_ids: entry.sample_ids,
+        })
+        .collect();
 
-    if items.is_empty() && precomputed.is_empty() {
-        return Ok(());
-    }
+    Ok(BackfillPlan { ready, work })
+}
 
+fn resolve_backfill_path(job: &db::ClaimedJob, sample_id: &str) -> Option<PathBuf> {
+    let (_source_id, relative_path) = match db::parse_sample_id(sample_id) {
+        Ok(parsed) => parsed,
+        Err(err) => {
+            warn!("Skipping embed backfill sample_id={sample_id}: {err}");
+            return None;
+        }
+    };
+    let absolute_path = job.source_root.join(&relative_path);
+    if !absolute_path.exists() {
+        warn!(
+            "Missing file for embed backfill: {}",
+            absolute_path.display()
+        );
+        return None;
+    }
+    Some(absolute_path)
+}
+
+fn cached_embedding_data(
+    conn: &rusqlite::Connection,
+    content_hash: &str,
+    analysis_version: &str,
+) -> Result<Option<EmbeddingData>, String> {
+    let Some(cached) = db::cached_embedding_by_hash(
+        conn,
+        content_hash,
+        analysis_version,
+        crate::analysis::similarity::SIMILARITY_MODEL_ID,
+    )? else {
+        return Ok(None);
+    };
+    let Ok(vec) = crate::analysis::decode_f32_le_blob(&cached.vec_blob) else {
+        return Ok(None);
+    };
+    if vec.len() != crate::analysis::similarity::SIMILARITY_DIM {
+        return Ok(None);
+    }
+    Ok(Some(EmbeddingData {
+        embedding: vec,
+        created_at: cached.created_at,
+    }))
+}
+
+fn cached_feature_embedding_data(
+    conn: &rusqlite::Connection,
+    content_hash: &str,
+    analysis_version: &str,
+) -> Result<Option<EmbeddingData>, String> {
+    let Some(cached) = db::cached_features_by_hash(
+        conn,
+        content_hash,
+        analysis_version,
+        crate::analysis::vector::FEATURE_VERSION_V1,
+    )? else {
+        return Ok(None);
+    };
+    let Ok(features) = crate::analysis::decode_f32_le_blob(&cached.vec_blob) else {
+        return Ok(None);
+    };
+    let Ok(data) = embedding_data_from_features(&features) else {
+        return Ok(None);
+    };
+    Ok(Some(data))
+}
+
+fn embedding_data_from_features(features: &[f32]) -> Result<EmbeddingData, String> {
+    let embedding = crate::analysis::similarity::embedding_from_features(features)?;
+    Ok(EmbeddingData {
+        embedding,
+        created_at: now_epoch_seconds(),
+    })
+}
+
+fn materialize_result(
+    sample_id: &str,
+    content_hash: &str,
+    data: &EmbeddingData,
+) -> EmbeddingResult {
+    EmbeddingResult {
+        sample_id: sample_id.to_string(),
+        content_hash: content_hash.to_string(),
+        embedding: data.embedding.clone(),
+        created_at: data.created_at,
+    }
+}
+
+fn run_embedding_workers(
+    work: Vec<EmbeddingWork>,
+    analysis_sample_rate: u32,
+) -> (Vec<EmbeddingComputation>, Vec<String>) {
+    if work.is_empty() {
+        return (Vec::new(), Vec::new());
+    }
     let worker_count = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(1)
-        .min(items.len())
+        .min(work.len())
         .max(1);
-    let queue = Arc::new(Mutex::new(VecDeque::from(items)));
+    let queue = Arc::new(Mutex::new(VecDeque::from(work)));
     let (tx, rx) = channel();
 
     std::thread::scope(|scope| {
@@ -190,7 +319,9 @@ pub(super) fn run_embedding_backfill_job(
                                 continue;
                             }
                         };
-                        let embedding = match crate::analysis::similarity::embedding_from_features(&features) {
+                        let embedding = match crate::analysis::similarity::embedding_from_features(
+                            &features,
+                        ) {
                             Ok(embedding) => embedding,
                             Err(err) => {
                                 let _ = tx.send(Err(format!(
@@ -200,10 +331,11 @@ pub(super) fn run_embedding_backfill_job(
                                 continue;
                             }
                         };
-                        let _ = tx.send(Ok(EmbeddingResult {
-                            sample_id: work.sample_id,
+                        let _ = tx.send(Ok(EmbeddingComputation {
                             content_hash: work.content_hash,
+                            sample_ids: work.sample_ids,
                             embedding,
+                            created_at: now_epoch_seconds(),
                         }));
                     }
                 }
@@ -212,24 +344,22 @@ pub(super) fn run_embedding_backfill_job(
         drop(tx);
     });
 
-    let (mut results, errors) = collect_results(rx);
-    if !precomputed.is_empty() {
-        results.extend(precomputed);
-    }
-    if results.is_empty() {
-        if !errors.is_empty() {
-            return Err(format!("Embedding backfill failed: {:?}", errors));
+    collect_results(rx)
+}
+
+fn expand_computations(computed: Vec<EmbeddingComputation>) -> Vec<EmbeddingResult> {
+    let mut results = Vec::new();
+    for item in computed {
+        for sample_id in item.sample_ids {
+            results.push(EmbeddingResult {
+                sample_id,
+                content_hash: item.content_hash.clone(),
+                embedding: item.embedding.clone(),
+                created_at: item.created_at,
+            });
         }
-        return Ok(());
     }
-
-    write_backfill_results(conn, &results, analysis_version)?;
-
-    if !errors.is_empty() {
-        warn!("Embedding backfill had errors: {:?}", errors);
-    }
-
-    Ok(())
+    results
 }
 
 fn drain_batch(queue: &mut VecDeque<EmbeddingWork>, batch_max: usize) -> Vec<EmbeddingWork> {
@@ -244,8 +374,8 @@ fn drain_batch(queue: &mut VecDeque<EmbeddingWork>, batch_max: usize) -> Vec<Emb
 }
 
 fn collect_results(
-    rx: std::sync::mpsc::Receiver<Result<EmbeddingResult, String>>,
-) -> (Vec<EmbeddingResult>, Vec<String>) {
+    rx: std::sync::mpsc::Receiver<Result<EmbeddingComputation, String>>,
+) -> (Vec<EmbeddingComputation>, Vec<String>) {
     let mut results = Vec::new();
     let mut errors = ErrorCollector::new(3);
     while let Ok(result) = rx.recv() {
@@ -278,34 +408,22 @@ fn write_backfill_chunk(
     chunk: &[EmbeddingResult],
     analysis_version: &str,
 ) -> Result<(), String> {
-    let created_at = now_epoch_seconds();
     conn.execute_batch("BEGIN IMMEDIATE")
         .map_err(|err| format!("Begin embedding backfill tx failed: {err}"))?;
     for result in chunk {
         let embedding_blob = crate::analysis::vector::encode_f32_le_blob(&result.embedding);
-        let insert = conn.execute(
-            "INSERT INTO embeddings (sample_id, model_id, dim, dtype, l2_normed, vec, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
-             ON CONFLICT(sample_id) DO UPDATE SET
-                model_id = excluded.model_id,
-                dim = excluded.dim,
-                dtype = excluded.dtype,
-                l2_normed = excluded.l2_normed,
-                vec = excluded.vec,
-                created_at = excluded.created_at",
-            rusqlite::params![
-                result.sample_id,
-                crate::analysis::similarity::SIMILARITY_MODEL_ID,
-                crate::analysis::similarity::SIMILARITY_DIM as i64,
-                crate::analysis::similarity::SIMILARITY_DTYPE_F32,
-                true,
-                &embedding_blob,
-                created_at
-            ],
-        );
-        if let Err(err) = insert {
+        if let Err(err) = db::upsert_embedding(
+            conn,
+            &result.sample_id,
+            crate::analysis::similarity::SIMILARITY_MODEL_ID,
+            crate::analysis::similarity::SIMILARITY_DIM as i64,
+            crate::analysis::similarity::SIMILARITY_DTYPE_F32,
+            true,
+            &embedding_blob,
+            result.created_at,
+        ) {
             let _ = conn.execute_batch("ROLLBACK");
-            return Err(format!("Embedding backfill insert failed: {err}"));
+            return Err(err);
         }
         db::upsert_cached_embedding(
             conn,
@@ -316,11 +434,9 @@ fn write_backfill_chunk(
             crate::analysis::similarity::SIMILARITY_DTYPE_F32,
             true,
             &embedding_blob,
-            created_at,
+            result.created_at,
         )?;
     }
-    conn.execute_batch("COMMIT")
-        .map_err(|err| format!("Commit embedding backfill tx failed: {err}"))?;
     if let Err(err) = crate::analysis::ann_index::upsert_embeddings_batch(
         conn,
         chunk.iter()
@@ -328,6 +444,8 @@ fn write_backfill_chunk(
     ) {
         warn!("ANN index batch update failed: {err}");
     }
+    conn.execute_batch("COMMIT")
+        .map_err(|err| format!("Commit embedding backfill tx failed: {err}"))?;
     Ok(())
 }
 
@@ -372,83 +490,4 @@ fn load_features_vec_optional(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn make_work(id: &str) -> EmbeddingWork {
-        EmbeddingWork {
-            sample_id: id.to_string(),
-            absolute_path: PathBuf::from(format!("dummy/{id}.wav")),
-            content_hash: format!("hash-{id}"),
-        }
-    }
-
-    #[test]
-    fn drain_batch_caps_at_limit() {
-        let mut queue = VecDeque::new();
-        queue.push_back(make_work("a"));
-        queue.push_back(make_work("b"));
-        queue.push_back(make_work("c"));
-
-        let batch = drain_batch(&mut queue, 2);
-        assert_eq!(batch.len(), 2);
-        assert_eq!(queue.len(), 1);
-        assert_eq!(queue.front().unwrap().sample_id, "c");
-    }
-
-    #[test]
-    fn collect_results_limits_error_list() {
-        let (tx, rx) = channel();
-        tx.send(Err("err-1".to_string())).unwrap();
-        tx.send(Ok(EmbeddingResult {
-            sample_id: "a".to_string(),
-            content_hash: "hash-a".to_string(),
-            embedding: vec![0.0_f32; 2],
-        }))
-        .unwrap();
-        tx.send(Err("err-2".to_string())).unwrap();
-        tx.send(Err("err-3".to_string())).unwrap();
-        tx.send(Err("err-4".to_string())).unwrap();
-        drop(tx);
-
-        let (results, errors) = collect_results(rx);
-        assert_eq!(results.len(), 1);
-        assert_eq!(errors.len(), 3);
-        assert_eq!(errors[0], "err-1");
-        assert_eq!(errors[2], "err-3");
-    }
-
-    #[test]
-    fn backfill_retry_succeeds_after_failures() {
-        let mut attempts = 0;
-        let result = retry_backfill_write_with(
-            || {
-                attempts += 1;
-                if attempts < 3 {
-                    Err("nope".to_string())
-                } else {
-                    Ok(())
-                }
-            },
-            4,
-            Duration::from_millis(0),
-        );
-        assert!(result.is_ok());
-        assert_eq!(attempts, 3);
-    }
-
-    #[test]
-    fn backfill_retry_stops_after_limit() {
-        let mut attempts = 0;
-        let result = retry_backfill_write_with(
-            || {
-                attempts += 1;
-                Err("nope".to_string())
-            },
-            3,
-            Duration::from_millis(0),
-        );
-        assert!(result.is_err());
-        assert_eq!(attempts, 3);
-    }
-}
+mod tests;
