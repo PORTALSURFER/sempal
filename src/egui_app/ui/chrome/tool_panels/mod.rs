@@ -1,7 +1,6 @@
 mod analysis_options;
 mod audio_combos;
 mod audio_settings;
-mod gpu_embeddings;
 
 use eframe::egui::{self, RichText};
 

@@ -2,7 +2,6 @@ use eframe::egui::{self, RichText};
 
 use crate::egui_app::ui::EguiApp;
 use crate::egui_app::ui::style;
-use super::super::buttons;
 use super::section_label;
 
 impl EguiApp {
@@ -51,30 +50,7 @@ impl EguiApp {
 
         ui.add_space(ui.spacing().item_spacing.y);
         ui.separator();
-        section_label(ui, "GPU embeddings");
-        let wgpu_label = wgpu_backend_label();
-        let backend_label = match self.controller.panns_backend() {
-            crate::sample_sources::config::PannsBackendChoice::Wgpu => wgpu_label,
-            crate::sample_sources::config::PannsBackendChoice::Cpu => "CPU",
-            crate::sample_sources::config::PannsBackendChoice::Cuda => "CUDA",
-        };
-        ui.label(
-            RichText::new(format!("Backend: {}", backend_label)).color(palette.text_muted),
-        );
-        if ui
-            .add(buttons::action_button("Open GPU embedding options…"))
-            .clicked()
-        {
-            self.controller.ui.audio.panel_open = true;
-            self.controller.refresh_audio_options();
-        }
-    }
-}
-
-fn wgpu_backend_label() -> &'static str {
-    if cfg!(target_os = "macos") {
-        "WGPU (Metal)"
-    } else {
-        "WGPU (Vulkan)"
+        section_label(ui, "Similarity embeddings");
+        ui.label(RichText::new("Backend: CPU (DSP)").color(palette.text_muted));
     }
 }

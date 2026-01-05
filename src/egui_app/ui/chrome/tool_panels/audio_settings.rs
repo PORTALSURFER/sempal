@@ -155,9 +155,6 @@ impl EguiApp {
                 if ui.button("Show hint now").clicked() {
                     self.controller.show_hint_of_day();
                 }
-                ui.add_space(6.0);
-                ui.separator();
-                self.render_gpu_embeddings_panel(ui);
             });
         self.controller.ui.audio.panel_open = open;
     }

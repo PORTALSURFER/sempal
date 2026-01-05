@@ -53,10 +53,6 @@ const HINTS: &[HintItem] = &[
         body: "Run similarity prep after adding sources to unlock map navigation.",
     },
     HintItem {
-        title: "GPU embeddings",
-        body: "Open GPU embedding options to speed up analysis on compatible hardware.",
-    },
-    HintItem {
         title: "Snap beats then transients",
         body: "When BPM snap is on, it wins over transient snapping.",
     },
