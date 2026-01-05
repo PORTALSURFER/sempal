@@ -1,4 +1,5 @@
 use crate::analysis::ann_index::{build as ann_build, storage as ann_storage, update as ann_update};
+use hnsw_rs::api::AnnT;
 use crate::analysis::vector::encode_f32_le_blob;
 use crate::analysis::{ann_index, similarity};
 use crate::app_dirs::ConfigBaseGuard;

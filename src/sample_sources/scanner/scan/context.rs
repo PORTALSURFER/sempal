@@ -7,7 +7,7 @@ use crate::sample_sources::SourceDatabase;
 use super::{ScanError, ScanMode, ScanStats};
 use super::super::scan_diff::index_by_hash;
 
-pub(super) struct ScanContext {
+pub(crate) struct ScanContext {
     pub(super) existing: HashMap<PathBuf, WavEntry>,
     pub(super) existing_by_hash: HashMap<String, Vec<PathBuf>>,
     pub(super) stats: ScanStats,

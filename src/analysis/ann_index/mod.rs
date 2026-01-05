@@ -1,7 +1,19 @@
+#[cfg(test)]
+pub(crate) mod build;
+#[cfg(not(test))]
 mod build;
 mod container;
+#[cfg(test)]
+pub(crate) mod state;
+#[cfg(not(test))]
 mod state;
+#[cfg(test)]
+pub(crate) mod storage;
+#[cfg(not(test))]
 mod storage;
+#[cfg(test)]
+pub(crate) mod update;
+#[cfg(not(test))]
 mod update;
 
 use crate::analysis::{decode_f32_le_blob, similarity};
