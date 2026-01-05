@@ -132,7 +132,7 @@ impl EguiController {
     }
 
     fn next_focus_path_after_folder_move(&mut self, rows: &[usize]) -> Option<PathBuf> {
-        if rows.is_empty() || self.ui.browser.visible.is_empty() {
+        if rows.is_empty() || self.ui.browser.visible.len() == 0 {
             return None;
         }
         let mut sorted = rows.to_vec();
