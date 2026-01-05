@@ -67,8 +67,8 @@ impl EguiController {
         } else {
             self.ui.waveform.bpm_input.clear();
         }
-        self.refresh_audio_options();
-        self.refresh_audio_input_options();
+        self.refresh_audio_options(true);
+        self.refresh_audio_input_options(true);
         self.apply_volume(cfg.core.volume);
         self.ui.trash_folder = cfg.core.trash_folder.clone();
         self.ui.collection_export_root = cfg.core.collection_export_root.clone();

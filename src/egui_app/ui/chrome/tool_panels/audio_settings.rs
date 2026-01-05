@@ -188,8 +188,8 @@ impl EguiApp {
         ui.label(RichText::new(summary).color(palette.text_muted));
         if ui.button("Open options…").clicked() {
             self.controller.ui.audio.panel_open = true;
-            self.controller.refresh_audio_options();
-            self.controller.refresh_audio_input_options();
+            self.controller.refresh_audio_options(false);
+            self.controller.refresh_audio_input_options(false);
         }
         if let Some(warning) = &self.controller.ui.audio.warning {
             ui.label(
