@@ -72,7 +72,7 @@ fn count_embeddings(conn: &Connection, model_id: &str) -> Result<i64, String> {
     .map_err(|err| format!("Failed to count embeddings: {err}"))
 }
 
-fn build_hnsw(params: &AnnIndexParams, count: i64) -> Hnsw<f32, DistCosine> {
+fn build_hnsw(params: &AnnIndexParams, count: i64) -> Hnsw<'static, f32, DistCosine> {
     let max_elements = (count.max(1) as usize).max(1024);
     Hnsw::new(
         params.max_nb_connection,
@@ -116,7 +116,7 @@ fn insert_embeddings(
 
 fn build_state(
     params: AnnIndexParams,
-    hnsw: Hnsw<f32, DistCosine>,
+    hnsw: Hnsw<'static, f32, DistCosine>,
     id_map: Vec<String>,
     index_path: PathBuf,
 ) -> AnnIndexState {
@@ -198,7 +198,10 @@ fn load_legacy_index(
     build_loaded_state(hnsw, id_map, params, index_path.clone())
 }
 
-fn load_hnsw(dir: &std::path::Path, basename: &str) -> Result<Hnsw<f32, DistCosine>, String> {
+fn load_hnsw(
+    dir: &std::path::Path,
+    basename: &str,
+) -> Result<Hnsw<'static, f32, DistCosine>, String> {
     let hnsw_io = Box::new(HnswIo::new(dir, basename));
     let hnsw_io = Box::leak(hnsw_io);
     hnsw_io
@@ -206,7 +209,7 @@ fn load_hnsw(dir: &std::path::Path, basename: &str) -> Result<Hnsw<f32, DistCosi
         .map_err(|_| "Failed to read ANN index".to_string())
 }
 
-fn load_hnsw_from_path(index_path: &PathBuf) -> Result<Hnsw<f32, DistCosine>, String> {
+fn load_hnsw_from_path(index_path: &PathBuf) -> Result<Hnsw<'static, f32, DistCosine>, String> {
     let basename = index_path
         .file_name()
         .and_then(|name| name.to_str())
@@ -275,7 +278,7 @@ fn update_index_path(
 }
 
 fn build_loaded_state(
-    hnsw: Hnsw<f32, DistCosine>,
+    hnsw: Hnsw<'static, f32, DistCosine>,
     id_map: Vec<String>,
     params: &AnnIndexParams,
     index_path: PathBuf,
