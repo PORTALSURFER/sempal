@@ -1,4 +1,6 @@
 mod members;
+mod move_plan;
+mod fs;
 mod ui;
 mod r#move;
 

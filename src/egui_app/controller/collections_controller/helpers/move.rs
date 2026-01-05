@@ -1,10 +1,15 @@
 use super::super::*;
-use super::members::BrowserSampleContext;
+use super::fs::{
+    move_sample_file,
+    run_collection_move_task,
+    unique_destination_name,
+    CollectionMoveRequest,
+};
+use super::move_plan::MovePlan;
 use super::CollectionsController;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
-use std::time::SystemTime;
 use crate::sample_sources::SourceDatabase;
 
 impl CollectionsController<'_> {
@@ -18,60 +23,10 @@ impl CollectionsController<'_> {
         self.visible_row_for_path(&path)
     }
 
-    pub(in crate::egui_app::controller::collections_controller) fn browser_selection_rows_for_move(
-        &mut self,
-    ) -> Vec<usize> {
-        let mut rows: Vec<usize> = self
-            .ui
-            .browser
-            .selected_paths
-            .clone()
-            .iter()
-            .filter_map(|path| self.visible_row_for_path(path))
-            .collect();
-        if rows.is_empty() {
-            if let Some(row) = self
-                .focused_browser_row()
-                .or_else(|| self.primary_visible_row_for_browser_selection())
-            {
-                rows.push(row);
-            }
-        }
-        rows.sort_unstable();
-        rows.dedup();
-        rows
-    }
-
-    pub(in crate::egui_app::controller::collections_controller) fn next_browser_focus_path_after_move(
-        &mut self,
-        rows: &[usize],
-    ) -> Option<PathBuf> {
-        if rows.is_empty() || self.ui.browser.visible.len() == 0 {
-            return None;
-        }
-        let mut sorted = rows.to_vec();
-        sorted.sort_unstable();
-        let highest = sorted.last().copied()?;
-        let first = sorted.first().copied().unwrap_or(highest);
-        let after = highest
-            .checked_add(1)
-            .and_then(|idx| self.ui.browser.visible.get(idx))
-            .and_then(|entry_idx| self.wav_entry(entry_idx))
-            .map(|entry| entry.relative_path.clone());
-        if after.is_some() {
-            return after;
-        }
-        first
-            .checked_sub(1)
-            .and_then(|idx| self.ui.browser.visible.get(idx))
-            .and_then(|entry_idx| self.wav_entry(entry_idx))
-            .map(|entry| entry.relative_path.clone())
-    }
-
     pub(in crate::egui_app::controller::collections_controller) fn move_browser_rows_to_collection(
         &mut self,
         collection_id: &CollectionId,
-        rows: &[usize],
+        plan: MovePlan,
     ) {
         if !self.settings.feature_flags.collections_enabled {
             self.set_status("Collections are disabled", StatusTone::Warning);
@@ -98,9 +53,10 @@ impl CollectionsController<'_> {
             return;
         };
         let collection_name = self.library.collections[collection_index].name.clone();
-        let (contexts, mut last_error) = self.collect_browser_contexts(rows);
-        let total_contexts = contexts.len();
-        let move_requests: Vec<CollectionMoveRequest> = contexts
+        let mut last_error = plan.last_error;
+        let total_contexts = plan.contexts.len();
+        let move_requests: Vec<CollectionMoveRequest> = plan
+            .contexts
             .into_iter()
             .map(|ctx| CollectionMoveRequest {
                 source_id: ctx.source.id,
@@ -308,29 +264,6 @@ impl CollectionsController<'_> {
         }
     }
 
-    pub(super) fn collect_browser_contexts(
-        &mut self,
-        rows: &[usize],
-    ) -> (Vec<BrowserSampleContext>, Option<String>) {
-        let mut contexts = Vec::new();
-        let mut seen = std::collections::HashSet::new();
-        let mut last_error = None;
-        for row in rows {
-            match self.resolve_browser_sample(*row) {
-                Ok(ctx) => {
-                    if seen.insert(ctx.entry.relative_path.clone()) {
-                        contexts.push(BrowserSampleContext {
-                            source: ctx.source,
-                            entry: ctx.entry,
-                        });
-                    }
-                }
-                Err(err) => last_error = Some(err),
-            }
-        }
-        (contexts, last_error)
-    }
-
     fn resolve_collection_clip_root(&self, collection_id: &CollectionId) -> Result<PathBuf, String> {
         let preferred = self
             .library
@@ -395,164 +328,5 @@ impl CollectionsController<'_> {
             self.persist_config("Failed to save collection after move")?;
         }
         Ok(())
-    }
-}
-
-fn unique_destination_name(root: &Path, path: &Path) -> Result<PathBuf, String> {
-    let file_name = path
-        .file_name()
-        .ok_or_else(|| "Sample has no file name".to_string())?;
-    let candidate = PathBuf::from(file_name);
-    if !root.join(&candidate).exists() {
-        return Ok(candidate);
-    }
-    let stem = path
-        .file_stem()
-        .map(|name| name.to_string_lossy().to_string())
-        .unwrap_or_else(|| "sample".to_string());
-    let extension = path
-        .extension()
-        .map(|ext| ext.to_string_lossy().to_string());
-    for index in 1..=999 {
-        let suffix = format!("{stem}_move{index:03}");
-        let file_name = if let Some(ext) = &extension {
-            format!("{suffix}.{ext}")
-        } else {
-            suffix
-        };
-        let candidate = PathBuf::from(file_name);
-        if !root.join(&candidate).exists() {
-            return Ok(candidate);
-        }
-    }
-    Err("Failed to find destination file name".into())
-}
-
-fn move_sample_file(source: &Path, destination: &Path) -> Result<(), String> {
-    match fs::rename(source, destination) {
-        Ok(()) => Ok(()),
-        Err(rename_err) => {
-            if let Err(copy_err) = fs::copy(source, destination) {
-                return Err(format!(
-                    "Failed to move file: {rename_err}; copy failed: {copy_err}"
-                ));
-            }
-            if let Err(remove_err) = fs::remove_file(source) {
-                let _ = fs::remove_file(destination);
-                return Err(format!("Failed to remove original file: {remove_err}"));
-            }
-            Ok(())
-        }
-    }
-}
-
-struct CollectionMoveRequest {
-    source_id: SourceId,
-    source_root: PathBuf,
-    relative_path: PathBuf,
-}
-
-fn run_collection_move_task(
-    collection_id: CollectionId,
-    clip_root: PathBuf,
-    requests: Vec<CollectionMoveRequest>,
-) -> crate::egui_app::controller::jobs::CollectionMoveResult {
-    let mut moved = Vec::new();
-    let mut errors = Vec::new();
-    let clip_db = match SourceDatabase::open(&clip_root) {
-        Ok(db) => db,
-        Err(err) => {
-            errors.push(format!("Failed to open collection database: {err}"));
-            return crate::egui_app::controller::jobs::CollectionMoveResult {
-                collection_id,
-                moved,
-                errors,
-            };
-        }
-    };
-    let mut source_dbs: std::collections::HashMap<PathBuf, SourceDatabase> =
-        std::collections::HashMap::new();
-    for request in requests {
-        let absolute = request.source_root.join(&request.relative_path);
-        if !absolute.is_file() {
-            errors.push(format!(
-                "File missing: {}",
-                request.relative_path.display()
-            ));
-            continue;
-        }
-        let clip_relative = match unique_destination_name(&clip_root, &request.relative_path) {
-            Ok(path) => path,
-            Err(err) => {
-                errors.push(err);
-                continue;
-            }
-        };
-        let clip_absolute = clip_root.join(&clip_relative);
-        if let Err(err) = move_sample_file(&absolute, &clip_absolute) {
-            errors.push(err);
-            continue;
-        }
-        let clip_metadata = match fs::metadata(&clip_absolute) {
-            Ok(metadata) => metadata,
-            Err(err) => {
-                let _ = move_sample_file(&clip_absolute, &absolute);
-                errors.push(format!("Missing clip metadata: {err}"));
-                continue;
-            }
-        };
-        let modified_ns = match clip_metadata.modified() {
-            Ok(modified) => match modified.duration_since(SystemTime::UNIX_EPOCH) {
-                Ok(duration) => duration.as_nanos() as i64,
-                Err(_) => {
-                    let _ = move_sample_file(&clip_absolute, &absolute);
-                    errors.push("File modified time is before epoch".to_string());
-                    continue;
-                }
-            },
-            Err(err) => {
-                let _ = move_sample_file(&clip_absolute, &absolute);
-                errors.push(format!("Missing mtime for collection: {err}"));
-                continue;
-            }
-        };
-        if let Err(err) = clip_db.upsert_file(
-            &clip_relative,
-            clip_metadata.len(),
-            modified_ns,
-        ) {
-            let _ = move_sample_file(&clip_absolute, &absolute);
-            errors.push(format!("Failed to sync collection entry: {err}"));
-            continue;
-        }
-        let db = match source_dbs.entry(request.source_root.clone()) {
-            std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
-            std::collections::hash_map::Entry::Vacant(entry) => match SourceDatabase::open(&request.source_root) {
-                Ok(db) => entry.insert(db),
-                Err(err) => {
-                    let _ = clip_db.remove_file(&clip_relative);
-                    let _ = move_sample_file(&clip_absolute, &absolute);
-                    errors.push(format!("Failed to open source database: {err}"));
-                    continue;
-                }
-            },
-        };
-        if let Err(err) = db.remove_file(&request.relative_path) {
-            let _ = clip_db.remove_file(&clip_relative);
-            let _ = move_sample_file(&clip_absolute, &absolute);
-            errors.push(format!("Failed to drop source database row: {err}"));
-            continue;
-        }
-        moved.push(crate::egui_app::controller::jobs::CollectionMoveSuccess {
-            source_id: request.source_id,
-            relative_path: request.relative_path,
-            clip_root: clip_root.clone(),
-            clip_relative,
-        });
-    }
-    crate::egui_app::controller::jobs::CollectionMoveResult {
-        collection_id,
-        moved,
-        errors,
     }
 }

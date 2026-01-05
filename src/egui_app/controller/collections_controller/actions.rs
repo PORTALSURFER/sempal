@@ -291,16 +291,16 @@ impl CollectionsActions for CollectionsController<'_> {
         else {
             return false;
         };
-        let rows = self.browser_selection_rows_for_move();
-        if rows.is_empty() {
+        let plan = self.build_browser_move_plan();
+        if plan.is_empty() {
             self.set_status("Select samples to move to a collection", StatusTone::Info);
             return true;
         }
-        let next_focus = self.next_browser_focus_path_after_move(&rows);
+        let next_focus = plan.next_focus.clone();
         if let Some(path) = next_focus.as_ref() {
             self.runtime.jobs.set_pending_select_path(Some(path.clone()));
         }
-        self.move_browser_rows_to_collection(&collection_id, &rows);
+        self.move_browser_rows_to_collection(&collection_id, plan);
         self.clear_browser_selection();
         if let Some(path) = next_focus {
             if let Some(row) = self.visible_row_for_path(&path) {
