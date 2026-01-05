@@ -72,8 +72,14 @@ impl EguiController {
         let reuse_available = empty_entries && !cached_available.is_empty() && !disk_refresh_due;
         let available = if reuse_available || (pending_load && empty_entries && !disk_refresh_due) {
             cached_available
+        } else if disk_refresh_due {
+            self.collect_folders(&source.root, true)
         } else {
-            self.collect_folders(&source.root, disk_refresh_due)
+            let mut collected = self.collect_folders(&source.root, false);
+            if !cached_available.is_empty() {
+                collected.extend(cached_available);
+            }
+            collected
         };
         let snapshot = {
             let model = self
