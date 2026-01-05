@@ -8,10 +8,10 @@ use super::{ScanError, ScanMode, ScanStats};
 use super::super::scan_diff::index_by_hash;
 
 pub(crate) struct ScanContext {
-    pub(super) existing: HashMap<PathBuf, WavEntry>,
-    pub(super) existing_by_hash: HashMap<String, Vec<PathBuf>>,
-    pub(super) stats: ScanStats,
-    pub(super) mode: ScanMode,
+    pub(crate) existing: HashMap<PathBuf, WavEntry>,
+    pub(crate) existing_by_hash: HashMap<String, Vec<PathBuf>>,
+    pub(crate) stats: ScanStats,
+    pub(crate) mode: ScanMode,
 }
 
 impl ScanContext {
