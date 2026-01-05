@@ -14,7 +14,7 @@ pub const SIMILARITY_BATCH_MAX: usize = 8;
 /// Normalize a vector in-place and return whether the norm was non-zero.
 pub fn normalize_l2_in_place(values: &mut [f32]) -> bool {
     let mut sum = 0.0_f32;
-    for &value in values {
+    for value in values.iter() {
         sum += value * value;
     }
     if !sum.is_finite() || sum <= 0.0 {
