@@ -7,6 +7,8 @@ use crate::sample_sources::SampleSource;
 use std::cmp::Ordering;
 use std::path::{Path, PathBuf};
 
+mod ops;
+
 impl EguiController {
     /// Detect non-silent slice ranges for the loaded waveform and store them in UI state.
     pub(crate) fn detect_waveform_slices_from_silence(&mut self) -> Result<usize, String> {
@@ -61,31 +63,11 @@ impl EguiController {
 
     /// Apply a manually painted slice, cutting it out of any overlapping slices.
     pub(crate) fn apply_painted_slice(&mut self, range: SelectionRange) -> bool {
-        let min_width = MIN_SELECTION_WIDTH;
-        if range.width() < min_width {
+        let Some(updated) =
+            ops::apply_painted_slice(&self.ui.waveform.slices, range, MIN_SELECTION_WIDTH)
+        else {
             return false;
-        }
-        let mut updated = Vec::with_capacity(self.ui.waveform.slices.len() + 1);
-        for slice in self.ui.waveform.slices.iter().copied() {
-            if !ranges_overlap(slice, range) {
-                updated.push(slice);
-                continue;
-            }
-            if slice.start() < range.start() {
-                let left = SelectionRange::new(slice.start(), range.start());
-                if left.width() >= min_width {
-                    updated.push(left);
-                }
-            }
-            if slice.end() > range.end() {
-                let right = SelectionRange::new(range.end(), slice.end());
-                if right.width() >= min_width {
-                    updated.push(right);
-                }
-            }
-        }
-        updated.push(range);
-        updated.sort_by(|a, b| a.start().partial_cmp(&b.start()).unwrap_or(Ordering::Equal));
+        };
         self.ui.waveform.slices = updated;
         self.ui.waveform.selected_slices.clear();
         true
@@ -93,76 +75,34 @@ impl EguiController {
 
     /// Update an existing slice range, cutting it out of any overlapping slices.
     pub(crate) fn update_slice_range(&mut self, index: usize, range: SelectionRange) -> Option<usize> {
-        if index >= self.ui.waveform.slices.len() {
-            return None;
-        }
-        let min_width = MIN_SELECTION_WIDTH;
-        if range.width() < min_width {
-            return None;
-        }
-        let was_selected = self.ui.waveform.selected_slices.contains(&index);
-        let selected_ranges: Vec<SelectionRange> = self
-            .ui
-            .waveform
-            .selected_slices
-            .iter()
-            .filter_map(|&selected| self.ui.waveform.slices.get(selected).copied())
-            .collect();
-        let mut updated = Vec::with_capacity(self.ui.waveform.slices.len() + 1);
-        for (current_index, slice) in self.ui.waveform.slices.iter().copied().enumerate() {
-            if current_index == index {
-                continue;
-            }
-            if !ranges_overlap(slice, range) {
-                updated.push(slice);
-                continue;
-            }
-            if slice.start() < range.start() {
-                let left = SelectionRange::new(slice.start(), range.start());
-                if left.width() >= min_width {
-                    updated.push(left);
-                }
-            }
-            if slice.end() > range.end() {
-                let right = SelectionRange::new(range.end(), slice.end());
-                if right.width() >= min_width {
-                    updated.push(right);
-                }
-            }
-        }
-        updated.push(range);
-        updated.sort_by(|a, b| a.start().partial_cmp(&b.start()).unwrap_or(Ordering::Equal));
-        let new_index = updated.iter().position(|slice| *slice == range);
-        let mut new_selected = Vec::new();
-        if was_selected {
-            if let Some(index) = new_index {
-                new_selected.push(index);
-            }
-        }
-        for selected in selected_ranges {
-            if let Some(index) = updated.iter().position(|slice| *slice == selected) {
-                new_selected.push(index);
-            }
-        }
-        new_selected.sort_unstable();
-        new_selected.dedup();
-        self.ui.waveform.slices = updated;
-        self.ui.waveform.selected_slices = new_selected;
-        new_index
+        let updated = ops::update_slice_range(
+            &self.ui.waveform.slices,
+            &self.ui.waveform.selected_slices,
+            index,
+            range,
+            MIN_SELECTION_WIDTH,
+        )?;
+        self.ui.waveform.slices = updated.slices;
+        self.ui.waveform.selected_slices = updated.selected_indices;
+        updated.new_index
     }
 
     /// Snap a slice paint position to BPM or transient markers when enabled.
     pub(crate) fn snap_slice_paint_position(&self, position: f32, snap_override: bool) -> f32 {
-        if snap_override {
-            return position;
-        }
-        if let Some(step) = slice_bpm_snap_step(self) {
-            return snap_to_step(position, step);
-        }
-        if let Some(snapped) = snap_to_transient(self, position) {
-            return snapped;
-        }
-        position
+        let state = ops::SliceSnapState {
+            bpm_snap_enabled: self.ui.waveform.bpm_snap_enabled,
+            bpm_value: self.ui.waveform.bpm_value,
+            duration_seconds: self
+                .sample_view
+                .wav
+                .loaded_audio
+                .as_ref()
+                .map(|audio| audio.duration_seconds),
+            transient_markers_enabled: self.ui.waveform.transient_markers_enabled,
+            transient_snap_enabled: self.ui.waveform.transient_snap_enabled,
+            transients: self.ui.waveform.transients.clone(),
+        };
+        ops::snap_slice_paint_position(&state, position, snap_override)
     }
 
     /// Export detected slices to new audio files and register them in the browser.
@@ -247,7 +187,7 @@ impl EguiController {
             .slices
             .iter()
             .copied()
-            .filter(|slice| !ranges_overlap(*slice, merged))
+            .filter(|slice| !ops::ranges_overlap(*slice, merged))
             .collect();
         self.ui.waveform.slices.push(merged);
         self.ui
@@ -345,61 +285,6 @@ impl EguiController {
     }
 }
 
-fn ranges_overlap(a: SelectionRange, b: SelectionRange) -> bool {
-    a.start() < b.end() && a.end() > b.start()
-}
-
-fn slice_bpm_snap_step(controller: &EguiController) -> Option<f32> {
-    if !controller.ui.waveform.bpm_snap_enabled {
-        return None;
-    }
-    let bpm = controller.ui.waveform.bpm_value?;
-    if !bpm.is_finite() || bpm <= 0.0 {
-        return None;
-    }
-    let duration = controller
-        .sample_view
-        .wav
-        .loaded_audio
-        .as_ref()
-        .map(|audio| audio.duration_seconds)?;
-    if !duration.is_finite() || duration <= 0.0 {
-        return None;
-    }
-    let step = 60.0 / bpm / duration;
-    if step.is_finite() && step > 0.0 {
-        Some(step)
-    } else {
-        None
-    }
-}
-
-fn snap_to_step(position: f32, step: f32) -> f32 {
-    if !position.is_finite() || !step.is_finite() || step <= 0.0 {
-        return position;
-    }
-    (position / step).round().mul_add(step, 0.0).clamp(0.0, 1.0)
-}
-
-fn snap_to_transient(controller: &EguiController, position: f32) -> Option<f32> {
-    const TRANSIENT_SNAP_RADIUS: f32 = 0.01;
-    if !controller.ui.waveform.transient_markers_enabled
-        || !controller.ui.waveform.transient_snap_enabled
-    {
-        return None;
-    }
-    let mut closest = None;
-    let mut best_distance = TRANSIENT_SNAP_RADIUS;
-    for &marker in &controller.ui.waveform.transients {
-        let distance = (marker - position).abs();
-        if distance <= best_distance {
-            best_distance = distance;
-            closest = Some(marker);
-        }
-    }
-    closest
-}
-
 fn strip_slice_suffix(stem: &str) -> &str {
     if let Some((prefix, suffix)) = stem.rsplit_once("_slice")
         && !prefix.is_empty()
@@ -431,7 +316,7 @@ fn append_slices_from_transients(
         }
         if non_silent_ranges
             .iter()
-            .any(|range| ranges_overlap(*range, slice))
+            .any(|range| ops::ranges_overlap(*range, slice))
         {
             slices.push(slice);
         }
@@ -440,3 +325,5 @@ fn append_slices_from_transients(
 
 #[cfg(test)]
 mod slices_tests;
+#[cfg(test)]
+mod ops_tests;
