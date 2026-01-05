@@ -107,8 +107,8 @@ fn insert_embeddings_row(conn: &Connection, sample_id: &str, model_id: &str) {
         params![
             sample_id,
             model_id,
-            crate::analysis::embedding::EMBEDDING_DIM as i64,
-            crate::analysis::embedding::EMBEDDING_DTYPE_F32
+            crate::analysis::similarity::SIMILARITY_DIM as i64,
+            crate::analysis::similarity::SIMILARITY_DTYPE_F32
         ],
     )
     .unwrap();
@@ -199,7 +199,7 @@ fn backfill_full_enqueues_even_when_up_to_date() {
         insert_embeddings_row(
             &conn,
             &sample_id,
-            crate::analysis::embedding::EMBEDDING_MODEL_ID,
+            crate::analysis::similarity::SIMILARITY_MODEL_ID,
         );
     }
 
@@ -225,7 +225,7 @@ fn backfill_skips_failed_jobs_when_not_forced() {
     insert_embeddings_row(
         &conn,
         &sample_id,
-        crate::analysis::embedding::EMBEDDING_MODEL_ID,
+        crate::analysis::similarity::SIMILARITY_MODEL_ID,
     );
     conn.execute(
         "INSERT INTO analysis_jobs (sample_id, source_id, relative_path, job_type, content_hash, status, attempts, created_at, last_error)
@@ -268,7 +268,7 @@ fn backfill_retries_failed_jobs_when_forced() {
     insert_embeddings_row(
         &conn,
         &sample_id,
-        crate::analysis::embedding::EMBEDDING_MODEL_ID,
+        crate::analysis::similarity::SIMILARITY_MODEL_ID,
     );
     conn.execute(
         "INSERT INTO analysis_jobs (sample_id, source_id, relative_path, job_type, content_hash, status, attempts, created_at, last_error)
@@ -343,7 +343,7 @@ fn enqueue_invalidates_when_analysis_version_stale() {
     insert_embeddings_row(
         &conn,
         &sample_id,
-        crate::analysis::embedding::EMBEDDING_MODEL_ID,
+        crate::analysis::similarity::SIMILARITY_MODEL_ID,
     );
 
     let changed_samples = vec![ChangedSample {
@@ -391,7 +391,7 @@ fn enqueue_invalidates_when_content_hash_changes() {
     insert_embeddings_row(
         &conn,
         &sample_id,
-        crate::analysis::embedding::EMBEDDING_MODEL_ID,
+        crate::analysis::similarity::SIMILARITY_MODEL_ID,
     );
 
     let changed_samples = vec![ChangedSample {
@@ -442,7 +442,7 @@ fn backfill_invalidates_when_analysis_version_stale() {
     insert_embeddings_row(
         &conn,
         &sample_id,
-        crate::analysis::embedding::EMBEDDING_MODEL_ID,
+        crate::analysis::similarity::SIMILARITY_MODEL_ID,
     );
 
     let (_inserted, _progress) = enqueue_jobs_for_source_backfill(&env.source).unwrap();
@@ -486,7 +486,7 @@ fn backfill_invalidates_when_content_hash_changes() {
     insert_embeddings_row(
         &conn,
         &sample_id,
-        crate::analysis::embedding::EMBEDDING_MODEL_ID,
+        crate::analysis::similarity::SIMILARITY_MODEL_ID,
     );
 
     let (_inserted, _progress) = enqueue_jobs_for_source_backfill(&env.source).unwrap();
@@ -538,7 +538,7 @@ fn embedding_backfill_enqueues_missing_or_mismatched() {
     insert_embeddings_row(
         &conn,
         &b,
-        crate::analysis::embedding::EMBEDDING_MODEL_ID,
+        crate::analysis::similarity::SIMILARITY_MODEL_ID,
     );
     insert_embeddings_row(&conn, &c, "old_model");
 

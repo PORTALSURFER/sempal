@@ -23,12 +23,12 @@ pub(super) fn lookup_cache_by_hash(
         conn,
         content_hash,
         analysis_version,
-        crate::analysis::embedding::EMBEDDING_MODEL_ID,
+        crate::analysis::similarity::SIMILARITY_MODEL_ID,
     )?;
     let embedding_vec = embedding
         .as_ref()
         .and_then(|embedding| crate::analysis::decode_f32_le_blob(&embedding.vec_blob).ok())
-        .filter(|vec| vec.len() == crate::analysis::embedding::EMBEDDING_DIM);
+        .filter(|vec| vec.len() == crate::analysis::similarity::SIMILARITY_DIM);
     Ok(CacheLookup {
         features,
         embedding,
@@ -43,7 +43,7 @@ pub(super) fn load_existing_embedding(
     load_embedding_vec_optional(
         conn,
         sample_id,
-        crate::analysis::embedding::EMBEDDING_MODEL_ID,
-        crate::analysis::embedding::EMBEDDING_DIM,
+        crate::analysis::similarity::SIMILARITY_MODEL_ID,
+        crate::analysis::similarity::SIMILARITY_DIM,
     )
 }

@@ -1,6 +1,6 @@
 use std::sync::LazyLock;
 
-use crate::analysis::{audio, embedding};
+use crate::analysis::{audio, similarity};
 
 pub(crate) fn analysis_version() -> &'static str {
     &ANALYSIS_VERSION
@@ -9,7 +9,7 @@ pub(crate) fn analysis_version() -> &'static str {
 pub(crate) fn analysis_version_for_sample_rate(sample_rate: u32) -> String {
     let payload = format!(
         "embedder={}|sr={}|max={}|window={}|hop={}|min={}|trim_on_db={}|trim_off_db={}|pre={}|post={}",
-        embedding::EMBEDDING_MODEL_ID,
+        similarity::SIMILARITY_MODEL_ID,
         sample_rate,
         audio::MAX_ANALYSIS_SECONDS,
         audio::WINDOW_SECONDS,

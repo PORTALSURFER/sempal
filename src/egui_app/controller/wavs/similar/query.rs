@@ -71,7 +71,7 @@ pub(super) fn build_similarity_query_for_loaded_sample(
         )
         .map_err(|err| format!("Load similarity embeddings failed: {err}"))?;
     let mut rows = stmt
-        .query(params![crate::analysis::embedding::EMBEDDING_MODEL_ID])
+        .query(params![crate::analysis::similarity::SIMILARITY_MODEL_ID])
         .map_err(|err| format!("Load similarity embeddings failed: {err}"))?;
     while let Some(row) = rows.next().map_err(|err| format!("Load embeddings failed: {err}"))? {
         let candidate_id: String = row
@@ -143,17 +143,9 @@ pub(super) fn build_similarity_query_for_audio_path(
         .selected_source
         .clone()
         .ok_or_else(|| "No active source selected".to_string())?;
-    let decoded = crate::analysis::audio::decode_for_analysis(path)?;
-    let processed = crate::analysis::audio::preprocess_mono_for_embedding(
-        &decoded.mono,
-        decoded.sample_rate_used,
-    );
-    let embedding =
-        crate::analysis::embedding::infer_embedding_query(&processed, decoded.sample_rate_used)?;
-    let query_dsp = crate::analysis::compute_feature_vector_v1_for_path(path)
-        .ok()
-        .and_then(|features| crate::analysis::light_dsp_from_features_v1(&features))
-        .map(normalize_l2);
+    let features = crate::analysis::compute_feature_vector_v1_for_path(path)?;
+    let embedding = crate::analysis::similarity::embedding_from_features(&features)?;
+    let query_dsp = crate::analysis::light_dsp_from_features_v1(&features).map(normalize_l2);
     let conn = open_source_db_for_id(controller, &source_id)?;
     let neighbours = crate::analysis::ann_index::find_similar_for_embedding(
         &conn,

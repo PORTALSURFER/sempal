@@ -1,14 +1,11 @@
 use crate::egui_app::controller::analysis_jobs::db;
-use tracing::warn;
 
 use super::analysis_cache::{load_existing_embedding, lookup_cache_by_hash};
 use super::analysis_db::{
     apply_cached_embedding, apply_cached_features_and_embedding, finalize_analysis_job,
     update_metadata_for_skip,
 };
-use super::analysis_decode::{
-    build_logmel_for_embedding, decode_for_analysis, infer_embedding_from_logmel, DecodeOutcome,
-};
+use super::analysis_decode::{decode_for_analysis, DecodeOutcome};
 use super::support::JobHeartbeat;
 
 pub(in crate::egui_app::controller::analysis_jobs::pool) struct AnalysisContext<'a> {
@@ -83,26 +80,16 @@ pub(super) fn run_analysis_job_with_decoded(
     decoded: crate::analysis::audio::AnalysisAudio,
     context: &AnalysisContext<'_>,
 ) -> Result<(), String> {
-    let mut needs_embedding_upsert = false;
-    let embedding = if context.use_cache {
-        if let Some(cached) = load_existing_embedding(conn, &job.sample_id)? {
-            cached
-        } else {
-            let embedding = super::analysis_decode::infer_embedding_from_audio(&decoded)?;
-            needs_embedding_upsert = true;
-            embedding
-        }
+    let needs_embedding_upsert = if context.use_cache {
+        load_existing_embedding(conn, &job.sample_id)?.is_none()
     } else {
-        let embedding = super::analysis_decode::infer_embedding_from_audio(&decoded)?;
-        needs_embedding_upsert = true;
-        embedding
+        true
     };
     finalize_analysis_job(
         conn,
         job,
         decoded,
         context.analysis_version,
-        embedding,
         needs_embedding_upsert,
         true,
     )
@@ -116,8 +103,6 @@ pub(in crate::egui_app::controller::analysis_jobs::pool) fn run_analysis_jobs_wi
     struct BatchJob {
         job: db::ClaimedJob,
         decoded: crate::analysis::audio::AnalysisAudio,
-        embedding: Option<Vec<f32>>,
-        logmel: Option<Vec<f32>>,
         needs_embedding_upsert: bool,
         error: Option<String>,
     }
@@ -125,16 +110,12 @@ pub(in crate::egui_app::controller::analysis_jobs::pool) fn run_analysis_jobs_wi
     let job_ids: Vec<i64> = jobs.iter().map(|(job, _)| job.id).collect();
     let mut heartbeat = JobHeartbeat::new(std::time::Duration::from_secs(4));
     let mut batch_jobs = Vec::with_capacity(jobs.len());
-    let mut logmel_scratch = crate::analysis::embedding::PannsLogMelScratch::default();
     let _ = heartbeat.touch_jobs(conn, &job_ids);
     for (job, decoded) in jobs {
         let sample_id = job.sample_id.clone();
-        let sample_rate_used = decoded.sample_rate_used;
         let mut item = BatchJob {
             job,
             decoded,
-            embedding: None,
-            logmel: None,
             needs_embedding_upsert: false,
             error: None,
         };
@@ -148,142 +129,38 @@ pub(in crate::egui_app::controller::analysis_jobs::pool) fn run_analysis_jobs_wi
         }
         if context.use_cache {
             match load_existing_embedding(conn, &sample_id) {
-                Ok(Some(cached)) => {
-                    item.embedding = Some(cached);
+                Ok(Some(_cached)) => {
+                    item.needs_embedding_upsert = false;
                 }
-                Ok(None) => match build_logmel_for_embedding(
-                    &item.decoded.mono,
-                    sample_rate_used,
-                    &mut logmel_scratch,
-                ) {
-                    Ok(logmel) => {
-                        item.logmel = Some(logmel);
-                        item.needs_embedding_upsert = true;
-                    }
-                    Err(err) => {
-                        item.error = Some(err);
-                    }
-                },
-                Err(err) => {
-                    item.error = Some(err);
-                }
-            }
-        } else {
-            match build_logmel_for_embedding(
-                &item.decoded.mono,
-                sample_rate_used,
-                &mut logmel_scratch,
-            ) {
-                Ok(logmel) => {
-                    item.logmel = Some(logmel);
+                Ok(None) => {
                     item.needs_embedding_upsert = true;
                 }
                 Err(err) => {
                     item.error = Some(err);
                 }
             }
+        } else {
+            item.needs_embedding_upsert = true;
         }
         batch_jobs.push(item);
     }
     let _ = heartbeat.touch_jobs(conn, &job_ids);
-
-    let mut input_indices = Vec::new();
-    let mut logmel_inputs = Vec::new();
-    for (idx, item) in batch_jobs.iter().enumerate() {
-        if let Some(logmel) = item.logmel.as_ref() {
-            input_indices.push(idx);
-            logmel_inputs.push(logmel.clone());
-        }
-    }
-
-    if !input_indices.is_empty() {
-        let _ = heartbeat.touch_jobs(conn, &job_ids);
-        let results = if crate::analysis::embedding::embedding_pipeline_enabled() {
-            let inflight = crate::analysis::embedding::embedding_inflight_max();
-            let micro_batch = crate::analysis::embedding::embedding_batch_max();
-            crate::analysis::embedding::infer_embeddings_from_logmel_batch_pipelined(
-                &logmel_inputs,
-                micro_batch,
-                inflight,
-            )
-        } else {
-            let micro_batch = crate::analysis::embedding::embedding_batch_max();
-            crate::analysis::embedding::infer_embeddings_from_logmel_batch_chunked(
-                &logmel_inputs,
-                micro_batch,
-            )
-        };
-        let _ = heartbeat.touch_jobs(conn, &job_ids);
-        for (idx, result) in input_indices.iter().copied().zip(results.into_iter()) {
-            match result {
-                Ok(embedding) => {
-                    if let Some(item) = batch_jobs.get_mut(idx) {
-                        item.embedding = Some(embedding);
-                    }
-                }
-                Err(err) => {
-                    let logmel = match batch_jobs.get(idx) {
-                        Some(item) => item.logmel.as_ref(),
-                        None => None,
-                    };
-                    let fallback = match logmel {
-                        Some(logmel) => std::panic::catch_unwind(|| {
-                            infer_embedding_from_logmel(logmel.as_slice())
-                        })
-                        .unwrap_or_else(|_| Err("PANNs single inference panicked".to_string())),
-                        None => Err("Missing log-mel for fallback".to_string()),
-                    };
-                    if let Some(item) = batch_jobs.get_mut(idx) {
-                        match fallback {
-                            Ok(embedding) => {
-                                item.embedding = Some(embedding);
-                            }
-                            Err(fallback_err) => {
-                                item.error = Some(format!(
-                                    "Batch inference failed: {err}; fallback failed: {fallback_err}"
-                                ));
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    let mut ann_batch: Vec<(String, Vec<f32>)> = Vec::new();
     let mut outcomes = Vec::with_capacity(batch_jobs.len());
     for item in batch_jobs {
         let _ = heartbeat.touch_jobs(conn, &job_ids);
         let result = if let Some(err) = item.error {
             Err(err)
-        } else if let Some(embedding) = item.embedding {
-            let sample_id = item.job.sample_id.clone();
+        } else {
             finalize_analysis_job(
                 conn,
                 &item.job,
                 item.decoded,
                 context.analysis_version,
-                embedding.clone(),
                 item.needs_embedding_upsert,
-                false,
+                true,
             )
-            .map(|_| {
-                ann_batch.push((sample_id, embedding));
-            })
-        } else {
-            Err("Missing embedding for analysis job".to_string())
         };
         outcomes.push((item.job, result));
-    }
-    if !ann_batch.is_empty() {
-        if let Err(err) = crate::analysis::ann_index::upsert_embeddings_batch(
-            conn,
-            ann_batch
-                .iter()
-                .map(|(sample_id, embedding)| (sample_id.as_str(), embedding.as_slice())),
-        ) {
-            warn!("ANN index batch update failed: {err}");
-        }
     }
     outcomes
 }

@@ -175,7 +175,7 @@ pub(super) fn spawn_compute_worker(
         let mut last_queue_log = Instant::now();
         let mut connections: HashMap<std::path::PathBuf, Connection> = HashMap::new();
         let mut deferred_updates: Vec<db::DeferredJobUpdate> = Vec::new();
-        let embedding_batch_max = crate::analysis::embedding::embedding_batch_max();
+        let embedding_batch_max = crate::analysis::similarity::SIMILARITY_BATCH_MAX;
         loop {
             if shutdown.load(Ordering::Relaxed) {
                 break;

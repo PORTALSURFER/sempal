@@ -48,31 +48,3 @@ pub(super) fn decode_for_analysis(
     )?;
     Ok(DecodeOutcome::Decoded(decoded))
 }
-
-pub(super) fn build_logmel_for_embedding(
-    mono: &[f32],
-    sample_rate: u32,
-    scratch: &mut crate::analysis::embedding::PannsLogMelScratch,
-) -> Result<Vec<f32>, String> {
-    let processed = crate::analysis::audio::preprocess_mono_for_embedding(mono, sample_rate);
-    let mut logmel = vec![0.0_f32; crate::analysis::embedding::PANNS_LOGMEL_LEN];
-    crate::analysis::embedding::build_panns_logmel_into(
-        &processed,
-        sample_rate,
-        &mut logmel,
-        scratch,
-    )?;
-    Ok(logmel)
-}
-
-pub(super) fn infer_embedding_from_logmel(logmel: &[f32]) -> Result<Vec<f32>, String> {
-    crate::analysis::embedding::infer_embedding_from_logmel(logmel)
-}
-
-pub(super) fn infer_embedding_from_audio(
-    decoded: &crate::analysis::audio::AnalysisAudio,
-) -> Result<Vec<f32>, String> {
-    let mut scratch = crate::analysis::embedding::PannsLogMelScratch::default();
-    let logmel = build_logmel_for_embedding(&decoded.mono, decoded.sample_rate_used, &mut scratch)?;
-    infer_embedding_from_logmel(&logmel)
-}

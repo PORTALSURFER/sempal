@@ -80,7 +80,6 @@ pub(super) fn finalize_analysis_job(
     job: &db::ClaimedJob,
     decoded: crate::analysis::audio::AnalysisAudio,
     analysis_version: &str,
-    embedding: Vec<f32>,
     needs_embedding_upsert: bool,
     do_ann_upsert: bool,
 ) -> Result<(), String> {
@@ -88,20 +87,6 @@ pub(super) fn finalize_analysis_job(
         .content_hash
         .as_deref()
         .ok_or_else(|| format!("Missing content_hash for analysis job {}", job.sample_id))?;
-    if needs_embedding_upsert {
-        let embedding_blob = crate::analysis::vector::encode_f32_le_blob(&embedding);
-        let created_at = now_epoch_seconds();
-        db::upsert_embedding(
-            conn,
-            &job.sample_id,
-            crate::analysis::embedding::EMBEDDING_MODEL_ID,
-            crate::analysis::embedding::EMBEDDING_DIM as i64,
-            crate::analysis::embedding::EMBEDDING_DTYPE_F32,
-            true,
-            &embedding_blob,
-            created_at,
-        )?;
-    }
     let time_domain = crate::analysis::time_domain::extract_time_domain_features(
         &decoded.mono,
         decoded.sample_rate_used,
@@ -112,6 +97,22 @@ pub(super) fn finalize_analysis_job(
     );
     let features =
         crate::analysis::features::AnalysisFeaturesV1::new(time_domain, frequency_domain);
+    let vector = crate::analysis::vector::to_f32_vector_v1(&features);
+    let embedding = crate::analysis::similarity::embedding_from_features(&vector)?;
+    if needs_embedding_upsert {
+        let embedding_blob = crate::analysis::vector::encode_f32_le_blob(&embedding);
+        let created_at = now_epoch_seconds();
+        db::upsert_embedding(
+            conn,
+            &job.sample_id,
+            crate::analysis::similarity::SIMILARITY_MODEL_ID,
+            crate::analysis::similarity::SIMILARITY_DIM as i64,
+            crate::analysis::similarity::SIMILARITY_DTYPE_F32,
+            true,
+            &embedding_blob,
+            created_at,
+        )?;
+    }
     db::update_analysis_metadata(
         conn,
         &job.sample_id,
@@ -127,7 +128,6 @@ pub(super) fn finalize_analysis_job(
     if do_ann_upsert {
         crate::analysis::ann_index::upsert_embedding(conn, &job.sample_id, &embedding)?;
     }
-    let vector = crate::analysis::vector::to_f32_vector_v1(&features);
     let blob = crate::analysis::vector::encode_f32_le_blob(&vector);
     let computed_at = now_epoch_seconds();
     db::upsert_analysis_features(
@@ -152,9 +152,9 @@ pub(super) fn finalize_analysis_job(
         conn,
         content_hash,
         analysis_version,
-        crate::analysis::embedding::EMBEDDING_MODEL_ID,
-        crate::analysis::embedding::EMBEDDING_DIM as i64,
-        crate::analysis::embedding::EMBEDDING_DTYPE_F32,
+        crate::analysis::similarity::SIMILARITY_MODEL_ID,
+        crate::analysis::similarity::SIMILARITY_DIM as i64,
+        crate::analysis::similarity::SIMILARITY_DTYPE_F32,
         true,
         &embedding_blob,
         now_epoch_seconds(),

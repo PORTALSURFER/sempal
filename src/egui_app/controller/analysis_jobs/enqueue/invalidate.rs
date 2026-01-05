@@ -41,7 +41,7 @@ pub(super) fn collect_backfill_updates(
         conn,
         current_version,
         job_type,
-        crate::analysis::embedding::EMBEDDING_MODEL_ID,
+        crate::analysis::similarity::SIMILARITY_MODEL_ID,
     )?;
     Ok((sample_metadata, jobs, invalidate))
 }

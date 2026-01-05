@@ -74,7 +74,7 @@ impl EguiController {
             let mut rows = stmt
                 .query(params![
                     ANALYSIS_JOB_TYPE,
-                    crate::analysis::embedding::EMBEDDING_MODEL_ID,
+                    crate::analysis::similarity::SIMILARITY_MODEL_ID,
                     prefix,
                     prefix_end
                 ])

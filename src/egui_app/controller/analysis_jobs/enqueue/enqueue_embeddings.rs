@@ -97,7 +97,7 @@ fn enqueue_embedding_backfill(
             .map_err(|err| format!("Prepare embedding backfill query failed: {err}"))?;
         let mut rows = stmt
             .query(params![
-                crate::analysis::embedding::EMBEDDING_MODEL_ID,
+                crate::analysis::similarity::SIMILARITY_MODEL_ID,
                 format!("{}::%", request.source.id)
             ])
             .map_err(|err| format!("Failed to query embedding backfill rows: {err}"))?;

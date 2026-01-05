@@ -15,7 +15,7 @@ fn failed_samples_for_source_conn(
     source_id: &crate::sample_sources::SourceId,
 ) -> Result<HashMap<PathBuf, String>, String> {
     let prefix = format!("{}::%", source_id.as_str());
-    let embedding_model = crate::analysis::embedding::EMBEDDING_MODEL_ID;
+    let embedding_model = crate::analysis::similarity::SIMILARITY_MODEL_ID;
     let analysis_version = crate::analysis::version::analysis_version();
     let mut stmt = conn
         .prepare(
@@ -115,7 +115,7 @@ mod tests {
         conn.execute(
             "INSERT INTO embeddings (sample_id, model_id, dim, dtype, l2_normed, vec, created_at)
              VALUES ('s1::Pack/a.wav', ?1, 1, 'f32', 1, X'00', 0)",
-            params![crate::analysis::embedding::EMBEDDING_MODEL_ID],
+            params![crate::analysis::similarity::SIMILARITY_MODEL_ID],
         )
         .unwrap();
 

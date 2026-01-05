@@ -15,11 +15,6 @@ impl EguiController {
         force_full_analysis: bool,
     ) {
         self.runtime.similarity_prep_last_error = None;
-        std::thread::spawn(|| {
-            if let Err(err) = crate::analysis::embedding::warmup_panns() {
-                tracing::warn!("PANNs warmup failed: {err}");
-            }
-        });
         if self.runtime.similarity_prep.is_some() {
             self.refresh_similarity_prep_progress();
             self.set_status_message(StatusMessage::SimilarityPrepAlreadyRunning);

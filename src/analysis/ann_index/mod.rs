@@ -3,7 +3,7 @@ mod state;
 mod storage;
 mod update;
 
-use crate::analysis::{decode_f32_le_blob, embedding};
+use crate::analysis::{decode_f32_le_blob, similarity};
 use rusqlite::Connection;
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
@@ -105,10 +105,10 @@ pub fn find_similar_for_embedding(
     if k == 0 {
         return Ok(Vec::new());
     }
-    if embedding.len() != embedding::EMBEDDING_DIM {
+    if embedding.len() != similarity::SIMILARITY_DIM {
         return Err(format!(
             "Embedding dim mismatch: expected {}, got {}",
-            embedding::EMBEDDING_DIM,
+            similarity::SIMILARITY_DIM,
             embedding.len()
         ));
     }
@@ -156,7 +156,7 @@ fn load_embedding(conn: &Connection, sample_id: &str) -> Result<Vec<f32>, String
     let blob: Vec<u8> = conn
         .query_row(
             "SELECT vec FROM embeddings WHERE sample_id = ?1 AND model_id = ?2",
-            rusqlite::params![sample_id, embedding::EMBEDDING_MODEL_ID],
+            rusqlite::params![sample_id, similarity::SIMILARITY_MODEL_ID],
             |row| row.get(0),
         )
         .map_err(|err| format!("Failed to load embedding for {sample_id}: {err}"))?;

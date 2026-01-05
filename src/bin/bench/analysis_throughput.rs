@@ -31,15 +31,11 @@ pub(super) fn run(options: &BenchOptions) -> Result<AnalysisBenchResult, String>
             source_err(vec.len())?;
         }
         if options.analysis_full {
-            let processed = sempal::analysis::preprocess_mono_for_embedding(
+            let embedding = sempal::analysis::compute_similarity_embedding_for_mono_samples(
                 &samples,
                 options.analysis_sample_rate,
-            );
-            let embedding = sempal::analysis::infer_embedding(
-                &processed,
-                options.analysis_sample_rate,
             )?;
-            if embedding.len() != sempal::analysis::embedding::EMBEDDING_DIM {
+            if embedding.len() != sempal::analysis::similarity::SIMILARITY_DIM {
                 return Err(format!(
                     "Unexpected embedding dim: {}",
                     embedding.len()

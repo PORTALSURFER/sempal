@@ -8,16 +8,16 @@
 - Keep PANNs as an optional backend during transition for A/B comparisons and fallback.
 
 ## Step-by-step plan
-1. [-] Audit current embedding pipeline (PANNs preprocessing, model ID contract, storage, ANN index) to identify integration points and constraints.
-2. [-] Define a descriptor feature set aligned with Sononym/Ableton-style aspects (timbre/MFCC stats, spectral shape, envelope/attack-decay, pitch stats, duration), including normalization strategy and target dimensionality.
-3. [-] Design storage/schema updates for descriptor vectors (tables, model IDs, versioning) without breaking existing embeddings.
-4. [-] Implement descriptor extraction modules and unit tests, reusing existing FFT/mel utilities where possible.
-5. [-] Add similarity scoring for descriptor vectors (weighted cosine/L2) and expose tunable weights in config/UI if appropriate.
+1. [x] Audit current embedding pipeline (PANNs preprocessing, model ID contract, storage, ANN index) to identify integration points and constraints.
+2. [x] Define a descriptor feature set aligned with Sononym/Ableton-style aspects (timbre/MFCC stats, spectral shape, envelope/attack-decay, pitch stats, duration), including normalization strategy and target dimensionality.
+3. [x] Design storage/schema updates for descriptor vectors (tables, model IDs, versioning) without breaking existing embeddings.
+4. [x] Implement descriptor extraction modules and unit tests, reusing existing FFT/mel utilities where possible.
+5. [x] Add similarity scoring for descriptor vectors (weighted cosine/L2) and expose tunable weights in config/UI if appropriate.
 6. [-] Implement optional dimensionality reduction (PCA/offline projection) and integrate into indexing/search.
-7. [-] Update indexing/search pipeline to handle multiple embedding backends (PANNs vs descriptors) and ensure smooth migration.
+7. [x] Update indexing/search pipeline to use descriptor embeddings (drop PANNs from similarity path).
 8. [-] Benchmark extraction and query performance on representative sample sets; tune weights/window lengths for quality vs speed.
-9. [-] Add regression tests/fixtures for descriptor extraction, similarity ranking, and DB migrations.
-10. [-] Document the new similarity pipeline, configuration knobs, and migration guidance.
+9. [~] Add regression tests/fixtures for descriptor extraction, similarity ranking, and DB migrations.
+10. [x] Document the new similarity pipeline, configuration knobs, and migration guidance.
 
 ## Code Style & Architecture Rules Reminder
 - Keep files under 400 lines; split when necessary.

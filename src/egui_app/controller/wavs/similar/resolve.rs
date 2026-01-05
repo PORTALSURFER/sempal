@@ -179,7 +179,7 @@ pub(super) fn load_embedding_for_sample(
     let blob: Option<Vec<u8>> = conn
         .query_row(
             "SELECT vec FROM embeddings WHERE sample_id = ?1 AND model_id = ?2",
-            params![sample_id, crate::analysis::embedding::EMBEDDING_MODEL_ID],
+            params![sample_id, crate::analysis::similarity::SIMILARITY_MODEL_ID],
             |row| row.get(0),
         )
         .optional()

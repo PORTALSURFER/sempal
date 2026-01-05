@@ -142,7 +142,7 @@ impl AnalysisWorkerPool {
                 worker_count,
                 self.decode_worker_count_override.load(Ordering::Relaxed),
             );
-            let embedding_batch_max = crate::analysis::embedding::embedding_batch_max();
+            let embedding_batch_max = crate::analysis::similarity::SIMILARITY_BATCH_MAX;
             let decode_queue_target =
                 job_claim::decode_queue_target(embedding_batch_max, worker_count);
             let queue = std::sync::Arc::new(job_claim::DecodedQueue::new());

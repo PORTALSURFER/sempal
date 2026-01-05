@@ -12,35 +12,31 @@ For `feat_version = 1`, the vector is a fixed-length array of `183` `f32` values
 - `time_domain`: `TimeDomainFeatures`
 - `frequency_domain`: `FrequencyDomainFeatures`
 
-## Embedding Contract (PANNs)
+## Embedding Contract (Similarity DSP)
 
-Sempal stores PANNs embeddings in the `embeddings` table. The following contract is
-authoritative for all embedding inference in the app and dataset tooling.
+Sempal stores descriptor-based similarity embeddings in the `embeddings` table. The following
+contract is authoritative for all similarity embedding inference in the app and dataset tooling.
 
 ### Input preprocessing
 
 - Input is mono `f32` samples in `[-1.0, 1.0]`.
 - Mono mixdown is required for multi-channel audio.
-- Preprocess using `preprocess_mono_for_embedding`:
+- Preprocess using `prepare_mono_for_analysis`:
   - Trim silence with hysteresis.
+  - Apply energy-window selection for long files.
+  - Pad to the minimum analysis duration.
   - Normalize peak to `1.0` (if non-zero).
   - Sanitize non-finite values (clamp and zero subnormals).
 
-### Model input
+### Feature extraction
 
-- Target sample rate: `16_000Hz` (resample if needed).
-- Window length: `10s` (`160_000` samples).
-- If shorter than 10s, repeat-pad to length; if longer, truncate to 10s.
-- Compute log-mel features:
-  - STFT: `n_fft=512`, `hop=160`, Hann window.
-  - Mel: `64` bands, `fmin=50Hz`, `fmax=8_000Hz`.
-  - Log scale: `10 * log10(mel + 1e-10)`.
-- Model input tensor layout: `[batch, 1, frames, mel]` where `frames=1000`.
+- Compute the V1 DSP feature vector (time-domain + frequency-domain aggregates).
+- The feature vector layout is documented in this file under "Layout (v1)".
 
 ### Output embedding
 
-- Model ID: `panns_cnn14_16k__sr16k__nfft512__hop160__mel64__log10__chunk10__repeatpad_v1`
-- Dimension: `2048` `f32` values.
+- Model ID: `features_v1__len183__l2`
+- Dimension: `183` `f32` values.
 - L2-normalized with `||v|| ~= 1.0` (tolerance `1e-3`).
 - Stored with `embeddings.model_id`, `dim`, `dtype`, and `l2_normed = true`.
 

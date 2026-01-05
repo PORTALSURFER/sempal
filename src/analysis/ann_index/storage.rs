@@ -4,7 +4,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use std::path::{Path, PathBuf};
 
 const ANN_DIR: &str = "ann";
-const ANN_BASENAME: &str = "panns_hnsw";
+const ANN_BASENAME: &str = "similarity_hnsw";
 const ANN_ID_MAP_SUFFIX: &str = "idmap.json";
 
 pub(crate) fn read_meta(

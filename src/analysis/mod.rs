@@ -12,6 +12,7 @@ pub(crate) mod features;
 pub(crate) mod fft;
 pub(crate) mod frequency_domain;
 pub mod hdbscan;
+pub mod similarity;
 pub(crate) mod time_domain;
 pub mod umap;
 pub mod vector;
@@ -39,6 +40,12 @@ pub fn compute_feature_vector_v1_for_path(path: &Path) -> Result<Vec<f32>, Strin
     Ok(vector::to_f32_vector_v1(&features))
 }
 
+/// Compute the similarity embedding for a file path using V1 DSP features.
+pub fn compute_similarity_embedding_for_path(path: &Path) -> Result<Vec<f32>, String> {
+    let features = compute_feature_vector_v1_for_path(path)?;
+    similarity::embedding_from_features(&features)
+}
+
 /// Compute the V1 feature vector from mono samples without decoding from disk.
 pub fn compute_feature_vector_v1_for_mono_samples(
     samples: &[f32],
@@ -61,6 +68,15 @@ pub fn compute_feature_vector_v1_for_mono_samples(
     );
     let features = features::AnalysisFeaturesV1::new(time_domain, frequency_domain);
     Ok(vector::to_f32_vector_v1(&features))
+}
+
+/// Compute the similarity embedding from mono samples using V1 DSP features.
+pub fn compute_similarity_embedding_for_mono_samples(
+    samples: &[f32],
+    sample_rate: u32,
+) -> Result<Vec<f32>, String> {
+    let features = compute_feature_vector_v1_for_mono_samples(samples, sample_rate)?;
+    similarity::embedding_from_features(&features)
 }
 
 /// Preprocess mono audio for embedding inference (silence trim + normalization).

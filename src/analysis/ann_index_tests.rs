@@ -1,5 +1,5 @@
 use crate::analysis::vector::encode_f32_le_blob;
-use crate::analysis::{ann_index, embedding};
+use crate::analysis::{ann_index, similarity};
 use crate::app_dirs::ConfigBaseGuard;
 use rusqlite::{Connection, params};
 use std::sync::{LazyLock, Mutex};
@@ -34,7 +34,7 @@ fn ann_index_matches_bruteforce_neighbors_on_fixture() {
     )
     .unwrap();
 
-    let dim = embedding::EMBEDDING_DIM;
+    let dim = similarity::SIMILARITY_DIM;
     let samples = vec![
         ("s1", normalize(unit_vec(dim, 0))),
         ("s2", normalize(blend_unit(dim, 0, 1, 0.08))),
@@ -46,7 +46,7 @@ fn ann_index_matches_bruteforce_neighbors_on_fixture() {
         conn.execute(
             "INSERT INTO embeddings (sample_id, model_id, dim, dtype, l2_normed, vec, created_at)
              VALUES (?1, ?2, ?3, 'f32', 1, ?4, 0)",
-            params![sample_id, embedding::EMBEDDING_MODEL_ID, dim as i64, blob],
+            params![sample_id, similarity::SIMILARITY_MODEL_ID, dim as i64, blob],
         )
         .unwrap();
     }
@@ -89,7 +89,7 @@ fn ann_index_incremental_update_matches_full_rebuild() {
     )
     .unwrap();
 
-    let dim = embedding::EMBEDDING_DIM;
+    let dim = similarity::SIMILARITY_DIM;
     let base_samples = vec![
         ("s1", normalize(unit_vec(dim, 0))),
         ("s2", normalize(unit_vec(dim, 1))),
@@ -154,7 +154,7 @@ fn insert_embeddings(conn: &Connection, dim: usize, samples: &[(&str, Vec<f32>)]
         conn.execute(
             "INSERT INTO embeddings (sample_id, model_id, dim, dtype, l2_normed, vec, created_at)
              VALUES (?1, ?2, ?3, 'f32', 1, ?4, 0)",
-            params![sample_id, embedding::EMBEDDING_MODEL_ID, dim as i64, blob],
+            params![sample_id, similarity::SIMILARITY_MODEL_ID, dim as i64, blob],
         )
         .unwrap();
     }

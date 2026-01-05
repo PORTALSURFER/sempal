@@ -1,4 +1,4 @@
-use crate::analysis::{embedding, version};
+use crate::analysis::{similarity, version};
 use hnsw_rs::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -36,9 +36,9 @@ pub(crate) struct AnnIndexMetaRow {
 pub(crate) fn default_params() -> AnnIndexParams {
     AnnIndexParams {
         analysis_version: version::analysis_version().to_string(),
-        model_id: embedding::EMBEDDING_MODEL_ID.to_string(),
+        model_id: similarity::SIMILARITY_MODEL_ID.to_string(),
         metric: "cosine".to_string(),
-        dim: embedding::EMBEDDING_DIM,
+        dim: similarity::SIMILARITY_DIM,
         max_nb_connection: 16,
         ef_construction: 200,
         ef_search: 64,

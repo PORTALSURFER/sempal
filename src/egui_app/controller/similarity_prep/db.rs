@@ -39,7 +39,7 @@ pub(super) fn source_has_embeddings(source: &SampleSource) -> bool {
     let Ok(conn) = analysis_jobs::open_source_db(&source.root) else {
         return false;
     };
-    let model_id = crate::analysis::embedding::EMBEDDING_MODEL_ID;
+    let model_id = crate::analysis::similarity::SIMILARITY_MODEL_ID;
     let sample_id_prefix = format!("{}::%", source.id.as_str());
     let count: Result<i64, _> = conn.query_row(
         "SELECT COUNT(*) FROM embeddings WHERE model_id = ?1 AND sample_id LIKE ?2",

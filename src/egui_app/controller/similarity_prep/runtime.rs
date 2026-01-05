@@ -188,14 +188,14 @@ fn run_similarity_finalize(
     let sample_id_prefix = format!("{}::%", source_id.as_str());
     crate::analysis::umap::build_umap_layout(
         &mut conn,
-        crate::analysis::embedding::EMBEDDING_MODEL_ID,
+        crate::analysis::similarity::SIMILARITY_MODEL_ID,
         umap_version,
         0,
         0.95,
     )?;
     let layout_rows = store.count_umap_layout_rows(
         &conn,
-        crate::analysis::embedding::EMBEDDING_MODEL_ID,
+        crate::analysis::similarity::SIMILARITY_MODEL_ID,
         umap_version,
         &sample_id_prefix,
     )?;
@@ -207,7 +207,7 @@ fn run_similarity_finalize(
     }
     let cluster_stats = crate::analysis::hdbscan::build_hdbscan_clusters_for_sample_id_prefix(
         &mut conn,
-        crate::analysis::embedding::EMBEDDING_MODEL_ID,
+        crate::analysis::similarity::SIMILARITY_MODEL_ID,
         HdbscanMethod::Umap,
         Some(umap_version),
         Some(sample_id_prefix.as_str()),

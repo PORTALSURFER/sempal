@@ -229,7 +229,7 @@ pub(super) fn prepare_cluster_centroids(
             app.controller.ui.map.cached_cluster_centroids_key.clone();
         let umap_version = umap_version.to_string();
         app.controller.build_umap_clusters(
-            crate::analysis::embedding::EMBEDDING_MODEL_ID,
+            crate::analysis::similarity::SIMILARITY_MODEL_ID,
             &umap_version,
         );
     }

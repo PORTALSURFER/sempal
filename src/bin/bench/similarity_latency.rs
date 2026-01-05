@@ -4,7 +4,7 @@ use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use rusqlite::{Connection, params};
 use sempal::analysis::vector::encode_f32_le_blob;
-use sempal::analysis::{ann_index, embedding};
+use sempal::analysis::{ann_index, similarity};
 use serde::Serialize;
 use tempfile::tempdir;
 
@@ -57,7 +57,7 @@ pub(super) fn run(options: &BenchOptions) -> Result<SimilarityBenchResult, Strin
 
 fn seed_embeddings(conn: &mut Connection, rows: usize, seed: u64) -> Result<(), String> {
     let mut rng = StdRng::seed_from_u64(seed);
-    let dim = embedding::EMBEDDING_DIM;
+    let dim = similarity::SIMILARITY_DIM;
     let tx = conn
         .transaction()
         .map_err(|err| format!("Start seed transaction failed: {err}"))?;
@@ -80,7 +80,7 @@ fn seed_embeddings(conn: &mut Connection, rows: usize, seed: u64) -> Result<(), 
             let blob = encode_f32_le_blob(&vec);
             stmt.execute(params![
                 sample_id,
-                embedding::EMBEDDING_MODEL_ID,
+                similarity::SIMILARITY_MODEL_ID,
                 dim as i64,
                 blob
             ])

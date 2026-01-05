@@ -1,4 +1,5 @@
 use crate::egui_app::controller::analysis_jobs::db;
+use rusqlite::{OptionalExtension, params};
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::{mpsc::channel, Arc, Mutex};
@@ -39,12 +40,13 @@ pub(super) fn run_embedding_backfill_job(
     }
 
     let mut items = Vec::new();
+    let mut precomputed = Vec::new();
     for sample_id in sample_ids {
         if load_embedding_vec_optional(
             conn,
             &sample_id,
-            crate::analysis::embedding::EMBEDDING_MODEL_ID,
-            crate::analysis::embedding::EMBEDDING_DIM,
+            crate::analysis::similarity::SIMILARITY_MODEL_ID,
+            crate::analysis::similarity::SIMILARITY_DIM,
         )?
         .is_some()
         {
@@ -58,10 +60,10 @@ pub(super) fn run_embedding_backfill_job(
                 conn,
                 &content_hash,
                 analysis_version,
-                crate::analysis::embedding::EMBEDDING_MODEL_ID,
+                crate::analysis::similarity::SIMILARITY_MODEL_ID,
             )? {
                 if let Ok(vec) = crate::analysis::decode_f32_le_blob(&cached.vec_blob) {
-                    if vec.len() == crate::analysis::embedding::EMBEDDING_DIM {
+                    if vec.len() == crate::analysis::similarity::SIMILARITY_DIM {
                         db::upsert_embedding(
                             conn,
                             &sample_id,
@@ -73,6 +75,37 @@ pub(super) fn run_embedding_backfill_job(
                             cached.created_at,
                         )?;
                         crate::analysis::ann_index::upsert_embedding(conn, &sample_id, &vec)?;
+                        continue;
+                    }
+                }
+            }
+        }
+        if let Some(features) = load_features_vec_optional(conn, &sample_id)? {
+            if let Ok(embedding) = crate::analysis::similarity::embedding_from_features(&features) {
+                precomputed.push(EmbeddingResult {
+                    sample_id,
+                    content_hash,
+                    embedding,
+                });
+                continue;
+            }
+        }
+        if use_cache {
+            if let Some(cached) = db::cached_features_by_hash(
+                conn,
+                &content_hash,
+                analysis_version,
+                crate::analysis::vector::FEATURE_VERSION_V1,
+            )? {
+                if let Ok(features) = crate::analysis::decode_f32_le_blob(&cached.vec_blob) {
+                    if let Ok(embedding) =
+                        crate::analysis::similarity::embedding_from_features(&features)
+                    {
+                        precomputed.push(EmbeddingResult {
+                            sample_id,
+                            content_hash,
+                            embedding,
+                        });
                         continue;
                     }
                 }
@@ -100,7 +133,7 @@ pub(super) fn run_embedding_backfill_job(
         });
     }
 
-    if items.is_empty() {
+    if items.is_empty() && precomputed.is_empty() {
         return Ok(());
     }
 
@@ -117,7 +150,7 @@ pub(super) fn run_embedding_backfill_job(
             let queue = Arc::clone(&queue);
             let tx = tx.clone();
             scope.spawn(move || {
-                let embedding_batch_max = crate::analysis::embedding::embedding_batch_max();
+                let embedding_batch_max = crate::analysis::similarity::SIMILARITY_BATCH_MAX;
                 loop {
                     let batch = {
                         let mut guard = match queue.lock() {
@@ -130,10 +163,6 @@ pub(super) fn run_embedding_backfill_job(
                         break;
                     }
 
-                    let mut payloads = Vec::new();
-                    let mut logmels = Vec::new();
-                    let mut logmel_scratch =
-                        crate::analysis::embedding::PannsLogMelScratch::default();
                     for work in batch {
                         let decoded = match crate::analysis::audio::decode_for_analysis_with_rate(
                             &work.absolute_path,
@@ -148,65 +177,34 @@ pub(super) fn run_embedding_backfill_job(
                                 continue;
                             }
                         };
-                        let processed = crate::analysis::audio::preprocess_mono_for_embedding(
+                        let features = match crate::analysis::compute_feature_vector_v1_for_mono_samples(
                             &decoded.mono,
                             decoded.sample_rate_used,
-                        );
-                        let mut logmel =
-                            vec![0.0_f32; crate::analysis::embedding::PANNS_LOGMEL_LEN];
-                        if let Err(err) = crate::analysis::embedding::build_panns_logmel_into(
-                            &processed,
-                            decoded.sample_rate_used,
-                            &mut logmel,
-                            &mut logmel_scratch,
                         ) {
-                            let _ = tx.send(Err(format!(
-                                "Log-mel failed for {}: {err}",
-                                work.absolute_path.display()
-                            )));
-                            continue;
-                        }
-                        logmels.push(logmel);
-                        payloads.push((work.sample_id, work.content_hash));
-                    }
-
-                    if logmels.is_empty() {
-                        continue;
-                    }
-
-                    let embeddings = if crate::analysis::embedding::embedding_pipeline_enabled() {
-                        let inflight = crate::analysis::embedding::embedding_inflight_max();
-                        let micro_batch = crate::analysis::embedding::embedding_batch_max();
-                        crate::analysis::embedding::infer_embeddings_from_logmel_batch_pipelined(
-                            &logmels,
-                            micro_batch,
-                            inflight,
-                        )
-                    } else {
-                        let micro_batch = crate::analysis::embedding::embedding_batch_max();
-                        crate::analysis::embedding::infer_embeddings_from_logmel_batch_chunked(
-                            &logmels,
-                            micro_batch,
-                        )
-                    };
-                    for ((sample_id, content_hash), result) in
-                        payloads.into_iter().zip(embeddings.into_iter())
-                    {
-                        match result {
-                            Ok(embedding) => {
-                                let _ = tx.send(Ok(EmbeddingResult {
-                                    sample_id,
-                                    content_hash,
-                                    embedding,
-                                }));
-                            }
+                            Ok(features) => features,
                             Err(err) => {
                                 let _ = tx.send(Err(format!(
-                                    "Embed failed for {}: {err}",
-                                    sample_id
+                                    "Feature extraction failed for {}: {err}",
+                                    work.absolute_path.display()
                                 )));
+                                continue;
                             }
-                        }
+                        };
+                        let embedding = match crate::analysis::similarity::embedding_from_features(&features) {
+                            Ok(embedding) => embedding,
+                            Err(err) => {
+                                let _ = tx.send(Err(format!(
+                                    "Embedding build failed for {}: {err}",
+                                    work.absolute_path.display()
+                                )));
+                                continue;
+                            }
+                        };
+                        let _ = tx.send(Ok(EmbeddingResult {
+                            sample_id: work.sample_id,
+                            content_hash: work.content_hash,
+                            embedding,
+                        }));
                     }
                 }
             });
@@ -214,7 +212,10 @@ pub(super) fn run_embedding_backfill_job(
         drop(tx);
     });
 
-    let (results, errors) = collect_results(rx);
+    let (mut results, errors) = collect_results(rx);
+    if !precomputed.is_empty() {
+        results.extend(precomputed);
+    }
     if results.is_empty() {
         if !errors.is_empty() {
             return Err(format!("Embedding backfill failed: {:?}", errors));
@@ -294,9 +295,9 @@ fn write_backfill_chunk(
                 created_at = excluded.created_at",
             rusqlite::params![
                 result.sample_id,
-                crate::analysis::embedding::EMBEDDING_MODEL_ID,
-                crate::analysis::embedding::EMBEDDING_DIM as i64,
-                crate::analysis::embedding::EMBEDDING_DTYPE_F32,
+                crate::analysis::similarity::SIMILARITY_MODEL_ID,
+                crate::analysis::similarity::SIMILARITY_DIM as i64,
+                crate::analysis::similarity::SIMILARITY_DTYPE_F32,
                 true,
                 &embedding_blob,
                 created_at
@@ -310,9 +311,9 @@ fn write_backfill_chunk(
             conn,
             &result.content_hash,
             analysis_version,
-            crate::analysis::embedding::EMBEDDING_MODEL_ID,
-            crate::analysis::embedding::EMBEDDING_DIM as i64,
-            crate::analysis::embedding::EMBEDDING_DTYPE_F32,
+            crate::analysis::similarity::SIMILARITY_MODEL_ID,
+            crate::analysis::similarity::SIMILARITY_DIM as i64,
+            crate::analysis::similarity::SIMILARITY_DTYPE_F32,
             true,
             &embedding_blob,
             created_at,
@@ -346,6 +347,28 @@ where
         }
     }
     Err("Embedding backfill retries exhausted".to_string())
+}
+
+fn load_features_vec_optional(
+    conn: &rusqlite::Connection,
+    sample_id: &str,
+) -> Result<Option<Vec<f32>>, String> {
+    let blob: Option<Vec<u8>> = conn
+        .query_row(
+            "SELECT vec_blob FROM features WHERE sample_id = ?1",
+            params![sample_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|err| format!("Failed to load features for {sample_id}: {err}"))?;
+    let Some(blob) = blob else {
+        return Ok(None);
+    };
+    let vec = crate::analysis::decode_f32_le_blob(&blob)?;
+    if vec.len() != crate::analysis::vector::FEATURE_VECTOR_LEN_V1 {
+        return Ok(None);
+    }
+    Ok(Some(vec))
 }
 
 #[cfg(test)]
