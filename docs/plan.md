@@ -1,23 +1,19 @@
 ## Goal
-- Plan a shift from the current PANNs-heavy similarity pipeline toward a faster, descriptor-first system inspired by Sononym/Ableton, while preserving existing functionality and compatibility.
+- Plan a per-source single-file ANN index format that sits alongside each source `library.db`, matching current HNSW performance and flexibility.
 
 ## Proposed solutions
-- Replace or supplement PANNs embeddings with a lightweight descriptor vector (spectral, temporal, pitch, timbre) and a weighted similarity metric.
-- Add a small learned projection (e.g., PCA) over descriptors to reduce dimensionality without introducing large neural nets.
-- Shorten analysis windows and optimize preprocessing (batching, caching) to reduce per-sample compute time.
-- Keep PANNs as an optional backend during transition for A/B comparisons and fallback.
+- Implement a custom single-file container that stores HNSW graph/data plus id map with fixed offsets for mmap-friendly access.
+- Keep HNSW serialization but add a thin wrapper that packs/unpacks the two HNSW files and id map into one file without changing the search algorithm.
+- Add versioned header metadata to support future format changes and multiple embedding models.
 
 ## Step-by-step plan
-1. [x] Audit current embedding pipeline (PANNs preprocessing, model ID contract, storage, ANN index) to identify integration points and constraints.
-2. [x] Define a descriptor feature set aligned with Sononym/Ableton-style aspects (timbre/MFCC stats, spectral shape, envelope/attack-decay, pitch stats, duration), including normalization strategy and target dimensionality.
-3. [x] Design storage/schema updates for descriptor vectors (tables, model IDs, versioning) without breaking existing embeddings.
-4. [x] Implement descriptor extraction modules and unit tests, reusing existing FFT/mel utilities where possible.
-5. [x] Add similarity scoring for descriptor vectors (weighted cosine/L2) and expose tunable weights in config/UI if appropriate.
-6. [-] Implement optional dimensionality reduction (PCA/offline projection) and integrate into indexing/search.
-7. [x] Update indexing/search pipeline to use descriptor embeddings (drop PANNs from similarity path).
-8. [-] Benchmark extraction and query performance on representative sample sets; tune weights/window lengths for quality vs speed.
-9. [~] Add regression tests/fixtures for descriptor extraction, similarity ranking, and DB migrations.
-10. [x] Document the new similarity pipeline, configuration knobs, and migration guidance.
+1. [-] Audit the current ANN storage flow (file paths, HNSW dump/load, id map handling) and confirm where the per-source DB path is resolved.
+2. [-] Define the single-file container format (header, version, model_id, offsets, lengths, checksum) and decide binary vs JSON for the id map.
+3. [-] Add a new storage module to read/write the container file, keeping mmap-friendly layout and minimal copying.
+4. [-] Update ANN build/load paths to use the container file next to `library.db`, with fallback to legacy files and automatic migration.
+5. [-] Add tests for container round-trip, migration from old files, and consistency with existing ANN search results.
+6. [-] Benchmark load/search performance vs the current multi-file approach and confirm parity.
+7. [-] Document the new file format, migration behavior, and any cleanup tooling.
 
 ## Code Style & Architecture Rules Reminder
 - Keep files under 400 lines; split when necessary.
