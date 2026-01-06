@@ -12,26 +12,45 @@ pub(super) fn resolve_sample_id_for_visible_row(
     controller: &mut EguiController,
     visible_row: usize,
 ) -> Result<(String, usize), String> {
-    let source_id = controller
+    let source_id = resolve_selected_source(controller)?;
+    let entry_index = resolve_visible_row_index(controller, visible_row)?;
+    let sample_id = resolve_sample_id_for_entry(controller, &source_id, entry_index)?;
+    Ok((sample_id, entry_index))
+}
+
+fn resolve_selected_source(controller: &EguiController) -> Result<SourceId, String> {
+    controller
         .selection_state
         .ctx
         .selected_source
         .clone()
-        .ok_or_else(|| "No active source selected".to_string())?;
-    let entry_index = controller
+        .ok_or_else(|| "No active source selected".to_string())
+}
+
+fn resolve_visible_row_index(
+    controller: &EguiController,
+    visible_row: usize,
+) -> Result<usize, String> {
+    controller
         .ui
         .browser
         .visible
         .get(visible_row)
-        .ok_or_else(|| "Selected row is out of range".to_string())?;
+        .ok_or_else(|| "Selected row is out of range".to_string())
+}
+
+fn resolve_sample_id_for_entry(
+    controller: &EguiController,
+    source_id: &SourceId,
+    entry_index: usize,
+) -> Result<String, String> {
     let entry = controller
         .wav_entry(entry_index)
         .ok_or_else(|| "Sample entry missing".to_string())?;
-    let sample_id = super::super::analysis_jobs::build_sample_id(
+    Ok(super::super::analysis_jobs::build_sample_id(
         source_id.as_str(),
         &entry.relative_path,
-    );
-    Ok((sample_id, entry_index))
+    ))
 }
 
 pub(super) fn resolve_similarity_for_sample_id(
@@ -466,6 +485,53 @@ mod tests {
         .unwrap();
         assert_eq!(indices, vec![0]);
         assert_eq!(scores.len(), 1);
+    }
+
+    #[test]
+    fn filter_ranked_candidates_handles_empty_input() {
+        let conn = in_memory_conn();
+        let source_id = SourceId::from_string("source-a");
+        let ranked: Vec<(String, f32)> = Vec::new();
+        let (indices, scores) =
+            filter_ranked_candidates(&conn, ranked, &source_id, None, |_| Some(0)).unwrap();
+        assert!(indices.is_empty());
+        assert!(scores.is_empty());
+    }
+
+    #[test]
+    fn filter_ranked_candidates_filters_all_by_cutoff() {
+        let conn = in_memory_conn();
+        let source_id = SourceId::from_string("source-a");
+        let sample_id = super::super::analysis_jobs::build_sample_id(
+            source_id.as_str(),
+            Path::new("skip.wav"),
+        );
+        let ranked = vec![(sample_id, DUPLICATE_SCORE_THRESHOLD - 0.01)];
+        let (indices, scores) = filter_ranked_candidates(
+            &conn,
+            ranked,
+            &source_id,
+            Some(DUPLICATE_SCORE_THRESHOLD),
+            |_| Some(0),
+        )
+        .unwrap();
+        assert!(indices.is_empty());
+        assert!(scores.is_empty());
+    }
+
+    #[test]
+    fn filter_ranked_candidates_skips_unresolved_paths() {
+        let conn = in_memory_conn();
+        let source_id = SourceId::from_string("source-a");
+        let sample_id = super::super::analysis_jobs::build_sample_id(
+            source_id.as_str(),
+            Path::new("missing.wav"),
+        );
+        let ranked = vec![(sample_id, DUPLICATE_SCORE_THRESHOLD + 0.01)];
+        let (indices, scores) =
+            filter_ranked_candidates(&conn, ranked, &source_id, None, |_| None).unwrap();
+        assert!(indices.is_empty());
+        assert!(scores.is_empty());
     }
 
     #[test]

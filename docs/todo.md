@@ -10,14 +10,6 @@
     a thin orchestration layer.
   - Tests: move/enhance related tests to enqueue/tests.rs and add coverage for
     “skip failed samples on hard sync” vs “force requeue”.
-- TODO 4: Reduce complexity in similarity resolution path.
-  - File: src/egui_app/controller/wavs/similar/resolve.rs
-  - Why: big logic handling row→sample resolution, filtering, and result
-    composition.
-  - Suggested: extract a “resolve visible rows” helper and a “sample id lookup”
-    helper; make resolve path purely data flow.
-  - Tests: add edge-case tests for empty/filtered lists and for missing sample id
-    resolution.
 - TODO 5: Split oversized controller tests into focused modules + shared helpers.
   - Files: src/egui_app/controller/tests/waveform.rs, src/egui_app/controller/
     tests/browser_actions.rs, src/egui_app/controller/tests/collections.rs, src/
