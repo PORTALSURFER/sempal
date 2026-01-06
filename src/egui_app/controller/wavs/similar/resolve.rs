@@ -40,7 +40,7 @@ fn resolve_visible_row_index(
 }
 
 fn resolve_sample_id_for_entry(
-    controller: &EguiController,
+    controller: &mut EguiController,
     source_id: &SourceId,
     entry_index: usize,
 ) -> Result<String, String> {
