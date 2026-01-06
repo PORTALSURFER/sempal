@@ -169,36 +169,15 @@ fn enqueue_from_staged_samples(
     if staged_samples.is_empty() {
         return Ok((0, db::current_progress(conn)?));
     }
-    let staged_index: std::collections::HashMap<String, db::SampleMetadata> = staged_samples
-        .iter()
-        .map(|sample| (sample.sample_id.clone(), sample.clone()))
-        .collect();
     persist::stage_backfill_samples(conn, &staged_samples)?;
-    let (mut sample_metadata, mut jobs, mut invalidate) =
-        invalidate::collect_backfill_updates(conn, job_type, force_full)?;
-    let include_failed = force_full;
-    let failed_jobs = if include_failed {
-        invalidate::fetch_failed_backfill_jobs(conn, job_type, source_id)?
-    } else {
-        Vec::new()
-    };
-    let failed_count = invalidate::merge_failed_backfill_jobs(
-        &staged_index,
-        &mut sample_metadata,
-        &mut jobs,
-        &mut invalidate,
-        &failed_jobs,
-    );
-    if !invalidate.is_empty() {
-        invalidate.sort();
-        invalidate.dedup();
-    }
+    let plan =
+        invalidate::build_backfill_plan(conn, &staged_samples, job_type, force_full, source_id)?;
 
-    if skip_when_no_jobs && jobs.is_empty() {
+    if skip_when_no_jobs && plan.jobs.is_empty() {
         info!(
             "Analysis backfill: no jobs to enqueue (staged={}, failed_requeued={}, source_id={}, job_type={}, force_full={})",
             staged_samples.len(),
-            failed_count,
+            plan.failed_requeued,
             source_id,
             job_type,
             force_full
@@ -208,9 +187,9 @@ fn enqueue_from_staged_samples(
     info!(
         "Analysis backfill prepared (staged={}, jobs={}, failed_requeued={}, invalidate={}, source_id={}, job_type={}, force_full={})",
         staged_samples.len(),
-        jobs.len(),
-        failed_count,
-        invalidate.len(),
+        plan.jobs.len(),
+        plan.failed_requeued,
+        plan.invalidate.len(),
         source_id,
         job_type,
         force_full
@@ -218,9 +197,9 @@ fn enqueue_from_staged_samples(
     let created_at = now_epoch_seconds();
     let (inserted, progress) = persist::write_backfill_samples(
         conn,
-        &sample_metadata,
-        &invalidate,
-        &jobs,
+        &plan.sample_metadata,
+        &plan.invalidate,
+        &plan.jobs,
         job_type,
         source_id,
         created_at,
@@ -229,8 +208,8 @@ fn enqueue_from_staged_samples(
         "Analysis backfill enqueued (inserted={}, staged={}, jobs={}, failed_requeued={}, source_id={}, job_type={})",
         inserted,
         staged_samples.len(),
-        jobs.len(),
-        failed_count,
+        plan.jobs.len(),
+        plan.failed_requeued,
         source_id,
         job_type
     );

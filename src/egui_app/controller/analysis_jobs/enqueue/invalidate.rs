@@ -2,6 +2,13 @@ use crate::egui_app::controller::analysis_jobs::db;
 use rusqlite::params;
 use std::collections::{HashMap, HashSet};
 
+pub(super) struct BackfillPlan {
+    pub(super) sample_metadata: Vec<db::SampleMetadata>,
+    pub(super) jobs: Vec<(String, String)>,
+    pub(super) invalidate: Vec<String>,
+    pub(super) failed_requeued: usize,
+}
+
 pub(super) fn collect_changed_sample_updates(
     sample_metadata: &[db::SampleMetadata],
     existing_states: &HashMap<String, db::SampleAnalysisState>,
@@ -44,6 +51,43 @@ pub(super) fn collect_backfill_updates(
         crate::analysis::similarity::SIMILARITY_MODEL_ID,
     )?;
     Ok((sample_metadata, jobs, invalidate))
+}
+
+pub(super) fn build_backfill_plan(
+    conn: &mut rusqlite::Connection,
+    staged_samples: &[db::SampleMetadata],
+    job_type: &str,
+    force_full: bool,
+    source_id: &str,
+) -> Result<BackfillPlan, String> {
+    let staged_index: HashMap<String, db::SampleMetadata> = staged_samples
+        .iter()
+        .map(|sample| (sample.sample_id.clone(), sample.clone()))
+        .collect();
+    let (mut sample_metadata, mut jobs, mut invalidate) =
+        collect_backfill_updates(conn, job_type, force_full)?;
+    let failed_jobs = if force_full {
+        fetch_failed_backfill_jobs(conn, job_type, source_id)?
+    } else {
+        Vec::new()
+    };
+    let failed_requeued = merge_failed_backfill_jobs(
+        &staged_index,
+        &mut sample_metadata,
+        &mut jobs,
+        &mut invalidate,
+        &failed_jobs,
+    );
+    if !invalidate.is_empty() {
+        invalidate.sort();
+        invalidate.dedup();
+    }
+    Ok(BackfillPlan {
+        sample_metadata,
+        jobs,
+        invalidate,
+        failed_requeued,
+    })
 }
 
 pub(super) fn fetch_failed_backfill_jobs(
