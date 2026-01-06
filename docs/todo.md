@@ -10,12 +10,6 @@
     a thin orchestration layer.
   - Tests: move/enhance related tests to enqueue/tests.rs and add coverage for
     “skip failed samples on hard sync” vs “force requeue”.
-- TODO 3: Split monolithic waveform slice overlay rendering.
-  - File: src/egui_app/ui/waveform_view/slice_overlay.rs
-  - Why: large UI + geometry + styling in one file.
-  - Suggested: slice_overlay/geometry.rs for layout math, slice_overlay/render.rs
-    for painting, and slice_overlay/mod.rs for orchestration.
-  - Tests: small geometry tests for edge clamping and visible range boundaries.
 - TODO 4: Reduce complexity in similarity resolution path.
   - File: src/egui_app/controller/wavs/similar/resolve.rs
   - Why: big logic handling row→sample resolution, filtering, and result
