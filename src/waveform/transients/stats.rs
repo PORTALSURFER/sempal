@@ -28,29 +28,6 @@ impl RollingMedian {
     }
 }
 
-pub(crate) fn median_mad(values: &[f32]) -> (f32, f32) {
-    if values.is_empty() {
-        return (0.0, 0.0);
-    }
-    let mut sorted = values
-        .iter()
-        .copied()
-        .filter(|value| value.is_finite())
-        .collect::<Vec<f32>>();
-    if sorted.is_empty() {
-        return (0.0, 0.0);
-    }
-    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    let median = sorted[sorted.len() / 2];
-    let mut deviations = sorted
-        .iter()
-        .map(|value| (*value - median).abs())
-        .collect::<Vec<f32>>();
-    deviations.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    let mad = deviations[deviations.len() / 2];
-    (median, mad.max(1.0e-6))
-}
-
 pub(crate) fn mean_std_dev(values: &[f32]) -> (f32, f32) {
     if values.is_empty() {
         return (0.0, 0.0);
