@@ -1,7 +1,7 @@
 mod enqueue_embeddings;
 mod enqueue_helpers;
-mod invalidate;
 mod enqueue_samples;
+mod invalidate;
 mod persist;
 mod scan;
 

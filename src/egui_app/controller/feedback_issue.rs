@@ -119,20 +119,13 @@ impl EguiController {
         match result {
             Ok(token) => {
                 if !self.persist_issue_token(&token, false) {
-                    self.set_status(
-                        "Failed to save GitHub token".to_string(),
-                        StatusTone::Error,
-                    );
+                    self.set_status("Failed to save GitHub token".to_string(), StatusTone::Error);
                 }
             }
             Err(err) => {
-                self.ui.feedback_issue.last_error = Some(format!(
-                    "Auto-connect failed: {err}. Use Paste token…"
-                ));
-                self.set_status(
-                    format!("GitHub connect failed: {err}"),
-                    StatusTone::Error,
-                );
+                self.ui.feedback_issue.last_error =
+                    Some(format!("Auto-connect failed: {err}. Use Paste token…"));
+                self.set_status(format!("GitHub connect failed: {err}"), StatusTone::Error);
             }
         }
     }

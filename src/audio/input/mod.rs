@@ -12,7 +12,7 @@ pub use enumerate::{
     supported_input_sample_rates,
 };
 pub use resolve::resolve_input_stream_config;
-pub(crate) use stream::{build_input_stream, StreamChannelSelection};
+pub(crate) use stream::{StreamChannelSelection, build_input_stream};
 
 #[derive(Debug, Error)]
 pub enum AudioInputError {
@@ -28,7 +28,9 @@ pub enum AudioInputError {
     #[error("Failed to open input stream: {source}")]
     OpenStream { source: cpal::BuildStreamError },
     #[error("Failed to read default input config: {source}")]
-    DefaultInputConfig { source: cpal::DefaultStreamConfigError },
+    DefaultInputConfig {
+        source: cpal::DefaultStreamConfigError,
+    },
     #[error("Failed to start input stream: {source}")]
     StartStream { source: cpal::PlayStreamError },
     #[error("Recording failed: {detail}")]

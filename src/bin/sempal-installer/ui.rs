@@ -3,7 +3,7 @@ use std::{path::PathBuf, sync::mpsc, thread};
 
 use sempal::egui_app::ui::style;
 
-use crate::{install, paths, APP_NAME};
+use crate::{APP_NAME, install, paths};
 
 pub(crate) fn run_installer_app() -> eframe::Result<()> {
     let mut viewport = egui::ViewportBuilder::default().with_inner_size([600.0, 300.0]);
@@ -175,15 +175,17 @@ impl eframe::App for InstallerApp {
                 InstallStep::License => {
                     ui.label("License");
                     let scroll_height = (ui.available_height() - 64.0).max(160.0);
-                    ScrollArea::vertical().max_height(scroll_height).show(ui, |ui| {
-                        ui.add(
-                            egui::TextEdit::multiline(&mut self.license_text)
-                                .desired_rows(16)
-                                .desired_width(ui.available_width())
-                                .font(egui::TextStyle::Monospace)
-                                .interactive(false),
-                        );
-                    });
+                    ScrollArea::vertical()
+                        .max_height(scroll_height)
+                        .show(ui, |ui| {
+                            ui.add(
+                                egui::TextEdit::multiline(&mut self.license_text)
+                                    .desired_rows(16)
+                                    .desired_width(ui.available_width())
+                                    .font(egui::TextStyle::Monospace)
+                                    .interactive(false),
+                            );
+                        });
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         if ui.button("Next").clicked() {
                             self.step = InstallStep::Location;
@@ -287,7 +289,10 @@ impl eframe::App for InstallerApp {
     }
 }
 
-pub(crate) fn send_started(sender: &mpsc::Sender<InstallerEvent>, total_files: usize) -> Result<(), String> {
+pub(crate) fn send_started(
+    sender: &mpsc::Sender<InstallerEvent>,
+    total_files: usize,
+) -> Result<(), String> {
     sender
         .send(InstallerEvent::Started { total_files })
         .map_err(|err| format!("Failed to report install start: {err}"))

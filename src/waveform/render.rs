@@ -201,7 +201,6 @@ impl WaveformRenderer {
             }
         }
     }
-
 }
 
 #[cfg(test)]

@@ -1,4 +1,4 @@
-use super::super::{file_metadata, DragDropController};
+use super::super::{DragDropController, file_metadata};
 use crate::egui_app::state::DragSample;
 use crate::egui_app::ui::style::StatusTone;
 use crate::sample_sources::{SourceId, WavEntry};

@@ -8,13 +8,7 @@ use std::path::Path;
 const ANN_CONTAINER_MAGIC: &[u8; 8] = b"SANNIDX1";
 const ANN_CONTAINER_VERSION: u32 = 1;
 const ANN_CONTAINER_CHECKSUM_LEN: usize = 32;
-const ANN_CONTAINER_HEADER_LEN: usize = 8
-    + 4
-    + 4
-    + 4
-    + 4
-    + (8 * 6)
-    + ANN_CONTAINER_CHECKSUM_LEN;
+const ANN_CONTAINER_HEADER_LEN: usize = 8 + 4 + 4 + 4 + 4 + (8 * 6) + ANN_CONTAINER_CHECKSUM_LEN;
 
 #[derive(Clone, Copy, Debug)]
 struct AnnContainerHeader {
@@ -46,8 +40,12 @@ pub(crate) fn write_container(
     let data_len = file_len(data_path)?;
     let id_map_bytes = encode_id_map(id_map)?;
     let model_id_bytes = model_id.as_bytes();
-    let header =
-        AnnContainerHeader::new(model_id_bytes.len(), graph_len, data_len, id_map_bytes.len());
+    let header = AnnContainerHeader::new(
+        model_id_bytes.len(),
+        graph_len,
+        data_len,
+        id_map_bytes.len(),
+    );
     let mut temp = create_tempfile(path)?;
     let file = temp.as_file_mut();
     write_placeholder_header(file)?;
@@ -155,8 +153,8 @@ fn read_model_id(
     file.read_exact(&mut model_id)
         .map_err(|err| format!("Failed to read ANN model id: {err}"))?;
     hasher.update(&model_id);
-    let model_id = String::from_utf8(model_id)
-        .map_err(|err| format!("ANN model id invalid UTF-8: {err}"))?;
+    let model_id =
+        String::from_utf8(model_id).map_err(|err| format!("ANN model id invalid UTF-8: {err}"))?;
     Ok(model_id)
 }
 
@@ -179,8 +177,8 @@ fn copy_range_with_hash(
     file.seek(SeekFrom::Start(offset))
         .map_err(|err| format!("Failed to seek ANN container: {err}"))?;
     let mut reader = file.take(len);
-    let mut out = File::create(out_path)
-        .map_err(|err| format!("Failed to write ANN payload: {err}"))?;
+    let mut out =
+        File::create(out_path).map_err(|err| format!("Failed to write ANN payload: {err}"))?;
     copy_reader_with_hash(&mut reader, &mut out, hasher)
 }
 
@@ -230,14 +228,16 @@ fn write_id_map(file: &mut File, bytes: &[u8], hasher: &mut Sha256) -> Result<()
 
 fn read_u32(reader: &mut dyn Read) -> Result<u32, String> {
     let mut buf = [0u8; 4];
-    reader.read_exact(&mut buf)
+    reader
+        .read_exact(&mut buf)
         .map_err(|err| format!("Failed to read ANN header: {err}"))?;
     Ok(u32::from_le_bytes(buf))
 }
 
 fn read_u64(reader: &mut dyn Read) -> Result<u64, String> {
     let mut buf = [0u8; 8];
-    reader.read_exact(&mut buf)
+    reader
+        .read_exact(&mut buf)
         .map_err(|err| format!("Failed to read ANN header: {err}"))?;
     Ok(u64::from_le_bytes(buf))
 }

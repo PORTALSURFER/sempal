@@ -105,12 +105,7 @@ mod tests {
             prep_completed_at: Some(10),
             has_embeddings: true,
         };
-        let plan = plan_similarity_prep_start(
-            &store,
-            &sample_source(),
-            "v1".to_string(),
-            false,
-        );
+        let plan = plan_similarity_prep_start(&store, &sample_source(), "v1".to_string(), false);
         assert!(plan.skip_scan);
         assert!(plan.state.skip_backfill);
         assert!(!plan.needs_embeddings);
@@ -120,12 +115,7 @@ mod tests {
             prep_completed_at: Some(10),
             has_embeddings: false,
         };
-        let plan = plan_similarity_prep_start(
-            &store,
-            &sample_source(),
-            "v1".to_string(),
-            false,
-        );
+        let plan = plan_similarity_prep_start(&store, &sample_source(), "v1".to_string(), false);
         assert!(plan.skip_scan);
         assert!(!plan.state.skip_backfill);
         assert!(plan.needs_embeddings);

@@ -1,8 +1,12 @@
-use std::{collections::HashSet, fs, path::{Path, PathBuf}};
+use std::{
+    collections::HashSet,
+    fs,
+    path::{Path, PathBuf},
+};
 
 use ::sempal::app_dirs;
 
-use crate::{download, registry, shortcuts, ui, paths};
+use crate::{download, paths, registry, shortcuts, ui};
 
 pub(crate) struct InstallPlan {
     pub(crate) actions: Vec<PlanAction>,
@@ -45,11 +49,7 @@ pub(crate) fn run_install(
         )?;
         fs::copy(source, &target)
             .map_err(|err| format!("Failed to copy {}: {err}", source.display()))?;
-        ui::send_file_copied(
-            &sender,
-            idx + 1,
-            relative.display().to_string(),
-        )?;
+        ui::send_file_copied(&sender, idx + 1, relative.display().to_string())?;
     }
 
     send_log(&sender, "Syncing model cache")?;
@@ -96,11 +96,7 @@ pub(crate) fn plan_install(bundle_dir: &Path, install_dir: &Path) -> Result<Inst
     Ok(InstallPlan { actions })
 }
 
-fn add_dir_action(
-    actions: &mut Vec<PlanAction>,
-    seen_dirs: &mut HashSet<PathBuf>,
-    path: PathBuf,
-) {
+fn add_dir_action(actions: &mut Vec<PlanAction>, seen_dirs: &mut HashSet<PathBuf>, path: PathBuf) {
     if seen_dirs.insert(path.clone()) {
         actions.push(PlanAction::CreateDir { path });
     }

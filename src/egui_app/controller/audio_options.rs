@@ -1,7 +1,5 @@
 use super::*;
-use crate::egui_app::state::{
-    ActiveAudioInput, ActiveAudioOutput, AudioDeviceView, AudioHostView,
-};
+use crate::egui_app::state::{ActiveAudioInput, ActiveAudioOutput, AudioDeviceView, AudioHostView};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct NormalizedAudioOptions {
@@ -104,7 +102,8 @@ impl EguiController {
             |host| crate::audio::available_devices(host).map_err(|err| err.to_string()),
             |host, device| {
                 if probe_rates {
-                    crate::audio::supported_sample_rates(host, device).unwrap_or_else(|_| Vec::new())
+                    crate::audio::supported_sample_rates(host, device)
+                        .unwrap_or_else(|_| Vec::new())
                 } else {
                     Vec::new()
                 }
@@ -203,15 +202,15 @@ impl EguiController {
                 self.settings.audio_input.host.as_deref(),
                 self.settings.audio_input.device.as_deref(),
             ) {
-                (Some(host), Some(device)) => match crate::audio::available_input_channel_count(
-                    host, device,
-                ) {
-                    Ok(count) => count,
-                    Err(err) => {
-                        warning.get_or_insert_with(|| err.to_string());
-                        0
+                (Some(host), Some(device)) => {
+                    match crate::audio::available_input_channel_count(host, device) {
+                        Ok(count) => count,
+                        Err(err) => {
+                            warning.get_or_insert_with(|| err.to_string());
+                            0
+                        }
                     }
-                },
+                }
                 _ => 0,
             }
         } else if selection_changed {
@@ -219,8 +218,10 @@ impl EguiController {
         } else {
             self.ui.audio.input_channel_count
         };
-        let normalized =
-            Self::normalize_input_channel_selection(&self.settings.audio_input.channels, channel_count);
+        let normalized = Self::normalize_input_channel_selection(
+            &self.settings.audio_input.channels,
+            channel_count,
+        );
         if !self.settings.audio_input.channels.is_empty()
             && normalized != self.settings.audio_input.channels
         {
@@ -398,10 +399,7 @@ impl EguiController {
         ))
     }
 
-    fn audio_input_fallback_message(
-        &self,
-        input: &crate::audio::ResolvedInput,
-    ) -> Option<String> {
+    fn audio_input_fallback_message(&self, input: &crate::audio::ResolvedInput) -> Option<String> {
         if !input.used_fallback {
             return None;
         }

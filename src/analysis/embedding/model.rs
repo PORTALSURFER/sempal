@@ -1,15 +1,15 @@
 use std::sync::{Mutex, OnceLock};
 
 use super::backend::{
-    init_cubecl_config, init_wgpu, panns_backend_kind, PannsBackendKind, PannsCpuBackend,
-    PannsCpuDevice, PannsWgpuBackend, PannsWgpuDevice,
+    PannsBackendKind, PannsCpuBackend, PannsCpuDevice, PannsWgpuBackend, PannsWgpuDevice,
+    init_cubecl_config, init_wgpu, panns_backend_kind,
 };
 #[cfg(feature = "panns-cuda")]
 use super::backend::{PannsCudaBackend, PannsCudaDevice};
 use super::logmel::{PANNS_LOGMEL_LEN, PANNS_SAMPLE_RATE};
 use super::panns_burn;
 use super::panns_burnpack_path;
-use crate::analysis::panns_preprocess::{PannsPreprocessor, PANNS_STFT_HOP, PANNS_STFT_N_FFT};
+use crate::analysis::panns_preprocess::{PANNS_STFT_HOP, PANNS_STFT_N_FFT, PannsPreprocessor};
 
 pub(super) enum PannsModelInner {
     Wgpu {
@@ -100,7 +100,9 @@ impl PannsModel {
     }
 }
 
-pub(super) fn with_panns_model<T>(f: impl FnOnce(&mut PannsModel) -> Result<T, String>) -> Result<T, String> {
+pub(super) fn with_panns_model<T>(
+    f: impl FnOnce(&mut PannsModel) -> Result<T, String>,
+) -> Result<T, String> {
     let mutex = PANNS_MODEL.get_or_init(|| Mutex::new(None));
     let mut guard = mutex
         .lock()

@@ -22,7 +22,7 @@ fn selection_drop_to_browser_ignores_active_collection() {
         .load_waveform_for_selection(&source, Path::new("clip.wav"))
         .unwrap();
     controller.ui.focus.context = FocusContext::Waveform;
-    controller.set_wav_entries_for_tests( vec![sample_entry("clip.wav", SampleTag::Neutral)]);
+    controller.set_wav_entries_for_tests(vec![sample_entry("clip.wav", SampleTag::Neutral)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
@@ -51,9 +51,11 @@ fn selection_drop_to_browser_ignores_active_collection() {
         .find(|c| c.id == collection_id)
         .unwrap();
     assert!(collection.members.is_empty());
-    assert!(controller
-        .wav_index_for_path(Path::new("clip_sel.wav"))
-        .is_some());
+    assert!(
+        controller
+            .wav_index_for_path(Path::new("clip_sel.wav"))
+            .is_some()
+    );
     assert_eq!(
         controller.sample_view.wav.selected_wav.as_deref(),
         Some(Path::new("clip_sel.wav"))
@@ -74,7 +76,7 @@ fn selection_drop_to_browser_can_keep_source_focused() {
     let source = SampleSource::new(root.clone());
     controller.library.sources.push(source.clone());
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
-    controller.set_wav_entries_for_tests( vec![sample_entry("clip.wav", SampleTag::Neutral)]);
+    controller.set_wav_entries_for_tests(vec![sample_entry("clip.wav", SampleTag::Neutral)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
@@ -126,7 +128,7 @@ fn selection_drop_to_browser_creates_clip_in_focused_folder() {
         .load_waveform_for_selection(&source, Path::new("clip.wav"))
         .unwrap();
     controller.ui.focus.context = FocusContext::Waveform;
-    controller.set_wav_entries_for_tests( vec![sample_entry("clip.wav", SampleTag::Neutral)]);
+    controller.set_wav_entries_for_tests(vec![sample_entry("clip.wav", SampleTag::Neutral)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
     controller.ui.sources.folders.rows = vec![
@@ -168,9 +170,11 @@ fn selection_drop_to_browser_creates_clip_in_focused_folder() {
     controller.finish_active_drag();
 
     assert!(root.join("sub").join("clip_sel.wav").is_file());
-    assert!(controller
-        .wav_index_for_path(Path::new("sub/clip_sel.wav"))
-        .is_some());
+    assert!(
+        controller
+            .wav_index_for_path(Path::new("sub/clip_sel.wav"))
+            .is_some()
+    );
 }
 
 #[test]
@@ -191,7 +195,7 @@ fn selection_drop_to_browser_respects_shift_pressed_mid_drag() {
         .load_waveform_for_selection(&source, Path::new("clip.wav"))
         .unwrap();
     controller.ui.focus.context = FocusContext::Waveform;
-    controller.set_wav_entries_for_tests( vec![sample_entry("clip.wav", SampleTag::Neutral)]);
+    controller.set_wav_entries_for_tests(vec![sample_entry("clip.wav", SampleTag::Neutral)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
@@ -211,9 +215,11 @@ fn selection_drop_to_browser_respects_shift_pressed_mid_drag() {
     );
     controller.finish_active_drag();
 
-    assert!(controller
-        .wav_index_for_path(Path::new("clip_sel.wav"))
-        .is_some());
+    assert!(
+        controller
+            .wav_index_for_path(Path::new("clip_sel.wav"))
+            .is_some()
+    );
     assert_eq!(
         controller.sample_view.wav.selected_wav.as_deref(),
         Some(Path::new("clip.wav"))
@@ -238,7 +244,7 @@ fn selection_drop_to_folder_panel_creates_clip_in_folder() {
     controller
         .load_waveform_for_selection(&source, Path::new("clip.wav"))
         .unwrap();
-    controller.set_wav_entries_for_tests( vec![sample_entry("clip.wav", SampleTag::Neutral)]);
+    controller.set_wav_entries_for_tests(vec![sample_entry("clip.wav", SampleTag::Neutral)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
@@ -257,7 +263,9 @@ fn selection_drop_to_folder_panel_creates_clip_in_folder() {
     controller.finish_active_drag();
 
     assert!(root.join("sub").join("clip_sel.wav").is_file());
-    assert!(controller
-        .wav_index_for_path(Path::new("sub/clip_sel.wav"))
-        .is_some());
+    assert!(
+        controller
+            .wav_index_for_path(Path::new("sub/clip_sel.wav"))
+            .is_some()
+    );
 }

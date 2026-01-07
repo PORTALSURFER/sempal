@@ -2,7 +2,7 @@ use crate::egui_app::controller::analysis_jobs::db;
 use rusqlite::{OptionalExtension, params};
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
-use std::sync::{mpsc::channel, Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc::channel};
 use std::thread::sleep;
 use std::time::Duration;
 use tracing::warn;
@@ -126,9 +126,7 @@ fn build_backfill_plan(
             continue;
         }
         if use_cache {
-            if let Some(data) =
-                cached_embedding_data(conn, &content_hash, analysis_version)?
-            {
+            if let Some(data) = cached_embedding_data(conn, &content_hash, analysis_version)? {
                 embedding_cache.insert(content_hash.clone(), data.clone());
                 ready.push(materialize_result(sample_id, &content_hash, &data));
                 continue;
@@ -201,7 +199,8 @@ fn cached_embedding_data(
         content_hash,
         analysis_version,
         crate::analysis::similarity::SIMILARITY_MODEL_ID,
-    )? else {
+    )?
+    else {
         return Ok(None);
     };
     let Ok(vec) = crate::analysis::decode_f32_le_blob(&cached.vec_blob) else {
@@ -226,7 +225,8 @@ fn cached_feature_embedding_data(
         content_hash,
         analysis_version,
         crate::analysis::vector::FEATURE_VERSION_V1,
-    )? else {
+    )?
+    else {
         return Ok(None);
     };
     let Ok(features) = crate::analysis::decode_f32_le_blob(&cached.vec_blob) else {
@@ -306,31 +306,31 @@ fn run_embedding_workers(
                                 continue;
                             }
                         };
-                        let features = match crate::analysis::compute_feature_vector_v1_for_mono_samples(
-                            &decoded.mono,
-                            decoded.sample_rate_used,
-                        ) {
-                            Ok(features) => features,
-                            Err(err) => {
-                                let _ = tx.send(Err(format!(
-                                    "Feature extraction failed for {}: {err}",
-                                    work.absolute_path.display()
-                                )));
-                                continue;
-                            }
-                        };
-                        let embedding = match crate::analysis::similarity::embedding_from_features(
-                            &features,
-                        ) {
-                            Ok(embedding) => embedding,
-                            Err(err) => {
-                                let _ = tx.send(Err(format!(
-                                    "Embedding build failed for {}: {err}",
-                                    work.absolute_path.display()
-                                )));
-                                continue;
-                            }
-                        };
+                        let features =
+                            match crate::analysis::compute_feature_vector_v1_for_mono_samples(
+                                &decoded.mono,
+                                decoded.sample_rate_used,
+                            ) {
+                                Ok(features) => features,
+                                Err(err) => {
+                                    let _ = tx.send(Err(format!(
+                                        "Feature extraction failed for {}: {err}",
+                                        work.absolute_path.display()
+                                    )));
+                                    continue;
+                                }
+                            };
+                        let embedding =
+                            match crate::analysis::similarity::embedding_from_features(&features) {
+                                Ok(embedding) => embedding,
+                                Err(err) => {
+                                    let _ = tx.send(Err(format!(
+                                        "Embedding build failed for {}: {err}",
+                                        work.absolute_path.display()
+                                    )));
+                                    continue;
+                                }
+                            };
                         let _ = tx.send(Ok(EmbeddingComputation {
                             content_hash: work.content_hash,
                             sample_ids: work.sample_ids,
@@ -439,7 +439,8 @@ fn write_backfill_chunk(
     }
     if let Err(err) = crate::analysis::ann_index::upsert_embeddings_batch(
         conn,
-        chunk.iter()
+        chunk
+            .iter()
             .map(|result| (result.sample_id.as_str(), result.embedding.as_slice())),
     ) {
         warn!("ANN index batch update failed: {err}");

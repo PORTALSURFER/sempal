@@ -1,5 +1,5 @@
-use super::*;
 use super::state::audio::RecordingTarget;
+use super::*;
 use std::path::{Path, PathBuf};
 use time::format_description::FormatItem;
 use time::macros::format_description;
@@ -58,8 +58,7 @@ pub(super) fn register_recording_in_browser(
     recording_path: &PathBuf,
 ) -> Result<(), String> {
     let (source, relative_path) = resolve_recording_target(controller, target, recording_path)?;
-    let (file_size, modified_ns) =
-        super::collection_items_helpers::file_metadata(recording_path)?;
+    let (file_size, modified_ns) = super::collection_items_helpers::file_metadata(recording_path)?;
     let db = controller
         .database_for(&source)
         .map_err(|err| format!("Database unavailable: {err}"))?;
@@ -175,7 +174,10 @@ mod tests {
         let (_, relative, absolute) = next_recording_path_in_source(&mut controller).unwrap();
         let file_name = relative.file_name().unwrap().to_string_lossy();
         assert!(file_name.starts_with(RECORDING_FILE_PREFIX));
-        assert_eq!(relative.extension().and_then(|ext| ext.to_str()), Some(RECORDING_FILE_EXT));
+        assert_eq!(
+            relative.extension().and_then(|ext| ext.to_str()),
+            Some(RECORDING_FILE_EXT)
+        );
         assert!(absolute.starts_with(&source.root));
     }
 

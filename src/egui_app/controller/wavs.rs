@@ -67,9 +67,7 @@ impl EguiController {
         let page_size = self.wav_entries.page_size.max(1);
         let page_index = index / page_size;
         let offset = page_index * page_size;
-        let db = self
-            .database_for(&source)
-            .map_err(|err| err.to_string())?;
+        let db = self.database_for(&source).map_err(|err| err.to_string())?;
         let entries = db
             .list_files_page(page_size, offset)
             .map_err(|err| err.to_string())?;
@@ -95,9 +93,7 @@ impl EguiController {
         let Some(source) = self.current_source() else {
             return Ok(());
         };
-        let db = self
-            .database_for(&source)
-            .map_err(|err| err.to_string())?;
+        let db = self.database_for(&source).map_err(|err| err.to_string())?;
         let total = self.wav_entries.total;
         let page_size = self.wav_entries.page_size.max(1);
         let page_count = (total + page_size - 1) / page_size;

@@ -1,6 +1,6 @@
 use crate::analysis::audio;
 use crate::analysis::panns_preprocess::{
-    PannsPreprocessor, PANNS_MEL_BANDS, PANNS_STFT_HOP, PANNS_STFT_N_FFT,
+    PANNS_MEL_BANDS, PANNS_STFT_HOP, PANNS_STFT_N_FFT, PannsPreprocessor,
 };
 
 /// Target sample rate for PANNs inference.
@@ -27,12 +27,8 @@ impl Default for PannsLogMelScratch {
         Self {
             resample_scratch: Vec::new(),
             wave_scratch: Vec::new(),
-            preprocess: PannsPreprocessor::new(
-                PANNS_SAMPLE_RATE,
-                PANNS_STFT_N_FFT,
-                PANNS_STFT_HOP,
-            )
-            .expect("panns preprocess init"),
+            preprocess: PannsPreprocessor::new(PANNS_SAMPLE_RATE, PANNS_STFT_N_FFT, PANNS_STFT_HOP)
+                .expect("panns preprocess init"),
         }
     }
 }
@@ -71,7 +67,11 @@ pub(super) fn prepare_panns_logmel(
     if sample_rate != PANNS_SAMPLE_RATE {
         audio::resample_linear_into(resample_scratch, samples, sample_rate, PANNS_SAMPLE_RATE);
         audio::sanitize_samples_in_place(resample_scratch.as_mut_slice());
-        repeat_pad_into(wave_scratch, resample_scratch.as_slice(), PANNS_INPUT_SAMPLES);
+        repeat_pad_into(
+            wave_scratch,
+            resample_scratch.as_slice(),
+            PANNS_INPUT_SAMPLES,
+        );
     } else {
         repeat_pad_into(wave_scratch, samples, PANNS_INPUT_SAMPLES);
         audio::sanitize_samples_in_place(wave_scratch.as_mut_slice());

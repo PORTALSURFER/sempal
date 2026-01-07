@@ -5,7 +5,7 @@ use super::analysis_db::{
     apply_cached_embedding, apply_cached_features_and_embedding, finalize_analysis_job,
     update_metadata_for_skip,
 };
-use super::analysis_decode::{decode_for_analysis, DecodeOutcome};
+use super::analysis_decode::{DecodeOutcome, decode_for_analysis};
 use super::support::JobHeartbeat;
 
 pub(in crate::egui_app::controller::analysis_jobs::pool) struct AnalysisContext<'a> {

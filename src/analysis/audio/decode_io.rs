@@ -32,10 +32,8 @@ pub(crate) fn probe_metadata(path: &Path) -> Result<AudioProbe, String> {
         let spec = reader.spec();
         let sample_rate = spec.sample_rate.max(1);
         let channels = spec.channels.max(1);
-        let duration_seconds = (reader.duration() as f32
-            / channels as f32
-            / sample_rate as f32)
-            .max(0.0);
+        let duration_seconds =
+            (reader.duration() as f32 / channels as f32 / sample_rate as f32).max(0.0);
         return Ok(AudioProbe {
             duration_seconds: Some(duration_seconds),
             sample_rate: Some(sample_rate),
@@ -96,7 +94,10 @@ pub(crate) fn decode_for_analysis_with_rate_limit(
             decoded.sample_rate,
             sample_rate,
         );
-        Ok(prepare_mono_for_analysis_from_slice(&resampled, sample_rate))
+        Ok(prepare_mono_for_analysis_from_slice(
+            &resampled,
+            sample_rate,
+        ))
     })
 }
 

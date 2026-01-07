@@ -1,9 +1,9 @@
-use super::audio_samples::{crop_samples, decode_samples_from_bytes, write_wav, DecodedSamples};
 use super::EguiController;
 use super::MIN_SELECTION_WIDTH;
+use super::audio_samples::{DecodedSamples, crop_samples, decode_samples_from_bytes, write_wav};
 use crate::analysis::audio::{detect_non_silent_ranges, downmix_to_mono_into};
-use crate::selection::SelectionRange;
 use crate::sample_sources::SampleSource;
+use crate::selection::SelectionRange;
 use std::cmp::Ordering;
 use std::path::{Path, PathBuf};
 
@@ -74,7 +74,11 @@ impl EguiController {
     }
 
     /// Update an existing slice range, cutting it out of any overlapping slices.
-    pub(crate) fn update_slice_range(&mut self, index: usize, range: SelectionRange) -> Option<usize> {
+    pub(crate) fn update_slice_range(
+        &mut self,
+        index: usize,
+        range: SelectionRange,
+    ) -> Option<usize> {
         let updated = ops::update_slice_range(
             &self.ui.waveform.slices,
             &self.ui.waveform.selected_slices,
@@ -112,8 +116,7 @@ impl EguiController {
         }
         let (source, relative_path, decoded) = self.slice_export_context()?;
         let mut counter = 1usize;
-        let exported =
-            self.export_slice_batch(&source, &relative_path, &decoded, &mut counter)?;
+        let exported = self.export_slice_batch(&source, &relative_path, &decoded, &mut counter)?;
         self.ui.waveform.slices.clear();
         self.ui.waveform.selected_slices.clear();
         Ok(exported)
@@ -135,10 +138,7 @@ impl EguiController {
             return false;
         }
         self.ui.waveform.selected_slices.push(index);
-        self.ui
-            .waveform
-            .selected_slices
-            .sort_unstable();
+        self.ui.waveform.selected_slices.sort_unstable();
         true
     }
 
@@ -231,12 +231,7 @@ impl EguiController {
         let samples = crop_samples(&decoded.samples, decoded.channels, slice)?;
         let target_rel = self.next_slice_path_in_dir(source, relative_path, counter);
         let target_abs = source.root.join(&target_rel);
-        write_wav(
-            &target_abs,
-            &samples,
-            decoded.sample_rate,
-            decoded.channels,
-        )?;
+        write_wav(&target_abs, &samples, decoded.sample_rate, decoded.channels)?;
         self.record_selection_entry(source, target_rel, None, true, true)?;
         Ok(())
     }
@@ -306,7 +301,12 @@ fn append_slices_from_transients(
     }
     let mut points = Vec::with_capacity(transients.len() + 2);
     points.push(0.0);
-    points.extend(transients.iter().copied().filter(|marker| *marker > 0.0 && *marker < 1.0));
+    points.extend(
+        transients
+            .iter()
+            .copied()
+            .filter(|marker| *marker > 0.0 && *marker < 1.0),
+    );
     points.push(1.0);
     points.sort_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal));
     for pair in points.windows(2) {
@@ -324,6 +324,6 @@ fn append_slices_from_transients(
 }
 
 #[cfg(test)]
-mod slices_tests;
-#[cfg(test)]
 mod ops_tests;
+#[cfg(test)]
+mod slices_tests;

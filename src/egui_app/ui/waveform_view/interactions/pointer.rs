@@ -117,9 +117,7 @@ pub(in super::super) fn handle_waveform_pointer_interactions(
 }
 
 fn start_slice_paint(app: &mut EguiApp, position: f32) {
-    let snapped = app
-        .controller
-        .snap_slice_paint_position(position, false);
+    let snapped = app.controller.snap_slice_paint_position(position, false);
     app.slice_paint = Some(super::super::SlicePaintState {
         anchor: snapped,
         range: crate::selection::SelectionRange::new(snapped, snapped),
@@ -130,9 +128,7 @@ fn update_slice_paint(app: &mut EguiApp, position: f32) {
     let Some(state) = app.slice_paint.as_mut() else {
         return;
     };
-    let snapped = app
-        .controller
-        .snap_slice_paint_position(position, false);
+    let snapped = app.controller.snap_slice_paint_position(position, false);
     state.range = crate::selection::SelectionRange::new(state.anchor, snapped);
 }
 

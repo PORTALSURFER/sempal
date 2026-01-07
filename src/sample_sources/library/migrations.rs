@@ -219,10 +219,7 @@ impl LibraryDatabase {
             return Ok(());
         }
         let tx = self.connection.transaction().map_err(map_sql_error)?;
-        let alter_result = tx.execute(
-            "ALTER TABLE collections ADD COLUMN hotkey INTEGER",
-            [],
-        );
+        let alter_result = tx.execute("ALTER TABLE collections ADD COLUMN hotkey INTEGER", []);
         match alter_result {
             Ok(_) => {}
             Err(err) => {

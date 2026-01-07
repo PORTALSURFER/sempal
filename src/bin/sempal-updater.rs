@@ -119,9 +119,9 @@ impl ArgState {
     }
 
     fn finish(self) -> Result<(UpdaterRunArgs, bool), String> {
-        let install_dir =
-            self.install_dir
-                .ok_or_else(|| format!("Missing --install-dir\n\n{}", help_text()))?;
+        let install_dir = self
+            .install_dir
+            .ok_or_else(|| format!("Missing --install-dir\n\n{}", help_text()))?;
         Ok((
             UpdaterRunArgs {
                 repo: self.repo,

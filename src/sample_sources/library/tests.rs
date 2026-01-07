@@ -174,8 +174,14 @@ fn preserves_collection_and_member_order() {
         let loaded = load().unwrap();
 
         assert_eq!(loaded.collections.len(), 2);
-        assert_eq!(loaded.collections[0].id.as_str(), collection_one_id.as_str());
-        assert_eq!(loaded.collections[1].id.as_str(), collection_two_id.as_str());
+        assert_eq!(
+            loaded.collections[0].id.as_str(),
+            collection_one_id.as_str()
+        );
+        assert_eq!(
+            loaded.collections[1].id.as_str(),
+            collection_two_id.as_str()
+        );
         assert_eq!(loaded.collections[0].members.len(), 2);
         assert_eq!(
             loaded.collections[0].members[0].relative_path,
@@ -367,7 +373,12 @@ fn migrates_legacy_schema_to_latest() {
         }
         assert!(!embedding_columns.contains("vec_blob"));
 
-        for table in ["features", "layout_umap", "hdbscan_clusters", "ann_index_meta"] {
+        for table in [
+            "features",
+            "layout_umap",
+            "hdbscan_clusters",
+            "ann_index_meta",
+        ] {
             assert_table_exists(&conn, table);
         }
     });

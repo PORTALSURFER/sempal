@@ -1,7 +1,7 @@
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use rusqlite::{Connection, params};
-use sempal::analysis::{ann_index, embedding};
 use sempal::analysis::vector::encode_f32_le_blob;
+use sempal::analysis::{ann_index, embedding};
 use std::path::Path;
 use tempfile::tempdir;
 
@@ -38,7 +38,12 @@ fn seed_embeddings(conn: &Connection, start: usize, count: usize) {
         conn.execute(
             "INSERT INTO embeddings (sample_id, model_id, dim, dtype, l2_normed, vec, created_at)
              VALUES (?1, ?2, ?3, 'f32', 1, ?4, 0)",
-            params![format!("s{i}"), embedding::EMBEDDING_MODEL_ID, dim as i64, blob],
+            params![
+                format!("s{i}"),
+                embedding::EMBEDDING_MODEL_ID,
+                dim as i64,
+                blob
+            ],
         )
         .expect("seed embedding");
     }

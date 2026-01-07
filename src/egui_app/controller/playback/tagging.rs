@@ -7,7 +7,10 @@ pub(super) fn tag_selected(controller: &mut EguiController, target: SampleTag) {
     let refocus_path = controller
         .wav_entry(selected_index)
         .map(|entry| entry.relative_path.clone());
-    let primary_row = match refocus_path.as_deref().and_then(|path| controller.visible_row_for_path(path)) {
+    let primary_row = match refocus_path
+        .as_deref()
+        .and_then(|path| controller.visible_row_for_path(path))
+    {
         Some(row) => row,
         None => return,
     };

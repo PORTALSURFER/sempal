@@ -1,7 +1,7 @@
 use super::types::SampleMetadata;
-use rusqlite::{Connection, TransactionBehavior};
-use rusqlite::types::Value;
 use rusqlite::params_from_iter;
+use rusqlite::types::Value;
+use rusqlite::{Connection, TransactionBehavior};
 
 pub(in crate::egui_app::controller::analysis_jobs) fn enqueue_jobs(
     conn: &mut Connection,

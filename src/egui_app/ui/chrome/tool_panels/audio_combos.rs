@@ -97,7 +97,8 @@ impl EguiApp {
                 for device in &devices {
                     let selected = selected_device.as_deref() == Some(device.name.as_str());
                     if ui.selectable_label(selected, &device.name).clicked() {
-                        self.controller.set_audio_input_device(Some(device.name.clone()));
+                        self.controller
+                            .set_audio_input_device(Some(device.name.clone()));
                     }
                 }
             });

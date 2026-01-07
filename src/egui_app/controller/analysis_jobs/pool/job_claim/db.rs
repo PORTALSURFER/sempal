@@ -1,7 +1,7 @@
-use super::super::progress_cache::ProgressCache;
-use super::queue::DecodedQueue;
-use super::analysis_db;
 use super::super::job_execution::update_job_status_with_retry;
+use super::super::progress_cache::ProgressCache;
+use super::analysis_db;
+use super::queue::DecodedQueue;
 use crate::egui_app::controller::analysis_jobs::types::AnalysisJobMessage;
 use crate::egui_app::controller::jobs::JobMessage;
 use rusqlite::Connection;
@@ -43,10 +43,7 @@ pub(super) fn finalize_immediate_job(
     let conn = match open_connection_with_retry(connections, &job.source_root) {
         Ok(conn) => conn,
         Err(err) => {
-            tracing::warn!(
-                "Analysis job DB open failed for {}: {err}",
-                job.sample_id
-            );
+            tracing::warn!("Analysis job DB open failed for {}: {err}", job.sample_id);
             decode_queue.clear_inflight(job.id);
             return Some(DeferredJobUpdate {
                 job,
@@ -59,7 +56,9 @@ pub(super) fn finalize_immediate_job(
             update_job_status_with_retry(|| analysis_db::mark_done(conn, job.id));
         }
         Err(err) => {
-            update_job_status_with_retry(|| analysis_db::mark_failed_with_reason(conn, job.id, &err));
+            update_job_status_with_retry(|| {
+                analysis_db::mark_failed_with_reason(conn, job.id, &err)
+            });
         }
     }
     decode_queue.clear_inflight(job.id);

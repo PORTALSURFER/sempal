@@ -4,10 +4,10 @@ use std::thread;
 
 use crate::sample_sources::SourceDatabase;
 
-use super::{ScanContext, ScanError, ScanStats};
 use super::super::scan_db_sync::db_sync_phase;
 use super::super::scan_fs::ensure_root_dir;
 use super::super::scan_walk::walk_phase;
+use super::{ScanContext, ScanError, ScanStats};
 
 /// Scan strategy used when walking a source root.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

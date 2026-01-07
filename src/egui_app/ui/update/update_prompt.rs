@@ -84,7 +84,9 @@ impl EguiApp {
                     modifiers.ctrl = true;
                 }
                 state.consume_key(modifiers, egui::Key::V);
-                state.events.retain(|event| !matches!(event, egui::Event::Paste(_)));
+                state
+                    .events
+                    .retain(|event| !matches!(event, egui::Event::Paste(_)));
             });
         }
     }

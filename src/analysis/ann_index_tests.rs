@@ -1,8 +1,10 @@
-use crate::analysis::ann_index::{build as ann_build, storage as ann_storage, update as ann_update};
-use hnsw_rs::api::AnnT;
+use crate::analysis::ann_index::{
+    build as ann_build, storage as ann_storage, update as ann_update,
+};
 use crate::analysis::vector::encode_f32_le_blob;
 use crate::analysis::{ann_index, similarity};
 use crate::app_dirs::ConfigBaseGuard;
+use hnsw_rs::api::AnnT;
 use rusqlite::{Connection, params};
 use std::sync::{LazyLock, Mutex};
 use tempfile::tempdir;
@@ -116,7 +118,10 @@ fn ann_index_incremental_update_matches_full_rebuild() {
 
     ann_index::rebuild_index(&conn).expect("ANN rebuild");
     let rebuilt = ann_index::find_similar(&conn, "s1", 2).expect("ANN search");
-    let rebuilt_ids: Vec<_> = rebuilt.iter().map(|entry| entry.sample_id.as_str()).collect();
+    let rebuilt_ids: Vec<_> = rebuilt
+        .iter()
+        .map(|entry| entry.sample_id.as_str())
+        .collect();
 
     assert_eq!(incremental_ids.len(), 2);
     assert_eq!(rebuilt_ids.len(), 2);
@@ -132,8 +137,7 @@ fn ann_index_container_round_trip_loads() {
 
         let params = crate::analysis::ann_index::state::default_params();
         let index_path = ann_storage::default_index_path(conn).unwrap();
-        let mut state =
-            ann_build::build_index_from_db(conn, params.clone(), index_path).unwrap();
+        let mut state = ann_build::build_index_from_db(conn, params.clone(), index_path).unwrap();
         ann_update::flush_index(conn, &mut state).unwrap();
 
         let meta = ann_storage::read_meta(conn, &params.model_id)
@@ -241,7 +245,10 @@ fn write_legacy_ann_files(
 ) {
     let dir = path.parent().expect("legacy parent");
     std::fs::create_dir_all(dir).unwrap();
-    let basename = path.file_name().and_then(|name| name.to_str()).expect("legacy name");
+    let basename = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .expect("legacy name");
     state.hnsw.file_dump(dir, basename).unwrap();
     let id_map_path = ann_storage::legacy_id_map_path_for(path);
     ann_storage::save_legacy_id_map(&id_map_path, &state.id_map).unwrap();

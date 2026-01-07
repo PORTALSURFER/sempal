@@ -99,8 +99,7 @@ pub(super) fn handle_analysis_message(
                                 .duration_since(UNIX_EPOCH)
                                 .ok()
                                 .map(|duration| duration.as_secs() as i64);
-                            let stale_after =
-                                super::analysis_jobs::stale_running_job_seconds();
+                            let stale_after = super::analysis_jobs::stale_running_job_seconds();
                             jobs.into_iter()
                                 .map(|job| {
                                     let label = super::analysis_jobs::parse_sample_id(

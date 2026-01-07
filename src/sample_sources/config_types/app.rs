@@ -4,15 +4,15 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     audio::{AudioInputConfig, AudioOutputConfig},
-    sample_sources::{Collection, SampleSource, SourceId},
     sample_sources::library::LibraryState,
+    sample_sources::{Collection, SampleSource, SourceId},
 };
 
-use super::{AnalysisSettings, InteractionOptions, UpdateSettings};
 use super::super::config_defaults::{
     clamp_analysis_worker_count, clamp_volume, default_audio_input, default_audio_output,
     default_true, default_volume,
 };
+use super::{AnalysisSettings, InteractionOptions, UpdateSettings};
 
 /// Aggregate application state loaded from disk.
 ///

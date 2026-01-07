@@ -14,10 +14,8 @@ use tempfile::tempdir;
 
 #[test]
 fn waveform_image_resizes_to_view() {
-    let (mut controller, source) = prepare_with_source_and_wav_entries(vec![sample_entry(
-        "resize.wav",
-        SampleTag::Neutral,
-    )]);
+    let (mut controller, source) =
+        prepare_with_source_and_wav_entries(vec![sample_entry("resize.wav", SampleTag::Neutral)]);
     let wav_path = source.root.join("resize.wav");
     write_test_wav(&wav_path, &[0.0, 0.25, -0.5, 0.75]);
 
@@ -32,10 +30,8 @@ fn waveform_image_resizes_to_view() {
 
 #[test]
 fn removing_selected_source_clears_waveform_view() {
-    let (mut controller, source) = prepare_with_source_and_wav_entries(vec![sample_entry(
-        "one.wav",
-        SampleTag::Neutral,
-    )]);
+    let (mut controller, source) =
+        prepare_with_source_and_wav_entries(vec![sample_entry("one.wav", SampleTag::Neutral)]);
     let wav_path = source.root.join("one.wav");
     write_test_wav(&wav_path, &[0.1, -0.1]);
     controller
@@ -52,10 +48,8 @@ fn removing_selected_source_clears_waveform_view() {
 
 #[test]
 fn switching_sources_resets_waveform_state() {
-    let (mut controller, first) = prepare_with_source_and_wav_entries(vec![sample_entry(
-        "a.wav",
-        SampleTag::Neutral,
-    )]);
+    let (mut controller, first) =
+        prepare_with_source_and_wav_entries(vec![sample_entry("a.wav", SampleTag::Neutral)]);
     let wav_path = first.root.join("a.wav");
     write_test_wav(&wav_path, &[0.0, 0.1]);
     controller
@@ -78,10 +72,8 @@ fn switching_sources_resets_waveform_state() {
 
 #[test]
 fn pruning_missing_selection_clears_waveform_view() {
-    let (mut controller, source) = prepare_with_source_and_wav_entries(vec![sample_entry(
-        "gone.wav",
-        SampleTag::Neutral,
-    )]);
+    let (mut controller, source) =
+        prepare_with_source_and_wav_entries(vec![sample_entry("gone.wav", SampleTag::Neutral)]);
     let wav_path = source.root.join("gone.wav");
     write_test_wav(&wav_path, &[0.2, -0.2]);
     controller.sample_view.wav.selected_wav = Some(PathBuf::from("gone.wav"));
@@ -101,10 +93,8 @@ fn pruning_missing_selection_clears_waveform_view() {
 
 #[test]
 fn cropping_selection_overwrites_file() {
-    let (mut controller, source) = prepare_with_source_and_wav_entries(vec![sample_entry(
-        "edit.wav",
-        SampleTag::Neutral,
-    )]);
+    let (mut controller, source) =
+        prepare_with_source_and_wav_entries(vec![sample_entry("edit.wav", SampleTag::Neutral)]);
     let wav_path = load_waveform_selection(
         &mut controller,
         &source,
@@ -127,10 +117,8 @@ fn cropping_selection_overwrites_file() {
 
 #[test]
 fn trimming_selection_removes_span() {
-    let (mut controller, source) = prepare_with_source_and_wav_entries(vec![sample_entry(
-        "trim.wav",
-        SampleTag::Neutral,
-    )]);
+    let (mut controller, source) =
+        prepare_with_source_and_wav_entries(vec![sample_entry("trim.wav", SampleTag::Neutral)]);
     let wav_path = load_waveform_selection(
         &mut controller,
         &source,
@@ -154,10 +142,8 @@ fn trimming_selection_removes_span() {
 
 #[test]
 fn click_removal_interpolates_selected_span() {
-    let (mut controller, source) = prepare_with_source_and_wav_entries(vec![sample_entry(
-        "click.wav",
-        SampleTag::Neutral,
-    )]);
+    let (mut controller, source) =
+        prepare_with_source_and_wav_entries(vec![sample_entry("click.wav", SampleTag::Neutral)]);
     let selection = SelectionRange::new(0.4, 0.6);
     let wav_path = load_waveform_selection(
         &mut controller,
@@ -188,10 +174,8 @@ fn click_removal_interpolates_selected_span() {
 
 #[test]
 fn destructive_edit_request_prompts_without_yolo_mode() {
-    let (mut controller, source) = prepare_with_source_and_wav_entries(vec![sample_entry(
-        "warn.wav",
-        SampleTag::Neutral,
-    )]);
+    let (mut controller, source) =
+        prepare_with_source_and_wav_entries(vec![sample_entry("warn.wav", SampleTag::Neutral)]);
     let wav_path = load_waveform_selection(
         &mut controller,
         &source,
@@ -216,10 +200,8 @@ fn destructive_edit_request_prompts_without_yolo_mode() {
 
 #[test]
 fn yolo_mode_applies_destructive_edit_immediately() {
-    let (mut controller, source) = prepare_with_source_and_wav_entries(vec![sample_entry(
-        "yolo.wav",
-        SampleTag::Neutral,
-    )]);
+    let (mut controller, source) =
+        prepare_with_source_and_wav_entries(vec![sample_entry("yolo.wav", SampleTag::Neutral)]);
     let wav_path = load_waveform_selection(
         &mut controller,
         &source,
@@ -245,10 +227,8 @@ fn yolo_mode_applies_destructive_edit_immediately() {
 
 #[test]
 fn confirming_pending_destructive_edit_clears_prompt() {
-    let (mut controller, source) = prepare_with_source_and_wav_entries(vec![sample_entry(
-        "confirm.wav",
-        SampleTag::Neutral,
-    )]);
+    let (mut controller, source) =
+        prepare_with_source_and_wav_entries(vec![sample_entry("confirm.wav", SampleTag::Neutral)]);
     let wav_path = load_waveform_selection(
         &mut controller,
         &source,
@@ -499,10 +479,8 @@ fn c_hotkey_prompts_crop_selection_in_waveform_focus() {
 
 #[test]
 fn shift_c_hotkey_crops_selection_to_new_sample() {
-    let (mut controller, source) = prepare_with_source_and_wav_entries(vec![sample_entry(
-        "original.wav",
-        SampleTag::Neutral,
-    )]);
+    let (mut controller, source) =
+        prepare_with_source_and_wav_entries(vec![sample_entry("original.wav", SampleTag::Neutral)]);
     let wav_path = load_waveform_selection(
         &mut controller,
         &source,

@@ -1,7 +1,9 @@
 //! Selection and waveform view state for the controller.
 
+use super::super::{
+    CollectionId, DecodedWaveform, SampleSource, SelectionRange, SourceId, WaveformRenderer, wavs,
+};
 use super::audio::LoadedAudio;
-use super::super::{CollectionId, DecodedWaveform, SampleSource, SelectionRange, SourceId, WaveformRenderer, wavs};
 use crate::selection::SelectionState;
 use std::path::PathBuf;
 

@@ -1,8 +1,8 @@
 use super::helpers::TriageSampleContext;
 use super::*;
 use crate::egui_app::state::LoopCrossfadeSettings;
-use tracing::{info, warn};
 use std::collections::HashSet;
+use tracing::{info, warn};
 
 pub(crate) trait BrowserActions {
     fn tag_browser_sample(&mut self, row: usize, tag: SampleTag) -> Result<(), String>;

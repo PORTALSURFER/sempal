@@ -20,7 +20,11 @@ pub(super) fn grow_selection(controller: &mut EguiController, offset: isize) {
     let _ = controller.play_audio(controller.ui.waveform.loop_enabled, None);
 }
 
-fn visible_row_after_offset(controller: &mut EguiController, offset: isize, list_len: usize) -> usize {
+fn visible_row_after_offset(
+    controller: &mut EguiController,
+    offset: isize,
+    list_len: usize,
+) -> usize {
     let selected_wav = controller.sample_view.wav.selected_wav.clone();
     let current_row = controller
         .ui

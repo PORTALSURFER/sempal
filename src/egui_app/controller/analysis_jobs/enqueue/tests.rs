@@ -120,7 +120,11 @@ fn backfill_enqueues_when_source_has_no_features() {
     env.create_files(&["Pack/a.wav", "Pack/b.wav", "Pack/c.wav"]);
     seed_source_db(
         &env.source,
-        &[("Pack/a.wav", "ha"), ("Pack/b.wav", "hb"), ("Pack/c.wav", "hc")],
+        &[
+            ("Pack/a.wav", "ha"),
+            ("Pack/b.wav", "hb"),
+            ("Pack/c.wav", "hc"),
+        ],
     );
     let source_db = SourceDatabase::open(&env.source.root).unwrap();
     let entries = source_db.list_files().unwrap();
@@ -492,7 +496,11 @@ fn embedding_backfill_enqueues_missing_or_mismatched() {
     let env = TestEnv::new();
     seed_source_db(
         &env.source,
-        &[("Pack/a.wav", "ha"), ("Pack/b.wav", "hb"), ("Pack/c.wav", "hc")],
+        &[
+            ("Pack/a.wav", "ha"),
+            ("Pack/b.wav", "hb"),
+            ("Pack/c.wav", "hc"),
+        ],
     );
 
     let conn = db::open_source_db(&env.source.root).unwrap();
@@ -504,11 +512,7 @@ fn embedding_backfill_enqueues_missing_or_mismatched() {
     for (sample_id, hash) in [(&a, "ha"), (&b, "hb"), (&c, "hc")] {
         insert_sample_row(&conn, sample_id, hash, None);
     }
-    insert_embeddings_row(
-        &conn,
-        &b,
-        crate::analysis::similarity::SIMILARITY_MODEL_ID,
-    );
+    insert_embeddings_row(&conn, &b, crate::analysis::similarity::SIMILARITY_MODEL_ID);
     insert_embeddings_row(&conn, &c, "old_model");
 
     let (inserted, _progress) = enqueue_jobs_for_embedding_backfill(&env.source).unwrap();

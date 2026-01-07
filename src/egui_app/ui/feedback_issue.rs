@@ -179,7 +179,10 @@ impl EguiApp {
         ui.add_space(6.0);
         ui.horizontal(|ui| {
             if ui
-                .add_enabled(!self.controller.ui.feedback_issue.connecting, egui::Button::new("Connect GitHub"))
+                .add_enabled(
+                    !self.controller.ui.feedback_issue.connecting,
+                    egui::Button::new("Connect GitHub"),
+                )
                 .clicked()
             {
                 self.controller.connect_github_issue_reporting();

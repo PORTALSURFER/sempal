@@ -56,7 +56,10 @@ impl EguiApp {
                     .clear_targets_from(DragSource::Folders);
             }
             if drag_payload.is_some() && !source_drop_active {
-                self.controller.ui.drag.clear_targets_from(DragSource::Sources);
+                self.controller
+                    .ui
+                    .drag
+                    .clear_targets_from(DragSource::Sources);
             }
             let pointer_pos = ui
                 .input(|i| i.pointer.hover_pos().or_else(|| i.pointer.interact_pos()))

@@ -9,15 +9,15 @@ mod ops;
 mod prompt;
 mod undo_entries;
 
-#[path = "../selection_normalize.rs"]
-mod selection_normalize;
 #[path = "../selection_click.rs"]
 mod selection_click;
+#[path = "../selection_normalize.rs"]
+mod selection_normalize;
 
 use buffer::write_selection_wav;
 use buffer::{SelectionEditBuffer, SelectionTarget};
-use selection_normalize::normalize_selection;
 use selection_click::repair_clicks_selection as repair_clicks_buffer;
+use selection_normalize::normalize_selection;
 
 use ops::{apply_directional_fade, crop_buffer, reverse_buffer, trim_buffer};
 

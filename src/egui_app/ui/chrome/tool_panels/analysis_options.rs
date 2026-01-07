@@ -1,8 +1,8 @@
 use eframe::egui::{self, RichText};
 
+use super::section_label;
 use crate::egui_app::ui::EguiApp;
 use crate::egui_app::ui::style;
-use super::section_label;
 
 impl EguiApp {
     pub(in crate::egui_app::ui::chrome) fn render_analysis_options_menu(
@@ -40,9 +40,7 @@ impl EguiApp {
             "Limit background CPU usage (change takes effect on next start).".to_string()
         };
         let drag = egui::DragValue::new(&mut workers).range(0..=64);
-        let response = ui
-            .add(drag)
-            .on_hover_text(hover_text);
+        let response = ui.add(drag).on_hover_text(hover_text);
         if response.changed() {
             self.controller
                 .set_analysis_worker_count(workers.max(0) as u32);

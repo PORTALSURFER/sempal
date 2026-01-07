@@ -17,7 +17,10 @@ impl EguiController {
         match state.stage {
             SimilarityPrepStage::AwaitScan => {
                 if self.runtime.jobs.scan_in_progress() {
-                    info!("Similarity prep waiting for scan (source_id={})", state.source_id.as_str());
+                    info!(
+                        "Similarity prep waiting for scan (source_id={})",
+                        state.source_id.as_str()
+                    );
                     self.ensure_similarity_prep_progress(0, false);
                     self.set_similarity_scan_detail();
                     return;
@@ -76,10 +79,9 @@ impl EguiController {
                     if embed_progress.pending > 0 || embed_progress.running > 0 {
                         self.ensure_similarity_prep_progress(embed_progress.total(), true);
                         self.set_similarity_embedding_detail();
-                        self.ui.progress.set_counts(
-                            embed_progress.total(),
-                            embed_progress.completed(),
-                        );
+                        self.ui
+                            .progress
+                            .set_counts(embed_progress.total(), embed_progress.completed());
                         let jobs_completed = embed_progress.completed();
                         let jobs_total = embed_progress.total();
                         let mut detail =
@@ -101,45 +103,48 @@ impl EguiController {
                         self.enqueue_similarity_backfill(source, false);
                         return;
                     }
-                self.handle_similarity_analysis_progress(&progress);
-                return;
+                    self.handle_similarity_analysis_progress(&progress);
+                    return;
+                }
+                self.ensure_similarity_prep_progress(progress.total(), true);
+                self.ui
+                    .progress
+                    .set_counts(progress.total(), progress.completed());
+                let jobs_completed = progress.completed();
+                let jobs_total = progress.total();
+                let samples_completed = progress.samples_completed();
+                let samples_total = progress.samples_total;
+                let mut detail = format!(
+                    "Analyzing audio features… Jobs {jobs_completed}/{jobs_total} • Samples {samples_completed}/{samples_total}"
+                );
+                if progress.running == 0 && progress.pending > 0 {
+                    detail.push_str(" • Waiting for workers");
+                }
+                if progress.failed > 0 {
+                    detail.push_str(&format!(" • {} failed", progress.failed));
+                }
+                self.ui.progress.set_detail(Some(detail));
+                self.ui
+                    .progress
+                    .set_analysis_snapshot(Some(AnalysisProgressSnapshot {
+                        pending: progress.pending,
+                        running: progress.running,
+                        failed: progress.failed,
+                        samples_completed,
+                        samples_total,
+                        running_jobs: Vec::new(),
+                        stale_after_secs: Some(
+                            crate::egui_app::controller::analysis_jobs::stale_running_job_seconds(),
+                        ),
+                    }));
             }
-            self.ensure_similarity_prep_progress(progress.total(), true);
-            self.ui.progress
-                .set_counts(progress.total(), progress.completed());
-            let jobs_completed = progress.completed();
-            let jobs_total = progress.total();
-            let samples_completed = progress.samples_completed();
-            let samples_total = progress.samples_total;
-            let mut detail = format!(
-                "Analyzing audio features… Jobs {jobs_completed}/{jobs_total} • Samples {samples_completed}/{samples_total}"
-            );
-            if progress.running == 0 && progress.pending > 0 {
-                detail.push_str(" • Waiting for workers");
-            }
-            if progress.failed > 0 {
-                detail.push_str(&format!(" • {} failed", progress.failed));
-            }
-            self.ui.progress.set_detail(Some(detail));
-            self.ui.progress.set_analysis_snapshot(Some(AnalysisProgressSnapshot {
-                pending: progress.pending,
-                running: progress.running,
-                failed: progress.failed,
-                samples_completed,
-                samples_total,
-                running_jobs: Vec::new(),
-                stale_after_secs: Some(
-                    crate::egui_app::controller::analysis_jobs::stale_running_job_seconds(),
-                ),
-            }));
-        }
-        SimilarityPrepStage::Finalizing => {
-            info!(
-                "Similarity prep finalizing (source_id={})",
-                state.source_id.as_str()
-            );
-            self.ensure_similarity_finalize_progress();
-            self.set_similarity_finalize_detail();
+            SimilarityPrepStage::Finalizing => {
+                info!(
+                    "Similarity prep finalizing (source_id={})",
+                    state.source_id.as_str()
+                );
+                self.ensure_similarity_finalize_progress();
+                self.set_similarity_finalize_detail();
             }
         }
     }

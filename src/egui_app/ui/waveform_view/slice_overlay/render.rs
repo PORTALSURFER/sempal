@@ -1,14 +1,14 @@
 use crate::selection::{SelectionEdge, SelectionRange};
 use eframe::egui::{self, Color32, CursorIcon};
 
-use super::geometry::{edge_position_px, slice_rect, to_wave_pos, update_slice_edge};
+use super::super::super::{EguiApp, SliceDragKind, SliceDragState};
 use super::super::selection_geometry::{
     paint_selection_edge_bracket, selection_edge_handle_rect, selection_handle_height,
     selection_handle_rect,
 };
-use crate::egui_app::ui::style;
-use super::super::super::{EguiApp, SliceDragKind, SliceDragState};
+use super::geometry::{edge_position_px, slice_rect, to_wave_pos, update_slice_edge};
 use super::{SliceEdgeSpec, SliceItem, SliceOverlayEnv, SliceOverlayResult};
+use crate::egui_app::ui::style;
 
 pub(super) fn render_slice_overlays(
     app: &mut EguiApp,
@@ -335,11 +335,7 @@ fn handle_slice_edge_drag(
     }
 }
 
-fn start_slice_edge_drag(
-    app: &mut EguiApp,
-    spec: &SliceEdgeSpec,
-    edge_response: &egui::Response,
-) {
+fn start_slice_edge_drag(app: &mut EguiApp, spec: &SliceEdgeSpec, edge_response: &egui::Response) {
     let offset = edge_response
         .interact_pointer_pos()
         .map(|pos| pos.x - edge_position_px(spec.edge, spec.slice_rect))
@@ -365,8 +361,7 @@ fn update_slice_edge_drag(
     }) = app.slice_drag
         && active_index == index
     {
-        let view_fraction =
-            ((pos.x - offset - env.rect.left()) / env.rect.width()).clamp(0.0, 1.0);
+        let view_fraction = ((pos.x - offset - env.rect.left()) / env.rect.width()).clamp(0.0, 1.0);
         let absolute = env.view.start + env.view_width.max(f32::EPSILON) * view_fraction;
         let clamped = absolute.clamp(0.0, 1.0);
         if let Some(slice) = app.controller.ui.waveform.slices.get(active_index).copied() {
@@ -404,7 +399,10 @@ fn sync_slice_drag_release(app: &mut EguiApp, ctx: &egui::Context) {
 }
 
 fn finish_slice_drag(app: &mut EguiApp, index: usize) {
-    if let Some(SliceDragState { index: active_index, .. }) = app.slice_drag
+    if let Some(SliceDragState {
+        index: active_index,
+        ..
+    }) = app.slice_drag
         && active_index == index
     {
         app.slice_drag = None;

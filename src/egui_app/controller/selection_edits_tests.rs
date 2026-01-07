@@ -1,5 +1,5 @@
-use super::*;
 use super::selection_click::repair_clicks_selection;
+use super::*;
 
 #[test]
 fn slice_frames_keeps_requested_range() {

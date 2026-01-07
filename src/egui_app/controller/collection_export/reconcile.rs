@@ -44,8 +44,14 @@ pub(super) fn reconcile_collection_export(
         .filter_map(|m| m.relative_path.file_name().map(PathBuf::from))
         .collect();
     let (seen, removed) = remove_missing_exports(controller, collection_id, &members, &file_names);
-    let added =
-        add_new_exports(controller, collection_id, &collection_dir, &files, &member_paths, &seen)?;
+    let added = add_new_exports(
+        controller,
+        collection_id,
+        &collection_dir,
+        &files,
+        &member_paths,
+        &seen,
+    )?;
     controller.persist_config("Failed to save collection")?;
     controller.refresh_collections_ui();
     Ok((added, removed))

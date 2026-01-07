@@ -1,12 +1,12 @@
-use super::TestConfigEnv;
-use crate::audio::{AudioInputConfig, AudioOutputConfig};
-use crate::sample_sources::config::AppConfig;
-use super::super::load::load_settings_from;
-use super::super::save::save_to_path;
 use super::super::super::config_types::{
     AnalysisSettings, AppSettingsCore, FeatureFlags, HintSettings, InteractionOptions,
     PannsBackendChoice, UpdateChannel, UpdateSettings, WgpuPowerPreference,
 };
+use super::super::load::load_settings_from;
+use super::super::save::save_to_path;
+use super::TestConfigEnv;
+use crate::audio::{AudioInputConfig, AudioOutputConfig};
+use crate::sample_sources::config::AppConfig;
 use crate::sample_sources::library::LibraryState;
 use crate::sample_sources::{Collection, SampleSource, SourceId};
 use crate::waveform::WaveformChannelView;
@@ -313,7 +313,10 @@ fn settings_round_trip_preserves_fields() {
         round_trip.core.controls.bpm_snap_enabled,
         cfg.core.controls.bpm_snap_enabled
     );
-    assert_eq!(round_trip.core.controls.bpm_value, cfg.core.controls.bpm_value);
+    assert_eq!(
+        round_trip.core.controls.bpm_value,
+        cfg.core.controls.bpm_value
+    );
     assert_eq!(
         round_trip.core.controls.transient_snap_enabled,
         cfg.core.controls.transient_snap_enabled

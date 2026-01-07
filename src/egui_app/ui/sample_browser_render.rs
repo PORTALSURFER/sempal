@@ -93,12 +93,11 @@ impl EguiApp {
                 let row_width = metrics.row_width;
                 let similar_query = self.controller.ui.browser.similar_query.as_ref();
                 let is_anchor = similar_query.and_then(|sim| sim.anchor_index) == Some(entry_index);
-                let similar_strength = similar_query
-                    .and_then(|sim| sim.display_strength_for_index(entry_index));
+                let similar_strength =
+                    similar_query.and_then(|sim| sim.display_strength_for_index(entry_index));
                 let marker_color = style::triage_marker_color(tag);
-                let triage_marker_width = marker_color
-                    .as_ref()
-                    .map(|_| style::triage_marker_width());
+                let triage_marker_width =
+                    marker_color.as_ref().map(|_| style::triage_marker_width());
                 let triage_marker = marker_color.map(|color| RowMarker {
                     width: style::triage_marker_width(),
                     color,

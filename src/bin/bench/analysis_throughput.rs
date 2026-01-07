@@ -36,10 +36,7 @@ pub(super) fn run(options: &BenchOptions) -> Result<AnalysisBenchResult, String>
                 options.analysis_sample_rate,
             )?;
             if embedding.len() != sempal::analysis::similarity::SIMILARITY_DIM {
-                return Err(format!(
-                    "Unexpected embedding dim: {}",
-                    embedding.len()
-                ));
+                return Err(format!("Unexpected embedding dim: {}", embedding.len()));
             }
         }
     }
@@ -50,11 +47,7 @@ pub(super) fn run(options: &BenchOptions) -> Result<AnalysisBenchResult, String>
     ))
 }
 
-fn synth_mono_samples(
-    sample_rate: u32,
-    duration_ms: u32,
-    rng: &mut StdRng,
-) -> Vec<f32> {
+fn synth_mono_samples(sample_rate: u32, duration_ms: u32, rng: &mut StdRng) -> Vec<f32> {
     let samples = ((sample_rate as f64 * duration_ms as f64) / 1000.0)
         .round()
         .max(1.0) as usize;

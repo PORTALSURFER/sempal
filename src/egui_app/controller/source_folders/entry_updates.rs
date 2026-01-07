@@ -102,11 +102,7 @@ impl EguiController {
             return;
         }
         for (old_entry, new_entry) in updates {
-            self.update_selection_paths(
-                source,
-                &old_entry.relative_path,
-                &new_entry.relative_path,
-            );
+            self.update_selection_paths(source, &old_entry.relative_path, &new_entry.relative_path);
         }
         self.invalidate_cached_audio_for_entry_updates(&source.id, updates);
         self.invalidate_wav_entries_for_source(source);

@@ -224,10 +224,7 @@ pub fn open_output_stream(
         resolved.buffer_size_frames,
         resolved.used_fallback
     );
-    Ok(OpenStreamOutcome {
-        stream,
-        resolved,
-    })
+    Ok(OpenStreamOutcome { stream, resolved })
 }
 
 fn resolve_host(id: Option<&str>) -> Result<(cpal::Host, String, bool), AudioOutputError> {

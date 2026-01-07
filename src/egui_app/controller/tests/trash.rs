@@ -24,7 +24,7 @@ fn moving_trashed_samples_moves_and_prunes_state() -> Result<(), String> {
         .unwrap();
     db.set_tag(Path::new("keep.wav"), SampleTag::Keep).unwrap();
 
-    controller.set_wav_entries_for_tests( vec![
+    controller.set_wav_entries_for_tests(vec![
         sample_entry("trash.wav", SampleTag::Trash),
         sample_entry("keep.wav", SampleTag::Keep),
     ]);
@@ -45,9 +45,11 @@ fn moving_trashed_samples_moves_and_prunes_state() -> Result<(), String> {
     assert_eq!(rows[0].tag, SampleTag::Keep);
     assert_eq!(controller.wav_entries_len(), 1);
     let entries = controller.wav_entries.pages.get(&0).expect("entries");
-    assert!(entries
-        .iter()
-        .all(|entry| entry.relative_path != PathBuf::from("trash.wav")));
+    assert!(
+        entries
+            .iter()
+            .all(|entry| entry.relative_path != PathBuf::from("trash.wav"))
+    );
     assert!(controller.ui.browser.trash.is_empty());
     Ok(())
 }
@@ -71,7 +73,7 @@ fn moving_trashed_samples_can_cancel_midway() -> Result<(), String> {
         }
     }
 
-    controller.set_wav_entries_for_tests( vec![
+    controller.set_wav_entries_for_tests(vec![
         sample_entry("one.wav", SampleTag::Trash),
         sample_entry("two.wav", SampleTag::Trash),
     ]);

@@ -82,11 +82,7 @@ fn parse_model_setup_args() -> Option<PannsSetupOptions> {
             _ => {}
         }
     }
-    if run {
-        Some(options)
-    } else {
-        None
-    }
+    if run { Some(options) } else { None }
 }
 
 #[cfg(all(target_os = "windows", not(debug_assertions)))]

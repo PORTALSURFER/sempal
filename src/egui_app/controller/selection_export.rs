@@ -122,14 +122,7 @@ impl EguiController {
                 folder,
             )
         } else {
-            self.export_selection_clip(
-                &source_id,
-                &relative_path,
-                selection,
-                None,
-                true,
-                true,
-            )
+            self.export_selection_clip(&source_id, &relative_path, selection, None, true, true)
         };
         match export {
             Ok(entry) => {

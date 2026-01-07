@@ -29,15 +29,14 @@ pub(crate) use backend::{
 };
 #[allow(unused_imports)]
 pub(crate) use infer::{
-    infer_embedding, infer_embedding_from_logmel, infer_embedding_query,
+    EmbeddingBatchInput, infer_embedding, infer_embedding_from_logmel, infer_embedding_query,
     infer_embeddings_batch, infer_embeddings_from_logmel_batch,
     infer_embeddings_from_logmel_batch_chunked, infer_embeddings_from_logmel_batch_pipelined,
-    EmbeddingBatchInput,
 };
 #[allow(unused_imports)]
-pub(crate) use logmel::{build_panns_logmel_into, PannsLogMelScratch, PANNS_LOGMEL_LEN};
+pub(crate) use logmel::{PANNS_LOGMEL_LEN, PannsLogMelScratch, build_panns_logmel_into};
 #[allow(unused_imports)]
-pub(crate) use model::{reset_panns_model, try_reset_panns_model, warmup_panns, PannsModel};
+pub(crate) use model::{PannsModel, reset_panns_model, try_reset_panns_model, warmup_panns};
 
 #[cfg(test)]
 mod tests {

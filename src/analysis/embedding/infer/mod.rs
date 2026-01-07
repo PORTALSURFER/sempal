@@ -2,11 +2,11 @@
 
 use burn::tensor::TensorData;
 
+use super::EMBEDDING_DIM;
 use super::backend::{embedding_batch_max, panns_batch_enabled};
 use super::logmel::{PANNS_INPUT_FRAMES, PANNS_LOGMEL_LEN};
-use super::model::{with_panns_model, PannsModelInner};
+use super::model::{PannsModelInner, with_panns_model};
 use super::query::query_window_ranges;
-use super::EMBEDDING_DIM;
 use crate::analysis::panns_preprocess::PANNS_MEL_BANDS;
 
 mod backend_io;
@@ -67,11 +67,8 @@ pub(crate) fn infer_embeddings_batch(
         return Ok(Vec::new());
     }
     let batch_enabled = panns_batch_enabled();
-    let batch_plan = schedule::plan_batch_slices(
-        inputs.len(),
-        embedding_batch_max(),
-        batch_enabled,
-    );
+    let batch_plan =
+        schedule::plan_batch_slices(inputs.len(), embedding_batch_max(), batch_enabled);
     with_panns_model(|model| {
         let mut outputs = Vec::with_capacity(inputs.len());
         for plan in batch_plan {

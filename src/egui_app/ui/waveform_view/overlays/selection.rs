@@ -1,5 +1,5 @@
-use super::selection_geometry::loop_bar_rect;
 use super::selection_drag;
+use super::selection_geometry::loop_bar_rect;
 use super::style;
 use super::*;
 use eframe::egui::{self, Color32};
@@ -47,13 +47,7 @@ pub(super) fn render_loop_bar(
             );
         }
         selection_drag::handle_selection_slide_drag(
-            app,
-            ui,
-            rect,
-            view,
-            view_width,
-            selection,
-            &response,
+            app, ui, rect, view, view_width, selection, &response,
         );
     } else {
         ui.painter()
@@ -72,7 +66,10 @@ fn selection_is_power_of_two_beats(
     if !bpm.is_finite() || bpm <= 0.0 {
         return false;
     }
-    let duration = app.controller.loaded_audio_duration_seconds().unwrap_or(0.0);
+    let duration = app
+        .controller
+        .loaded_audio_duration_seconds()
+        .unwrap_or(0.0);
     if !duration.is_finite() || duration <= 0.0 {
         return false;
     }

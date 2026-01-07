@@ -1,5 +1,5 @@
-use crate::egui_app::controller::test_support::write_test_wav;
 use crate::egui_app::controller::EguiController;
+use crate::egui_app::controller::test_support::write_test_wav;
 use crate::sample_sources::SampleSource;
 use crate::selection::SelectionRange;
 use std::path::Path;
@@ -39,10 +39,8 @@ fn accept_waveform_slices_exports_files() {
     controller
         .load_waveform_for_selection(&source, Path::new("clip.wav"))
         .unwrap();
-    controller.ui.waveform.slices = vec![
-        SelectionRange::new(0.0, 0.5),
-        SelectionRange::new(0.5, 1.0),
-    ];
+    controller.ui.waveform.slices =
+        vec![SelectionRange::new(0.0, 0.5), SelectionRange::new(0.5, 1.0)];
 
     let count = controller.accept_waveform_slices().unwrap();
 
@@ -91,9 +89,18 @@ fn apply_painted_slice_cuts_existing_ranges() {
 
     assert!(added);
     assert_eq!(controller.ui.waveform.slices.len(), 3);
-    assert_eq!(controller.ui.waveform.slices[0], SelectionRange::new(0.2, 0.4));
-    assert_eq!(controller.ui.waveform.slices[1], SelectionRange::new(0.4, 0.6));
-    assert_eq!(controller.ui.waveform.slices[2], SelectionRange::new(0.6, 0.8));
+    assert_eq!(
+        controller.ui.waveform.slices[0],
+        SelectionRange::new(0.2, 0.4)
+    );
+    assert_eq!(
+        controller.ui.waveform.slices[1],
+        SelectionRange::new(0.4, 0.6)
+    );
+    assert_eq!(
+        controller.ui.waveform.slices[2],
+        SelectionRange::new(0.6, 0.8)
+    );
 }
 
 #[test]
@@ -120,8 +127,14 @@ fn detect_waveform_slices_skips_silent_segments_with_transients() {
 
     assert_eq!(count, 2);
     assert_eq!(controller.ui.waveform.slices.len(), 2);
-    assert_eq!(controller.ui.waveform.slices[0], SelectionRange::new(0.25, 0.5));
-    assert_eq!(controller.ui.waveform.slices[1], SelectionRange::new(0.75, 1.0));
+    assert_eq!(
+        controller.ui.waveform.slices[0],
+        SelectionRange::new(0.25, 0.5)
+    );
+    assert_eq!(
+        controller.ui.waveform.slices[1],
+        SelectionRange::new(0.75, 1.0)
+    );
 }
 
 #[test]
@@ -139,7 +152,10 @@ fn delete_selected_slices_removes_marked_ranges() {
 
     assert_eq!(removed, 2);
     assert_eq!(controller.ui.waveform.slices.len(), 1);
-    assert_eq!(controller.ui.waveform.slices[0], SelectionRange::new(0.3, 0.4));
+    assert_eq!(
+        controller.ui.waveform.slices[0],
+        SelectionRange::new(0.3, 0.4)
+    );
     assert!(controller.ui.waveform.selected_slices.is_empty());
 }
 
@@ -158,6 +174,9 @@ fn merge_selected_slices_spans_between_markers() {
 
     assert_eq!(merged, Some(SelectionRange::new(0.1, 0.8)));
     assert_eq!(controller.ui.waveform.slices.len(), 1);
-    assert_eq!(controller.ui.waveform.slices[0], SelectionRange::new(0.1, 0.8));
+    assert_eq!(
+        controller.ui.waveform.slices[0],
+        SelectionRange::new(0.1, 0.8)
+    );
     assert_eq!(controller.ui.waveform.selected_slices, vec![0]);
 }

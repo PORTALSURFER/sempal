@@ -47,7 +47,9 @@ pub fn resolve_input_stream_config(
     })
 }
 
-pub(super) fn resolve_host(id: Option<&str>) -> Result<(cpal::Host, String, bool), AudioInputError> {
+pub(super) fn resolve_host(
+    id: Option<&str>,
+) -> Result<(cpal::Host, String, bool), AudioInputError> {
     let default_host = cpal::default_host();
     let default_id = default_host.id().name().to_string();
     let Some(requested) = id else {
@@ -95,8 +97,13 @@ pub(super) fn resolve_device(
 fn load_input_configs(
     device: &cpal::Device,
     host_id: &str,
-) -> Result<(cpal::SupportedStreamConfig, Vec<cpal::SupportedStreamConfigRange>), AudioInputError>
-{
+) -> Result<
+    (
+        cpal::SupportedStreamConfig,
+        Vec<cpal::SupportedStreamConfigRange>,
+    ),
+    AudioInputError,
+> {
     let default_config = device
         .default_input_config()
         .map_err(|source| AudioInputError::DefaultInputConfig { source })?;
@@ -118,9 +125,7 @@ fn build_input_stream_config(
     rate: u32,
     buffer_size: Option<u32>,
 ) -> (cpal::StreamConfig, Option<u32>) {
-    let mut stream_config = range
-        .with_sample_rate(cpal::SampleRate(rate))
-        .config();
+    let mut stream_config = range.with_sample_rate(cpal::SampleRate(rate)).config();
     if let Some(size) = buffer_size.filter(|size| *size > 0) {
         stream_config.buffer_size = cpal::BufferSize::Fixed(size);
     }
@@ -168,10 +173,7 @@ fn pick_stream_config<'a>(
     let mut picked = None;
     let mut rate = default_rate;
     if let Some(requested) = requested_rate {
-        if let Some(range) = ranges
-            .iter()
-            .find(|range| rate_in_range(requested, *range))
-        {
+        if let Some(range) = ranges.iter().find(|range| rate_in_range(requested, *range)) {
             picked = Some(*range);
             rate = requested;
         } else if using_desired {
@@ -230,10 +232,7 @@ struct InputChannelSelection {
     used_fallback: bool,
 }
 
-fn resolve_selected_input_channels(
-    requested: &[u16],
-    max_channels: u16,
-) -> InputChannelSelection {
+fn resolve_selected_input_channels(requested: &[u16], max_channels: u16) -> InputChannelSelection {
     let mut used_fallback = false;
     let mut selected = normalize_selected_channels(requested, max_channels);
     if !requested.is_empty() && selected.len() != requested.len() {
@@ -246,11 +245,7 @@ fn resolve_selected_input_channels(
         used_fallback = true;
     }
     let output_channels = selected.len().clamp(1, 2) as u16;
-    let min_stream_channels = selected
-        .iter()
-        .copied()
-        .max()
-        .unwrap_or(output_channels);
+    let min_stream_channels = selected.iter().copied().max().unwrap_or(output_channels);
     InputChannelSelection {
         selected_channels: selected,
         output_channels,

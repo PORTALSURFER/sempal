@@ -106,10 +106,14 @@ impl EguiController {
                 },
                 JobMessage::TrashMove(message) => match message {
                     TrashMoveMessage::SetTotal(total) => {
-                        self.ui.progress.set_counts(total, self.ui.progress.completed);
+                        self.ui
+                            .progress
+                            .set_counts(total, self.ui.progress.completed);
                     }
                     TrashMoveMessage::Progress { completed, detail } => {
-                        self.ui.progress.set_counts(self.ui.progress.total, completed);
+                        self.ui
+                            .progress
+                            .set_counts(self.ui.progress.total, completed);
                         self.ui.progress.set_detail(detail);
                     }
                     TrashMoveMessage::Finished(result) => {

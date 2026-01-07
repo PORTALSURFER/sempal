@@ -33,14 +33,13 @@ pub(super) fn decode_for_analysis(
             }
         }
     }
-    let decode_limit_seconds =
-        if context.max_analysis_duration_seconds.is_finite()
-            && context.max_analysis_duration_seconds > 0.0
-        {
-            Some(context.max_analysis_duration_seconds)
-        } else {
-            None
-        };
+    let decode_limit_seconds = if context.max_analysis_duration_seconds.is_finite()
+        && context.max_analysis_duration_seconds > 0.0
+    {
+        Some(context.max_analysis_duration_seconds)
+    } else {
+        None
+    };
     let decoded = crate::analysis::audio::decode_for_analysis_with_rate_limit(
         &absolute,
         context.analysis_sample_rate,

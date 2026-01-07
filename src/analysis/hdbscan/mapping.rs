@@ -72,10 +72,7 @@ pub fn assign_all_points_to_clusters(data: &[Vec<f32>], labels: &mut [i32]) {
     }
 }
 
-pub fn remap_labels_deterministic(
-    sample_ids: &[String],
-    labels: &mut [i32],
-) -> Result<(), String> {
+pub fn remap_labels_deterministic(sample_ids: &[String], labels: &mut [i32]) -> Result<(), String> {
     if sample_ids.len() != labels.len() {
         return Err("Cluster label length mismatch".to_string());
     }

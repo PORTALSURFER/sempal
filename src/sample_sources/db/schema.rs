@@ -188,7 +188,10 @@ fn ensure_analysis_jobs_optional_columns(connection: &Connection) -> Result<(), 
         .collect();
     if !columns.contains("running_at") {
         connection
-            .execute("ALTER TABLE analysis_jobs ADD COLUMN running_at INTEGER", [])
+            .execute(
+                "ALTER TABLE analysis_jobs ADD COLUMN running_at INTEGER",
+                [],
+            )
             .map_err(map_sql_error)?;
         let now = now_epoch_seconds();
         connection

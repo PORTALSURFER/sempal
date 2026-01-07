@@ -67,8 +67,9 @@ impl EguiController {
                 .or_default();
             (model.available.clone(), model.last_disk_refresh)
         };
-        let disk_refresh_due = last_disk_refresh
-            .map_or(true, |last| now.duration_since(last) >= Duration::from_secs(2));
+        let disk_refresh_due = last_disk_refresh.map_or(true, |last| {
+            now.duration_since(last) >= Duration::from_secs(2)
+        });
         let reuse_available = empty_entries && !cached_available.is_empty() && !disk_refresh_due;
         let available = if reuse_available || (pending_load && empty_entries && !disk_refresh_due) {
             cached_available
@@ -132,21 +133,13 @@ impl EguiController {
         self.build_folder_rows(&snapshot);
     }
 
-    pub(in crate::egui_app) fn refresh_folder_browser_if_stale(
-        &mut self,
-        max_age: Duration,
-    ) {
+    pub(in crate::egui_app) fn refresh_folder_browser_if_stale(&mut self, max_age: Duration) {
         let Some(source_id) = self.selection_state.ctx.selected_source.clone() else {
             return;
         };
         let now = Instant::now();
         let needs_refresh = {
-            let model = self
-                .ui_cache
-                .folders
-                .models
-                .entry(source_id)
-                .or_default();
+            let model = self.ui_cache.folders.models.entry(source_id).or_default();
             model
                 .last_disk_refresh
                 .map_or(true, |last| now.duration_since(last) >= max_age)
@@ -310,15 +303,7 @@ impl EguiController {
             };
             rows.push(row);
             if has_children && is_expanded {
-                Self::flatten_folder_tree(
-                    child,
-                    depth + 1,
-                    tree,
-                    model,
-                    expanded,
-                    hotkeys,
-                    rows,
-                );
+                Self::flatten_folder_tree(child, depth + 1, tree, model, expanded, hotkeys, rows);
             }
         }
     }

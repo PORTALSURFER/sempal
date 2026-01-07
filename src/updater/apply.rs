@@ -107,14 +107,16 @@ where
 
     let zip_name = expected_zip_asset_name(&args.identity, version.as_deref())?;
     let checksums_name = expected_checksums_name(&args.identity, version.as_deref())?;
-    let checksums_sig_name =
-        expected_checksums_signature_name(&args.identity, version.as_deref())?;
+    let checksums_sig_name = expected_checksums_signature_name(&args.identity, version.as_deref())?;
 
     let tmp = tempfile::tempdir()?;
     let zip_path = tmp.path().join(&zip_name);
     report(&mut progress, format!("Downloading {checksums_name}..."));
     let checksums_bytes = archive::download_release_asset_bytes(&release, &checksums_name)?;
-    report(&mut progress, format!("Downloading {checksums_sig_name}..."));
+    report(
+        &mut progress,
+        format!("Downloading {checksums_sig_name}..."),
+    );
     let signature_bytes = archive::download_release_asset_bytes(&release, &checksums_sig_name)?;
     report(&mut progress, "Verifying checksums signature...");
     archive::verify_checksums_signature(&checksums_bytes, &signature_bytes)?;
@@ -149,7 +151,10 @@ where
 
     if args.relaunch {
         report(&mut progress, "Relaunching app...");
-        relaunch_app(&args.install_dir, &args.identity.app, &manifest)?;
+        if let Err(err) = relaunch_app(&args.install_dir, &args.identity.app, &manifest) {
+            report(&mut progress, format!("Relaunch failed: {err}"));
+            return Err(err);
+        }
     }
 
     Ok(ApplyPlan {
@@ -245,7 +250,9 @@ fn relaunch_app(
         )));
     }
     let mut cmd = Command::new(exe);
-    let _ = cmd.spawn();
+    cmd.spawn().map_err(|err| {
+        UpdateError::Invalid(format!("Failed to relaunch {}: {err}", exe.display()))
+    })?;
     Ok(())
 }
 
@@ -261,5 +268,26 @@ fn channel_label(channel: UpdateChannel) -> &'static str {
     match channel {
         UpdateChannel::Stable => "stable",
         UpdateChannel::Nightly => "nightly",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn relaunch_app_errors_when_executable_missing() {
+        let tmp = tempdir().unwrap();
+        let manifest = UpdateManifest {
+            app: "sempal".to_string(),
+            channel: "stable".to_string(),
+            target: "target".to_string(),
+            platform: "linux".to_string(),
+            arch: "x86_64".to_string(),
+            files: Vec::new(),
+        };
+        let err = relaunch_app(tmp.path(), "sempal", &manifest).unwrap_err();
+        assert!(err.to_string().contains("Updated executable missing"));
     }
 }

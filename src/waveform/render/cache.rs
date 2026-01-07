@@ -74,7 +74,12 @@ impl WaveformRenderer {
         Some(image)
     }
 
-    pub(super) fn cached_full_width(&self, width: u32, view_fraction: f32, frame_count: usize) -> u32 {
+    pub(super) fn cached_full_width(
+        &self,
+        width: u32,
+        view_fraction: f32,
+        frame_count: usize,
+    ) -> u32 {
         const MAX_CACHED_FULL_WIDTH: u32 = 200_000;
         let desired = ((width as f32) / view_fraction).ceil().max(width as f32) as u32;
         let frame_cap = frame_count.min(u32::MAX as usize) as u32;

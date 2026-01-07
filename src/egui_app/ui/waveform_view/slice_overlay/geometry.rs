@@ -44,7 +44,9 @@ pub(super) fn edge_position_px(edge: SelectionEdge, slice_rect: egui::Rect) -> f
 
 pub(super) fn to_wave_pos(env: &SliceOverlayEnv<'_>, pos: egui::Pos2) -> f32 {
     let normalized = ((pos.x - env.rect.left()) / env.rect.width()).clamp(0.0, 1.0);
-    normalized.mul_add(env.view_width, env.view.start).clamp(0.0, 1.0)
+    normalized
+        .mul_add(env.view_width, env.view.start)
+        .clamp(0.0, 1.0)
 }
 
 #[cfg(test)]
@@ -89,7 +91,9 @@ mod tests {
         let range = SelectionRange::new(0.2, 0.4);
         let start = update_slice_edge(range, SelectionEdge::Start, 0.39);
         assert!((start.end() - 0.4).abs() < f32::EPSILON);
-        assert!(start.start() <= 0.4 - crate::egui_app::controller::MIN_SELECTION_WIDTH + f32::EPSILON);
+        assert!(
+            start.start() <= 0.4 - crate::egui_app::controller::MIN_SELECTION_WIDTH + f32::EPSILON
+        );
         let end = update_slice_edge(range, SelectionEdge::End, 0.21);
         assert!((end.start() - 0.2).abs() < f32::EPSILON);
         assert!(end.end() >= 0.2 + crate::egui_app::controller::MIN_SELECTION_WIDTH - f32::EPSILON);

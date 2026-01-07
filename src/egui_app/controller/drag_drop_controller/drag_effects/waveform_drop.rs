@@ -1,4 +1,4 @@
-use super::super::{file_metadata, DragDropController};
+use super::super::{DragDropController, file_metadata};
 use crate::egui_app::ui::style::StatusTone;
 use crate::sample_sources::SourceId;
 use std::fs;
@@ -13,7 +13,8 @@ impl DragDropController<'_> {
     ) {
         info!(
             "handle_waveform_sample_drop_to_browser source={} path={}",
-            source_id, relative_path.display()
+            source_id,
+            relative_path.display()
         );
         self.set_status(
             format!(

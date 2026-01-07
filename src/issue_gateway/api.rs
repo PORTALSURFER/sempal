@@ -74,9 +74,7 @@ pub fn fetch_issue_token() -> Result<String, IssueAuthError> {
         Err(ureq::Error::Status(code, response)) => {
             let body =
                 read_body_limited(response, MAX_AUTH_RESPONSE_BYTES).unwrap_or_else(|err| err);
-            return Err(IssueAuthError::ServerError(format!(
-                "HTTP {code}: {body}"
-            )));
+            return Err(IssueAuthError::ServerError(format!("HTTP {code}: {body}")));
         }
         Err(ureq::Error::Transport(err)) => {
             return Err(IssueAuthError::Transport(err.to_string()));
@@ -93,7 +91,8 @@ pub fn create_issue(
     request: &CreateIssueRequest,
 ) -> Result<CreateIssueResponse, CreateIssueError> {
     let url = format!("{BASE_URL}/issue");
-    let req = http_client::agent().post(&url)
+    let req = http_client::agent()
+        .post(&url)
         .set("Accept", "application/json")
         .set("Content-Type", "application/json")
         .set("Authorization", &format!("Bearer {}", token.trim()));
@@ -110,8 +109,8 @@ pub fn create_issue(
         }
     };
 
-    let body = read_body_limited(response, MAX_ISSUE_RESPONSE_BYTES)
-        .map_err(CreateIssueError::Json)?;
+    let body =
+        read_body_limited(response, MAX_ISSUE_RESPONSE_BYTES).map_err(CreateIssueError::Json)?;
     parse_create_issue_response(&body)
 }
 
@@ -214,8 +213,8 @@ fn is_session_expired_message(message: &str) -> bool {
 }
 
 fn read_body_limited(response: ureq::Response, max_bytes: usize) -> Result<String, String> {
-    let bytes = http_client::read_response_bytes(response, max_bytes)
-        .map_err(|err| err.to_string())?;
+    let bytes =
+        http_client::read_response_bytes(response, max_bytes).map_err(|err| err.to_string())?;
     String::from_utf8(bytes).map_err(|err| err.to_string())
 }
 
@@ -245,8 +244,8 @@ mod tests {
 
     #[test]
     fn maps_session_expired_to_unauthorized() {
-        let err =
-            parse_create_issue_response(r#"{ "error": "Session expired. Reconnect." }"#).unwrap_err();
+        let err = parse_create_issue_response(r#"{ "error": "Session expired. Reconnect." }"#)
+            .unwrap_err();
         assert!(matches!(err, CreateIssueError::Unauthorized));
     }
 

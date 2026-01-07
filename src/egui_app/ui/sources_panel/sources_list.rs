@@ -8,8 +8,10 @@ use eframe::egui::{self, RichText, Ui};
 impl EguiApp {
     pub(super) fn render_sources_list(&mut self, ui: &mut Ui, height: f32) -> egui::Rect {
         let drag_payload = self.controller.ui.drag.payload.clone();
-        let drag_active =
-            matches!(drag_payload, Some(DragPayload::Sample { .. } | DragPayload::Samples { .. }));
+        let drag_active = matches!(
+            drag_payload,
+            Some(DragPayload::Sample { .. } | DragPayload::Samples { .. })
+        );
         let pointer_pos = pointer_pos_for_drag(ui, self.controller.ui.drag.position);
         let output = egui::ScrollArea::vertical()
             .id_salt("sources_scroll")
@@ -127,10 +129,7 @@ impl EguiApp {
                 close_menu = true;
             }
             ui.separator();
-            ui.label(
-                RichText::new("Similarity prep")
-                    .color(style::palette().text_muted),
-            );
+            ui.label(RichText::new("Similarity prep").color(style::palette().text_muted));
             let mut cap_enabled = self.controller.similarity_prep_duration_cap_enabled();
             if ui
                 .checkbox(&mut cap_enabled, "Limit analysis duration")
@@ -146,9 +145,9 @@ impl EguiApp {
                     .speed(1.0)
                     .range(1.0..=3600.0)
                     .suffix(" s");
-                let response = ui.add(drag).on_hover_text(
-                    "Maximum file length to analyze during similarity preparation",
-                );
+                let response = ui
+                    .add(drag)
+                    .on_hover_text("Maximum file length to analyze during similarity preparation");
                 if response.changed() {
                     self.controller.set_max_analysis_duration_seconds(seconds);
                 }
@@ -170,17 +169,16 @@ impl EguiApp {
                     .speed(500.0)
                     .range(8_000..=16_000)
                     .suffix(" Hz");
-                let response = ui.add(drag).on_hover_text(
-                    "Sample rate used for fast similarity prep analysis",
-                );
+                let response = ui
+                    .add(drag)
+                    .on_hover_text("Sample rate used for fast similarity prep analysis");
                 if response.changed() {
-                    self.controller.set_similarity_prep_fast_sample_rate(sample_rate);
+                    self.controller
+                        .set_similarity_prep_fast_sample_rate(sample_rate);
                 }
             });
             ui.add_enabled_ui(!self.controller.similarity_prep_in_progress(), |ui| {
-                let mut force_full = self
-                    .controller
-                    .similarity_prep_force_full_analysis_next();
+                let mut force_full = self.controller.similarity_prep_force_full_analysis_next();
                 if ui
                     .checkbox(&mut force_full, "Force full reanalysis (next run)")
                     .on_hover_text(

@@ -22,8 +22,8 @@ pub(super) fn stage_samples_for_source(
     source: &crate::sample_sources::SampleSource,
     include_missing_entries: bool,
 ) -> Result<Vec<db::SampleMetadata>, String> {
-    let source_db = crate::sample_sources::SourceDatabase::open(&source.root)
-        .map_err(|err| err.to_string())?;
+    let source_db =
+        crate::sample_sources::SourceDatabase::open(&source.root).map_err(|err| err.to_string())?;
     let mut entries = source_db.list_files().map_err(|err| err.to_string())?;
     if !include_missing_entries {
         entries.retain(|entry| !entry.missing);

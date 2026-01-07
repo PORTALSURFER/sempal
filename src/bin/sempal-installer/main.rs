@@ -36,7 +36,7 @@ fn main() -> eframe::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::install::{plan_install, PlanAction};
+    use super::install::{PlanAction, plan_install};
     use std::fs;
 
     #[test]

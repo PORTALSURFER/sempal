@@ -20,7 +20,10 @@ pub(super) fn update_progress_detail(
     detail: Option<String>,
 ) {
     if controller.ui.progress.task == Some(task) {
-        controller.ui.progress.set_counts(controller.ui.progress.total, completed);
+        controller
+            .ui
+            .progress
+            .set_counts(controller.ui.progress.total, completed);
         controller.ui.progress.set_detail(detail);
     }
 }

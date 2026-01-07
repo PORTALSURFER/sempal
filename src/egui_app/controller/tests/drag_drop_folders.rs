@@ -99,7 +99,7 @@ fn sample_drop_to_folder_moves_and_updates_state() {
     let db = controller.database_for(&source).unwrap();
     db.upsert_file(Path::new("one.wav"), metadata.len(), modified_ns)
         .unwrap();
-    controller.set_wav_entries_for_tests( vec![sample_entry("one.wav", SampleTag::Neutral)]);
+    controller.set_wav_entries_for_tests(vec![sample_entry("one.wav", SampleTag::Neutral)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
@@ -159,7 +159,7 @@ fn sample_drop_to_folder_rejects_conflicts() {
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
     controller.cache_db(&source).unwrap();
 
-    controller.set_wav_entries_for_tests( vec![sample_entry("one.wav", SampleTag::Neutral)]);
+    controller.set_wav_entries_for_tests(vec![sample_entry("one.wav", SampleTag::Neutral)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
@@ -177,7 +177,11 @@ fn sample_drop_to_folder_rejects_conflicts() {
 
     assert!(root.join("one.wav").is_file());
     assert!(dest.join("one.wav").is_file());
-    assert!(controller.wav_index_for_path(Path::new("one.wav")).is_some());
+    assert!(
+        controller
+            .wav_index_for_path(Path::new("one.wav"))
+            .is_some()
+    );
 }
 
 #[test]

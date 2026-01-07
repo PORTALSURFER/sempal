@@ -1,6 +1,6 @@
 use super::HotkeysController;
-use crate::egui_app::controller::hotkeys::HotkeyCommand;
 use crate::egui_app::controller::StatusTone;
+use crate::egui_app::controller::hotkeys::HotkeyCommand;
 use crate::egui_app::state::FocusContext;
 use crate::sample_sources::SampleTag;
 

@@ -313,10 +313,7 @@ impl ControllerJobs {
         self.collection_move_in_progress
     }
 
-    pub(super) fn start_collection_move(
-        &mut self,
-        rx: Receiver<CollectionMoveResult>,
-    ) {
+    pub(super) fn start_collection_move(&mut self, rx: Receiver<CollectionMoveResult>) {
         self.collection_move_in_progress = true;
         let tx = self.message_tx.clone();
         thread::spawn(move || {

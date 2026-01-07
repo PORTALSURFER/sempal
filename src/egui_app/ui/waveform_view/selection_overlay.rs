@@ -46,12 +46,7 @@ pub(super) fn render_selection_overlay(
         painter.rect_filled(selection_rect, 0.0, style::with_alpha(highlight, 60));
         painter.rect_filled(handle_rect, 0.0, handle_color);
     }
-    selection_drag::handle_selection_handle_drag(
-        app,
-        ui,
-        selection,
-        &handle_response,
-    );
+    selection_drag::handle_selection_handle_drag(app, ui, selection, &handle_response);
 
     if let Some(duration_label) = app.controller.ui.waveform.selection_duration.as_deref() {
         let painter = ui.painter();
@@ -81,15 +76,7 @@ pub(super) fn render_selection_overlay(
     let top_cut = super::overlays::LOOP_BAR_HEIGHT;
     let bottom_cut = selection_handle_height(selection_rect);
     draw_bpm_guides(
-        app,
-        ui,
-        rect,
-        selection,
-        view,
-        view_width,
-        highlight,
-        top_cut,
-        bottom_cut,
+        app, ui, rect, selection, view, view_width, highlight, top_cut, bottom_cut,
     );
 
     let start_edge_rect = selection_edge_handle_rect(selection_rect, SelectionEdge::Start);
@@ -172,7 +159,10 @@ fn draw_bpm_guides(
     if !bpm.is_finite() || bpm <= 0.0 {
         return;
     }
-    let duration = app.controller.loaded_audio_duration_seconds().unwrap_or(0.0);
+    let duration = app
+        .controller
+        .loaded_audio_duration_seconds()
+        .unwrap_or(0.0);
     if !duration.is_finite() || duration <= 0.0 {
         return;
     }

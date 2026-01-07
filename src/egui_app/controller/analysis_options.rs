@@ -57,8 +57,10 @@ impl EguiController {
 
     pub(super) fn apply_analysis_backend_env(&mut self) {
         let mut backend = self.settings.analysis.panns_backend;
-        if matches!(backend, crate::sample_sources::config::PannsBackendChoice::Cuda)
-            && !cfg!(feature = "panns-cuda")
+        if matches!(
+            backend,
+            crate::sample_sources::config::PannsBackendChoice::Cuda
+        ) && !cfg!(feature = "panns-cuda")
         {
             backend = crate::sample_sources::config::PannsBackendChoice::Wgpu;
             self.set_status(

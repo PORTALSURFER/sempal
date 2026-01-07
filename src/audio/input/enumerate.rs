@@ -1,9 +1,9 @@
 use cpal;
 use cpal::traits::{DeviceTrait, HostTrait};
 
+use super::resolve::{resolve_device, resolve_host};
 use super::{AudioDeviceSummary, AudioHostSummary, AudioInputError};
 use crate::audio::device::{device_label, host_label};
-use super::resolve::{resolve_device, resolve_host};
 
 /// Enumerate audio hosts available on this platform.
 pub fn available_input_hosts() -> Vec<AudioHostSummary> {

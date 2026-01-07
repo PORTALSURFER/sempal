@@ -170,7 +170,10 @@ fn commit_entry(entry: &StagedEntry) -> Result<CommittedEntry, UpdateError> {
         }
         return Err(err.into());
     }
-    Ok(CommittedEntry { staged: entry.clone(), had_dest })
+    Ok(CommittedEntry {
+        staged: entry.clone(),
+        had_dest,
+    })
 }
 
 fn rollback_entry(entry: &CommittedEntry) -> Result<(), UpdateError> {

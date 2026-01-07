@@ -55,8 +55,8 @@ mod platform {
 #[cfg(target_os = "windows")]
 mod platform {
     use super::*;
-    use std::os::windows::ffi::OsStrExt;
     use std::ffi::OsString;
+    use std::os::windows::ffi::OsStrExt;
     use std::os::windows::ffi::OsStringExt;
     use std::ptr::copy_nonoverlapping;
     use std::sync::OnceLock;
@@ -69,7 +69,7 @@ mod platform {
         GMEM_MOVEABLE, GMEM_ZEROINIT, GlobalAlloc, GlobalLock, GlobalUnlock,
     };
     use windows::Win32::System::Ole::{CF_HDROP, DROPEFFECT_COPY};
-    use windows::Win32::UI::Shell::{DragQueryFileW, DROPFILES, HDROP};
+    use windows::Win32::UI::Shell::{DROPFILES, DragQueryFileW, HDROP};
     use windows::core::w;
 
     const CF_UNICODETEXT: u32 = 13;
@@ -213,10 +213,8 @@ mod platform {
             return Ok(Vec::new());
         }
         let _clipboard = ClipboardReader::new()?;
-        let handle =
-            unsafe { GetClipboardData(CF_HDROP.0 as u32) }.map_err(|err| {
-                format!("GetClipboardData(CF_HDROP) failed: {err}")
-            })?;
+        let handle = unsafe { GetClipboardData(CF_HDROP.0 as u32) }
+            .map_err(|err| format!("GetClipboardData(CF_HDROP) failed: {err}"))?;
         let hdrop = HDROP(handle.0);
         let count = unsafe { DragQueryFileW(hdrop, 0xFFFFFFFF, None) };
         if count == 0 {

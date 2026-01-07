@@ -38,18 +38,18 @@ pub(super) fn render_hover_overlay(
             && app.controller.ui.waveform.cursor.is_some();
         let allow_hover_override = !suppress_hover
             && (moved
-            || app
-                .controller
-                .ui
-                .waveform
-                .cursor_last_navigation_at
-                .is_none_or(|nav| {
-                    app.controller
-                        .ui
-                        .waveform
-                        .hover_pointer_last_moved_at
-                        .is_none_or(|moved_at| nav <= moved_at)
-                }));
+                || app
+                    .controller
+                    .ui
+                    .waveform
+                    .cursor_last_navigation_at
+                    .is_none_or(|nav| {
+                        app.controller
+                            .ui
+                            .waveform
+                            .hover_pointer_last_moved_at
+                            .is_none_or(|moved_at| nav <= moved_at)
+                    }));
 
         if allow_hover_override {
             hover_x = Some(pos.x);

@@ -20,7 +20,10 @@ impl DedupTracker {
 
     /// Marks a job inflight if it is not already inflight.
     pub(super) fn try_mark_inflight(&self, job_id: i64) -> bool {
-        let mut inflight = self.inflight_jobs.lock().expect("decoded queue inflight lock");
+        let mut inflight = self
+            .inflight_jobs
+            .lock()
+            .expect("decoded queue inflight lock");
         if inflight.contains(&job_id) {
             return false;
         }
@@ -30,13 +33,19 @@ impl DedupTracker {
 
     /// Clears an inflight marker for a job.
     pub(super) fn clear_inflight(&self, job_id: i64) {
-        let mut inflight = self.inflight_jobs.lock().expect("decoded queue inflight lock");
+        let mut inflight = self
+            .inflight_jobs
+            .lock()
+            .expect("decoded queue inflight lock");
         inflight.remove(&job_id);
     }
 
     /// Marks a job pending if it has not already been queued.
     pub(super) fn mark_pending(&self, job_id: i64) -> bool {
-        let mut pending = self.pending_jobs.lock().expect("decoded queue pending lock");
+        let mut pending = self
+            .pending_jobs
+            .lock()
+            .expect("decoded queue pending lock");
         if pending.contains(&job_id) {
             return false;
         }
@@ -46,7 +55,10 @@ impl DedupTracker {
 
     /// Clears a pending marker for a job.
     pub(super) fn clear_pending(&self, job_id: i64) {
-        let mut pending = self.pending_jobs.lock().expect("decoded queue pending lock");
+        let mut pending = self
+            .pending_jobs
+            .lock()
+            .expect("decoded queue pending lock");
         pending.remove(&job_id);
     }
 }

@@ -204,14 +204,12 @@ impl EguiApp {
                             let age_label = age
                                 .map(format_elapsed)
                                 .unwrap_or_else(|| "unknown".to_string());
-                            let mut line =
-                                format!("{} • last heartbeat {}", job.label, age_label);
+                            let mut line = format!("{} • last heartbeat {}", job.label, age_label);
                             if job.possibly_stalled {
                                 line.push_str(" • possibly stalled");
                             }
                             ui.label(line);
-                            if let (Some(age), Some(stale_after)) =
-                                (age, snapshot.stale_after_secs)
+                            if let (Some(age), Some(stale_after)) = (age, snapshot.stale_after_secs)
                             {
                                 let fraction =
                                     (age.as_secs_f32() / stale_after as f32).clamp(0.0, 1.0);

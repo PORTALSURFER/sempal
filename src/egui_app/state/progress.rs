@@ -150,20 +150,12 @@ mod tests {
 
     #[test]
     fn running_job_marks_stale_heartbeat() {
-        let snapshot = RunningJobSnapshot::from_heartbeat(
-            "job".to_string(),
-            Some(10),
-            Some(5),
-            Some(20),
-        );
+        let snapshot =
+            RunningJobSnapshot::from_heartbeat("job".to_string(), Some(10), Some(5), Some(20));
         assert!(snapshot.possibly_stalled);
 
-        let snapshot = RunningJobSnapshot::from_heartbeat(
-            "job".to_string(),
-            Some(18),
-            Some(5),
-            Some(20),
-        );
+        let snapshot =
+            RunningJobSnapshot::from_heartbeat("job".to_string(), Some(18), Some(5), Some(20));
         assert!(!snapshot.possibly_stalled);
     }
 }

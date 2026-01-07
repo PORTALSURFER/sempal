@@ -1,6 +1,6 @@
 use super::HotkeysController;
-use crate::egui_app::controller::hotkeys::HotkeyCommand;
 use crate::egui_app::controller::StatusTone;
+use crate::egui_app::controller::hotkeys::HotkeyCommand;
 use crate::egui_app::state::{DestructiveSelectionEdit, SampleBrowserTab};
 
 pub(super) fn handle_browser_command(
@@ -44,10 +44,7 @@ pub(super) fn handle_browser_command(
                 controller.clear_similar_filter();
             } else if let Some(row) = controller.focused_browser_row() {
                 if let Err(err) = controller.find_similar_for_visible_row(row) {
-                    controller.set_status(
-                        format!("Find similar failed: {err}"),
-                        StatusTone::Error,
-                    );
+                    controller.set_status(format!("Find similar failed: {err}"), StatusTone::Error);
                 }
             } else {
                 controller.set_status("Focus a sample to find similar", StatusTone::Info);
@@ -67,8 +64,8 @@ pub(super) fn handle_browser_command(
             true
         }
         HotkeyCommand::ReverseSelection => {
-            let _ =
-                controller.request_destructive_selection_edit(DestructiveSelectionEdit::ReverseSelection);
+            let _ = controller
+                .request_destructive_selection_edit(DestructiveSelectionEdit::ReverseSelection);
             true
         }
         _ => false,

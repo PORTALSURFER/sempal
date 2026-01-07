@@ -46,13 +46,5 @@ pub(super) fn render_slice_overlays(
     view_width: f32,
     pointer_pos: Option<egui::Pos2>,
 ) -> SliceOverlayResult {
-    render::render_slice_overlays(
-        app,
-        ui,
-        rect,
-        palette,
-        view,
-        view_width,
-        pointer_pos,
-    )
+    render::render_slice_overlays(app, ui, rect, palette, view, view_width, pointer_pos)
 }

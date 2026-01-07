@@ -184,10 +184,8 @@ impl EguiController {
         if self.ui.waveform.transient_cache_token == Some(decoded.cache_token) {
             return;
         }
-        self.ui.waveform.transients = crate::waveform::transients::detect_transients(
-            decoded,
-            DEFAULT_TRANSIENT_SENSITIVITY,
-        );
+        self.ui.waveform.transients =
+            crate::waveform::transients::detect_transients(decoded, DEFAULT_TRANSIENT_SENSITIVITY);
         self.ui.waveform.transient_cache_token = Some(decoded.cache_token);
     }
 

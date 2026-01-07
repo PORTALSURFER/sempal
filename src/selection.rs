@@ -234,7 +234,11 @@ fn snap_delta(delta: f32, step: f32) -> f32 {
     (delta / step).round() * step
 }
 
-fn enforce_min_width(range: SelectionRange, min_width: f32, anchor: SelectionEdge) -> SelectionRange {
+fn enforce_min_width(
+    range: SelectionRange,
+    min_width: f32,
+    anchor: SelectionEdge,
+) -> SelectionRange {
     if range.width() >= min_width {
         return range;
     }

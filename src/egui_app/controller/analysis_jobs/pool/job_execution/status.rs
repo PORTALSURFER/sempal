@@ -1,8 +1,9 @@
 use std::thread::sleep;
 use std::time::Duration;
 
-pub(in crate::egui_app::controller::analysis_jobs::pool) fn update_job_status_with_retry<F>(update: F)
-where
+pub(in crate::egui_app::controller::analysis_jobs::pool) fn update_job_status_with_retry<F>(
+    update: F,
+) where
     F: FnMut() -> Result<(), String>,
 {
     let _ = update_job_status_with_retry_inner(update, 5, Duration::from_millis(50));

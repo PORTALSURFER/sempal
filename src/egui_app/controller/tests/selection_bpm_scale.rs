@@ -30,7 +30,13 @@ fn alt_drag_scales_without_loop_enabled() {
     let (mut controller, source) = dummy_controller();
     let samples = vec![0.0; 32];
     let selection = SelectionRange::new(0.0, 0.5);
-    load_waveform_selection(&mut controller, &source, "scale_no_loop.wav", &samples, selection);
+    load_waveform_selection(
+        &mut controller,
+        &source,
+        "scale_no_loop.wav",
+        &samples,
+        selection,
+    );
 
     controller.selection_state.range.set_range(Some(selection));
     controller.apply_selection(Some(selection));

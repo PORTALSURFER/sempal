@@ -184,11 +184,10 @@ impl WaveformRenderer {
     fn catmull_rom(p0: f32, p1: f32, p2: f32, p3: f32, t: f32) -> f32 {
         let t2 = t * t;
         let t3 = t2 * t;
-        0.5
-            * (2.0 * p1
-                + (-p0 + p2) * t
-                + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t2
-                + (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * t3)
+        0.5 * (2.0 * p1
+            + (-p0 + p2) * t
+            + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t2
+            + (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * t3)
     }
 
     fn blend_pixel(
@@ -253,11 +252,47 @@ impl WaveformRenderer {
         let xpxl1 = xend as isize;
         let ypxl1 = yend.floor() as isize;
         if steep {
-            Self::plot_aa(image, stride, width, height, ypxl1, xpxl1, fg, (1.0 - (yend.fract())) * xgap);
-            Self::plot_aa(image, stride, width, height, ypxl1 + 1, xpxl1, fg, yend.fract() * xgap);
+            Self::plot_aa(
+                image,
+                stride,
+                width,
+                height,
+                ypxl1,
+                xpxl1,
+                fg,
+                (1.0 - (yend.fract())) * xgap,
+            );
+            Self::plot_aa(
+                image,
+                stride,
+                width,
+                height,
+                ypxl1 + 1,
+                xpxl1,
+                fg,
+                yend.fract() * xgap,
+            );
         } else {
-            Self::plot_aa(image, stride, width, height, xpxl1, ypxl1, fg, (1.0 - (yend.fract())) * xgap);
-            Self::plot_aa(image, stride, width, height, xpxl1, ypxl1 + 1, fg, yend.fract() * xgap);
+            Self::plot_aa(
+                image,
+                stride,
+                width,
+                height,
+                xpxl1,
+                ypxl1,
+                fg,
+                (1.0 - (yend.fract())) * xgap,
+            );
+            Self::plot_aa(
+                image,
+                stride,
+                width,
+                height,
+                xpxl1,
+                ypxl1 + 1,
+                fg,
+                yend.fract() * xgap,
+            );
         }
         let mut intery = yend + gradient;
 
@@ -281,11 +316,47 @@ impl WaveformRenderer {
         }
 
         if steep {
-            Self::plot_aa(image, stride, width, height, ypxl2, xpxl2, fg, (1.0 - (yend.fract())) * xgap);
-            Self::plot_aa(image, stride, width, height, ypxl2 + 1, xpxl2, fg, yend.fract() * xgap);
+            Self::plot_aa(
+                image,
+                stride,
+                width,
+                height,
+                ypxl2,
+                xpxl2,
+                fg,
+                (1.0 - (yend.fract())) * xgap,
+            );
+            Self::plot_aa(
+                image,
+                stride,
+                width,
+                height,
+                ypxl2 + 1,
+                xpxl2,
+                fg,
+                yend.fract() * xgap,
+            );
         } else {
-            Self::plot_aa(image, stride, width, height, xpxl2, ypxl2, fg, (1.0 - (yend.fract())) * xgap);
-            Self::plot_aa(image, stride, width, height, xpxl2, ypxl2 + 1, fg, yend.fract() * xgap);
+            Self::plot_aa(
+                image,
+                stride,
+                width,
+                height,
+                xpxl2,
+                ypxl2,
+                fg,
+                (1.0 - (yend.fract())) * xgap,
+            );
+            Self::plot_aa(
+                image,
+                stride,
+                width,
+                height,
+                xpxl2,
+                ypxl2 + 1,
+                fg,
+                yend.fract() * xgap,
+            );
         }
     }
 

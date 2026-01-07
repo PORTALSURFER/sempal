@@ -53,10 +53,8 @@ fn draw_transient_markers(
             continue;
         }
         let x = to_screen_x(marker, rect);
-        ui.painter().line_segment(
-            [egui::pos2(x, top), egui::pos2(x, rect.bottom())],
-            stroke,
-        );
+        ui.painter()
+            .line_segment([egui::pos2(x, top), egui::pos2(x, rect.bottom())], stroke);
         let base_y = rect.top() + 1.0;
         let tip_y = base_y + triangle_height;
         let points = vec![

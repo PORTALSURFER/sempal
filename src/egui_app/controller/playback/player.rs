@@ -82,9 +82,11 @@ pub(super) fn play_audio(
             if let Some(start_pos) = start_override {
                 if start_pos >= range.start() && start_pos <= range.end() {
                     start = start_pos;
-                    player
-                        .borrow_mut()
-                        .play_looped_range_from(range.start(), range.end(), start_pos)?;
+                    player.borrow_mut().play_looped_range_from(
+                        range.start(),
+                        range.end(),
+                        start_pos,
+                    )?;
                 } else {
                     start = range.start();
                     player

@@ -1,4 +1,4 @@
-use crate::egui_app::controller::{jobs, EguiController, StatusMessage};
+use crate::egui_app::controller::{EguiController, StatusMessage, jobs};
 use crate::sample_sources::SampleSource;
 
 impl EguiController {

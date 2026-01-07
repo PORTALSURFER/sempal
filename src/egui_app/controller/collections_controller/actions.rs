@@ -269,10 +269,7 @@ impl CollectionsActions for CollectionsController<'_> {
             }
         };
         if let Some(slot) = slot {
-            self.set_status(
-                format!("Bound hotkey {slot} to '{name}'"),
-                StatusTone::Info,
-            );
+            self.set_status(format!("Bound hotkey {slot} to '{name}'"), StatusTone::Info);
         } else {
             self.set_status(format!("Cleared hotkey for '{name}'"), StatusTone::Info);
         }
@@ -298,7 +295,9 @@ impl CollectionsActions for CollectionsController<'_> {
         }
         let next_focus = plan.next_focus.clone();
         if let Some(path) = next_focus.as_ref() {
-            self.runtime.jobs.set_pending_select_path(Some(path.clone()));
+            self.runtime
+                .jobs
+                .set_pending_select_path(Some(path.clone()));
         }
         self.move_browser_rows_to_collection(&collection_id, plan);
         self.clear_browser_selection();

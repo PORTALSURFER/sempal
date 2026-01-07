@@ -125,10 +125,20 @@ impl EguiApp {
                                     egui::RichText::new(APP_VERSION).color(palette.text_muted),
                                 );
                                 ui.add_space(8.0);
-                                if ui.add(crate::egui_app::ui::chrome::buttons::action_button("Report issue")).clicked() {
+                                if ui
+                                    .add(crate::egui_app::ui::chrome::buttons::action_button(
+                                        "Report issue",
+                                    ))
+                                    .clicked()
+                                {
                                     self.controller.open_feedback_issue_prompt();
                                 }
-                                if ui.add(crate::egui_app::ui::chrome::buttons::action_button("Donate")).clicked() {
+                                if ui
+                                    .add(crate::egui_app::ui::chrome::buttons::action_button(
+                                        "Donate",
+                                    ))
+                                    .clicked()
+                                {
                                     let _ = open::that("https://www.buymeacoffee.com/portalsurfer");
                                 }
                             }

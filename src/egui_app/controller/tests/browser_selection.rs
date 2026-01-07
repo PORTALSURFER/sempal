@@ -8,7 +8,7 @@ fn hotkey_tagging_applies_to_all_selected_rows() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source.clone());
     controller.cache_db(&source).unwrap();
-    controller.set_wav_entries_for_tests( vec![
+    controller.set_wav_entries_for_tests(vec![
         sample_entry("one.wav", SampleTag::Neutral),
         sample_entry("two.wav", SampleTag::Neutral),
     ]);
@@ -51,12 +51,16 @@ fn folder_hotkey_moves_selected_samples() {
     assert!(destination.join("two.wav").exists());
     assert!(!source.root.join("one.wav").exists());
     assert!(!source.root.join("two.wav").exists());
-    assert!(controller
-        .wav_index_for_path(&PathBuf::from("dest/one.wav"))
-        .is_some());
-    assert!(controller
-        .wav_index_for_path(&PathBuf::from("dest/two.wav"))
-        .is_some());
+    assert!(
+        controller
+            .wav_index_for_path(&PathBuf::from("dest/one.wav"))
+            .is_some()
+    );
+    assert!(
+        controller
+            .wav_index_for_path(&PathBuf::from("dest/two.wav"))
+            .is_some()
+    );
 }
 
 #[test]
@@ -64,7 +68,7 @@ fn escape_clears_selection() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source.clone());
     controller.cache_db(&source).unwrap();
-    controller.set_wav_entries_for_tests( vec![
+    controller.set_wav_entries_for_tests(vec![
         sample_entry("one.wav", SampleTag::Neutral),
         sample_entry("two.wav", SampleTag::Neutral),
     ]);
@@ -85,16 +89,10 @@ fn escape_clears_selection() {
 fn update_selection_paths_rewrites_browser_selected_paths() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source.clone());
-    controller.ui.browser.selected_paths = vec![
-        PathBuf::from("old.wav"),
-        PathBuf::from("keep.wav"),
-    ];
+    controller.ui.browser.selected_paths =
+        vec![PathBuf::from("old.wav"), PathBuf::from("keep.wav")];
 
-    controller.update_selection_paths(
-        &source,
-        Path::new("old.wav"),
-        Path::new("new.wav"),
-    );
+    controller.update_selection_paths(&source, Path::new("old.wav"), Path::new("new.wav"));
 
     assert_eq!(
         controller.ui.browser.selected_paths,
@@ -116,8 +114,16 @@ fn update_cached_entry_replaces_old_path_in_lookup() {
     updated.modified_ns = 7;
     controller.update_cached_entry(&source, Path::new("old.wav"), updated);
 
-    assert!(controller.wav_index_for_path(Path::new("old.wav")).is_none());
-    assert!(controller.wav_index_for_path(Path::new("new.wav")).is_some());
+    assert!(
+        controller
+            .wav_index_for_path(Path::new("old.wav"))
+            .is_none()
+    );
+    assert!(
+        controller
+            .wav_index_for_path(Path::new("new.wav"))
+            .is_some()
+    );
     assert_eq!(
         controller.ui.browser.selected_paths,
         vec![PathBuf::from("new.wav")]
@@ -128,7 +134,7 @@ fn update_cached_entry_replaces_old_path_in_lookup() {
 fn select_all_populates_visible_browser_paths() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source);
-    controller.set_wav_entries_for_tests( vec![
+    controller.set_wav_entries_for_tests(vec![
         sample_entry("one.wav", SampleTag::Neutral),
         sample_entry("two.wav", SampleTag::Neutral),
         sample_entry("three.wav", SampleTag::Neutral),
@@ -147,7 +153,7 @@ fn escape_handler_clears_waveform_and_browser_state() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source.clone());
     controller.cache_db(&source).unwrap();
-    controller.set_wav_entries_for_tests( vec![sample_entry("one.wav", SampleTag::Neutral)]);
+    controller.set_wav_entries_for_tests(vec![sample_entry("one.wav", SampleTag::Neutral)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
@@ -195,7 +201,7 @@ fn escape_stops_playback_before_clearing_selection() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source.clone());
     controller.cache_db(&source).unwrap();
-    controller.set_wav_entries_for_tests( vec![sample_entry("one.wav", SampleTag::Neutral)]);
+    controller.set_wav_entries_for_tests(vec![sample_entry("one.wav", SampleTag::Neutral)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
@@ -218,7 +224,7 @@ fn click_clears_selection_and_focuses_row() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source.clone());
     controller.cache_db(&source).unwrap();
-    controller.set_wav_entries_for_tests( vec![
+    controller.set_wav_entries_for_tests(vec![
         sample_entry("one.wav", SampleTag::Neutral),
         sample_entry("two.wav", SampleTag::Neutral),
         sample_entry("three.wav", SampleTag::Neutral),
@@ -242,7 +248,7 @@ fn click_clears_selection_and_focuses_row() {
 fn ctrl_click_toggles_selection_and_focuses_row() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source);
-    controller.set_wav_entries_for_tests( vec![
+    controller.set_wav_entries_for_tests(vec![
         sample_entry("one.wav", SampleTag::Neutral),
         sample_entry("two.wav", SampleTag::Neutral),
         sample_entry("three.wav", SampleTag::Neutral),
@@ -266,7 +272,7 @@ fn ctrl_click_toggles_selection_and_focuses_row() {
 fn shift_click_extends_selection_range() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source);
-    controller.set_wav_entries_for_tests( vec![
+    controller.set_wav_entries_for_tests(vec![
         sample_entry("one.wav", SampleTag::Neutral),
         sample_entry("two.wav", SampleTag::Neutral),
         sample_entry("three.wav", SampleTag::Neutral),
@@ -292,7 +298,7 @@ fn shift_click_extends_selection_range() {
 fn ctrl_shift_click_adds_range_without_resetting_anchor() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source);
-    controller.set_wav_entries_for_tests( vec![
+    controller.set_wav_entries_for_tests(vec![
         sample_entry("one.wav", SampleTag::Neutral),
         sample_entry("two.wav", SampleTag::Neutral),
         sample_entry("three.wav", SampleTag::Neutral),
@@ -328,7 +334,7 @@ fn ctrl_shift_click_adds_range_without_resetting_anchor() {
 fn shift_arrow_grows_selection() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source);
-    controller.set_wav_entries_for_tests( vec![
+    controller.set_wav_entries_for_tests(vec![
         sample_entry("one.wav", SampleTag::Neutral),
         sample_entry("two.wav", SampleTag::Neutral),
         sample_entry("three.wav", SampleTag::Neutral),

@@ -8,7 +8,7 @@ use std::{
 
 use tracing::warn;
 
-use crate::sample_sources::{is_supported_audio, SourceDatabase};
+use crate::sample_sources::{SourceDatabase, is_supported_audio};
 
 use super::scan::ScanError;
 

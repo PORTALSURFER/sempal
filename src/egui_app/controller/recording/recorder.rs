@@ -1,7 +1,7 @@
+use super::state::audio::RecordingTarget;
 use super::*;
 use crate::audio::{AudioRecorder, InputMonitor, RecordingOutcome};
 use crate::waveform::{DecodedWaveform, WaveformPeaks};
-use super::state::audio::RecordingTarget;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -22,7 +22,8 @@ pub(super) fn start_recording_in_current_source(
     if controller.is_playing() {
         controller.stop_playback_if_active();
     }
-    let (source, relative_path, output_path) = super::path::next_recording_path_in_source(controller)?;
+    let (source, relative_path, output_path) =
+        super::path::next_recording_path_in_source(controller)?;
     if controller.settings.controls.input_monitoring_enabled && controller.audio.player.is_none() {
         if let Err(err) = controller.ensure_player() {
             controller.set_status(err, StatusTone::Warning);
@@ -67,11 +68,9 @@ pub(super) fn stop_recording(
         ),
         StatusTone::Info,
     );
-    if let Err(err) = super::path::register_recording_in_browser(
-        controller,
-        target.as_ref(),
-        &outcome.path,
-    ) {
+    if let Err(err) =
+        super::path::register_recording_in_browser(controller, target.as_ref(), &outcome.path)
+    {
         controller.set_status(
             format!(
                 "Recorded {:.2}s to {} (indexing failed: {err})",

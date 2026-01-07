@@ -7,7 +7,7 @@ use base64::Engine;
 
 use crate::http_client;
 
-use super::{UpdateError, CHECKSUMS_PUBLIC_KEY_BASE64, github};
+use super::{CHECKSUMS_PUBLIC_KEY_BASE64, UpdateError, github};
 
 const MAX_CHECKSUM_BYTES: usize = 1024 * 1024;
 const MAX_RELEASE_ASSET_BYTES: usize = 1024 * 1024 * 1024;
@@ -51,11 +51,7 @@ pub(super) fn verify_checksums_signature(
     checksums: &[u8],
     signature_bytes: &[u8],
 ) -> Result<(), UpdateError> {
-    verify_checksums_signature_with_key(
-        checksums,
-        signature_bytes,
-        CHECKSUMS_PUBLIC_KEY_BASE64,
-    )
+    verify_checksums_signature_with_key(checksums, signature_bytes, CHECKSUMS_PUBLIC_KEY_BASE64)
 }
 
 fn verify_checksums_signature_with_key(
@@ -75,9 +71,8 @@ fn verify_checksums_signature_with_key(
     let signature_raw = base64::engine::general_purpose::STANDARD
         .decode(signature_text)
         .map_err(|err| UpdateError::Invalid(format!("Invalid signature encoding: {err}")))?;
-    let signature = Signature::from_slice(&signature_raw).map_err(|err| {
-        UpdateError::Invalid(format!("Invalid signature length: {err}"))
-    })?;
+    let signature = Signature::from_slice(&signature_raw)
+        .map_err(|err| UpdateError::Invalid(format!("Invalid signature length: {err}")))?;
     let public_key_raw = base64::engine::general_purpose::STANDARD
         .decode(public_key_base64)
         .map_err(|err| UpdateError::Invalid(format!("Invalid public key encoding: {err}")))?;
@@ -197,8 +192,7 @@ mod tests {
         let checksums = b"deadbeef  sempal.zip\n";
         let signing_key = SigningKey::from_bytes(&[7u8; 32]);
         let signature = signing_key.sign(b"other");
-        let signature_text =
-            base64::engine::general_purpose::STANDARD.encode(signature.to_bytes());
+        let signature_text = base64::engine::general_purpose::STANDARD.encode(signature.to_bytes());
         let public_key_text = base64::engine::general_purpose::STANDARD
             .encode(signing_key.verifying_key().to_bytes());
         let err = verify_checksums_signature_with_key(
@@ -227,8 +221,7 @@ mod tests {
         let tampered = b"beefdead  sempal.zip\n";
         let signing_key = SigningKey::from_bytes(&[7u8; 32]);
         let signature = signing_key.sign(checksums);
-        let signature_text =
-            base64::engine::general_purpose::STANDARD.encode(signature.to_bytes());
+        let signature_text = base64::engine::general_purpose::STANDARD.encode(signature.to_bytes());
         let public_key_text = base64::engine::general_purpose::STANDARD
             .encode(signing_key.verifying_key().to_bytes());
         let err = verify_checksums_signature_with_key(
@@ -245,15 +238,10 @@ mod tests {
         let checksums = b"deadbeef  sempal.zip\n";
         let signing_key = SigningKey::from_bytes(&[7u8; 32]);
         let signature = signing_key.sign(checksums);
-        let signature_text =
-            base64::engine::general_purpose::STANDARD.encode(signature.to_bytes());
+        let signature_text = base64::engine::general_purpose::STANDARD.encode(signature.to_bytes());
         let public_key_text = base64::engine::general_purpose::STANDARD
             .encode(signing_key.verifying_key().to_bytes());
-        verify_checksums_signature_with_key(
-            checksums,
-            signature_text.as_bytes(),
-            &public_key_text,
-        )
-        .expect("signature should verify");
+        verify_checksums_signature_with_key(checksums, signature_text.as_bytes(), &public_key_text)
+            .expect("signature should verify");
     }
 }

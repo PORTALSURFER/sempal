@@ -130,8 +130,10 @@ pub(super) fn merge_failed_backfill_jobs(
         return 0;
     }
     let mut job_ids: HashSet<String> = jobs.iter().map(|(id, _)| id.clone()).collect();
-    let mut sample_ids: HashSet<String> =
-        sample_metadata.iter().map(|sample| sample.sample_id.clone()).collect();
+    let mut sample_ids: HashSet<String> = sample_metadata
+        .iter()
+        .map(|sample| sample.sample_id.clone())
+        .collect();
     let mut failed_count = 0;
     for sample_id in failed_jobs {
         let Some(sample) = staged_index.get(sample_id) else {
@@ -181,8 +183,8 @@ fn fetch_force_backfill_jobs(
             continue;
         }
         let size: i64 = row.get(2).map_err(|err| err.to_string())?;
-        let size = u64::try_from(size)
-            .map_err(|_| "Sample size exceeds storage limits".to_string())?;
+        let size =
+            u64::try_from(size).map_err(|_| "Sample size exceeds storage limits".to_string())?;
         let mtime_ns: i64 = row.get(3).map_err(|err| err.to_string())?;
         sample_metadata.push(db::SampleMetadata {
             sample_id: sample_id.clone(),
@@ -270,8 +272,8 @@ fn fetch_backfill_jobs(
             continue;
         }
         let size: i64 = row.get(2).map_err(|err| err.to_string())?;
-        let size = u64::try_from(size)
-            .map_err(|_| "Sample size exceeds storage limits".to_string())?;
+        let size =
+            u64::try_from(size).map_err(|_| "Sample size exceeds storage limits".to_string())?;
         let mtime_ns: i64 = row.get(3).map_err(|err| err.to_string())?;
         sample_metadata.push(db::SampleMetadata {
             sample_id: sample_id.clone(),

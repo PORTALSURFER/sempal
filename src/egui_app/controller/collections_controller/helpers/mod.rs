@@ -1,8 +1,8 @@
-mod members;
-mod move_plan;
 mod fs;
-mod ui;
+mod members;
 mod r#move;
+mod move_plan;
+mod ui;
 
 use super::*;
 use std::path::PathBuf;

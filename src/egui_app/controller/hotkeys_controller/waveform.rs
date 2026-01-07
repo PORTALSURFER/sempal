@@ -1,6 +1,6 @@
 use super::HotkeysController;
-use crate::egui_app::controller::hotkeys::HotkeyCommand;
 use crate::egui_app::controller::StatusTone;
+use crate::egui_app::controller::hotkeys::HotkeyCommand;
 use crate::egui_app::state::DestructiveSelectionEdit;
 use crate::sample_sources::WavEntry;
 
@@ -20,8 +20,8 @@ pub(super) fn handle_waveform_command(
             true
         }
         HotkeyCommand::CropSelection => {
-            let _ =
-                controller.request_destructive_selection_edit(DestructiveSelectionEdit::CropSelection);
+            let _ = controller
+                .request_destructive_selection_edit(DestructiveSelectionEdit::CropSelection);
             true
         }
         HotkeyCommand::CropSelectionNewSample => {
@@ -44,25 +44,23 @@ pub(super) fn handle_waveform_command(
             true
         }
         HotkeyCommand::TrimSelection => {
-            let _ =
-                controller.request_destructive_selection_edit(DestructiveSelectionEdit::TrimSelection);
+            let _ = controller
+                .request_destructive_selection_edit(DestructiveSelectionEdit::TrimSelection);
             true
         }
         HotkeyCommand::ReverseSelection => {
-            let _ =
-                controller.request_destructive_selection_edit(DestructiveSelectionEdit::ReverseSelection);
+            let _ = controller
+                .request_destructive_selection_edit(DestructiveSelectionEdit::ReverseSelection);
             true
         }
         HotkeyCommand::FadeSelectionLeftToRight => {
-            let _ = controller.request_destructive_selection_edit(
-                DestructiveSelectionEdit::FadeLeftToRight,
-            );
+            let _ = controller
+                .request_destructive_selection_edit(DestructiveSelectionEdit::FadeLeftToRight);
             true
         }
         HotkeyCommand::FadeSelectionRightToLeft => {
-            let _ = controller.request_destructive_selection_edit(
-                DestructiveSelectionEdit::FadeRightToLeft,
-            );
+            let _ = controller
+                .request_destructive_selection_edit(DestructiveSelectionEdit::FadeRightToLeft);
             true
         }
         HotkeyCommand::DeleteSliceMarkers => {
@@ -87,9 +85,8 @@ pub(super) fn handle_waveform_command(
                     controller.set_status("No slices merged", StatusTone::Info);
                 }
             } else {
-                let _ = controller.request_destructive_selection_edit(
-                    DestructiveSelectionEdit::MuteSelection,
-                );
+                let _ = controller
+                    .request_destructive_selection_edit(DestructiveSelectionEdit::MuteSelection);
             }
             true
         }

@@ -29,7 +29,11 @@ impl EguiController {
         &mut self,
         focused_index: Option<usize>,
         loaded_index: Option<usize>,
-    ) -> (crate::egui_app::state::VisibleRows, Option<usize>, Option<usize>) {
+    ) -> (
+        crate::egui_app::state::VisibleRows,
+        Option<usize>,
+        Option<usize>,
+    ) {
         let filter = self.ui.browser.filter;
         let filter_accepts = |tag: SampleTag| match filter {
             TriageFlagFilter::All => true,
@@ -217,7 +221,10 @@ impl EguiController {
                 .map(|cached| cached.len() != self.wav_entries_len())
                 .unwrap_or(true);
             if needs_labels {
-                self.ui_cache.browser.labels.insert(source_id.clone(), Vec::new());
+                self.ui_cache
+                    .browser
+                    .labels
+                    .insert(source_id.clone(), Vec::new());
             }
             for index in 0..self.wav_entries_len() {
                 let label = self.label_for_ref(index).map(str::to_string);
@@ -243,10 +250,10 @@ impl EguiController {
             .map(|cached| cached.len() != self.wav_entries_len())
             .unwrap_or(true);
         if needs_labels {
-            self.ui_cache
-                .browser
-                .labels
-                .insert(source_id.clone(), vec![String::new(); self.wav_entries_len()]);
+            self.ui_cache.browser.labels.insert(
+                source_id.clone(),
+                vec![String::new(); self.wav_entries_len()],
+            );
         }
         let needs_fill = self
             .ui_cache
@@ -271,7 +278,6 @@ impl EguiController {
             .and_then(|labels| labels.get(index))
             .map(|label| label.as_str())
     }
-
 }
 
 pub(super) fn set_browser_filter(controller: &mut EguiController, filter: TriageFlagFilter) {

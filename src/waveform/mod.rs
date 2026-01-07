@@ -71,7 +71,11 @@ impl DecodedWaveform {
         if !start.is_finite() || !end.is_finite() {
             return None;
         }
-        let (start, end) = if start <= end { (start, end) } else { (end, start) };
+        let (start, end) = if start <= end {
+            (start, end)
+        } else {
+            (end, start)
+        };
         let total_frames = self.frame_count();
         if total_frames == 0 {
             return None;
@@ -83,12 +87,7 @@ impl DecodedWaveform {
     }
 }
 
-fn max_abs_from_samples(
-    samples: &[f32],
-    channels: usize,
-    start: f32,
-    end: f32,
-) -> Option<f32> {
+fn max_abs_from_samples(samples: &[f32], channels: usize, start: f32, end: f32) -> Option<f32> {
     if samples.is_empty() {
         return None;
     }

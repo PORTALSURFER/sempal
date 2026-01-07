@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::super::config_defaults::{
-    default_analysis_worker_count, default_fast_similarity_prep_sample_rate, default_false,
+    default_analysis_worker_count, default_false, default_fast_similarity_prep_sample_rate,
     default_max_analysis_duration_seconds, default_true,
 };
 

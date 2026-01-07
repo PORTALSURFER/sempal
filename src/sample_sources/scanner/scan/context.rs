@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use crate::sample_sources::db::WavEntry;
 use crate::sample_sources::SourceDatabase;
+use crate::sample_sources::db::WavEntry;
 
-use super::{ScanError, ScanMode, ScanStats};
 use super::super::scan_diff::index_by_hash;
+use super::{ScanError, ScanMode, ScanStats};
 
 pub(crate) struct ScanContext {
     pub(crate) existing: HashMap<PathBuf, WavEntry>,

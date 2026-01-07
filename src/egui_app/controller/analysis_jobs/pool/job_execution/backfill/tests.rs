@@ -179,8 +179,8 @@ fn plan_uses_cached_embedding_when_available() {
 
     let temp = tempfile::TempDir::new().unwrap();
     let job = make_job(&["s::a.wav"], temp.path());
-    let plan = build_backfill_plan(&conn, &job, &["s::a.wav".to_string()], true, "v1")
-        .expect("plan");
+    let plan =
+        build_backfill_plan(&conn, &job, &["s::a.wav".to_string()], true, "v1").expect("plan");
 
     assert!(plan.work.is_empty());
     assert_eq!(plan.ready.len(), 1);
@@ -195,8 +195,8 @@ fn plan_builds_work_when_cache_misses() {
     let temp = tempfile::TempDir::new().unwrap();
     std::fs::write(temp.path().join("a.wav"), b"data").unwrap();
     let job = make_job(&["s::a.wav"], temp.path());
-    let plan = build_backfill_plan(&conn, &job, &["s::a.wav".to_string()], false, "v1")
-        .expect("plan");
+    let plan =
+        build_backfill_plan(&conn, &job, &["s::a.wav".to_string()], false, "v1").expect("plan");
 
     assert!(plan.ready.is_empty());
     assert_eq!(plan.work.len(), 1);

@@ -154,10 +154,8 @@ impl EguiApp {
                     .controller
                     .recalc_similarity_for_browser_rows(&action_rows)
                 {
-                    self.controller.set_status(
-                        format!("Similarity prep failed: {err}"),
-                        StatusTone::Error,
-                    );
+                    self.controller
+                        .set_status(format!("Similarity prep failed: {err}"), StatusTone::Error);
                 } else {
                     close_menu = true;
                     ui.close();

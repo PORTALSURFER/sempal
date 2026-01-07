@@ -5,13 +5,13 @@ pub(crate) mod audio;
 pub(crate) mod audio_decode;
 #[allow(dead_code)]
 pub(crate) mod augment;
-#[allow(dead_code)]
-pub(crate) mod panns_preprocess;
 pub mod embedding;
 pub(crate) mod features;
 pub(crate) mod fft;
 pub(crate) mod frequency_domain;
 pub mod hdbscan;
+#[allow(dead_code)]
+pub(crate) mod panns_preprocess;
 pub mod similarity;
 pub(crate) mod time_domain;
 pub mod umap;

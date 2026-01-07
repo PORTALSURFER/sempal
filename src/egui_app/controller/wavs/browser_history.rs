@@ -6,26 +6,18 @@ impl EguiController {
         if self.history.focus_history.entries.is_empty() {
             return;
         }
-        let current = self.history.focus_history.cursor.unwrap_or_else(|| {
-            self.history
-                .focus_history
-                .entries
-                .len()
-                .saturating_sub(1)
-        });
+        let current = self
+            .history
+            .focus_history
+            .cursor
+            .unwrap_or_else(|| self.history.focus_history.entries.len().saturating_sub(1));
         if current == 0 {
             self.history.focus_history.cursor = Some(0);
             return;
         }
         let target = current - 1;
         self.history.focus_history.cursor = Some(target);
-        if let Some(entry) = self
-            .history
-            .focus_history
-            .entries
-            .get(target)
-            .cloned()
-        {
+        if let Some(entry) = self.history.focus_history.entries.get(target).cloned() {
             focus_history_entry(self, entry);
         }
     }
@@ -34,32 +26,19 @@ impl EguiController {
         if self.history.focus_history.entries.is_empty() {
             return;
         }
-        let current = self.history.focus_history.cursor.unwrap_or_else(|| {
-            self.history
-                .focus_history
-                .entries
-                .len()
-                .saturating_sub(1)
-        });
-        let last = self
+        let current = self
             .history
             .focus_history
-            .entries
-            .len()
-            .saturating_sub(1);
+            .cursor
+            .unwrap_or_else(|| self.history.focus_history.entries.len().saturating_sub(1));
+        let last = self.history.focus_history.entries.len().saturating_sub(1);
         if current >= last {
             self.history.focus_history.cursor = Some(last);
             return;
         }
         let target = current + 1;
         self.history.focus_history.cursor = Some(target);
-        if let Some(entry) = self
-            .history
-            .focus_history
-            .entries
-            .get(target)
-            .cloned()
-        {
+        if let Some(entry) = self.history.focus_history.entries.get(target).cloned() {
             focus_history_entry(self, entry);
         }
     }
@@ -77,7 +56,10 @@ impl EguiController {
         };
         let history = &mut self.history.focus_history;
         if let Some(cursor) = history.cursor
-            && history.entries.get(cursor).is_some_and(|current| current == &entry)
+            && history
+                .entries
+                .get(cursor)
+                .is_some_and(|current| current == &entry)
         {
             return;
         }

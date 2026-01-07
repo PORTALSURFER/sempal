@@ -40,9 +40,7 @@ fn render_loop_crossfade_body(
 ) {
     let palette = style::palette();
     ui.set_min_width(320.0);
-    ui.label(
-        RichText::new(prompt.relative_path.display().to_string()).color(palette.text_primary),
-    );
+    ui.label(RichText::new(prompt.relative_path.display().to_string()).color(palette.text_primary));
     ui.add_space(8.0);
     ui.label("Crossfade depth");
     ui.horizontal(|ui| {
@@ -83,7 +81,8 @@ fn render_loop_crossfade_body(
     });
     ui.add_space(8.0);
     ui.label(
-        RichText::new("Creates a new file; the original stays untouched.").color(palette.text_muted),
+        RichText::new("Creates a new file; the original stays untouched.")
+            .color(palette.text_muted),
     );
     ui.add_space(8.0);
     ui.horizontal(|ui| {

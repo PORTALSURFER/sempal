@@ -107,8 +107,7 @@ pub(crate) fn flush_index(conn: &Connection, state: &mut AnnIndexState) -> Resul
         .tempdir_in(dir)
         .map_err(|err| format!("Failed to create ANN dump dir: {err}"))?;
     dump_hnsw(state, temp_dir.path())?;
-    let (graph_path, data_path) =
-        hnsw_dump_paths(&temp_dir.path().join(ANN_TEMP_DUMP_BASENAME))?;
+    let (graph_path, data_path) = hnsw_dump_paths(&temp_dir.path().join(ANN_TEMP_DUMP_BASENAME))?;
     container::write_container(
         &index_path,
         &state.params.model_id,

@@ -315,11 +315,7 @@ fn band_energy(power: &[f32], sample_rate: u32, fft_len: usize, lo: f32, hi: f32
             return unsafe { sum_power_sse2(slice) };
         }
     }
-    slice
-        .iter()
-        .copied()
-        .map(|v| v.max(0.0) as f64)
-        .sum()
+    slice.iter().copied().map(|v| v.max(0.0) as f64).sum()
 }
 
 #[cfg(target_arch = "x86_64")]

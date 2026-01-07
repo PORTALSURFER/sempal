@@ -66,10 +66,7 @@ fn enqueue_embedding_backfill(
         .query_row(
             "SELECT COUNT(*) FROM analysis_jobs
              WHERE job_type = ?1 AND source_id = ?2 AND status IN ('pending','running')",
-            params![
-                db::EMBEDDING_BACKFILL_JOB_TYPE,
-                request.source.id.as_str()
-            ],
+            params![db::EMBEDDING_BACKFILL_JOB_TYPE, request.source.id.as_str()],
             |row| row.get(0),
         )
         .unwrap_or(0);

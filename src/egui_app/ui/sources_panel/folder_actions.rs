@@ -177,10 +177,7 @@ impl EguiApp {
         ui.menu_button("Bind hotkey", |ui| {
             for slot in 0..=9 {
                 let bound = current == Some(slot);
-                if ui
-                    .selectable_label(bound, slot.to_string())
-                    .clicked()
-                {
+                if ui.selectable_label(bound, slot.to_string()).clicked() {
                     self.controller.bind_folder_hotkey(path, Some(slot));
                     ui.close_menu();
                 }

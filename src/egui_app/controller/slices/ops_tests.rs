@@ -1,14 +1,11 @@
 use super::ops::{
-    apply_painted_slice, snap_slice_paint_position, update_slice_range, SliceSnapState,
+    SliceSnapState, apply_painted_slice, snap_slice_paint_position, update_slice_range,
 };
 use crate::selection::SelectionRange;
 
 #[test]
 fn apply_painted_slice_splits_overlaps() {
-    let slices = vec![
-        SelectionRange::new(0.1, 0.4),
-        SelectionRange::new(0.5, 0.8),
-    ];
+    let slices = vec![SelectionRange::new(0.1, 0.4), SelectionRange::new(0.5, 0.8)];
     let range = SelectionRange::new(0.3, 0.6);
     let updated = apply_painted_slice(&slices, range, 0.01).expect("valid range");
 
@@ -20,14 +17,10 @@ fn apply_painted_slice_splits_overlaps() {
 
 #[test]
 fn update_slice_range_keeps_selection_when_updated_slice_selected() {
-    let slices = vec![
-        SelectionRange::new(0.1, 0.3),
-        SelectionRange::new(0.4, 0.6),
-    ];
+    let slices = vec![SelectionRange::new(0.1, 0.3), SelectionRange::new(0.4, 0.6)];
     let selected = vec![0];
     let range = SelectionRange::new(0.15, 0.25);
-    let result = update_slice_range(&slices, &selected, 0, range, 0.01)
-        .expect("valid update");
+    let result = update_slice_range(&slices, &selected, 0, range, 0.01).expect("valid update");
 
     assert_eq!(result.new_index, Some(0));
     assert_eq!(result.selected_indices, vec![0]);

@@ -59,11 +59,8 @@ impl EguiController {
     }
 
     pub(crate) fn update_waveform_circular_slide(&mut self, position: f32) {
-        let Some((rotated, spec_channels, sample_rate)) = self
-            .sample_view
-            .waveform_slide
-            .as_mut()
-            .and_then(|state| {
+        let Some((rotated, spec_channels, sample_rate)) =
+            self.sample_view.waveform_slide.as_mut().and_then(|state| {
                 let total_frames = state.original_samples.len() / state.channels.max(1);
                 if total_frames == 0 {
                     return None;
@@ -138,12 +135,7 @@ impl EguiController {
         })
     }
 
-    fn apply_waveform_slide_preview(
-        &mut self,
-        samples: Vec<f32>,
-        channels: u16,
-        sample_rate: u32,
-    ) {
+    fn apply_waveform_slide_preview(&mut self, samples: Vec<f32>, channels: u16, sample_rate: u32) {
         let channels = channels.max(1);
         let total_frames = samples.len() / channels as usize;
         if total_frames == 0 {

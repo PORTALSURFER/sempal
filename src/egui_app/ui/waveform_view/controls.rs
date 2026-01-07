@@ -54,10 +54,7 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
             RichText::new("Record").color(palette.text_muted)
         };
         let record_button = ui
-            .add_enabled(
-                is_recording || has_source,
-                egui::Button::new(record_label),
-            )
+            .add_enabled(is_recording || has_source, egui::Button::new(record_label))
             .on_hover_text("Record into the selected source folder");
         if record_button.clicked() {
             let result = if is_recording {
@@ -92,9 +89,9 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
             .add_enabled(!is_recording, egui::Button::new(play_label))
             .on_hover_text("Play from the current selection or cursor");
         if play_button.clicked() {
-            if let Err(err) =
-                app.controller
-                    .play_audio(app.controller.ui.waveform.loop_enabled, None)
+            if let Err(err) = app
+                .controller
+                .play_audio(app.controller.ui.waveform.loop_enabled, None)
             {
                 app.controller.set_status(err, style::StatusTone::Error);
             }
@@ -104,7 +101,8 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
         } else {
             RichText::new("Stop").color(palette.text_muted)
         };
-        let stop_button = ui.add_enabled(is_playing, egui::Button::new(stop_label))
+        let stop_button = ui
+            .add_enabled(is_playing, egui::Button::new(stop_label))
             .on_hover_text("Stop playback");
         if stop_button.clicked() {
             app.controller.stop_playback_if_active();
@@ -141,7 +139,8 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
             .checkbox(&mut show_transients, "Show transients")
             .clicked()
         {
-            app.controller.set_transient_markers_enabled(show_transients);
+            app.controller
+                .set_transient_markers_enabled(show_transients);
         }
         let mut transient_snap = app.controller.ui.waveform.transient_snap_enabled;
         let snap_toggle = ui.add_enabled(
@@ -179,10 +178,9 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
             .on_hover_text("Detect non-silent slices from the loaded sample");
         if detect_button.clicked() {
             match app.controller.detect_waveform_slices_from_silence() {
-                Ok(count) => app.controller.set_status(
-                    format!("Detected {count} slices"),
-                    style::StatusTone::Info,
-                ),
+                Ok(count) => app
+                    .controller
+                    .set_status(format!("Detected {count} slices"), style::StatusTone::Info),
                 Err(err) => app.controller.set_status(err, style::StatusTone::Error),
             }
             app.controller.ui.waveform.slice_mode_enabled = true;
@@ -196,7 +194,10 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
             app.controller.clear_waveform_slices();
         }
         if slices_ready {
-            ui.label(format!("Slices: {}", app.controller.ui.waveform.slices.len()));
+            ui.label(format!(
+                "Slices: {}",
+                app.controller.ui.waveform.slices.len()
+            ));
         }
     });
     if view_mode != app.controller.ui.waveform.channel_view {
@@ -206,7 +207,10 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
 
 fn parse_bpm_input(input: &str) -> Option<f32> {
     let trimmed = input.trim().to_lowercase();
-    let trimmed = trimmed.strip_suffix("bpm").unwrap_or(trimmed.as_str()).trim();
+    let trimmed = trimmed
+        .strip_suffix("bpm")
+        .unwrap_or(trimmed.as_str())
+        .trim();
     let bpm = trimmed.parse::<f32>().ok()?;
     if bpm.is_finite() && bpm > 0.0 {
         Some(bpm)

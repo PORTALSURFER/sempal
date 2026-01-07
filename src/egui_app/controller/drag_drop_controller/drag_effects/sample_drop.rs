@@ -31,8 +31,9 @@ impl DragDropController<'_> {
                     &source,
                     &relative_path,
                 ) {
-                    Ok(name) => self
-                        .set_status(format!("Moved sample to '{name}'"), StatusTone::Info),
+                    Ok(name) => {
+                        self.set_status(format!("Moved sample to '{name}'"), StatusTone::Info)
+                    }
                     Err(err) => self.set_status(err, StatusTone::Error),
                 }
             } else if let Some(source) = self

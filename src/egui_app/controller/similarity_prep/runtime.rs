@@ -1,7 +1,7 @@
-use super::store::{DbSimilarityPrepStore, SimilarityPrepStore};
 use super::DEFAULT_CLUSTER_MIN_SIZE;
+use super::store::{DbSimilarityPrepStore, SimilarityPrepStore};
 use crate::analysis::hdbscan::{HdbscanConfig, HdbscanMethod};
-use crate::egui_app::controller::{analysis_jobs, jobs, EguiController};
+use crate::egui_app::controller::{EguiController, analysis_jobs, jobs};
 use crate::sample_sources::{SampleSource, SourceId};
 use std::thread;
 use tracing::info;
@@ -19,9 +19,9 @@ impl EguiController {
     }
 
     pub(super) fn restore_similarity_prep_duration_cap(&mut self) {
-        self.runtime
-            .analysis
-            .set_max_analysis_duration_seconds(self.settings.analysis.max_analysis_duration_seconds);
+        self.runtime.analysis.set_max_analysis_duration_seconds(
+            self.settings.analysis.max_analysis_duration_seconds,
+        );
     }
 
     pub(super) fn apply_similarity_prep_fast_mode(&mut self) {
@@ -155,10 +155,9 @@ impl EguiController {
         let tx = self.runtime.jobs.message_sender();
         thread::spawn(move || {
             let started_at = std::time::Instant::now();
-            let result = std::panic::catch_unwind(|| run_similarity_finalize(&source_id, &umap_version))
-                .unwrap_or_else(|_| {
-                    Err("Similarity finalize panicked".to_string())
-                });
+            let result =
+                std::panic::catch_unwind(|| run_similarity_finalize(&source_id, &umap_version))
+                    .unwrap_or_else(|_| Err("Similarity finalize panicked".to_string()));
             tracing::info!(
                 "Similarity finalize finished in {:.2?} (source_id={})",
                 started_at.elapsed(),

@@ -22,7 +22,6 @@ pub(super) fn clamp_anti_clip_fade_ms(fade_ms: f32) -> f32 {
     fade_ms.clamp(MIN_ANTI_CLIP_FADE_MS, MAX_ANTI_CLIP_FADE_MS)
 }
 
-
 fn clamp_wheel_zoom_speed(speed: f32) -> f32 {
     speed.clamp(MIN_WHEEL_ZOOM_SPEED, MAX_WHEEL_ZOOM_SPEED)
 }

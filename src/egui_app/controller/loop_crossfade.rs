@@ -53,23 +53,15 @@ impl EguiController {
     ) -> Result<PathBuf, String> {
         let (mut samples, spec) = read_samples_for_normalization(absolute_path)?;
         let (channels, total_frames) = loop_crossfade_layout(&samples, spec.channels)?;
-        let fade_frames =
-            loop_crossfade_frames(settings, spec.sample_rate.max(1), total_frames)?;
+        let fade_frames = loop_crossfade_frames(settings, spec.sample_rate.max(1), total_frames)?;
         apply_loop_crossfade(&mut samples, channels, total_frames, fade_frames)?;
         let suffix = loop_crossfade_suffix(settings);
-        let new_relative =
-            next_loop_crossfade_relative_path(relative_path, &source.root, &suffix);
+        let new_relative = next_loop_crossfade_relative_path(relative_path, &source.root, &suffix);
         let new_absolute = source.root.join(&new_relative);
         let tag = self.sample_tag_for(source, relative_path)?;
         write_loop_crossfade_wav(&new_absolute, &samples, loop_crossfade_spec(&spec))?;
         register_loop_crossfade_entry(self, source, &new_relative, &new_absolute, tag)?;
-        maybe_capture_loop_crossfade_undo(
-            self,
-            source,
-            &new_relative,
-            &new_absolute,
-            tag,
-        );
+        maybe_capture_loop_crossfade_undo(self, source, &new_relative, &new_absolute, tag);
         self.set_status(
             format!("Created loop crossfade {}", new_relative.display()),
             StatusTone::Info,
@@ -221,11 +213,7 @@ fn loop_crossfade_spec(spec: &hound::WavSpec) -> hound::WavSpec {
     }
 }
 
-fn next_loop_crossfade_relative_path(
-    relative_path: &Path,
-    root: &Path,
-    suffix: &str,
-) -> PathBuf {
+fn next_loop_crossfade_relative_path(relative_path: &Path, root: &Path, suffix: &str) -> PathBuf {
     let parent = relative_path.parent().unwrap_or_else(|| Path::new(""));
     let stem = relative_path
         .file_stem()
@@ -259,8 +247,8 @@ fn write_loop_crossfade_wav(
     samples: &[f32],
     spec: hound::WavSpec,
 ) -> Result<(), String> {
-    let mut writer =
-        hound::WavWriter::create(path, spec).map_err(|err| format!("Failed to write wav: {err}"))?;
+    let mut writer = hound::WavWriter::create(path, spec)
+        .map_err(|err| format!("Failed to write wav: {err}"))?;
     for sample in samples {
         writer
             .write_sample(*sample)

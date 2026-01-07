@@ -5,20 +5,20 @@ mod job_progress;
 mod progress_cache;
 
 use crate::sample_sources::SourceId;
+use progress_cache::ProgressCache;
 #[cfg(not(test))]
 use std::collections::HashSet;
+use std::mem;
+#[cfg(not(test))]
+use std::sync::Mutex;
 use std::sync::{
     Arc, RwLock,
     atomic::AtomicU32,
     atomic::{AtomicBool, Ordering},
     mpsc::Sender,
 };
-use std::mem;
-#[cfg(not(test))]
-use std::sync::Mutex;
 use std::thread::JoinHandle;
 use tracing::info;
-use progress_cache::ProgressCache;
 
 /// Long-lived worker pool that claims and processes analysis jobs from the library database.
 pub(in crate::egui_app::controller) struct AnalysisWorkerPool {

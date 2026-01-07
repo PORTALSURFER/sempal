@@ -1,7 +1,3 @@
-use std::{
-    sync::mpsc::{self, Receiver},
-    thread,
-};
 use eframe::egui::{self, RichText};
 use sempal::{
     egui_app::ui::style,
@@ -9,6 +5,10 @@ use sempal::{
         APP_NAME, ApplyPlan, ReleaseSummary, UpdateChannel, UpdateProgress, UpdaterRunArgs,
         apply_update_with_progress, list_recent_releases,
     },
+};
+use std::{
+    sync::mpsc::{self, Receiver},
+    thread,
 };
 const MAX_LOG_LINES: usize = 200;
 const RELEASE_LIST_LIMIT: usize = 5;
@@ -150,10 +150,7 @@ impl UpdateUiApp {
         let Some(rx) = &self.progress_rx else {
             return;
         };
-        let messages: Vec<String> = rx
-            .try_iter()
-            .map(|progress| progress.message)
-            .collect();
+        let messages: Vec<String> = rx.try_iter().map(|progress| progress.message).collect();
         if messages.is_empty() {
             return;
         }
@@ -179,10 +176,7 @@ impl UpdateUiApp {
                         plan.release_tag,
                         plan.install_dir.display()
                     ));
-                    self.status = UiStatus::Success(format!(
-                        "Updated to {}",
-                        plan.release_tag
-                    ));
+                    self.status = UiStatus::Success(format!("Updated to {}", plan.release_tag));
                 }
                 Err(err) => {
                     self.push_log(format!("Update failed: {err}"));

@@ -98,10 +98,7 @@ impl EguiController {
         });
     }
 
-    pub fn recalc_similarity_for_browser_rows(
-        &mut self,
-        rows: &[usize],
-    ) -> Result<(), String> {
+    pub fn recalc_similarity_for_browser_rows(&mut self, rows: &[usize]) -> Result<(), String> {
         let Some(source) = self.current_source() else {
             return Err("Select a source first".to_string());
         };
@@ -141,7 +138,8 @@ impl EguiController {
         let source = source.clone();
         std::thread::spawn(move || {
             if !changed_samples.is_empty() {
-                let result = super::analysis_jobs::enqueue_jobs_for_source(&source, &changed_samples);
+                let result =
+                    super::analysis_jobs::enqueue_jobs_for_source(&source, &changed_samples);
                 match result {
                     Ok((inserted, progress)) => {
                         let _ = tx.send(super::jobs::JobMessage::Analysis(

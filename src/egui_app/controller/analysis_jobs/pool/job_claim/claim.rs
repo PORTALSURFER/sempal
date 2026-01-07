@@ -38,10 +38,7 @@ pub(in crate::egui_app::controller::analysis_jobs) fn refresh_sources(
         let conn = match db::open_source_db(&source.root) {
             Ok(conn) => conn,
             Err(err) => {
-                tracing::debug!(
-                    "Source DB open failed for {}: {err}",
-                    source.root.display()
-                );
+                tracing::debug!("Source DB open failed for {}: {err}", source.root.display());
                 continue;
             }
         };

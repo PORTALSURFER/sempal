@@ -2,13 +2,13 @@ use std::env;
 use std::path::PathBuf;
 use std::sync::{LazyLock, OnceLock};
 
-#[cfg(target_os = "macos")]
-use burn::backend::wgpu::{self, graphics::Metal, WgpuDevice};
-#[cfg(not(target_os = "macos"))]
-use burn::backend::wgpu::{self, graphics::Vulkan, WgpuDevice};
 use burn::backend::ndarray::{NdArray, NdArrayDevice};
+#[cfg(target_os = "macos")]
+use burn::backend::wgpu::{self, WgpuDevice, graphics::Metal};
+#[cfg(not(target_os = "macos"))]
+use burn::backend::wgpu::{self, WgpuDevice, graphics::Vulkan};
 #[cfg(feature = "panns-cuda")]
-use burn::backend::{cuda::CudaDevice, Cuda};
+use burn::backend::{Cuda, cuda::CudaDevice};
 use tracing::warn;
 
 use super::panns_paths;

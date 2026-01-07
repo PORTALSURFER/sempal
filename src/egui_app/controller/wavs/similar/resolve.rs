@@ -84,13 +84,10 @@ pub(super) fn resolve_similarity_for_sample_id(
         query_embedding.as_deref(),
         query_dsp.as_deref(),
     )?;
-    let (indices, scores) = filter_ranked_candidates(
-        &conn,
-        ranked,
-        &source_id,
-        score_cutoff,
-        |path| controller.wav_index_for_path(path),
-    )?;
+    let (indices, scores) =
+        filter_ranked_candidates(&conn, ranked, &source_id, score_cutoff, |path| {
+            controller.wav_index_for_path(path)
+        })?;
     Ok(ResolvedSimilarity {
         sample_id: sample_id.to_string(),
         relative_path,
@@ -393,14 +390,10 @@ mod tests {
     fn duplicate_filter_respects_score_cutoff() {
         let conn = in_memory_conn();
         let source_id = SourceId::from_string("source-a");
-        let sample_id = super::super::analysis_jobs::build_sample_id(
-            source_id.as_str(),
-            Path::new("a.wav"),
-        );
-        let lower_id = super::super::analysis_jobs::build_sample_id(
-            source_id.as_str(),
-            Path::new("b.wav"),
-        );
+        let sample_id =
+            super::super::analysis_jobs::build_sample_id(source_id.as_str(), Path::new("a.wav"));
+        let lower_id =
+            super::super::analysis_jobs::build_sample_id(source_id.as_str(), Path::new("b.wav"));
         let ranked = vec![
             (sample_id.clone(), DUPLICATE_SCORE_THRESHOLD + 0.002),
             (lower_id.clone(), DUPLICATE_SCORE_THRESHOLD - 0.001),
@@ -428,10 +421,8 @@ mod tests {
             source_id.as_str(),
             Path::new("silent.wav"),
         );
-        let loud_id = super::super::analysis_jobs::build_sample_id(
-            source_id.as_str(),
-            Path::new("loud.wav"),
-        );
+        let loud_id =
+            super::super::analysis_jobs::build_sample_id(source_id.as_str(), Path::new("loud.wav"));
         insert_rms(&conn, &silent_id, DUPLICATE_RMS_MIN * 0.5);
         insert_rms(&conn, &loud_id, DUPLICATE_RMS_MIN * 10.0);
         let ranked = vec![
@@ -458,10 +449,8 @@ mod tests {
         let conn = in_memory_conn();
         let source_id = SourceId::from_string("source-a");
         let other_source = SourceId::from_string("source-b");
-        let own_id = super::super::analysis_jobs::build_sample_id(
-            source_id.as_str(),
-            Path::new("keep.wav"),
-        );
+        let own_id =
+            super::super::analysis_jobs::build_sample_id(source_id.as_str(), Path::new("keep.wav"));
         let other_id = super::super::analysis_jobs::build_sample_id(
             other_source.as_str(),
             Path::new("skip.wav"),
@@ -502,10 +491,8 @@ mod tests {
     fn filter_ranked_candidates_filters_all_by_cutoff() {
         let conn = in_memory_conn();
         let source_id = SourceId::from_string("source-a");
-        let sample_id = super::super::analysis_jobs::build_sample_id(
-            source_id.as_str(),
-            Path::new("skip.wav"),
-        );
+        let sample_id =
+            super::super::analysis_jobs::build_sample_id(source_id.as_str(), Path::new("skip.wav"));
         let ranked = vec![(sample_id, DUPLICATE_SCORE_THRESHOLD - 0.01)];
         let (indices, scores) = filter_ranked_candidates(
             &conn,

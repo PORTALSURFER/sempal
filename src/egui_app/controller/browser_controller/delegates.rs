@@ -84,19 +84,14 @@ impl EguiController {
                 "Select a source first".to_string()
             })?
         };
-        let index = self
-            .visible_browser_index(row)
-            .ok_or_else(|| {
-                warn!(row, "triage tag: visible row missing");
-                "Sample not found".to_string()
-            })?;
-        let entry = self
-            .wav_entry(index)
-            .cloned()
-            .ok_or_else(|| {
-                warn!(row, index, "triage tag: wav entry missing");
-                "Sample not found".to_string()
-            })?;
+        let index = self.visible_browser_index(row).ok_or_else(|| {
+            warn!(row, "triage tag: visible row missing");
+            "Sample not found".to_string()
+        })?;
+        let entry = self.wav_entry(index).cloned().ok_or_else(|| {
+            warn!(row, index, "triage tag: wav entry missing");
+            "Sample not found".to_string()
+        })?;
         let absolute_path = source.root.join(&entry.relative_path);
         Ok(helpers::TriageSampleContext {
             source,

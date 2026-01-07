@@ -1,5 +1,5 @@
 use super::super::*;
-use super::{collection_member_view, CollectionMemberView, CollectionsController};
+use super::{CollectionMemberView, CollectionsController, collection_member_view};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
@@ -163,7 +163,12 @@ impl CollectionsController<'_> {
         let (added, already, new_members, last_error) =
             self.add_contexts_to_collection(collection_index, contexts, last_error);
         self.finalize_browser_collection_add(
-            collection_id, &collection_name, added, already, new_members, last_error,
+            collection_id,
+            &collection_name,
+            added,
+            already,
+            new_members,
+            last_error,
         );
     }
 

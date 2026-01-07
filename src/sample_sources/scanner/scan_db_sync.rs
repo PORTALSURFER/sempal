@@ -1,8 +1,8 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::sample_sources::SourceDatabase;
 use crate::sample_sources::db::META_LAST_SCAN_COMPLETED_AT;
 use crate::sample_sources::db::SourceWriteBatch;
-use crate::sample_sources::SourceDatabase;
 
 use super::scan::{ScanContext, ScanError};
 use super::scan_diff::mark_missing;

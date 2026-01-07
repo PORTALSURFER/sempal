@@ -98,10 +98,9 @@ pub(super) fn handle_sample_row_drag<StartDrag, BuildPending, PendingMatch>(
         return;
     }
     if drag_active && response.dragged() {
-        if let Some(pos) =
-            response
-                .interact_pointer_pos()
-                .or_else(|| pointer_pos_for_drag(ui, controller.ui.drag.position))
+        if let Some(pos) = response
+            .interact_pointer_pos()
+            .or_else(|| pointer_pos_for_drag(ui, controller.ui.drag.position))
         {
             let shift_down = ui.input(|i| i.modifiers.shift);
             controller.update_active_drag(pos, drag_source, drag_target, shift_down);

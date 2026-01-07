@@ -1,5 +1,5 @@
-use super::members::BrowserSampleContext;
 use super::CollectionsController;
+use super::members::BrowserSampleContext;
 use std::path::PathBuf;
 
 /// Shared move selection, validation, and focus data for collection moves.
@@ -109,7 +109,9 @@ impl CollectionsController<'_> {
 
 #[cfg(test)]
 mod tests {
-    use crate::egui_app::controller::test_support::{prepare_with_source_and_wav_entries, sample_entry};
+    use crate::egui_app::controller::test_support::{
+        prepare_with_source_and_wav_entries, sample_entry,
+    };
     use crate::sample_sources::SampleTag;
 
     fn controller_with_entries(names: &[&str]) -> crate::egui_app::controller::EguiController {
@@ -151,9 +153,7 @@ mod tests {
     fn next_browser_focus_path_after_move_falls_back_before_last_row() {
         let mut controller = controller_with_entries(&["one.wav", "two.wav", "three.wav"]);
         let expected = {
-            let entry_index = controller
-                .visible_browser_index(1)
-                .expect("visible row");
+            let entry_index = controller.visible_browser_index(1).expect("visible row");
             controller
                 .wav_entry(entry_index)
                 .expect("wav entry")

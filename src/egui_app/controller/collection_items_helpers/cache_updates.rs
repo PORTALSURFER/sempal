@@ -99,9 +99,7 @@ impl EguiController {
         if old_path == new_entry.relative_path {
             let mut updated = false;
             if self.selection_state.ctx.selected_source.as_ref() == Some(&source.id) {
-                updated |= self
-                    .wav_entries
-                    .update_entry(old_path, new_entry.clone());
+                updated |= self.wav_entries.update_entry(old_path, new_entry.clone());
             }
             if let Some(cache) = self.cache.wav.entries.get_mut(&source.id) {
                 updated |= cache.update_entry(old_path, new_entry.clone());

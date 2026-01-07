@@ -1,11 +1,11 @@
 use std::{env, fs};
 
-use crate::{paths, UNINSTALL_KEY};
+use crate::{UNINSTALL_KEY, paths};
 
 #[cfg(target_os = "windows")]
-use winreg::enums::{HKEY_CURRENT_USER, KEY_WRITE};
-#[cfg(target_os = "windows")]
 use winreg::RegKey;
+#[cfg(target_os = "windows")]
+use winreg::enums::{HKEY_CURRENT_USER, KEY_WRITE};
 
 pub(crate) fn run_uninstall() -> Result<(), String> {
     #[cfg(target_os = "windows")]

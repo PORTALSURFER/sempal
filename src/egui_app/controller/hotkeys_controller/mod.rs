@@ -211,10 +211,8 @@ mod tests {
 
     #[test]
     fn waveform_hotkey_respects_focus() {
-        let (mut controller, source) = prepare_with_source_and_wav_entries(vec![sample_entry(
-            "one.wav",
-            SampleTag::Neutral,
-        )]);
+        let (mut controller, source) =
+            prepare_with_source_and_wav_entries(vec![sample_entry("one.wav", SampleTag::Neutral)]);
         load_waveform_selection(
             &mut controller,
             &source,

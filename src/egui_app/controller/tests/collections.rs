@@ -222,7 +222,7 @@ fn browser_rename_updates_collections_and_lookup() {
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
 
     write_test_wav(&root.join("one.wav"), &[0.1, -0.2]);
-    controller.set_wav_entries_for_tests( vec![sample_entry("one.wav", SampleTag::Neutral)]);
+    controller.set_wav_entries_for_tests(vec![sample_entry("one.wav", SampleTag::Neutral)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
@@ -265,7 +265,7 @@ fn starting_browser_rename_queues_prompt_for_focused_row() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source.clone());
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
-    controller.set_wav_entries_for_tests( vec![sample_entry("one.wav", SampleTag::Neutral)]);
+    controller.set_wav_entries_for_tests(vec![sample_entry("one.wav", SampleTag::Neutral)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
     controller.focus_browser_list();
@@ -292,7 +292,7 @@ fn selecting_browser_sample_clears_collection_selection() {
 
     write_test_wav(&source.root.join("a.wav"), &[0.0]);
     write_test_wav(&source.root.join("b.wav"), &[0.0]);
-    controller.set_wav_entries_for_tests( vec![
+    controller.set_wav_entries_for_tests(vec![
         sample_entry("a.wav", SampleTag::Neutral),
         sample_entry("b.wav", SampleTag::Neutral),
     ]);
@@ -372,21 +372,27 @@ fn sample_tag_for_builds_wav_cache_lookup() {
             sample_entry("b.wav", SampleTag::Neutral),
         ],
     );
-    controller.cache.wav.entries.insert(source.id.clone(), cache);
+    controller
+        .cache
+        .wav
+        .entries
+        .insert(source.id.clone(), cache);
 
     let tag = controller
         .sample_tag_for(&source, Path::new("b.wav"))
         .unwrap();
     assert_eq!(tag, SampleTag::Neutral);
     assert!(controller.cache.wav.entries.contains_key(&source.id));
-    assert!(controller
-        .cache
-        .wav
-        .entries
-        .get(&source.id)
-        .unwrap()
-        .lookup
-        .contains_key(Path::new("b.wav")));
+    assert!(
+        controller
+            .cache
+            .wav
+            .entries
+            .get(&source.id)
+            .unwrap()
+            .lookup
+            .contains_key(Path::new("b.wav"))
+    );
 }
 
 #[test]
@@ -407,15 +413,21 @@ fn pruning_cached_sample_updates_wav_cache_lookup() {
             sample_entry("b.wav", SampleTag::Neutral),
         ],
     );
-    controller.cache.wav.entries.insert(source.id.clone(), cache);
-    assert!(controller
+    controller
         .cache
         .wav
         .entries
-        .get(&source.id)
-        .unwrap()
-        .lookup
-        .contains_key(Path::new("a.wav")));
+        .insert(source.id.clone(), cache);
+    assert!(
+        controller
+            .cache
+            .wav
+            .entries
+            .get(&source.id)
+            .unwrap()
+            .lookup
+            .contains_key(Path::new("a.wav"))
+    );
 
     controller.prune_cached_sample(&source, Path::new("a.wav"));
 
@@ -431,7 +443,7 @@ fn browser_selection_restores_last_browsable_source_after_clip_preview() {
     controller.cache_db(&source).unwrap();
 
     write_test_wav(&source.root.join("a.wav"), &[0.0]);
-    controller.set_wav_entries_for_tests( vec![sample_entry("a.wav", SampleTag::Neutral)]);
+    controller.set_wav_entries_for_tests(vec![sample_entry("a.wav", SampleTag::Neutral)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
@@ -463,7 +475,7 @@ fn browser_rename_preserves_extension_and_stem_with_dots() {
 
     let original = root.join("take.001.WAV");
     write_test_wav(&original, &[0.1, -0.2]);
-    controller.set_wav_entries_for_tests( vec![sample_entry("take.001.WAV", SampleTag::Neutral)]);
+    controller.set_wav_entries_for_tests(vec![sample_entry("take.001.WAV", SampleTag::Neutral)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
@@ -481,7 +493,7 @@ fn cancelling_browser_rename_clears_prompt() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source.clone());
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
-    controller.set_wav_entries_for_tests( vec![sample_entry("one.wav", SampleTag::Neutral)]);
+    controller.set_wav_entries_for_tests(vec![sample_entry("one.wav", SampleTag::Neutral)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
     controller.focus_browser_list();

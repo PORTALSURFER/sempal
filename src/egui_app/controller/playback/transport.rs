@@ -136,7 +136,9 @@ pub(super) fn toggle_loop(controller: &mut EguiController) {
                         .range
                         .range()
                         .or(controller.ui.waveform.selection)
-                        .filter(|range| super::selection_meets_bpm_min_for_playback(controller, *range))
+                        .filter(|range| {
+                            super::selection_meets_bpm_min_for_playback(controller, *range)
+                        })
                         .is_some();
                     let start_override = if has_selection {
                         None

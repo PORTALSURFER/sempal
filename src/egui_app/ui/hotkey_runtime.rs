@@ -35,7 +35,11 @@ impl EguiApp {
             self.controller.ui.browser.pending_action,
             Some(crate::egui_app::state::SampleBrowserActionPrompt::Rename { .. })
         );
-        if collection_rename_active || folder_rename_active || folder_create_active || browser_rename_active {
+        if collection_rename_active
+            || folder_rename_active
+            || folder_create_active
+            || browser_rename_active
+        {
             return;
         }
         let wants_text_input = ctx.wants_keyboard_input();

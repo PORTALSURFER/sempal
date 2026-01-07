@@ -60,10 +60,7 @@ pub(super) fn trim_silence_with_hysteresis(samples: &[f32], sample_rate: u32) ->
 }
 
 /// Identify contiguous non-silent ranges using RMS hysteresis thresholds.
-pub(crate) fn detect_non_silent_ranges(
-    samples: &[f32],
-    sample_rate: u32,
-) -> Vec<(usize, usize)> {
+pub(crate) fn detect_non_silent_ranges(samples: &[f32], sample_rate: u32) -> Vec<(usize, usize)> {
     if samples.is_empty() || sample_rate == 0 {
         return Vec::new();
     }

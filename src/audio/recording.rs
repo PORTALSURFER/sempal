@@ -1,19 +1,19 @@
 use std::fs::File;
 use std::io::BufWriter;
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::{Receiver, Sender};
 use std::sync::Arc;
+use std::sync::mpsc::{Receiver, Sender};
 use std::thread::{self, JoinHandle};
 use std::time::Instant;
 
-use cpal::traits::StreamTrait;
 use cpal::Stream;
-use rodio::buffer::SamplesBuffer;
+use cpal::traits::StreamTrait;
 use rodio::Sink;
+use rodio::buffer::SamplesBuffer;
 
 use super::input::{
-    AudioInputConfig, AudioInputError, ResolvedInput, StreamChannelSelection,
-    build_input_stream, resolve_input_stream_config,
+    AudioInputConfig, AudioInputError, ResolvedInput, StreamChannelSelection, build_input_stream,
+    resolve_input_stream_config,
 };
 
 pub struct RecordingOutcome {
@@ -151,9 +151,12 @@ impl RecorderWriter {
     }
 
     fn join(&mut self) -> Result<RecordingStats, AudioInputError> {
-        let handle = self.join.take().ok_or_else(|| AudioInputError::RecordingFailed {
-            detail: "Recorder writer already joined".into(),
-        })?;
+        let handle = self
+            .join
+            .take()
+            .ok_or_else(|| AudioInputError::RecordingFailed {
+                detail: "Recorder writer already joined".into(),
+            })?;
         handle
             .join()
             .map_err(|_| AudioInputError::RecordingFailed {
@@ -219,12 +222,7 @@ fn writer_loop(
     writer.finalize()
 }
 
-fn monitor_loop(
-    sink: Sink,
-    channels: u16,
-    sample_rate: u32,
-    receiver: Receiver<MonitorCommand>,
-) {
+fn monitor_loop(sink: Sink, channels: u16, sample_rate: u32, receiver: Receiver<MonitorCommand>) {
     let channels = channels.max(1);
     let sample_rate = sample_rate.max(1);
     sink.play();
@@ -306,9 +304,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let path = dir.path().join("recording.wav");
         let mut writer = WavSampleWriter::new(&path, 48_000, 2).unwrap();
-        writer
-            .write_samples(&[0.0, 0.5, -0.5, 1.0])
-            .unwrap();
+        writer.write_samples(&[0.0, 0.5, -0.5, 1.0]).unwrap();
         let stats = writer.finalize().unwrap();
         assert_eq!(stats.frames, 2);
 

@@ -10,9 +10,9 @@ use crate::egui_app::state::FocusContext;
 use crate::sample_sources::Collection;
 use crate::sample_sources::collections::CollectionMember;
 use hound::WavReader;
+use std::cell::RefCell;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
-use std::cell::RefCell;
 use std::rc::Rc;
 use tempfile::tempdir;
 
@@ -33,10 +33,8 @@ fn hotkey_tagging_applies_to_all_selected_rows() {
 
 #[test]
 fn focus_hotkey_does_not_autoplay_browser_sample() {
-    let (mut controller, source) = prepare_with_source_and_wav_entries(vec![sample_entry(
-        "one.wav",
-        SampleTag::Neutral,
-    )]);
+    let (mut controller, source) =
+        prepare_with_source_and_wav_entries(vec![sample_entry("one.wav", SampleTag::Neutral)]);
     write_test_wav(&source.root.join("one.wav"), &[0.0, 0.1]);
 
     assert!(controller.settings.feature_flags.autoplay_selection);
@@ -279,7 +277,7 @@ fn browser_normalize_refreshes_exports() -> Result<(), String> {
     controller.library.sources.push(source.clone());
 
     write_test_wav(&root.join("one.wav"), &[0.25, -0.5]);
-    controller.set_wav_entries_for_tests( vec![sample_entry("one.wav", SampleTag::Neutral)]);
+    controller.set_wav_entries_for_tests(vec![sample_entry("one.wav", SampleTag::Neutral)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
     controller
@@ -369,7 +367,7 @@ fn browser_delete_prunes_collections_and_exports() -> Result<(), String> {
     controller.library.sources.push(source.clone());
 
     write_test_wav(&root.join("delete.wav"), &[0.1, 0.2]);
-    controller.set_wav_entries_for_tests( vec![sample_entry("delete.wav", SampleTag::Neutral)]);
+    controller.set_wav_entries_for_tests(vec![sample_entry("delete.wav", SampleTag::Neutral)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
@@ -414,7 +412,7 @@ fn browser_remove_dead_links_prunes_missing_rows() -> Result<(), String> {
     write_test_wav(&source.root.join("alive.wav"), &[0.0, 0.1, -0.1]);
     let mut dead = sample_entry("gone.wav", SampleTag::Neutral);
     dead.missing = true;
-    controller.set_wav_entries_for_tests( vec![sample_entry("alive.wav", SampleTag::Neutral), dead]);
+    controller.set_wav_entries_for_tests(vec![sample_entry("alive.wav", SampleTag::Neutral), dead]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
@@ -442,9 +440,11 @@ fn browser_remove_dead_links_prunes_missing_rows() -> Result<(), String> {
         std::path::PathBuf::from("alive.wav")
     );
     assert!(!controller.sample_missing(&source.id, std::path::Path::new("alive.wav")));
-    assert!(controller
-        .wav_index_for_path(std::path::Path::new("gone.wav"))
-        .is_none());
+    assert!(
+        controller
+            .wav_index_for_path(std::path::Path::new("gone.wav"))
+            .is_none()
+    );
     Ok(())
 }
 
@@ -457,7 +457,7 @@ fn removing_dead_links_for_source_prunes_missing_entries() -> Result<(), String>
     write_test_wav(&source.root.join("alive.wav"), &[0.0, 0.1, -0.1]);
     let mut dead = sample_entry("gone.wav", SampleTag::Neutral);
     dead.missing = true;
-    controller.set_wav_entries_for_tests( vec![sample_entry("alive.wav", SampleTag::Neutral), dead]);
+    controller.set_wav_entries_for_tests(vec![sample_entry("alive.wav", SampleTag::Neutral), dead]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
     let mut missing = std::collections::HashSet::new();
@@ -495,7 +495,7 @@ fn deleting_browser_sample_moves_focus_forward() -> Result<(), String> {
     for name in ["a.wav", "b.wav", "c.wav"] {
         write_test_wav(&source.root.join(name), &[0.1, -0.1]);
     }
-    controller.set_wav_entries_for_tests( vec![
+    controller.set_wav_entries_for_tests(vec![
         sample_entry("a.wav", SampleTag::Neutral),
         sample_entry("b.wav", SampleTag::Neutral),
         sample_entry("c.wav", SampleTag::Neutral),

@@ -1,10 +1,10 @@
 use burn::tensor::backend::Backend;
 use burn::tensor::{Tensor, TensorData};
 
+use super::super::EMBEDDING_DIM;
 use super::super::logmel::PANNS_INPUT_FRAMES;
 use super::super::model::{PannsModel, PannsModelInner};
 use super::super::panns_burn;
-use super::super::EMBEDDING_DIM;
 use crate::analysis::panns_preprocess::PANNS_MEL_BANDS;
 
 pub(super) fn infer_embeddings_from_logmel_batch_pipelined_with_backend<B: Backend>(

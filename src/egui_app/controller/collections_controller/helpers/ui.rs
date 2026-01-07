@@ -1,5 +1,5 @@
 use super::super::*;
-use super::{collection_member_view_owned, CollectionMemberViewOwned, CollectionsController};
+use super::{CollectionMemberViewOwned, CollectionsController, collection_member_view_owned};
 use std::path::{Path, PathBuf};
 
 impl CollectionsController<'_> {

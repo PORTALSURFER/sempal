@@ -1,7 +1,7 @@
 use std::time::Duration;
 
-use super::AudioPlayer;
 use super::super::routing::{duration_from_secs_f32, duration_mod};
+use super::AudioPlayer;
 
 impl AudioPlayer {
     /// Current playback progress as a 0-1 fraction.

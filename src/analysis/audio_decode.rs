@@ -18,10 +18,7 @@ pub(crate) struct DecodedAudio {
 /// Decode audio into interleaved `f32` samples with sample rate and channel count.
 ///
 /// Supported formats include wav/aiff/flac/mp3 via rodio, with a symphonia fallback.
-pub(crate) fn decode_audio(
-    path: &Path,
-    max_seconds: Option<f32>,
-) -> Result<DecodedAudio, String> {
+pub(crate) fn decode_audio(path: &Path, max_seconds: Option<f32>) -> Result<DecodedAudio, String> {
     let file =
         File::open(path).map_err(|err| format!("Failed to open {}: {err}", path.display()))?;
     let byte_len = file.metadata().map(|meta| meta.len()).unwrap_or(0) as u64;
@@ -41,12 +38,10 @@ pub(crate) fn decode_audio(
         Ok(decoder) => {
             let sample_rate = decoder.sample_rate().max(1);
             let channels = decoder.channels().max(1);
-            let max_samples = max_seconds
-                .filter(|limit| *limit > 0.0)
-                .map(|limit| {
-                    let frames = (limit * sample_rate as f32).ceil().max(1.0);
-                    (frames as usize).saturating_mul(channels as usize).max(1)
-                });
+            let max_samples = max_seconds.filter(|limit| *limit > 0.0).map(|limit| {
+                let frames = (limit * sample_rate as f32).ceil().max(1.0);
+                (frames as usize).saturating_mul(channels as usize).max(1)
+            });
             let samples: Vec<f32> = match max_samples {
                 Some(limit) => decoder.take(limit).collect(),
                 None => decoder.collect(),
@@ -102,12 +97,10 @@ fn decode_with_symphonia(
         .channels
         .ok_or_else(|| format!("Missing channel count for {}", path.display()))?
         .count() as u16;
-    let max_samples = max_seconds
-        .filter(|limit| *limit > 0.0)
-        .map(|limit| {
-            let frames = (limit * sample_rate as f32).ceil().max(1.0);
-            (frames as usize).saturating_mul(channels as usize).max(1)
-        });
+    let max_samples = max_seconds.filter(|limit| *limit > 0.0).map(|limit| {
+        let frames = (limit * sample_rate as f32).ceil().max(1.0);
+        (frames as usize).saturating_mul(channels as usize).max(1)
+    });
 
     let mut decoder = symphonia::default::get_codecs()
         .make(codec_params, &DecoderOptions::default())

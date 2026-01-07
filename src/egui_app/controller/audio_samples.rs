@@ -14,8 +14,8 @@ pub(super) struct DecodedSamples {
 
 /// Decode WAV bytes into interleaved f32 samples plus basic metadata.
 pub(super) fn decode_samples_from_bytes(bytes: &[u8]) -> Result<DecodedSamples, String> {
-    let mut reader = hound::WavReader::new(Cursor::new(bytes))
-        .map_err(|err| format!("Invalid wav: {err}"))?;
+    let mut reader =
+        hound::WavReader::new(Cursor::new(bytes)).map_err(|err| format!("Invalid wav: {err}"))?;
     let spec = reader.spec();
     let channels = spec.channels.max(1);
     let samples = decode_samples(&mut reader, spec.sample_format, spec.bits_per_sample)?;

@@ -2,8 +2,8 @@ use super::super::test_support::{dummy_controller, sample_entry, write_test_wav}
 use super::super::*;
 use super::common::{prepare_browser_sample, visible_indices};
 use crate::egui_app::controller::hotkeys;
-use crate::egui_app::state::SampleBrowserTab;
 use crate::egui_app::state::FocusContext;
+use crate::egui_app::state::SampleBrowserTab;
 use crate::sample_sources::Collection;
 use crate::sample_sources::collections::CollectionMember;
 use egui::Key;
@@ -185,7 +185,7 @@ fn focus_history_steps_backward_and_forward() {
 fn random_sample_selection_uses_seeded_rng() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source.clone());
-    controller.set_wav_entries_for_tests( vec![
+    controller.set_wav_entries_for_tests(vec![
         sample_entry("one.wav", SampleTag::Neutral),
         sample_entry("two.wav", SampleTag::Neutral),
         sample_entry("three.wav", SampleTag::Neutral),
@@ -368,7 +368,7 @@ fn trash_move_hotkey_moves_samples() -> Result<(), String> {
     db.set_tag(Path::new("trash.wav"), SampleTag::Trash)
         .map_err(|err| format!("tag: {err}"))?;
 
-    controller.set_wav_entries_for_tests( vec![sample_entry("trash.wav", SampleTag::Trash)]);
+    controller.set_wav_entries_for_tests(vec![sample_entry("trash.wav", SampleTag::Trash)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
@@ -387,7 +387,7 @@ fn trash_move_hotkey_moves_samples() -> Result<(), String> {
 fn random_history_steps_backward() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source.clone());
-    controller.set_wav_entries_for_tests( vec![
+    controller.set_wav_entries_for_tests(vec![
         sample_entry("one.wav", SampleTag::Neutral),
         sample_entry("two.wav", SampleTag::Neutral),
     ]);
@@ -424,9 +424,11 @@ fn random_history_trims_to_limit() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source.clone());
     let total = RANDOM_HISTORY_LIMIT + 5;
-    controller.set_wav_entries_for_tests( (0..total)
-        .map(|i| sample_entry(&format!("{i}.wav"), SampleTag::Neutral))
-        .collect());
+    controller.set_wav_entries_for_tests(
+        (0..total)
+            .map(|i| sample_entry(&format!("{i}.wav"), SampleTag::Neutral))
+            .collect(),
+    );
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 

@@ -1,5 +1,5 @@
-use crate::egui_app::controller::analysis_jobs::db;
 use super::dedup::DedupTracker;
+use crate::egui_app::controller::analysis_jobs::db;
 use std::collections::VecDeque;
 use std::sync::{Condvar, Mutex};
 use std::sync::{atomic::AtomicBool, atomic::AtomicUsize, atomic::Ordering};
@@ -65,11 +65,7 @@ impl DecodedQueue {
         }
     }
 
-    pub(super) fn pop_batch(
-        &self,
-        shutdown: &AtomicBool,
-        max: usize,
-    ) -> (Vec<DecodedWork>, u64) {
+    pub(super) fn pop_batch(&self, shutdown: &AtomicBool, max: usize) -> (Vec<DecodedWork>, u64) {
         let mut guard = self.queue.lock().expect("decoded queue lock");
         let start = std::time::Instant::now();
         loop {

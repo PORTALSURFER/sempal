@@ -1,6 +1,8 @@
 //! Cached data for the controller, including databases and UI caches.
 
-use super::super::{SampleSource, SourceDatabase, SourceDbError, SourceId, WavEntry, source_folders, wavs};
+use super::super::{
+    SampleSource, SourceDatabase, SourceDbError, SourceId, WavEntry, source_folders, wavs,
+};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -63,7 +65,8 @@ impl LibraryCacheState {
 
 pub(in crate::egui_app::controller) struct BrowserCacheState {
     pub(in crate::egui_app::controller) labels: HashMap<SourceId, Vec<String>>,
-    pub(in crate::egui_app::controller) analysis_failures: HashMap<SourceId, HashMap<PathBuf, String>>,
+    pub(in crate::egui_app::controller) analysis_failures:
+        HashMap<SourceId, HashMap<PathBuf, String>>,
     pub(in crate::egui_app::controller) analysis_failures_pending: HashSet<SourceId>,
     pub(in crate::egui_app::controller) search: wavs::BrowserSearchCache,
     pub(in crate::egui_app::controller) features: HashMap<SourceId, FeatureCache>,
@@ -93,7 +96,8 @@ pub(crate) struct FeatureCache {
 }
 
 pub(in crate::egui_app::controller) struct FolderBrowsersState {
-    pub(in crate::egui_app::controller) models: HashMap<SourceId, source_folders::FolderBrowserModel>,
+    pub(in crate::egui_app::controller) models:
+        HashMap<SourceId, source_folders::FolderBrowserModel>,
 }
 
 pub(in crate::egui_app::controller) struct ControllerUiCacheState {
@@ -156,10 +160,15 @@ impl WavEntriesState {
     pub(in crate::egui_app::controller) fn entry(&self, index: usize) -> Option<&WavEntry> {
         let page_index = index / self.page_size;
         let in_page = index % self.page_size;
-        self.pages.get(&page_index).and_then(|page| page.get(in_page))
+        self.pages
+            .get(&page_index)
+            .and_then(|page| page.get(in_page))
     }
 
-    pub(in crate::egui_app::controller) fn entry_mut(&mut self, index: usize) -> Option<&mut WavEntry> {
+    pub(in crate::egui_app::controller) fn entry_mut(
+        &mut self,
+        index: usize,
+    ) -> Option<&mut WavEntry> {
         let page_index = index / self.page_size;
         let in_page = index % self.page_size;
         self.pages
@@ -167,7 +176,11 @@ impl WavEntriesState {
             .and_then(|page| page.get_mut(in_page))
     }
 
-    pub(in crate::egui_app::controller) fn update_entry(&mut self, path: &Path, entry: WavEntry) -> bool {
+    pub(in crate::egui_app::controller) fn update_entry(
+        &mut self,
+        path: &Path,
+        entry: WavEntry,
+    ) -> bool {
         let Some(index) = self.lookup.get(path).copied() else {
             return false;
         };

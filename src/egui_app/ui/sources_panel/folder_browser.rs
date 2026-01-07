@@ -1,5 +1,7 @@
 use super::EguiApp;
-use super::helpers::{NumberColumn, RowBackground, list_row_height, number_column_width, render_list_row};
+use super::helpers::{
+    NumberColumn, RowBackground, list_row_height, number_column_width, render_list_row,
+};
 use super::style;
 use super::utils::{folder_row_label, sample_housing_folders};
 use crate::egui_app::state::{DragSource, DragTarget, FocusContext};
@@ -105,7 +107,10 @@ impl EguiApp {
                     None
                 });
                 let label = folder_row_label(&root_row, label_width, ui);
-                let hotkey_text = root_row.hotkey.map(|key| key.to_string()).unwrap_or_default();
+                let hotkey_text = root_row
+                    .hotkey
+                    .map(|key| key.to_string())
+                    .unwrap_or_default();
                 let response = render_list_row(
                     ui,
                     super::helpers::ListRow {
@@ -199,7 +204,7 @@ impl EguiApp {
                 ui.add_space(2.0);
             }
             let inline_parent = inline_parent_for_rows.clone();
-                let scroll = egui::ScrollArea::vertical()
+            let scroll = egui::ScrollArea::vertical()
                 .id_salt("folder_browser_scroll")
                 .max_height(height);
             scroll.show(ui, |ui| {
@@ -454,10 +459,7 @@ impl EguiApp {
 fn paint_right_side_dot(ui: &mut Ui, rect: egui::Rect, offset_x: f32) {
     let padding = ui.spacing().button_padding.x;
     let radius = 3.0;
-    let center = egui::pos2(
-        rect.right() - padding - radius - offset_x,
-        rect.center().y,
-    );
+    let center = egui::pos2(rect.right() - padding - radius - offset_x, rect.center().y);
     ui.painter()
         .circle_filled(center, radius, egui::Color32::WHITE);
 }

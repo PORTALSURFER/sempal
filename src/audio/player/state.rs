@@ -5,11 +5,11 @@ use std::time::{Duration, Instant};
 #[cfg(test)]
 use rodio::{OutputStream, Source};
 
-use super::AudioPlayer;
 use super::super::DEFAULT_ANTI_CLIP_FADE;
 use super::super::mixer::{decoder_duration, wav_header_duration};
 use super::super::output::{AudioOutputConfig, ResolvedOutput, open_output_stream};
 use super::super::routing::duration_from_secs_f32;
+use super::AudioPlayer;
 
 impl AudioPlayer {
     /// Create a new audio player using the default output device.
@@ -66,7 +66,11 @@ impl AudioPlayer {
 
     /// Adjust normalized audition gain for current and future playback.
     pub fn set_playback_gain(&mut self, gain: f32) {
-        self.playback_gain = if gain.is_finite() && gain > 0.0 { gain } else { 1.0 };
+        self.playback_gain = if gain.is_finite() && gain > 0.0 {
+            gain
+        } else {
+            1.0
+        };
         let effective = self.effective_volume();
         if let Some(sink) = self.sink.as_mut() {
             sink.set_volume(effective);

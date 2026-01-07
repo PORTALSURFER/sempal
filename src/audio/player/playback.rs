@@ -2,9 +2,9 @@ use std::time::Duration;
 
 use rodio::Source;
 
-use super::AudioPlayer;
 use super::super::fade::{EdgeFade, fade_duration};
 use super::super::mixer::{decoder_from_bytes, map_seek_error};
+use super::AudioPlayer;
 
 impl AudioPlayer {
     /// Begin playback from the stored buffer.
@@ -35,12 +35,7 @@ impl AudioPlayer {
         let (bounded_start, bounded_end, duration) = self.normalized_span(start, end)?;
         let clamped_offset = offset.clamp(start.min(end), start.max(end));
         let offset_seconds = (clamped_offset * duration - bounded_start).max(0.0);
-        self.start_with_looped_span_offset(
-            bounded_start,
-            bounded_end,
-            duration,
-            offset_seconds,
-        )
+        self.start_with_looped_span_offset(bounded_start, bounded_end, duration, offset_seconds)
     }
 
     /// Loop the full track while starting playback at the given normalized position.

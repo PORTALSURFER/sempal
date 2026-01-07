@@ -1,6 +1,6 @@
+use crate::egui_app::controller::analysis_jobs::db;
 use rusqlite::OptionalExtension;
 use std::time::Instant;
-use crate::egui_app::controller::analysis_jobs::db;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 pub(super) fn load_embedding_vec_optional(

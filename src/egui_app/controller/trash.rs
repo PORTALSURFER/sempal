@@ -89,10 +89,14 @@ impl EguiController {
                 cancel.clone(),
                 |message| match message {
                     TrashMoveMessage::SetTotal(total) => {
-                        self.ui.progress.set_counts(total, self.ui.progress.completed);
+                        self.ui
+                            .progress
+                            .set_counts(total, self.ui.progress.completed);
                     }
                     TrashMoveMessage::Progress { completed, detail } => {
-                        self.ui.progress.set_counts(self.ui.progress.total, completed);
+                        self.ui
+                            .progress
+                            .set_counts(self.ui.progress.total, completed);
                         self.ui.progress.set_detail(detail);
                         if let Some(cancel_after) = cancel_after
                             && completed >= cancel_after

@@ -4,7 +4,9 @@ mod stats;
 
 use super::{DecodedWaveform, WaveformPeaks};
 use odf::{analysis_params, mono_samples, spectral_flux_superflux};
-use peaks::{compute_baselines, pick_peaks_hysteresis, percentile, smooth_values, SensitivityParams};
+use peaks::{
+    SensitivityParams, compute_baselines, percentile, pick_peaks_hysteresis, smooth_values,
+};
 use tracing::info;
 
 const BASELINE_SECONDS: f32 = 0.15;
@@ -21,7 +23,6 @@ pub struct TransientNovelty {
     pub sample_rate: u32,
     pub total_frames: usize,
 }
-
 
 pub fn detect_transients(decoded: &DecodedWaveform, sensitivity: f32) -> Vec<f32> {
     let Some(novelty) = compute_transient_novelty(decoded) else {
@@ -181,8 +182,7 @@ fn detect_transients_from_peaks(
         .round()
         .max(1.0) as usize;
     let max_transients = max_transients(decoded.duration_seconds, params.min_gap_seconds);
-    let window = ((BASELINE_SECONDS * sample_rate) / bucket_stride)
-        .round() as usize;
+    let window = ((BASELINE_SECONDS * sample_rate) / bucket_stride).round() as usize;
     let window = window.clamp(MIN_THRESHOLD_WINDOW, MAX_THRESHOLD_WINDOW);
     let baselines = compute_baselines(&novelty_smoothed, window);
     let global_floor = percentile(&novelty_smoothed, params.floor_quantile);

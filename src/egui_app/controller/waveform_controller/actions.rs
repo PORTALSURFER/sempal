@@ -190,7 +190,10 @@ impl WaveformActions for WaveformController<'_> {
         let before = Some(selection);
         let width = selection.width();
         let mut delta = width * steps as f32;
-        if let Some(step) = self.bpm_snap_step().filter(|step| step.is_finite() && *step > 0.0) {
+        if let Some(step) = self
+            .bpm_snap_step()
+            .filter(|step| step.is_finite() && *step > 0.0)
+        {
             let snapped = (delta / step).round() * step;
             if snapped != 0.0 {
                 delta = snapped;

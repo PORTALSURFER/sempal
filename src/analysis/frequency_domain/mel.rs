@@ -178,8 +178,7 @@ fn dct_ii_into(values: &[f32], count: usize, cos_table: &[f32], out: &mut Vec<f3
         for k in 0..count {
             let mut sum = 0.0_f64;
             for (m, &v) in values.iter().enumerate() {
-                let angle =
-                    std::f64::consts::PI * (k as f64) * ((m as f64) + 0.5) / bands as f64;
+                let angle = std::f64::consts::PI * (k as f64) * ((m as f64) + 0.5) / bands as f64;
                 sum += v as f64 * angle.cos();
             }
             out[k] = sum as f32;

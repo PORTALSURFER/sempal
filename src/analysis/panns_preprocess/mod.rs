@@ -9,7 +9,7 @@ mod preprocessor;
 mod stft;
 
 pub(crate) use mel::PannsMelBank;
-pub(crate) use preprocessor::{log_mel_frames, PannsPreprocessor};
+pub(crate) use preprocessor::{PannsPreprocessor, log_mel_frames};
 pub(crate) use stft::{stft_power_frames, stft_power_frames_into_flat};
 
 #[cfg(test)]

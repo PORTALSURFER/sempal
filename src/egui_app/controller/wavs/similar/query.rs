@@ -1,16 +1,11 @@
+use super::resolve::{
+    ResolvedSimilarity, cosine_similarity, load_embedding_for_sample, load_light_dsp_for_sample,
+    normalize_l2, open_source_db_for_id, rerank_with_dsp,
+};
 use super::*;
 use crate::egui_app::state::SimilarQuery;
 use crate::egui_app::view_model;
 use rusqlite::params;
-use super::resolve::{
-    ResolvedSimilarity,
-    open_source_db_for_id,
-    rerank_with_dsp,
-    load_embedding_for_sample,
-    load_light_dsp_for_sample,
-    normalize_l2,
-    cosine_similarity,
-};
 use std::collections::HashMap;
 
 pub(super) fn build_similar_query_for_sample_id(
@@ -21,8 +16,7 @@ pub(super) fn build_similar_query_for_sample_id(
     anchor_override: Option<usize>,
     empty_error: &str,
 ) -> Result<SimilarQuery, String> {
-    let resolved =
-        resolve::resolve_similarity_for_sample_id(controller, sample_id, score_cutoff)?;
+    let resolved = resolve::resolve_similarity_for_sample_id(controller, sample_id, score_cutoff)?;
     if resolved.indices.is_empty() {
         return Err(empty_error.to_string());
     }
@@ -48,8 +42,7 @@ pub(super) fn build_similarity_query_for_loaded_sample(
         return Err("Select the loaded sample's source to sort by similarity".to_string());
     }
     let loaded_path = loaded_audio.relative_path.clone();
-    let sample_id =
-        super::super::analysis_jobs::build_sample_id(source_id.as_str(), &loaded_path);
+    let sample_id = super::super::analysis_jobs::build_sample_id(source_id.as_str(), &loaded_path);
     let conn = open_source_db_for_id(controller, &source_id)?;
     let query_embedding = load_embedding_for_sample(&conn, &sample_id)?
         .ok_or_else(|| "Similarity data missing for the loaded sample".to_string())?;
@@ -73,7 +66,10 @@ pub(super) fn build_similarity_query_for_loaded_sample(
     let mut rows = stmt
         .query(params![crate::analysis::similarity::SIMILARITY_MODEL_ID])
         .map_err(|err| format!("Load similarity embeddings failed: {err}"))?;
-    while let Some(row) = rows.next().map_err(|err| format!("Load embeddings failed: {err}"))? {
+    while let Some(row) = rows
+        .next()
+        .map_err(|err| format!("Load embeddings failed: {err}"))?
+    {
         let candidate_id: String = row
             .get(0)
             .map_err(|err| format!("Load embeddings failed: {err}"))?;
@@ -213,13 +209,14 @@ fn resolve_anchor_index(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::egui_app::controller::test_support::{prepare_with_source_and_wav_entries, sample_entry};
+    use crate::egui_app::controller::test_support::{
+        prepare_with_source_and_wav_entries, sample_entry,
+    };
 
     #[test]
     fn resolve_anchor_index_prefers_override() {
-        let (mut controller, _source) = prepare_with_source_and_wav_entries(vec![
-            sample_entry("a.wav", SampleTag::Neutral),
-        ]);
+        let (mut controller, _source) =
+            prepare_with_source_and_wav_entries(vec![sample_entry("a.wav", SampleTag::Neutral)]);
         let anchor = resolve_anchor_index(&mut controller, Path::new("a.wav"), Some(7));
         assert_eq!(anchor, Some(7));
     }

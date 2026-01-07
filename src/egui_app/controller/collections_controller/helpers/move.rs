@@ -1,16 +1,13 @@
 use super::super::*;
+use super::CollectionsController;
 use super::fs::{
-    move_sample_file,
-    run_collection_move_task,
-    unique_destination_name,
-    CollectionMoveRequest,
+    CollectionMoveRequest, move_sample_file, run_collection_move_task, unique_destination_name,
 };
 use super::move_plan::MovePlan;
-use super::CollectionsController;
+use crate::sample_sources::SourceDatabase;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
-use crate::sample_sources::SourceDatabase;
 
 impl CollectionsController<'_> {
     pub(in crate::egui_app::controller::collections_controller) fn primary_visible_row_for_browser_selection(
@@ -112,11 +109,9 @@ impl CollectionsController<'_> {
         let clip_relative = unique_destination_name(&clip_root, relative_path)?;
         let clip_absolute = clip_root.join(&clip_relative);
         move_sample_file(&absolute, &clip_absolute)?;
-        if let Err(err) = self.add_clip_to_collection(
-            collection_id,
-            clip_root.clone(),
-            clip_relative.clone(),
-        ) {
+        if let Err(err) =
+            self.add_clip_to_collection(collection_id, clip_root.clone(), clip_relative.clone())
+        {
             let _ = fs::rename(&clip_absolute, &absolute);
             return Err(err);
         }
@@ -226,8 +221,7 @@ impl CollectionsController<'_> {
                         continue;
                     }
                     if let Err(err) = db.remove_file(&relative_path) {
-                        cleanup_error =
-                            Some(format!("Failed to remove moved entry: {err}"));
+                        cleanup_error = Some(format!("Failed to remove moved entry: {err}"));
                     }
                 }
             }
@@ -264,7 +258,10 @@ impl CollectionsController<'_> {
         }
     }
 
-    fn resolve_collection_clip_root(&self, collection_id: &CollectionId) -> Result<PathBuf, String> {
+    fn resolve_collection_clip_root(
+        &self,
+        collection_id: &CollectionId,
+    ) -> Result<PathBuf, String> {
         let preferred = self
             .library
             .collections

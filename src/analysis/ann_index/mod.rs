@@ -66,7 +66,9 @@ where
     if iter.peek().is_none() {
         return Ok(());
     }
-    with_index_state(conn, |state| update::upsert_embeddings_batch(conn, state, iter))
+    with_index_state(conn, |state| {
+        update::upsert_embeddings_batch(conn, state, iter)
+    })
 }
 
 pub fn flush_pending_inserts(conn: &Connection) -> Result<(), String> {

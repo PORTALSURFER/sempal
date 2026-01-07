@@ -132,12 +132,7 @@ impl EguiController {
             let needs_failures =
                 !from_cache || !self.ui_cache.browser.analysis_failures.contains_key(id);
             if needs_failures {
-                let source = self
-                    .library
-                    .sources
-                    .iter()
-                    .find(|s| &s.id == id)
-                    .cloned();
+                let source = self.library.sources.iter().find(|s| &s.id == id).cloned();
                 if let Some(source) = source {
                     self.queue_analysis_failures_refresh(&source);
                 } else {
@@ -151,10 +146,7 @@ impl EguiController {
             .map(|d| format!(" in {} ms", d.as_millis()))
             .unwrap_or_default();
         self.set_status(
-            format!(
-                "{prefix} {} wav files{suffix}",
-                self.wav_entries.total
-            ),
+            format!("{prefix} {} wav files{suffix}", self.wav_entries.total),
             StatusTone::Info,
         );
         if let Some(source_id) = source_id.as_ref() {

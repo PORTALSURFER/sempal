@@ -1,8 +1,8 @@
 use crate::analysis::fft::{Complex32, FftPlan, fft_radix2_inplace_with_plan, hann_window};
 
-use super::{PANNS_MEL_BANDS, PANNS_STFT_HOP, PANNS_STFT_N_FFT};
 use super::mel::PannsMelBank;
 use super::stft::{fill_windowed, power_spectrum_into};
+use super::{PANNS_MEL_BANDS, PANNS_STFT_HOP, PANNS_STFT_N_FFT};
 
 pub(crate) struct PannsPreprocessor {
     sample_rate: u32,
@@ -118,8 +118,7 @@ impl PannsPreprocessor {
 
 /// Compute log-mel frames using PANNs defaults (log10 with epsilon).
 pub(crate) fn log_mel_frames(samples: &[f32], sample_rate: u32) -> Result<Vec<Vec<f32>>, String> {
-    let mut preprocessor =
-        PannsPreprocessor::new(sample_rate, PANNS_STFT_N_FFT, PANNS_STFT_HOP)?;
+    let mut preprocessor = PannsPreprocessor::new(sample_rate, PANNS_STFT_N_FFT, PANNS_STFT_HOP)?;
     let frames_len = if samples.is_empty() {
         1
     } else {

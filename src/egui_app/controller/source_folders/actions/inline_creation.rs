@@ -1,8 +1,8 @@
 use super::ops;
 use super::*;
 use crate::egui_app::state::InlineFolderCreation;
-use std::path::{Path, PathBuf};
 use std::fs;
+use std::path::{Path, PathBuf};
 
 impl EguiController {
     pub(crate) fn start_new_folder(&mut self) {

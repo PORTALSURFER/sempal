@@ -5,7 +5,6 @@ use crate::paths;
 
 #[cfg(target_os = "windows")]
 use windows::{
-    core::{HSTRING, Interface, PCWSTR},
     Win32::{
         System::Com::{
             CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED, CoCreateInstance, CoInitializeEx,
@@ -13,6 +12,7 @@ use windows::{
         },
         UI::Shell::{IShellLinkW, ShellLink},
     },
+    core::{HSTRING, Interface, PCWSTR},
 };
 
 pub(crate) fn create_start_menu_shortcut(install_dir: &Path) -> Result<(), String> {

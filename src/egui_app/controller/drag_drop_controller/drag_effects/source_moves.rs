@@ -1,4 +1,4 @@
-use super::super::{file_metadata, DragDropController};
+use super::super::{DragDropController, file_metadata};
 use crate::egui_app::state::DragSample;
 use crate::egui_app::ui::style::StatusTone;
 use crate::sample_sources::{SampleTag, SourceId, WavEntry};
@@ -39,7 +39,10 @@ impl DragDropController<'_> {
         };
         if !target_source.root.is_dir() {
             self.set_status(
-                format!("Target source folder missing: {}", target_source.root.display()),
+                format!(
+                    "Target source folder missing: {}",
+                    target_source.root.display()
+                ),
                 StatusTone::Error,
             );
             return false;
@@ -301,8 +304,8 @@ fn move_sample_file(source: &Path, destination: &Path) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::egui_app::controller::test_support::{sample_entry, write_test_wav};
     use crate::egui_app::controller::EguiController;
+    use crate::egui_app::controller::test_support::{sample_entry, write_test_wav};
     use crate::sample_sources::{SampleSource, SampleTag};
     use crate::waveform::WaveformRenderer;
     use tempfile::tempdir;
@@ -352,7 +355,15 @@ mod tests {
             .drag_drop()
             .handle_samples_drop_to_source(&samples, target.id.clone());
 
-        assert!(controller.wav_index_for_path(Path::new("one.wav")).is_none());
-        assert!(controller.wav_index_for_path(Path::new("two.wav")).is_none());
+        assert!(
+            controller
+                .wav_index_for_path(Path::new("one.wav"))
+                .is_none()
+        );
+        assert!(
+            controller
+                .wav_index_for_path(Path::new("two.wav"))
+                .is_none()
+        );
     }
 }

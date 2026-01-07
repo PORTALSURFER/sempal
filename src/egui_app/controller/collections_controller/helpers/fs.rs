@@ -81,10 +81,7 @@ pub(super) fn run_collection_move_task(
     for request in requests {
         let absolute = request.source_root.join(&request.relative_path);
         if !absolute.is_file() {
-            errors.push(format!(
-                "File missing: {}",
-                request.relative_path.display()
-            ));
+            errors.push(format!("File missing: {}", request.relative_path.display()));
             continue;
         }
         let clip_relative = match unique_destination_name(&clip_root, &request.relative_path) {
@@ -122,26 +119,24 @@ pub(super) fn run_collection_move_task(
                 continue;
             }
         };
-        if let Err(err) = clip_db.upsert_file(
-            &clip_relative,
-            clip_metadata.len(),
-            modified_ns,
-        ) {
+        if let Err(err) = clip_db.upsert_file(&clip_relative, clip_metadata.len(), modified_ns) {
             let _ = move_sample_file(&clip_absolute, &absolute);
             errors.push(format!("Failed to sync collection entry: {err}"));
             continue;
         }
         let db = match source_dbs.entry(request.source_root.clone()) {
             std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
-            std::collections::hash_map::Entry::Vacant(entry) => match SourceDatabase::open(&request.source_root) {
-                Ok(db) => entry.insert(db),
-                Err(err) => {
-                    let _ = clip_db.remove_file(&clip_relative);
-                    let _ = move_sample_file(&clip_absolute, &absolute);
-                    errors.push(format!("Failed to open source database: {err}"));
-                    continue;
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                match SourceDatabase::open(&request.source_root) {
+                    Ok(db) => entry.insert(db),
+                    Err(err) => {
+                        let _ = clip_db.remove_file(&clip_relative);
+                        let _ = move_sample_file(&clip_absolute, &absolute);
+                        errors.push(format!("Failed to open source database: {err}"));
+                        continue;
+                    }
                 }
-            },
+            }
         };
         if let Err(err) = db.remove_file(&request.relative_path) {
             let _ = clip_db.remove_file(&clip_relative);

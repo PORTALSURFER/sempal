@@ -5,9 +5,7 @@ use rusqlite::Connection;
 use std::collections::{HashMap, HashSet};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::{
-    Arc,
-    Mutex,
-    RwLock,
+    Arc, Mutex, RwLock,
     atomic::AtomicU32,
     atomic::{AtomicBool, Ordering},
     mpsc::Sender,
@@ -105,7 +103,10 @@ pub(super) fn spawn_decoder_worker(
                 continue;
             }
             if log_jobs {
-                eprintln!("analysis decode start: {} ({})", job.sample_id, job.job_type);
+                eprintln!(
+                    "analysis decode start: {} ({})",
+                    job.sample_id, job.job_type
+                );
             }
             let heartbeat = if job.job_type == analysis_db::ANALYZE_SAMPLE_JOB_TYPE {
                 Some(db::spawn_decode_heartbeat(
@@ -216,7 +217,10 @@ pub(super) fn spawn_compute_worker(
                 .unwrap_or_else(|| crate::analysis::version::analysis_version().to_string());
             let mut decoded_batches: HashMap<
                 std::path::PathBuf,
-                Vec<(analysis_db::ClaimedJob, crate::analysis::audio::AnalysisAudio)>,
+                Vec<(
+                    analysis_db::ClaimedJob,
+                    crate::analysis::audio::AnalysisAudio,
+                )>,
             > = HashMap::new();
             let mut immediate_jobs: Vec<(analysis_db::ClaimedJob, Result<(), String>)> = Vec::new();
 
@@ -241,15 +245,17 @@ pub(super) fn spawn_compute_worker(
                     continue;
                 }
                 if log_jobs {
-                    eprintln!("analysis run start: {} ({})", work.job.sample_id, work.job.job_type);
+                    eprintln!(
+                        "analysis run start: {} ({})",
+                        work.job.sample_id, work.job.job_type
+                    );
                 }
                 let job_fallback = work.job.clone();
                 let mut batch_job: Option<(
                     analysis_db::ClaimedJob,
                     crate::analysis::audio::AnalysisAudio,
                 )> = None;
-                let mut immediate_job: Option<(analysis_db::ClaimedJob, Result<(), String>)> =
-                    None;
+                let mut immediate_job: Option<(analysis_db::ClaimedJob, Result<(), String>)> = None;
 
                 let outcome = catch_unwind(AssertUnwindSafe(|| {
                     let conn = match db::open_connection_with_retry(

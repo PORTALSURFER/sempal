@@ -61,7 +61,11 @@ impl EguiApp {
         let palette = style::palette();
         let state = &mut self.controller.ui.hints;
         ui.set_min_width(520.0);
-        ui.label(RichText::new(&state.title).strong().color(palette.text_primary));
+        ui.label(
+            RichText::new(&state.title)
+                .strong()
+                .color(palette.text_primary),
+        );
         ui.add_space(8.0);
         ui.label(RichText::new(&state.body).color(palette.text_primary));
         ui.add_space(12.0);

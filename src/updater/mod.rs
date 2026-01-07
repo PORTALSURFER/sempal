@@ -9,8 +9,8 @@ mod check;
 mod fs_ops;
 mod github;
 
-use std::path::{Path, PathBuf};
 use std::path::Component;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -23,8 +23,7 @@ pub const APP_NAME: &str = "sempal";
 /// Canonical GitHub repository slug (`OWNER/REPO`) used for update checks.
 pub const REPO_SLUG: &str = "PORTALSURFER/sempal";
 /// Base64-encoded Ed25519 public key used to verify checksum signatures.
-pub(crate) const CHECKSUMS_PUBLIC_KEY_BASE64: &str =
-    "kicipwnHITr+xoX96bXvp85X2el7+2JyVsYldhtRWDY=";
+pub(crate) const CHECKSUMS_PUBLIC_KEY_BASE64: &str = "kicipwnHITr+xoX96bXvp85X2el7+2JyVsYldhtRWDY=";
 
 /// Update channel selection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -221,16 +220,12 @@ fn sanitize_relative_path(name: &str) -> Result<PathBuf, UpdateError> {
                 saw_component = true;
             }
             Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
-                return Err(UpdateError::Invalid(format!(
-                    "Invalid update path: {name}"
-                )));
+                return Err(UpdateError::Invalid(format!("Invalid update path: {name}")));
             }
         }
     }
     if !saw_component {
-        return Err(UpdateError::Invalid(format!(
-            "Invalid update path: {name}"
-        )));
+        return Err(UpdateError::Invalid(format!("Invalid update path: {name}")));
     }
     Ok(sanitized)
 }

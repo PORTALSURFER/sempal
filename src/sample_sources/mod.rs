@@ -11,11 +11,11 @@ pub mod library;
 pub mod scan_state;
 pub mod scanner;
 
+pub(crate) use audio_support::{is_supported_audio, supported_audio_where_clause};
 pub use collections::{Collection, CollectionId};
 pub use db::{DB_FILE_NAME, SampleTag, SourceDatabase, SourceDbError, WavEntry};
 pub use scan_state::ScanTracker;
 pub use scanner::{ScanError, ScanMode, ScanStats};
-pub(crate) use audio_support::{is_supported_audio, supported_audio_where_clause};
 
 /// Identifier for a configured sample source.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]

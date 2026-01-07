@@ -3,9 +3,9 @@ use std::{env, path::Path};
 use crate::{APP_NAME, APP_PUBLISHER, UNINSTALL_KEY};
 
 #[cfg(target_os = "windows")]
-use winreg::enums::{HKEY_CURRENT_USER};
-#[cfg(target_os = "windows")]
 use winreg::RegKey;
+#[cfg(target_os = "windows")]
+use winreg::enums::HKEY_CURRENT_USER;
 
 pub(crate) fn register_uninstall_entry(install_dir: &Path) -> Result<(), String> {
     #[cfg(target_os = "windows")]

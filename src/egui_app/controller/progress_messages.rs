@@ -8,8 +8,7 @@ const SIMILARITY_FINALIZE_LABEL: &str = "Finalizing similarity prep";
 const SIMILARITY_SCAN_DETAIL: &str = "Scanning source…";
 const SIMILARITY_ANALYSIS_DETAIL: &str = "Analyzing…";
 const SIMILARITY_EMBEDDING_DETAIL: &str = "Embedding backfill…";
-const SIMILARITY_FINALIZE_DETAIL: &str =
-    "Building UMAP layout, clustering, and ANN index…";
+const SIMILARITY_FINALIZE_DETAIL: &str = "Building UMAP layout, clustering, and ANN index…";
 const WAV_LOAD_LABEL: &str = "Loading samples";
 
 impl EguiController {

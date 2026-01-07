@@ -1,7 +1,7 @@
 mod scan;
 mod scan_db_sync;
-mod scan_diff_phase;
 mod scan_diff;
+mod scan_diff_phase;
 mod scan_fs;
 mod scan_walk;
 

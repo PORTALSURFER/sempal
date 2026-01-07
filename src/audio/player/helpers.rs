@@ -3,19 +3,23 @@ use std::time::{Duration, Instant};
 
 use rodio::{OutputStream, Sink, Source};
 
-use super::AudioPlayer;
-use super::super::fade::{FadeOutHandle, FadeOutOnRequest, fade_frames_for_duration};
 #[cfg(test)]
 use super::super::DEFAULT_ANTI_CLIP_FADE;
 #[cfg(test)]
 use super::super::fade::{EdgeFade, fade_duration};
+use super::super::fade::{FadeOutHandle, FadeOutOnRequest, fade_frames_for_duration};
 #[cfg(test)]
 use super::super::mixer::{decoder_from_bytes, map_seek_error};
+use super::AudioPlayer;
 
 impl AudioPlayer {
     pub(super) fn effective_volume(&self) -> f32 {
         let volume = self.volume * self.playback_gain;
-        if volume.is_finite() { volume.max(0.0) } else { 0.0 }
+        if volume.is_finite() {
+            volume.max(0.0)
+        } else {
+            0.0
+        }
     }
 
     pub(super) fn reset_playback_state(&mut self) {
@@ -87,7 +91,11 @@ impl AudioPlayer {
         if duration <= 0.0 {
             return Err("Load a .wav file first".into());
         }
-        let (start, end) = if start <= end { (start, end) } else { (end, start) };
+        let (start, end) = if start <= end {
+            (start, end)
+        } else {
+            (end, start)
+        };
         let clamped_start = start.clamp(0.0, 1.0) * duration;
         let clamped_end = end.clamp(0.0, 1.0) * duration;
         let mut bounded_start = clamped_start.min(duration);

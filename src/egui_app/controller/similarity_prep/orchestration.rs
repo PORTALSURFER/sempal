@@ -1,6 +1,8 @@
 use super::plan::plan_similarity_prep_start;
 use super::store::DbSimilarityPrepStore;
-use crate::egui_app::controller::{analysis_jobs, EguiController, SimilarityPrepStage, StatusMessage};
+use crate::egui_app::controller::{
+    EguiController, SimilarityPrepStage, StatusMessage, analysis_jobs,
+};
 use crate::egui_app::ui::style::StatusTone;
 
 impl EguiController {

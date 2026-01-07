@@ -136,7 +136,10 @@ mod tests {
     #[test]
     fn selection_rect_clamps_to_zero_width_when_offscreen() {
         let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(120.0, 12.0));
-        let view = WaveformView { start: 0.5, end: 1.0 };
+        let view = WaveformView {
+            start: 0.5,
+            end: 1.0,
+        };
         let selection = SelectionRange::new(0.0, 0.1);
         let selection_rect = selection_rect_for_view(selection, rect, view, view.width());
         assert!((selection_rect.width() - 0.0).abs() < 1.0e-6);
@@ -145,7 +148,10 @@ mod tests {
     #[test]
     fn loop_bar_rect_clamps_to_view_bounds() {
         let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(80.0, 12.0));
-        let view = WaveformView { start: 0.5, end: 1.0 };
+        let view = WaveformView {
+            start: 0.5,
+            end: 1.0,
+        };
         let selection = SelectionRange::new(0.0, 0.25);
         let bar_rect = loop_bar_rect(rect, view, view.width(), Some(selection), 12.0);
         assert!((bar_rect.left() - rect.left()).abs() < 1.0e-6);

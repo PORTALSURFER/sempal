@@ -32,10 +32,9 @@ impl EguiController {
         };
         self.build_folder_rows(&snapshot);
         match slot {
-            Some(slot) => self.set_status(
-                format!("Bound hotkey {slot} to '{name}'"),
-                StatusTone::Info,
-            ),
+            Some(slot) => {
+                self.set_status(format!("Bound hotkey {slot} to '{name}'"), StatusTone::Info)
+            }
             None => self.set_status(format!("Cleared hotkey for '{name}'"), StatusTone::Info),
         }
     }
@@ -66,7 +65,9 @@ impl EguiController {
         let Some(model) = self.current_folder_model_mut() else {
             return Err("Select a source first".into());
         };
-        model.hotkeys.retain(|key, path| *key != slot.unwrap_or(255) && path != folder);
+        model
+            .hotkeys
+            .retain(|key, path| *key != slot.unwrap_or(255) && path != folder);
         if let Some(slot) = slot {
             model.hotkeys.insert(slot, folder.to_path_buf());
         }
@@ -184,5 +185,8 @@ impl EguiController {
 
 enum FolderHotkeyTarget {
     Missing,
-    Ready { source: SampleSource, folder: PathBuf },
+    Ready {
+        source: SampleSource,
+        folder: PathBuf,
+    },
 }

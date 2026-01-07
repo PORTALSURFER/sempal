@@ -157,14 +157,11 @@ fn load_container_index(
         return Ok(None);
     }
     let temp_dir = temp_unpack_dir()?;
-    let unpack = match container::unpack_container(
-        index_path,
-        temp_dir.path(),
-        TEMP_UNPACK_BASENAME,
-    ) {
-        Ok(unpack) => unpack,
-        Err(_) => return Ok(None),
-    };
+    let unpack =
+        match container::unpack_container(index_path, temp_dir.path(), TEMP_UNPACK_BASENAME) {
+            Ok(unpack) => unpack,
+            Err(_) => return Ok(None),
+        };
     if unpack.model_id != params.model_id {
         return Ok(None);
     }
@@ -266,11 +263,7 @@ fn load_legacy_outcome(
     Ok(None)
 }
 
-fn update_index_path(
-    mut state: AnnIndexState,
-    index_path: &PathBuf,
-    force: bool,
-) -> AnnIndexState {
+fn update_index_path(mut state: AnnIndexState, index_path: &PathBuf, force: bool) -> AnnIndexState {
     if force {
         state.index_path = index_path.clone();
     }
@@ -286,12 +279,7 @@ fn build_loaded_state(
     if hnsw.get_nb_point() != id_map.len() {
         return Ok(None);
     }
-    Ok(Some(build_state(
-        params.clone(),
-        hnsw,
-        id_map,
-        index_path,
-    )))
+    Ok(Some(build_state(params.clone(), hnsw, id_map, index_path)))
 }
 
 fn temp_unpack_dir() -> Result<tempfile::TempDir, String> {

@@ -3,8 +3,7 @@ use crate::egui_app::controller::analysis_jobs::types::{AnalysisJobMessage, Anal
 use crate::egui_app::controller::jobs::JobMessage;
 use rusqlite::Connection;
 use std::sync::{
-    Arc,
-    RwLock,
+    Arc, RwLock,
     atomic::{AtomicBool, Ordering},
     mpsc::Sender,
 };
@@ -64,7 +63,12 @@ fn current_progress_all(
     progress_cache: &Arc<RwLock<ProgressCache>>,
     refresh_cache: bool,
 ) -> AnalysisProgress {
-    if refresh_cache || progress_cache.read().map(|cache| cache.is_empty()).unwrap_or(true) {
+    if refresh_cache
+        || progress_cache
+            .read()
+            .map(|cache| cache.is_empty())
+            .unwrap_or(true)
+    {
         let mut total = AnalysisProgress::default();
         let mut updates = Vec::new();
         for source in sources {
@@ -146,7 +150,9 @@ pub(super) fn spawn_progress_poller(
     tx: Sender<JobMessage>,
     cancel: Arc<AtomicBool>,
     shutdown: Arc<AtomicBool>,
-    allowed_source_ids: Arc<RwLock<Option<std::collections::HashSet<crate::sample_sources::SourceId>>>>,
+    allowed_source_ids: Arc<
+        RwLock<Option<std::collections::HashSet<crate::sample_sources::SourceId>>>,
+    >,
     progress_cache: Arc<RwLock<ProgressCache>>,
 ) -> JoinHandle<()> {
     std::thread::spawn(move || {
@@ -223,7 +229,10 @@ pub(super) fn spawn_progress_poller(
     })
 }
 
-fn should_refresh_db(last_db_refresh: Instant, progress_cache: &Arc<RwLock<ProgressCache>>) -> bool {
+fn should_refresh_db(
+    last_db_refresh: Instant,
+    progress_cache: &Arc<RwLock<ProgressCache>>,
+) -> bool {
     if last_db_refresh.elapsed() >= DB_REFRESH_INTERVAL {
         return true;
     }
@@ -325,10 +334,7 @@ mod tests {
     #[test]
     fn should_refresh_db_when_cache_empty_or_stale() {
         let cache = Arc::new(RwLock::new(ProgressCache::default()));
-        assert!(should_refresh_db(
-            Instant::now(),
-            &cache
-        ));
+        assert!(should_refresh_db(Instant::now(), &cache));
 
         let mut cache_guard = cache.write().unwrap();
         cache_guard.update(
@@ -337,10 +343,7 @@ mod tests {
         );
         drop(cache_guard);
 
-        assert!(!should_refresh_db(
-            Instant::now(),
-            &cache
-        ));
+        assert!(!should_refresh_db(Instant::now(), &cache));
         assert!(should_refresh_db(
             Instant::now() - DB_REFRESH_INTERVAL - Duration::from_millis(1),
             &cache

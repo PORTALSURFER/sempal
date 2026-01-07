@@ -36,8 +36,7 @@ pub(crate) fn read_meta(
 
 /// Insert or update ANN metadata for the current state.
 pub(crate) fn upsert_meta(conn: &Connection, state: &AnnIndexState) -> Result<(), String> {
-    let params_json =
-        serde_json::to_string(&state.params).map_err(|err| format!("{err}"))?;
+    let params_json = serde_json::to_string(&state.params).map_err(|err| format!("{err}"))?;
     let now = chrono_now_epoch_seconds();
     conn.execute(
         "INSERT INTO ann_index_meta (model_id, index_path, count, params_json, updated_at)

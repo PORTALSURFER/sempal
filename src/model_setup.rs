@@ -61,9 +61,8 @@ pub fn ensure_panns_burnpack(options: PannsSetupOptions) -> Result<PathBuf, Stri
     }
 
     if !onnx_path.exists() || options.force {
-        let url = resolve_onnx_url(options.onnx_url.as_deref()).ok_or_else(|| {
-            "Missing PANNs ONNX URL; set SEMPAL_PANNS_ONNX_URL.".to_string()
-        })?;
+        let url = resolve_onnx_url(options.onnx_url.as_deref())
+            .ok_or_else(|| "Missing PANNs ONNX URL; set SEMPAL_PANNS_ONNX_URL.".to_string())?;
         let allowed_hosts = resolve_allowed_hosts();
         validate_onnx_url(&url, &allowed_hosts)?;
         let expected_sha256 = resolve_onnx_sha256(options.onnx_sha256.as_deref())?;
@@ -120,8 +119,12 @@ fn resolve_models_dir(override_dir: Option<PathBuf>) -> Result<PathBuf, String> 
         None => app_dirs::app_root_dir().map_err(|err| err.to_string())?,
     };
     let models_dir = root.join("models");
-    fs::create_dir_all(&models_dir)
-        .map_err(|err| format!("Failed to create models dir {}: {err}", models_dir.display()))?;
+    fs::create_dir_all(&models_dir).map_err(|err| {
+        format!(
+            "Failed to create models dir {}: {err}",
+            models_dir.display()
+        )
+    })?;
     Ok(models_dir)
 }
 
@@ -217,8 +220,8 @@ fn download_to_path(url: &str, dest: &Path, expected_sha256: &str) -> Result<(),
         ));
     }
     let tmp = dest.with_extension("tmp");
-    let mut file = File::create(&tmp)
-        .map_err(|err| format!("Failed to write {}: {err}", tmp.display()))?;
+    let mut file =
+        File::create(&tmp).map_err(|err| format!("Failed to write {}: {err}", tmp.display()))?;
     http_client::copy_response_to_writer(response, &mut file, MAX_PANNS_ONNX_BYTES)
         .map_err(|err| format!("Failed to write {}: {err}", tmp.display()))?;
     file.flush()
@@ -230,8 +233,7 @@ fn download_to_path(url: &str, dest: &Path, expected_sha256: &str) -> Result<(),
             "PANNs ONNX SHA-256 mismatch: expected {expected_sha256}, got {actual_sha256}."
         ));
     }
-    fs::rename(&tmp, dest)
-        .map_err(|err| format!("Failed to move {}: {err}", dest.display()))?;
+    fs::rename(&tmp, dest).map_err(|err| format!("Failed to move {}: {err}", dest.display()))?;
     Ok(())
 }
 
@@ -239,7 +241,10 @@ fn download_optional(url: &str, dest: &Path) -> Result<(), String> {
     match http_client::agent().get(url).call() {
         Ok(response) => {
             if response.status() >= 400 {
-                return Err(format!("Failed to download {url}: HTTP {}", response.status()));
+                return Err(format!(
+                    "Failed to download {url}: HTTP {}",
+                    response.status()
+                ));
             }
             let tmp = dest.with_extension("tmp");
             let mut file = File::create(&tmp)
@@ -256,15 +261,18 @@ fn download_optional(url: &str, dest: &Path) -> Result<(), String> {
             if response.status() == 404 {
                 return Ok(());
             }
-            Err(format!("Failed to download {url}: HTTP {}", response.status()))
+            Err(format!(
+                "Failed to download {url}: HTTP {}",
+                response.status()
+            ))
         }
         Err(err) => Err(format!("Failed to download {url}: {err}")),
     }
 }
 
 fn sha256_file(path: &Path) -> Result<String, String> {
-    let mut file = File::open(path)
-        .map_err(|err| format!("Failed to read {}: {err}", path.display()))?;
+    let mut file =
+        File::open(path).map_err(|err| format!("Failed to read {}: {err}", path.display()))?;
     let mut hasher = Sha256::new();
     let mut buf = [0u8; 64 * 1024];
     loop {
@@ -312,7 +320,9 @@ fn generate_burnpack(onnx_path: &Path, models_dir: &Path) -> Result<(), String> 
 
 #[cfg(test)]
 mod tests {
-    use super::{normalize_sha256, resolve_onnx_sha256, resolve_onnx_url, sha256_file, validate_onnx_url};
+    use super::{
+        normalize_sha256, resolve_onnx_sha256, resolve_onnx_url, sha256_file, validate_onnx_url,
+    };
     use std::collections::HashSet;
     use std::io::Write;
 
@@ -350,8 +360,7 @@ mod tests {
     #[test]
     fn validate_onnx_url_rejects_unknown_host() {
         let hosts = allowed_hosts(&["example.com"]);
-        let err =
-            validate_onnx_url("https://untrusted.test/panns.onnx", &hosts).unwrap_err();
+        let err = validate_onnx_url("https://untrusted.test/panns.onnx", &hosts).unwrap_err();
         assert!(err.contains("allowlisted"));
     }
 

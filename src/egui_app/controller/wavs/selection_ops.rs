@@ -197,12 +197,10 @@ pub(super) fn set_sample_tag_for_source(
     target_tag: SampleTag,
     require_present: bool,
 ) -> Result<(), String> {
-    let db = controller
-        .database_for(source)
-        .map_err(|err| {
-            warn!(source_id = %source.id, error = %err, "triage tag: database unavailable");
-            err.to_string()
-        })?;
+    let db = controller.database_for(source).map_err(|err| {
+        warn!(source_id = %source.id, error = %err, "triage tag: database unavailable");
+        err.to_string()
+    })?;
     if require_present {
         let exists = db
             .index_for_path(path)

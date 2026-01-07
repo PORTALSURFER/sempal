@@ -1,8 +1,6 @@
 //! Runtime state and job coordination for the controller.
 
-use super::super::{
-    ScanMode, SourceDbError, SourceId, WavEntry, analysis_jobs, jobs,
-};
+use super::super::{ScanMode, SourceDbError, SourceId, WavEntry, analysis_jobs, jobs};
 use crate::sample_sources::config::PannsBackendChoice;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};

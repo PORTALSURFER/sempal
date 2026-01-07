@@ -68,14 +68,13 @@ pub(super) fn handle_selection_slide_drag(
             if let Some(slide) = app.selection_slide {
                 let cursor = to_wave_pos(pos);
                 let delta = cursor - slide.anchor;
-                let snap_step =
-                    if app.controller.ui.waveform.bpm_snap_enabled
-                        && !ui.input(|i| i.modifiers.shift)
-                    {
-                        bpm_snap_step(app)
-                    } else {
-                        None
-                    };
+                let snap_step = if app.controller.ui.waveform.bpm_snap_enabled
+                    && !ui.input(|i| i.modifiers.shift)
+                {
+                    bpm_snap_step(app)
+                } else {
+                    None
+                };
                 let mut adjusted_delta = snap_step
                     .filter(|step| step.is_finite() && *step > 0.0)
                     .map(|step| snap_delta(delta, step))
@@ -159,9 +158,7 @@ pub(super) fn handle_selection_edge_drag(
     selection_edge_x: f32,
 ) {
     let pointer_down = edge_response.is_pointer_button_down_on();
-    if edge_response.drag_started()
-        || (pointer_down && !app.controller.is_selection_dragging())
-    {
+    if edge_response.drag_started() || (pointer_down && !app.controller.is_selection_dragging()) {
         app.controller.start_selection_edge_drag(edge, alt_down);
         app.selection_edge_alt_scale = alt_down;
         if app.selection_edge_offset.is_none() {

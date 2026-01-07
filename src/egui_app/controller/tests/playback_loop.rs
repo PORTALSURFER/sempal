@@ -139,7 +139,10 @@ fn finish_selection_drag_keeps_playing_when_playhead_inside_loop() {
         return;
     };
     let updated_selection = SelectionRange::new(0.2, 0.6);
-    controller.selection_state.range.set_range(Some(updated_selection));
+    controller
+        .selection_state
+        .range
+        .set_range(Some(updated_selection));
     controller.apply_selection(Some(updated_selection));
     controller.ui.waveform.playhead.position = 0.3;
 
@@ -155,7 +158,10 @@ fn finish_selection_drag_restarts_when_playhead_outside_loop() {
         return;
     };
     let updated_selection = SelectionRange::new(0.6, 0.8);
-    controller.selection_state.range.set_range(Some(updated_selection));
+    controller
+        .selection_state
+        .range
+        .set_range(Some(updated_selection));
     controller.apply_selection(Some(updated_selection));
     controller.ui.waveform.playhead.position = 0.2;
 

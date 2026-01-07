@@ -73,10 +73,7 @@ impl EguiController {
         }
         let absolute_new = source.root.join(&new_relative);
         if absolute_new.exists() {
-            return Err(format!(
-                "Folder already exists: {}",
-                new_relative.display()
-            ));
+            return Err(format!("Folder already exists: {}", new_relative.display()));
         }
         let affected = self.folder_entries(folder);
         fs::rename(&absolute_old, &absolute_new)
