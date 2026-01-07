@@ -1,8 +1,11 @@
 use crate::app_dirs;
-use std::path::PathBuf;
+use sha2::{Digest, Sha256};
+use std::path::{Path, PathBuf};
 
 const KEYRING_SERVICE: &str = "sempal";
 const KEYRING_KEY: &str = "sempal_github_issue_token";
+const FALLBACK_ENABLE_ENV: &str = "SEMPAL_ALLOW_FALLBACK_TOKEN_STORAGE";
+const FALLBACK_SECRET_ENV: &str = "SEMPAL_FALLBACK_TOKEN_SECRET";
 
 #[derive(Debug, thiserror::Error)]
 pub enum IssueTokenStoreError {
@@ -21,13 +24,18 @@ pub enum IssueTokenStoreError {
 #[derive(Clone, Debug)]
 pub struct IssueTokenStore {
     fallback_dir: PathBuf,
+    fallback_key: Option<[u8; 32]>,
 }
 
 impl IssueTokenStore {
     pub fn new() -> Result<Self, IssueTokenStoreError> {
         let fallback_dir = app_dirs::app_root_dir()?.join("secrets");
         std::fs::create_dir_all(&fallback_dir)?;
-        Ok(Self { fallback_dir })
+        let fallback_key = fallback_key_material(&fallback_dir);
+        Ok(Self {
+            fallback_dir,
+            fallback_key,
+        })
     }
 
     pub fn get(&self) -> Result<Option<String>, IssueTokenStoreError> {
@@ -122,11 +130,8 @@ impl IssueTokenStore {
         self.fallback_dir.join("github_issue_token.bin")
     }
 
-    fn fallback_key_path(&self) -> PathBuf {
-        self.fallback_dir.join("github_issue_token.key")
-    }
-
     fn fallback_get(&self) -> Result<Option<String>, IssueTokenStoreError> {
+        let key = self.fallback_key.ok_or_else(fallback_disabled_error)?;
         let token_path = self.fallback_token_path();
         if !token_path.exists() {
             return Ok(None);
@@ -136,30 +141,16 @@ impl IssueTokenStore {
             return Err(IssueTokenStoreError::Decode("token file too short".into()));
         }
         let (nonce, ciphertext) = data.split_at(12);
-        let key_bytes = std::fs::read(self.fallback_key_path())?;
-        if key_bytes.len() != 32 {
-            return Err(IssueTokenStoreError::Decode("token key invalid".into()));
-        }
-        let plaintext = decrypt(&key_bytes, nonce, ciphertext)?;
+        let plaintext = decrypt(&key, nonce, ciphertext)?;
         let token = String::from_utf8(plaintext)
             .map_err(|err| IssueTokenStoreError::Decode(err.to_string()))?;
         Ok(Some(token))
     }
 
     fn fallback_set(&self, token: &str) -> Result<(), IssueTokenStoreError> {
-        let key_path = self.fallback_key_path();
-        let key_bytes = if key_path.exists() {
-            std::fs::read(&key_path)?
-        } else {
-            let bytes = random_bytes(32)?;
-            write_private_file(&key_path, &bytes)?;
-            bytes
-        };
-        if key_bytes.len() != 32 {
-            return Err(IssueTokenStoreError::Decode("token key invalid".into()));
-        }
+        let key = self.fallback_key.ok_or_else(fallback_disabled_error)?;
         let nonce = random_bytes(12)?;
-        let ciphertext = encrypt(&key_bytes, &nonce, token.as_bytes())?;
+        let ciphertext = encrypt(&key, &nonce, token.as_bytes())?;
         let mut payload = Vec::with_capacity(nonce.len() + ciphertext.len());
         payload.extend_from_slice(&nonce);
         payload.extend_from_slice(&ciphertext);
@@ -169,7 +160,6 @@ impl IssueTokenStore {
 
     fn fallback_delete(&self) -> Result<(), IssueTokenStoreError> {
         let _ = std::fs::remove_file(self.fallback_token_path());
-        let _ = std::fs::remove_file(self.fallback_key_path());
         Ok(())
     }
 }
@@ -178,6 +168,48 @@ fn keyring_disabled() -> bool {
     std::env::var("SEMPAL_DISABLE_KEYRING")
         .map(|value| value == "1" || value.eq_ignore_ascii_case("true"))
         .unwrap_or(false)
+}
+
+fn fallback_opt_in() -> bool {
+    std::env::var(FALLBACK_ENABLE_ENV)
+        .map(|value| value == "1" || value.eq_ignore_ascii_case("true"))
+        .unwrap_or(false)
+}
+
+fn fallback_key_material(fallback_dir: &Path) -> Option<[u8; 32]> {
+    if !fallback_opt_in() {
+        return None;
+    }
+    match std::env::var(FALLBACK_SECRET_ENV) {
+        Ok(secret) if !secret.is_empty() => Some(derive_fallback_key(&secret, fallback_dir)),
+        _ => {
+            eprintln!(
+                "Warning: fallback token storage enabled ({}), but {} is not set; fallback disabled.",
+                FALLBACK_ENABLE_ENV, FALLBACK_SECRET_ENV
+            );
+            None
+        }
+    }
+}
+
+fn derive_fallback_key(secret: &str, fallback_dir: &Path) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(secret.as_bytes());
+    hasher.update(b":");
+    hasher.update(fallback_dir.as_os_str().to_string_lossy().as_bytes());
+    let result = hasher.finalize();
+    let mut key = [0u8; 32];
+    key.copy_from_slice(&result);
+    key
+}
+
+fn fallback_disabled_error() -> IssueTokenStoreError {
+    IssueTokenStoreError::Unavailable(
+        "Fallback token storage disabled; set \
+         SEMPAL_ALLOW_FALLBACK_TOKEN_STORAGE=1 and \
+         SEMPAL_FALLBACK_TOKEN_SECRET to enable an encrypted fallback."
+            .to_string(),
+    )
 }
 
 fn random_bytes(len: usize) -> Result<Vec<u8>, IssueTokenStoreError> {
@@ -189,7 +221,7 @@ fn random_bytes(len: usize) -> Result<Vec<u8>, IssueTokenStoreError> {
     Ok(out)
 }
 
-fn write_private_file(path: &PathBuf, bytes: &[u8]) -> Result<(), IssueTokenStoreError> {
+fn write_private_file(path: &Path, bytes: &[u8]) -> Result<(), IssueTokenStoreError> {
     use std::io::Write;
     let mut file = std::fs::OpenOptions::new()
         .create(true)
@@ -202,7 +234,30 @@ fn write_private_file(path: &PathBuf, bytes: &[u8]) -> Result<(), IssueTokenStor
         use std::os::unix::fs::PermissionsExt;
         let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
     }
+    #[cfg(target_os = "windows")]
+    {
+        harden_windows_permissions(path);
+    }
     Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn harden_windows_permissions(path: &Path) {
+    use std::os::windows::ffi::OsStrExt;
+    use windows::{
+        Win32::Storage::FileSystem::{
+            FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_READONLY, SetFileAttributesW,
+        },
+        core::PCWSTR,
+    };
+    let mut wide: Vec<u16> = path.as_os_str().encode_wide().collect();
+    wide.push(0);
+    let _ = unsafe {
+        SetFileAttributesW(
+            PCWSTR(wide.as_ptr()),
+            FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_READONLY,
+        )
+    };
 }
 
 fn encrypt(key: &[u8], nonce: &[u8], plaintext: &[u8]) -> Result<Vec<u8>, IssueTokenStoreError> {
@@ -234,6 +289,8 @@ mod tests {
     fn fallback_roundtrip_when_keyring_disabled() {
         unsafe {
             std::env::set_var("SEMPAL_DISABLE_KEYRING", "1");
+            std::env::set_var(FALLBACK_ENABLE_ENV, "1");
+            std::env::set_var(FALLBACK_SECRET_ENV, "super_secret_token_key");
         }
         let base = tempdir().unwrap();
         let _guard = app_dirs::ConfigBaseGuard::set(base.path().to_path_buf());
@@ -248,6 +305,8 @@ mod tests {
         assert_eq!(store.get().unwrap(), None);
         unsafe {
             std::env::remove_var("SEMPAL_DISABLE_KEYRING");
+            std::env::remove_var(FALLBACK_ENABLE_ENV);
+            std::env::remove_var(FALLBACK_SECRET_ENV);
         }
     }
 }
