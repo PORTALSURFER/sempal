@@ -68,6 +68,11 @@ fn parse_model_setup_args() -> Option<PannsSetupOptions> {
                     options.onnx_url = Some(value);
                 }
             }
+            "--onnx-sha256" => {
+                if let Some(value) = args.next() {
+                    options.onnx_sha256 = Some(value);
+                }
+            }
             "--models-dir" => {
                 if let Some(value) = args.next() {
                     options.models_dir = Some(std::path::PathBuf::from(value));

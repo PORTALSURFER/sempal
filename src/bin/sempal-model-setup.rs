@@ -12,6 +12,11 @@ fn main() {
                     options.onnx_url = Some(value);
                 }
             }
+            "--onnx-sha256" => {
+                if let Some(value) = args.next() {
+                    options.onnx_sha256 = Some(value);
+                }
+            }
             "--models-dir" => {
                 if let Some(value) = args.next() {
                     options.models_dir = Some(PathBuf::from(value));
@@ -41,6 +46,6 @@ fn main() {
 
 fn print_help() {
     println!(
-        "Usage: sempal-model-setup [--onnx-url <url>] [--models-dir <path>] [--force]"
+        "Usage: sempal-model-setup [--onnx-url <url>] [--onnx-sha256 <hex>] [--models-dir <path>] [--force]"
     );
 }

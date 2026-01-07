@@ -39,6 +39,9 @@ Audio sample triage and collection building tool built with Rust and egui.
 - Override locations if needed:
   - `SEMPAL_PANNS_ONNX_PATH` for the ONNX path
   - `SEMPAL_MODELS_DIR` for the models directory
+- When downloading the ONNX model, provide an allowlisted HTTPS URL and its SHA-256 hash:
+  - `SEMPAL_PANNS_ONNX_URL` and `SEMPAL_PANNS_ONNX_SHA256`
+  - Override allowed hosts with `SEMPAL_PANNS_ONNX_ALLOWED_HOSTS` (comma-separated)
 
 ## Building the Windows installer bundle
 

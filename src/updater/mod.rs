@@ -10,6 +10,7 @@ mod fs_ops;
 mod github;
 
 use std::path::{Path, PathBuf};
+use std::path::Component;
 
 use serde::{Deserialize, Serialize};
 
@@ -195,11 +196,11 @@ fn expected_checksums_signature_name(
 }
 
 fn ensure_child_path(dir: &Path, name: &str) -> Result<PathBuf, UpdateError> {
-    let candidate = dir.join(name);
+    let relative = sanitize_relative_path(name)?;
     let dir = dir
         .canonicalize()
         .map_err(|err| UpdateError::Invalid(format!("Invalid install dir: {err}")))?;
-    let candidate = candidate.canonicalize().unwrap_or(candidate);
+    let candidate = dir.join(relative);
     if !candidate.starts_with(&dir) {
         return Err(UpdateError::Invalid(format!(
             "Refusing to write outside install dir: {}",
@@ -207,4 +208,61 @@ fn ensure_child_path(dir: &Path, name: &str) -> Result<PathBuf, UpdateError> {
         )));
     }
     Ok(candidate)
+}
+
+fn sanitize_relative_path(name: &str) -> Result<PathBuf, UpdateError> {
+    let mut sanitized = PathBuf::new();
+    let mut saw_component = false;
+    for component in Path::new(name).components() {
+        match component {
+            Component::CurDir => {}
+            Component::Normal(part) => {
+                sanitized.push(part);
+                saw_component = true;
+            }
+            Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
+                return Err(UpdateError::Invalid(format!(
+                    "Invalid update path: {name}"
+                )));
+            }
+        }
+    }
+    if !saw_component {
+        return Err(UpdateError::Invalid(format!(
+            "Invalid update path: {name}"
+        )));
+    }
+    Ok(sanitized)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn ensure_child_path_rejects_parent_dir() {
+        let dir = tempdir().unwrap();
+        let err = ensure_child_path(dir.path(), "../evil.txt").unwrap_err();
+        assert!(err.to_string().contains("Invalid update path"));
+    }
+
+    #[test]
+    fn ensure_child_path_rejects_absolute_path() {
+        let dir = tempdir().unwrap();
+        #[cfg(windows)]
+        let name = "C:\\evil.txt";
+        #[cfg(not(windows))]
+        let name = "/tmp/evil.txt";
+        let err = ensure_child_path(dir.path(), name).unwrap_err();
+        assert!(err.to_string().contains("Invalid update path"));
+    }
+
+    #[test]
+    fn ensure_child_path_allows_relative_path() {
+        let dir = tempdir().unwrap();
+        let path = ensure_child_path(dir.path(), "./ok/file.txt").unwrap();
+        assert!(path.starts_with(dir.path()));
+        assert!(path.ends_with("ok/file.txt"));
+    }
 }
