@@ -10,7 +10,7 @@ use std::path::Path;
 pub(in super::super) struct BrowserSearchCache {
     source_id: Option<SourceId>,
     query: String,
-    scores: Vec<Option<i64>>,
+    pub(in crate::egui_app::controller) scores: Vec<Option<i64>>,
     scratch: Vec<(usize, i64)>,
     matcher: SkimMatcherV2,
 }
@@ -179,6 +179,10 @@ impl EguiController {
         )
     }
 
+    pub(super) fn should_offload_search(&self) -> bool {
+        self.wav_entries_len() > 5000
+    }
+
     #[allow(dead_code)]
     fn browser_filter_accepts(&self, tag: SampleTag) -> bool {
         match self.ui.browser.filter {
@@ -277,6 +281,30 @@ impl EguiController {
             .get(&source_id)
             .and_then(|labels| labels.get(index))
             .map(|label| label.as_str())
+    }
+
+    pub(in crate::egui_app::controller) fn dispatch_search_job(&mut self) {
+        let Some(source) = self.current_source() else {
+            return;
+        };
+        let query = self.ui.browser.search_query.clone();
+        let filter = self.ui.browser.filter;
+        let sort = self.ui.browser.sort;
+        let similar_query = self.ui.browser.similar_query.clone();
+        let folder_selection = self.folder_selection_for_filter().cloned();
+        let folder_negated = self.folder_negation_for_filter().cloned();
+
+        self.ui.browser.search_busy = true;
+        self.runtime.jobs.send_search_job(crate::egui_app::controller::jobs::SearchJob {
+            source_id: source.id.clone(),
+            source_root: source.root.clone(),
+            query,
+            filter,
+            sort,
+            similar_query,
+            folder_selection,
+            folder_negated,
+        });
     }
 }
 

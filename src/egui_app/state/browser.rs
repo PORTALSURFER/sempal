@@ -41,6 +41,8 @@ pub struct SampleBrowserState {
     pub rename_focus_requested: bool,
     /// Active tab in the sample browser area.
     pub active_tab: SampleBrowserTab,
+    /// True when a background search/filter job is running.
+    pub search_busy: bool,
 }
 
 impl Default for SampleBrowserState {
@@ -68,6 +70,7 @@ impl Default for SampleBrowserState {
             pending_action: None,
             rename_focus_requested: false,
             active_tab: SampleBrowserTab::List,
+            search_busy: false,
         }
     }
 }
@@ -143,6 +146,20 @@ impl VisibleRows {
 
     pub fn clear_to_list(&mut self) {
         *self = VisibleRows::List(Vec::new());
+    }
+
+    pub fn iter(&self) -> Box<dyn Iterator<Item = usize> + '_> {
+        match self {
+            VisibleRows::All { total } => Box::new(0..*total),
+            VisibleRows::List(rows) => Box::new(rows.iter().copied()),
+        }
+    }
+
+    pub fn position(&self, index: usize) -> Option<usize> {
+        match self {
+            VisibleRows::All { total } => (index < *total).then_some(index),
+            VisibleRows::List(rows) => rows.iter().position(|i| *i == index),
+        }
     }
 }
 

@@ -9,6 +9,7 @@ mod browser_actions;
 mod browser_history;
 mod browser_lists;
 mod browser_search;
+pub(super) mod browser_search_worker;
 mod feature_cache;
 mod selection_ops;
 mod similar;

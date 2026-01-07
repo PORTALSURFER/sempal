@@ -3,6 +3,7 @@ use super::{
     ScanJobMessage, SourceId, UpdateCheckResult, WavLoadJob, WavLoadResult, trash_move,
 };
 use std::{
+    collections::BTreeSet,
     path::PathBuf,
     sync::{
         Arc,
@@ -29,6 +30,30 @@ pub(super) enum JobMessage {
     UpdateChecked(UpdateCheckResult),
     IssueGatewayCreated(IssueGatewayCreateResult),
     IssueGatewayAuthed(IssueGatewayAuthResult),
+    BrowserSearchFinished(SearchResult),
+}
+
+#[derive(Debug)]
+pub(super) struct SearchJob {
+    pub(super) source_id: SourceId,
+    pub(super) source_root: PathBuf,
+    pub(super) query: String,
+    pub(super) filter: crate::egui_app::state::TriageFlagFilter,
+    pub(super) sort: crate::egui_app::state::SampleBrowserSort,
+    pub(super) similar_query: Option<crate::egui_app::state::SimilarQuery>,
+    pub(super) folder_selection: Option<BTreeSet<PathBuf>>,
+    pub(super) folder_negated: Option<BTreeSet<PathBuf>>,
+}
+
+#[derive(Debug)]
+pub(super) struct SearchResult {
+    pub(super) source_id: SourceId,
+    pub(super) query: String,
+    pub(super) visible: crate::egui_app::state::VisibleRows,
+    pub(super) trash: Vec<usize>,
+    pub(super) neutral: Vec<usize>,
+    pub(super) keep: Vec<usize>,
+    pub(super) scores: Vec<Option<i64>>,
 }
 
 #[derive(Debug)]
@@ -115,6 +140,7 @@ pub(super) struct AnalysisFailuresResult {
 pub(super) struct ControllerJobs {
     pub(super) wav_job_tx: Sender<WavLoadJob>,
     pub(super) audio_job_tx: Sender<AudioLoadJob>,
+    pub(super) search_job_tx: Sender<SearchJob>,
     message_tx: Sender<JobMessage>,
     message_rx: Receiver<JobMessage>,
     pub(super) pending_source: Option<SourceId>,
@@ -140,11 +166,14 @@ impl ControllerJobs {
         wav_job_rx: Receiver<WavLoadResult>,
         audio_job_tx: Sender<AudioLoadJob>,
         audio_job_rx: Receiver<AudioLoadResult>,
+        search_job_tx: Sender<SearchJob>,
+        search_job_rx: Receiver<SearchResult>,
     ) -> Self {
         let (message_tx, message_rx) = std::sync::mpsc::channel::<JobMessage>();
         let jobs = Self {
             wav_job_tx,
             audio_job_tx,
+            search_job_tx,
             message_tx,
             message_rx,
             pending_source: None,
@@ -165,6 +194,7 @@ impl ControllerJobs {
         };
         jobs.forward_wav_results(wav_job_rx);
         jobs.forward_audio_results(audio_job_rx);
+        jobs.forward_search_results(search_job_rx);
         jobs
     }
 
@@ -190,6 +220,15 @@ impl ControllerJobs {
         thread::spawn(move || {
             while let Ok(message) = rx.recv() {
                 let _ = tx.send(JobMessage::AudioLoaded(message));
+            }
+        });
+    }
+
+    pub(super) fn forward_search_results(&self, rx: Receiver<SearchResult>) {
+        let tx = self.message_tx.clone();
+        thread::spawn(move || {
+            while let Ok(message) = rx.recv() {
+                let _ = tx.send(JobMessage::BrowserSearchFinished(message));
             }
         });
     }
@@ -246,6 +285,10 @@ impl ControllerJobs {
 
     pub(super) fn send_audio_job(&self, job: AudioLoadJob) -> Result<(), ()> {
         self.audio_job_tx.send(job).map_err(|_| ())
+    }
+
+    pub(super) fn send_search_job(&self, job: SearchJob) {
+        let _ = self.search_job_tx.send(job);
     }
 
     pub(super) fn scan_in_progress(&self) -> bool {

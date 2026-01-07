@@ -220,6 +220,26 @@ impl EguiController {
                 JobMessage::IssueGatewayAuthed(message) => {
                     updates::handle_issue_gateway_authed(self, message);
                 }
+                JobMessage::BrowserSearchFinished(message) => {
+                    if Some(&message.source_id) == self.selection_state.ctx.selected_source.as_ref()
+                        && message.query == self.ui.browser.search_query
+                    {
+                        self.ui.browser.visible = message.visible;
+                        self.ui.browser.trash = message.trash;
+                        self.ui.browser.neutral = message.neutral;
+                        self.ui.browser.keep = message.keep;
+                        self.ui_cache.browser.search.scores = message.scores;
+                        self.ui.browser.search_busy = false;
+
+                        // Re-sync selection/loaded hints for the new visible list
+                        let focused_index = self.selected_row_index();
+                        let loaded_index = self.loaded_row_index();
+                        self.ui.browser.selected_visible = focused_index
+                            .and_then(|idx| self.ui.browser.visible.position(idx));
+                        self.ui.browser.loaded_visible = loaded_index
+                            .and_then(|idx| self.ui.browser.visible.position(idx));
+                    }
+                }
             }
         }
     }

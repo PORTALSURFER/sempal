@@ -117,7 +117,15 @@ impl EguiController {
     pub fn new(renderer: WaveformRenderer, player: Option<Rc<RefCell<AudioPlayer>>>) -> Self {
         let (wav_job_tx, wav_job_rx) = wav_entries_loader::spawn_wav_loader();
         let (audio_job_tx, audio_job_rx) = audio_loader::spawn_audio_loader(renderer.clone());
-        let jobs = jobs::ControllerJobs::new(wav_job_tx, wav_job_rx, audio_job_tx, audio_job_rx);
+        let (search_job_tx, search_job_rx) = wavs::browser_search_worker::spawn_search_worker();
+        let jobs = jobs::ControllerJobs::new(
+            wav_job_tx,
+            wav_job_rx,
+            audio_job_tx,
+            audio_job_rx,
+            search_job_tx,
+            search_job_rx,
+        );
         let analysis = AnalysisWorkerPool::new();
         Self {
             ui: UiState::default(),

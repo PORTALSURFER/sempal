@@ -18,6 +18,12 @@ impl EguiController {
         let loaded_index = highlight_selection
             .then_some(self.loaded_row_index())
             .flatten();
+
+        if self.should_offload_search() {
+            self.dispatch_search_job();
+            return;
+        }
+
         self.reset_browser_ui();
         let mut trash = Vec::new();
         let mut neutral = Vec::new();
@@ -86,6 +92,7 @@ impl EguiController {
         self.ui.browser.keep.clear();
         self.ui.browser.visible.clear_to_list();
         self.ui.browser.selected_visible = None;
+        self.ui.browser.search_busy = false;
         if collections_selected {
             self.ui.browser.selected = None;
         }

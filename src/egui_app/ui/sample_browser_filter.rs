@@ -40,6 +40,9 @@ impl EguiApp {
             if response.changed() {
                 self.controller.set_browser_search(query);
             }
+            if self.controller.ui.browser.search_busy {
+                ui.add(egui::Spinner::new().size(16.0));
+            }
 
             ui.add_space(ui.spacing().item_spacing.x);
             let selected_row = self.controller.ui.browser.selected_visible;
