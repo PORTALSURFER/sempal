@@ -36,22 +36,31 @@ pub(super) fn run_trash_move_task(
     cancel: Arc<AtomicBool>,
     sender: Option<&Sender<TrashMoveMessage>>,
 ) -> TrashMoveFinished {
-    run_trash_move_task_with_progress(sources, collections, trash_root, cancel, |message| {
-        if let Some(tx) = sender {
-            let _ = tx.send(message);
-        }
-    })
+    run_trash_move_task_with_progress(
+        sources,
+        collections,
+        trash_root,
+        cancel,
+        |message| {
+            if let Some(tx) = sender {
+                let _ = tx.send(message);
+            }
+        },
+        move_to_trash,
+    )
 }
 
-pub(super) fn run_trash_move_task_with_progress<F>(
+pub(super) fn run_trash_move_task_with_progress<F, M>(
     sources: Vec<SampleSource>,
     mut collections: Vec<Collection>,
     trash_root: PathBuf,
     cancel: Arc<AtomicBool>,
     mut on_message: F,
+    mut mover: M,
 ) -> TrashMoveFinished
 where
     F: FnMut(TrashMoveMessage),
+    M: FnMut(&SampleSource, &WavEntry, &Path) -> Result<(), String>,
 {
     let mut errors = Vec::new();
     let mut trashed_by_source: Vec<(SampleSource, Vec<WavEntry>)> = Vec::new();
@@ -137,13 +146,26 @@ where
                 });
             }
 
-            match move_to_trash(&source, &entry, &trash_root) {
+            // 1. Mark as missing in database (Write-Ahead)
+            if let Err(err) = db.set_missing(&entry.relative_path, true) {
+                errors.push(format!(
+                    "Failed to mark {} as missing before move: {err}",
+                    entry.relative_path.display()
+                ));
+                completed += 1;
+                continue;
+            }
+
+            // 2. Perform filesystem move
+            match mover(&source, &entry, &trash_root) {
                 Ok(()) => {
+                    // 3. Remove from database
                     if let Err(err) = db.remove_file(&entry.relative_path) {
                         errors.push(format!(
                             "Failed to drop database row for {}: {err}",
                             entry.relative_path.display()
                         ));
+                        // Even if drop fails, the file is moved and marked missing, so it's safer.
                     } else {
                         moved += 1;
                         moved_keys.insert(MovedKey {
@@ -153,7 +175,16 @@ where
                         affected_sources.insert(source.id.clone());
                     }
                 }
-                Err(err) => errors.push(err),
+                Err(err) => {
+                    // 4. Rollback: Unmark as missing if move failed
+                    errors.push(err);
+                    if let Err(rollback_err) = db.set_missing(&entry.relative_path, false) {
+                        errors.push(format!(
+                            "Failed to rollback missing status for {}: {rollback_err}",
+                            entry.relative_path.display()
+                        ));
+                    }
+                }
             }
 
             completed += 1;
@@ -219,7 +250,7 @@ fn unique_destination(root: &Path, relative: &Path) -> Result<PathBuf, String> {
     Err("Could not create unique trash destination".into())
 }
 
-fn move_to_trash(source: &SampleSource, entry: &WavEntry, trash_root: &Path) -> Result<(), String> {
+pub(super) fn move_to_trash(source: &SampleSource, entry: &WavEntry, trash_root: &Path) -> Result<(), String> {
     let absolute = source.root.join(&entry.relative_path);
     if !absolute.is_file() {
         return Err(format!("File not found for trash: {}", absolute.display()));
@@ -244,4 +275,77 @@ fn move_to_trash(source: &SampleSource, entry: &WavEntry, trash_root: &Path) -> 
         })?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sample_sources::SourceId;
+    use tempfile::tempdir;
+
+    fn make_test_db(dir: &Path, filename: &str) -> SourceDatabase {
+        let db = SourceDatabase::open(dir).unwrap();
+        db.upsert_file(Path::new(filename), 123, 456).unwrap();
+        db.set_tag(Path::new(filename), SampleTag::Trash).unwrap();
+        db
+    }
+
+    #[test]
+    fn rollback_on_failure() {
+        let dir = tempdir().unwrap();
+        let source_root = dir.path().to_path_buf();
+        let db = make_test_db(&source_root, "fail.wav");
+
+        let source = SampleSource {
+            id: SourceId::new(),
+            root: source_root.clone(),
+        };
+
+        let trash_root = dir.path().join("trash");
+        let cancel = Arc::new(AtomicBool::new(false));
+
+        let finished = run_trash_move_task_with_progress(
+            vec![source],
+            vec![],
+            trash_root,
+            cancel,
+            |_| {},
+            |_source, _entry, _root| Err("Simulated IO Error".to_string()),
+        );
+
+        assert!(!finished.errors.is_empty());
+
+        let files = db.list_files().unwrap();
+        assert_eq!(files.len(), 1);
+        assert!(!files[0].missing, "Should rollback missing status on failure");
+    }
+
+    #[test]
+    fn success_removes_from_db() {
+        let dir = tempdir().unwrap();
+        let source_root = dir.path().to_path_buf();
+        let db = make_test_db(&source_root, "success.wav");
+
+        let source = SampleSource {
+            id: SourceId::new(),
+            root: source_root.clone(),
+        };
+
+        let trash_root = dir.path().join("trash");
+        let cancel = Arc::new(AtomicBool::new(false));
+
+        let finished = run_trash_move_task_with_progress(
+            vec![source],
+            vec![],
+            trash_root,
+            cancel,
+            |_| {},
+            |_source, _entry, _root| Ok(()),
+        );
+
+        assert!(finished.errors.is_empty());
+
+        let files = db.list_files().unwrap();
+        assert_eq!(files.len(), 0, "Should remove file from DB on success");
+    }
 }

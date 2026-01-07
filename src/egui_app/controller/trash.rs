@@ -106,6 +106,7 @@ impl EguiController {
                     }
                     TrashMoveMessage::Finished(_) => {}
                 },
+                super::trash_move::move_to_trash,
             );
             self.apply_trash_move_finished(finished);
         }

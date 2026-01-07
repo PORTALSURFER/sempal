@@ -1,0 +1,89 @@
+   Compiling sempal v6.0.0 (X:\sempal)
+warning: unused imports: `stft_power_frames_into_flat` and `stft_power_frames`
+  --> src\analysis\panns_preprocess\mod.rs:13:23
+   |
+13 | pub(crate) use stft::{stft_power_frames, stft_power_frames_into_flat};
+   |                       ^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `WavEntry`
+ --> src\egui_app\controller\wavs\browser_search_worker.rs:3:40
+  |
+3 | use crate::sample_sources::{SampleTag, WavEntry};
+  |                                        ^^^^^^^^
+
+error[E0061]: this function takes 6 arguments but 5 arguments were supplied
+   --> src\egui_app\controller\trash.rs:85:28
+    |
+ 85 |               let finished = run_trash_move_task_with_progress(
+    |  ____________________________^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^-
+ 86 | |                 sources,
+ 87 | |                 collections,
+ 88 | |                 trash_root,
+...   |
+108 | |                 },
+109 | |             );
+    | |_____________- argument #6 is missing
+    |
+note: function defined here
+   --> src\egui_app\controller\trash_move.rs:53:15
+    |
+ 53 | pub(super) fn run_trash_move_task_with_progress<F, M>(
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+ 59 |     mut mover: M,
+    |     ------------
+help: provide the argument
+    |
+ 85 |             let finished = run_trash_move_task_with_progress(
+...
+108 |                 },
+109 ~                 /* mover */,
+110 ~             );
+    |
+
+warning: use of deprecated method `egui::Ui::close_menu`: Use `ui.close()` or `ui.close_kind(UiKind::Menu)` instead
+   --> src\egui_app\ui\sources_panel\folder_actions.rs:182:24
+    |
+182 |                     ui.close_menu();
+    |                        ^^^^^^^^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated method `egui::Ui::close_menu`: Use `ui.close()` or `ui.close_kind(UiKind::Menu)` instead
+   --> src\egui_app\ui\sources_panel\folder_actions.rs:189:24
+    |
+189 |                     ui.close_menu();
+    |                        ^^^^^^^^^^
+
+warning: value assigned to `counter` is never read
+   --> src\egui_app\controller\undo.rs:212:9
+    |
+212 |         counter.value = 2;
+    |         ^^^^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+    = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+  --> src\http_client.rs:29:9
+   |
+29 |     let mut reader = response.into_reader();
+   |         ----^^^^^^
+   |         |
+   |         help: remove this `mut`
+   |
+   = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+  --> src\http_client.rs:49:9
+   |
+49 |     let mut reader = response.into_reader();
+   |         ----^^^^^^
+   |         |
+   |         help: remove this `mut`
+
+For more information about this error, try `rustc --explain E0061`.
+warning: `sempal` (lib test) generated 7 warnings
+error: could not compile `sempal` (lib test) due to 1 previous error; 7 warnings emitted
