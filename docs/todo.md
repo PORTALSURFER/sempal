@@ -1,5 +1,3 @@
-
-
 3. Redundant Path Normalization in Memory Lookup Table
 Severity: Medium
 Why it matters: The WavEntriesState lookup table stores three versions of every path (original, forward-slash, and back-slash) to handle cross-platform path inconsistencies. For large libraries, this triples the memory footprint of the path cache, which could easily exceed 100MB for moderately sized collections.

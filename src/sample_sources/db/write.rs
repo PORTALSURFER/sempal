@@ -15,14 +15,20 @@ impl SourceDatabase {
         modified_ns: i64,
     ) -> Result<(), SourceDbError> {
         let path = normalize_relative_path(relative_path)?;
+        let extension = relative_path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_lowercase();
         let mut stmt = self
             .connection
             .prepare_cached(
-                "INSERT INTO wav_files (path, file_size, modified_ns, tag, missing)
-                 VALUES (?1, ?2, ?3, ?4, ?5)
+                "INSERT INTO wav_files (path, file_size, modified_ns, tag, missing, extension)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)
                  ON CONFLICT(path) DO UPDATE SET file_size = excluded.file_size,
                                                 modified_ns = excluded.modified_ns,
-                                                missing = excluded.missing",
+                                                missing = excluded.missing,
+                                                extension = excluded.extension",
             )
             .map_err(map_sql_error)?;
         stmt.execute(params![
@@ -30,7 +36,8 @@ impl SourceDatabase {
             file_size as i64,
             modified_ns,
             SampleTag::Neutral.as_i64(),
-            0i64
+            0i64,
+            extension
         ])
         .map_err(map_sql_error)?;
         Ok(())
@@ -100,13 +107,19 @@ impl<'conn> SourceWriteBatch<'conn> {
         modified_ns: i64,
     ) -> Result<(), SourceDbError> {
         let path = normalize_relative_path(relative_path)?;
+        let extension = relative_path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_lowercase();
         self.tx
             .prepare_cached(
-                "INSERT INTO wav_files (path, file_size, modified_ns, tag, missing)
-                 VALUES (?1, ?2, ?3, ?4, ?5)
+                "INSERT INTO wav_files (path, file_size, modified_ns, tag, missing, extension)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)
                  ON CONFLICT(path) DO UPDATE SET file_size = excluded.file_size,
                                                 modified_ns = excluded.modified_ns,
-                                                missing = excluded.missing",
+                                                missing = excluded.missing,
+                                                extension = excluded.extension",
             )
             .map_err(map_sql_error)?
             .execute(params![
@@ -114,7 +127,8 @@ impl<'conn> SourceWriteBatch<'conn> {
                 file_size as i64,
                 modified_ns,
                 SampleTag::Neutral.as_i64(),
-                0i64
+                0i64,
+                extension
             ])
             .map_err(map_sql_error)?;
         Ok(())
@@ -128,14 +142,20 @@ impl<'conn> SourceWriteBatch<'conn> {
         content_hash: &str,
     ) -> Result<(), SourceDbError> {
         let path = normalize_relative_path(relative_path)?;
+        let extension = relative_path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_lowercase();
         self.tx
             .prepare_cached(
-                "INSERT INTO wav_files (path, file_size, modified_ns, content_hash, tag, missing)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                "INSERT INTO wav_files (path, file_size, modified_ns, content_hash, tag, missing, extension)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
                  ON CONFLICT(path) DO UPDATE SET file_size = excluded.file_size,
                                                 modified_ns = excluded.modified_ns,
                                                 content_hash = excluded.content_hash,
-                                                missing = excluded.missing",
+                                                missing = excluded.missing,
+                                                extension = excluded.extension",
             )
             .map_err(map_sql_error)?
             .execute(params![
@@ -144,7 +164,8 @@ impl<'conn> SourceWriteBatch<'conn> {
                 modified_ns,
                 content_hash,
                 SampleTag::Neutral.as_i64(),
-                0i64
+                0i64,
+                extension
             ])
             .map_err(map_sql_error)?;
         Ok(())
@@ -160,16 +181,22 @@ impl<'conn> SourceWriteBatch<'conn> {
         missing: bool,
     ) -> Result<(), SourceDbError> {
         let path = normalize_relative_path(relative_path)?;
+        let extension = relative_path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_lowercase();
         let flag = if missing { 1i64 } else { 0i64 };
         self.tx
             .prepare_cached(
-                "INSERT INTO wav_files (path, file_size, modified_ns, content_hash, tag, missing)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                "INSERT INTO wav_files (path, file_size, modified_ns, content_hash, tag, missing, extension)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
                  ON CONFLICT(path) DO UPDATE SET file_size = excluded.file_size,
                                                 modified_ns = excluded.modified_ns,
                                                 content_hash = excluded.content_hash,
                                                 tag = excluded.tag,
-                                                missing = excluded.missing",
+                                                missing = excluded.missing,
+                                                extension = excluded.extension",
             )
             .map_err(map_sql_error)?
             .execute(params![
@@ -178,7 +205,8 @@ impl<'conn> SourceWriteBatch<'conn> {
                 modified_ns,
                 content_hash,
                 tag.as_i64(),
-                flag
+                flag,
+                extension
             ])
             .map_err(map_sql_error)?;
         Ok(())

@@ -15,14 +15,9 @@ pub(crate) fn is_supported_audio(path: &Path) -> bool {
 
 /// Build a SQL WHERE clause that filters for supported audio extensions.
 pub(crate) fn supported_audio_where_clause() -> String {
-    let mut clause = String::new();
-    for (idx, ext) in SUPPORTED_AUDIO_EXTENSIONS.iter().enumerate() {
-        if idx > 0 {
-            clause.push_str(" OR ");
-        }
-        clause.push_str("lower(path) LIKE '%.");
-        clause.push_str(ext);
-        clause.push('\'');
-    }
-    clause
+    let exts: Vec<String> = SUPPORTED_AUDIO_EXTENSIONS
+        .iter()
+        .map(|ext| format!("'{}'", ext))
+        .collect();
+    format!("extension IN ({})", exts.join(", "))
 }
