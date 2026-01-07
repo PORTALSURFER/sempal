@@ -143,7 +143,7 @@ where
         }
     }
 
-    report(&mut progress, "Copying updated files...");
+    report(&mut progress, "Applying update transaction...");
     let (copied_files, replaced_dirs) =
         apply_files_and_dirs(&args.install_dir, &root_dir, &manifest)?;
 
@@ -206,6 +206,7 @@ fn apply_files_and_dirs(
         .ok()
         .and_then(|p| p.file_name().map(|s| s.to_owned()));
 
+    let mut transaction = fs_ops::UpdateTransaction::new();
     let mut copied = Vec::new();
     for file in manifest.files.iter() {
         let src = root_dir.join(file);
@@ -213,7 +214,7 @@ fn apply_files_and_dirs(
         if running_name.as_deref() == dest.file_name() {
             continue;
         }
-        fs_ops::copy_file_atomic(&src, &dest)?;
+        transaction.stage_file(&src, &dest)?;
         copied.push(file.clone());
     }
 
@@ -221,9 +222,11 @@ fn apply_files_and_dirs(
     let resources_src = root_dir.join("resources");
     if resources_src.is_dir() {
         let resources_dest = install_dir.join("resources");
-        fs_ops::replace_dir(&resources_src, &resources_dest)?;
+        transaction.stage_dir(&resources_src, &resources_dest)?;
         replaced_dirs.push("resources".to_string());
     }
+
+    transaction.commit()?;
 
     Ok((copied, replaced_dirs))
 }
