@@ -1,16 +1,18 @@
 use std::{
     env,
     fs::{self, File},
-    io::{self, Write},
+    io::Write,
     path::{Path, PathBuf},
 };
 
 use burn_import::onnx::ModelGen;
 
-use crate::app_dirs;
+use crate::{app_dirs, http_client};
 
 const PANNS_ONNX_NAME: &str = "panns_cnn14_16k.onnx";
 const PANNS_BURNPACK_NAME: &str = "panns_cnn14_16k.bpk";
+const MAX_PANNS_ONNX_BYTES: usize = 512 * 1024 * 1024;
+const MAX_PANNS_DATA_BYTES: usize = 512 * 1024 * 1024;
 
 #[derive(Debug, Clone)]
 pub struct PannsSetupOptions {
@@ -118,7 +120,8 @@ fn resolve_onnx_url(explicit: Option<&str>) -> Option<String> {
 }
 
 fn download_to_path(url: &str, dest: &Path) -> Result<(), String> {
-    let response = ureq::get(url)
+    let response = http_client::agent()
+        .get(url)
         .call()
         .map_err(|err| format!("Failed to download {url}: {err}"))?;
     if response.status() >= 400 {
@@ -128,10 +131,9 @@ fn download_to_path(url: &str, dest: &Path) -> Result<(), String> {
         ));
     }
     let tmp = dest.with_extension("tmp");
-    let mut reader = response.into_reader();
     let mut file = File::create(&tmp)
         .map_err(|err| format!("Failed to write {}: {err}", tmp.display()))?;
-    io::copy(&mut reader, &mut file)
+    http_client::copy_response_to_writer(response, &mut file, MAX_PANNS_ONNX_BYTES)
         .map_err(|err| format!("Failed to write {}: {err}", tmp.display()))?;
     file.flush()
         .map_err(|err| format!("Failed to flush {}: {err}", tmp.display()))?;
@@ -141,16 +143,15 @@ fn download_to_path(url: &str, dest: &Path) -> Result<(), String> {
 }
 
 fn download_optional(url: &str, dest: &Path) -> Result<(), String> {
-    match ureq::get(url).call() {
+    match http_client::agent().get(url).call() {
         Ok(response) => {
             if response.status() >= 400 {
                 return Err(format!("Failed to download {url}: HTTP {}", response.status()));
             }
             let tmp = dest.with_extension("tmp");
-            let mut reader = response.into_reader();
             let mut file = File::create(&tmp)
                 .map_err(|err| format!("Failed to write {}: {err}", tmp.display()))?;
-            io::copy(&mut reader, &mut file)
+            http_client::copy_response_to_writer(response, &mut file, MAX_PANNS_DATA_BYTES)
                 .map_err(|err| format!("Failed to write {}: {err}", tmp.display()))?;
             file.flush()
                 .map_err(|err| format!("Failed to flush {}: {err}", tmp.display()))?;

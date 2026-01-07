@@ -12,6 +12,7 @@ pub mod egui_app;
 pub mod external_clipboard;
 /// Platform helpers for external drag-and-drop.
 pub mod external_drag;
+mod http_client;
 /// GitHub issue reporting via the Sempal gateway.
 pub mod issue_gateway;
 /// Logging setup helpers.

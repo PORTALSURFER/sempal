@@ -2,9 +2,14 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::http_client;
+
 pub const BASE_URL: &str = "https://sempal-gitissue-gateway.portalsurfer.workers.dev";
 pub const AUTH_START_URL: &str =
     "https://sempal-gitissue-gateway.portalsurfer.workers.dev/auth/start";
+
+const MAX_AUTH_RESPONSE_BYTES: usize = 64 * 1024;
+const MAX_ISSUE_RESPONSE_BYTES: usize = 256 * 1024;
 
 /// The kind of issue the user is submitting.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -64,10 +69,11 @@ pub enum IssueAuthError {
 
 /// Start an auth session and return the token produced by the gateway.
 pub fn fetch_issue_token() -> Result<String, IssueAuthError> {
-    let response = match ureq::get(AUTH_START_URL).call() {
+    let response = match http_client::agent().get(AUTH_START_URL).call() {
         Ok(response) => response,
         Err(ureq::Error::Status(code, response)) => {
-            let body = response.into_string().unwrap_or_default();
+            let body =
+                read_body_limited(response, MAX_AUTH_RESPONSE_BYTES).unwrap_or_else(|err| err);
             return Err(IssueAuthError::ServerError(format!(
                 "HTTP {code}: {body}"
             )));
@@ -77,7 +83,8 @@ pub fn fetch_issue_token() -> Result<String, IssueAuthError> {
         }
     };
 
-    let body = response.into_string().unwrap_or_default();
+    let body = read_body_limited(response, MAX_AUTH_RESPONSE_BYTES)
+        .map_err(IssueAuthError::InvalidResponse)?;
     parse_issue_token(&body)
 }
 
@@ -86,7 +93,7 @@ pub fn create_issue(
     request: &CreateIssueRequest,
 ) -> Result<CreateIssueResponse, CreateIssueError> {
     let url = format!("{BASE_URL}/issue");
-    let req = ureq::post(&url)
+    let req = http_client::agent().post(&url)
         .set("Accept", "application/json")
         .set("Content-Type", "application/json")
         .set("Authorization", &format!("Bearer {}", token.trim()));
@@ -94,7 +101,8 @@ pub fn create_issue(
     let response = match req.send_json(request) {
         Ok(response) => response,
         Err(ureq::Error::Status(code, response)) => {
-            let body = response.into_string().unwrap_or_default();
+            let body =
+                read_body_limited(response, MAX_ISSUE_RESPONSE_BYTES).unwrap_or_else(|err| err);
             return Err(map_status_error(code, body));
         }
         Err(ureq::Error::Transport(err)) => {
@@ -102,7 +110,8 @@ pub fn create_issue(
         }
     };
 
-    let body = response.into_string().unwrap_or_default();
+    let body = read_body_limited(response, MAX_ISSUE_RESPONSE_BYTES)
+        .map_err(CreateIssueError::Json)?;
     parse_create_issue_response(&body)
 }
 
@@ -202,6 +211,12 @@ fn parse_issue_token(body: &str) -> Result<String, IssueAuthError> {
 fn is_session_expired_message(message: &str) -> bool {
     let lowered = message.trim().to_ascii_lowercase();
     lowered.contains("session") && lowered.contains("expired")
+}
+
+fn read_body_limited(response: ureq::Response, max_bytes: usize) -> Result<String, String> {
+    let bytes = http_client::read_response_bytes(response, max_bytes)
+        .map_err(|err| err.to_string())?;
+    String::from_utf8(bytes).map_err(|err| err.to_string())
 }
 
 #[cfg(test)]

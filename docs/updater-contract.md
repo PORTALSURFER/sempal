@@ -17,6 +17,8 @@ For `windows` + `x86_64` (`x86_64-pc-windows-msvc`):
 - Nightly zip: `sempal-nightly-windows-x86_64.zip`
 - Stable checksums: `checksums-v{VERSION}.txt`
 - Nightly checksums: `checksums-nightly.txt`
+- Stable checksums signature: `checksums-v{VERSION}.txt.sig`
+- Nightly checksums signature: `checksums-nightly.txt.sig`
 
 For `linux` + `x86_64` (`x86_64-unknown-linux-gnu`):
 
@@ -24,6 +26,8 @@ For `linux` + `x86_64` (`x86_64-unknown-linux-gnu`):
 - Nightly zip: `sempal-nightly-linux-x86_64.zip`
 - Stable checksums: `checksums-v{VERSION}.txt`
 - Nightly checksums: `checksums-nightly.txt`
+- Stable checksums signature: `checksums-v{VERSION}.txt.sig`
+- Nightly checksums signature: `checksums-nightly.txt.sig`
 
 For `linux` + `aarch64` (`aarch64-unknown-linux-gnu`):
 
@@ -31,6 +35,8 @@ For `linux` + `aarch64` (`aarch64-unknown-linux-gnu`):
 - Nightly zip: `sempal-nightly-linux-aarch64.zip`
 - Stable checksums: `checksums-v{VERSION}.txt`
 - Nightly checksums: `checksums-nightly.txt`
+- Stable checksums signature: `checksums-v{VERSION}.txt.sig`
+- Nightly checksums signature: `checksums-nightly.txt.sig`
 
 For `macos` + `x86_64` (`x86_64-apple-darwin`):
 
@@ -38,6 +44,8 @@ For `macos` + `x86_64` (`x86_64-apple-darwin`):
 - Nightly zip: `sempal-nightly-macos-x86_64.zip`
 - Stable checksums: `checksums-v{VERSION}.txt`
 - Nightly checksums: `checksums-nightly.txt`
+- Stable checksums signature: `checksums-v{VERSION}.txt.sig`
+- Nightly checksums signature: `checksums-nightly.txt.sig`
 
 For `macos` + `aarch64` (`aarch64-apple-darwin`):
 
@@ -45,12 +53,17 @@ For `macos` + `aarch64` (`aarch64-apple-darwin`):
 - Nightly zip: `sempal-nightly-macos-aarch64.zip`
 - Stable checksums: `checksums-v{VERSION}.txt`
 - Nightly checksums: `checksums-nightly.txt`
+- Stable checksums signature: `checksums-v{VERSION}.txt.sig`
+- Nightly checksums signature: `checksums-nightly.txt.sig`
 
 The checksums file is expected to include a SHA-256 entry for the zip asset:
 
 ```
 <sha256>  <zip_filename>
 ```
+
+The checksums signature file contains a base64-encoded Ed25519 signature of the
+checksums file bytes.
 
 ## Zip layout
 

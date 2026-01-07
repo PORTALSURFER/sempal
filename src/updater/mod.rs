@@ -21,6 +21,9 @@ pub use github::ReleaseSummary;
 pub const APP_NAME: &str = "sempal";
 /// Canonical GitHub repository slug (`OWNER/REPO`) used for update checks.
 pub const REPO_SLUG: &str = "PORTALSURFER/sempal";
+/// Base64-encoded Ed25519 public key used to verify checksum signatures.
+pub(crate) const CHECKSUMS_PUBLIC_KEY_BASE64: &str =
+    "kicipwnHITr+xoX96bXvp85X2el7+2JyVsYldhtRWDY=";
 
 /// Update channel selection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -172,6 +175,21 @@ fn expected_checksums_name(
             format!("checksums-v{version}.txt")
         }
         UpdateChannel::Nightly => "checksums-nightly.txt".to_string(),
+    };
+    Ok(name)
+}
+
+fn expected_checksums_signature_name(
+    identity: &RuntimeIdentity,
+    version: Option<&str>,
+) -> Result<String, UpdateError> {
+    let name = match identity.channel {
+        UpdateChannel::Stable => {
+            let version =
+                version.ok_or_else(|| UpdateError::Invalid("Missing stable version".into()))?;
+            format!("checksums-v{version}.txt.sig")
+        }
+        UpdateChannel::Nightly => "checksums-nightly.txt.sig".to_string(),
     };
     Ok(name)
 }

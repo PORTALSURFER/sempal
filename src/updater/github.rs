@@ -1,8 +1,13 @@
 use serde::Deserialize;
 
+use crate::http_client;
+
 use super::{
-    RuntimeIdentity, UpdateChannel, UpdateError, expected_checksums_name, expected_zip_asset_name,
+    RuntimeIdentity, UpdateChannel, UpdateError, expected_checksums_name,
+    expected_checksums_signature_name, expected_zip_asset_name,
 };
+
+const MAX_RELEASE_JSON_BYTES: usize = 2 * 1024 * 1024;
 
 #[derive(Debug, Clone, Deserialize)]
 pub(super) struct ReleaseAsset {
@@ -51,14 +56,16 @@ fn fetch_release_by_tag(repo: &str, tag: &str) -> Result<Release, UpdateError> {
 }
 
 fn get_json<T: for<'de> Deserialize<'de>>(url: &str) -> Result<T, UpdateError> {
-    let response = ureq::get(url)
+    let response = http_client::agent()
+        .get(url)
         .set("User-Agent", "sempal-updater")
         .set("Accept", "application/vnd.github+json")
         .call()
         .map_err(|err| UpdateError::Http(err.to_string()))?;
-    response
-        .into_json::<T>()
-        .map_err(|err| UpdateError::Http(err.to_string()))
+    let bytes = http_client::read_response_bytes(response, MAX_RELEASE_JSON_BYTES)
+        .map_err(|err| UpdateError::Http(err.to_string()))?;
+    let parsed = serde_json::from_slice(&bytes)?;
+    Ok(parsed)
 }
 
 pub(super) fn find_asset<'a>(release: &'a Release, name: &str) -> Option<&'a ReleaseAsset> {
@@ -84,7 +91,8 @@ pub(super) fn list_releases_with_assets(
                 };
                 let zip_name = expected_zip_asset_name(identity, Some(version_text))?;
                 let checksums_name = expected_checksums_name(identity, Some(version_text))?;
-                if has_assets(&release, &[zip_name, checksums_name]) {
+                let sig_name = expected_checksums_signature_name(identity, Some(version_text))?;
+                if has_assets(&release, &[zip_name, checksums_name, sig_name]) {
                     matches.push(ReleaseSummary {
                         tag: release.tag_name,
                         html_url: release.html_url,
@@ -98,7 +106,8 @@ pub(super) fn list_releases_with_assets(
                 }
                 let zip_name = expected_zip_asset_name(identity, None)?;
                 let checksums_name = expected_checksums_name(identity, None)?;
-                if has_assets(&release, &[zip_name, checksums_name]) {
+                let sig_name = expected_checksums_signature_name(identity, None)?;
+                if has_assets(&release, &[zip_name, checksums_name, sig_name]) {
                     matches.push(ReleaseSummary {
                         tag: release.tag_name,
                         html_url: release.html_url,
@@ -121,7 +130,7 @@ pub(super) fn fetch_release_by_tag_with_assets(
     identity: &RuntimeIdentity,
 ) -> Result<Release, UpdateError> {
     let release = fetch_release_by_tag(repo, tag)?;
-    let (zip_name, checksums_name) = match channel {
+    let (zip_name, checksums_name, sig_name) = match channel {
         UpdateChannel::Stable => {
             let version_text = tag.strip_prefix('v').ok_or_else(|| {
                 UpdateError::Invalid(format!("Stable tag must start with 'v', got '{tag}'"))
@@ -129,6 +138,7 @@ pub(super) fn fetch_release_by_tag_with_assets(
             (
                 expected_zip_asset_name(identity, Some(version_text))?,
                 expected_checksums_name(identity, Some(version_text))?,
+                expected_checksums_signature_name(identity, Some(version_text))?,
             )
         }
         UpdateChannel::Nightly => {
@@ -140,10 +150,11 @@ pub(super) fn fetch_release_by_tag_with_assets(
             (
                 expected_zip_asset_name(identity, None)?,
                 expected_checksums_name(identity, None)?,
+                expected_checksums_signature_name(identity, None)?,
             )
         }
     };
-    if !has_assets(&release, &[zip_name, checksums_name]) {
+    if !has_assets(&release, &[zip_name, checksums_name, sig_name]) {
         return Err(UpdateError::Invalid(format!(
             "Release '{tag}' missing required assets"
         )));
@@ -167,7 +178,8 @@ fn select_release_with_assets(
                 };
                 let zip_name = expected_zip_asset_name(identity, Some(version_text))?;
                 let checksums_name = expected_checksums_name(identity, Some(version_text))?;
-                if has_assets(&release, &[zip_name, checksums_name]) {
+                let sig_name = expected_checksums_signature_name(identity, Some(version_text))?;
+                if has_assets(&release, &[zip_name, checksums_name, sig_name]) {
                     return Ok(release);
                 }
             }
@@ -177,7 +189,8 @@ fn select_release_with_assets(
                 }
                 let zip_name = expected_zip_asset_name(identity, None)?;
                 let checksums_name = expected_checksums_name(identity, None)?;
-                if has_assets(&release, &[zip_name, checksums_name]) {
+                let sig_name = expected_checksums_signature_name(identity, None)?;
+                if has_assets(&release, &[zip_name, checksums_name, sig_name]) {
                     return Ok(release);
                 }
             }

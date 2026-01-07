@@ -1,17 +1,25 @@
 use std::{fs::File, io::Read, path::Path};
 
+use ed25519_dalek::{Signature, VerifyingKey};
 use sha2::{Digest, Sha256};
 
-use super::{UpdateError, github};
+use base64::Engine;
+
+use crate::http_client;
+
+use super::{UpdateError, CHECKSUMS_PUBLIC_KEY_BASE64, github};
+
+const MAX_CHECKSUM_BYTES: usize = 1024 * 1024;
+const MAX_RELEASE_ASSET_BYTES: usize = 1024 * 1024 * 1024;
+const MAX_SIGNATURE_BYTES: usize = 8 * 1024;
 
 pub(super) fn download_text(url: &str) -> Result<Vec<u8>, UpdateError> {
-    let response = ureq::get(url)
+    let response = http_client::agent()
+        .get(url)
         .set("User-Agent", "sempal-updater")
         .call()
         .map_err(|err| UpdateError::Http(err.to_string()))?;
-    let mut reader = response.into_reader();
-    let mut bytes = Vec::new();
-    reader.read_to_end(&mut bytes)?;
+    let bytes = http_client::read_response_bytes(response, MAX_CHECKSUM_BYTES)?;
     Ok(bytes)
 }
 
@@ -38,14 +46,62 @@ pub(super) fn parse_checksums_for_asset(
     )))
 }
 
+/// Verify the checksums signature using the embedded public key.
+pub(super) fn verify_checksums_signature(
+    checksums: &[u8],
+    signature_bytes: &[u8],
+) -> Result<(), UpdateError> {
+    verify_checksums_signature_with_key(
+        checksums,
+        signature_bytes,
+        CHECKSUMS_PUBLIC_KEY_BASE64,
+    )
+}
+
+fn verify_checksums_signature_with_key(
+    checksums: &[u8],
+    signature_bytes: &[u8],
+    public_key_base64: &str,
+) -> Result<(), UpdateError> {
+    let signature_text = std::str::from_utf8(signature_bytes)
+        .map_err(|err| UpdateError::Invalid(format!("Invalid signature file: {err}")))?;
+    let signature_text = signature_text.trim();
+    if signature_text.is_empty() {
+        return Err(UpdateError::Invalid("Empty signature file".into()));
+    }
+    if signature_text.len() > MAX_SIGNATURE_BYTES {
+        return Err(UpdateError::Invalid("Signature file too large".into()));
+    }
+    let signature_raw = base64::engine::general_purpose::STANDARD
+        .decode(signature_text)
+        .map_err(|err| UpdateError::Invalid(format!("Invalid signature encoding: {err}")))?;
+    let signature = Signature::from_slice(&signature_raw).map_err(|err| {
+        UpdateError::Invalid(format!("Invalid signature length: {err}"))
+    })?;
+    let public_key_raw = base64::engine::general_purpose::STANDARD
+        .decode(public_key_base64)
+        .map_err(|err| UpdateError::Invalid(format!("Invalid public key encoding: {err}")))?;
+    let public_key = VerifyingKey::from_bytes(
+        public_key_raw
+            .as_slice()
+            .try_into()
+            .map_err(|_| UpdateError::Invalid("Invalid public key length".into()))?,
+    )
+    .map_err(|err| UpdateError::Invalid(format!("Invalid public key: {err}")))?;
+    public_key
+        .verify_strict(checksums, &signature)
+        .map_err(|err| UpdateError::Invalid(format!("Checksums signature mismatch: {err}")))?;
+    Ok(())
+}
+
 pub(super) fn download_to_file(url: &str, dest: &Path) -> Result<(), UpdateError> {
-    let response = ureq::get(url)
+    let response = http_client::agent()
+        .get(url)
         .set("User-Agent", "sempal-updater")
         .call()
         .map_err(|err| UpdateError::Http(err.to_string()))?;
-    let mut reader = response.into_reader();
     let mut file = File::create(dest)?;
-    std::io::copy(&mut reader, &mut file)?;
+    http_client::copy_response_to_writer(response, &mut file, MAX_RELEASE_ASSET_BYTES)?;
     Ok(())
 }
 
@@ -129,4 +185,45 @@ pub(super) fn download_release_asset_bytes(
     let asset = github::find_asset(release, asset_name)
         .ok_or_else(|| UpdateError::Invalid(format!("Missing release asset {asset_name}")))?;
     download_text(&asset.browser_download_url)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ed25519_dalek::{Signer, SigningKey};
+
+    #[test]
+    fn verify_checksums_signature_rejects_invalid_signature() {
+        let checksums = b"deadbeef  sempal.zip\n";
+        let signing_key = SigningKey::from_bytes(&[7u8; 32]);
+        let signature = signing_key.sign(b"other");
+        let signature_text =
+            base64::engine::general_purpose::STANDARD.encode(signature.to_bytes());
+        let public_key_text = base64::engine::general_purpose::STANDARD
+            .encode(signing_key.verifying_key().to_bytes());
+        let err = verify_checksums_signature_with_key(
+            checksums,
+            signature_text.as_bytes(),
+            &public_key_text,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("Checksums signature mismatch"));
+    }
+
+    #[test]
+    fn verify_checksums_signature_accepts_valid_signature() {
+        let checksums = b"deadbeef  sempal.zip\n";
+        let signing_key = SigningKey::from_bytes(&[7u8; 32]);
+        let signature = signing_key.sign(checksums);
+        let signature_text =
+            base64::engine::general_purpose::STANDARD.encode(signature.to_bytes());
+        let public_key_text = base64::engine::general_purpose::STANDARD
+            .encode(signing_key.verifying_key().to_bytes());
+        verify_checksums_signature_with_key(
+            checksums,
+            signature_text.as_bytes(),
+            &public_key_text,
+        )
+        .expect("signature should verify");
+    }
 }

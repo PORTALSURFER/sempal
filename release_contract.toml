@@ -17,6 +17,8 @@ stable_asset = "{APP_NAME}-v{VERSION}-{platform}-{arch}.zip"
 nightly_asset = "{APP_NAME}-nightly-{platform}-{arch}.zip"
 stable_checksums = "checksums-v{VERSION}.txt"
 nightly_checksums = "checksums-nightly.txt"
+stable_checksums_sig = "checksums-v{VERSION}.txt.sig"
+nightly_checksums_sig = "checksums-nightly.txt.sig"
 
 [archive_layout]
 root_dir = "{APP_NAME}"
