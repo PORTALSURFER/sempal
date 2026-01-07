@@ -107,7 +107,7 @@ impl SourceDatabase {
         if !crate::sample_sources::is_supported_audio(path) {
             return Ok(None);
         }
-        let path_str = super::normalize_relative_path(path).map_err(map_sql_error)?;
+        let path_str = super::normalize_relative_path(path)?;
         let (offset, exists): (i64, i64) = self
             .connection
             .query_row(
@@ -129,7 +129,7 @@ impl SourceDatabase {
         if !crate::sample_sources::is_supported_audio(path) {
             return Ok(None);
         }
-        let path_str = super::normalize_relative_path(path).map_err(map_sql_error)?;
+        let path_str = super::normalize_relative_path(path)?;
         let value: Option<i64> = self
             .connection
             .query_row(

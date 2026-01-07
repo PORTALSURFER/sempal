@@ -1,0 +1,175 @@
+   Compiling sempal v6.0.0 (X:\sempal)
+warning: unused import: `mel::PannsMelBank`
+  --> src\analysis\panns_preprocess\mod.rs:11:16
+   |
+11 | pub(crate) use mel::PannsMelBank;
+   |                ^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `log_mel_frames`
+  --> src\analysis\panns_preprocess\mod.rs:12:50
+   |
+12 | pub(crate) use preprocessor::{PannsPreprocessor, log_mel_frames};
+   |                                                  ^^^^^^^^^^^^^^
+
+warning: unused imports: `stft_power_frames_into_flat` and `stft_power_frames`
+  --> src\analysis\panns_preprocess\mod.rs:13:23
+   |
+13 | pub(crate) use stft::{stft_power_frames, stft_power_frames_into_flat};
+   |                       ^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `mark_failed`
+  --> src\egui_app\controller\analysis_jobs\db\mod.rs:35:54
+   |
+35 |     SampleAnalysisState, claim_next_jobs, mark_done, mark_failed, mark_failed_with_reason,
+   |                                                      ^^^^^^^^^^^
+
+warning: unused import: `WavEntry`
+ --> src\egui_app\controller\wavs\browser_search_worker.rs:3:40
+  |
+3 | use crate::sample_sources::{SampleTag, WavEntry};
+  |                                        ^^^^^^^^
+
+error[E0283]: type annotations needed
+   --> src\egui_app\controller\state\cache.rs:185:43
+    |
+185 |         let Some(index) = self.lookup.get(Path::new(normalized.as_ref())).copied() else {
+    |                                           ^^^^^^^^^ ------------------- type must be known at this point
+    |                                           |
+    |                                           cannot infer type of the type parameter `S` declared on the associated function `new`
+    |
+    = note: multiple `impl`s satisfying `_: AsRef<OsStr>` found in the following crates: `std`, `tempfile`:
+            - impl AsRef<OsStr> for OsStr;
+            - impl AsRef<OsStr> for OsString;
+            - impl AsRef<OsStr> for TempPath;
+            - impl AsRef<OsStr> for std::path::Path;
+            - impl AsRef<OsStr> for std::path::PathBuf;
+            - impl AsRef<OsStr> for std::string::String;
+            - impl AsRef<OsStr> for std::sys::process::windows::EnvKey;
+            - impl AsRef<OsStr> for str;
+note: required by a bound in `std::path::Path::new`
+   --> /rustc/ded5c06cf21d2b93bffd5d884aa6e96934ee4234\library\std\src\path.rs:2359:5
+help: consider specifying the generic argument
+    |
+185 |         let Some(index) = self.lookup.get(Path::new::<S>(normalized.as_ref())).copied() else {
+    |                                                    +++++
+help: consider removing this method call, as the receiver has type `std::string::String` and `std::string::String: AsRef<OsStr>` trivially holds
+    |
+185 -         let Some(index) = self.lookup.get(Path::new(normalized.as_ref())).copied() else {
+185 +         let Some(index) = self.lookup.get(Path::new(normalized)).copied() else {
+    |
+
+error[E0283]: type annotations needed
+   --> src\egui_app\controller\state\cache.rs:185:43
+    |
+185 |         let Some(index) = self.lookup.get(Path::new(normalized.as_ref())).copied() else {
+    |                                           ^^^^^^^^^            ------ type must be known at this point
+    |                                           |
+    |                                           cannot infer type of the type parameter `S` declared on the associated function `new`
+    |
+    = note: multiple `impl`s satisfying `std::string::String: AsRef<_>` found in the following crates: `alloc`, `std`:
+            - impl AsRef<OsStr> for std::string::String;
+            - impl AsRef<[u8]> for std::string::String;
+            - impl AsRef<std::path::Path> for std::string::String;
+            - impl AsRef<str> for std::string::String;
+help: consider specifying the generic argument
+    |
+185 |         let Some(index) = self.lookup.get(Path::new::<S>(normalized.as_ref())).copied() else {
+    |                                                    +++++
+
+error[E0599]: no method named `into_owned` found for struct `std::string::String` in the current scope
+   --> src\egui_app\controller\state\cache.rs:197:53
+    |
+197 |         self.lookup.insert(PathBuf::from(normalized.into_owned()), index);
+    |                                                     ^^^^^^^^^^
+    |
+help: there is a method `to_owned` with a similar name
+    |
+197 -         self.lookup.insert(PathBuf::from(normalized.into_owned()), index);
+197 +         self.lookup.insert(PathBuf::from(normalized.to_owned()), index);
+    |
+
+error[E0283]: type annotations needed
+  --> src\egui_app\controller\wavs.rs:81:58
+   |
+81 |         if let Some(index) = self.wav_entries.lookup.get(Path::new(normalized.as_ref())).copied() {
+   |                                                          ^^^^^^^^^ ------------------- type must be known at this point
+   |                                                          |
+   |                                                          cannot infer type of the type parameter `S` declared on the associated function `new`
+   |
+   = note: multiple `impl`s satisfying `_: AsRef<OsStr>` found in the following crates: `std`, `tempfile`:
+           - impl AsRef<OsStr> for OsStr;
+           - impl AsRef<OsStr> for OsString;
+           - impl AsRef<OsStr> for TempPath;
+           - impl AsRef<OsStr> for std::path::Path;
+           - impl AsRef<OsStr> for std::path::PathBuf;
+           - impl AsRef<OsStr> for std::string::String;
+           - impl AsRef<OsStr> for std::sys::process::windows::EnvKey;
+           - impl AsRef<OsStr> for str;
+note: required by a bound in `std::path::Path::new`
+  --> /rustc/ded5c06cf21d2b93bffd5d884aa6e96934ee4234\library\std\src\path.rs:2359:5
+help: consider specifying the generic argument
+   |
+81 |         if let Some(index) = self.wav_entries.lookup.get(Path::new::<S>(normalized.as_ref())).copied() {
+   |                                                                   +++++
+help: consider removing this method call, as the receiver has type `std::string::String` and `std::string::String: AsRef<OsStr>` trivially holds
+   |
+81 -         if let Some(index) = self.wav_entries.lookup.get(Path::new(normalized.as_ref())).copied() {
+81 +         if let Some(index) = self.wav_entries.lookup.get(Path::new(normalized)).copied() {
+   |
+
+error[E0283]: type annotations needed
+  --> src\egui_app\controller\wavs.rs:81:58
+   |
+81 |         if let Some(index) = self.wav_entries.lookup.get(Path::new(normalized.as_ref())).copied() {
+   |                                                          ^^^^^^^^^            ------ type must be known at this point
+   |                                                          |
+   |                                                          cannot infer type of the type parameter `S` declared on the associated function `new`
+   |
+   = note: multiple `impl`s satisfying `std::string::String: AsRef<_>` found in the following crates: `alloc`, `std`:
+           - impl AsRef<OsStr> for std::string::String;
+           - impl AsRef<[u8]> for std::string::String;
+           - impl AsRef<std::path::Path> for std::string::String;
+           - impl AsRef<str> for std::string::String;
+help: consider specifying the generic argument
+   |
+81 |         if let Some(index) = self.wav_entries.lookup.get(Path::new::<S>(normalized.as_ref())).copied() {
+   |                                                                   +++++
+
+warning: use of deprecated method `egui::Ui::close_menu`: Use `ui.close()` or `ui.close_kind(UiKind::Menu)` instead
+   --> src\egui_app\ui\sources_panel\folder_actions.rs:182:24
+    |
+182 |                     ui.close_menu();
+    |                        ^^^^^^^^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated method `egui::Ui::close_menu`: Use `ui.close()` or `ui.close_kind(UiKind::Menu)` instead
+   --> src\egui_app\ui\sources_panel\folder_actions.rs:189:24
+    |
+189 |                     ui.close_menu();
+    |                        ^^^^^^^^^^
+
+warning: variable does not need to be mutable
+  --> src\http_client.rs:29:9
+   |
+29 |     let mut reader = response.into_reader();
+   |         ----^^^^^^
+   |         |
+   |         help: remove this `mut`
+   |
+   = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+  --> src\http_client.rs:49:9
+   |
+49 |     let mut reader = response.into_reader();
+   |         ----^^^^^^
+   |         |
+   |         help: remove this `mut`
+
+Some errors have detailed explanations: E0283, E0599.
+For more information about an error, try `rustc --explain E0283`.
+warning: `sempal` (lib) generated 9 warnings
+error: could not compile `sempal` (lib) due to 5 previous errors; 9 warnings emitted

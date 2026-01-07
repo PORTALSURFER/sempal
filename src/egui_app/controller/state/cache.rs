@@ -182,7 +182,7 @@ impl WavEntriesState {
         entry: WavEntry,
     ) -> bool {
         let normalized = path.to_string_lossy().replace('\\', "/");
-        let Some(index) = self.lookup.get(Path::new(normalized.as_ref())).copied() else {
+        let Some(index) = self.lookup.get(Path::new(&normalized)).copied() else {
             return false;
         };
         let Some(slot) = self.entry_mut(index) else {
@@ -194,6 +194,63 @@ impl WavEntriesState {
 
     pub(in crate::egui_app::controller) fn insert_lookup(&mut self, path: PathBuf, index: usize) {
         let normalized = path.to_string_lossy().replace('\\', "/");
-        self.lookup.insert(PathBuf::from(normalized.into_owned()), index);
+        self.lookup.insert(PathBuf::from(normalized), index);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_insert_lookup_normalizes_paths() {
+        let mut cache = WavEntriesState::new(10, 10);
+        
+        // Insert with backslash
+        cache.insert_lookup(PathBuf::from("foo\\bar.wav"), 1);
+        
+        // Should be found with forward slash
+        assert_eq!(cache.lookup.get(Path::new("foo/bar.wav")), Some(&1));
+        
+        // Should be found with backslash (due to normalization on lookup/insert? No, insert normalizes key. Lookup must normalize query.)
+        // We haven't updated lookup accessors on WavEntriesState itself other than update_entry.
+        // Wait, update_entry calls lookup.get(path). 
+        // WavEntriesState::entry() accesses by index.
+        
+        // Let's verify internal storage is normalized (size is 1)
+        assert_eq!(cache.lookup.len(), 1);
+        assert!(cache.lookup.contains_key(Path::new("foo/bar.wav")));
+    }
+
+    #[test]
+    fn test_update_entry_normalizes_lookup_key() {
+        let mut cache = WavEntriesState::new(10, 10);
+        
+        // Mock entry existence
+        cache.insert_page(0, vec![WavEntry {
+            relative_path: PathBuf::from("foo/bar.wav"),
+            file_size: 0,
+            modified_ns: 0,
+            content_hash: None,
+            tag: crate::sample_sources::SampleTag::Neutral,
+            missing: false,
+        }]);
+        
+        let new_entry = WavEntry {
+            relative_path: PathBuf::from("foo/bar.wav"),
+            file_size: 100,
+            modified_ns: 100,
+            content_hash: None,
+            tag: crate::sample_sources::SampleTag::Keep,
+            missing: false,
+        };
+        
+        // Update using backslash path
+        let success = cache.update_entry(Path::new("foo\\bar.wav"), new_entry);
+        assert!(success, "Should find entry even with backslash path");
+        
+        // Verify update happened
+        let entry = cache.entry(0).unwrap();
+        assert_eq!(entry.tag, crate::sample_sources::SampleTag::Keep);
     }
 }
