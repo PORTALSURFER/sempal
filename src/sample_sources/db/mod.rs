@@ -8,6 +8,7 @@ mod read;
 mod schema;
 mod util;
 mod write;
+pub use util::normalize_relative_path;
 
 /// Hidden filename used for per-source databases.
 pub const DB_FILE_NAME: &str = ".sempal_samples.db";

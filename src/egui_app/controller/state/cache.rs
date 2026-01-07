@@ -181,7 +181,8 @@ impl WavEntriesState {
         path: &Path,
         entry: WavEntry,
     ) -> bool {
-        let Some(index) = self.lookup.get(path).copied() else {
+        let normalized = path.to_string_lossy().replace('\\', "/");
+        let Some(index) = self.lookup.get(Path::new(normalized.as_ref())).copied() else {
             return false;
         };
         let Some(slot) = self.entry_mut(index) else {
@@ -192,19 +193,7 @@ impl WavEntriesState {
     }
 
     pub(in crate::egui_app::controller) fn insert_lookup(&mut self, path: PathBuf, index: usize) {
-        self.lookup.insert(path.clone(), index);
-        let path_str = path.to_string_lossy();
-        if path_str.contains('\\') {
-            let normalized = path_str.replace('\\', "/");
-            self.lookup
-                .entry(PathBuf::from(normalized))
-                .or_insert(index);
-        }
-        if path_str.contains('/') {
-            let normalized = path_str.replace('/', "\\");
-            self.lookup
-                .entry(PathBuf::from(normalized))
-                .or_insert(index);
-        }
+        let normalized = path.to_string_lossy().replace('\\', "/");
+        self.lookup.insert(PathBuf::from(normalized.into_owned()), index);
     }
 }

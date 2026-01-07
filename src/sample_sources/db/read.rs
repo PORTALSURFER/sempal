@@ -107,14 +107,14 @@ impl SourceDatabase {
         if !crate::sample_sources::is_supported_audio(path) {
             return Ok(None);
         }
-        let path_str = path.to_string_lossy();
+        let path_str = super::normalize_relative_path(path).map_err(map_sql_error)?;
         let (offset, exists): (i64, i64) = self
             .connection
             .query_row(
                 "SELECT
                     (SELECT COUNT(*) FROM wav_files WHERE path < ?1) AS offset,
                     EXISTS(SELECT 1 FROM wav_files WHERE path = ?1) AS path_exists",
-                rusqlite::params![path_str.as_ref()],
+                rusqlite::params![path_str.as_str()],
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .map_err(map_sql_error)?;
@@ -129,12 +129,12 @@ impl SourceDatabase {
         if !crate::sample_sources::is_supported_audio(path) {
             return Ok(None);
         }
-        let path_str = path.to_string_lossy();
+        let path_str = super::normalize_relative_path(path).map_err(map_sql_error)?;
         let value: Option<i64> = self
             .connection
             .query_row(
                 "SELECT tag FROM wav_files WHERE path = ?1",
-                rusqlite::params![path_str.as_ref()],
+                rusqlite::params![path_str.as_str()],
                 |row| row.get(0),
             )
             .optional()

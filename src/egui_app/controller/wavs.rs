@@ -77,7 +77,8 @@ impl EguiController {
     }
 
     pub(super) fn wav_index_for_path(&mut self, path: &Path) -> Option<usize> {
-        if let Some(index) = self.wav_entries.lookup.get(path).copied() {
+        let normalized = path.to_string_lossy().replace('\\', "/");
+        if let Some(index) = self.wav_entries.lookup.get(Path::new(normalized.as_ref())).copied() {
             return Some(index);
         }
         let source = self.current_source()?;
