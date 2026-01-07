@@ -56,7 +56,7 @@ impl IssueTokenStore {
     pub fn set(&self, token: &str) -> Result<(), IssueTokenStoreError> {
         let token = token.trim();
         if token.is_empty() {
-            return Ok(());
+            return self.delete();
         }
         if self.try_keyring_set(token).is_ok() {
             match self.try_keyring_get() {
@@ -75,7 +75,15 @@ impl IssueTokenStore {
     pub fn set_and_verify(&self, token: &str) -> Result<(), IssueTokenStoreError> {
         let token = token.trim();
         if token.is_empty() {
-            return Ok(());
+            self.delete()?;
+            match self.get()? {
+                None => return Ok(()),
+                _ => {
+                    return Err(IssueTokenStoreError::Unavailable(
+                        "Token cleared, but still present. Try again.".to_string(),
+                    ));
+                }
+            }
         }
         self.set(token)?;
         match self.get()? {
@@ -302,6 +310,26 @@ mod tests {
             Some("tok_abcdefghijklmnopqrstuvwxyz")
         );
         store.delete().unwrap();
+        assert_eq!(store.get().unwrap(), None);
+        unsafe {
+            std::env::remove_var("SEMPAL_DISABLE_KEYRING");
+            std::env::remove_var(FALLBACK_ENABLE_ENV);
+            std::env::remove_var(FALLBACK_SECRET_ENV);
+        }
+    }
+
+    #[test]
+    fn set_empty_token_clears_storage() {
+        unsafe {
+            std::env::set_var("SEMPAL_DISABLE_KEYRING", "1");
+            std::env::set_var(FALLBACK_ENABLE_ENV, "1");
+            std::env::set_var(FALLBACK_SECRET_ENV, "super_secret_token_key");
+        }
+        let base = tempdir().unwrap();
+        let _guard = app_dirs::ConfigBaseGuard::set(base.path().to_path_buf());
+        let store = IssueTokenStore::new().unwrap();
+        store.set("tok_abcdefghijklmnopqrstuvwxyz").unwrap();
+        store.set("").unwrap();
         assert_eq!(store.get().unwrap(), None);
         unsafe {
             std::env::remove_var("SEMPAL_DISABLE_KEYRING");
