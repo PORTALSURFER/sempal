@@ -262,7 +262,8 @@ mod tests {
     fn ensure_child_path_allows_relative_path() {
         let dir = tempdir().unwrap();
         let path = ensure_child_path(dir.path(), "./ok/file.txt").unwrap();
-        assert!(path.starts_with(dir.path()));
-        assert!(path.ends_with("ok/file.txt"));
+        let canonical = dir.path().canonicalize().unwrap();
+        assert!(path.starts_with(&canonical));
+        assert!(path.ends_with(Path::new("ok").join("file.txt")));
     }
 }
