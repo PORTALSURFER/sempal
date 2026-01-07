@@ -249,9 +249,10 @@ fn relaunch_app(
             exe.display()
         )));
     }
-    let mut cmd = Command::new(exe);
+    let exe_display = exe.display().to_string();
+    let mut cmd = Command::new(&exe);
     cmd.spawn().map_err(|err| {
-        UpdateError::Invalid(format!("Failed to relaunch {}: {err}", exe.display()))
+        UpdateError::Invalid(format!("Failed to relaunch {exe_display}: {err}"))
     })?;
     Ok(())
 }
