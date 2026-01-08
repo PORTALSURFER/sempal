@@ -6,33 +6,6 @@ Audit performed on `x:\sempal`. The codebase is generally well-structured but su
 ## Findings
 
 
-
-### 2. Broken Windows Updates (Correctness/Maintainability)
-**Severity**: Critical (Windows Only)
-**Why it matters**: The updater explicitly skips copying the new executable if it matches the running filename. On Windows, you cannot *overwrite* a running executable, but you *can* rename it. The current logic simply leaves the old executable in place, resulting in a "partial update" (assets are new, code is old) which can lead to crashes or undefined behavior.
-**Evidence**: `src/updater/apply.rs`: Lines 219-221 (`if running_name.as_deref() == dest.file_name() { continue; }`).
-**Recommended change**: 
-1.  Detect if `dest` matches the running executable.
-2.  If so, `fs::rename(&dest, dest.with_extension("exe.old"))` to move the running binary out of the way.
-3.  Copy the new binary to `dest`.
-**Risk/Tradeoffs**: Minimal. Standard practice on Windows.
-**Quick win?**: Yes.
-**Verification**: Run an update on Windows and verify the `.exe` timestamp changes and the old one exists as `.old`.
-
-### 3. Unbounded File Reading in Sanitizer (Performance/DoS)
-**Severity**: High
-**Why it matters**: `read_sanitized_wav_bytes` reads the **entire file** into memory to sanitize the header. This is utilized during normalization. If a user imports a massive logical recording (e.g., 1GB WAV), the app will attempt to allocate 1GB buffer, potentially causing an OOM crash.
-**Evidence**: 
-- `src/wav_sanitize.rs`: Line 47 (`std::fs::read(path)`).
-- `src/egui_app/controller/collection_items_helpers/io.rs`: Line 7.
-**Recommended change**: 
-1.  Change `sanitize_wav_bytes` to accept a `Read` or `Seek` trait.
-2.  Read only the first 4KB to inspect/fix the header.
-3.  If no fix is needed, return the file handle. If fix is needed, construct a "Chained Reader" that performs the fix on the fly or copies the fixed header + streams the rest of the file.
-**Risk/Tradeoffs**: Increased complexity in I/O logic.
-**Quick win?**: No.
-**Verification**: Open a 2GB WAV file and monitor RAM usage. It should not spike by 2GB.
-
 ### 4. Inefficient Trash Collection (Performance)
 **Severity**: Medium
 **Why it matters**: To move trashed files, the application loads the **entire** file list from the database and filters it in memory using Rust code. This is an O(N) memory operation for a task that should be O(T) (number of trashed items).

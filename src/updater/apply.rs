@@ -217,6 +217,15 @@ fn apply_files_and_dirs(
         let src = root_dir.join(file);
         let dest = ensure_child_path(install_dir, file)?;
         if running_name.as_deref() == dest.file_name() {
+            let old_dest = dest.with_extension("exe.old");
+            if old_dest.exists() {
+                fs::remove_file(&old_dest)?;
+            }
+            if dest.exists() {
+                fs::rename(&dest, &old_dest)?;
+            }
+            fs::copy(&src, &dest)?;
+            copied.push(file.clone());
             continue;
         }
         transaction.stage_file(&src, &dest)?;

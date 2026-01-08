@@ -4,8 +4,8 @@ use std::path::Path;
 pub(super) fn read_samples_for_normalization(
     path: &Path,
 ) -> Result<(Vec<f32>, hound::WavSpec), String> {
-    let bytes = crate::wav_sanitize::read_sanitized_wav_bytes(path)?;
-    let mut reader = hound::WavReader::new(std::io::Cursor::new(bytes))
+    let reader_source = crate::wav_sanitize::open_sanitized_wav(path)?;
+    let mut reader = hound::WavReader::new(reader_source)
         .map_err(|err| format!("Invalid wav: {err}"))?;
     let spec = reader.spec();
     let samples = match spec.sample_format {
