@@ -33,6 +33,34 @@ impl SourceDatabase {
         Ok(rows)
     }
 
+    /// Fetch tracked wav files filtered by tag.
+    pub fn list_files_by_tag(&self, tag: super::SampleTag) -> Result<Vec<WavEntry>, SourceDbError> {
+        let filter = crate::sample_sources::supported_audio_where_clause();
+        let sql = format!(
+            "SELECT path, file_size, modified_ns, content_hash, tag, missing
+             FROM wav_files
+             WHERE {filter} AND tag = ?1
+             ORDER BY path ASC"
+        );
+        let mut stmt = self.connection.prepare(&sql).map_err(map_sql_error)?;
+        let rows = stmt
+            .query_map([tag.as_i64()], |row| {
+                let path: String = row.get(0)?;
+                Ok(WavEntry {
+                    relative_path: PathBuf::from(path),
+                    file_size: row.get::<_, i64>(1)? as u64,
+                    modified_ns: row.get(2)?,
+                    content_hash: row.get::<_, Option<String>>(3)?,
+                    tag: super::SampleTag::from_i64(row.get(4)?),
+                    missing: row.get::<_, i64>(5)? != 0,
+                })
+            })
+            .map_err(map_sql_error)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(map_sql_error)?;
+        Ok(rows)
+    }
+
     /// Fetch relative paths that are currently marked missing.
     pub fn list_missing_paths(&self) -> Result<Vec<PathBuf>, SourceDbError> {
         let mut stmt = self

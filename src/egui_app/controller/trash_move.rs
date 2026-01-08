@@ -75,17 +75,13 @@ where
                 continue;
             }
         };
-        let entries = match db.list_files() {
+        let trashed = match db.list_files_by_tag(SampleTag::Trash) {
             Ok(entries) => entries,
             Err(err) => {
                 errors.push(format!("{}: {err}", source.root.display()));
                 continue;
             }
         };
-        let trashed: Vec<WavEntry> = entries
-            .into_iter()
-            .filter(|entry| entry.tag == SampleTag::Trash)
-            .collect();
         if !trashed.is_empty() {
             trashed_by_source.push((source, trashed));
         }
