@@ -1,4 +1,4 @@
-use super::super::selection_edits::SelectionEditRequest;
+use crate::egui_app::controller::library::selection_edits::SelectionEditRequest;
 use super::super::test_support::{
     load_waveform_selection, prepare_with_source_and_wav_entries, sample_entry, write_test_wav,
 };

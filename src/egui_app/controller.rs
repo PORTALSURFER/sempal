@@ -350,10 +350,6 @@ fn status_badge(tone: StatusTone) -> (String, Color32) {
 }
 
 #[cfg(test)]
-mod audio_options_tests;
-#[cfg(test)]
-mod collection_items_tests;
-#[cfg(test)]
 mod test_support;
 #[cfg(test)]
 mod tests;

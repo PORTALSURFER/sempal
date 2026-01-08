@@ -34,5 +34,3 @@ pub(crate) mod wavs;
 
 #[cfg(test)]
 mod collection_items_tests;
-#[cfg(test)]
-mod selection_edits_tests;

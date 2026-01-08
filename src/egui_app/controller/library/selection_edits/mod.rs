@@ -14,7 +14,7 @@ mod selection_normalize;
 
 use buffer::write_selection_wav;
 use buffer::{SelectionEditBuffer, SelectionTarget};
-use selection_click::repair_clicks_selection as repair_clicks_buffer;
+pub(crate) use selection_click::repair_clicks_selection as repair_clicks_buffer;
 use selection_normalize::normalize_selection;
 
 use ops::{apply_directional_fade, crop_buffer, reverse_buffer, trim_buffer};

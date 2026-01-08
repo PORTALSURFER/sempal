@@ -4,11 +4,20 @@ use crate::sample_sources::{SampleTag, WavEntry};
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
 use std::cmp::Ordering;
+use std::collections::HashMap;
 use std::sync::mpsc::{Receiver, Sender};
+use std::sync::Arc;
 use std::thread;
 
+struct CompactSearchEntry {
+    display_label: Box<str>,
+    parent_path: Arc<str>,
+    file_name: Box<str>,
+    tag: SampleTag,
+}
+
 struct SearchWorkerCache {
-    entries: Option<Vec<WavEntry>>,
+    entries: Option<Vec<CompactSearchEntry>>,
     source_id: Option<String>,
     revision: u64,
 }
@@ -56,7 +65,38 @@ fn process_search_job(
             if must_reload {
                 match db.list_files() {
                     Ok(loaded_entries) => {
-                        cache.entries = Some(loaded_entries);
+                        let mut interner: HashMap<String, Arc<str>> = HashMap::new();
+                        let compact_entries: Vec<CompactSearchEntry> = loaded_entries
+                            .into_iter()
+                            .map(|e| {
+                                let parent = e
+                                    .relative_path
+                                    .parent()
+                                    .map(|p| p.to_string_lossy().to_string())
+                                    .unwrap_or_default();
+                                let parent_arc = interner
+                                    .entry(parent.clone())
+                                    .or_insert_with(|| Arc::from(parent.as_str()))
+                                    .clone();
+
+                                let file_name = e
+                                    .relative_path
+                                    .file_name()
+                                    .map(|n| n.to_string_lossy().to_string())
+                                    .unwrap_or_default();
+
+                                let display_label =
+                                    crate::egui_app::view_model::sample_display_label(&e.relative_path);
+
+                                CompactSearchEntry {
+                                    display_label: display_label.into_boxed_str(),
+                                    parent_path: parent_arc,
+                                    file_name: file_name.into_boxed_str(),
+                                    tag: e.tag,
+                                }
+                            })
+                            .collect();
+                        cache.entries = Some(compact_entries);
                         cache.source_id = Some(job_source_id_str);
                         cache.revision = revision;
                     }
@@ -96,9 +136,11 @@ fn process_search_job(
         TriageFlagFilter::Untagged => matches!(tag, SampleTag::Neutral),
     };
 
-    let folder_accepts = |relative_path: &std::path::Path| {
+    let folder_accepts = |entry: &CompactSearchEntry| {
+        let path =
+            std::path::Path::new(entry.parent_path.as_ref()).join(entry.file_name.as_ref());
         crate::egui_app::controller::library::source_folders::folder_filter_accepts(
-            relative_path,
+            &path,
             job.folder_selection.as_ref(),
             job.folder_negated.as_ref(),
         )
@@ -109,8 +151,7 @@ fn process_search_job(
 
     if has_query {
         for (index, entry) in entries.iter().enumerate() {
-            let label = crate::egui_app::view_model::sample_display_label(&entry.relative_path);
-            scores[index] = matcher.fuzzy_match(&label, &job.query);
+            scores[index] = matcher.fuzzy_match(&entry.display_label, &job.query);
         }
     }
 
@@ -119,7 +160,7 @@ fn process_search_job(
     if let Some(similar) = &job.similar_query {
         for index in similar.indices.iter().copied() {
             if let Some(entry) = entries.get(index) {
-                if filter_accepts(entry.tag) && folder_accepts(&entry.relative_path) {
+                if filter_accepts(entry.tag) && folder_accepts(entry) {
                     visible.push(index);
                 }
             }
@@ -140,7 +181,7 @@ fn process_search_job(
 
             if let Some(anchor) = similar.anchor_index {
                 if let Some(entry) = entries.get(anchor) {
-                    if filter_accepts(entry.tag) && folder_accepts(&entry.relative_path) {
+                    if filter_accepts(entry.tag) && folder_accepts(entry) {
                         if let Some(pos) = visible.iter().position(|i| *i == anchor) {
                             visible.remove(pos);
                         }
@@ -165,7 +206,7 @@ fn process_search_job(
             SampleTag::Keep => keep.push(index),
         }
 
-        if job.similar_query.is_none() && filter_accepts(entry.tag) && folder_accepts(&entry.relative_path) {
+        if job.similar_query.is_none() && filter_accepts(entry.tag) && folder_accepts(entry) {
             if has_query {
                 if let Some(score) = scores[index] {
                     scratch.push((index, score));
@@ -205,5 +246,68 @@ fn process_search_job(
         neutral,
         keep,
         scores,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_compact_search_entry_and_interning() {
+        let entries = vec![
+            WavEntry {
+                relative_path: std::path::PathBuf::from("kits/drums/kick.wav"),
+                file_size: 100,
+                modified_ns: 1,
+                content_hash: None,
+                tag: SampleTag::Neutral,
+                missing: false,
+            },
+            WavEntry {
+                relative_path: std::path::PathBuf::from("kits/drums/snare.wav"),
+                file_size: 110,
+                modified_ns: 2,
+                content_hash: None,
+                tag: SampleTag::Neutral,
+                missing: false,
+            },
+        ];
+
+        let mut interner: HashMap<String, Arc<str>> = HashMap::new();
+        let compacts: Vec<CompactSearchEntry> = entries
+            .into_iter()
+            .map(|e| {
+                let parent = e
+                    .relative_path
+                    .parent()
+                    .map(|p| p.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                let parent_arc = interner
+                    .entry(parent.clone())
+                    .or_insert_with(|| Arc::from(parent.as_str()))
+                    .clone();
+                let file_name = e
+                    .relative_path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                let display_label = crate::egui_app::view_model::sample_display_label(&e.relative_path);
+                CompactSearchEntry {
+                    display_label: display_label.into_boxed_str(),
+                    parent_path: parent_arc,
+                    file_name: file_name.into_boxed_str(),
+                    tag: e.tag,
+                }
+            })
+            .collect();
+
+        assert_eq!(compacts.len(), 2);
+        assert_eq!(compacts[0].display_label.as_ref(), "kick");
+        assert_eq!(compacts[1].display_label.as_ref(), "snare");
+
+        // Check interning
+        assert!(Arc::ptr_eq(&compacts[0].parent_path, &compacts[1].parent_path));
+        assert_eq!(compacts[0].parent_path.as_ref(), "kits/drums");
     }
 }

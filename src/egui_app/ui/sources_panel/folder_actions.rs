@@ -179,14 +179,14 @@ impl EguiApp {
                 let bound = current == Some(slot);
                 if ui.selectable_label(bound, slot.to_string()).clicked() {
                     self.controller.bind_folder_hotkey(path, Some(slot));
-                    ui.close_menu();
+                    ui.close();
                 }
             }
             if current.is_some() {
                 ui.separator();
                 if ui.button("Clear hotkey").clicked() {
                     self.controller.bind_folder_hotkey(path, None);
-                    ui.close_menu();
+                    ui.close();
                 }
             }
         });

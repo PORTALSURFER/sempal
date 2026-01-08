@@ -1,4 +1,4 @@
-use super::selection_click::repair_clicks_selection;
+use super::repair_clicks_buffer;
 use super::*;
 
 #[test]
@@ -152,7 +152,7 @@ fn click_repair_interpolates_single_sample_linearly() {
         end_frame: 3,
     };
 
-    repair_clicks_selection(&mut buffer).unwrap();
+    repair_clicks_buffer(&mut buffer).unwrap();
 
     assert!(buffer.samples[2].abs() < 1e-6);
 }
@@ -172,7 +172,7 @@ fn click_repair_interpolates_multichannel_linearly() {
         end_frame: 2,
     };
 
-    repair_clicks_selection(&mut buffer).unwrap();
+    repair_clicks_buffer(&mut buffer).unwrap();
 
     assert!((buffer.samples[2] - 0.4).abs() < 1e-6);
     assert!((buffer.samples[3] + 0.4).abs() < 1e-6);
@@ -189,7 +189,7 @@ fn click_repair_interpolates_across_span() {
         end_frame: 4,
     };
 
-    repair_clicks_selection(&mut buffer).unwrap();
+    repair_clicks_buffer(&mut buffer).unwrap();
 
     assert!((buffer.samples[2] - 0.481_481_5).abs() < 1e-5);
     assert!((buffer.samples[3] + 0.481_481_5).abs() < 1e-5);
@@ -206,7 +206,7 @@ fn click_repair_matches_neighbor_blend() {
         end_frame: 3,
     };
 
-    repair_clicks_selection(&mut buffer).unwrap();
+    repair_clicks_buffer(&mut buffer).unwrap();
 
     assert!((buffer.samples[2] - 0.5).abs() < 1e-6);
 }
