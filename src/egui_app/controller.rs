@@ -322,6 +322,10 @@ impl EguiController {
             .as_ref()
             .map(|audio| audio.duration_seconds)
     }
+
+    pub(crate) fn is_issue_gateway_poll_in_progress(&self) -> bool {
+        self.runtime.jobs.issue_gateway_poll_in_progress
+    }
 }
 
 fn log_status_entry(tone: StatusTone, entry: &str) {

@@ -86,6 +86,53 @@ pub fn fetch_issue_token() -> Result<String, IssueAuthError> {
     parse_issue_token(&body)
 }
 
+/// Poll for a token using a request ID.
+pub fn poll_issue_token(request_id: &str) -> Result<Option<String>, IssueAuthError> {
+    let url = format!("{BASE_URL}/auth/poll?requestId={}", encodeURIComponent(request_id));
+    let response = match http_client::agent().get(&url).call() {
+        Ok(response) => response,
+        Err(ureq::Error::Status(202, _)) => return Ok(None),
+        Err(ureq::Error::Status(code, response)) => {
+            let body =
+                read_body_limited(response, MAX_AUTH_RESPONSE_BYTES).unwrap_or_else(|err| err);
+            return Err(IssueAuthError::ServerError(format!("HTTP {code}: {body}")));
+        }
+        Err(ureq::Error::Transport(err)) => {
+            return Err(IssueAuthError::Transport(err.to_string()));
+        }
+    };
+
+    let body = read_body_limited(response, MAX_AUTH_RESPONSE_BYTES)
+        .map_err(IssueAuthError::InvalidResponse)?;
+    
+    #[derive(Deserialize)]
+    struct PollResponse {
+        ok: bool,
+        #[serde(rename = "sessionId")]
+        session_id: Option<String>,
+        error: Option<String>,
+    }
+    
+    let parsed: PollResponse = serde_json::from_str(&body)
+        .map_err(|err| IssueAuthError::InvalidResponse(err.to_string()))?;
+        
+    if let Some(token) = parsed.session_id {
+        if looks_like_issue_token(&token) {
+            return Ok(Some(token));
+        }
+    }
+    
+    if let Some(err) = parsed.error {
+        return Err(IssueAuthError::ServerError(err));
+    }
+    
+    Ok(None)
+}
+
+fn encodeURIComponent(s: &str) -> String {
+    url::form_urlencoded::byte_serialize(s.as_bytes()).collect()
+}
+
 pub fn create_issue(
     token: &str,
     request: &CreateIssueRequest,

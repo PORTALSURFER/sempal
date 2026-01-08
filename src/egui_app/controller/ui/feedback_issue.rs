@@ -36,17 +36,26 @@ impl EguiController {
         self.ui.feedback_issue.connecting = true;
         self.ui.feedback_issue.last_error = None;
         self.set_status("Opening GitHub auth page…", StatusTone::Info);
-        let auth_url = crate::issue_gateway::api::AUTH_START_URL;
-        if let Err(err) = open::that(auth_url) {
+        
+        // Generate a random request ID for automatic polling
+        let request_id = format!("req_{}", uuid::Uuid::new_v4());
+        let auth_url = format!("{}?requestId={}", crate::issue_gateway::api::AUTH_START_URL, request_id);
+        
+        if let Err(err) = open::that(&auth_url) {
             self.ui.feedback_issue.last_error = Some(format!(
-                "Failed to open auth URL. Open it manually and paste the token: {auth_url} ({err})"
+                "Failed to open auth URL. Open it manually and paste the token: {} ({err})",
+                crate::issue_gateway::api::AUTH_START_URL
             ));
             self.set_status("GitHub connect failed".to_string(), StatusTone::Error);
+            self.ui.feedback_issue.connecting = false;
+            self.ui.feedback_issue.token_modal_open = true;
+            self.ui.feedback_issue.focus_token_requested = true;
+        } else {
+            // Start polling in the background
+            self.runtime.jobs.begin_issue_gateway_poll(super::jobs::IssueGatewayPollJob {
+                request_id,
+            });
         }
-        self.ui.feedback_issue.connecting = false;
-        self.ui.feedback_issue.token_modal_open = true;
-        self.ui.feedback_issue.focus_token_requested = true;
-        self.ui.feedback_issue.token_autofill_last = None;
     }
 
     pub(crate) fn save_github_issue_token(&mut self, token: &str) {
@@ -116,6 +125,7 @@ impl EguiController {
         result: Result<String, crate::issue_gateway::api::IssueAuthError>,
     ) {
         self.ui.feedback_issue.connecting = false;
+        self.runtime.jobs.clear_issue_gateway_poll();
         match result {
             Ok(token) => {
                 if !self.persist_issue_token(&token, false) {

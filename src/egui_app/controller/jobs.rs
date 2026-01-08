@@ -66,6 +66,11 @@ pub(super) struct IssueGatewayJob {
 }
 
 #[derive(Debug)]
+pub(super) struct IssueGatewayPollJob {
+    pub(super) request_id: String,
+}
+
+#[derive(Debug)]
 pub(super) struct IssueGatewayCreateResult {
     pub(super) result: Result<
         crate::issue_gateway::api::CreateIssueResponse,
@@ -161,6 +166,8 @@ pub(crate) struct ControllerJobs {
     pub(super) update_check_in_progress: bool,
     pub(super) issue_gateway_in_progress: bool,
     pub(super) issue_gateway_auth_in_progress: bool,
+    pub(super) issue_gateway_poll_in_progress: bool,
+    pub(super) issue_gateway_poll_cancel: Option<Arc<std::sync::atomic::AtomicBool>>,
 }
 
 impl ControllerJobs {
@@ -194,6 +201,8 @@ impl ControllerJobs {
             update_check_in_progress: false,
             issue_gateway_in_progress: false,
             issue_gateway_auth_in_progress: false,
+            issue_gateway_poll_in_progress: false,
+            issue_gateway_poll_cancel: None,
         };
         jobs.forward_wav_results(wav_job_rx);
         jobs.forward_audio_results(audio_job_rx);
@@ -480,5 +489,47 @@ impl ControllerJobs {
 
     pub(super) fn clear_issue_gateway_auth(&mut self) {
         self.issue_gateway_auth_in_progress = false;
+    }
+
+    pub(super) fn begin_issue_gateway_poll(&mut self, job: IssueGatewayPollJob) {
+        if self.issue_gateway_poll_in_progress {
+            return;
+        }
+        self.issue_gateway_poll_in_progress = true;
+        let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        self.issue_gateway_poll_cancel = Some(cancel.clone());
+        let tx = self.message_tx.clone();
+        thread::spawn(move || {
+            loop {
+                if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                    break;
+                }
+                match crate::issue_gateway::api::poll_issue_token(&job.request_id) {
+                    Ok(Some(token)) => {
+                        let _ = tx.send(JobMessage::IssueGatewayAuthed(IssueGatewayAuthResult {
+                            result: Ok(token),
+                        }));
+                        break;
+                    }
+                    Ok(None) => {
+                        // Keep polling
+                    }
+                    Err(err) => {
+                        let _ = tx.send(JobMessage::IssueGatewayAuthed(IssueGatewayAuthResult {
+                            result: Err(err),
+                        }));
+                        break;
+                    }
+                }
+                thread::sleep(std::time::Duration::from_secs(3));
+            }
+        });
+    }
+
+    pub(super) fn clear_issue_gateway_poll(&mut self) {
+        self.issue_gateway_poll_in_progress = false;
+        if let Some(cancel) = self.issue_gateway_poll_cancel.take() {
+            cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
     }
 }

@@ -195,7 +195,10 @@ impl EguiApp {
                 self.controller.disconnect_github_issue_reporting();
             }
         });
-        if self.controller.ui.feedback_issue.connecting {
+        let connecting = self.controller.ui.feedback_issue.connecting 
+            || self.controller.is_issue_gateway_poll_in_progress();
+
+        if connecting {
             ui.label(RichText::new("Status: connecting…").color(palette.text_muted));
         } else {
             match crate::issue_gateway::IssueTokenStore::new().and_then(|store| store.get()) {

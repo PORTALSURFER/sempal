@@ -163,8 +163,15 @@ export default {
 		}
 
 		if (req.method === "GET" && url.pathname === "/auth/start") {
+			const requestId = url.searchParams.get("requestId");
 			const state = randomToken(24);
-			await env.SESSIONS.put(`state:${state}`, "1", { expirationTtl: 600 });
+			const stateData: any = { ok: "1" };
+			if (requestId) {
+				stateData.requestId = requestId;
+			}
+			await env.SESSIONS.put(`state:${state}`, JSON.stringify(stateData), {
+				expirationTtl: 600
+			});
 			const authUrl = new URL("https://github.com/login/oauth/authorize");
 			authUrl.searchParams.set("client_id", env.GITHUB_CLIENT_ID);
 			authUrl.searchParams.set("state", state);
@@ -178,11 +185,13 @@ export default {
 				return json({ error: "Missing code/state" }, { status: 400 });
 			}
 			const stateKey = `state:${state}`;
-			const ok = await env.SESSIONS.get(stateKey);
-			if (!ok) {
+			const stateRaw = await env.SESSIONS.get(stateKey);
+			if (!stateRaw) {
 				return json({ error: "Invalid/expired state" }, { status: 400 });
 			}
+			const stateData = JSON.parse(stateRaw);
 			await env.SESSIONS.delete(stateKey);
+
 			let githubToken: string;
 			try {
 				githubToken = await exchangeCodeForToken(env, code);
@@ -193,6 +202,14 @@ export default {
 			await env.SESSIONS.put(`sess:${sessionId}`, githubToken, {
 				expirationTtl: 60 * 60 * 24 * 7
 			});
+
+			// If requestId was present, store the sessionId for polling
+			if (stateData.requestId) {
+				await env.SESSIONS.put(`poll:${stateData.requestId}`, sessionId, {
+					expirationTtl: 300 // 5 minutes to poll
+				});
+			}
+
 			const cookie = `sempal_sess=${encodeURIComponent(
 				sessionId
 			)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${60 * 60 * 24 * 7
@@ -207,10 +224,10 @@ export default {
 
 			return new Response(
 				`✔ GitHub connected
+				
+${stateData.requestId ? "Your app should now be connected automatically." : "Copy this token into the app:"}
 
-Copy this token into the app:
-
-${sessionId}
+${stateData.requestId ? "" : sessionId}
 
 You can close this tab.`,
 				{
@@ -221,6 +238,19 @@ You can close this tab.`,
 					}
 				}
 			);
+		}
+
+		if (req.method === "GET" && url.pathname === "/auth/poll") {
+			const requestId = url.searchParams.get("requestId");
+			if (!requestId) {
+				return withCors(req, json({ error: "Missing requestId" }, { status: 400 }));
+			}
+			const sessionId = await env.SESSIONS.get(`poll:${requestId}`);
+			if (sessionId) {
+				await env.SESSIONS.delete(`poll:${requestId}`);
+				return withCors(req, json({ ok: true, sessionId }));
+			}
+			return withCors(req, json({ ok: false }, { status: 202 })); // Accepted, but processing (waiting)
 		}
 
 		if (req.method === "POST" && url.pathname === "/issue") {
