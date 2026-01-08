@@ -24,19 +24,19 @@ impl std::ops::DerefMut for WaveformController<'_> {
     }
 }
 
-pub(super) const PLAYHEAD_STEP_PX: f32 = 32.0;
-pub(super) const PLAYHEAD_STEP_PX_FINE: f32 = 1.0;
-pub(super) const VIEW_EPSILON: f32 = 1e-5;
-pub(super) const CURSOR_IDLE_FADE: Duration = Duration::from_millis(500);
+pub(crate) const PLAYHEAD_STEP_PX: f32 = 32.0;
+pub(crate) const PLAYHEAD_STEP_PX_FINE: f32 = 1.0;
+pub(crate) const VIEW_EPSILON: f32 = 1e-5;
+pub(crate) const CURSOR_IDLE_FADE: Duration = Duration::from_millis(500);
 
 #[derive(Clone, Copy, Debug)]
-pub(super) enum CursorUpdateSource {
+pub(crate) enum CursorUpdateSource {
     Hover,
     Navigation,
 }
 
 impl WaveformController<'_> {
-    pub(super) fn display_view(&self) -> WaveformView {
+    pub(crate) fn display_view(&self) -> WaveformView {
         self.ui
             .waveform
             .image
@@ -57,7 +57,7 @@ impl WaveformController<'_> {
         self.zoom_waveform_steps_with_factor(zoom_in, steps, focus, None, true, true);
     }
 
-    pub(super) fn waveform_step_size(&self, fine: bool) -> f32 {
+    pub(crate) fn waveform_step_size(&self, fine: bool) -> f32 {
         let width_px = self.sample_view.waveform.size[0].max(1) as f32;
         let px = if fine {
             PLAYHEAD_STEP_PX_FINE
@@ -68,7 +68,7 @@ impl WaveformController<'_> {
         self.ui.waveform.view.width() * px_fraction
     }
 
-    pub(super) fn bpm_snap_step(&self) -> Option<f32> {
+    pub(crate) fn bpm_snap_step(&self) -> Option<f32> {
         if !self.ui.waveform.bpm_snap_enabled {
             return None;
         }
@@ -88,7 +88,7 @@ impl WaveformController<'_> {
         }
     }
 
-    pub(super) fn selection_min_width(&self) -> f32 {
+    pub(crate) fn selection_min_width(&self) -> f32 {
         if !self.ui.waveform.bpm_snap_enabled {
             return 0.0;
         }
@@ -97,7 +97,7 @@ impl WaveformController<'_> {
             .unwrap_or(0.0)
     }
 
-    pub(super) fn refresh_loop_after_selection_change(&mut self, selection: SelectionRange) {
+    pub(crate) fn refresh_loop_after_selection_change(&mut self, selection: SelectionRange) {
         if !self.ui.waveform.loop_enabled || !self.is_playing() {
             return;
         }
@@ -115,7 +115,7 @@ impl WaveformController<'_> {
         }
     }
 
-    pub(super) fn ensure_selection_visible_in_view(&mut self, selection: SelectionRange) {
+    pub(crate) fn ensure_selection_visible_in_view(&mut self, selection: SelectionRange) {
         if !self.waveform_ready() {
             return;
         }
@@ -151,7 +151,7 @@ impl WaveformController<'_> {
         self.set_waveform_cursor_with_source(position, CursorUpdateSource::Hover);
     }
 
-    pub(super) fn set_waveform_cursor_with_source(
+    pub(crate) fn set_waveform_cursor_with_source(
         &mut self,
         position: f32,
         source: CursorUpdateSource,
@@ -171,7 +171,7 @@ impl WaveformController<'_> {
         self.ensure_cursor_visible_in_view(clamped);
     }
 
-    pub(super) fn waveform_navigation_anchor(&self) -> f32 {
+    pub(crate) fn waveform_navigation_anchor(&self) -> f32 {
         if let Some(cursor) = self.ui.waveform.cursor {
             return cursor;
         }
@@ -188,7 +188,7 @@ impl WaveformController<'_> {
         (view.start + view.end) * 0.5
     }
 
-    pub(super) fn set_playhead_after_selection(&mut self, position: f32, resume_playback: bool) {
+    pub(crate) fn set_playhead_after_selection(&mut self, position: f32, resume_playback: bool) {
         if resume_playback && self.is_playing() {
             self.set_playhead_and_seek(position);
         } else {
@@ -219,7 +219,7 @@ impl WaveformController<'_> {
         self.ensure_playhead_visible_in_view();
     }
 
-    pub(super) fn ensure_playhead_visible_in_view(&mut self) {
+    pub(crate) fn ensure_playhead_visible_in_view(&mut self) {
         let mut view = self.ui.waveform.view;
         let width = view.width();
         let pos = self.ui.waveform.playhead.position;
@@ -285,7 +285,7 @@ impl WaveformController<'_> {
         }
     }
 
-    pub(super) fn waveform_focus_point(&self) -> f32 {
+    pub(crate) fn waveform_focus_point(&self) -> f32 {
         if let Some(cursor) = self.ui.waveform.cursor {
             cursor
         } else if let Some(marker) = self.ui.waveform.last_start_marker {
@@ -300,7 +300,7 @@ impl WaveformController<'_> {
         }
     }
 
-    pub(super) fn apply_zoom_step(
+    pub(crate) fn apply_zoom_step(
         &mut self,
         zoom_in: bool,
         focus: Option<f32>,
@@ -324,7 +324,7 @@ impl WaveformController<'_> {
         };
         let min_width = self.min_view_width();
         let max_zoom =
-            (1.0 / min_width).min(crate::egui_app::controller::wavs::MAX_ZOOM_MULTIPLIER);
+            (1.0 / min_width).min(crate::egui_app::controller::library::wavs::MAX_ZOOM_MULTIPLIER);
         let min_render_width = (1.0 / max_zoom).max(min_width);
         if zoom_in && original.width() <= min_render_width + VIEW_EPSILON {
             return false;
@@ -354,7 +354,7 @@ impl WaveformController<'_> {
     }
 }
 
-pub(super) fn clamp_selection_bounds(start: f32, end: f32, min_width: f32) -> (f32, f32) {
+pub(crate) fn clamp_selection_bounds(start: f32, end: f32, min_width: f32) -> (f32, f32) {
     let mut a = start.clamp(0.0, 1.0);
     let mut b = end.clamp(0.0, 1.0);
     if a > b {
@@ -368,6 +368,6 @@ pub(super) fn clamp_selection_bounds(start: f32, end: f32, min_width: f32) -> (f
     (a, b)
 }
 
-pub(super) fn views_differ(a: WaveformView, b: WaveformView) -> bool {
+pub(crate) fn views_differ(a: WaveformView, b: WaveformView) -> bool {
     (a.start - b.start).abs() > VIEW_EPSILON || (a.end - b.end).abs() > VIEW_EPSILON
 }

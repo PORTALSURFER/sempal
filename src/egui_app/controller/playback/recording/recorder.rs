@@ -5,15 +5,15 @@ use crate::waveform::{DecodedWaveform, WaveformPeaks};
 use std::sync::Arc;
 use std::time::Instant;
 
-pub(super) fn is_recording(controller: &EguiController) -> bool {
+pub(crate) fn is_recording(controller: &EguiController) -> bool {
     controller.audio.recorder.is_some()
 }
 
-pub(super) fn start_recording(controller: &mut EguiController) -> Result<(), String> {
+pub(crate) fn start_recording(controller: &mut EguiController) -> Result<(), String> {
     start_recording_in_current_source(controller)
 }
 
-pub(super) fn start_recording_in_current_source(
+pub(crate) fn start_recording_in_current_source(
     controller: &mut EguiController,
 ) -> Result<(), String> {
     if is_recording(controller) {
@@ -50,7 +50,7 @@ pub(super) fn start_recording_in_current_source(
     Ok(())
 }
 
-pub(super) fn stop_recording(
+pub(crate) fn stop_recording(
     controller: &mut EguiController,
 ) -> Result<Option<RecordingOutcome>, String> {
     let target = controller.audio.recording_target.clone();
@@ -98,12 +98,12 @@ pub(super) fn stop_recording(
     Ok(Some(outcome))
 }
 
-pub(super) fn stop_recording_and_load(controller: &mut EguiController) -> Result<(), String> {
+pub(crate) fn stop_recording_and_load(controller: &mut EguiController) -> Result<(), String> {
     let _ = stop_recording(controller)?;
     Ok(())
 }
 
-pub(super) fn refresh_output_after_recording(controller: &mut EguiController) {
+pub(crate) fn refresh_output_after_recording(controller: &mut EguiController) {
     if !output_host_is_asio(controller) {
         return;
     }
@@ -205,7 +205,7 @@ pub(crate) fn refresh_recording_waveform(controller: &mut EguiController) {
     }
 }
 
-pub(super) fn start_input_monitor(controller: &mut EguiController, recorder: &AudioRecorder) {
+pub(crate) fn start_input_monitor(controller: &mut EguiController, recorder: &AudioRecorder) {
     if !controller.settings.controls.input_monitoring_enabled {
         return;
     }
@@ -229,7 +229,7 @@ pub(super) fn start_input_monitor(controller: &mut EguiController, recorder: &Au
     controller.audio.input_monitor = Some(monitor);
 }
 
-pub(super) fn stop_input_monitor(controller: &mut EguiController) {
+pub(crate) fn stop_input_monitor(controller: &mut EguiController) {
     if let Some(recorder) = controller.audio.recorder.as_ref() {
         recorder.detach_monitor();
     }

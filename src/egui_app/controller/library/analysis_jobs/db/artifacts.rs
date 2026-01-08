@@ -1,25 +1,25 @@
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 
-pub(in crate::egui_app::controller::analysis_jobs) struct CachedFeatures {
-    pub(in crate::egui_app::controller::analysis_jobs) feat_version: i64,
-    pub(in crate::egui_app::controller::analysis_jobs) vec_blob: Vec<u8>,
-    pub(in crate::egui_app::controller::analysis_jobs) computed_at: i64,
-    pub(in crate::egui_app::controller::analysis_jobs) duration_seconds: f32,
-    pub(in crate::egui_app::controller::analysis_jobs) sr_used: u32,
+pub(crate) struct CachedFeatures {
+    pub(crate) feat_version: i64,
+    pub(crate) vec_blob: Vec<u8>,
+    pub(crate) computed_at: i64,
+    pub(crate) duration_seconds: f32,
+    pub(crate) sr_used: u32,
 }
 
-pub(in crate::egui_app::controller::analysis_jobs) struct CachedEmbedding {
+pub(crate) struct CachedEmbedding {
     #[allow(dead_code)]
-    pub(in crate::egui_app::controller::analysis_jobs) analysis_version: String,
-    pub(in crate::egui_app::controller::analysis_jobs) model_id: String,
-    pub(in crate::egui_app::controller::analysis_jobs) dim: i64,
-    pub(in crate::egui_app::controller::analysis_jobs) dtype: String,
-    pub(in crate::egui_app::controller::analysis_jobs) l2_normed: bool,
-    pub(in crate::egui_app::controller::analysis_jobs) vec_blob: Vec<u8>,
-    pub(in crate::egui_app::controller::analysis_jobs) created_at: i64,
+    pub(crate) analysis_version: String,
+    pub(crate) model_id: String,
+    pub(crate) dim: i64,
+    pub(crate) dtype: String,
+    pub(crate) l2_normed: bool,
+    pub(crate) vec_blob: Vec<u8>,
+    pub(crate) created_at: i64,
 }
 
-pub(in crate::egui_app::controller::analysis_jobs) fn invalidate_analysis_artifacts(
+pub(crate) fn invalidate_analysis_artifacts(
     conn: &mut Connection,
     sample_ids: &[String],
 ) -> Result<(), String> {
@@ -57,7 +57,7 @@ pub(in crate::egui_app::controller::analysis_jobs) fn invalidate_analysis_artifa
     Ok(())
 }
 
-pub(in crate::egui_app::controller::analysis_jobs) fn update_analysis_metadata(
+pub(crate) fn update_analysis_metadata(
     conn: &Connection,
     sample_id: &str,
     content_hash: Option<&str>,
@@ -85,7 +85,7 @@ pub(in crate::egui_app::controller::analysis_jobs) fn update_analysis_metadata(
     Ok(())
 }
 
-pub(in crate::egui_app::controller::analysis_jobs) fn upsert_analysis_features(
+pub(crate) fn upsert_analysis_features(
     conn: &Connection,
     sample_id: &str,
     vec_blob: &[u8],
@@ -105,7 +105,7 @@ pub(in crate::egui_app::controller::analysis_jobs) fn upsert_analysis_features(
     Ok(())
 }
 
-pub(in crate::egui_app::controller::analysis_jobs) fn upsert_embedding(
+pub(crate) fn upsert_embedding(
     conn: &Connection,
     sample_id: &str,
     model_id: &str,
@@ -133,7 +133,7 @@ pub(in crate::egui_app::controller::analysis_jobs) fn upsert_embedding(
     Ok(())
 }
 
-pub(in crate::egui_app::controller::analysis_jobs) fn cached_features_by_hash(
+pub(crate) fn cached_features_by_hash(
     conn: &Connection,
     content_hash: &str,
     analysis_version: &str,
@@ -158,7 +158,7 @@ pub(in crate::egui_app::controller::analysis_jobs) fn cached_features_by_hash(
     .map_err(|err| format!("Failed to load cached features for {content_hash}: {err}"))
 }
 
-pub(in crate::egui_app::controller::analysis_jobs) fn cached_embedding_by_hash(
+pub(crate) fn cached_embedding_by_hash(
     conn: &Connection,
     content_hash: &str,
     analysis_version: &str,
@@ -185,7 +185,7 @@ pub(in crate::egui_app::controller::analysis_jobs) fn cached_embedding_by_hash(
     .map_err(|err| format!("Failed to load cached embedding for {content_hash}: {err}"))
 }
 
-pub(in crate::egui_app::controller::analysis_jobs) fn upsert_cached_features(
+pub(crate) fn upsert_cached_features(
     conn: &Connection,
     content_hash: &str,
     analysis_version: &str,
@@ -220,7 +220,7 @@ pub(in crate::egui_app::controller::analysis_jobs) fn upsert_cached_features(
     Ok(())
 }
 
-pub(in crate::egui_app::controller::analysis_jobs) fn upsert_cached_embedding(
+pub(crate) fn upsert_cached_embedding(
     conn: &Connection,
     content_hash: &str,
     analysis_version: &str,

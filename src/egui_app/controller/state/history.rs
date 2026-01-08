@@ -1,17 +1,18 @@
 //! Undo and navigation history state for the controller.
 
-use super::super::{SourceId, undo};
+use crate::egui_app::controller::undo;
+use crate::sample_sources::SourceId;
 use std::collections::VecDeque;
 use std::path::PathBuf;
 
-pub(in crate::egui_app::controller) struct ControllerHistoryState {
-    pub(in crate::egui_app::controller) undo_stack: undo::UndoStack<super::super::EguiController>,
-    pub(in crate::egui_app::controller) random_history: RandomHistoryState,
-    pub(in crate::egui_app::controller) focus_history: FocusHistoryState,
+pub(crate) struct ControllerHistoryState {
+    pub(crate) undo_stack: undo::UndoStack<super::super::EguiController>,
+    pub(crate) random_history: RandomHistoryState,
+    pub(crate) focus_history: FocusHistoryState,
 }
 
 impl ControllerHistoryState {
-    pub(in crate::egui_app::controller) fn new(undo_limit: usize) -> Self {
+    pub(crate) fn new(undo_limit: usize) -> Self {
         Self {
             undo_stack: undo::UndoStack::new(undo_limit),
             random_history: RandomHistoryState::new(),
@@ -21,18 +22,18 @@ impl ControllerHistoryState {
 }
 
 #[derive(Clone)]
-pub(in crate::egui_app::controller) struct RandomHistoryEntry {
-    pub(in crate::egui_app::controller) source_id: SourceId,
-    pub(in crate::egui_app::controller) relative_path: PathBuf,
+pub(crate) struct RandomHistoryEntry {
+    pub(crate) source_id: SourceId,
+    pub(crate) relative_path: PathBuf,
 }
 
-pub(in crate::egui_app::controller) struct RandomHistoryState {
-    pub(in crate::egui_app::controller) entries: VecDeque<RandomHistoryEntry>,
-    pub(in crate::egui_app::controller) cursor: Option<usize>,
+pub(crate) struct RandomHistoryState {
+    pub(crate) entries: VecDeque<RandomHistoryEntry>,
+    pub(crate) cursor: Option<usize>,
 }
 
 impl RandomHistoryState {
-    pub(in crate::egui_app::controller) fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             entries: VecDeque::new(),
             cursor: None,
@@ -41,19 +42,19 @@ impl RandomHistoryState {
 }
 
 #[derive(Clone, PartialEq, Eq)]
-pub(in crate::egui_app::controller) struct FocusHistoryEntry {
-    pub(in crate::egui_app::controller) source_id: SourceId,
-    pub(in crate::egui_app::controller) relative_path: PathBuf,
+pub(crate) struct FocusHistoryEntry {
+    pub(crate) source_id: SourceId,
+    pub(crate) relative_path: PathBuf,
 }
 
-pub(in crate::egui_app::controller) struct FocusHistoryState {
-    pub(in crate::egui_app::controller) entries: VecDeque<FocusHistoryEntry>,
-    pub(in crate::egui_app::controller) cursor: Option<usize>,
-    pub(in crate::egui_app::controller) suspend_push: bool,
+pub(crate) struct FocusHistoryState {
+    pub(crate) entries: VecDeque<FocusHistoryEntry>,
+    pub(crate) cursor: Option<usize>,
+    pub(crate) suspend_push: bool,
 }
 
 impl FocusHistoryState {
-    pub(in crate::egui_app::controller) fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             entries: VecDeque::new(),
             cursor: None,

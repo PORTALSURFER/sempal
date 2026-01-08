@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use tracing::info;
 
 impl DragDropController<'_> {
-    pub(in crate::egui_app::controller::drag_drop_controller) fn handle_waveform_sample_drop_to_browser(
+    pub(crate) fn handle_waveform_sample_drop_to_browser(
         &mut self,
         source_id: SourceId,
         relative_path: PathBuf,

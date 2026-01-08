@@ -1,4 +1,5 @@
 use super::*;
+use crate::egui_app::controller::library::analysis_jobs;
 use rusqlite::types::Value;
 use rusqlite::{Connection, OptionalExtension, params, params_from_iter};
 use std::collections::HashMap;
@@ -98,7 +99,7 @@ impl EguiController {
         umap_version: &str,
         sample_id: &str,
     ) -> Result<Option<(f32, f32)>, String> {
-        let (source_id, _relative) = super::analysis_jobs::parse_sample_id(sample_id)?;
+        let (source_id, _relative) = analysis_jobs::parse_sample_id(sample_id)?;
         let source_id = SourceId::from_string(source_id);
         let conn = open_source_db(self, Some(&source_id))?;
         load_umap_point_for_sample(&conn, model_id, umap_version, sample_id)
@@ -124,7 +125,7 @@ impl EguiController {
     }
 }
 
-pub(super) fn run_umap_build(
+pub(crate) fn run_umap_build(
     model_id: &str,
     umap_version: &str,
     source_id: &SourceId,
@@ -134,7 +135,7 @@ pub(super) fn run_umap_build(
     Ok(())
 }
 
-pub(super) fn run_umap_cluster_build(
+pub(crate) fn run_umap_cluster_build(
     model_id: &str,
     umap_version: &str,
     source_id: Option<&SourceId>,
@@ -151,7 +152,7 @@ pub(super) fn run_umap_cluster_build(
         Some(umap_version),
         sample_id_prefix.as_deref(),
         crate::analysis::hdbscan::HdbscanConfig {
-            min_cluster_size: super::similarity_prep::DEFAULT_CLUSTER_MIN_SIZE,
+            min_cluster_size: crate::egui_app::controller::library::similarity_prep::DEFAULT_CLUSTER_MIN_SIZE,
             min_samples: None,
             allow_single_cluster: false,
         },
@@ -169,7 +170,7 @@ fn open_source_db(
         .iter()
         .find(|source| &source.id == source_id)
         .ok_or_else(|| "Source not found".to_string())?;
-    super::analysis_jobs::open_source_db(&source.root)
+    analysis_jobs::open_source_db(&source.root)
 }
 
 fn open_source_db_for_id(source_id: &SourceId) -> Result<Connection, String> {
@@ -179,7 +180,7 @@ fn open_source_db_for_id(source_id: &SourceId) -> Result<Connection, String> {
         .iter()
         .find(|source| &source.id == source_id)
         .ok_or_else(|| "Source not found".to_string())?;
-    super::analysis_jobs::open_source_db(&source.root)
+    analysis_jobs::open_source_db(&source.root)
 }
 
 fn load_umap_bounds(

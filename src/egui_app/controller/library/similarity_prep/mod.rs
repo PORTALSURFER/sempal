@@ -7,5 +7,6 @@ mod state;
 mod store;
 mod transitions;
 mod ui;
+pub(crate) use store::{DbSimilarityPrepStore, SimilarityPrepStore};
 
-pub(super) const DEFAULT_CLUSTER_MIN_SIZE: usize = 10;
+pub(crate) const DEFAULT_CLUSTER_MIN_SIZE: usize = 10;

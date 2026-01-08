@@ -1,24 +1,25 @@
 //! Cached data for the controller, including databases and UI caches.
 
 use super::super::{
-    SampleSource, SourceDatabase, SourceDbError, SourceId, WavEntry, source_folders, wavs,
+    SampleSource, SourceDatabase, SourceDbError, SourceId, WavEntry,
 };
+use crate::egui_app::controller::library::{source_folders, wavs};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-pub(in crate::egui_app::controller) struct WavCacheState {
-    pub(in crate::egui_app::controller) entries: HashMap<SourceId, WavEntriesState>,
+pub(crate) struct WavCacheState {
+    pub(crate) entries: HashMap<SourceId, WavEntriesState>,
 }
 
 impl WavCacheState {
-    pub(in crate::egui_app::controller) fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             entries: HashMap::new(),
         }
     }
 
-    pub(in crate::egui_app::controller) fn insert_page(
+    pub(crate) fn insert_page(
         &mut self,
         source_id: SourceId,
         total: usize,
@@ -36,13 +37,13 @@ impl WavCacheState {
     }
 }
 
-pub(in crate::egui_app::controller) struct LibraryCacheState {
-    pub(in crate::egui_app::controller) db: HashMap<SourceId, Rc<SourceDatabase>>,
-    pub(in crate::egui_app::controller) wav: WavCacheState,
+pub(crate) struct LibraryCacheState {
+    pub(crate) db: HashMap<SourceId, Rc<SourceDatabase>>,
+    pub(crate) wav: WavCacheState,
 }
 
 impl LibraryCacheState {
-    pub(in crate::egui_app::controller) fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             db: HashMap::new(),
             wav: WavCacheState::new(),
@@ -50,7 +51,7 @@ impl LibraryCacheState {
     }
 
     /// Resolve or open the database for `source`, caching the handle.
-    pub(in crate::egui_app::controller) fn database_for(
+    pub(crate) fn database_for(
         &mut self,
         source: &SampleSource,
     ) -> Result<Rc<SourceDatabase>, SourceDbError> {
@@ -63,13 +64,13 @@ impl LibraryCacheState {
     }
 }
 
-pub(in crate::egui_app::controller) struct BrowserCacheState {
-    pub(in crate::egui_app::controller) labels: HashMap<SourceId, Vec<String>>,
-    pub(in crate::egui_app::controller) analysis_failures:
+pub(crate) struct BrowserCacheState {
+    pub(crate) labels: HashMap<SourceId, Vec<String>>,
+    pub(crate) analysis_failures:
         HashMap<SourceId, HashMap<PathBuf, String>>,
-    pub(in crate::egui_app::controller) analysis_failures_pending: HashSet<SourceId>,
-    pub(in crate::egui_app::controller) search: wavs::BrowserSearchCache,
-    pub(in crate::egui_app::controller) features: HashMap<SourceId, FeatureCache>,
+    pub(crate) analysis_failures_pending: HashSet<SourceId>,
+    pub(crate) search: wavs::BrowserSearchCache,
+    pub(crate) features: HashMap<SourceId, FeatureCache>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -95,18 +96,18 @@ pub(crate) struct FeatureCache {
     pub(crate) rows: Vec<Option<FeatureStatus>>,
 }
 
-pub(in crate::egui_app::controller) struct FolderBrowsersState {
-    pub(in crate::egui_app::controller) models:
+pub(crate) struct FolderBrowsersState {
+    pub(crate) models:
         HashMap<SourceId, source_folders::FolderBrowserModel>,
 }
 
-pub(in crate::egui_app::controller) struct ControllerUiCacheState {
-    pub(in crate::egui_app::controller) browser: BrowserCacheState,
-    pub(in crate::egui_app::controller) folders: FolderBrowsersState,
+pub(crate) struct ControllerUiCacheState {
+    pub(crate) browser: BrowserCacheState,
+    pub(crate) folders: FolderBrowsersState,
 }
 
 impl ControllerUiCacheState {
-    pub(in crate::egui_app::controller) fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             browser: BrowserCacheState {
                 labels: HashMap::new(),
@@ -122,15 +123,15 @@ impl ControllerUiCacheState {
     }
 }
 
-pub(in crate::egui_app::controller) struct WavEntriesState {
-    pub(in crate::egui_app::controller) total: usize,
-    pub(in crate::egui_app::controller) page_size: usize,
-    pub(in crate::egui_app::controller) pages: HashMap<usize, Vec<WavEntry>>,
-    pub(in crate::egui_app::controller) lookup: HashMap<PathBuf, usize>,
+pub(crate) struct WavEntriesState {
+    pub(crate) total: usize,
+    pub(crate) page_size: usize,
+    pub(crate) pages: HashMap<usize, Vec<WavEntry>>,
+    pub(crate) lookup: HashMap<PathBuf, usize>,
 }
 
 impl WavEntriesState {
-    pub(in crate::egui_app::controller) fn new(total: usize, page_size: usize) -> Self {
+    pub(crate) fn new(total: usize, page_size: usize) -> Self {
         Self {
             total,
             page_size: page_size.max(1),
@@ -139,13 +140,13 @@ impl WavEntriesState {
         }
     }
 
-    pub(in crate::egui_app::controller) fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         self.total = 0;
         self.pages.clear();
         self.lookup.clear();
     }
 
-    pub(in crate::egui_app::controller) fn insert_page(
+    pub(crate) fn insert_page(
         &mut self,
         page_index: usize,
         entries: Vec<WavEntry>,
@@ -157,7 +158,7 @@ impl WavEntriesState {
         self.pages.insert(page_index, entries);
     }
 
-    pub(in crate::egui_app::controller) fn entry(&self, index: usize) -> Option<&WavEntry> {
+    pub(crate) fn entry(&self, index: usize) -> Option<&WavEntry> {
         let page_index = index / self.page_size;
         let in_page = index % self.page_size;
         self.pages
@@ -165,7 +166,7 @@ impl WavEntriesState {
             .and_then(|page| page.get(in_page))
     }
 
-    pub(in crate::egui_app::controller) fn entry_mut(
+    pub(crate) fn entry_mut(
         &mut self,
         index: usize,
     ) -> Option<&mut WavEntry> {
@@ -176,7 +177,7 @@ impl WavEntriesState {
             .and_then(|page| page.get_mut(in_page))
     }
 
-    pub(in crate::egui_app::controller) fn update_entry(
+    pub(crate) fn update_entry(
         &mut self,
         path: &Path,
         entry: WavEntry,
@@ -192,7 +193,7 @@ impl WavEntriesState {
         true
     }
 
-    pub(in crate::egui_app::controller) fn insert_lookup(&mut self, path: PathBuf, index: usize) {
+    pub(crate) fn insert_lookup(&mut self, path: PathBuf, index: usize) {
         let normalized = path.to_string_lossy().replace('\\', "/");
         self.lookup.insert(PathBuf::from(normalized), index);
     }

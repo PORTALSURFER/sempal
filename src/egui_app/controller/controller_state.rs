@@ -9,7 +9,7 @@ pub(super) use super::state::history::{
     ControllerHistoryState, FocusHistoryEntry, RandomHistoryEntry,
 };
 pub(super) use super::state::library::{LibraryState, MissingState, RowFlags};
-pub(super) use super::state::runtime::{
+pub(crate) use super::state::runtime::{
     ControllerRuntimeState, LoadEntriesError, ScanJobMessage, ScanResult, SimilarityPrepStage,
     SimilarityPrepState, UpdateCheckResult, WavLoadJob, WavLoadResult,
 };

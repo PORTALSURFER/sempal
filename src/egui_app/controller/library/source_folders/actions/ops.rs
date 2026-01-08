@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-pub(super) fn normalize_folder_name(name: &str) -> Result<String, String> {
+pub(crate) fn normalize_folder_name(name: &str) -> Result<String, String> {
     let trimmed = name.trim();
     if trimmed.is_empty() {
         return Err("Folder name cannot be empty".into());
@@ -15,7 +15,7 @@ pub(super) fn normalize_folder_name(name: &str) -> Result<String, String> {
     Ok(trimmed.to_string())
 }
 
-pub(super) fn folder_with_name(target: &Path, name: &str) -> PathBuf {
+pub(crate) fn folder_with_name(target: &Path, name: &str) -> PathBuf {
     target.parent().map_or_else(
         || PathBuf::from(name),
         |parent| {
@@ -28,12 +28,12 @@ pub(super) fn folder_with_name(target: &Path, name: &str) -> PathBuf {
     )
 }
 
-pub(super) fn rename_target(target: &Path, new_name: &str) -> Result<PathBuf, String> {
+pub(crate) fn rename_target(target: &Path, new_name: &str) -> Result<PathBuf, String> {
     let name = normalize_folder_name(new_name)?;
     Ok(folder_with_name(target, &name))
 }
 
-pub(super) fn move_target(folder: &Path, target_folder: &Path) -> Result<PathBuf, String> {
+pub(crate) fn move_target(folder: &Path, target_folder: &Path) -> Result<PathBuf, String> {
     if folder.as_os_str().is_empty() {
         return Err("Root folder cannot be moved".into());
     }
@@ -50,7 +50,7 @@ pub(super) fn move_target(folder: &Path, target_folder: &Path) -> Result<PathBuf
     })
 }
 
-pub(super) fn normalize_folder_hotkey(hotkey: Option<u8>) -> Result<Option<u8>, String> {
+pub(crate) fn normalize_folder_hotkey(hotkey: Option<u8>) -> Result<Option<u8>, String> {
     match hotkey {
         None => Ok(None),
         Some(slot) if slot <= 9 => Ok(Some(slot)),
@@ -58,7 +58,7 @@ pub(super) fn normalize_folder_hotkey(hotkey: Option<u8>) -> Result<Option<u8>, 
     }
 }
 
-pub(super) fn remap_path_set(set: &mut BTreeSet<PathBuf>, old: &Path, new: &Path) {
+pub(crate) fn remap_path_set(set: &mut BTreeSet<PathBuf>, old: &Path, new: &Path) {
     let descendants: Vec<PathBuf> = set
         .iter()
         .filter(|path| path.starts_with(old))
@@ -74,7 +74,7 @@ pub(super) fn remap_path_set(set: &mut BTreeSet<PathBuf>, old: &Path, new: &Path
     }
 }
 
-pub(super) fn remap_path_map(map: &mut BTreeMap<u8, PathBuf>, old: &Path, new: &Path) {
+pub(crate) fn remap_path_map(map: &mut BTreeMap<u8, PathBuf>, old: &Path, new: &Path) {
     let updates: Vec<(u8, PathBuf)> = map
         .iter()
         .filter(|(_, path)| path.starts_with(old))
@@ -88,7 +88,7 @@ pub(super) fn remap_path_map(map: &mut BTreeMap<u8, PathBuf>, old: &Path, new: &
     }
 }
 
-pub(super) fn remap_path_option(value: Option<PathBuf>, old: &Path, new: &Path) -> Option<PathBuf> {
+pub(crate) fn remap_path_option(value: Option<PathBuf>, old: &Path, new: &Path) -> Option<PathBuf> {
     let value = value?;
     if !value.starts_with(old) {
         return Some(value);

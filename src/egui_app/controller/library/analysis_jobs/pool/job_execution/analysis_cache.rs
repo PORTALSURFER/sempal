@@ -1,14 +1,14 @@
-use crate::egui_app::controller::analysis_jobs::db;
+use crate::egui_app::controller::library::analysis_jobs::db;
 
 use super::support::load_embedding_vec_optional;
 
-pub(super) struct CacheLookup {
-    pub(super) features: Option<db::CachedFeatures>,
-    pub(super) embedding: Option<db::CachedEmbedding>,
-    pub(super) embedding_vec: Option<Vec<f32>>,
+pub(crate) struct CacheLookup {
+    pub(crate) features: Option<db::CachedFeatures>,
+    pub(crate) embedding: Option<db::CachedEmbedding>,
+    pub(crate) embedding_vec: Option<Vec<f32>>,
 }
 
-pub(super) fn lookup_cache_by_hash(
+pub(crate) fn lookup_cache_by_hash(
     conn: &rusqlite::Connection,
     content_hash: &str,
     analysis_version: &str,
@@ -36,7 +36,7 @@ pub(super) fn lookup_cache_by_hash(
     })
 }
 
-pub(super) fn load_existing_embedding(
+pub(crate) fn load_existing_embedding(
     conn: &rusqlite::Connection,
     sample_id: &str,
 ) -> Result<Option<Vec<f32>>, String> {

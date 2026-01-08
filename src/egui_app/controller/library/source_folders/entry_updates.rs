@@ -3,7 +3,7 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 impl EguiController {
-    pub(super) fn folder_entries(&mut self, folder: &Path) -> Vec<WavEntry> {
+    pub(crate) fn folder_entries(&mut self, folder: &Path) -> Vec<WavEntry> {
         let mut entries = Vec::new();
         for index in 0..self.wav_entries_len() {
             if let Some(entry) = self.wav_entry(index)
@@ -15,7 +15,7 @@ impl EguiController {
         entries
     }
 
-    pub(super) fn rewrite_entries_for_folder(
+    pub(crate) fn rewrite_entries_for_folder(
         &mut self,
         source: &SampleSource,
         old_folder: &Path,
@@ -108,7 +108,7 @@ impl EguiController {
         self.invalidate_wav_entries_for_source(source);
     }
 
-    pub(super) fn update_manual_folders<F>(&mut self, mut update: F)
+    pub(crate) fn update_manual_folders<F>(&mut self, mut update: F)
     where
         F: FnMut(&mut BTreeSet<PathBuf>),
     {
@@ -118,7 +118,7 @@ impl EguiController {
         update(&mut model.manual_folders);
     }
 
-    pub(super) fn remap_manual_folders(&mut self, old: &Path, new: &Path) {
+    pub(crate) fn remap_manual_folders(&mut self, old: &Path, new: &Path) {
         self.update_manual_folders(|set| {
             let descendants: Vec<PathBuf> = set
                 .iter()

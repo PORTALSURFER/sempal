@@ -5,18 +5,18 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 #[derive(Clone)]
-pub(in crate::egui_app::controller) struct RowFlags {
-    pub(in crate::egui_app::controller) focused: bool,
-    pub(in crate::egui_app::controller) loaded: bool,
+pub(crate) struct RowFlags {
+    pub(crate) focused: bool,
+    pub(crate) loaded: bool,
 }
 
-pub(in crate::egui_app::controller) struct MissingState {
-    pub(in crate::egui_app::controller) sources: HashSet<SourceId>,
-    pub(in crate::egui_app::controller) wavs: HashMap<SourceId, HashSet<PathBuf>>,
+pub(crate) struct MissingState {
+    pub(crate) sources: HashSet<SourceId>,
+    pub(crate) wavs: HashMap<SourceId, HashSet<PathBuf>>,
 }
 
 impl MissingState {
-    pub(in crate::egui_app::controller) fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             sources: HashSet::new(),
             wavs: HashMap::new(),
@@ -24,14 +24,14 @@ impl MissingState {
     }
 }
 
-pub(in crate::egui_app::controller) struct LibraryState {
-    pub(in crate::egui_app::controller) sources: Vec<SampleSource>,
-    pub(in crate::egui_app::controller) collections: Vec<Collection>,
-    pub(in crate::egui_app::controller) missing: MissingState,
+pub(crate) struct LibraryState {
+    pub(crate) sources: Vec<SampleSource>,
+    pub(crate) collections: Vec<Collection>,
+    pub(crate) missing: MissingState,
 }
 
 impl LibraryState {
-    pub(in crate::egui_app::controller) fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             sources: Vec::new(),
             collections: Vec::new(),

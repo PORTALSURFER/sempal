@@ -4,14 +4,14 @@ use hound::SampleFormat;
 use std::path::Path;
 
 impl EguiController {
-    pub(in crate::egui_app::controller) fn normalize_and_save(
+    pub(crate) fn normalize_and_save(
         &mut self,
         ctx: &super::CollectionSampleContext,
     ) -> Result<(u64, i64, SampleTag), String> {
         self.normalize_and_save_for_path(&ctx.source, &ctx.member.relative_path, &ctx.absolute_path)
     }
 
-    pub(in crate::egui_app::controller) fn normalize_and_save_for_path(
+    pub(crate) fn normalize_and_save_for_path(
         &mut self,
         source: &SampleSource,
         relative_path: &Path,
@@ -44,7 +44,7 @@ impl EguiController {
         Ok((file_size, modified_ns, tag))
     }
 
-    pub(in crate::egui_app::controller) fn sample_tag_for(
+    pub(crate) fn sample_tag_for(
         &mut self,
         source: &SampleSource,
         relative_path: &Path,

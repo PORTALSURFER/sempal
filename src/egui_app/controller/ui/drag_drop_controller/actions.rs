@@ -358,7 +358,7 @@ impl DragDropController<'_> {
     const EXTERNAL_DRAG_ARM_WINDOW: Duration = Duration::from_millis(250);
 
     #[cfg(any(target_os = "windows", test))]
-    pub(super) fn should_launch_external_drag(
+    pub(crate) fn should_launch_external_drag(
         &mut self,
         pointer_outside: bool,
         pointer_left: bool,
@@ -392,7 +392,7 @@ impl DragDropController<'_> {
     }
 
     #[cfg(target_os = "windows")]
-    pub(super) fn maybe_launch_external_drag(&mut self, pointer_outside: bool, pointer_left: bool) {
+    pub(crate) fn maybe_launch_external_drag(&mut self, pointer_outside: bool, pointer_left: bool) {
         if self.ui.drag.external_started {
             return;
         }

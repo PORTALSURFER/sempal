@@ -3,7 +3,7 @@ use crate::sample_sources::collections::CollectionMember;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-pub(super) fn copy_member_to_export(
+pub(crate) fn copy_member_to_export(
     export_root: &Path,
     source: &SampleSource,
     member: &CollectionMember,
@@ -34,7 +34,7 @@ pub(super) fn copy_member_to_export(
     Ok(())
 }
 
-pub(super) fn collect_exported_files(root: &Path) -> Result<Vec<PathBuf>, String> {
+pub(crate) fn collect_exported_files(root: &Path) -> Result<Vec<PathBuf>, String> {
     let mut files = Vec::new();
     let mut seen = HashSet::new();
     let mut stack = vec![root.to_path_buf()];
@@ -65,7 +65,7 @@ pub(super) fn collect_exported_files(root: &Path) -> Result<Vec<PathBuf>, String
     Ok(files)
 }
 
-pub(super) fn ensure_export_dir(path: &Path) -> Result<(), String> {
+pub(crate) fn ensure_export_dir(path: &Path) -> Result<(), String> {
     if path.exists() && !path.is_dir() {
         return Err(format!(
             "Export path is not a directory: {}",

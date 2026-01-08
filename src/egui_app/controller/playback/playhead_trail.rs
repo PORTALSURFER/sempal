@@ -21,7 +21,7 @@ fn seed_trail(playhead: &mut PlayheadState, position: f32, now: Instant) {
     });
 }
 
-pub(super) fn start_or_seek_trail(playhead: &mut PlayheadState, position: f32, is_seek: bool) {
+pub(crate) fn start_or_seek_trail(playhead: &mut PlayheadState, position: f32, is_seek: bool) {
     let now = Instant::now();
     if is_seek {
         stash_active_trail(playhead);
@@ -29,7 +29,7 @@ pub(super) fn start_or_seek_trail(playhead: &mut PlayheadState, position: f32, i
     seed_trail(playhead, position, now);
 }
 
-pub(super) fn stash_active_trail(playhead: &mut PlayheadState) {
+pub(crate) fn stash_active_trail(playhead: &mut PlayheadState) {
     if playhead.trail.is_empty() {
         return;
     }
@@ -43,7 +43,7 @@ pub(super) fn stash_active_trail(playhead: &mut PlayheadState) {
     }
 }
 
-pub(super) fn tick_playhead_trail(
+pub(crate) fn tick_playhead_trail(
     playhead: &mut PlayheadState,
     position: f32,
     _is_looping: bool,

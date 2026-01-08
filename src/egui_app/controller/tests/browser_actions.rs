@@ -4,8 +4,8 @@ use super::super::test_support::{
 };
 use super::super::*;
 use super::common::{max_sample_amplitude, visible_indices};
-use crate::egui_app::controller::collection_export;
-use crate::egui_app::controller::hotkeys;
+use crate::egui_app::controller::library::collection_export;
+use crate::egui_app::controller::ui::hotkeys;
 use crate::egui_app::state::FocusContext;
 use crate::sample_sources::Collection;
 use crate::sample_sources::collections::CollectionMember;
@@ -521,3 +521,4 @@ fn deleting_browser_sample_moves_focus_forward() -> Result<(), String> {
     assert_eq!(controller.ui.browser.selected_visible, Some(0));
     Ok(())
 }
+

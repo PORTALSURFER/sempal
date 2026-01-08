@@ -1,4 +1,4 @@
-use super::SelectionEditBuffer;
+use super::buffer::SelectionEditBuffer;
 
 #[derive(Clone, Copy, Debug)]
 struct ClickRepairBounds {
@@ -9,7 +9,7 @@ struct ClickRepairBounds {
 }
 
 /// Replace the selected frames with an interpolated repair to remove clicks.
-pub(super) fn repair_clicks_selection(buffer: &mut SelectionEditBuffer) -> Result<(), String> {
+pub(crate) fn repair_clicks_selection(buffer: &mut SelectionEditBuffer) -> Result<(), String> {
     let bounds = selection_bounds(buffer)?;
     ensure_neighbors(&bounds)?;
     let original = buffer.samples.clone();

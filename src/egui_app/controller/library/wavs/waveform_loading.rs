@@ -2,7 +2,7 @@ use super::*;
 use crate::egui_app::state::WaveformView;
 
 impl EguiController {
-    pub(in crate::egui_app::controller) fn load_waveform_for_selection(
+    pub(crate) fn load_waveform_for_selection(
         &mut self,
         source: &SampleSource,
         relative_path: &Path,
@@ -68,7 +68,7 @@ impl EguiController {
         Ok(())
     }
 
-    pub(in crate::egui_app::controller) fn load_collection_waveform(
+    pub(crate) fn load_collection_waveform(
         &mut self,
         source: &SampleSource,
         relative_path: &Path,
@@ -81,7 +81,7 @@ impl EguiController {
         )
     }
 
-    pub(in crate::egui_app::controller) fn finish_waveform_load(
+    pub(crate) fn finish_waveform_load(
         &mut self,
         source: &SampleSource,
         relative_path: &Path,
@@ -120,14 +120,14 @@ impl EguiController {
         )
     }
 
-    pub(super) fn clear_waveform_selection(&mut self) {
+    pub(crate) fn clear_waveform_selection(&mut self) {
         self.ui.waveform.playhead = PlayheadState::default();
         self.ui.waveform.selection = None;
         self.ui.waveform.selection_duration = None;
         self.selection_state.range.clear();
     }
 
-    pub(super) fn loaded_status_text(
+    pub(crate) fn loaded_status_text(
         relative_path: &Path,
         duration_seconds: f32,
         sample_rate: u32,
@@ -177,7 +177,7 @@ impl EguiController {
         format!("{sample_rate} Hz")
     }
 
-    pub(in crate::egui_app::controller) fn invalidate_cached_audio(
+    pub(crate) fn invalidate_cached_audio(
         &mut self,
         source_id: &SourceId,
         relative_path: &Path,
@@ -215,7 +215,7 @@ impl EguiController {
         Ok(())
     }
 
-    pub(in crate::egui_app::controller) fn clear_loaded_audio_and_waveform_visuals(&mut self) {
+    pub(crate) fn clear_loaded_audio_and_waveform_visuals(&mut self) {
         self.sample_view.wav.loaded_audio = None;
         self.sample_view.waveform.decoded = None;
         self.ui.waveform.image = None;
@@ -226,7 +226,7 @@ impl EguiController {
         self.clear_waveform_slices();
     }
 
-    pub(in crate::egui_app::controller) fn reload_waveform_for_selection_if_active(
+    pub(crate) fn reload_waveform_for_selection_if_active(
         &mut self,
         source: &SampleSource,
         relative_path: &Path,

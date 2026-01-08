@@ -8,18 +8,18 @@ use std::{
     rc::Rc,
 };
 
-pub(super) struct SourceCacheInvalidator<'a> {
+pub(crate) struct SourceCacheInvalidator<'a> {
     db_cache: &'a mut HashMap<SourceId, Rc<SourceDatabase>>,
     wav_cache: &'a mut HashMap<SourceId, super::WavEntriesState>,
     label_cache: &'a mut HashMap<SourceId, Vec<String>>,
     analysis_failures_cache: &'a mut HashMap<SourceId, HashMap<PathBuf, String>>,
     feature_cache: &'a mut HashMap<SourceId, FeatureCache>,
     missing_wavs: &'a mut HashMap<SourceId, HashSet<PathBuf>>,
-    folder_browsers: &'a mut HashMap<SourceId, super::source_folders::FolderBrowserModel>,
+    folder_browsers: &'a mut HashMap<SourceId, crate::egui_app::controller::library::source_folders::FolderBrowserModel>,
 }
 
 impl<'a> SourceCacheInvalidator<'a> {
-    pub(super) fn new_from_state(
+    pub(crate) fn new_from_state(
         cache: &'a mut LibraryCacheState,
         ui_cache: &'a mut ControllerUiCacheState,
         missing: &'a mut MissingState,
@@ -35,14 +35,14 @@ impl<'a> SourceCacheInvalidator<'a> {
         )
     }
 
-    pub(super) fn new(
+    pub(crate) fn new(
         db_cache: &'a mut HashMap<SourceId, Rc<SourceDatabase>>,
         wav_cache: &'a mut HashMap<SourceId, super::WavEntriesState>,
         label_cache: &'a mut HashMap<SourceId, Vec<String>>,
         analysis_failures_cache: &'a mut HashMap<SourceId, HashMap<PathBuf, String>>,
         feature_cache: &'a mut HashMap<SourceId, FeatureCache>,
         missing_wavs: &'a mut HashMap<SourceId, HashSet<PathBuf>>,
-        folder_browsers: &'a mut HashMap<SourceId, super::source_folders::FolderBrowserModel>,
+        folder_browsers: &'a mut HashMap<SourceId, crate::egui_app::controller::library::source_folders::FolderBrowserModel>,
     ) -> Self {
         Self {
             db_cache,
@@ -55,7 +55,7 @@ impl<'a> SourceCacheInvalidator<'a> {
         }
     }
 
-    pub(super) fn invalidate_wav_related(&mut self, source_id: &SourceId) {
+    pub(crate) fn invalidate_wav_related(&mut self, source_id: &SourceId) {
         self.wav_cache.remove(source_id);
         self.label_cache.remove(source_id);
         self.analysis_failures_cache.remove(source_id);
@@ -63,15 +63,15 @@ impl<'a> SourceCacheInvalidator<'a> {
         self.missing_wavs.remove(source_id);
     }
 
-    pub(super) fn invalidate_db_cache(&mut self, source_id: &SourceId) {
+    pub(crate) fn invalidate_db_cache(&mut self, source_id: &SourceId) {
         self.db_cache.remove(source_id);
     }
 
-    pub(super) fn invalidate_folder_browser(&mut self, source_id: &SourceId) {
+    pub(crate) fn invalidate_folder_browser(&mut self, source_id: &SourceId) {
         self.folder_browsers.remove(source_id);
     }
 
-    pub(super) fn invalidate_all(&mut self, source_id: &SourceId) {
+    pub(crate) fn invalidate_all(&mut self, source_id: &SourceId) {
         self.invalidate_db_cache(source_id);
         self.invalidate_wav_related(source_id);
         self.invalidate_folder_browser(source_id);

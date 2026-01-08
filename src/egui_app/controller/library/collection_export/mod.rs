@@ -8,14 +8,14 @@ use super::*;
 use crate::sample_sources::collections::CollectionMember;
 use std::path::{Path, PathBuf};
 
-pub(in crate::egui_app::controller) fn resolved_export_dir(
+pub(crate) fn resolved_export_dir(
     collection: &Collection,
     global_root: Option<&Path>,
 ) -> Option<PathBuf> {
     paths::resolved_export_dir(collection, global_root)
 }
 
-pub(in crate::egui_app::controller) fn export_dir_for(
+pub(crate) fn export_dir_for(
     collection: &Collection,
     global_root: Option<&Path>,
 ) -> Result<PathBuf, String> {
@@ -23,18 +23,18 @@ pub(in crate::egui_app::controller) fn export_dir_for(
 }
 
 #[cfg(test)]
-pub(in crate::egui_app::controller) fn collection_folder_name(collection: &Collection) -> String {
+pub(crate) fn collection_folder_name(collection: &Collection) -> String {
     paths::collection_folder_name(collection)
 }
 
-pub(in crate::egui_app::controller) fn delete_exported_file(
+pub(crate) fn delete_exported_file(
     export_dir: Option<PathBuf>,
     member: &CollectionMember,
 ) {
     paths::delete_exported_file(export_dir, member);
 }
 
-pub(in crate::egui_app::controller) fn collection_folder_name_from_str(name: &str) -> String {
+pub(crate) fn collection_folder_name_from_str(name: &str) -> String {
     paths::collection_folder_name_from_str(name)
 }
 

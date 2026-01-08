@@ -1,15 +1,15 @@
-use crate::egui_app::controller::analysis_jobs::db;
+use crate::egui_app::controller::library::analysis_jobs::db;
 use rusqlite::params;
 use std::collections::{HashMap, HashSet};
 
-pub(super) struct BackfillPlan {
-    pub(super) sample_metadata: Vec<db::SampleMetadata>,
-    pub(super) jobs: Vec<(String, String)>,
-    pub(super) invalidate: Vec<String>,
-    pub(super) failed_requeued: usize,
+pub(crate) struct BackfillPlan {
+    pub(crate) sample_metadata: Vec<db::SampleMetadata>,
+    pub(crate) jobs: Vec<(String, String)>,
+    pub(crate) invalidate: Vec<String>,
+    pub(crate) failed_requeued: usize,
 }
 
-pub(super) fn collect_changed_sample_updates(
+pub(crate) fn collect_changed_sample_updates(
     sample_metadata: &[db::SampleMetadata],
     existing_states: &HashMap<String, db::SampleAnalysisState>,
     current_version: &str,
@@ -33,7 +33,7 @@ pub(super) fn collect_changed_sample_updates(
     (invalidate, jobs)
 }
 
-pub(super) fn collect_backfill_updates(
+pub(crate) fn collect_backfill_updates(
     conn: &mut rusqlite::Connection,
     job_type: &str,
     force_full: bool,
@@ -53,7 +53,7 @@ pub(super) fn collect_backfill_updates(
     Ok((sample_metadata, jobs, invalidate))
 }
 
-pub(super) fn build_backfill_plan(
+pub(crate) fn build_backfill_plan(
     conn: &mut rusqlite::Connection,
     staged_samples: &[db::SampleMetadata],
     job_type: &str,
@@ -90,7 +90,7 @@ pub(super) fn build_backfill_plan(
     })
 }
 
-pub(super) fn fetch_failed_backfill_jobs(
+pub(crate) fn fetch_failed_backfill_jobs(
     conn: &mut rusqlite::Connection,
     job_type: &str,
     source_id: &str,
@@ -119,7 +119,7 @@ pub(super) fn fetch_failed_backfill_jobs(
     Ok(failed)
 }
 
-pub(super) fn merge_failed_backfill_jobs(
+pub(crate) fn merge_failed_backfill_jobs(
     staged_index: &HashMap<String, db::SampleMetadata>,
     sample_metadata: &mut Vec<db::SampleMetadata>,
     jobs: &mut Vec<(String, String)>,

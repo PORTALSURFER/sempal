@@ -1,10 +1,10 @@
 use super::HotkeysController;
 use crate::egui_app::controller::StatusTone;
-use crate::egui_app::controller::hotkeys::HotkeyCommand;
+use crate::egui_app::controller::ui::hotkeys::HotkeyCommand;
 use crate::egui_app::state::DestructiveSelectionEdit;
 use crate::sample_sources::WavEntry;
 
-pub(super) fn handle_waveform_command(
+pub(crate) fn handle_waveform_command(
     controller: &mut HotkeysController<'_>,
     command: HotkeyCommand,
 ) -> bool {
@@ -171,3 +171,4 @@ impl HotkeysController<'_> {
         Ok(())
     }
 }
+

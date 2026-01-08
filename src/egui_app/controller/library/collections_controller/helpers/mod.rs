@@ -11,7 +11,7 @@ pub(crate) struct CollectionsController<'a> {
     controller: &'a mut EguiController,
 }
 
-pub(super) struct CollectionMemberView<'a> {
+pub(crate) struct CollectionMemberView<'a> {
     source_id: &'a SourceId,
     relative_path: &'a Path,
     clip_root: Option<&'a PathBuf>,
@@ -28,7 +28,7 @@ impl<'a> CollectionMemberView<'a> {
 }
 
 #[derive(Clone)]
-pub(super) struct CollectionMemberViewOwned {
+pub(crate) struct CollectionMemberViewOwned {
     source_id: SourceId,
     relative_path: PathBuf,
     clip_root: Option<PathBuf>,

@@ -1,8 +1,8 @@
-use crate::egui_app::controller::analysis_jobs::db;
+use crate::egui_app::controller::library::analysis_jobs::db;
 
 use super::support::now_epoch_seconds;
 
-pub(super) fn apply_cached_features_and_embedding(
+pub(crate) fn apply_cached_features_and_embedding(
     conn: &rusqlite::Connection,
     job: &db::ClaimedJob,
     content_hash: &str,
@@ -40,7 +40,7 @@ pub(super) fn apply_cached_features_and_embedding(
     Ok(())
 }
 
-pub(super) fn apply_cached_embedding(
+pub(crate) fn apply_cached_embedding(
     conn: &rusqlite::Connection,
     job: &db::ClaimedJob,
     embedding: &db::CachedEmbedding,
@@ -58,7 +58,7 @@ pub(super) fn apply_cached_embedding(
     Ok(())
 }
 
-pub(super) fn update_metadata_for_skip(
+pub(crate) fn update_metadata_for_skip(
     conn: &rusqlite::Connection,
     job: &db::ClaimedJob,
     duration_seconds: f32,
@@ -75,7 +75,7 @@ pub(super) fn update_metadata_for_skip(
     )
 }
 
-pub(super) fn finalize_analysis_job(
+pub(crate) fn finalize_analysis_job(
     conn: &rusqlite::Connection,
     job: &db::ClaimedJob,
     decoded: crate::analysis::audio::AnalysisAudio,

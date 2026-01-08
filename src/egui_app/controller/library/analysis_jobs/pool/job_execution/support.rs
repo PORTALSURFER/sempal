@@ -1,9 +1,9 @@
-use crate::egui_app::controller::analysis_jobs::db;
+use crate::egui_app::controller::library::analysis_jobs::db;
 use rusqlite::OptionalExtension;
 use std::time::Instant;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-pub(super) fn load_embedding_vec_optional(
+pub(crate) fn load_embedding_vec_optional(
     conn: &rusqlite::Connection,
     sample_id: &str,
     model_id: &str,
@@ -27,27 +27,27 @@ pub(super) fn load_embedding_vec_optional(
     Ok(Some(vec))
 }
 
-pub(super) fn now_epoch_seconds() -> i64 {
+pub(crate) fn now_epoch_seconds() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_else(|_| Duration::from_secs(0))
         .as_secs() as i64
 }
 
-pub(super) struct JobHeartbeat {
+pub(crate) struct JobHeartbeat {
     interval: Duration,
     last_touch: Instant,
 }
 
 impl JobHeartbeat {
-    pub(super) fn new(interval: Duration) -> Self {
+    pub(crate) fn new(interval: Duration) -> Self {
         Self {
             interval,
             last_touch: Instant::now() - interval,
         }
     }
 
-    pub(super) fn touch_jobs(
+    pub(crate) fn touch_jobs(
         &mut self,
         conn: &rusqlite::Connection,
         job_ids: &[i64],

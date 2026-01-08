@@ -1,7 +1,7 @@
-use super::SelectionEditBuffer;
+use super::buffer::SelectionEditBuffer;
 use std::time::Duration;
 
-pub(super) fn normalize_selection(
+pub(crate) fn normalize_selection(
     buffer: &mut SelectionEditBuffer,
     fade_duration: Duration,
 ) -> Result<(), String> {

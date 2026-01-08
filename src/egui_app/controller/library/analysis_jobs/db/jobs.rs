@@ -5,12 +5,12 @@ use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 /// Cached analysis state for a sample row.
-pub(in crate::egui_app::controller::analysis_jobs) struct SampleAnalysisState {
-    pub(in crate::egui_app::controller::analysis_jobs) content_hash: String,
-    pub(in crate::egui_app::controller::analysis_jobs) analysis_version: Option<String>,
+pub(crate) struct SampleAnalysisState {
+    pub(crate) content_hash: String,
+    pub(crate) analysis_version: Option<String>,
 }
 
-pub(in crate::egui_app::controller::analysis_jobs) fn sample_content_hash(
+pub(crate) fn sample_content_hash(
     conn: &Connection,
     sample_id: &str,
 ) -> Result<Option<String>, String> {
@@ -24,7 +24,7 @@ pub(in crate::egui_app::controller::analysis_jobs) fn sample_content_hash(
 }
 
 /// Load content hashes and analysis versions for the requested sample ids.
-pub(in crate::egui_app::controller::analysis_jobs) fn sample_analysis_states(
+pub(crate) fn sample_analysis_states(
     conn: &Connection,
     sample_ids: &[String],
 ) -> Result<HashMap<String, SampleAnalysisState>, String> {
@@ -66,7 +66,7 @@ pub(in crate::egui_app::controller::analysis_jobs) fn sample_analysis_states(
 }
 
 #[cfg(test)]
-pub(in crate::egui_app::controller::analysis_jobs) fn claim_next_job(
+pub(crate) fn claim_next_job(
     conn: &mut Connection,
     source_root: &Path,
 ) -> Result<Option<ClaimedJob>, String> {
@@ -74,7 +74,7 @@ pub(in crate::egui_app::controller::analysis_jobs) fn claim_next_job(
     Ok(jobs.pop())
 }
 
-pub(in crate::egui_app::controller::analysis_jobs) fn claim_next_jobs(
+pub(crate) fn claim_next_jobs(
     conn: &mut Connection,
     source_root: &Path,
     limit: usize,
@@ -155,7 +155,7 @@ pub(in crate::egui_app::controller::analysis_jobs) fn claim_next_jobs(
 }
 
 #[cfg_attr(test, allow(dead_code))]
-pub(in crate::egui_app::controller::analysis_jobs) fn mark_done(
+pub(crate) fn mark_done(
     conn: &Connection,
     job_id: i64,
 ) -> Result<(), String> {
@@ -170,7 +170,7 @@ pub(in crate::egui_app::controller::analysis_jobs) fn mark_done(
 }
 
 #[cfg_attr(test, allow(dead_code))]
-pub(in crate::egui_app::controller::analysis_jobs) fn mark_failed(
+pub(crate) fn mark_failed(
     conn: &Connection,
     job_id: i64,
     error: &str,
@@ -185,7 +185,7 @@ pub(in crate::egui_app::controller::analysis_jobs) fn mark_failed(
     Ok(())
 }
 
-pub(in crate::egui_app::controller::analysis_jobs) fn mark_failed_with_reason(
+pub(crate) fn mark_failed_with_reason(
     conn: &Connection,
     job_id: i64,
     error: &str,
@@ -200,7 +200,7 @@ pub(in crate::egui_app::controller::analysis_jobs) fn mark_failed_with_reason(
     Ok(())
 }
 
-pub(in crate::egui_app::controller::analysis_jobs) fn mark_pending(
+pub(crate) fn mark_pending(
     conn: &Connection,
     job_id: i64,
 ) -> Result<(), String> {
@@ -214,7 +214,7 @@ pub(in crate::egui_app::controller::analysis_jobs) fn mark_pending(
     Ok(())
 }
 
-pub(in crate::egui_app::controller::analysis_jobs) fn touch_running_at(
+pub(crate) fn touch_running_at(
     conn: &Connection,
     job_ids: &[i64],
 ) -> Result<(), String> {

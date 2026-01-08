@@ -1,9 +1,9 @@
-use super::audio_cache::CacheKey;
+use crate::egui_app::controller::playback::audio_cache::CacheKey;
 use super::*;
 use std::path::Path;
 
 impl EguiController {
-    pub(in crate::egui_app::controller) fn handle_audio_loaded(
+    pub(crate) fn handle_audio_loaded(
         &mut self,
         pending: PendingAudio,
         outcome: AudioLoadOutcome,
@@ -43,7 +43,7 @@ impl EguiController {
         self.maybe_trigger_pending_playback();
     }
 
-    pub(in crate::egui_app::controller) fn handle_audio_load_error(
+    pub(crate) fn handle_audio_load_error(
         &mut self,
         pending: PendingAudio,
         error: AudioLoadError,
@@ -92,7 +92,7 @@ impl EguiController {
         }
     }
 
-    pub(in crate::egui_app::controller) fn queue_audio_load_for(
+    pub(crate) fn queue_audio_load_for(
         &mut self,
         source: &SampleSource,
         relative_path: &Path,
@@ -141,7 +141,7 @@ impl EguiController {
         Ok(())
     }
 
-    pub(super) fn try_use_cached_audio(
+    pub(crate) fn try_use_cached_audio(
         &mut self,
         source: &SampleSource,
         relative_path: &Path,

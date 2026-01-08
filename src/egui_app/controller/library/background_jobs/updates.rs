@@ -1,7 +1,7 @@
 use super::*;
 use crate::egui_app::controller::jobs::{IssueGatewayAuthResult, IssueGatewayCreateResult};
 
-pub(super) fn handle_update_checked(controller: &mut EguiController, message: UpdateCheckResult) {
+pub(crate) fn handle_update_checked(controller: &mut EguiController, message: UpdateCheckResult) {
     controller.runtime.jobs.clear_update_check();
     match message.result {
         Ok(outcome) => controller.apply_update_check_result(outcome),
@@ -9,7 +9,7 @@ pub(super) fn handle_update_checked(controller: &mut EguiController, message: Up
     }
 }
 
-pub(super) fn handle_issue_gateway_created(
+pub(crate) fn handle_issue_gateway_created(
     controller: &mut EguiController,
     message: IssueGatewayCreateResult,
 ) {
@@ -59,7 +59,7 @@ pub(super) fn handle_issue_gateway_created(
     }
 }
 
-pub(super) fn handle_issue_gateway_authed(
+pub(crate) fn handle_issue_gateway_authed(
     controller: &mut EguiController,
     message: IssueGatewayAuthResult,
 ) {

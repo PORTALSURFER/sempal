@@ -139,7 +139,7 @@ impl EguiController {
         }
     }
 
-    pub(in crate::egui_app::controller::collection_export) fn set_collection_export_path(
+    pub(crate) fn set_collection_export_path(
         &mut self,
         collection_id: &CollectionId,
         path: Option<PathBuf>,
@@ -170,7 +170,7 @@ impl EguiController {
         Ok(())
     }
 
-    pub(in crate::egui_app::controller::collection_export) fn set_collection_export_root(
+    pub(crate) fn set_collection_export_root(
         &mut self,
         path: Option<PathBuf>,
     ) -> Result<(), String> {
@@ -182,7 +182,7 @@ impl EguiController {
         self.persist_config("Failed to save collection export root")
     }
 
-    pub(in crate::egui_app::controller) fn sync_collection_exports_on_startup(&mut self) {
+    pub(crate) fn sync_collection_exports_on_startup(&mut self) {
         let root = match self.settings.collection_export_root.as_deref() {
             Some(root) => root.to_path_buf(),
             None => return,

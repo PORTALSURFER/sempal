@@ -1,6 +1,6 @@
 use super::enqueue_helpers::now_epoch_seconds;
-use crate::egui_app::controller::analysis_jobs::db;
-use crate::egui_app::controller::analysis_jobs::types::AnalysisProgress;
+use crate::egui_app::controller::library::analysis_jobs::db;
+use crate::egui_app::controller::library::analysis_jobs::types::AnalysisProgress;
 use rusqlite::params;
 use tracing::info;
 
@@ -8,14 +8,14 @@ struct EnqueueEmbeddingBackfillRequest<'a> {
     source: &'a crate::sample_sources::SampleSource,
 }
 
-pub(in crate::egui_app::controller) fn enqueue_jobs_for_embedding_backfill(
+pub(crate) fn enqueue_jobs_for_embedding_backfill(
     source: &crate::sample_sources::SampleSource,
 ) -> Result<(usize, AnalysisProgress), String> {
     let request = EnqueueEmbeddingBackfillRequest { source };
     enqueue_embedding_backfill(request)
 }
 
-pub(in crate::egui_app::controller) fn enqueue_jobs_for_embedding_samples(
+pub(crate) fn enqueue_jobs_for_embedding_samples(
     source: &crate::sample_sources::SampleSource,
     sample_ids: &[String],
 ) -> Result<(usize, AnalysisProgress), String> {

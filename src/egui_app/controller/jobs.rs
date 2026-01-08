@@ -1,7 +1,10 @@
-use super::{
-    AnalysisJobMessage, AudioLoadJob, AudioLoadResult, PendingAudio, PendingPlayback,
-    ScanJobMessage, SourceId, UpdateCheckResult, WavLoadJob, WavLoadResult, trash_move,
-};
+use super::ScanJobMessage;
+use super::library::analysis_jobs::AnalysisJobMessage;
+use super::library::trash_move;
+use super::playback::audio_loader::{AudioLoadJob, AudioLoadResult};
+use super::state::audio::{PendingAudio, PendingPlayback};
+use super::state::runtime::{UpdateCheckResult, WavLoadJob, WavLoadResult};
+use crate::sample_sources::SourceId;
 use std::{
     collections::BTreeSet,
     path::PathBuf,
@@ -16,7 +19,7 @@ use std::{
 type TryRecvError = std::sync::mpsc::TryRecvError;
 
 #[cfg_attr(test, allow(dead_code))]
-pub(super) enum JobMessage {
+pub(crate) enum JobMessage {
     WavLoaded(WavLoadResult),
     AudioLoaded(AudioLoadResult),
     Scan(ScanJobMessage),
@@ -34,7 +37,7 @@ pub(super) enum JobMessage {
 }
 
 #[derive(Debug)]
-pub(super) struct SearchJob {
+pub(crate) struct SearchJob {
     pub(super) source_id: SourceId,
     pub(super) source_root: PathBuf,
     pub(super) query: String,
@@ -46,14 +49,14 @@ pub(super) struct SearchJob {
 }
 
 #[derive(Debug)]
-pub(super) struct SearchResult {
-    pub(super) source_id: SourceId,
-    pub(super) query: String,
-    pub(super) visible: crate::egui_app::state::VisibleRows,
-    pub(super) trash: Vec<usize>,
-    pub(super) neutral: Vec<usize>,
-    pub(super) keep: Vec<usize>,
-    pub(super) scores: Vec<Option<i64>>,
+pub(crate) struct SearchResult {
+    pub(crate) source_id: SourceId,
+    pub(crate) query: String,
+    pub(crate) visible: crate::egui_app::state::VisibleRows,
+    pub(crate) trash: Vec<usize>,
+    pub(crate) neutral: Vec<usize>,
+    pub(crate) keep: Vec<usize>,
+    pub(crate) scores: Vec<Option<i64>>,
 }
 
 #[derive(Debug)]
@@ -137,10 +140,10 @@ pub(super) struct AnalysisFailuresResult {
     pub(super) result: Result<std::collections::HashMap<PathBuf, String>, String>,
 }
 
-pub(super) struct ControllerJobs {
-    pub(super) wav_job_tx: Sender<WavLoadJob>,
-    pub(super) audio_job_tx: Sender<AudioLoadJob>,
-    pub(super) search_job_tx: Sender<SearchJob>,
+pub(crate) struct ControllerJobs {
+    pub(crate) wav_job_tx: Sender<WavLoadJob>,
+    pub(crate) audio_job_tx: Sender<AudioLoadJob>,
+    pub(crate) search_job_tx: Sender<SearchJob>,
     message_tx: Sender<JobMessage>,
     message_rx: Receiver<JobMessage>,
     pub(super) pending_source: Option<SourceId>,
@@ -391,7 +394,7 @@ impl ControllerJobs {
         let tx = self.message_tx.clone();
         thread::spawn(move || {
             let result =
-                super::map_view::run_umap_build(&job.model_id, &job.umap_version, &job.source_id);
+                super::ui::map_view::run_umap_build(&job.model_id, &job.umap_version, &job.source_id);
             let _ = tx.send(JobMessage::UmapBuilt(UmapBuildResult {
                 umap_version: job.umap_version,
                 result,
@@ -410,7 +413,7 @@ impl ControllerJobs {
         self.umap_cluster_build_in_progress = true;
         let tx = self.message_tx.clone();
         thread::spawn(move || {
-            let result = super::map_view::run_umap_cluster_build(
+            let result = super::ui::map_view::run_umap_cluster_build(
                 &job.model_id,
                 &job.umap_version,
                 job.source_id.as_ref(),

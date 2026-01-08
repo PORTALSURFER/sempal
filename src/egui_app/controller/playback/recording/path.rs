@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use time::format_description::FormatItem;
 use time::macros::format_description;
 
-pub(super) fn next_recording_path_in_source(
+pub(crate) fn next_recording_path_in_source(
     controller: &mut EguiController,
 ) -> Result<(SampleSource, PathBuf, PathBuf), String> {
     let source = controller
@@ -32,7 +32,7 @@ pub(super) fn next_recording_path_in_source(
     Ok((source, relative_path, absolute_path))
 }
 
-pub(super) fn resolve_recording_target(
+pub(crate) fn resolve_recording_target(
     controller: &mut EguiController,
     target: Option<&RecordingTarget>,
     recording_path: &PathBuf,
@@ -52,13 +52,13 @@ pub(super) fn resolve_recording_target(
     Ok((source, relative_path))
 }
 
-pub(super) fn register_recording_in_browser(
+pub(crate) fn register_recording_in_browser(
     controller: &mut EguiController,
     target: Option<&RecordingTarget>,
     recording_path: &PathBuf,
 ) -> Result<(), String> {
     let (source, relative_path) = resolve_recording_target(controller, target, recording_path)?;
-    let (file_size, modified_ns) = super::collection_items_helpers::file_metadata(recording_path)?;
+    let (file_size, modified_ns) = crate::egui_app::controller::library::collection_items_helpers::file_metadata(recording_path)?;
     let db = controller
         .database_for(&source)
         .map_err(|err| format!("Database unavailable: {err}"))?;

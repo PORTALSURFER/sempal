@@ -1,25 +1,25 @@
-use super::super::collection_items_helpers::read_samples_for_normalization;
+use crate::egui_app::controller::library::collection_items_helpers::read_samples_for_normalization;
 use super::super::*;
 use std::path::{Path, PathBuf};
 
-pub(super) struct SelectionTarget {
-    pub(super) source: SampleSource,
-    pub(super) relative_path: PathBuf,
-    pub(super) absolute_path: PathBuf,
-    pub(super) selection: SelectionRange,
+pub(crate) struct SelectionTarget {
+    pub(crate) source: SampleSource,
+    pub(crate) relative_path: PathBuf,
+    pub(crate) absolute_path: PathBuf,
+    pub(crate) selection: SelectionRange,
 }
 
 #[derive(Clone)]
-pub(super) struct SelectionEditBuffer {
-    pub(super) samples: Vec<f32>,
-    pub(super) channels: usize,
-    pub(super) sample_rate: u32,
-    pub(super) spec_channels: u16,
-    pub(super) start_frame: usize,
-    pub(super) end_frame: usize,
+pub(crate) struct SelectionEditBuffer {
+    pub(crate) samples: Vec<f32>,
+    pub(crate) channels: usize,
+    pub(crate) sample_rate: u32,
+    pub(crate) spec_channels: u16,
+    pub(crate) start_frame: usize,
+    pub(crate) end_frame: usize,
 }
 
-pub(super) fn load_selection_buffer(
+pub(crate) fn load_selection_buffer(
     absolute_path: &Path,
     selection: SelectionRange,
 ) -> Result<SelectionEditBuffer, String> {
@@ -40,7 +40,7 @@ pub(super) fn load_selection_buffer(
     })
 }
 
-pub(super) fn selection_frame_bounds(
+pub(crate) fn selection_frame_bounds(
     total_frames: usize,
     bounds: SelectionRange,
 ) -> (usize, usize) {
@@ -53,7 +53,7 @@ pub(super) fn selection_frame_bounds(
     (start_frame, end_frame)
 }
 
-pub(super) fn write_selection_wav(
+pub(crate) fn write_selection_wav(
     target: &PathBuf,
     samples: &[f32],
     spec: hound::WavSpec,
@@ -70,7 +70,7 @@ pub(super) fn write_selection_wav(
         .map_err(|err| format!("Failed to finalize wav: {err}"))
 }
 
-pub(super) fn next_crop_relative_path(
+pub(crate) fn next_crop_relative_path(
     relative_path: &Path,
     root: &Path,
 ) -> Result<PathBuf, String> {

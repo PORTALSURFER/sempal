@@ -1,7 +1,7 @@
 use super::{DragDropController, DragPayload, Pos2};
 
 impl DragDropController<'_> {
-    pub(super) fn reset_drag(&mut self) {
+    pub(crate) fn reset_drag(&mut self) {
         self.ui.drag.payload = None;
         self.ui.drag.label.clear();
         self.ui.drag.position = None;
@@ -14,7 +14,7 @@ impl DragDropController<'_> {
         self.ui.drag.origin_source = None;
     }
 
-    pub(super) fn begin_drag(&mut self, payload: DragPayload, label: String, pos: Pos2) {
+    pub(crate) fn begin_drag(&mut self, payload: DragPayload, label: String, pos: Pos2) {
         self.ui.drag.payload = Some(payload);
         self.ui.drag.label = label;
         self.ui.drag.position = Some(pos);

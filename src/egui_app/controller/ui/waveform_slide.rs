@@ -1,4 +1,4 @@
-use super::collection_items_helpers::{file_metadata, read_samples_for_normalization};
+use crate::egui_app::controller::library::collection_items_helpers::{file_metadata, read_samples_for_normalization};
 use super::*;
 use crate::waveform::DecodedWaveform;
 use hound::SampleFormat;
@@ -34,7 +34,7 @@ impl EguiController {
             return Ok(());
         }
         let target = self.waveform_slide_target()?;
-        let (samples, spec) = read_samples_for_normalization(&target.absolute_path)?;
+        let (samples, spec): (Vec<f32>, _) = read_samples_for_normalization(&target.absolute_path)?;
         if samples.is_empty() {
             return Err("No audio data available".into());
         }

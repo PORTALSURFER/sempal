@@ -1,6 +1,6 @@
 use super::*;
 
-pub(super) fn handle_similarity_prepared(
+pub(crate) fn handle_similarity_prepared(
     controller: &mut EguiController,
     message: jobs::SimilarityPrepResult,
 ) {

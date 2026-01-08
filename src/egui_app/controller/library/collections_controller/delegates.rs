@@ -155,7 +155,7 @@ impl EguiController {
             .apply_collection_hotkey(hotkey, focus)
     }
 
-    pub(in crate::egui_app::controller) fn add_clip_to_collection(
+    pub(crate) fn add_clip_to_collection(
         &mut self,
         collection_id: &CollectionId,
         clip_root: PathBuf,
@@ -175,22 +175,22 @@ impl EguiController {
         self.selection_state.ctx.selected_collection.clone()
     }
 
-    pub(in crate::egui_app::controller) fn refresh_collections_ui(&mut self) {
+    pub(crate) fn refresh_collections_ui(&mut self) {
         self.collections_ctrl().refresh_collections_ui();
     }
 
-    pub(in crate::egui_app::controller) fn apply_collection_move_result(
+    pub(crate) fn apply_collection_move_result(
         &mut self,
         result: crate::egui_app::controller::jobs::CollectionMoveResult,
     ) {
         self.collections_ctrl().apply_collection_move_result(result);
     }
 
-    pub(in crate::egui_app::controller) fn ensure_collection_selection(&mut self) {
+    pub(crate) fn ensure_collection_selection(&mut self) {
         self.collections_ctrl().ensure_collection_selection();
     }
 
-    pub(in crate::egui_app::controller) fn ensure_sample_db_entry(
+    pub(crate) fn ensure_sample_db_entry(
         &mut self,
         source: &SampleSource,
         relative_path: &Path,
@@ -199,7 +199,7 @@ impl EguiController {
             .ensure_sample_db_entry(source, relative_path)
     }
 
-    pub(in crate::egui_app::controller) fn current_collection(&self) -> Option<Collection> {
+    pub(crate) fn current_collection(&self) -> Option<Collection> {
         let selected = self.selection_state.ctx.selected_collection.as_ref()?;
         self.library
             .collections

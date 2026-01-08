@@ -1,5 +1,5 @@
-use super::collection_items_helpers::{file_metadata, read_samples_for_normalization};
-use super::undo;
+use crate::egui_app::controller::library::collection_items_helpers::{file_metadata, read_samples_for_normalization};
+use crate::egui_app::controller::undo;
 use super::*;
 use crate::egui_app::state::{LoopCrossfadePrompt, LoopCrossfadeSettings, LoopCrossfadeUnit};
 use hound::SampleFormat;
@@ -44,7 +44,7 @@ impl EguiController {
     }
 
     /// Apply a loop crossfade copy for a single sample path.
-    pub(in crate::egui_app::controller) fn apply_loop_crossfade_for_sample(
+    pub(crate) fn apply_loop_crossfade_for_sample(
         &mut self,
         source: &SampleSource,
         relative_path: &Path,

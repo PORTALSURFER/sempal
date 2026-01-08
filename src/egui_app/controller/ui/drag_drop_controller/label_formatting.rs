@@ -1,7 +1,7 @@
 use super::*;
 
 impl DragDropController<'_> {
-    pub(super) fn selection_drag_label(
+    pub(crate) fn selection_drag_label(
         &self,
         audio: &LoadedAudio,
         bounds: SelectionRange,
@@ -16,7 +16,7 @@ impl DragDropController<'_> {
     }
 
     #[cfg(target_os = "windows")]
-    pub(super) fn export_selection_for_drag(
+    pub(crate) fn export_selection_for_drag(
         &mut self,
         bounds: SelectionRange,
     ) -> Result<(PathBuf, String), String> {

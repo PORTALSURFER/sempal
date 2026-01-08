@@ -3,12 +3,12 @@ use crate::egui_app::state::FocusContext;
 
 impl EguiController {
     /// Mark the sample browser as the active focus surface.
-    pub(super) fn focus_browser_context(&mut self) {
+    pub(crate) fn focus_browser_context(&mut self) {
         self.set_focus_context(FocusContext::SampleBrowser);
     }
 
     /// Focus the sample browser, selecting a row if none is active.
-    pub(super) fn focus_browser_list(&mut self) {
+    pub(crate) fn focus_browser_list(&mut self) {
         let visible_len = self.ui.browser.visible.len();
         let anchor = self
             .ui
@@ -56,12 +56,12 @@ impl EguiController {
     }
 
     /// Mark the collections sample list as the active focus surface.
-    pub(super) fn focus_collection_context(&mut self) {
+    pub(crate) fn focus_collection_context(&mut self) {
         self.set_focus_context(FocusContext::CollectionSample);
     }
 
     /// Focus the collection samples list, selecting the current row or first row.
-    pub(super) fn focus_collection_samples_list(&mut self) {
+    pub(crate) fn focus_collection_samples_list(&mut self) {
         let Some(collection) = self.current_collection() else {
             self.focus_collection_context();
             self.set_status_message(StatusMessage::SelectCollectionFirst {
@@ -107,17 +107,17 @@ impl EguiController {
     }
 
     /// Mark the sources list as the active focus surface.
-    pub(super) fn focus_sources_context(&mut self) {
+    pub(crate) fn focus_sources_context(&mut self) {
         self.set_focus_context(FocusContext::SourcesList);
     }
 
     /// Mark the source folder browser as the active focus surface.
-    pub(super) fn focus_folder_context(&mut self) {
+    pub(crate) fn focus_folder_context(&mut self) {
         self.set_focus_context(FocusContext::SourceFolders);
     }
 
     /// Focus the sources list, selecting the current row or the first available source.
-    pub(super) fn focus_sources_list(&mut self) {
+    pub(crate) fn focus_sources_list(&mut self) {
         if self.library.sources.is_empty() {
             self.set_status_message(StatusMessage::AddSourceFirst {
                 tone: StatusTone::Info,
@@ -135,12 +135,12 @@ impl EguiController {
     }
 
     /// Mark the collections list as the active focus surface.
-    pub(super) fn focus_collections_list_context(&mut self) {
+    pub(crate) fn focus_collections_list_context(&mut self) {
         self.set_focus_context(FocusContext::CollectionsList);
     }
 
     /// Focus the collections list, selecting the active row or the first entry.
-    pub(super) fn focus_collections_list(&mut self) {
+    pub(crate) fn focus_collections_list(&mut self) {
         if self.library.collections.is_empty() {
             self.set_status_message(StatusMessage::CreateCollectionFirst);
             return;
@@ -156,12 +156,12 @@ impl EguiController {
     }
 
     /// Clear focus when no interactive surface should process shortcuts.
-    pub(super) fn clear_focus_context(&mut self) {
+    pub(crate) fn clear_focus_context(&mut self) {
         self.set_focus_context(FocusContext::None);
     }
 
     /// Clear focus when it currently belongs to the collections list.
-    pub(super) fn clear_collection_focus_context(&mut self) {
+    pub(crate) fn clear_collection_focus_context(&mut self) {
         if matches!(self.ui.focus.context, FocusContext::CollectionSample) {
             self.clear_focus_context();
         }

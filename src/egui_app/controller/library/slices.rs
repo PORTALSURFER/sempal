@@ -1,6 +1,6 @@
 use super::EguiController;
 use super::MIN_SELECTION_WIDTH;
-use super::audio_samples::{DecodedSamples, crop_samples, decode_samples_from_bytes, write_wav};
+use crate::egui_app::controller::playback::audio_samples::{DecodedSamples, crop_samples, decode_samples_from_bytes, write_wav};
 use crate::analysis::audio::{detect_non_silent_ranges, downmix_to_mono_into};
 use crate::sample_sources::SampleSource;
 use crate::selection::SelectionRange;
@@ -110,7 +110,7 @@ impl EguiController {
     }
 
     /// Export detected slices to new audio files and register them in the browser.
-    pub(super) fn accept_waveform_slices(&mut self) -> Result<usize, String> {
+    pub(crate) fn accept_waveform_slices(&mut self) -> Result<usize, String> {
         if self.ui.waveform.slices.is_empty() {
             return Err("No slices to export".into());
         }

@@ -2,19 +2,19 @@ use super::super::types::{AnalysisProgress, RunningJobInfo};
 use super::constants::{ANALYZE_SAMPLE_JOB_TYPE, EMBEDDING_BACKFILL_JOB_TYPE};
 use rusqlite::Connection;
 
-pub(in crate::egui_app::controller::analysis_jobs) fn current_progress(
+pub(crate) fn current_progress(
     conn: &Connection,
 ) -> Result<AnalysisProgress, String> {
     current_progress_for_job_type(conn, ANALYZE_SAMPLE_JOB_TYPE, true)
 }
 
-pub(in crate::egui_app::controller::analysis_jobs) fn current_embedding_backfill_progress(
+pub(crate) fn current_embedding_backfill_progress(
     conn: &Connection,
 ) -> Result<AnalysisProgress, String> {
     current_progress_for_job_type(conn, EMBEDDING_BACKFILL_JOB_TYPE, false)
 }
 
-pub(in crate::egui_app::controller::analysis_jobs) fn current_running_jobs(
+pub(crate) fn current_running_jobs(
     conn: &Connection,
     limit: usize,
 ) -> Result<Vec<RunningJobInfo>, String> {

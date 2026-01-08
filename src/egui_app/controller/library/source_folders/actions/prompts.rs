@@ -24,7 +24,7 @@ impl EguiController {
             );
             return;
         }
-        if let Err(err) = super::super::os_explorer::open_folder_in_file_explorer(&absolute) {
+        if let Err(err) = crate::egui_app::controller::ui::os_explorer::open_folder_in_file_explorer(&absolute) {
             self.set_status(err, StatusTone::Error);
         }
     }
@@ -62,7 +62,7 @@ impl EguiController {
         }
     }
 
-    pub(super) fn confirm_folder_delete(&self, target: &Path) -> bool {
+    pub(crate) fn confirm_folder_delete(&self, target: &Path) -> bool {
         if cfg!(test) {
             return true;
         }

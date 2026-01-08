@@ -7,7 +7,7 @@ const SELECTION_START_SNAP_RADIUS: f32 = 0.01;
 const SELECTION_START_SNAP_VIEW_FRACTION: f32 = 0.03;
 const SELECTION_START_SNAP_SECONDS: f32 = 0.1;
 
-pub(super) fn start_selection_drag(controller: &mut EguiController, position: f32) {
+pub(crate) fn start_selection_drag(controller: &mut EguiController, position: f32) {
     controller.selection_state.bpm_scale_beats = None;
     controller.begin_selection_undo("Selection");
     let start = snap_selection_start(controller, position)
@@ -17,7 +17,7 @@ pub(super) fn start_selection_drag(controller: &mut EguiController, position: f3
     controller.apply_selection(Some(range));
 }
 
-pub(super) fn start_selection_edge_drag(
+pub(crate) fn start_selection_edge_drag(
     controller: &mut EguiController,
     edge: SelectionEdge,
     bpm_scale: bool,
@@ -35,7 +35,7 @@ pub(super) fn start_selection_edge_drag(
     true
 }
 
-pub(super) fn update_selection_drag(
+pub(crate) fn update_selection_drag(
     controller: &mut EguiController,
     position: f32,
     snap_override: bool,
@@ -63,7 +63,7 @@ pub(super) fn update_selection_drag(
     }
 }
 
-pub(super) fn finish_selection_drag(controller: &mut EguiController) {
+pub(crate) fn finish_selection_drag(controller: &mut EguiController) {
     controller.selection_state.range.finish_drag();
     controller.selection_state.bpm_scale_beats = None;
     clear_too_small_bpm_selection(controller);
@@ -97,16 +97,16 @@ pub(super) fn finish_selection_drag(controller: &mut EguiController) {
     }
 }
 
-pub(super) fn set_selection_range(controller: &mut EguiController, range: SelectionRange) {
+pub(crate) fn set_selection_range(controller: &mut EguiController, range: SelectionRange) {
     controller.selection_state.range.set_range(Some(range));
     controller.apply_selection(Some(range));
 }
 
-pub(super) fn is_selection_dragging(controller: &EguiController) -> bool {
+pub(crate) fn is_selection_dragging(controller: &EguiController) -> bool {
     controller.selection_state.range.is_dragging()
 }
 
-pub(super) fn clear_selection(controller: &mut EguiController) {
+pub(crate) fn clear_selection(controller: &mut EguiController) {
     let before = controller
         .selection_state
         .range
@@ -119,7 +119,7 @@ pub(super) fn clear_selection(controller: &mut EguiController) {
     }
 }
 
-pub(super) fn toggle_loop(controller: &mut EguiController) {
+pub(crate) fn toggle_loop(controller: &mut EguiController) {
     let was_looping = controller.ui.waveform.loop_enabled;
     controller.ui.waveform.loop_enabled = !controller.ui.waveform.loop_enabled;
     if controller.ui.waveform.loop_enabled {
@@ -168,7 +168,7 @@ pub(super) fn toggle_loop(controller: &mut EguiController) {
     }
 }
 
-pub(super) fn seek_to(controller: &mut EguiController, position: f32) {
+pub(crate) fn seek_to(controller: &mut EguiController, position: f32) {
     let looped = controller.ui.waveform.loop_enabled;
     record_play_start(controller, position);
     if let Err(err) = controller.play_audio(looped, Some(position)) {
@@ -318,7 +318,7 @@ fn format_bpm_input(value: f32) -> String {
     }
 }
 
-pub(super) fn replay_from_last_start(controller: &mut EguiController) -> bool {
+pub(crate) fn replay_from_last_start(controller: &mut EguiController) -> bool {
     if let Some(position) = controller.ui.waveform.last_start_marker {
         seek_to(controller, position);
         return true;
@@ -334,7 +334,7 @@ pub(super) fn replay_from_last_start(controller: &mut EguiController) -> bool {
     false
 }
 
-pub(super) fn play_from_cursor(controller: &mut EguiController) -> bool {
+pub(crate) fn play_from_cursor(controller: &mut EguiController) -> bool {
     if !controller.waveform_ready() {
         return false;
     }
@@ -353,18 +353,18 @@ pub(super) fn play_from_cursor(controller: &mut EguiController) -> bool {
     replay_from_last_start(controller)
 }
 
-pub(super) fn record_play_start(controller: &mut EguiController, position: f32) {
+pub(crate) fn record_play_start(controller: &mut EguiController, position: f32) {
     let clamped = position.clamp(0.0, 1.0);
     controller.ui.waveform.last_start_marker = Some(clamped);
     controller.set_waveform_cursor(clamped);
 }
 
-pub(super) fn set_volume(controller: &mut EguiController, volume: f32) {
+pub(crate) fn set_volume(controller: &mut EguiController, volume: f32) {
     controller.apply_volume(volume);
     let _ = controller.persist_config("Failed to save volume");
 }
 
-pub(super) fn toggle_play_pause(controller: &mut EguiController) {
+pub(crate) fn toggle_play_pause(controller: &mut EguiController) {
     let player_rc = match controller.ensure_player() {
         Ok(Some(p)) => p,
         Ok(None) => {
@@ -381,7 +381,7 @@ pub(super) fn toggle_play_pause(controller: &mut EguiController) {
     let _ = controller.play_audio(controller.ui.waveform.loop_enabled, None);
 }
 
-pub(super) fn stop_playback_if_active(controller: &mut EguiController) -> bool {
+pub(crate) fn stop_playback_if_active(controller: &mut EguiController) -> bool {
     controller.audio.pending_loop_disable_at = None;
     let Some(player_rc) = controller.audio.player.as_ref() else {
         return false;
@@ -401,7 +401,7 @@ pub(super) fn stop_playback_if_active(controller: &mut EguiController) -> bool {
     stopped
 }
 
-pub(super) fn handle_escape(controller: &mut EguiController) {
+pub(crate) fn handle_escape(controller: &mut EguiController) {
     let selection_active = controller.selection_state.range.range().is_some()
         || controller.ui.waveform.selection.is_some();
     let stopped_playback = stop_playback_if_active(controller);

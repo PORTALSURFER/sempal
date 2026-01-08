@@ -3,7 +3,7 @@ use super::{CollectionMemberViewOwned, CollectionsController, collection_member_
 use std::path::{Path, PathBuf};
 
 impl CollectionsController<'_> {
-    pub(in crate::egui_app::controller::collections_controller) fn refresh_collections_ui(
+    pub(crate) fn refresh_collections_ui(
         &mut self,
     ) {
         let selected_id = self.selection_state.ctx.selected_collection.clone();
@@ -42,7 +42,7 @@ impl CollectionsController<'_> {
         self.refresh_collection_samples();
     }
 
-    pub(in crate::egui_app::controller::collections_controller) fn refresh_collection_selection_ui(
+    pub(crate) fn refresh_collection_selection_ui(
         &mut self,
     ) {
         if self.ui.collections.rows.is_empty() {
@@ -58,7 +58,7 @@ impl CollectionsController<'_> {
             .and_then(|id| self.library.collections.iter().position(|c| &c.id == id));
     }
 
-    pub(in crate::egui_app::controller::collections_controller) fn refresh_collection_samples(
+    pub(crate) fn refresh_collection_samples(
         &mut self,
     ) {
         let selected_index = self
@@ -179,7 +179,7 @@ impl CollectionsController<'_> {
         }
     }
 
-    pub(in crate::egui_app::controller::collections_controller) fn ensure_collection_selection(
+    pub(crate) fn ensure_collection_selection(
         &mut self,
     ) {
         if self.selection_state.ctx.selected_collection.is_some() {
@@ -190,7 +190,7 @@ impl CollectionsController<'_> {
         }
     }
 
-    pub(in crate::egui_app::controller::collections_controller) fn finalize_browser_collection_add(
+    pub(crate) fn finalize_browser_collection_add(
         &mut self,
         collection_id: &CollectionId,
         collection_name: &str,
@@ -224,7 +224,7 @@ impl CollectionsController<'_> {
         }
     }
 
-    pub(super) fn finalize_collection_add(
+    pub(crate) fn finalize_collection_add(
         &mut self,
         collection_id: &CollectionId,
         member: &CollectionMember,

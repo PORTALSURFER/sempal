@@ -1,7 +1,7 @@
-use crate::egui_app::controller::analysis_jobs::db;
-use crate::egui_app::controller::analysis_jobs::types::AnalysisProgress;
+use crate::egui_app::controller::library::analysis_jobs::db;
+use crate::egui_app::controller::library::analysis_jobs::types::AnalysisProgress;
 
-pub(super) fn write_changed_samples(
+pub(crate) fn write_changed_samples(
     conn: &mut rusqlite::Connection,
     sample_metadata: &[db::SampleMetadata],
     invalidate: &[String],
@@ -24,7 +24,7 @@ pub(super) fn write_changed_samples(
     Ok((inserted, progress))
 }
 
-pub(super) fn write_backfill_samples(
+pub(crate) fn write_backfill_samples(
     conn: &mut rusqlite::Connection,
     sample_metadata: &[db::SampleMetadata],
     invalidate: &[String],
@@ -42,7 +42,7 @@ pub(super) fn write_backfill_samples(
     Ok((inserted, progress))
 }
 
-pub(super) fn stage_backfill_samples(
+pub(crate) fn stage_backfill_samples(
     conn: &mut rusqlite::Connection,
     samples: &[db::SampleMetadata],
 ) -> Result<(), String> {

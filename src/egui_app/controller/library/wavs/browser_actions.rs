@@ -5,7 +5,7 @@ use crate::egui_app::view_model;
 use std::path::Path;
 
 impl EguiController {
-    pub(in crate::egui_app::controller) fn visible_row_for_path(
+    pub(crate) fn visible_row_for_path(
         &mut self,
         path: &Path,
     ) -> Option<usize> {
@@ -219,7 +219,7 @@ impl EguiController {
             );
             return;
         }
-        if let Err(err) = super::super::os_explorer::reveal_in_file_explorer(&absolute) {
+        if let Err(err) = crate::egui_app::controller::ui::os_explorer::reveal_in_file_explorer(&absolute) {
             self.set_status(err, StatusTone::Error);
         }
     }

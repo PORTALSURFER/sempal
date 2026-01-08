@@ -43,7 +43,7 @@ impl EguiController {
         }
     }
 
-    pub(super) fn record_focus_history(&mut self, path: &Path) {
+    pub(crate) fn record_focus_history(&mut self, path: &Path) {
         if self.history.focus_history.suspend_push {
             return;
         }

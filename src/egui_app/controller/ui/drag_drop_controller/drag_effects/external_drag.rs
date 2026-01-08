@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 impl DragDropController<'_> {
     #[cfg(target_os = "windows")]
-    pub(in crate::egui_app::controller::drag_drop_controller) fn start_external_drag(
+    pub(crate) fn start_external_drag(
         &self,
         paths: &[PathBuf],
     ) -> Result<(), String> {

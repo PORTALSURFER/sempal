@@ -4,7 +4,7 @@ use super::io;
 use std::path::Path;
 
 impl EguiController {
-    pub(in crate::egui_app::controller) fn apply_rename(
+    pub(crate) fn apply_rename(
         &mut self,
         ctx: &CollectionSampleContext,
         new_relative: &Path,
@@ -21,7 +21,7 @@ impl EguiController {
         Ok((file_size, modified_ns))
     }
 
-    pub(in crate::egui_app::controller) fn rewrite_db_entry(
+    pub(crate) fn rewrite_db_entry(
         &mut self,
         ctx: &CollectionSampleContext,
         new_relative: &Path,
@@ -39,7 +39,7 @@ impl EguiController {
         )
     }
 
-    pub(in crate::egui_app::controller) fn rewrite_db_entry_for_source(
+    pub(crate) fn rewrite_db_entry_for_source(
         &mut self,
         source: &SampleSource,
         old_relative: &Path,
@@ -68,7 +68,7 @@ impl EguiController {
             .map_err(|err| format!("Failed to save rename: {err}"))
     }
 
-    pub(in crate::egui_app::controller) fn upsert_metadata(
+    pub(crate) fn upsert_metadata(
         &mut self,
         ctx: &CollectionSampleContext,
         file_size: u64,
@@ -82,7 +82,7 @@ impl EguiController {
         )
     }
 
-    pub(in crate::egui_app::controller) fn upsert_metadata_for_source(
+    pub(crate) fn upsert_metadata_for_source(
         &mut self,
         source: &SampleSource,
         relative_path: &Path,

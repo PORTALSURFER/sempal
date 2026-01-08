@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use tracing::info;
 
 impl DragDropController<'_> {
-    pub(in crate::egui_app::controller::drag_drop_controller) fn handle_sample_drop_to_source(
+    pub(crate) fn handle_sample_drop_to_source(
         &mut self,
         source_id: SourceId,
         relative_path: PathBuf,
@@ -142,7 +142,7 @@ impl DragDropController<'_> {
         true
     }
 
-    pub(in crate::egui_app::controller::drag_drop_controller) fn handle_samples_drop_to_source(
+    pub(crate) fn handle_samples_drop_to_source(
         &mut self,
         samples: &[DragSample],
         target_source_id: SourceId,

@@ -23,7 +23,7 @@ impl EguiController {
         }
     }
 
-    pub(super) fn maybe_open_hint_of_day(&mut self) {
+    pub(crate) fn maybe_open_hint_of_day(&mut self) {
         if !self.settings.hints.show_on_startup {
             return;
         }

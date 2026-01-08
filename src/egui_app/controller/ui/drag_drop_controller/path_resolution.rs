@@ -1,7 +1,7 @@
 use super::*;
 
 impl DragDropController<'_> {
-    pub(super) fn selection_clip_root_for_collection(
+    pub(crate) fn selection_clip_root_for_collection(
         &self,
         collection_id: &CollectionId,
     ) -> Result<PathBuf, String> {
@@ -11,7 +11,7 @@ impl DragDropController<'_> {
             .iter()
             .find(|c| &c.id == collection_id)
             .and_then(|collection| {
-                super::super::collection_export::resolved_export_dir(
+                crate::egui_app::controller::library::collection_export::resolved_export_dir(
                     collection,
                     self.settings.collection_export_root.as_deref(),
                 )
@@ -41,7 +41,7 @@ impl DragDropController<'_> {
     }
 
     #[cfg(target_os = "windows")]
-    pub(super) fn sample_absolute_path(
+    pub(crate) fn sample_absolute_path(
         &self,
         source_id: &SourceId,
         relative_path: &Path,

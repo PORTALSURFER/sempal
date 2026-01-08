@@ -2,58 +2,16 @@
 //! This module now delegates responsibilities into focused submodules to
 //! keep files small and behaviour easy to reason about.
 
-mod analysis_backfill;
-mod analysis_jobs;
-mod analysis_options;
-mod audio_cache;
-mod audio_loader;
-mod audio_options;
-mod audio_samples;
-mod background_jobs;
-mod browser_controller;
-mod clipboard;
-mod clipboard_paste;
-mod collection_export;
-mod collection_items;
-mod collection_items_helpers;
-mod collections_controller;
+mod library;
+mod playback;
+mod ui;
+
 mod config;
 pub(crate) mod controller_state;
-mod drag_drop_controller;
-mod feedback_issue;
-mod focus;
-mod hints;
-pub(crate) mod hotkeys;
-mod hotkeys_controller;
-mod interaction_options;
-mod jobs;
-mod loading;
-mod loop_crossfade;
-mod map_view;
-mod missing_samples;
-mod os_explorer;
-mod playback;
-mod progress;
-mod progress_messages;
-mod recording;
-mod scans;
-mod selection_edits;
-mod selection_export;
-mod similarity_prep;
-mod slices;
-mod source_cache_invalidator;
-mod source_folders;
-mod sources;
-mod state;
-mod status_message;
-mod trash;
-mod trash_move;
-mod undo;
-mod updates;
-mod wav_entries_loader;
-mod waveform_controller;
-mod waveform_slide;
-mod wavs;
+pub(crate) mod jobs;
+pub(crate) mod state;
+pub(crate) mod undo;
+pub(crate) mod updates;
 
 use crate::{
     audio::AudioPlayer,
@@ -61,7 +19,7 @@ use crate::{
         FolderBrowserUiState, PlayheadState, ProgressOverlayState, SampleBrowserSort,
         SampleBrowserState, TriageFlagColumn, TriageFlagFilter, UiState, WaveformImage,
     },
-    egui_app::{ui::style, ui::style::StatusTone, view_model},
+    egui_app::{ui::style, view_model},
     sample_sources::scanner::ScanMode,
     sample_sources::{
         Collection, CollectionId, SampleSource, SampleTag, SourceDatabase, SourceDbError, SourceId,
@@ -70,30 +28,33 @@ use crate::{
     selection::SelectionRange,
     waveform::{DecodedWaveform, WaveformRenderer},
 };
-pub(in crate::egui_app::controller) use analysis_jobs::AnalysisJobMessage;
-use analysis_jobs::AnalysisWorkerPool;
-use audio_loader::{AudioLoadError, AudioLoadJob, AudioLoadOutcome, AudioLoadResult};
-pub(in crate::egui_app::controller) use controller_state::*;
+pub(in crate::egui_app::controller) use library::analysis_jobs::AnalysisJobMessage;
+use library::analysis_jobs::AnalysisWorkerPool;
+use playback::audio_loader::{AudioLoadError, AudioLoadJob, AudioLoadOutcome};
+pub(crate) use controller_state::*;
 use egui::Color32;
 use open;
 use rfd::FileDialog;
-pub(crate) use status_message::StatusMessage;
+pub(crate) use ui::hotkeys;
+pub(crate) use ui::status_message::StatusMessage;
 use std::{
     cell::RefCell,
     path::{Path, PathBuf},
     rc::Rc,
     time::{Duration, Instant},
-};
+};pub(crate) use crate::egui_app::ui::style::StatusTone;
 
-/// Minimum selection width used to decide when to play a looped region.
+
 pub(crate) const MIN_SELECTION_WIDTH: f32 = 0.001;
 pub(crate) const BPM_MIN_SELECTION_DIVISOR: f32 = 16.0;
-const AUDIO_CACHE_CAPACITY: usize = 12;
-const AUDIO_HISTORY_LIMIT: usize = 8;
-const RANDOM_HISTORY_LIMIT: usize = 20;
-const FOCUS_HISTORY_LIMIT: usize = 100;
-const UNDO_LIMIT: usize = 20;
-const STATUS_LOG_LIMIT: usize = 200;
+pub(crate) const BPM_MIN_SELECTION_WIDTH: f32 = 0.0001;
+pub(crate) const SIMILARITY_MIN_SELECTION_WIDTH: f32 = 0.002;
+pub(crate) const AUDIO_CACHE_CAPACITY: usize = 12;
+pub(crate) const AUDIO_HISTORY_LIMIT: usize = 8;
+pub(crate) const RANDOM_HISTORY_LIMIT: usize = 20;
+pub(crate) const FOCUS_HISTORY_LIMIT: usize = 100;
+pub(crate) const UNDO_LIMIT: usize = 20;
+pub(crate) const STATUS_LOG_LIMIT: usize = 200;
 
 /// Maintains app state and bridges core logic to the egui UI.
 pub struct EguiController {
@@ -115,9 +76,9 @@ pub struct EguiController {
 impl EguiController {
     /// Create a controller with shared renderer and optional audio player.
     pub fn new(renderer: WaveformRenderer, player: Option<Rc<RefCell<AudioPlayer>>>) -> Self {
-        let (wav_job_tx, wav_job_rx) = wav_entries_loader::spawn_wav_loader();
-        let (audio_job_tx, audio_job_rx) = audio_loader::spawn_audio_loader(renderer.clone());
-        let (search_job_tx, search_job_rx) = wavs::browser_search_worker::spawn_search_worker();
+        let (wav_job_tx, wav_job_rx) = library::wav_entries_loader::spawn_wav_loader();
+        let (audio_job_tx, audio_job_rx) = playback::audio_loader::spawn_audio_loader(renderer.clone());
+        let (search_job_tx, search_job_rx) = library::wavs::browser_search_worker::spawn_search_worker();
         let jobs = jobs::ControllerJobs::new(
             wav_job_tx,
             wav_job_rx,
@@ -190,7 +151,7 @@ impl EguiController {
             && last_activity_at
                 .is_some_and(|time| now.saturating_duration_since(time) >= IDLE_WINDOW);
         let base_worker_count = if self.settings.analysis.analysis_worker_count == 0 {
-            crate::egui_app::controller::analysis_jobs::default_worker_count()
+            crate::egui_app::controller::library::analysis_jobs::default_worker_count()
         } else {
             self.settings.analysis.analysis_worker_count
         };
@@ -333,24 +294,24 @@ impl EguiController {
         ));
     }
 
-    pub(crate) fn browser(&mut self) -> browser_controller::BrowserController<'_> {
-        browser_controller::BrowserController::new(self)
+    pub(crate) fn browser(&mut self) -> library::browser_controller::BrowserController<'_> {
+        library::browser_controller::BrowserController::new(self)
     }
 
-    pub(crate) fn waveform(&mut self) -> waveform_controller::WaveformController<'_> {
-        waveform_controller::WaveformController::new(self)
+    pub(crate) fn waveform(&mut self) -> ui::waveform_controller::WaveformController<'_> {
+        ui::waveform_controller::WaveformController::new(self)
     }
 
-    pub(crate) fn drag_drop(&mut self) -> drag_drop_controller::DragDropController<'_> {
-        drag_drop_controller::DragDropController::new(self)
+    pub(crate) fn drag_drop(&mut self) -> ui::drag_drop_controller::DragDropController<'_> {
+        ui::drag_drop_controller::DragDropController::new(self)
     }
 
-    pub(crate) fn collections_ctrl(&mut self) -> collections_controller::CollectionsController<'_> {
-        collections_controller::CollectionsController::new(self)
+    pub(crate) fn collections_ctrl(&mut self) -> library::collections_controller::CollectionsController<'_> {
+        library::collections_controller::CollectionsController::new(self)
     }
 
-    pub(crate) fn hotkeys_ctrl(&mut self) -> hotkeys_controller::HotkeysController<'_> {
-        hotkeys_controller::HotkeysController::new(self)
+    pub(crate) fn hotkeys_ctrl(&mut self) -> ui::hotkeys_controller::HotkeysController<'_> {
+        ui::hotkeys_controller::HotkeysController::new(self)
     }
 
     /// Returns the duration in seconds for the currently loaded audio, if any.

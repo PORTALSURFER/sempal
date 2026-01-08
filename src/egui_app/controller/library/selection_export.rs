@@ -3,10 +3,10 @@ use crate::sample_sources::SampleTag;
 use std::fs;
 use std::time::SystemTime;
 
-use super::audio_samples::{crop_samples, decode_samples_from_bytes, write_wav};
+use crate::egui_app::controller::playback::audio_samples::{crop_samples, decode_samples_from_bytes, write_wav};
 
 impl EguiController {
-    pub(super) fn export_selection_clip(
+    pub(crate) fn export_selection_clip(
         &mut self,
         source_id: &SourceId,
         relative_path: &Path,
@@ -36,7 +36,7 @@ impl EguiController {
         )
     }
 
-    pub(super) fn export_selection_clip_in_folder(
+    pub(crate) fn export_selection_clip_in_folder(
         &mut self,
         source_id: &SourceId,
         relative_path: &Path,
@@ -141,7 +141,7 @@ impl EguiController {
         }
     }
 
-    pub(super) fn export_selection_clip_to_root(
+    pub(crate) fn export_selection_clip_to_root(
         &mut self,
         source_id: &SourceId,
         relative_path: &Path,
@@ -163,7 +163,7 @@ impl EguiController {
         self.record_selection_entry(&source, target_rel, target_tag, false, false)
     }
 
-    pub(super) fn selection_audio(
+    pub(crate) fn selection_audio(
         &self,
         source_id: &SourceId,
         relative_path: &Path,
@@ -218,7 +218,7 @@ impl EguiController {
     }
 
     /// Register a newly exported clip in the browser and source database.
-    pub(super) fn record_selection_entry(
+    pub(crate) fn record_selection_entry(
         &mut self,
         source: &SampleSource,
         relative_path: PathBuf,

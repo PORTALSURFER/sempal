@@ -1,7 +1,7 @@
-use crate::egui_app::controller::analysis_jobs::db;
+use crate::egui_app::controller::library::analysis_jobs::db;
 
 #[cfg_attr(test, allow(dead_code))]
-pub(super) fn reset_running_jobs() -> Result<(), String> {
+pub(crate) fn reset_running_jobs() -> Result<(), String> {
     let state = crate::sample_sources::library::load().map_err(|err| err.to_string())?;
     for source in state.sources {
         if !source.root.is_dir() {

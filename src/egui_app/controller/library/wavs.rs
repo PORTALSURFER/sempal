@@ -1,4 +1,4 @@
-use super::audio_cache::CacheKey;
+use crate::egui_app::controller::playback::audio_cache::CacheKey;
 use super::*;
 use crate::egui_app::view_model;
 use crate::waveform::DecodedWaveform;
@@ -9,7 +9,7 @@ mod browser_actions;
 mod browser_history;
 mod browser_lists;
 mod browser_search;
-pub(super) mod browser_search_worker;
+pub(crate) mod browser_search_worker;
 mod feature_cache;
 mod selection_ops;
 mod similar;
@@ -18,15 +18,15 @@ mod waveform_rendering;
 pub(crate) use waveform_rendering::MAX_ZOOM_MULTIPLIER;
 mod waveform_view;
 
-pub(super) use browser_search::BrowserSearchCache;
-pub(super) use waveform_rendering::WaveformRenderMeta;
+pub(crate) use browser_search::BrowserSearchCache;
+pub(crate) use waveform_rendering::WaveformRenderMeta;
 
 /// Upper bound for waveform texture width to stay within GPU limits.
-pub(super) const MAX_TEXTURE_WIDTH: u32 = 16_384;
+pub(crate) const MAX_TEXTURE_WIDTH: u32 = 16_384;
 
 impl EguiController {
     /// Reset all waveform and playback visuals.
-    pub(super) fn clear_waveform_view(&mut self) {
+    pub(crate) fn clear_waveform_view(&mut self) {
         waveform_view::clear_waveform_view(self);
     }
 
@@ -54,11 +54,11 @@ impl EguiController {
         self.ui.browser.visible.get(row)
     }
 
-    pub(super) fn wav_entries_len(&self) -> usize {
+    pub(crate) fn wav_entries_len(&self) -> usize {
         self.wav_entries.total
     }
 
-    pub(super) fn ensure_wav_page_loaded(&mut self, index: usize) -> Result<(), String> {
+    pub(crate) fn ensure_wav_page_loaded(&mut self, index: usize) -> Result<(), String> {
         if self.wav_entries.entry(index).is_some() {
             return Ok(());
         }
@@ -76,7 +76,7 @@ impl EguiController {
         Ok(())
     }
 
-    pub(super) fn wav_index_for_path(&mut self, path: &Path) -> Option<usize> {
+    pub(crate) fn wav_index_for_path(&mut self, path: &Path) -> Option<usize> {
         let normalized = path.to_string_lossy().replace('\\', "/");
         if let Some(index) = self.wav_entries.lookup.get(Path::new(&normalized)).copied() {
             return Some(index);
@@ -88,7 +88,7 @@ impl EguiController {
         Some(index)
     }
 
-    pub(super) fn for_each_wav_entry(
+    pub(crate) fn for_each_wav_entry(
         &mut self,
         mut visit: impl FnMut(usize, &WavEntry),
     ) -> Result<(), String> {
@@ -200,7 +200,7 @@ impl EguiController {
         similar::find_similar_for_visible_row(self, row)
     }
 
-    pub(super) fn refresh_similarity_sort_for_loaded_sample(&mut self) {
+    pub(crate) fn refresh_similarity_sort_for_loaded_sample(&mut self) {
         if let Err(err) = similar::refresh_similarity_sort_for_loaded(self) {
             similar::disable_similarity_sort(self);
             self.set_status(err, StatusTone::Warning);
@@ -254,7 +254,7 @@ impl EguiController {
         let entry = self
             .wav_entry(entry_index)
             .ok_or_else(|| "Sample entry missing".to_string())?;
-        Ok(super::analysis_jobs::build_sample_id(
+        Ok(analysis_jobs::build_sample_id(
             source_id.as_str(),
             &entry.relative_path,
         ))
@@ -264,7 +264,7 @@ impl EguiController {
     pub fn selected_sample_id(&self) -> Option<String> {
         let source_id = self.selection_state.ctx.selected_source.as_ref()?;
         let path = self.sample_view.wav.selected_wav.as_ref()?;
-        Some(super::analysis_jobs::build_sample_id(
+        Some(analysis_jobs::build_sample_id(
             source_id.as_str(),
             path,
         ))
@@ -272,7 +272,7 @@ impl EguiController {
 
     /// Focus the sample browser on a library sample_id without autoplay.
     pub fn focus_sample_from_map(&mut self, sample_id: &str) -> Result<(), String> {
-        let (source_id, relative_path) = super::analysis_jobs::parse_sample_id(sample_id)?;
+        let (source_id, relative_path) = analysis_jobs::parse_sample_id(sample_id)?;
         let source_id = SourceId::from_string(source_id);
         if self.selection_state.ctx.selected_source.as_ref() != Some(&source_id) {
             self.select_source(Some(source_id.clone()));
@@ -291,7 +291,7 @@ impl EguiController {
 
     /// Load waveform/audio for a given library sample_id without requiring browser selection.
     pub fn preview_sample_by_id(&mut self, sample_id: &str) -> Result<(), String> {
-        let (source_id, relative_path) = super::analysis_jobs::parse_sample_id(sample_id)?;
+        let (source_id, relative_path) = analysis_jobs::parse_sample_id(sample_id)?;
         let source = self
             .library
             .sources
@@ -339,12 +339,12 @@ impl EguiController {
         self.label_for_ref(index).map(str::to_string)
     }
 
-    pub(super) fn rebuild_wav_lookup(&mut self) {
+    pub(crate) fn rebuild_wav_lookup(&mut self) {
         selection_ops::rebuild_wav_lookup(self);
     }
 
     #[allow(dead_code)]
-    pub(in crate::egui_app::controller) fn sync_browser_after_wav_entries_mutation(
+    pub(crate) fn sync_browser_after_wav_entries_mutation(
         &mut self,
         source_id: &SourceId,
     ) {
@@ -352,14 +352,14 @@ impl EguiController {
     }
 
     #[allow(dead_code)]
-    pub(in crate::egui_app::controller) fn sync_browser_after_wav_entries_mutation_keep_search_cache(
+    pub(crate) fn sync_browser_after_wav_entries_mutation_keep_search_cache(
         &mut self,
         source_id: &SourceId,
     ) {
         selection_ops::sync_browser_after_wav_entries_mutation_keep_search_cache(self, source_id);
     }
 
-    pub(in crate::egui_app::controller) fn invalidate_cached_audio_for_entry_updates(
+    pub(crate) fn invalidate_cached_audio_for_entry_updates(
         &mut self,
         source_id: &SourceId,
         updates: &[(WavEntry, WavEntry)],
@@ -367,7 +367,7 @@ impl EguiController {
         selection_ops::invalidate_cached_audio_for_entry_updates(self, source_id, updates);
     }
 
-    pub(super) fn set_sample_tag(
+    pub(crate) fn set_sample_tag(
         &mut self,
         path: &Path,
         column: TriageFlagColumn,
@@ -376,7 +376,7 @@ impl EguiController {
     }
 
     #[allow(dead_code)]
-    pub(super) fn set_sample_tag_value(
+    pub(crate) fn set_sample_tag_value(
         &mut self,
         path: &Path,
         target_tag: SampleTag,
@@ -384,7 +384,7 @@ impl EguiController {
         selection_ops::set_sample_tag_value(self, path, target_tag)
     }
 
-    pub(super) fn set_sample_tag_for_source(
+    pub(crate) fn set_sample_tag_for_source(
         &mut self,
         source: &SampleSource,
         path: &Path,

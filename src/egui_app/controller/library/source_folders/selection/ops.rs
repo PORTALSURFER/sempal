@@ -101,7 +101,7 @@ impl EguiController {
         self.apply_folder_selection(row_index, FolderSelectMode::Toggle);
     }
 
-    pub(in crate::egui_app::controller) fn toggle_focused_folder_selection(&mut self) {
+    pub(crate) fn toggle_focused_folder_selection(&mut self) {
         let Some(row) = self.ui.sources.folders.focused else {
             return;
         };

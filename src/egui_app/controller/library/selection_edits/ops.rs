@@ -1,7 +1,7 @@
 use super::FadeDirection;
 use super::buffer::SelectionEditBuffer;
 
-pub(super) fn crop_buffer(buffer: &mut SelectionEditBuffer) -> Result<(), String> {
+pub(crate) fn crop_buffer(buffer: &mut SelectionEditBuffer) -> Result<(), String> {
     let cropped = slice_frames(
         &buffer.samples,
         buffer.channels,
@@ -15,7 +15,7 @@ pub(super) fn crop_buffer(buffer: &mut SelectionEditBuffer) -> Result<(), String
     Ok(())
 }
 
-pub(super) fn trim_buffer(buffer: &mut SelectionEditBuffer) -> Result<(), String> {
+pub(crate) fn trim_buffer(buffer: &mut SelectionEditBuffer) -> Result<(), String> {
     let total_frames = buffer.samples.len() / buffer.channels;
     if buffer.start_frame == 0 && buffer.end_frame >= total_frames {
         return Err("Cannot trim the entire file; crop instead".into());
@@ -37,7 +37,7 @@ pub(super) fn trim_buffer(buffer: &mut SelectionEditBuffer) -> Result<(), String
     Ok(())
 }
 
-pub(super) fn mute_buffer(buffer: &mut SelectionEditBuffer) -> Result<(), String> {
+pub(crate) fn mute_buffer(buffer: &mut SelectionEditBuffer) -> Result<(), String> {
     apply_muted_selection(
         &mut buffer.samples,
         buffer.channels,
@@ -47,7 +47,7 @@ pub(super) fn mute_buffer(buffer: &mut SelectionEditBuffer) -> Result<(), String
     Ok(())
 }
 
-pub(super) fn reverse_buffer(buffer: &mut SelectionEditBuffer) -> Result<(), String> {
+pub(crate) fn reverse_buffer(buffer: &mut SelectionEditBuffer) -> Result<(), String> {
     let channels = buffer.channels.max(1);
     let total_frames = buffer.samples.len() / channels;
     let start = buffer.start_frame.min(total_frames);
@@ -69,7 +69,7 @@ pub(super) fn reverse_buffer(buffer: &mut SelectionEditBuffer) -> Result<(), Str
     Ok(())
 }
 
-pub(super) fn slice_frames(
+pub(crate) fn slice_frames(
     samples: &[f32],
     channels: usize,
     start_frame: usize,
@@ -83,7 +83,7 @@ pub(super) fn slice_frames(
     cropped
 }
 
-pub(super) fn apply_directional_fade(
+pub(crate) fn apply_directional_fade(
     samples: &mut [f32],
     channels: usize,
     start_frame: usize,
@@ -139,7 +139,7 @@ fn apply_fade_ramp(
     }
 }
 
-pub(super) fn fade_factor(frame_count: usize, progress: f32, direction: FadeDirection) -> f32 {
+pub(crate) fn fade_factor(frame_count: usize, progress: f32, direction: FadeDirection) -> f32 {
     if frame_count == 1 {
         return 0.0;
     }
@@ -158,7 +158,7 @@ fn smootherstep(t: f32) -> f32 {
     t3 * (t * (t * 6.0 - 15.0) + 10.0)
 }
 
-pub(super) fn apply_muted_selection(
+pub(crate) fn apply_muted_selection(
     samples: &mut [f32],
     channels: usize,
     start_frame: usize,

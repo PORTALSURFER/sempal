@@ -1,7 +1,7 @@
 use hound::SampleFormat;
 use std::path::Path;
 
-pub(super) fn read_samples_for_normalization(
+pub(crate) fn read_samples_for_normalization(
     path: &Path,
 ) -> Result<(Vec<f32>, hound::WavSpec), String> {
     let reader_source = crate::wav_sanitize::open_sanitized_wav(path)?;
@@ -27,7 +27,7 @@ pub(super) fn read_samples_for_normalization(
     Ok((samples, spec))
 }
 
-pub(super) fn write_normalized_wav(
+pub(crate) fn write_normalized_wav(
     path: &Path,
     samples: &[f32],
     spec: hound::WavSpec,
@@ -44,7 +44,7 @@ pub(super) fn write_normalized_wav(
         .map_err(|err| format!("Failed to finalize wav: {err}"))
 }
 
-pub(super) fn file_metadata(path: &Path) -> Result<(u64, i64), String> {
+pub(crate) fn file_metadata(path: &Path) -> Result<(u64, i64), String> {
     let metadata = std::fs::metadata(path)
         .map_err(|err| format!("Failed to read {}: {err}", path.display()))?;
     let modified_ns = metadata

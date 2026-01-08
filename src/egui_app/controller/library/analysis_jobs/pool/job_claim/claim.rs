@@ -1,18 +1,18 @@
-use crate::egui_app::controller::analysis_jobs::db;
-use crate::egui_app::controller::analysis_jobs::stale_running_job_seconds;
+use crate::egui_app::controller::library::analysis_jobs::db;
+use crate::egui_app::controller::library::analysis_jobs::stale_running_job_seconds;
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-pub(in crate::egui_app::controller::analysis_jobs) struct SourceClaimDb {
-    pub(super) source: crate::sample_sources::SampleSource,
-    pub(super) conn: rusqlite::Connection,
+pub(crate) struct SourceClaimDb {
+    pub(crate) source: crate::sample_sources::SampleSource,
+    pub(crate) conn: rusqlite::Connection,
 }
 
-pub(in crate::egui_app::controller::analysis_jobs) const SOURCE_REFRESH_INTERVAL: Duration =
+pub(crate) const SOURCE_REFRESH_INTERVAL: Duration =
     Duration::from_secs(5);
 
-pub(in crate::egui_app::controller::analysis_jobs) fn refresh_sources(
+pub(crate) fn refresh_sources(
     sources: &mut Vec<SourceClaimDb>,
     last_refresh: &mut Instant,
     reset_done: &std::sync::Arc<std::sync::Mutex<HashSet<PathBuf>>>,
@@ -58,7 +58,7 @@ pub(in crate::egui_app::controller::analysis_jobs) fn refresh_sources(
 }
 
 #[cfg_attr(test, allow(dead_code))]
-pub(in crate::egui_app::controller::analysis_jobs) fn worker_count_with_override(
+pub(crate) fn worker_count_with_override(
     override_count: u32,
 ) -> usize {
     if override_count >= 1 {
@@ -79,7 +79,7 @@ pub(in crate::egui_app::controller::analysis_jobs) fn worker_count_with_override
 }
 
 #[cfg_attr(test, allow(dead_code))]
-pub(in crate::egui_app::controller::analysis_jobs) fn decode_worker_count_with_override(
+pub(crate) fn decode_worker_count_with_override(
     worker_count: usize,
     override_count: u32,
 ) -> usize {
@@ -99,7 +99,7 @@ pub(in crate::egui_app::controller::analysis_jobs) fn decode_worker_count_with_o
     std::cmp::min(worker_count.saturating_mul(2).max(2), max_workers)
 }
 
-pub(super) fn claim_batch_size() -> usize {
+pub(crate) fn claim_batch_size() -> usize {
     if let Ok(value) = std::env::var("SEMPAL_ANALYSIS_CLAIM_BATCH") {
         if let Ok(parsed) = value.trim().parse::<usize>() {
             if parsed >= 1 {
@@ -111,7 +111,7 @@ pub(super) fn claim_batch_size() -> usize {
 }
 
 #[cfg_attr(test, allow(dead_code))]
-pub(in crate::egui_app::controller::analysis_jobs) fn decode_queue_target(
+pub(crate) fn decode_queue_target(
     embedding_batch_max: usize,
     worker_count: usize,
 ) -> usize {

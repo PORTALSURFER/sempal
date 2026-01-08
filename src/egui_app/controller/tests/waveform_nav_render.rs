@@ -1,5 +1,5 @@
 use super::super::test_support::{dummy_controller, sample_entry, write_test_wav};
-use super::super::wavs;
+use crate::egui_app::controller::library::wavs;
 use super::super::*;
 use super::common::prepare_browser_sample;
 use crate::egui_app::state::WaveformView;
@@ -63,14 +63,14 @@ fn waveform_refresh_respects_view_slice_and_caps_width() {
     assert!((image.view_start - 0.25).abs() < 1e-6);
     assert!((image.view_end - 0.5).abs() < 1e-6);
     let expected_width = (controller.sample_view.waveform.size[0] as f32)
-        .min(crate::egui_app::controller::wavs::MAX_TEXTURE_WIDTH as f32)
+        .min(crate::egui_app::controller::library::wavs::MAX_TEXTURE_WIDTH as f32)
         .ceil() as usize;
     let samples_in_view = (0.5 - 0.25) * 1000.0;
     let upper = (samples_in_view as usize)
-        .min(crate::egui_app::controller::wavs::MAX_TEXTURE_WIDTH as usize)
+        .min(crate::egui_app::controller::library::wavs::MAX_TEXTURE_WIDTH as usize)
         .max(1);
     let lower = controller.sample_view.waveform.size[0]
-        .min(crate::egui_app::controller::wavs::MAX_TEXTURE_WIDTH) as usize;
+        .min(crate::egui_app::controller::library::wavs::MAX_TEXTURE_WIDTH) as usize;
     let clamped = expected_width.min(upper).max(lower);
     assert_eq!(image.image.size[0], clamped);
     assert_eq!(image.image.size[1], 10);

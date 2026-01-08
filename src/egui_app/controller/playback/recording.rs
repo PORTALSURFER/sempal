@@ -20,7 +20,7 @@ impl EguiController {
         recorder::start_recording(self)
     }
 
-    pub(super) fn start_recording_in_current_source(&mut self) -> Result<(), String> {
+    pub(crate) fn start_recording_in_current_source(&mut self) -> Result<(), String> {
         recorder::start_recording_in_current_source(self)
     }
 
@@ -40,11 +40,11 @@ impl EguiController {
         recorder::refresh_recording_waveform(self);
     }
 
-    pub(super) fn start_input_monitor(&mut self, recorder: &AudioRecorder) {
+    pub(crate) fn start_input_monitor(&mut self, recorder: &AudioRecorder) {
         recorder::start_input_monitor(self, recorder);
     }
 
-    pub(super) fn stop_input_monitor(&mut self) {
+    pub(crate) fn stop_input_monitor(&mut self) {
         recorder::stop_input_monitor(self);
     }
 }

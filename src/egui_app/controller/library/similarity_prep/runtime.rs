@@ -1,13 +1,15 @@
 use super::DEFAULT_CLUSTER_MIN_SIZE;
 use super::store::{DbSimilarityPrepStore, SimilarityPrepStore};
 use crate::analysis::hdbscan::{HdbscanConfig, HdbscanMethod};
-use crate::egui_app::controller::{EguiController, analysis_jobs, jobs};
+use crate::egui_app::controller::EguiController;
+use crate::egui_app::controller::jobs;
+use crate::egui_app::controller::library::analysis_jobs;
 use crate::sample_sources::{SampleSource, SourceId};
 use std::thread;
 use tracing::info;
 
 impl EguiController {
-    pub(super) fn apply_similarity_prep_duration_cap(&mut self) {
+    pub(crate) fn apply_similarity_prep_duration_cap(&mut self) {
         let max_duration = if self.similarity_prep_duration_cap_enabled() {
             self.settings.analysis.max_analysis_duration_seconds
         } else {
@@ -18,13 +20,13 @@ impl EguiController {
             .set_max_analysis_duration_seconds(max_duration);
     }
 
-    pub(super) fn restore_similarity_prep_duration_cap(&mut self) {
+    pub(crate) fn restore_similarity_prep_duration_cap(&mut self) {
         self.runtime.analysis.set_max_analysis_duration_seconds(
             self.settings.analysis.max_analysis_duration_seconds,
         );
     }
 
-    pub(super) fn apply_similarity_prep_fast_mode(&mut self) {
+    pub(crate) fn apply_similarity_prep_fast_mode(&mut self) {
         if !self.similarity_prep_fast_mode_enabled() {
             return;
         }
@@ -36,25 +38,25 @@ impl EguiController {
             .set_analysis_version_override(Some(version));
     }
 
-    pub(super) fn restore_similarity_prep_fast_mode(&mut self) {
+    pub(crate) fn restore_similarity_prep_fast_mode(&mut self) {
         self.runtime
             .analysis
             .set_analysis_sample_rate(crate::analysis::audio::ANALYSIS_SAMPLE_RATE);
         self.runtime.analysis.set_analysis_version_override(None);
     }
 
-    pub(super) fn apply_similarity_prep_full_analysis(&mut self, force_full_analysis: bool) {
+    pub(crate) fn apply_similarity_prep_full_analysis(&mut self, force_full_analysis: bool) {
         if !force_full_analysis {
             return;
         }
         self.runtime.analysis.set_analysis_cache_enabled(false);
     }
 
-    pub(super) fn restore_similarity_prep_full_analysis(&mut self) {
+    pub(crate) fn restore_similarity_prep_full_analysis(&mut self) {
         self.runtime.analysis.set_analysis_cache_enabled(true);
     }
 
-    pub(super) fn apply_similarity_prep_worker_boost(&mut self) {
+    pub(crate) fn apply_similarity_prep_worker_boost(&mut self) {
         if self.settings.analysis.analysis_worker_count != 0 {
             return;
         }
@@ -67,14 +69,14 @@ impl EguiController {
         self.runtime.analysis.set_worker_count(boosted);
     }
 
-    pub(super) fn restore_similarity_prep_worker_count(&mut self) {
+    pub(crate) fn restore_similarity_prep_worker_count(&mut self) {
         self.runtime.performance.idle_worker_override = None;
         self.runtime
             .analysis
             .set_worker_count(self.settings.analysis.analysis_worker_count);
     }
 
-    pub(super) fn enqueue_similarity_backfill(
+    pub(crate) fn enqueue_similarity_backfill(
         &mut self,
         source: SampleSource,
         force_full_analysis: bool,
@@ -151,7 +153,7 @@ impl EguiController {
         });
     }
 
-    pub(super) fn start_similarity_finalize(&mut self, source_id: SourceId, umap_version: String) {
+    pub(crate) fn start_similarity_finalize(&mut self, source_id: SourceId, umap_version: String) {
         let tx = self.runtime.jobs.message_sender();
         thread::spawn(move || {
             let started_at = std::time::Instant::now();
@@ -169,7 +171,7 @@ impl EguiController {
         });
     }
 
-    pub(super) fn find_source_by_id(&self, source_id: &SourceId) -> Option<SampleSource> {
+    pub(crate) fn find_source_by_id(&self, source_id: &SourceId) -> Option<SampleSource> {
         self.library
             .sources
             .iter()

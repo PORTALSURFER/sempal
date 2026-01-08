@@ -1,4 +1,4 @@
-use super::audio_cache::FileMetadata;
+use crate::egui_app::controller::playback::audio_cache::FileMetadata;
 use super::*;
 use crate::egui_app::state::WaveformView;
 use crate::waveform::DecodedWaveform;
@@ -22,7 +22,7 @@ fn min_view_width_for_frames(frame_count: usize, width_px: u32) -> f32 {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(in crate::egui_app::controller) struct WaveformRenderMeta {
+pub(crate) struct WaveformRenderMeta {
     pub view_start: f32,
     pub view_end: f32,
     pub size: [u32; 2],
@@ -34,7 +34,7 @@ pub(in crate::egui_app::controller) struct WaveformRenderMeta {
 
 impl WaveformRenderMeta {
     /// Check whether two render targets describe the same view and layout.
-    pub(in crate::egui_app::controller) fn matches(&self, other: &WaveformRenderMeta) -> bool {
+    pub(crate) fn matches(&self, other: &WaveformRenderMeta) -> bool {
         let width = (self.view_end - self.view_start)
             .abs()
             .max((other.view_end - other.view_start).abs())
@@ -52,7 +52,7 @@ impl WaveformRenderMeta {
 }
 
 impl EguiController {
-    pub(in crate::egui_app::controller) fn min_view_width(&self) -> f32 {
+    pub(crate) fn min_view_width(&self) -> f32 {
         if let Some(decoded) = self.sample_view.waveform.decoded.as_ref() {
             min_view_width_for_frames(decoded.frame_count(), self.sample_view.waveform.size[0])
         } else {
@@ -61,7 +61,7 @@ impl EguiController {
     }
 
     #[allow(dead_code)]
-    pub(super) fn apply_view_bounds_with_min(&mut self, min_width: f32) -> WaveformView {
+    pub(crate) fn apply_view_bounds_with_min(&mut self, min_width: f32) -> WaveformView {
         let mut view = self.ui.waveform.view.clamp();
         let width = view.width().max(min_width);
         view.start = view.start.min(1.0 - width);
@@ -70,7 +70,7 @@ impl EguiController {
         view
     }
 
-    pub(in crate::egui_app::controller) fn apply_waveform_image(
+    pub(crate) fn apply_waveform_image(
         &mut self,
         decoded: DecodedWaveform,
     ) {
@@ -142,7 +142,7 @@ impl EguiController {
             .waveform
             .render_meta
             .as_ref()
-            .is_some_and(|meta| meta.matches(&desired_meta))
+            .is_some_and(|meta: &WaveformRenderMeta| meta.matches(&desired_meta))
         {
             return;
         }
@@ -175,7 +175,7 @@ impl EguiController {
         self.sample_view.waveform.render_meta = Some(desired_meta);
     }
 
-    pub(in crate::egui_app::controller) fn refresh_waveform_transients(&mut self) {
+    pub(crate) fn refresh_waveform_transients(&mut self) {
         let Some(decoded) = self.sample_view.waveform.decoded.as_ref() else {
             self.ui.waveform.transients.clear();
             self.ui.waveform.transient_cache_token = None;
@@ -189,7 +189,7 @@ impl EguiController {
         self.ui.waveform.transient_cache_token = Some(decoded.cache_token);
     }
 
-    pub(in crate::egui_app::controller::wavs) fn read_waveform_bytes(
+    pub(crate) fn read_waveform_bytes(
         &self,
         source: &SampleSource,
         relative_path: &Path,
@@ -200,7 +200,7 @@ impl EguiController {
         Ok(crate::wav_sanitize::sanitize_wav_bytes(bytes))
     }
 
-    pub(in crate::egui_app::controller::wavs) fn current_file_metadata(
+    pub(crate) fn current_file_metadata(
         &self,
         source: &SampleSource,
         relative_path: &Path,

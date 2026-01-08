@@ -5,13 +5,13 @@ mod similarity;
 mod updates;
 
 use super::jobs::JobMessage;
-use super::trash_move::TrashMoveMessage;
+use trash_move::TrashMoveMessage;
 use super::*;
 use crate::egui_app::state::ProgressTaskKind;
 use std::sync::atomic::Ordering;
 
 impl EguiController {
-    pub(in crate::egui_app::controller) fn poll_background_jobs(&mut self) {
+    pub(crate) fn poll_background_jobs(&mut self) {
         if self.ui.progress.cancel_requested {
             match self.ui.progress.task {
                 Some(ProgressTaskKind::TrashMove) => {

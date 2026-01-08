@@ -18,7 +18,7 @@ fn windows_explorer_select_args(path: &Path) -> [OsString; 2] {
     [OsString::from("/select,"), windows_explorer_target(path)]
 }
 
-pub(super) fn reveal_in_file_explorer(path: &Path) -> Result<(), String> {
+pub(crate) fn reveal_in_file_explorer(path: &Path) -> Result<(), String> {
     if !path.exists() {
         return Err(format!("File not found: {}", path.display()));
     }
@@ -61,7 +61,7 @@ pub(super) fn reveal_in_file_explorer(path: &Path) -> Result<(), String> {
     }
 }
 
-pub(super) fn open_folder_in_file_explorer(path: &Path) -> Result<(), String> {
+pub(crate) fn open_folder_in_file_explorer(path: &Path) -> Result<(), String> {
     if !path.exists() {
         return Err(format!("Folder not found: {}", path.display()));
     }

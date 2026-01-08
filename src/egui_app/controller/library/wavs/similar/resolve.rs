@@ -1,14 +1,14 @@
 use super::*;
 use rusqlite::{OptionalExtension, params};
 
-pub(super) struct ResolvedSimilarity {
+pub(crate) struct ResolvedSimilarity {
     pub sample_id: String,
     pub relative_path: PathBuf,
     pub indices: Vec<usize>,
     pub scores: Vec<f32>,
 }
 
-pub(super) fn resolve_sample_id_for_visible_row(
+pub(crate) fn resolve_sample_id_for_visible_row(
     controller: &mut EguiController,
     visible_row: usize,
 ) -> Result<(String, usize), String> {
@@ -47,18 +47,18 @@ fn resolve_sample_id_for_entry(
     let entry = controller
         .wav_entry(entry_index)
         .ok_or_else(|| "Sample entry missing".to_string())?;
-    Ok(super::super::analysis_jobs::build_sample_id(
+    Ok(super::analysis_jobs::build_sample_id(
         source_id.as_str(),
         &entry.relative_path,
     ))
 }
 
-pub(super) fn resolve_similarity_for_sample_id(
+pub(crate) fn resolve_similarity_for_sample_id(
     controller: &mut EguiController,
     sample_id: &str,
     score_cutoff: Option<f32>,
 ) -> Result<ResolvedSimilarity, String> {
-    let (source_id, relative_path) = super::super::analysis_jobs::parse_sample_id(sample_id)?;
+    let (source_id, relative_path) = super::analysis_jobs::parse_sample_id(sample_id)?;
     let source_id = SourceId::from_string(source_id);
     if controller.selection_state.ctx.selected_source.as_ref() != Some(&source_id) {
         controller.select_source(Some(source_id.clone()));
@@ -96,7 +96,7 @@ pub(super) fn resolve_similarity_for_sample_id(
     })
 }
 
-pub(super) fn open_source_db_for_id(
+pub(crate) fn open_source_db_for_id(
     controller: &EguiController,
     source_id: &SourceId,
 ) -> Result<rusqlite::Connection, String> {
@@ -106,10 +106,10 @@ pub(super) fn open_source_db_for_id(
         .iter()
         .find(|source| &source.id == source_id)
         .ok_or_else(|| "Source not found".to_string())?;
-    super::super::analysis_jobs::open_source_db(&source.root)
+    super::analysis_jobs::open_source_db(&source.root)
 }
 
-pub(super) fn rerank_with_dsp(
+pub(crate) fn rerank_with_dsp(
     conn: &rusqlite::Connection,
     neighbours: Vec<crate::analysis::ann_index::SimilarNeighbor>,
     query_embedding: Option<&[f32]>,
@@ -146,7 +146,7 @@ pub(super) fn rerank_with_dsp(
     Ok(scored)
 }
 
-pub(super) fn load_light_dsp_for_sample(
+pub(crate) fn load_light_dsp_for_sample(
     conn: &rusqlite::Connection,
     sample_id: &str,
 ) -> Result<Option<Vec<f32>>, String> {
@@ -166,7 +166,7 @@ pub(super) fn load_light_dsp_for_sample(
     Ok(light.map(normalize_l2))
 }
 
-pub(super) fn load_rms_for_sample(
+pub(crate) fn load_rms_for_sample(
     conn: &rusqlite::Connection,
     sample_id: &str,
 ) -> Result<Option<f32>, String> {
@@ -188,7 +188,7 @@ pub(super) fn load_rms_for_sample(
     Ok(Some(features[FEATURE_RMS_INDEX]))
 }
 
-pub(super) fn load_embedding_for_sample(
+pub(crate) fn load_embedding_for_sample(
     conn: &rusqlite::Connection,
     sample_id: &str,
 ) -> Result<Option<Vec<f32>>, String> {
@@ -206,7 +206,7 @@ pub(super) fn load_embedding_for_sample(
     crate::analysis::decode_f32_le_blob(&blob).map(Some)
 }
 
-pub(super) fn normalize_l2(mut values: Vec<f32>) -> Vec<f32> {
+pub(crate) fn normalize_l2(mut values: Vec<f32>) -> Vec<f32> {
     let mut sum = 0.0_f32;
     for value in &values {
         sum += value * value;
@@ -220,7 +220,7 @@ pub(super) fn normalize_l2(mut values: Vec<f32>) -> Vec<f32> {
     values
 }
 
-pub(super) fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
+pub(crate) fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     let len = a.len().min(b.len());
     if len == 0 {
         return 0.0;
@@ -253,7 +253,7 @@ fn filter_ranked_candidates(
             }
         }
         let (candidate_source, relative_path) =
-            super::super::analysis_jobs::parse_sample_id(&candidate_id)?;
+            super::analysis_jobs::parse_sample_id(&candidate_id)?;
         if candidate_source.as_str() != source_id.as_str() {
             continue;
         }
@@ -315,7 +315,7 @@ fn maybe_enqueue_full_analysis(
     if active > 0 {
         return Ok(());
     }
-    let (source_id, relative_path) = super::super::analysis_jobs::parse_sample_id(sample_id)?;
+    let (source_id, relative_path) = super::analysis_jobs::parse_sample_id(sample_id)?;
     let relative_path = relative_path.to_string_lossy().replace('\\', "/");
     let created_at = now_epoch_seconds();
     conn.execute(
@@ -391,9 +391,9 @@ mod tests {
         let conn = in_memory_conn();
         let source_id = SourceId::from_string("source-a");
         let sample_id =
-            super::super::analysis_jobs::build_sample_id(source_id.as_str(), Path::new("a.wav"));
+            super::analysis_jobs::build_sample_id(source_id.as_str(), Path::new("a.wav"));
         let lower_id =
-            super::super::analysis_jobs::build_sample_id(source_id.as_str(), Path::new("b.wav"));
+            super::analysis_jobs::build_sample_id(source_id.as_str(), Path::new("b.wav"));
         let ranked = vec![
             (sample_id.clone(), DUPLICATE_SCORE_THRESHOLD + 0.002),
             (lower_id.clone(), DUPLICATE_SCORE_THRESHOLD - 0.001),
@@ -417,12 +417,12 @@ mod tests {
     fn duplicate_filter_skips_silent_rms_candidates() {
         let conn = in_memory_conn();
         let source_id = SourceId::from_string("source-a");
-        let silent_id = super::super::analysis_jobs::build_sample_id(
+        let silent_id = super::analysis_jobs::build_sample_id(
             source_id.as_str(),
             Path::new("silent.wav"),
         );
         let loud_id =
-            super::super::analysis_jobs::build_sample_id(source_id.as_str(), Path::new("loud.wav"));
+            super::analysis_jobs::build_sample_id(source_id.as_str(), Path::new("loud.wav"));
         insert_rms(&conn, &silent_id, DUPLICATE_RMS_MIN * 0.5);
         insert_rms(&conn, &loud_id, DUPLICATE_RMS_MIN * 10.0);
         let ranked = vec![
@@ -450,8 +450,8 @@ mod tests {
         let source_id = SourceId::from_string("source-a");
         let other_source = SourceId::from_string("source-b");
         let own_id =
-            super::super::analysis_jobs::build_sample_id(source_id.as_str(), Path::new("keep.wav"));
-        let other_id = super::super::analysis_jobs::build_sample_id(
+            super::analysis_jobs::build_sample_id(source_id.as_str(), Path::new("keep.wav"));
+        let other_id = super::analysis_jobs::build_sample_id(
             other_source.as_str(),
             Path::new("skip.wav"),
         );
@@ -492,7 +492,7 @@ mod tests {
         let conn = in_memory_conn();
         let source_id = SourceId::from_string("source-a");
         let sample_id =
-            super::super::analysis_jobs::build_sample_id(source_id.as_str(), Path::new("skip.wav"));
+            super::analysis_jobs::build_sample_id(source_id.as_str(), Path::new("skip.wav"));
         let ranked = vec![(sample_id, DUPLICATE_SCORE_THRESHOLD - 0.01)];
         let (indices, scores) = filter_ranked_candidates(
             &conn,
@@ -510,7 +510,7 @@ mod tests {
     fn filter_ranked_candidates_skips_unresolved_paths() {
         let conn = in_memory_conn();
         let source_id = SourceId::from_string("source-a");
-        let sample_id = super::super::analysis_jobs::build_sample_id(
+        let sample_id = super::analysis_jobs::build_sample_id(
             source_id.as_str(),
             Path::new("missing.wav"),
         );

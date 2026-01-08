@@ -2,33 +2,33 @@ use std::fmt;
 
 /// Persistent aggregate progress for analysis jobs.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(in crate::egui_app::controller) struct AnalysisProgress {
+pub(crate) struct AnalysisProgress {
     /// Job-level counts.
-    pub(in crate::egui_app::controller) pending: usize,
-    pub(in crate::egui_app::controller) running: usize,
-    pub(in crate::egui_app::controller) done: usize,
-    pub(in crate::egui_app::controller) failed: usize,
+    pub(crate) pending: usize,
+    pub(crate) running: usize,
+    pub(crate) done: usize,
+    pub(crate) failed: usize,
     /// Unique-sample counts derived from job rows.
-    pub(in crate::egui_app::controller) samples_total: usize,
-    pub(in crate::egui_app::controller) samples_pending_or_running: usize,
+    pub(crate) samples_total: usize,
+    pub(crate) samples_pending_or_running: usize,
 }
 
 #[derive(Clone, Debug)]
-pub(in crate::egui_app::controller) struct RunningJobInfo {
-    pub(in crate::egui_app::controller) sample_id: String,
-    pub(in crate::egui_app::controller) last_heartbeat_at: Option<i64>,
+pub(crate) struct RunningJobInfo {
+    pub(crate) sample_id: String,
+    pub(crate) last_heartbeat_at: Option<i64>,
 }
 
 impl AnalysisProgress {
-    pub(in crate::egui_app::controller) fn total(&self) -> usize {
+    pub(crate) fn total(&self) -> usize {
         self.pending + self.running + self.done + self.failed
     }
 
-    pub(in crate::egui_app::controller) fn completed(&self) -> usize {
+    pub(crate) fn completed(&self) -> usize {
         self.done + self.failed
     }
 
-    pub(in crate::egui_app::controller) fn samples_completed(&self) -> usize {
+    pub(crate) fn samples_completed(&self) -> usize {
         self.samples_total
             .saturating_sub(self.samples_pending_or_running)
     }
@@ -51,7 +51,7 @@ impl fmt::Display for AnalysisProgress {
 
 /// Controller messages emitted by the background analysis system.
 #[derive(Clone, Debug)]
-pub(in crate::egui_app::controller) enum AnalysisJobMessage {
+pub(crate) enum AnalysisJobMessage {
     /// Queue counts changed (either due to enqueue or workers making progress).
     Progress {
         source_id: Option<crate::sample_sources::SourceId>,

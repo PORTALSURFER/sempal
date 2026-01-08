@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 
 impl CollectionsController<'_> {
-    pub(in crate::egui_app::controller::collections_controller) fn primary_visible_row_for_browser_selection(
+    pub(crate) fn primary_visible_row_for_browser_selection(
         &mut self,
     ) -> Option<usize> {
         let selected_index = self.selected_row_index()?;
@@ -20,7 +20,7 @@ impl CollectionsController<'_> {
         self.visible_row_for_path(&path)
     }
 
-    pub(in crate::egui_app::controller::collections_controller) fn move_browser_rows_to_collection(
+    pub(crate) fn move_browser_rows_to_collection(
         &mut self,
         collection_id: &CollectionId,
         plan: MovePlan,
@@ -85,7 +85,7 @@ impl CollectionsController<'_> {
         }
     }
 
-    pub(in crate::egui_app::controller) fn move_sample_to_collection(
+    pub(crate) fn move_sample_to_collection(
         &mut self,
         collection_id: &CollectionId,
         source: &SampleSource,
@@ -120,7 +120,7 @@ impl CollectionsController<'_> {
         Ok(collection_name)
     }
 
-    pub(in crate::egui_app::controller::collections_controller) fn apply_collection_move_result(
+    pub(crate) fn apply_collection_move_result(
         &mut self,
         result: crate::egui_app::controller::jobs::CollectionMoveResult,
     ) {

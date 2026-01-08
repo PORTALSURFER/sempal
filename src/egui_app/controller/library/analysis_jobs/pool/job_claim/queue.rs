@@ -1,11 +1,11 @@
 use super::dedup::DedupTracker;
-use crate::egui_app::controller::analysis_jobs::db;
+use crate::egui_app::controller::library::analysis_jobs::db;
 use std::collections::VecDeque;
 use std::sync::{Condvar, Mutex};
 use std::sync::{atomic::AtomicBool, atomic::AtomicUsize, atomic::Ordering};
 use std::time::Duration;
 
-pub(in crate::egui_app::controller::analysis_jobs) struct DecodedQueue {
+pub(crate) struct DecodedQueue {
     queue: Mutex<VecDeque<DecodedWork>>,
     ready: Condvar,
     len: AtomicUsize,
@@ -13,7 +13,7 @@ pub(in crate::egui_app::controller::analysis_jobs) struct DecodedQueue {
 }
 
 impl DecodedQueue {
-    pub(in crate::egui_app::controller::analysis_jobs) fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             queue: Mutex::new(VecDeque::new()),
             ready: Condvar::new(),
@@ -22,15 +22,15 @@ impl DecodedQueue {
         }
     }
 
-    pub(super) fn try_mark_inflight(&self, job_id: i64) -> bool {
+    pub(crate) fn try_mark_inflight(&self, job_id: i64) -> bool {
         self.dedup.try_mark_inflight(job_id)
     }
 
-    pub(super) fn clear_inflight(&self, job_id: i64) {
+    pub(crate) fn clear_inflight(&self, job_id: i64) {
         self.dedup.clear_inflight(job_id);
     }
 
-    pub(super) fn push(&self, work: DecodedWork) -> bool {
+    pub(crate) fn push(&self, work: DecodedWork) -> bool {
         let mut guard = self.queue.lock().expect("decoded queue lock");
         if work.job.job_type == db::ANALYZE_SAMPLE_JOB_TYPE {
             if !self.dedup.mark_pending(work.job.id) {
@@ -44,7 +44,7 @@ impl DecodedQueue {
     }
 
     #[cfg(test)]
-    pub(super) fn pop(&self, shutdown: &AtomicBool) -> Option<DecodedWork> {
+    pub(crate) fn pop(&self, shutdown: &AtomicBool) -> Option<DecodedWork> {
         let mut guard = self.queue.lock().expect("decoded queue lock");
         loop {
             if shutdown.load(Ordering::Relaxed) {
@@ -65,7 +65,7 @@ impl DecodedQueue {
         }
     }
 
-    pub(super) fn pop_batch(&self, shutdown: &AtomicBool, max: usize) -> (Vec<DecodedWork>, u64) {
+    pub(crate) fn pop_batch(&self, shutdown: &AtomicBool, max: usize) -> (Vec<DecodedWork>, u64) {
         let mut guard = self.queue.lock().expect("decoded queue lock");
         let start = std::time::Instant::now();
         loop {
@@ -101,17 +101,17 @@ impl DecodedQueue {
         }
     }
 
-    pub(super) fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.len.load(Ordering::Relaxed)
     }
 }
 
-pub(in crate::egui_app::controller::analysis_jobs) struct DecodedWork {
-    pub(super) job: db::ClaimedJob,
-    pub(super) outcome: DecodeOutcome,
+pub(crate) struct DecodedWork {
+    pub(crate) job: db::ClaimedJob,
+    pub(crate) outcome: DecodeOutcome,
 }
 
-pub(in crate::egui_app::controller::analysis_jobs) enum DecodeOutcome {
+pub(crate) enum DecodeOutcome {
     Decoded(crate::analysis::audio::AnalysisAudio),
     Skipped {
         duration_seconds: f32,

@@ -1,8 +1,8 @@
-use crate::egui_app::controller::analysis_jobs::db;
+use crate::egui_app::controller::library::analysis_jobs::db;
 
 use super::analysis::AnalysisContext;
 
-pub(super) enum DecodeOutcome {
+pub(crate) enum DecodeOutcome {
     Decoded(crate::analysis::audio::AnalysisAudio),
     Skipped {
         duration_seconds: f32,
@@ -10,7 +10,7 @@ pub(super) enum DecodeOutcome {
     },
 }
 
-pub(super) fn decode_for_analysis(
+pub(crate) fn decode_for_analysis(
     job: &db::ClaimedJob,
     context: &AnalysisContext<'_>,
 ) -> Result<DecodeOutcome, String> {

@@ -1,4 +1,4 @@
-use crate::egui_app::controller::analysis_jobs::db;
+use crate::egui_app::controller::library::analysis_jobs::db;
 
 use super::analysis_cache::{load_existing_embedding, lookup_cache_by_hash};
 use super::analysis_db::{
@@ -8,14 +8,14 @@ use super::analysis_db::{
 use super::analysis_decode::{DecodeOutcome, decode_for_analysis};
 use super::support::JobHeartbeat;
 
-pub(in crate::egui_app::controller::analysis_jobs::pool) struct AnalysisContext<'a> {
-    pub(in crate::egui_app::controller::analysis_jobs::pool) use_cache: bool,
-    pub(in crate::egui_app::controller::analysis_jobs::pool) max_analysis_duration_seconds: f32,
-    pub(in crate::egui_app::controller::analysis_jobs::pool) analysis_sample_rate: u32,
-    pub(in crate::egui_app::controller::analysis_jobs::pool) analysis_version: &'a str,
+pub(crate) struct AnalysisContext<'a> {
+    pub(crate) use_cache: bool,
+    pub(crate) max_analysis_duration_seconds: f32,
+    pub(crate) analysis_sample_rate: u32,
+    pub(crate) analysis_version: &'a str,
 }
 
-pub(super) fn run_analysis_job(
+pub(crate) fn run_analysis_job(
     conn: &rusqlite::Connection,
     job: &db::ClaimedJob,
     context: &AnalysisContext<'_>,
@@ -74,7 +74,7 @@ pub(super) fn run_analysis_job(
     }
 }
 
-pub(super) fn run_analysis_job_with_decoded(
+pub(crate) fn run_analysis_job_with_decoded(
     conn: &rusqlite::Connection,
     job: &db::ClaimedJob,
     decoded: crate::analysis::audio::AnalysisAudio,
@@ -95,7 +95,7 @@ pub(super) fn run_analysis_job_with_decoded(
     )
 }
 
-pub(in crate::egui_app::controller::analysis_jobs::pool) fn run_analysis_jobs_with_decoded_batch(
+pub(crate) fn run_analysis_jobs_with_decoded_batch(
     conn: &rusqlite::Connection,
     jobs: Vec<(db::ClaimedJob, crate::analysis::audio::AnalysisAudio)>,
     context: &AnalysisContext<'_>,

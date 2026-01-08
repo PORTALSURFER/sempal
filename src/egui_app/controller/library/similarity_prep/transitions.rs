@@ -1,8 +1,10 @@
 use super::state;
 use super::store::{DbSimilarityPrepStore, SimilarityPrepStore};
 use crate::egui_app::controller::{
-    EguiController, SimilarityPrepStage, SimilarityPrepState, analysis_jobs, jobs,
+    EguiController, library::analysis_jobs, jobs,
 };
+use state::SimilarityPrepStage;
+use state::SimilarityPrepState;
 use crate::egui_app::state::ProgressTaskKind;
 use crate::sample_sources::SourceId;
 
@@ -26,7 +28,7 @@ fn matches_similarity_stage(
 }
 
 impl EguiController {
-    pub(in crate::egui_app::controller) fn handle_similarity_scan_finished(
+    pub(crate) fn handle_similarity_scan_finished(
         &mut self,
         source_id: &SourceId,
         scan_changed: bool,
@@ -56,7 +58,7 @@ impl EguiController {
         }
     }
 
-    pub(in crate::egui_app::controller) fn handle_similarity_analysis_progress(
+    pub(crate) fn handle_similarity_analysis_progress(
         &mut self,
         progress: &analysis_jobs::AnalysisProgress,
     ) {
@@ -76,7 +78,7 @@ impl EguiController {
         self.start_similarity_finalize(source_id, umap_version);
     }
 
-    pub(in crate::egui_app::controller) fn handle_similarity_prep_result(
+    pub(crate) fn handle_similarity_prep_result(
         &mut self,
         result: jobs::SimilarityPrepResult,
     ) {
@@ -107,7 +109,7 @@ impl EguiController {
         }
     }
 
-    pub(in crate::egui_app::controller) fn cancel_similarity_prep(&mut self, source_id: &SourceId) {
+    pub(crate) fn cancel_similarity_prep(&mut self, source_id: &SourceId) {
         let matches = self
             .runtime
             .similarity_prep

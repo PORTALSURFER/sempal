@@ -1,5 +1,5 @@
 use super::job_execution::{run_analysis_jobs_with_decoded_batch, run_job};
-use crate::egui_app::controller::analysis_jobs::db as analysis_db;
+use crate::egui_app::controller::library::analysis_jobs::db as analysis_db;
 use crate::egui_app::controller::jobs::JobMessage;
 use rusqlite::Connection;
 use std::collections::{HashMap, HashSet};
@@ -29,10 +29,10 @@ mod queue;
 mod selection;
 
 #[allow(unused_imports)]
-pub(in crate::egui_app::controller::analysis_jobs) use claim::{
+pub(crate) use claim::{
     decode_queue_target, decode_worker_count_with_override, worker_count_with_override,
 };
-pub(in crate::egui_app::controller::analysis_jobs) use queue::{
+pub(crate) use queue::{
     DecodeOutcome, DecodedQueue, DecodedWork,
 };
 
@@ -40,7 +40,7 @@ pub(in crate::egui_app::controller::analysis_jobs) use queue::{
 mod tests;
 
 #[cfg_attr(test, allow(dead_code))]
-pub(super) fn spawn_decoder_worker(
+pub(crate) fn spawn_decoder_worker(
     _worker_index: usize,
     decode_queue: Arc<DecodedQueue>,
     cancel: Arc<AtomicBool>,
@@ -156,7 +156,7 @@ pub(super) fn spawn_decoder_worker(
 }
 
 #[cfg_attr(test, allow(dead_code))]
-pub(super) fn spawn_compute_worker(
+pub(crate) fn spawn_compute_worker(
     _worker_index: usize,
     tx: Sender<JobMessage>,
     decode_queue: Arc<DecodedQueue>,

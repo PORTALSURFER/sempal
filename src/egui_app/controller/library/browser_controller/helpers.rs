@@ -24,19 +24,19 @@ impl std::ops::DerefMut for BrowserController<'_> {
     }
 }
 
-pub(in crate::egui_app::controller) struct TriageSampleContext {
-    pub(in crate::egui_app::controller) source: SampleSource,
-    pub(in crate::egui_app::controller) entry: WavEntry,
-    pub(in crate::egui_app::controller) absolute_path: PathBuf,
+pub(crate) struct TriageSampleContext {
+    pub(crate) source: SampleSource,
+    pub(crate) entry: WavEntry,
+    pub(crate) absolute_path: PathBuf,
 }
 
 impl BrowserController<'_> {
-    pub(super) fn try_normalize_browser_sample(&mut self, row: usize) -> Result<(), String> {
+    pub(crate) fn try_normalize_browser_sample(&mut self, row: usize) -> Result<(), String> {
         let ctx = self.resolve_browser_sample(row)?;
         self.try_normalize_browser_sample_ctx(&ctx)
     }
 
-    pub(super) fn try_normalize_browser_sample_ctx(
+    pub(crate) fn try_normalize_browser_sample_ctx(
         &mut self,
         ctx: &TriageSampleContext,
     ) -> Result<(), String> {
@@ -121,7 +121,7 @@ impl BrowserController<'_> {
         Ok(())
     }
 
-    pub(super) fn next_browser_focus_after_delete(&mut self, rows: &[usize]) -> Option<PathBuf> {
+    pub(crate) fn next_browser_focus_after_delete(&mut self, rows: &[usize]) -> Option<PathBuf> {
         if rows.is_empty() || self.ui.browser.visible.len() == 0 {
             return None;
         }
@@ -144,7 +144,7 @@ impl BrowserController<'_> {
             .map(|entry| entry.relative_path.clone())
     }
 
-    pub(super) fn try_delete_browser_sample_ctx(
+    pub(crate) fn try_delete_browser_sample_ctx(
         &mut self,
         ctx: &TriageSampleContext,
     ) -> Result<(), String> {
@@ -168,7 +168,7 @@ impl BrowserController<'_> {
         Ok(())
     }
 
-    pub(super) fn try_remove_dead_link_browser_sample_ctx(
+    pub(crate) fn try_remove_dead_link_browser_sample_ctx(
         &mut self,
         ctx: &TriageSampleContext,
     ) -> Result<(), String> {
@@ -190,7 +190,7 @@ impl BrowserController<'_> {
         Ok(())
     }
 
-    pub(super) fn try_rename_browser_sample(
+    pub(crate) fn try_rename_browser_sample(
         &mut self,
         row: usize,
         new_name: &str,

@@ -23,7 +23,7 @@ impl Default for SearchWorkerCache {
     }
 }
 
-pub(in super::super) fn spawn_search_worker() -> (Sender<SearchJob>, Receiver<SearchResult>) {
+pub(crate) fn spawn_search_worker() -> (Sender<SearchJob>, Receiver<SearchResult>) {
     let (tx, rx) = std::sync::mpsc::channel::<SearchJob>();
     let (result_tx, result_rx) = std::sync::mpsc::channel::<SearchResult>();
     thread::spawn(move || {
@@ -97,7 +97,7 @@ fn process_search_job(
     };
 
     let folder_accepts = |relative_path: &std::path::Path| {
-        crate::egui_app::controller::source_folders::folder_filter_accepts(
+        crate::egui_app::controller::library::source_folders::folder_filter_accepts(
             relative_path,
             job.folder_selection.as_ref(),
             job.folder_negated.as_ref(),

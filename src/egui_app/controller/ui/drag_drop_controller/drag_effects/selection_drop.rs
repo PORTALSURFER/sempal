@@ -6,7 +6,7 @@ use crate::selection::SelectionRange;
 use std::path::{Path, PathBuf};
 
 impl DragDropController<'_> {
-    pub(in crate::egui_app::controller::drag_drop_controller) fn handle_selection_drop(
+    pub(crate) fn handle_selection_drop(
         &mut self,
         source_id: SourceId,
         relative_path: PathBuf,

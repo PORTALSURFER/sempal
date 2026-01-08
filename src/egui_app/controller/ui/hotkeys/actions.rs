@@ -2,7 +2,7 @@ use super::types::{HotkeyAction, HotkeyCommand, HotkeyGesture, HotkeyScope, KeyP
 use crate::egui_app::state::FocusContext;
 use egui::Key;
 
-pub(super) const HOTKEY_ACTIONS: &[HotkeyAction] = &[
+pub(crate) const HOTKEY_ACTIONS: &[HotkeyAction] = &[
     HotkeyAction {
         id: "undo-ctrl-z",
         label: "Undo",

@@ -1,23 +1,25 @@
 //! Audio playback and loading state for the controller.
 
-use super::super::{AudioPlayer, SourceId, audio_cache::AudioCache};
+use crate::audio::AudioPlayer;
+use crate::egui_app::controller::playback::audio_cache::AudioCache;
+use crate::sample_sources::SourceId;
 use crate::audio::{AudioRecorder, InputMonitor};
 use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::Instant;
 
-pub(in crate::egui_app::controller) struct ControllerAudioState {
-    pub(in crate::egui_app::controller) player: Option<Rc<RefCell<AudioPlayer>>>,
-    pub(in crate::egui_app::controller) cache: AudioCache,
-    pub(in crate::egui_app::controller) pending_loop_disable_at: Option<Instant>,
-    pub(in crate::egui_app::controller) recorder: Option<AudioRecorder>,
-    pub(in crate::egui_app::controller) recording_target: Option<RecordingTarget>,
-    pub(in crate::egui_app::controller) input_monitor: Option<InputMonitor>,
+pub(crate) struct ControllerAudioState {
+    pub(crate) player: Option<Rc<RefCell<AudioPlayer>>>,
+    pub(crate) cache: AudioCache,
+    pub(crate) pending_loop_disable_at: Option<Instant>,
+    pub(crate) recorder: Option<AudioRecorder>,
+    pub(crate) recording_target: Option<RecordingTarget>,
+    pub(crate) input_monitor: Option<InputMonitor>,
 }
 
 impl ControllerAudioState {
-    pub(in crate::egui_app::controller) fn new(
+    pub(crate) fn new(
         player: Option<Rc<RefCell<AudioPlayer>>>,
         cache_capacity: usize,
         history_limit: usize,
@@ -34,44 +36,44 @@ impl ControllerAudioState {
 }
 
 #[derive(Clone)]
-pub(in crate::egui_app::controller) struct RecordingTarget {
-    pub(in crate::egui_app::controller) source_id: SourceId,
-    pub(in crate::egui_app::controller) relative_path: PathBuf,
-    pub(in crate::egui_app::controller) absolute_path: PathBuf,
-    pub(in crate::egui_app::controller) last_refresh_at: Option<Instant>,
-    pub(in crate::egui_app::controller) last_file_len: u64,
-    pub(in crate::egui_app::controller) loaded_once: bool,
+pub(crate) struct RecordingTarget {
+    pub(crate) source_id: SourceId,
+    pub(crate) relative_path: PathBuf,
+    pub(crate) absolute_path: PathBuf,
+    pub(crate) last_refresh_at: Option<Instant>,
+    pub(crate) last_file_len: u64,
+    pub(crate) loaded_once: bool,
 }
 
 #[derive(Clone)]
-pub(in crate::egui_app::controller) struct PendingAudio {
-    pub(in crate::egui_app::controller) request_id: u64,
-    pub(in crate::egui_app::controller) source_id: SourceId,
-    pub(in crate::egui_app::controller) root: PathBuf,
-    pub(in crate::egui_app::controller) relative_path: PathBuf,
-    pub(in crate::egui_app::controller) intent: AudioLoadIntent,
+pub(crate) struct PendingAudio {
+    pub(crate) request_id: u64,
+    pub(crate) source_id: SourceId,
+    pub(crate) root: PathBuf,
+    pub(crate) relative_path: PathBuf,
+    pub(crate) intent: AudioLoadIntent,
 }
 
 #[derive(Clone)]
-pub(in crate::egui_app::controller) struct PendingPlayback {
-    pub(in crate::egui_app::controller) source_id: SourceId,
-    pub(in crate::egui_app::controller) relative_path: PathBuf,
-    pub(in crate::egui_app::controller) looped: bool,
-    pub(in crate::egui_app::controller) start_override: Option<f32>,
+pub(crate) struct PendingPlayback {
+    pub(crate) source_id: SourceId,
+    pub(crate) relative_path: PathBuf,
+    pub(crate) looped: bool,
+    pub(crate) start_override: Option<f32>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(in crate::egui_app::controller) enum AudioLoadIntent {
+pub(crate) enum AudioLoadIntent {
     Selection,
     CollectionPreview,
 }
 
 #[derive(Clone)]
-pub(in crate::egui_app::controller) struct LoadedAudio {
-    pub(in crate::egui_app::controller) source_id: SourceId,
-    pub(in crate::egui_app::controller) relative_path: PathBuf,
-    pub(in crate::egui_app::controller) bytes: Vec<u8>,
-    pub(in crate::egui_app::controller) duration_seconds: f32,
-    pub(in crate::egui_app::controller) sample_rate: u32,
-    pub(in crate::egui_app::controller) channels: u16,
+pub(crate) struct LoadedAudio {
+    pub(crate) source_id: SourceId,
+    pub(crate) relative_path: PathBuf,
+    pub(crate) bytes: Vec<u8>,
+    pub(crate) duration_seconds: f32,
+    pub(crate) sample_rate: u32,
+    pub(crate) channels: u16,
 }

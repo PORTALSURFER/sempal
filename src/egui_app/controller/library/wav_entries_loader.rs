@@ -5,7 +5,7 @@ use std::{
     time::Instant,
 };
 
-pub(super) fn spawn_wav_loader() -> (Sender<WavLoadJob>, Receiver<WavLoadResult>) {
+pub(crate) fn spawn_wav_loader() -> (Sender<WavLoadJob>, Receiver<WavLoadResult>) {
     let (tx, rx) = std::sync::mpsc::channel::<WavLoadJob>();
     let (result_tx, result_rx) = std::sync::mpsc::channel::<WavLoadResult>();
     thread::spawn(move || {
@@ -24,7 +24,7 @@ pub(super) fn spawn_wav_loader() -> (Sender<WavLoadJob>, Receiver<WavLoadResult>
     (tx, result_rx)
 }
 
-pub(super) fn load_entries(job: &WavLoadJob) -> (Result<Vec<WavEntry>, LoadEntriesError>, usize) {
+pub(crate) fn load_entries(job: &WavLoadJob) -> (Result<Vec<WavEntry>, LoadEntriesError>, usize) {
     let db = match SourceDatabase::open(&job.root) {
         Ok(db) => db,
         Err(err) => return (Err(LoadEntriesError::Db(err)), 0),

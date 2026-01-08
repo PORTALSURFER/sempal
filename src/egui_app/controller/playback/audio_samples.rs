@@ -6,14 +6,14 @@ use std::path::Path;
 
 /// Decoded WAV samples plus metadata derived from the file header.
 #[derive(Clone, Debug)]
-pub(super) struct DecodedSamples {
-    pub(super) samples: Vec<f32>,
-    pub(super) channels: u16,
-    pub(super) sample_rate: u32,
+pub(crate) struct DecodedSamples {
+    pub(crate) samples: Vec<f32>,
+    pub(crate) channels: u16,
+    pub(crate) sample_rate: u32,
 }
 
 /// Decode WAV bytes into interleaved f32 samples plus basic metadata.
-pub(super) fn decode_samples_from_bytes(bytes: &[u8]) -> Result<DecodedSamples, String> {
+pub(crate) fn decode_samples_from_bytes(bytes: &[u8]) -> Result<DecodedSamples, String> {
     let mut reader =
         hound::WavReader::new(Cursor::new(bytes)).map_err(|err| format!("Invalid wav: {err}"))?;
     let spec = reader.spec();
@@ -27,7 +27,7 @@ pub(super) fn decode_samples_from_bytes(bytes: &[u8]) -> Result<DecodedSamples, 
 }
 
 /// Crop interleaved samples to the provided normalized bounds.
-pub(super) fn crop_samples(
+pub(crate) fn crop_samples(
     samples: &[f32],
     channels: u16,
     bounds: SelectionRange,
@@ -42,7 +42,7 @@ pub(super) fn crop_samples(
 }
 
 /// Write interleaved f32 samples to a WAV file.
-pub(super) fn write_wav(
+pub(crate) fn write_wav(
     target: &Path,
     samples: &[f32],
     sample_rate: u32,

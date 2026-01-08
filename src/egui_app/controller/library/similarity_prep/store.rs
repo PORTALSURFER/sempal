@@ -1,8 +1,8 @@
 use super::db;
-use crate::egui_app::controller::analysis_jobs;
+use crate::egui_app::controller::library::analysis_jobs;
 use crate::sample_sources::{SampleSource, SourceId};
 
-pub(super) trait SimilarityPrepStore {
+pub(crate) trait SimilarityPrepStore {
     fn read_scan_timestamp(&self, source: &SampleSource) -> Option<i64>;
     fn read_prep_timestamp(&self, source: &SampleSource) -> Option<i64>;
     fn source_has_embeddings(&self, source: &SampleSource) -> bool;
@@ -28,7 +28,7 @@ pub(super) trait SimilarityPrepStore {
     ) -> Result<i64, String>;
 }
 
-pub(super) struct DbSimilarityPrepStore;
+pub(crate) struct DbSimilarityPrepStore;
 
 impl SimilarityPrepStore for DbSimilarityPrepStore {
     fn read_scan_timestamp(&self, source: &SampleSource) -> Option<i64> {

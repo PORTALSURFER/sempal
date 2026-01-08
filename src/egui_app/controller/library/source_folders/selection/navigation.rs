@@ -1,7 +1,7 @@
 use super::super::*;
 
 impl EguiController {
-    pub(in crate::egui_app::controller) fn drop_folder_focus(&mut self) {
+    pub(crate) fn drop_folder_focus(&mut self) {
         self.ui.sources.folders.focused = None;
         self.ui.sources.folders.scroll_to = None;
         let Some(model) = self.current_folder_model_mut() else {

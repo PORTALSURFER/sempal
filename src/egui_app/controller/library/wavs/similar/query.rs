@@ -8,7 +8,7 @@ use crate::egui_app::view_model;
 use rusqlite::params;
 use std::collections::HashMap;
 
-pub(super) fn build_similar_query_for_sample_id(
+pub(crate) fn build_similar_query_for_sample_id(
     controller: &mut EguiController,
     sample_id: &str,
     score_cutoff: Option<f32>,
@@ -28,7 +28,7 @@ pub(super) fn build_similar_query_for_sample_id(
     ))
 }
 
-pub(super) fn build_similarity_query_for_loaded_sample(
+pub(crate) fn build_similarity_query_for_loaded_sample(
     controller: &mut EguiController,
 ) -> Result<SimilarQuery, String> {
     let loaded_audio = controller
@@ -42,7 +42,7 @@ pub(super) fn build_similarity_query_for_loaded_sample(
         return Err("Select the loaded sample's source to sort by similarity".to_string());
     }
     let loaded_path = loaded_audio.relative_path.clone();
-    let sample_id = super::super::analysis_jobs::build_sample_id(source_id.as_str(), &loaded_path);
+    let sample_id = super::analysis_jobs::build_sample_id(source_id.as_str(), &loaded_path);
     let conn = open_source_db_for_id(controller, &source_id)?;
     let query_embedding = load_embedding_for_sample(&conn, &sample_id)?
         .ok_or_else(|| "Similarity data missing for the loaded sample".to_string())?;
@@ -80,7 +80,7 @@ pub(super) fn build_similarity_query_for_loaded_sample(
             .get(2)
             .map_err(|err| format!("Load embeddings failed: {err}"))?;
         let (candidate_source, relative_path) =
-            super::super::analysis_jobs::parse_sample_id(&candidate_id)?;
+            super::analysis_jobs::parse_sample_id(&candidate_id)?;
         if candidate_source.as_str() != source_id.as_str() {
             continue;
         }
@@ -129,7 +129,7 @@ pub(super) fn build_similarity_query_for_loaded_sample(
     })
 }
 
-pub(super) fn build_similarity_query_for_audio_path(
+pub(crate) fn build_similarity_query_for_audio_path(
     controller: &mut EguiController,
     path: &Path,
 ) -> Result<SimilarQuery, String> {
@@ -154,7 +154,7 @@ pub(super) fn build_similarity_query_for_audio_path(
     let mut scores = Vec::new();
     for (candidate_id, score) in ranked {
         let (candidate_source, relative_path) =
-            super::super::analysis_jobs::parse_sample_id(&candidate_id)?;
+            super::analysis_jobs::parse_sample_id(&candidate_id)?;
         if candidate_source.as_str() != source_id.as_str() {
             continue;
         }

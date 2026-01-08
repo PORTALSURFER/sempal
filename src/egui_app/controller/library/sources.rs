@@ -163,7 +163,7 @@ impl EguiController {
         }
     }
 
-    pub(super) fn refresh_sources_ui(&mut self) {
+    pub(crate) fn refresh_sources_ui(&mut self) {
         self.ui.sources.rows = self
             .library
             .sources
@@ -192,7 +192,7 @@ impl EguiController {
             .cloned()
     }
 
-    pub(super) fn rebuild_missing_sources(&mut self) {
+    pub(crate) fn rebuild_missing_sources(&mut self) {
         self.library.missing.sources.clear();
         for source in &self.library.sources {
             if !source.root.is_dir() {
@@ -206,7 +206,7 @@ impl EguiController {
         }
     }
 
-    pub(super) fn mark_source_missing(&mut self, source_id: &SourceId, reason: &str) {
+    pub(crate) fn mark_source_missing(&mut self, source_id: &SourceId, reason: &str) {
         let inserted = self.library.missing.sources.insert(source_id.clone());
         if inserted && self.selection_state.ctx.selected_source.as_ref() == Some(source_id) {
             self.clear_waveform_view();
@@ -227,7 +227,7 @@ impl EguiController {
         }
     }
 
-    pub(super) fn clear_source_missing(&mut self, source_id: &SourceId) {
+    pub(crate) fn clear_source_missing(&mut self, source_id: &SourceId) {
         let removed = self.library.missing.sources.remove(source_id);
         self.library.missing.wavs.remove(source_id);
         if removed {
@@ -235,7 +235,7 @@ impl EguiController {
         }
     }
 
-    pub(super) fn select_source_internal(
+    pub(crate) fn select_source_internal(
         &mut self,
         id: Option<SourceId>,
         pending_path: Option<PathBuf>,
@@ -289,14 +289,14 @@ impl EguiController {
         }
     }
 
-    pub(super) fn database_for(
+    pub(crate) fn database_for(
         &mut self,
         source: &SampleSource,
     ) -> Result<Rc<SourceDatabase>, SourceDbError> {
         self.cache.database_for(source)
     }
 
-    pub(super) fn cache_db(
+    pub(crate) fn cache_db(
         &mut self,
         source: &SampleSource,
     ) -> Result<Rc<SourceDatabase>, SourceDbError> {

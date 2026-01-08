@@ -1,6 +1,6 @@
 use rusqlite::{Connection, TransactionBehavior, params};
 
-pub(in crate::egui_app::controller::analysis_jobs) fn reset_running_to_pending(
+pub(crate) fn reset_running_to_pending(
     conn: &Connection,
 ) -> Result<usize, String> {
     conn.execute(
@@ -12,7 +12,7 @@ pub(in crate::egui_app::controller::analysis_jobs) fn reset_running_to_pending(
     .map_err(|err| format!("Failed to reset running analysis jobs: {err}"))
 }
 
-pub(in crate::egui_app::controller::analysis_jobs) fn fail_stale_running_jobs(
+pub(crate) fn fail_stale_running_jobs(
     conn: &Connection,
     stale_before_epoch: i64,
 ) -> Result<usize, String> {
@@ -29,7 +29,7 @@ pub(in crate::egui_app::controller::analysis_jobs) fn fail_stale_running_jobs(
     .map_err(|err| format!("Failed to fail stale analysis jobs: {err}"))
 }
 
-pub(in crate::egui_app::controller::analysis_jobs) fn fail_stale_running_jobs_with_sources(
+pub(crate) fn fail_stale_running_jobs_with_sources(
     conn: &Connection,
     stale_before_epoch: i64,
 ) -> Result<(usize, Vec<crate::sample_sources::SourceId>), String> {
@@ -58,7 +58,7 @@ pub(in crate::egui_app::controller::analysis_jobs) fn fail_stale_running_jobs_wi
     Ok((changed, sources))
 }
 
-pub(in crate::egui_app::controller::analysis_jobs) fn prune_jobs_for_missing_sources(
+pub(crate) fn prune_jobs_for_missing_sources(
     conn: &Connection,
 ) -> Result<usize, String> {
     conn.execute(
@@ -74,7 +74,7 @@ pub(in crate::egui_app::controller::analysis_jobs) fn prune_jobs_for_missing_sou
     .map_err(|err| format!("Failed to prune analysis jobs for missing files: {err}"))
 }
 
-pub(in crate::egui_app::controller) fn purge_orphaned_samples(
+pub(crate) fn purge_orphaned_samples(
     conn: &mut Connection,
 ) -> Result<usize, String> {
     let tx = conn

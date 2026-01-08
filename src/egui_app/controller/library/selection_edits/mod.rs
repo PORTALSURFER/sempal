@@ -1,4 +1,4 @@
-use super::collection_items_helpers::file_metadata;
+use crate::egui_app::controller::library::collection_items_helpers::file_metadata;
 use super::*;
 use crate::egui_app::state::DestructiveSelectionEdit;
 use hound::SampleFormat;
@@ -9,9 +9,7 @@ mod ops;
 mod prompt;
 mod undo_entries;
 
-#[path = "../selection_click.rs"]
 mod selection_click;
-#[path = "../selection_normalize.rs"]
 mod selection_normalize;
 
 use buffer::write_selection_wav;
@@ -26,7 +24,7 @@ use buffer::selection_frame_bounds;
 #[cfg(test)]
 use ops::{apply_muted_selection, fade_factor, slice_frames};
 
-use super::undo;
+use crate::egui_app::controller::undo;
 
 /// Direction of a fade applied over the active selection.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

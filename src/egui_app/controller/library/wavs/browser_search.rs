@@ -7,16 +7,16 @@ use std::cmp::Ordering;
 use std::path::Path;
 
 #[derive(Default)]
-pub(in super::super) struct BrowserSearchCache {
+pub(crate) struct BrowserSearchCache {
     source_id: Option<SourceId>,
     query: String,
-    pub(in crate::egui_app::controller) scores: Vec<Option<i64>>,
+    pub(crate) scores: Vec<Option<i64>>,
     scratch: Vec<(usize, i64)>,
     matcher: SkimMatcherV2,
 }
 
 impl BrowserSearchCache {
-    pub(in super::super) fn invalidate(&mut self) {
+    pub(crate) fn invalidate(&mut self) {
         self.source_id = None;
         self.query.clear();
         self.scores.clear();
@@ -25,7 +25,7 @@ impl BrowserSearchCache {
 }
 
 impl EguiController {
-    pub(super) fn build_visible_rows(
+    pub(crate) fn build_visible_rows(
         &mut self,
         focused_index: Option<usize>,
         loaded_index: Option<usize>,
@@ -50,7 +50,7 @@ impl EguiController {
                 .as_ref()
                 .is_some_and(|negated| !negated.is_empty());
         let folder_accepts = |relative_path: &Path| {
-            crate::egui_app::controller::source_folders::folder_filter_accepts(
+            crate::egui_app::controller::library::source_folders::folder_filter_accepts(
                 relative_path,
                 folder_selection.as_ref(),
                 folder_negated.as_ref(),
@@ -179,7 +179,7 @@ impl EguiController {
         )
     }
 
-    pub(super) fn should_offload_search(&self) -> bool {
+    pub(crate) fn should_offload_search(&self) -> bool {
         self.wav_entries_len() > 5000
     }
 
@@ -244,7 +244,7 @@ impl EguiController {
         }
     }
 
-    pub(super) fn label_for_ref(&mut self, index: usize) -> Option<&str> {
+    pub(crate) fn label_for_ref(&mut self, index: usize) -> Option<&str> {
         let source_id = self.selection_state.ctx.selected_source.clone()?;
         let needs_labels = self
             .ui_cache
@@ -283,7 +283,7 @@ impl EguiController {
             .map(|label| label.as_str())
     }
 
-    pub(in crate::egui_app::controller) fn dispatch_search_job(&mut self) {
+    pub(crate) fn dispatch_search_job(&mut self) {
         let Some(source) = self.current_source() else {
             return;
         };
@@ -308,14 +308,14 @@ impl EguiController {
     }
 }
 
-pub(super) fn set_browser_filter(controller: &mut EguiController, filter: TriageFlagFilter) {
+pub(crate) fn set_browser_filter(controller: &mut EguiController, filter: TriageFlagFilter) {
     if controller.ui.browser.filter != filter {
         controller.ui.browser.filter = filter;
         controller.rebuild_browser_lists();
     }
 }
 
-pub(super) fn set_browser_sort(controller: &mut EguiController, sort: SampleBrowserSort) {
+pub(crate) fn set_browser_sort(controller: &mut EguiController, sort: SampleBrowserSort) {
     if controller.ui.browser.sort != sort {
         controller.ui.browser.sort = sort;
         if sort == SampleBrowserSort::ListOrder {
@@ -325,12 +325,12 @@ pub(super) fn set_browser_sort(controller: &mut EguiController, sort: SampleBrow
     }
 }
 
-pub(super) fn focus_browser_search(controller: &mut EguiController) {
+pub(crate) fn focus_browser_search(controller: &mut EguiController) {
     controller.ui.browser.search_focus_requested = true;
     controller.focus_browser_context();
 }
 
-pub(super) fn set_browser_search(controller: &mut EguiController, query: impl Into<String>) {
+pub(crate) fn set_browser_search(controller: &mut EguiController, query: impl Into<String>) {
     let query = query.into();
     if controller.ui.browser.search_query == query {
         return;

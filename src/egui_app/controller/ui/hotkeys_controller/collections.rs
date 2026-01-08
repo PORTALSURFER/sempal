@@ -1,10 +1,10 @@
 use super::HotkeysController;
 use crate::egui_app::controller::StatusTone;
-use crate::egui_app::controller::hotkeys::HotkeyCommand;
+use crate::egui_app::controller::ui::hotkeys::HotkeyCommand;
 use crate::egui_app::state::FocusContext;
 use crate::sample_sources::SampleTag;
 
-pub(super) fn handle_collections_command(
+pub(crate) fn handle_collections_command(
     controller: &mut HotkeysController<'_>,
     command: HotkeyCommand,
     focus: FocusContext,
@@ -78,3 +78,4 @@ impl HotkeysController<'_> {
         }
     }
 }
+

@@ -1,5 +1,5 @@
-use crate::egui_app::controller::analysis_jobs::db;
-use crate::egui_app::controller::analysis_jobs::types::{AnalysisJobMessage, AnalysisProgress};
+use crate::egui_app::controller::library::analysis_jobs::db;
+use crate::egui_app::controller::library::analysis_jobs::types::{AnalysisJobMessage, AnalysisProgress};
 use crate::egui_app::controller::jobs::JobMessage;
 use rusqlite::Connection;
 use std::sync::{
@@ -146,7 +146,7 @@ fn now_epoch_seconds() -> i64 {
 }
 
 #[cfg_attr(test, allow(dead_code))]
-pub(super) fn spawn_progress_poller(
+pub(crate) fn spawn_progress_poller(
     tx: Sender<JobMessage>,
     cancel: Arc<AtomicBool>,
     shutdown: Arc<AtomicBool>,
@@ -176,7 +176,7 @@ pub(super) fn spawn_progress_poller(
             if last_cleanup.elapsed() >= STALE_CLEANUP_INTERVAL {
                 last_cleanup = Instant::now();
                 let stale_before = now_epoch_seconds().saturating_sub(
-                    crate::egui_app::controller::analysis_jobs::stale_running_job_seconds(),
+                    crate::egui_app::controller::library::analysis_jobs::stale_running_job_seconds(),
                 );
                 let _ = cleanup_stale_jobs(&mut sources, stale_before, &progress_cache, &tx);
             }

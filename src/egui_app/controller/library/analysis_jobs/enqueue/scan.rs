@@ -1,9 +1,9 @@
 use super::enqueue_helpers::fast_content_hash;
-use crate::egui_app::controller::analysis_jobs::db;
+use crate::egui_app::controller::library::analysis_jobs::db;
 use crate::sample_sources::scanner::ChangedSample;
 use std::path::Path;
 
-pub(super) fn sample_metadata_for_changed_samples(
+pub(crate) fn sample_metadata_for_changed_samples(
     source: &crate::sample_sources::SampleSource,
     changed_samples: &[ChangedSample],
 ) -> Vec<db::SampleMetadata> {
@@ -18,7 +18,7 @@ pub(super) fn sample_metadata_for_changed_samples(
         .collect()
 }
 
-pub(super) fn stage_samples_for_source(
+pub(crate) fn stage_samples_for_source(
     source: &crate::sample_sources::SampleSource,
     include_missing_entries: bool,
 ) -> Result<Vec<db::SampleMetadata>, String> {

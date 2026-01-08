@@ -1,13 +1,17 @@
 use super::*;
+use crate::egui_app::controller::library::analysis_jobs;
+use crate::egui_app::controller::library::wav_entries_loader;
+use crate::sample_sources::WavEntry;
+use crate::egui_app::controller::{WavLoadJob, LoadEntriesError};
 impl EguiController {
-    pub(super) fn sync_after_wav_entries_changed(&mut self) {
+    pub(crate) fn sync_after_wav_entries_changed(&mut self) {
         self.rebuild_wav_lookup();
         self.ui_cache.browser.search.invalidate();
         self.refresh_folder_browser();
         self.rebuild_browser_lists();
     }
 
-    pub(super) fn queue_wav_load(&mut self) {
+    pub(crate) fn queue_wav_load(&mut self) {
         let Some(source) = self.current_source() else {
             return;
         };
@@ -71,7 +75,7 @@ impl EguiController {
         self.ensure_wav_load_progress(&source);
     }
 
-    pub(super) fn handle_wav_load_error(&mut self, source_id: &SourceId, err: LoadEntriesError) {
+    pub(crate) fn handle_wav_load_error(&mut self, source_id: &SourceId, err: LoadEntriesError) {
         match err {
             LoadEntriesError::Db(SourceDbError::InvalidRoot(_)) => {
                 self.mark_source_missing(source_id, "Source folder missing");
@@ -89,7 +93,7 @@ impl EguiController {
         }
     }
 
-    pub(super) fn apply_wav_entries(
+    pub(crate) fn apply_wav_entries(
         &mut self,
         entries: Vec<WavEntry>,
         total: usize,
@@ -167,7 +171,7 @@ impl EguiController {
         let _ = crate::sample_sources::scanner::scan_in_background(source.root.clone());
     }
 
-    pub(super) fn queue_analysis_failures_refresh(&mut self, source: &SampleSource) {
+    pub(crate) fn queue_analysis_failures_refresh(&mut self, source: &SampleSource) {
         if self
             .ui_cache
             .browser
@@ -183,7 +187,7 @@ impl EguiController {
         let tx = self.runtime.jobs.message_sender();
         let source = source.clone();
         std::thread::spawn(move || {
-            let result = super::analysis_jobs::failed_samples_for_source(&source);
+            let result = analysis_jobs::failed_samples_for_source(&source);
             let _ = tx.send(super::jobs::JobMessage::AnalysisFailuresLoaded(
                 super::jobs::AnalysisFailuresResult {
                     source_id: source.id.clone(),
@@ -193,7 +197,7 @@ impl EguiController {
         });
     }
 
-    pub(super) fn invalidate_wav_entries_for_source(&mut self, source: &SampleSource) {
+    pub(crate) fn invalidate_wav_entries_for_source(&mut self, source: &SampleSource) {
         self.cache.wav.entries.remove(&source.id);
         if self.selection_state.ctx.selected_source.as_ref() == Some(&source.id) {
             self.wav_entries.clear();
@@ -205,7 +209,7 @@ impl EguiController {
         self.rebuild_missing_lookup_for_source(&source.id);
     }
 
-    pub(super) fn invalidate_wav_entries_for_source_preserve_folders(
+    pub(crate) fn invalidate_wav_entries_for_source_preserve_folders(
         &mut self,
         source: &SampleSource,
     ) {

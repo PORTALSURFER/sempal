@@ -1,5 +1,5 @@
 use super::*;
-use crate::egui_app::controller::hotkeys::{HotkeyAction, HotkeyCommand};
+use crate::egui_app::controller::ui::hotkeys::{HotkeyAction, HotkeyCommand};
 use crate::egui_app::state::FocusContext;
 
 mod browser;
@@ -195,7 +195,7 @@ impl EguiController {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::egui_app::controller::hotkeys;
+    use crate::egui_app::controller::ui::hotkeys;
     use crate::egui_app::controller::test_support::{
         load_waveform_selection, prepare_with_source_and_wav_entries, sample_entry,
     };
@@ -265,3 +265,4 @@ mod tests {
         assert!(controller.ui.collections.pending_action.is_none());
     }
 }
+

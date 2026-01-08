@@ -1,4 +1,4 @@
-use crate::egui_app::controller::analysis_jobs::db;
+use crate::egui_app::controller::library::analysis_jobs::db;
 use rusqlite::{OptionalExtension, params};
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
@@ -55,7 +55,7 @@ impl WorkEntry {
     }
 }
 
-pub(super) fn run_embedding_backfill_job(
+pub(crate) fn run_embedding_backfill_job(
     conn: &rusqlite::Connection,
     job: &db::ClaimedJob,
     use_cache: bool,

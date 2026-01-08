@@ -5,7 +5,7 @@ use crate::sample_sources::collections::CollectionMember;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-pub(super) fn reconcile_collection_export(
+pub(crate) fn reconcile_collection_export(
     controller: &mut EguiController,
     collection_id: &CollectionId,
 ) -> Result<(usize, usize), String> {

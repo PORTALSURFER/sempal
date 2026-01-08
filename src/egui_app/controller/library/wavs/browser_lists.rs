@@ -2,7 +2,7 @@ use super::*;
 use crate::egui_app::state::FocusContext;
 
 impl EguiController {
-    pub(in crate::egui_app::controller) fn rebuild_browser_lists(&mut self) {
+    pub(crate) fn rebuild_browser_lists(&mut self) {
         if self.ui.collections.selected_sample.is_some() {
             self.ui.browser.autoscroll = false;
         }
@@ -70,14 +70,14 @@ impl EguiController {
         }
     }
 
-    pub(in crate::egui_app::controller) fn selected_row_index(&mut self) -> Option<usize> {
+    pub(crate) fn selected_row_index(&mut self) -> Option<usize> {
         let selected_wav = self.sample_view.wav.selected_wav.clone();
         selected_wav
             .as_ref()
             .and_then(|path| self.wav_index_for_path(path))
     }
 
-    pub(in crate::egui_app::controller) fn loaded_row_index(&mut self) -> Option<usize> {
+    pub(crate) fn loaded_row_index(&mut self) -> Option<usize> {
         let loaded_wav = self.sample_view.wav.loaded_wav.clone();
         loaded_wav
             .as_ref()
@@ -145,16 +145,16 @@ impl EguiController {
         }
     }
 
-    pub(in crate::egui_app::controller) fn focused_browser_row(&self) -> Option<usize> {
+    pub(crate) fn focused_browser_row(&self) -> Option<usize> {
         self.ui.browser.selected_visible
     }
 
-    pub(in crate::egui_app::controller) fn focused_browser_path(&mut self) -> Option<PathBuf> {
+    pub(crate) fn focused_browser_path(&mut self) -> Option<PathBuf> {
         let row = self.focused_browser_row()?;
         self.browser_path_for_visible(row)
     }
 
-    pub(in crate::egui_app::controller) fn browser_path_for_visible(
+    pub(crate) fn browser_path_for_visible(
         &mut self,
         visible_row: usize,
     ) -> Option<PathBuf> {

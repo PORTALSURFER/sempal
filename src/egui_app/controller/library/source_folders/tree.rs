@@ -12,17 +12,17 @@ fn is_root_path(path: &Path) -> bool {
 }
 
 #[derive(Clone, Default)]
-pub(in crate::egui_app::controller) struct FolderBrowserModel {
-    pub(super) selected: BTreeSet<PathBuf>,
-    pub(super) negated: BTreeSet<PathBuf>,
-    pub(super) expanded: BTreeSet<PathBuf>,
-    pub(super) focused: Option<PathBuf>,
-    pub(super) available: BTreeSet<PathBuf>,
-    pub(super) selection_anchor: Option<PathBuf>,
-    pub(super) manual_folders: BTreeSet<PathBuf>,
-    pub(super) search_query: String,
-    pub(super) last_disk_refresh: Option<Instant>,
-    pub(super) hotkeys: BTreeMap<u8, PathBuf>,
+pub(crate) struct FolderBrowserModel {
+    pub(crate) selected: BTreeSet<PathBuf>,
+    pub(crate) negated: BTreeSet<PathBuf>,
+    pub(crate) expanded: BTreeSet<PathBuf>,
+    pub(crate) focused: Option<PathBuf>,
+    pub(crate) available: BTreeSet<PathBuf>,
+    pub(crate) selection_anchor: Option<PathBuf>,
+    pub(crate) manual_folders: BTreeSet<PathBuf>,
+    pub(crate) search_query: String,
+    pub(crate) last_disk_refresh: Option<Instant>,
+    pub(crate) hotkeys: BTreeMap<u8, PathBuf>,
 }
 
 impl FolderBrowserModel {
@@ -46,7 +46,7 @@ impl FolderBrowserModel {
 }
 
 impl EguiController {
-    pub(in crate::egui_app::controller) fn refresh_folder_browser(&mut self) {
+    pub(crate) fn refresh_folder_browser(&mut self) {
         let Some(source_id) = self.selection_state.ctx.selected_source.clone() else {
             self.ui.sources.folders = FolderBrowserUiState::default();
             return;
@@ -149,17 +149,17 @@ impl EguiController {
         }
     }
 
-    pub(super) fn current_folder_model_mut(&mut self) -> Option<&mut FolderBrowserModel> {
+    pub(crate) fn current_folder_model_mut(&mut self) -> Option<&mut FolderBrowserModel> {
         let id = self.selection_state.ctx.selected_source.clone()?;
         Some(self.ui_cache.folders.models.entry(id).or_default())
     }
 
-    pub(super) fn current_folder_model(&self) -> Option<&FolderBrowserModel> {
+    pub(crate) fn current_folder_model(&self) -> Option<&FolderBrowserModel> {
         let id = self.selection_state.ctx.selected_source.as_ref()?;
         self.ui_cache.folders.models.get(id)
     }
 
-    pub(super) fn build_folder_rows(&mut self, model: &FolderBrowserModel) {
+    pub(crate) fn build_folder_rows(&mut self, model: &FolderBrowserModel) {
         self.ui.sources.folders.search_query = model.search_query.clone();
         let hotkey_lookup: BTreeMap<PathBuf, u8> = model
             .hotkeys

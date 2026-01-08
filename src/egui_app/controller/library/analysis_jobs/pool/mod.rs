@@ -21,7 +21,7 @@ use std::thread::JoinHandle;
 use tracing::info;
 
 /// Long-lived worker pool that claims and processes analysis jobs from the library database.
-pub(in crate::egui_app::controller) struct AnalysisWorkerPool {
+pub(crate) struct AnalysisWorkerPool {
     cancel: Arc<AtomicBool>,
     shutdown: Arc<AtomicBool>,
     pause_claiming: Arc<AtomicBool>,
@@ -38,7 +38,7 @@ pub(in crate::egui_app::controller) struct AnalysisWorkerPool {
 }
 
 impl AnalysisWorkerPool {
-    pub(in crate::egui_app::controller) fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             cancel: Arc::new(AtomicBool::new(false)),
             shutdown: Arc::new(AtomicBool::new(false)),
@@ -57,13 +57,13 @@ impl AnalysisWorkerPool {
         }
     }
 
-    pub(in crate::egui_app::controller) fn set_max_analysis_duration_seconds(&self, value: f32) {
+    pub(crate) fn set_max_analysis_duration_seconds(&self, value: f32) {
         let clamped = value.clamp(0.0, 60.0 * 60.0);
         self.max_duration_bits
             .store(clamped.to_bits(), Ordering::Relaxed);
     }
 
-    pub(in crate::egui_app::controller) fn set_worker_count(&self, value: u32) {
+    pub(crate) fn set_worker_count(&self, value: u32) {
         let previous = self.worker_count_override.swap(value, Ordering::Relaxed);
         if previous != value {
             info!("Analysis worker count override set to {}", value);
@@ -72,21 +72,21 @@ impl AnalysisWorkerPool {
 
     #[cfg_attr(test, allow(dead_code))]
     #[allow(dead_code)]
-    pub(in crate::egui_app::controller) fn set_decode_worker_count(&self, value: u32) {
+    pub(crate) fn set_decode_worker_count(&self, value: u32) {
         self.decode_worker_count_override
             .store(value, Ordering::Relaxed);
     }
 
-    pub(in crate::egui_app::controller) fn set_analysis_sample_rate(&self, value: u32) {
+    pub(crate) fn set_analysis_sample_rate(&self, value: u32) {
         let clamped = value.max(1);
         self.analysis_sample_rate.store(clamped, Ordering::Relaxed);
     }
 
-    pub(in crate::egui_app::controller) fn set_analysis_cache_enabled(&self, enabled: bool) {
+    pub(crate) fn set_analysis_cache_enabled(&self, enabled: bool) {
         self.use_cache.store(enabled, Ordering::Relaxed);
     }
 
-    pub(in crate::egui_app::controller) fn set_analysis_version_override(
+    pub(crate) fn set_analysis_version_override(
         &self,
         value: Option<String>,
     ) {
@@ -95,7 +95,7 @@ impl AnalysisWorkerPool {
         }
     }
 
-    pub(in crate::egui_app::controller) fn set_allowed_sources(
+    pub(crate) fn set_allowed_sources(
         &self,
         sources: Option<Vec<SourceId>>,
     ) {
@@ -111,21 +111,21 @@ impl AnalysisWorkerPool {
         }
     }
 
-    pub(in crate::egui_app::controller) fn pause_claiming(&self) {
+    pub(crate) fn pause_claiming(&self) {
         let previous = self.pause_claiming.swap(true, Ordering::Relaxed);
         if !previous {
             info!("Analysis job claiming paused");
         }
     }
 
-    pub(in crate::egui_app::controller) fn resume_claiming(&self) {
+    pub(crate) fn resume_claiming(&self) {
         let previous = self.pause_claiming.swap(false, Ordering::Relaxed);
         if previous {
             info!("Analysis job claiming resumed");
         }
     }
 
-    pub(in crate::egui_app::controller) fn start(
+    pub(crate) fn start(
         &mut self,
         message_tx: Sender<crate::egui_app::controller::jobs::JobMessage>,
     ) {
@@ -190,7 +190,7 @@ impl AnalysisWorkerPool {
         }
     }
 
-    pub(in crate::egui_app::controller) fn restart(
+    pub(crate) fn restart(
         &mut self,
         message_tx: Sender<crate::egui_app::controller::jobs::JobMessage>,
     ) {
@@ -216,16 +216,16 @@ impl AnalysisWorkerPool {
         self.start(message_tx);
     }
 
-    pub(in crate::egui_app::controller) fn cancel(&self) {
+    pub(crate) fn cancel(&self) {
         self.cancel.store(true, Ordering::Relaxed);
         let _ = job_cleanup::reset_running_jobs();
     }
 
-    pub(in crate::egui_app::controller) fn resume(&self) {
+    pub(crate) fn resume(&self) {
         self.cancel.store(false, Ordering::Relaxed);
     }
 
-    pub(in crate::egui_app::controller) fn shutdown(&mut self) {
+    pub(crate) fn shutdown(&mut self) {
         self.shutdown.store(true, Ordering::Relaxed);
         self.cancel.store(true, Ordering::Relaxed);
         let _ = job_cleanup::reset_running_jobs();
@@ -235,7 +235,7 @@ impl AnalysisWorkerPool {
     }
 }
 
-pub(in crate::egui_app::controller) fn default_worker_count() -> usize {
+pub(crate) fn default_worker_count() -> usize {
     job_claim::worker_count_with_override(0)
 }
 

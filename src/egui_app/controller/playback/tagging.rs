@@ -1,6 +1,6 @@
 use super::*;
 
-pub(super) fn tag_selected(controller: &mut EguiController, target: SampleTag) {
+pub(crate) fn tag_selected(controller: &mut EguiController, target: SampleTag) {
     let Some(selected_index) = controller.selected_row_index() else {
         return;
     };
@@ -101,7 +101,7 @@ pub(super) fn tag_selected(controller: &mut EguiController, target: SampleTag) {
     }
 }
 
-pub(super) fn move_selection_column(controller: &mut EguiController, delta: isize) {
+pub(crate) fn move_selection_column(controller: &mut EguiController, delta: isize) {
     use crate::egui_app::state::TriageFlagFilter::*;
     let filters = [All, Keep, Trash, Untagged];
     let current = controller.ui.browser.filter;
@@ -111,7 +111,7 @@ pub(super) fn move_selection_column(controller: &mut EguiController, delta: isiz
     controller.set_browser_filter(target);
 }
 
-pub(super) fn tag_selected_left(controller: &mut EguiController) {
+pub(crate) fn tag_selected_left(controller: &mut EguiController) {
     let target = match controller.selected_tag() {
         Some(SampleTag::Keep) => SampleTag::Neutral,
         _ => SampleTag::Trash,

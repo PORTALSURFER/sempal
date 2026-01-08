@@ -1,7 +1,7 @@
 //! Claim selection helpers for analysis jobs.
 
 use super::claim::{SourceClaimDb, claim_batch_size, refresh_sources};
-use crate::egui_app::controller::analysis_jobs::db;
+use crate::egui_app::controller::library::analysis_jobs::db;
 use crate::sample_sources::SourceId;
 use std::collections::{HashSet, VecDeque};
 use std::path::PathBuf;
@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 /// A selection outcome from the claim pool.
-pub(super) enum ClaimSelection {
+pub(crate) enum ClaimSelection {
     /// A job is ready to process.
     Job(db::ClaimedJob),
     /// No sources are available to claim from.
@@ -19,7 +19,7 @@ pub(super) enum ClaimSelection {
 }
 
 /// Tracks claim sources and selects the next job to work on.
-pub(super) struct ClaimSelector {
+pub(crate) struct ClaimSelector {
     sources: Vec<SourceClaimDb>,
     last_refresh: Instant,
     next_source: usize,
@@ -31,7 +31,7 @@ pub(super) struct ClaimSelector {
 
 impl ClaimSelector {
     /// Creates a new claim selector for decoding workers.
-    pub(super) fn new(reset_done: Arc<Mutex<HashSet<PathBuf>>>) -> Self {
+    pub(crate) fn new(reset_done: Arc<Mutex<HashSet<PathBuf>>>) -> Self {
         Self {
             sources: Vec::new(),
             last_refresh: Instant::now() - super::claim::SOURCE_REFRESH_INTERVAL,
@@ -44,7 +44,7 @@ impl ClaimSelector {
     }
 
     #[cfg(test)]
-    pub(super) fn with_sources_for_tests(
+    pub(crate) fn with_sources_for_tests(
         sources: Vec<SourceClaimDb>,
         claim_batch: usize,
         reset_done: Arc<Mutex<HashSet<PathBuf>>>,
@@ -61,7 +61,7 @@ impl ClaimSelector {
     }
 
     /// Selects the next job if one is available.
-    pub(super) fn select_next(
+    pub(crate) fn select_next(
         &mut self,
         allowed_source_ids: Option<&HashSet<SourceId>>,
     ) -> ClaimSelection {

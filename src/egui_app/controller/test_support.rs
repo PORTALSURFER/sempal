@@ -1,5 +1,5 @@
 use super::*;
-use hound::{SampleFormat, WavSpec, WavWriter};
+use hound::{SampleFormat, wavspec, WavWriter};
 use std::path::{Path, PathBuf};
 use tempfile::tempdir;
 
@@ -59,7 +59,7 @@ pub(super) fn load_waveform_selection(
 }
 
 pub(super) fn write_test_wav(path: &Path, samples: &[f32]) {
-    let spec = WavSpec {
+    let spec = wavspec {
         channels: 1,
         sample_rate: 8,
         bits_per_sample: 32,

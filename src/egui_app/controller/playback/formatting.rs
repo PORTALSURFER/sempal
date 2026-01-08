@@ -1,4 +1,4 @@
-pub(super) fn format_selection_duration(seconds: f32) -> String {
+pub(crate) fn format_selection_duration(seconds: f32) -> String {
     if !seconds.is_finite() || seconds <= 0.0 {
         return "0 ms".to_string();
     }
@@ -14,7 +14,7 @@ pub(super) fn format_selection_duration(seconds: f32) -> String {
 }
 
 /// Format an absolute timestamp into `HH:MM:SS:MS` where `MS` is zero-padded milliseconds.
-pub(super) fn format_timestamp_hms_ms(seconds: f32) -> String {
+pub(crate) fn format_timestamp_hms_ms(seconds: f32) -> String {
     if !seconds.is_finite() || seconds < 0.0 {
         return "00:00:00:000".to_string();
     }

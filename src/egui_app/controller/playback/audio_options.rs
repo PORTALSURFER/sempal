@@ -2,16 +2,16 @@ use super::*;
 use crate::egui_app::state::{ActiveAudioInput, ActiveAudioOutput, AudioDeviceView, AudioHostView};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct NormalizedAudioOptions {
-    pub(super) host_id: Option<String>,
-    pub(super) device_name: Option<String>,
-    pub(super) sample_rate: Option<u32>,
-    pub(super) devices: Vec<crate::audio::AudioDeviceSummary>,
-    pub(super) sample_rates: Vec<u32>,
-    pub(super) warning: Option<String>,
+pub(crate) struct NormalizedAudioOptions {
+    pub(crate) host_id: Option<String>,
+    pub(crate) device_name: Option<String>,
+    pub(crate) sample_rate: Option<u32>,
+    pub(crate) devices: Vec<crate::audio::AudioDeviceSummary>,
+    pub(crate) sample_rates: Vec<u32>,
+    pub(crate) warning: Option<String>,
 }
 
-pub(super) fn normalize_audio_options(
+pub(crate) fn normalize_audio_options(
     current_host: Option<String>,
     current_device: Option<String>,
     current_sample_rate: Option<u32>,
@@ -322,7 +322,7 @@ impl EguiController {
     }
 
     /// Apply current audio config to the player and persist config.
-    pub(super) fn apply_audio_selection(&mut self) {
+    pub(crate) fn apply_audio_selection(&mut self) {
         self.ui.audio.selected = self.settings.audio_output.clone();
         match self.rebuild_audio_player() {
             Ok(_) => {
@@ -334,7 +334,7 @@ impl EguiController {
         }
     }
 
-    pub(super) fn update_audio_output_status(&mut self) {
+    pub(crate) fn update_audio_output_status(&mut self) {
         if let Some(player) = self.audio.player.as_ref() {
             let output = player.borrow().output_details().clone();
             self.ui.audio.applied = Some(ActiveAudioOutput::from(&output));
@@ -342,7 +342,7 @@ impl EguiController {
         }
     }
 
-    pub(super) fn update_audio_input_status(&mut self, input: &crate::audio::ResolvedInput) {
+    pub(crate) fn update_audio_input_status(&mut self, input: &crate::audio::ResolvedInput) {
         self.ui.audio.input_applied = Some(ActiveAudioInput::from(input));
         self.ui.audio.input_warning = self.audio_input_fallback_message(input);
     }

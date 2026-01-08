@@ -1,20 +1,21 @@
 //! Selection and waveform view state for the controller.
 
-use super::super::{
-    CollectionId, DecodedWaveform, SampleSource, SelectionRange, SourceId, WaveformRenderer, wavs,
-};
+use crate::egui_app::controller::library::wavs;
+use crate::sample_sources::{CollectionId, SampleSource, SourceId};
+use crate::selection::SelectionRange;
+use crate::waveform::{DecodedWaveform, WaveformRenderer};
 use super::audio::LoadedAudio;
 use crate::selection::SelectionState;
 use std::path::PathBuf;
 
-pub(in crate::egui_app::controller) struct WavSelectionState {
-    pub(in crate::egui_app::controller) selected_wav: Option<PathBuf>,
-    pub(in crate::egui_app::controller) loaded_wav: Option<PathBuf>,
-    pub(in crate::egui_app::controller) loaded_audio: Option<LoadedAudio>,
+pub(crate) struct WavSelectionState {
+    pub(crate) selected_wav: Option<PathBuf>,
+    pub(crate) loaded_wav: Option<PathBuf>,
+    pub(crate) loaded_audio: Option<LoadedAudio>,
 }
 
 impl WavSelectionState {
-    pub(in crate::egui_app::controller) fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             selected_wav: None,
             loaded_wav: None,
@@ -23,15 +24,15 @@ impl WavSelectionState {
     }
 }
 
-pub(in crate::egui_app::controller) struct ControllerSampleViewState {
-    pub(in crate::egui_app::controller) renderer: WaveformRenderer,
-    pub(in crate::egui_app::controller) waveform: WaveformState,
-    pub(in crate::egui_app::controller) waveform_slide: Option<WaveformSlideState>,
-    pub(in crate::egui_app::controller) wav: WavSelectionState,
+pub(crate) struct ControllerSampleViewState {
+    pub(crate) renderer: WaveformRenderer,
+    pub(crate) waveform: WaveformState,
+    pub(crate) waveform_slide: Option<WaveformSlideState>,
+    pub(crate) wav: WavSelectionState,
 }
 
 impl ControllerSampleViewState {
-    pub(in crate::egui_app::controller) fn new(renderer: WaveformRenderer) -> Self {
+    pub(crate) fn new(renderer: WaveformRenderer) -> Self {
         let (waveform_width, waveform_height) = renderer.dimensions();
         Self {
             renderer,
@@ -47,26 +48,26 @@ impl ControllerSampleViewState {
 }
 
 /// Cached state for a circular waveform slide drag.
-pub(in crate::egui_app::controller) struct WaveformSlideState {
-    pub(in crate::egui_app::controller) source: SampleSource,
-    pub(in crate::egui_app::controller) relative_path: PathBuf,
-    pub(in crate::egui_app::controller) absolute_path: PathBuf,
-    pub(in crate::egui_app::controller) original_samples: Vec<f32>,
-    pub(in crate::egui_app::controller) channels: usize,
-    pub(in crate::egui_app::controller) spec_channels: u16,
-    pub(in crate::egui_app::controller) sample_rate: u32,
-    pub(in crate::egui_app::controller) start_normalized: f32,
-    pub(in crate::egui_app::controller) last_offset_frames: isize,
+pub(crate) struct WaveformSlideState {
+    pub(crate) source: SampleSource,
+    pub(crate) relative_path: PathBuf,
+    pub(crate) absolute_path: PathBuf,
+    pub(crate) original_samples: Vec<f32>,
+    pub(crate) channels: usize,
+    pub(crate) spec_channels: u16,
+    pub(crate) sample_rate: u32,
+    pub(crate) start_normalized: f32,
+    pub(crate) last_offset_frames: isize,
 }
 
-pub(in crate::egui_app::controller) struct SelectionContextState {
-    pub(in crate::egui_app::controller) selected_source: Option<SourceId>,
-    pub(in crate::egui_app::controller) last_selected_browsable_source: Option<SourceId>,
-    pub(in crate::egui_app::controller) selected_collection: Option<CollectionId>,
+pub(crate) struct SelectionContextState {
+    pub(crate) selected_source: Option<SourceId>,
+    pub(crate) last_selected_browsable_source: Option<SourceId>,
+    pub(crate) selected_collection: Option<CollectionId>,
 }
 
 impl SelectionContextState {
-    pub(in crate::egui_app::controller) fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             selected_source: None,
             last_selected_browsable_source: None,
@@ -75,21 +76,21 @@ impl SelectionContextState {
     }
 }
 
-pub(in crate::egui_app::controller) struct SelectionUndoState {
-    pub(in crate::egui_app::controller) label: String,
-    pub(in crate::egui_app::controller) before: Option<SelectionRange>,
+pub(crate) struct SelectionUndoState {
+    pub(crate) label: String,
+    pub(crate) before: Option<SelectionRange>,
 }
 
-pub(in crate::egui_app::controller) struct ControllerSelectionState {
-    pub(in crate::egui_app::controller) ctx: SelectionContextState,
-    pub(in crate::egui_app::controller) range: SelectionState,
-    pub(in crate::egui_app::controller) pending_undo: Option<SelectionUndoState>,
-    pub(in crate::egui_app::controller) suppress_autoplay_once: bool,
-    pub(in crate::egui_app::controller) bpm_scale_beats: Option<f32>,
+pub(crate) struct ControllerSelectionState {
+    pub(crate) ctx: SelectionContextState,
+    pub(crate) range: SelectionState,
+    pub(crate) pending_undo: Option<SelectionUndoState>,
+    pub(crate) suppress_autoplay_once: bool,
+    pub(crate) bpm_scale_beats: Option<f32>,
 }
 
 impl ControllerSelectionState {
-    pub(in crate::egui_app::controller) fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             ctx: SelectionContextState::new(),
             range: SelectionState::new(),
@@ -100,8 +101,8 @@ impl ControllerSelectionState {
     }
 }
 
-pub(in crate::egui_app::controller) struct WaveformState {
-    pub(in crate::egui_app::controller) size: [u32; 2],
-    pub(in crate::egui_app::controller) decoded: Option<DecodedWaveform>,
-    pub(in crate::egui_app::controller) render_meta: Option<wavs::WaveformRenderMeta>,
+pub(crate) struct WaveformState {
+    pub(crate) size: [u32; 2],
+    pub(crate) decoded: Option<DecodedWaveform>,
+    pub(crate) render_meta: Option<wavs::WaveformRenderMeta>,
 }

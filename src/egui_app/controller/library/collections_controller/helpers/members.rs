@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 impl CollectionsController<'_> {
-    pub(in crate::egui_app::controller::collections_controller) fn collection_member_source(
+    pub(crate) fn collection_member_source(
         &self,
         member: &CollectionMember,
     ) -> Option<SampleSource> {
@@ -23,14 +23,14 @@ impl CollectionsController<'_> {
             .cloned()
     }
 
-    pub(in crate::egui_app::controller::collections_controller) fn collection_member_missing(
+    pub(crate) fn collection_member_missing(
         &mut self,
         member: &CollectionMember,
     ) -> bool {
         self.collection_member_missing_view(&collection_member_view(member))
     }
 
-    pub(in crate::egui_app::controller::collections_controller) fn collection_member_missing_view(
+    pub(crate) fn collection_member_missing_view(
         &mut self,
         member: &CollectionMemberView<'_>,
     ) -> bool {
@@ -40,7 +40,7 @@ impl CollectionsController<'_> {
         self.sample_missing(member.source_id, member.relative_path)
     }
 
-    pub(in crate::egui_app::controller::collections_controller) fn add_clip_to_collection(
+    pub(crate) fn add_clip_to_collection(
         &mut self,
         collection_id: &CollectionId,
         clip_root: PathBuf,
@@ -79,7 +79,7 @@ impl CollectionsController<'_> {
         self.finalize_collection_add(collection_id, &new_member, &new_member.relative_path)
     }
 
-    pub(in crate::egui_app::controller::collections_controller) fn ensure_sample_db_entry(
+    pub(crate) fn ensure_sample_db_entry(
         &mut self,
         source: &SampleSource,
         relative_path: &Path,
@@ -101,7 +101,7 @@ impl CollectionsController<'_> {
             .map_err(|err| format!("Failed to sync collection entry: {err}"))
     }
 
-    pub(in crate::egui_app::controller::collections_controller) fn current_collection(
+    pub(crate) fn current_collection(
         &self,
     ) -> Option<Collection> {
         let selected = self.selection_state.ctx.selected_collection.as_ref()?;
@@ -112,7 +112,7 @@ impl CollectionsController<'_> {
             .cloned()
     }
 
-    pub(in crate::egui_app::controller::collections_controller) fn add_sample_to_collection_inner(
+    pub(crate) fn add_sample_to_collection_inner(
         &mut self,
         collection_id: &CollectionId,
         source: &SampleSource,
@@ -140,7 +140,7 @@ impl CollectionsController<'_> {
         self.finalize_collection_add(collection_id, &new_member, relative_path)
     }
 
-    pub(in crate::egui_app::controller::collections_controller) fn add_browser_rows_to_collection(
+    pub(crate) fn add_browser_rows_to_collection(
         &mut self,
         collection_id: &CollectionId,
         rows: &[usize],
@@ -172,7 +172,7 @@ impl CollectionsController<'_> {
         );
     }
 
-    pub(in crate::egui_app::controller::collections_controller) fn normalize_collection_hotkey(
+    pub(crate) fn normalize_collection_hotkey(
         &self,
         hotkey: Option<u8>,
     ) -> Result<Option<u8>, String> {
@@ -183,7 +183,7 @@ impl CollectionsController<'_> {
         }
     }
 
-    pub(in crate::egui_app::controller::collections_controller) fn apply_collection_hotkey_binding(
+    pub(crate) fn apply_collection_hotkey_binding(
         &mut self,
         collection_id: &CollectionId,
         hotkey: Option<u8>,
@@ -208,7 +208,7 @@ impl CollectionsController<'_> {
         Ok(name)
     }
 
-    pub(in crate::egui_app::controller::collections_controller) fn next_collection_name(
+    pub(crate) fn next_collection_name(
         &self,
     ) -> String {
         let base = "Collection";
@@ -257,7 +257,7 @@ impl CollectionsController<'_> {
     }
 }
 
-pub(super) struct BrowserSampleContext {
-    pub(super) source: SampleSource,
-    pub(super) entry: WavEntry,
+pub(crate) struct BrowserSampleContext {
+    pub(crate) source: SampleSource,
+    pub(crate) entry: WavEntry,
 }

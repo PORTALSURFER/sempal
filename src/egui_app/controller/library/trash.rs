@@ -1,10 +1,10 @@
-use super::trash_move::TrashMoveFinished;
+use trash_move::TrashMoveFinished;
 #[cfg(test)]
-use super::trash_move::TrashMoveMessage;
+use trash_move::TrashMoveMessage;
 #[cfg(not(test))]
-use super::trash_move::run_trash_move_task;
+use trash_move::run_trash_move_task;
 #[cfg(test)]
-use super::trash_move::run_trash_move_task_with_progress;
+use trash_move::run_trash_move_task_with_progress;
 use super::*;
 use crate::egui_app::state::ProgressTaskKind;
 use crate::sample_sources::config::normalize_path;
@@ -106,7 +106,7 @@ impl EguiController {
                     }
                     TrashMoveMessage::Finished(_) => {}
                 },
-                super::trash_move::move_to_trash,
+                trash_move::move_to_trash,
             );
             self.apply_trash_move_finished(finished);
         }
@@ -194,7 +194,7 @@ impl EguiController {
         }
     }
 
-    pub(super) fn apply_trash_move_finished(&mut self, result: TrashMoveFinished) {
+    pub(crate) fn apply_trash_move_finished(&mut self, result: TrashMoveFinished) {
         if result.collections_changed {
             self.library.collections = result.collections;
             self.refresh_collections_ui();

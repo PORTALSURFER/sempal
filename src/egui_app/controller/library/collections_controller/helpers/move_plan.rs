@@ -3,22 +3,22 @@ use super::members::BrowserSampleContext;
 use std::path::PathBuf;
 
 /// Shared move selection, validation, and focus data for collection moves.
-pub(in crate::egui_app::controller::collections_controller) struct MovePlan {
-    pub(in crate::egui_app::controller::collections_controller) rows: Vec<usize>,
-    pub(in crate::egui_app::controller::collections_controller) contexts: Vec<BrowserSampleContext>,
-    pub(in crate::egui_app::controller::collections_controller) last_error: Option<String>,
-    pub(in crate::egui_app::controller::collections_controller) next_focus: Option<PathBuf>,
+pub(crate) struct MovePlan {
+    pub(crate) rows: Vec<usize>,
+    pub(crate) contexts: Vec<BrowserSampleContext>,
+    pub(crate) last_error: Option<String>,
+    pub(crate) next_focus: Option<PathBuf>,
 }
 
 impl MovePlan {
-    pub(in crate::egui_app::controller::collections_controller) fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.rows.is_empty()
     }
 }
 
 impl CollectionsController<'_> {
     /// Build a move plan from the browser selection, including validation and focus fallback.
-    pub(in crate::egui_app::controller::collections_controller) fn build_browser_move_plan(
+    pub(crate) fn build_browser_move_plan(
         &mut self,
     ) -> MovePlan {
         let rows = self.browser_selection_rows_for_move();
@@ -32,7 +32,7 @@ impl CollectionsController<'_> {
         }
     }
 
-    pub(in crate::egui_app::controller::collections_controller) fn browser_selection_rows_for_move(
+    pub(crate) fn browser_selection_rows_for_move(
         &mut self,
     ) -> Vec<usize> {
         let mut rows: Vec<usize> = self
@@ -56,7 +56,7 @@ impl CollectionsController<'_> {
         rows
     }
 
-    pub(in crate::egui_app::controller::collections_controller) fn next_browser_focus_path_after_move(
+    pub(crate) fn next_browser_focus_path_after_move(
         &mut self,
         rows: &[usize],
     ) -> Option<PathBuf> {
@@ -83,7 +83,7 @@ impl CollectionsController<'_> {
     }
 
     /// Resolve browser rows into unique move contexts, tracking the last error.
-    pub(super) fn collect_browser_contexts(
+    pub(crate) fn collect_browser_contexts(
         &mut self,
         rows: &[usize],
     ) -> (Vec<BrowserSampleContext>, Option<String>) {

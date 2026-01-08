@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use std::path::Path;
 
 impl EguiController {
-    pub(in crate::egui_app::controller) fn sync_missing_from_db(&mut self, source_id: &SourceId) {
+    pub(crate) fn sync_missing_from_db(&mut self, source_id: &SourceId) {
         let Some(source) = self
             .library
             .sources
@@ -25,7 +25,7 @@ impl EguiController {
         }
     }
 
-    pub(in crate::egui_app::controller) fn rebuild_missing_lookup_for_source(
+    pub(crate) fn rebuild_missing_lookup_for_source(
         &mut self,
         source_id: &SourceId,
     ) {
@@ -50,7 +50,7 @@ impl EguiController {
         self.library.missing.wavs.insert(source_id.clone(), missing);
     }
 
-    pub(in crate::egui_app::controller) fn mark_sample_missing(
+    pub(crate) fn mark_sample_missing(
         &mut self,
         source: &SampleSource,
         relative_path: &Path,
@@ -121,7 +121,7 @@ impl EguiController {
         Ok(())
     }
 
-    pub(in crate::egui_app::controller) fn sample_missing(
+    pub(crate) fn sample_missing(
         &mut self,
         source_id: &SourceId,
         relative_path: &Path,
@@ -163,7 +163,7 @@ impl EguiController {
         false
     }
 
-    pub(in crate::egui_app::controller) fn show_missing_waveform_notice(
+    pub(crate) fn show_missing_waveform_notice(
         &mut self,
         relative_path: &Path,
     ) {
@@ -172,7 +172,7 @@ impl EguiController {
         self.ui.waveform.notice = Some(message);
     }
 
-    pub(in crate::egui_app::controller) fn remove_dead_links_for_source_entries(
+    pub(crate) fn remove_dead_links_for_source_entries(
         &mut self,
         source: &SampleSource,
     ) -> Result<usize, String> {

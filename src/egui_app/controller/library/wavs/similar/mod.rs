@@ -14,7 +14,7 @@ const DUPLICATE_RMS_MIN: f32 = 1.0e-4;
 const FEATURE_RMS_INDEX: usize = 2;
 const MISSING_SIMILARITY_SCORE: f32 = -2.0;
 
-pub(super) fn find_similar_for_visible_row(
+pub(crate) fn find_similar_for_visible_row(
     controller: &mut EguiController,
     visible_row: usize,
 ) -> Result<(), String> {
@@ -30,7 +30,7 @@ pub(super) fn find_similar_for_visible_row(
     )
 }
 
-pub(super) fn find_duplicates_for_visible_row(
+pub(crate) fn find_duplicates_for_visible_row(
     controller: &mut EguiController,
     visible_row: usize,
 ) -> Result<(), String> {
@@ -46,7 +46,7 @@ pub(super) fn find_duplicates_for_visible_row(
     )
 }
 
-pub(super) fn find_similar_for_sample_id(
+pub(crate) fn find_similar_for_sample_id(
     controller: &mut EguiController,
     sample_id: &str,
 ) -> Result<(), String> {
@@ -60,7 +60,7 @@ pub(super) fn find_similar_for_sample_id(
     )
 }
 
-pub(super) fn clear_similar_filter(controller: &mut EguiController) {
+pub(crate) fn clear_similar_filter(controller: &mut EguiController) {
     apply::clear_similar_filter(controller);
 }
 
@@ -84,7 +84,7 @@ fn apply_similarity_for_sample_id(
     Ok(())
 }
 
-pub(super) fn find_similar_for_audio_path(
+pub(crate) fn find_similar_for_audio_path(
     controller: &mut EguiController,
     path: &Path,
 ) -> Result<(), String> {
@@ -93,18 +93,18 @@ pub(super) fn find_similar_for_audio_path(
     Ok(())
 }
 
-pub(super) fn enable_loaded_similarity_sort(controller: &mut EguiController) -> Result<(), String> {
+pub(crate) fn enable_loaded_similarity_sort(controller: &mut EguiController) -> Result<(), String> {
     let query = query::build_similarity_query_for_loaded_sample(controller)?;
     apply::apply_similarity_query(controller, query);
     controller.ui.browser.similarity_sort_follow_loaded = true;
     Ok(())
 }
 
-pub(super) fn disable_similarity_sort(controller: &mut EguiController) {
+pub(crate) fn disable_similarity_sort(controller: &mut EguiController) {
     apply::disable_similarity_sort(controller);
 }
 
-pub(super) fn refresh_similarity_sort_for_loaded(
+pub(crate) fn refresh_similarity_sort_for_loaded(
     controller: &mut EguiController,
 ) -> Result<(), String> {
     if !controller.ui.browser.similarity_sort_follow_loaded {

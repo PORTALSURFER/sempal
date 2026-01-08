@@ -1,11 +1,11 @@
 //! Claim lease helpers for analysis jobs.
 
-use crate::egui_app::controller::analysis_jobs::db;
+use crate::egui_app::controller::library::analysis_jobs::db;
 use crate::sample_sources::SourceId;
 use std::collections::HashSet;
 
 /// Returns true when the job is allowed for the current source filter.
-pub(super) fn job_allowed(
+pub(crate) fn job_allowed(
     job: &db::ClaimedJob,
     allowed_source_ids: Option<&HashSet<SourceId>>,
 ) -> bool {
@@ -20,6 +20,6 @@ pub(super) fn job_allowed(
 }
 
 /// Releases a claim back to pending.
-pub(super) fn release_claim(conn: &rusqlite::Connection, job_id: i64) {
+pub(crate) fn release_claim(conn: &rusqlite::Connection, job_id: i64) {
     let _ = db::mark_pending(conn, job_id);
 }

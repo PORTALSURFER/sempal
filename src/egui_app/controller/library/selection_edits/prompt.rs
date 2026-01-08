@@ -44,7 +44,7 @@ impl DestructiveSelectionEdit {
     }
 }
 
-pub(super) fn prompt_for_edit(edit: DestructiveSelectionEdit) -> DestructiveEditPrompt {
+pub(crate) fn prompt_for_edit(edit: DestructiveSelectionEdit) -> DestructiveEditPrompt {
     DestructiveEditPrompt {
         edit,
         title: edit.title().to_string(),

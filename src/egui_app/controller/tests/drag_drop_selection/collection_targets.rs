@@ -1,7 +1,7 @@
 use super::super::super::test_support::{sample_entry, write_test_wav};
 use super::super::super::*;
 use crate::app_dirs::ConfigBaseGuard;
-use crate::egui_app::controller::collection_export;
+use crate::egui_app::controller::library::collection_export;
 use crate::egui_app::state::{DragPayload, DragSource, DragTarget};
 use crate::sample_sources::Collection;
 use std::path::{Path, PathBuf};

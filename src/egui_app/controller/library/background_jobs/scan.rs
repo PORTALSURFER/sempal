@@ -2,7 +2,7 @@ use super::progress;
 use super::*;
 use crate::egui_app::state::ProgressTaskKind;
 
-pub(super) fn handle_scan_progress(
+pub(crate) fn handle_scan_progress(
     controller: &mut EguiController,
     completed: usize,
     detail: Option<String>,
@@ -16,7 +16,7 @@ pub(super) fn handle_scan_progress(
     progress::update_progress_detail(controller, ProgressTaskKind::Scan, completed, Some(detail));
 }
 
-pub(super) fn handle_scan_finished(controller: &mut EguiController, result: ScanResult) {
+pub(crate) fn handle_scan_finished(controller: &mut EguiController, result: ScanResult) {
     controller.runtime.jobs.clear_scan();
     if controller.ui.progress.task == Some(ProgressTaskKind::Scan) {
         controller.clear_progress();
@@ -72,7 +72,7 @@ pub(super) fn handle_scan_finished(controller: &mut EguiController, result: Scan
                     let tx = controller.runtime.jobs.message_sender();
                     let changed_samples = changed_samples.clone();
                     std::thread::spawn(move || {
-                        let result = super::analysis_jobs::enqueue_jobs_for_source(
+                        let result = analysis_jobs::enqueue_jobs_for_source(
                             &source,
                             &changed_samples,
                         );
@@ -100,7 +100,7 @@ pub(super) fn handle_scan_finished(controller: &mut EguiController, result: Scan
                 }
                 let tx = controller.runtime.jobs.message_sender();
                 std::thread::spawn(move || {
-                    let result = super::analysis_jobs::enqueue_jobs_for_source_backfill(&source);
+                    let result = analysis_jobs::enqueue_jobs_for_source_backfill(&source);
                     match result {
                         Ok((inserted, progress)) => {
                             let _ = tx.send(JobMessage::Analysis(
@@ -114,7 +114,7 @@ pub(super) fn handle_scan_finished(controller: &mut EguiController, result: Scan
                         }
                     }
                     let embed_result =
-                        super::analysis_jobs::enqueue_jobs_for_embedding_backfill(&source);
+                        analysis_jobs::enqueue_jobs_for_embedding_backfill(&source);
                     match embed_result {
                         Ok((inserted, progress)) => {
                             if inserted > 0 {

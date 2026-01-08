@@ -157,8 +157,8 @@ pub(crate) struct HotkeyAction {
     pub(crate) id: &'static str,
     pub(crate) label: &'static str,
     pub(crate) gesture: HotkeyGesture,
-    pub(super) scope: HotkeyScope,
-    pub(super) command: HotkeyCommand,
+    pub(crate) scope: HotkeyScope,
+    pub(crate) command: HotkeyCommand,
 }
 
 impl HotkeyAction {

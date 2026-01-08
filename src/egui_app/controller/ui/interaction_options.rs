@@ -10,15 +10,15 @@ const MAX_WHEEL_ZOOM_SPEED: f32 = 20.0;
 const MIN_ANTI_CLIP_FADE_MS: f32 = 0.0;
 const MAX_ANTI_CLIP_FADE_MS: f32 = 20.0;
 
-pub(super) fn clamp_scroll_speed(speed: f32) -> f32 {
+pub(crate) fn clamp_scroll_speed(speed: f32) -> f32 {
     speed.clamp(MIN_SCROLL_SPEED, MAX_SCROLL_SPEED)
 }
 
-pub(super) fn clamp_zoom_factor(factor: f32) -> f32 {
+pub(crate) fn clamp_zoom_factor(factor: f32) -> f32 {
     factor.clamp(MIN_ZOOM_FACTOR, MAX_ZOOM_FACTOR)
 }
 
-pub(super) fn clamp_anti_clip_fade_ms(fade_ms: f32) -> f32 {
+pub(crate) fn clamp_anti_clip_fade_ms(fade_ms: f32) -> f32 {
     fade_ms.clamp(MIN_ANTI_CLIP_FADE_MS, MAX_ANTI_CLIP_FADE_MS)
 }
 

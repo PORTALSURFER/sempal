@@ -1,4 +1,4 @@
-use super::interaction_options::{clamp_scroll_speed, clamp_zoom_factor};
+use super::ui::interaction_options::{clamp_scroll_speed, clamp_zoom_factor};
 use super::*;
 
 impl EguiController {
@@ -14,7 +14,7 @@ impl EguiController {
         self.settings.feature_flags = cfg.core.feature_flags;
         self.settings.analysis = cfg.core.analysis;
         self.settings.analysis.max_analysis_duration_seconds =
-            super::analysis_options::clamp_max_analysis_duration_seconds(
+            super::library::analysis_options::clamp_max_analysis_duration_seconds(
                 self.settings.analysis.max_analysis_duration_seconds,
             );
         self.settings.updates = cfg.core.updates.clone();
@@ -35,7 +35,7 @@ impl EguiController {
         self.settings.controls.keyboard_zoom_factor =
             clamp_zoom_factor(self.settings.controls.keyboard_zoom_factor);
         self.settings.controls.anti_clip_fade_ms =
-            super::interaction_options::clamp_anti_clip_fade_ms(
+            super::ui::interaction_options::clamp_anti_clip_fade_ms(
                 self.settings.controls.anti_clip_fade_ms,
             );
         self.ui.controls = crate::egui_app::state::InteractionOptionsState {
@@ -88,8 +88,8 @@ impl EguiController {
         self.library.collections = cfg.collections;
         let mut purge_failures = Vec::new();
         for source in &self.library.sources {
-            if let Ok(mut conn) = super::analysis_jobs::open_source_db(&source.root) {
-                if let Err(err) = super::analysis_jobs::purge_orphaned_samples(&mut conn) {
+            if let Ok(mut conn) = super::library::analysis_jobs::open_source_db(&source.root) {
+                if let Err(err) = super::library::analysis_jobs::purge_orphaned_samples(&mut conn) {
                     purge_failures.push((source.root.display().to_string(), err));
                 }
             }
@@ -104,7 +104,7 @@ impl EguiController {
         for collection in self.library.collections.iter_mut() {
             let expected_source_prefix = format!("collection-{}", collection.id.as_str());
             let resolved_root =
-                crate::egui_app::controller::collection_export::resolved_export_dir(
+                crate::egui_app::controller::library::collection_export::resolved_export_dir(
                     collection,
                     self.settings.collection_export_root.as_deref(),
                 )

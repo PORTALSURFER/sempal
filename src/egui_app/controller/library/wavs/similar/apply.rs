@@ -1,7 +1,7 @@
 use super::*;
 use crate::egui_app::state::{SampleBrowserSort, SimilarQuery};
 
-pub(super) fn apply_similarity_query(controller: &mut EguiController, query: SimilarQuery) {
+pub(crate) fn apply_similarity_query(controller: &mut EguiController, query: SimilarQuery) {
     controller.ui.browser.similar_query = Some(query);
     controller.ui.browser.sort = SampleBrowserSort::Similarity;
     controller.ui.browser.similarity_sort_follow_loaded = false;
@@ -10,7 +10,7 @@ pub(super) fn apply_similarity_query(controller: &mut EguiController, query: Sim
     controller.rebuild_browser_lists();
 }
 
-pub(super) fn clear_similar_filter(controller: &mut EguiController) {
+pub(crate) fn clear_similar_filter(controller: &mut EguiController) {
     if controller.ui.browser.similar_query.take().is_some() {
         controller.ui.browser.sort = SampleBrowserSort::ListOrder;
         controller.ui.browser.similarity_sort_follow_loaded = false;
@@ -18,7 +18,7 @@ pub(super) fn clear_similar_filter(controller: &mut EguiController) {
     }
 }
 
-pub(super) fn disable_similarity_sort(controller: &mut EguiController) {
+pub(crate) fn disable_similarity_sort(controller: &mut EguiController) {
     controller.ui.browser.sort = SampleBrowserSort::ListOrder;
     controller.ui.browser.similarity_sort_follow_loaded = false;
     controller.ui.browser.similar_query = None;

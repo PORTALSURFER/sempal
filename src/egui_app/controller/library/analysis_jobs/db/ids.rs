@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 #[cfg_attr(test, allow(dead_code))]
-pub(in crate::egui_app::controller) fn parse_sample_id(
+pub(crate) fn parse_sample_id(
     sample_id: &str,
 ) -> Result<(String, PathBuf), String> {
     let (source, path) = sample_id
@@ -16,7 +16,7 @@ pub(in crate::egui_app::controller) fn parse_sample_id(
     Ok((source.to_string(), PathBuf::from(path)))
 }
 
-pub(in crate::egui_app::controller) fn build_sample_id(
+pub(crate) fn build_sample_id(
     source_id: &str,
     relative_path: &Path,
 ) -> String {

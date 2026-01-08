@@ -1,5 +1,5 @@
 use super::*;
-use crate::egui_app::controller::audio_cache::FileMetadata;
+use crate::egui_app::controller::playback::audio_cache::FileMetadata;
 use crate::waveform::{DecodedWaveform, WaveformRenderer};
 use std::{
     fs,
@@ -8,33 +8,33 @@ use std::{
     thread,
 };
 
-pub(super) struct AudioLoadJob {
+pub(crate) struct AudioLoadJob {
     pub request_id: u64,
     pub source_id: SourceId,
     pub root: PathBuf,
     pub relative_path: PathBuf,
 }
 
-pub(super) struct AudioLoadOutcome {
+pub(crate) struct AudioLoadOutcome {
     pub decoded: DecodedWaveform,
     pub bytes: Vec<u8>,
     pub metadata: FileMetadata,
 }
 
 #[derive(Debug)]
-pub(super) enum AudioLoadError {
+pub(crate) enum AudioLoadError {
     Missing(String),
     Failed(String),
 }
 
-pub(super) struct AudioLoadResult {
+pub(crate) struct AudioLoadResult {
     pub request_id: u64,
     pub source_id: SourceId,
     pub relative_path: PathBuf,
     pub result: Result<AudioLoadOutcome, AudioLoadError>,
 }
 
-pub(super) fn spawn_audio_loader(
+pub(crate) fn spawn_audio_loader(
     renderer: WaveformRenderer,
 ) -> (Sender<AudioLoadJob>, Receiver<AudioLoadResult>) {
     let (tx, rx) = std::sync::mpsc::channel::<AudioLoadJob>();
@@ -106,3 +106,4 @@ fn load_audio(
         },
     })
 }
+

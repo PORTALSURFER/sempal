@@ -5,19 +5,19 @@ use std::{
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct FileMetadata {
+pub(crate) struct FileMetadata {
     pub file_size: u64,
     pub modified_ns: i64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub(super) struct CacheKey {
+pub(crate) struct CacheKey {
     pub source_id: SourceId,
     pub relative_path: PathBuf,
 }
 
 impl CacheKey {
-    pub(super) fn new(source_id: &SourceId, relative_path: &Path) -> Self {
+    pub(crate) fn new(source_id: &SourceId, relative_path: &Path) -> Self {
         Self {
             source_id: source_id.clone(),
             relative_path: relative_path.to_path_buf(),
@@ -26,13 +26,13 @@ impl CacheKey {
 }
 
 #[derive(Clone)]
-pub(super) struct CachedAudio {
+pub(crate) struct CachedAudio {
     pub metadata: FileMetadata,
     pub decoded: DecodedWaveform,
     pub bytes: Vec<u8>,
 }
 
-pub(super) struct AudioCache {
+pub(crate) struct AudioCache {
     capacity: usize,
     history_limit: usize,
     entries: HashMap<CacheKey, CachedAudio>,
@@ -40,7 +40,7 @@ pub(super) struct AudioCache {
 }
 
 impl AudioCache {
-    pub(super) fn new(capacity: usize, history_limit: usize) -> Self {
+    pub(crate) fn new(capacity: usize, history_limit: usize) -> Self {
         Self {
             capacity: capacity.max(1),
             history_limit: history_limit.max(1),
@@ -49,7 +49,7 @@ impl AudioCache {
         }
     }
 
-    pub(super) fn get(&mut self, key: &CacheKey, metadata: FileMetadata) -> Option<CachedAudio> {
+    pub(crate) fn get(&mut self, key: &CacheKey, metadata: FileMetadata) -> Option<CachedAudio> {
         if let Some(entry) = self.entries.get(key) {
             if entry.metadata == metadata {
                 let hit = entry.clone();
@@ -61,7 +61,7 @@ impl AudioCache {
         None
     }
 
-    pub(super) fn insert(
+    pub(crate) fn insert(
         &mut self,
         key: CacheKey,
         metadata: FileMetadata,
@@ -80,7 +80,7 @@ impl AudioCache {
         self.enforce_limits();
     }
 
-    pub(super) fn invalidate(&mut self, key: &CacheKey) {
+    pub(crate) fn invalidate(&mut self, key: &CacheKey) {
         self.entries.remove(key);
         self.history.retain(|existing| existing != key);
     }

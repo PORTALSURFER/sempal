@@ -1,5 +1,5 @@
 use super::*;
-use crate::egui_app::controller::analysis_jobs::db as analysis_db;
+use crate::egui_app::controller::library::analysis_jobs::db as analysis_db;
 use crate::sample_sources::SampleSource;
 use std::collections::{HashMap, HashSet};
 use std::sync::mpsc;

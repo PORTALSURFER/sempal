@@ -1,24 +1,27 @@
 //! Runtime state and job coordination for the controller.
 
-use super::super::{ScanMode, SourceDbError, SourceId, WavEntry, analysis_jobs, jobs};
+use crate::egui_app::controller::library::analysis_jobs;
+use crate::egui_app::controller::jobs;
+use crate::sample_sources::{ScanMode, SourceId, WavEntry};
+use crate::sample_sources::db::SourceDbError;
 use crate::sample_sources::config::PannsBackendChoice;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-pub(in crate::egui_app::controller) struct ControllerRuntimeState {
-    pub(in crate::egui_app::controller) jobs: jobs::ControllerJobs,
-    pub(in crate::egui_app::controller) analysis: analysis_jobs::AnalysisWorkerPool,
-    pub(in crate::egui_app::controller) performance: PerformanceGovernorState,
-    pub(in crate::egui_app::controller) pending_backend_switch: Option<PannsBackendChoice>,
-    pub(in crate::egui_app::controller) similarity_prep: Option<SimilarityPrepState>,
-    pub(in crate::egui_app::controller) similarity_prep_last_error: Option<String>,
-    pub(in crate::egui_app::controller) similarity_prep_force_full_analysis_next: bool,
+pub(crate) struct ControllerRuntimeState {
+    pub(crate) jobs: jobs::ControllerJobs,
+    pub(crate) analysis: analysis_jobs::AnalysisWorkerPool,
+    pub(crate) performance: PerformanceGovernorState,
+    pub(crate) pending_backend_switch: Option<PannsBackendChoice>,
+    pub(crate) similarity_prep: Option<SimilarityPrepState>,
+    pub(crate) similarity_prep_last_error: Option<String>,
+    pub(crate) similarity_prep_force_full_analysis_next: bool,
     #[cfg(test)]
-    pub(in crate::egui_app::controller) progress_cancel_after: Option<usize>,
+    pub(crate) progress_cancel_after: Option<usize>,
 }
 
 impl ControllerRuntimeState {
-    pub(in crate::egui_app::controller) fn new(
+    pub(crate) fn new(
         jobs: jobs::ControllerJobs,
         analysis: analysis_jobs::AnalysisWorkerPool,
     ) -> Self {
@@ -36,16 +39,16 @@ impl ControllerRuntimeState {
     }
 }
 
-pub(in crate::egui_app::controller) struct PerformanceGovernorState {
-    pub(in crate::egui_app::controller) last_user_activity_at: Option<Instant>,
-    pub(in crate::egui_app::controller) last_slow_frame_at: Option<Instant>,
-    pub(in crate::egui_app::controller) last_frame_at: Option<Instant>,
-    pub(in crate::egui_app::controller) last_worker_count: Option<u32>,
-    pub(in crate::egui_app::controller) idle_worker_override: Option<u32>,
+pub(crate) struct PerformanceGovernorState {
+    pub(crate) last_user_activity_at: Option<Instant>,
+    pub(crate) last_slow_frame_at: Option<Instant>,
+    pub(crate) last_frame_at: Option<Instant>,
+    pub(crate) last_worker_count: Option<u32>,
+    pub(crate) idle_worker_override: Option<u32>,
 }
 
 impl PerformanceGovernorState {
-    pub(in crate::egui_app::controller) fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             last_user_activity_at: None,
             last_slow_frame_at: None,
@@ -57,46 +60,46 @@ impl PerformanceGovernorState {
 }
 
 #[derive(Clone, Debug)]
-pub(in crate::egui_app::controller) struct SimilarityPrepState {
-    pub(in crate::egui_app::controller) source_id: SourceId,
-    pub(in crate::egui_app::controller) stage: SimilarityPrepStage,
-    pub(in crate::egui_app::controller) umap_version: String,
-    pub(in crate::egui_app::controller) scan_completed_at: Option<i64>,
-    pub(in crate::egui_app::controller) skip_backfill: bool,
-    pub(in crate::egui_app::controller) force_full_analysis: bool,
+pub(crate) struct SimilarityPrepState {
+    pub(crate) source_id: SourceId,
+    pub(crate) stage: SimilarityPrepStage,
+    pub(crate) umap_version: String,
+    pub(crate) scan_completed_at: Option<i64>,
+    pub(crate) skip_backfill: bool,
+    pub(crate) force_full_analysis: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(in crate::egui_app::controller) enum SimilarityPrepStage {
+pub(crate) enum SimilarityPrepStage {
     AwaitScan,
     AwaitEmbeddings,
     Finalizing,
 }
 
-pub(in crate::egui_app::controller) struct WavLoadJob {
-    pub(in crate::egui_app::controller) source_id: SourceId,
-    pub(in crate::egui_app::controller) root: PathBuf,
-    pub(in crate::egui_app::controller) page_size: usize,
+pub(crate) struct WavLoadJob {
+    pub(crate) source_id: SourceId,
+    pub(crate) root: PathBuf,
+    pub(crate) page_size: usize,
 }
 
-pub(in crate::egui_app::controller) struct WavLoadResult {
-    pub(in crate::egui_app::controller) source_id: SourceId,
-    pub(in crate::egui_app::controller) result: Result<Vec<WavEntry>, LoadEntriesError>,
-    pub(in crate::egui_app::controller) elapsed: Duration,
-    pub(in crate::egui_app::controller) total: usize,
-    pub(in crate::egui_app::controller) page_index: usize,
+pub(crate) struct WavLoadResult {
+    pub(crate) source_id: SourceId,
+    pub(crate) result: Result<Vec<WavEntry>, LoadEntriesError>,
+    pub(crate) elapsed: Duration,
+    pub(crate) total: usize,
+    pub(crate) page_index: usize,
 }
 
-pub(in crate::egui_app::controller) struct ScanResult {
-    pub(in crate::egui_app::controller) source_id: SourceId,
-    pub(in crate::egui_app::controller) mode: ScanMode,
-    pub(in crate::egui_app::controller) result: Result<
+pub(crate) struct ScanResult {
+    pub(crate) source_id: SourceId,
+    pub(crate) mode: ScanMode,
+    pub(crate) result: Result<
         crate::sample_sources::scanner::ScanStats,
         crate::sample_sources::scanner::ScanError,
     >,
 }
 
-pub(in crate::egui_app::controller) enum ScanJobMessage {
+pub(crate) enum ScanJobMessage {
     Progress {
         completed: usize,
         detail: Option<String>,
@@ -105,12 +108,12 @@ pub(in crate::egui_app::controller) enum ScanJobMessage {
 }
 
 #[derive(Clone)]
-pub(in crate::egui_app::controller) struct UpdateCheckResult {
-    pub(in crate::egui_app::controller) result: Result<crate::updater::UpdateCheckOutcome, String>,
+pub(crate) struct UpdateCheckResult {
+    pub(crate) result: Result<crate::updater::UpdateCheckOutcome, String>,
 }
 
 #[derive(Debug)]
-pub(in crate::egui_app::controller) enum LoadEntriesError {
+pub(crate) enum LoadEntriesError {
     Db(SourceDbError),
     Message(String),
 }

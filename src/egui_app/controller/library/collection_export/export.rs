@@ -4,7 +4,7 @@ use super::fs_ops::{copy_member_to_export, ensure_export_dir};
 use crate::sample_sources::collections::CollectionMember;
 
 impl EguiController {
-    pub(in crate::egui_app::controller) fn export_member_if_needed(
+    pub(crate) fn export_member_if_needed(
         &mut self,
         collection_id: &CollectionId,
         member: &CollectionMember,
@@ -39,7 +39,7 @@ impl EguiController {
         copy_member_to_export(&collection_dir, &source, member)
     }
 
-    pub(in crate::egui_app::controller) fn export_all_members(
+    pub(crate) fn export_all_members(
         &mut self,
         collection_id: &CollectionId,
     ) -> Result<(), String> {
@@ -58,7 +58,7 @@ impl EguiController {
         Ok(())
     }
 
-    pub(in crate::egui_app::controller) fn sync_collections_from_export_root_path(
+    pub(crate) fn sync_collections_from_export_root_path(
         &mut self,
         root: &std::path::Path,
     ) -> Result<usize, String> {
@@ -119,7 +119,7 @@ impl EguiController {
         Ok(created)
     }
 
-    pub(in crate::egui_app::controller) fn remove_member_from_collection(
+    pub(crate) fn remove_member_from_collection(
         &mut self,
         collection_id: &CollectionId,
         member: &CollectionMember,
@@ -141,7 +141,7 @@ impl EguiController {
         removed
     }
 
-    pub(in crate::egui_app::controller) fn collection_members(
+    pub(crate) fn collection_members(
         &self,
         collection_id: &CollectionId,
     ) -> Vec<CollectionMember> {

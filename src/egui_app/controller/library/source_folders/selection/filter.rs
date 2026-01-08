@@ -2,7 +2,7 @@ use super::super::*;
 use std::collections::BTreeSet;
 
 impl EguiController {
-    pub(in crate::egui_app::controller) fn folder_selection_for_filter(
+    pub(crate) fn folder_selection_for_filter(
         &self,
     ) -> Option<&BTreeSet<PathBuf>> {
         let id = self.selection_state.ctx.selected_source.as_ref()?;
@@ -13,7 +13,7 @@ impl EguiController {
             .map(|model| &model.selected)
     }
 
-    pub(in crate::egui_app::controller) fn folder_negation_for_filter(
+    pub(crate) fn folder_negation_for_filter(
         &self,
     ) -> Option<&BTreeSet<PathBuf>> {
         let id = self.selection_state.ctx.selected_source.as_ref()?;
@@ -25,7 +25,7 @@ impl EguiController {
     }
 
     #[allow(dead_code)]
-    pub(in crate::egui_app::controller) fn folder_filter_accepts(
+    pub(crate) fn folder_filter_accepts(
         &self,
         relative_path: &Path,
     ) -> bool {
@@ -35,7 +35,7 @@ impl EguiController {
     }
 }
 
-pub(in crate::egui_app::controller) fn folder_filter_accepts(
+pub(crate) fn folder_filter_accepts(
     relative_path: &Path,
     selection: Option<&BTreeSet<PathBuf>>,
     negated: Option<&BTreeSet<PathBuf>>,

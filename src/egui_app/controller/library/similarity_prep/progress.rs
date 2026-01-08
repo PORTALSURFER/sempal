@@ -1,10 +1,10 @@
-use super::store::{DbSimilarityPrepStore, SimilarityPrepStore};
-use crate::egui_app::controller::{EguiController, SimilarityPrepStage};
+use crate::egui_app::controller::EguiController;
+use super::{DbSimilarityPrepStore, SimilarityPrepStore, state::SimilarityPrepStage};
 use crate::egui_app::state::AnalysisProgressSnapshot;
 use tracing::info;
 
 impl EguiController {
-    pub(super) fn refresh_similarity_prep_progress(&mut self) {
+    pub(crate) fn refresh_similarity_prep_progress(&mut self) {
         let Some(state) = self.runtime.similarity_prep.as_ref() else {
             return;
         };
@@ -134,7 +134,7 @@ impl EguiController {
                         samples_total,
                         running_jobs: Vec::new(),
                         stale_after_secs: Some(
-                            crate::egui_app::controller::analysis_jobs::stale_running_job_seconds(),
+                            crate::egui_app::controller::library::analysis_jobs::stale_running_job_seconds(),
                         ),
                     }));
             }

@@ -22,7 +22,7 @@ fn remove_env_var(key: &str) {
     }
 }
 
-pub(super) fn clamp_max_analysis_duration_seconds(seconds: f32) -> f32 {
+pub(crate) fn clamp_max_analysis_duration_seconds(seconds: f32) -> f32 {
     seconds.clamp(
         MIN_MAX_ANALYSIS_DURATION_SECONDS,
         MAX_MAX_ANALYSIS_DURATION_SECONDS,
@@ -30,7 +30,7 @@ pub(super) fn clamp_max_analysis_duration_seconds(seconds: f32) -> f32 {
 }
 
 impl EguiController {
-    pub(super) fn sync_analysis_backend_from_env(&mut self) {
+    pub(crate) fn sync_analysis_backend_from_env(&mut self) {
         if let Ok(value) = std::env::var(PANNS_BACKEND_ENV) {
             if let Some(parsed) =
                 crate::sample_sources::config::PannsBackendChoice::from_env(&value)
@@ -55,7 +55,7 @@ impl EguiController {
         }
     }
 
-    pub(super) fn apply_analysis_backend_env(&mut self) {
+    pub(crate) fn apply_analysis_backend_env(&mut self) {
         let mut backend = self.settings.analysis.panns_backend;
         if matches!(
             backend,
@@ -128,7 +128,7 @@ impl EguiController {
     }
 
     pub fn analysis_auto_worker_count(&self) -> u32 {
-        crate::egui_app::controller::analysis_jobs::default_worker_count()
+        crate::egui_app::controller::library::analysis_jobs::default_worker_count()
     }
 
     pub fn similarity_prep_fast_mode_enabled(&self) -> bool {
@@ -246,7 +246,7 @@ impl EguiController {
         }
     }
 
-    pub(super) fn apply_pending_backend_switch(&mut self) -> bool {
+    pub(crate) fn apply_pending_backend_switch(&mut self) -> bool {
         let Some(backend) = self.runtime.pending_backend_switch.take() else {
             return false;
         };

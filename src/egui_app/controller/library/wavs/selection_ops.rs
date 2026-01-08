@@ -1,11 +1,11 @@
 use super::*;
 use tracing::{debug, warn};
 
-pub(super) fn select_wav_by_path(controller: &mut EguiController, path: &Path) {
+pub(crate) fn select_wav_by_path(controller: &mut EguiController, path: &Path) {
     select_wav_by_path_with_rebuild(controller, path, true);
 }
 
-pub(super) fn select_wav_by_path_with_rebuild(
+pub(crate) fn select_wav_by_path_with_rebuild(
     controller: &mut EguiController,
     path: &Path,
     rebuild: bool,
@@ -89,7 +89,7 @@ pub(super) fn select_wav_by_path_with_rebuild(
     }
 }
 
-pub(super) fn select_wav_by_index(controller: &mut EguiController, index: usize) {
+pub(crate) fn select_wav_by_index(controller: &mut EguiController, index: usize) {
     let path = match controller.wav_entry(index) {
         Some(entry) => entry.relative_path.clone(),
         None => return,
@@ -97,13 +97,13 @@ pub(super) fn select_wav_by_index(controller: &mut EguiController, index: usize)
     select_wav_by_path(controller, &path);
 }
 
-pub(super) fn select_from_browser(controller: &mut EguiController, path: &Path) {
+pub(crate) fn select_from_browser(controller: &mut EguiController, path: &Path) {
     controller.ui.collections.selected_sample = None;
     controller.focus_browser_context();
     select_wav_by_path(controller, path);
 }
 
-pub(super) fn triage_flag_drop_target(controller: &EguiController) -> TriageFlagColumn {
+pub(crate) fn triage_flag_drop_target(controller: &EguiController) -> TriageFlagColumn {
     match controller.ui.browser.filter {
         TriageFlagFilter::All | TriageFlagFilter::Untagged => TriageFlagColumn::Neutral,
         TriageFlagFilter::Keep => TriageFlagColumn::Keep,
@@ -111,14 +111,14 @@ pub(super) fn triage_flag_drop_target(controller: &EguiController) -> TriageFlag
     }
 }
 
-pub(super) fn selected_tag(controller: &mut EguiController) -> Option<SampleTag> {
+pub(crate) fn selected_tag(controller: &mut EguiController) -> Option<SampleTag> {
     controller
         .selected_row_index()
         .and_then(|idx| controller.wav_entry(idx))
         .map(|entry| entry.tag)
 }
 
-pub(super) fn rebuild_wav_lookup(controller: &mut EguiController) {
+pub(crate) fn rebuild_wav_lookup(controller: &mut EguiController) {
     controller.wav_entries.lookup.clear();
     let mut entries = Vec::new();
     for (page_index, page) in controller.wav_entries.pages.iter() {
@@ -133,7 +133,7 @@ pub(super) fn rebuild_wav_lookup(controller: &mut EguiController) {
 }
 
 #[allow(dead_code)]
-pub(super) fn sync_browser_after_wav_entries_mutation(
+pub(crate) fn sync_browser_after_wav_entries_mutation(
     controller: &mut EguiController,
     source_id: &SourceId,
 ) {
@@ -145,7 +145,7 @@ pub(super) fn sync_browser_after_wav_entries_mutation(
 }
 
 #[allow(dead_code)]
-pub(super) fn sync_browser_after_wav_entries_mutation_keep_search_cache(
+pub(crate) fn sync_browser_after_wav_entries_mutation_keep_search_cache(
     controller: &mut EguiController,
     source_id: &SourceId,
 ) {
@@ -155,7 +155,7 @@ pub(super) fn sync_browser_after_wav_entries_mutation_keep_search_cache(
     controller.ui_cache.browser.labels.remove(source_id);
 }
 
-pub(super) fn invalidate_cached_audio_for_entry_updates(
+pub(crate) fn invalidate_cached_audio_for_entry_updates(
     controller: &mut EguiController,
     source_id: &SourceId,
     updates: &[(WavEntry, WavEntry)],
@@ -166,7 +166,7 @@ pub(super) fn invalidate_cached_audio_for_entry_updates(
     }
 }
 
-pub(super) fn set_sample_tag(
+pub(crate) fn set_sample_tag(
     controller: &mut EguiController,
     path: &Path,
     column: TriageFlagColumn,
@@ -179,7 +179,7 @@ pub(super) fn set_sample_tag(
     set_sample_tag_value(controller, path, target_tag)
 }
 
-pub(super) fn set_sample_tag_value(
+pub(crate) fn set_sample_tag_value(
     controller: &mut EguiController,
     path: &Path,
     target_tag: SampleTag,
@@ -190,7 +190,7 @@ pub(super) fn set_sample_tag_value(
     set_sample_tag_for_source(controller, &source, path, target_tag, true)
 }
 
-pub(super) fn set_sample_tag_for_source(
+pub(crate) fn set_sample_tag_for_source(
     controller: &mut EguiController,
     source: &SampleSource,
     path: &Path,

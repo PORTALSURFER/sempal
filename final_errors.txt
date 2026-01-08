@@ -1,0 +1,190 @@
+   Compiling sempal v6.0.0 (X:\sempal)
+warning: unused import: `mel::PannsMelBank`
+  --> src\analysis\panns_preprocess\mod.rs:11:16
+   |
+11 | pub(crate) use mel::PannsMelBank;
+   |                ^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `log_mel_frames`
+  --> src\analysis\panns_preprocess\mod.rs:12:50
+   |
+12 | pub(crate) use preprocessor::{PannsPreprocessor, log_mel_frames};
+   |                                                  ^^^^^^^^^^^^^^
+
+warning: unused imports: `stft_power_frames_into_flat` and `stft_power_frames`
+  --> src\analysis\panns_preprocess\mod.rs:13:23
+   |
+13 | pub(crate) use stft::{stft_power_frames, stft_power_frames_into_flat};
+   |                       ^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `BPM_MIN_SELECTION_DIVISOR`
+ --> src\egui_app\controller\library\mod.rs:3:54
+  |
+3 |     EguiController, StatusTone, MIN_SELECTION_WIDTH, BPM_MIN_SELECTION_DIVISOR,
+  |                                                      ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `mark_failed`
+  --> src\egui_app\controller\library\analysis_jobs\db\mod.rs:35:54
+   |
+35 |     SampleAnalysisState, claim_next_jobs, mark_done, mark_failed, mark_failed_with_reason,
+   |                                                      ^^^^^^^^^^^
+
+warning: unused import: `crate::egui_app::controller::library::analysis_jobs`
+ --> src\egui_app\controller\library\similarity_prep\orchestration.rs:5:5
+  |
+5 | use crate::egui_app::controller::library::analysis_jobs;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `SimilarityPrepStore`
+  --> src\egui_app\controller\library\similarity_prep\mod.rs:10:47
+   |
+10 | pub(crate) use store::{DbSimilarityPrepStore, SimilarityPrepStore};
+   |                                               ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `MIN_SELECTION_WIDTH`
+ --> src\egui_app\controller\playback\mod.rs:2:52
+  |
+2 | pub(crate) use super::{EguiController, StatusTone, MIN_SELECTION_WIDTH, BPM_MIN_SELECTION_DIVISOR};
+  |                                                    ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::egui_app::state::*`
+ --> src\egui_app\controller\playback\mod.rs:3:16
+  |
+3 | pub(crate) use crate::egui_app::state::*;
+  |                ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::egui_app::state::*`
+ --> src\egui_app\controller\ui\mod.rs:3:16
+  |
+3 | pub(crate) use crate::egui_app::state::*;
+  |                ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `CollectionId`, `DecodedWaveform`, `FolderBrowserUiState`, `PlayheadState`, `ProgressOverlayState`, `SampleBrowserSort`, `SampleBrowserState`, `SampleTag`, `TriageFlagColumn`, `TriageFlagFilter`, `WaveformImage`, and `sample_sources::scanner::ScanMode`
+  --> src\egui_app\controller.rs:19:9
+   |
+19 |         FolderBrowserUiState, PlayheadState, ProgressOverlayState, SampleBrowserSort,
+   |         ^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^
+20 |         SampleBrowserState, TriageFlagColumn, TriageFlagFilter, UiState, WaveformImage,
+   |         ^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^           ^^^^^^^^^^^^^
+...
+23 |     sample_sources::scanner::ScanMode,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+24 |     sample_sources::{
+25 |         Collection, CollectionId, SampleSource, SampleTag, SourceDatabase, SourceDbError, SourceId,
+   |                     ^^^^^^^^^^^^                ^^^^^^^^^
+...
+29 |     waveform::{DecodedWaveform, WaveformRenderer},
+   |                ^^^^^^^^^^^^^^^
+
+error[E0599]: no method named `current_analysis_progress` found for struct `DbSimilarityPrepStore` in the current scope
+  --> src\egui_app\controller\library\similarity_prep\progress.rs:43:44
+   |
+43 |                 let progress = match store.current_analysis_progress(&source) {
+   |                                            ^^^^^^^^^^^^^^^^^^^^^^^^^ method not found in `DbSimilarityPrepStore`
+   |
+  ::: src\egui_app\controller\library\similarity_prep\store.rs:10:8
+   |
+10 |     fn current_analysis_progress(
+   |        ------------------------- the method is available for `DbSimilarityPrepStore` here
+...
+31 | pub(crate) struct DbSimilarityPrepStore;
+   | --------------------------------------- method `current_analysis_progress` not found for this struct
+   |
+   = help: items from traits can only be used if the trait is in scope
+help: trait `SimilarityPrepStore` which provides `current_analysis_progress` is implemented but not in scope; perhaps you want to import it
+   |
+ 1 + use crate::egui_app::controller::library::similarity_prep::store::SimilarityPrepStore;
+   |
+
+error[E0599]: no method named `current_embedding_backfill_progress` found for struct `DbSimilarityPrepStore` in the current scope
+  --> src\egui_app\controller\library\similarity_prep\progress.rs:68:26
+   |
+67 |                       let embed_progress = store
+   |  __________________________________________-
+68 | |                         .current_embedding_backfill_progress(&source)
+   | |_________________________-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+  ::: src\egui_app\controller\library\similarity_prep\store.rs:14:8
+   |
+14 |       fn current_embedding_backfill_progress(
+   |          ----------------------------------- the method is available for `DbSimilarityPrepStore` here
+...
+31 |   pub(crate) struct DbSimilarityPrepStore;
+   |   --------------------------------------- method `current_embedding_backfill_progress` not found for this struct
+   |
+   = help: items from traits can only be used if the trait is in scope
+help: trait `SimilarityPrepStore` which provides `current_embedding_backfill_progress` is implemented but not in scope; perhaps you want to import it
+   |
+ 1 + use crate::egui_app::controller::library::similarity_prep::store::SimilarityPrepStore;
+   |
+help: there is a method `current_analysis_progress` with a similar name
+   |
+68 -                         .current_embedding_backfill_progress(&source)
+68 +                         .current_analysis_progress(&source)
+   |
+
+error[E0599]: no method named `source_has_embeddings` found for struct `DbSimilarityPrepStore` in the current scope
+  --> src\egui_app\controller\library\similarity_prep\progress.rs:96:31
+   |
+96 |                     if !store.source_has_embeddings(&source) {
+   |                               ^^^^^^^^^^^^^^^^^^^^^ method not found in `DbSimilarityPrepStore`
+   |
+  ::: src\egui_app\controller\library\similarity_prep\store.rs:8:8
+   |
+ 8 |     fn source_has_embeddings(&self, source: &SampleSource) -> bool;
+   |        --------------------- the method is available for `DbSimilarityPrepStore` here
+...
+31 | pub(crate) struct DbSimilarityPrepStore;
+   | --------------------------------------- method `source_has_embeddings` not found for this struct
+   |
+   = help: items from traits can only be used if the trait is in scope
+help: trait `SimilarityPrepStore` which provides `source_has_embeddings` is implemented but not in scope; perhaps you want to import it
+   |
+ 1 + use crate::egui_app::controller::library::similarity_prep::store::SimilarityPrepStore;
+   |
+
+warning: use of deprecated method `egui::Ui::close_menu`: Use `ui.close()` or `ui.close_kind(UiKind::Menu)` instead
+   --> src\egui_app\ui\sources_panel\folder_actions.rs:182:24
+    |
+182 |                     ui.close_menu();
+    |                        ^^^^^^^^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated method `egui::Ui::close_menu`: Use `ui.close()` or `ui.close_kind(UiKind::Menu)` instead
+   --> src\egui_app\ui\sources_panel\folder_actions.rs:189:24
+    |
+189 |                     ui.close_menu();
+    |                        ^^^^^^^^^^
+
+warning: variable does not need to be mutable
+  --> src\http_client.rs:29:9
+   |
+29 |     let mut reader = response.into_reader();
+   |         ----^^^^^^
+   |         |
+   |         help: remove this `mut`
+   |
+   = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+  --> src\http_client.rs:49:9
+   |
+49 |     let mut reader = response.into_reader();
+   |         ----^^^^^^
+   |         |
+   |         help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> src\wav_sanitize.rs:186:9
+    |
+186 |     let mut changed = false;
+    |         ----^^^^^^^
+    |         |
+    |         help: remove this `mut`
+
+For more information about this error, try `rustc --explain E0599`.
+warning: `sempal` (lib) generated 16 warnings
+error: could not compile `sempal` (lib) due to 3 previous errors; 16 warnings emitted

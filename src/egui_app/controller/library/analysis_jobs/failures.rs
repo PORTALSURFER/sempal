@@ -3,7 +3,7 @@ use rusqlite::{Connection, params};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-pub(in crate::egui_app::controller) fn failed_samples_for_source(
+pub(crate) fn failed_samples_for_source(
     source: &crate::sample_sources::SampleSource,
 ) -> Result<HashMap<PathBuf, String>, String> {
     let conn = db::open_source_db(&source.root)?;

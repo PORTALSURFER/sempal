@@ -4,13 +4,13 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-pub(super) struct CollectionMoveRequest {
-    pub(super) source_id: SourceId,
-    pub(super) source_root: PathBuf,
-    pub(super) relative_path: PathBuf,
+pub(crate) struct CollectionMoveRequest {
+    pub(crate) source_id: SourceId,
+    pub(crate) source_root: PathBuf,
+    pub(crate) relative_path: PathBuf,
 }
 
-pub(super) fn unique_destination_name(root: &Path, path: &Path) -> Result<PathBuf, String> {
+pub(crate) fn unique_destination_name(root: &Path, path: &Path) -> Result<PathBuf, String> {
     let file_name = path
         .file_name()
         .ok_or_else(|| "Sample has no file name".to_string())?;
@@ -40,7 +40,7 @@ pub(super) fn unique_destination_name(root: &Path, path: &Path) -> Result<PathBu
     Err("Failed to find destination file name".into())
 }
 
-pub(super) fn move_sample_file(source: &Path, destination: &Path) -> Result<(), String> {
+pub(crate) fn move_sample_file(source: &Path, destination: &Path) -> Result<(), String> {
     match fs::rename(source, destination) {
         Ok(()) => Ok(()),
         Err(rename_err) => {
@@ -58,7 +58,7 @@ pub(super) fn move_sample_file(source: &Path, destination: &Path) -> Result<(), 
     }
 }
 
-pub(super) fn run_collection_move_task(
+pub(crate) fn run_collection_move_task(
     collection_id: CollectionId,
     clip_root: PathBuf,
     requests: Vec<CollectionMoveRequest>,

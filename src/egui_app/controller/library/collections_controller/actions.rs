@@ -361,27 +361,27 @@ impl CollectionsController<'_> {
         let _ = self.play_audio(looped, None);
     }
 
-    pub(super) fn clear_collection_sample_selection(&mut self) {
+    pub(crate) fn clear_collection_sample_selection(&mut self) {
         self.ui.collections.selected_paths.clear();
         self.ui.collections.selection_anchor = None;
     }
 
-    pub(super) fn focus_collection_sample_row(&mut self, row: usize) {
+    pub(crate) fn focus_collection_sample_row(&mut self, row: usize) {
         self.apply_collection_sample_selection(row, CollectionSelectionAction::Replace);
     }
 
-    pub(super) fn toggle_collection_sample_selection(&mut self, row: usize) {
+    pub(crate) fn toggle_collection_sample_selection(&mut self, row: usize) {
         self.apply_collection_sample_selection(row, CollectionSelectionAction::Toggle);
     }
 
-    pub(super) fn extend_collection_sample_selection_to_row(&mut self, row: usize) {
+    pub(crate) fn extend_collection_sample_selection_to_row(&mut self, row: usize) {
         self.apply_collection_sample_selection(
             row,
             CollectionSelectionAction::Extend { additive: false },
         );
     }
 
-    pub(super) fn add_range_collection_sample_selection(&mut self, row: usize) {
+    pub(crate) fn add_range_collection_sample_selection(&mut self, row: usize) {
         self.apply_collection_sample_selection(
             row,
             CollectionSelectionAction::Extend { additive: true },

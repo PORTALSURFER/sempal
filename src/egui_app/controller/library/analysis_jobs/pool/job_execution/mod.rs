@@ -1,4 +1,4 @@
-use crate::egui_app::controller::analysis_jobs::db;
+use crate::egui_app::controller::library::analysis_jobs::db;
 
 mod analysis;
 mod analysis_cache;
@@ -9,11 +9,11 @@ mod errors;
 mod status;
 mod support;
 
-pub(in crate::egui_app::controller::analysis_jobs::pool) use analysis::AnalysisContext;
-pub(in crate::egui_app::controller::analysis_jobs::pool) use analysis::run_analysis_jobs_with_decoded_batch;
-pub(in crate::egui_app::controller::analysis_jobs::pool) use status::update_job_status_with_retry;
+pub(crate) use analysis::AnalysisContext;
+pub(crate) use analysis::run_analysis_jobs_with_decoded_batch;
+pub(crate) use status::update_job_status_with_retry;
 
-pub(super) fn run_job(
+pub(crate) fn run_job(
     conn: &rusqlite::Connection,
     job: &db::ClaimedJob,
     use_cache: bool,

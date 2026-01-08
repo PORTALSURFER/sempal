@@ -4,14 +4,14 @@ use std::collections::HashSet;
 use std::sync::Mutex;
 
 /// Tracks inflight and pending jobs to prevent duplicate work.
-pub(super) struct DedupTracker {
+pub(crate) struct DedupTracker {
     pending_jobs: Mutex<HashSet<i64>>,
     inflight_jobs: Mutex<HashSet<i64>>,
 }
 
 impl DedupTracker {
     /// Creates a new dedup tracker.
-    pub(super) fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             pending_jobs: Mutex::new(HashSet::new()),
             inflight_jobs: Mutex::new(HashSet::new()),
@@ -19,7 +19,7 @@ impl DedupTracker {
     }
 
     /// Marks a job inflight if it is not already inflight.
-    pub(super) fn try_mark_inflight(&self, job_id: i64) -> bool {
+    pub(crate) fn try_mark_inflight(&self, job_id: i64) -> bool {
         let mut inflight = self
             .inflight_jobs
             .lock()
@@ -32,7 +32,7 @@ impl DedupTracker {
     }
 
     /// Clears an inflight marker for a job.
-    pub(super) fn clear_inflight(&self, job_id: i64) {
+    pub(crate) fn clear_inflight(&self, job_id: i64) {
         let mut inflight = self
             .inflight_jobs
             .lock()
@@ -41,7 +41,7 @@ impl DedupTracker {
     }
 
     /// Marks a job pending if it has not already been queued.
-    pub(super) fn mark_pending(&self, job_id: i64) -> bool {
+    pub(crate) fn mark_pending(&self, job_id: i64) -> bool {
         let mut pending = self
             .pending_jobs
             .lock()
@@ -54,7 +54,7 @@ impl DedupTracker {
     }
 
     /// Clears a pending marker for a job.
-    pub(super) fn clear_pending(&self, job_id: i64) {
+    pub(crate) fn clear_pending(&self, job_id: i64) {
         let mut pending = self
             .pending_jobs
             .lock()

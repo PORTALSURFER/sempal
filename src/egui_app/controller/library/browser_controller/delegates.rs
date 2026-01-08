@@ -65,7 +65,7 @@ impl EguiController {
         self.browser().remove_dead_link_browser_samples(rows)
     }
 
-    pub(in crate::egui_app::controller) fn resolve_browser_sample(
+    pub(crate) fn resolve_browser_sample(
         &mut self,
         row: usize,
     ) -> Result<helpers::TriageSampleContext, String> {
@@ -100,7 +100,7 @@ impl EguiController {
         })
     }
 
-    pub(in crate::egui_app::controller) fn prune_cached_sample(
+    pub(crate) fn prune_cached_sample(
         &mut self,
         source: &SampleSource,
         relative_path: &Path,
@@ -119,7 +119,7 @@ impl EguiController {
         self.clear_loaded_sample_if(source, relative_path);
     }
 
-    pub(in crate::egui_app::controller) fn clear_loaded_sample_if(
+    pub(crate) fn clear_loaded_sample_if(
         &mut self,
         source: &SampleSource,
         relative_path: &Path,
@@ -144,7 +144,7 @@ impl EguiController {
         }
     }
 
-    pub(in crate::egui_app::controller) fn refresh_waveform_for_sample(
+    pub(crate) fn refresh_waveform_for_sample(
         &mut self,
         source: &SampleSource,
         relative_path: &Path,
@@ -152,7 +152,7 @@ impl EguiController {
         self.reload_waveform_for_selection_if_active(source, relative_path);
     }
 
-    pub(in crate::egui_app::controller) fn reexport_collections_for_sample(
+    pub(crate) fn reexport_collections_for_sample(
         &mut self,
         source_id: &SourceId,
         relative_path: &Path,
@@ -186,7 +186,7 @@ impl EguiController {
         }
     }
 
-    pub(in crate::egui_app::controller) fn update_collections_for_rename(
+    pub(crate) fn update_collections_for_rename(
         &mut self,
         source_id: &SourceId,
         old_relative: &Path,
@@ -235,7 +235,7 @@ impl EguiController {
         changed
     }
 
-    pub(in crate::egui_app::controller) fn remove_sample_from_collections(
+    pub(crate) fn remove_sample_from_collections(
         &mut self,
         source_id: &SourceId,
         relative_path: &Path,
@@ -262,7 +262,7 @@ impl EguiController {
         changed
     }
 
-    pub(in crate::egui_app::controller) fn remove_samples_from_collections(
+    pub(crate) fn remove_samples_from_collections(
         &mut self,
         source_id: &SourceId,
         relative_paths: &[PathBuf],
@@ -298,7 +298,7 @@ impl EguiController {
         changed
     }
 
-    pub(in crate::egui_app::controller) fn refocus_after_filtered_removal(
+    pub(crate) fn refocus_after_filtered_removal(
         &mut self,
         primary_visible_row: usize,
     ) {

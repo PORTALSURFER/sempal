@@ -4,23 +4,23 @@ use rand::seq::IteratorRandom;
 #[cfg(test)]
 use rand::{SeedableRng, rngs::StdRng};
 
-pub(super) fn play_random_visible_sample(controller: &mut EguiController) {
+pub(crate) fn play_random_visible_sample(controller: &mut EguiController) {
     let mut rng = rand::rng();
     play_random_visible_sample_internal(controller, &mut rng, super::SHOULD_PLAY_RANDOM_SAMPLE);
 }
 
 #[cfg(test)]
-pub(super) fn play_random_visible_sample_with_seed(controller: &mut EguiController, seed: u64) {
+pub(crate) fn play_random_visible_sample_with_seed(controller: &mut EguiController, seed: u64) {
     let mut rng = StdRng::seed_from_u64(seed);
     play_random_visible_sample_internal(controller, &mut rng, false);
 }
 
-pub(super) fn focus_random_visible_sample(controller: &mut EguiController) {
+pub(crate) fn focus_random_visible_sample(controller: &mut EguiController) {
     let mut rng = rand::rng();
     play_random_visible_sample_internal(controller, &mut rng, false);
 }
 
-pub(super) fn play_previous_random_sample(controller: &mut EguiController) {
+pub(crate) fn play_previous_random_sample(controller: &mut EguiController) {
     if controller.history.random_history.entries.is_empty() {
         controller.set_status_message(StatusMessage::RandomHistoryEmpty);
         return;
@@ -51,7 +51,7 @@ pub(super) fn play_previous_random_sample(controller: &mut EguiController) {
     }
 }
 
-pub(super) fn toggle_random_navigation_mode(controller: &mut EguiController) {
+pub(crate) fn toggle_random_navigation_mode(controller: &mut EguiController) {
     controller.ui.browser.random_navigation_mode = !controller.ui.browser.random_navigation_mode;
     if controller.ui.browser.random_navigation_mode {
         controller.set_status_message(StatusMessage::custom(
@@ -63,7 +63,7 @@ pub(super) fn toggle_random_navigation_mode(controller: &mut EguiController) {
     }
 }
 
-pub(super) fn random_navigation_mode_enabled(controller: &EguiController) -> bool {
+pub(crate) fn random_navigation_mode_enabled(controller: &EguiController) -> bool {
     controller.ui.browser.random_navigation_mode
 }
 

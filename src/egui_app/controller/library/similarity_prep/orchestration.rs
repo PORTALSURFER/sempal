@@ -1,8 +1,9 @@
 use super::plan::plan_similarity_prep_start;
 use super::store::DbSimilarityPrepStore;
-use crate::egui_app::controller::{
-    EguiController, SimilarityPrepStage, StatusMessage, analysis_jobs,
-};
+use super::state::SimilarityPrepStage;
+use crate::egui_app::controller::EguiController;
+use crate::egui_app::controller::library::analysis_jobs;
+use crate::egui_app::controller::ui::status_message::StatusMessage;
 use crate::egui_app::ui::style::StatusTone;
 
 impl EguiController {
@@ -103,7 +104,8 @@ impl EguiController {
             self.runtime.jobs.umap_cluster_build_in_progress()
         );
         if let Some(source) = self.find_source_by_id(&state.source_id)
-            && let Ok(progress) = analysis_jobs::current_progress_for_source(&source)
+            && let Ok(progress) =
+                crate::egui_app::controller::library::analysis_jobs::current_progress_for_source(&source)
         {
             out.push_str(&format!(" analysis_progress={progress}"));
         }

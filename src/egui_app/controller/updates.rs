@@ -106,7 +106,7 @@ impl EguiController {
         }
     }
 
-    pub(in crate::egui_app::controller) fn apply_update_check_result(
+    pub(crate) fn apply_update_check_result(
         &mut self,
         result: UpdateCheckOutcome,
     ) {
@@ -130,7 +130,7 @@ impl EguiController {
         }
     }
 
-    pub(in crate::egui_app::controller) fn apply_update_check_error(&mut self, err: String) {
+    pub(crate) fn apply_update_check_error(&mut self, err: String) {
         if err.contains("release with required assets found") {
             self.ui.update.status = crate::egui_app::state::UpdateStatus::Idle;
             self.ui.update.last_error = None;
@@ -175,7 +175,7 @@ fn map_channel(channel: crate::sample_sources::config::UpdateChannel) -> UpdateC
     }
 }
 
-pub(in crate::egui_app::controller) fn run_update_check(
+pub(crate) fn run_update_check(
     request: UpdateCheckRequest,
 ) -> Result<UpdateCheckOutcome, String> {
     check_for_updates(request).map_err(|err| err.to_string())

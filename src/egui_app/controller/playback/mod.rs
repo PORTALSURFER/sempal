@@ -1,5 +1,17 @@
 use super::*;
+pub(crate) use super::{EguiController, StatusTone, MIN_SELECTION_WIDTH, BPM_MIN_SELECTION_DIVISOR};
+pub(crate) use crate::egui_app::state::*;
+pub(crate) use crate::sample_sources::*;
+pub(crate) use crate::selection::SelectionRange;
+
 use std::path::PathBuf;
+
+pub(crate) mod audio_cache;
+pub(crate) mod audio_loader;
+pub(crate) mod audio_options;
+pub(crate) mod audio_samples;
+pub(crate) mod loop_crossfade;
+pub(crate) mod recording;
 
 mod browser_nav;
 mod formatting;
@@ -8,6 +20,9 @@ mod playhead_trail;
 mod random_nav;
 mod tagging;
 mod transport;
+
+#[cfg(test)]
+mod audio_options_tests;
 
 use formatting::{format_selection_duration, format_timestamp_hms_ms};
 
@@ -53,7 +68,7 @@ fn selection_min_width(controller: &EguiController) -> f32 {
     min_seconds / duration
 }
 
-pub(super) fn bpm_min_selection_seconds(controller: &EguiController) -> Option<f32> {
+pub(crate) fn bpm_min_selection_seconds(controller: &EguiController) -> Option<f32> {
     if !controller.ui.waveform.bpm_snap_enabled {
         return None;
     }
@@ -70,7 +85,7 @@ pub(super) fn bpm_min_selection_seconds(controller: &EguiController) -> Option<f
     }
 }
 
-pub(super) fn selection_meets_bpm_min_for_playback(
+pub(crate) fn selection_meets_bpm_min_for_playback(
     controller: &EguiController,
     range: SelectionRange,
 ) -> bool {
@@ -159,7 +174,7 @@ impl EguiController {
     }
 
     #[allow(dead_code)]
-    pub(super) fn update_playhead_from_progress(
+    pub(crate) fn update_playhead_from_progress(
         &mut self,
         progress: Option<f32>,
         is_looping: bool,
@@ -167,7 +182,7 @@ impl EguiController {
         player::update_playhead_from_progress(self, progress, is_looping, false);
     }
 
-    pub(super) fn hide_waveform_playhead(&mut self) {
+    pub(crate) fn hide_waveform_playhead(&mut self) {
         player::hide_waveform_playhead(self);
     }
 
@@ -185,7 +200,7 @@ impl EguiController {
         player::hide_waveform_playhead_for_tests(self);
     }
 
-    pub(in crate::egui_app::controller) fn apply_selection(
+    pub(crate) fn apply_selection(
         &mut self,
         range: Option<SelectionRange>,
     ) {
@@ -197,21 +212,21 @@ impl EguiController {
     }
 
     #[allow(dead_code)]
-    pub(super) fn selection_duration_label(&self, range: SelectionRange) -> Option<String> {
+    pub(crate) fn selection_duration_label(&self, range: SelectionRange) -> Option<String> {
         player::selection_duration_label(self, range)
     }
 
-    pub(in crate::egui_app::controller) fn apply_volume(&mut self, volume: f32) {
+    pub(crate) fn apply_volume(&mut self, volume: f32) {
         player::apply_volume(self, volume);
     }
 
-    pub(in crate::egui_app::controller) fn ensure_player(
+    pub(crate) fn ensure_player(
         &mut self,
     ) -> Result<Option<Rc<RefCell<AudioPlayer>>>, String> {
         player::ensure_player(self)
     }
 
-    pub(super) fn defer_loop_disable_after_cycle(&mut self) -> Result<(), String> {
+    pub(crate) fn defer_loop_disable_after_cycle(&mut self) -> Result<(), String> {
         player::defer_loop_disable_after_cycle(self)
     }
 
@@ -236,7 +251,7 @@ impl EguiController {
     }
 
     #[cfg(test)]
-    pub(super) fn play_random_visible_sample_with_seed(&mut self, seed: u64) {
+    pub(crate) fn play_random_visible_sample_with_seed(&mut self, seed: u64) {
         random_nav::play_random_visible_sample_with_seed(self, seed);
     }
 

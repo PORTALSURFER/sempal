@@ -48,7 +48,7 @@ impl EguiController {
             .iter()
             .find(|source| &source.id == source_id)
             .ok_or_else(|| "Source not found".to_string())?;
-        let conn = super::analysis_jobs::open_source_db(&source.root)?;
+        let conn = analysis_jobs::open_source_db(&source.root)?;
         let mut rows = vec![None; needs_len];
 
         let prefix = format!("{}::", source_id.as_str());

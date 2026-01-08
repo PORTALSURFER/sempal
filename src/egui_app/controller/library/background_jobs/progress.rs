@@ -1,7 +1,7 @@
 use super::*;
 use crate::egui_app::state::ProgressTaskKind;
 
-pub(super) fn ensure_progress_visible(
+pub(crate) fn ensure_progress_visible(
     controller: &mut EguiController,
     task: ProgressTaskKind,
     label: &str,
@@ -13,7 +13,7 @@ pub(super) fn ensure_progress_visible(
     }
 }
 
-pub(super) fn update_progress_detail(
+pub(crate) fn update_progress_detail(
     controller: &mut EguiController,
     task: ProgressTaskKind,
     completed: usize,
@@ -28,7 +28,7 @@ pub(super) fn update_progress_detail(
     }
 }
 
-pub(super) fn update_progress_totals(
+pub(crate) fn update_progress_totals(
     controller: &mut EguiController,
     task: ProgressTaskKind,
     total: usize,

@@ -1,7 +1,7 @@
-use crate::egui_app::controller::analysis_jobs;
+use crate::egui_app::controller::library::analysis_jobs;
 use crate::sample_sources::{SampleSource, SourceDatabase, SourceId};
 
-pub(super) fn read_source_scan_timestamp(source: &SampleSource) -> Option<i64> {
+pub(crate) fn read_source_scan_timestamp(source: &SampleSource) -> Option<i64> {
     let db = SourceDatabase::open(&source.root).ok()?;
     db.get_metadata(crate::sample_sources::db::META_LAST_SCAN_COMPLETED_AT)
         .ok()
@@ -9,7 +9,7 @@ pub(super) fn read_source_scan_timestamp(source: &SampleSource) -> Option<i64> {
         .and_then(|value| value.parse().ok())
 }
 
-pub(super) fn read_source_prep_timestamp(source: &SampleSource) -> Option<i64> {
+pub(crate) fn read_source_prep_timestamp(source: &SampleSource) -> Option<i64> {
     let db = SourceDatabase::open(&source.root).ok()?;
     db.get_metadata(crate::sample_sources::db::META_LAST_SIMILARITY_PREP_SCAN_AT)
         .ok()
@@ -17,7 +17,7 @@ pub(super) fn read_source_prep_timestamp(source: &SampleSource) -> Option<i64> {
         .and_then(|value| value.parse().ok())
 }
 
-pub(super) fn record_similarity_prep_scan_timestamp(source: &SampleSource, scan_completed_at: i64) {
+pub(crate) fn record_similarity_prep_scan_timestamp(source: &SampleSource, scan_completed_at: i64) {
     if let Ok(db) = SourceDatabase::open(&source.root) {
         let _ = db.set_metadata(
             crate::sample_sources::db::META_LAST_SIMILARITY_PREP_SCAN_AT,
@@ -26,7 +26,7 @@ pub(super) fn record_similarity_prep_scan_timestamp(source: &SampleSource, scan_
     }
 }
 
-pub(super) fn source_has_embeddings(source: &SampleSource) -> bool {
+pub(crate) fn source_has_embeddings(source: &SampleSource) -> bool {
     let Ok(source_db) = SourceDatabase::open(&source.root) else {
         return false;
     };
@@ -51,7 +51,7 @@ pub(super) fn source_has_embeddings(source: &SampleSource) -> bool {
         .unwrap_or(false)
 }
 
-pub(super) fn count_umap_layout_rows(
+pub(crate) fn count_umap_layout_rows(
     conn: &rusqlite::Connection,
     model_id: &str,
     umap_version: &str,
@@ -66,7 +66,7 @@ pub(super) fn count_umap_layout_rows(
     .map_err(|err| format!("Count layout rows failed: {err}"))
 }
 
-pub(super) fn open_source_db_for_similarity(
+pub(crate) fn open_source_db_for_similarity(
     source_id: &SourceId,
 ) -> Result<rusqlite::Connection, String> {
     let state = crate::sample_sources::library::load().map_err(|err| err.to_string())?;

@@ -1,7 +1,7 @@
 use super::super::test_support::{dummy_controller, sample_entry, write_test_wav};
 use super::super::*;
 use super::common::{prepare_browser_sample, visible_indices};
-use crate::egui_app::controller::hotkeys;
+use crate::egui_app::controller::ui::hotkeys;
 use crate::egui_app::state::FocusContext;
 use crate::egui_app::state::SampleBrowserTab;
 use crate::sample_sources::Collection;
@@ -485,3 +485,4 @@ fn random_navigation_mode_toggles_state_and_status() {
     assert!(!controller.random_navigation_mode_enabled());
     assert_eq!(controller.ui.status.text, "Random navigation off");
 }
+

@@ -1,7 +1,7 @@
 use super::*;
 use std::time::{Duration, Instant};
 
-pub(super) fn play_audio(
+pub(crate) fn play_audio(
     controller: &mut EguiController,
     looped: bool,
     start_override: Option<f32>,
@@ -144,7 +144,7 @@ fn normalized_audition_gain(controller: &EguiController, start: f32, end: f32) -
     1.0 / peak
 }
 
-pub(super) fn is_playing(controller: &EguiController) -> bool {
+pub(crate) fn is_playing(controller: &EguiController) -> bool {
     controller
         .audio
         .player
@@ -153,7 +153,7 @@ pub(super) fn is_playing(controller: &EguiController) -> bool {
         .unwrap_or(false)
 }
 
-pub(super) fn tick_playhead(controller: &mut EguiController) {
+pub(crate) fn tick_playhead(controller: &mut EguiController) {
     controller.poll_background_jobs();
     let Some(player) = controller.audio.player.as_ref().cloned() else {
         if controller.sample_view.waveform.decoded.is_none() {
@@ -187,7 +187,7 @@ pub(super) fn tick_playhead(controller: &mut EguiController) {
     }
 }
 
-pub(super) fn update_playhead_from_progress(
+pub(crate) fn update_playhead_from_progress(
     controller: &mut EguiController,
     progress: Option<f32>,
     is_looping: bool,
@@ -255,7 +255,7 @@ fn smooth_progress_after_seek(
     seek.position + (progress - seek.position) * eased
 }
 
-pub(super) fn hide_waveform_playhead(controller: &mut EguiController) {
+pub(crate) fn hide_waveform_playhead(controller: &mut EguiController) {
     super::playhead_trail::stash_active_trail(&mut controller.ui.waveform.playhead);
     controller.ui.waveform.playhead.visible = false;
     controller.ui.waveform.playhead.active_span_end = None;
@@ -263,7 +263,7 @@ pub(super) fn hide_waveform_playhead(controller: &mut EguiController) {
 }
 
 #[cfg(test)]
-pub(super) fn playhead_completed_span_for_tests(
+pub(crate) fn playhead_completed_span_for_tests(
     controller: &EguiController,
     progress: f32,
     is_looping: bool,
@@ -272,7 +272,7 @@ pub(super) fn playhead_completed_span_for_tests(
 }
 
 #[cfg(test)]
-pub(super) fn hide_waveform_playhead_for_tests(controller: &mut EguiController) {
+pub(crate) fn hide_waveform_playhead_for_tests(controller: &mut EguiController) {
     hide_waveform_playhead(controller);
 }
 
@@ -305,7 +305,7 @@ mod tests {
     }
 }
 
-pub(in crate::egui_app::controller) fn apply_selection(
+pub(crate) fn apply_selection(
     controller: &mut EguiController,
     range: Option<SelectionRange>,
 ) {
@@ -314,7 +314,7 @@ pub(in crate::egui_app::controller) fn apply_selection(
     controller.ui.waveform.selection_duration = label;
 }
 
-pub(super) fn update_waveform_hover_time(controller: &mut EguiController, position: Option<f32>) {
+pub(crate) fn update_waveform_hover_time(controller: &mut EguiController, position: Option<f32>) {
     if let (Some(position), Some(audio)) =
         (position, controller.sample_view.wav.loaded_audio.as_ref())
     {
@@ -326,7 +326,7 @@ pub(super) fn update_waveform_hover_time(controller: &mut EguiController, positi
     }
 }
 
-pub(super) fn selection_duration_label(
+pub(crate) fn selection_duration_label(
     controller: &EguiController,
     range: SelectionRange,
 ) -> Option<String> {
@@ -335,7 +335,7 @@ pub(super) fn selection_duration_label(
     Some(format_selection_duration(seconds))
 }
 
-pub(in crate::egui_app::controller) fn apply_volume(controller: &mut EguiController, volume: f32) {
+pub(crate) fn apply_volume(controller: &mut EguiController, volume: f32) {
     let clamped = volume.clamp(0.0, 1.0);
     controller.ui.volume = clamped;
     if let Some(player) = controller.audio.player.as_ref() {
@@ -343,7 +343,7 @@ pub(in crate::egui_app::controller) fn apply_volume(controller: &mut EguiControl
     }
 }
 
-pub(in crate::egui_app::controller) fn ensure_player(
+pub(crate) fn ensure_player(
     controller: &mut EguiController,
 ) -> Result<Option<Rc<RefCell<AudioPlayer>>>, String> {
     if controller.audio.player.is_none() {
@@ -360,7 +360,7 @@ pub(in crate::egui_app::controller) fn ensure_player(
     Ok(controller.audio.player.clone())
 }
 
-pub(super) fn defer_loop_disable_after_cycle(
+pub(crate) fn defer_loop_disable_after_cycle(
     controller: &mut EguiController,
 ) -> Result<(), String> {
     controller.audio.pending_loop_disable_at = None;

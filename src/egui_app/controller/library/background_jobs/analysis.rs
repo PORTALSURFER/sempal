@@ -4,7 +4,7 @@ use crate::egui_app::state::ProgressTaskKind;
 use crate::egui_app::state::RunningJobSnapshot;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-pub(super) fn handle_analysis_message(
+pub(crate) fn handle_analysis_message(
     controller: &mut EguiController,
     message: AnalysisJobMessage,
 ) {
@@ -25,7 +25,7 @@ pub(super) fn handle_analysis_message(
                     if let Some(source) = controller.current_source() {
                         if &source.id == selected_id {
                             if let Ok(scoped) =
-                                super::analysis_jobs::current_progress_for_source(&source)
+                                analysis_jobs::current_progress_for_source(&source)
                             {
                                 progress = scoped;
                             }
@@ -92,17 +92,17 @@ pub(super) fn handle_analysis_message(
                     detail.push_str(&format!(" • {} failed", progress.failed));
                 }
                 let running_jobs = if let Some(source) = controller.current_source() {
-                    super::analysis_jobs::current_running_jobs_for_source(&source, 3)
+                    analysis_jobs::current_running_jobs_for_source(&source, 3)
                         .ok()
                         .map(|jobs| {
                             let now_epoch = SystemTime::now()
                                 .duration_since(UNIX_EPOCH)
                                 .ok()
                                 .map(|duration| duration.as_secs() as i64);
-                            let stale_after = super::analysis_jobs::stale_running_job_seconds();
+                            let stale_after = analysis_jobs::stale_running_job_seconds();
                             jobs.into_iter()
                                 .map(|job| {
-                                    let label = super::analysis_jobs::parse_sample_id(
+                                    let label = analysis_jobs::parse_sample_id(
                                         job.sample_id.as_str(),
                                     )
                                     .ok()
@@ -129,7 +129,7 @@ pub(super) fn handle_analysis_message(
                         samples_completed,
                         samples_total,
                         running_jobs,
-                        stale_after_secs: Some(super::analysis_jobs::stale_running_job_seconds()),
+                        stale_after_secs: Some(analysis_jobs::stale_running_job_seconds()),
                     },
                 ));
                 progress::update_progress_totals(

@@ -1,4 +1,4 @@
-use super::super::collection_items_helpers::file_metadata;
+use crate::egui_app::controller::library::collection_items_helpers::file_metadata;
 use super::super::undo;
 use super::super::*;
 use std::path::{Path, PathBuf};
@@ -39,7 +39,7 @@ impl EguiController {
         .with_cleanup_dir(backup_dir)
     }
 
-    pub(super) fn crop_new_sample_undo_entry(
+    pub(crate) fn crop_new_sample_undo_entry(
         &self,
         label: String,
         source_id: SourceId,
@@ -114,7 +114,7 @@ impl EguiController {
         .with_cleanup_dir(backup_dir)
     }
 
-    pub(super) fn sync_after_audio_overwrite(
+    pub(crate) fn sync_after_audio_overwrite(
         &mut self,
         source_id: &SourceId,
         relative_path: &Path,

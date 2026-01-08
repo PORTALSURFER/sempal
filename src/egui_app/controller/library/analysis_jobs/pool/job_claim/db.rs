@@ -2,7 +2,7 @@ use super::super::job_execution::update_job_status_with_retry;
 use super::super::progress_cache::ProgressCache;
 use super::analysis_db;
 use super::queue::DecodedQueue;
-use crate::egui_app::controller::analysis_jobs::types::AnalysisJobMessage;
+use crate::egui_app::controller::library::analysis_jobs::types::AnalysisJobMessage;
 use crate::egui_app::controller::jobs::JobMessage;
 use rusqlite::Connection;
 use std::collections::HashMap;
@@ -11,12 +11,12 @@ use std::sync::{atomic::AtomicBool, mpsc::Sender};
 use std::thread::{JoinHandle, sleep};
 use std::time::{Duration, Instant};
 
-pub(super) struct DeferredJobUpdate {
-    pub(super) job: analysis_db::ClaimedJob,
-    pub(super) error: String,
+pub(crate) struct DeferredJobUpdate {
+    pub(crate) job: analysis_db::ClaimedJob,
+    pub(crate) error: String,
 }
 
-pub(super) fn finalize_immediate_job(
+pub(crate) fn finalize_immediate_job(
     connections: &mut HashMap<std::path::PathBuf, Connection>,
     decode_queue: &DecodedQueue,
     tx: &Sender<JobMessage>,
@@ -79,7 +79,7 @@ pub(super) fn finalize_immediate_job(
     None
 }
 
-pub(super) fn open_connection_with_retry<'a>(
+pub(crate) fn open_connection_with_retry<'a>(
     connections: &'a mut HashMap<std::path::PathBuf, Connection>,
     source_root: &std::path::Path,
 ) -> Result<&'a mut Connection, String> {
@@ -103,7 +103,7 @@ pub(super) fn open_connection_with_retry<'a>(
     }
 }
 
-pub(super) fn flush_deferred_updates(
+pub(crate) fn flush_deferred_updates(
     connections: &mut HashMap<std::path::PathBuf, Connection>,
     decode_queue: &DecodedQueue,
     tx: &Sender<JobMessage>,
@@ -131,7 +131,7 @@ pub(super) fn flush_deferred_updates(
     *deferred_updates = remaining;
 }
 
-pub(super) fn spawn_decode_heartbeat(
+pub(crate) fn spawn_decode_heartbeat(
     source_root: std::path::PathBuf,
     job_id: i64,
     interval: Duration,

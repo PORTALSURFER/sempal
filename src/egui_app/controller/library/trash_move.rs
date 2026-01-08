@@ -8,7 +8,7 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
-pub(super) enum TrashMoveMessage {
+pub(crate) enum TrashMoveMessage {
     SetTotal(usize),
     Progress {
         completed: usize,
@@ -18,18 +18,18 @@ pub(super) enum TrashMoveMessage {
 }
 
 #[derive(Clone)]
-pub(super) struct TrashMoveFinished {
-    pub(super) total: usize,
-    pub(super) moved: usize,
-    pub(super) cancelled: bool,
-    pub(super) errors: Vec<String>,
-    pub(super) collections_changed: bool,
-    pub(super) collections: Vec<Collection>,
-    pub(super) affected_sources: Vec<SourceId>,
+pub(crate) struct TrashMoveFinished {
+    pub(crate) total: usize,
+    pub(crate) moved: usize,
+    pub(crate) cancelled: bool,
+    pub(crate) errors: Vec<String>,
+    pub(crate) collections_changed: bool,
+    pub(crate) collections: Vec<Collection>,
+    pub(crate) affected_sources: Vec<SourceId>,
 }
 
 #[cfg(not(test))]
-pub(super) fn run_trash_move_task(
+pub(crate) fn run_trash_move_task(
     sources: Vec<SampleSource>,
     collections: Vec<Collection>,
     trash_root: PathBuf,
@@ -50,7 +50,7 @@ pub(super) fn run_trash_move_task(
     )
 }
 
-pub(super) fn run_trash_move_task_with_progress<F, M>(
+pub(crate) fn run_trash_move_task_with_progress<F, M>(
     sources: Vec<SampleSource>,
     mut collections: Vec<Collection>,
     trash_root: PathBuf,
@@ -246,7 +246,7 @@ fn unique_destination(root: &Path, relative: &Path) -> Result<PathBuf, String> {
     Err("Could not create unique trash destination".into())
 }
 
-pub(super) fn move_to_trash(source: &SampleSource, entry: &WavEntry, trash_root: &Path) -> Result<(), String> {
+pub(crate) fn move_to_trash(source: &SampleSource, entry: &WavEntry, trash_root: &Path) -> Result<(), String> {
     let absolute = source.root.join(&entry.relative_path);
     if !absolute.is_file() {
         return Err(format!("File not found for trash: {}", absolute.display()));

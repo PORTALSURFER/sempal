@@ -1,11 +1,11 @@
-use super::super::collection_export;
+use crate::egui_app::controller::library::collection_export;
 use super::super::*;
 use super::CollectionSampleContext;
 use crate::sample_sources::collections::CollectionMember;
 use std::path::Path;
 
 impl EguiController {
-    pub(in crate::egui_app::controller) fn resolve_collection_sample(
+    pub(crate) fn resolve_collection_sample(
         &self,
         row: usize,
     ) -> Result<CollectionSampleContext, String> {
@@ -39,7 +39,7 @@ impl EguiController {
         })
     }
 
-    pub(in crate::egui_app::controller) fn drop_collection_member(
+    pub(crate) fn drop_collection_member(
         &mut self,
         ctx: &CollectionSampleContext,
     ) -> bool {
@@ -62,7 +62,7 @@ impl EguiController {
         removed
     }
 
-    pub(in crate::egui_app::controller) fn update_collection_member_path(
+    pub(crate) fn update_collection_member_path(
         &mut self,
         ctx: &CollectionSampleContext,
         new_relative: &Path,
@@ -82,7 +82,7 @@ impl EguiController {
         Ok(())
     }
 
-    pub(in crate::egui_app::controller) fn update_cached_entry(
+    pub(crate) fn update_cached_entry(
         &mut self,
         source: &SampleSource,
         old_path: &Path,
@@ -160,7 +160,7 @@ impl EguiController {
         self.invalidate_cached_audio(&source.id, &new_entry.relative_path);
     }
 
-    pub(in crate::egui_app::controller) fn insert_cached_entry(
+    pub(crate) fn insert_cached_entry(
         &mut self,
         source: &SampleSource,
         entry: WavEntry,
@@ -169,7 +169,7 @@ impl EguiController {
         self.invalidate_cached_audio(&source.id, &entry.relative_path);
     }
 
-    pub(in crate::egui_app::controller) fn update_selection_paths(
+    pub(crate) fn update_selection_paths(
         &mut self,
         source: &SampleSource,
         old_path: &Path,
@@ -211,7 +211,7 @@ impl EguiController {
         }
     }
 
-    pub(in crate::egui_app::controller) fn refresh_waveform_after_change(
+    pub(crate) fn refresh_waveform_after_change(
         &mut self,
         ctx: &CollectionSampleContext,
         relative_path: &Path,
@@ -238,7 +238,7 @@ impl EguiController {
         }
     }
 
-    pub(in crate::egui_app::controller) fn update_export_after_change(
+    pub(crate) fn update_export_after_change(
         &mut self,
         ctx: &CollectionSampleContext,
         new_relative: &Path,

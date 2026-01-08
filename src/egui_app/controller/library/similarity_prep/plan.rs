@@ -3,13 +3,13 @@ use super::store::SimilarityPrepStore;
 use crate::egui_app::controller::SimilarityPrepState;
 use crate::sample_sources::SampleSource;
 
-pub(super) struct SimilarityPrepStartPlan {
-    pub(super) needs_embeddings: bool,
-    pub(super) skip_scan: bool,
-    pub(super) state: SimilarityPrepState,
+pub(crate) struct SimilarityPrepStartPlan {
+    pub(crate) needs_embeddings: bool,
+    pub(crate) skip_scan: bool,
+    pub(crate) state: SimilarityPrepState,
 }
 
-pub(super) fn plan_similarity_prep_start(
+pub(crate) fn plan_similarity_prep_start(
     store: &impl SimilarityPrepStore,
     source: &SampleSource,
     umap_version: String,
@@ -37,7 +37,7 @@ pub(super) fn plan_similarity_prep_start(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::egui_app::controller::analysis_jobs;
+    use crate::egui_app::controller::library::analysis_jobs;
     use crate::sample_sources::SourceId;
     use std::path::PathBuf;
 

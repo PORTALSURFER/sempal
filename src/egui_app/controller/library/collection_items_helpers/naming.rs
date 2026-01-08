@@ -3,7 +3,7 @@ use super::CollectionSampleContext;
 use std::path::{Path, PathBuf};
 
 impl EguiController {
-    pub(in crate::egui_app::controller) fn validate_new_sample_name(
+    pub(crate) fn validate_new_sample_name(
         &self,
         ctx: &CollectionSampleContext,
         new_name: &str,
@@ -15,7 +15,7 @@ impl EguiController {
         )
     }
 
-    pub(in crate::egui_app::controller) fn validate_new_sample_name_in_parent(
+    pub(crate) fn validate_new_sample_name_in_parent(
         &self,
         relative_path: &Path,
         root: &Path,
@@ -41,7 +41,7 @@ impl EguiController {
     }
 
     /// Build a sanitized sample name that keeps the existing file extension.
-    pub(in crate::egui_app::controller) fn name_with_preserved_extension(
+    pub(crate) fn name_with_preserved_extension(
         &self,
         current_relative: &Path,
         new_name: &str,

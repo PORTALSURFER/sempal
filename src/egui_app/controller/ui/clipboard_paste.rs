@@ -1,6 +1,6 @@
 use super::*;
-use crate::egui_app::controller::collection_export;
-use crate::egui_app::controller::collection_items_helpers::file_metadata;
+use crate::egui_app::controller::library::collection_export;
+use crate::egui_app::controller::library::collection_items_helpers::file_metadata;
 use crate::sample_sources::is_supported_audio;
 use std::path::{Path, PathBuf};
 
