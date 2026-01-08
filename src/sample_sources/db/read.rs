@@ -154,4 +154,12 @@ impl SourceDatabase {
             .map_err(map_sql_error)?;
         Ok(value)
     }
+
+    pub fn get_revision(&self) -> Result<u64, SourceDbError> {
+        let rev_str = self.get_metadata("revision")?;
+        match rev_str {
+            Some(s) => s.parse::<u64>().map_err(|_| SourceDbError::Unexpected),
+            None => Ok(0),
+        }
+    }
 }

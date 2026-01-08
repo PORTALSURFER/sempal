@@ -7,22 +7,73 @@ use std::cmp::Ordering;
 use std::sync::mpsc::{Receiver, Sender};
 use std::thread;
 
+struct SearchWorkerCache {
+    entries: Option<Vec<WavEntry>>,
+    source_id: Option<String>,
+    revision: u64,
+}
+
+impl Default for SearchWorkerCache {
+    fn default() -> Self {
+        Self {
+            entries: None,
+            source_id: None,
+            revision: 0,
+        }
+    }
+}
+
 pub(in super::super) fn spawn_search_worker() -> (Sender<SearchJob>, Receiver<SearchResult>) {
     let (tx, rx) = std::sync::mpsc::channel::<SearchJob>();
     let (result_tx, result_rx) = std::sync::mpsc::channel::<SearchResult>();
     thread::spawn(move || {
         let matcher = SkimMatcherV2::default();
+        let mut cache = SearchWorkerCache::default();
         while let Ok(job) = rx.recv() {
-            let result = process_search_job(job, &matcher);
+            let result = process_search_job(job, &matcher, &mut cache);
             let _ = result_tx.send(result);
         }
     });
     (tx, result_rx)
 }
 
-fn process_search_job(job: SearchJob, matcher: &SkimMatcherV2) -> SearchResult {
-    let db = match crate::sample_sources::SourceDatabase::open(&job.source_root) {
-        Ok(db) => db,
+fn process_search_job(
+    job: SearchJob,
+    matcher: &SkimMatcherV2,
+    cache: &mut SearchWorkerCache,
+) -> SearchResult {
+    let db_result = crate::sample_sources::SourceDatabase::open(&job.source_root);
+
+    match db_result {
+        Ok(db) => {
+            let revision = db.get_revision().unwrap_or(0);
+            let job_source_id_str = job.source_id.as_str().to_string();
+
+            let must_reload = cache.entries.is_none()
+                || cache.source_id.as_ref() != Some(&job_source_id_str)
+                || cache.revision != revision;
+
+            if must_reload {
+                match db.list_files() {
+                    Ok(loaded_entries) => {
+                        cache.entries = Some(loaded_entries);
+                        cache.source_id = Some(job_source_id_str);
+                        cache.revision = revision;
+                    }
+                    Err(_) => {
+                        return SearchResult {
+                            source_id: job.source_id,
+                            query: job.query,
+                            visible: VisibleRows::List(Vec::new()),
+                            trash: Vec::new(),
+                            neutral: Vec::new(),
+                            keep: Vec::new(),
+                            scores: Vec::new(),
+                        };
+                    }
+                }
+            }
+        }
         Err(_) => {
             return SearchResult {
                 source_id: job.source_id,
@@ -36,20 +87,7 @@ fn process_search_job(job: SearchJob, matcher: &SkimMatcherV2) -> SearchResult {
         }
     };
 
-    let entries = match db.list_files() {
-        Ok(entries) => entries,
-        Err(_) => {
-            return SearchResult {
-                source_id: job.source_id,
-                query: job.query,
-                visible: VisibleRows::List(Vec::new()),
-                trash: Vec::new(),
-                neutral: Vec::new(),
-                keep: Vec::new(),
-                scores: Vec::new(),
-            };
-        }
-    };
+    let entries = cache.entries.as_ref().unwrap();
 
     let filter_accepts = |tag: SampleTag| match job.filter {
         TriageFlagFilter::All => true,

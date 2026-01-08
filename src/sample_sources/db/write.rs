@@ -40,6 +40,8 @@ impl SourceDatabase {
             extension
         ])
         .map_err(map_sql_error)?;
+        
+        Self::bump_revision(&self.connection)?;
         Ok(())
     }
 
@@ -73,6 +75,7 @@ impl SourceDatabase {
         let path = normalize_relative_path(relative_path)?;
         self.connection
             .execute("DELETE FROM wav_files WHERE path = ?1", params![path])?;
+        Self::bump_revision(&self.connection)?;
         Ok(())
     }
 
@@ -94,6 +97,17 @@ impl SourceDatabase {
                 params![key, value],
             )
             .map_err(map_sql_error)?;
+        Ok(())
+    }
+
+    fn bump_revision(conn: &rusqlite::Connection) -> Result<(), SourceDbError> {
+        conn.execute(
+            "INSERT INTO metadata (key, value)
+             VALUES ('revision', '1')
+             ON CONFLICT(key) DO UPDATE SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT)",
+            [],
+        )
+        .map_err(map_sql_error)?;
         Ok(())
     }
 }
@@ -252,6 +266,7 @@ impl<'conn> SourceWriteBatch<'conn> {
 
     /// Commit all batched operations atomically.
     pub fn commit(self) -> Result<(), SourceDbError> {
+        SourceDatabase::bump_revision(&self.tx)?;
         self.tx.commit().map_err(map_sql_error)?;
         Ok(())
     }
