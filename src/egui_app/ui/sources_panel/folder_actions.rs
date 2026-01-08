@@ -61,6 +61,7 @@ impl EguiApp {
                 sense: egui::Sense::hover(),
                 number: None,
                 marker: None,
+                rating: None,
             },
         );
         let padding = ui.spacing().button_padding.x;

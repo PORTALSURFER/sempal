@@ -284,6 +284,11 @@ impl EguiController {
     pub fn tag_selected_left(&mut self) {
         tagging::tag_selected_left(self);
     }
+
+    /// Adjust rating for selected items by a delta (-3 to 3 relative change).
+    pub fn adjust_selected_rating(&mut self, delta: i8) {
+        tagging::adjust_selected_rating(self, delta);
+    }
 }
 
 #[cfg(test)]

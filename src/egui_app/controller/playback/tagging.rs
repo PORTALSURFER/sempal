@@ -122,3 +122,118 @@ pub(crate) fn tag_selected_left(controller: &mut EguiController) {
     };
     controller.tag_selected(target);
 }
+
+pub(crate) fn adjust_selected_rating(controller: &mut EguiController, delta: i8) {
+    let Some(selected_index) = controller.selected_row_index() else {
+        return;
+    };
+    let refocus_path = controller
+        .wav_entry(selected_index)
+        .map(|entry| entry.relative_path.clone());
+    let primary_row = match refocus_path
+        .as_deref()
+        .and_then(|path| controller.visible_row_for_path(path))
+    {
+        Some(row) => row,
+        None => return,
+    };
+    let rows = controller.action_rows_from_primary(primary_row);
+    controller.ui.collections.selected_sample = None;
+    controller.focus_browser_context();
+    controller.ui.browser.autoscroll = true;
+    let mut last_error = None;
+
+    // Use a HashMap to store previous values to allow per-item untagging if needed
+    // However, the standard pattern in tagging.rs is to store (SourceId, Path, Rating).
+    let mut previous_values: Vec<(SourceId, PathBuf, crate::sample_sources::Rating)> = Vec::new();
+    let mut applied_updates: Vec<(SourceId, PathBuf, crate::sample_sources::Rating)> = Vec::new();
+    
+    let mut contexts = Vec::with_capacity(rows.len());
+    let mut seen = std::collections::HashSet::new();
+    for row in rows {
+        match controller.resolve_browser_sample(row) {
+            Ok(ctx) => {
+                if seen.insert(ctx.entry.relative_path.clone()) {
+                    contexts.push(ctx);
+                }
+            }
+            Err(err) => last_error = Some(err),
+        }
+    }
+
+    for ctx in contexts {
+        let current_rating = ctx.entry.tag;
+        let new_val = (current_rating.val() + delta).clamp(-3, 3);
+        let target = crate::sample_sources::Rating::new(new_val);
+
+        if target != current_rating {
+             let before = (
+                ctx.source.id.clone(),
+                ctx.entry.relative_path.clone(),
+                current_rating,
+            );
+            
+            match controller.set_sample_tag_for_source(
+                &ctx.source,
+                &ctx.entry.relative_path,
+                target,
+                true,
+            ) {
+                Ok(()) => {
+                    previous_values.push(before);
+                    applied_updates.push((ctx.source.id.clone(), ctx.entry.relative_path.clone(), target));
+                }
+                Err(err) => last_error = Some(err),
+            }
+        }
+    }
+
+    if !applied_updates.is_empty() {
+        let label = if delta > 0 { "Increase rating" } else { "Decrease rating" };
+        
+        // Capture for closures
+        let redo_updates = applied_updates.clone();
+        let undo_values = previous_values;
+        let refocus_path_undo = refocus_path.clone();
+
+        controller.push_undo_entry(super::undo::UndoEntry::<EguiController>::new(
+            label,
+            move |controller: &mut EguiController| {
+                for (source_id, path, tag) in undo_values.iter() {
+                     let source = controller
+                        .library
+                        .sources
+                        .iter()
+                        .find(|s| &s.id == source_id)
+                        .cloned()
+                        .ok_or_else(|| "Source not available".to_string())?;
+                    controller.set_sample_tag_for_source(&source, path, *tag, false)?;
+                }
+                if let Some(path) = refocus_path_undo.as_deref() {
+                     controller.selection_state.suppress_autoplay_once = true;
+                     if let Some(row) = controller.visible_row_for_path(path) {
+                         controller.focus_browser_row_only(row);
+                     }
+                }
+                Ok(())
+            },
+            move |controller: &mut EguiController| {
+                 for (source_id, path, tag) in redo_updates.iter() {
+                    let source = controller
+                        .library
+                        .sources
+                        .iter()
+                        .find(|s| &s.id == source_id)
+                        .cloned()
+                        .ok_or_else(|| "Source not available".to_string())?;
+                    controller.set_sample_tag_for_source(&source, path, *tag, false)?;
+                }
+                Ok(())
+            },
+        ));
+    }
+    controller.refocus_after_filtered_removal(primary_row);
+    if let Some(err) = last_error {
+        controller.set_status(err, StatusTone::Error);
+    }
+}

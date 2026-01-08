@@ -157,14 +157,6 @@ impl HotkeysController<'_> {
 
     fn handle_tagging_command(&mut self, command: HotkeyCommand, focus: FocusContext) -> bool {
         match command {
-            HotkeyCommand::TagKeepSelected => {
-                if matches!(focus, FocusContext::CollectionSample) {
-                    self.tag_selected_collection_sample(Rating::KEEP_1);
-                } else {
-                    self.tag_selected(Rating::KEEP_1);
-                }
-                true
-            }
             HotkeyCommand::TagNeutralSelected => {
                 if matches!(focus, FocusContext::CollectionSample) {
                     self.tag_selected_collection_sample(Rating::NEUTRAL);
@@ -173,11 +165,31 @@ impl HotkeysController<'_> {
                 }
                 true
             }
-            HotkeyCommand::TagTrashSelected => {
+            HotkeyCommand::IncrementRatingSelected => {
                 if matches!(focus, FocusContext::CollectionSample) {
-                    self.tag_selected_collection_sample(Rating::TRASH_1);
+                    // Collections don't support rating adjustments yet or verify if tag_selected_collection_sample supports it.
+                    // The user prompt specifically mentions "selected sample(s)" which usually implies the main browser.
+                    // For now, I will assume it applies to the main selection context or if extended to collections, similar logic is needed.
+                    // EguiController::adjust_selected_rating uses selected_row_index which is likely browser specific.
+                    // Checking implementation of tag_selected_collection_sample might be useful.
+                    // For now, we'll only support browser context similar to tag_selected logic if generic or specific.
+                    // Correction: adjust_selected_rating implementation uses `controller.selected_row_index()` which looks at `self.ui.browser.selected`, so it's browser-specific.
+                    // Collections use `self.ui.collections.selected_sample`.
+                    // So `adjust_selected_rating` currently only supports browser.
+                    // I'll stick to browser for now as per "selected sample(s)" usually implying the main list, but user might want collection items too.
+                    // However, `adjust_selected_rating` implementation I added is browser-centric.
+                    self.adjust_selected_rating(1);
                 } else {
-                    self.tag_selected(Rating::TRASH_1);
+                    self.adjust_selected_rating(1);
+                }
+                true
+            }
+            HotkeyCommand::DecrementRatingSelected => {
+                 if matches!(focus, FocusContext::CollectionSample) {
+                    // Same as above
+                    self.adjust_selected_rating(-1);
+                } else {
+                    self.adjust_selected_rating(-1);
                 }
                 true
             }

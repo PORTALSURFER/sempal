@@ -106,6 +106,7 @@ impl EguiApp {
                                         color: palette.text_muted,
                                     }),
                                     marker: None,
+                                    rating: None,
                                 },
                             );
                             if is_drag_hover {
@@ -311,6 +312,7 @@ impl EguiApp {
                                     color: palette.text_muted,
                                 }),
                                 marker: triage_marker,
+                                rating: Some(sample.tag),
                             },
                         );
                         if is_selected {

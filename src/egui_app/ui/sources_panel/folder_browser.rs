@@ -127,6 +127,7 @@ impl EguiApp {
                             color: style::palette().text_muted,
                         }),
                         marker: None,
+                        rating: None,
                     },
                 );
                 if sample_parent_folders.contains(&root_row.path) {
@@ -296,6 +297,7 @@ impl EguiApp {
                                 color: style::palette().text_muted,
                             }),
                             marker: None,
+                            rating: None,
                         },
                     );
                     let started_drag = if !rename_match

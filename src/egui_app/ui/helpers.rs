@@ -1,5 +1,6 @@
 use super::style;
 use eframe::egui::{self, Align2, Color32, TextStyle, Ui};
+use crate::sample_sources::Rating;
 
 /// Metadata for rendering a fixed-width number column alongside a list row.
 pub(super) struct NumberColumn<'a> {
@@ -81,6 +82,7 @@ pub(super) struct ListRow<'a> {
     pub sense: egui::Sense,
     pub number: Option<NumberColumn<'a>>,
     pub marker: Option<RowMarker>,
+    pub rating: Option<Rating>,
 }
 
 pub(super) fn render_list_row(ui: &mut Ui, row: ListRow<'_>) -> egui::Response {
@@ -153,13 +155,37 @@ pub(super) fn render_list_row(ui: &mut Ui, row: ListRow<'_>) -> egui::Response {
         number_width += number_gap;
     }
     let label_x = rect.left() + padding + number_width;
-    ui.painter().text(
+    let label_rect = ui.painter().text(
         egui::pos2(label_x, rect.center().y),
         Align2::LEFT_CENTER,
         row.label,
         font_id,
         row.text_color,
     );
+    if let Some(rating) = row.rating {
+        if !rating.is_neutral() {
+            let count = rating.val().abs();
+            let color = if rating.is_keep() {
+                style::semantic_palette().triage_keep
+            } else {
+                style::semantic_palette().triage_trash
+            };
+
+            let square_size = 6.0;
+            let spacing = 3.0;
+            let start_x = label_rect.right() + 6.0;
+            let y = rect.center().y - square_size * 0.5;
+
+            for i in 0..count {
+                let x = start_x + (i as f32 * (square_size + spacing));
+                let r = egui::Rect::from_min_size(
+                    egui::pos2(x, y),
+                    egui::vec2(square_size, square_size),
+                );
+                ui.painter().rect_filled(r, 0.0, color);
+            }
+        }
+    }
     response
 }
 

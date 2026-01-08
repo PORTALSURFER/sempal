@@ -30,14 +30,7 @@ pub(crate) fn handle_collections_command(
                 false
             }
         }
-        HotkeyCommand::TagKeepSelected => {
-            if matches!(focus, FocusContext::CollectionSample) {
-                controller.tag_selected_collection_sample(Rating::KEEP_1);
-                true
-            } else {
-                false
-            }
-        }
+
         HotkeyCommand::TagNeutralSelected => {
             if matches!(focus, FocusContext::CollectionSample) {
                 controller.tag_selected_collection_sample(Rating::NEUTRAL);
@@ -46,14 +39,7 @@ pub(crate) fn handle_collections_command(
                 false
             }
         }
-        HotkeyCommand::TagTrashSelected => {
-            if matches!(focus, FocusContext::CollectionSample) {
-                controller.tag_selected_collection_sample(Rating::TRASH_1);
-                true
-            } else {
-                false
-            }
-        }
+
         _ => false,
     }
 }

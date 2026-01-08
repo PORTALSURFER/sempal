@@ -202,6 +202,7 @@ impl EguiApp {
                                 color: palette.text_muted,
                             }),
                             marker: triage_marker,
+                            rating: Some(tag),
                         },
                     );
                     let response = if let Some(hover) = status_label.hover_text.as_deref() {

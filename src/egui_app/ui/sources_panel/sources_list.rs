@@ -51,6 +51,7 @@ impl EguiApp {
                                 sense: egui::Sense::click(),
                                 number: None,
                                 marker: None,
+                                rating: None,
                             },
                         )
                         .on_hover_text(&row.path);
