@@ -3,8 +3,6 @@
 pub mod ann_index;
 pub(crate) mod audio;
 pub(crate) mod audio_decode;
-#[allow(dead_code)]
-pub(crate) mod augment;
 pub mod embedding;
 pub(crate) mod features;
 pub(crate) mod fft;

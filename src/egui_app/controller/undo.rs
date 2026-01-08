@@ -57,16 +57,6 @@ impl<T> UndoStack<T> {
         }
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn can_undo(&self) -> bool {
-        !self.undo.is_empty()
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn can_redo(&self) -> bool {
-        !self.redo.is_empty()
-    }
-
     pub(crate) fn undo(&mut self, target: &mut T) -> Result<Option<String>, String> {
         let Some(entry) = self.undo.pop_back() else {
             return Ok(None);
@@ -203,11 +193,10 @@ mod tests {
             },
         ));
 
-        assert!(stack.can_undo());
-        assert!(!stack.can_redo());
+        assert_eq!(stack.redo(&mut counter).unwrap(), None);
 
         stack.undo(&mut counter).unwrap();
-        assert!(stack.can_redo());
+        assert_eq!(counter.value, 0);
 
         counter.value = 2;
         stack.push(UndoEntry::new(
@@ -222,6 +211,6 @@ mod tests {
             },
         ));
 
-        assert!(!stack.can_redo());
+        assert_eq!(stack.redo(&mut counter).unwrap(), None);
     }
 }

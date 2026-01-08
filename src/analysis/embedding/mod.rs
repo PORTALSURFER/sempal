@@ -22,20 +22,11 @@ pub const EMBEDDING_DIM: usize = 2048;
 /// Data type label for stored embeddings.
 pub const EMBEDDING_DTYPE_F32: &str = "f32";
 
-#[allow(unused_imports)]
-pub(crate) use backend::{
-    embedding_batch_max, embedding_inflight_max, embedding_model_path, embedding_pipeline_enabled,
-    panns_burnpack_path,
-};
-#[allow(unused_imports)]
+pub(crate) use backend::panns_burnpack_path;
 pub(crate) use infer::{
-    EmbeddingBatchInput, infer_embedding, infer_embedding_from_logmel, infer_embedding_query,
-    infer_embeddings_batch, infer_embeddings_from_logmel_batch,
-    infer_embeddings_from_logmel_batch_chunked, infer_embeddings_from_logmel_batch_pipelined,
+    infer_embedding, infer_embedding_from_logmel, infer_embedding_query,
 };
-#[allow(unused_imports)]
 pub(crate) use logmel::{PANNS_LOGMEL_LEN, PannsLogMelScratch, build_panns_logmel_into};
-#[allow(unused_imports)]
 pub(crate) use model::{PannsModel, reset_panns_model, try_reset_panns_model, warmup_panns};
 
 #[cfg(test)]

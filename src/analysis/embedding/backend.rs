@@ -49,38 +49,6 @@ pub(super) fn panns_backend_kind() -> PannsBackendKind {
     }
 }
 
-/// Maximum micro-batch size for PANNs embedding inference.
-pub(crate) fn embedding_batch_max() -> usize {
-    let requested = env::var("SEMPAL_EMBEDDING_BATCH")
-        .ok()
-        .and_then(|value| value.trim().parse::<usize>().ok())
-        .filter(|value| *value >= 1);
-    let default = if cfg!(target_os = "windows") { 4 } else { 16 };
-    let max = requested.unwrap_or(default);
-    if cfg!(target_os = "windows") {
-        max.min(4)
-    } else {
-        max
-    }
-}
-
-/// Maximum number of in-flight embedding batches for pipelined readback.
-pub(crate) fn embedding_inflight_max() -> usize {
-    env::var("SEMPAL_EMBEDDING_INFLIGHT")
-        .ok()
-        .and_then(|value| value.trim().parse::<usize>().ok())
-        .filter(|value| *value >= 1)
-        .unwrap_or(2)
-}
-
-/// Whether to use the pipelined embedding path for overlapping readback.
-pub(crate) fn embedding_pipeline_enabled() -> bool {
-    env::var("SEMPAL_EMBEDDING_PIPELINE")
-        .ok()
-        .map(|value| value.trim().eq_ignore_ascii_case("1"))
-        .unwrap_or(false)
-}
-
 pub(super) fn init_wgpu(device: &WgpuDevice) {
     WGPU_INIT.get_or_init(|| {
         #[cfg(target_os = "macos")]
@@ -98,23 +66,6 @@ pub(super) fn init_cubecl_config() {
         config.autotune.cache = cubecl_runtime::config::cache::CacheConfig::Global;
         let _ = std::panic::catch_unwind(|| cubecl_runtime::config::GlobalConfig::set(config));
     });
-}
-
-#[allow(dead_code)]
-pub(super) fn panns_batch_enabled() -> bool {
-    static ENABLED: OnceLock<bool> = OnceLock::new();
-    *ENABLED.get_or_init(|| {
-        if cfg!(target_os = "windows") {
-            if let Ok(value) = std::env::var("SEMPAL_PANNS_BATCH") {
-                return value.trim() == "1";
-            }
-            return false;
-        }
-        match std::env::var("SEMPAL_PANNS_BATCH") {
-            Ok(value) => value.trim() == "1",
-            Err(_) => true,
-        }
-    })
 }
 
 /// Resolve the path to the PANNs burnpack, using env overrides if present.

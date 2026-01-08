@@ -200,16 +200,6 @@ impl EguiController {
         self.set_status(text, tone);
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn can_undo(&self) -> bool {
-        self.history.undo_stack.can_undo()
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn can_redo(&self) -> bool {
-        self.history.undo_stack.can_redo()
-    }
-
     pub(crate) fn undo(&mut self) {
         let mut stack = std::mem::replace(
             &mut self.history.undo_stack,
