@@ -1,5 +1,5 @@
 use super::*;
-use crate::sample_sources::{SampleTag, SourceDatabase};
+use crate::sample_sources::{Rating, SourceDatabase};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tempfile::tempdir;
@@ -17,7 +17,7 @@ fn scan_add_update_mark_missing() {
     assert_eq!(first.changed_samples.len(), 1);
     let initial = db.list_files().unwrap();
     assert_eq!(initial.len(), 1);
-    assert_eq!(initial[0].tag, SampleTag::Neutral);
+    assert_eq!(initial[0].tag, Rating::NEUTRAL);
 
     std::fs::write(&file_path, b"longer-data").unwrap();
     let second = scan_once(&db).unwrap();
@@ -167,7 +167,7 @@ fn scan_detects_rename_and_preserves_tag() {
 
     let db = SourceDatabase::open(dir.path()).unwrap();
     scan_once(&db).unwrap();
-    db.set_tag(Path::new("one.wav"), SampleTag::Keep).unwrap();
+    db.set_tag(Path::new("one.wav"), Rating::KEEP_1).unwrap();
 
     std::fs::rename(&first_path, &second_path).unwrap();
     let stats = scan_once(&db).unwrap();
@@ -180,7 +180,7 @@ fn scan_detects_rename_and_preserves_tag() {
     let rows = db.list_files().unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].relative_path, PathBuf::from("two.wav"));
-    assert_eq!(rows[0].tag, SampleTag::Keep);
+    assert_eq!(rows[0].tag, Rating::KEEP_1);
     assert!(!rows[0].missing);
 }
 
@@ -192,7 +192,7 @@ fn hard_rescan_prunes_missing_files_with_tags() {
 
     let db = SourceDatabase::open(dir.path()).unwrap();
     scan_once(&db).unwrap();
-    db.set_tag(Path::new("one.wav"), SampleTag::Keep).unwrap();
+    db.set_tag(Path::new("one.wav"), Rating::KEEP_1).unwrap();
 
     std::fs::remove_file(&file_path).unwrap();
     scan_once(&db).unwrap();

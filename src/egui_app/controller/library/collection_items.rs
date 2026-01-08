@@ -68,7 +68,7 @@ impl EguiController {
     }
 
     /// Apply a keep/trash tag to a collection sample.
-    pub fn tag_collection_sample(&mut self, row: usize, tag: SampleTag) -> Result<(), String> {
+    pub fn tag_collection_sample(&mut self, row: usize, tag: crate::sample_sources::Rating) -> Result<(), String> {
         let result: Result<(), String> = (|| {
             let ctx = self.resolve_collection_sample(row)?;
             self.set_sample_tag_for_source(&ctx.source, &ctx.member.relative_path, tag, false)?;
@@ -89,7 +89,7 @@ impl EguiController {
     }
 
     /// Tag the currently selected collection sample (if any).
-    pub fn tag_selected_collection_sample(&mut self, tag: SampleTag) {
+    pub fn tag_selected_collection_sample(&mut self, tag: crate::sample_sources::Rating) {
         let Some(row) = self.ui.collections.selected_sample else {
             return;
         };
@@ -99,14 +99,14 @@ impl EguiController {
     /// Convenience tag action for "trash" direction on the selected collection sample.
     pub fn tag_selected_collection_left(&mut self) {
         let target = match self.selected_collection_tag() {
-            Some(SampleTag::Keep) => SampleTag::Neutral,
-            _ => SampleTag::Trash,
+            Some(t) if t.is_keep() => crate::sample_sources::Rating::NEUTRAL,
+            _ => crate::sample_sources::Rating::TRASH_3,
         };
         self.tag_selected_collection_sample(target);
     }
 
     /// Tag of the currently selected collection sample (if any).
-    pub fn selected_collection_tag(&self) -> Option<SampleTag> {
+    pub fn selected_collection_tag(&self) -> Option<crate::sample_sources::Rating> {
         let row = self.ui.collections.selected_sample?;
         self.ui
             .collections

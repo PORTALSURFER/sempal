@@ -264,7 +264,7 @@ fn register_loop_crossfade_entry(
     source: &SampleSource,
     relative_path: &Path,
     absolute_path: &Path,
-    tag: SampleTag,
+    tag: crate::sample_sources::Rating,
 ) -> Result<(u64, i64), String> {
     let (file_size, modified_ns) = file_metadata(absolute_path)?;
     let db = controller
@@ -294,7 +294,7 @@ fn maybe_capture_loop_crossfade_undo(
     source: &SampleSource,
     relative_path: &Path,
     absolute_path: &Path,
-    tag: SampleTag,
+    tag: crate::sample_sources::Rating,
 ) {
     let Ok(backup) = undo::OverwriteBackup::capture_before(absolute_path) else {
         return;
@@ -316,7 +316,7 @@ fn loop_crossfade_undo_entry(
     source_id: SourceId,
     relative_path: PathBuf,
     absolute_path: PathBuf,
-    tag: SampleTag,
+    tag: crate::sample_sources::Rating,
     backup: undo::OverwriteBackup,
 ) -> undo::UndoEntry<EguiController> {
     let after = backup.after.clone();
@@ -367,7 +367,7 @@ fn redo_loop_crossfade(
     source_id: &SourceId,
     relative_path: &Path,
     absolute_path: &Path,
-    tag: SampleTag,
+    tag: crate::sample_sources::Rating,
     after: &Path,
 ) -> Result<(), String> {
     let source = loop_crossfade_source(controller, source_id)?;

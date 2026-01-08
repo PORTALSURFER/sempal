@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use rusqlite::params;
 
 use super::util::{map_sql_error, normalize_relative_path};
-use super::{SampleTag, SourceDatabase, SourceDbError, SourceWriteBatch};
+use super::{Rating, SourceDatabase, SourceDbError, SourceWriteBatch};
 
 impl SourceDatabase {
     /// Upsert a wav file row using the path relative to the source root.
@@ -35,7 +35,7 @@ impl SourceDatabase {
             path,
             file_size as i64,
             modified_ns,
-            SampleTag::Neutral.as_i64(),
+            Rating::NEUTRAL.as_i64(),
             0i64,
             extension
         ])
@@ -47,12 +47,12 @@ impl SourceDatabase {
 
     /// Persist a keep/trash tag for a single wav file by relative path.
     #[allow(dead_code)]
-    pub fn set_tag(&self, relative_path: &Path, tag: SampleTag) -> Result<(), SourceDbError> {
+    pub fn set_tag(&self, relative_path: &Path, tag: Rating) -> Result<(), SourceDbError> {
         self.set_tags_batch(&[(relative_path.to_path_buf(), tag)])
     }
 
     /// Persist multiple tag changes in one transaction, coalescing SQLite work.
-    pub fn set_tags_batch(&self, updates: &[(PathBuf, SampleTag)]) -> Result<(), SourceDbError> {
+    pub fn set_tags_batch(&self, updates: &[(PathBuf, Rating)]) -> Result<(), SourceDbError> {
         if updates.is_empty() {
             return Ok(());
         }
@@ -140,7 +140,7 @@ impl<'conn> SourceWriteBatch<'conn> {
                 path,
                 file_size as i64,
                 modified_ns,
-                SampleTag::Neutral.as_i64(),
+                Rating::NEUTRAL.as_i64(),
                 0i64,
                 extension
             ])
@@ -177,7 +177,7 @@ impl<'conn> SourceWriteBatch<'conn> {
                 file_size as i64,
                 modified_ns,
                 content_hash,
-                SampleTag::Neutral.as_i64(),
+                Rating::NEUTRAL.as_i64(),
                 0i64,
                 extension
             ])
@@ -191,7 +191,7 @@ impl<'conn> SourceWriteBatch<'conn> {
         file_size: u64,
         modified_ns: i64,
         content_hash: &str,
-        tag: SampleTag,
+        tag: Rating,
         missing: bool,
     ) -> Result<(), SourceDbError> {
         let path = normalize_relative_path(relative_path)?;
@@ -227,7 +227,7 @@ impl<'conn> SourceWriteBatch<'conn> {
     }
 
     /// Update the tag for a wav row within the batch.
-    pub fn set_tag(&mut self, relative_path: &Path, tag: SampleTag) -> Result<(), SourceDbError> {
+    pub fn set_tag(&mut self, relative_path: &Path, tag: Rating) -> Result<(), SourceDbError> {
         let path = normalize_relative_path(relative_path)?;
         self.tx
             .prepare_cached("UPDATE wav_files SET tag = ?1 WHERE path = ?2")

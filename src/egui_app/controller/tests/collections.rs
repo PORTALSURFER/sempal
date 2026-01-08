@@ -222,7 +222,7 @@ fn browser_rename_updates_collections_and_lookup() {
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
 
     write_test_wav(&root.join("one.wav"), &[0.1, -0.2]);
-    controller.set_wav_entries_for_tests(vec![sample_entry("one.wav", SampleTag::Neutral)]);
+    controller.set_wav_entries_for_tests(vec![sample_entry("one.wav", crate::sample_sources::Rating::NEUTRAL)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
@@ -265,7 +265,7 @@ fn starting_browser_rename_queues_prompt_for_focused_row() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source.clone());
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
-    controller.set_wav_entries_for_tests(vec![sample_entry("one.wav", SampleTag::Neutral)]);
+    controller.set_wav_entries_for_tests(vec![sample_entry("one.wav", crate::sample_sources::Rating::NEUTRAL)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
     controller.focus_browser_list();
@@ -293,8 +293,8 @@ fn selecting_browser_sample_clears_collection_selection() {
     write_test_wav(&source.root.join("a.wav"), &[0.0]);
     write_test_wav(&source.root.join("b.wav"), &[0.0]);
     controller.set_wav_entries_for_tests(vec![
-        sample_entry("a.wav", SampleTag::Neutral),
-        sample_entry("b.wav", SampleTag::Neutral),
+        sample_entry("a.wav", crate::sample_sources::Rating::NEUTRAL),
+        sample_entry("b.wav", crate::sample_sources::Rating::NEUTRAL),
     ]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
@@ -368,8 +368,8 @@ fn sample_tag_for_builds_wav_cache_lookup() {
     cache.insert_page(
         0,
         vec![
-            sample_entry("a.wav", SampleTag::Keep),
-            sample_entry("b.wav", SampleTag::Neutral),
+            sample_entry("a.wav", crate::sample_sources::Rating::KEEP_1),
+            sample_entry("b.wav", crate::sample_sources::Rating::NEUTRAL),
         ],
     );
     controller
@@ -381,7 +381,7 @@ fn sample_tag_for_builds_wav_cache_lookup() {
     let tag = controller
         .sample_tag_for(&source, Path::new("b.wav"))
         .unwrap();
-    assert_eq!(tag, SampleTag::Neutral);
+    assert_eq!(tag, crate::sample_sources::Rating::NEUTRAL);
     assert!(controller.cache.wav.entries.contains_key(&source.id));
     assert!(
         controller
@@ -409,8 +409,8 @@ fn pruning_cached_sample_updates_wav_cache_lookup() {
     cache.insert_page(
         0,
         vec![
-            sample_entry("a.wav", SampleTag::Neutral),
-            sample_entry("b.wav", SampleTag::Neutral),
+            sample_entry("a.wav", crate::sample_sources::Rating::NEUTRAL),
+            sample_entry("b.wav", crate::sample_sources::Rating::NEUTRAL),
         ],
     );
     controller
@@ -443,7 +443,7 @@ fn browser_selection_restores_last_browsable_source_after_clip_preview() {
     controller.cache_db(&source).unwrap();
 
     write_test_wav(&source.root.join("a.wav"), &[0.0]);
-    controller.set_wav_entries_for_tests(vec![sample_entry("a.wav", SampleTag::Neutral)]);
+    controller.set_wav_entries_for_tests(vec![sample_entry("a.wav", crate::sample_sources::Rating::NEUTRAL)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
@@ -475,7 +475,7 @@ fn browser_rename_preserves_extension_and_stem_with_dots() {
 
     let original = root.join("take.001.WAV");
     write_test_wav(&original, &[0.1, -0.2]);
-    controller.set_wav_entries_for_tests(vec![sample_entry("take.001.WAV", SampleTag::Neutral)]);
+    controller.set_wav_entries_for_tests(vec![sample_entry("take.001.WAV", crate::sample_sources::Rating::NEUTRAL)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
@@ -493,7 +493,7 @@ fn cancelling_browser_rename_clears_prompt() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source.clone());
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
-    controller.set_wav_entries_for_tests(vec![sample_entry("one.wav", SampleTag::Neutral)]);
+    controller.set_wav_entries_for_tests(vec![sample_entry("one.wav", crate::sample_sources::Rating::NEUTRAL)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
     controller.focus_browser_list();

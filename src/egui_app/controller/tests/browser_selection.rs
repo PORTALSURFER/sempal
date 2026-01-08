@@ -9,8 +9,8 @@ fn hotkey_tagging_applies_to_all_selected_rows() {
     controller.library.sources.push(source.clone());
     controller.cache_db(&source).unwrap();
     controller.set_wav_entries_for_tests(vec![
-        sample_entry("one.wav", SampleTag::Neutral),
-        sample_entry("two.wav", SampleTag::Neutral),
+        sample_entry("one.wav", crate::sample_sources::Rating::NEUTRAL),
+        sample_entry("two.wav", crate::sample_sources::Rating::NEUTRAL),
     ]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
@@ -19,8 +19,8 @@ fn hotkey_tagging_applies_to_all_selected_rows() {
     controller.toggle_browser_row_selection(1);
     controller.tag_selected_left();
 
-    assert_eq!(controller.wav_entry(0).unwrap().tag, SampleTag::Trash);
-    assert_eq!(controller.wav_entry(1).unwrap().tag, SampleTag::Trash);
+    assert_eq!(controller.wav_entry(0).unwrap().tag, crate::sample_sources::Rating::TRASH_3);
+    assert_eq!(controller.wav_entry(1).unwrap().tag, crate::sample_sources::Rating::TRASH_3);
 }
 
 #[test]
@@ -36,9 +36,9 @@ fn folder_hotkey_moves_selected_samples() {
     }
     write_test_wav(&destination.join("existing.wav"), &[0.0]);
     controller.set_wav_entries_for_tests(vec![
-        sample_entry("one.wav", SampleTag::Neutral),
-        sample_entry("two.wav", SampleTag::Neutral),
-        sample_entry("dest/existing.wav", SampleTag::Neutral),
+        sample_entry("one.wav", crate::sample_sources::Rating::NEUTRAL),
+        sample_entry("two.wav", crate::sample_sources::Rating::NEUTRAL),
+        sample_entry("dest/existing.wav", crate::sample_sources::Rating::NEUTRAL),
     ]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
@@ -69,8 +69,8 @@ fn escape_clears_selection() {
     controller.library.sources.push(source.clone());
     controller.cache_db(&source).unwrap();
     controller.set_wav_entries_for_tests(vec![
-        sample_entry("one.wav", SampleTag::Neutral),
-        sample_entry("two.wav", SampleTag::Neutral),
+        sample_entry("one.wav", crate::sample_sources::Rating::NEUTRAL),
+        sample_entry("two.wav", crate::sample_sources::Rating::NEUTRAL),
     ]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
@@ -104,12 +104,12 @@ fn update_selection_paths_rewrites_browser_selected_paths() {
 fn update_cached_entry_replaces_old_path_in_lookup() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source.clone());
-    controller.set_wav_entries_for_tests(vec![sample_entry("old.wav", SampleTag::Neutral)]);
+    controller.set_wav_entries_for_tests(vec![sample_entry("old.wav", crate::sample_sources::Rating::NEUTRAL)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
     controller.ui.browser.selected_paths = vec![PathBuf::from("old.wav")];
 
-    let mut updated = sample_entry("new.wav", SampleTag::Neutral);
+    let mut updated = sample_entry("new.wav", crate::sample_sources::Rating::NEUTRAL);
     updated.file_size = 10;
     updated.modified_ns = 7;
     controller.update_cached_entry(&source, Path::new("old.wav"), updated);
@@ -135,9 +135,9 @@ fn select_all_populates_visible_browser_paths() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source);
     controller.set_wav_entries_for_tests(vec![
-        sample_entry("one.wav", SampleTag::Neutral),
-        sample_entry("two.wav", SampleTag::Neutral),
-        sample_entry("three.wav", SampleTag::Neutral),
+        sample_entry("one.wav", crate::sample_sources::Rating::NEUTRAL),
+        sample_entry("two.wav", crate::sample_sources::Rating::NEUTRAL),
+        sample_entry("three.wav", crate::sample_sources::Rating::NEUTRAL),
     ]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
@@ -153,7 +153,7 @@ fn escape_handler_clears_waveform_and_browser_state() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source.clone());
     controller.cache_db(&source).unwrap();
-    controller.set_wav_entries_for_tests(vec![sample_entry("one.wav", SampleTag::Neutral)]);
+    controller.set_wav_entries_for_tests(vec![sample_entry("one.wav", crate::sample_sources::Rating::NEUTRAL)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
@@ -201,7 +201,7 @@ fn escape_stops_playback_before_clearing_selection() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source.clone());
     controller.cache_db(&source).unwrap();
-    controller.set_wav_entries_for_tests(vec![sample_entry("one.wav", SampleTag::Neutral)]);
+    controller.set_wav_entries_for_tests(vec![sample_entry("one.wav", crate::sample_sources::Rating::NEUTRAL)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
@@ -225,9 +225,9 @@ fn click_clears_selection_and_focuses_row() {
     controller.library.sources.push(source.clone());
     controller.cache_db(&source).unwrap();
     controller.set_wav_entries_for_tests(vec![
-        sample_entry("one.wav", SampleTag::Neutral),
-        sample_entry("two.wav", SampleTag::Neutral),
-        sample_entry("three.wav", SampleTag::Neutral),
+        sample_entry("one.wav", crate::sample_sources::Rating::NEUTRAL),
+        sample_entry("two.wav", crate::sample_sources::Rating::NEUTRAL),
+        sample_entry("three.wav", crate::sample_sources::Rating::NEUTRAL),
     ]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
@@ -249,9 +249,9 @@ fn ctrl_click_toggles_selection_and_focuses_row() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source);
     controller.set_wav_entries_for_tests(vec![
-        sample_entry("one.wav", SampleTag::Neutral),
-        sample_entry("two.wav", SampleTag::Neutral),
-        sample_entry("three.wav", SampleTag::Neutral),
+        sample_entry("one.wav", crate::sample_sources::Rating::NEUTRAL),
+        sample_entry("two.wav", crate::sample_sources::Rating::NEUTRAL),
+        sample_entry("three.wav", crate::sample_sources::Rating::NEUTRAL),
     ]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
@@ -273,9 +273,9 @@ fn shift_click_extends_selection_range() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source);
     controller.set_wav_entries_for_tests(vec![
-        sample_entry("one.wav", SampleTag::Neutral),
-        sample_entry("two.wav", SampleTag::Neutral),
-        sample_entry("three.wav", SampleTag::Neutral),
+        sample_entry("one.wav", crate::sample_sources::Rating::NEUTRAL),
+        sample_entry("two.wav", crate::sample_sources::Rating::NEUTRAL),
+        sample_entry("three.wav", crate::sample_sources::Rating::NEUTRAL),
     ]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
@@ -299,12 +299,12 @@ fn ctrl_shift_click_adds_range_without_resetting_anchor() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source);
     controller.set_wav_entries_for_tests(vec![
-        sample_entry("one.wav", SampleTag::Neutral),
-        sample_entry("two.wav", SampleTag::Neutral),
-        sample_entry("three.wav", SampleTag::Neutral),
-        sample_entry("four.wav", SampleTag::Neutral),
-        sample_entry("five.wav", SampleTag::Neutral),
-        sample_entry("six.wav", SampleTag::Neutral),
+        sample_entry("one.wav", crate::sample_sources::Rating::NEUTRAL),
+        sample_entry("two.wav", crate::sample_sources::Rating::NEUTRAL),
+        sample_entry("three.wav", crate::sample_sources::Rating::NEUTRAL),
+        sample_entry("four.wav", crate::sample_sources::Rating::NEUTRAL),
+        sample_entry("five.wav", crate::sample_sources::Rating::NEUTRAL),
+        sample_entry("six.wav", crate::sample_sources::Rating::NEUTRAL),
     ]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
@@ -335,9 +335,9 @@ fn shift_arrow_grows_selection() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source);
     controller.set_wav_entries_for_tests(vec![
-        sample_entry("one.wav", SampleTag::Neutral),
-        sample_entry("two.wav", SampleTag::Neutral),
-        sample_entry("three.wav", SampleTag::Neutral),
+        sample_entry("one.wav", crate::sample_sources::Rating::NEUTRAL),
+        sample_entry("two.wav", crate::sample_sources::Rating::NEUTRAL),
+        sample_entry("three.wav", crate::sample_sources::Rating::NEUTRAL),
     ]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();

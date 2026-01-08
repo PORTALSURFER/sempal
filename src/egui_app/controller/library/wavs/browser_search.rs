@@ -12,7 +12,7 @@ pub(crate) struct BrowserSearchCache {
     query: String,
     pub(crate) scores: Vec<Option<i64>>,
     scratch: Vec<(usize, i64)>,
-    matcher: SkimMatcherV2,
+    pub(crate) matcher: SkimMatcherV2,
 }
 
 impl BrowserSearchCache {
@@ -35,11 +35,11 @@ impl EguiController {
         Option<usize>,
     ) {
         let filter = self.ui.browser.filter;
-        let filter_accepts = |tag: SampleTag| match filter {
+        let filter_accepts = |tag: crate::sample_sources::Rating| match filter {
             TriageFlagFilter::All => true,
-            TriageFlagFilter::Keep => matches!(tag, SampleTag::Keep),
-            TriageFlagFilter::Trash => matches!(tag, SampleTag::Trash),
-            TriageFlagFilter::Untagged => matches!(tag, SampleTag::Neutral),
+            TriageFlagFilter::Keep => tag.is_keep(),
+            TriageFlagFilter::Trash => tag.is_trash(),
+            TriageFlagFilter::Untagged => tag.is_neutral(),
         };
         let folder_selection = self.folder_selection_for_filter().cloned();
         let folder_negated = self.folder_negation_for_filter().cloned();
@@ -63,9 +63,7 @@ impl EguiController {
                 let Some(entry) = self.wav_entry(index) else {
                     continue;
                 };
-                let tag = entry.tag;
-                let path = entry.relative_path.clone();
-                if filter_accepts(tag) && folder_accepts(&path) {
+                if filter_accepts(entry.tag) && folder_accepts(&entry.relative_path) {
                     visible.push(index);
                 }
             }
@@ -96,9 +94,7 @@ impl EguiController {
                     });
                     if let Some(anchor) = similar.anchor_index {
                         if let Some(entry) = self.wav_entry(anchor) {
-                            let tag = entry.tag;
-                            let path = entry.relative_path.clone();
-                            if filter_accepts(tag) && folder_accepts(&path) {
+                            if filter_accepts(entry.tag) && folder_accepts(&entry.relative_path) {
                                 if let Some(pos) = visible.iter().position(|i| *i == anchor) {
                                     visible.remove(pos);
                                 }
@@ -184,12 +180,12 @@ impl EguiController {
     }
 
     #[allow(dead_code)]
-    fn browser_filter_accepts(&self, tag: SampleTag) -> bool {
+    fn browser_filter_accepts(&self, tag: crate::sample_sources::Rating) -> bool {
         match self.ui.browser.filter {
             TriageFlagFilter::All => true,
-            TriageFlagFilter::Keep => matches!(tag, SampleTag::Keep),
-            TriageFlagFilter::Trash => matches!(tag, SampleTag::Trash),
-            TriageFlagFilter::Untagged => matches!(tag, SampleTag::Neutral),
+            TriageFlagFilter::Keep => tag.is_keep(),
+            TriageFlagFilter::Trash => tag.is_trash(),
+            TriageFlagFilter::Untagged => tag.is_neutral(),
         }
     }
 
@@ -230,17 +226,22 @@ impl EguiController {
                     .labels
                     .insert(source_id.clone(), Vec::new());
             }
-            for index in 0..self.wav_entries_len() {
-                let label = self.label_for_ref(index).map(str::to_string);
-                if let Some(label) = label {
-                    self.ui_cache.browser.search.scores[index] = self
-                        .ui_cache
-                        .browser
-                        .search
-                        .matcher
-                        .fuzzy_match(label.as_str(), query);
+            let mut label_strings: Vec<Option<String>> = Vec::with_capacity(self.wav_entries_len());
+            for idx in 0..self.wav_entries_len() {
+                let lbl = self.label_for_ref(idx).map(|s| s.to_string());
+                label_strings.push(lbl);
+            }
+
+            let mut new_scores: Vec<Option<i64>> = Vec::with_capacity(label_strings.len());
+            for lbl_opt in label_strings {
+                if let Some(lbl_str) = lbl_opt {
+                    let score = self.ui_cache.browser.search.matcher.fuzzy_match(&lbl_str, query);
+                    new_scores.push(score);
+                } else {
+                    new_scores.push(None);
                 }
             }
+            self.ui_cache.browser.search.scores = new_scores;
         }
     }
 

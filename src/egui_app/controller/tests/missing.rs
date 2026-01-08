@@ -17,7 +17,7 @@ fn selecting_missing_sample_sets_waveform_notice() {
         file_size: 1,
         modified_ns: 1,
         content_hash: None,
-        tag: SampleTag::Neutral,
+        tag: crate::sample_sources::Rating::NEUTRAL,
         missing: true,
     }]);
     controller.rebuild_wav_lookup();
@@ -46,7 +46,7 @@ fn collection_views_flag_missing_members() {
         file_size: 1,
         modified_ns: 1,
         content_hash: None,
-        tag: SampleTag::Neutral,
+        tag: crate::sample_sources::Rating::NEUTRAL,
         missing: true,
     }]);
     controller.rebuild_wav_lookup();
@@ -92,7 +92,7 @@ fn read_failure_marks_sample_missing() {
         file_size: 1,
         modified_ns: 1,
         content_hash: None,
-        tag: SampleTag::Neutral,
+        tag: crate::sample_sources::Rating::NEUTRAL,
         missing: false,
     }]);
     controller.rebuild_wav_lookup();
@@ -133,12 +133,12 @@ fn apply_wav_entries_updates_missing_lookup() {
             1,
             1,
             "h1",
-            SampleTag::Neutral,
+            crate::sample_sources::Rating::NEUTRAL,
             false,
         )
         .unwrap();
     batch
-        .upsert_file_with_hash_and_tag(Path::new("gone.wav"), 1, 1, "h2", SampleTag::Neutral, true)
+        .upsert_file_with_hash_and_tag(Path::new("gone.wav"), 1, 1, "h2", crate::sample_sources::Rating::NEUTRAL, true)
         .unwrap();
     batch.commit().unwrap();
     let entries = vec![
@@ -147,7 +147,7 @@ fn apply_wav_entries_updates_missing_lookup() {
             file_size: 1,
             modified_ns: 1,
             content_hash: None,
-            tag: SampleTag::Neutral,
+            tag: crate::sample_sources::Rating::NEUTRAL,
             missing: false,
         },
         WavEntry {
@@ -155,7 +155,7 @@ fn apply_wav_entries_updates_missing_lookup() {
             file_size: 1,
             modified_ns: 1,
             content_hash: None,
-            tag: SampleTag::Neutral,
+            tag: crate::sample_sources::Rating::NEUTRAL,
             missing: true,
         },
     ];
@@ -309,7 +309,7 @@ fn mark_missing_updates_cache_db_and_missing_set_when_inactive() {
             file_size: 1,
             modified_ns: 1,
             content_hash: None,
-            tag: SampleTag::Neutral,
+            tag: crate::sample_sources::Rating::NEUTRAL,
             missing: false,
         }],
     );

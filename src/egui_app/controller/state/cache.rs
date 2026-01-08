@@ -233,7 +233,7 @@ mod tests {
             file_size: 0,
             modified_ns: 0,
             content_hash: None,
-            tag: crate::sample_sources::SampleTag::Neutral,
+            tag: crate::sample_sources::Rating::NEUTRAL,
             missing: false,
         }]);
         
@@ -242,7 +242,7 @@ mod tests {
             file_size: 100,
             modified_ns: 100,
             content_hash: None,
-            tag: crate::sample_sources::SampleTag::Keep,
+            tag: crate::sample_sources::Rating::KEEP_1,
             missing: false,
         };
         
@@ -252,6 +252,6 @@ mod tests {
         
         // Verify update happened
         let entry = cache.entry(0).unwrap();
-        assert_eq!(entry.tag, crate::sample_sources::SampleTag::Keep);
+        assert_eq!(entry.tag, crate::sample_sources::Rating::KEEP_1);
     }
 }

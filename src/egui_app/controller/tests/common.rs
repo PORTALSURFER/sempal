@@ -18,7 +18,7 @@ pub(super) fn prepare_browser_sample(
 ) {
     controller.library.sources.push(source.clone());
     write_test_wav(&source.root.join(name), &[0.0, 0.1, -0.1]);
-    controller.set_wav_entries_for_tests(vec![sample_entry(name, SampleTag::Neutral)]);
+    controller.set_wav_entries_for_tests(vec![sample_entry(name, crate::sample_sources::Rating::NEUTRAL)]);
     controller.rebuild_browser_lists();
 }
 

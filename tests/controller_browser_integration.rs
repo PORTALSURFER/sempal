@@ -3,7 +3,7 @@ mod support;
 use support::{sempal_env::SempalEnvGuard, wav::write_test_wav};
 
 use sempal::{
-    egui_app::controller::EguiController, sample_sources::SampleTag, waveform::WaveformRenderer,
+    egui_app::controller::EguiController, sample_sources::Rating, waveform::WaveformRenderer,
 };
 use std::{path::PathBuf, time::Duration};
 use tempfile::TempDir;
@@ -168,7 +168,7 @@ fn browser_tagging_via_controller_updates_rows() {
     controller.focus_browser_row_only(0);
     controller.toggle_browser_row_selection(1);
     controller
-        .tag_browser_samples(&[0, 1], SampleTag::Trash, 0)
+        .tag_browser_samples(&[0, 1], Rating::TRASH_3, 0)
         .expect("tag browser samples");
 
     assert_eq!(controller.ui.browser.trash.len(), 2);

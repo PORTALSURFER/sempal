@@ -60,7 +60,7 @@ fn sample_drop_without_active_collection_warns() {
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
     controller.cache_db(&source).unwrap();
     write_test_wav(&root.join("one.wav"), &[0.1, 0.2]);
-    controller.set_wav_entries_for_tests(vec![sample_entry("one.wav", SampleTag::Neutral)]);
+    controller.set_wav_entries_for_tests(vec![sample_entry("one.wav", crate::sample_sources::Rating::NEUTRAL)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
@@ -96,7 +96,7 @@ fn sample_drop_without_selection_warns_even_with_collections() {
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
     controller.cache_db(&source).unwrap();
     write_test_wav(&root.join("one.wav"), &[0.1, 0.2]);
-    controller.set_wav_entries_for_tests(vec![sample_entry("one.wav", SampleTag::Neutral)]);
+    controller.set_wav_entries_for_tests(vec![sample_entry("one.wav", crate::sample_sources::Rating::NEUTRAL)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 

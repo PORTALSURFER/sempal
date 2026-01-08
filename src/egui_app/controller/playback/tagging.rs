@@ -1,6 +1,6 @@
 use super::*;
 
-pub(crate) fn tag_selected(controller: &mut EguiController, target: SampleTag) {
+pub(crate) fn tag_selected(controller: &mut EguiController, target: crate::sample_sources::Rating) {
     let Some(selected_index) = controller.selected_row_index() else {
         return;
     };
@@ -19,7 +19,7 @@ pub(crate) fn tag_selected(controller: &mut EguiController, target: SampleTag) {
     controller.focus_browser_context();
     controller.ui.browser.autoscroll = true;
     let mut last_error = None;
-    let mut applied: Vec<(SourceId, PathBuf, SampleTag)> = Vec::new();
+    let mut applied: Vec<(SourceId, PathBuf, crate::sample_sources::Rating)> = Vec::new();
     let mut contexts = Vec::with_capacity(rows.len());
     let mut seen = std::collections::HashSet::new();
     for row in rows {
@@ -49,12 +49,16 @@ pub(crate) fn tag_selected(controller: &mut EguiController, target: SampleTag) {
         }
     }
     if !applied.is_empty() {
-        let label = match target {
-            SampleTag::Keep => "Tag keep",
-            SampleTag::Trash => "Tag trash",
-            SampleTag::Neutral => "Tag neutral",
+        let label = if target == crate::sample_sources::Rating::KEEP_1 {
+            "Tag keep"
+        } else if target == crate::sample_sources::Rating::TRASH_3 {
+            "Tag trash"
+        } else if target == crate::sample_sources::Rating::NEUTRAL {
+            "Tag neutral"
+        } else {
+            "Tag sample"
         };
-        let redo_updates: Vec<(SourceId, PathBuf, SampleTag)> = applied
+        let redo_updates: Vec<(SourceId, PathBuf, crate::sample_sources::Rating)> = applied
             .iter()
             .map(|(source_id, path, _)| (source_id.clone(), path.clone(), target))
             .collect();
@@ -113,8 +117,8 @@ pub(crate) fn move_selection_column(controller: &mut EguiController, delta: isiz
 
 pub(crate) fn tag_selected_left(controller: &mut EguiController) {
     let target = match controller.selected_tag() {
-        Some(SampleTag::Keep) => SampleTag::Neutral,
-        _ => SampleTag::Trash,
+        Some(tag) if tag.is_keep() => crate::sample_sources::Rating::NEUTRAL,
+        _ => crate::sample_sources::Rating::TRASH_3,
     };
     controller.tag_selected(target);
 }

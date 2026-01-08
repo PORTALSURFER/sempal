@@ -23,7 +23,7 @@ impl SourceDatabase {
                     file_size: row.get::<_, i64>(1)? as u64,
                     modified_ns: row.get(2)?,
                     content_hash: row.get::<_, Option<String>>(3)?,
-                    tag: super::SampleTag::from_i64(row.get(4)?),
+                    tag: super::Rating::from_i64(row.get(4)?),
                     missing: row.get::<_, i64>(5)? != 0,
                 })
             })
@@ -34,7 +34,7 @@ impl SourceDatabase {
     }
 
     /// Fetch tracked wav files filtered by tag.
-    pub fn list_files_by_tag(&self, tag: super::SampleTag) -> Result<Vec<WavEntry>, SourceDbError> {
+    pub fn list_files_by_tag(&self, tag: super::Rating) -> Result<Vec<WavEntry>, SourceDbError> {
         let filter = crate::sample_sources::supported_audio_where_clause();
         let sql = format!(
             "SELECT path, file_size, modified_ns, content_hash, tag, missing
@@ -51,7 +51,7 @@ impl SourceDatabase {
                     file_size: row.get::<_, i64>(1)? as u64,
                     modified_ns: row.get(2)?,
                     content_hash: row.get::<_, Option<String>>(3)?,
-                    tag: super::SampleTag::from_i64(row.get(4)?),
+                    tag: super::Rating::from_i64(row.get(4)?),
                     missing: row.get::<_, i64>(5)? != 0,
                 })
             })
@@ -120,7 +120,7 @@ impl SourceDatabase {
                     file_size: row.get::<_, i64>(1)? as u64,
                     modified_ns: row.get(2)?,
                     content_hash: row.get::<_, Option<String>>(3)?,
-                    tag: super::SampleTag::from_i64(row.get(4)?),
+                    tag: super::Rating::from_i64(row.get(4)?),
                     missing: row.get::<_, i64>(5)? != 0,
                 })
             })
@@ -153,7 +153,7 @@ impl SourceDatabase {
     }
 
     /// Fetch the tag for a specific wav path.
-    pub fn tag_for_path(&self, path: &Path) -> Result<Option<super::SampleTag>, SourceDbError> {
+    pub fn tag_for_path(&self, path: &Path) -> Result<Option<super::Rating>, SourceDbError> {
         if !crate::sample_sources::is_supported_audio(path) {
             return Ok(None);
         }
@@ -167,7 +167,7 @@ impl SourceDatabase {
             )
             .optional()
             .map_err(map_sql_error)?;
-        Ok(value.map(super::SampleTag::from_i64))
+        Ok(value.map(super::Rating::from_i64))
     }
 
     pub fn get_metadata(&self, key: &str) -> Result<Option<String>, SourceDbError> {

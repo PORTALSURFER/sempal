@@ -1,4 +1,4 @@
-use crate::sample_sources::{CollectionId, SampleTag, SourceId};
+use crate::sample_sources::{CollectionId, Rating, SourceId};
 use std::path::PathBuf;
 
 /// Collections sidebar and sample list state.
@@ -69,6 +69,6 @@ pub struct CollectionSampleView {
     pub source: String,
     pub path: PathBuf,
     pub label: String,
-    pub tag: SampleTag,
+    pub tag: Rating,
     pub missing: bool,
 }

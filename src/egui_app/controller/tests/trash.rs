@@ -20,13 +20,13 @@ fn moving_trashed_samples_moves_and_prunes_state() -> Result<(), String> {
     let db = controller.database_for(&source).unwrap();
     db.upsert_file(Path::new("trash.wav"), 4, 1).unwrap();
     db.upsert_file(Path::new("keep.wav"), 4, 1).unwrap();
-    db.set_tag(Path::new("trash.wav"), SampleTag::Trash)
+    db.set_tag(Path::new("trash.wav"), crate::sample_sources::Rating::TRASH_3)
         .unwrap();
-    db.set_tag(Path::new("keep.wav"), SampleTag::Keep).unwrap();
+    db.set_tag(Path::new("keep.wav"), crate::sample_sources::Rating::KEEP_1).unwrap();
 
     controller.set_wav_entries_for_tests(vec![
-        sample_entry("trash.wav", SampleTag::Trash),
-        sample_entry("keep.wav", SampleTag::Keep),
+        sample_entry("trash.wav", crate::sample_sources::Rating::TRASH_3),
+        sample_entry("keep.wav", crate::sample_sources::Rating::KEEP_1),
     ]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
@@ -42,7 +42,7 @@ fn moving_trashed_samples_moves_and_prunes_state() -> Result<(), String> {
         .unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].relative_path, PathBuf::from("keep.wav"));
-    assert_eq!(rows[0].tag, SampleTag::Keep);
+    assert_eq!(rows[0].tag, crate::sample_sources::Rating::KEEP_1);
     assert_eq!(controller.wav_entries_len(), 1);
     let entries = controller.wav_entries.pages.get(&0).expect("entries");
     assert!(
@@ -69,13 +69,13 @@ fn moving_trashed_samples_can_cancel_midway() -> Result<(), String> {
             let path = source.root.join(name);
             write_test_wav(&path, &[0.2, -0.2]);
             db.upsert_file(Path::new(name), 4, 1).unwrap();
-            db.set_tag(Path::new(name), SampleTag::Trash).unwrap();
+            db.set_tag(Path::new(name), crate::sample_sources::Rating::TRASH_3).unwrap();
         }
     }
 
     controller.set_wav_entries_for_tests(vec![
-        sample_entry("one.wav", SampleTag::Trash),
-        sample_entry("two.wav", SampleTag::Trash),
+        sample_entry("one.wav", crate::sample_sources::Rating::TRASH_3),
+        sample_entry("two.wav", crate::sample_sources::Rating::TRASH_3),
     ]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();

@@ -140,8 +140,8 @@ fn selecting_new_sample_clears_last_start_marker() {
     write_test_wav(&source.root.join("a.wav"), &[0.0, 0.1]);
     write_test_wav(&source.root.join("b.wav"), &[0.2, -0.2]);
     controller.set_wav_entries_for_tests(vec![
-        sample_entry("a.wav", SampleTag::Neutral),
-        sample_entry("b.wav", SampleTag::Neutral),
+        sample_entry("a.wav", crate::sample_sources::Rating::NEUTRAL),
+        sample_entry("b.wav", crate::sample_sources::Rating::NEUTRAL),
     ]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();

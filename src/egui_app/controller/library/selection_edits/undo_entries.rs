@@ -45,7 +45,7 @@ impl EguiController {
         source_id: SourceId,
         relative_path: PathBuf,
         absolute_path: PathBuf,
-        tag: SampleTag,
+        tag: crate::sample_sources::Rating,
         backup: undo::OverwriteBackup,
     ) -> undo::UndoEntry<EguiController> {
         let after = backup.after.clone();

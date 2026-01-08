@@ -36,10 +36,12 @@ impl EguiController {
                 focused: Some(i) == focused_index,
                 loaded: Some(i) == loaded_index,
             };
-            let target = match entry.tag {
-                SampleTag::Trash => &mut trash,
-                SampleTag::Neutral => &mut neutral,
-                SampleTag::Keep => &mut keep,
+            let target = if entry.tag.is_trash() {
+                &mut trash
+            } else if entry.tag.is_keep() {
+                &mut keep
+            } else {
+                &mut neutral
             };
             let row_index = target.len();
             target.push(i);
@@ -104,10 +106,12 @@ impl EguiController {
 
     #[allow(dead_code)]
     fn push_browser_row(&mut self, entry_index: usize, entry: &WavEntry, flags: RowFlags) {
-        let target = match entry.tag {
-            SampleTag::Trash => &mut self.ui.browser.trash,
-            SampleTag::Neutral => &mut self.ui.browser.neutral,
-            SampleTag::Keep => &mut self.ui.browser.keep,
+        let target = if entry.tag.is_trash() {
+            &mut self.ui.browser.trash
+        } else if entry.tag.is_keep() {
+            &mut self.ui.browser.keep
+        } else {
+            &mut self.ui.browser.neutral
         };
         let row_index = target.len();
         target.push(entry_index);

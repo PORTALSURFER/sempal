@@ -1,7 +1,7 @@
 use super::super::DragDropController;
 use crate::egui_app::state::TriageFlagColumn;
 use crate::egui_app::ui::style::StatusTone;
-use crate::sample_sources::{CollectionId, SampleTag, SourceId};
+use crate::sample_sources::{CollectionId, Rating, SourceId};
 use crate::selection::SelectionRange;
 use std::path::{Path, PathBuf};
 
@@ -24,9 +24,9 @@ impl DragDropController<'_> {
             return;
         }
         let target_tag = triage_target.map(|column| match column {
-            TriageFlagColumn::Trash => SampleTag::Trash,
-            TriageFlagColumn::Neutral => SampleTag::Neutral,
-            TriageFlagColumn::Keep => SampleTag::Keep,
+            TriageFlagColumn::Trash => Rating::TRASH_1,
+            TriageFlagColumn::Neutral => Rating::NEUTRAL,
+            TriageFlagColumn::Keep => Rating::KEEP_1,
         });
         if let Some(folder) = folder_target.as_deref()
             && !folder.as_os_str().is_empty()
@@ -132,7 +132,7 @@ impl DragDropController<'_> {
         source_id: &SourceId,
         relative_path: &Path,
         bounds: SelectionRange,
-        target_tag: Option<SampleTag>,
+        target_tag: Option<Rating>,
         keep_source_focused: bool,
     ) {
         let folder_override = self
@@ -185,7 +185,7 @@ impl DragDropController<'_> {
         source_id: &SourceId,
         relative_path: &Path,
         bounds: SelectionRange,
-        target_tag: Option<SampleTag>,
+        target_tag: Option<Rating>,
         collection_id: &CollectionId,
     ) {
         let clip_root = match self.selection_clip_root_for_collection(collection_id) {

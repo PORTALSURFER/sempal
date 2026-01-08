@@ -75,7 +75,7 @@ where
                 continue;
             }
         };
-        let trashed = match db.list_files_by_tag(SampleTag::Trash) {
+        let trashed = match db.list_files_by_tag(crate::sample_sources::Rating::TRASH_3) {
             Ok(entries) => entries,
             Err(err) => {
                 errors.push(format!("{}: {err}", source.root.display()));
@@ -276,13 +276,13 @@ pub(crate) fn move_to_trash(source: &SampleSource, entry: &WavEntry, trash_root:
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sample_sources::SourceId;
+    use crate::sample_sources::{Rating, SourceId};
     use tempfile::tempdir;
 
     fn make_test_db(dir: &Path, filename: &str) -> SourceDatabase {
         let db = SourceDatabase::open(dir).unwrap();
         db.upsert_file(Path::new(filename), 123, 456).unwrap();
-        db.set_tag(Path::new(filename), SampleTag::Trash).unwrap();
+        db.set_tag(Path::new(filename), Rating::TRASH_3).unwrap();
         db
     }
 

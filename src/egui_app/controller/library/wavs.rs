@@ -171,7 +171,7 @@ impl EguiController {
     }
 
     /// Current tag of the selected wav, if any.
-    pub fn selected_tag(&mut self) -> Option<SampleTag> {
+    pub fn selected_tag(&mut self) -> Option<crate::sample_sources::Rating> {
         selection_ops::selected_tag(self)
     }
 
@@ -379,7 +379,7 @@ impl EguiController {
     pub(crate) fn set_sample_tag_value(
         &mut self,
         path: &Path,
-        target_tag: SampleTag,
+        target_tag: crate::sample_sources::Rating,
     ) -> Result<(), String> {
         selection_ops::set_sample_tag_value(self, path, target_tag)
     }
@@ -388,7 +388,7 @@ impl EguiController {
         &mut self,
         source: &SampleSource,
         path: &Path,
-        target_tag: SampleTag,
+        target_tag: crate::sample_sources::Rating,
         require_present: bool,
     ) -> Result<(), String> {
         selection_ops::set_sample_tag_for_source(self, source, path, target_tag, require_present)

@@ -159,25 +159,25 @@ impl HotkeysController<'_> {
         match command {
             HotkeyCommand::TagKeepSelected => {
                 if matches!(focus, FocusContext::CollectionSample) {
-                    self.tag_selected_collection_sample(SampleTag::Keep);
+                    self.tag_selected_collection_sample(Rating::KEEP_1);
                 } else {
-                    self.tag_selected(SampleTag::Keep);
+                    self.tag_selected(Rating::KEEP_1);
                 }
                 true
             }
             HotkeyCommand::TagNeutralSelected => {
                 if matches!(focus, FocusContext::CollectionSample) {
-                    self.tag_selected_collection_sample(SampleTag::Neutral);
+                    self.tag_selected_collection_sample(Rating::NEUTRAL);
                 } else {
-                    self.tag_selected(SampleTag::Neutral);
+                    self.tag_selected(Rating::NEUTRAL);
                 }
                 true
             }
             HotkeyCommand::TagTrashSelected => {
                 if matches!(focus, FocusContext::CollectionSample) {
-                    self.tag_selected_collection_sample(SampleTag::Trash);
+                    self.tag_selected_collection_sample(Rating::TRASH_1);
                 } else {
-                    self.tag_selected(SampleTag::Trash);
+                    self.tag_selected(Rating::TRASH_1);
                 }
                 true
             }
@@ -200,7 +200,7 @@ mod tests {
         load_waveform_selection, prepare_with_source_and_wav_entries, sample_entry,
     };
     use crate::egui_app::state::{CollectionActionPrompt, FocusContext};
-    use crate::sample_sources::SampleTag;
+    use crate::sample_sources::Rating;
     use crate::selection::SelectionRange;
 
     fn action_for(command: HotkeyCommand) -> HotkeyAction {
@@ -212,7 +212,7 @@ mod tests {
     #[test]
     fn waveform_hotkey_respects_focus() {
         let (mut controller, source) =
-            prepare_with_source_and_wav_entries(vec![sample_entry("one.wav", SampleTag::Neutral)]);
+            prepare_with_source_and_wav_entries(vec![sample_entry("one.wav", Rating::NEUTRAL)]);
         load_waveform_selection(
             &mut controller,
             &source,

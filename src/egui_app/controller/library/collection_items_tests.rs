@@ -48,7 +48,7 @@ fn collection_tagging_updates_database() {
     let (mut controller, source, _) = setup_collection_with_sample("one.wav");
 
     controller
-        .tag_collection_sample(0, SampleTag::Keep)
+        .tag_collection_sample(0, crate::sample_sources::Rating::KEEP_1)
         .unwrap();
 
     let db = controller.database_for(&source).unwrap();
@@ -57,7 +57,7 @@ fn collection_tagging_updates_database() {
         .iter()
         .find(|row| row.relative_path == Path::new("one.wav"))
         .unwrap();
-    assert_eq!(entry.tag, SampleTag::Keep);
+    assert_eq!(entry.tag, crate::sample_sources::Rating::KEEP_1);
 }
 
 #[test]
@@ -65,7 +65,7 @@ fn collection_rows_expose_tags_in_ui() {
     let (mut controller, source, _) = setup_collection_with_sample("one.wav");
     controller.ui.collections.selected_sample = Some(0);
 
-    controller.tag_selected_collection_sample(SampleTag::Keep);
+    controller.tag_selected_collection_sample(crate::sample_sources::Rating::KEEP_1);
     assert_eq!(
         controller
             .ui
@@ -73,7 +73,7 @@ fn collection_rows_expose_tags_in_ui() {
             .samples
             .first()
             .map(|sample| sample.tag),
-        Some(SampleTag::Keep)
+        Some(crate::sample_sources::Rating::KEEP_1)
     );
 
     controller.tag_selected_collection_left();
@@ -84,7 +84,7 @@ fn collection_rows_expose_tags_in_ui() {
             .samples
             .first()
             .map(|sample| sample.tag),
-        Some(SampleTag::Neutral)
+        Some(crate::sample_sources::Rating::NEUTRAL)
     );
 
     let db = controller.database_for(&source).unwrap();
@@ -93,7 +93,7 @@ fn collection_rows_expose_tags_in_ui() {
         .iter()
         .find(|row| row.relative_path == Path::new("one.wav"))
         .unwrap();
-    assert_eq!(entry.tag, SampleTag::Neutral);
+    assert_eq!(entry.tag, crate::sample_sources::Rating::NEUTRAL);
 }
 
 #[test]
@@ -110,9 +110,9 @@ fn collection_clip_tagging_works_without_registered_source() {
     controller.refresh_collections_ui();
     controller.select_collection_sample(1);
 
-    controller.tag_selected_collection_sample(SampleTag::Keep);
+    controller.tag_selected_collection_sample(crate::sample_sources::Rating::KEEP_1);
 
-    assert_eq!(controller.ui.collections.samples[1].tag, SampleTag::Keep);
+    assert_eq!(controller.ui.collections.samples[1].tag, crate::sample_sources::Rating::KEEP_1);
     assert_ne!(
         controller.ui.status.text,
         "Source not available for this sample"

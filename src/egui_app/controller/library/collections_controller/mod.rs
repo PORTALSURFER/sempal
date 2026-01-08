@@ -7,6 +7,6 @@ pub(crate) use helpers::CollectionsController;
 
 use super::collection_export;
 use super::*;
-use crate::sample_sources::SampleTag;
+use crate::sample_sources::Rating;
 use crate::sample_sources::collections::CollectionMember;
 use std::path::PathBuf;

@@ -102,7 +102,7 @@ impl CollectionsController<'_> {
                         if tag_error.is_none() {
                             tag_error = Some(err);
                         }
-                        SampleTag::Neutral
+                        crate::sample_sources::Rating::NEUTRAL
                     }
                 }
             } else {
@@ -119,7 +119,7 @@ impl CollectionsController<'_> {
                             if tag_error.is_none() {
                                 tag_error = Some(err);
                             }
-                            SampleTag::Neutral
+                            crate::sample_sources::Rating::NEUTRAL
                         }
                     },
                     None => {
@@ -129,7 +129,7 @@ impl CollectionsController<'_> {
                                 view.relative_path.display()
                             ));
                         }
-                        SampleTag::Neutral
+                        crate::sample_sources::Rating::NEUTRAL
                     }
                 }
             };

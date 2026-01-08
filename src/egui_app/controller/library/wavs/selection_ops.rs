@@ -1,5 +1,6 @@
 use super::*;
 use tracing::{debug, warn};
+use crate::sample_sources::Rating;
 
 pub(crate) fn select_wav_by_path(controller: &mut EguiController, path: &Path) {
     select_wav_by_path_with_rebuild(controller, path, true);
@@ -111,7 +112,7 @@ pub(crate) fn triage_flag_drop_target(controller: &EguiController) -> TriageFlag
     }
 }
 
-pub(crate) fn selected_tag(controller: &mut EguiController) -> Option<SampleTag> {
+pub(crate) fn selected_tag(controller: &mut EguiController) -> Option<Rating> {
     controller
         .selected_row_index()
         .and_then(|idx| controller.wav_entry(idx))
@@ -172,9 +173,9 @@ pub(crate) fn set_sample_tag(
     column: TriageFlagColumn,
 ) -> Result<(), String> {
     let target_tag = match column {
-        TriageFlagColumn::Trash => SampleTag::Trash,
-        TriageFlagColumn::Neutral => SampleTag::Neutral,
-        TriageFlagColumn::Keep => SampleTag::Keep,
+        TriageFlagColumn::Trash => Rating::TRASH_3,
+        TriageFlagColumn::Neutral => Rating::NEUTRAL,
+        TriageFlagColumn::Keep => Rating::KEEP_1,
     };
     set_sample_tag_value(controller, path, target_tag)
 }
@@ -182,7 +183,7 @@ pub(crate) fn set_sample_tag(
 pub(crate) fn set_sample_tag_value(
     controller: &mut EguiController,
     path: &Path,
-    target_tag: SampleTag,
+    target_tag: Rating,
 ) -> Result<(), String> {
     let Some(source) = controller.current_source() else {
         return Err("Select a source first".into());
@@ -194,7 +195,7 @@ pub(crate) fn set_sample_tag_for_source(
     controller: &mut EguiController,
     source: &SampleSource,
     path: &Path,
-    target_tag: SampleTag,
+    target_tag: Rating,
     require_present: bool,
 ) -> Result<(), String> {
     let db = controller.database_for(source).map_err(|err| {

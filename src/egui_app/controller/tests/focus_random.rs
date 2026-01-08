@@ -147,9 +147,9 @@ fn focus_history_steps_backward_and_forward() {
     write_test_wav(&source.root.join("b.wav"), &[0.0, 0.1]);
     write_test_wav(&source.root.join("c.wav"), &[0.0, 0.1]);
     controller.set_wav_entries_for_tests(vec![
-        sample_entry("a.wav", SampleTag::Neutral),
-        sample_entry("b.wav", SampleTag::Neutral),
-        sample_entry("c.wav", SampleTag::Neutral),
+        sample_entry("a.wav", crate::sample_sources::Rating::NEUTRAL),
+        sample_entry("b.wav", crate::sample_sources::Rating::NEUTRAL),
+        sample_entry("c.wav", crate::sample_sources::Rating::NEUTRAL),
     ]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
@@ -186,9 +186,9 @@ fn random_sample_selection_uses_seeded_rng() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source.clone());
     controller.set_wav_entries_for_tests(vec![
-        sample_entry("one.wav", SampleTag::Neutral),
-        sample_entry("two.wav", SampleTag::Neutral),
-        sample_entry("three.wav", SampleTag::Neutral),
+        sample_entry("one.wav", crate::sample_sources::Rating::NEUTRAL),
+        sample_entry("two.wav", crate::sample_sources::Rating::NEUTRAL),
+        sample_entry("three.wav", crate::sample_sources::Rating::NEUTRAL),
     ]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
@@ -285,7 +285,7 @@ fn tag_neutral_hotkey_is_registered() {
 fn quote_hotkey_tags_selected_sample_neutral() {
     let (mut controller, source) = dummy_controller();
     prepare_browser_sample(&mut controller, &source, "neutral.wav");
-    controller.wav_entries.entry_mut(0).unwrap().tag = SampleTag::Keep;
+    controller.wav_entries.entry_mut(0).unwrap().tag = crate::sample_sources::Rating::KEEP_1;
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
     controller.focus_browser_row(0);
@@ -295,7 +295,7 @@ fn quote_hotkey_tags_selected_sample_neutral() {
         .expect("tag-neutral hotkey");
     controller.handle_hotkey(action, FocusContext::None);
 
-    assert_eq!(controller.wav_entry(0).unwrap().tag, SampleTag::Neutral);
+    assert_eq!(controller.wav_entry(0).unwrap().tag, crate::sample_sources::Rating::NEUTRAL);
 }
 
 #[test]
@@ -323,7 +323,7 @@ fn tag_hotkeys_apply_to_collection_focus() {
     controller.handle_hotkey(keep, FocusContext::CollectionSample);
     assert_eq!(
         controller.ui.collections.samples[0].tag,
-        SampleTag::Keep,
+        crate::sample_sources::Rating::KEEP_1,
         "keep hotkey"
     );
 
@@ -333,7 +333,7 @@ fn tag_hotkeys_apply_to_collection_focus() {
     controller.handle_hotkey(neutral, FocusContext::CollectionSample);
     assert_eq!(
         controller.ui.collections.samples[0].tag,
-        SampleTag::Neutral,
+        crate::sample_sources::Rating::NEUTRAL,
         "neutral hotkey"
     );
 
@@ -343,7 +343,7 @@ fn tag_hotkeys_apply_to_collection_focus() {
     controller.handle_hotkey(trash, FocusContext::CollectionSample);
     assert_eq!(
         controller.ui.collections.samples[0].tag,
-        SampleTag::Trash,
+        crate::sample_sources::Rating::TRASH_3,
         "trash hotkey"
     );
 }
@@ -365,10 +365,10 @@ fn trash_move_hotkey_moves_samples() -> Result<(), String> {
         .map_err(|err| format!("open db: {err}"))?;
     db.upsert_file(Path::new("trash.wav"), 4, 1)
         .map_err(|err| format!("upsert: {err}"))?;
-    db.set_tag(Path::new("trash.wav"), SampleTag::Trash)
+    db.set_tag(Path::new("trash.wav"), crate::sample_sources::Rating::TRASH_3)
         .map_err(|err| format!("tag: {err}"))?;
 
-    controller.set_wav_entries_for_tests(vec![sample_entry("trash.wav", SampleTag::Trash)]);
+    controller.set_wav_entries_for_tests(vec![sample_entry("trash.wav", crate::sample_sources::Rating::TRASH_3)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
@@ -388,8 +388,8 @@ fn random_history_steps_backward() {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source.clone());
     controller.set_wav_entries_for_tests(vec![
-        sample_entry("one.wav", SampleTag::Neutral),
-        sample_entry("two.wav", SampleTag::Neutral),
+        sample_entry("one.wav", crate::sample_sources::Rating::NEUTRAL),
+        sample_entry("two.wav", crate::sample_sources::Rating::NEUTRAL),
     ]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
@@ -426,7 +426,7 @@ fn random_history_trims_to_limit() {
     let total = RANDOM_HISTORY_LIMIT + 5;
     controller.set_wav_entries_for_tests(
         (0..total)
-            .map(|i| sample_entry(&format!("{i}.wav"), SampleTag::Neutral))
+            .map(|i| sample_entry(&format!("{i}.wav"), crate::sample_sources::Rating::NEUTRAL))
             .collect(),
     );
     controller.rebuild_wav_lookup();

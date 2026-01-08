@@ -2,7 +2,7 @@ use super::super::DragDropController;
 use crate::egui_app::state::DragSample;
 use crate::egui_app::state::TriageFlagColumn;
 use crate::egui_app::ui::style::StatusTone;
-use crate::sample_sources::{CollectionId, SampleTag, SourceId};
+use crate::sample_sources::{CollectionId, Rating, SourceId};
 use std::path::PathBuf;
 
 impl DragDropController<'_> {
@@ -58,9 +58,9 @@ impl DragDropController<'_> {
         if let Some(column) = triage_target {
             self.selection_state.suppress_autoplay_once = true;
             let target_tag = match column {
-                TriageFlagColumn::Trash => SampleTag::Trash,
-                TriageFlagColumn::Neutral => SampleTag::Neutral,
-                TriageFlagColumn::Keep => SampleTag::Keep,
+                TriageFlagColumn::Trash => Rating::TRASH_1,
+                TriageFlagColumn::Neutral => Rating::NEUTRAL,
+                TriageFlagColumn::Keep => Rating::KEEP_1,
             };
             if let Some(source) = self
                 .library

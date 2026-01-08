@@ -1,5 +1,5 @@
 use super::*;
-use crate::sample_sources::SampleTag;
+use crate::sample_sources::Rating;
 use std::fs;
 use std::time::SystemTime;
 
@@ -11,7 +11,7 @@ impl EguiController {
         source_id: &SourceId,
         relative_path: &Path,
         bounds: SelectionRange,
-        target_tag: Option<SampleTag>,
+        target_tag: Option<Rating>,
         add_to_browser: bool,
         register_in_source: bool,
     ) -> Result<WavEntry, String> {
@@ -41,7 +41,7 @@ impl EguiController {
         source_id: &SourceId,
         relative_path: &Path,
         bounds: SelectionRange,
-        target_tag: Option<SampleTag>,
+        target_tag: Option<Rating>,
         add_to_browser: bool,
         register_in_source: bool,
         folder: &Path,
@@ -146,7 +146,7 @@ impl EguiController {
         source_id: &SourceId,
         relative_path: &Path,
         bounds: SelectionRange,
-        target_tag: Option<SampleTag>,
+        target_tag: Option<Rating>,
         clip_root: &Path,
         name_hint: &Path,
     ) -> Result<WavEntry, String> {
@@ -222,7 +222,7 @@ impl EguiController {
         &mut self,
         source: &SampleSource,
         relative_path: PathBuf,
-        target_tag: Option<SampleTag>,
+        target_tag: Option<Rating>,
         add_to_browser: bool,
         register_in_source: bool,
     ) -> Result<WavEntry, String> {
@@ -239,7 +239,7 @@ impl EguiController {
             file_size: metadata.len(),
             modified_ns,
             content_hash: None,
-            tag: target_tag.unwrap_or(SampleTag::Neutral),
+            tag: target_tag.unwrap_or(Rating::NEUTRAL),
             missing: false,
         };
         if register_in_source {
@@ -248,7 +248,7 @@ impl EguiController {
                 .map_err(|err| format!("Database unavailable: {err}"))?;
             db.upsert_file(&entry.relative_path, entry.file_size, entry.modified_ns)
                 .map_err(|err| format!("Failed to register clip: {err}"))?;
-            if entry.tag != SampleTag::Neutral {
+            if entry.tag != Rating::NEUTRAL {
                 db.set_tag(&entry.relative_path, entry.tag)
                     .map_err(|err| format!("Failed to tag clip: {err}"))?;
             }

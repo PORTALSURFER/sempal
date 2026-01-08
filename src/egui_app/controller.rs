@@ -22,7 +22,7 @@ use crate::{
     egui_app::{ui::style, view_model},
     sample_sources::scanner::ScanMode,
     sample_sources::{
-        Collection, CollectionId, SampleSource, SampleTag, SourceDatabase, SourceDbError, SourceId,
+        Collection, CollectionId, Rating, SampleSource, SourceDatabase, SourceDbError, SourceId,
         WavEntry,
     },
     selection::SelectionRange,

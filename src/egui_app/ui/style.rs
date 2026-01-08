@@ -1,4 +1,4 @@
-use crate::sample_sources::SampleTag;
+use crate::sample_sources::Rating;
 use eframe::egui::{
     Color32, Frame, Margin, Rect, Stroke, StrokeKind, Ui, Visuals,
     epaint::{CornerRadius, Shadow},
@@ -203,21 +203,26 @@ pub fn triage_marker_width() -> f32 {
 }
 
 /// Colour for the trailing triage marker based on tag.
-pub fn triage_marker_color(tag: SampleTag) -> Option<Color32> {
+pub fn triage_marker_color(tag: Rating) -> Option<Color32> {
     let palette = semantic_palette();
-    match tag {
-        SampleTag::Trash => Some(with_alpha(palette.triage_trash, 220)),
-        SampleTag::Keep => Some(with_alpha(palette.triage_keep, 220)),
-        SampleTag::Neutral => None,
+    if tag.is_trash() {
+        Some(with_alpha(palette.triage_trash, 220))
+    } else if tag.is_keep() {
+        Some(with_alpha(palette.triage_keep, 220))
+    } else {
+        None
     }
 }
 
 /// Text colour to match the triage flag used for a sample row.
-pub fn triage_label_color(tag: SampleTag) -> Color32 {
-    match tag {
-        SampleTag::Trash => semantic_palette().triage_trash,
-        SampleTag::Keep => semantic_palette().triage_keep,
-        SampleTag::Neutral => palette().text_primary,
+pub fn triage_label_color(tag: Rating) -> Color32 {
+    let palette = semantic_palette();
+    if tag.is_trash() {
+        palette.triage_trash
+    } else if tag.is_keep() {
+        palette.triage_keep
+    } else {
+        crate::egui_app::ui::style::palette().text_primary
     }
 }
 
@@ -346,15 +351,16 @@ pub fn paint_section_border(ui: &Ui, rect: Rect, focused: bool) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sample_sources::SampleTag;
+    use crate::sample_sources::Rating;
 
+    #[test]
     #[test]
     fn triage_label_color_matches_flags() {
         let semantic = semantic_palette();
-        assert_eq!(triage_label_color(SampleTag::Trash), semantic.triage_trash);
-        assert_eq!(triage_label_color(SampleTag::Keep), semantic.triage_keep);
+        assert_eq!(triage_label_color(Rating::TRASH_1), semantic.triage_trash);
+        assert_eq!(triage_label_color(Rating::KEEP_1), semantic.triage_keep);
         assert_eq!(
-            triage_label_color(SampleTag::Neutral),
+            triage_label_color(Rating::NEUTRAL),
             palette().text_primary
         );
     }

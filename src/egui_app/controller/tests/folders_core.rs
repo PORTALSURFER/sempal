@@ -74,7 +74,7 @@ fn root_entry_stays_above_real_folders() {
     let folder = source.root.join("rooted");
     std::fs::create_dir_all(&folder).unwrap();
     write_test_wav(&folder.join("clip.wav"), &[0.2, -0.2]);
-    controller.set_wav_entries_for_tests(vec![sample_entry("rooted/clip.wav", SampleTag::Neutral)]);
+    controller.set_wav_entries_for_tests(vec![sample_entry("rooted/clip.wav", crate::sample_sources::Rating::NEUTRAL)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
     controller.refresh_folder_browser();
@@ -108,7 +108,7 @@ fn start_new_folder_uses_focused_parent() {
     let folder = source.root.join("clips");
     std::fs::create_dir_all(&folder).unwrap();
     write_test_wav(&folder.join("clip.wav"), &[0.2, -0.2]);
-    controller.set_wav_entries_for_tests(vec![sample_entry("clips/clip.wav", SampleTag::Neutral)]);
+    controller.set_wav_entries_for_tests(vec![sample_entry("clips/clip.wav", crate::sample_sources::Rating::NEUTRAL)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
     controller.refresh_folder_browser();
@@ -168,8 +168,8 @@ fn selecting_root_filters_to_root_files() -> Result<(), String> {
     write_test_wav(&source.root.join("root.wav"), &[0.2, -0.2]);
     write_test_wav(&folder.join("clip.wav"), &[0.2, -0.2]);
     controller.set_wav_entries_for_tests(vec![
-        sample_entry("root.wav", SampleTag::Neutral),
-        sample_entry("rooted/clip.wav", SampleTag::Neutral),
+        sample_entry("root.wav", crate::sample_sources::Rating::NEUTRAL),
+        sample_entry("rooted/clip.wav", crate::sample_sources::Rating::NEUTRAL),
     ]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
@@ -211,7 +211,7 @@ fn renaming_folder_updates_entries_and_tree() -> Result<(), String> {
     let folder = source.root.join("old");
     std::fs::create_dir_all(&folder).unwrap();
     write_test_wav(&folder.join("clip.wav"), &[0.1, -0.1]);
-    controller.set_wav_entries_for_tests(vec![sample_entry("old/clip.wav", SampleTag::Neutral)]);
+    controller.set_wav_entries_for_tests(vec![sample_entry("old/clip.wav", crate::sample_sources::Rating::NEUTRAL)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
     controller.refresh_folder_browser();
@@ -260,7 +260,7 @@ fn deleting_folder_removes_wavs() -> Result<(), String> {
     let target = source.root.join("gone");
     std::fs::create_dir_all(&target).unwrap();
     write_test_wav(&target.join("sample.wav"), &[0.0, 0.2]);
-    controller.set_wav_entries_for_tests(vec![sample_entry("gone/sample.wav", SampleTag::Neutral)]);
+    controller.set_wav_entries_for_tests(vec![sample_entry("gone/sample.wav", crate::sample_sources::Rating::NEUTRAL)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
     controller.refresh_folder_browser();
@@ -302,9 +302,9 @@ fn deleting_folder_moves_focus_to_next_available() -> Result<(), String> {
         write_test_wav(&path.join(format!("{folder}.wav")), &[0.0, 0.2]);
     }
     controller.set_wav_entries_for_tests(vec![
-        sample_entry("a/a.wav", SampleTag::Neutral),
-        sample_entry("b/b.wav", SampleTag::Neutral),
-        sample_entry("c/c.wav", SampleTag::Neutral),
+        sample_entry("a/a.wav", crate::sample_sources::Rating::NEUTRAL),
+        sample_entry("b/b.wav", crate::sample_sources::Rating::NEUTRAL),
+        sample_entry("c/c.wav", crate::sample_sources::Rating::NEUTRAL),
     ]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
@@ -345,7 +345,7 @@ fn folder_focus_clears_when_context_changes() -> Result<(), String> {
     let folder = source.root.join("one");
     std::fs::create_dir_all(&folder).unwrap();
     write_test_wav(&folder.join("sample.wav"), &[0.2, -0.2]);
-    controller.set_wav_entries_for_tests(vec![sample_entry("one/sample.wav", SampleTag::Neutral)]);
+    controller.set_wav_entries_for_tests(vec![sample_entry("one/sample.wav", crate::sample_sources::Rating::NEUTRAL)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
     controller.refresh_folder_browser();
@@ -381,8 +381,8 @@ fn clearing_folder_selection_shows_all_samples() -> Result<(), String> {
     std::fs::create_dir_all(source.root.join("a")).unwrap();
     std::fs::create_dir_all(source.root.join("b")).unwrap();
     controller.set_wav_entries_for_tests(vec![
-        sample_entry("a/one.wav", SampleTag::Neutral),
-        sample_entry("b/two.wav", SampleTag::Neutral),
+        sample_entry("a/one.wav", crate::sample_sources::Rating::NEUTRAL),
+        sample_entry("b/two.wav", crate::sample_sources::Rating::NEUTRAL),
     ]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
@@ -416,8 +416,8 @@ fn negated_folder_hides_samples() -> Result<(), String> {
     std::fs::create_dir_all(source.root.join("a")).unwrap();
     std::fs::create_dir_all(source.root.join("b")).unwrap();
     controller.set_wav_entries_for_tests(vec![
-        sample_entry("a/one.wav", SampleTag::Neutral),
-        sample_entry("b/two.wav", SampleTag::Neutral),
+        sample_entry("a/one.wav", crate::sample_sources::Rating::NEUTRAL),
+        sample_entry("b/two.wav", crate::sample_sources::Rating::NEUTRAL),
     ]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
@@ -447,8 +447,8 @@ fn negated_root_hides_only_root_samples() -> Result<(), String> {
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
     std::fs::create_dir_all(source.root.join("sub")).unwrap();
     controller.set_wav_entries_for_tests(vec![
-        sample_entry("root.wav", SampleTag::Neutral),
-        sample_entry("sub/child.wav", SampleTag::Neutral),
+        sample_entry("root.wav", crate::sample_sources::Rating::NEUTRAL),
+        sample_entry("sub/child.wav", crate::sample_sources::Rating::NEUTRAL),
     ]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
@@ -469,7 +469,7 @@ fn escape_does_not_clear_folder_filter_without_folder_focus() -> Result<(), Stri
     controller.library.sources.push(source.clone());
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
     std::fs::create_dir_all(source.root.join("a")).unwrap();
-    controller.set_wav_entries_for_tests(vec![sample_entry("a/one.wav", SampleTag::Neutral)]);
+    controller.set_wav_entries_for_tests(vec![sample_entry("a/one.wav", crate::sample_sources::Rating::NEUTRAL)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
     controller.refresh_folder_browser();

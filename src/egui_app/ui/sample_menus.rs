@@ -1,5 +1,5 @@
 use super::*;
-use crate::sample_sources::SampleTag;
+
 use eframe::egui;
 
 impl EguiApp {
@@ -9,13 +9,25 @@ impl EguiApp {
         close_menu: &mut bool,
         mut on_tag: F,
     ) where
-        F: FnMut(&mut EguiApp, SampleTag) -> bool,
+        F: FnMut(&mut EguiApp, crate::sample_sources::Rating) -> bool,
     {
+        use crate::sample_sources::Rating;
         ui.menu_button("Tag", |ui| {
             let mut tag_clicked = false;
-            tag_clicked |= ui.button("Trash").clicked() && on_tag(self, SampleTag::Trash);
-            tag_clicked |= ui.button("Neutral").clicked() && on_tag(self, SampleTag::Neutral);
-            tag_clicked |= ui.button("Keep").clicked() && on_tag(self, SampleTag::Keep);
+            ui.horizontal(|ui| {
+                if ui.button("Trash (-3)").clicked() { tag_clicked |= on_tag(self, Rating::new(-3)); }
+                if ui.button("Trash (-2)").clicked() { tag_clicked |= on_tag(self, Rating::new(-2)); }
+                if ui.button("Trash (-1)").clicked() { tag_clicked |= on_tag(self, Rating::new(-1)); }
+            });
+            ui.separator();
+             if ui.button("Neutral (0)").clicked() { tag_clicked |= on_tag(self, Rating::NEUTRAL); }
+            ui.separator();
+            ui.horizontal(|ui| {
+                if ui.button("Keep (+1)").clicked() { tag_clicked |= on_tag(self, Rating::new(1)); }
+                if ui.button("Keep (+2)").clicked() { tag_clicked |= on_tag(self, Rating::new(2)); }
+                if ui.button("Keep (+3)").clicked() { tag_clicked |= on_tag(self, Rating::new(3)); }
+            });
+
             if tag_clicked {
                 *close_menu = true;
                 ui.close();

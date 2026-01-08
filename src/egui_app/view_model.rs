@@ -3,7 +3,7 @@
 
 use crate::egui_app::state::{CollectionRowView, CollectionSampleView, SourceRowView};
 use crate::sample_sources::collections::{CollectionMember, collection_folder_name_from_str};
-use crate::sample_sources::{Collection, CollectionId, SampleSource, SampleTag};
+use crate::sample_sources::{Collection, CollectionId, Rating, SampleSource};
 use std::path::{Path, PathBuf};
 
 /// Convert a sample source into a UI row.
@@ -52,7 +52,7 @@ pub fn collection_samples(
     collection: Option<&Collection>,
     sources: &[SampleSource],
     missing_flags: Option<&[bool]>,
-    mut tag_lookup: impl FnMut(&CollectionMember) -> SampleTag,
+    mut tag_lookup: impl FnMut(&CollectionMember) -> Rating,
 ) -> Vec<CollectionSampleView> {
     let Some(collection) = collection else {
         return Vec::new();
@@ -95,18 +95,18 @@ fn source_label(sources: &[SampleSource], id: &str) -> String {
 
 /// Helper to derive a browser index from a tag and absolute row position.
 pub fn sample_browser_index_for(
-    tag: SampleTag,
+    tag: Rating,
     index: usize,
 ) -> crate::egui_app::state::SampleBrowserIndex {
     use crate::egui_app::state::TriageFlagColumn::*;
-    crate::egui_app::state::SampleBrowserIndex {
-        column: match tag {
-            SampleTag::Trash => Trash,
-            SampleTag::Neutral => Neutral,
-            SampleTag::Keep => Keep,
-        },
-        row: index,
-    }
+    let column = if tag.is_trash() {
+        Trash
+    } else if tag.is_keep() {
+        Keep
+    } else {
+        Neutral
+    };
+    crate::egui_app::state::SampleBrowserIndex { column, row: index }
 }
 
 /// Produce a user-facing sample label that omits folders and extensions.

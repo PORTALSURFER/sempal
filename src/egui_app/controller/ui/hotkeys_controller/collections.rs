@@ -2,7 +2,7 @@ use super::HotkeysController;
 use crate::egui_app::controller::StatusTone;
 use crate::egui_app::controller::ui::hotkeys::HotkeyCommand;
 use crate::egui_app::state::FocusContext;
-use crate::sample_sources::SampleTag;
+use crate::sample_sources::Rating;
 
 pub(crate) fn handle_collections_command(
     controller: &mut HotkeysController<'_>,
@@ -32,7 +32,7 @@ pub(crate) fn handle_collections_command(
         }
         HotkeyCommand::TagKeepSelected => {
             if matches!(focus, FocusContext::CollectionSample) {
-                controller.tag_selected_collection_sample(SampleTag::Keep);
+                controller.tag_selected_collection_sample(Rating::KEEP_1);
                 true
             } else {
                 false
@@ -40,7 +40,7 @@ pub(crate) fn handle_collections_command(
         }
         HotkeyCommand::TagNeutralSelected => {
             if matches!(focus, FocusContext::CollectionSample) {
-                controller.tag_selected_collection_sample(SampleTag::Neutral);
+                controller.tag_selected_collection_sample(Rating::NEUTRAL);
                 true
             } else {
                 false
@@ -48,7 +48,7 @@ pub(crate) fn handle_collections_command(
         }
         HotkeyCommand::TagTrashSelected => {
             if matches!(focus, FocusContext::CollectionSample) {
-                controller.tag_selected_collection_sample(SampleTag::Trash);
+                controller.tag_selected_collection_sample(Rating::TRASH_1);
                 true
             } else {
                 false

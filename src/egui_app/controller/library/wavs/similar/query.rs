@@ -216,7 +216,7 @@ mod tests {
     #[test]
     fn resolve_anchor_index_prefers_override() {
         let (mut controller, _source) =
-            prepare_with_source_and_wav_entries(vec![sample_entry("a.wav", SampleTag::Neutral)]);
+            prepare_with_source_and_wav_entries(vec![sample_entry("a.wav", crate::sample_sources::Rating::NEUTRAL)]);
         let anchor = resolve_anchor_index(&mut controller, Path::new("a.wav"), Some(7));
         assert_eq!(anchor, Some(7));
     }

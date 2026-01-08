@@ -153,7 +153,7 @@ fn sample_drop_falls_back_to_active_collection() {
     controller.settings.collection_export_root = Some(export_root.clone());
     controller.cache_db(&source).unwrap();
     write_test_wav(&root.join("one.wav"), &[0.1, 0.2]);
-    controller.set_wav_entries_for_tests(vec![sample_entry("one.wav", SampleTag::Neutral)]);
+    controller.set_wav_entries_for_tests(vec![sample_entry("one.wav", crate::sample_sources::Rating::NEUTRAL)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 

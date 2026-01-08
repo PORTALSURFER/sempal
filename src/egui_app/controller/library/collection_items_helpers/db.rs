@@ -8,7 +8,7 @@ impl EguiController {
         &mut self,
         ctx: &CollectionSampleContext,
         new_relative: &Path,
-        tag: SampleTag,
+        tag: crate::sample_sources::Rating,
     ) -> Result<(u64, i64), String> {
         let new_absolute = ctx.source.root.join(new_relative);
         std::fs::rename(&ctx.absolute_path, &new_absolute)
@@ -27,7 +27,7 @@ impl EguiController {
         new_relative: &Path,
         file_size: u64,
         modified_ns: i64,
-        tag: SampleTag,
+        tag: crate::sample_sources::Rating,
     ) -> Result<(), String> {
         self.rewrite_db_entry_for_source(
             &ctx.source,
@@ -46,7 +46,7 @@ impl EguiController {
         new_relative: &Path,
         file_size: u64,
         modified_ns: i64,
-        tag: SampleTag,
+        tag: crate::sample_sources::Rating,
     ) -> Result<(), String> {
         let db = self
             .database_for(source)

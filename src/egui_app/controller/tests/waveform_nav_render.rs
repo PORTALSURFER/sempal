@@ -158,8 +158,8 @@ fn stale_audio_results_are_ignored() {
     write_test_wav(&source.root.join("a.wav"), &[0.0, 0.1]);
     write_test_wav(&source.root.join("b.wav"), &[0.0, -0.1]);
     controller.set_wav_entries_for_tests(vec![
-        sample_entry("a.wav", SampleTag::Neutral),
-        sample_entry("b.wav", SampleTag::Neutral),
+        sample_entry("a.wav", crate::sample_sources::Rating::NEUTRAL),
+        sample_entry("b.wav", crate::sample_sources::Rating::NEUTRAL),
     ]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
@@ -193,7 +193,7 @@ fn play_request_is_deferred_until_audio_ready() {
     controller.library.sources.push(source.clone());
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
     write_test_wav(&source.root.join("wait.wav"), &[0.0, 0.2, -0.2]);
-    controller.set_wav_entries_for_tests(vec![sample_entry("wait.wav", SampleTag::Neutral)]);
+    controller.set_wav_entries_for_tests(vec![sample_entry("wait.wav", crate::sample_sources::Rating::NEUTRAL)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
@@ -219,7 +219,7 @@ fn loading_flag_clears_after_audio_load() {
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
     let rel = PathBuf::from("load.wav");
     write_test_wav(&source.root.join(&rel), &[0.0, 0.5, -0.5]);
-    controller.set_wav_entries_for_tests(vec![sample_entry("load.wav", SampleTag::Neutral)]);
+    controller.set_wav_entries_for_tests(vec![sample_entry("load.wav", crate::sample_sources::Rating::NEUTRAL)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 

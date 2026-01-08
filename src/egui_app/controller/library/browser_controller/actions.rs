@@ -5,11 +5,11 @@ use std::collections::HashSet;
 use tracing::{info, warn};
 
 pub(crate) trait BrowserActions {
-    fn tag_browser_sample(&mut self, row: usize, tag: SampleTag) -> Result<(), String>;
+    fn tag_browser_sample(&mut self, row: usize, tag: crate::sample_sources::Rating) -> Result<(), String>;
     fn tag_browser_samples(
         &mut self,
         rows: &[usize],
-        tag: SampleTag,
+        tag: crate::sample_sources::Rating,
         primary_visible_row: usize,
     ) -> Result<(), String>;
     fn normalize_browser_sample(&mut self, row: usize) -> Result<(), String>;
@@ -27,7 +27,7 @@ pub(crate) trait BrowserActions {
 }
 
 impl BrowserActions for BrowserController<'_> {
-    fn tag_browser_sample(&mut self, row: usize, tag: SampleTag) -> Result<(), String> {
+    fn tag_browser_sample(&mut self, row: usize, tag: crate::sample_sources::Rating) -> Result<(), String> {
         info!(row, ?tag, "triage tag: single row");
         let result: Result<(), String> = (|| {
             let ctx = self.resolve_browser_sample(row)?;
@@ -48,7 +48,7 @@ impl BrowserActions for BrowserController<'_> {
     fn tag_browser_samples(
         &mut self,
         rows: &[usize],
-        tag: SampleTag,
+        tag: crate::sample_sources::Rating,
         primary_visible_row: usize,
     ) -> Result<(), String> {
         info!(?rows, ?tag, primary_visible_row, "triage tag: multi row");

@@ -41,13 +41,17 @@ impl IssueTokenStore {
     pub fn get(&self) -> Result<Option<String>, IssueTokenStoreError> {
         match self.try_keyring_get() {
             Ok(Some(token)) => Ok(Some(token)),
-            Ok(None) => self.fallback_get(),
-            Err(err) => {
-                let fallback = self.fallback_get()?;
-                if let Some(token) = fallback {
-                    Ok(Some(token))
+            Ok(None) => {
+                if self.fallback_key.is_some() {
+                    self.fallback_get()
                 } else {
-                    Err(err)
+                    Ok(None)
+                }
+            }
+            Err(keyring_err) => {
+                match self.fallback_get() {
+                    Ok(Some(token)) => Ok(Some(token)),
+                    _ => Err(keyring_err),
                 }
             }
         }
@@ -58,40 +62,49 @@ impl IssueTokenStore {
         if token.is_empty() {
             return self.delete();
         }
-        if self.try_keyring_set(token).is_ok() {
-            match self.try_keyring_get() {
-                Ok(Some(stored)) if stored == token => {
-                    let _ = self.fallback_delete();
-                    return Ok(());
+
+        let keyring_err = match self.try_keyring_set(token) {
+            Ok(_) => {
+                // Verify it can be read back
+                match self.try_keyring_get() {
+                    Ok(Some(stored)) if stored == token => {
+                        let _ = self.fallback_delete();
+                        return Ok(());
+                    }
+                    Ok(Some(stored)) => {
+                        Some(IssueTokenStoreError::Unavailable(
+                            format!("Keyring set succeeded but read back mismatch (got {} bytes, expected {}).", 
+                                stored.len(), token.len())
+                        ))
+                    }
+                    Ok(None) => {
+                        Some(IssueTokenStoreError::Unavailable(
+                            "Keyring set reported success but item was not found immediately after.".into(),
+                        ))
+                    }
+                    Err(e) => Some(e),
                 }
-                Ok(_) => {}
-                Err(_) => {}
+            }
+            Err(e) => Some(e),
+        };
+
+        match self.fallback_set(token) {
+            Ok(_) => Ok(()),
+            Err(fallback_err) => {
+                if self.fallback_key.is_none() {
+                    // Fallback is disabled. Return the keyring error if we have one.
+                    if let Some(ke) = keyring_err {
+                        return Err(ke);
+                    }
+                }
+                Err(fallback_err)
             }
         }
-        self.fallback_set(token)
     }
 
     /// Store the token and verify it can be read back.
     pub fn set_and_verify(&self, token: &str) -> Result<(), IssueTokenStoreError> {
-        let token = token.trim();
-        if token.is_empty() {
-            self.delete()?;
-            match self.get()? {
-                None => return Ok(()),
-                _ => {
-                    return Err(IssueTokenStoreError::Unavailable(
-                        "Token cleared, but still present. Try again.".to_string(),
-                    ));
-                }
-            }
-        }
-        self.set(token)?;
-        match self.get()? {
-            Some(stored) if stored.trim() == token => Ok(()),
-            _ => Err(IssueTokenStoreError::Unavailable(
-                "Token saved, but could not be read back. Try again.".to_string(),
-            )),
-        }
+        self.set(token)
     }
 
     pub fn delete(&self) -> Result<(), IssueTokenStoreError> {
@@ -335,6 +348,24 @@ mod tests {
             std::env::remove_var("SEMPAL_DISABLE_KEYRING");
             std::env::remove_var(FALLBACK_ENABLE_ENV);
             std::env::remove_var(FALLBACK_SECRET_ENV);
+        }
+    }
+
+    #[test]
+    fn get_none_when_both_empty_and_fallback_disabled() {
+        unsafe {
+            std::env::set_var("SEMPAL_DISABLE_KEYRING", "1");
+            std::env::remove_var(FALLBACK_ENABLE_ENV);
+        }
+        let base = tempdir().unwrap();
+        let _guard = crate::app_dirs::ConfigBaseGuard::set(base.path().to_path_buf());
+        let store = IssueTokenStore::new().unwrap();
+        
+        // This should return Ok(None), not Err
+        assert_eq!(store.get().unwrap(), None);
+        
+        unsafe {
+            std::env::remove_var("SEMPAL_DISABLE_KEYRING");
         }
     }
 }

@@ -4,7 +4,7 @@ use tracing::warn;
 
 impl EguiController {
     /// Apply a keep/trash/neutral tag to a single visible browser row.
-    pub fn tag_browser_sample(&mut self, row: usize, tag: SampleTag) -> Result<(), String> {
+    pub fn tag_browser_sample(&mut self, row: usize, tag: crate::sample_sources::Rating) -> Result<(), String> {
         self.browser().tag_browser_sample(row, tag)
     }
 
@@ -12,7 +12,7 @@ impl EguiController {
     pub fn tag_browser_samples(
         &mut self,
         rows: &[usize],
-        tag: SampleTag,
+        tag: crate::sample_sources::Rating,
         primary_visible_row: usize,
     ) -> Result<(), String> {
         self.browser()

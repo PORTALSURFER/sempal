@@ -19,22 +19,22 @@ use tempfile::tempdir;
 #[test]
 fn hotkey_tagging_applies_to_all_selected_rows() {
     let (mut controller, _source) = prepare_with_source_and_wav_entries(vec![
-        sample_entry("one.wav", SampleTag::Neutral),
-        sample_entry("two.wav", SampleTag::Neutral),
+        sample_entry("one.wav", crate::sample_sources::Rating::NEUTRAL),
+        sample_entry("two.wav", crate::sample_sources::Rating::NEUTRAL),
     ]);
 
     controller.focus_browser_row_only(0);
     controller.toggle_browser_row_selection(1);
     controller.tag_selected_left();
 
-    assert_eq!(controller.wav_entry(0).unwrap().tag, SampleTag::Trash);
-    assert_eq!(controller.wav_entry(1).unwrap().tag, SampleTag::Trash);
+    assert_eq!(controller.wav_entry(0).unwrap().tag, crate::sample_sources::Rating::TRASH_3);
+    assert_eq!(controller.wav_entry(1).unwrap().tag, crate::sample_sources::Rating::TRASH_3);
 }
 
 #[test]
 fn focus_hotkey_does_not_autoplay_browser_sample() {
     let (mut controller, source) =
-        prepare_with_source_and_wav_entries(vec![sample_entry("one.wav", SampleTag::Neutral)]);
+        prepare_with_source_and_wav_entries(vec![sample_entry("one.wav", crate::sample_sources::Rating::NEUTRAL)]);
     write_test_wav(&source.root.join("one.wav"), &[0.0, 0.1]);
 
     assert!(controller.settings.feature_flags.autoplay_selection);
@@ -53,8 +53,8 @@ fn focus_hotkey_does_not_autoplay_browser_sample() {
 #[test]
 fn x_key_toggle_respects_focus() {
     let (mut controller, _source) = prepare_with_source_and_wav_entries(vec![
-        sample_entry("one.wav", SampleTag::Neutral),
-        sample_entry("two.wav", SampleTag::Neutral),
+        sample_entry("one.wav", crate::sample_sources::Rating::NEUTRAL),
+        sample_entry("two.wav", crate::sample_sources::Rating::NEUTRAL),
     ]);
 
     controller.focus_browser_row(0);
@@ -77,9 +77,9 @@ fn x_key_toggle_respects_focus() {
 #[test]
 fn action_rows_include_selection_and_primary() {
     let (mut controller, _source) = prepare_with_source_and_wav_entries(vec![
-        sample_entry("one.wav", SampleTag::Neutral),
-        sample_entry("two.wav", SampleTag::Neutral),
-        sample_entry("three.wav", SampleTag::Neutral),
+        sample_entry("one.wav", crate::sample_sources::Rating::NEUTRAL),
+        sample_entry("two.wav", crate::sample_sources::Rating::NEUTRAL),
+        sample_entry("three.wav", crate::sample_sources::Rating::NEUTRAL),
     ]);
     controller.ui.browser.selected_paths =
         vec![PathBuf::from("one.wav"), PathBuf::from("three.wav")];
@@ -92,8 +92,8 @@ fn action_rows_include_selection_and_primary() {
 #[test]
 fn tag_actions_apply_to_all_selected_rows() {
     let (mut controller, _source) = prepare_with_source_and_wav_entries(vec![
-        sample_entry("one.wav", SampleTag::Neutral),
-        sample_entry("two.wav", SampleTag::Neutral),
+        sample_entry("one.wav", crate::sample_sources::Rating::NEUTRAL),
+        sample_entry("two.wav", crate::sample_sources::Rating::NEUTRAL),
     ]);
 
     controller.focus_browser_row(0);
@@ -101,19 +101,19 @@ fn tag_actions_apply_to_all_selected_rows() {
     let rows = controller.action_rows_from_primary(0);
 
     controller
-        .tag_browser_samples(&rows, SampleTag::Keep, 0)
+        .tag_browser_samples(&rows, crate::sample_sources::Rating::KEEP_1, 0)
         .unwrap();
 
-    assert_eq!(controller.wav_entry(0).unwrap().tag, SampleTag::Keep);
-    assert_eq!(controller.wav_entry(1).unwrap().tag, SampleTag::Keep);
+    assert_eq!(controller.wav_entry(0).unwrap().tag, crate::sample_sources::Rating::KEEP_1);
+    assert_eq!(controller.wav_entry(1).unwrap().tag, crate::sample_sources::Rating::KEEP_1);
 }
 
 #[test]
 fn delete_actions_apply_to_all_selected_rows() {
     let (mut controller, source) = prepare_with_source_and_wav_entries(vec![
-        sample_entry("one.wav", SampleTag::Neutral),
-        sample_entry("two.wav", SampleTag::Neutral),
-        sample_entry("three.wav", SampleTag::Neutral),
+        sample_entry("one.wav", crate::sample_sources::Rating::NEUTRAL),
+        sample_entry("two.wav", crate::sample_sources::Rating::NEUTRAL),
+        sample_entry("three.wav", crate::sample_sources::Rating::NEUTRAL),
     ]);
     write_test_wav(&source.root.join("one.wav"), &[0.0, 0.1]);
     write_test_wav(&source.root.join("two.wav"), &[0.0, 0.1]);
@@ -135,9 +135,9 @@ fn delete_actions_apply_to_all_selected_rows() {
 #[test]
 fn delete_hotkey_applies_to_all_selected_rows() {
     let (mut controller, source) = prepare_with_source_and_wav_entries(vec![
-        sample_entry("one.wav", SampleTag::Neutral),
-        sample_entry("two.wav", SampleTag::Neutral),
-        sample_entry("three.wav", SampleTag::Neutral),
+        sample_entry("one.wav", crate::sample_sources::Rating::NEUTRAL),
+        sample_entry("two.wav", crate::sample_sources::Rating::NEUTRAL),
+        sample_entry("three.wav", crate::sample_sources::Rating::NEUTRAL),
     ]);
     write_test_wav(&source.root.join("one.wav"), &[0.0, 0.1]);
     write_test_wav(&source.root.join("two.wav"), &[0.0, 0.1]);
@@ -161,8 +161,8 @@ fn delete_hotkey_applies_to_all_selected_rows() {
 #[test]
 fn normalize_actions_apply_to_all_selected_rows() {
     let (mut controller, source) = prepare_with_source_and_wav_entries(vec![
-        sample_entry("one.wav", SampleTag::Neutral),
-        sample_entry("two.wav", SampleTag::Neutral),
+        sample_entry("one.wav", crate::sample_sources::Rating::NEUTRAL),
+        sample_entry("two.wav", crate::sample_sources::Rating::NEUTRAL),
     ]);
     write_test_wav(&source.root.join("one.wav"), &[0.0, 0.1]);
     write_test_wav(&source.root.join("two.wav"), &[0.0, 0.1]);
@@ -181,9 +181,9 @@ fn normalize_actions_apply_to_all_selected_rows() {
 #[test]
 fn selection_persists_when_nudging_focus() {
     let (mut controller, _source) = prepare_with_source_and_wav_entries(vec![
-        sample_entry("one.wav", SampleTag::Neutral),
-        sample_entry("two.wav", SampleTag::Neutral),
-        sample_entry("three.wav", SampleTag::Neutral),
+        sample_entry("one.wav", crate::sample_sources::Rating::NEUTRAL),
+        sample_entry("two.wav", crate::sample_sources::Rating::NEUTRAL),
+        sample_entry("three.wav", crate::sample_sources::Rating::NEUTRAL),
     ]);
 
     controller.focus_browser_row(0);
@@ -200,8 +200,8 @@ fn selection_persists_when_nudging_focus() {
 #[test]
 fn focused_row_actions_work_without_explicit_selection() {
     let (mut controller, _source) = prepare_with_source_and_wav_entries(vec![
-        sample_entry("one.wav", SampleTag::Neutral),
-        sample_entry("two.wav", SampleTag::Neutral),
+        sample_entry("one.wav", crate::sample_sources::Rating::NEUTRAL),
+        sample_entry("two.wav", crate::sample_sources::Rating::NEUTRAL),
     ]);
 
     controller.nudge_selection(0);
@@ -209,7 +209,7 @@ fn focused_row_actions_work_without_explicit_selection() {
 
     controller.tag_selected_left();
 
-    assert_eq!(controller.wav_entry(0).unwrap().tag, SampleTag::Trash);
+    assert_eq!(controller.wav_entry(0).unwrap().tag, crate::sample_sources::Rating::TRASH_3);
     assert_eq!(controller.ui.browser.selected_visible, Some(0));
 }
 
@@ -236,13 +236,13 @@ fn exporting_selection_updates_entries_and_db() {
             &source.id,
             Path::new("orig.wav"),
             SelectionRange::new(0.0, 0.5),
-            Some(SampleTag::Keep),
+            Some(crate::sample_sources::Rating::KEEP_1),
             true,
             true,
         )
         .unwrap();
 
-    assert_eq!(entry.tag, SampleTag::Keep);
+    assert_eq!(entry.tag, crate::sample_sources::Rating::KEEP_1);
     assert_eq!(entry.relative_path, PathBuf::from("orig_sel.wav"));
     assert_eq!(controller.wav_entries_len(), 1);
     assert_eq!(controller.ui.browser.visible.len(), 1);
@@ -261,7 +261,7 @@ fn exporting_selection_updates_entries_and_db() {
         .iter()
         .find(|row| row.relative_path == entry.relative_path)
         .unwrap();
-    assert_eq!(saved.tag, SampleTag::Keep);
+    assert_eq!(saved.tag, crate::sample_sources::Rating::KEEP_1);
 }
 
 #[test]
@@ -277,7 +277,7 @@ fn browser_normalize_refreshes_exports() -> Result<(), String> {
     controller.library.sources.push(source.clone());
 
     write_test_wav(&root.join("one.wav"), &[0.25, -0.5]);
-    controller.set_wav_entries_for_tests(vec![sample_entry("one.wav", SampleTag::Neutral)]);
+    controller.set_wav_entries_for_tests(vec![sample_entry("one.wav", crate::sample_sources::Rating::NEUTRAL)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
     controller
@@ -333,7 +333,7 @@ fn browser_normalize_resumes_playback_when_playing() {
     };
     let (mut controller, source) = prepare_with_source_and_wav_entries(vec![sample_entry(
         "normalize_resume_browser.wav",
-        SampleTag::Neutral,
+        crate::sample_sources::Rating::NEUTRAL,
     )]);
     controller.audio.player = Some(Rc::new(RefCell::new(player)));
     load_waveform_selection(
@@ -367,7 +367,7 @@ fn browser_delete_prunes_collections_and_exports() -> Result<(), String> {
     controller.library.sources.push(source.clone());
 
     write_test_wav(&root.join("delete.wav"), &[0.1, 0.2]);
-    controller.set_wav_entries_for_tests(vec![sample_entry("delete.wav", SampleTag::Neutral)]);
+    controller.set_wav_entries_for_tests(vec![sample_entry("delete.wav", crate::sample_sources::Rating::NEUTRAL)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
@@ -410,9 +410,9 @@ fn browser_remove_dead_links_prunes_missing_rows() -> Result<(), String> {
     controller.library.sources.push(source.clone());
 
     write_test_wav(&source.root.join("alive.wav"), &[0.0, 0.1, -0.1]);
-    let mut dead = sample_entry("gone.wav", SampleTag::Neutral);
+    let mut dead = sample_entry("gone.wav", crate::sample_sources::Rating::NEUTRAL);
     dead.missing = true;
-    controller.set_wav_entries_for_tests(vec![sample_entry("alive.wav", SampleTag::Neutral), dead]);
+    controller.set_wav_entries_for_tests(vec![sample_entry("alive.wav", crate::sample_sources::Rating::NEUTRAL), dead]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
@@ -455,9 +455,9 @@ fn removing_dead_links_for_source_prunes_missing_entries() -> Result<(), String>
     controller.cache_db(&source).unwrap();
 
     write_test_wav(&source.root.join("alive.wav"), &[0.0, 0.1, -0.1]);
-    let mut dead = sample_entry("gone.wav", SampleTag::Neutral);
+    let mut dead = sample_entry("gone.wav", crate::sample_sources::Rating::NEUTRAL);
     dead.missing = true;
-    controller.set_wav_entries_for_tests(vec![sample_entry("alive.wav", SampleTag::Neutral), dead]);
+    controller.set_wav_entries_for_tests(vec![sample_entry("alive.wav", crate::sample_sources::Rating::NEUTRAL), dead]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
     let mut missing = std::collections::HashSet::new();
@@ -496,9 +496,9 @@ fn deleting_browser_sample_moves_focus_forward() -> Result<(), String> {
         write_test_wav(&source.root.join(name), &[0.1, -0.1]);
     }
     controller.set_wav_entries_for_tests(vec![
-        sample_entry("a.wav", SampleTag::Neutral),
-        sample_entry("b.wav", SampleTag::Neutral),
-        sample_entry("c.wav", SampleTag::Neutral),
+        sample_entry("a.wav", crate::sample_sources::Rating::NEUTRAL),
+        sample_entry("b.wav", crate::sample_sources::Rating::NEUTRAL),
+        sample_entry("c.wav", crate::sample_sources::Rating::NEUTRAL),
     ]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();

@@ -1,7 +1,7 @@
 use super::super::{DragDropController, file_metadata};
 use crate::egui_app::state::DragSample;
 use crate::egui_app::ui::style::StatusTone;
-use crate::sample_sources::{SampleTag, SourceId, WavEntry};
+use crate::sample_sources::{Rating, SourceId, WavEntry};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use tracing::info;
@@ -179,7 +179,7 @@ impl DragDropController<'_> {
         relative_path: &Path,
         file_size: u64,
         modified_ns: i64,
-        tag: SampleTag,
+        tag: Rating,
     ) -> Result<(), String> {
         let db = self
             .database_for(source)
@@ -306,7 +306,7 @@ mod tests {
     use super::*;
     use crate::egui_app::controller::EguiController;
     use crate::egui_app::controller::test_support::{sample_entry, write_test_wav};
-    use crate::sample_sources::{SampleSource, SampleTag};
+    use crate::sample_sources::{Rating, SampleSource};
     use crate::waveform::WaveformRenderer;
     use tempfile::tempdir;
 
@@ -335,8 +335,8 @@ mod tests {
             .ensure_sample_db_entry(&source, Path::new("two.wav"))
             .unwrap();
         controller.set_wav_entries_for_tests(vec![
-            sample_entry("one.wav", SampleTag::Neutral),
-            sample_entry("two.wav", SampleTag::Neutral),
+            sample_entry("one.wav", Rating::NEUTRAL),
+            sample_entry("two.wav", Rating::NEUTRAL),
         ]);
         controller.rebuild_wav_lookup();
         controller.rebuild_browser_lists();

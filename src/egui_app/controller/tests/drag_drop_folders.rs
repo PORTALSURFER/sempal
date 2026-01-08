@@ -99,7 +99,7 @@ fn sample_drop_to_folder_moves_and_updates_state() {
     let db = controller.database_for(&source).unwrap();
     db.upsert_file(Path::new("one.wav"), metadata.len(), modified_ns)
         .unwrap();
-    controller.set_wav_entries_for_tests(vec![sample_entry("one.wav", SampleTag::Neutral)]);
+    controller.set_wav_entries_for_tests(vec![sample_entry("one.wav", crate::sample_sources::Rating::NEUTRAL)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
@@ -159,7 +159,7 @@ fn sample_drop_to_folder_rejects_conflicts() {
     controller.selection_state.ctx.selected_source = Some(source.id.clone());
     controller.cache_db(&source).unwrap();
 
-    controller.set_wav_entries_for_tests(vec![sample_entry("one.wav", SampleTag::Neutral)]);
+    controller.set_wav_entries_for_tests(vec![sample_entry("one.wav", crate::sample_sources::Rating::NEUTRAL)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 
@@ -197,7 +197,7 @@ fn folder_drop_to_folder_moves_tree() {
     std::fs::create_dir_all(&dest_folder).unwrap();
     write_test_wav(&src_folder.join("clip.wav"), &[0.1, 0.2]);
 
-    controller.set_wav_entries_for_tests(vec![sample_entry("one/clip.wav", SampleTag::Neutral)]);
+    controller.set_wav_entries_for_tests(vec![sample_entry("one/clip.wav", crate::sample_sources::Rating::NEUTRAL)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
     controller.refresh_folder_browser();

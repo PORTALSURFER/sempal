@@ -231,7 +231,7 @@ impl EguiController {
     }
 
     /// Tag the focused/selected wavs and keep the current focus.
-    pub fn tag_selected(&mut self, target: SampleTag) {
+    pub fn tag_selected(&mut self, target: crate::sample_sources::Rating) {
         tagging::tag_selected(self, target);
     }
 

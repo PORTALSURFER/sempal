@@ -17,7 +17,7 @@ fn waveform_sample_drop_copies_and_registers() {
     controller.cache_db(&source).unwrap();
 
     write_test_wav(&root.join("one.wav"), &[0.1, 0.2]);
-    controller.set_wav_entries_for_tests(vec![sample_entry("one.wav", SampleTag::Neutral)]);
+    controller.set_wav_entries_for_tests(vec![sample_entry("one.wav", crate::sample_sources::Rating::NEUTRAL)]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
 

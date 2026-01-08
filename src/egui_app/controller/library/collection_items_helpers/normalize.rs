@@ -7,7 +7,7 @@ impl EguiController {
     pub(crate) fn normalize_and_save(
         &mut self,
         ctx: &super::CollectionSampleContext,
-    ) -> Result<(u64, i64, SampleTag), String> {
+    ) -> Result<(u64, i64, crate::sample_sources::Rating), String> {
         self.normalize_and_save_for_path(&ctx.source, &ctx.member.relative_path, &ctx.absolute_path)
     }
 
@@ -16,7 +16,7 @@ impl EguiController {
         source: &SampleSource,
         relative_path: &Path,
         absolute_path: &Path,
-    ) -> Result<(u64, i64, SampleTag), String> {
+    ) -> Result<(u64, i64, crate::sample_sources::Rating), String> {
         let (samples, spec) = io::read_samples_for_normalization(absolute_path)?;
         if samples.is_empty() {
             return Err("No audio data to normalize".into());
@@ -48,7 +48,7 @@ impl EguiController {
         &mut self,
         source: &SampleSource,
         relative_path: &Path,
-    ) -> Result<SampleTag, String> {
+    ) -> Result<crate::sample_sources::Rating, String> {
         if let Some(cache) = self.cache.wav.entries.get(&source.id) {
             if let Some(index) = cache.lookup.get(relative_path).copied()
                 && let Some(entry) = cache.entry(index)

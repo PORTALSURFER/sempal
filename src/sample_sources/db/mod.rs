@@ -4,10 +4,14 @@ use rusqlite::{Connection, Transaction};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-mod read;
-mod schema;
-mod util;
-mod write;
+pub mod read;
+pub mod schema;
+pub mod write;
+
+pub mod util; // Restored
+
+mod rating_tests;
+
 pub use util::normalize_relative_path;
 
 /// Hidden filename used for per-source databases.
@@ -15,30 +19,61 @@ pub const DB_FILE_NAME: &str = ".sempal_samples.db";
 pub const META_LAST_SCAN_COMPLETED_AT: &str = "last_scan_completed_at";
 pub const META_LAST_SIMILARITY_PREP_SCAN_AT: &str = "last_similarity_prep_scan_at";
 
-/// Tag applied to a wav file to mark keep/trash decisions.
+/// Rating applied to a wav file to mark keep/trash decisions.
+/// Positive values (1..=3) are Keep.
+/// Negative values (-3..=-1) are Trash.
+/// 0 is Neutral.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum SampleTag {
-    Neutral,
-    Keep,
-    Trash,
+pub struct Rating(i8);
+
+impl Default for Rating {
+    fn default() -> Self {
+        Self(0)
+    }
 }
 
-impl SampleTag {
+impl Rating {
+    pub const NEUTRAL: Self = Self(0);
+    pub const KEEP_1: Self = Self(1);
+    pub const KEEP_3: Self = Self(3);
+    pub const TRASH_1: Self = Self(-1);
+    pub const TRASH_3: Self = Self(-3); // Full Trash
+
+    pub fn new(val: i8) -> Self {
+        Self(val.clamp(-3, 3))
+    }
+
+    pub fn val(&self) -> i8 {
+        self.0
+    }
+
+    pub fn is_neutral(&self) -> bool {
+        self.0 == 0
+    }
+
+    pub fn is_keep(&self) -> bool {
+        self.0 > 0
+    }
+
+    pub fn is_trash(&self) -> bool {
+        self.0 < 0
+    }
+
     /// Convert the tag to a SQLite-friendly integer.
     pub fn as_i64(self) -> i64 {
-        match self {
-            SampleTag::Neutral => 0,
-            SampleTag::Keep => 1,
-            SampleTag::Trash => 2,
-        }
+        self.0 as i64
     }
 
     /// Parse an integer column value into a tag.
+    /// Handles migration of legacy values:
+    /// 1 -> Keep (1)
+    /// 2 -> Trash (-1)
+    /// others -> mapped directly if in range, else Neutral
     pub fn from_i64(value: i64) -> Self {
         match value {
-            1 => SampleTag::Keep,
-            2 => SampleTag::Trash,
-            _ => SampleTag::Neutral,
+            1 => Self(1),
+            2 => Self(-1), // Legacy Trash -> Trash Level 1
+            v => Self(v.clamp(-3, 3) as i8),
         }
     }
 }
@@ -50,7 +85,7 @@ pub struct WavEntry {
     pub file_size: u64,
     pub modified_ns: i64,
     pub content_hash: Option<String>,
-    pub tag: SampleTag,
+    pub tag: Rating,
     pub missing: bool,
 }
 
@@ -156,22 +191,22 @@ mod tests {
         db.upsert_file(Path::new("one.wav"), 10, 5).unwrap();
 
         let first = db.list_files().unwrap();
-        assert_eq!(first[0].tag, SampleTag::Neutral);
+        assert_eq!(first[0].tag, Rating::NEUTRAL);
         assert!(!first[0].missing);
 
-        db.set_tag(Path::new("one.wav"), SampleTag::Keep).unwrap();
+        db.set_tag(Path::new("one.wav"), Rating::KEEP_1).unwrap();
         let second = db.list_files().unwrap();
-        assert_eq!(second[0].tag, SampleTag::Keep);
+        assert_eq!(second[0].tag, Rating::KEEP_1);
         assert!(!second[0].missing);
 
         db.upsert_file(Path::new("one.wav"), 12, 6).unwrap();
         let third = db.list_files().unwrap();
-        assert_eq!(third[0].tag, SampleTag::Keep);
+        assert_eq!(third[0].tag, Rating::KEEP_1);
         assert!(!third[0].missing);
 
         let reopened = SourceDatabase::open(dir.path()).unwrap();
         let fourth = reopened.list_files().unwrap();
-        assert_eq!(fourth[0].tag, SampleTag::Keep);
+        assert_eq!(fourth[0].tag, Rating::KEEP_1);
         assert!(!fourth[0].missing);
     }
 
@@ -182,13 +217,13 @@ mod tests {
         db.upsert_file(Path::new("one.wav"), 10, 5).unwrap();
 
         db.set_tags_batch(&[
-            (PathBuf::from("one.wav"), SampleTag::Keep),
-            (PathBuf::from("one.wav"), SampleTag::Trash),
+            (PathBuf::from("one.wav"), Rating::KEEP_1),
+            (PathBuf::from("one.wav"), Rating::TRASH_1),
         ])
         .unwrap();
 
         let rows = db.list_files().unwrap();
-        assert_eq!(rows[0].tag, SampleTag::Trash);
+        assert_eq!(rows[0].tag, Rating::TRASH_1);
     }
 
     #[test]
@@ -224,7 +259,7 @@ mod tests {
         let db = SourceDatabase::open(dir.path()).unwrap();
         let rows = db.list_files().unwrap();
         assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].tag, SampleTag::Neutral);
+        assert_eq!(rows[0].tag, Rating::NEUTRAL);
         assert!(!rows[0].missing);
     }
 

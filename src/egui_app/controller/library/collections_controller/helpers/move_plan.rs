@@ -112,12 +112,12 @@ mod tests {
     use crate::egui_app::controller::test_support::{
         prepare_with_source_and_wav_entries, sample_entry,
     };
-    use crate::sample_sources::SampleTag;
+    use crate::sample_sources::Rating;
 
     fn controller_with_entries(names: &[&str]) -> crate::egui_app::controller::EguiController {
         let entries = names
             .iter()
-            .map(|name| sample_entry(name, SampleTag::Neutral))
+            .map(|name| sample_entry(name, Rating::NEUTRAL))
             .collect();
         let (controller, _source) = prepare_with_source_and_wav_entries(entries);
         controller

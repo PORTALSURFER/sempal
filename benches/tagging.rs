@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-use sempal::sample_sources::{SampleTag, SourceDatabase};
+use sempal::sample_sources::{Rating, SourceDatabase};
 use std::hint::black_box;
 use tempfile::tempdir;
 
@@ -19,13 +19,13 @@ fn setup_db() -> SourceDatabase {
     db
 }
 
-fn tag_updates() -> Vec<(PathBuf, SampleTag)> {
+fn tag_updates() -> Vec<(PathBuf, Rating)> {
     (0..SAMPLE_COUNT)
         .map(|i| {
             let tag = if i % 2 == 0 {
-                SampleTag::Keep
+                Rating::KEEP_1
             } else {
-                SampleTag::Trash
+                Rating::TRASH_3
             };
             (PathBuf::from(format!("{i}.wav")), tag)
         })

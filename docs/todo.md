@@ -1,18 +1,4 @@
-3. Inefficient Search Loop with Repeated Allocations
-Severity: Medium (Performance)
-Why it matters: The fuzzy search loop calls 
-sample_display_label
- for every entry on every keystroke. This function performs multiple String and PathBuf allocations, creating significant pressure on the allocator during search.
-Evidence: 
-browser_search_worker.rs:L111-114
-, 
-view_model.rs:L112-123
-Recommended change: Pre-calculate and cache the display label strings within the 
-SearchWorkerCache
- during the initial load or revision bump.
-Risk/Tradeoffs: Slight increase in cache memory usage.
-Quick win?: Yes
-Suggested test/verification: Use a profiler like flamegraph to confirm reduction in to_string and PathBuf allocations during active search.
+
 
 4. Race Condition in Application Relaunch during Update
 Severity: Medium (Reliability)
@@ -40,4 +26,21 @@ Risk/Tradeoffs: Requires a widespread API refactor in the db module.
 Quick win?: No
 Suggested test/verification: Verify path consistency via existing unit tests in 
 src/sample_sources/db/mod.rs
-.
+
+
+
+6. Rating system
+currently we have a trash and keep flag system. I want to extend this. we should keep track of how many times a sample was flagged as trash or keep. with a max of 3 points in either direction. so a user can keep a sample 3 times, or trash it 3 times, either will deduct a point from the other. I also want to add a visual rectangle on the sample item to show this rating, green rectangles for keep, red for trash. 3 rectangles max. placed on the far right on the sample item element in the ui.
+only when a sample is marked as trash 3 times, should it get the full color in text. before this, keep it normal, only add the rects.
+
+We should also modify the trash move system, to only apply to samples which have been marked as trash 3 times.
+
+7. aging system
+I want to add an aging system to the samples, we should keep track of how many times a sample was played, and how long ago it was played. and visually show this in the ui, with a color gradient. Aged samples should show up as 3 levels of darker grey. 1 week old samples should show up as the first level of grey, 2 weeks old as the second level, and 3 weeks old as the third level. 
+
+8. aging sort
+lets add a system to sort the samples by age following the aging system. listing samples in order of when they were last played, with the oldest samples first.
+with a button to swap descending and ascending order.
+
+9. applying audio selection edits very slow
+currently applying audio selection edits is very slow. like normalizing a section of the audio, or removing silence from a section. please design this to be much faster.
