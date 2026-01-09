@@ -20,6 +20,7 @@ pub(super) fn attach_selection_context_menu(
 
 pub(super) fn render_selection_context_menu(app: &mut EguiApp, ui: &mut egui::Ui) {
     let palette = style::palette();
+    let fade_ms = app.controller.ui.controls.anti_clip_fade_ms;
     let mut close_menu = false;
     let mut request_edit = |edit: DestructiveSelectionEdit| match app
         .controller
@@ -86,7 +87,6 @@ pub(super) fn render_selection_context_menu(app: &mut EguiApp, ui: &mut egui::Ui
     {
         request_edit(DestructiveSelectionEdit::ClickRemoval);
     }
-    let fade_ms = app.controller.ui.controls.anti_clip_fade_ms;
     if ui
         .button("Short edge fades")
         .on_hover_text(format!(
