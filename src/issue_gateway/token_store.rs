@@ -1,8 +1,17 @@
+//! Token storage for issue access, preferring the OS keyring with an opt-in
+//! obfuscated file fallback for platforms where the keyring is unavailable.
+//! The fallback stores the encryption key alongside the ciphertext, so it
+//! provides only lightweight protection at rest and must be explicitly enabled.
+
 use crate::app_dirs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 const KEYRING_SERVICE: &str = "sempal";
 const KEYRING_KEY: &str = "sempal_github_issue_token";
+const FALLBACK_ALLOW_ENV: &str = "SEMPAL_ALLOW_FALLBACK_TOKEN_STORAGE";
+
+static FALLBACK_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 
 /// Errors returned by the issue token storage backend.
 #[derive(Debug, thiserror::Error)]
@@ -19,7 +28,10 @@ pub enum IssueTokenStoreError {
     AppDir(#[from] crate::app_dirs::AppDirError),
 }
 
-/// Stores the issue token in the OS keyring with an encrypted file fallback.
+/// Stores the issue token in the OS keyring with an opt-in encrypted file fallback.
+///
+/// The fallback stores the encryption key next to the ciphertext, so it only
+/// offers obfuscation if an attacker can read the filesystem.
 #[derive(Clone, Debug)]
 pub struct IssueTokenStore {
     fallback_dir: PathBuf,
@@ -33,18 +45,32 @@ impl IssueTokenStore {
         Ok(Self { fallback_dir })
     }
 
-    /// Load the token from the keyring or fallback storage if needed.
+    /// Load the token from the keyring or the opt-in fallback storage if allowed.
     pub fn get(&self) -> Result<Option<String>, IssueTokenStoreError> {
         match self.try_keyring_get() {
             Ok(Some(token)) => Ok(Some(token)),
-            Ok(None) => self.fallback_get(),
-            Err(_keyring_err) => {
-                // Keyring failed, try fallback
-                self.fallback_get()
+            Ok(None) => {
+                if fallback_allowed() {
+                    self.fallback_get()
+                } else {
+                    Ok(None)
+                }
+            }
+            Err(keyring_err) => {
+                if fallback_allowed() {
+                    // Keyring failed, try fallback if explicitly enabled.
+                    self.fallback_get()
+                } else {
+                    Err(IssueTokenStoreError::Unavailable(format!(
+                        "Keyring unavailable ({keyring_err}). Fallback storage is disabled; set {FALLBACK_ALLOW_ENV}=1 to allow obfuscated file storage."
+                    )))
+                }
             }
         }
     }
 
+    /// Store the token, preferring the OS keyring and using the fallback only
+    /// when explicitly enabled.
     pub fn set(&self, token: &str) -> Result<(), IssueTokenStoreError> {
         let token = token.trim();
         if token.is_empty() {
@@ -85,15 +111,20 @@ impl IssueTokenStore {
             Err(e) => Some(e),
         };
 
-        // Keyring failed, use fallback storage automatically
-        match self.fallback_set(token) {
-            Ok(_) => {
-                if let Some(IssueTokenStoreError::Unavailable(_)) = keyring_err {
-                    eprintln!("Warning: OS keyring unavailable, using encrypted file storage instead.");
-                }
-                Ok(())
+        if fallback_allowed() {
+            // Keyring failed, use fallback storage only when explicitly enabled.
+            match self.fallback_set(token) {
+                Ok(_) => Ok(()),
+                Err(fallback_err) => Err(fallback_err),
             }
-            Err(fallback_err) => Err(fallback_err),
+        } else {
+            let keyring_error = keyring_err
+                .as_ref()
+                .map(|err| err.to_string())
+                .unwrap_or_else(|| "unknown keyring error".into());
+            Err(IssueTokenStoreError::Unavailable(format!(
+                "Keyring unavailable ({keyring_error}). Fallback storage is disabled; set {FALLBACK_ALLOW_ENV}=1 to allow obfuscated file storage."
+            )))
         }
     }
 
@@ -181,10 +212,16 @@ impl IssueTokenStore {
 
 
     fn fallback_get(&self) -> Result<Option<String>, IssueTokenStoreError> {
+        if !fallback_allowed() {
+            return Err(IssueTokenStoreError::Unavailable(format!(
+                "Fallback storage disabled; set {FALLBACK_ALLOW_ENV}=1 to allow obfuscated file storage."
+            )));
+        }
         let token_path = self.fallback_token_path();
         if !token_path.exists() {
             return Ok(None);
         }
+        warn_fallback_active();
         let key = self.ensure_fallback_key()?;
         let data = std::fs::read(token_path)?;
         if data.len() < 12 {
@@ -198,6 +235,12 @@ impl IssueTokenStore {
     }
 
     fn fallback_set(&self, token: &str) -> Result<(), IssueTokenStoreError> {
+        if !fallback_allowed() {
+            return Err(IssueTokenStoreError::Unavailable(format!(
+                "Fallback storage disabled; set {FALLBACK_ALLOW_ENV}=1 to allow obfuscated file storage."
+            )));
+        }
+        warn_fallback_active();
         let key = self.ensure_fallback_key()?;
         let nonce = random_bytes(12)?;
         let ciphertext = encrypt(&key, &nonce, token.as_bytes())?;
@@ -215,9 +258,28 @@ impl IssueTokenStore {
 }
 
 fn keyring_disabled() -> bool {
-    std::env::var("SEMPAL_DISABLE_KEYRING")
+    env_var_truthy("SEMPAL_DISABLE_KEYRING")
+}
+
+fn fallback_allowed() -> bool {
+    env_var_truthy(FALLBACK_ALLOW_ENV)
+}
+
+fn env_var_truthy(key: &str) -> bool {
+    std::env::var(key)
         .map(|value| value == "1" || value.eq_ignore_ascii_case("true"))
         .unwrap_or(false)
+}
+
+fn warn_fallback_active() {
+    if FALLBACK_WARNING_EMITTED
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_ok()
+    {
+        tracing::warn!(
+            "Fallback token storage enabled; the encryption key is stored next to the ciphertext and only provides obfuscation."
+        );
+    }
 }
 
 fn random_bytes(len: usize) -> Result<Vec<u8>, IssueTokenStoreError> {
@@ -370,11 +432,24 @@ mod tests {
     use super::*;
     use tempfile::tempdir;
 
+    fn allow_fallback() {
+        unsafe {
+            std::env::set_var(FALLBACK_ALLOW_ENV, "1");
+        }
+    }
+
+    fn disallow_fallback() {
+        unsafe {
+            std::env::remove_var(FALLBACK_ALLOW_ENV);
+        }
+    }
+
     #[test]
     fn fallback_roundtrip_when_keyring_disabled() {
         unsafe {
             std::env::set_var("SEMPAL_DISABLE_KEYRING", "1");
         }
+        allow_fallback();
         let base = tempdir().unwrap();
         let _guard = app_dirs::ConfigBaseGuard::set(base.path().to_path_buf());
         let store = IssueTokenStore::new().unwrap();
@@ -389,6 +464,7 @@ mod tests {
         unsafe {
             std::env::remove_var("SEMPAL_DISABLE_KEYRING");
         }
+        disallow_fallback();
     }
 
     #[test]
@@ -396,6 +472,7 @@ mod tests {
         unsafe {
             std::env::set_var("SEMPAL_DISABLE_KEYRING", "1");
         }
+        allow_fallback();
         let base = tempdir().unwrap();
         let _guard = app_dirs::ConfigBaseGuard::set(base.path().to_path_buf());
         let store = IssueTokenStore::new().unwrap();
@@ -405,20 +482,28 @@ mod tests {
         unsafe {
             std::env::remove_var("SEMPAL_DISABLE_KEYRING");
         }
+        disallow_fallback();
     }
 
     #[test]
-    fn automatic_fallback_when_keyring_disabled() {
+    fn fallback_is_only_used_when_explicitly_allowed() {
         unsafe {
             std::env::set_var("SEMPAL_DISABLE_KEYRING", "1");
         }
         let base = tempdir().unwrap();
         let _guard = crate::app_dirs::ConfigBaseGuard::set(base.path().to_path_buf());
         let store = IssueTokenStore::new().unwrap();
-        
-        // Should automatically use fallback storage
-        assert_eq!(store.get().unwrap(), None);
-        
+
+        // Fallback should be disabled unless explicitly allowed.
+        let err = store.set("tok_abcdefghijklmnopqrstuvwxyz").unwrap_err();
+        match err {
+            IssueTokenStoreError::Unavailable(message) => {
+                assert!(message.contains(FALLBACK_ALLOW_ENV));
+            }
+            other => panic!("expected unavailable error, got {other:?}"),
+        }
+        assert!(!store.fallback_token_path().exists());
+
         unsafe {
             std::env::remove_var("SEMPAL_DISABLE_KEYRING");
         }
@@ -429,6 +514,7 @@ mod tests {
         unsafe {
             std::env::set_var("SEMPAL_DISABLE_KEYRING", "1");
         }
+        allow_fallback();
         let base = tempdir().unwrap();
         let _guard = app_dirs::ConfigBaseGuard::set(base.path().to_path_buf());
         let store = IssueTokenStore::new().unwrap();
@@ -443,6 +529,7 @@ mod tests {
         unsafe {
             std::env::remove_var("SEMPAL_DISABLE_KEYRING");
         }
+        disallow_fallback();
     }
 
     #[cfg(unix)]
@@ -452,6 +539,7 @@ mod tests {
         unsafe {
             std::env::set_var("SEMPAL_DISABLE_KEYRING", "1");
         }
+        allow_fallback();
         let base = tempdir().unwrap();
         let _guard = app_dirs::ConfigBaseGuard::set(base.path().to_path_buf());
         let store = IssueTokenStore::new().unwrap();
@@ -474,5 +562,26 @@ mod tests {
         unsafe {
             std::env::remove_var("SEMPAL_DISABLE_KEYRING");
         }
+        disallow_fallback();
+    }
+
+    #[test]
+    fn fallback_warns_when_active() {
+        unsafe {
+            std::env::set_var("SEMPAL_DISABLE_KEYRING", "1");
+        }
+        allow_fallback();
+        FALLBACK_WARNING_EMITTED.store(false, Ordering::SeqCst);
+        let base = tempdir().unwrap();
+        let _guard = app_dirs::ConfigBaseGuard::set(base.path().to_path_buf());
+        let store = IssueTokenStore::new().unwrap();
+
+        store.set("tok_abcdefghijklmnopqrstuvwxyz").unwrap();
+        assert!(FALLBACK_WARNING_EMITTED.load(Ordering::SeqCst));
+
+        unsafe {
+            std::env::remove_var("SEMPAL_DISABLE_KEYRING");
+        }
+        disallow_fallback();
     }
 }
