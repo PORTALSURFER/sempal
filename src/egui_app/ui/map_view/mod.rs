@@ -9,6 +9,7 @@ use super::style;
 use super::*;
 use eframe::egui;
 use std::time::Instant;
+use tracing::warn;
 
 const MAP_POINT_LIMIT: usize = 50_000;
 const MAP_HEATMAP_BINS: usize = 64;
@@ -104,7 +105,8 @@ impl EguiApp {
             cluster_umap_version,
             source_id.as_ref(),
         );
-        let blend_enabled = cluster_overlay && similarity_blend;
+        let cluster_overlay_ready = resolve_cluster_overlay(cluster_overlay, centroids_arc.as_ref());
+        let blend_enabled = cluster_overlay_ready && similarity_blend;
         let map_diagonal =
             ((bounds.max_x - bounds.min_x).powi(2) + (bounds.max_y - bounds.min_y).powi(2)).sqrt();
         let focused_point = focused_sample_id.as_deref().and_then(|id| {
@@ -170,7 +172,7 @@ impl EguiApp {
                 };
                 return style::with_alpha(style::similarity_map_color(t), alpha);
             }
-            if cluster_overlay {
+            if cluster_overlay_ready {
                 if blend_enabled {
                     map_clusters::blended_cluster_color(
                         point,
@@ -230,7 +232,7 @@ impl EguiApp {
             self.controller.ui.map.pan,
             self.controller.ui.map.zoom,
             focused_sample_id.as_deref(),
-            cluster_overlay,
+            cluster_overlay_ready,
             MAP_HEATMAP_BINS,
             point_color,
         );
@@ -260,5 +262,33 @@ impl EguiApp {
         self.controller.ui.map.last_render_ms = render_started.elapsed().as_secs_f32() * 1000.0;
         self.controller.ui.map.last_draw_calls = draw_calls;
         self.controller.ui.map.last_points_rendered = points_rendered;
+    }
+}
+
+fn resolve_cluster_overlay(
+    requested: bool,
+    centroids: Option<
+        &std::sync::Arc<std::collections::HashMap<i32, crate::egui_app::state::MapClusterCentroid>>,
+    >,
+) -> bool {
+    if requested && centroids.is_none() {
+        warn!("Cluster overlay requested without centroids; using base point colors.");
+        false
+    } else {
+        requested
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_cluster_overlay;
+    use std::collections::HashMap;
+    use std::sync::Arc;
+
+    #[test]
+    fn cluster_overlay_requires_centroids() {
+        let centroids: Option<Arc<HashMap<i32, crate::egui_app::state::MapClusterCentroid>>> = None;
+        assert!(!resolve_cluster_overlay(true, centroids.as_ref()));
+        assert!(!resolve_cluster_overlay(false, centroids.as_ref()));
     }
 }

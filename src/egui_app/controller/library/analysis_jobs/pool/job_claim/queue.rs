@@ -4,6 +4,7 @@ use std::collections::VecDeque;
 use std::sync::{Condvar, Mutex};
 use std::sync::{atomic::AtomicBool, atomic::AtomicUsize, atomic::Ordering};
 use std::time::Duration;
+use tracing::warn;
 
 pub(crate) struct DecodedQueue {
     queue: Mutex<VecDeque<DecodedWork>>,
@@ -31,7 +32,7 @@ impl DecodedQueue {
     }
 
     pub(crate) fn push(&self, work: DecodedWork) -> bool {
-        let mut guard = self.queue.lock().expect("decoded queue lock");
+        let mut guard = self.lock_queue();
         if work.job.job_type == db::ANALYZE_SAMPLE_JOB_TYPE {
             if !self.dedup.mark_pending(work.job.id) {
                 return false;
@@ -45,7 +46,7 @@ impl DecodedQueue {
 
     #[cfg(test)]
     pub(crate) fn pop(&self, shutdown: &AtomicBool) -> Option<DecodedWork> {
-        let mut guard = self.queue.lock().expect("decoded queue lock");
+        let mut guard = self.lock_queue();
         loop {
             if shutdown.load(Ordering::Relaxed) {
                 return None;
@@ -57,16 +58,13 @@ impl DecodedQueue {
                 self.len.fetch_sub(1, Ordering::Relaxed);
                 return Some(work);
             }
-            let (next_guard, _) = self
-                .ready
-                .wait_timeout(guard, Duration::from_millis(50))
-                .expect("decoded queue wait");
+            let (next_guard, _) = self.wait_ready(guard);
             guard = next_guard;
         }
     }
 
     pub(crate) fn pop_batch(&self, shutdown: &AtomicBool, max: usize) -> (Vec<DecodedWork>, u64) {
-        let mut guard = self.queue.lock().expect("decoded queue lock");
+        let mut guard = self.lock_queue();
         let start = std::time::Instant::now();
         loop {
             if shutdown.load(Ordering::Relaxed) {
@@ -93,16 +91,35 @@ impl DecodedQueue {
                 }
                 return (batch, start.elapsed().as_millis() as u64);
             }
-            let (next_guard, _) = self
-                .ready
-                .wait_timeout(guard, Duration::from_millis(50))
-                .expect("decoded queue wait");
+            let (next_guard, _) = self.wait_ready(guard);
             guard = next_guard;
         }
     }
 
     pub(crate) fn len(&self) -> usize {
         self.len.load(Ordering::Relaxed)
+    }
+
+    fn lock_queue(&self) -> std::sync::MutexGuard<'_, VecDeque<DecodedWork>> {
+        self.queue.lock().unwrap_or_else(|poisoned| {
+            warn!("Decoded queue lock poisoned; recovering.");
+            poisoned.into_inner()
+        })
+    }
+
+    fn wait_ready<'a>(
+        &self,
+        guard: std::sync::MutexGuard<'a, VecDeque<DecodedWork>>,
+    ) -> (
+        std::sync::MutexGuard<'a, VecDeque<DecodedWork>>,
+        std::sync::WaitTimeoutResult,
+    ) {
+        self.ready
+            .wait_timeout(guard, Duration::from_millis(50))
+            .unwrap_or_else(|poisoned| {
+                warn!("Decoded queue condvar poisoned; recovering.");
+                poisoned.into_inner()
+            })
     }
 }
 
@@ -167,5 +184,16 @@ mod tests {
         assert!(queue.push(make_work(7)));
         assert!(queue.pop(&shutdown).is_some());
         assert!(queue.push(make_work(7)));
+    }
+
+    #[test]
+    fn poisoned_queue_lock_recovers_on_push() {
+        let queue = DecodedQueue::new();
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = queue.queue.lock().unwrap();
+            panic!("poison");
+        }));
+        assert!(queue.push(make_work(11)));
+        assert_eq!(queue.len(), 1);
     }
 }
