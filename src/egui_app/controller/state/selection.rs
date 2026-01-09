@@ -84,6 +84,7 @@ pub(crate) struct SelectionUndoState {
 pub(crate) struct ControllerSelectionState {
     pub(crate) ctx: SelectionContextState,
     pub(crate) range: SelectionState,
+    pub(crate) edit_range: SelectionState,
     pub(crate) pending_undo: Option<SelectionUndoState>,
     pub(crate) suppress_autoplay_once: bool,
     pub(crate) bpm_scale_beats: Option<f32>,
@@ -94,6 +95,7 @@ impl ControllerSelectionState {
         Self {
             ctx: SelectionContextState::new(),
             range: SelectionState::new(),
+            edit_range: SelectionState::new(),
             pending_undo: None,
             suppress_autoplay_once: false,
             bpm_scale_beats: None,

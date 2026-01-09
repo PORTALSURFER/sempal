@@ -9,22 +9,23 @@ pub(super) fn handle_selection_handle_drag(
     selection: SelectionRange,
     handle_response: &egui::Response,
 ) {
-    if handle_response.drag_started() {
+    let primary_down = ui.input(|i| i.pointer.button_down(egui::PointerButton::Primary));
+    if handle_response.drag_started() && primary_down {
         if let Some(pos) = handle_response.interact_pointer_pos() {
             app.controller
                 .start_selection_drag_payload(selection, pos, true);
             app.controller.ui.drag.origin_source = Some(DragSource::Waveform);
         }
-    } else if handle_response.dragged() {
+    } else if handle_response.dragged_by(egui::PointerButton::Primary) {
         if let Some(pos) = handle_response.interact_pointer_pos() {
             let alt_down = ui.input(|i| i.modifiers.alt);
             app.controller.refresh_drag_position(pos, false, alt_down);
         }
-    } else if handle_response.drag_stopped() {
+    } else if handle_response.drag_stopped() && !primary_down {
         app.controller.finish_active_drag();
     }
 
-    if handle_response.dragged() {
+    if handle_response.dragged_by(egui::PointerButton::Primary) {
         ui.output_mut(|o| o.cursor_icon = CursorIcon::Grabbing);
     } else if handle_response.hovered() {
         ui.output_mut(|o| o.cursor_icon = CursorIcon::Grab);
@@ -155,11 +156,14 @@ pub(super) fn handle_selection_edge_drag(
     edge: SelectionEdge,
     alt_down: bool,
     shift_down: bool,
+    primary_down: bool,
     edge_response: &egui::Response,
     selection_edge_x: f32,
 ) {
-    let pointer_down = edge_response.is_pointer_button_down_on();
-    if edge_response.drag_started() || (pointer_down && !app.controller.is_selection_dragging()) {
+    let pointer_down = primary_down && edge_response.is_pointer_button_down_on();
+    if (edge_response.drag_started() && primary_down)
+        || (pointer_down && !app.controller.is_selection_dragging())
+    {
         app.controller.start_selection_edge_drag(edge, alt_down);
         app.selection_edge_alt_scale = alt_down;
         if app.selection_edge_offset.is_none() {
@@ -170,7 +174,7 @@ pub(super) fn handle_selection_edge_drag(
             }
         }
     }
-    if (pointer_down || edge_response.dragged())
+    if (pointer_down || edge_response.dragged_by(egui::PointerButton::Primary))
         && let Some(pos) = edge_response.interact_pointer_pos()
     {
         let offset = app.selection_edge_offset.unwrap_or(0.0);
@@ -179,7 +183,7 @@ pub(super) fn handle_selection_edge_drag(
         let clamped = absolute.clamp(0.0, 1.0);
         app.controller.update_selection_drag(clamped, shift_down);
     }
-    if edge_response.drag_stopped() {
+    if edge_response.drag_stopped() && !primary_down {
         app.selection_edge_offset = None;
         app.selection_edge_alt_scale = false;
         app.controller.finish_selection_drag();

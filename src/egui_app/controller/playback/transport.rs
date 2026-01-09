@@ -17,6 +17,14 @@ pub(crate) fn start_selection_drag(controller: &mut EguiController, position: f3
     controller.apply_selection(Some(range));
 }
 
+pub(crate) fn start_edit_selection_drag(controller: &mut EguiController, position: f32) {
+    let start = snap_selection_start(controller, position)
+        .or_else(|| snap_to_transient(controller, position))
+        .unwrap_or(position);
+    let range = controller.selection_state.edit_range.begin_new(start);
+    controller.apply_edit_selection(Some(range));
+}
+
 pub(crate) fn start_selection_edge_drag(
     controller: &mut EguiController,
     edge: SelectionEdge,
@@ -63,6 +71,29 @@ pub(crate) fn update_selection_drag(
     }
 }
 
+pub(crate) fn update_edit_selection_drag(
+    controller: &mut EguiController,
+    position: f32,
+    snap_override: bool,
+) {
+    let range = if snap_override {
+        controller.selection_state.edit_range.update_drag(position)
+    } else if let Some(step) = bpm_snap_step(controller) {
+        controller
+            .selection_state
+            .edit_range
+            .update_drag_snapped(position, step)
+    } else {
+        let snapped = snap_to_transient(controller, position).unwrap_or(position);
+        controller.selection_state.edit_range.update_drag(snapped)
+    };
+    if let Some(range) = range {
+        controller.apply_edit_selection(Some(range));
+    } else if controller.selection_state.edit_range.range().is_none() {
+        controller.apply_edit_selection(None);
+    }
+}
+
 pub(crate) fn finish_selection_drag(controller: &mut EguiController) {
     controller.selection_state.range.finish_drag();
     controller.selection_state.bpm_scale_beats = None;
@@ -97,13 +128,26 @@ pub(crate) fn finish_selection_drag(controller: &mut EguiController) {
     }
 }
 
+pub(crate) fn finish_edit_selection_drag(controller: &mut EguiController) {
+    controller.selection_state.edit_range.finish_drag();
+}
+
 pub(crate) fn set_selection_range(controller: &mut EguiController, range: SelectionRange) {
     controller.selection_state.range.set_range(Some(range));
     controller.apply_selection(Some(range));
 }
 
+pub(crate) fn set_edit_selection_range(controller: &mut EguiController, range: SelectionRange) {
+    controller.selection_state.edit_range.set_range(Some(range));
+    controller.apply_edit_selection(Some(range));
+}
+
 pub(crate) fn is_selection_dragging(controller: &EguiController) -> bool {
     controller.selection_state.range.is_dragging()
+}
+
+pub(crate) fn is_edit_selection_dragging(controller: &EguiController) -> bool {
+    controller.selection_state.edit_range.is_dragging()
 }
 
 pub(crate) fn clear_selection(controller: &mut EguiController) {
@@ -116,6 +160,13 @@ pub(crate) fn clear_selection(controller: &mut EguiController) {
     if cleared || controller.ui.waveform.selection.is_some() {
         controller.apply_selection(None);
         controller.push_selection_undo("Selection", before, None);
+    }
+}
+
+pub(crate) fn clear_edit_selection(controller: &mut EguiController) {
+    let cleared = controller.selection_state.edit_range.clear();
+    if cleared || controller.ui.waveform.edit_selection.is_some() {
+        controller.apply_edit_selection(None);
     }
 }
 
@@ -403,10 +454,13 @@ pub(crate) fn stop_playback_if_active(controller: &mut EguiController) -> bool {
 
 pub(crate) fn handle_escape(controller: &mut EguiController) {
     let selection_active = controller.selection_state.range.range().is_some()
-        || controller.ui.waveform.selection.is_some();
+        || controller.ui.waveform.selection.is_some()
+        || controller.selection_state.edit_range.range().is_some()
+        || controller.ui.waveform.edit_selection.is_some();
     let stopped_playback = stop_playback_if_active(controller);
     if !(selection_active && stopped_playback) {
         clear_selection(controller);
+        clear_edit_selection(controller);
     }
     let had_cursor = controller.ui.waveform.cursor.take().is_some();
     if had_cursor {

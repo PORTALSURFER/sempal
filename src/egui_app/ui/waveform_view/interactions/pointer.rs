@@ -36,6 +36,8 @@ pub(in super::super) fn handle_waveform_pointer_interactions(
     };
     let normalized = pointer_pos.map(normalize_to_waveform);
     let middle_down = ui.input(|i| i.pointer.button_down(egui::PointerButton::Middle));
+    let primary_down = ui.input(|i| i.pointer.button_down(egui::PointerButton::Primary));
+    let secondary_down = ui.input(|i| i.pointer.button_down(egui::PointerButton::Secondary));
     let modifiers = ui.input(|i| i.modifiers);
     let slide_modifiers = modifiers.ctrl && modifiers.shift && modifiers.alt;
     if middle_down {
@@ -55,7 +57,7 @@ pub(in super::super) fn handle_waveform_pointer_interactions(
         return;
     }
     app.controller.ui.waveform.pan_drag_pos = None;
-    if response.drag_started() && slide_modifiers {
+    if response.drag_started() && slide_modifiers && primary_down {
         if let Some(value) = drag_start_normalized.or(normalized) {
             if app.controller.ui.waveform.image.is_some() {
                 app.controller.focus_waveform_context();
@@ -80,9 +82,11 @@ pub(in super::super) fn handle_waveform_pointer_interactions(
     }
     if response.drag_started() {
         if let Some(value) = drag_start_normalized {
-            if app.controller.ui.waveform.slice_mode_enabled {
+            if secondary_down {
+                app.controller.start_edit_selection_drag(value);
+            } else if app.controller.ui.waveform.slice_mode_enabled {
                 start_slice_paint(app, value);
-            } else {
+            } else if primary_down {
                 app.controller.start_selection_drag(value);
             }
         }
@@ -91,14 +95,18 @@ pub(in super::super) fn handle_waveform_pointer_interactions(
             if app.controller.ui.waveform.image.is_some() {
                 app.controller.focus_waveform_context();
             }
-            if app.controller.ui.waveform.slice_mode_enabled {
+            if response.dragged_by(egui::PointerButton::Secondary) {
+                app.controller.update_edit_selection_drag(value, false);
+            } else if app.controller.ui.waveform.slice_mode_enabled {
                 update_slice_paint(app, value);
-            } else {
+            } else if response.dragged_by(egui::PointerButton::Primary) {
                 app.controller.update_selection_drag(value, false);
             }
         }
     } else if response.drag_stopped() {
-        if app.controller.ui.waveform.slice_mode_enabled {
+        if app.controller.is_edit_selection_dragging() && !secondary_down {
+            app.controller.finish_edit_selection_drag();
+        } else if app.controller.ui.waveform.slice_mode_enabled {
             finish_slice_paint(app);
         } else if app.controller.is_selection_dragging() {
             app.controller.finish_selection_drag();

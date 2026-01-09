@@ -17,6 +17,8 @@ pub struct WaveformState {
     pub cursor: Option<f32>,
     pub selection: Option<SelectionRange>,
     pub selection_duration: Option<String>,
+    /// Optional edit selection range used for destructive edits (normalized 0-1).
+    pub edit_selection: Option<SelectionRange>,
     /// Detected slice ranges for the current waveform.
     pub slices: Vec<SelectionRange>,
     /// Indices of slice ranges currently selected for edits.
@@ -71,6 +73,7 @@ impl Default for WaveformState {
             cursor: None,
             selection: None,
             selection_duration: None,
+            edit_selection: None,
             slices: Vec::new(),
             selected_slices: Vec::new(),
             slice_mode_enabled: false,

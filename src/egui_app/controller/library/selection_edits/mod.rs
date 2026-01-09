@@ -186,6 +186,7 @@ impl EguiController {
     pub(crate) fn normalize_waveform_selection(&mut self) -> Result<(), String> {
         let preserved_view = self.ui.waveform.view;
         let preserved_selection = self.ui.waveform.selection;
+        let preserved_edit_selection = self.ui.waveform.edit_selection;
         let preserved_cursor = self.ui.waveform.cursor;
         let was_playing = self.is_playing();
         let was_looping = self.ui.waveform.loop_enabled;
@@ -198,6 +199,10 @@ impl EguiController {
             self.ui.waveform.cursor = preserved_cursor;
             self.selection_state.range.set_range(preserved_selection);
             self.apply_selection(preserved_selection);
+            self.selection_state
+                .edit_range
+                .set_range(preserved_edit_selection);
+            self.apply_edit_selection(preserved_edit_selection);
             if was_playing {
                 let start_override = if playhead_position.is_finite() {
                     Some(playhead_position.clamp(0.0, 1.0))
@@ -248,6 +253,7 @@ impl EguiController {
     pub(crate) fn repair_clicks_selection(&mut self) -> Result<(), String> {
         let preserved_view = self.ui.waveform.view;
         let preserved_selection = self.ui.waveform.selection;
+        let preserved_edit_selection = self.ui.waveform.edit_selection;
         let preserved_cursor = self.ui.waveform.cursor;
         let was_playing = self.is_playing();
         let was_looping = self.ui.waveform.loop_enabled;
@@ -259,6 +265,10 @@ impl EguiController {
             self.ui.waveform.cursor = preserved_cursor;
             self.selection_state.range.set_range(preserved_selection);
             self.apply_selection(preserved_selection);
+            self.selection_state
+                .edit_range
+                .set_range(preserved_edit_selection);
+            self.apply_edit_selection(preserved_edit_selection);
             if was_playing {
                 let start_override = if playhead_position.is_finite() {
                     Some(playhead_position.clamp(0.0, 1.0))
@@ -369,14 +379,10 @@ impl EguiController {
     }
 
     fn selection_target(&self) -> Result<SelectionTarget, String> {
-        let selection = self
-            .ui
-            .waveform
-            .selection
-            .ok_or_else(|| "Make a selection first".to_string())?;
-        if selection.width() <= 0.0 {
-            return Err("Selection is empty".into());
-        }
+        let selection = selection_target_range(
+            self.ui.waveform.edit_selection,
+            self.ui.waveform.selection,
+        );
         let audio = self
             .sample_view
             .wav
@@ -399,6 +405,17 @@ impl EguiController {
             selection,
         })
     }
+}
+
+fn selection_target_range(
+    edit_selection: Option<SelectionRange>,
+    play_selection: Option<SelectionRange>,
+) -> SelectionRange {
+    let edit_selection = edit_selection.filter(|range| range.width() > 0.0);
+    let play_selection = play_selection.filter(|range| range.width() > 0.0);
+    edit_selection
+        .or(play_selection)
+        .unwrap_or_else(|| SelectionRange::new(0.0, 1.0))
 }
 
 fn edge_fade_frame_count(sample_rate: u32, selection_frames: usize, duration: Duration) -> usize {

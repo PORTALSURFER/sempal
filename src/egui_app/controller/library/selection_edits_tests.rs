@@ -242,3 +242,24 @@ fn normalize_selection_scales_and_blends_edges() {
     assert!((buffer.samples[start_frame - 1] - before_selection).abs() < 1e-6);
     assert!(buffer.samples[end_frame].abs() < 1e-6);
 }
+
+#[test]
+fn selection_target_range_prefers_edit_selection() {
+    let edit = SelectionRange::new(0.2, 0.4);
+    let play = SelectionRange::new(0.0, 0.5);
+    let target = selection_target_range(Some(edit), Some(play));
+    assert_eq!(target, edit);
+}
+
+#[test]
+fn selection_target_range_falls_back_to_play_selection() {
+    let play = SelectionRange::new(0.1, 0.3);
+    let target = selection_target_range(None, Some(play));
+    assert_eq!(target, play);
+}
+
+#[test]
+fn selection_target_range_defaults_to_full_sample() {
+    let target = selection_target_range(None, None);
+    assert_eq!(target, SelectionRange::new(0.0, 1.0));
+}

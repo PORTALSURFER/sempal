@@ -124,7 +124,9 @@ impl EguiController {
         self.ui.waveform.playhead = PlayheadState::default();
         self.ui.waveform.selection = None;
         self.ui.waveform.selection_duration = None;
+        self.ui.waveform.edit_selection = None;
         self.selection_state.range.clear();
+        self.selection_state.edit_range.clear();
     }
 
     pub(crate) fn loaded_status_text(
@@ -223,7 +225,9 @@ impl EguiController {
         self.ui.waveform.playhead = PlayheadState::default();
         self.ui.waveform.selection = None;
         self.ui.waveform.selection_duration = None;
+        self.ui.waveform.edit_selection = None;
         self.selection_state.range.clear();
+        self.selection_state.edit_range.clear();
         self.clear_waveform_slices();
     }
 

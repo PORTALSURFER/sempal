@@ -105,6 +105,11 @@ impl EguiController {
         transport::start_selection_drag(self, position);
     }
 
+    /// Begin a right-click edit selection drag on the waveform.
+    pub fn start_edit_selection_drag(&mut self, position: f32) {
+        transport::start_edit_selection_drag(self, position);
+    }
+
     pub fn start_selection_edge_drag(
         &mut self,
         edge: crate::selection::SelectionEdge,
@@ -117,20 +122,45 @@ impl EguiController {
         transport::update_selection_drag(self, position, snap_override);
     }
 
+    /// Update the in-progress edit selection drag with the latest cursor position.
+    pub fn update_edit_selection_drag(&mut self, position: f32, snap_override: bool) {
+        transport::update_edit_selection_drag(self, position, snap_override);
+    }
+
     pub fn finish_selection_drag(&mut self) {
         transport::finish_selection_drag(self);
+    }
+
+    /// Finish the edit selection drag and keep the edit selection active.
+    pub fn finish_edit_selection_drag(&mut self) {
+        transport::finish_edit_selection_drag(self);
     }
 
     pub fn set_selection_range(&mut self, range: SelectionRange) {
         transport::set_selection_range(self, range);
     }
 
+    /// Replace the edit selection without a drag gesture.
+    pub fn set_edit_selection_range(&mut self, range: SelectionRange) {
+        transport::set_edit_selection_range(self, range);
+    }
+
     pub fn is_selection_dragging(&self) -> bool {
         transport::is_selection_dragging(self)
     }
 
+    /// True while an edit selection drag gesture is active.
+    pub fn is_edit_selection_dragging(&self) -> bool {
+        transport::is_edit_selection_dragging(self)
+    }
+
     pub fn clear_selection(&mut self) {
         transport::clear_selection(self);
+    }
+
+    /// Clear the edit selection while leaving playback selection intact.
+    pub fn clear_edit_selection(&mut self) {
+        transport::clear_edit_selection(self);
     }
 
     pub fn toggle_loop(&mut self) {
@@ -276,6 +306,13 @@ impl EguiController {
         range: Option<SelectionRange>,
     ) {
         player::apply_selection(self, range);
+    }
+
+    pub(crate) fn apply_edit_selection(
+        &mut self,
+        range: Option<SelectionRange>,
+    ) {
+        player::apply_edit_selection(self, range);
     }
 
     pub fn update_waveform_hover_time(&mut self, position: Option<f32>) {

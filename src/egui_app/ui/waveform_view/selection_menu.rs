@@ -22,6 +22,7 @@ pub(super) fn render_selection_context_menu(app: &mut EguiApp, ui: &mut egui::Ui
     let palette = style::palette();
     let fade_ms = app.controller.ui.controls.anti_clip_fade_ms;
     let mut close_menu = false;
+    let has_edit_selection = app.controller.ui.waveform.edit_selection.is_some();
     let mut request_edit = |edit: DestructiveSelectionEdit| match app
         .controller
         .request_destructive_selection_edit(edit)
@@ -32,7 +33,12 @@ pub(super) fn render_selection_context_menu(app: &mut EguiApp, ui: &mut egui::Ui
         }
         Err(_) => false,
     };
-    ui.label(RichText::new("Selection actions").color(palette.text_primary));
+    let title = if has_edit_selection {
+        "Edit selection actions"
+    } else {
+        "Selection actions"
+    };
+    ui.label(RichText::new(title).color(palette.text_primary));
     if ui
         .button("Crop to selection")
         .on_hover_text("Overwrite the file with just this region")

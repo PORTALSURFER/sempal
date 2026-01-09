@@ -91,14 +91,16 @@ pub(super) fn render_selection_overlay(
         ui.id().with("selection_edge_end"),
         egui::Sense::click_and_drag(),
     );
-    let start_edge_pointer_down = start_edge_response.is_pointer_button_down_on();
-    let end_edge_pointer_down = end_edge_response.is_pointer_button_down_on();
+    let primary_down = ui.input(|i| i.pointer.button_down(egui::PointerButton::Primary));
+    let start_edge_pointer_down =
+        primary_down && start_edge_response.is_pointer_button_down_on();
+    let end_edge_pointer_down = primary_down && end_edge_response.is_pointer_button_down_on();
     let edge_dragging = start_edge_pointer_down
         || end_edge_pointer_down
-        || start_edge_response.dragged()
-        || start_edge_response.drag_started()
-        || end_edge_response.dragged()
-        || end_edge_response.drag_started();
+        || start_edge_response.dragged_by(egui::PointerButton::Primary)
+        || (start_edge_response.drag_started() && primary_down)
+        || end_edge_response.dragged_by(egui::PointerButton::Primary)
+        || (end_edge_response.drag_started() && primary_down);
     let alt_down = ui.input(|i| i.modifiers.alt);
     let shift_down = ui.input(|i| i.modifiers.shift);
     let scale_active = (app.selection_edge_alt_scale && edge_dragging) || alt_down;
@@ -118,13 +120,14 @@ pub(super) fn render_selection_overlay(
             edge,
             alt_down,
             shift_down,
+            primary_down,
             &edge_response,
             edge_pos,
         );
         let edge_hovered = pointer_pos.is_some_and(|p| edge_rect.contains(p))
             || edge_response.hovered()
-            || edge_response.is_pointer_button_down_on()
-            || edge_response.dragged();
+            || (primary_down && edge_response.is_pointer_button_down_on())
+            || edge_response.dragged_by(egui::PointerButton::Primary);
         if edge_hovered {
             let color = if scale_active {
                 style::palette().accent_mint

@@ -315,6 +315,13 @@ pub(crate) fn apply_selection(
     controller.ui.waveform.selection_duration = label;
 }
 
+pub(crate) fn apply_edit_selection(
+    controller: &mut EguiController,
+    range: Option<SelectionRange>,
+) {
+    controller.ui.waveform.edit_selection = range;
+}
+
 pub(crate) fn update_waveform_hover_time(controller: &mut EguiController, position: Option<f32>) {
     if let (Some(position), Some(audio)) =
         (position, controller.sample_view.wav.loaded_audio.as_ref())

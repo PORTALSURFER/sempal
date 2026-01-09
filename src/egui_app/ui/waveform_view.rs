@@ -7,6 +7,7 @@ use eframe::egui::{self, StrokeKind, Ui};
 mod base_render;
 mod controls;
 mod destructive_prompt;
+mod edit_selection_overlay;
 mod hover_overlay;
 mod interactions;
 mod overlays;
@@ -89,6 +90,14 @@ impl EguiApp {
                 pointer_pos,
             );
             let slice_dragging = slice_result.dragging;
+            edit_selection_overlay::render_edit_selection_overlay(
+                self,
+                ui,
+                waveform_rect,
+                &palette,
+                display_view,
+                view_width,
+            );
             let edge_dragging = selection_overlay::render_selection_overlay(
                 self,
                 ui,
