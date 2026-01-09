@@ -154,6 +154,9 @@ impl DragDropController<'_> {
             self.set_status(err, StatusTone::Error);
             return;
         }
+        let last_played_at = self
+            .sample_last_played_for(&source, &relative_path)
+            .unwrap_or(None);
         let new_entry = WavEntry {
             relative_path: new_relative.clone(),
             file_size,
@@ -161,6 +164,7 @@ impl DragDropController<'_> {
             content_hash: None,
             tag,
             missing: false,
+            last_played_at,
         };
         self.update_cached_entry(&source, &relative_path, new_entry);
         if self.update_collections_for_rename(&source.id, &relative_path, &new_relative) {

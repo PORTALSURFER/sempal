@@ -75,6 +75,7 @@ pub fn collection_samples(
                 .and_then(|flags| flags.get(index))
                 .copied()
                 .unwrap_or(false),
+            last_played_at: None,
         })
         .collect()
 }

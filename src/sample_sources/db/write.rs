@@ -70,6 +70,23 @@ impl SourceDatabase {
         batch.commit()
     }
 
+    /// Record the most recent playback timestamp for a wav file.
+    pub fn set_last_played_at(
+        &self,
+        relative_path: &Path,
+        played_at: i64,
+    ) -> Result<(), SourceDbError> {
+        let path = normalize_relative_path(relative_path)?;
+        self.connection
+            .execute(
+                "UPDATE wav_files SET last_played_at = ?1 WHERE path = ?2",
+                params![played_at, path],
+            )
+            .map_err(map_sql_error)?;
+        Self::bump_revision(&self.connection)?;
+        Ok(())
+    }
+
     /// Remove a wav file row by relative path.
     pub fn remove_file(&self, relative_path: &Path) -> Result<(), SourceDbError> {
         let path = normalize_relative_path(relative_path)?;
@@ -249,6 +266,21 @@ impl<'conn> SourceWriteBatch<'conn> {
             .prepare_cached("UPDATE wav_files SET missing = ?1 WHERE path = ?2")
             .map_err(map_sql_error)?
             .execute(params![flag, path])
+            .map_err(map_sql_error)?;
+        Ok(())
+    }
+
+    /// Update the last played timestamp for a wav row within the batch.
+    pub fn set_last_played_at(
+        &mut self,
+        relative_path: &Path,
+        played_at: i64,
+    ) -> Result<(), SourceDbError> {
+        let path = normalize_relative_path(relative_path)?;
+        self.tx
+            .prepare_cached("UPDATE wav_files SET last_played_at = ?1 WHERE path = ?2")
+            .map_err(map_sql_error)?
+            .execute(params![played_at, path])
             .map_err(map_sql_error)?;
         Ok(())
     }

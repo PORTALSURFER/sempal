@@ -136,6 +136,9 @@ impl HotkeysController<'_> {
         let (file_size, modified_ns, tag) =
             self.normalize_and_save_for_path(&source, &relative_path, &absolute_path)?;
         self.upsert_metadata_for_source(&source, &relative_path, file_size, modified_ns)?;
+        let last_played_at = self
+            .sample_last_played_for(&source, &relative_path)
+            .unwrap_or(None);
         let updated = WavEntry {
             relative_path: relative_path.clone(),
             file_size,
@@ -143,6 +146,7 @@ impl HotkeysController<'_> {
             content_hash: None,
             tag,
             missing: false,
+            last_played_at,
         };
         self.update_cached_entry(&source, &relative_path, updated);
         if self.selection_state.ctx.selected_source.as_ref() == Some(&source.id) {
@@ -171,4 +175,3 @@ impl HotkeysController<'_> {
         Ok(())
     }
 }
-

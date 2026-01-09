@@ -50,6 +50,9 @@ pub struct SemanticPalette {
     pub triage_trash: Color32,
     pub triage_trash_subtle: Color32,
     pub triage_keep: Color32,
+    pub playback_age_light: Color32,
+    pub playback_age_medium: Color32,
+    pub playback_age_dark: Color32,
     pub text_contrast: Color32,
     pub missing: Color32,
 }
@@ -89,6 +92,9 @@ pub fn semantic_palette() -> SemanticPalette {
         triage_trash: Color32::from_rgb(158, 102, 96),
         triage_trash_subtle: Color32::from_rgb(116, 78, 74),
         triage_keep: Color32::from_rgb(126, 156, 126),
+        playback_age_light: Color32::from_rgb(200, 200, 200),
+        playback_age_medium: Color32::from_rgb(150, 150, 150),
+        playback_age_dark: Color32::from_rgb(110, 110, 110),
         text_contrast: Color32::WHITE,
         missing: Color32::from_rgb(204, 132, 132),
     }
@@ -226,6 +232,28 @@ pub fn triage_label_color(tag: Rating) -> Color32 {
     }
 }
 
+/// Text colour representing the playback age bucket for a sample.
+pub fn playback_age_label_color(last_played_at: Option<i64>, now_epoch: i64) -> Color32 {
+    const WEEK_SECS: i64 = 60 * 60 * 24 * 7;
+    const TWO_WEEKS_SECS: i64 = WEEK_SECS * 2;
+    const MONTH_SECS: i64 = 60 * 60 * 24 * 30;
+
+    let palette = semantic_palette();
+    let Some(last_played_at) = last_played_at else {
+        return palette.playback_age_dark;
+    };
+    let age_secs = now_epoch.saturating_sub(last_played_at).max(0);
+    if age_secs < WEEK_SECS {
+        palette.playback_age_light
+    } else if age_secs < TWO_WEEKS_SECS {
+        palette.playback_age_medium
+    } else if age_secs >= MONTH_SECS {
+        palette.playback_age_dark
+    } else {
+        palette.playback_age_medium
+    }
+}
+
 /// Apply the shared palette to egui visuals for a consistent frame look.
 pub fn apply_visuals(visuals: &mut Visuals) {
     let palette = palette();
@@ -354,7 +382,6 @@ mod tests {
     use crate::sample_sources::Rating;
 
     #[test]
-    #[test]
     fn triage_label_color_matches_flags() {
         let semantic = semantic_palette();
         assert_eq!(triage_label_color(Rating::TRASH_3), semantic.triage_trash);
@@ -370,6 +397,29 @@ mod tests {
         assert_eq!(
             triage_label_color(Rating::KEEP_1),
             palette().text_primary
+        );
+    }
+
+    #[test]
+    fn playback_age_label_color_uses_buckets() {
+        let semantic = semantic_palette();
+        let now = 1_000_000;
+        let one_day = 60 * 60 * 24;
+        assert_eq!(
+            playback_age_label_color(Some(now - one_day), now),
+            semantic.playback_age_light
+        );
+        assert_eq!(
+            playback_age_label_color(Some(now - one_day * 8), now),
+            semantic.playback_age_medium
+        );
+        assert_eq!(
+            playback_age_label_color(Some(now - one_day * 40), now),
+            semantic.playback_age_dark
+        );
+        assert_eq!(
+            playback_age_label_color(None, now),
+            semantic.playback_age_dark
         );
     }
 }

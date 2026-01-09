@@ -95,6 +95,9 @@ impl EguiController {
                     .map_err(|err| format!("Failed to sync database entry: {err}"))?;
                 db.set_tag(&redo_relative, tag)
                     .map_err(|err| format!("Failed to sync tag: {err}"))?;
+                let last_played_at = controller
+                    .sample_last_played_for(&source, &redo_relative)
+                    .unwrap_or(None);
                 controller.insert_cached_entry(
                     &source,
                     WavEntry {
@@ -104,6 +107,7 @@ impl EguiController {
                         content_hash: None,
                         tag,
                         missing: false,
+                        last_played_at,
                     },
                 );
                 controller.refresh_waveform_for_sample(&source, &redo_relative);
@@ -129,6 +133,7 @@ impl EguiController {
         let absolute_path = source.root.join(relative_path);
         let (file_size, modified_ns) = file_metadata(&absolute_path)?;
         let tag = self.sample_tag_for(&source, relative_path)?;
+        let last_played_at = self.sample_last_played_for(&source, relative_path)?;
         let entry = WavEntry {
             relative_path: relative_path.to_path_buf(),
             file_size,
@@ -136,6 +141,7 @@ impl EguiController {
             content_hash: None,
             tag,
             missing: false,
+            last_played_at,
         };
         self.update_cached_entry(&source, relative_path, entry);
         self.refresh_waveform_for_sample(&source, relative_path);

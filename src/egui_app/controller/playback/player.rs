@@ -125,6 +125,7 @@ pub(crate) fn play_audio(
             started_at: Instant::now(),
         });
     }
+    controller.record_loaded_audio_playback();
     Ok(())
 }
 

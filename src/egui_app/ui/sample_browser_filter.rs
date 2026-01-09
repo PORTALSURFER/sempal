@@ -1,6 +1,6 @@
 use super::style;
 use super::*;
-use crate::egui_app::state::TriageFlagFilter;
+use crate::egui_app::state::{SampleBrowserSort, TriageFlagFilter};
 use eframe::egui::{self, RichText, Ui};
 
 impl EguiApp {
@@ -89,6 +89,34 @@ impl EguiApp {
                 } else {
                     self.controller.disable_similarity_sort();
                 }
+            }
+            ui.add_space(ui.spacing().item_spacing.x);
+            ui.label(RichText::new("Sort").color(palette.text_primary));
+            let current_sort = self.controller.ui.browser.sort;
+            let sort_label = match current_sort {
+                SampleBrowserSort::ListOrder => "List order",
+                SampleBrowserSort::Similarity => "Similarity",
+                SampleBrowserSort::PlaybackAgeAsc => "Playback age (oldest)",
+                SampleBrowserSort::PlaybackAgeDesc => "Playback age (recent)",
+            };
+            let mut sort = current_sort;
+            egui::ComboBox::from_id_source("browser_sort")
+                .selected_text(sort_label)
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut sort, SampleBrowserSort::ListOrder, "List order");
+                    ui.selectable_value(
+                        &mut sort,
+                        SampleBrowserSort::PlaybackAgeAsc,
+                        "Playback age (oldest)",
+                    );
+                    ui.selectable_value(
+                        &mut sort,
+                        SampleBrowserSort::PlaybackAgeDesc,
+                        "Playback age (recent)",
+                    );
+                });
+            if sort != current_sort {
+                self.controller.set_browser_sort(sort);
             }
             ui.add_space(ui.spacing().item_spacing.x);
             let random_mode_enabled = self.controller.random_navigation_mode_enabled();

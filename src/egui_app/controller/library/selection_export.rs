@@ -241,6 +241,7 @@ impl EguiController {
             content_hash: None,
             tag: target_tag.unwrap_or(Rating::NEUTRAL),
             missing: false,
+            last_played_at: None,
         };
         if register_in_source {
             let db = self

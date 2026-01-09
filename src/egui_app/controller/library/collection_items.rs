@@ -30,6 +30,8 @@ impl EguiController {
         let result: Result<(), String> = (|| {
             let ctx = self.resolve_collection_sample(row)?;
             let tag = self.sample_tag_for(&ctx.source, &ctx.member.relative_path)?;
+            let last_played_at = self
+                .sample_last_played_for(&ctx.source, &ctx.member.relative_path)?;
             let full_name =
                 self.name_with_preserved_extension(&ctx.member.relative_path, new_name)?;
             let new_relative = self.validate_new_sample_name(&ctx, &full_name)?;
@@ -45,6 +47,7 @@ impl EguiController {
                     content_hash: None,
                     tag,
                     missing: false,
+                    last_played_at,
                 },
             );
             self.refresh_waveform_after_change(&ctx, &new_relative);
@@ -121,6 +124,8 @@ impl EguiController {
             let ctx = self.resolve_collection_sample(row)?;
             let (file_size, modified_ns, tag) = self.normalize_and_save(&ctx)?;
             self.upsert_metadata(&ctx, file_size, modified_ns)?;
+            let last_played_at = self
+                .sample_last_played_for(&ctx.source, &ctx.member.relative_path)?;
             self.update_cached_entry(
                 &ctx.source,
                 &ctx.member.relative_path,
@@ -131,6 +136,7 @@ impl EguiController {
                     content_hash: None,
                     tag,
                     missing: false,
+                    last_played_at,
                 },
             );
             if self.selection_state.ctx.selected_source.as_ref() == Some(&ctx.source.id) {

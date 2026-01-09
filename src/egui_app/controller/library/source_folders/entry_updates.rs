@@ -57,6 +57,11 @@ impl EguiController {
             batch
                 .set_tag(&updated_path, entry.tag)
                 .map_err(|err| format!("Failed to copy tag: {err}"))?;
+            if let Some(last_played_at) = entry.last_played_at {
+                batch
+                    .set_last_played_at(&updated_path, last_played_at)
+                    .map_err(|err| format!("Failed to copy playback age: {err}"))?;
+            }
         }
         batch
             .commit()

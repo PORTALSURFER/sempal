@@ -80,6 +80,7 @@ impl BrowserController<'_> {
             content_hash: None,
             tag,
             missing: false,
+            last_played_at: ctx.entry.last_played_at,
         };
         self.update_cached_entry(&ctx.source, &ctx.entry.relative_path, updated);
         if self.selection_state.ctx.selected_source.as_ref() == Some(&ctx.source.id) {
@@ -236,6 +237,7 @@ impl BrowserController<'_> {
                 content_hash: None,
                 tag,
                 missing: false,
+                last_played_at: ctx.entry.last_played_at,
             },
         );
         self.refresh_waveform_for_sample(&ctx.source, new_relative);

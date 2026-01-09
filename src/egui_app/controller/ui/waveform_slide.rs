@@ -185,6 +185,10 @@ impl EguiController {
             .map_err(|err| format!("Failed to sync database entry: {err}"))?;
         db.set_tag(&state.relative_path, tag)
             .map_err(|err| format!("Failed to sync tag: {err}"))?;
+        let last_played_at = self
+            .wav_index_for_path(&state.relative_path)
+            .and_then(|idx| self.wav_entry(idx))
+            .and_then(|entry| entry.last_played_at);
         let entry = WavEntry {
             relative_path: state.relative_path.clone(),
             file_size,
@@ -192,6 +196,7 @@ impl EguiController {
             content_hash: None,
             tag,
             missing: false,
+            last_played_at,
         };
         self.update_cached_entry(&state.source, &state.relative_path, entry);
         self.refresh_waveform_for_sample(&state.source, &state.relative_path);

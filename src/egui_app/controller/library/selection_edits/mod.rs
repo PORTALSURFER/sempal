@@ -118,6 +118,7 @@ impl EguiController {
                 content_hash: None,
                 tag,
                 missing: false,
+                last_played_at: None,
             },
         );
         self.enqueue_similarity_for_new_sample(
@@ -309,6 +310,8 @@ impl EguiController {
             .map_err(|err| format!("Failed to sync database entry: {err}"))?;
         db.set_tag(&context.relative_path, tag)
             .map_err(|err| format!("Failed to sync tag: {err}"))?;
+        let last_played_at = self
+            .sample_last_played_for(&context.source, &context.relative_path)?;
         let entry = WavEntry {
             relative_path: context.relative_path.clone(),
             file_size,
@@ -316,6 +319,7 @@ impl EguiController {
             content_hash: None,
             tag,
             missing: false,
+            last_played_at,
         };
         self.update_cached_entry(&context.source, &context.relative_path, entry);
         self.refresh_waveform_for_sample(&context.source, &context.relative_path);

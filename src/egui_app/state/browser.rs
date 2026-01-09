@@ -192,6 +192,8 @@ pub enum TriageFlagFilter {
 pub enum SampleBrowserSort {
     ListOrder,
     Similarity,
+    PlaybackAgeAsc,
+    PlaybackAgeDesc,
 }
 
 /// Pending inline action for the sample browser.

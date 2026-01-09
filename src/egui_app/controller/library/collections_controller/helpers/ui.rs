@@ -133,6 +133,27 @@ impl CollectionsController<'_> {
                     }
                 }
             };
+            let last_played_at = if let Some(root) = view.clip_root {
+                let source = SampleSource {
+                    id: view.source_id.clone(),
+                    root: root.clone(),
+                };
+                self.sample_last_played_for(&source, view.relative_path)
+                    .unwrap_or(None)
+            } else {
+                let source = self
+                    .library
+                    .sources
+                    .iter()
+                    .find(|s| &s.id == view.source_id)
+                    .cloned();
+                match source {
+                    Some(source) => self
+                        .sample_last_played_for(&source, view.relative_path)
+                        .unwrap_or(None),
+                    None => None,
+                }
+            };
             samples.push(crate::egui_app::state::CollectionSampleView {
                 source_id: view.source_id.clone(),
                 source: source_label,
@@ -140,6 +161,7 @@ impl CollectionsController<'_> {
                 label: view_model::sample_display_label(view.relative_path),
                 tag,
                 missing,
+                last_played_at,
             });
         }
         self.ui.collections.samples = samples;

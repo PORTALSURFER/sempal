@@ -71,4 +71,5 @@ pub struct CollectionSampleView {
     pub label: String,
     pub tag: Rating,
     pub missing: bool,
+    pub last_played_at: Option<i64>,
 }

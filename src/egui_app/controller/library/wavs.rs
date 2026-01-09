@@ -147,6 +147,9 @@ impl EguiController {
                         entry.tag,
                         entry.missing,
                     );
+                    if let Some(last_played_at) = entry.last_played_at {
+                        let _ = batch.set_last_played_at(&entry.relative_path, last_played_at);
+                    }
                 }
                 let _ = batch.commit();
             }

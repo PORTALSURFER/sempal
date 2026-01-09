@@ -20,6 +20,10 @@ impl EguiApp {
         let loaded_row = self.controller.ui.browser.loaded_visible;
         let drop_target = self.controller.triage_flag_drop_target();
         let mut tab = self.controller.ui.browser.active_tab;
+        let now_epoch = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
         ui.horizontal(|ui| {
             if ui
                 .selectable_label(tab == SampleBrowserTab::List, "Samples")
@@ -72,8 +76,13 @@ impl EguiApp {
                     Some(index) => index,
                     None => return,
                 };
-                let (tag, path, missing) = match self.controller.wav_entry(entry_index) {
-                    Some(entry) => (entry.tag, entry.relative_path.clone(), entry.missing),
+                let (tag, path, missing, last_played_at) = match self.controller.wav_entry(entry_index) {
+                    Some(entry) => (
+                        entry.tag,
+                        entry.relative_path.clone(),
+                        entry.missing,
+                        entry.last_played_at,
+                    ),
                     None => return,
                 };
                 let rename_match = matches!(
@@ -132,7 +141,7 @@ impl EguiApp {
                     .controller
                     .analysis_failure_for_entry(entry_index)
                     .map(str::to_string);
-                let base_color = style::triage_label_color(tag);
+                let base_color = style::playback_age_label_color(last_played_at, now_epoch);
                 let status_label = status_badges::apply_sample_status(
                     base_label,
                     base_color,

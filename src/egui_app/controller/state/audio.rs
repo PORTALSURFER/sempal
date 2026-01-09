@@ -71,6 +71,7 @@ pub(crate) enum AudioLoadIntent {
 #[derive(Clone)]
 pub(crate) struct LoadedAudio {
     pub(crate) source_id: SourceId,
+    pub(crate) root: PathBuf,
     pub(crate) relative_path: PathBuf,
     pub(crate) bytes: Vec<u8>,
     pub(crate) duration_seconds: f32,

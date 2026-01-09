@@ -25,6 +25,7 @@ mod transport;
 mod audio_options_tests;
 
 use formatting::{format_selection_duration, format_timestamp_hms_ms};
+use tracing::warn;
 
 #[cfg(test)]
 const SHOULD_PLAY_RANDOM_SAMPLE: bool = false;
@@ -90,6 +91,13 @@ pub(crate) fn selection_meets_bpm_min_for_playback(
     range: SelectionRange,
 ) -> bool {
     selection_meets_bpm_min(controller, range)
+}
+
+fn now_epoch_seconds() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64
 }
 
 impl EguiController {
@@ -163,6 +171,69 @@ impl EguiController {
 
     pub fn play_audio(&mut self, looped: bool, start_override: Option<f32>) -> Result<(), String> {
         player::play_audio(self, looped, start_override)
+    }
+
+    /// Record playback for the currently loaded audio, updating caches and UI.
+    pub(crate) fn record_loaded_audio_playback(&mut self) {
+        let Some(audio) = self.sample_view.wav.loaded_audio.as_ref() else {
+            return;
+        };
+        let source_id = audio.source_id.clone();
+        let root = audio.root.clone();
+        let relative_path = audio.relative_path.clone();
+        let played_at = now_epoch_seconds();
+        let source = SampleSource {
+            id: source_id.clone(),
+            root,
+        };
+        match self.database_for(&source) {
+            Ok(db) => {
+                if let Err(err) = db.set_last_played_at(&relative_path, played_at) {
+                    warn!(
+                        "Failed to update playback age for {}: {}",
+                        relative_path.display(),
+                        err
+                    );
+                }
+            }
+            Err(err) => {
+                warn!(
+                    "Database unavailable for playback age update {}: {}",
+                    relative_path.display(),
+                    err
+                );
+            }
+        }
+        let mut updated_browser = false;
+        if self.selection_state.ctx.selected_source.as_ref() == Some(&source_id)
+            && let Some(index) = self.wav_index_for_path(&relative_path)
+        {
+            let _ = self.ensure_wav_page_loaded(index);
+            if let Some(entry) = self.wav_entries.entry(index).cloned() {
+                let mut updated_entry = entry.clone();
+                updated_entry.last_played_at = Some(played_at);
+                updated_browser = self
+                    .wav_entries
+                    .update_entry(&relative_path, updated_entry);
+            }
+        }
+        if let Some(cache) = self.cache.wav.entries.get_mut(&source_id) {
+            if let Some(index) = cache.lookup.get(&relative_path).copied()
+                && let Some(entry) = cache.entry(index).cloned()
+            {
+                let mut updated_entry = entry.clone();
+                updated_entry.last_played_at = Some(played_at);
+                cache.update_entry(&relative_path, updated_entry);
+            }
+        }
+        if updated_browser {
+            self.rebuild_browser_lists();
+        }
+        for sample in &mut self.ui.collections.samples {
+            if sample.source_id == source_id && sample.path == relative_path {
+                sample.last_played_at = Some(played_at);
+            }
+        }
     }
 
     pub fn is_playing(&self) -> bool {
@@ -302,6 +373,7 @@ mod tests {
         let (mut controller, source) = test_support::dummy_controller();
         controller.sample_view.wav.loaded_audio = Some(LoadedAudio {
             source_id: source.id.clone(),
+            root: source.root.clone(),
             relative_path: PathBuf::from("clip.wav"),
             bytes: Vec::new(),
             duration_seconds: 4.0,

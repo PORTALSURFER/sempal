@@ -13,6 +13,7 @@ struct CompactSearchEntry {
     display_label: Box<str>,
     relative_path: Box<str>,
     tag: Rating,
+    last_played_at: Option<i64>,
 }
 
 struct SearchWorkerCache {
@@ -75,6 +76,7 @@ fn process_search_job(
                                     display_label: display_label.into_boxed_str(),
                                     relative_path: relative_path.into_boxed_str(),
                                     tag: e.tag,
+                                    last_played_at: e.last_played_at,
                                 }
                             })
                             .collect();
@@ -147,31 +149,49 @@ fn process_search_job(
             }
         }
 
-        if job.sort == SampleBrowserSort::Similarity {
-            let mut score_lookup = vec![None; entries.len()];
-            for (&index, &score) in similar.indices.iter().zip(similar.scores.iter()) {
-                if index < score_lookup.len() {
-                    score_lookup[index] = Some(score);
+        match job.sort {
+            SampleBrowserSort::Similarity => {
+                let mut score_lookup = vec![None; entries.len()];
+                for (&index, &score) in similar.indices.iter().zip(similar.scores.iter()) {
+                    if index < score_lookup.len() {
+                        score_lookup[index] = Some(score);
+                    }
                 }
-            }
-            visible.sort_by(|a: &usize, b: &usize| {
-                let a_score = score_lookup.get(*a).and_then(|s| *s).unwrap_or(f32::NEG_INFINITY);
-                let b_score = score_lookup.get(*b).and_then(|s| *s).unwrap_or(f32::NEG_INFINITY);
-                b_score.partial_cmp(&a_score).unwrap_or(Ordering::Equal).then_with(|| a.cmp(b))
-            });
+                visible.sort_by(|a: &usize, b: &usize| {
+                    let a_score = score_lookup
+                        .get(*a)
+                        .and_then(|s| *s)
+                        .unwrap_or(f32::NEG_INFINITY);
+                    let b_score = score_lookup
+                        .get(*b)
+                        .and_then(|s| *s)
+                        .unwrap_or(f32::NEG_INFINITY);
+                    b_score
+                        .partial_cmp(&a_score)
+                        .unwrap_or(Ordering::Equal)
+                        .then_with(|| a.cmp(b))
+                });
 
-            if let Some(anchor) = similar.anchor_index {
-                if let Some(entry) = entries.get(anchor) {
-                    if filter_accepts(entry.tag) && folder_accepts(entry) {
-                        if let Some(pos) = visible.iter().position(|i| *i == anchor) {
-                            visible.remove(pos);
+                if let Some(anchor) = similar.anchor_index {
+                    if let Some(entry) = entries.get(anchor) {
+                        if filter_accepts(entry.tag) && folder_accepts(entry) {
+                            if let Some(pos) = visible.iter().position(|i| *i == anchor) {
+                                visible.remove(pos);
+                            }
+                            visible.insert(0, anchor);
                         }
-                        visible.insert(0, anchor);
                     }
                 }
             }
-        } else {
-            visible.sort_unstable();
+            SampleBrowserSort::PlaybackAgeAsc => {
+                sort_visible_by_playback_age(entries, &mut visible, true);
+            }
+            SampleBrowserSort::PlaybackAgeDesc => {
+                sort_visible_by_playback_age(entries, &mut visible, false);
+            }
+            SampleBrowserSort::ListOrder => {
+                visible.sort_unstable();
+            }
         }
     }
 
@@ -207,7 +227,12 @@ fn process_search_job(
 
     let has_folder_filters = job.folder_selection.as_ref().is_some_and(|s: &std::collections::BTreeSet<std::path::PathBuf>| !s.is_empty())
         || job.folder_negated.as_ref().is_some_and(|n: &std::collections::BTreeSet<std::path::PathBuf>| !n.is_empty());
-    if !has_query && !has_folder_filters && job.filter == TriageFlagFilter::All && job.similar_query.is_none() {
+    if !has_query
+        && !has_folder_filters
+        && job.filter == TriageFlagFilter::All
+        && job.similar_query.is_none()
+        && job.sort == SampleBrowserSort::ListOrder
+    {
         return SearchResult {
             source_id: job.source_id,
             query: job.query,
@@ -221,6 +246,18 @@ fn process_search_job(
         };
     }
 
+    if job.similar_query.is_none() {
+        match job.sort {
+            SampleBrowserSort::PlaybackAgeAsc => {
+                sort_visible_by_playback_age(entries, &mut visible, true);
+            }
+            SampleBrowserSort::PlaybackAgeDesc => {
+                sort_visible_by_playback_age(entries, &mut visible, false);
+            }
+            _ => {}
+        }
+    }
+
     SearchResult {
         source_id: job.source_id,
         query: job.query,
@@ -230,6 +267,29 @@ fn process_search_job(
         keep,
         scores,
     }
+}
+
+fn sort_visible_by_playback_age(
+    entries: &[CompactSearchEntry],
+    visible: &mut Vec<usize>,
+    ascending: bool,
+) {
+    visible.sort_by(|a, b| {
+        let a_key = entries
+            .get(*a)
+            .and_then(|entry| entry.last_played_at)
+            .unwrap_or(i64::MIN);
+        let b_key = entries
+            .get(*b)
+            .and_then(|entry| entry.last_played_at)
+            .unwrap_or(i64::MIN);
+        let order = if ascending {
+            a_key.cmp(&b_key)
+        } else {
+            b_key.cmp(&a_key)
+        };
+        order.then_with(|| a.cmp(b))
+    });
 }
 
 #[cfg(test)]
@@ -246,6 +306,7 @@ mod tests {
                 content_hash: None,
                 tag: Rating::NEUTRAL,
                 missing: false,
+                last_played_at: None,
             },
             WavEntry {
                 relative_path: std::path::PathBuf::from("kits/drums/snare.wav"),
@@ -254,6 +315,7 @@ mod tests {
                 content_hash: None,
                 tag: Rating::NEUTRAL,
                 missing: false,
+                last_played_at: None,
             },
         ];
 
@@ -266,6 +328,7 @@ mod tests {
                     display_label: display_label.into_boxed_str(),
                     relative_path: relative_path.into_boxed_str(),
                     tag: e.tag,
+                    last_played_at: e.last_played_at,
                 }
             })
             .collect();

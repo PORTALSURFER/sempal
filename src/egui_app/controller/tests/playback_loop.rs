@@ -19,6 +19,7 @@ fn setup_looping_controller(selection: SelectionRange) -> Option<EguiController>
     let (mut controller, source) = dummy_controller();
     controller.sample_view.wav.loaded_audio = Some(LoadedAudio {
         source_id: source.id.clone(),
+        root: source.root.clone(),
         relative_path: PathBuf::from("loop_drag_test.wav"),
         bytes,
         duration_seconds: duration,
@@ -53,6 +54,7 @@ fn enabling_loop_while_playing_restarts_in_looped_mode() {
     let (mut controller, source) = dummy_controller();
     controller.sample_view.wav.loaded_audio = Some(LoadedAudio {
         source_id: source.id.clone(),
+        root: source.root.clone(),
         relative_path: PathBuf::from("loop_test.wav"),
         bytes: std::fs::read(&wav_path).unwrap(),
         duration_seconds: 30.0,
@@ -99,6 +101,7 @@ fn enabling_loop_while_playing_uses_full_selection() {
     let (mut controller, source) = dummy_controller();
     controller.sample_view.wav.loaded_audio = Some(LoadedAudio {
         source_id: source.id.clone(),
+        root: source.root.clone(),
         relative_path: PathBuf::from("loop_selection_test.wav"),
         bytes: std::fs::read(&wav_path).unwrap(),
         duration_seconds: duration,

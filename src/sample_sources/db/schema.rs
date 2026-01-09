@@ -17,8 +17,9 @@ pub(super) fn apply_schema(connection: &Connection) -> Result<(), SourceDbError>
                 modified_ns INTEGER NOT NULL,
                 tag INTEGER NOT NULL DEFAULT 0,
                 missing INTEGER NOT NULL DEFAULT 0,
-                extension TEXT NOT NULL DEFAULT ''
-            );
+                extension TEXT NOT NULL DEFAULT '',
+                last_played_at INTEGER
+             );
              CREATE TABLE IF NOT EXISTS analysis_jobs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 sample_id TEXT NOT NULL,
@@ -193,6 +194,11 @@ fn ensure_wav_files_optional_columns(connection: &Connection) -> Result<(), Sour
                  WHERE extension = '' AND instr(path, '.') > 0",
                 [],
             )
+            .map_err(map_sql_error)?;
+    }
+    if !columns.contains("last_played_at") {
+        connection
+            .execute("ALTER TABLE wav_files ADD COLUMN last_played_at INTEGER", [])
             .map_err(map_sql_error)?;
     }
     Ok(())

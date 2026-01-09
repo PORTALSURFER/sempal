@@ -87,6 +87,9 @@ pub struct WavEntry {
     pub content_hash: Option<String>,
     pub tag: Rating,
     pub missing: bool,
+    /// Epoch seconds of the most recent playback, if any.
+    #[serde(default)]
+    pub last_played_at: Option<i64>,
 }
 
 /// Errors returned when managing a source database.

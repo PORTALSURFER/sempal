@@ -178,6 +178,10 @@ impl EguiApp {
         pointer_pos: Option<egui::Pos2>,
     ) {
         let palette = style::palette();
+        let now_epoch = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
         let samples = self.controller.ui.collections.samples.clone();
         let selected_row = self.controller.ui.collections.selected_sample;
         let selected_paths = self.controller.ui.collections.selected_paths.clone();
@@ -290,7 +294,7 @@ impl EguiApp {
                         let number_text = format!("{}", row + 1);
                         let status_label = status_badges::apply_sample_status(
                             base_label,
-                            style::triage_label_color(sample.tag),
+                            style::playback_age_label_color(sample.last_played_at, now_epoch),
                             sample.missing,
                             None,
                         );

@@ -283,6 +283,7 @@ fn register_loop_crossfade_entry(
             content_hash: None,
             tag,
             missing: false,
+            last_played_at: None,
         },
     );
     controller.enqueue_similarity_for_new_sample(source, relative_path, file_size, modified_ns);
@@ -393,6 +394,7 @@ fn redo_loop_crossfade(
             content_hash: None,
             tag,
             missing: false,
+            last_played_at: None,
         },
     );
     controller.refresh_waveform_for_sample(&source, relative_path);

@@ -19,6 +19,7 @@ fn selecting_missing_sample_sets_waveform_notice() {
         content_hash: None,
         tag: crate::sample_sources::Rating::NEUTRAL,
         missing: true,
+        last_played_at: None,
     }]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
@@ -48,6 +49,7 @@ fn collection_views_flag_missing_members() {
         content_hash: None,
         tag: crate::sample_sources::Rating::NEUTRAL,
         missing: true,
+        last_played_at: None,
     }]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
@@ -94,6 +96,7 @@ fn read_failure_marks_sample_missing() {
         content_hash: None,
         tag: crate::sample_sources::Rating::NEUTRAL,
         missing: false,
+        last_played_at: None,
     }]);
     controller.rebuild_wav_lookup();
     controller.rebuild_browser_lists();
@@ -149,6 +152,7 @@ fn apply_wav_entries_updates_missing_lookup() {
             content_hash: None,
             tag: crate::sample_sources::Rating::NEUTRAL,
             missing: false,
+            last_played_at: None,
         },
         WavEntry {
             relative_path: PathBuf::from("gone.wav"),
@@ -157,6 +161,7 @@ fn apply_wav_entries_updates_missing_lookup() {
             content_hash: None,
             tag: crate::sample_sources::Rating::NEUTRAL,
             missing: true,
+            last_played_at: None,
         },
     ];
 
@@ -311,6 +316,7 @@ fn mark_missing_updates_cache_db_and_missing_set_when_inactive() {
             content_hash: None,
             tag: crate::sample_sources::Rating::NEUTRAL,
             missing: false,
+            last_played_at: None,
         }],
     );
     controller

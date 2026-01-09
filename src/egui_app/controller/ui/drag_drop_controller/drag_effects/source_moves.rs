@@ -62,6 +62,9 @@ impl DragDropController<'_> {
                 return false;
             }
         };
+        let last_played_at = self
+            .sample_last_played_for(&source, &relative_path)
+            .unwrap_or(None);
         let target_relative = match unique_destination_path(&target_source.root, &relative_path) {
             Ok(path) => path,
             Err(err) => {
@@ -101,6 +104,7 @@ impl DragDropController<'_> {
             file_size,
             modified_ns,
             tag,
+            last_played_at,
         ) {
             let _ = move_sample_file(&target_absolute, &absolute);
             self.set_status(err, StatusTone::Error);
@@ -120,6 +124,7 @@ impl DragDropController<'_> {
             content_hash: None,
             tag,
             missing: false,
+            last_played_at,
         };
         self.insert_cached_entry(&target_source, new_entry);
         if self.update_collections_for_source_move(
@@ -180,6 +185,7 @@ impl DragDropController<'_> {
         file_size: u64,
         modified_ns: i64,
         tag: Rating,
+        last_played_at: Option<i64>,
     ) -> Result<(), String> {
         let db = self
             .database_for(source)
@@ -188,6 +194,10 @@ impl DragDropController<'_> {
             .map_err(|err| format!("Failed to register file: {err}"))?;
         db.set_tag(relative_path, tag)
             .map_err(|err| format!("Failed to set tag: {err}"))?;
+        if let Some(last_played_at) = last_played_at {
+            db.set_last_played_at(relative_path, last_played_at)
+                .map_err(|err| format!("Failed to copy playback age: {err}"))?;
+        }
         Ok(())
     }
 

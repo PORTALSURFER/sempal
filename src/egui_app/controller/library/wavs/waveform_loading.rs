@@ -197,6 +197,7 @@ impl EguiController {
     ) -> Result<(), String> {
         self.sample_view.wav.loaded_audio = Some(LoadedAudio {
             source_id: source.id.clone(),
+            root: source.root.clone(),
             relative_path: relative_path.to_path_buf(),
             bytes: bytes.clone(),
             duration_seconds,

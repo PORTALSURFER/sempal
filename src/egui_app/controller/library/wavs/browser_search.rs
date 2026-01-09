@@ -56,8 +56,8 @@ impl EguiController {
                 folder_negated.as_ref(),
             )
         };
+        let sort_mode = self.ui.browser.sort;
         if let Some(similar) = self.ui.browser.similar_query.clone() {
-            let sort_mode = self.ui.browser.sort;
             let mut visible: Vec<usize> = Vec::new();
             for index in similar.indices.iter().copied() {
                 let Some(entry) = self.wav_entry(index) else {
@@ -103,6 +103,12 @@ impl EguiController {
                         }
                     }
                 }
+                SampleBrowserSort::PlaybackAgeAsc => {
+                    sort_visible_by_playback_age(self, &mut visible, true);
+                }
+                SampleBrowserSort::PlaybackAgeDesc => {
+                    sort_visible_by_playback_age(self, &mut visible, false);
+                }
             }
             let selected_visible =
                 focused_index.and_then(|idx| visible.iter().position(|i| *i == idx));
@@ -118,6 +124,7 @@ impl EguiController {
             if !has_folder_filters
                 && self.ui.browser.filter == TriageFlagFilter::All
                 && self.ui.browser.similar_query.is_none()
+                && sort_mode == SampleBrowserSort::ListOrder
             {
                 let total = self.wav_entries_len();
                 return (
@@ -127,11 +134,34 @@ impl EguiController {
                 );
             }
             let mut visible = Vec::new();
+            let mut playback_scratch = Vec::new();
             let _ = self.for_each_wav_entry(|index, entry| {
                 if filter_accepts(entry.tag) && folder_accepts(&entry.relative_path) {
-                    visible.push(index);
+                    if matches!(
+                        sort_mode,
+                        SampleBrowserSort::PlaybackAgeAsc | SampleBrowserSort::PlaybackAgeDesc
+                    ) {
+                        playback_scratch.push((index, entry.last_played_at.unwrap_or(i64::MIN)));
+                    } else {
+                        visible.push(index);
+                    }
                 }
             });
+            if matches!(
+                sort_mode,
+                SampleBrowserSort::PlaybackAgeAsc | SampleBrowserSort::PlaybackAgeDesc
+            ) {
+                let ascending = sort_mode == SampleBrowserSort::PlaybackAgeAsc;
+                playback_scratch.sort_by(|a, b| {
+                    let order = if ascending {
+                        a.1.cmp(&b.1)
+                    } else {
+                        b.1.cmp(&a.1)
+                    };
+                    order.then_with(|| a.0.cmp(&b.0))
+                });
+                visible = playback_scratch.into_iter().map(|(index, _)| index).collect();
+            }
             let selected_visible =
                 focused_index.and_then(|idx| visible.iter().position(|i| *i == idx));
             let loaded_visible =
@@ -166,6 +196,14 @@ impl EguiController {
             .iter()
             .map(|(index, _)| *index)
             .collect();
+        let mut visible = visible;
+        if matches!(
+            sort_mode,
+            SampleBrowserSort::PlaybackAgeAsc | SampleBrowserSort::PlaybackAgeDesc
+        ) {
+            let ascending = sort_mode == SampleBrowserSort::PlaybackAgeAsc;
+            sort_visible_by_playback_age(self, &mut visible, ascending);
+        }
         let selected_visible = focused_index.and_then(|idx| visible.iter().position(|i| *i == idx));
         let loaded_visible = loaded_index.and_then(|idx| visible.iter().position(|i| *i == idx));
         (
@@ -319,7 +357,7 @@ pub(crate) fn set_browser_filter(controller: &mut EguiController, filter: Triage
 pub(crate) fn set_browser_sort(controller: &mut EguiController, sort: SampleBrowserSort) {
     if controller.ui.browser.sort != sort {
         controller.ui.browser.sort = sort;
-        if sort == SampleBrowserSort::ListOrder {
+        if sort != SampleBrowserSort::Similarity {
             controller.ui.browser.similarity_sort_follow_loaded = false;
         }
         controller.rebuild_browser_lists();
@@ -341,4 +379,27 @@ pub(crate) fn set_browser_search(controller: &mut EguiController, query: impl In
     controller.ui.browser.sort = SampleBrowserSort::ListOrder;
     controller.ui.browser.similarity_sort_follow_loaded = false;
     controller.rebuild_browser_lists();
+}
+
+fn sort_visible_by_playback_age(
+    controller: &mut EguiController,
+    visible: &mut Vec<usize>,
+    ascending: bool,
+) {
+    visible.sort_by(|a, b| {
+        let a_key = controller
+            .wav_entry(*a)
+            .and_then(|entry| entry.last_played_at)
+            .unwrap_or(i64::MIN);
+        let b_key = controller
+            .wav_entry(*b)
+            .and_then(|entry| entry.last_played_at)
+            .unwrap_or(i64::MIN);
+        let order = if ascending {
+            a_key.cmp(&b_key)
+        } else {
+            b_key.cmp(&a_key)
+        };
+        order.then_with(|| a.cmp(b))
+    });
 }

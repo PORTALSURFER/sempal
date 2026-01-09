@@ -235,6 +235,7 @@ mod tests {
             content_hash: None,
             tag: crate::sample_sources::Rating::NEUTRAL,
             missing: false,
+            last_played_at: None,
         }]);
         
         let new_entry = WavEntry {
@@ -244,6 +245,7 @@ mod tests {
             content_hash: None,
             tag: crate::sample_sources::Rating::KEEP_1,
             missing: false,
+            last_played_at: None,
         };
         
         // Update using backslash path

@@ -118,6 +118,9 @@ fn apply_rename(
         entry.tag,
         false,
     )?;
+    if let Some(last_played_at) = entry.last_played_at {
+        batch.set_last_played_at(new_path, last_played_at)?;
+    }
     Ok(())
 }
 

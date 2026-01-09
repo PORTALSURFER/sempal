@@ -51,6 +51,9 @@ impl EguiController {
         let db = self
             .database_for(source)
             .map_err(|err| format!("Database unavailable: {err}"))?;
+        let last_played_at = db
+            .last_played_at_for_path(old_relative)
+            .map_err(|err| format!("Failed to load playback age: {err}"))?;
         let mut batch = db
             .write_batch()
             .map_err(|err| format!("Failed to start database update: {err}"))?;
@@ -63,6 +66,11 @@ impl EguiController {
         batch
             .set_tag(new_relative, tag)
             .map_err(|err| format!("Failed to copy tag: {err}"))?;
+        if let Some(last_played_at) = last_played_at {
+            batch
+                .set_last_played_at(new_relative, last_played_at)
+                .map_err(|err| format!("Failed to copy playback age: {err}"))?;
+        }
         batch
             .commit()
             .map_err(|err| format!("Failed to save rename: {err}"))
