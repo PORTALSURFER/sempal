@@ -55,6 +55,7 @@ impl EguiApp {
                     DragPayload::Sample { .. }
                         | DragPayload::Samples { .. }
                         | DragPayload::Folder { .. }
+                        | DragPayload::DropTargetReorder { .. }
                 )
             );
             if drag_payload.is_some() && !folder_drop_active {

@@ -143,5 +143,8 @@ fn start_drag_from_pending(
             relative_path,
         } => controller.start_folder_drag(source_id, relative_path, pending.label, pos),
         DragPayload::Selection { .. } => {}
+        DragPayload::DropTargetReorder { path } => {
+            controller.start_drop_target_drag(path, pending.label, pos);
+        }
     }
 }

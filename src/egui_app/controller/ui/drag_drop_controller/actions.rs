@@ -25,6 +25,8 @@ pub(crate) trait DragDropActions {
         pos: Pos2,
         keep_source_focused: bool,
     );
+    /// Begin dragging a drop target row to reorder the sidebar list.
+    fn start_drop_target_drag(&mut self, path: PathBuf, label: String, pos: Pos2);
     fn update_active_drag(
         &mut self,
         pos: Pos2,
@@ -100,6 +102,10 @@ impl DragDropActions for DragDropController<'_> {
         };
         let label = self.selection_drag_label(&audio, bounds);
         self.begin_drag(payload, label, pos);
+    }
+
+    fn start_drop_target_drag(&mut self, path: PathBuf, label: String, pos: Pos2) {
+        self.begin_drag(DragPayload::DropTargetReorder { path }, label, pos);
     }
 
     fn update_active_drag(
@@ -387,6 +393,14 @@ impl DragDropActions for DragDropController<'_> {
                     keep_source_focused,
                 );
             }
+            DragPayload::DropTargetReorder { path } => {
+                let target_path = match active_target {
+                    DragTarget::DropTarget { path } => Some(path),
+                    DragTarget::DropTargetsPanel => None,
+                    _ => return,
+                };
+                self.reorder_drop_targets(&path, target_path.as_deref());
+            }
         }
     }
 }
@@ -465,6 +479,7 @@ impl DragDropController<'_> {
                     Ok(label)
                 }),
             Some(DragPayload::Folder { .. }) => return,
+            Some(DragPayload::DropTargetReorder { .. }) => return,
             None => return,
         };
         match status {

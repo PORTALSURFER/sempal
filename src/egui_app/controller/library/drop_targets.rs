@@ -139,6 +139,62 @@ impl EguiController {
         let _ = self.persist_config("Failed to save drop target color");
     }
 
+    /// Reorder the drop target list by moving a path to a new position.
+    pub(crate) fn reorder_drop_targets(&mut self, dragged_path: &Path, target_path: Option<&Path>) {
+        let target_path = target_path.map(|path| path.to_path_buf());
+        let from_index = self
+            .settings
+            .drop_targets
+            .iter()
+            .position(|target| target.path == dragged_path);
+        let Some(from_index) = from_index else {
+            return;
+        };
+        let to_index = match target_path.as_ref() {
+            Some(path) => self
+                .settings
+                .drop_targets
+                .iter()
+                .position(|target| target.path == *path),
+            None => Some(self.settings.drop_targets.len()),
+        };
+        let Some(to_index) = to_index else {
+            return;
+        };
+        if target_path.is_some() && from_index == to_index {
+            return;
+        }
+        if from_index >= self.settings.drop_targets.len() {
+            return;
+        }
+        let mut insert_index = to_index;
+        if insert_index > self.settings.drop_targets.len() {
+            insert_index = self.settings.drop_targets.len();
+        }
+        let moved = self.settings.drop_targets.remove(from_index);
+        if target_path.is_some() && insert_index > from_index {
+            insert_index = insert_index.saturating_sub(1);
+        }
+        if insert_index > self.settings.drop_targets.len() {
+            insert_index = self.settings.drop_targets.len();
+        }
+        self.settings.drop_targets.insert(insert_index, moved);
+        if let Some(selected) = self.ui.sources.drop_targets.selected {
+            let new_selected = if selected == from_index {
+                Some(insert_index)
+            } else if from_index < selected && insert_index >= selected {
+                Some(selected - 1)
+            } else if from_index > selected && insert_index <= selected {
+                Some(selected + 1)
+            } else {
+                Some(selected)
+            };
+            self.ui.sources.drop_targets.selected = new_selected;
+        }
+        self.refresh_drop_targets_ui();
+        let _ = self.persist_config("Failed to save drop target order");
+    }
+
     /// Resolve a drop target path to its source and relative folder.
     pub(crate) fn resolve_drop_target_location(
         &self,

@@ -439,6 +439,7 @@ impl EguiApp {
                                 }),
                                 DragPayload::Folder { .. } => false,
                                 DragPayload::Selection { .. } => false,
+                                DragPayload::DropTargetReorder { .. } => false,
                             },
                         );
                     },

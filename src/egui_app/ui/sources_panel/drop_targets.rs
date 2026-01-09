@@ -4,7 +4,7 @@ use super::helpers::{
 };
 use super::style;
 use crate::egui_app::state::{DragPayload, DragSource, DragTarget};
-use crate::egui_app::ui::drag_targets::{handle_drop_zone, pointer_pos_for_drag};
+use crate::egui_app::ui::drag_targets::{handle_drop_zone, handle_sample_row_drag, pointer_pos_for_drag};
 use crate::sample_sources::config::DropTargetColor;
 use eframe::egui::{self, Align2, RichText, StrokeKind, TextStyle, Ui};
 
@@ -23,6 +23,7 @@ impl EguiApp {
         ui.add_space(6.0);
 
         let drag_payload = self.controller.ui.drag.payload.clone();
+        let drag_active = drag_payload.is_some();
         let sample_drag_active = matches!(
             drag_payload,
             Some(DragPayload::Sample { .. } | DragPayload::Samples { .. })
@@ -30,6 +31,10 @@ impl EguiApp {
         let folder_drag_active = matches!(
             drag_payload,
             Some(DragPayload::Folder { .. })
+        );
+        let drop_target_drag_active = matches!(
+            drag_payload,
+            Some(DragPayload::DropTargetReorder { .. })
         );
         let pointer_pos = pointer_pos_for_drag(ui, self.controller.ui.drag.position);
         let rows = self.controller.ui.sources.drop_targets.rows.clone();
@@ -59,6 +64,12 @@ impl EguiApp {
                     }
                     for (index, row) in rows.iter().enumerate() {
                         let is_selected = Some(index) == selected;
+                        let drag_path = row.path.clone();
+                        let target_path = drag_path.clone();
+                        let pending_path = drag_path.clone();
+                        let match_path = drag_path.clone();
+                        let drag_label = format!("Drop target: {}", row.name);
+                        let pending_label = drag_label.clone();
                         let row_width = ui.available_width();
                         let padding = ui.spacing().button_padding.x * 2.0;
                         let base_label = clamp_label_for_width(&row.name, row_width - padding);
@@ -90,13 +101,42 @@ impl EguiApp {
                                 background: bg,
                                 skip_hover: false,
                                 text_color,
-                                sense: egui::Sense::click(),
+                                sense: egui::Sense::click_and_drag(),
                                 number: None,
                                 marker,
                                 rating: None,
                             },
                         )
                         .on_hover_text(row.path.display().to_string());
+                        handle_sample_row_drag(
+                            ui,
+                            &response,
+                            drag_active,
+                            &mut self.controller,
+                            DragSource::DropTargets,
+                            DragTarget::DropTarget {
+                                path: target_path,
+                            },
+                            move |pos, controller| {
+                                controller.start_drop_target_drag(drag_path, drag_label, pos);
+                            },
+                            move |pos, _controller| {
+                                Some(crate::egui_app::state::PendingOsDragStart {
+                                    payload: DragPayload::DropTargetReorder {
+                                        path: pending_path.clone(),
+                                    },
+                                    label: pending_label.clone(),
+                                    origin: pos,
+                                })
+                            },
+                            move |pending| match &pending.payload {
+                                DragPayload::DropTargetReorder { path } => *path == match_path,
+                                DragPayload::Sample { .. } => false,
+                                DragPayload::Samples { .. } => false,
+                                DragPayload::Folder { .. } => false,
+                                DragPayload::Selection { .. } => false,
+                            },
+                        );
                         if response.clicked() {
                             self.controller.select_drop_target_by_index(index);
                         }
@@ -104,6 +144,19 @@ impl EguiApp {
                             ui,
                             &mut self.controller,
                             sample_drag_active,
+                            pointer_pos,
+                            response.rect,
+                            DragSource::DropTargets,
+                            DragTarget::DropTarget {
+                                path: row.path.clone(),
+                            },
+                            style::drag_target_stroke(),
+                            egui::StrokeKind::Inside,
+                        );
+                        handle_drop_zone(
+                            ui,
+                            &mut self.controller,
+                            drop_target_drag_active,
                             pointer_pos,
                             response.rect,
                             DragSource::DropTargets,
@@ -121,6 +174,17 @@ impl EguiApp {
             ui,
             &mut self.controller,
             folder_drag_active,
+            pointer_pos,
+            frame_response.response.rect,
+            DragSource::DropTargets,
+            DragTarget::DropTargetsPanel,
+            style::drag_target_stroke(),
+            egui::StrokeKind::Inside,
+        );
+        handle_drop_zone(
+            ui,
+            &mut self.controller,
+            drop_target_drag_active,
             pointer_pos,
             frame_response.response.rect,
             DragSource::DropTargets,

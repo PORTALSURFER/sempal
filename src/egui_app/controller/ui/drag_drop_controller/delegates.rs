@@ -48,6 +48,11 @@ impl EguiController {
             .start_selection_drag_payload(bounds, pos, keep_source_focused);
     }
 
+    /// Begin dragging a drop target row to reorder the list.
+    pub fn start_drop_target_drag(&mut self, path: PathBuf, label: String, pos: Pos2) {
+        self.drag_drop().start_drop_target_drag(path, label, pos);
+    }
+
     /// Update the active drag state with a new pointer position and target.
     pub fn update_active_drag(
         &mut self,

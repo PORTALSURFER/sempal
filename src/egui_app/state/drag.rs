@@ -34,6 +34,11 @@ pub enum DragPayload {
         /// When true, keep focus on the source sample after exporting a clip.
         keep_source_focused: bool,
     },
+    /// Drag payload for reordering drop targets in the sidebar.
+    DropTargetReorder {
+        /// Drop target path being moved within the list.
+        path: PathBuf,
+    },
 }
 
 /// Panel-originating drag target.

@@ -110,6 +110,7 @@ impl EguiApp {
                     .any(|sample| sample.relative_path == match_path),
                 DragPayload::Folder { .. } => false,
                 DragPayload::Selection { .. } => false,
+                DragPayload::DropTargetReorder { .. } => false,
             },
         );
     }
