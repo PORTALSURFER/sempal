@@ -29,7 +29,9 @@ impl EguiApp {
                 ctx.input(|i| i.pointer.hover_pos().or_else(|| i.pointer.interact_pos()))
             {
                 let shift_down = ctx.input(|i| i.modifiers.shift);
-                self.controller.refresh_drag_position(pos, shift_down);
+                let alt_down = ctx.input(|i| i.modifiers.alt);
+                self.controller
+                    .refresh_drag_position(pos, shift_down, alt_down);
             }
         } else {
             self.controller.ui.drag.position = None;

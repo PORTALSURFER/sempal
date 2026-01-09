@@ -1,7 +1,9 @@
 //! Helpers to convert domain data into egui-facing view structs.
 // Transitional helpers; wiring into the egui renderer will consume these.
 
-use crate::egui_app::state::{CollectionRowView, CollectionSampleView, SourceRowView};
+use crate::egui_app::state::{
+    CollectionRowView, CollectionSampleView, DropTargetRowView, SourceRowView,
+};
 use crate::sample_sources::collections::{CollectionMember, collection_folder_name_from_str};
 use crate::sample_sources::{Collection, CollectionId, Rating, SampleSource};
 use std::path::{Path, PathBuf};
@@ -18,6 +20,20 @@ pub fn source_row(source: &SampleSource, missing: bool) -> SourceRowView {
         id: source.id.clone(),
         name,
         path: source.root.to_string_lossy().to_string(),
+        missing,
+    }
+}
+
+/// Convert a drop target path into a UI row.
+pub fn drop_target_row(path: &Path, missing: bool) -> DropTargetRowView {
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map(|name| name.to_string())
+        .unwrap_or_else(|| path.to_string_lossy().to_string());
+    DropTargetRowView {
+        path: path.to_path_buf(),
+        name,
         missing,
     }
 }

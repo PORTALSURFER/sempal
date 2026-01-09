@@ -17,7 +17,8 @@ pub(super) fn handle_selection_handle_drag(
         }
     } else if handle_response.dragged() {
         if let Some(pos) = handle_response.interact_pointer_pos() {
-            app.controller.refresh_drag_position(pos, false);
+            let alt_down = ui.input(|i| i.modifiers.alt);
+            app.controller.refresh_drag_position(pos, false, alt_down);
         }
     } else if handle_response.drag_stopped() {
         app.controller.finish_active_drag();

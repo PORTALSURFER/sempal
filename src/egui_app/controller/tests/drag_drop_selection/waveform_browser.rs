@@ -212,6 +212,7 @@ fn selection_drop_to_browser_respects_shift_pressed_mid_drag() {
         DragSource::Browser,
         DragTarget::BrowserTriage(crate::egui_app::state::TriageFlagColumn::Keep),
         true,
+        false,
     );
     controller.finish_active_drag();
 

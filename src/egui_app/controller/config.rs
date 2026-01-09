@@ -22,6 +22,7 @@ impl EguiController {
         self.settings.app_data_dir = cfg.core.app_data_dir.clone();
         self.settings.trash_folder = cfg.core.trash_folder.clone();
         self.settings.collection_export_root = cfg.core.collection_export_root.clone();
+        self.settings.drop_targets = cfg.core.drop_targets.clone();
         self.ui.collections.enabled = self.settings.feature_flags.collections_enabled;
         self.settings.audio_output = cfg.core.audio_output.clone();
         self.ui.audio.selected = self.settings.audio_output.clone();
@@ -171,6 +172,7 @@ impl EguiController {
                 app_data_dir: self.settings.app_data_dir.clone(),
                 trash_folder: self.settings.trash_folder.clone(),
                 collection_export_root: self.settings.collection_export_root.clone(),
+                drop_targets: self.settings.drop_targets.clone(),
                 last_selected_source: self
                     .selection_state
                     .ctx

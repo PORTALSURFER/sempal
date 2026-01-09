@@ -9,6 +9,7 @@ pub struct SourcePanelState {
     pub menu_row: Option<usize>,
     pub scroll_to: Option<usize>,
     pub folders: FolderBrowserUiState,
+    pub drop_targets: DropTargetsUiState,
 }
 
 /// Display data for a single source row.
@@ -60,4 +61,21 @@ pub struct InlineFolderCreation {
     pub parent: PathBuf,
     pub name: String,
     pub focus_requested: bool,
+}
+
+/// Sidebar list of configured drop targets.
+#[derive(Clone, Debug, Default)]
+pub struct DropTargetsUiState {
+    pub rows: Vec<DropTargetRowView>,
+    pub selected: Option<usize>,
+    pub menu_row: Option<usize>,
+    pub scroll_to: Option<usize>,
+}
+
+/// Display data for a single drop target row.
+#[derive(Clone, Debug)]
+pub struct DropTargetRowView {
+    pub path: PathBuf,
+    pub name: String,
+    pub missing: bool,
 }

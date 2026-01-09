@@ -135,11 +135,13 @@ impl EguiApp {
                                 && response.rect.contains(pointer)
                             {
                                 let shift_down = ui.input(|i| i.modifiers.shift);
+                                let alt_down = ui.input(|i| i.modifiers.alt);
                                 self.controller.update_active_drag(
                                     pointer,
                                     DragSource::Collections,
                                     DragTarget::CollectionsRow(collection.id.clone()),
                                     shift_down,
+                                    alt_down,
                                 );
                             }
                         });

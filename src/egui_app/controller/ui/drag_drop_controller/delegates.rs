@@ -55,14 +55,16 @@ impl EguiController {
         source: DragSource,
         target: DragTarget,
         shift_down: bool,
+        alt_down: bool,
     ) {
         self.drag_drop()
-            .update_active_drag(pos, source, target, shift_down);
+            .update_active_drag(pos, source, target, shift_down, alt_down);
     }
 
     /// Update the stored drag pointer position (used when egui pointer positions are missing).
-    pub fn refresh_drag_position(&mut self, pos: Pos2, shift_down: bool) {
-        self.drag_drop().refresh_drag_position(pos, shift_down);
+    pub fn refresh_drag_position(&mut self, pos: Pos2, shift_down: bool, alt_down: bool) {
+        self.drag_drop()
+            .refresh_drag_position(pos, shift_down, alt_down);
     }
 
     /// Finish the active drag gesture and apply any resulting action.

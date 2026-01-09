@@ -246,7 +246,9 @@ fn handle_waveform_drag_handle_interactions(
     } else if response.dragged() {
         if let Some(pos) = response.interact_pointer_pos() {
             let shift_down = ui.input(|i| i.modifiers.shift);
-            app.controller.refresh_drag_position(pos, shift_down);
+            let alt_down = ui.input(|i| i.modifiers.alt);
+            app.controller
+                .refresh_drag_position(pos, shift_down, alt_down);
         }
     } else if response.drag_stopped() {
         app.controller.finish_active_drag();

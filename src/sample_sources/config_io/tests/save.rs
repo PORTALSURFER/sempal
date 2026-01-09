@@ -170,6 +170,10 @@ fn settings_round_trip_preserves_fields() {
             app_data_dir: Some(std::path::PathBuf::from("data_root")),
             trash_folder: Some(std::path::PathBuf::from("trash_bin")),
             collection_export_root: Some(std::path::PathBuf::from("exports_root")),
+            drop_targets: vec![
+                std::path::PathBuf::from("drops/a"),
+                std::path::PathBuf::from("drops/b"),
+            ],
             last_selected_source: Some(source_id.clone()),
             audio_output: AudioOutputConfig {
                 host: Some("coreaudio".into()),

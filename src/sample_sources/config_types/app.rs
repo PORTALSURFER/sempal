@@ -17,8 +17,8 @@ use super::{AnalysisSettings, InteractionOptions, UpdateSettings};
 /// Aggregate application state loaded from disk.
 ///
 /// Config keys (TOML): `feature_flags`, `analysis`, `updates`, `hints`, `app_data_dir`,
-/// `trash_folder`, `collection_export_root`, `last_selected_source`, `volume`,
-/// `audio_output`, `audio_input`, `controls`.
+/// `trash_folder`, `collection_export_root`, `drop_targets`, `last_selected_source`,
+/// `volume`, `audio_output`, `audio_input`, `controls`.
 ///
 /// `sources` and `collections` are stored in the library database.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -81,6 +81,9 @@ pub struct AppSettingsCore {
     /// Optional default root used when creating collection export folders.
     #[serde(default)]
     pub collection_export_root: Option<PathBuf>,
+    /// User-defined drop target folders used by the sidebar.
+    #[serde(default)]
+    pub drop_targets: Vec<PathBuf>,
     #[serde(default)]
     pub last_selected_source: Option<SourceId>,
     #[serde(default = "default_audio_output")]
@@ -167,6 +170,7 @@ impl Default for AppSettingsCore {
             app_data_dir: None,
             trash_folder: None,
             collection_export_root: None,
+            drop_targets: Vec::new(),
             last_selected_source: None,
             audio_output: default_audio_output(),
             audio_input: default_audio_input(),

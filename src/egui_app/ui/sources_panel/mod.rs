@@ -4,6 +4,7 @@ use crate::egui_app::state::{DragPayload, DragSource, FocusContext};
 use eframe::egui::{Align2, RichText, StrokeKind, TextStyle, Ui};
 
 mod drag_drop;
+mod drop_targets;
 mod folder_actions;
 mod folder_browser;
 mod sources_list;
@@ -34,7 +35,6 @@ impl EguiApp {
             let sources_rect = self.render_sources_list(ui, source_list_height);
             ui.add_space(8.0);
             let remaining = ui.available_height();
-            let folder_height = remaining.max(120.0);
             let drag_payload = self.controller.ui.drag.payload.clone();
             let folder_drop_active = matches!(
                 drag_payload,
@@ -46,6 +46,10 @@ impl EguiApp {
                 )
             );
             let source_drop_active = matches!(
+                drag_payload,
+                Some(DragPayload::Sample { .. } | DragPayload::Samples { .. })
+            );
+            let drop_targets_active = matches!(
                 drag_payload,
                 Some(DragPayload::Sample { .. } | DragPayload::Samples { .. })
             );
@@ -61,10 +65,27 @@ impl EguiApp {
                     .drag
                     .clear_targets_from(DragSource::Sources);
             }
+            if drag_payload.is_some() && !drop_targets_active {
+                self.controller
+                    .ui
+                    .drag
+                    .clear_targets_from(DragSource::DropTargets);
+            }
+            let min_folder_height = 60.0;
+            let min_drop_targets_height = 40.0;
+            let mut drop_targets_height = (remaining * 0.25).clamp(60.0, 160.0);
+            let mut folder_height = remaining - drop_targets_height - 8.0;
+            if folder_height < min_folder_height {
+                folder_height = min_folder_height;
+                drop_targets_height = (remaining - folder_height - 8.0)
+                    .max(min_drop_targets_height);
+            }
             let pointer_pos = ui
                 .input(|i| i.pointer.hover_pos().or_else(|| i.pointer.interact_pos()))
                 .or(self.controller.ui.drag.position);
             self.render_folder_browser(ui, folder_height, folder_drop_active, pointer_pos);
+            ui.add_space(8.0);
+            self.render_drop_targets(ui, drop_targets_height);
 
             let focus = self.controller.ui.focus.context;
             let stroke = style::focused_row_stroke();

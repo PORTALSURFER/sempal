@@ -181,6 +181,7 @@ impl EguiController {
             .as_ref()
             .and_then(|id| self.library.sources.iter().position(|s| &s.id == id));
         self.ui.sources.scroll_to = self.ui.sources.selected;
+        self.refresh_drop_targets_ui();
     }
 
     pub(crate) fn current_source(&self) -> Option<SampleSource> {

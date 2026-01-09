@@ -14,6 +14,7 @@ pub(crate) struct AppSettingsState {
     pub(crate) controls: crate::sample_sources::config::InteractionOptions,
     pub(crate) trash_folder: Option<PathBuf>,
     pub(crate) collection_export_root: Option<PathBuf>,
+    pub(crate) drop_targets: Vec<PathBuf>,
 }
 
 impl AppSettingsState {
@@ -29,6 +30,7 @@ impl AppSettingsState {
             controls: crate::sample_sources::config::InteractionOptions::default(),
             trash_folder: None,
             collection_export_root: None,
+            drop_targets: Vec::new(),
         }
     }
 }

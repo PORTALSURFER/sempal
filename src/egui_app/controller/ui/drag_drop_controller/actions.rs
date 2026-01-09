@@ -31,8 +31,9 @@ pub(crate) trait DragDropActions {
         source: DragSource,
         target: DragTarget,
         shift_down: bool,
+        alt_down: bool,
     );
-    fn refresh_drag_position(&mut self, pos: Pos2, shift_down: bool);
+    fn refresh_drag_position(&mut self, pos: Pos2, shift_down: bool, alt_down: bool);
     fn finish_active_drag(&mut self);
 }
 
@@ -107,6 +108,7 @@ impl DragDropActions for DragDropController<'_> {
         source: DragSource,
         target: DragTarget,
         shift_down: bool,
+        alt_down: bool,
     ) {
         if self.ui.drag.payload.is_none() {
             return;
@@ -119,6 +121,7 @@ impl DragDropActions for DragDropController<'_> {
             pos, source, target
         );
         self.ui.drag.position = Some(pos);
+        self.ui.drag.copy_on_drop = alt_down;
         if self.ui.drag.origin_source.is_none() {
             self.ui.drag.origin_source = Some(source);
         }
@@ -133,12 +136,13 @@ impl DragDropActions for DragDropController<'_> {
         }
     }
 
-    fn refresh_drag_position(&mut self, pos: Pos2, shift_down: bool) {
+    fn refresh_drag_position(&mut self, pos: Pos2, shift_down: bool, alt_down: bool) {
         if self.ui.drag.payload.is_some() {
             if self.ui.drag.pointer_left_window {
                 return;
             }
             self.ui.drag.position = Some(pos);
+            self.ui.drag.copy_on_drop = alt_down;
             if let Some(DragPayload::Selection {
                 keep_source_focused,
                 ..
@@ -161,6 +165,7 @@ impl DragDropActions for DragDropController<'_> {
         };
 
         let active_target = self.ui.drag.active_target.clone();
+        let copy_requested = self.ui.drag.copy_on_drop;
 
         info!(
             "Finish drag payload={:?} active_target={:?} last_folder_target={:?}",
@@ -184,6 +189,10 @@ impl DragDropActions for DragDropController<'_> {
                 (None, target, true)
             }
             _ => (None, None, false),
+        };
+        let drop_target_path = match &active_target {
+            DragTarget::DropTarget { path } => Some(path.clone()),
+            _ => None,
         };
 
         let is_sample_payload = matches!(
@@ -231,7 +240,8 @@ impl DragDropActions for DragDropController<'_> {
                 || matches!(active_target, DragTarget::CollectionsRow(_))
                 || (self.library.collections.is_empty()
                     && triage_target.is_none()
-                    && folder_target.is_none()));
+                    && folder_target.is_none()
+                    && drop_target_path.is_none()));
 
         debug!(
             "Collection drop context: drop_in_panel={} current_collection_id={:?} collection_target={:?} folder_target={:?} triage_target={:?} pointer_at={:?}",
@@ -284,6 +294,13 @@ impl DragDropActions for DragDropController<'_> {
                     self.handle_waveform_sample_drop_to_browser(source_id, relative_path);
                 } else if let Some(target) = source_target {
                     self.handle_sample_drop_to_source(source_id, relative_path, target);
+                } else if let Some(target_path) = drop_target_path.clone() {
+                    self.handle_sample_drop_to_drop_target(
+                        source_id,
+                        relative_path,
+                        target_path,
+                        copy_requested,
+                    );
                 } else if let Some(folder) = folder_target {
                     self.handle_sample_drop_to_folder(source_id, relative_path, &folder);
                 } else {
@@ -301,6 +318,12 @@ impl DragDropActions for DragDropController<'_> {
                     collection_target.is_some() && origin_source != Some(DragSource::Collections);
                 if let Some(target) = source_target {
                     self.handle_samples_drop_to_source(&samples, target);
+                } else if let Some(target_path) = drop_target_path.clone() {
+                    self.handle_samples_drop_to_drop_target(
+                        &samples,
+                        target_path,
+                        copy_requested,
+                    );
                 } else if let Some(folder) = folder_target {
                     self.handle_samples_drop_to_folder(&samples, &folder);
                 } else {
@@ -318,6 +341,11 @@ impl DragDropActions for DragDropController<'_> {
             } => {
                 if let Some(folder) = folder_target {
                     self.handle_folder_drop_to_folder(source_id, relative_path, &folder);
+                } else if drop_target_path.is_some() {
+                    self.set_status(
+                        "Drop targets accept samples, not folders",
+                        StatusTone::Warning,
+                    );
                 } else {
                     self.set_status("Drop onto a folder to move it", StatusTone::Warning);
                 }
@@ -331,6 +359,13 @@ impl DragDropActions for DragDropController<'_> {
                 if source_target.is_some() {
                     self.set_status(
                         "Drop samples onto a source to move them",
+                        StatusTone::Warning,
+                    );
+                    return;
+                }
+                if drop_target_path.is_some() {
+                    self.set_status(
+                        "Drop targets accept samples, not selections",
                         StatusTone::Warning,
                     );
                     return;

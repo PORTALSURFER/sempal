@@ -155,6 +155,7 @@ impl EguiApp {
                     {
                         hovered_folder = Some(root_row.path.clone());
                         let shift_down = ui.input(|i| i.modifiers.shift);
+                        let alt_down = ui.input(|i| i.modifiers.alt);
                         self.controller.update_active_drag(
                             pointer,
                             DragSource::Folders,
@@ -162,6 +163,7 @@ impl EguiApp {
                                 folder: Some(root_row.path.clone()),
                             },
                             shift_down,
+                            alt_down,
                         );
                     }
                     if hovered_folder
@@ -349,6 +351,7 @@ impl EguiApp {
                         {
                             hovered_folder = Some(row.path.clone());
                             let shift_down = ui.input(|i| i.modifiers.shift);
+                            let alt_down = ui.input(|i| i.modifiers.alt);
                             self.controller.update_active_drag(
                                 pointer,
                                 DragSource::Folders,
@@ -356,6 +359,7 @@ impl EguiApp {
                                     folder: Some(row.path.clone()),
                                 },
                                 shift_down,
+                                alt_down,
                             );
                         }
                         if hovered_folder
@@ -423,11 +427,13 @@ impl EguiApp {
                 if folder_drop_active && hovered_folder.is_none() {
                     let pointer = pointer_pos.unwrap_or_default();
                     let shift_down = ui.input(|i| i.modifiers.shift);
+                    let alt_down = ui.input(|i| i.modifiers.alt);
                     self.controller.update_active_drag(
                         pointer,
                         DragSource::Folders,
                         DragTarget::FolderPanel { folder: None },
                         shift_down,
+                        alt_down,
                     );
                 }
             });
@@ -436,20 +442,24 @@ impl EguiApp {
             if frame_response.response.rect.contains(pointer) {
                 if hovered_folder.is_none() {
                     let shift_down = ui.input(|i| i.modifiers.shift);
+                    let alt_down = ui.input(|i| i.modifiers.alt);
                     self.controller.update_active_drag(
                         pointer,
                         DragSource::Folders,
                         DragTarget::FolderPanel { folder: None },
                         shift_down,
+                        alt_down,
                     );
                 }
             } else {
                 let shift_down = ui.input(|i| i.modifiers.shift);
+                let alt_down = ui.input(|i| i.modifiers.alt);
                 self.controller.update_active_drag(
                     pointer,
                     DragSource::Folders,
                     DragTarget::None,
                     shift_down,
+                    alt_down,
                 );
             }
         }

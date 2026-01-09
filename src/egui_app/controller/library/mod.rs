@@ -16,6 +16,7 @@ pub(crate) mod collection_export;
 pub(crate) mod collection_items;
 pub(crate) mod collection_items_helpers;
 pub(crate) mod collections_controller;
+pub(crate) mod drop_targets;
 pub(crate) mod missing_samples;
 pub(crate) mod progress;
 pub(crate) mod progress_messages;

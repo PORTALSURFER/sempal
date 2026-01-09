@@ -31,7 +31,8 @@ pub(super) fn handle_drop_zone(
         return false;
     }
     let shift_down = ui.input(|i| i.modifiers.shift);
-    controller.update_active_drag(pointer, drag_source, drag_target, shift_down);
+    let alt_down = ui.input(|i| i.modifiers.alt);
+    controller.update_active_drag(pointer, drag_source, drag_target, shift_down, alt_down);
     ui.painter()
         .rect_stroke(target_rect, 6.0, stroke, stroke_kind);
     true
@@ -103,7 +104,8 @@ pub(super) fn handle_sample_row_drag<StartDrag, BuildPending, PendingMatch>(
             .or_else(|| pointer_pos_for_drag(ui, controller.ui.drag.position))
         {
             let shift_down = ui.input(|i| i.modifiers.shift);
-            controller.update_active_drag(pos, drag_source, drag_target, shift_down);
+            let alt_down = ui.input(|i| i.modifiers.alt);
+            controller.update_active_drag(pos, drag_source, drag_target, shift_down, alt_down);
         }
     } else if response.drag_stopped() {
         let window_focused = ui.input(|i| i.viewport().focused.unwrap_or(true));

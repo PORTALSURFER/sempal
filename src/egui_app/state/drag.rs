@@ -43,6 +43,7 @@ pub enum DragSource {
     Browser,
     Sources,
     Folders,
+    DropTargets,
     Waveform,
     External,
 }
@@ -56,6 +57,7 @@ pub enum DragTarget {
     BrowserTriage(TriageFlagColumn),
     SourcesRow(SourceId),
     FolderPanel { folder: Option<PathBuf> },
+    DropTarget { path: PathBuf },
     External,
 }
 
@@ -67,6 +69,7 @@ impl DragTarget {
             DragTarget::CollectionsRow(_) => 4,
             DragTarget::SourcesRow(_) => 3,
             DragTarget::FolderPanel { .. } => 2,
+            DragTarget::DropTarget { .. } => 2,
             DragTarget::BrowserTriage(_) => 2,
             DragTarget::None => 0,
         }
@@ -102,6 +105,8 @@ pub struct DragState {
     pub active_target: DragTarget,
     pub target_history: Vec<DragTargetSnapshot>,
     pub last_folder_target: Option<PathBuf>,
+    /// True when the user is requesting a copy on drop (alt key held).
+    pub copy_on_drop: bool,
     pub external_started: bool,
     pub external_arm_at: Option<Instant>,
     /// Best-effort signal that the cursor has left the app window mid-drag (Windows-only use).
@@ -135,6 +140,7 @@ impl Default for DragState {
             active_target: DragTarget::None,
             target_history: Vec::new(),
             last_folder_target: None,
+            copy_on_drop: false,
             external_started: false,
             external_arm_at: None,
             pointer_left_window: false,

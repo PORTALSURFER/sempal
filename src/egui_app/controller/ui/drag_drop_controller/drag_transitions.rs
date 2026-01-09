@@ -7,6 +7,7 @@ impl DragDropController<'_> {
         self.ui.drag.position = None;
         self.ui.drag.clear_all_targets();
         self.ui.drag.last_folder_target = None;
+        self.ui.drag.copy_on_drop = false;
         self.ui.drag.external_started = false;
         self.ui.drag.external_arm_at = None;
         self.ui.drag.pointer_left_window = false;
@@ -20,6 +21,7 @@ impl DragDropController<'_> {
         self.ui.drag.position = Some(pos);
         self.ui.drag.clear_all_targets();
         self.ui.drag.last_folder_target = None;
+        self.ui.drag.copy_on_drop = false;
         self.ui.drag.external_started = false;
         self.ui.drag.external_arm_at = None;
         self.ui.drag.pointer_left_window = false;

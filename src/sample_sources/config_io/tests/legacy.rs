@@ -24,6 +24,7 @@ fn migrates_from_legacy_json() {
             app_data_dir: None,
             trash_folder: Some(std::path::PathBuf::from("trash_here")),
             collection_export_root: None,
+            drop_targets: Vec::new(),
             last_selected_source: None,
             audio_output: AudioOutputConfig::default(),
             audio_input: AudioInputConfig::default(),

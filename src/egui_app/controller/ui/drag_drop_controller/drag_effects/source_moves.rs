@@ -178,7 +178,7 @@ impl DragDropController<'_> {
         }
     }
 
-    fn register_moved_sample_for_source(
+    pub(super) fn register_moved_sample_for_source(
         &mut self,
         source: &crate::sample_sources::SampleSource,
         relative_path: &Path,
@@ -201,7 +201,7 @@ impl DragDropController<'_> {
         Ok(())
     }
 
-    fn remove_source_db_entry(
+    pub(super) fn remove_source_db_entry(
         &mut self,
         source: &crate::sample_sources::SampleSource,
         relative_path: &Path,
@@ -225,7 +225,7 @@ impl DragDropController<'_> {
             .map_err(|err| format!("Failed to drop database row: {err}"))
     }
 
-    fn update_collections_for_source_move(
+    pub(super) fn update_collections_for_source_move(
         &mut self,
         from: &SourceId,
         to: &SourceId,
@@ -293,7 +293,7 @@ fn unique_destination_path(root: &Path, relative: &Path) -> Result<PathBuf, Stri
     Err("Failed to find destination file name".into())
 }
 
-fn move_sample_file(source: &Path, destination: &Path) -> Result<(), String> {
+pub(super) fn move_sample_file(source: &Path, destination: &Path) -> Result<(), String> {
     match std::fs::rename(source, destination) {
         Ok(()) => Ok(()),
         Err(rename_err) => {
