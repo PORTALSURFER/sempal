@@ -186,6 +186,10 @@ impl IssueTokenStore {
         self.fallback_dir.join("github_issue_token.bin")
     }
 
+    fn legacy_fallback_key_path(&self) -> PathBuf {
+        self.fallback_dir.join("encryption.key")
+    }
+
     fn fallback_key_entry(&self) -> Result<keyring::Entry, IssueTokenStoreError> {
         keyring::Entry::new(KEYRING_SERVICE, FALLBACK_KEYRING_KEY)
             .map_err(|err| IssueTokenStoreError::Unavailable(err.to_string()))
@@ -290,13 +294,16 @@ impl IssueTokenStore {
         let (nonce, ciphertext) = data.split_at(12);
         let plaintext = match decrypt(&key, nonce, ciphertext) {
             Ok(plaintext) => plaintext,
-            Err(err) => {
-                tracing::warn!(
-                    "Fallback token payload failed to decrypt; clearing fallback storage: {err}"
-                );
-                let _ = self.fallback_delete();
-                return Ok(None);
-            }
+            Err(err) => match self.try_legacy_fallback_decrypt(nonce, ciphertext, &key)? {
+                Some(plaintext) => plaintext,
+                None => {
+                    tracing::warn!(
+                        "Fallback token payload failed to decrypt; clearing fallback storage: {err}"
+                    );
+                    let _ = self.fallback_delete();
+                    return Ok(None);
+                }
+            },
         };
         let token = String::from_utf8(plaintext)
             .map_err(|err| IssueTokenStoreError::Decode(err.to_string()))?;
@@ -311,11 +318,7 @@ impl IssueTokenStore {
         }
         warn_fallback_active();
         let key = self.ensure_fallback_key()?;
-        let nonce = random_bytes(12)?;
-        let ciphertext = encrypt(&key, &nonce, token.as_bytes())?;
-        let mut payload = Vec::with_capacity(nonce.len() + ciphertext.len());
-        payload.extend_from_slice(&nonce);
-        payload.extend_from_slice(&ciphertext);
+        let payload = self.encrypt_fallback_payload(&key, token.as_bytes())?;
         write_private_file(&self.fallback_token_path(), &payload)?;
         Ok(())
     }
@@ -326,12 +329,56 @@ impl IssueTokenStore {
             clear_windows_readonly(self.fallback_token_path().as_path());
         }
         let _ = std::fs::remove_file(self.fallback_token_path());
+        let _ = std::fs::remove_file(self.legacy_fallback_key_path());
         let _ = self.try_keyring_fallback_key_delete();
         *self
             .fallback_key_cache
             .lock()
             .expect("fallback key cache lock poisoned") = None;
         Ok(())
+    }
+
+    fn try_legacy_fallback_decrypt(
+        &self,
+        nonce: &[u8],
+        ciphertext: &[u8],
+        new_key: &[u8; 32],
+    ) -> Result<Option<Vec<u8>>, IssueTokenStoreError> {
+        let legacy_key_path = self.legacy_fallback_key_path();
+        if !legacy_key_path.exists() {
+            return Ok(None);
+        }
+        let key_bytes = std::fs::read(&legacy_key_path)?;
+        if key_bytes.len() != 32 {
+            return Ok(None);
+        }
+        let mut legacy_key = [0u8; 32];
+        legacy_key.copy_from_slice(&key_bytes);
+        match decrypt(&legacy_key, nonce, ciphertext) {
+            Ok(plaintext) => {
+                tracing::info!(
+                    "Migrating legacy fallback token payload to keyring-backed storage."
+                );
+                let new_payload = self.encrypt_fallback_payload(new_key, &plaintext)?;
+                write_private_file(&self.fallback_token_path(), &new_payload)?;
+                let _ = std::fs::remove_file(&legacy_key_path);
+                Ok(Some(plaintext))
+            }
+            Err(_) => Ok(None),
+        }
+    }
+
+    fn encrypt_fallback_payload(
+        &self,
+        key: &[u8; 32],
+        plaintext: &[u8],
+    ) -> Result<Vec<u8>, IssueTokenStoreError> {
+        let nonce = random_bytes(12)?;
+        let ciphertext = encrypt(key, &nonce, plaintext)?;
+        let mut payload = Vec::with_capacity(nonce.len() + ciphertext.len());
+        payload.extend_from_slice(&nonce);
+        payload.extend_from_slice(&ciphertext);
+        Ok(payload)
     }
 }
 
@@ -723,6 +770,36 @@ mod tests {
         std::fs::write(store.fallback_token_path(), payload).unwrap();
         assert_eq!(store.fallback_get().unwrap(), None);
         assert!(!store.fallback_token_path().exists());
+
+        unsafe {
+            std::env::remove_var("SEMPAL_DISABLE_KEYRING");
+        }
+        disallow_fallback();
+    }
+
+    #[test]
+    fn fallback_get_migrates_legacy_key_file() {
+        enable_mock_keyring();
+        let _env_guard = env_lock();
+        unsafe {
+            std::env::set_var("SEMPAL_DISABLE_KEYRING", "1");
+        }
+        allow_fallback();
+        let base = tempdir().unwrap();
+        let _guard = app_dirs::ConfigBaseGuard::set(base.path().to_path_buf());
+        let store = IssueTokenStore::new().unwrap();
+
+        let legacy_key_bytes = random_bytes(32).unwrap();
+        let mut legacy_key = [0u8; 32];
+        legacy_key.copy_from_slice(&legacy_key_bytes);
+        write_private_file(&store.legacy_fallback_key_path(), &legacy_key_bytes).unwrap();
+        let legacy_payload = store
+            .encrypt_fallback_payload(&legacy_key, b"tok_legacy")
+            .unwrap();
+        write_private_file(&store.fallback_token_path(), &legacy_payload).unwrap();
+
+        assert_eq!(store.fallback_get().unwrap().as_deref(), Some("tok_legacy"));
+        assert!(!store.legacy_fallback_key_path().exists());
 
         unsafe {
             std::env::remove_var("SEMPAL_DISABLE_KEYRING");
