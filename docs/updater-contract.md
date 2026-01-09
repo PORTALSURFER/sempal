@@ -89,6 +89,12 @@ The updater validates at least:
 - `arch`: `x86_64`
 - `files`: list of file names expected inside `sempal/`
 
+During updates, the updater compares the installed `update-manifest.json` against
+the new manifest and deletes any previously listed files that are no longer
+present. If the new release omits a `resources/` directory, the existing one is
+removed as well. This keeps stale binaries or assets from lingering across
+releases.
+
 Minimal example:
 
 ```json
