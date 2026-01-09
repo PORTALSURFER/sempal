@@ -17,7 +17,7 @@ use buffer::{SelectionEditBuffer, SelectionTarget};
 pub(crate) use selection_click::repair_clicks_selection as repair_clicks_buffer;
 use selection_normalize::normalize_selection;
 
-use ops::{apply_directional_fade, crop_buffer, reverse_buffer, trim_buffer};
+use ops::{apply_directional_fade, apply_edge_fades, crop_buffer, reverse_buffer, trim_buffer};
 
 #[cfg(test)]
 use buffer::selection_frame_bounds;
@@ -215,6 +215,35 @@ impl EguiController {
         result
     }
 
+    /// Apply short fade-in/out ramps at the selection edges to reduce clicks.
+    pub(crate) fn soften_waveform_selection_edges(&mut self) -> Result<(), String> {
+        let fade_ms = self.ui.controls.anti_clip_fade_ms.max(0.0);
+        let fade_duration = Duration::from_secs_f32(fade_ms / 1000.0);
+        let result = self.apply_selection_edit("Applied short fades", |buffer| {
+            let selection_frames = buffer.end_frame.saturating_sub(buffer.start_frame);
+            let fade_frames = edge_fade_frame_count(
+                buffer.sample_rate.max(1),
+                selection_frames,
+                fade_duration,
+            );
+            if fade_frames == 0 {
+                return Err("Selection is too short for edge fades".into());
+            }
+            apply_edge_fades(
+                &mut buffer.samples,
+                buffer.channels,
+                buffer.start_frame,
+                buffer.end_frame,
+                fade_frames,
+            );
+            Ok(())
+        });
+        if let Err(err) = &result {
+            self.set_status(err.clone(), StatusTone::Error);
+        }
+        result
+    }
+
     /// Repair clicks inside the selection by interpolating the span.
     pub(crate) fn repair_clicks_selection(&mut self) -> Result<(), String> {
         let preserved_view = self.ui.waveform.view;
@@ -276,6 +305,7 @@ impl EguiController {
             DestructiveSelectionEdit::FadeRightToLeft => {
                 self.fade_waveform_selection(FadeDirection::RightToLeft)
             }
+            DestructiveSelectionEdit::ShortEdgeFades => self.soften_waveform_selection_edges(),
             DestructiveSelectionEdit::MuteSelection => self.mute_waveform_selection(),
             DestructiveSelectionEdit::NormalizeSelection => self.normalize_waveform_selection(),
             DestructiveSelectionEdit::ClickRemoval => self.repair_clicks_selection(),
@@ -369,6 +399,14 @@ impl EguiController {
             selection,
         })
     }
+}
+
+fn edge_fade_frame_count(sample_rate: u32, selection_frames: usize, duration: Duration) -> usize {
+    if selection_frames == 0 {
+        return 0;
+    }
+    let frames = (sample_rate as f32 * duration.as_secs_f32()).round() as usize;
+    frames.min(selection_frames / 2)
 }
 
 #[cfg(test)]

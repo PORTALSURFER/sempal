@@ -38,6 +38,8 @@ pub enum DestructiveSelectionEdit {
     ReverseSelection,
     FadeLeftToRight,
     FadeRightToLeft,
+    /// Apply short fade-in/out ramps at the selection edges to reduce clicks.
+    ShortEdgeFades,
     MuteSelection,
     NormalizeSelection,
     ClickRemoval,

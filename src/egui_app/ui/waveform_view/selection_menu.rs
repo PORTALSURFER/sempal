@@ -86,6 +86,16 @@ pub(super) fn render_selection_context_menu(app: &mut EguiApp, ui: &mut egui::Ui
     {
         request_edit(DestructiveSelectionEdit::ClickRemoval);
     }
+    let fade_ms = app.controller.ui.controls.anti_clip_fade_ms;
+    if ui
+        .button("Short edge fades")
+        .on_hover_text(format!(
+            "Apply ~{fade_ms:.1}ms fade-in/out at the selection edges"
+        ))
+        .clicked()
+    {
+        request_edit(DestructiveSelectionEdit::ShortEdgeFades);
+    }
     if ui
         .button("Normalize selection")
         .on_hover_text("Scale selection to full range with 5ms edge fades")

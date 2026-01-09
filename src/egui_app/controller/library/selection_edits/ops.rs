@@ -107,6 +107,54 @@ pub(crate) fn apply_directional_fade(
     }
 }
 
+/// Apply fade-in and fade-out ramps at the edges of the selected span.
+pub(crate) fn apply_edge_fades(
+    samples: &mut [f32],
+    channels: usize,
+    start_frame: usize,
+    end_frame: usize,
+    fade_frames: usize,
+) {
+    let channels = channels.max(1);
+    let total_frames = samples.len() / channels;
+    let (clamped_start, clamped_end) = clamped_selection_span(total_frames, start_frame, end_frame);
+    if clamped_end <= clamped_start {
+        return;
+    }
+    let selection_frames = clamped_end - clamped_start;
+    let fade_frames = fade_frames.min(selection_frames / 2);
+    if fade_frames == 0 {
+        return;
+    }
+    let denom = (fade_frames.saturating_sub(1)).max(1) as f32;
+    for i in 0..fade_frames {
+        let t = i as f32 / denom;
+        let factor = fade_factor(fade_frames, t, FadeDirection::RightToLeft);
+        let frame = clamped_start + i;
+        for ch in 0..channels {
+            let idx = frame * channels + ch;
+            if let Some(sample) = samples.get_mut(idx) {
+                *sample *= factor;
+            }
+        }
+    }
+    for i in 0..fade_frames {
+        let t = if fade_frames == 1 {
+            1.0
+        } else {
+            i as f32 / denom
+        };
+        let factor = fade_factor(fade_frames, t, FadeDirection::LeftToRight);
+        let frame = clamped_end.saturating_sub(fade_frames) + i;
+        for ch in 0..channels {
+            let idx = frame * channels + ch;
+            if let Some(sample) = samples.get_mut(idx) {
+                *sample *= factor;
+            }
+        }
+    }
+}
+
 fn clamped_selection_span(
     total_frames: usize,
     start_frame: usize,
@@ -177,5 +225,20 @@ pub(crate) fn apply_muted_selection(
         for sample in &mut samples[offset..frame_end] {
             *sample = 0.0;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::apply_edge_fades;
+
+    #[test]
+    fn edge_fades_ramp_selection_edges() {
+        let mut samples = vec![1.0_f32; 4];
+        apply_edge_fades(&mut samples, 1, 0, 4, 2);
+        assert!((samples[0] - 0.0).abs() < 1e-6);
+        assert!((samples[1] - 1.0).abs() < 1e-6);
+        assert!((samples[2] - 1.0).abs() < 1e-6);
+        assert!((samples[3] - 0.0).abs() < 1e-6);
     }
 }

@@ -8,6 +8,7 @@ impl DestructiveSelectionEdit {
             DestructiveSelectionEdit::ReverseSelection => "Reverse selection",
             DestructiveSelectionEdit::FadeLeftToRight => "Fade selection (left to right)",
             DestructiveSelectionEdit::FadeRightToLeft => "Fade selection (right to left)",
+            DestructiveSelectionEdit::ShortEdgeFades => "Add short edge fades",
             DestructiveSelectionEdit::MuteSelection => "Mute selection",
             DestructiveSelectionEdit::NormalizeSelection => "Normalize selection",
             DestructiveSelectionEdit::ClickRemoval => "Remove clicks in selection",
@@ -30,6 +31,9 @@ impl DestructiveSelectionEdit {
             }
             DestructiveSelectionEdit::FadeRightToLeft => {
                 "This will overwrite the selection with a fade up from silence."
+            }
+            DestructiveSelectionEdit::ShortEdgeFades => {
+                "This will overwrite the selection with short fade-ins and fade-outs."
             }
             DestructiveSelectionEdit::MuteSelection => {
                 "This will overwrite the selection with silence."
