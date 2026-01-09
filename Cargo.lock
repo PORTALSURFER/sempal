@@ -6950,6 +6950,7 @@ dependencies = [
  "hound",
  "image",
  "keyring",
+ "libc",
  "linfa",
  "linfa-reduction",
  "linfa-tsne",

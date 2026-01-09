@@ -116,6 +116,7 @@ impl CacheInner {
     }
 
     fn touch(&mut self, key: CacheKey) {
+        self.order.retain(|existing| existing != &key);
         self.order.push_back(key);
     }
 
@@ -158,5 +159,21 @@ mod tests {
         let changed = cache.get_or_compute(2, &samples, 1, WaveformChannelView::Mono, 1);
 
         assert_ne!(first_mono_column(&initial), first_mono_column(&changed));
+    }
+
+    #[test]
+    fn cache_order_stays_bounded_for_repeated_touch() {
+        let mut inner = CacheInner::new();
+        let samples = vec![0.0_f32, 1.0];
+        let key = CacheKey::new(1, &samples, 1, WaveformChannelView::Mono, 10);
+        let value = CachedColumns::Mono(std::sync::Arc::from([(0.0, 1.0)]));
+
+        inner.insert(key, value);
+        for _ in 0..10 {
+            inner.touch(key);
+        }
+
+        assert_eq!(inner.order.len(), inner.map.len());
+        assert_eq!(inner.order.len(), 1);
     }
 }
