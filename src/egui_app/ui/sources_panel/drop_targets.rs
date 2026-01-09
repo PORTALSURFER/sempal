@@ -108,6 +108,14 @@ impl EguiApp {
                             },
                         )
                         .on_hover_text(row.path.display().to_string());
+                        if is_selected {
+                            ui.painter().rect_stroke(
+                                response.rect,
+                                0.0,
+                                style::focused_row_stroke(),
+                                StrokeKind::Inside,
+                            );
+                        }
                         handle_sample_row_drag(
                             ui,
                             &response,
