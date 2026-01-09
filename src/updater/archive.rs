@@ -266,8 +266,8 @@ mod tests {
     fn write_zip(path: &Path, entries: &[(&str, &[u8])]) -> Result<(), UpdateError> {
         let file = File::create(path)?;
         let mut zip = zip::ZipWriter::new(file);
-        let options =
-            zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
         for (name, data) in entries {
             zip.start_file(name, options)
                 .map_err(|err| UpdateError::Zip(err.to_string()))?;
