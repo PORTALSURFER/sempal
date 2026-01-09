@@ -79,10 +79,9 @@ impl EguiController {
         keep_source_focused: bool,
     ) -> Result<(), String> {
         let selection = self
-            .selection_state
-            .range
-            .range()
-            .or(self.ui.waveform.selection)
+            .ui
+            .waveform
+            .selection
             .filter(|range| range.width() >= MIN_SELECTION_WIDTH)
             .ok_or_else(|| "Create a selection first".to_string())?;
         let audio = self

@@ -94,7 +94,6 @@ impl EguiApp {
                 self,
                 ui,
                 waveform_rect,
-                &palette,
                 display_view,
                 view_width,
             );
