@@ -152,7 +152,7 @@ pub(crate) const HOTKEY_ACTIONS: &[HotkeyAction] = &[
     },
     HotkeyAction {
         id: "align-waveform-start",
-        label: "Set start to last play position",
+        label: "Set start to hover cursor",
         gesture: HotkeyGesture::new(Key::S),
         scope: HotkeyScope::Focus(FocusContext::Waveform),
         command: HotkeyCommand::AlignWaveformStartToMarker,

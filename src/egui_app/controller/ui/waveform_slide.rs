@@ -9,12 +9,17 @@ impl EguiController {
         if self.is_waveform_circular_slide_active() {
             return Err("Finish the current waveform slide first".to_string());
         }
-        let marker = self
-            .ui
-            .waveform
-            .last_start_marker
-            .ok_or_else(|| "Play audio to set a start marker first".to_string())?
-            .clamp(0.0, 1.0);
+        let marker = match (
+            self.ui.waveform.cursor,
+            self.ui.waveform.cursor_last_hover_at,
+            self.ui.waveform.cursor_last_navigation_at,
+        ) {
+            (Some(cursor), Some(hover), Some(nav)) if hover >= nav => Some(cursor),
+            (Some(cursor), Some(_), None) => Some(cursor),
+            _ => None,
+        }
+        .ok_or_else(|| "Hover over the waveform to set a start position first".to_string())?
+        .clamp(0.0, 1.0);
         if !marker.is_finite() {
             return Err("Start marker is invalid".to_string());
         }

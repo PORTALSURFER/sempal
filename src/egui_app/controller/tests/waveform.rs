@@ -116,6 +116,28 @@ fn cropping_selection_overwrites_file() {
 }
 
 #[test]
+fn align_waveform_start_uses_hover_cursor() {
+    let (mut controller, source) =
+        prepare_with_source_and_wav_entries(vec![sample_entry("align.wav", crate::sample_sources::Rating::NEUTRAL)]);
+    let wav_path = source.root.join("align.wav");
+    write_test_wav(&wav_path, &[1.0, 2.0, 3.0, 4.0]);
+    controller
+        .load_waveform_for_selection(&source, Path::new("align.wav"))
+        .unwrap();
+    controller.set_waveform_cursor_from_hover(0.5);
+    controller.ui.waveform.last_start_marker = None;
+
+    controller.align_waveform_start_to_last_marker().unwrap();
+
+    let samples: Vec<f32> = WavReader::open(&wav_path)
+        .unwrap()
+        .samples::<f32>()
+        .map(|s| s.unwrap())
+        .collect();
+    assert_eq!(samples, vec![3.0, 4.0, 1.0, 2.0]);
+}
+
+#[test]
 fn trimming_selection_removes_span() {
     let (mut controller, source) =
         prepare_with_source_and_wav_entries(vec![sample_entry("trim.wav", crate::sample_sources::Rating::NEUTRAL)]);
