@@ -2,10 +2,13 @@
 
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
+use uuid::Uuid;
 
 use crate::http_client;
 
+/// Base URL for the issue gateway API.
 pub const BASE_URL: &str = "https://sempal-gitissue-gateway.portalsurfer.workers.dev";
+/// Direct URL for starting the auth flow in a browser.
 pub const AUTH_START_URL: &str =
     "https://sempal-gitissue-gateway.portalsurfer.workers.dev/auth/start";
 
@@ -25,6 +28,7 @@ pub enum IssueKind {
 }
 
 impl IssueKind {
+    /// Return the title prefix used when creating an issue of this kind.
     pub fn title_prefix(self) -> &'static str {
         match self {
             Self::FeatureRequest => "FR: ",
@@ -33,20 +37,28 @@ impl IssueKind {
     }
 }
 
+/// Payload sent to the issue gateway when creating a GitHub issue.
 #[derive(Clone, Debug, Serialize)]
 pub struct CreateIssueRequest {
+    /// Issue title, including any prefix for routing.
     pub title: String,
+    /// Optional issue body supplied by the user.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub body: Option<String>,
 }
 
+/// Successful issue creation response returned by the gateway.
 #[derive(Clone, Debug, Deserialize)]
 pub struct CreateIssueResponse {
+    /// Whether the gateway reported success.
     pub ok: bool,
+    /// URL for the created GitHub issue.
     pub issue_url: String,
+    /// GitHub issue number.
     pub number: u64,
 }
 
+/// Error states surfaced when creating a GitHub issue.
 #[derive(Debug, thiserror::Error)]
 pub enum CreateIssueError {
     #[error("Token invalid or expired")]
@@ -63,6 +75,7 @@ pub enum CreateIssueError {
     Json(String),
 }
 
+/// Error states surfaced when fetching or polling auth tokens.
 #[derive(Debug, thiserror::Error)]
 pub enum IssueAuthError {
     #[error("Invalid auth response: {0}")]
@@ -139,12 +152,22 @@ fn encodeURIComponent(s: &str) -> String {
     url::form_urlencoded::byte_serialize(s.as_bytes()).collect()
 }
 
+/// Create a GitHub issue through the gateway with idempotent retry support.
 pub fn create_issue(
     token: &str,
     request: &CreateIssueRequest,
 ) -> Result<CreateIssueResponse, CreateIssueError> {
-    let url = format!("{BASE_URL}/issue");
-    let response = match post_with_transport_retry(&url, token, request) {
+    create_issue_with_url(BASE_URL, token, request)
+}
+
+fn create_issue_with_url(
+    base_url: &str,
+    token: &str,
+    request: &CreateIssueRequest,
+) -> Result<CreateIssueResponse, CreateIssueError> {
+    let url = format!("{base_url}/issue");
+    let idempotency_key = format!("issue-{}", Uuid::new_v4());
+    let response = match post_with_retry(&url, token, request, &idempotency_key) {
         Ok(response) => response,
         Err(ureq::Error::Status(code, response)) => {
             let body =
@@ -276,10 +299,11 @@ fn get_with_retry(url: &str) -> Result<ureq::Response, ureq::Error> {
     )
 }
 
-fn post_with_transport_retry(
+fn post_with_retry(
     url: &str,
     token: &str,
     request: &CreateIssueRequest,
+    idempotency_key: &str,
 ) -> Result<ureq::Response, ureq::Error> {
     http_client::retry_with_backoff(
         ISSUE_RETRY_CONFIG,
@@ -289,15 +313,23 @@ fn post_with_transport_retry(
                 .set("Accept", "application/json")
                 .set("Content-Type", "application/json")
                 .set("Authorization", &format!("Bearer {}", token.trim()))
+                .set("Idempotency-Key", idempotency_key)
                 .send_json(request)
         },
-        |err| matches!(err, ureq::Error::Transport(_)),
+        |err| match err {
+            ureq::Error::Transport(_) => true,
+            ureq::Error::Status(code, _) => (500..=599).contains(code),
+        },
     )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::sync::{Arc, Mutex};
+    use std::thread;
 
     #[test]
     fn issue_kind_prefixes_match_spec_examples() {
@@ -337,5 +369,64 @@ mod tests {
     fn rejects_auth_body_without_token() {
         let err = parse_issue_token("No token here").unwrap_err();
         assert!(err.to_string().contains("Token not found"));
+    }
+
+    #[test]
+    fn create_issue_retries_on_server_errors_with_idempotency_key() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let seen_keys = Arc::new(Mutex::new(Vec::new()));
+        let seen_keys_thread = Arc::clone(&seen_keys);
+        thread::spawn(move || {
+            for attempt in 0..3 {
+                let (mut stream, _) = listener.accept().expect("accept");
+                let mut buf = [0u8; 4096];
+                let read = stream.read(&mut buf).unwrap_or(0);
+                let request = String::from_utf8_lossy(&buf[..read]);
+                for line in request.lines() {
+                    if line.is_empty() {
+                        break;
+                    }
+                    if let Some(value) = line.strip_prefix("Idempotency-Key:") {
+                        seen_keys_thread
+                            .lock()
+                            .expect("lock")
+                            .push(value.trim().to_string());
+                    }
+                }
+
+                let response = if attempt < 2 {
+                    let body = "transient error";
+                    format!(
+                        "HTTP/1.1 500 Internal Server Error\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                        body.len(),
+                        body
+                    )
+                } else {
+                    let body = r#"{"ok":true,"issue_url":"https://example.com/1","number":1}"#;
+                    format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                        body.len(),
+                        body
+                    )
+                };
+                let _ = stream.write_all(response.as_bytes());
+            }
+        });
+
+        let request = CreateIssueRequest {
+            title: "Bug: flaky".to_string(),
+            body: Some("retry me".to_string()),
+        };
+        let url = format!("http://{}", addr);
+        let response = create_issue_with_url(&url, "token", &request).expect("create issue");
+        assert!(response.ok);
+        assert_eq!(response.number, 1);
+
+        let keys = seen_keys.lock().expect("lock");
+        assert_eq!(keys.len(), 3);
+        let unique: std::collections::HashSet<_> = keys.iter().collect();
+        assert_eq!(unique.len(), 1);
+        assert!(!keys[0].is_empty());
     }
 }
