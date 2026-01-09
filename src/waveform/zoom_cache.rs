@@ -25,10 +25,12 @@ impl WaveformZoomCache {
         width: u32,
     ) -> CachedColumns {
         let key = CacheKey::new(cache_token, samples, channels, view, width);
-        let mut inner = self.inner.lock().expect("waveform zoom cache lock");
-        if let Some(hit) = inner.map.get(&key).cloned() {
-            inner.touch(key);
-            return hit;
+        {
+            let mut inner = self.inner.lock().expect("waveform zoom cache lock");
+            if let Some(hit) = inner.map.get(&key).cloned() {
+                inner.touch(key);
+                return hit;
+            }
         }
 
         let computed =
@@ -39,6 +41,11 @@ impl WaveformZoomCache {
                     right: right.into(),
                 },
             };
+        let mut inner = self.inner.lock().expect("waveform zoom cache lock");
+        if let Some(hit) = inner.map.get(&key).cloned() {
+            inner.touch(key);
+            return hit;
+        }
         inner.insert(key, computed.clone());
         computed
     }
@@ -141,6 +148,11 @@ impl CacheInner {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{
+        sync::{mpsc, Arc, Barrier},
+        thread,
+        time::Duration,
+    };
 
     fn first_mono_column(columns: &CachedColumns) -> (f32, f32) {
         match columns {
@@ -175,5 +187,45 @@ mod tests {
 
         assert_eq!(inner.order.len(), inner.map.len());
         assert_eq!(inner.order.len(), 1);
+    }
+
+    #[test]
+    fn get_or_compute_allows_parallel_requests() {
+        let cache = Arc::new(WaveformZoomCache::new());
+        let samples = Arc::new(vec![0.0_f32, 1.0, 0.0, 1.0]);
+        let threads = 8;
+        let barrier = Arc::new(Barrier::new(threads));
+        let (tx, rx) = mpsc::channel();
+        let mut handles = Vec::with_capacity(threads);
+
+        for _ in 0..threads {
+            let cache = Arc::clone(&cache);
+            let samples = Arc::clone(&samples);
+            let barrier = Arc::clone(&barrier);
+            let tx = tx.clone();
+            handles.push(thread::spawn(move || {
+                barrier.wait();
+                let columns =
+                    cache.get_or_compute(1, &samples, 1, WaveformChannelView::Mono, 32);
+                tx.send(first_mono_column(&columns))
+                    .expect("send waveform column");
+            }));
+        }
+        drop(tx);
+
+        let mut results = Vec::with_capacity(threads);
+        for _ in 0..threads {
+            results.push(
+                rx.recv_timeout(Duration::from_secs(2))
+                    .expect("receive waveform column"),
+            );
+        }
+        for handle in handles {
+            handle.join().expect("join waveform thread");
+        }
+
+        for result in results.iter().skip(1) {
+            assert_eq!(*result, results[0]);
+        }
     }
 }
