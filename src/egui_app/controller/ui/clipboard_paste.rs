@@ -165,14 +165,29 @@ fn paste_file_to_source(
     let absolute = source.root.join(&relative);
     std::fs::copy(path, &absolute)
         .map_err(|err| format!("Failed to paste {}: {err}", path.display()))?;
-    let (file_size, modified_ns) = file_metadata(&absolute)?;
-    let db = controller
-        .database_for(source)
-        .map_err(|err| format!("Failed to open source DB: {err}"))?;
-    db.upsert_file(&relative, file_size, modified_ns)
-        .map_err(|err| format!("Failed to register pasted file: {err}"))?;
-    controller.enqueue_similarity_for_new_sample(source, &relative, file_size, modified_ns);
-    Ok(relative)
+    let result = (|| -> Result<(), String> {
+        let (file_size, modified_ns) = file_metadata(&absolute)?;
+        let db = controller
+            .database_for(source)
+            .map_err(|err| format!("Failed to open source DB: {err}"))?;
+        db.upsert_file(&relative, file_size, modified_ns)
+            .map_err(|err| format!("Failed to register pasted file: {err}"))?;
+        controller.enqueue_similarity_for_new_sample(source, &relative, file_size, modified_ns);
+        Ok(())
+    })();
+    match result {
+        Ok(()) => Ok(relative),
+        Err(err) => {
+            if let Err(remove_err) = std::fs::remove_file(&absolute) {
+                Err(format!(
+                    "{err}; failed to remove pasted file {}: {remove_err}",
+                    absolute.display()
+                ))
+            } else {
+                Err(err)
+            }
+        }
+    }
 }
 
 fn paste_files_into_collection(
