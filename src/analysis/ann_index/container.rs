@@ -9,6 +9,7 @@ const ANN_CONTAINER_MAGIC: &[u8; 8] = b"SANNIDX1";
 const ANN_CONTAINER_VERSION: u32 = 1;
 const ANN_CONTAINER_CHECKSUM_LEN: usize = 32;
 const ANN_CONTAINER_HEADER_LEN: usize = 8 + 4 + 4 + 4 + 4 + (8 * 6) + ANN_CONTAINER_CHECKSUM_LEN;
+const MAX_MODEL_ID_LEN: u32 = 16 * 1024;
 
 #[derive(Clone, Copy, Debug)]
 struct AnnContainerHeader {
@@ -40,6 +41,13 @@ pub(crate) fn write_container(
     let data_len = file_len(data_path)?;
     let id_map_bytes = encode_id_map(id_map)?;
     let model_id_bytes = model_id.as_bytes();
+    if model_id_bytes.len() > MAX_MODEL_ID_LEN as usize {
+        return Err(format!(
+            "ANN model id too long: {} bytes (max {})",
+            model_id_bytes.len(),
+            MAX_MODEL_ID_LEN
+        ));
+    }
     let header = AnnContainerHeader::new(
         model_id_bytes.len(),
         graph_len,
@@ -105,16 +113,36 @@ impl AnnContainerHeader {
     }
 
     fn validate(&self, file_len: u64) -> Result<(), String> {
-        let end = self.id_map_offset + self.id_map_len;
-        if self.graph_offset < ANN_CONTAINER_HEADER_LEN as u64 {
-            return Err("ANN container graph offset invalid".to_string());
+        if self.model_id_len > MAX_MODEL_ID_LEN {
+            return Err(format!(
+                "ANN container model id length too large: {} bytes (max {})",
+                self.model_id_len, MAX_MODEL_ID_LEN
+            ));
         }
-        if self.graph_offset + self.graph_len > self.data_offset {
+        let expected_graph_offset = (ANN_CONTAINER_HEADER_LEN as u64)
+            .checked_add(self.model_id_len as u64)
+            .ok_or_else(|| "ANN container header length overflow".to_string())?;
+        if self.graph_offset != expected_graph_offset {
+            return Err("ANN container graph offset mismatch".to_string());
+        }
+        let graph_end = self
+            .graph_offset
+            .checked_add(self.graph_len)
+            .ok_or_else(|| "ANN container graph section overflow".to_string())?;
+        if graph_end > self.data_offset {
             return Err("ANN container graph section overlaps data".to_string());
         }
-        if self.data_offset + self.data_len > self.id_map_offset {
+        let data_end = self
+            .data_offset
+            .checked_add(self.data_len)
+            .ok_or_else(|| "ANN container data section overflow".to_string())?;
+        if data_end > self.id_map_offset {
             return Err("ANN container data section overlaps id map".to_string());
         }
+        let end = self
+            .id_map_offset
+            .checked_add(self.id_map_len)
+            .ok_or_else(|| "ANN container id map section overflow".to_string())?;
         if end > file_len {
             return Err("ANN container payload exceeds file length".to_string());
         }
@@ -149,6 +177,12 @@ fn read_model_id(
     header: &AnnContainerHeader,
     hasher: &mut Sha256,
 ) -> Result<String, String> {
+    if header.model_id_len > MAX_MODEL_ID_LEN {
+        return Err(format!(
+            "ANN container model id length too large: {} bytes (max {})",
+            header.model_id_len, MAX_MODEL_ID_LEN
+        ));
+    }
     let mut model_id = vec![0u8; header.model_id_len as usize];
     file.read_exact(&mut model_id)
         .map_err(|err| format!("Failed to read ANN model id: {err}"))?;
@@ -203,7 +237,9 @@ fn copy_reader_with_hash(
 }
 
 fn read_range(file: &mut File, offset: u64, len: u64) -> Result<Vec<u8>, String> {
-    let mut buf = vec![0u8; len as usize];
+    let len = usize::try_from(len)
+        .map_err(|_| "ANN container payload too large to read".to_string())?;
+    let mut buf = vec![0u8; len];
     file.seek(SeekFrom::Start(offset))
         .map_err(|err| format!("Failed to seek ANN container: {err}"))?;
     file.read_exact(&mut buf)
@@ -337,8 +373,10 @@ fn read_header_prefix(file: &mut File) -> Result<usize, String> {
         return Err(format!("ANN container version mismatch: {version}"));
     }
     let header_len = u32::from_le_bytes(prefix[12..16].try_into().unwrap()) as usize;
-    if header_len < ANN_CONTAINER_HEADER_LEN {
-        return Err("ANN container header too short".to_string());
+    if header_len != ANN_CONTAINER_HEADER_LEN {
+        return Err(format!(
+            "ANN container header length mismatch: {header_len}"
+        ));
     }
     Ok(header_len)
 }
@@ -374,4 +412,60 @@ fn parse_header(rest: Vec<u8>) -> Result<AnnContainerHeader, String> {
         id_map_len,
         checksum,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ann_container_rejects_oversized_model_id_len() {
+        let model_id_len = MAX_MODEL_ID_LEN + 1;
+        let graph_offset =
+            (ANN_CONTAINER_HEADER_LEN as u64).checked_add(model_id_len as u64).unwrap();
+        let header = AnnContainerHeader {
+            model_id_len,
+            graph_offset,
+            graph_len: 0,
+            data_offset: graph_offset,
+            data_len: 0,
+            id_map_offset: graph_offset,
+            id_map_len: 0,
+            checksum: [0u8; ANN_CONTAINER_CHECKSUM_LEN],
+        };
+        let err = header.validate(graph_offset).unwrap_err();
+        assert!(err.contains("model id length"));
+    }
+
+    #[test]
+    fn ann_container_rejects_offset_overflow() {
+        let header = AnnContainerHeader {
+            model_id_len: 0,
+            graph_offset: ANN_CONTAINER_HEADER_LEN as u64,
+            graph_len: 0,
+            data_offset: ANN_CONTAINER_HEADER_LEN as u64,
+            data_len: 0,
+            id_map_offset: u64::MAX - 1,
+            id_map_len: 10,
+            checksum: [0u8; ANN_CONTAINER_CHECKSUM_LEN],
+        };
+        let err = header.validate(u64::MAX).unwrap_err();
+        assert!(err.contains("id map section overflow"));
+    }
+
+    #[test]
+    fn ann_container_rejects_inconsistent_graph_offset() {
+        let header = AnnContainerHeader {
+            model_id_len: 4,
+            graph_offset: ANN_CONTAINER_HEADER_LEN as u64 + 1,
+            graph_len: 0,
+            data_offset: ANN_CONTAINER_HEADER_LEN as u64 + 1,
+            data_len: 0,
+            id_map_offset: ANN_CONTAINER_HEADER_LEN as u64 + 1,
+            id_map_len: 0,
+            checksum: [0u8; ANN_CONTAINER_CHECKSUM_LEN],
+        };
+        let err = header.validate(u64::MAX).unwrap_err();
+        assert!(err.contains("graph offset mismatch"));
+    }
 }

@@ -34,6 +34,8 @@ All integers are little-endian. The file is a header followed by payload blocks.
   - Id map JSON bytes
 
 The checksum is computed over the model id, graph, data, and id map bytes.
+Model ids are limited to 16 KiB to avoid excessive allocations when loading
+containers.
 
 ## Migration behavior
 
