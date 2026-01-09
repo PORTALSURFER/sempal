@@ -58,6 +58,7 @@ impl EguiController {
     }
 
     pub(crate) fn toggle_folder_expanded(&mut self, row_index: usize) {
+        self.clear_drop_target_selection();
         let Some(row) = self.ui.sources.folders.rows.get(row_index).cloned() else {
             return;
         };
@@ -86,6 +87,7 @@ impl EguiController {
     }
 
     pub(crate) fn focus_folder_row(&mut self, row_index: usize) {
+        self.clear_drop_target_selection();
         let Some(row) = self.ui.sources.folders.rows.get(row_index).cloned() else {
             return;
         };

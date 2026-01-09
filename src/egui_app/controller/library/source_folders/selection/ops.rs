@@ -44,10 +44,12 @@ enum FolderSelectMode {
 
 impl EguiController {
     pub(crate) fn replace_folder_selection(&mut self, row_index: usize) {
+        self.clear_drop_target_selection();
         self.apply_folder_selection(row_index, FolderSelectMode::Replace);
     }
 
     pub(crate) fn select_folder_range(&mut self, row_index: usize) {
+        self.clear_drop_target_selection();
         let rows = self.ui.sources.folders.rows.clone();
         if rows.is_empty() {
             return;
@@ -98,6 +100,7 @@ impl EguiController {
     }
 
     pub(crate) fn toggle_folder_row_selection(&mut self, row_index: usize) {
+        self.clear_drop_target_selection();
         self.apply_folder_selection(row_index, FolderSelectMode::Toggle);
     }
 
@@ -109,6 +112,7 @@ impl EguiController {
     }
 
     pub(crate) fn clear_folder_selection(&mut self) {
+        self.clear_drop_target_selection();
         let focused_path = self.ui.sources.folders.focused.and_then(|idx| {
             self.ui
                 .sources
@@ -142,6 +146,7 @@ impl EguiController {
     }
 
     pub(crate) fn add_folder_to_selection(&mut self, row_index: usize) {
+        self.clear_drop_target_selection();
         let Some(row) = self.ui.sources.folders.rows.get(row_index).cloned() else {
             return;
         };
@@ -194,6 +199,7 @@ impl EguiController {
     }
 
     pub(crate) fn toggle_folder_row_negation(&mut self, row_index: usize) {
+        self.clear_drop_target_selection();
         let Some(row) = self.ui.sources.folders.rows.get(row_index).cloned() else {
             return;
         };
@@ -363,6 +369,7 @@ impl EguiController {
     }
 
     pub(in super::super) fn focus_folder_by_path(&mut self, path: &Path) {
+        self.clear_drop_target_selection();
         let Some(model) = self.current_folder_model_mut() else {
             return;
         };

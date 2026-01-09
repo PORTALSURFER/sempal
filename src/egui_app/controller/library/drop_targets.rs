@@ -92,6 +92,13 @@ impl EguiController {
         self.focus_folder_context();
     }
 
+    /// Clear the currently selected drop target from the sidebar UI.
+    pub(crate) fn clear_drop_target_selection(&mut self) {
+        self.ui.sources.drop_targets.selected = None;
+        self.ui.sources.drop_targets.scroll_to = None;
+        self.ui.sources.drop_targets.menu_row = None;
+    }
+
     /// Convert a folder drag into a new drop target entry.
     pub(crate) fn handle_folder_drop_to_drop_targets(
         &mut self,
