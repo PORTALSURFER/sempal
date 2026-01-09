@@ -288,7 +288,16 @@ impl IssueTokenStore {
             return Err(IssueTokenStoreError::Decode("token file too short".into()));
         }
         let (nonce, ciphertext) = data.split_at(12);
-        let plaintext = decrypt(&key, nonce, ciphertext)?;
+        let plaintext = match decrypt(&key, nonce, ciphertext) {
+            Ok(plaintext) => plaintext,
+            Err(err) => {
+                tracing::warn!(
+                    "Fallback token payload failed to decrypt; clearing fallback storage: {err}"
+                );
+                let _ = self.fallback_delete();
+                return Ok(None);
+            }
+        };
         let token = String::from_utf8(plaintext)
             .map_err(|err| IssueTokenStoreError::Decode(err.to_string()))?;
         Ok(Some(token))
@@ -312,6 +321,10 @@ impl IssueTokenStore {
     }
 
     fn fallback_delete(&self) -> Result<(), IssueTokenStoreError> {
+        #[cfg(target_os = "windows")]
+        {
+            clear_windows_readonly(self.fallback_token_path().as_path());
+        }
         let _ = std::fs::remove_file(self.fallback_token_path());
         let _ = self.try_keyring_fallback_key_delete();
         *self
@@ -423,6 +436,7 @@ fn replace_file(temp_path: &Path, path: &Path) -> Result<(), IssueTokenStoreErro
         Err(err) => {
             #[cfg(target_os = "windows")]
             if err.kind() == std::io::ErrorKind::AlreadyExists {
+                clear_windows_readonly(path);
                 std::fs::remove_file(path)?;
                 std::fs::rename(temp_path, path)?;
                 return Ok(());
@@ -470,6 +484,19 @@ fn harden_windows_permissions(path: &Path) {
             FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_READONLY,
         )
     };
+}
+
+#[cfg(target_os = "windows")]
+/// Clear readonly attributes so the fallback token file can be replaced.
+fn clear_windows_readonly(path: &Path) {
+    use std::os::windows::ffi::OsStrExt;
+    use windows::{
+        Win32::Storage::FileSystem::{FILE_ATTRIBUTE_NORMAL, SetFileAttributesW},
+        core::PCWSTR,
+    };
+    let mut wide: Vec<u16> = path.as_os_str().encode_wide().collect();
+    wide.push(0);
+    let _ = unsafe { SetFileAttributesW(PCWSTR(wide.as_ptr()), FILE_ATTRIBUTE_NORMAL) };
 }
 
 fn encrypt(key: &[u8], nonce: &[u8], plaintext: &[u8]) -> Result<Vec<u8>, IssueTokenStoreError> {
@@ -672,6 +699,30 @@ mod tests {
             }
             other => panic!("expected decode error, got {other:?}"),
         }
+
+        unsafe {
+            std::env::remove_var("SEMPAL_DISABLE_KEYRING");
+        }
+        disallow_fallback();
+    }
+
+    #[test]
+    fn fallback_get_clears_unreadable_payload() {
+        enable_mock_keyring();
+        let _env_guard = env_lock();
+        unsafe {
+            std::env::set_var("SEMPAL_DISABLE_KEYRING", "1");
+        }
+        allow_fallback();
+        let base = tempdir().unwrap();
+        let _guard = app_dirs::ConfigBaseGuard::set(base.path().to_path_buf());
+        let store = IssueTokenStore::new().unwrap();
+
+        let mut payload = vec![0u8; 12];
+        payload.extend_from_slice(&[1u8; 16]);
+        std::fs::write(store.fallback_token_path(), payload).unwrap();
+        assert_eq!(store.fallback_get().unwrap(), None);
+        assert!(!store.fallback_token_path().exists());
 
         unsafe {
             std::env::remove_var("SEMPAL_DISABLE_KEYRING");
