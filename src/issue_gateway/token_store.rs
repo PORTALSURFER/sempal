@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 const KEYRING_SERVICE: &str = "sempal";
 const KEYRING_KEY: &str = "sempal_github_issue_token";
 
+/// Errors returned by the issue token storage backend.
 #[derive(Debug, thiserror::Error)]
 pub enum IssueTokenStoreError {
     #[error("Token store unavailable: {0}")]
@@ -18,18 +19,21 @@ pub enum IssueTokenStoreError {
     AppDir(#[from] crate::app_dirs::AppDirError),
 }
 
+/// Stores the issue token in the OS keyring with an encrypted file fallback.
 #[derive(Clone, Debug)]
 pub struct IssueTokenStore {
     fallback_dir: PathBuf,
 }
 
 impl IssueTokenStore {
+    /// Create a token store rooted in the configured app directory.
     pub fn new() -> Result<Self, IssueTokenStoreError> {
         let fallback_dir = app_dirs::app_root_dir()?.join("secrets");
         std::fs::create_dir_all(&fallback_dir)?;
         Ok(Self { fallback_dir })
     }
 
+    /// Load the token from the keyring or fallback storage if needed.
     pub fn get(&self) -> Result<Option<String>, IssueTokenStoreError> {
         match self.try_keyring_get() {
             Ok(Some(token)) => Ok(Some(token)),
@@ -98,6 +102,7 @@ impl IssueTokenStore {
         self.set(token)
     }
 
+    /// Remove the token from all storage backends.
     pub fn delete(&self) -> Result<(), IssueTokenStoreError> {
         let _ = self.try_keyring_delete();
         let _ = self.fallback_delete();
@@ -224,27 +229,104 @@ fn random_bytes(len: usize) -> Result<Vec<u8>, IssueTokenStoreError> {
     Ok(out)
 }
 
+/// Write a file with restricted permissions using an atomic swap on supported platforms.
 fn write_private_file(path: &Path, bytes: &[u8]) -> Result<(), IssueTokenStoreError> {
     use std::io::Write;
-    let mut file = std::fs::OpenOptions::new()
-        .create(true)
-        .truncate(true)
-        .write(true)
-        .open(path)?;
-    file.write_all(bytes)?;
+    let dir = path.parent().ok_or_else(|| {
+        IssueTokenStoreError::Io(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "token path has no parent directory",
+        ))
+    })?;
+    let file_name = path.file_name().ok_or_else(|| {
+        IssueTokenStoreError::Io(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "token path has no file name",
+        ))
+    })?;
+
+    let mut last_err = None;
+    for _ in 0..5 {
+        let suffix = random_hex(6)?;
+        let tmp_path = dir.join(format!("{}.tmp-{}", file_name.to_string_lossy(), suffix));
+        let mut open_options = std::fs::OpenOptions::new();
+        open_options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            open_options.mode(0o600);
+        }
+        match open_options.open(&tmp_path) {
+            Ok(mut file) => {
+                file.write_all(bytes)?;
+                file.sync_all()?;
+                drop(file);
+                replace_file(&tmp_path, path)?;
+                #[cfg(target_os = "windows")]
+                {
+                    harden_windows_permissions(path);
+                }
+                sync_parent_dir(dir)?;
+                return Ok(());
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
+                last_err = Some(err);
+                continue;
+            }
+            Err(err) => return Err(err.into()),
+        }
+    }
+
+    Err(IssueTokenStoreError::Io(std::io::Error::new(
+        std::io::ErrorKind::AlreadyExists,
+        format!(
+            "failed to create temporary file for {}: {}",
+            path.display(),
+            last_err
+                .as_ref()
+                .map(|err| err.to_string())
+                .unwrap_or_else(|| "unknown error".into())
+        ),
+    )))
+}
+
+fn replace_file(temp_path: &Path, path: &Path) -> Result<(), IssueTokenStoreError> {
+    match std::fs::rename(temp_path, path) {
+        Ok(()) => Ok(()),
+        Err(err) => {
+            #[cfg(target_os = "windows")]
+            if err.kind() == std::io::ErrorKind::AlreadyExists {
+                std::fs::remove_file(path)?;
+                std::fs::rename(temp_path, path)?;
+                return Ok(());
+            }
+            Err(err.into())
+        }
+    }
+}
+
+fn sync_parent_dir(dir: &Path) -> Result<(), IssueTokenStoreError> {
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
-    }
-    #[cfg(target_os = "windows")]
-    {
-        harden_windows_permissions(path);
+        let dir_handle = std::fs::File::open(dir)?;
+        dir_handle.sync_all()?;
     }
     Ok(())
 }
 
+fn random_hex(len: usize) -> Result<String, IssueTokenStoreError> {
+    let bytes = random_bytes(len)?;
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        use std::fmt::Write;
+        write!(&mut out, "{:02x}", byte).expect("writing to String should not fail");
+    }
+    Ok(out)
+}
+
 #[cfg(target_os = "windows")]
+/// Apply best-effort hiding/readonly attributes for the fallback token file.
+/// This is not equivalent to ACLs but avoids a visible plaintext file.
 fn harden_windows_permissions(path: &Path) {
     use std::os::windows::ffi::OsStrExt;
     use windows::{
@@ -337,6 +419,58 @@ mod tests {
         // Should automatically use fallback storage
         assert_eq!(store.get().unwrap(), None);
         
+        unsafe {
+            std::env::remove_var("SEMPAL_DISABLE_KEYRING");
+        }
+    }
+
+    #[test]
+    fn fallback_get_rejects_corrupted_payload() {
+        unsafe {
+            std::env::set_var("SEMPAL_DISABLE_KEYRING", "1");
+        }
+        let base = tempdir().unwrap();
+        let _guard = app_dirs::ConfigBaseGuard::set(base.path().to_path_buf());
+        let store = IssueTokenStore::new().unwrap();
+
+        std::fs::write(store.fallback_token_path(), b"short").unwrap();
+        let err = store.fallback_get().unwrap_err();
+        match err {
+            IssueTokenStoreError::Decode(_) => {}
+            other => panic!("expected decode error, got {other:?}"),
+        }
+
+        unsafe {
+            std::env::remove_var("SEMPAL_DISABLE_KEYRING");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn fallback_files_are_private_on_unix() {
+        use std::os::unix::fs::PermissionsExt;
+        unsafe {
+            std::env::set_var("SEMPAL_DISABLE_KEYRING", "1");
+        }
+        let base = tempdir().unwrap();
+        let _guard = app_dirs::ConfigBaseGuard::set(base.path().to_path_buf());
+        let store = IssueTokenStore::new().unwrap();
+
+        store.set("tok_abcdefghijklmnopqrstuvwxyz").unwrap();
+        let token_mode = std::fs::metadata(store.fallback_token_path())
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777;
+        let key_mode = std::fs::metadata(store.fallback_key_path())
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777;
+
+        assert_eq!(token_mode, 0o600);
+        assert_eq!(key_mode, 0o600);
+
         unsafe {
             std::env::remove_var("SEMPAL_DISABLE_KEYRING");
         }
