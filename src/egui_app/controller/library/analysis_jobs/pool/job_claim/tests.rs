@@ -81,7 +81,7 @@ fn clears_inflight_when_db_open_fails() {
         job_type: analysis_db::ANALYZE_SAMPLE_JOB_TYPE.to_string(),
         source_root: source_root.clone(),
     };
-    let queue = DecodedQueue::new();
+    let queue = DecodedQueue::new(4);
     assert!(queue.try_mark_inflight(job.id));
     let (tx, _rx) = mpsc::channel::<JobMessage>();
     let mut connections = HashMap::new();
@@ -188,7 +188,7 @@ fn mid_loop_db_open_failure_clears_inflight_and_marks_failed() {
         job_type: analysis_db::ANALYZE_SAMPLE_JOB_TYPE.to_string(),
         source_root: source_root.clone(),
     };
-    let queue = DecodedQueue::new();
+    let queue = DecodedQueue::new(4);
     assert!(queue.try_mark_inflight(job.id));
     let (tx, _rx) = mpsc::channel::<JobMessage>();
     let progress_cache = Arc::new(RwLock::new(ProgressCache::default()));

@@ -145,11 +145,14 @@ impl AnalysisWorkerPool {
             let embedding_batch_max = crate::analysis::similarity::SIMILARITY_BATCH_MAX;
             let decode_queue_target =
                 job_claim::decode_queue_target(embedding_batch_max, worker_count);
-            let queue = std::sync::Arc::new(job_claim::DecodedQueue::new());
+            let queue = std::sync::Arc::new(job_claim::DecodedQueue::new(decode_queue_target));
             let reset_done = Arc::new(Mutex::new(HashSet::new()));
             info!(
-                "Analysis workers starting: compute={}, decode={}, queue_target={}",
-                worker_count, decode_workers, decode_queue_target
+                "Analysis workers starting: compute={}, decode={}, queue_target={}, queue_max={}",
+                worker_count,
+                decode_workers,
+                decode_queue_target,
+                queue.max_size()
             );
             for worker_index in 0..decode_workers {
                 self.threads.push(job_claim::spawn_decoder_worker(

@@ -144,10 +144,10 @@ pub(crate) fn spawn_decoder_worker(
             }
             let job_sample_id = job.sample_id.clone();
             let job_id = job.id;
-            let queued = decode_queue.push(DecodedWork { job, outcome });
+            let queued = decode_queue.push(DecodedWork { job, outcome }, shutdown.as_ref());
             if !queued {
                 decode_queue.clear_inflight(job_id);
-                if log_jobs {
+                if log_jobs && !shutdown.load(Ordering::Relaxed) {
                     eprintln!("analysis decode skipped duplicate: {}", job_sample_id);
                 }
             }
@@ -200,8 +200,9 @@ pub(crate) fn spawn_compute_worker(
             if log_queue && last_queue_log.elapsed() >= Duration::from_secs(2) {
                 last_queue_log = Instant::now();
                 eprintln!(
-                    "analysis queue: decoded={}, batch={}, wait_ms={}",
+                    "analysis queue: decoded={}, max={}, batch={}, wait_ms={}",
                     decode_queue.len(),
+                    decode_queue.max_size(),
                     batch.len(),
                     wait_ms
                 );
