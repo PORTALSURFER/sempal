@@ -133,29 +133,6 @@ pub(crate) fn rebuild_wav_lookup(controller: &mut EguiController) {
     }
 }
 
-#[allow(dead_code)]
-pub(crate) fn sync_browser_after_wav_entries_mutation(
-    controller: &mut EguiController,
-    source_id: &SourceId,
-) {
-    rebuild_wav_lookup(controller);
-    controller.ui.browser.similar_query = None;
-    controller.ui_cache.browser.search.invalidate();
-    controller.rebuild_browser_lists();
-    controller.ui_cache.browser.labels.remove(source_id);
-}
-
-#[allow(dead_code)]
-pub(crate) fn sync_browser_after_wav_entries_mutation_keep_search_cache(
-    controller: &mut EguiController,
-    source_id: &SourceId,
-) {
-    rebuild_wav_lookup(controller);
-    controller.ui.browser.similar_query = None;
-    controller.rebuild_browser_lists();
-    controller.ui_cache.browser.labels.remove(source_id);
-}
-
 pub(crate) fn invalidate_cached_audio_for_entry_updates(
     controller: &mut EguiController,
     source_id: &SourceId,

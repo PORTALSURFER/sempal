@@ -343,22 +343,6 @@ impl EguiController {
         selection_ops::rebuild_wav_lookup(self);
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn sync_browser_after_wav_entries_mutation(
-        &mut self,
-        source_id: &SourceId,
-    ) {
-        selection_ops::sync_browser_after_wav_entries_mutation(self, source_id);
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn sync_browser_after_wav_entries_mutation_keep_search_cache(
-        &mut self,
-        source_id: &SourceId,
-    ) {
-        selection_ops::sync_browser_after_wav_entries_mutation_keep_search_cache(self, source_id);
-    }
-
     pub(crate) fn invalidate_cached_audio_for_entry_updates(
         &mut self,
         source_id: &SourceId,
@@ -373,15 +357,6 @@ impl EguiController {
         column: TriageFlagColumn,
     ) -> Result<(), String> {
         selection_ops::set_sample_tag(self, path, column)
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn set_sample_tag_value(
-        &mut self,
-        path: &Path,
-        target_tag: crate::sample_sources::Rating,
-    ) -> Result<(), String> {
-        selection_ops::set_sample_tag_value(self, path, target_tag)
     }
 
     pub(crate) fn set_sample_tag_for_source(
