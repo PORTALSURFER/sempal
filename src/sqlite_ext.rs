@@ -2,17 +2,37 @@
 //!
 //! By default, Sempal runs entirely on built-in SQLite capabilities.
 //! If `SEMPAL_SQLITE_EXT` points at a loadable extension, Sempal will attempt
-//! to load it and continue with a safe fallback if loading fails.
+//! to load it and continue with a safe fallback if loading fails. Loading is
+//! gated by `SEMPAL_SQLITE_EXT_ENABLE` and restricted to app-owned directories
+//! unless `SEMPAL_SQLITE_EXT_UNSAFE` is explicitly set.
+//! The allowlisted directory lives at `<app_root>/sqlite_extensions`.
+
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use rusqlite::Connection;
+use tracing::warn;
 
 /// Environment variable pointing at a loadable SQLite extension (.so/.dll/.dylib).
 pub const SQLITE_EXT_ENV: &str = "SEMPAL_SQLITE_EXT";
+
+/// Environment variable that must be set to enable loading `SEMPAL_SQLITE_EXT`.
+pub const SQLITE_EXT_ENABLE_ENV: &str = "SEMPAL_SQLITE_EXT_ENABLE";
+
+/// Environment variable that bypasses extension safety checks when set.
+pub const SQLITE_EXT_UNSAFE_ENV: &str = "SEMPAL_SQLITE_EXT_UNSAFE";
+
+const SQLITE_EXT_DIR_NAME: &str = "sqlite_extensions";
 
 /// Attempt to load the optional SQLite extension specified by `SEMPAL_SQLITE_EXT`.
 ///
 /// This is a best-effort operation:
 /// - If the env var is unset, this is a no-op.
+/// - If `SEMPAL_SQLITE_EXT_ENABLE` is not set, the extension is rejected.
+/// - The extension must live under the app-owned `sqlite_extensions` directory unless
+///   `SEMPAL_SQLITE_EXT_UNSAFE` is set.
 /// - If loading fails, the error is returned to the caller so it can be logged/ignored.
 pub fn try_load_optional_extension(conn: &Connection) -> Result<(), rusqlite::Error> {
     let Ok(path) = std::env::var(SQLITE_EXT_ENV) else {
@@ -21,23 +41,194 @@ pub fn try_load_optional_extension(conn: &Connection) -> Result<(), rusqlite::Er
     if path.trim().is_empty() {
         return Ok(());
     }
+    if !env_flag_set(SQLITE_EXT_ENABLE_ENV) {
+        warn!(
+            path = %path,
+            "{SQLITE_EXT_ENV} ignored because {SQLITE_EXT_ENABLE_ENV} is not set; \
+             refusing to load arbitrary SQLite extensions without explicit opt-in."
+        );
+        return Ok(());
+    }
+    let allowlist_dir = match allowlisted_extension_dir() {
+        Ok(dir) => dir,
+        Err(err) => {
+            warn!(
+                path = %path,
+                "SQLite extension load skipped: {err}"
+            );
+            return Ok(());
+        }
+    };
+    let resolved = match resolve_extension_path(&path, &allowlist_dir) {
+        Ok(resolved) => resolved,
+        Err(err) => {
+            warn!(
+                path = %path,
+                "SQLite extension load skipped: {err}"
+            );
+            return Ok(());
+        }
+    };
+    if env_flag_set(SQLITE_EXT_UNSAFE_ENV) {
+        warn!(
+            path = %resolved.display(),
+            "{SQLITE_EXT_UNSAFE_ENV} set; bypassing SQLite extension safety checks."
+        );
+    } else if let Err(err) = validate_extension_file(&resolved) {
+        warn!(
+            path = %resolved.display(),
+            "SQLite extension load blocked: {err}"
+        );
+        return Ok(());
+    }
     unsafe {
         conn.load_extension_enable()?;
     }
-    let load_result = unsafe { conn.load_extension(path, Option::<&str>::None) };
+    let load_result = unsafe { conn.load_extension(&resolved, Option::<&str>::None) };
     let _ = conn.load_extension_disable();
     load_result
+}
+
+fn env_flag_set(name: &str) -> bool {
+    let Ok(value) = std::env::var(name) else {
+        return false;
+    };
+    match value.trim().to_ascii_lowercase().as_str() {
+        "1" | "true" | "yes" | "on" => true,
+        _ => false,
+    }
+}
+
+fn allowlisted_extension_dir() -> Result<PathBuf, String> {
+    let root = crate::app_dirs::app_root_dir().map_err(|err| err.to_string())?;
+    let dir = root.join(SQLITE_EXT_DIR_NAME);
+    fs::create_dir_all(&dir).map_err(|err| {
+        format!(
+            "Failed to create SQLite extension directory {}: {err}",
+            dir.display()
+        )
+    })?;
+    dir.canonicalize().map_err(|err| {
+        format!(
+            "Failed to resolve SQLite extension directory {}: {err}",
+            dir.display()
+        )
+    })
+}
+
+fn resolve_extension_path(raw: &str, allowlist_dir: &Path) -> Result<PathBuf, String> {
+    let trimmed = raw.trim();
+    let candidate = PathBuf::from(trimmed);
+    let candidate = if candidate.is_absolute() {
+        candidate
+    } else {
+        allowlist_dir.join(candidate)
+    };
+    let resolved = candidate.canonicalize().map_err(|err| {
+        format!(
+            "Failed to resolve SQLite extension path {}: {err}",
+            candidate.display()
+        )
+    })?;
+    if !resolved.starts_with(allowlist_dir) {
+        return Err(format!(
+            "SQLite extension must live under {}",
+            allowlist_dir.display()
+        ));
+    }
+    Ok(resolved)
+}
+
+fn validate_extension_file(path: &Path) -> Result<(), String> {
+    let metadata = fs::metadata(path).map_err(|err| {
+        format!(
+            "Failed to read SQLite extension metadata for {}: {err}",
+            path.display()
+        )
+    })?;
+    if !metadata.is_file() {
+        return Err("SQLite extension path is not a regular file".to_string());
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let uid = metadata.uid();
+        let euid = unsafe { libc::geteuid() };
+        if uid != euid {
+            return Err(format!(
+                "SQLite extension must be owned by the current user (uid {euid})"
+            ));
+        }
+        let mode = metadata.mode();
+        if mode & 0o022 != 0 {
+            return Err("SQLite extension is writable by group or others".to_string());
+        }
+        return Ok(());
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = metadata;
+        Err(format!(
+            "SQLite extension ownership checks are unavailable on this platform; \
+             set {SQLITE_EXT_UNSAFE_ENV}=1 to override"
+        ))
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use tempfile::tempdir;
+
+    struct EnvVarGuard {
+        key: &'static str,
+        previous: Option<String>,
+    }
+
+    impl EnvVarGuard {
+        fn set(key: &'static str, value: &str) -> Self {
+            let previous = std::env::var(key).ok();
+            unsafe {
+                std::env::set_var(key, value);
+            }
+            Self { key, previous }
+        }
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            match self.previous.as_deref() {
+                Some(value) => unsafe {
+                    std::env::set_var(self.key, value);
+                },
+                None => unsafe {
+                    std::env::remove_var(self.key);
+                },
+            }
+        }
+    }
 
     #[test]
     fn no_env_var_is_noop() {
         unsafe {
             std::env::remove_var(SQLITE_EXT_ENV);
+            std::env::remove_var(SQLITE_EXT_ENABLE_ENV);
+            std::env::remove_var(SQLITE_EXT_UNSAFE_ENV);
         }
+        let conn = Connection::open_in_memory().unwrap();
+        try_load_optional_extension(&conn).unwrap();
+    }
+
+    #[test]
+    fn rejects_extension_outside_allowlist() {
+        let base = tempdir().unwrap();
+        let _guard = crate::app_dirs::ConfigBaseGuard::set(base.path().to_path_buf());
+        let outside = tempdir().unwrap();
+        let ext_path = outside.path().join("test_ext.so");
+        fs::write(&ext_path, b"not a sqlite extension").unwrap();
+        let _ext_guard = EnvVarGuard::set(SQLITE_EXT_ENV, ext_path.to_str().unwrap());
+        let _enable_guard = EnvVarGuard::set(SQLITE_EXT_ENABLE_ENV, "1");
         let conn = Connection::open_in_memory().unwrap();
         try_load_optional_extension(&conn).unwrap();
     }

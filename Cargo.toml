@@ -98,6 +98,7 @@ windows-core = "0.62.2"
 winreg = "0.52.0"
 
 [target.'cfg(not(target_os = "windows"))'.dependencies]
+libc = "0.2.176"
 
 [dev-dependencies]
 criterion = "0.8.1"
