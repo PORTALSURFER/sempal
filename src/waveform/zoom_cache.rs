@@ -4,18 +4,24 @@ use std::{
     hash::{Hash, Hasher},
     sync::Mutex,
 };
+use tracing::warn;
 
+/// Cache of precomputed waveform columns keyed by token, view, and width.
 pub(super) struct WaveformZoomCache {
     inner: Mutex<CacheInner>,
 }
 
 impl WaveformZoomCache {
+    /// Create an empty cache with a small, bounded entry budget.
     pub(super) fn new() -> Self {
         Self {
             inner: Mutex::new(CacheInner::new()),
         }
     }
 
+    /// Return cached columns for the request or compute and store them on miss.
+    ///
+    /// This keeps the render path fast while allowing cache invalidation via the token.
     pub(super) fn get_or_compute(
         &self,
         cache_token: u64,
@@ -26,7 +32,7 @@ impl WaveformZoomCache {
     ) -> CachedColumns {
         let key = CacheKey::new(cache_token, samples, channels, view, width);
         {
-            let mut inner = self.inner.lock().expect("waveform zoom cache lock");
+            let mut inner = self.lock_inner();
             if let Some(hit) = inner.map.get(&key).cloned() {
                 inner.touch(key);
                 return hit;
@@ -41,7 +47,7 @@ impl WaveformZoomCache {
                     right: right.into(),
                 },
             };
-        let mut inner = self.inner.lock().expect("waveform zoom cache lock");
+        let mut inner = self.lock_inner();
         if let Some(hit) = inner.map.get(&key).cloned() {
             inner.touch(key);
             return hit;
@@ -49,9 +55,23 @@ impl WaveformZoomCache {
         inner.insert(key, computed.clone());
         computed
     }
+
+    fn lock_inner(&self) -> std::sync::MutexGuard<'_, CacheInner> {
+        match self.inner.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => {
+                warn!("Waveform zoom cache mutex poisoned; recovering with cleared cache.");
+                let mut inner = poisoned.into_inner();
+                inner.map.clear();
+                inner.order.clear();
+                inner
+            }
+        }
+    }
 }
 
 #[derive(Clone)]
+/// Cached waveform columns stored in shared arcs for inexpensive cloning.
 pub(super) enum CachedColumns {
     Mono(std::sync::Arc<[(f32, f32)]>),
     SplitStereo {
@@ -227,5 +247,20 @@ mod tests {
         for result in results.iter().skip(1) {
             assert_eq!(*result, results[0]);
         }
+    }
+
+    #[test]
+    fn get_or_compute_recovers_after_poisoned_lock() {
+        let cache = WaveformZoomCache::new();
+        let samples = vec![0.0_f32, 1.0];
+
+        let result = std::panic::catch_unwind(|| {
+            let _guard = cache.inner.lock().expect("poison cache lock");
+            panic!("poison cache lock for test");
+        });
+        assert!(result.is_err());
+
+        let columns = cache.get_or_compute(1, &samples, 1, WaveformChannelView::Mono, 1);
+        assert!(matches!(columns, CachedColumns::Mono(_)));
     }
 }
