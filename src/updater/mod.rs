@@ -9,8 +9,11 @@ mod check;
 mod fs_ops;
 mod github;
 
-use std::path::Component;
-use std::path::{Path, PathBuf};
+use std::{
+    fs,
+    io::ErrorKind,
+    path::{Component, Path, PathBuf},
+};
 
 use serde::{Deserialize, Serialize};
 
@@ -206,7 +209,33 @@ fn ensure_child_path(dir: &Path, name: &str) -> Result<PathBuf, UpdateError> {
             candidate.display()
         )));
     }
+    ensure_no_symlink_path(&candidate)?;
     Ok(candidate)
+}
+
+fn ensure_no_symlink_path(path: &Path) -> Result<(), UpdateError> {
+    let mut current = PathBuf::new();
+    for component in path.components() {
+        current.push(component.as_os_str());
+        match fs::symlink_metadata(&current) {
+            Ok(metadata) => {
+                if metadata.file_type().is_symlink() {
+                    return Err(UpdateError::Invalid(format!(
+                        "Refusing to write through symlink: {}",
+                        current.display()
+                    )));
+                }
+            }
+            Err(err) if err.kind() == ErrorKind::NotFound => break,
+            Err(err) => {
+                return Err(UpdateError::Invalid(format!(
+                    "Failed to inspect update path {}: {err}",
+                    current.display()
+                )));
+            }
+        }
+    }
+    Ok(())
 }
 
 fn sanitize_relative_path(name: &str) -> Result<PathBuf, UpdateError> {
@@ -260,5 +289,22 @@ mod tests {
         let canonical = dir.path().canonicalize().unwrap();
         assert!(path.starts_with(&canonical));
         assert!(path.ends_with(Path::new("ok").join("file.txt")));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ensure_child_path_rejects_symlinked_component() {
+        use std::os::unix::fs::symlink;
+
+        let dir = tempdir().unwrap();
+        let install = dir.path().join("install");
+        let external = dir.path().join("external");
+        fs::create_dir_all(&install).unwrap();
+        fs::create_dir_all(&external).unwrap();
+        let link = install.join("link");
+        symlink(&external, &link).unwrap();
+
+        let err = ensure_child_path(&install, "link/file.txt").unwrap_err();
+        assert!(err.to_string().contains("symlink"));
     }
 }

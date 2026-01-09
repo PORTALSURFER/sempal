@@ -219,7 +219,7 @@ fn apply_files_and_dirs(
     let mut replaced_dirs = Vec::new();
     let resources_src = root_dir.join("resources");
     if resources_src.is_dir() {
-        let resources_dest = install_dir.join("resources");
+        let resources_dest = ensure_child_path(install_dir, "resources")?;
         transaction.stage_dir(&resources_src, &resources_dest)?;
         replaced_dirs.push("resources".to_string());
     }
