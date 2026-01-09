@@ -200,6 +200,27 @@ fn preserves_collection_and_member_order() {
 }
 
 #[test]
+fn recovers_from_library_lock_poisoning() {
+    let temp = tempdir().unwrap();
+    with_config_home(temp.path(), || {
+        let result = std::panic::catch_unwind(|| {
+            let _guard = LIBRARY_LOCK.lock().unwrap();
+            panic!("poison library lock");
+        });
+        assert!(result.is_err());
+
+        let state = LibraryState {
+            sources: Vec::new(),
+            collections: Vec::new(),
+        };
+        save(&state).unwrap();
+        let loaded = load().unwrap();
+        assert!(loaded.sources.is_empty());
+        assert!(loaded.collections.is_empty());
+    });
+}
+
+#[test]
 fn database_lives_under_app_root() {
     let temp = tempdir().unwrap();
     with_config_home(temp.path(), || {

@@ -7,6 +7,7 @@ use std::sync::{LazyLock, Mutex};
 use rusqlite::{Connection, Transaction, params};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use tracing::warn;
 
 mod migrations;
 mod schema_checks;
@@ -58,21 +59,21 @@ pub enum LibraryError {
 
 /// Load all sources and collections from the global library database, creating it if missing.
 pub fn load() -> Result<LibraryState, LibraryError> {
-    let _guard = LIBRARY_LOCK.lock().expect("library lock mutex poisoned");
+    let _guard = lock_library();
     let db = LibraryDatabase::open()?;
     db.load_state()
 }
 
 /// Persist sources and collections to the global library database, replacing existing rows.
 pub fn save(state: &LibraryState) -> Result<(), LibraryError> {
-    let _guard = LIBRARY_LOCK.lock().expect("library lock mutex poisoned");
+    let _guard = lock_library();
     let mut db = LibraryDatabase::open()?;
     db.replace_state(state)
 }
 
 /// Open a connection to the library DB with schema + migrations applied.
 pub fn open_connection() -> Result<Connection, LibraryError> {
-    let _guard = LIBRARY_LOCK.lock().expect("library lock mutex poisoned");
+    let _guard = lock_library();
     let db = LibraryDatabase::open()?;
     Ok(db.into_connection())
 }
@@ -82,9 +83,19 @@ pub fn open_connection() -> Result<Connection, LibraryError> {
 /// This allows removing and re-adding a source without creating a new `source_id::...` namespace
 /// (and therefore avoids re-analysis when files are unchanged).
 pub fn lookup_source_id_for_root(root: &Path) -> Result<Option<SourceId>, LibraryError> {
-    let _guard = LIBRARY_LOCK.lock().expect("library lock mutex poisoned");
+    let _guard = lock_library();
     let db = LibraryDatabase::open()?;
     db.lookup_known_source_id(root)
+}
+
+fn lock_library() -> std::sync::MutexGuard<'static, ()> {
+    match LIBRARY_LOCK.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => {
+            warn!("Library DB mutex poisoned; recovering to keep the app running.");
+            poisoned.into_inner()
+        }
+    }
 }
 
 struct LibraryDatabase {
