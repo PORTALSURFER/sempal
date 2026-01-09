@@ -11,7 +11,7 @@ pub const SIMILARITY_DTYPE_F32: &str = "f32";
 /// Default analysis batch size for similarity feature extraction.
 pub const SIMILARITY_BATCH_MAX: usize = 8;
 
-/// Normalize a vector in-place and return whether the norm was non-zero.
+/// Normalize a vector in-place and return whether the norm is finite and non-zero.
 pub fn normalize_l2_in_place(values: &mut [f32]) -> bool {
     let mut sum = 0.0_f32;
     for value in values.iter() {
@@ -31,6 +31,8 @@ pub fn normalize_l2_in_place(values: &mut [f32]) -> bool {
 }
 
 /// Build a normalized similarity embedding from a feature vector.
+///
+/// Returns an error when the features cannot be normalized (zero norm or NaNs).
 pub fn embedding_from_features(features: &[f32]) -> Result<Vec<f32>, String> {
     if features.len() != SIMILARITY_DIM {
         return Err(format!(
@@ -39,7 +41,9 @@ pub fn embedding_from_features(features: &[f32]) -> Result<Vec<f32>, String> {
         ));
     }
     let mut embedding = features.to_vec();
-    normalize_l2_in_place(&mut embedding);
+    if !normalize_l2_in_place(&mut embedding) {
+        return Err("Similarity features normalization failed: zero or non-finite norm".to_string());
+    }
     Ok(embedding)
 }
 
@@ -61,5 +65,20 @@ mod tests {
     fn embedding_from_features_rejects_wrong_length() {
         let err = embedding_from_features(&[0.0_f32; 3]).unwrap_err();
         assert!(err.to_ascii_lowercase().contains("length mismatch"));
+    }
+
+    #[test]
+    fn embedding_from_features_rejects_zero_vector() {
+        let features = vec![0.0_f32; SIMILARITY_DIM];
+        let err = embedding_from_features(&features).unwrap_err();
+        assert!(err.to_ascii_lowercase().contains("normalization failed"));
+    }
+
+    #[test]
+    fn embedding_from_features_rejects_nan_vector() {
+        let mut features = vec![0.0_f32; SIMILARITY_DIM];
+        features[0] = f32::NAN;
+        let err = embedding_from_features(&features).unwrap_err();
+        assert!(err.to_ascii_lowercase().contains("normalization failed"));
     }
 }
