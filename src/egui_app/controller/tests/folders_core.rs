@@ -292,6 +292,48 @@ fn deleting_folder_removes_wavs() -> Result<(), String> {
 }
 
 #[test]
+fn deleting_folder_rolls_back_on_db_failure() -> Result<(), String> {
+    let (mut controller, source) = dummy_controller();
+    controller.library.sources.push(source.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
+    let target = source.root.join("gone");
+    std::fs::create_dir_all(&target).unwrap();
+    write_test_wav(&target.join("sample.wav"), &[0.0, 0.2]);
+    controller.set_wav_entries_for_tests(vec![sample_entry("gone/sample.wav", crate::sample_sources::Rating::NEUTRAL)]);
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+    controller.refresh_folder_browser();
+    if let Some(index) = controller
+        .ui
+        .sources
+        .folders
+        .rows
+        .iter()
+        .position(|row| row.path == PathBuf::from("gone"))
+    {
+        controller.focus_folder_row(index);
+    }
+    controller.runtime.fail_next_folder_delete_db = true;
+
+    controller.delete_focused_folder();
+
+    assert!(target.exists());
+    assert_eq!(controller.wav_entries_len(), 1);
+    assert!(
+        controller
+            .ui
+            .sources
+            .folders
+            .rows
+            .iter()
+            .any(|row| row.path == PathBuf::from("gone"))
+    );
+    let db = crate::sample_sources::SourceDatabase::open(&source.root).unwrap();
+    assert_eq!(db.count_files().unwrap(), 1);
+    Ok(())
+}
+
+#[test]
 fn deleting_folder_moves_focus_to_next_available() -> Result<(), String> {
     let (mut controller, source) = dummy_controller();
     controller.library.sources.push(source.clone());

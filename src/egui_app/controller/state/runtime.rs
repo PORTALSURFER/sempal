@@ -18,6 +18,9 @@ pub(crate) struct ControllerRuntimeState {
     pub(crate) similarity_prep_force_full_analysis_next: bool,
     #[cfg(test)]
     pub(crate) progress_cancel_after: Option<usize>,
+    #[cfg(test)]
+    /// Force the next folder delete DB write to fail for rollback tests.
+    pub(crate) fail_next_folder_delete_db: bool,
 }
 
 impl ControllerRuntimeState {
@@ -35,6 +38,8 @@ impl ControllerRuntimeState {
             similarity_prep_force_full_analysis_next: false,
             #[cfg(test)]
             progress_cancel_after: None,
+            #[cfg(test)]
+            fail_next_folder_delete_db: false,
         }
     }
 }

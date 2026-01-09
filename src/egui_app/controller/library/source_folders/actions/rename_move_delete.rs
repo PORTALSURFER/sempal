@@ -103,32 +103,59 @@ impl EguiController {
             return Ok(());
         }
         let entries = self.folder_entries(target);
-        fs::remove_dir_all(&absolute).map_err(|err| format!("Failed to delete folder: {err}"))?;
+        let staging_root = source.root.join(".sempal_delete_staging");
+        let staged = Self::stage_folder_for_delete(&absolute, &staging_root, target)?;
         let mut collections_changed = false;
+        let mut collections_snapshot = None;
         if !entries.is_empty() {
-            let db = self
-                .database_for(&source)
-                .map_err(|err| format!("Database unavailable: {err}"))?;
-            let mut batch = db
-                .write_batch()
-                .map_err(|err| format!("Failed to start database update: {err}"))?;
-            for entry in &entries {
-                batch
-                    .remove_file(&entry.relative_path)
-                    .map_err(|err| format!("Failed to drop database row: {err}"))?;
+            #[cfg(test)]
+            if self.runtime.fail_next_folder_delete_db {
+                self.runtime.fail_next_folder_delete_db = false;
+                return Self::rollback_staged_folder(
+                    &staged,
+                    &absolute,
+                    "Simulated database failure",
+                );
             }
-            batch
-                .commit()
-                .map_err(|err| format!("Failed to save folder delete: {err}"))?;
+            let db_result: Result<(), String> = (|| {
+                let db = self
+                    .database_for(&source)
+                    .map_err(|err| format!("Database unavailable: {err}"))?;
+                let mut batch = db
+                    .write_batch()
+                    .map_err(|err| format!("Failed to start database update: {err}"))?;
+                for entry in &entries {
+                    batch
+                        .remove_file(&entry.relative_path)
+                        .map_err(|err| format!("Failed to drop database row: {err}"))?;
+                }
+                batch
+                    .commit()
+                    .map_err(|err| format!("Failed to save folder delete: {err}"))?;
+                Ok(())
+            })();
+            if let Err(err) = db_result {
+                return Self::rollback_staged_folder(&staged, &absolute, &err);
+            }
+            collections_snapshot = Some(self.library.collections.clone());
         }
-        for entry in entries {
-            self.prune_cached_sample(&source, &entry.relative_path);
+        for entry in &entries {
             if self.remove_sample_from_collections(&source.id, &entry.relative_path) {
                 collections_changed = true;
             }
         }
         if collections_changed {
-            self.persist_config("Failed to save collection after delete")?;
+            if let Err(err) = self.persist_config("Failed to save collection after delete") {
+                if let Some(snapshot) = collections_snapshot {
+                    self.library.collections = snapshot;
+                    self.refresh_collections_ui();
+                }
+                let _ = self.restore_db_entries(&source, target, &entries);
+                return Self::rollback_staged_folder(&staged, &absolute, &err);
+            }
+        }
+        for entry in &entries {
+            self.prune_cached_sample(&source, &entry.relative_path);
         }
         self.update_manual_folders(|set| {
             set.retain(|path| !path.starts_with(target));
@@ -143,7 +170,119 @@ impl EguiController {
         }
         self.ui.sources.folders.pending_action = None;
         self.ui.sources.folders.new_folder = None;
+        fs::remove_dir_all(&staged)
+            .map_err(|err| format!("Failed to finalize folder delete: {err}"))?;
+        Self::cleanup_staging_root(&staging_root);
         Ok(())
+    }
+
+    fn stage_folder_for_delete(
+        absolute: &Path,
+        staging_root: &Path,
+        relative: &Path,
+    ) -> Result<PathBuf, String> {
+        let staged = Self::unique_staging_path(staging_root, relative);
+        if let Some(parent) = staged.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|err| format!("Failed to prepare folder delete staging: {err}"))?;
+        }
+        fs::rename(absolute, &staged)
+            .map_err(|err| format!("Failed to stage folder delete: {err}"))?;
+        Ok(staged)
+    }
+
+    fn unique_staging_path(staging_root: &Path, relative: &Path) -> PathBuf {
+        let mut candidate = staging_root.join(relative);
+        if !candidate.exists() {
+            return candidate;
+        }
+        let parent = relative.parent().unwrap_or_else(|| Path::new(""));
+        let name = relative
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("folder");
+        for idx in 1..=1000 {
+            let mut alt = PathBuf::from(parent);
+            alt.push(format!("{name}.staged-{idx}"));
+            candidate = staging_root.join(alt);
+            if !candidate.exists() {
+                return candidate;
+            }
+        }
+        candidate
+    }
+
+    fn rollback_staged_folder(
+        staged: &Path,
+        absolute: &Path,
+        err: &str,
+    ) -> Result<(), String> {
+        if let Err(restore_err) = fs::rename(staged, absolute) {
+            return Err(format!(
+                "{err} (also failed to restore folder: {restore_err})"
+            ));
+        }
+        Err(err.to_string())
+    }
+
+    fn restore_db_entries(
+        &mut self,
+        source: &SampleSource,
+        target: &Path,
+        entries: &[WavEntry],
+    ) -> Result<(), String> {
+        if entries.is_empty() {
+            return Ok(());
+        }
+        let db = self
+            .database_for(source)
+            .map_err(|err| format!("Database unavailable: {err}"))?;
+        let mut batch = db
+            .write_batch()
+            .map_err(|err| format!("Failed to start database restore: {err}"))?;
+        for entry in entries {
+            if !entry.relative_path.starts_with(target) {
+                continue;
+            }
+            match entry.content_hash.as_deref() {
+                Some(hash) => batch
+                    .upsert_file_with_hash_and_tag(
+                        &entry.relative_path,
+                        entry.file_size,
+                        entry.modified_ns,
+                        hash,
+                        entry.tag,
+                        entry.missing,
+                    )
+                    .map_err(|err| format!("Failed to restore entry: {err}"))?,
+                None => {
+                    batch
+                        .upsert_file(&entry.relative_path, entry.file_size, entry.modified_ns)
+                        .map_err(|err| format!("Failed to restore entry: {err}"))?;
+                    if entry.tag != Rating::NEUTRAL {
+                        batch
+                            .set_tag(&entry.relative_path, entry.tag)
+                            .map_err(|err| format!("Failed to restore tag: {err}"))?;
+                    }
+                    if entry.missing {
+                        batch
+                            .set_missing(&entry.relative_path, entry.missing)
+                            .map_err(|err| format!("Failed to restore missing flag: {err}"))?;
+                    }
+                }
+            }
+        }
+        batch
+            .commit()
+            .map_err(|err| format!("Failed to finalize database restore: {err}"))
+    }
+
+    fn cleanup_staging_root(staging_root: &Path) {
+        if let Ok(mut entries) = fs::read_dir(staging_root) {
+            if entries.next().is_none() {
+                let _ = fs::remove_dir(staging_root);
+            }
+        }
     }
 
     fn next_folder_focus_after_delete(&self, target: &Path) -> Option<PathBuf> {
