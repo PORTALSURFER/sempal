@@ -6,6 +6,7 @@ profile.json.gz
 profile.json.gz
 profile.json.gz
 bundle-staging
+.sempal_delete_staging/
 assets/ml/panns_cnn14_16k/*.bpk
 assets/ml/panns_cnn14_16k/*.onnx
 assets/ml/panns_cnn14_16k/*.onnx.data

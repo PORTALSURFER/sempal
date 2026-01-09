@@ -114,6 +114,7 @@ impl EguiController {
                 return Self::rollback_staged_folder(
                     &staged,
                     &absolute,
+                    &staging_root,
                     "Simulated database failure",
                 );
             }
@@ -135,7 +136,7 @@ impl EguiController {
                 Ok(())
             })();
             if let Err(err) = db_result {
-                return Self::rollback_staged_folder(&staged, &absolute, &err);
+                return Self::rollback_staged_folder(&staged, &absolute, &staging_root, &err);
             }
             collections_snapshot = Some(self.library.collections.clone());
         }
@@ -151,7 +152,7 @@ impl EguiController {
                     self.refresh_collections_ui();
                 }
                 let _ = self.restore_db_entries(&source, target, &entries);
-                return Self::rollback_staged_folder(&staged, &absolute, &err);
+                return Self::rollback_staged_folder(&staged, &absolute, &staging_root, &err);
             }
         }
         for entry in &entries {
@@ -185,6 +186,7 @@ impl EguiController {
         if let Some(parent) = staged.parent() {
             fs::create_dir_all(parent)
                 .map_err(|err| format!("Failed to prepare folder delete staging: {err}"))?;
+            Self::mark_staging_root_hidden(staging_root);
         }
         fs::rename(absolute, &staged)
             .map_err(|err| format!("Failed to stage folder delete: {err}"))?;
@@ -215,6 +217,7 @@ impl EguiController {
     fn rollback_staged_folder(
         staged: &Path,
         absolute: &Path,
+        staging_root: &Path,
         err: &str,
     ) -> Result<(), String> {
         if let Err(restore_err) = fs::rename(staged, absolute) {
@@ -222,6 +225,7 @@ impl EguiController {
                 "{err} (also failed to restore folder: {restore_err})"
             ));
         }
+        Self::cleanup_staging_root(staging_root);
         Err(err.to_string())
     }
 
@@ -284,6 +288,22 @@ impl EguiController {
             }
         }
     }
+
+    #[cfg(target_os = "windows")]
+    fn mark_staging_root_hidden(staging_root: &Path) {
+        use std::os::windows::ffi::OsStrExt;
+        use windows::{
+            Win32::Storage::FileSystem::{FILE_ATTRIBUTE_HIDDEN, SetFileAttributesW},
+            core::PCWSTR,
+        };
+
+        let mut wide: Vec<u16> = staging_root.as_os_str().encode_wide().collect();
+        wide.push(0);
+        let _ = unsafe { SetFileAttributesW(PCWSTR(wide.as_ptr()), FILE_ATTRIBUTE_HIDDEN) };
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    fn mark_staging_root_hidden(_staging_root: &Path) {}
 
     fn next_folder_focus_after_delete(&self, target: &Path) -> Option<PathBuf> {
         let rows = &self.ui.sources.folders.rows;
