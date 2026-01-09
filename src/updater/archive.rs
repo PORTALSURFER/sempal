@@ -36,6 +36,7 @@ impl ZipExtractionLimits {
     }
 }
 
+/// Download a small text asset into memory with a strict size cap.
 pub(super) fn download_text(url: &str) -> Result<Vec<u8>, UpdateError> {
     let response = http_client::agent()
         .get(url)
@@ -46,6 +47,7 @@ pub(super) fn download_text(url: &str) -> Result<Vec<u8>, UpdateError> {
     Ok(bytes)
 }
 
+/// Parse a checksums file and return the hash for the requested asset name.
 pub(super) fn parse_checksums_for_asset(
     checksums: &[u8],
     asset_name: &str,
@@ -112,6 +114,7 @@ fn verify_checksums_signature_with_key(
     Ok(())
 }
 
+/// Download a release asset to disk with a hard size limit.
 pub(super) fn download_to_file(url: &str, dest: &Path) -> Result<(), UpdateError> {
     let response = http_client::agent()
         .get(url)
@@ -123,6 +126,7 @@ pub(super) fn download_to_file(url: &str, dest: &Path) -> Result<(), UpdateError
     Ok(())
 }
 
+/// Compute the SHA-256 hex digest for a local file.
 pub(super) fn sha256_file(path: &Path) -> Result<String, UpdateError> {
     let mut file = File::open(path)?;
     let mut hasher = Sha256::new();
@@ -137,6 +141,7 @@ pub(super) fn sha256_file(path: &Path) -> Result<String, UpdateError> {
     Ok(format!("{:x}", hasher.finalize()))
 }
 
+/// Compare the on-disk zip checksum to the expected SHA-256 digest.
 pub(super) fn verify_zip_checksum(path: &Path, expected: &str) -> Result<(), UpdateError> {
     let actual = sha256_file(path)?;
     if actual != expected {
@@ -153,8 +158,19 @@ pub(super) fn verify_zip_checksum(path: &Path, expected: &str) -> Result<(), Upd
     Ok(())
 }
 
+/// Extract a zip archive into a directory while enforcing safety limits.
 pub(super) fn unzip_to_dir(zip_path: &Path, dest_dir: &Path) -> Result<(), UpdateError> {
     unzip_to_dir_with_limits(zip_path, dest_dir, ZipExtractionLimits::standard())
+}
+
+#[cfg(unix)]
+fn safe_unix_file_mode(archive_mode: u32) -> u32 {
+    let is_executable = archive_mode & 0o111 != 0;
+    if is_executable {
+        0o755
+    } else {
+        0o644
+    }
 }
 
 fn unzip_to_dir_with_limits(
@@ -229,13 +245,15 @@ fn unzip_to_dir_with_limits(
         {
             use std::os::unix::fs::PermissionsExt;
             if let Some(mode) = entry.unix_mode() {
-                std::fs::set_permissions(&outpath, std::fs::Permissions::from_mode(mode))?;
+                let safe_mode = safe_unix_file_mode(mode);
+                std::fs::set_permissions(&outpath, std::fs::Permissions::from_mode(safe_mode))?;
             }
         }
     }
     Ok(())
 }
 
+/// Download a named asset from a GitHub release to disk.
 pub(super) fn download_release_asset(
     release: &github::Release,
     asset_name: &str,
@@ -247,6 +265,7 @@ pub(super) fn download_release_asset(
     Ok(())
 }
 
+/// Download a named asset from a GitHub release into memory.
 pub(super) fn download_release_asset_bytes(
     release: &github::Release,
     asset_name: &str,
@@ -261,6 +280,8 @@ mod tests {
     use super::*;
     use ed25519_dalek::{Signer, SigningKey};
     use std::io::Write;
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
     use tempfile::tempdir;
 
     fn write_zip(path: &Path, entries: &[(&str, &[u8])]) -> Result<(), UpdateError> {
@@ -269,6 +290,26 @@ mod tests {
         let options = zip::write::SimpleFileOptions::default()
             .compression_method(zip::CompressionMethod::Deflated);
         for (name, data) in entries {
+            zip.start_file(name, options)
+                .map_err(|err| UpdateError::Zip(err.to_string()))?;
+            zip.write_all(data)?;
+        }
+        zip.finish()
+            .map_err(|err| UpdateError::Zip(err.to_string()))?;
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    fn write_zip_with_modes(
+        path: &Path,
+        entries: &[(&str, &[u8], u32)],
+    ) -> Result<(), UpdateError> {
+        let file = File::create(path)?;
+        let mut zip = zip::ZipWriter::new(file);
+        for (name, data, mode) in entries {
+            let options = zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Deflated)
+                .unix_permissions(*mode);
             zip.start_file(name, options)
                 .map_err(|err| UpdateError::Zip(err.to_string()))?;
             zip.write_all(data)?;
@@ -390,5 +431,33 @@ mod tests {
             unzip_to_dir_with_limits(&zip_path, temp.path().join("out").as_path(), limits)
                 .unwrap_err();
         assert!(err.to_string().contains("compression ratio"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unzip_strips_unsafe_permissions() {
+        let temp = tempdir().expect("tempdir");
+        let zip_path = temp.path().join("perms.zip");
+        write_zip_with_modes(
+            &zip_path,
+            &[
+                ("bin/tool", b"run", 0o7777),
+                ("data/config.toml", b"cfg", 0o6666),
+            ],
+        )
+        .expect("zip write");
+        unzip_to_dir(&zip_path, temp.path().join("out").as_path()).expect("unzip");
+        let exec_mode = std::fs::metadata(temp.path().join("out/bin/tool"))
+            .expect("exec metadata")
+            .permissions()
+            .mode()
+            & 0o7777;
+        let data_mode = std::fs::metadata(temp.path().join("out/data/config.toml"))
+            .expect("data metadata")
+            .permissions()
+            .mode()
+            & 0o7777;
+        assert_eq!(exec_mode, 0o755);
+        assert_eq!(data_mode, 0o644);
     }
 }
