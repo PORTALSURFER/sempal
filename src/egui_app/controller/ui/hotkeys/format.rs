@@ -47,6 +47,7 @@ fn key_label(key: Key) -> &'static str {
         egui::Key::Y => "Y",
         egui::Key::Z => "Z",
         egui::Key::M => "M",
+        egui::Key::B => "B",
         egui::Key::Slash => "/",
         egui::Key::Backslash => "\\",
         egui::Key::Quote => "'",

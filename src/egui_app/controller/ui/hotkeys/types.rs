@@ -140,6 +140,8 @@ pub(crate) enum HotkeyCommand {
     FadeSelectionRightToLeft,
     MuteSelection,
     DeleteSliceMarkers,
+    ToggleBpmSnap,
+    ToggleTransientMarkers,
     NormalizeWaveform,
     AlignWaveformStartToMarker,
     CropSelection,

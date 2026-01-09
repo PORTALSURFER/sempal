@@ -255,6 +255,7 @@ fn press_text_variants(press: &hotkeys::KeyPress) -> &'static [&'static str] {
         egui::Key::D => &["d", "D"],
         egui::Key::C => &["c", "C"],
         egui::Key::M => &["m", "M"],
+        egui::Key::B => &["b", "B"],
         egui::Key::T => &["t", "T"],
         egui::Key::U => &["u", "U"],
         egui::Key::Y => &["y", "Y"],

@@ -90,11 +90,35 @@ pub(crate) fn handle_waveform_command(
             }
             true
         }
+        HotkeyCommand::ToggleBpmSnap => {
+            controller.toggle_bpm_snap();
+            true
+        }
+        HotkeyCommand::ToggleTransientMarkers => {
+            controller.toggle_transient_markers();
+            true
+        }
         _ => false,
     }
 }
 
 impl HotkeysController<'_> {
+    fn toggle_bpm_snap(&mut self) {
+        let enabled = !self.ui.waveform.bpm_snap_enabled;
+        let prev_value = self.ui.waveform.bpm_value;
+        self.set_bpm_snap_enabled(enabled);
+        if enabled && prev_value.is_none() {
+            let fallback = 142.0;
+            self.set_bpm_value(fallback);
+            self.ui.waveform.bpm_input = format!("{fallback:.0}");
+        }
+    }
+
+    fn toggle_transient_markers(&mut self) {
+        let enabled = !self.ui.waveform.transient_markers_enabled;
+        self.set_transient_markers_enabled(enabled);
+    }
+
     fn normalize_waveform_selection_or_sample(&mut self) {
         if self
             .ui
