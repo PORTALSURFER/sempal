@@ -1,4 +1,4 @@
-use std::{fs::File, io::Read, path::Path};
+use std::{fs::File, io::Read, path::Path, time::Duration};
 
 use ed25519_dalek::{Signature, VerifyingKey};
 use sha2::{Digest, Sha256};
@@ -16,6 +16,11 @@ const MAX_ZIP_ENTRIES: usize = 10_000;
 const MAX_ZIP_ENTRY_UNCOMPRESSED_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_ZIP_TOTAL_UNCOMPRESSED_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 const MAX_ZIP_COMPRESSION_RATIO: u64 = 200;
+const DOWNLOAD_RETRY_CONFIG: http_client::RetryConfig = http_client::RetryConfig {
+    max_attempts: 3,
+    base_delay: Duration::from_millis(200),
+    max_delay: Duration::from_secs(2),
+};
 
 #[derive(Clone, Copy)]
 struct ZipExtractionLimits {
@@ -38,11 +43,7 @@ impl ZipExtractionLimits {
 
 /// Download a small text asset into memory with a strict size cap.
 pub(super) fn download_text(url: &str) -> Result<Vec<u8>, UpdateError> {
-    let response = http_client::agent()
-        .get(url)
-        .set("User-Agent", "sempal-updater")
-        .call()
-        .map_err(|err| UpdateError::Http(err.to_string()))?;
+    let response = get_with_retry(url)?;
     let bytes = http_client::read_response_bytes(response, MAX_CHECKSUM_BYTES)?;
     Ok(bytes)
 }
@@ -116,11 +117,7 @@ fn verify_checksums_signature_with_key(
 
 /// Download a release asset to disk with a hard size limit.
 pub(super) fn download_to_file(url: &str, dest: &Path) -> Result<(), UpdateError> {
-    let response = http_client::agent()
-        .get(url)
-        .set("User-Agent", "sempal-updater")
-        .call()
-        .map_err(|err| UpdateError::Http(err.to_string()))?;
+    let response = get_with_retry(url)?;
     let mut file = File::create(dest)?;
     http_client::copy_response_to_writer(response, &mut file, MAX_RELEASE_ASSET_BYTES)?;
     Ok(())
@@ -251,6 +248,27 @@ fn unzip_to_dir_with_limits(
         }
     }
     Ok(())
+}
+
+fn get_with_retry(url: &str) -> Result<ureq::Response, UpdateError> {
+    let response = http_client::retry_with_backoff(
+        DOWNLOAD_RETRY_CONFIG,
+        || {
+            http_client::agent()
+                .get(url)
+                .set("User-Agent", "sempal-updater")
+                .call()
+        },
+        |err| match err {
+            ureq::Error::Transport(_) => true,
+            ureq::Error::Status(code, _) => (500..=599).contains(code),
+        },
+    );
+    match response {
+        Ok(response) => Ok(response),
+        Err(ureq::Error::Status(code, _)) => Err(UpdateError::Http(format!("HTTP {code}"))),
+        Err(ureq::Error::Transport(err)) => Err(UpdateError::Http(err.to_string())),
+    }
 }
 
 /// Download a named asset from a GitHub release to disk.

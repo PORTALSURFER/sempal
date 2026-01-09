@@ -1,6 +1,7 @@
 //! Gateway API client for creating GitHub issues.
 
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 
 use crate::http_client;
 
@@ -10,6 +11,11 @@ pub const AUTH_START_URL: &str =
 
 const MAX_AUTH_RESPONSE_BYTES: usize = 64 * 1024;
 const MAX_ISSUE_RESPONSE_BYTES: usize = 256 * 1024;
+const ISSUE_RETRY_CONFIG: http_client::RetryConfig = http_client::RetryConfig {
+    max_attempts: 3,
+    base_delay: Duration::from_millis(200),
+    max_delay: Duration::from_secs(2),
+};
 
 /// The kind of issue the user is submitting.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -69,7 +75,7 @@ pub enum IssueAuthError {
 
 /// Start an auth session and return the token produced by the gateway.
 pub fn fetch_issue_token() -> Result<String, IssueAuthError> {
-    let response = match http_client::agent().get(AUTH_START_URL).call() {
+    let response = match get_with_retry(AUTH_START_URL) {
         Ok(response) => response,
         Err(ureq::Error::Status(code, response)) => {
             let body =
@@ -89,7 +95,7 @@ pub fn fetch_issue_token() -> Result<String, IssueAuthError> {
 /// Poll for a token using a request ID.
 pub fn poll_issue_token(request_id: &str) -> Result<Option<String>, IssueAuthError> {
     let url = format!("{BASE_URL}/auth/poll?requestId={}", encodeURIComponent(request_id));
-    let response = match http_client::agent().get(&url).call() {
+    let response = match get_with_retry(&url) {
         Ok(response) => response,
         Err(ureq::Error::Status(202, _)) => return Ok(None),
         Err(ureq::Error::Status(code, response)) => {
@@ -138,13 +144,7 @@ pub fn create_issue(
     request: &CreateIssueRequest,
 ) -> Result<CreateIssueResponse, CreateIssueError> {
     let url = format!("{BASE_URL}/issue");
-    let req = http_client::agent()
-        .post(&url)
-        .set("Accept", "application/json")
-        .set("Content-Type", "application/json")
-        .set("Authorization", &format!("Bearer {}", token.trim()));
-
-    let response = match req.send_json(request) {
+    let response = match post_with_transport_retry(&url, token, request) {
         Ok(response) => response,
         Err(ureq::Error::Status(code, response)) => {
             let body =
@@ -263,6 +263,36 @@ fn read_body_limited(response: ureq::Response, max_bytes: usize) -> Result<Strin
     let bytes =
         http_client::read_response_bytes(response, max_bytes).map_err(|err| err.to_string())?;
     String::from_utf8(bytes).map_err(|err| err.to_string())
+}
+
+fn get_with_retry(url: &str) -> Result<ureq::Response, ureq::Error> {
+    http_client::retry_with_backoff(
+        ISSUE_RETRY_CONFIG,
+        || http_client::agent().get(url).call(),
+        |err| match err {
+            ureq::Error::Transport(_) => true,
+            ureq::Error::Status(code, _) => (500..=599).contains(code),
+        },
+    )
+}
+
+fn post_with_transport_retry(
+    url: &str,
+    token: &str,
+    request: &CreateIssueRequest,
+) -> Result<ureq::Response, ureq::Error> {
+    http_client::retry_with_backoff(
+        ISSUE_RETRY_CONFIG,
+        || {
+            http_client::agent()
+                .post(url)
+                .set("Accept", "application/json")
+                .set("Content-Type", "application/json")
+                .set("Authorization", &format!("Bearer {}", token.trim()))
+                .send_json(request)
+        },
+        |err| matches!(err, ureq::Error::Transport(_)),
+    )
 }
 
 #[cfg(test)]

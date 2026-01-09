@@ -8,6 +8,17 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const READ_TIMEOUT: Duration = Duration::from_secs(30);
 const WRITE_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// Retry settings for network operations with exponential backoff.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct RetryConfig {
+    /// Maximum number of attempts, including the first try.
+    pub max_attempts: usize,
+    /// Base delay used for the exponential backoff.
+    pub base_delay: Duration,
+    /// Maximum delay allowed between attempts.
+    pub max_delay: Duration,
+}
+
 /// Return a shared HTTP agent with consistent timeouts.
 pub(crate) fn agent() -> &'static ureq::Agent {
     static AGENT: OnceLock<ureq::Agent> = OnceLock::new();
@@ -18,6 +29,35 @@ pub(crate) fn agent() -> &'static ureq::Agent {
             .timeout_write(WRITE_TIMEOUT)
             .build()
     })
+}
+
+/// Retry an operation with bounded exponential backoff when the predicate allows it.
+pub(crate) fn retry_with_backoff<T, E, F, R>(
+    config: RetryConfig,
+    mut action: F,
+    mut should_retry: R,
+) -> Result<T, E>
+where
+    F: FnMut() -> Result<T, E>,
+    R: FnMut(&E) -> bool,
+{
+    let mut attempt = 0usize;
+    loop {
+        attempt += 1;
+        match action() {
+            Ok(value) => return Ok(value),
+            Err(err) => {
+                if attempt >= config.max_attempts || !should_retry(&err) {
+                    return Err(err);
+                }
+                std::thread::sleep(backoff_delay(
+                    config.base_delay,
+                    config.max_delay,
+                    attempt,
+                ));
+            }
+        }
+    }
 }
 
 /// Read a response into memory, enforcing a maximum byte size.
@@ -83,6 +123,17 @@ fn check_content_length(response: &ureq::Response, max_bytes: usize) -> Result<(
     Ok(())
 }
 
+fn backoff_delay(base: Duration, max: Duration, attempt: usize) -> Duration {
+    let exponent = u32::try_from(attempt.saturating_sub(1)).unwrap_or(u32::MAX);
+    let factor = 1u32.checked_shl(exponent).unwrap_or(u32::MAX);
+    let delay = base.checked_mul(factor).unwrap_or(max);
+    if delay > max {
+        max
+    } else {
+        delay
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -139,5 +190,43 @@ mod tests {
         let response = agent().get(&url).call().unwrap();
         let bytes = read_response_bytes(response, 16).unwrap();
         assert_eq!(bytes, body.as_bytes());
+    }
+
+    #[test]
+    fn retry_with_backoff_stops_after_success() {
+        let mut attempts = 0usize;
+        let config = RetryConfig {
+            max_attempts: 4,
+            base_delay: Duration::from_millis(0),
+            max_delay: Duration::from_millis(0),
+        };
+        let result: Result<u32, &'static str> =
+            retry_with_backoff(config, || {
+                attempts += 1;
+                if attempts < 3 {
+                    Err("fail")
+                } else {
+                    Ok(7)
+                }
+            }, |_| true);
+        assert_eq!(result, Ok(7));
+        assert_eq!(attempts, 3);
+    }
+
+    #[test]
+    fn retry_with_backoff_honors_should_retry() {
+        let mut attempts = 0usize;
+        let config = RetryConfig {
+            max_attempts: 3,
+            base_delay: Duration::from_millis(0),
+            max_delay: Duration::from_millis(0),
+        };
+        let result: Result<u32, &'static str> =
+            retry_with_backoff(config, || {
+                attempts += 1;
+                Err("fail")
+            }, |_| false);
+        assert_eq!(result, Err("fail"));
+        assert_eq!(attempts, 1);
     }
 }
