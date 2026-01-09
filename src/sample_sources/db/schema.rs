@@ -46,7 +46,8 @@ pub(super) fn apply_schema(connection: &Connection) -> Result<(), SourceDbError>
                 mtime_ns INTEGER NOT NULL,
                 duration_seconds REAL,
                 sr_used INTEGER,
-                analysis_version TEXT
+                analysis_version TEXT,
+                bpm REAL
              );
              CREATE TABLE IF NOT EXISTS analysis_features (
                 sample_id TEXT PRIMARY KEY,
@@ -146,6 +147,7 @@ pub(super) fn apply_schema(connection: &Connection) -> Result<(), SourceDbError>
 fn ensure_optional_columns(connection: &Connection) -> Result<(), SourceDbError> {
     ensure_wav_files_optional_columns(connection)?;
     ensure_analysis_jobs_optional_columns(connection)?;
+    ensure_samples_optional_columns(connection)?;
     Ok(())
 }
 
@@ -275,6 +277,38 @@ fn ensure_analysis_jobs_optional_columns(connection: &Connection) -> Result<(), 
                  WHERE relative_path = '' OR relative_path IS NULL",
                 [],
             )
+            .map_err(map_sql_error)?;
+    }
+    Ok(())
+}
+
+fn ensure_samples_optional_columns(connection: &Connection) -> Result<(), SourceDbError> {
+    let mut stmt = connection
+        .prepare("PRAGMA table_info(samples)")
+        .map_err(map_sql_error)?;
+    let columns: std::collections::HashSet<String> = stmt
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(map_sql_error)?
+        .filter_map(Result::ok)
+        .collect();
+    if !columns.contains("duration_seconds") {
+        connection
+            .execute("ALTER TABLE samples ADD COLUMN duration_seconds REAL", [])
+            .map_err(map_sql_error)?;
+    }
+    if !columns.contains("sr_used") {
+        connection
+            .execute("ALTER TABLE samples ADD COLUMN sr_used INTEGER", [])
+            .map_err(map_sql_error)?;
+    }
+    if !columns.contains("analysis_version") {
+        connection
+            .execute("ALTER TABLE samples ADD COLUMN analysis_version TEXT", [])
+            .map_err(map_sql_error)?;
+    }
+    if !columns.contains("bpm") {
+        connection
+            .execute("ALTER TABLE samples ADD COLUMN bpm REAL", [])
             .map_err(map_sql_error)?;
     }
     Ok(())

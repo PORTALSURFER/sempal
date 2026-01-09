@@ -117,7 +117,11 @@ impl EguiController {
             sample_rate,
             channels,
             bytes,
-        )
+        )?;
+        if matches!(intent, AudioLoadIntent::Selection) {
+            self.apply_loaded_sample_bpm(source, relative_path);
+        }
+        Ok(())
     }
 
     pub(crate) fn clear_waveform_selection(&mut self) {
@@ -216,6 +220,63 @@ impl EguiController {
             Err(err) => self.set_status(err, StatusTone::Warning),
         }
         Ok(())
+    }
+
+    fn apply_loaded_sample_bpm(&mut self, source: &SampleSource, relative_path: &Path) {
+        let sample_id = analysis_jobs::build_sample_id(source.id.as_str(), relative_path);
+        let conn = match analysis_jobs::open_source_db(&source.root) {
+            Ok(conn) => conn,
+            Err(err) => {
+                tracing::warn!("Failed to open source DB for BPM load: {err}");
+                return;
+            }
+        };
+        match analysis_jobs::sample_bpm(&conn, &sample_id) {
+            Ok(Some(bpm)) => self.set_waveform_bpm_input(Some(bpm)),
+            Ok(None) => {}
+            Err(err) => {
+                tracing::warn!("Failed to load BPM metadata for {sample_id}: {err}");
+            }
+        }
+    }
+
+    /// Persist the BPM snap value for the currently loaded sample.
+    pub(crate) fn persist_loaded_sample_bpm(&mut self, bpm: f32) {
+        if !bpm.is_finite() || bpm <= 0.0 {
+            return;
+        }
+        let Some(loaded) = self.sample_view.wav.loaded_audio.as_ref() else {
+            return;
+        };
+        let conn = match analysis_jobs::open_source_db(&loaded.root) {
+            Ok(conn) => conn,
+            Err(err) => {
+                tracing::warn!("Failed to open source DB for BPM save: {err}");
+                return;
+            }
+        };
+        let sample_id = analysis_jobs::build_sample_id(
+            loaded.source_id.as_str(),
+            &loaded.relative_path,
+        );
+        if let Err(err) = analysis_jobs::update_sample_bpm(&conn, &sample_id, Some(bpm)) {
+            tracing::warn!("Failed to update BPM metadata for {sample_id}: {err}");
+        }
+    }
+
+    fn set_waveform_bpm_input(&mut self, bpm: Option<f32>) {
+        let bpm = bpm.filter(|value| value.is_finite() && *value > 0.0);
+        self.ui.waveform.bpm_value = bpm;
+        if let Some(value) = bpm {
+            let rounded = value.round();
+            if (value - rounded).abs() < 0.01 {
+                self.ui.waveform.bpm_input = format!("{rounded:.0}");
+            } else {
+                self.ui.waveform.bpm_input = format!("{value:.2}");
+            }
+        } else {
+            self.ui.waveform.bpm_input.clear();
+        }
     }
 
     pub(crate) fn clear_loaded_audio_and_waveform_visuals(&mut self) {

@@ -23,6 +23,46 @@ pub(crate) fn sample_content_hash(
     .map_err(|err| format!("Failed to lookup sample content hash: {err}"))
 }
 
+/// Load the stored BPM for a sample, if present.
+pub(crate) fn sample_bpm(
+    conn: &Connection,
+    sample_id: &str,
+) -> Result<Option<f32>, String> {
+    let bpm: Option<f64> = conn
+        .query_row(
+            "SELECT bpm FROM samples WHERE sample_id = ?1",
+            params![sample_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|err| format!("Failed to lookup sample bpm: {err}"))?
+        .flatten();
+    Ok(bpm
+        .map(|value| value as f32)
+        .filter(|value| value.is_finite() && *value > 0.0))
+}
+
+/// Update the stored BPM for a sample row, clearing it if the value is invalid.
+pub(crate) fn update_sample_bpm(
+    conn: &Connection,
+    sample_id: &str,
+    bpm: Option<f32>,
+) -> Result<(), String> {
+    let bpm = bpm
+        .filter(|value| value.is_finite() && *value > 0.0)
+        .map(|value| value as f64);
+    let updated = conn
+        .execute(
+            "UPDATE samples SET bpm = ?2 WHERE sample_id = ?1",
+            params![sample_id, bpm],
+        )
+        .map_err(|err| format!("Failed to update sample bpm: {err}"))?;
+    if updated == 0 {
+        return Err(format!("No sample row updated for sample_id={sample_id}"));
+    }
+    Ok(())
+}
+
 /// Load content hashes and analysis versions for the requested sample ids.
 pub(crate) fn sample_analysis_states(
     conn: &Connection,

@@ -95,10 +95,16 @@ pub(crate) fn update_edit_selection_drag(
 }
 
 pub(crate) fn finish_selection_drag(controller: &mut EguiController) {
+    let bpm_scaled = controller.selection_state.bpm_scale_beats.is_some();
     controller.selection_state.range.finish_drag();
     controller.selection_state.bpm_scale_beats = None;
     clear_too_small_bpm_selection(controller);
     controller.commit_selection_undo();
+    if bpm_scaled {
+        if let Some(bpm) = controller.ui.waveform.bpm_value {
+            controller.persist_loaded_sample_bpm(bpm);
+        }
+    }
     let is_playing = controller
         .audio
         .player

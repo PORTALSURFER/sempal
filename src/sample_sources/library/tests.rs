@@ -383,7 +383,7 @@ fn migrates_legacy_schema_to_latest() {
         assert_has_columns(
             &conn,
             "samples",
-            &["duration_seconds", "sr_used", "analysis_version"],
+            &["duration_seconds", "sr_used", "analysis_version", "bpm"],
         );
         assert_has_columns(&conn, "collection_members", &["clip_root"]);
         assert_has_columns(&conn, "collections", &["hotkey"]);

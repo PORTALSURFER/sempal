@@ -25,7 +25,8 @@ fn conn_with_schema() -> Connection {
             mtime_ns INTEGER NOT NULL,
             duration_seconds REAL,
             sr_used INTEGER,
-            analysis_version TEXT
+            analysis_version TEXT,
+            bpm REAL
         );
         CREATE TABLE wav_files (
             path TEXT PRIMARY KEY,
@@ -58,6 +59,23 @@ fn conn_with_schema() -> Connection {
     )
     .unwrap();
     conn
+}
+
+#[test]
+fn sample_bpm_round_trips() {
+    let conn = conn_with_schema();
+    conn.execute(
+        "INSERT INTO samples (sample_id, content_hash, size, mtime_ns)
+         VALUES (?1, ?2, 1, 1)",
+        params!["s::a.wav", "hash"],
+    )
+    .unwrap();
+    update_sample_bpm(&conn, "s::a.wav", Some(128.0)).unwrap();
+    let bpm = sample_bpm(&conn, "s::a.wav").unwrap();
+    assert_eq!(bpm, Some(128.0));
+    update_sample_bpm(&conn, "s::a.wav", None).unwrap();
+    let cleared = sample_bpm(&conn, "s::a.wav").unwrap();
+    assert_eq!(cleared, None);
 }
 
 #[test]

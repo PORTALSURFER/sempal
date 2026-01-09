@@ -106,7 +106,7 @@ fn upsert_samples_tx(
     const BATCH_SIZE: usize = 200;
     for chunk in samples.chunks(BATCH_SIZE) {
         let mut sql = String::from(
-            "INSERT INTO samples (sample_id, content_hash, size, mtime_ns, duration_seconds, sr_used, analysis_version) VALUES ",
+            "INSERT INTO samples (sample_id, content_hash, size, mtime_ns, duration_seconds, sr_used, analysis_version, bpm) VALUES ",
         );
         let mut params: Vec<Value> = Vec::with_capacity(chunk.len() * 4);
         for (idx, sample) in chunk.iter().enumerate() {
@@ -115,7 +115,7 @@ fn upsert_samples_tx(
             }
             let base = idx * 4;
             sql.push_str(&format!(
-                "(?{}, ?{}, ?{}, ?{}, NULL, NULL, NULL)",
+                "(?{}, ?{}, ?{}, ?{}, NULL, NULL, NULL, NULL)",
                 base + 1,
                 base + 2,
                 base + 3,
@@ -145,6 +145,11 @@ fn upsert_samples_tx(
                     WHEN samples.content_hash != excluded.content_hash
                     THEN NULL
                     ELSE samples.analysis_version
+                END,
+                bpm = CASE
+                    WHEN samples.content_hash != excluded.content_hash
+                    THEN NULL
+                    ELSE samples.bpm
                 END",
         );
         let batch_changed = tx

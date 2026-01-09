@@ -21,6 +21,7 @@ impl LibraryDatabase {
         if columns.contains("duration_seconds")
             && columns.contains("sr_used")
             && columns.contains("analysis_version")
+            && columns.contains("bpm")
         {
             return Ok(());
         }
@@ -35,6 +36,10 @@ impl LibraryDatabase {
         }
         if !columns.contains("analysis_version") {
             tx.execute("ALTER TABLE samples ADD COLUMN analysis_version TEXT", [])
+                .map_err(map_sql_error)?;
+        }
+        if !columns.contains("bpm") {
+            tx.execute("ALTER TABLE samples ADD COLUMN bpm REAL", [])
                 .map_err(map_sql_error)?;
         }
         tx.commit().map_err(map_sql_error)?;
