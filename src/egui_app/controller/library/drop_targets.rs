@@ -92,6 +92,32 @@ impl EguiController {
         self.focus_folder_context();
     }
 
+    /// Convert a folder drag into a new drop target entry.
+    pub(crate) fn handle_folder_drop_to_drop_targets(
+        &mut self,
+        source_id: SourceId,
+        relative_path: PathBuf,
+    ) {
+        let Some(source) = self
+            .library
+            .sources
+            .iter()
+            .find(|source| source.id == source_id)
+            .cloned()
+        else {
+            self.set_status("Source not available for drop target", StatusTone::Error);
+            return;
+        };
+        let target_path = source.root.join(&relative_path);
+        if !target_path.is_dir() {
+            self.set_status("Folder not found for drop target", StatusTone::Error);
+            return;
+        }
+        if let Err(error) = self.add_drop_target_from_path(target_path) {
+            self.set_status(error, StatusTone::Error);
+        }
+    }
+
     /// Assign a preset color to a drop target entry.
     pub(crate) fn set_drop_target_color(
         &mut self,

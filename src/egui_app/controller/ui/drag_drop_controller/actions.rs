@@ -194,6 +194,7 @@ impl DragDropActions for DragDropController<'_> {
             DragTarget::DropTarget { path } => Some(path.clone()),
             _ => None,
         };
+        let drop_targets_panel = matches!(active_target, DragTarget::DropTargetsPanel);
 
         let is_sample_payload = matches!(
             payload,
@@ -341,6 +342,8 @@ impl DragDropActions for DragDropController<'_> {
             } => {
                 if let Some(folder) = folder_target {
                     self.handle_folder_drop_to_folder(source_id, relative_path, &folder);
+                } else if drop_targets_panel {
+                    self.handle_folder_drop_to_drop_targets(source_id, relative_path);
                 } else if drop_target_path.is_some() {
                     self.set_status(
                         "Drop targets accept samples, not folders",

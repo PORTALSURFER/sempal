@@ -51,7 +51,11 @@ impl EguiApp {
             );
             let drop_targets_active = matches!(
                 drag_payload,
-                Some(DragPayload::Sample { .. } | DragPayload::Samples { .. })
+                Some(
+                    DragPayload::Sample { .. }
+                        | DragPayload::Samples { .. }
+                        | DragPayload::Folder { .. }
+                )
             );
             if drag_payload.is_some() && !folder_drop_active {
                 self.controller
@@ -86,30 +90,52 @@ impl EguiApp {
             let mut resize_origin = self.controller.ui.sources.drop_targets.resize_origin_height;
             let max_drop_targets_height =
                 (remaining - min_folder_height - handle_height).max(min_drop_targets_height);
-            drop_targets_height =
-                drop_targets_height.clamp(min_drop_targets_height, max_drop_targets_height);
-            if let Some(current) = height_override {
-                if current != drop_targets_height {
-                    height_override = Some(drop_targets_height);
+            let clamp_heights = |mut drop_height: f32| {
+                drop_height = drop_height.clamp(min_drop_targets_height, max_drop_targets_height);
+                let mut folder_height = remaining - drop_height - handle_height;
+                if folder_height < min_folder_height {
+                    folder_height = min_folder_height;
+                    drop_height = (remaining - folder_height - handle_height)
+                        .max(min_drop_targets_height);
                 }
-            }
-            let mut folder_height = remaining - drop_targets_height - handle_height;
-            if folder_height < min_folder_height {
-                folder_height = min_folder_height;
-                drop_targets_height = (remaining - folder_height - handle_height)
-                    .max(min_drop_targets_height);
-                if height_override.is_some() {
+                (drop_height, folder_height)
+            };
+            let (mut drop_targets_height, mut folder_height) =
+                clamp_heights(drop_targets_height);
+            if let Some(current) = height_override {
+                if (current - drop_targets_height).abs() > f32::EPSILON {
                     height_override = Some(drop_targets_height);
                 }
             }
             let pointer_pos = ui
                 .input(|i| i.pointer.hover_pos().or_else(|| i.pointer.interact_pos()))
                 .or(self.controller.ui.drag.position);
-            self.render_folder_browser(ui, folder_height, folder_drop_active, pointer_pos);
-            let (handle_rect, handle_response) = ui.allocate_exact_size(
-                egui::vec2(ui.available_width(), handle_height),
-                egui::Sense::drag(),
-            );
+            let available_rect = ui.available_rect_before_wrap();
+            let build_layout = |folder_height: f32, drop_targets_height: f32| {
+                let total_height = folder_height + handle_height + drop_targets_height;
+                let layout_rect = egui::Rect::from_min_size(
+                    available_rect.min,
+                    egui::vec2(available_rect.width(), total_height),
+                );
+                let folder_rect = egui::Rect::from_min_size(
+                    layout_rect.min,
+                    egui::vec2(layout_rect.width(), folder_height),
+                );
+                let handle_rect = egui::Rect::from_min_size(
+                    egui::pos2(layout_rect.left(), folder_rect.bottom()),
+                    egui::vec2(layout_rect.width(), handle_height),
+                );
+                let drop_targets_rect = egui::Rect::from_min_size(
+                    egui::pos2(layout_rect.left(), handle_rect.bottom()),
+                    egui::vec2(layout_rect.width(), drop_targets_height),
+                );
+                (layout_rect, folder_rect, handle_rect, drop_targets_rect)
+            };
+            let (layout_rect, _folder_rect, handle_rect, _drop_targets_rect) =
+                build_layout(folder_height, drop_targets_height);
+            ui.allocate_rect(layout_rect, egui::Sense::hover());
+            let handle_response =
+                ui.interact(handle_rect, ui.id().with("drop_targets_handle"), egui::Sense::drag());
             if handle_response.hovered() || handle_response.dragged() {
                 ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::ResizeVertical);
             }
@@ -128,7 +154,26 @@ impl EguiApp {
             let handle_stroke = style::inner_border();
             ui.painter()
                 .line_segment([handle_rect.center_top(), handle_rect.center_bottom()], handle_stroke);
-            self.render_drop_targets(ui, drop_targets_height);
+            if height_override.is_some() {
+                let (clamped_drop_height, clamped_folder_height) =
+                    clamp_heights(drop_targets_height);
+                drop_targets_height = clamped_drop_height;
+                folder_height = clamped_folder_height;
+                height_override = Some(drop_targets_height);
+            }
+            let (_layout_rect, folder_rect, handle_rect, drop_targets_rect) =
+                build_layout(folder_height, drop_targets_height);
+            ui.allocate_ui_at_rect(folder_rect, |ui| {
+                self.render_folder_browser(ui, folder_height, folder_drop_active, pointer_pos);
+            });
+            let handle_stroke = style::inner_border();
+            ui.painter().line_segment(
+                [handle_rect.center_top(), handle_rect.center_bottom()],
+                handle_stroke,
+            );
+            ui.allocate_ui_at_rect(drop_targets_rect, |ui| {
+                self.render_drop_targets(ui, drop_targets_height);
+            });
             self.controller.ui.sources.drop_targets.height_override = height_override;
             self.controller.ui.sources.drop_targets.resize_origin_height = resize_origin;
 

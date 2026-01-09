@@ -23,9 +23,13 @@ impl EguiApp {
         ui.add_space(6.0);
 
         let drag_payload = self.controller.ui.drag.payload.clone();
-        let drag_active = matches!(
+        let sample_drag_active = matches!(
             drag_payload,
             Some(DragPayload::Sample { .. } | DragPayload::Samples { .. })
+        );
+        let folder_drag_active = matches!(
+            drag_payload,
+            Some(DragPayload::Folder { .. })
         );
         let pointer_pos = pointer_pos_for_drag(ui, self.controller.ui.drag.position);
         let rows = self.controller.ui.sources.drop_targets.rows.clone();
@@ -99,7 +103,7 @@ impl EguiApp {
                         handle_drop_zone(
                             ui,
                             &mut self.controller,
-                            drag_active,
+                            sample_drag_active,
                             pointer_pos,
                             response.rect,
                             DragSource::DropTargets,
@@ -113,6 +117,17 @@ impl EguiApp {
                     }
                 });
         });
+        handle_drop_zone(
+            ui,
+            &mut self.controller,
+            folder_drag_active,
+            pointer_pos,
+            frame_response.response.rect,
+            DragSource::DropTargets,
+            DragTarget::DropTargetsPanel,
+            style::drag_target_stroke(),
+            egui::StrokeKind::Inside,
+        );
         style::paint_section_border(ui, frame_response.response.rect, false);
     }
 

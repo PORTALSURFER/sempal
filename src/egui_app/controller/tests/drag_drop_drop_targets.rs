@@ -53,3 +53,29 @@ fn drop_target_copy_duplicates_sample() {
         entry.relative_path == PathBuf::from("dest/one.wav") && entry.tag == Rating::KEEP_1
     }));
 }
+
+#[test]
+fn drop_target_panel_accepts_folder_drag() {
+    let temp = tempdir().unwrap();
+    let _guard = ConfigBaseGuard::set(temp.path().to_path_buf());
+    let root = temp.path().join("source");
+    let target = root.join("targets");
+    std::fs::create_dir_all(&target).unwrap();
+    let renderer = WaveformRenderer::new(12, 12);
+    let mut controller = EguiController::new(renderer, None);
+    let source = SampleSource::new(root.clone());
+    controller.library.sources.push(source.clone());
+
+    controller.ui.drag.payload = Some(DragPayload::Folder {
+        source_id: source.id.clone(),
+        relative_path: PathBuf::from("targets"),
+    });
+    controller.ui.drag.set_target(DragSource::DropTargets, DragTarget::DropTargetsPanel);
+    controller.finish_active_drag();
+
+    assert_eq!(controller.settings.drop_targets.len(), 1);
+    assert_eq!(
+        controller.settings.drop_targets[0].path,
+        root.join("targets")
+    );
+}

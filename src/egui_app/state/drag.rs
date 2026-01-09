@@ -58,6 +58,7 @@ pub enum DragTarget {
     SourcesRow(SourceId),
     FolderPanel { folder: Option<PathBuf> },
     DropTarget { path: PathBuf },
+    DropTargetsPanel,
     External,
 }
 
@@ -70,6 +71,7 @@ impl DragTarget {
             DragTarget::SourcesRow(_) => 3,
             DragTarget::FolderPanel { .. } => 2,
             DragTarget::DropTarget { .. } => 2,
+            DragTarget::DropTargetsPanel => 2,
             DragTarget::BrowserTriage(_) => 2,
             DragTarget::None => 0,
         }

@@ -150,6 +150,7 @@ impl EguiApp {
 
     fn render_panels(&mut self, ctx: &egui::Context) {
         self.render_status(ctx);
+        self.render_drop_target_status(ctx);
         egui::SidePanel::left("sources")
             .resizable(true)
             .default_width(260.0)
@@ -161,6 +162,28 @@ impl EguiApp {
             ui.set_min_height(ui.available_height());
             self.render_center(ui);
         });
+    }
+
+    fn render_drop_target_status(&mut self, ctx: &egui::Context) {
+        TopBottomPanel::bottom("drop_target_status")
+            .exact_height(22.0)
+            .frame(egui::Frame::default().fill(style::palette().bg_secondary))
+            .show(ctx, |ui| {
+                ui.vertical_centered(|ui| {
+                    let selected = self.controller.ui.sources.drop_targets.selected;
+                    let row = selected.and_then(|index| {
+                        self.controller
+                            .ui
+                            .sources
+                            .drop_targets
+                            .rows
+                            .get(index)
+                    });
+                    if let Some(row) = row {
+                        ui.label(egui::RichText::new(row.path.display().to_string()));
+                    }
+                });
+            });
     }
 
     fn render_overlays(
