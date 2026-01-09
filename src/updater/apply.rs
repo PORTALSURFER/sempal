@@ -207,27 +207,11 @@ fn apply_files_and_dirs(
     root_dir: &Path,
     manifest: &UpdateManifest,
 ) -> Result<(Vec<String>, Vec<String>), UpdateError> {
-    let running_name = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.file_name().map(|s| s.to_owned()));
-
     let mut transaction = fs_ops::UpdateTransaction::new();
     let mut copied = Vec::new();
     for file in manifest.files.iter() {
         let src = root_dir.join(file);
         let dest = ensure_child_path(install_dir, file)?;
-        if running_name.as_deref() == dest.file_name() {
-            let old_dest = dest.with_extension("exe.old");
-            if old_dest.exists() {
-                fs::remove_file(&old_dest)?;
-            }
-            if dest.exists() {
-                fs::rename(&dest, &old_dest)?;
-            }
-            fs::copy(&src, &dest)?;
-            copied.push(file.clone());
-            continue;
-        }
         transaction.stage_file(&src, &dest)?;
         copied.push(file.clone());
     }
@@ -283,6 +267,7 @@ fn channel_label(channel: UpdateChannel) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
     use tempfile::tempdir;
 
     #[test]
@@ -298,5 +283,37 @@ mod tests {
         };
         let err = relaunch_app(tmp.path(), "sempal", &manifest).unwrap_err();
         assert!(err.to_string().contains("Updated executable missing"));
+    }
+
+    #[test]
+    fn apply_files_and_dirs_keeps_running_executable_on_stage_failure() {
+        let tmp = tempdir().unwrap();
+        let install_dir = tmp.path().join("install");
+        let root_dir = tmp.path().join("root");
+        fs::create_dir_all(&install_dir).unwrap();
+        fs::create_dir_all(&root_dir).unwrap();
+
+        let running_name = std::env::current_exe()
+            .unwrap()
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+        let running_dest = install_dir.join(&running_name);
+        fs::write(&running_dest, "old-binary").unwrap();
+
+        let manifest = UpdateManifest {
+            app: "sempal".to_string(),
+            channel: "stable".to_string(),
+            target: "target".to_string(),
+            platform: "linux".to_string(),
+            arch: "x86_64".to_string(),
+            files: vec![running_name.clone()],
+        };
+
+        let _err = apply_files_and_dirs(&install_dir, &root_dir, &manifest).unwrap_err();
+        assert_eq!(fs::read_to_string(&running_dest).unwrap(), "old-binary");
+        assert!(!install_dir.join(format!("{running_name}.old")).exists());
+        assert!(!install_dir.join(format!("{running_name}.new")).exists());
     }
 }
