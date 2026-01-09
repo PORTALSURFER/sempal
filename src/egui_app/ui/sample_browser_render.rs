@@ -1,7 +1,8 @@
 use super::drag_targets;
 use super::flat_items_list::{FlatItemsListConfig, render_flat_items_list};
 use super::helpers::{
-    NumberColumn, RowBackground, RowMarker, clamp_label_for_width, render_list_row,
+    NumberColumn, RowBackground, RowMarker, clamp_label_for_width, loop_badge_space,
+    render_list_row,
 };
 use super::status_badges;
 use super::style;
@@ -76,10 +77,11 @@ impl EguiApp {
                     Some(index) => index,
                     None => return,
                 };
-                let (tag, path, missing, last_played_at) = match self.controller.wav_entry(entry_index) {
+                let (tag, path, looped, missing, last_played_at) = match self.controller.wav_entry(entry_index) {
                     Some(entry) => (
                         entry.tag,
                         entry.relative_path.clone(),
+                        entry.looped,
                         entry.missing,
                         entry.last_played_at,
                     ),
@@ -125,10 +127,12 @@ impl EguiApp {
                 } else {
                     0.0
                 };
+                let loop_space = if looped { loop_badge_space(ui) } else { 0.0 };
                 let trailing_space = indicator_space
                     + triage_marker_width
                         .map(|width| width + metrics.padding * 0.5)
-                        .unwrap_or(0.0);
+                        .unwrap_or(0.0)
+                    + loop_space;
 
                 let mut base_label = self
                     .controller
@@ -212,6 +216,7 @@ impl EguiApp {
                             }),
                             marker: triage_marker,
                             rating: Some(tag),
+                            looped,
                         },
                     );
                     let response = if let Some(hover) = status_label.hover_text.as_deref() {

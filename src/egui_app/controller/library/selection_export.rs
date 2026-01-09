@@ -239,6 +239,7 @@ impl EguiController {
             modified_ns,
             content_hash: None,
             tag: target_tag.unwrap_or(Rating::NEUTRAL),
+            looped: false,
             missing: false,
             last_played_at: None,
         };

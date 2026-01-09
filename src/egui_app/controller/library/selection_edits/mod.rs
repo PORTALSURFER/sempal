@@ -117,6 +117,7 @@ impl EguiController {
                 modified_ns,
                 content_hash: None,
                 tag,
+                looped: false,
                 missing: false,
                 last_played_at: None,
             },
@@ -352,12 +353,14 @@ impl EguiController {
             .map_err(|err| format!("Failed to sync tag: {err}"))?;
         let last_played_at = self
             .sample_last_played_for(&context.source, &context.relative_path)?;
+        let looped = self.sample_looped_for(&context.source, &context.relative_path)?;
         let entry = WavEntry {
             relative_path: context.relative_path.clone(),
             file_size,
             modified_ns,
             content_hash: None,
             tag,
+            looped,
             missing: false,
             last_played_at,
         };

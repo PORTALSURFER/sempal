@@ -70,6 +70,33 @@ impl EguiController {
             .ok_or_else(|| "Sample not found in database".to_string())
     }
 
+    /// Resolve the loop marker state for a sample path, if available.
+    pub(crate) fn sample_looped_for(
+        &mut self,
+        source: &SampleSource,
+        relative_path: &Path,
+    ) -> Result<bool, String> {
+        if let Some(cache) = self.cache.wav.entries.get(&source.id) {
+            if let Some(index) = cache.lookup.get(relative_path).copied()
+                && let Some(entry) = cache.entry(index)
+            {
+                return Ok(entry.looped);
+            }
+        }
+        if self.selection_state.ctx.selected_source.as_ref() == Some(&source.id)
+            && let Some(index) = self.wav_index_for_path(relative_path)
+            && let Some(entry) = self.wav_entries.entry(index)
+        {
+            return Ok(entry.looped);
+        }
+        let db = self
+            .database_for(source)
+            .map_err(|err| format!("Database unavailable: {err}"))?;
+        db.looped_for_path(relative_path)
+            .map_err(|err| format!("Failed to read database: {err}"))?
+            .ok_or_else(|| "Sample not found in database".to_string())
+    }
+
     /// Resolve the last played timestamp for a sample path, if available.
     pub(crate) fn sample_last_played_for(
         &mut self,

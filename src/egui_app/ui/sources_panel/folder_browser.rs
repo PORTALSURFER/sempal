@@ -128,6 +128,7 @@ impl EguiApp {
                         }),
                         marker: None,
                         rating: None,
+                        looped: false,
                     },
                 );
                 if sample_parent_folders.contains(&root_row.path) {
@@ -300,6 +301,7 @@ impl EguiApp {
                             }),
                             marker: None,
                             rating: None,
+                            looped: false,
                         },
                     );
                     let started_drag = if !rename_match

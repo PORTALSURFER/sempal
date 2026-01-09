@@ -30,6 +30,7 @@ impl EguiController {
         let result: Result<(), String> = (|| {
             let ctx = self.resolve_collection_sample(row)?;
             let tag = self.sample_tag_for(&ctx.source, &ctx.member.relative_path)?;
+            let looped = self.sample_looped_for(&ctx.source, &ctx.member.relative_path)?;
             let last_played_at = self
                 .sample_last_played_for(&ctx.source, &ctx.member.relative_path)?;
             let full_name =
@@ -46,6 +47,7 @@ impl EguiController {
                     modified_ns,
                     content_hash: None,
                     tag,
+                    looped,
                     missing: false,
                     last_played_at,
                 },
@@ -124,6 +126,7 @@ impl EguiController {
             let ctx = self.resolve_collection_sample(row)?;
             let (file_size, modified_ns, tag) = self.normalize_and_save(&ctx)?;
             self.upsert_metadata(&ctx, file_size, modified_ns)?;
+            let looped = self.sample_looped_for(&ctx.source, &ctx.member.relative_path)?;
             let last_played_at = self
                 .sample_last_played_for(&ctx.source, &ctx.member.relative_path)?;
             self.update_cached_entry(
@@ -135,6 +138,7 @@ impl EguiController {
                     modified_ns,
                     content_hash: None,
                     tag,
+                    looped,
                     missing: false,
                     last_played_at,
                 },

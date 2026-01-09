@@ -372,5 +372,16 @@ impl EguiController {
         selection_ops::set_sample_tag_for_source(self, source, path, target_tag, require_present)
     }
 
+    /// Update the loop marker for a sample path within a specific source.
+    pub(crate) fn set_sample_looped_for_source(
+        &mut self,
+        source: &SampleSource,
+        path: &Path,
+        looped: bool,
+        require_present: bool,
+    ) -> Result<(), String> {
+        selection_ops::set_sample_looped_for_source(self, source, path, looped, require_present)
+    }
+
     // waveform loading helpers moved to `waveform_loading` submodule.
 }

@@ -23,8 +23,8 @@ impl SourceDatabase {
         let mut stmt = self
             .connection
             .prepare_cached(
-                "INSERT INTO wav_files (path, file_size, modified_ns, tag, missing, extension)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                "INSERT INTO wav_files (path, file_size, modified_ns, tag, looped, missing, extension)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
                  ON CONFLICT(path) DO UPDATE SET file_size = excluded.file_size,
                                                 modified_ns = excluded.modified_ns,
                                                 missing = excluded.missing,
@@ -36,6 +36,7 @@ impl SourceDatabase {
             file_size as i64,
             modified_ns,
             Rating::NEUTRAL.as_i64(),
+            0i64,
             0i64,
             extension
         ])
@@ -49,6 +50,20 @@ impl SourceDatabase {
     #[allow(dead_code)]
     pub fn set_tag(&self, relative_path: &Path, tag: Rating) -> Result<(), SourceDbError> {
         self.set_tags_batch(&[(relative_path.to_path_buf(), tag)])
+    }
+
+    /// Persist a loop marker for a single wav file by relative path.
+    pub fn set_looped(&self, relative_path: &Path, looped: bool) -> Result<(), SourceDbError> {
+        let path = normalize_relative_path(relative_path)?;
+        let flag = if looped { 1i64 } else { 0i64 };
+        self.connection
+            .execute(
+                "UPDATE wav_files SET looped = ?1 WHERE path = ?2",
+                params![flag, path],
+            )
+            .map_err(map_sql_error)?;
+        Self::bump_revision(&self.connection)?;
+        Ok(())
     }
 
     /// Persist multiple tag changes in one transaction, coalescing SQLite work.
@@ -145,8 +160,8 @@ impl<'conn> SourceWriteBatch<'conn> {
             .to_lowercase();
         self.tx
             .prepare_cached(
-                "INSERT INTO wav_files (path, file_size, modified_ns, tag, missing, extension)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                "INSERT INTO wav_files (path, file_size, modified_ns, tag, looped, missing, extension)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
                  ON CONFLICT(path) DO UPDATE SET file_size = excluded.file_size,
                                                 modified_ns = excluded.modified_ns,
                                                 missing = excluded.missing,
@@ -158,6 +173,7 @@ impl<'conn> SourceWriteBatch<'conn> {
                 file_size as i64,
                 modified_ns,
                 Rating::NEUTRAL.as_i64(),
+                0i64,
                 0i64,
                 extension
             ])
@@ -180,8 +196,8 @@ impl<'conn> SourceWriteBatch<'conn> {
             .to_lowercase();
         self.tx
             .prepare_cached(
-                "INSERT INTO wav_files (path, file_size, modified_ns, content_hash, tag, missing, extension)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                "INSERT INTO wav_files (path, file_size, modified_ns, content_hash, tag, looped, missing, extension)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
                  ON CONFLICT(path) DO UPDATE SET file_size = excluded.file_size,
                                                 modified_ns = excluded.modified_ns,
                                                 content_hash = excluded.content_hash,
@@ -195,6 +211,7 @@ impl<'conn> SourceWriteBatch<'conn> {
                 modified_ns,
                 content_hash,
                 Rating::NEUTRAL.as_i64(),
+                0i64,
                 0i64,
                 extension
             ])
@@ -220,8 +237,8 @@ impl<'conn> SourceWriteBatch<'conn> {
         let flag = if missing { 1i64 } else { 0i64 };
         self.tx
             .prepare_cached(
-                "INSERT INTO wav_files (path, file_size, modified_ns, content_hash, tag, missing, extension)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                "INSERT INTO wav_files (path, file_size, modified_ns, content_hash, tag, looped, missing, extension)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
                  ON CONFLICT(path) DO UPDATE SET file_size = excluded.file_size,
                                                 modified_ns = excluded.modified_ns,
                                                 content_hash = excluded.content_hash,
@@ -236,6 +253,7 @@ impl<'conn> SourceWriteBatch<'conn> {
                 modified_ns,
                 content_hash,
                 tag.as_i64(),
+                0i64,
                 flag,
                 extension
             ])
@@ -250,6 +268,18 @@ impl<'conn> SourceWriteBatch<'conn> {
             .prepare_cached("UPDATE wav_files SET tag = ?1 WHERE path = ?2")
             .map_err(map_sql_error)?
             .execute(params![tag.as_i64(), path])
+            .map_err(map_sql_error)?;
+        Ok(())
+    }
+
+    /// Update the loop marker for a wav row within the batch.
+    pub fn set_looped(&mut self, relative_path: &Path, looped: bool) -> Result<(), SourceDbError> {
+        let path = normalize_relative_path(relative_path)?;
+        let flag = if looped { 1i64 } else { 0i64 };
+        self.tx
+            .prepare_cached("UPDATE wav_files SET looped = ?1 WHERE path = ?2")
+            .map_err(map_sql_error)?
+            .execute(params![flag, path])
             .map_err(map_sql_error)?;
         Ok(())
     }

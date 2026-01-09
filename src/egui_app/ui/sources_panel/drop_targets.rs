@@ -105,6 +105,7 @@ impl EguiApp {
                                 number: None,
                                 marker,
                                 rating: None,
+                                looped: false,
                             },
                         )
                         .on_hover_text(row.path.display().to_string());

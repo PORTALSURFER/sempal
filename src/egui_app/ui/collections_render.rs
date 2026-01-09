@@ -107,6 +107,7 @@ impl EguiApp {
                                     }),
                                     marker: None,
                                     rating: None,
+                                    looped: false,
                                 },
                             );
                             if is_drag_hover {
@@ -319,6 +320,7 @@ impl EguiApp {
                                 }),
                                 marker: triage_marker,
                                 rating: Some(sample.tag),
+                                looped: false,
                             },
                         );
                         if is_selected {

@@ -86,6 +86,9 @@ pub struct WavEntry {
     pub modified_ns: i64,
     pub content_hash: Option<String>,
     pub tag: Rating,
+    /// True when the sample is marked as a loop for quick filtering in the UI.
+    #[serde(default)]
+    pub looped: bool,
     pub missing: bool,
     /// Epoch seconds of the most recent playback, if any.
     #[serde(default)]
@@ -195,11 +198,13 @@ mod tests {
 
         let first = db.list_files().unwrap();
         assert_eq!(first[0].tag, Rating::NEUTRAL);
+        assert!(!first[0].looped);
         assert!(!first[0].missing);
 
         db.set_tag(Path::new("one.wav"), Rating::KEEP_1).unwrap();
         let second = db.list_files().unwrap();
         assert_eq!(second[0].tag, Rating::KEEP_1);
+        assert!(!second[0].looped);
         assert!(!second[0].missing);
 
         db.upsert_file(Path::new("one.wav"), 12, 6).unwrap();
@@ -210,7 +215,30 @@ mod tests {
         let reopened = SourceDatabase::open(dir.path()).unwrap();
         let fourth = reopened.list_files().unwrap();
         assert_eq!(fourth[0].tag, Rating::KEEP_1);
+        assert!(!fourth[0].looped);
         assert!(!fourth[0].missing);
+    }
+
+    #[test]
+    fn loop_markers_default_and_persist() {
+        let dir = tempdir().unwrap();
+        let db = SourceDatabase::open(dir.path()).unwrap();
+        db.upsert_file(Path::new("loop.wav"), 10, 5).unwrap();
+
+        let first = db.list_files().unwrap();
+        assert!(!first[0].looped);
+
+        db.set_looped(Path::new("loop.wav"), true).unwrap();
+        let second = db.list_files().unwrap();
+        assert!(second[0].looped);
+
+        db.upsert_file(Path::new("loop.wav"), 12, 6).unwrap();
+        let third = db.list_files().unwrap();
+        assert!(third[0].looped);
+
+        let reopened = SourceDatabase::open(dir.path()).unwrap();
+        let fourth = reopened.list_files().unwrap();
+        assert!(fourth[0].looped);
     }
 
     #[test]

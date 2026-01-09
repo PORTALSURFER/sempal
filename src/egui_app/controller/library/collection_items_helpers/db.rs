@@ -54,6 +54,10 @@ impl EguiController {
         let last_played_at = db
             .last_played_at_for_path(old_relative)
             .map_err(|err| format!("Failed to load playback age: {err}"))?;
+        let looped = db
+            .looped_for_path(old_relative)
+            .map_err(|err| format!("Failed to load loop marker: {err}"))?
+            .unwrap_or(false);
         let mut batch = db
             .write_batch()
             .map_err(|err| format!("Failed to start database update: {err}"))?;
@@ -66,6 +70,9 @@ impl EguiController {
         batch
             .set_tag(new_relative, tag)
             .map_err(|err| format!("Failed to copy tag: {err}"))?;
+        batch
+            .set_looped(new_relative, looped)
+            .map_err(|err| format!("Failed to copy loop marker: {err}"))?;
         if let Some(last_played_at) = last_played_at {
             batch
                 .set_last_played_at(new_relative, last_played_at)

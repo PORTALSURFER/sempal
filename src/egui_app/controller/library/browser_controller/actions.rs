@@ -12,6 +12,12 @@ pub(crate) trait BrowserActions {
         tag: crate::sample_sources::Rating,
         primary_visible_row: usize,
     ) -> Result<(), String>;
+    fn set_loop_marker_browser_samples(
+        &mut self,
+        rows: &[usize],
+        looped: bool,
+        primary_visible_row: usize,
+    ) -> Result<(), String>;
     fn normalize_browser_sample(&mut self, row: usize) -> Result<(), String>;
     fn normalize_browser_samples(&mut self, rows: &[usize]) -> Result<(), String>;
     fn loop_crossfade_browser_samples(
@@ -69,6 +75,38 @@ impl BrowserActions for BrowserController<'_> {
         self.refocus_after_filtered_removal(primary_visible_row);
         if let Some(err) = last_error {
             warn!(?rows, ?tag, error = %err, "triage tag failed for multi row");
+            Err(err)
+        } else {
+            Ok(())
+        }
+    }
+
+    fn set_loop_marker_browser_samples(
+        &mut self,
+        rows: &[usize],
+        looped: bool,
+        primary_visible_row: usize,
+    ) -> Result<(), String> {
+        let (contexts, mut last_error) = self.resolve_unique_browser_contexts(rows);
+        let action_label = if looped { "Marked loop" } else { "Cleared loop" };
+        for ctx in contexts {
+            if let Err(err) = self.set_sample_looped_for_source(
+                &ctx.source,
+                &ctx.entry.relative_path,
+                looped,
+                true,
+            ) {
+                last_error = Some(err);
+            } else {
+                self.set_status(
+                    format!("{action_label} {}", ctx.entry.relative_path.display()),
+                    StatusTone::Info,
+                );
+            }
+        }
+        self.refocus_after_filtered_removal(primary_visible_row);
+        if let Some(err) = last_error {
+            warn!(?rows, looped, error = %err, "loop marker failed for multi row");
             Err(err)
         } else {
             Ok(())

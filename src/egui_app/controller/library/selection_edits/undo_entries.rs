@@ -98,6 +98,7 @@ impl EguiController {
                 let last_played_at = controller
                     .sample_last_played_for(&source, &redo_relative)
                     .unwrap_or(None);
+                let looped = controller.sample_looped_for(&source, &redo_relative).unwrap_or(false);
                 controller.insert_cached_entry(
                     &source,
                     WavEntry {
@@ -106,6 +107,7 @@ impl EguiController {
                         modified_ns,
                         content_hash: None,
                         tag,
+                        looped,
                         missing: false,
                         last_played_at,
                     },
@@ -133,6 +135,7 @@ impl EguiController {
         let absolute_path = source.root.join(relative_path);
         let (file_size, modified_ns) = file_metadata(&absolute_path)?;
         let tag = self.sample_tag_for(&source, relative_path)?;
+        let looped = self.sample_looped_for(&source, relative_path)?;
         let last_played_at = self.sample_last_played_for(&source, relative_path)?;
         let entry = WavEntry {
             relative_path: relative_path.to_path_buf(),
@@ -140,6 +143,7 @@ impl EguiController {
             modified_ns,
             content_hash: None,
             tag,
+            looped,
             missing: false,
             last_played_at,
         };

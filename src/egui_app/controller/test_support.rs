@@ -23,6 +23,7 @@ pub(super) fn sample_entry(name: &str, tag: crate::sample_sources::Rating) -> Wa
         modified_ns: 0,
         content_hash: None,
         tag,
+        looped: false,
         missing: false,
         last_played_at: None,
     }

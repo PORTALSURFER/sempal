@@ -18,6 +18,7 @@ fn selecting_missing_sample_sets_waveform_notice() {
         modified_ns: 1,
         content_hash: None,
         tag: crate::sample_sources::Rating::NEUTRAL,
+        looped: false,
         missing: true,
         last_played_at: None,
     }]);
@@ -48,6 +49,7 @@ fn collection_views_flag_missing_members() {
         modified_ns: 1,
         content_hash: None,
         tag: crate::sample_sources::Rating::NEUTRAL,
+        looped: false,
         missing: true,
         last_played_at: None,
     }]);
@@ -95,6 +97,7 @@ fn read_failure_marks_sample_missing() {
         modified_ns: 1,
         content_hash: None,
         tag: crate::sample_sources::Rating::NEUTRAL,
+        looped: false,
         missing: false,
         last_played_at: None,
     }]);
@@ -151,6 +154,7 @@ fn apply_wav_entries_updates_missing_lookup() {
             modified_ns: 1,
             content_hash: None,
             tag: crate::sample_sources::Rating::NEUTRAL,
+            looped: false,
             missing: false,
             last_played_at: None,
         },
@@ -160,6 +164,7 @@ fn apply_wav_entries_updates_missing_lookup() {
             modified_ns: 1,
             content_hash: None,
             tag: crate::sample_sources::Rating::NEUTRAL,
+            looped: false,
             missing: true,
             last_played_at: None,
         },
@@ -315,6 +320,7 @@ fn mark_missing_updates_cache_db_and_missing_set_when_inactive() {
             modified_ns: 1,
             content_hash: None,
             tag: crate::sample_sources::Rating::NEUTRAL,
+            looped: false,
             missing: false,
             last_played_at: None,
         }],

@@ -163,12 +163,14 @@ impl HotkeysController<'_> {
         let last_played_at = self
             .sample_last_played_for(&source, &relative_path)
             .unwrap_or(None);
+        let looped = self.sample_looped_for(&source, &relative_path).unwrap_or(false);
         let updated = WavEntry {
             relative_path: relative_path.clone(),
             file_size,
             modified_ns,
             content_hash: None,
             tag,
+            looped,
             missing: false,
             last_played_at,
         };

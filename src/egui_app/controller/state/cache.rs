@@ -234,6 +234,7 @@ mod tests {
             modified_ns: 0,
             content_hash: None,
             tag: crate::sample_sources::Rating::NEUTRAL,
+            looped: false,
             missing: false,
             last_played_at: None,
         }]);
@@ -244,6 +245,7 @@ mod tests {
             modified_ns: 100,
             content_hash: None,
             tag: crate::sample_sources::Rating::KEEP_1,
+            looped: false,
             missing: false,
             last_played_at: None,
         };

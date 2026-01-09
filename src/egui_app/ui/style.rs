@@ -232,6 +232,16 @@ pub fn triage_label_color(tag: Rating) -> Color32 {
     }
 }
 
+/// Fill color for the loop marker badge shown in the sample browser list.
+pub fn loop_badge_fill() -> Color32 {
+    palette().accent_copper
+}
+
+/// Text color for the loop marker badge shown in the sample browser list.
+pub fn loop_badge_text() -> Color32 {
+    high_contrast_text()
+}
+
 /// Text colour representing the playback age bucket for a sample.
 pub fn playback_age_label_color(last_played_at: Option<i64>, now_epoch: i64) -> Color32 {
     const WEEK_SECS: i64 = 60 * 60 * 24 * 7;

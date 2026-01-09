@@ -52,6 +52,7 @@ impl EguiApp {
                                 number: None,
                                 marker: None,
                                 rating: None,
+                                looped: false,
                             },
                         )
                         .on_hover_text(&row.path);

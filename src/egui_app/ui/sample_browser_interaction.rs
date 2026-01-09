@@ -168,6 +168,51 @@ impl EguiApp {
                     .tag_browser_samples(&action_rows, tag, row)
                     .is_ok()
             });
+            let (selected_looped, selected_total) = action_rows.iter().copied().fold(
+                (0usize, 0usize),
+                |(looped, total), visible_row| {
+                    let entry = self
+                        .controller
+                        .visible_browser_index(visible_row)
+                        .and_then(|entry_idx| self.controller.wav_entry(entry_idx));
+                    if let Some(entry) = entry {
+                        let next_looped = looped + usize::from(entry.looped);
+                        (next_looped, total + 1)
+                    } else {
+                        (looped, total)
+                    }
+                },
+            );
+            let any_looped = selected_looped > 0;
+            let all_looped = selected_total > 0 && selected_looped == selected_total;
+            if ui
+                .add_enabled(!all_looped, egui::Button::new("Mark as Loop"))
+                .clicked()
+            {
+                if let Err(err) =
+                    self.controller
+                        .set_loop_marker_browser_samples(&action_rows, true, row)
+                {
+                    self.controller
+                        .set_status(format!("Loop marker failed: {err}"), StatusTone::Error);
+                } else {
+                    close_menu = true;
+                }
+            }
+            if ui
+                .add_enabled(any_looped, egui::Button::new("Clear Loop Marker"))
+                .clicked()
+            {
+                if let Err(err) =
+                    self.controller
+                        .set_loop_marker_browser_samples(&action_rows, false, row)
+                {
+                    self.controller
+                        .set_status(format!("Loop marker failed: {err}"), StatusTone::Error);
+                } else {
+                    close_menu = true;
+                }
+            }
             if ui
                 .button("Normalize (overwrite)")
                 .on_hover_text("Scale to full range and overwrite the wav")

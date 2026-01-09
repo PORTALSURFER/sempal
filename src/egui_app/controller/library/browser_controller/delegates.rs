@@ -19,6 +19,17 @@ impl EguiController {
             .tag_browser_samples(rows, tag, primary_visible_row)
     }
 
+    /// Apply or clear loop markers for multiple visible browser rows.
+    pub fn set_loop_marker_browser_samples(
+        &mut self,
+        rows: &[usize],
+        looped: bool,
+        primary_visible_row: usize,
+    ) -> Result<(), String> {
+        self.browser()
+            .set_loop_marker_browser_samples(rows, looped, primary_visible_row)
+    }
+
     /// Normalize a single visible browser row in-place (overwrites audio).
     pub fn normalize_browser_sample(&mut self, row: usize) -> Result<(), String> {
         self.browser().normalize_browser_sample(row)

@@ -79,6 +79,7 @@ impl BrowserController<'_> {
             modified_ns,
             content_hash: None,
             tag,
+            looped: ctx.entry.looped,
             missing: false,
             last_played_at: ctx.entry.last_played_at,
         };
@@ -236,6 +237,7 @@ impl BrowserController<'_> {
                 modified_ns,
                 content_hash: None,
                 tag,
+                looped: ctx.entry.looped,
                 missing: false,
                 last_played_at: ctx.entry.last_played_at,
             },

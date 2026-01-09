@@ -16,6 +16,7 @@ pub(super) fn apply_schema(connection: &Connection) -> Result<(), SourceDbError>
                 file_size INTEGER NOT NULL,
                 modified_ns INTEGER NOT NULL,
                 tag INTEGER NOT NULL DEFAULT 0,
+                looped INTEGER NOT NULL DEFAULT 0,
                 missing INTEGER NOT NULL DEFAULT 0,
                 extension TEXT NOT NULL DEFAULT '',
                 last_played_at INTEGER
@@ -169,6 +170,14 @@ fn ensure_wav_files_optional_columns(connection: &Connection) -> Result<(), Sour
         connection
             .execute(
                 "ALTER TABLE wav_files ADD COLUMN missing INTEGER NOT NULL DEFAULT 0",
+                [],
+            )
+            .map_err(map_sql_error)?;
+    }
+    if !columns.contains("looped") {
+        connection
+            .execute(
+                "ALTER TABLE wav_files ADD COLUMN looped INTEGER NOT NULL DEFAULT 0",
                 [],
             )
             .map_err(map_sql_error)?;

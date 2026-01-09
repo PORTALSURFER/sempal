@@ -62,6 +62,7 @@ impl EguiApp {
                 number: None,
                 marker: None,
                 rating: None,
+                looped: false,
             },
         );
         let padding = ui.spacing().button_padding.x;

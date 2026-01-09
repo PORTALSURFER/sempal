@@ -72,6 +72,13 @@ impl DragDropController<'_> {
                 return;
             }
         };
+        let looped = match self.sample_looped_for(&source, &relative_path) {
+            Ok(looped) => looped,
+            Err(err) => {
+                self.set_status(err, StatusTone::Error);
+                return;
+            }
+        };
         let last_played_at = self
             .sample_last_played_for(&source, &relative_path)
             .unwrap_or(None);
@@ -83,6 +90,7 @@ impl DragDropController<'_> {
                 &target.relative_folder,
                 &file_name,
                 tag,
+                looped,
                 last_played_at,
             ) {
                 Ok(path) => {
@@ -126,6 +134,7 @@ impl DragDropController<'_> {
             file_size,
             modified_ns,
             tag,
+            looped,
             last_played_at,
         ) {
             let _ = super::source_moves::move_sample_file(&destination_absolute, &absolute);
@@ -144,6 +153,7 @@ impl DragDropController<'_> {
             modified_ns,
             content_hash: None,
             tag,
+            looped,
             missing: false,
             last_played_at,
         };
@@ -206,6 +216,7 @@ fn copy_sample_to_target(
     target_folder: &Path,
     file_name: &std::ffi::OsStr,
     tag: Rating,
+    looped: bool,
     last_played_at: Option<i64>,
 ) -> Result<PathBuf, String> {
     let destination_relative =
@@ -238,6 +249,7 @@ fn copy_sample_to_target(
         file_size,
         modified_ns,
         tag,
+        looped,
         last_played_at,
     ) {
         let _ = std::fs::remove_file(&destination_absolute);
@@ -249,6 +261,7 @@ fn copy_sample_to_target(
         modified_ns,
         content_hash: None,
         tag,
+        looped,
         missing: false,
         last_played_at,
     };

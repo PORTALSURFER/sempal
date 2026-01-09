@@ -72,6 +72,24 @@ pub(super) fn clamp_label_for_width(text: &str, available_width: f32) -> String 
     clipped
 }
 
+const LOOP_BADGE_TEXT: &str = "LOOP";
+const LOOP_BADGE_PADDING_X: f32 = 6.0;
+const LOOP_BADGE_PADDING_Y: f32 = 2.0;
+const LOOP_BADGE_GAP: f32 = 6.0;
+
+/// Return the horizontal space needed for the loop badge, including the gap.
+pub(super) fn loop_badge_space(ui: &Ui) -> f32 {
+    let font_id = TextStyle::Button.resolve(ui.style());
+    let text_width = ui
+        .ctx()
+        .fonts_mut(|fonts| {
+            fonts.layout_no_wrap(LOOP_BADGE_TEXT.to_string(), font_id, Color32::WHITE)
+        })
+        .size()
+        .x;
+    LOOP_BADGE_GAP + text_width + LOOP_BADGE_PADDING_X * 2.0
+}
+
 pub(super) struct ListRow<'a> {
     pub label: &'a str,
     pub row_width: f32,
@@ -83,6 +101,7 @@ pub(super) struct ListRow<'a> {
     pub number: Option<NumberColumn<'a>>,
     pub marker: Option<RowMarker>,
     pub rating: Option<Rating>,
+    pub looped: bool,
 }
 
 pub(super) fn render_list_row(ui: &mut Ui, row: ListRow<'_>) -> egui::Response {
@@ -159,9 +178,40 @@ pub(super) fn render_list_row(ui: &mut Ui, row: ListRow<'_>) -> egui::Response {
         egui::pos2(label_x, rect.center().y),
         Align2::LEFT_CENTER,
         row.label,
-        font_id,
+        font_id.clone(),
         row.text_color,
     );
+    let mut trailing_x = label_rect.right();
+    if row.looped {
+        let badge_galley = ui.ctx().fonts_mut(|fonts| {
+            fonts.layout_no_wrap(
+                LOOP_BADGE_TEXT.to_string(),
+                font_id.clone(),
+                style::high_contrast_text(),
+            )
+        });
+        let badge_min = egui::pos2(
+            trailing_x + LOOP_BADGE_GAP,
+            rect.center().y - badge_galley.size().y * 0.5 - LOOP_BADGE_PADDING_Y,
+        );
+        let badge_rect = egui::Rect::from_min_size(
+            badge_min,
+            egui::vec2(
+                badge_galley.size().x + LOOP_BADGE_PADDING_X * 2.0,
+                badge_galley.size().y + LOOP_BADGE_PADDING_Y * 2.0,
+            ),
+        );
+        ui.painter()
+            .rect_filled(badge_rect, 0.0, style::loop_badge_fill());
+        ui.painter().text(
+            badge_rect.center(),
+            Align2::CENTER_CENTER,
+            LOOP_BADGE_TEXT,
+            font_id.clone(),
+            style::loop_badge_text(),
+        );
+        trailing_x = badge_rect.right();
+    }
     if let Some(rating) = row.rating {
         if !rating.is_neutral() {
             let count = rating.val().abs();
@@ -173,7 +223,7 @@ pub(super) fn render_list_row(ui: &mut Ui, row: ListRow<'_>) -> egui::Response {
 
             let square_size = 6.0;
             let spacing = 3.0;
-            let start_x = label_rect.right() + 6.0;
+            let start_x = trailing_x + 6.0;
             let y = rect.center().y - square_size * 0.5;
 
             for i in 0..count {

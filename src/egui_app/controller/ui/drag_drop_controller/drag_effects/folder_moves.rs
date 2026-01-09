@@ -111,6 +111,18 @@ impl DragDropController<'_> {
                 return;
             }
         };
+        let looped = match self.sample_looped_for(&source, &relative_path) {
+            Ok(looped) => looped,
+            Err(err) => {
+                warn!(
+                    "Folder move aborted: failed to resolve loop marker for {}: {}",
+                    relative_path.display(),
+                    err
+                );
+                self.set_status(err, StatusTone::Error);
+                return;
+            }
+        };
         if let Err(err) = std::fs::rename(&absolute, &target_absolute)
             .map_err(|err| format!("Failed to move file: {err}"))
         {
@@ -163,6 +175,7 @@ impl DragDropController<'_> {
             modified_ns,
             content_hash: None,
             tag,
+            looped,
             missing: false,
             last_played_at,
         };
