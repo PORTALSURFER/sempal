@@ -12,6 +12,29 @@ use super::{CHECKSUMS_PUBLIC_KEY_BASE64, UpdateError, github};
 const MAX_CHECKSUM_BYTES: usize = 1024 * 1024;
 const MAX_RELEASE_ASSET_BYTES: usize = 1024 * 1024 * 1024;
 const MAX_SIGNATURE_BYTES: usize = 8 * 1024;
+const MAX_ZIP_ENTRIES: usize = 10_000;
+const MAX_ZIP_ENTRY_UNCOMPRESSED_BYTES: u64 = 512 * 1024 * 1024;
+const MAX_ZIP_TOTAL_UNCOMPRESSED_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+const MAX_ZIP_COMPRESSION_RATIO: u64 = 200;
+
+#[derive(Clone, Copy)]
+struct ZipExtractionLimits {
+    max_entries: usize,
+    max_entry_uncompressed_bytes: u64,
+    max_total_uncompressed_bytes: u64,
+    max_compression_ratio: u64,
+}
+
+impl ZipExtractionLimits {
+    fn standard() -> Self {
+        Self {
+            max_entries: MAX_ZIP_ENTRIES,
+            max_entry_uncompressed_bytes: MAX_ZIP_ENTRY_UNCOMPRESSED_BYTES,
+            max_total_uncompressed_bytes: MAX_ZIP_TOTAL_UNCOMPRESSED_BYTES,
+            max_compression_ratio: MAX_ZIP_COMPRESSION_RATIO,
+        }
+    }
+}
 
 pub(super) fn download_text(url: &str) -> Result<Vec<u8>, UpdateError> {
     let response = http_client::agent()
@@ -131,13 +154,64 @@ pub(super) fn verify_zip_checksum(path: &Path, expected: &str) -> Result<(), Upd
 }
 
 pub(super) fn unzip_to_dir(zip_path: &Path, dest_dir: &Path) -> Result<(), UpdateError> {
+    unzip_to_dir_with_limits(zip_path, dest_dir, ZipExtractionLimits::standard())
+}
+
+fn unzip_to_dir_with_limits(
+    zip_path: &Path,
+    dest_dir: &Path,
+    limits: ZipExtractionLimits,
+) -> Result<(), UpdateError> {
     let file = File::open(zip_path)?;
     let mut archive =
         zip::ZipArchive::new(file).map_err(|err| UpdateError::Zip(err.to_string()))?;
-    for i in 0..archive.len() {
+    let entry_count = archive.len();
+    if entry_count > limits.max_entries {
+        return Err(UpdateError::Invalid(format!(
+            "Archive has {entry_count} entries, limit is {}",
+            limits.max_entries
+        )));
+    }
+    let mut total_uncompressed: u64 = 0;
+    for i in 0..entry_count {
         let mut entry = archive
             .by_index(i)
             .map_err(|err| UpdateError::Zip(err.to_string()))?;
+        let uncompressed_size = entry.size();
+        if uncompressed_size > limits.max_entry_uncompressed_bytes {
+            return Err(UpdateError::Invalid(format!(
+                "Archive entry '{}' is too large ({} bytes, limit {})",
+                entry.name(),
+                uncompressed_size,
+                limits.max_entry_uncompressed_bytes
+            )));
+        }
+        if uncompressed_size > 0 {
+            let compressed_size = entry.compressed_size();
+            if compressed_size == 0 {
+                return Err(UpdateError::Invalid(format!(
+                    "Archive entry '{}' has zero compressed size",
+                    entry.name()
+                )));
+            }
+            let max_uncompressed =
+                compressed_size.saturating_mul(limits.max_compression_ratio);
+            if uncompressed_size > max_uncompressed {
+                return Err(UpdateError::Invalid(format!(
+                    "Archive entry '{}' exceeds compression ratio limit",
+                    entry.name()
+                )));
+            }
+        }
+        total_uncompressed = total_uncompressed
+            .checked_add(uncompressed_size)
+            .ok_or_else(|| UpdateError::Invalid("Archive size overflow".into()))?;
+        if total_uncompressed > limits.max_total_uncompressed_bytes {
+            return Err(UpdateError::Invalid(format!(
+                "Archive extracted size {} exceeds limit {}",
+                total_uncompressed, limits.max_total_uncompressed_bytes
+            )));
+        }
         let outpath = match entry.enclosed_name() {
             Some(path) => dest_dir.join(path),
             None => continue,
@@ -186,6 +260,23 @@ pub(super) fn download_release_asset_bytes(
 mod tests {
     use super::*;
     use ed25519_dalek::{Signer, SigningKey};
+    use std::io::Write;
+    use tempfile::tempdir;
+
+    fn write_zip(path: &Path, entries: &[(&str, &[u8])]) -> Result<(), UpdateError> {
+        let file = File::create(path)?;
+        let mut zip = zip::ZipWriter::new(file);
+        let options =
+            zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+        for (name, data) in entries {
+            zip.start_file(name, options)
+                .map_err(|err| UpdateError::Zip(err.to_string()))?;
+            zip.write_all(data)?;
+        }
+        zip.finish()
+            .map_err(|err| UpdateError::Zip(err.to_string()))?;
+        Ok(())
+    }
 
     #[test]
     fn verify_checksums_signature_rejects_invalid_signature() {
@@ -243,5 +334,61 @@ mod tests {
             .encode(signing_key.verifying_key().to_bytes());
         verify_checksums_signature_with_key(checksums, signature_text.as_bytes(), &public_key_text)
             .expect("signature should verify");
+    }
+
+    #[test]
+    fn unzip_rejects_entry_over_size_limit() {
+        let temp = tempdir().expect("tempdir");
+        let zip_path = temp.path().join("oversize.zip");
+        write_zip(&zip_path, &[("big.bin", &[1u8; 8])]).expect("zip write");
+        let limits = ZipExtractionLimits {
+            max_entries: 10,
+            max_entry_uncompressed_bytes: 4,
+            max_total_uncompressed_bytes: 100,
+            max_compression_ratio: 100,
+        };
+        let err =
+            unzip_to_dir_with_limits(&zip_path, temp.path().join("out").as_path(), limits)
+                .unwrap_err();
+        assert!(err.to_string().contains("too large"));
+    }
+
+    #[test]
+    fn unzip_rejects_total_uncompressed_over_limit() {
+        let temp = tempdir().expect("tempdir");
+        let zip_path = temp.path().join("total.zip");
+        write_zip(
+            &zip_path,
+            &[("a.txt", &[1u8; 6]), ("b.txt", &[2u8; 6])],
+        )
+        .expect("zip write");
+        let limits = ZipExtractionLimits {
+            max_entries: 10,
+            max_entry_uncompressed_bytes: 10,
+            max_total_uncompressed_bytes: 10,
+            max_compression_ratio: 100,
+        };
+        let err =
+            unzip_to_dir_with_limits(&zip_path, temp.path().join("out").as_path(), limits)
+                .unwrap_err();
+        assert!(err.to_string().contains("exceeds limit"));
+    }
+
+    #[test]
+    fn unzip_rejects_suspicious_compression_ratio() {
+        let temp = tempdir().expect("tempdir");
+        let zip_path = temp.path().join("ratio.zip");
+        let data = vec![b'a'; 2048];
+        write_zip(&zip_path, &[("dense.txt", data.as_slice())]).expect("zip write");
+        let limits = ZipExtractionLimits {
+            max_entries: 10,
+            max_entry_uncompressed_bytes: 10_000,
+            max_total_uncompressed_bytes: 10_000,
+            max_compression_ratio: 2,
+        };
+        let err =
+            unzip_to_dir_with_limits(&zip_path, temp.path().join("out").as_path(), limits)
+                .unwrap_err();
+        assert!(err.to_string().contains("compression ratio"));
     }
 }
