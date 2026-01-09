@@ -66,7 +66,7 @@ mod platform {
         OpenClipboard, RegisterClipboardFormatW, SetClipboardData,
     };
     use windows::Win32::System::Memory::{
-        GMEM_MOVEABLE, GMEM_ZEROINIT, GlobalAlloc, GlobalLock, GlobalUnlock,
+        GMEM_MOVEABLE, GMEM_ZEROINIT, GlobalAlloc, GlobalLock, GlobalSize, GlobalUnlock,
     };
     use windows::Win32::System::Ole::{CF_HDROP, DROPEFFECT_COPY};
     use windows::Win32::UI::Shell::{DROPFILES, DragQueryFileW, HDROP};
@@ -250,14 +250,24 @@ mod platform {
         if ptr.is_null() {
             return Ok(String::new());
         }
-        let mut len = 0usize;
-        unsafe {
-            while *ptr.add(len) != 0 {
-                len += 1;
-            }
-            let slice = std::slice::from_raw_parts(ptr, len);
-            Ok(String::from_utf16_lossy(slice))
+        let size_bytes = unsafe { GlobalSize(HGLOBAL(handle.0)) };
+        if size_bytes == 0 {
+            return Err("GlobalSize failed for clipboard text".to_string());
         }
+        let max_u16 = size_bytes / std::mem::size_of::<u16>();
+        if max_u16 == 0 {
+            return Ok(String::new());
+        }
+        let slice = unsafe { std::slice::from_raw_parts(ptr, max_u16) };
+        let len = bounded_utf16_len(slice)?;
+        Ok(String::from_utf16_lossy(&slice[..len]))
+    }
+
+    fn bounded_utf16_len(slice: &[u16]) -> Result<usize, String> {
+        slice
+            .iter()
+            .position(|&ch| ch == 0)
+            .ok_or_else(|| "Clipboard text missing terminator".to_string())
     }
 
     fn preferred_drop_effect_format() -> Result<u16, String> {
@@ -314,5 +324,24 @@ mod platform {
             );
         }
         Ok(owned)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::bounded_utf16_len;
+
+        #[test]
+        fn bounded_utf16_len_finds_terminator() {
+            let data = [b'H' as u16, b'i' as u16, 0, b'X' as u16];
+            let len = bounded_utf16_len(&data).expect("expected terminator");
+            assert_eq!(len, 2);
+        }
+
+        #[test]
+        fn bounded_utf16_len_errors_without_terminator() {
+            let data = [b'H' as u16, b'i' as u16];
+            let err = bounded_utf16_len(&data).expect_err("expected error");
+            assert!(err.contains("missing terminator"));
+        }
     }
 }
