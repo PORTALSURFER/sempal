@@ -1,5 +1,6 @@
 use super::*;
 use crate::egui_app::view_model;
+use crate::sample_sources::config::{DropTargetColor, DropTargetConfig};
 use std::path::{Path, PathBuf};
 
 /// Resolved drop target mapped to a configured source and relative folder.
@@ -30,7 +31,7 @@ impl EguiController {
             .settings
             .drop_targets
             .iter()
-            .any(|existing| existing == &normalized)
+            .any(|existing| existing.path == normalized)
         {
             self.set_status("Drop target already added", StatusTone::Info);
             return Ok(());
@@ -38,7 +39,9 @@ impl EguiController {
         if self.resolve_drop_target_location(&normalized).is_none() {
             return Err("Drop targets must live inside a configured source".into());
         }
-        self.settings.drop_targets.push(normalized);
+        self.settings
+            .drop_targets
+            .push(DropTargetConfig::new(normalized));
         self.refresh_drop_targets_ui();
         self.persist_config("Failed to save drop targets")?;
         self.set_status("Drop target added", StatusTone::Info);
@@ -65,11 +68,11 @@ impl EguiController {
 
     /// Select a configured drop target and show its contents in the sample browser.
     pub(crate) fn select_drop_target_by_index(&mut self, index: usize) {
-        let Some(path) = self.settings.drop_targets.get(index).cloned() else {
+        let Some(config) = self.settings.drop_targets.get(index).cloned() else {
             return;
         };
         self.ui.sources.drop_targets.selected = Some(index);
-        let Some(location) = self.resolve_drop_target_location(&path) else {
+        let Some(location) = self.resolve_drop_target_location(&config.path) else {
             self.set_status(
                 "Drop target is no longer inside a configured source",
                 StatusTone::Warning,
@@ -87,6 +90,20 @@ impl EguiController {
         self.select_source(Some(location.source.id.clone()));
         self.focus_drop_target_folder(&location.relative_folder);
         self.focus_folder_context();
+    }
+
+    /// Assign a preset color to a drop target entry.
+    pub(crate) fn set_drop_target_color(
+        &mut self,
+        index: usize,
+        color: Option<DropTargetColor>,
+    ) {
+        let Some(target) = self.settings.drop_targets.get_mut(index) else {
+            return;
+        };
+        target.color = color;
+        self.refresh_drop_targets_ui();
+        let _ = self.persist_config("Failed to save drop target color");
     }
 
     /// Resolve a drop target path to its source and relative folder.
@@ -123,9 +140,10 @@ impl EguiController {
             .settings
             .drop_targets
             .iter()
-            .map(|path| {
-                let missing = !path.is_dir() || self.resolve_drop_target_location(path).is_none();
-                view_model::drop_target_row(path, missing)
+            .map(|config| {
+                let missing = !config.path.is_dir()
+                    || self.resolve_drop_target_location(&config.path).is_none();
+                view_model::drop_target_row(&config.path, config.color, missing)
             })
             .collect();
         let count = self.ui.sources.drop_targets.rows.len();

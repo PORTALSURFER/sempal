@@ -1,6 +1,7 @@
 use super::super::super::config_types::{
-    AnalysisSettings, AppSettingsCore, FeatureFlags, HintSettings, InteractionOptions,
-    PannsBackendChoice, UpdateChannel, UpdateSettings, WgpuPowerPreference,
+    AnalysisSettings, AppSettingsCore, DropTargetColor, DropTargetConfig, FeatureFlags,
+    HintSettings, InteractionOptions, PannsBackendChoice, UpdateChannel, UpdateSettings,
+    WgpuPowerPreference,
 };
 use super::super::load::load_settings_from;
 use super::super::save::save_to_path;
@@ -171,8 +172,11 @@ fn settings_round_trip_preserves_fields() {
             trash_folder: Some(std::path::PathBuf::from("trash_bin")),
             collection_export_root: Some(std::path::PathBuf::from("exports_root")),
             drop_targets: vec![
-                std::path::PathBuf::from("drops/a"),
-                std::path::PathBuf::from("drops/b"),
+                DropTargetConfig {
+                    path: std::path::PathBuf::from("drops/a"),
+                    color: Some(DropTargetColor::Mint),
+                },
+                DropTargetConfig::new(std::path::PathBuf::from("drops/b")),
             ],
             last_selected_source: Some(source_id.clone()),
             audio_output: AudioOutputConfig {

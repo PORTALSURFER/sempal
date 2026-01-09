@@ -70,6 +70,10 @@ pub struct DropTargetsUiState {
     pub selected: Option<usize>,
     pub menu_row: Option<usize>,
     pub scroll_to: Option<usize>,
+    /// User-defined height for the drop targets section, in points.
+    pub height_override: Option<f32>,
+    /// Cached height at the start of a resize drag for stable deltas.
+    pub resize_origin_height: Option<f32>,
 }
 
 /// Display data for a single drop target row.
@@ -78,4 +82,5 @@ pub struct DropTargetRowView {
     pub path: PathBuf,
     pub name: String,
     pub missing: bool,
+    pub color: Option<crate::sample_sources::config::DropTargetColor>,
 }

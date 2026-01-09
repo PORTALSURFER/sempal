@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::{
     audio::{AudioInputConfig, AudioOutputConfig},
@@ -81,9 +81,9 @@ pub struct AppSettingsCore {
     /// Optional default root used when creating collection export folders.
     #[serde(default)]
     pub collection_export_root: Option<PathBuf>,
-    /// User-defined drop target folders used by the sidebar.
-    #[serde(default)]
-    pub drop_targets: Vec<PathBuf>,
+    /// User-defined drop target folders used by the sidebar, with optional colors.
+    #[serde(default, deserialize_with = "deserialize_drop_targets")]
+    pub drop_targets: Vec<DropTargetConfig>,
     #[serde(default)]
     pub last_selected_source: Option<SourceId>,
     #[serde(default = "default_audio_output")]
@@ -102,6 +102,36 @@ impl AppSettingsCore {
         self.analysis.analysis_worker_count =
             clamp_analysis_worker_count(self.analysis.analysis_worker_count);
         self
+    }
+}
+
+/// Persisted color choices for drop target rows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DropTargetColor {
+    Mint,
+    Ice,
+    Copper,
+    Fog,
+    Amber,
+    Rose,
+    Spruce,
+    Clay,
+}
+
+/// Config data for a single drop target.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DropTargetConfig {
+    /// Folder path that receives dropped samples.
+    pub path: PathBuf,
+    /// Optional display color selected for the target.
+    pub color: Option<DropTargetColor>,
+}
+
+impl DropTargetConfig {
+    /// Build a drop target entry for the given path, with no color assigned.
+    pub fn new(path: PathBuf) -> Self {
+        Self { path, color: None }
     }
 }
 
@@ -178,4 +208,25 @@ impl Default for AppSettingsCore {
             controls: InteractionOptions::default(),
         }
     }
+}
+
+fn deserialize_drop_targets<'de, D>(deserializer: D) -> Result<Vec<DropTargetConfig>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum DropTargetEntry {
+        Path(PathBuf),
+        Config(DropTargetConfig),
+    }
+
+    let items = Option::<Vec<DropTargetEntry>>::deserialize(deserializer)?.unwrap_or_default();
+    Ok(items
+        .into_iter()
+        .map(|item| match item {
+            DropTargetEntry::Path(path) => DropTargetConfig::new(path),
+            DropTargetEntry::Config(config) => config,
+        })
+        .collect())
 }

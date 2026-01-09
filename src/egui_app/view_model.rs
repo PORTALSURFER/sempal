@@ -4,6 +4,7 @@
 use crate::egui_app::state::{
     CollectionRowView, CollectionSampleView, DropTargetRowView, SourceRowView,
 };
+use crate::sample_sources::config::DropTargetColor;
 use crate::sample_sources::collections::{CollectionMember, collection_folder_name_from_str};
 use crate::sample_sources::{Collection, CollectionId, Rating, SampleSource};
 use std::path::{Path, PathBuf};
@@ -25,7 +26,11 @@ pub fn source_row(source: &SampleSource, missing: bool) -> SourceRowView {
 }
 
 /// Convert a drop target path into a UI row.
-pub fn drop_target_row(path: &Path, missing: bool) -> DropTargetRowView {
+pub fn drop_target_row(
+    path: &Path,
+    color: Option<DropTargetColor>,
+    missing: bool,
+) -> DropTargetRowView {
     let name = path
         .file_name()
         .and_then(|name| name.to_str())
@@ -35,6 +40,7 @@ pub fn drop_target_row(path: &Path, missing: bool) -> DropTargetRowView {
         path: path.to_path_buf(),
         name,
         missing,
+        color,
     }
 }
 

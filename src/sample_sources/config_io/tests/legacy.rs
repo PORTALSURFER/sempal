@@ -1,6 +1,6 @@
 use super::super::super::config_types::{
-    AnalysisSettings, AppSettingsCore, FeatureFlags, HintSettings, InteractionOptions,
-    UpdateSettings,
+    AnalysisSettings, AppSettingsCore, DropTargetConfig, FeatureFlags, HintSettings,
+    InteractionOptions, UpdateSettings,
 };
 use super::super::LEGACY_CONFIG_FILE_NAME;
 use super::super::load::load_or_default;
@@ -24,7 +24,9 @@ fn migrates_from_legacy_json() {
             app_data_dir: None,
             trash_folder: Some(std::path::PathBuf::from("trash_here")),
             collection_export_root: None,
-            drop_targets: Vec::new(),
+            drop_targets: vec![DropTargetConfig::new(std::path::PathBuf::from(
+                "legacy_drop",
+            ))],
             last_selected_source: None,
             audio_output: AudioOutputConfig::default(),
             audio_input: AudioInputConfig::default(),
@@ -32,7 +34,13 @@ fn migrates_from_legacy_json() {
             controls: InteractionOptions::default(),
         },
     };
-    let data = serde_json::to_vec_pretty(&legacy).unwrap();
+    let mut data = serde_json::to_value(&legacy).unwrap();
+    if let Some(core) = data.get_mut("core") {
+        if let Some(drop_targets) = core.get_mut("drop_targets") {
+            *drop_targets = serde_json::json!(["legacy_drop"]);
+        }
+    }
+    let data = serde_json::to_vec_pretty(&data).unwrap();
     std::fs::write(&legacy_path, data).unwrap();
 
     let loaded = load_or_default().unwrap();

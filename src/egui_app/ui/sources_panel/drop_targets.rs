@@ -1,9 +1,12 @@
 use super::EguiApp;
-use super::helpers::{RowBackground, clamp_label_for_width, list_row_height, render_list_row};
+use super::helpers::{
+    RowBackground, RowMarker, clamp_label_for_width, list_row_height, render_list_row,
+};
 use super::style;
 use crate::egui_app::state::{DragPayload, DragSource, DragTarget};
 use crate::egui_app::ui::drag_targets::{handle_drop_zone, pointer_pos_for_drag};
-use eframe::egui::{self, Align2, RichText, TextStyle, Ui};
+use crate::sample_sources::config::DropTargetColor;
+use eframe::egui::{self, Align2, RichText, StrokeKind, TextStyle, Ui};
 
 impl EguiApp {
     pub(super) fn render_drop_targets(&mut self, ui: &mut Ui, height: f32) {
@@ -68,6 +71,12 @@ impl EguiApp {
                         let bg = RowBackground::from_option(
                             is_selected.then_some(style::row_selected_fill()),
                         );
+                        let marker = row
+                            .color
+                            .map(|color| RowMarker {
+                                width: 6.0,
+                                color: drop_target_color_fill(color),
+                            });
                         let response = render_list_row(
                             ui,
                             super::helpers::ListRow {
@@ -79,7 +88,7 @@ impl EguiApp {
                                 text_color,
                                 sense: egui::Sense::click(),
                                 number: None,
-                                marker: None,
+                                marker,
                                 rating: None,
                             },
                         )
@@ -117,6 +126,36 @@ impl EguiApp {
             let palette = style::palette();
             ui.label(RichText::new(row.name.clone()).color(palette.text_primary));
             let mut close_menu = false;
+            ui.separator();
+            ui.label(RichText::new("Color").color(palette.text_primary));
+            for swatch in drop_target_swatches() {
+                let is_selected = row.color == Some(swatch.color);
+                ui.horizontal(|ui| {
+                    let (rect, _) = ui.allocate_exact_size(
+                        egui::vec2(12.0, 12.0),
+                        egui::Sense::hover(),
+                    );
+                    ui.painter().rect_filled(rect, 2.0, swatch.fill);
+                    if is_selected {
+                        ui.painter().rect_stroke(
+                            rect,
+                            2.0,
+                            style::focused_row_stroke(),
+                            StrokeKind::Inside,
+                        );
+                    }
+                    let response = ui.selectable_label(is_selected, swatch.label);
+                    if response.clicked() {
+                        self.controller
+                            .set_drop_target_color(index, Some(swatch.color));
+                        close_menu = true;
+                    }
+                });
+            }
+            if ui.button("Clear color").clicked() {
+                self.controller.set_drop_target_color(index, None);
+                close_menu = true;
+            }
             if ui.button("Remove drop target").clicked() {
                 self.controller.remove_drop_target(index);
                 close_menu = true;
@@ -126,4 +165,65 @@ impl EguiApp {
             }
         });
     }
+}
+
+struct DropTargetSwatch {
+    color: DropTargetColor,
+    label: &'static str,
+    fill: egui::Color32,
+}
+
+fn drop_target_swatches() -> [DropTargetSwatch; 8] {
+    let palette = style::palette();
+    let semantic = style::semantic_palette();
+    [
+        DropTargetSwatch {
+            color: DropTargetColor::Mint,
+            label: "Mint",
+            fill: palette.accent_mint,
+        },
+        DropTargetSwatch {
+            color: DropTargetColor::Ice,
+            label: "Ice",
+            fill: palette.accent_ice,
+        },
+        DropTargetSwatch {
+            color: DropTargetColor::Copper,
+            label: "Copper",
+            fill: palette.accent_copper,
+        },
+        DropTargetSwatch {
+            color: DropTargetColor::Fog,
+            label: "Fog",
+            fill: semantic.badge_info,
+        },
+        DropTargetSwatch {
+            color: DropTargetColor::Amber,
+            label: "Amber",
+            fill: semantic.badge_warning,
+        },
+        DropTargetSwatch {
+            color: DropTargetColor::Rose,
+            label: "Rose",
+            fill: semantic.badge_error,
+        },
+        DropTargetSwatch {
+            color: DropTargetColor::Spruce,
+            label: "Spruce",
+            fill: semantic.triage_keep,
+        },
+        DropTargetSwatch {
+            color: DropTargetColor::Clay,
+            label: "Clay",
+            fill: semantic.triage_trash_subtle,
+        },
+    ]
+}
+
+fn drop_target_color_fill(color: DropTargetColor) -> egui::Color32 {
+    drop_target_swatches()
+        .into_iter()
+        .find(|swatch| swatch.color == color)
+        .map(|swatch| swatch.fill)
+        .unwrap_or_else(|| style::palette().accent_ice)
 }
