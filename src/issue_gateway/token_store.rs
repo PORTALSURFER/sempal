@@ -7,7 +7,7 @@ use crate::app_dirs;
 use base64::Engine as _;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Mutex, OnceLock};
 
 const KEYRING_SERVICE: &str = "sempal";
 const KEYRING_KEY: &str = "sempal_github_issue_token";
@@ -16,6 +16,7 @@ const FALLBACK_ALLOW_ENV: &str = "SEMPAL_ALLOW_FALLBACK_TOKEN_STORAGE";
 const MAX_FALLBACK_TOKEN_BYTES: u64 = 16 * 1024;
 
 static FALLBACK_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
+static FALLBACK_KEY_CACHE: OnceLock<Mutex<Option<[u8; 32]>>> = OnceLock::new();
 
 /// Errors returned by the issue token storage backend.
 #[derive(Debug, thiserror::Error)]
@@ -39,7 +40,6 @@ pub enum IssueTokenStoreError {
 #[derive(Clone, Debug)]
 pub struct IssueTokenStore {
     fallback_dir: PathBuf,
-    fallback_key_cache: Arc<Mutex<Option<[u8; 32]>>>,
 }
 
 impl IssueTokenStore {
@@ -47,10 +47,7 @@ impl IssueTokenStore {
     pub fn new() -> Result<Self, IssueTokenStoreError> {
         let fallback_dir = app_dirs::app_root_dir()?.join("secrets");
         std::fs::create_dir_all(&fallback_dir)?;
-        Ok(Self {
-            fallback_dir,
-            fallback_key_cache: Arc::new(Mutex::new(None)),
-        })
+        Ok(Self { fallback_dir })
     }
 
     /// Load the token from the keyring or the opt-in fallback storage if allowed.
@@ -220,7 +217,7 @@ impl IssueTokenStore {
     }
 
     fn cached_fallback_key(&self) -> Option<[u8; 32]> {
-        self.fallback_key_cache
+        fallback_key_cache()
             .lock()
             .expect("fallback key cache lock poisoned")
             .as_ref()
@@ -228,8 +225,7 @@ impl IssueTokenStore {
     }
 
     fn cache_fallback_key(&self, key: [u8; 32]) {
-        *self
-            .fallback_key_cache
+        *fallback_key_cache()
             .lock()
             .expect("fallback key cache lock poisoned") = Some(key);
     }
@@ -331,8 +327,7 @@ impl IssueTokenStore {
         let _ = std::fs::remove_file(self.fallback_token_path());
         let _ = std::fs::remove_file(self.legacy_fallback_key_path());
         let _ = self.try_keyring_fallback_key_delete();
-        *self
-            .fallback_key_cache
+        *fallback_key_cache()
             .lock()
             .expect("fallback key cache lock poisoned") = None;
         Ok(())
@@ -405,6 +400,10 @@ fn warn_fallback_active() {
             "Fallback token storage enabled; ciphertext is stored on disk and the encryption key is stored in the OS keyring."
         );
     }
+}
+
+fn fallback_key_cache() -> &'static Mutex<Option<[u8; 32]>> {
+    FALLBACK_KEY_CACHE.get_or_init(|| Mutex::new(None))
 }
 
 fn random_bytes(len: usize) -> Result<Vec<u8>, IssueTokenStoreError> {
