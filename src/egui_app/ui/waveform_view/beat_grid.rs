@@ -12,7 +12,7 @@ pub(super) fn render_waveform_beat_grid(
     app: &EguiApp,
     ui: &egui::Ui,
     rect: egui::Rect,
-    palette: &style::Palette,
+    _palette: &style::Palette,
     view: WaveformView,
     view_width: f32,
 ) {
@@ -46,8 +46,9 @@ pub(super) fn render_waveform_beat_grid(
     let quarter_step = beat_step * 0.25;
     let quarter_spacing_px = beat_spacing_px * 0.25;
 
-    let beat_stroke = egui::Stroke::new(1.0, style::with_alpha(palette.grid_soft, 90));
-    let quarter_stroke = egui::Stroke::new(1.0, style::with_alpha(palette.grid_soft, 50));
+    let grid_base = egui::Color32::from_rgb(200, 200, 200);
+    let beat_stroke = egui::Stroke::new(1.0, style::with_alpha(grid_base, 90));
+    let quarter_stroke = egui::Stroke::new(1.0, style::with_alpha(grid_base, 55));
     let mut draw_quarters = quarter_spacing_px >= MIN_QUARTER_SPACING_PX;
 
     let visible_start = view.start.max(0.0);
