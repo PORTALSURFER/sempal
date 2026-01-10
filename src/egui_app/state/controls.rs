@@ -12,6 +12,7 @@ pub struct InteractionOptionsState {
     pub destructive_yolo_mode: bool,
     pub waveform_channel_view: WaveformChannelView,
     pub input_monitoring_enabled: bool,
+    pub advance_after_rating: bool,
 }
 
 impl Default for InteractionOptionsState {
@@ -26,6 +27,7 @@ impl Default for InteractionOptionsState {
             destructive_yolo_mode: false,
             waveform_channel_view: WaveformChannelView::Mono,
             input_monitoring_enabled: true,
+            advance_after_rating: true,
         }
     }
 }

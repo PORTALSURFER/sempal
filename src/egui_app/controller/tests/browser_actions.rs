@@ -522,3 +522,39 @@ fn deleting_browser_sample_moves_focus_forward() -> Result<(), String> {
     Ok(())
 }
 
+#[test]
+fn rating_auto_advance_works() {
+    let (mut controller, _) = prepare_with_source_and_wav_entries(vec![
+        sample_entry("one.wav", Rating::NEUTRAL),
+        sample_entry("two.wav", Rating::NEUTRAL),
+        sample_entry("three.wav", Rating::NEUTRAL),
+    ]);
+
+    // Initial state: first row focused
+    controller.focus_browser_row(0);
+    assert_eq!(controller.ui.browser.selected_visible, Some(0));
+
+    // Case 1: Advance is ON (default)
+    controller.adjust_selected_rating(1);
+    assert_eq!(controller.ui.browser.selected_visible, Some(1), "Should advance to next row");
+
+    // Case 2: Advance is ON, rating again
+    controller.adjust_selected_rating(-1);
+    assert_eq!(controller.ui.browser.selected_visible, Some(2), "Should advance to next row again");
+
+    // Case 3: Advance is ON, but at the end
+    controller.adjust_selected_rating(1);
+    assert_eq!(controller.ui.browser.selected_visible, Some(2), "Should stay at the last row");
+
+    // Case 4: Advance is OFF
+    controller.set_advance_after_rating(false);
+    controller.focus_browser_row(0);
+    controller.adjust_selected_rating(1);
+    assert_eq!(controller.ui.browser.selected_visible, Some(0), "Should NOT advance when setting is off");
+
+    // Case 5: tag_selected should also advance
+    controller.set_advance_after_rating(true);
+    controller.focus_browser_row(0);
+    controller.tag_selected(Rating::KEEP_1);
+    assert_eq!(controller.ui.browser.selected_visible, Some(1), "tag_selected should also advance");
+}

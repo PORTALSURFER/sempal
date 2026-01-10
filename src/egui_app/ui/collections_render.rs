@@ -149,6 +149,9 @@ impl EguiApp {
                         });
                     }
                 });
+            if ui.rect_contains_pointer(list_response.rect) {
+                self.controller.focus_collections_list_context();
+            }
             let min_focus_height = list_row_height(ui);
             let focus_height = list_response
                 .content_size
@@ -464,6 +467,9 @@ impl EguiApp {
             style::drag_target_stroke(),
             StrokeKind::Inside,
         );
+        if ui.rect_contains_pointer(list_response.frame_rect) {
+            self.controller.focus_collection_context();
+        }
         if hovered {
             debug!(
                 "Collections drop zone hover: pointer={:?} rect={:?} current_collection_id={:?}",

@@ -103,6 +103,15 @@ pub(crate) fn tag_selected(controller: &mut EguiController, target: crate::sampl
     if let Some(err) = last_error {
         controller.set_status(err, StatusTone::Error);
     }
+
+    if controller.settings.controls.advance_after_rating
+        && controller.ui.browser.selected_visible == Some(primary_row)
+    {
+        let next_row = primary_row + 1;
+        if next_row < controller.ui.browser.visible.len() {
+            controller.focus_browser_row(next_row);
+        }
+    }
 }
 
 pub(crate) fn move_selection_column(controller: &mut EguiController, delta: isize) {
@@ -235,5 +244,14 @@ pub(crate) fn adjust_selected_rating(controller: &mut EguiController, delta: i8)
     controller.refocus_after_filtered_removal(primary_row);
     if let Some(err) = last_error {
         controller.set_status(err, StatusTone::Error);
+    }
+
+    if controller.settings.controls.advance_after_rating
+        && controller.ui.browser.selected_visible == Some(primary_row)
+    {
+        let next_row = primary_row + 1;
+        if next_row < controller.ui.browser.visible.len() {
+            controller.focus_browser_row(next_row);
+        }
     }
 }

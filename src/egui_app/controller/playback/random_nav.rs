@@ -79,24 +79,52 @@ fn play_random_visible_sample_internal<R: Rng + ?Sized>(
         return;
     };
     let total = controller.visible_browser_len();
-    let Some((visible_row, entry_index)) = (total > 0)
-        .then_some(())
-        .and_then(|_| (0..total).choose(rng))
-        .and_then(|visible_row| {
-            controller
-                .visible_browser_index(visible_row)
-                .map(|entry_index| (visible_row, entry_index))
-        })
-    else {
+    if total == 0 {
         controller.set_status_message(StatusMessage::NoSamplesToRandomize);
         return;
+    }
+
+    let mut available_indices: Vec<usize> = Vec::new();
+    for row in 0..total {
+        let Some(idx) = controller.visible_browser_index(row) else {
+            continue;
+        };
+        let Some(path) = controller
+            .wav_entry(idx)
+            .map(|e| e.relative_path.clone())
+        else {
+            continue;
+        };
+        if !controller
+            .history
+            .random_history
+            .has_played(&source_id, &path)
+        {
+            available_indices.push(row);
+        }
+    }
+
+    if available_indices.is_empty() {
+        controller.history.random_history.reset_played_for_source(&source_id);
+        available_indices = (0..total).collect();
+    }
+
+    let Some(&visible_row) = available_indices.iter().choose(rng) else {
+        return;
     };
+
+    let Some(entry_index) = controller.visible_browser_index(visible_row) else {
+        return;
+    };
+
     let Some(path) = controller
         .wav_entry(entry_index)
         .map(|entry| entry.relative_path.clone())
     else {
         return;
     };
+
+    controller.history.random_history.mark_played(&source_id, &path);
     push_random_history(controller, source_id, path.clone());
     controller.focus_browser_row_only(visible_row);
     if start_playback

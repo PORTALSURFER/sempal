@@ -210,6 +210,7 @@ fn settings_round_trip_preserves_fields() {
                 transient_markers_enabled: false,
                 input_monitoring_enabled: false,
                 normalized_audition_enabled: true,
+                advance_after_rating: true,
             },
         },
     };
@@ -350,5 +351,9 @@ fn settings_round_trip_preserves_fields() {
     assert_eq!(
         round_trip.core.controls.normalized_audition_enabled,
         cfg.core.controls.normalized_audition_enabled
+    );
+    assert_eq!(
+        round_trip.core.controls.advance_after_rating,
+        cfg.core.controls.advance_after_rating
     );
 }

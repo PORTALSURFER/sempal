@@ -33,6 +33,9 @@ impl EguiApp {
             ui.add_space(6.0);
             let source_list_height = (ui.available_height() * 0.25).max(140.0);
             let sources_rect = self.render_sources_list(ui, source_list_height);
+            if ui.rect_contains_pointer(sources_rect) {
+                self.controller.focus_sources_context();
+            }
             ui.add_space(8.0);
             let remaining = ui.available_height();
             let drag_payload = self.controller.ui.drag.payload.clone();
@@ -166,6 +169,9 @@ impl EguiApp {
                 build_layout(folder_height, drop_targets_height);
             ui.allocate_ui_at_rect(folder_rect, |ui| {
                 self.render_folder_browser(ui, folder_height, folder_drop_active, pointer_pos);
+                if ui.rect_contains_pointer(folder_rect) {
+                    self.controller.focus_folder_context();
+                }
             });
             let handle_stroke = style::inner_border();
             ui.painter().line_segment(

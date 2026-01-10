@@ -139,6 +139,13 @@ impl EguiApp {
                     )
                     .color(style::status_badge_color(style::StatusTone::Warning)),
                 );
+                let mut advance_after_rating = self.controller.ui.controls.advance_after_rating;
+                if ui
+                    .checkbox(&mut advance_after_rating, "Advance to next sample after rating")
+                    .changed()
+                {
+                    self.controller.set_advance_after_rating(advance_after_rating);
+                }
                 ui.add_space(6.0);
                 ui.separator();
                 section_label(ui, "Hints");

@@ -35,7 +35,11 @@ impl EguiApp {
     pub(super) fn render_center(&mut self, ui: &mut Ui) {
         ui.set_min_height(ui.available_height());
         ui.vertical(|ui| {
+            let waveform_rect = ui.available_rect_before_wrap();
             self.render_waveform(ui);
+            if ui.rect_contains_pointer(waveform_rect) {
+                self.controller.focus_waveform_context();
+            }
             ui.add_space(8.0);
             let browser_rect = ui.available_rect_before_wrap();
             if browser_rect.height() > 0.0 {
@@ -47,6 +51,9 @@ impl EguiApp {
                 );
                 browser_ui.set_min_height(browser_ui.available_height());
                 self.render_sample_browser(&mut browser_ui);
+                if ui.rect_contains_pointer(browser_rect) {
+                    self.controller.focus_browser_context();
+                }
             }
         });
     }

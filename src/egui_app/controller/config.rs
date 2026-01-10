@@ -49,6 +49,7 @@ impl EguiController {
             destructive_yolo_mode: self.settings.controls.destructive_yolo_mode,
             waveform_channel_view: self.settings.controls.waveform_channel_view,
             input_monitoring_enabled: self.settings.controls.input_monitoring_enabled,
+            advance_after_rating: self.settings.controls.advance_after_rating,
         };
         self.ui.waveform.channel_view = self.settings.controls.waveform_channel_view;
         self.ui.waveform.bpm_snap_enabled = self.settings.controls.bpm_snap_enabled;

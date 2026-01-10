@@ -486,3 +486,42 @@ fn random_navigation_mode_toggles_state_and_status() {
     assert_eq!(controller.ui.status.text, "Random navigation off");
 }
 
+#[test]
+fn random_sample_navigation_avoids_repeats() {
+    let (mut controller, source) = dummy_controller();
+    controller.library.sources.push(source.clone());
+    controller.selection_state.ctx.selected_source = Some(source.id.clone());
+    controller.set_wav_entries_for_tests(vec![
+        sample_entry("one.wav", crate::sample_sources::Rating::NEUTRAL),
+        sample_entry("two.wav", crate::sample_sources::Rating::NEUTRAL),
+        sample_entry("three.wav", crate::sample_sources::Rating::NEUTRAL),
+    ]);
+    controller.rebuild_wav_lookup();
+    controller.rebuild_browser_lists();
+
+    let mut played = std::collections::HashSet::new();
+
+    // Play all 3 samples randomly
+    for _ in 0..3 {
+        controller.play_random_visible_sample();
+        let selected = controller.ui.browser.selected_visible.expect("sample selected");
+        let path = controller
+            .visible_browser_index(selected)
+            .and_then(|idx| controller.wav_entry(idx))
+            .map(|e| e.relative_path.clone())
+            .expect("path");
+        assert!(played.insert(path), "Sample should not be repeated");
+    }
+
+    assert_eq!(played.len(), 3, "All samples should have been played");
+
+    // The next one should be a repeat (since all were played)
+    controller.play_random_visible_sample();
+    let selected = controller.ui.browser.selected_visible.expect("sample selected");
+    let path = controller
+        .visible_browser_index(selected)
+        .and_then(|idx| controller.wav_entry(idx))
+        .map(|e| e.relative_path.clone())
+        .expect("path");
+    assert!(played.contains(&path), "Should repeat after all were played");
+}

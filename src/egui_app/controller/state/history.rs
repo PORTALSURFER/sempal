@@ -3,7 +3,7 @@
 use crate::egui_app::controller::undo;
 use crate::sample_sources::SourceId;
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub(crate) struct ControllerHistoryState {
     pub(crate) undo_stack: undo::UndoStack<super::super::EguiController>,

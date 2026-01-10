@@ -318,6 +318,16 @@ impl EguiController {
         self.persist_controls();
     }
 
+    /// Toggle and persist auto-advance after rating/tagging.
+    pub fn set_advance_after_rating(&mut self, enabled: bool) {
+        if self.settings.controls.advance_after_rating == enabled {
+            return;
+        }
+        self.settings.controls.advance_after_rating = enabled;
+        self.ui.controls.advance_after_rating = enabled;
+        self.persist_controls();
+    }
+
     fn persist_controls(&mut self) {
         if let Err(err) = self.persist_config("Failed to save options") {
             self.set_status(err, StatusTone::Warning);
