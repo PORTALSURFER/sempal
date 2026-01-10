@@ -241,6 +241,13 @@ impl EguiController {
         if settings_match && ui_match {
             return;
         }
+        let was_playing = self.is_playing();
+        let start_override = if was_playing {
+            Some(self.ui.waveform.playhead.position)
+        } else {
+            None
+        };
+        let looped = self.ui.waveform.loop_enabled;
         self.settings.controls.bpm_value = value;
         self.ui.waveform.bpm_value = Some(value);
         self.persist_controls();
@@ -261,6 +268,19 @@ impl EguiController {
                 )
             };
             self.reload_waveform_for_selection_if_active(&source, &relative_path);
+            let loaded_matches = self
+                .sample_view
+                .wav
+                .loaded_audio
+                .as_ref()
+                .is_some_and(|audio| {
+                    audio.source_id == source.id && audio.relative_path == relative_path
+                });
+            if was_playing && loaded_matches {
+                if let Err(err) = self.play_audio(looped, start_override) {
+                    self.set_status(err, StatusTone::Error);
+                }
+            }
         }
     }
 
