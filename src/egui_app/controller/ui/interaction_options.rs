@@ -204,7 +204,7 @@ impl EguiController {
         self.reload_waveform_for_selection_if_active(&source, &relative_path);
     }
 
-    /// Update and persist the BPM snap value, also storing it for the loaded sample when possible.
+    /// Update and persist the BPM snap value for waveform snapping and stretching.
     pub fn set_bpm_value(&mut self, value: f32) {
         if !value.is_finite() || value <= 0.0 {
             return;
@@ -216,21 +216,11 @@ impl EguiController {
             .bpm_value
             .is_some_and(|bpm| (bpm - value).abs() < f32::EPSILON);
         if settings_match && ui_match {
-            if !self.selection_state.range.is_dragging()
-                && !self.selection_state.edit_range.is_dragging()
-            {
-                self.persist_loaded_sample_bpm(value);
-            }
             return;
         }
         self.settings.controls.bpm_value = value;
         self.ui.waveform.bpm_value = Some(value);
         self.persist_controls();
-        if !self.selection_state.range.is_dragging()
-            && !self.selection_state.edit_range.is_dragging()
-        {
-            self.persist_loaded_sample_bpm(value);
-        }
     }
 
     /// Enable/disable transient snapping and persist the setting.

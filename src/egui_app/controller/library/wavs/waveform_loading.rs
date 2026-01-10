@@ -166,7 +166,7 @@ impl EguiController {
         source: &SampleSource,
         relative_path: &Path,
     ) -> Option<f64> {
-        if !self.ui.waveform.bpm_snap_enabled || !self.ui.waveform.bpm_stretch_enabled {
+        if !self.ui.waveform.bpm_stretch_enabled {
             return None;
         }
         let target_bpm = self.ui.waveform.bpm_value?;
@@ -320,37 +320,6 @@ impl EguiController {
                 tracing::warn!("Failed to load BPM metadata for {sample_id}: {err}");
                 None
             }
-        }
-    }
-
-    /// Persist the BPM snap value for the currently loaded sample.
-    pub(crate) fn persist_loaded_sample_bpm(&mut self, bpm: f32) {
-        if !bpm.is_finite() || bpm <= 0.0 {
-            return;
-        }
-        let Some(loaded) = self.sample_view.wav.loaded_audio.as_ref() else {
-            return;
-        };
-        let conn = match analysis_jobs::open_source_db(&loaded.root) {
-            Ok(conn) => conn,
-            Err(err) => {
-                tracing::warn!("Failed to open source DB for BPM save: {err}");
-                return;
-            }
-        };
-        let sample_id = analysis_jobs::build_sample_id(
-            loaded.source_id.as_str(),
-            &loaded.relative_path,
-        );
-        if let Err(err) = analysis_jobs::update_sample_bpm(&conn, &sample_id, Some(bpm)) {
-            tracing::warn!("Failed to update BPM metadata for {sample_id}: {err}");
-        } else if let Some(cache) = self
-            .ui_cache
-            .browser
-            .bpm_values
-            .get_mut(&loaded.source_id)
-        {
-            cache.insert(loaded.relative_path.clone(), Some(bpm));
         }
     }
 

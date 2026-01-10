@@ -122,26 +122,19 @@ pub(super) fn render_waveform_controls(app: &mut EguiApp, ui: &mut Ui, palette: 
         }
         let mut bpm_lock = app.controller.ui.waveform.bpm_lock_enabled;
         let lock_toggle = ui
-            .add_enabled(
-                app.controller.ui.waveform.bpm_snap_enabled,
-                egui::Checkbox::new(&mut bpm_lock, "Lock"),
-            )
+            .add(egui::Checkbox::new(&mut bpm_lock, "Lock"))
             .on_hover_text("Keep the current BPM value when loading samples with BPM metadata");
         if lock_toggle.clicked() {
             app.controller.set_bpm_lock_enabled(bpm_lock);
         }
         let mut bpm_stretch = app.controller.ui.waveform.bpm_stretch_enabled;
         let stretch_toggle = ui
-            .add_enabled(
-                app.controller.ui.waveform.bpm_snap_enabled,
-                egui::Checkbox::new(&mut bpm_stretch, "Stretch"),
-            )
+            .add(egui::Checkbox::new(&mut bpm_stretch, "Stretch"))
             .on_hover_text("Time-stretch loaded samples to the current BPM value");
         if stretch_toggle.clicked() {
             app.controller.set_bpm_stretch_enabled(bpm_stretch);
         }
-        let bpm_edit = ui.add_enabled(
-            app.controller.ui.waveform.bpm_snap_enabled,
+        let bpm_edit = ui.add(
             egui::TextEdit::singleline(&mut app.controller.ui.waveform.bpm_input)
                 .desired_width(64.0)
                 .hint_text("120"),

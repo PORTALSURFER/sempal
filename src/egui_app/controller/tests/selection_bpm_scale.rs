@@ -1,6 +1,9 @@
+use super::super::library::analysis_jobs;
 use super::super::test_support::{dummy_controller, load_waveform_selection};
 use super::super::*;
 use crate::selection::SelectionEdge;
+use rusqlite::params;
+use std::path::Path;
 
 #[test]
 fn alt_drag_scales_selection_and_recalculates_bpm() {
@@ -101,4 +104,27 @@ fn start_drag_snaps_to_start_when_bpm_snap_enabled() {
 
     let updated = controller.ui.waveform.selection.unwrap();
     assert!((updated.start() - 0.0).abs() < 1e-6);
+}
+
+#[test]
+fn bpm_snap_value_does_not_persist_to_sample_metadata() {
+    let (mut controller, source) = dummy_controller();
+    let samples = vec![0.0; 32];
+    let selection = SelectionRange::new(0.0, 0.5);
+    let filename = "bpm_metadata.wav";
+    let sample_id = analysis_jobs::build_sample_id(source.id.as_str(), Path::new(filename));
+    let conn = analysis_jobs::open_source_db(&source.root).unwrap();
+    conn.execute(
+        "INSERT INTO samples (sample_id, content_hash, size, mtime_ns) VALUES (?1, ?2, ?3, ?4)",
+        params![sample_id, "test-hash", 1i64, 1i64],
+    )
+    .unwrap();
+    analysis_jobs::update_sample_bpm(&conn, &sample_id, Some(100.0)).unwrap();
+
+    load_waveform_selection(&mut controller, &source, filename, &samples, selection);
+    controller.set_bpm_snap_enabled(true);
+    controller.set_bpm_value(120.0);
+
+    let bpm = analysis_jobs::sample_bpm(&conn, &sample_id).unwrap();
+    assert_eq!(bpm, Some(100.0));
 }

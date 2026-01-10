@@ -33,9 +33,9 @@ pub struct WaveformState {
     pub bpm_lock_enabled: bool,
     /// When true, loaded samples with BPM metadata are time-stretched to match the current BPM.
     pub bpm_stretch_enabled: bool,
-    /// Last text input for bpm snapping.
+    /// Last text input for the waveform BPM value.
     pub bpm_input: String,
-    /// Parsed bpm value used for snapping, when valid.
+    /// Parsed waveform BPM value used by snapping and stretching when valid.
     pub bpm_value: Option<f32>,
     /// Cached transient positions (normalized 0-1) for the loaded waveform.
     pub transients: Vec<f32>,
